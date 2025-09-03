@@ -1,0 +1,252 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "mysql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model User {
+  id                    Int             @id @default(autoincrement())
+  email                 String          @unique
+  name                  String?
+  role                  String
+  roleName              String?
+  password              String
+  refreshToken          String?
+  refreshTokenExpiresAt DateTime?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  isActive              Boolean         @default(true)
+  lastActivityAt        DateTime?
+  lastLoginAt           DateTime?
+  OrdersHistory         OrdersHistory[]
+
+  @@map("users")
+}
+
+model Order {
+  id              String          @id
+  externalId      String          @unique
+  ttn             String
+  quantity        Int
+  status          String
+  items           String          @db.LongText
+  rawData         String          @db.LongText
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  cityName        String?
+  customerName    String?
+  customerPhone   String?
+  deliveryAddress String?
+  lastSynced      DateTime        @default(now())
+  orderDate       DateTime?
+  orderNumber     String
+  paymentMethod   String?
+  provider        String?
+  shippingMethod  String?
+  statusText      String
+  syncError       String?
+  syncStatus      String          @default("pending")
+  totalPrice      Float?
+  processedItems  String?         @db.LongText
+  pricinaZnizki   String?
+  sajt            String?
+  OrdersHistory   OrdersHistory[]
+
+  @@index([status])
+  @@index([externalId])
+  @@index([lastSynced])
+  @@index([syncStatus])
+  @@index([createdAt])
+  @@index([orderDate])
+  @@index([orderNumber])
+  @@index([status, createdAt])
+  @@map("orders")
+}
+
+model OrdersHistory {
+  id         String   @id @default(cuid())
+  orderId    String
+  status     String
+  statusText String
+  changedAt  DateTime @default(now())
+  source     String
+  userId     Int?
+  notes      String?
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([orderId])
+  @@index([changedAt])
+  @@index([source])
+  @@index([userId])
+  @@map("orders_history")
+}
+
+model Product {
+  id                  Int      @id @default(autoincrement())
+  sku                 String   @unique
+  name                String
+  costPerItem         Float?
+  currency            String   @default("UAH")
+  categoryId          Int?
+  categoryName        String?
+  set                 String?  @db.LongText
+  additionalPrices    String?  @db.LongText
+  stockBalanceByStock String?  @db.LongText
+  dilovodId           String?
+  parent              String?
+  lastSyncAt          DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  weight              Int?
+
+  @@index([sku])
+  @@index([categoryId])
+  @@index([lastSyncAt])
+  @@map("products")
+}
+
+model SettingsBoxes {
+  id          Int      @id @default(autoincrement())
+  name        String
+  marking     String
+  qntFrom     Int
+  qntTo       Int
+  width       Int
+  height      Int
+  length      Int
+  overflow    Int      @default(1)
+  weight      Decimal  @db.Decimal(10, 2)
+  self_weight Decimal  @db.Decimal(10, 2)
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([marking])
+  @@index([qntFrom])
+  @@index([qntTo])
+  @@map("settings_boxes")
+}
+
+model SettingsBase {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique @db.VarChar(255)
+  value       String   @db.Text
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @db.Timestamp(3)
+  updatedAt   DateTime @updatedAt @db.Timestamp(3)
+  category    String?  @db.VarChar(100)
+  isActive    Boolean  @default(true)
+
+  @@index([category])
+  @@index([isActive])
+  @@map("settings_base")
+}
+
+model SettingsWpSku {
+  id          Int      @id @default(autoincrement())
+  skus        String   @db.LongText
+  lastUpdated DateTime @default(now())
+  totalCount  Int      @default(0)
+
+  @@map("settings_wp_sku")
+}
+
+model WarehouseMovement {
+  id                   Int       @id @default(autoincrement())
+  draftCreatedAt       DateTime  @default(now())
+  draftLastEditedAt    DateTime  @updatedAt
+  sentToDilovodAt      DateTime?
+  internalDocNumber    String    @unique @default("00001")
+  items                String    @db.LongText
+  deviations           String?   @db.LongText
+  status               String    @default("draft")
+  sourceWarehouse      String
+  destinationWarehouse String
+  notes                String?
+  createdBy            Int
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([status])
+  @@index([draftCreatedAt])
+  @@index([sentToDilovodAt])
+  @@index([sourceWarehouse])
+  @@index([destinationWarehouse])
+  @@index([createdBy])
+  @@map("warehouse_movement")
+}
+
+model StockMovementHistory {
+  id              Int      @id @default(autoincrement())
+  productSku      String
+  warehouse       String
+  movementType    String
+  quantity        Float
+  quantityType    String
+  batchNumber     String?
+  referenceId     String?
+  referenceType   String?
+  previousBalance Float
+  newBalance      Float
+  movementDate    DateTime @default(now())
+  notes           String?
+  createdBy       Int?
+
+  @@index([productSku])
+  @@index([warehouse])
+  @@index([movementType])
+  @@index([movementDate])
+  @@index([referenceId])
+  @@index([referenceType])
+  @@map("stock_movement_history")
+}
+
+model SyncLogs {
+  id               String    @id @default(cuid())
+  type             String
+  status           String
+  message          String    @db.Text
+  details          String?   @db.LongText
+  startedAt        DateTime  @default(now())
+  finishedAt       DateTime?
+  duration         BigInt?
+  recordsProcessed Int?
+  errors           String?   @db.LongText
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([type])
+  @@index([status])
+  @@index([startedAt])
+  @@index([finishedAt])
+  @@map("sync_logs")
+}
+
+
+
+model SyncHistory {
+  id            String   @id @default(cuid())
+  syncType      String
+  startDate     String?
+  endDate       String?
+  totalOrders   Int
+  newOrders     Int
+  updatedOrders Int
+  skippedOrders Int
+  errors        Int
+  duration      Float
+  details       String   @db.LongText
+  status        String
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("sync_history")
+}

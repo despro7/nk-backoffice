@@ -1,0 +1,214 @@
+/* @tailwindcss v4 */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Nunito:wght@700;800&display=swap');
+
+@import "tailwindcss";
+@plugin "./hero.ts";
+@source "./**/*.{ts,tsx}";
+@source "../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}";
+
+@theme {
+  --breakpoint-xs: 475px;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+
+  --color-primary: #374151;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #9ca3af;
+  --color-secondary-foreground: #ffffff;
+  --color-background: #e5e7eb;
+  --color-background-paper: #ffffff;
+  --color-danger: #e3484b;
+  --color-danger-foreground: #ffffff;
+  --color-danger-400: #eb5541;
+  --color-danger-500: #e3484b;
+  --color-danger-700: #da291c;
+  --color-success-100: #e9f2e0;
+  --color-success-200: #bfef90;
+  --color-success-400: #cbdeb7;
+  --color-success-500: #5bb434;
+  --color-success-600: #409b18;
+  --color-success-700: #5e8f2d;
+  --color-warning-400: #ffebad;
+  --color-warning-500: #ebcb69;
+  --color-warning-600: #e2bf55;
+  --color-warning-700: #dbab19;
+  --color-warning-800: #886f22;
+  --color-common-dark: #1b1c1e;
+  --color-common-white: #ffffff;
+  --color-common-black: #000000;
+  --color-grey-50: #f6f6f6;
+  --color-grey-100: #f0f0f0;
+  --color-grey-200: #e5e5e5;
+  --color-grey-400: #d2d2d2;
+  --color-grey-500: #acacac;
+  --color-grey-600: #6f6f6f;
+  --color-grey-700: #555555;
+  --color-grey-800: #444444;
+  --color-neutral-50: #f9fafb;
+  --color-neutral-100: #f3f4f6;
+  --color-neutral-200: #e5e7eb;
+  --color-neutral-300: #d1d5db;
+  --color-neutral-400: #9ca3af;
+  --color-neutral-500: #6b7280;
+  --color-neutral-600: #4b5563;
+  --color-neutral-700: #374151;
+  --color-neutral-800: #1f2937;
+  --color-neutral-900: #111827;
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-foreground: hsl(var(--foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --radius-xl: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 32px;
+  --radius-3xl: 40px;
+  --radius-4xl: 48px;
+  --radius-5xl: 64px;
+
+  --shadow-container: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-inner: inset 0 8px 8px 0 rgba(0, 0, 0, 0.04);
+  --shadow-inner-sm: inset 0 1px 3px 0 rgba(55, 65, 81, 0.1);
+  --shadow-inner-md: inset 0 2px 6px 0 rgba(55, 65, 81, 0.08);
+  --shadow-button-primary: 0 12px 15px -10px rgba(55, 65, 81, 0.5);
+  --shadow-button-danger: 0 12px 15px -10px rgba(227, 72, 75, 0.5);
+
+  /* Переопределение стандартных теней HeroUI */
+  --shadow-small: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-medium: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --shadow-large: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+
+  --font-inter: Inter, -apple-system, Roboto, Helvetica, sans-serif;
+
+
+  @keyframes jello-horizontal {
+    0% {
+      -webkit-transform: scale3d(1, 1, 1);
+              transform: scale3d(1, 1, 1);
+    }
+    30% {
+      -webkit-transform: scale3d(1.05, 0.75, 1);
+              transform: scale3d(1.05, 0.75, 1);
+    }
+    40% {
+      -webkit-transform: scale3d(0.75, 1.05, 1);
+              transform: scale3d(0.75, 1.05, 1);
+    }
+    50% {
+      -webkit-transform: scale3d(1.05, 0.85, 1);
+              transform: scale3d(1.05, 0.85, 1);
+    }
+    65% {
+      -webkit-transform: scale3d(0.95, 1.05, 1);
+              transform: scale3d(0.95, 1.05, 1);
+    }
+    75% {
+      -webkit-transform: scale3d(1.05, 0.95, 1);
+              transform: scale3d(1.05, 0.95, 1);
+    }
+    100% {
+      -webkit-transform: scale3d(1, 1, 1);
+              transform: scale3d(1, 1, 1);
+    }
+  }
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-inter);
+    /* overflow-y: scroll; */
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  .animate-jello {
+    -webkit-animation: jello-horizontal 0.9s ;
+            animation: jello-horizontal 0.9s ;
+  }
+}

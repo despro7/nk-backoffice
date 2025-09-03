@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `settings_wp_sku` MODIFY `id` INTEGER NOT NULL AUTO_INCREMENT;

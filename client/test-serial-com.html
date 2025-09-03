@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тестування реального COM порту та обладнання</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+        }
+        .test-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .test-button:hover {
+            background: #0056b3;
+        }
+        .test-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .test-result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .test-result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .test-result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .test-result.info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+        select, input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 Тестування реального COM порту та обладнання</h1>
+    
+    <div class="warning">
+        <strong>⚠️ Увага:</strong> Цей тест потребує реального обладнання (ваги ВТА-60, сканер MC-200PT) та підтримки Web Serial API.
+        Переконайтеся, що обладнання підключене та браузер підтримує Web Serial API.
+    </div>
+
+    <div class="container">
+        <h2>🌐 Перевірка підтримки Web Serial API</h2>
+        <div id="apiSupport" class="test-result info">Перевіряємо...</div>
+        <button class="test-button" onclick="checkSerialSupport()">Перевірити підтримку</button>
+    </div>
+
+    <div class="container">
+        <h2>⚖️ Тестування ваг ВТА-60</h2>
+        
+        <div class="form-group">
+            <label for="baudRate">Швидкість передачі (бод):</label>
+            <select id="baudRate">
+                <option value="9600">9600</option>
+                <option value="19200">19200</option>
+                <option value="38400">38400</option>
+                <option value="57600">57600</option>
+                <option value="115200">115200</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="dataBits">Біти даних:</label>
+            <select id="dataBits">
+                <option value="7">7</option>
+                <option value="8" selected>8</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="parity">Парність:</label>
+            <select id="parity">
+                <option value="none" selected>Немає</option>
+                <option value="even">Парна</option>
+                <option value="odd">Непарна</option>
+            </select>
+        </div>
+
+        <div class="test-section">
+            <button class="test-button" onclick="connectToScale()">Підключитися до ваг</button>
+            <button class="test-button" onclick="disconnectFromScale()" disabled id="disconnectBtn">Відключитися</button>
+            <button class="test-button" onclick="readWeight()" disabled id="readWeightBtn">Зчитати вагу</button>
+            <div id="scaleResult" class="test-result" style="display: none;"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📷 Тестування сканера MC-200PT</h2>
+        
+        <div class="test-section">
+            <button class="test-button" onclick="startScannerTest()">Почати тест сканера</button>
+            <button class="test-button" onclick="stopScannerTest()" disabled id="stopScannerBtn">Зупинити тест</button>
+            <div id="scannerResult" class="test-result" style="display: none;"></div>
+            <div id="scannedCodes" style="margin-top: 15px;">
+                <h4>Відскановані коди:</h4>
+                <ul id="codesList"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let port = null;
+        let reader = null;
+        let scannerActive = false;
+        let scanBuffer = '';
+        let lastScanTime = 0;
+        const SCAN_TIMEOUT = 100; // мс між символами для визначення кінця сканування
+
+        // Перевірка підтримки Web Serial API
+        function checkSerialSupport() {
+            const resultElement = document.getElementById('apiSupport');
+            
+            if ('serial' in navigator) {
+                resultElement.className = 'test-result success';
+                resultElement.textContent = '✅ Web Serial API підтримується!\n\nВаш браузер підтримує роботу з COM портами.\nМожете проводити тести з реальним обладнанням.';
+            } else {
+                resultElement.className = 'test-result error';
+                resultElement.textContent = '❌ Web Serial API НЕ підтримується!\n\nВаш браузер не підтримує роботу з COM портами.\nСпробуйте:\n- Chrome/Edge версії 89+\n- Увімкніть експериментальні функції\n- Перейдіть на HTTPS';
+            }
+        }
+
+        // Підключення до ваг
+        async function connectToScale() {
+            const resultElement = document.getElementById('scaleResult');
+            resultElement.style.display = 'block';
+            resultElement.className = 'test-result info';
+            resultElement.textContent = '🔄 Підключення до ваг...';
+
+            try {
+                if (!('serial' in navigator)) {
+                    throw new Error('Web Serial API не підтримується');
+                }
+
+                // Запитуємо доступ до порту
+                port = await navigator.serial.requestPort({
+                    filters: [
+                        { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340
+                        { usbVendorId: 0x067b, usbProductId: 0x2303 }, // Prolific
+                        { usbVendorId: 0x0403, usbProductId: 0x6001 }  // FTDI
+                    ]
+                });
+
+                // Отримуємо налаштування з форми
+                const baudRate = parseInt(document.getElementById('baudRate').value);
+                const dataBits = parseInt(document.getElementById('dataBits').value);
+                const parity = document.getElementById('parity').value;
+
+                // Відкриваємо порт
+                await port.open({
+                    baudRate: baudRate,
+                    dataBits: dataBits,
+                    stopBits: 1,
+                    parity: parity,
+                    bufferSize: 1024
+                });
+
+                resultElement.className = 'test-result success';
+                resultElement.textContent = `✅ Успішно підключено до ваг!\n\nНалаштування:\n- Швидкість: ${baudRate} бод\n- Біти даних: ${dataBits}\n- Парність: ${parity}\n\nТепер можете зчитувати дані з ваг.`;
+
+                // Активуємо кнопки
+                document.getElementById('disconnectBtn').disabled = false;
+                document.getElementById('readWeightBtn').disabled = false;
+
+                // Запускаємо читання даних
+                startReadingScale();
+
+            } catch (error) {
+                resultElement.className = 'test-result error';
+                resultElement.textContent = `❌ Помилка підключення: ${error.message}\n\nПеревірте:\n- Чи підключені ваги\n- Чи правильний COM порт\n- Чи встановлені драйвери`;
+            }
+        }
+
+        // Відключення від ваг
+        async function disconnectFromScale() {
+            try {
+                if (reader) {
+                    await reader.cancel();
+                    reader = null;
+                }
+
+                if (port) {
+                    await port.close();
+                    port = null;
+                }
+
+                const resultElement = document.getElementById('scaleResult');
+                resultElement.className = 'test-result info';
+                resultElement.textContent = '🔌 Відключено від ваг';
+
+                // Деактивуємо кнопки
+                document.getElementById('disconnectBtn').disabled = true;
+                document.getElementById('readWeightBtn').disabled = true;
+
+            } catch (error) {
+                console.error('Помилка відключення:', error);
+            }
+        }
+
+        // Запуск читання даних з ваг
+        async function startReadingScale() {
+            if (!port || !port.readable) return;
+
+            try {
+                const textDecoder = new TextDecoder();
+                reader = port.readable.getReader();
+
+                let buffer = '';
+
+                while (port.readable) {
+                    try {
+                        const { value, done } = await reader.read();
+                        
+                        if (done) break;
+
+                        if (value) {
+                            const chunk = textDecoder.decode(value, { stream: true });
+                            buffer += chunk;
+
+                            // Обробляємо повні повідомлення (припускаємо, що повідомлення закінчуються \r\n)
+                            const lines = buffer.split('\r\n');
+                            buffer = lines.pop() || ''; // Зберігаємо неповне повідомлення
+
+                            for (const line of lines) {
+                                if (line.trim()) {
+                                    processWeightData(line.trim());
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Помилка читання:', error);
+                        break;
+                    }
+                }
+            } catch (error) {
+                console.error('Помилка запуску читання:', error);
+            }
+        }
+
+        // Обробка даних з ваг
+        function processWeightData(data) {
+            const resultElement = document.getElementById('scaleResult');
+            
+            // Спробуємо витягти вагу з даних
+            const weightMatch = data.match(/([+-]?\d+\.?\d*)/);
+            
+            if (weightMatch) {
+                const weight = parseFloat(weightMatch[1]);
+                const timestamp = new Date().toLocaleTimeString();
+                
+                resultElement.className = 'test-result success';
+                resultElement.textContent = `📊 ДАНІ З ВАГ:\n\nВага: ${weight} кг\nЧас: ${timestamp}\nСирі дані: ${data}\n\n${resultElement.textContent.split('\n\n').slice(1, 10).join('\n\n')}`;
+            } else {
+                console.log('Отримано дані:', data);
+            }
+        }
+
+        // Запит поточної ваги
+        async function readWeight() {
+            if (!port || !port.writable) {
+                alert('Спочатку підключіться до ваг');
+                return;
+            }
+
+            try {
+                const writer = port.writable.getWriter();
+                
+                // Надсилаємо команду запиту ваги (для ВТА-60 це може бути різна команда)
+                const command = new TextEncoder().encode('W\r\n'); // Припускаємо команду W
+                await writer.write(command);
+                
+                writer.releaseLock();
+                
+                console.log('Команда запиту ваги надіслана');
+            } catch (error) {
+                console.error('Помилка надсилання команди:', error);
+            }
+        }
+
+        // Початок тесту сканера
+        function startScannerTest() {
+            const resultElement = document.getElementById('scannerResult');
+            resultElement.style.display = 'block';
+            resultElement.className = 'test-result info';
+            resultElement.textContent = '🔄 Тест сканера запущено...\n\nСканер працює в режимі емуляції клавіатури.\nПросто поставте курсор сюди і скануйте штрих-код.';
+
+            scannerActive = true;
+            scanBuffer = '';
+            
+            // Додаємо слухач подій клавіатури
+            document.addEventListener('keydown', handleScannerInput);
+            
+            document.getElementById('stopScannerBtn').disabled = false;
+            
+            // Фокусуємося на результаті для кращого UX
+            resultElement.focus();
+        }
+
+        // Зупинка тесту сканера
+        function stopScannerTest() {
+            scannerActive = false;
+            document.removeEventListener('keydown', handleScannerInput);
+            
+            const resultElement = document.getElementById('scannerResult');
+            resultElement.className = 'test-result info';
+            resultElement.textContent = '⏹️ Тест сканера зупинено';
+            
+            document.getElementById('stopScannerBtn').disabled = true;
+        }
+
+        // Обробка вводу зі сканера
+        function handleScannerInput(event) {
+            if (!scannerActive) return;
+
+            const currentTime = Date.now();
+            
+            if (currentTime - lastScanTime < SCAN_TIMEOUT) {
+                // Це частина сканування
+                if (event.key === 'Enter') {
+                    // Кінець сканування
+                    processScanedCode();
+                } else if (event.key.length === 1) {
+                    // Додаємо символ до буфера
+                    scanBuffer += event.key;
+                }
+            } else {
+                // Новий початок сканування
+                scanBuffer = '';
+                if (event.key.length === 1) {
+                    scanBuffer += event.key;
+                }
+            }
+            
+            lastScanTime = currentTime;
+        }
+
+        // Обробка відсканованого коду
+        function processScanedCode() {
+            if (!scanBuffer.trim()) return;
+
+            const code = scanBuffer.trim();
+            const timestamp = new Date().toLocaleTimeString();
+            
+            // Додаємо до списку кодів
+            const codesList = document.getElementById('codesList');
+            const listItem = document.createElement('li');
+            listItem.innerHTML = `<strong>${code}</strong> - ${timestamp}`;
+            codesList.insertBefore(listItem, codesList.firstChild);
+            
+            // Оновлюємо результат
+            const resultElement = document.getElementById('scannerResult');
+            resultElement.className = 'test-result success';
+            resultElement.textContent = `✅ КОД ВІДСКАНОВАНИЙ!\n\nКод: ${code}\nТип: ${detectBarcodeType(code)}\nЧас: ${timestamp}\n\nЗагальних сканувань: ${codesList.children.length}`;
+            
+            // Очищаємо буфер
+            scanBuffer = '';
+        }
+
+        // Визначення типу штрих-коду
+        function detectBarcodeType(code) {
+            if (/^\d{13}$/.test(code)) return 'EAN-13';
+            if (/^\d{8}$/.test(code)) return 'EAN-8';
+            if (/^\d{12}$/.test(code)) return 'UPC-A';
+            if (/^[A-Z0-9]+$/.test(code)) return 'Code-128';
+            if (/^[A-Z0-9\-\.\/\+\s]+$/.test(code)) return 'Code-39';
+            return 'Unknown';
+        }
+
+        // Ініціалізація при завантаженні
+        document.addEventListener('DOMContentLoaded', function() {
+            checkSerialSupport();
+        });
+    </script>
+</body>
+</html>
