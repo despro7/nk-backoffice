@@ -113,6 +113,16 @@ export function createServer() {
     res.json({ message: ping });
   });
 
+  // Health check endpoint for server status monitoring
+  app.get("/api/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      version: process.version
+    });
+  });
+
   return app;
 }
 
@@ -134,6 +144,7 @@ app.listen(port, () => {
   ].join(', ')}`);
   console.log(`📋 Available endpoints:`);
   console.log(`   GET   /api/ping`);
+  console.log(`   GET   /api/health`);
   console.log(`   GET   /api/orders`);
   console.log(`   GET   /api/orders/test`);
   console.log(`   POST  /api/orders/sync`);

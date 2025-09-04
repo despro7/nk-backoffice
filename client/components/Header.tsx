@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useApi } from "@/hooks/useApi";
+import { useServerStatus } from "@/hooks/useServerStatus";
 import { cn, log } from "@/lib/utils";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, User, Switch } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";
@@ -19,6 +20,7 @@ export function Header({ className }: HeaderProps) {
   const api = useApi();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [equipmentState, equipmentActions] = useEquipmentFromAuth();
+  const { isOnline, isLoading } = useServerStatus();
   
   // Убираем лишние состояния - используем только equipmentState.isLoading
 
@@ -109,8 +111,28 @@ export function Header({ className }: HeaderProps) {
         </div>
       </div>
 
+      {/* Server Status Indicator - Center */}
+      <div className="flex items-center gap-2 justify-center sm:w-auto ml-10">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-sm">
+          {isLoading ? (
+            <div className="animate-spin rounded-full h-3 w-3 border-b border-neutral-400"></div>
+          ) : (
+            <div
+              className={`w-2 h-2 rounded-full ${
+                isOnline ? 'bg-green-600' : 'bg-red-500'
+              }`}
+            />
+          )}
+          <span className={`text-sm font-medium ${
+            isOnline ? 'text-green-600' : 'text-red-700'
+          }`}>
+            {isOnline ? 'Online' : 'Offline'}
+          </span>
+        </div>
+      </div>
+
       {/* Simulation Mode Switch */}
-      <div className="flex items-center gap-3 ml-auto">
+      <div className="flex items-center gap-3 w-full justify-center sm:w-auto ml-10">
         <Switch
           isSelected={equipmentState.config?.connectionType === "simulation"}
           onValueChange={toggleSimulationMode}

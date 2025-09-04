@@ -20,12 +20,6 @@ const SettingsOrderAssembly: React.FC = () => {
         <BoxSettingsManager />
       </section>
 
-      {/* Общие настройки */}
-      {isAdmin() && (
-      <section>
-        <SettingsManager />
-      </section>
-      )}
     </div>
   );
 };

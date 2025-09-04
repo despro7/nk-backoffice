@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useServerStatus } from '../hooks/useServerStatus';
 import logo from '/logo.svg';
+import { Alert } from '@heroui/react';
+import { Button } from '@heroui/react';
+import { DynamicIcon } from 'lucide-react/dynamic';
 
 export const LoginForm: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -10,6 +14,7 @@ export const LoginForm: React.FC = () => {
   const [error, setError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { isOnline } = useServerStatus();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +50,25 @@ export const LoginForm: React.FC = () => {
         <div>
           <img src={logo} alt="logo" className="w-50 mx-auto mb-10" />
         </div>
+
+        {/* Server Status Alert */}
+        {!isOnline && (
+        
+        <Alert
+          title="Сервер недоступний"
+          description={<>Зверніться до адміністратора в телеграм: <a href="https://t.me/despro7" target="_blank">@despro7</a></>}
+          color="danger"
+          variant="faded"
+          hideIcon={true}
+          startContent={
+            <DynamicIcon name="alert-triangle" size={20} />
+          }
+          classNames={{
+            title: 'font-bold',
+          }}
+        />
+        )}
+
         <form className="mt-8 space-y-8" onSubmit={handleSubmit}>
           <div className="rounded-md shadow-lg -space-y-px">
             <div>
@@ -90,10 +114,10 @@ export const LoginForm: React.FC = () => {
           <div>
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !isOnline}
               className="group relative w-full flex justify-center py-4 px-4 border border-transparent text-lg font-medium rounded-md text-white bg-gradient-to-r from-green-400 to-blue-500 hover:from-blue-500 hover:to-purple-500 transition-colors duration-600 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              {isLoading ? 'Вхід...' : 'Увійти'}
+              {isLoading ? 'Вхід...' : !isOnline ? 'Сервер недоступний' : 'Увійти'}
             </button>
           </div>
         </form>

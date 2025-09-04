@@ -14,6 +14,7 @@ import SettingsProductSets from "./pages/SettingsProductSets";
 import SettingsOrderAssembly from "./pages/SettingsOrderAssembly";
 import SettingsEquipment from "./pages/SettingsEquipment";
 import SettingsOrders from "./pages/SettingsOrders";
+import SettingsAdmin from "./pages/SettingsAdmin";
 
 // Определяем роли и их иерархию
 export const ROLES = {
@@ -194,7 +195,7 @@ export const appRoutes: AppRoute[] = [
   {
     path: "/settings/orders",
     component: SettingsOrders,
-    title: 'Налаштування синхронізації замовлень',
+    title: 'Налаштування синхронізации замовлень',
     pageTitle: 'Налаштування синхронізації замовлень | NK Backoffice',
     navLabel: 'Синхронізація замовлень',
     icon: <DynamicIcon name="refresh-cw" size={20} className="max-w-full max-h-full" />,
@@ -202,6 +203,18 @@ export const appRoutes: AppRoute[] = [
     parent: 'settings',
     order: 7,
     roles: [ROLES.ADMIN, ROLES.BOSS] // Только admin и boss
+  },
+  {
+    path: "/settings/admin",
+    component: SettingsAdmin,
+    title: 'Адмінські налаштування',
+    pageTitle: 'Адмінські налаштування | NK Backoffice',
+    navLabel: 'Адмінські налаштування',
+    icon: <DynamicIcon name="shield" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 8,
+    roles: [ROLES.ADMIN] // Только admin
   },
 ];
 

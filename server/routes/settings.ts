@@ -247,12 +247,88 @@ router.put('/:key', authenticateToken, async (req, res) => {
   }
 });
 
+// Публичные настройки, доступные без авторизации
+const PUBLIC_SETTINGS = ['server_check_interval', 'server_status_enabled'];
+
+const isPublicSetting = (key: string): boolean => {
+  return PUBLIC_SETTINGS.includes(key);
+};
+
+// Получить конкретную настройку по ключу (публичный для безопасных настроек)
+router.get('/:key', async (req, res) => {
+  try {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+
+    const { key } = req.params;
+
+    // Если настройка не публичная, требуем авторизацию
+    if (!isPublicSetting(key)) {
+      // Для непубличных настроек проверяем авторизацию
+      const authHeader = req.headers.authorization;
+      const token = authHeader && authHeader.split(' ')[1];
+
+      if (!token) {
+        return res.status(401).json({
+          success: false,
+          error: 'Authentication required for this setting'
+        });
+      }
+
+      // Импортируем и проверяем токен
+      const jwt = await import('jsonwebtoken');
+      const jwtSecret = process.env.JWT_SECRET;
+      if (!jwtSecret) {
+        return res.status(500).json({
+          success: false,
+          error: 'Server configuration error'
+        });
+      }
+
+      try {
+        jwt.verify(token, jwtSecret);
+      } catch (error) {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid token'
+        });
+      }
+    }
+
+    const setting = await prisma.settingsBase.findUnique({
+      where: { key, isActive: true }
+    });
+
+    if (!setting) {
+      return res.status(404).json({
+        success: false,
+        error: 'Setting not found'
+      });
+    }
+
+    res.json({
+      id: setting.id,
+      key: setting.key,
+      value: setting.value,
+      description: setting.description,
+      createdAt: setting.createdAt,
+      updatedAt: setting.updatedAt
+    });
+  } catch (error) {
+    console.error('Error getting setting:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get setting'
+    });
+  }
+});
+
 // Удалить настройку
 router.delete('/:key', authenticateToken, async (req, res) => {
   try {
     const { PrismaClient } = await import('@prisma/client');
     const prisma = new PrismaClient();
-    
+
     const { key } = req.params;
 
     await prisma.settingsBase.delete({

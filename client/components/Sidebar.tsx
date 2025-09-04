@@ -78,7 +78,7 @@ function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle
         className={cn(
           "transition-all duration-300 ease-in-out rounded-lg absolute top-0 left-0 w-full",
           isExpanded
-            ? `max-h-96 opacity-100 bg-neutral-100${isChildrenActive ? " bg-neutral-100" : ""}`
+            ? `max-h-dvh opacity-100 bg-neutral-100${isChildrenActive ? " bg-neutral-100" : ""}`
             : "max-h-0 opacity-0 overflow-hidden"
         )}
       >
