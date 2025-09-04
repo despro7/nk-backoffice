@@ -3,14 +3,14 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "NodeNext",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "noEmit": false,
     "outDir": "./dist/server",
     "lib": ["ES2022"],
-    "jsx": "react-jsx"
+    "allowImportingTsExtensions": true
   },
   "include": [
     "server/**/*"
