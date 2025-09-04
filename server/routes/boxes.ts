@@ -121,8 +121,8 @@ function getSpaciousPackaging(portionsCount: number, boxes: Box[]) {
 // ============================================================================
 
 
-// Получить все коробки (публичный endpoint для заказов)
-router.get("/", async (req, res) => {
+// Получить все коробки
+router.get("/", authenticateToken, async (req, res) => {
   try {
     const { all } = req.query; // Добавляем параметр all
 
@@ -293,7 +293,7 @@ router.post("/recommendations", authenticateToken, async (req, res) => {
 // ============================================================================
 // --- ОБНОВЛЕННЫЙ ENDPOINT ---
 // ============================================================================
-router.get("/recommendations/:portions", async (req, res) => {
+router.get("/recommendations/:portions", authenticateToken, async (req, res) => {
   try {
     const { portions } = req.params;
     const { mode } = req.query; // Получаем режим из query-параметров

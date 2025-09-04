@@ -15,7 +15,7 @@ const router = Router();
  * GET /api/orders/test
  * Simple test to check SalesDrive API configuration
  */
-router.get('/test', async (req, res) => {
+router.get('/test', authenticateToken, async (req, res) => {
   try {
     console.log('🧪 Testing SalesDrive configuration...');
     
@@ -67,7 +67,7 @@ router.get('/test', async (req, res) => {
  * GET /api/orders
  * Получить заказы из локальной БД с возможностью синхронизации и сортировки
  */
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   const startTime = Date.now();
   const { status, sync, sortBy, sortOrder, limit } = req.query;
 
@@ -165,7 +165,7 @@ router.get('/', async (req, res) => {
  * POST /api/orders/sync
  * Синхронизировать заказы из SalesDrive с локальной БД
  */
-router.post('/sync', async (req, res) => {
+router.post('/sync', authenticateToken, async (req, res) => {
   try {
     // Проверяем, включена ли синхронизация заказов
     const { syncSettingsService } = await import('../services/syncSettingsService.js');
@@ -182,7 +182,7 @@ router.post('/sync', async (req, res) => {
 
     res.json({
       success: result.success,
-      message: `Синхронизовано: ${result.synced}, Ошибок: ${result.errors}`,
+      message: `Synchronized: ${result.synced}, Errors: ${result.errors}`,
       data: result,
       timestamp: new Date().toISOString()
     });
@@ -199,7 +199,7 @@ router.post('/sync', async (req, res) => {
  * GET /api/orders/sync/status
  * Получить статус последней синхронизации
  */
-router.get('/sync/status', async (req, res) => {
+router.get('/sync/status', authenticateToken, async (req, res) => {
   try {
     // Получаем статистику заказов (включая время последней синхронизации)
     const stats = await orderDatabaseService.getOrderStats();
@@ -229,7 +229,7 @@ router.get('/sync/status', async (req, res) => {
  * GET /api/orders/:externalId
  * Получить детали конкретного заказа по externalId (номеру заказа из SalesDrive)
  */
-router.get('/:externalId', async (req, res) => {
+router.get('/:externalId', authenticateToken, async (req, res) => {
   try {
     const { externalId } = req.params; // Изменили с id на externalId
     
@@ -292,7 +292,7 @@ router.get('/:externalId', async (req, res) => {
  * PUT /api/orders/:externalId/status
  * Обновить статус заказа в SalesDrive
  */
-router.put('/:externalId/status', async (req, res) => {
+router.put('/:externalId/status', authenticateToken, async (req, res) => {
   try {
     const { externalId } = req.params; // Изменили с id на externalId
     const { status } = req.body;
@@ -350,7 +350,7 @@ router.put('/:externalId/status', async (req, res) => {
  * GET /api/orders/stats/summary
  * Получить статистику по заказам из локальной БД
  */
-router.get('/stats/summary', async (req, res) => {
+router.get('/stats/summary', authenticateToken, async (req, res) => {
   try {
     // Получаем статистику из локальной БД
     const stats = await orderDatabaseService.getOrdersStats();
@@ -379,7 +379,7 @@ router.get('/stats/summary', async (req, res) => {
  * GET /api/orders/raw/all
  * Получить все заказы в сыром виде для отладки
  */
-router.get('/raw/all', async (req, res) => {
+router.get('/raw/all', authenticateToken, async (req, res) => {
   try {
     const allOrders = await salesDriveService.fetchOrdersFromDate();
     
@@ -412,7 +412,7 @@ router.get('/raw/all', async (req, res) => {
  * GET /api/orders/debug/raw
  * Получить сырые данные от SalesDrive API без обработки
  */
-router.get('/debug/raw', async (req, res) => {
+router.get('/debug/raw', authenticateToken, async (req, res) => {
   try {
     // Получаем сырые данные напрямую от SalesDrive API
     const response = await fetch(`${process.env.SALESDRIVE_API_URL}?page=1&limit=5`, {
@@ -452,7 +452,7 @@ router.get('/debug/raw', async (req, res) => {
  * GET /api/orders/period
  * Получить заказы за определенный период с синхронизацией
  */
-router.get('/period', async (req, res) => {
+router.get('/period', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate, sync } = req.query;
 
@@ -512,7 +512,7 @@ router.get('/period', async (req, res) => {
  * GET /api/orders/products/stats/test
  * Тестовый endpoint для проверки статистики с тестовыми данными
  */
-router.get('/products/stats/test', async (req, res) => {
+router.get('/products/stats/test', authenticateToken, async (req, res) => {
   try {
     // Создаем тестовые данные для проверки
     const testData = [
@@ -564,7 +564,7 @@ router.get('/products/stats/test', async (req, res) => {
  * POST /api/orders/fix-items-data
  * Исправить поврежденные данные items в заказах
  */
-router.post('/fix-items-data', async (req, res) => {
+router.post('/fix-items-data', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
 
@@ -635,7 +635,7 @@ router.post('/fix-items-data', async (req, res) => {
  * POST /api/orders/preprocess-all
  * Предварительно рассчитать статистику для всех заказов
  */
-router.post('/preprocess-all', async (req, res) => {
+router.post('/preprocess-all', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
 
@@ -716,9 +716,9 @@ router.post('/preprocess-all', async (req, res) => {
 
 /**
  * POST /api/orders/:externalId/cache
- * Заполнить кеш для конкретного заказа (временно без авторизации для тестирования)
+ * Заполнить кеш для конкретного заказа
  */
-router.post('/:externalId/cache', async (req, res) => {
+router.post('/:externalId/cache', authenticateToken, async (req, res) => {
   try {
     const { externalId } = req.params;
 
@@ -751,7 +751,7 @@ router.post('/:externalId/cache', async (req, res) => {
  * GET /api/orders/products/stats/demo
  * Демонстрация работы кешированной статистики с тестовыми данными
  */
-router.get('/products/stats/demo', async (req, res) => {
+router.get('/products/stats/demo', authenticateToken, async (req, res) => {
   try {
     console.log('🚀 Demo endpoint: Simulating cached product statistics...');
 
@@ -813,7 +813,7 @@ router.get('/products/stats/demo', async (req, res) => {
  * POST /api/orders/sync/manual
  * Ручная синхронизация заказов с указанным диапазоном дат
  */
-router.post('/sync/manual', async (req, res) => {
+router.post('/sync/manual', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate } = req.body;
 
@@ -833,7 +833,7 @@ router.post('/sync/manual', async (req, res) => {
 
     res.json({
       success: true,
-      message: `Ручна синхронізація завершена: ${syncResult.synced} синхронізовано, ${syncResult.errors} помилок`,
+      message: `Manual synchronization completed: ${syncResult.synced} synchronized, ${syncResult.errors} errors`,
       data: syncResult
     });
 
@@ -924,7 +924,7 @@ router.get('/sync/history/:id', authenticateToken, async (req, res) => {
  * GET /api/orders/products/stats
  * Получить статистику по товарам из заказов с фильтрами
  */
-router.get('/products/stats', async (req, res) => {
+router.get('/products/stats', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync } = req.query;
     // console.log('🔍 SERVER RECEIVED:', { status, startDate, endDate, sync });
@@ -1071,7 +1071,7 @@ router.get('/products/stats', async (req, res) => {
  * GET /api/orders/products/stats/dates
  * Получить статистику по конкретному товару с разбивкой по датам
  */
-router.get('/products/stats/dates', async (req, res) => {
+router.get('/products/stats/dates', authenticateToken, async (req, res) => {
   try {
     const { sku, status, startDate, endDate, sync } = req.query;
 
@@ -1213,7 +1213,7 @@ router.get('/products/stats/dates', async (req, res) => {
  * GET /api/orders/cache/info
  * Получить информацию о состоянии кеша
  */
-router.get('/cache/info', async (req, res) => {
+router.get('/cache/info', authenticateToken, async (req, res) => {
   try {
     const cacheInfo = salesDriveService.getCacheInfo();
 
@@ -1235,7 +1235,7 @@ router.get('/cache/info', async (req, res) => {
  * POST /api/orders/cache/clear
  * Очистить весь кеш
  */
-router.post('/cache/clear', async (req, res) => {
+router.post('/cache/clear', authenticateToken, async (req, res) => {
   try {
     const result = salesDriveService.clearCache();
 
@@ -1258,7 +1258,7 @@ router.post('/cache/clear', async (req, res) => {
  * DELETE /api/orders/cache/:key
  * Очистить конкретную запись из кеша
  */
-router.delete('/cache/:key', async (req, res) => {
+router.delete('/cache/:key', authenticateToken, async (req, res) => {
   try {
     const { key } = req.params;
     const deleted = salesDriveService.clearCacheEntry(decodeURIComponent(key));
@@ -1282,7 +1282,7 @@ router.delete('/cache/:key', async (req, res) => {
  * GET /api/orders/sync-statistics
  * Получить статистику по загружаемым данным
  */
-router.get('/sync-statistics', async (req, res) => {
+router.get('/sync-statistics', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate, includeProductStats, includeOrderDetails } = req.query;
 
@@ -1316,7 +1316,7 @@ router.get('/sync-statistics', async (req, res) => {
  * GET /api/orders/advanced-filter
  * Получить заказы с расширенными фильтрами
  */
-router.get('/advanced-filter', async (req, res) => {
+router.get('/advanced-filter', authenticateToken, async (req, res) => {
   try {
     const {
       startDate,
@@ -1393,7 +1393,7 @@ router.get('/advanced-filter', async (req, res) => {
  * GET /api/orders/products/chart
  * Получить данные для графика продаж по товарам с разбивкой по датам
  */
-router.get('/products/chart', async (req, res) => {
+router.get('/products/chart', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync, groupBy = 'day', products } = req.query;
 

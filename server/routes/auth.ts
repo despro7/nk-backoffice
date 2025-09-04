@@ -22,11 +22,11 @@ router.post('/register', async (req: Request<{}, {}, RegisterRequest>, res: Resp
     res.status(201).json({
       user: result.user,
       expiresIn: result.expiresIn,
-      message: 'Користувача успішно зареєстровано'
+      message: 'User successfully registered'
     });
   } catch (error) {
     console.error('❌ Register error:', error);
-    res.status(400).json({ message: error instanceof Error ? error.message : 'Помилка реєстрації' });
+    res.status(400).json({ message: error instanceof Error ? error.message : 'Registration failed' });
   }
 });
 
@@ -47,11 +47,11 @@ router.post('/login', async (req: Request, res: Response) => {
     res.json({
       user: result.user,
       expiresIn: result.expiresIn,
-      message: 'Успішний вхід в систему'
+      message: 'Login successful'
     });
   } catch (error) {
     console.error('❌ Login error:', error);
-    res.status(401).json({ message: error instanceof Error ? error.message : 'Помилка входу' });
+    res.status(401).json({ message: error instanceof Error ? error.message : 'Login failed' });
   }
 });
 
@@ -62,7 +62,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
     const { refreshToken } = await AuthService.getTokenFromCookies(req);
     
     if (!refreshToken) {
-      return res.status(401).json({ message: 'Refresh токен не знайдено' });
+      return res.status(401).json({ message: 'Refresh token not found' });
     }
 
     // Обновляем токен используя refresh token из cookies
@@ -74,10 +74,10 @@ router.post('/refresh', async (req: Request, res: Response) => {
     // Отправляем ответ без токенов (они в cookies)
     res.json({
       expiresIn: result.expiresIn,
-      message: 'Токен успішно оновлено'
+      message: 'Token successfully refreshed'
     });
   } catch (error) {
-    res.status(401).json({ message: error instanceof Error ? error.message : 'Не вдалося оновити токен' });
+    res.status(401).json({ message: error instanceof Error ? error.message : 'Failed to refresh token' });
   }
 });
 
@@ -89,9 +89,9 @@ router.post('/logout', authenticateToken, async (req: Request, res: Response) =>
     // Очищаем cookies
     await AuthService.clearAuthCookies(res);
     
-    res.json({ message: 'Успішно вийшли з системи' });
+    res.json({ message: 'Successfully logged out' });
   } catch (error) {
-    res.status(500).json({ message: 'Помилка при виході з системи' });
+    res.status(500).json({ message: 'Logout failed' });
   }
 });
 
@@ -100,13 +100,13 @@ router.get('/profile', authenticateToken, async (req: Request, res: Response) =>
   try {
     const user = await AuthService.getUserById(req.user!.userId);
     if (!user) {
-      return res.status(404).json({ message: 'Користувача не знайдено' });
+      return res.status(404).json({ message: 'User not found' });
     }
 
     const { password, ...userWithoutPassword } = user;
     res.json(userWithoutPassword);
   } catch (error) {
-    res.status(500).json({ message: 'Не вдалося отримати профіль' });
+    res.status(500).json({ message: 'Failed to get profile' });
   }
 });
 
@@ -116,13 +116,13 @@ router.put('/profile', authenticateToken, async (req: Request<{}, {}, UpdateProf
     const updatedUser = await AuthService.updateProfile(req.user!.userId, req.body);
     res.json({ 
       success: true, 
-      message: 'Профіль успішно оновлено',
+      message: 'Profile successfully updated',
       user: updatedUser
     });
   } catch (error) {
     res.status(400).json({ 
       success: false,
-      message: error instanceof Error ? error.message : 'Не вдалося оновити профіль' 
+      message: error instanceof Error ? error.message : 'Failed to update profile' 
     });
   }
 });

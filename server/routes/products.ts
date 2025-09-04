@@ -6,8 +6,8 @@ import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Получить все товары с пагинацией (публичный endpoint для заказов)
-router.get('/', async (req, res) => {
+// Получить все товары с пагинацией
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -83,8 +83,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Получить товар по SKU (публичный endpoint для заказов)
-router.get('/:sku', async (req, res) => {
+// Получить товар по SKU
+router.get('/:sku', authenticateToken, async (req, res) => {
   try {
     const { sku } = req.params;
     const product = await prisma.product.findUnique({

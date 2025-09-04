@@ -1,5 +1,6 @@
 import express from 'express';
 import { shippingService } from '../services/shippingService.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -7,7 +8,7 @@ const router = express.Router();
  * POST /api/shipping/print-ttn
  * Печатает ТТН через API перевозчика
  */
-router.post('/print-ttn', async (req, res) => {
+router.post('/print-ttn', authenticateToken, async (req, res) => {
   try {
     const { ttn, provider, format = 'pdf' } = req.body;
 
@@ -48,7 +49,7 @@ router.post('/print-ttn', async (req, res) => {
  * GET /api/shipping/ttn-status/:ttn/:provider
  * Получить статус ТТН
  */
-router.get('/ttn-status/:ttn/:provider', async (req, res) => {
+router.get('/ttn-status/:ttn/:provider', authenticateToken, async (req, res) => {
   try {
     const { ttn, provider } = req.params;
 
