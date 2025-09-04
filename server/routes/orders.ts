@@ -168,7 +168,7 @@ router.get('/', async (req, res) => {
 router.post('/sync', async (req, res) => {
   try {
     // Проверяем, включена ли синхронизация заказов
-    const { syncSettingsService } = await import('../services/syncSettingsService');
+    const { syncSettingsService } = await import('../services/syncSettingsService.js');
     const isEnabled = await syncSettingsService.isSyncEnabled('orders');
 
     if (!isEnabled) {

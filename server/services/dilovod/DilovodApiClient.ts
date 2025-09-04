@@ -6,7 +6,7 @@ import {
   DilovodObjectResponse,
   DilovodGoodsResponse,
   DilovodPricesResponse
-} from './DilovodTypes';
+} from './DilovodTypes.js';
 import {
   handleDilovodApiError,
   logWithTimestamp,
@@ -83,9 +83,9 @@ export class DilovodApiClient {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as T;
       logWithTimestamp('Получен ответ от Dilovod API:', data);
-      
+
       return data;
     } catch (error) {
       const errorMessage = handleDilovodApiError(error, 'API Request');

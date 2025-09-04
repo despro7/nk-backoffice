@@ -43,6 +43,21 @@ export interface SalesDriveApiResponse {
   metadata?: any;
 }
 
+export interface SalesDriveRawApiResponse {
+  status: string;
+  message?: string;
+  data?: any[];
+  totals?: {
+    count?: number;
+  };
+}
+
+export interface SalesDriveStatusUpdateResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
 export class SalesDriveService {
   private apiUrl: string;
   private apiKey: string;
@@ -400,10 +415,10 @@ export class SalesDriveService {
           throw new Error(`SalesDrive API error: ${response.status} - ${response.statusText}`);
         }
 
-        const data = await response.json();
-        
+        const data = await response.json() as SalesDriveRawApiResponse;
+
         console.log(`Received response from SalesDrive:`, data);
-        
+
         // Проверяем структуру ответа согласно документации SalesDrive
         if (data.status !== 'success') {
           throw new Error(`SalesDrive API error: ${data.message || 'Unknown error'}`);
@@ -558,7 +573,7 @@ export class SalesDriveService {
           throw new Error(`SalesDrive API error: ${firstResponse.status} - ${firstResponse.statusText}`);
         }
 
-        const firstData = await firstResponse.json();
+        const firstData = await firstResponse.json() as SalesDriveRawApiResponse;
 
         if (firstData.status !== 'success') {
           throw new Error(`SalesDrive API error: ${firstData.message || 'Unknown error'}`);
@@ -690,7 +705,7 @@ export class SalesDriveService {
     // Сбрасываем состояние rate limiting при успешном запросе
     this.resetRateLimitState();
 
-    const data = await response.json();
+    const data = await response.json() as SalesDriveRawApiResponse;
 
     if (data.status !== 'success') {
       throw new Error(`Page ${page} API error: ${data.message || 'Unknown error'}`);
@@ -763,8 +778,8 @@ export class SalesDriveService {
             throw new Error(`SalesDrive API error: ${response.status} - ${response.statusText}`);
           }
 
-          const data = await response.json();
-          
+          const data = await response.json() as SalesDriveRawApiResponse;
+
           if (data.status !== 'success') {
             throw new Error(`SalesDrive API error: ${data.message || 'Unknown error'}`);
           }
@@ -1196,7 +1211,7 @@ export class SalesDriveService {
         return false;
       }
 
-      const responseData = await response.json();
+      const responseData = await response.json() as SalesDriveStatusUpdateResponse;
       console.log(`✅ SalesDrive response:`, responseData);
 
       if (responseData.success) {

@@ -19,6 +19,25 @@ export interface PrintTTNResponse {
   error?: string;
 }
 
+export interface NovaPoshtaApiResponse {
+  success: boolean;
+  data?: any[];
+  errors?: string[];
+  warnings?: string[];
+  info?: any;
+  messageCodes?: string[];
+  errorCodes?: string[];
+  warningCodes?: string[];
+  infoCodes?: string[];
+}
+
+export interface UkrPoshtaApiResponse {
+  success: boolean;
+  data?: any;
+  errors?: string[];
+  warnings?: string[];
+}
+
 export class ShippingService {
   private providers: { [key: string]: ShippingProvider } = {};
 
@@ -138,7 +157,7 @@ export class ShippingService {
       };
     }
 
-    const data = await response.json();
+    const data = await response.json() as NovaPoshtaApiResponse;
 
     if (data.success !== true) {
       throw new Error(data.errors?.[0] || data.warnings?.[0] || 'Ошибка API Нова Пошта');
@@ -198,7 +217,7 @@ export class ShippingService {
       body: JSON.stringify(payload)
     });
 
-    const data = await response.json();
+    const data = await response.json() as NovaPoshtaApiResponse;
     return data.data?.[0];
   }
 }

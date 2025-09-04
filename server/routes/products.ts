@@ -142,7 +142,7 @@ router.post('/sync', authenticateToken, async (req, res) => {
     }
 
     // Проверяем, включена ли синхронизация Dilovod
-    const { syncSettingsService } = await import('../services/syncSettingsService');
+    const { syncSettingsService } = await import('../services/syncSettingsService.js');
     const isEnabled = await syncSettingsService.isSyncEnabled('dilovod');
 
     if (!isEnabled) {
@@ -173,7 +173,7 @@ router.post('/sync-stock', authenticateToken, async (req, res) => {
     }
 
     // Проверяем, включена ли синхронизация остатков
-    const { syncSettingsService } = await import('../services/syncSettingsService');
+    const { syncSettingsService } = await import('../services/syncSettingsService.js');
     const isEnabled = await syncSettingsService.isSyncEnabled('stocks');
 
     if (!isEnabled) {
