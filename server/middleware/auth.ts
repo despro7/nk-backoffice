@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { JwtPayload } from '../types/auth';
-import { AuthService } from '../services/authService';
+import { JwtPayload } from '../types/auth.js';
+import { AuthService } from '../services/authService.js';
 
 // Расширяем интерфейс Request для добавления пользователя
 declare global {

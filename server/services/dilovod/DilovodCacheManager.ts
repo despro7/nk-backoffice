@@ -1,9 +1,9 @@
 // Менеджер кеша SKU товаров
 
 import { PrismaClient } from '@prisma/client';
-import { WordPressProduct } from './DilovodTypes';
-import { logWithTimestamp } from './DilovodUtils';
-import { syncSettingsService } from '../syncSettingsService';
+import { WordPressProduct } from './DilovodTypes.js';
+import { logWithTimestamp } from './DilovodUtils.js';
+import { syncSettingsService } from '../syncSettingsService.js';
 
 export class DilovodCacheManager {
   private prisma: PrismaClient;

@@ -1,6 +1,6 @@
 import express from 'express';
-import { authenticateToken } from '../middleware/auth';
-import EquipmentSettingsService from '../services/settingsService';
+import { authenticateToken } from '../middleware/auth.js';
+import EquipmentSettingsService from '../services/settingsService.js';
 
 const router = express.Router();
 const equipmentSettingsService = EquipmentSettingsService.getInstance();

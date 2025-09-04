@@ -1,6 +1,6 @@
 // Тест синхронизации одного товара
 import 'dotenv/config';
-import { DilovodService } from './services/dilovod/DilovodService';
+import { DilovodService } from './services/dilovod/DilovodService.js';
 
 async function testSingleProduct() {
   // Отладочная информация

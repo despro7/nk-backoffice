@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { salesDriveService } from '../services/salesDriveService';
-import { orderDatabaseService } from '../services/orderDatabaseService';
-import { syncHistoryService } from '../services/syncHistoryService';
-import { authenticateToken } from '../middleware/auth';
+import { salesDriveService } from '../services/salesDriveService.js';
+import { orderDatabaseService } from '../services/orderDatabaseService.js';
+import { syncHistoryService } from '../services/syncHistoryService.js';
+import { authenticateToken } from '../middleware/auth.js';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();

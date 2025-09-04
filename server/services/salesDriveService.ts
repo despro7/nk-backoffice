@@ -1,6 +1,6 @@
-import { orderDatabaseService } from './orderDatabaseService';
-import { syncSettingsService } from './syncSettingsService';
-import { syncHistoryService, CreateSyncHistoryData } from './syncHistoryService';
+import { orderDatabaseService } from './orderDatabaseService.js';
+import { syncSettingsService } from './syncSettingsService.js';
+import { syncHistoryService, CreateSyncHistoryData } from './syncHistoryService.js';
 
 // Node.js types for setInterval
 declare const setInterval: (callback: () => void, ms: number) => NodeJS.Timeout;

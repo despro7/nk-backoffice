@@ -2,18 +2,15 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
+    "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "noEmit": false,
     "outDir": "./dist/server",
-    "lib": ["ES2022"],
-    "allowImportingTsExtensions": true
+    "lib": ["ES2022"]
   },
-  "include": [
-    "server/**/*"
-  ],
+  "include": ["server/**/*"],
   "exclude": ["node_modules", "dist", "client"]
 }

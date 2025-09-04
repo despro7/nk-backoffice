@@ -1,5 +1,5 @@
 import * as cron from 'node-cron';
-import { salesDriveService } from './salesDriveService';
+import { salesDriveService } from './salesDriveService.js';
 
 export class CronService {
   private syncJob: cron.ScheduledTask | null = null;

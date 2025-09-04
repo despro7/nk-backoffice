@@ -1,6 +1,6 @@
 // Тест для проверки только комплектов (parent = 1100300000001315)
 import 'dotenv/config';
-import { DilovodService } from './services/dilovod/DilovodService';
+import { DilovodService } from './services/dilovod/DilovodService.js';
 
 async function testSetsOnly() {
   const dilovodService = new DilovodService();

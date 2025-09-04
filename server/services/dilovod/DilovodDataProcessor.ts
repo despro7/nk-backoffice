@@ -5,15 +5,15 @@ import {
   DilovodPricesResponse, 
   DilovodGoodsResponse, 
   DilovodSetComponent
-} from './DilovodTypes';
-import { DilovodApiClient } from './DilovodApiClient';
+} from './DilovodTypes.js';
+import { DilovodApiClient } from './DilovodApiClient.js';
 import {
   getPriceTypeNameById,
   logWithTimestamp,
   delay,
   getDilovodConfig,
   getDilovodConfigFromDB
-} from './DilovodUtils';
+} from './DilovodUtils.js';
 
 export class DilovodDataProcessor {
   private config: ReturnType<typeof getDilovodConfig>;

@@ -1,7 +1,7 @@
 // Утилиты и хелперы для работы с Dilovod
 
-import { DilovodConfig } from './DilovodTypes';
-import { syncSettingsService } from '../syncSettingsService';
+import { DilovodConfig } from './DilovodTypes.js';
+import { syncSettingsService } from '../syncSettingsService.js';
 
 // Конфигурация по умолчанию - теперь динамическая функция
 export function getDilovodConfig(): DilovodConfig {

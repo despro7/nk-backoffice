@@ -1,9 +1,9 @@
 // Менеджер синхронизации товаров с базой данных
 
 import { PrismaClient } from '@prisma/client';
-import { DilovodProduct, DilovodSyncResult } from './DilovodTypes';
-import { logWithTimestamp } from './DilovodUtils';
-import { syncSettingsService } from '../syncSettingsService';
+import { DilovodProduct, DilovodSyncResult } from './DilovodTypes.js';
+import { logWithTimestamp } from './DilovodUtils.js';
+import { syncSettingsService } from '../syncSettingsService.js';
 
 export class DilovodSyncManager {
   private prisma: PrismaClient;

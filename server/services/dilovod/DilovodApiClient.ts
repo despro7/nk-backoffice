@@ -14,7 +14,7 @@ import {
   getDilovodConfig,
   getDilovodConfigFromDB,
   formatDateForDilovod
-} from './DilovodUtils';
+} from './DilovodUtils.js';
 
 export class DilovodApiClient {
   private apiUrl: string;

@@ -1,6 +1,6 @@
 // Тестовый скрипт для проверки testProductsBySku
 import 'dotenv/config';
-import { DilovodService } from './services/dilovod/DilovodService';
+import { DilovodService } from './services/dilovod/DilovodService.js';
 
 async function testProductsBySku() {
   const dilovodService = new DilovodService();

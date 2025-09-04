@@ -1,17 +1,17 @@
 // Главный файл экспорта для всех модулей Dilovod
 
 // Экспортируем типы
-export * from './DilovodTypes';
+export * from './DilovodTypes.js';
 
 // Экспортируем утилиты
-export * from './DilovodUtils';
+export * from './DilovodUtils.js';
 
 // Экспортируем все модули
-export { DilovodApiClient } from './DilovodApiClient';
-export { DilovodCacheManager } from './DilovodCacheManager';
-export { DilovodDataProcessor } from './DilovodDataProcessor';
-export { DilovodSyncManager } from './DilovodSyncManager';
-export { DilovodService } from './DilovodService';
+export { DilovodApiClient } from './DilovodApiClient.js';
+export { DilovodCacheManager } from './DilovodCacheManager.js';
+export { DilovodDataProcessor } from './DilovodDataProcessor.js';
+export { DilovodSyncManager } from './DilovodSyncManager.js';
+export { DilovodService } from './DilovodService.js';
 
 // Экспортируем конфигурацию по умолчанию
-export { getDilovodConfig } from './DilovodUtils';
+export { getDilovodConfig } from './DilovodUtils.js';

@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { WarehouseMovement, StockMovementHistory, WarehouseMovementItem } from '../../client/types/warehouse';
+import { WarehouseMovement, StockMovementHistory, WarehouseMovementItem } from '../../client/types/warehouse.js';
 
 const prisma = new PrismaClient();
 

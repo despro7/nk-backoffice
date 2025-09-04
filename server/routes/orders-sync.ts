@@ -1,7 +1,7 @@
 import express from 'express';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken } from '../middleware/auth.js';
 import { PrismaClient } from '@prisma/client';
-import { syncSettingsService } from '../services/syncSettingsService';
+import { syncSettingsService } from '../services/syncSettingsService.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();

@@ -1,7 +1,7 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticateToken } from '../middleware/auth';
-import { DilovodService, logWithTimestamp } from '../services/dilovod';
+import { authenticateToken } from '../middleware/auth.js';
+import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();

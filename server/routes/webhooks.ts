@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { salesDriveService } from '../services/salesDriveService';
-import { orderDatabaseService } from '../services/orderDatabaseService';
+import { salesDriveService } from '../services/salesDriveService.js';
+import { orderDatabaseService } from '../services/orderDatabaseService.js';
 
 // Добавляем типизацию для webhook payload
 interface SalesDriveWebhookPayload {

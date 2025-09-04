@@ -1,6 +1,6 @@
 // Тестовый скрипт для проверки работы кеша SKU
 import 'dotenv/config';
-import { DilovodCacheManager } from './services/dilovod/DilovodCacheManager.ts';
+import { DilovodCacheManager } from './services/dilovod/DilovodCacheManager.js';
 
 async function testCache() {
   const cacheManager = new DilovodCacheManager();

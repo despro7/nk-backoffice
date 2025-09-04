@@ -9,9 +9,9 @@ import {
   DilovodSyncResult,
   DilovodTestResult,
   DilovodStockBalance
-} from './index';
-import { logWithTimestamp } from './DilovodUtils';
-import { syncSettingsService } from '../syncSettingsService';
+} from './index.js';
+import { logWithTimestamp } from './DilovodUtils.js';
+import { syncSettingsService } from '../syncSettingsService.js';
 
 export class DilovodService {
   private apiClient: DilovodApiClient;
