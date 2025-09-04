@@ -1,8 +1,7 @@
-import { defineConfig, Plugin } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
-import { createServer } from "./server";
 
 export default defineConfig(({ mode }) => ({
   server: {
@@ -14,9 +13,9 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
-    outDir: "dist/spa",
+    outDir: "dist/client",
   },
-  plugins: [react(), expressPlugin(), tailwindcss()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./client"),
@@ -29,14 +28,3 @@ export default defineConfig(({ mode }) => ({
     "process.env.CLIENT_URL": JSON.stringify(process.env.CLIENT_URL),
   },
 }));
-
-function expressPlugin(): Plugin {
-  return {
-    name: "express-plugin",
-    apply: "serve",
-    configureServer(server) {
-      const app = createServer();
-      server.middlewares.use(app);
-    },
-  };
-}

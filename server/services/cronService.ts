@@ -10,7 +10,7 @@ export class CronService {
   }
 
   /**
-   * Запускает автоматическую синхронизацию заказов каждые 5 минут
+   * Запускает автоматическую синхронизацию заказов каждый час
    */
   startOrderSync(): void {
     if (this.syncJob) {
@@ -18,8 +18,8 @@ export class CronService {
       return;
     }
 
-    // Запуск каждые 5 минут
-    this.syncJob = cron.schedule('*/60 * * * *', async () => {
+    // Запуск каждый час в минута 5 (чтобы избежать нагрузки в начале часа)
+    this.syncJob = cron.schedule('5 * * * *', async () => {
       if (this.isRunning) {
         console.log('⏳ Previous sync still running, skipping...');
         return;
@@ -27,14 +27,21 @@ export class CronService {
 
       this.isRunning = true;
       console.log('🕐 Running scheduled order sync...');
-      
+
       try {
         const startTime = Date.now();
-        const result = await salesDriveService.syncOrdersWithDatabase();
+
+        // Добавляем таймаут на синхронизацию (10 минут максимум)
+        const syncPromise = salesDriveService.syncOrdersWithDatabase();
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Sync timeout after 10 minutes')), 10 * 60 * 1000);
+        });
+
+        const result = await Promise.race([syncPromise, timeoutPromise]) as { success: boolean; synced: number; errors: number; details: any[] };
         const duration = Date.now() - startTime;
-        
+
         console.log(`✅ Scheduled sync completed in ${duration}ms: ${result.synced} synced, ${result.errors} errors`);
-        
+
         if (result.errors > 0) {
           console.warn(`⚠️ Sync completed with ${result.errors} errors`);
         }
@@ -48,7 +55,7 @@ export class CronService {
     });
 
     this.syncJob.start();
-    console.log('✅ Order sync cron job started (every 60 minutes)');
+    console.log('✅ Order sync cron job started (every hour at minute 5)');
   }
 
   /**

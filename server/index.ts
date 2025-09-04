@@ -12,7 +12,7 @@ import webhookRoutes from './routes/webhooks.js';
 import warehouseRoutes from './routes/warehouse.js';
 import ordersSyncRoutes from './routes/orders-sync.js';
 import { cronService } from './services/cronService.js';
-import { logServer } from '../client/lib/utils.js';
+import { logServer } from './lib/utils.js';
 import shippingRoutes from './routes/shipping.js';
 
 // Увеличиваем лимит listeners для process events
@@ -150,7 +150,8 @@ app.listen(port, () => {
 const shutdown = (signal: string) => {
   console.log(`\n🛑 ${signal} received, shutting down...`);
   cronService.stopAll();
-  setTimeout(() => process.exit(0), 2000);
+  // Уменьшаем задержку перед выходом
+  setTimeout(() => process.exit(0), 100);
 };
 
 process.once('SIGTERM', () => shutdown('SIGTERM'));

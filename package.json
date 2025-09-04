@@ -5,21 +5,25 @@
   "type": "module",
   "pkg": {
     "assets": [
-      "dist/spa/*"
+      "dist/client/*"
     ],
     "scripts": [
-      "dist/server/**/*.js"
+      "dist/**/*.js"
     ]
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --config vite.config.dev.ts",
     "dev:server": "tsx watch --tsconfig tsconfig.server.json server/index.ts",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
     "build:production": "npm run build && npm run db:generate",
-    "start": "node dist/server/production.mjs",
-    "start:dev": "npm run build:server && node dist/server/production.mjs",
+    "start": "node dist/server/index.js",
+    "start:bg": "start /B node dist/server/index.js",
+    "start:dev": "npm run build:server && node dist/server/index.js",
+    "start:dev:bg": "npm run build:server && start /B node dist/server/index.js",
+    "server:stop": "powershell -NoProfile -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object {$_.CommandLine -like '*dist/server/index.js*'} | Stop-Process -Force -ErrorAction SilentlyContinue; if ($LASTEXITCODE -eq 0) { Write-Host 'Server stopped' } else { Write-Host 'No server processes found' }\"",
+    "server:status": "powershell -NoProfile -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object {$_.CommandLine -like '*dist/server/index.js*'} | Select-Object Id, ProcessName, StartTime\"",
     "preview": "vite preview",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

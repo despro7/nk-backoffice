@@ -4,7 +4,6 @@ import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import { createServer } from "./server";
 
-// https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
@@ -15,7 +14,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
-    outDir: "dist/spa",
+    outDir: "dist/client",
   },
   plugins: [react(), expressPlugin(), tailwindcss()],
   resolve: {
@@ -24,16 +23,19 @@ export default defineConfig(({ mode }) => ({
       "@shared": path.resolve(__dirname, "./shared"),
     },
   },
+  define: {
+    __APP_VERSION__: JSON.stringify(process.env.npm_package_version || "1.0.0"),
+    "process.env.NODE_ENV": JSON.stringify(mode),
+    "process.env.CLIENT_URL": JSON.stringify(process.env.CLIENT_URL),
+  },
 }));
 
 function expressPlugin(): Plugin {
   return {
     name: "express-plugin",
-    apply: "serve", // Only apply during development (serve mode)
+    apply: "serve",
     configureServer(server) {
       const app = createServer();
-
-      // Add Express app as middleware to Vite dev server
       server.middlewares.use(app);
     },
   };
