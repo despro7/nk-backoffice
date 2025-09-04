@@ -11,34 +11,21 @@ export default defineConfig({
       formats: ["es"],
     },
     outDir: "dist/server",
-    target: "node22",
+    target: "node20",
     ssr: true,
     rollupOptions: {
       external: [
-        // Node.js built-ins
-        "fs",
-        "path",
-        "url",
-        "http",
-        "https",
-        "os",
-        "crypto",
-        "stream",
-        "util",
-        "events",
-        "buffer",
-        "querystring",
+        "fs", "path", "url", "http", "https", "os", "crypto",
+        "stream", "util", "events", "buffer", "querystring",
         "child_process",
-        // External dependencies that should not be bundled
-        "express",
-        "cors",
+        "express", "cors", "prisma"
       ],
       output: {
         format: "es",
         entryFileNames: "[name].mjs",
       },
     },
-    minify: false, // Keep readable for debugging
+    minify: false,
     sourcemap: true,
   },
   resolve: {
