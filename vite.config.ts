@@ -16,6 +16,10 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     outDir: "dist/spa",
+    // Добавляем переменные окружения для сборки
+    define: {
+      __APP_VERSION__: JSON.stringify(process.env.npm_package_version || '1.0.0'),
+    },
   },
   plugins: [react(), expressPlugin(), tailwindcss()],
   resolve: {
@@ -24,7 +28,13 @@ export default defineConfig(({ mode }) => ({
       "@shared": path.resolve(__dirname, "./shared"),
     },
   },
+  // Добавляем переменные окружения, доступные в клиенте
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(mode),
+    'process.env.CLIENT_URL': JSON.stringify(process.env.CLIENT_URL),
+  },
 }));
+
 
 function expressPlugin(): Plugin {
   return {

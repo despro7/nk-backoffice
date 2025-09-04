@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # Основное приложение
+  app:
+    build: .
+    container_name: nk-backoffice-app
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    env_file:
+      - .env
+    depends_on:
+      - db
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - nk-network
+
+  # База данных MySQL
+  db:
+    image: mysql:8.0
+    container_name: nk-backoffice-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-nk_backoffice}
+      MYSQL_USER: ${DB_USER:-nk_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-changeme456}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backup_db:/docker-entrypoint-initdb.d
+    networks:
+      - nk-network
+    command: --default-authentication-plugin=mysql_native_password
+
+# Постоянные тома для данных
+volumes:
+  mysql_data:
+
+# Сеть для коммуникации между сервисами
+networks:
+  nk-network:
+    driver: bridge
