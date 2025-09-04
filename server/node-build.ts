@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const app = createServer();
 const port = process.env.PORT || 3001;
 
-const distPath = path.join(__dirname, "../spa");
+const distPath = path.join(__dirname, "../client");
 
 // Статические файлы
 app.use(express.static(distPath));
