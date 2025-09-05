@@ -127,11 +127,28 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           if (existingOrder) {
             console.log(`🔄 Updating existing order ${existingOrder.externalId}`);
 
+            // Создаем безопасный rawData объект
+            const safeRawData = {
+              webhookType: req.body.info?.webhookType,
+              webhookEvent: req.body.info?.webhookEvent,
+              account: req.body.info?.account,
+              data: {
+                id: req.body.data?.id,
+                externalId: req.body.data?.externalId,
+                statusId: req.body.data?.statusId,
+                orderTime: req.body.data?.orderTime,
+                paymentAmount: req.body.data?.paymentAmount,
+                shipping_address: req.body.data?.shipping_address,
+                contacts: req.body.data?.contacts,
+                products: req.body.data?.products
+              }
+            };
+
             const updateData = {
               status: orderDetails.status,
               statusText: orderDetails.statusText,
               items: orderDetails.items,
-              rawData: orderDetails,
+              rawData: safeRawData, // Используем безопасный объект вместо orderDetails
               customerName: orderDetails.customerName,
               customerPhone: orderDetails.customerPhone,
               deliveryAddress: orderDetails.deliveryAddress,
@@ -160,6 +177,34 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               totalPrice: updateData.totalPrice
             });
 
+            // Проверяем rawData перед передачей
+            if (updateData.rawData) {
+              try {
+                const testSerialize = JSON.stringify(updateData.rawData);
+                console.log(`✅ RawData serialization test passed, length: ${testSerialize.length}`);
+              } catch (serializeError) {
+                console.error(`❌ RawData serialization failed:`, serializeError);
+                console.log(`   RawData type: ${typeof updateData.rawData}`);
+                console.log(`   RawData keys:`, Object.keys(updateData.rawData || {}));
+                // Не передаем rawData если она не сериализуется
+                updateData.rawData = null;
+              }
+            }
+
+            // Проверяем items перед передачей
+            if (updateData.items) {
+              try {
+                const testSerialize = JSON.stringify(updateData.items);
+                console.log(`✅ Items serialization test passed, length: ${testSerialize.length}`);
+              } catch (serializeError) {
+                console.error(`❌ Items serialization failed:`, serializeError);
+                console.log(`   Items type: ${typeof updateData.items}`);
+                console.log(`   Items isArray: ${Array.isArray(updateData.items)}`);
+                // Не передаем items если они не сериализуются
+                updateData.items = null;
+              }
+            }
+
             // Обновляем существующий заказ
             await orderDatabaseService.updateOrder(existingOrder.externalId, updateData);
             
@@ -169,6 +214,24 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
 
             // Создаем новый заказ с данными из webhook
             const webhookData = req.body.data;
+            // Создаем безопасный rawData для нового заказа
+            const safeRawDataForCreate = {
+              webhookType: req.body.info?.webhookType,
+              webhookEvent: req.body.info?.webhookEvent,
+              account: req.body.info?.account,
+              data: {
+                id: webhookData.id,
+                externalId: webhookData.externalId,
+                statusId: webhookData.statusId,
+                orderTime: webhookData.orderTime,
+                paymentAmount: webhookData.paymentAmount,
+                shipping_address: webhookData.shipping_address,
+                contacts: webhookData.contacts,
+                products: webhookData.products,
+                ord_novaposhta: webhookData.ord_novaposhta
+              }
+            };
+
             await orderDatabaseService.createOrder({
               id: webhookData.id?.toString() || orderDetails.id?.toString(),
               externalId: webhookData.externalId || orderDetails.orderNumber,
@@ -178,7 +241,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               status: orderDetails.status,
               statusText: orderDetails.statusText,
               items: orderDetails.items,
-              rawData: req.body, // Сохраняем полный webhook payload как объект
+              rawData: safeRawDataForCreate, // Используем безопасный объект
               customerName: webhookData.contacts?.[0]?.fName + ' ' + webhookData.contacts?.[0]?.lName,
               customerPhone: webhookData.contacts?.[0]?.phone?.[0],
               deliveryAddress: webhookData.shipping_address,
