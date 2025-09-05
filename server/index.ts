@@ -42,12 +42,18 @@ export function createServer() {
         logServer(`✅ CORS: Allowed ${key}`);
         loggedOrigins.add(key);
       }
-      
-      // Разрешаем запросы без origin
+
+      // Разрешаем запросы без origin (для webhook от внешних сервисов)
       if (!origin) {
         return callback(null, true);
       }
-      
+
+      // Специально разрешаем webhook запросы от SalesDrive
+      if (key === 'no-origin' || key.includes('salesdrive') || key.includes('webhook')) {
+        logServer(`✅ CORS: Webhook allowed for ${key}`);
+        return callback(null, true);
+      }
+
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -61,7 +67,14 @@ export function createServer() {
     exposedHeaders: ['Set-Cookie']
   }));
   app.use(cookieParser());
-  app.use(express.json());
+  app.use(express.json({
+    verify: (req, res, buf) => {
+      if (req.url.includes('/webhooks/')) {
+        console.log('📦 Webhook raw body length:', buf.length);
+        console.log('📦 Webhook raw body preview:', buf.toString().substring(0, 200));
+      }
+    }
+  }));
   app.use(express.urlencoded({ extended: true }));
   
   // Логирование для диагностики
@@ -151,6 +164,7 @@ app.listen(port, () => {
   console.log(`   GET   /api/orders/stats/summary (from local DB)`);
   console.log(`   GET   /api/orders/raw/all`);
   console.log(`   POST  /api/webhooks/salesdrive/order-update`);
+  console.log(`   POST  /api/webhooks/salesdrive/test`);
   console.log(`   GET   /api/webhooks/salesdrive/health`);
   
   // Запускаем cron-задачи

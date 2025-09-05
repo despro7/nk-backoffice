@@ -20,19 +20,41 @@ interface SalesDriveWebhookPayload {
 
 const router = Router();
 
+// Middleware для логирования webhook запросов
+router.use('/salesdrive/order-update', (req, res, next) => {
+  console.log('🔍 Webhook middleware - Request details:');
+  console.log(`   Method: ${req.method}`);
+  console.log(`   URL: ${req.url}`);
+  console.log(`   Content-Type: ${req.headers['content-type']}`);
+  console.log(`   User-Agent: ${req.headers['user-agent']}`);
+  console.log(`   Origin: ${req.headers['origin']}`);
+  console.log(`   Body exists: ${!!req.body}`);
+  console.log(`   Body keys: ${req.body ? Object.keys(req.body).join(', ') : 'none'}`);
+
+  // Продолжаем обработку
+  next();
+});
+
 /**
  * POST /api/webhooks/salesdrive/order-update
  * WebHook от SalesDrive для обновления заказов
  */
-router.post('/salesdrive/order-update', async (req: Request<{}, {}, SalesDriveWebhookPayload>, res: Response) => {
+router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
   try {
+    console.log('🔔 WebHook received - Raw body:', JSON.stringify(req.body, null, 2));
+
     const { data } = req.body;
     const orderId = data?.id?.toString();
     const externalId = data?.externalId;
 
     console.log(`🔔 WebHook received: status_change for order ${externalId || orderId}`);
+    console.log(`   - data.id: ${data?.id}`);
+    console.log(`   - data.externalId: ${data?.externalId}`);
+    console.log(`   - orderId: ${orderId}`);
+    console.log(`   - externalId: ${externalId}`);
 
     if (!orderId && !externalId) {
+      console.log('❌ Missing order identifier - returning 400');
       return res.status(400).json({
         success: false,
         error: 'Missing order identifier'
@@ -127,12 +149,26 @@ router.post('/salesdrive/order-update', async (req: Request<{}, {}, SalesDriveWe
 });
 
 /**
+ * POST /api/webhooks/salesdrive/test
+ * Тестовый endpoint для проверки webhook
+ */
+router.post('/salesdrive/test', (req, res) => {
+  console.log('🧪 Test webhook received:', JSON.stringify(req.body, null, 2));
+  res.json({
+    success: true,
+    message: 'Test webhook received',
+    received: req.body,
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
  * GET /api/webhooks/salesdrive/health
  * Проверка работоспособности webhook endpoint
  */
 router.get('/salesdrive/health', (req, res) => {
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     message: 'SalesDrive webhook endpoint is healthy',
     timestamp: new Date().toISOString()
   });
