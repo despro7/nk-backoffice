@@ -1,4 +1,4 @@
-export default {
+module.exports = {
   apps: [{
     name: 'nk-backoffice',
     script: 'dist/server/index.js',
