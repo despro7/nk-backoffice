@@ -144,9 +144,42 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               }
             };
 
+            // Маппинг статусов из SalesDrive в нашу систему
+            // В БД статусы хранятся как строки '1', '2', '3' и т.д.
+            const statusMapping: { [key: number]: string } = {
+              1: '1', // Нові
+              2: '2', // Підтверджено
+              3: '3', // На відправку
+              4: '4', // Відправлено
+              5: '5', // Продаж
+              6: '6', // Відмова
+              7: '7', // Повернення
+              8: '8'  // Видалений
+            };
+
+            // Функция для получения текста статуса
+            const getStatusText = (status: string): string => {
+              const statusTexts: { [key: string]: string } = {
+                '1': 'Нові',
+                '2': 'Підтверджено',
+                '3': 'На відправку',
+                '4': 'Відправлено',
+                '5': 'Продаж',
+                '6': 'Відмова',
+                '7': 'Повернення',
+                '8': 'Видалений'
+              };
+              return statusTexts[status] || 'Невідомий статус';
+            };
+
+            const webhookData = req.body.data;
+            const newStatus = statusMapping[webhookData.statusId] || orderDetails.status;
+
+            console.log(`🔄 Status mapping: webhook statusId=${webhookData.statusId} -> status='${newStatus}'`);
+
             const updateData = {
-              status: orderDetails.status,
-              statusText: orderDetails.statusText,
+              status: newStatus, // Используем статус из webhook
+              statusText: getStatusText(newStatus),
               items: orderDetails.items,
               rawData: safeRawData, // Используем безопасный объект вместо orderDetails
               customerName: orderDetails.customerName,
@@ -166,7 +199,8 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             };
 
             console.log(`📊 Update data:`, {
-              status: updateData.status,
+              oldStatus: existingOrder.status,
+              newStatus: updateData.status,
               statusText: updateData.statusText,
               itemsType: typeof updateData.items,
               rawDataType: typeof updateData.rawData,
@@ -207,8 +241,16 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
 
             // Обновляем существующий заказ
             await orderDatabaseService.updateOrder(existingOrder.externalId, updateData);
-            
+
             console.log(`✅ Order ${orderDetails.orderNumber} updated via webhook`);
+            console.log(`   Status changed: ${existingOrder.status} -> ${newStatus}`);
+
+            // Проверяем, действительно ли статус изменился
+            if (existingOrder.status !== newStatus) {
+              console.log(`🎉 Status successfully updated to: ${newStatus}`);
+            } else {
+              console.log(`ℹ️ Status remained the same: ${newStatus}`);
+            }
           } else {
             console.log(`🆕 Creating new order ${orderDetails.orderNumber}`);
 
