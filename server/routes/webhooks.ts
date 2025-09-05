@@ -76,12 +76,13 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
         if (existingOrder) {
           console.log(`✅ Found existing order ${existingOrder.externalId} in database`);
           // Используем данные из БД как orderDetails
+          // existingOrder.items уже распарсено в getOrderByExternalId
           orderDetails = {
             id: existingOrder.id,
             orderNumber: existingOrder.externalId,
             status: existingOrder.status,
             statusText: existingOrder.statusText,
-            items: existingOrder.items ? JSON.parse(existingOrder.items) : [],
+            items: existingOrder.items, // Уже распарсено в getOrderByExternalId
             customerName: existingOrder.customerName,
             customerPhone: existingOrder.customerPhone,
             deliveryAddress: existingOrder.deliveryAddress,
@@ -150,6 +151,9 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             console.log(`📊 Update data:`, {
               status: updateData.status,
               statusText: updateData.statusText,
+              itemsType: typeof updateData.items,
+              rawDataType: typeof updateData.rawData,
+              itemsIsArray: Array.isArray(updateData.items),
               hasItems: !!updateData.items,
               hasRawData: !!updateData.rawData,
               customerName: updateData.customerName,

@@ -120,12 +120,24 @@ export class OrderDatabaseService {
 
       // Обновляем items если они переданы
       if (data.items) {
+        console.log(`🔧 Serializing items:`, {
+          type: typeof data.items,
+          isArray: Array.isArray(data.items),
+          length: Array.isArray(data.items) ? data.items.length : 'N/A'
+        });
         updateData.items = JSON.stringify(data.items);
+        console.log(`✅ Items serialized, length: ${updateData.items.length}`);
       }
 
       // Обновляем rawData если передана
       if (data.rawData) {
+        console.log(`🔧 Serializing rawData:`, {
+          type: typeof data.rawData,
+          isObject: typeof data.rawData === 'object',
+          keys: typeof data.rawData === 'object' ? Object.keys(data.rawData || {}).length : 'N/A'
+        });
         updateData.rawData = JSON.stringify(data.rawData);
+        console.log(`✅ RawData serialized, length: ${updateData.rawData.length}`);
       }
 
       // Обновляем processedItems если переданы
