@@ -4,11 +4,18 @@ import { orderDatabaseService } from '../services/orderDatabaseService.js';
 
 // Добавляем типизацию для webhook payload
 interface SalesDriveWebhookPayload {
-  orderId?: string;
-  externalId?: string;
-  status?: string;
-  action: 'created' | 'updated' | 'deleted';
-  timestamp?: string;
+  info: {
+    webhookType: string;
+    webhookEvent: string;
+    account: string;
+  };
+  data: {
+    id: number;
+    externalId?: string;
+    statusId?: number;
+    [key: string]: any;
+  };
+  meta?: any;
 }
 
 const router = Router();
@@ -19,20 +26,23 @@ const router = Router();
  */
 router.post('/salesdrive/order-update', async (req: Request<{}, {}, SalesDriveWebhookPayload>, res: Response) => {
   try {
-    const { orderId, externalId, status, action, timestamp } = req.body;
-    
-    console.log(`🔔 WebHook received: ${action} for order ${externalId || orderId}`);
-    
-    if (!externalId && !orderId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Missing order identifier' 
+    const { data } = req.body;
+    const orderId = data?.id?.toString();
+    const externalId = data?.externalId;
+
+    console.log(`🔔 WebHook received: status_change for order ${externalId || orderId}`);
+
+    if (!orderId && !externalId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing order identifier'
       });
     }
 
     const orderIdentifier = externalId || orderId;
 
-    if (action === 'created' || action === 'updated') {
+    // For status_change events, we always update the order
+    if (req.body.info?.webhookEvent === 'status_change') {
       // Синхронизируем конкретный заказ
       try {
         // Получаем детали заказа из SalesDrive
@@ -93,19 +103,18 @@ router.post('/salesdrive/order-update', async (req: Request<{}, {}, SalesDriveWe
         }
       } catch (error) {
         console.error(`❌ Error processing webhook for order ${orderIdentifier}:`, error);
-        return res.status(500).json({ 
-          success: false, 
-          error: 'Failed to process order update' 
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to process order update'
         });
       }
-    } else if (action === 'deleted') {
-      // Обработка удаления заказа (опционально)
-      console.log(`🗑️ Order ${orderIdentifier} deleted in SalesDrive`);
+    } else {
+      console.log(`⚠️ Unsupported webhook event: ${req.body.info?.webhookEvent}`);
     }
     
-    res.json({ 
-      success: true, 
-      message: `Webhook processed: ${action} for order ${orderIdentifier}`,
+    res.json({
+      success: true,
+      message: `Webhook processed: ${req.body.info?.webhookEvent} for order ${orderIdentifier}`,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
