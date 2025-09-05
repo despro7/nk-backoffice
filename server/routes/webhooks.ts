@@ -174,7 +174,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               status: orderDetails.status,
               statusText: orderDetails.statusText,
               items: orderDetails.items,
-              rawData: req.body, // Сохраняем полный webhook payload
+              rawData: req.body, // Сохраняем полный webhook payload как объект
               customerName: webhookData.contacts?.[0]?.fName + ' ' + webhookData.contacts?.[0]?.lName,
               customerPhone: webhookData.contacts?.[0]?.phone?.[0],
               deliveryAddress: webhookData.shipping_address,
