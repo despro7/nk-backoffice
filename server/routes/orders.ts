@@ -17,7 +17,6 @@ const router = Router();
  */
 router.get('/test', authenticateToken, async (req, res) => {
   try {
-    console.log('🧪 Testing SalesDrive configuration...');
     
     // Check if environment variables are set
     const hasUrl = !!process.env.SALESDRIVE_API_URL;
@@ -71,39 +70,23 @@ router.get('/', authenticateToken, async (req, res) => {
   const startTime = Date.now();
   const { status, sync, sortBy, sortOrder, limit } = req.query;
 
-  console.log('🚀 [SERVER] GET /api/orders: Request received');
-  console.log('📋 [SERVER] GET /api/orders: Query params:', {
-    status,
-    sync,
-    sortBy: sortBy || 'createdAt',
-    sortOrder: sortOrder || 'desc',
-    limit: parseInt(limit as string) || 1000
-  });
 
   try {
     // Если запрошена синхронизация, сначала синхронизируем
     if (sync === 'true') {
-      console.log('🔄 [SERVER] GET /api/orders: Sync requested, starting synchronization...');
       const syncStartTime = Date.now();
 
       const syncResult = await salesDriveService.syncOrdersWithDatabase();
 
       const syncDuration = Date.now() - syncStartTime;
-      console.log(`✅ [SERVER] GET /api/orders: Sync completed in ${syncDuration}ms:`, {
-        success: syncResult.success,
-        synced: syncResult.synced,
-        errors: syncResult.errors
-      });
 
       if (!syncResult.success) {
         console.warn('⚠️ [SERVER] GET /api/orders: Sync completed with errors:', syncResult.errors);
       }
     } else {
-      console.log('⏭️ [SERVER] GET /api/orders: No sync requested, proceeding with local data');
     }
 
     // Получаем заказы из локальной БД с сортировкой
-    console.log('📦 [SERVER] GET /api/orders: Fetching orders from database...');
     const dbStartTime = Date.now();
 
     const orders = await orderDatabaseService.getOrders({
@@ -123,10 +106,8 @@ router.get('/', authenticateToken, async (req, res) => {
     const statusCounts = await orderDatabaseService.getStatusCounts();
 
     const dbDuration = Date.now() - dbStartTime;
-    console.log(`✅ [SERVER] GET /api/orders: Database fetch completed in ${dbDuration}ms, orders count: ${orders.length}`);
 
     const totalDuration = Date.now() - startTime;
-    console.log(`🏁 [SERVER] GET /api/orders: Total processing time: ${totalDuration}ms`);
 
     const response = {
       success: true,
@@ -147,7 +128,6 @@ router.get('/', authenticateToken, async (req, res) => {
       }
     };
 
-    console.log('📤 [SERVER] GET /api/orders: Sending response with', orders.length, 'orders');
     res.json(response);
 
   } catch (error) {
@@ -240,7 +220,6 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
       });
     }
 
-    console.log(`🔍 Fetching order details for external ID: ${externalId}`);
     
     // Получаем детали заказа по externalId
     const orderDetails = await orderDatabaseService.getOrderByExternalId(externalId);
@@ -317,7 +296,6 @@ router.put('/:externalId/status', authenticateToken, async (req, res) => {
     const result = await salesDriveService.updateSalesDriveOrderStatus(order.orderNumber, status);
 
     if (result) {
-      console.log(`✅ Successfully updated order ${order.orderNumber} status to ${status} in SalesDrive`);
       res.json({
         success: true,
         message: 'Order status updated successfully in SalesDrive',
@@ -465,7 +443,6 @@ router.get('/period', authenticateToken, async (req, res) => {
 
     // Если запрошена синхронизация, сначала синхронизируем
     if (sync === 'true') {
-      console.log('🔄 Sync requested for period, starting synchronization...');
       const syncResult = await salesDriveService.syncOrdersWithDatabase();
 
       if (!syncResult.success) {
@@ -598,7 +575,6 @@ router.post('/fix-items-data', authenticateToken, async (req, res) => {
                 items: items
               });
               fixedCount++;
-              console.log(`Fixed order ${order.externalId}`);
             } else {
               console.warn(`Could not extract items from rawData for order ${order.externalId}`);
               skippedCount++;
@@ -644,7 +620,6 @@ router.post('/preprocess-all', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied. Admin role required.' });
     }
 
-    console.log('🚀 Starting preprocessing for all orders...');
 
     const BATCH_SIZE = 50; // Обрабатываем по 50 заказов за раз
     let totalProcessed = 0;
@@ -654,14 +629,12 @@ router.post('/preprocess-all', authenticateToken, async (req, res) => {
     // Сначала получаем общее количество заказов
     const allOrders = await orderDatabaseService.getOrders({ limit: 10000 });
     totalOrders = allOrders.length;
-    console.log(`📊 Found ${totalOrders} orders to process`);
 
     // Обрабатываем заказы пачками
     for (let batchStart = 0; batchStart < totalOrders; batchStart += BATCH_SIZE) {
       const batchEnd = Math.min(batchStart + BATCH_SIZE, totalOrders);
       const batchOrders = allOrders.slice(batchStart, batchEnd);
 
-      console.log(`🔄 Processing batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(totalOrders / BATCH_SIZE)}: orders ${batchStart + 1}-${batchEnd}`);
 
       // Обрабатываем заказы в текущей пачке
       const batchPromises = batchOrders.map(async (order) => {
@@ -684,7 +657,6 @@ router.post('/preprocess-all', authenticateToken, async (req, res) => {
       totalProcessed += batchProcessed;
       totalErrors += batchErrors;
 
-      console.log(`✅ Batch completed: ${batchProcessed} processed, ${batchErrors} errors (${totalProcessed}/${totalOrders} total)`);
 
       // Небольшая пауза между пачками для снижения нагрузки
       if (batchEnd < totalOrders) {
@@ -692,7 +664,6 @@ router.post('/preprocess-all', authenticateToken, async (req, res) => {
       }
     }
 
-    console.log(`🎉 Preprocessing completed: ${totalProcessed} processed, ${totalErrors} errors`);
 
     res.json({
       success: true,
@@ -723,7 +694,6 @@ router.post('/:externalId/cache', authenticateToken, async (req, res) => {
     const { externalId } = req.params;
 
     // Временно убираем проверку авторизации для тестирования
-    console.log(`Processing cache for order ${externalId}...`);
 
     const success = await (orderDatabaseService as any).updateProcessedItems(externalId);
 
@@ -753,7 +723,6 @@ router.post('/:externalId/cache', authenticateToken, async (req, res) => {
  */
 router.get('/products/stats/demo', authenticateToken, async (req, res) => {
   try {
-    console.log('🚀 Demo endpoint: Simulating cached product statistics...');
 
     // Имитируем работу с кешированными данными
     const mockCachedStats = [
@@ -939,41 +908,28 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       }
     }
 
-    // Получаем заказы с фильтрами
-    const orders = await orderDatabaseService.getOrders({
-      status: status as string,
-      limit: 1000, // Обрабатываем до 1000 заказов для полной статистики
-      sortBy: 'orderDate',
-      sortOrder: 'desc'
-    });
-
     // Фильтруем по дате если указаны даты
-    let filteredOrders = orders;
+    let dateRangeFilter = undefined;
     if (startDate && endDate) {
-      const originalCount = orders.length;
       const start = new Date(startDate as string + ' 00:00:00');
       const end = new Date(endDate as string + ' 23:59:59');
-
-      console.log(`📅 Filtering by date range: ${start.toISOString()} to ${end.toISOString()}`);
-
-      filteredOrders = orders.filter(order => {
-        if (!order.orderDate) return false;
-        const orderDate = new Date(order.orderDate);
-        const matches = orderDate >= start && orderDate <= end;
-
-        if (filteredOrders.length < 10) { // Логируем только первые несколько заказов для отладки
-          console.log(`📅 Order ${order.externalId}: ${orderDate.toISOString()} - ${matches ? '✅' : '❌'}`);
-        }
-
-        return matches;
-      });
-      console.log(`📅 Date filtering: ${originalCount} -> ${filteredOrders.length} orders`);
+      dateRangeFilter = { start, end };
     }
+
+    // Получаем заказы с фильтрами включая дату
+    const orders = await orderDatabaseService.getOrders({
+      status: status as string,
+      limit: 10000, // Увеличиваем лимит для получения большего количества данных
+      sortBy: 'orderDate',
+      sortOrder: 'desc',
+      dateRange: dateRangeFilter
+    });
+
+    const filteredOrders = orders; // Уже отфильтрованы в БД
 
     // Собираем статистику по товарам из кешированных данных
     const productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } } = {};
 
-    console.log(`Processing ${filteredOrders.length} orders from cache...`);
 
     let processedOrders = 0;
     let cacheHits = 0;
@@ -1092,31 +1048,28 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
       }
     }
 
-    // Получаем заказы с фильтрами
-    const orders = await orderDatabaseService.getOrders({
-      status: status as string,
-      limit: 1000,
-      sortBy: 'orderDate',
-      sortOrder: 'asc' // Для корректной последовательности дат
-    });
-
     // Фильтруем по дате если указаны даты
-    let filteredOrders = orders;
+    let dateRangeFilter = undefined;
     if (startDate && endDate) {
       const start = new Date(startDate as string + ' 00:00:00');
       const end = new Date(endDate as string + ' 23:59:59');
-
-      filteredOrders = orders.filter(order => {
-        if (!order.orderDate) return false;
-        const orderDate = new Date(order.orderDate);
-        return orderDate >= start && orderDate <= end;
-      });
+      dateRangeFilter = { start, end };
     }
+
+    // Получаем заказы с фильтрами включая дату
+    const orders = await orderDatabaseService.getOrders({
+      status: status as string,
+      limit: 10000, // Увеличиваем лимит для получения большего количества данных
+      sortBy: 'orderDate',
+      sortOrder: 'asc', // Для корректной последовательности дат
+      dateRange: dateRangeFilter
+    });
+
+    const filteredOrders = orders; // Уже отфильтрованы в БД
 
     // Собираем статистику по датам для конкретного товара
     const dateStats: { [date: string]: { date: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } } = {};
 
-    console.log(`Processing ${filteredOrders.length} orders for product ${sku}...`);
 
     for (const order of filteredOrders) {
       try {
@@ -1414,27 +1367,26 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
       }
     }
 
-    // Получаем заказы с фильтрами
-    const orders = await orderDatabaseService.getOrders({
-      status: status as string,
-      limit: 1000,
-      sortBy: 'orderDate',
-      sortOrder: 'asc'
-    });
-
     // Фильтруем по дате
     const start = new Date(startDate as string + ' 00:00:00');
     const end = new Date(endDate as string + ' 23:59:59');
 
     // console.log(`📅 Filtering chart data by date range: ${start.toISOString()} to ${end.toISOString()}`);
 
-    const filteredOrders = orders.filter(order => {
-      if (!order.orderDate) return false;
-      const orderDate = new Date(order.orderDate);
-      return orderDate >= start && orderDate <= end;
+    // Получаем заказы с фильтрами включая дату
+    const orders = await orderDatabaseService.getOrders({
+      status: status as string,
+      limit: 10000, // Увеличиваем лимит для получения большего количества данных
+      sortBy: 'orderDate',
+      sortOrder: 'asc',
+      dateRange: {
+        start: start,
+        end: end
+      }
     });
 
-    console.log(`📊 Processing ${filteredOrders.length} orders for chart`);
+    const filteredOrders = orders; // Уже отфильтрованы в БД
+
 
     // Определения групп товаров для API
     const productGroupOptions = [
@@ -1730,5 +1682,416 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
     });
   }
 });
+
+/**
+ * GET /api/orders/sales/report
+ * Получить отчет продаж по дням для таблицы
+ */
+router.get('/sales/report', authenticateToken, async (req, res) => {
+  try {
+    const { status, startDate, endDate, sync, products } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'startDate и endDate обязательны'
+      });
+    }
+
+    // Если запрошена синхронизация, сначала синхронизируем
+    if (sync === 'true') {
+      console.log('🔄 Sync requested for sales report, starting synchronization...');
+      const syncResult = await salesDriveService.syncOrdersWithDatabase();
+
+      if (!syncResult.success) {
+        console.warn('⚠️ Sync completed with errors:', syncResult.errors);
+      }
+    }
+
+    // Фильтруем по дате
+    const start = new Date(startDate as string + ' 00:00:00');
+    const end = new Date(endDate as string + ' 23:59:59');
+
+    // Получаем заказы с фильтрами включая дату
+    const orders = await orderDatabaseService.getOrders({
+      status: status as string,
+      limit: 10000, // Увеличиваем лимит для получения большего количества данных
+      sortBy: 'orderDate',
+      sortOrder: 'asc',
+      // Добавляем фильтр по дате в запрос к БД
+      dateRange: {
+        start: start,
+        end: end
+      }
+    });
+
+    const filteredOrders = orders; // Уже отфильтрованы в БД
+
+
+    // Определения групп товаров
+    const productGroupOptions = [
+      { key: "first_courses", label: "Перші страви" },
+      { key: "main_courses", label: "Другі страви" },
+    ];
+
+    // Функция определения группы товара
+    const getProductGroup = (productName: string): string => {
+      const name = productName.toLowerCase();
+      if (name.includes('борщ') || name.includes('суп') || name.includes('бульйон') || name.includes('перший') || name.includes('перша')) {
+        return 'first_courses';
+      }
+      // По умолчанию все остальные товары считаем вторыми блюдами
+      return 'main_courses';
+    };
+
+    // Обрабатываем фильтр по товарам
+    let filterProducts: string[] = [];
+    let filterGroups: string[] = [];
+
+    if (products) {
+      if (Array.isArray(products)) {
+        filterProducts = products as string[];
+      } else {
+        filterProducts = [products as string];
+      }
+
+      // Разделяем на группы и индивидуальные товары
+      const individualProducts = filterProducts.filter(p => !p.startsWith('group_'));
+      const groupFilters = filterProducts.filter(p => p.startsWith('group_'));
+
+      filterProducts = individualProducts;
+      filterGroups = groupFilters.map(g => g.replace('group_', ''));
+    }
+
+    // Функция определения источника заказа
+    const getOrderSource = (sajt: string): string => {
+      if (!sajt) return 'невідомий';
+
+      // Проверяем точное значение "19" для нашего сайта
+      if (sajt === '19') {
+        return 'сайт';
+      }
+
+      // Все остальные значения считаем маркетплейсами
+      return 'маркетплейси';
+    };
+
+    // Собираем данные по дням
+    const salesData: { [dateKey: string]: {
+      ordersCount: number;
+      portionsCount: number;
+      ordersByStatus: { [status: string]: number };
+      portionsByStatus: { [status: string]: number };
+      ordersBySource: { [source: string]: number };
+      portionsBySource: { [source: string]: number };
+      ordersWithDiscountReason: number;
+      portionsWithDiscountReason: number;
+      discountReasonText: string;
+    } } = {};
+
+    for (const order of filteredOrders) {
+      try {
+        const orderDate = new Date(order.orderDate);
+        const dateKey = orderDate.toISOString().split('T')[0]; // YYYY-MM-DD
+
+        if (!salesData[dateKey]) {
+          salesData[dateKey] = {
+            ordersCount: 0,
+            portionsCount: 0,
+            ordersByStatus: {},
+            portionsByStatus: {},
+            ordersBySource: {},
+            portionsBySource: {},
+            ordersWithDiscountReason: 0,
+            portionsWithDiscountReason: 0,
+            discountReasonText: ''
+          };
+        }
+
+        // Проверяем фильтр по товарам
+        let shouldIncludeOrder = false;
+        let orderPortions = 0;
+
+        const processedItems = order.processedItems;
+        if (processedItems && typeof processedItems === 'string') {
+          const cachedStats = JSON.parse(processedItems);
+          if (Array.isArray(cachedStats)) {
+            for (const item of cachedStats) {
+              if (item && item.sku && item.orderedQuantity > 0) {
+                let shouldInclude = false;
+
+                if (filterProducts.length === 0 && filterGroups.length === 0) {
+                  // Нет фильтров - включаем все товары
+                  shouldInclude = true;
+                } else {
+                  // Проверяем индивидуальные товары
+                  if (filterProducts.includes(item.sku)) {
+                    shouldInclude = true;
+                  }
+
+                  // Проверяем группы товаров
+                  if (filterGroups.length > 0) {
+                    const productGroup = getProductGroup(item.name || item.sku);
+                    if (filterGroups.includes(productGroup)) {
+                      shouldInclude = true;
+                    }
+                  }
+                }
+
+                if (shouldInclude) {
+                  orderPortions += item.orderedQuantity;
+                  shouldIncludeOrder = true;
+                }
+              }
+            }
+          }
+        }
+
+        if (shouldIncludeOrder) {
+          // Добавляем заказ к статистике дня
+          salesData[dateKey].ordersCount += 1;
+          salesData[dateKey].portionsCount += orderPortions;
+
+          // Статистика по статусам
+          const status = order.status;
+          if (!salesData[dateKey].ordersByStatus[status]) {
+            salesData[dateKey].ordersByStatus[status] = 0;
+            salesData[dateKey].portionsByStatus[status] = 0;
+          }
+          salesData[dateKey].ordersByStatus[status] += 1;
+          salesData[dateKey].portionsByStatus[status] += orderPortions;
+
+          // Статистика по источникам
+          const source = getOrderSource(order.sajt || '');
+          if (!salesData[dateKey].ordersBySource[source]) {
+            salesData[dateKey].ordersBySource[source] = 0;
+            salesData[dateKey].portionsBySource[source] = 0;
+          }
+          salesData[dateKey].ordersBySource[source] += 1;
+          salesData[dateKey].portionsBySource[source] += orderPortions;
+
+          // Статистика по pricinaZnizki (причина знижки)
+          if (order.pricinaZnizki && order.pricinaZnizki.trim() !== '') {
+            salesData[dateKey].ordersWithDiscountReason += 1;
+            salesData[dateKey].portionsWithDiscountReason += orderPortions;
+
+            // Определяем причину скидки
+            if (order.pricinaZnizki === '33') {
+              salesData[dateKey].discountReasonText = 'Військові/волонтери';
+            }
+          }
+        }
+
+      } catch (error) {
+        console.warn(`Error processing order ${order.externalId} for sales report:`, error);
+      }
+    }
+
+    // Конвертируем в массив для ответа
+    const salesDataArray = Object.entries(salesData)
+      .map(([dateKey, data]) => ({
+        date: dateKey,
+        ordersCount: data.ordersCount,
+        portionsCount: data.portionsCount,
+        ordersByStatus: data.ordersByStatus,
+        portionsByStatus: data.portionsByStatus,
+        ordersBySource: data.ordersBySource,
+        portionsBySource: data.portionsBySource,
+        ordersWithDiscountReason: data.ordersWithDiscountReason,
+        portionsWithDiscountReason: data.portionsWithDiscountReason,
+        discountReasonText: data.discountReasonText
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    console.log(`✅ SALES REPORT GENERATED: ${salesDataArray.length} days`);
+
+    res.json({
+      success: true,
+      data: salesDataArray,
+      metadata: {
+        source: 'local_database',
+        filters: {
+          status: status || 'all',
+          dateRange: { startDate, endDate },
+          products: filterProducts,
+          groups: filterGroups
+        },
+        totalDays: salesDataArray.length,
+        totalOrders: filteredOrders.length,
+        fetchedAt: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Error getting sales report data:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
+
+/**
+ * GET /api/orders/products/chart/status-details
+ * Получить детальную информацию по статусам заказов за конкретную дату
+ */
+router.get('/products/chart/status-details', authenticateToken, async (req, res) => {
+  try {
+    const { date, startDate, endDate, groupBy = 'day' } = req.query;
+
+    if (!date || !startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'date, startDate и endDate обязательны'
+      });
+    }
+
+    // Фильтруем по дате
+    const start = new Date(startDate as string + ' 00:00:00');
+    const end = new Date(endDate as string + ' 23:59:59');
+
+    // Получаем заказы за указанный период с фильтром по дате
+    const orders = await orderDatabaseService.getOrders({
+      limit: 10000,
+      sortBy: 'orderDate',
+      sortOrder: 'asc',
+      dateRange: {
+        start: start,
+        end: end
+      }
+    });
+
+    const filteredOrders = orders; // Уже отфильтрованы в БД
+
+    // Определяем границы даты для группировки
+    let dateStart: Date;
+    let dateEnd: Date;
+
+    if (groupBy === 'day') {
+      dateStart = new Date(date as string + ' 00:00:00');
+      dateEnd = new Date(date as string + ' 23:59:59');
+    } else if (groupBy === 'week') {
+      const targetDate = new Date(date as string);
+      dateStart = new Date(targetDate);
+      dateStart.setDate(targetDate.getDate() - targetDate.getDay() + 1); // Понедельник
+      dateStart.setHours(0, 0, 0, 0);
+      dateEnd = new Date(dateStart);
+      dateEnd.setDate(dateStart.getDate() + 6);
+      dateEnd.setHours(23, 59, 59, 999);
+    } else if (groupBy === 'month') {
+      const targetDate = new Date(date as string + '-01');
+      dateStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+      dateEnd = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0);
+      dateEnd.setHours(23, 59, 59, 999);
+    } else {
+      // hour
+      dateStart = new Date(date as string + ':00:00');
+      dateEnd = new Date(date as string + ':59:59');
+    }
+
+
+    // Группируем заказы по статусам для указанной даты
+    const statusBreakdown: { [status: string]: { orders: any[], totalPortions: number, products: { [sku: string]: { name: string, quantity: number } } } } = {};
+
+    for (const order of filteredOrders) {
+      if (!order.orderDate) continue;
+
+      const orderDate = new Date(order.orderDate);
+      if (orderDate >= dateStart && orderDate <= dateEnd) {
+        const status = order.status;
+
+        if (!statusBreakdown[status]) {
+          statusBreakdown[status] = {
+            orders: [],
+            totalPortions: 0,
+            products: {}
+          };
+        }
+
+        statusBreakdown[status].orders.push({
+          id: order.externalId,
+          orderDate: order.orderDate,
+          quantity: order.quantity,
+          statusText: order.statusText
+        });
+
+        // Парсим товары из кешированных данных
+        try {
+          const processedItems = order.processedItems;
+          if (processedItems && typeof processedItems === 'string') {
+            const cachedStats = JSON.parse(processedItems);
+            if (Array.isArray(cachedStats)) {
+              for (const item of cachedStats) {
+                if (item && item.sku && item.orderedQuantity > 0) {
+                  if (!statusBreakdown[status].products[item.sku]) {
+                    statusBreakdown[status].products[item.sku] = {
+                      name: item.name || item.sku,
+                      quantity: 0
+                    };
+                  }
+                  statusBreakdown[status].products[item.sku].quantity += item.orderedQuantity;
+                  statusBreakdown[status].totalPortions += item.orderedQuantity;
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.warn(`Error parsing cached data for order ${order.externalId}:`, error);
+        }
+      }
+    }
+
+    // Преобразуем в массив для ответа
+    const statusArray = Object.entries(statusBreakdown).map(([status, data]) => ({
+      status,
+      statusText: getStatusText(status),
+      orderCount: data.orders.length,
+      totalPortions: data.totalPortions,
+      products: Object.values(data.products),
+      orders: data.orders.slice(0, 10) // Ограничиваем до 10 заказов для производительности
+    }));
+
+    // Сортируем по количеству порций (убывание)
+    statusArray.sort((a, b) => b.totalPortions - a.totalPortions);
+
+    const totalPortionsAll = statusArray.reduce((sum, item) => sum + item.totalPortions, 0);
+    const totalOrdersAll = statusArray.reduce((sum, item) => sum + item.orderCount, 0);
+
+    res.json({
+      success: true,
+      data: statusArray,
+      metadata: {
+        date: date,
+        dateRange: { start: dateStart.toISOString(), end: dateEnd.toISOString() },
+        groupBy,
+        totalPortions: totalPortionsAll,
+        totalOrders: totalOrdersAll,
+        statusCount: statusArray.length,
+        fetchedAt: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting status details:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
+
+// Вспомогательная функция для получения текстового представления статуса
+function getStatusText(status: string): string {
+  const statusMap: { [key: string]: string } = {
+    '1': 'Нові',
+    '2': 'Підтверджені',
+    '3': 'Готові до відправки',
+    '4': 'Відправлені',
+    '5': 'Продані',
+    '6': 'Відхилені',
+    '7': 'Повернені',
+    '8': 'Видалені'
+  };
+  return statusMap[status] || status;
+}
 
 export default router;

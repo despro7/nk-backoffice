@@ -481,7 +481,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       )}
 
       {/* Список позиций для комплектации */}
-      <div className="space-y-2">
+      <div className="space-y-2 mb-0">
         {items
           .filter((item) => {
             // Фильтруем элементы по текущей коробке

@@ -1,7 +1,7 @@
 module.exports = {
 	apps: [{
 	  name: 'nk-backoffice',
-	  script: 'dist/server/production.mjs',
+	  script: 'dist/server/index.js',
 	  instances: 1,
 	  autorestart: true,
 	  watch: false,

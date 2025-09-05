@@ -259,7 +259,7 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
 };
 
 // Функция для объединения коробок с товарами
-const combineBoxesWithItems = (boxes: any[], items: OrderChecklistItem[]): OrderChecklistItem[] => {
+const combineBoxesWithItems = (boxes: any[], items: OrderChecklistItem[], isReadyToShip: boolean = false): OrderChecklistItem[] => {
 
   // Создаем уникальные коробки, избегая дублирования
   const boxItems: OrderChecklistItem[] = boxes.map((box, index) => ({
@@ -267,7 +267,7 @@ const combineBoxesWithItems = (boxes: any[], items: OrderChecklistItem[]): Order
     name: box.name, // Используем реальное название коробки из базы данных
     quantity: 1, // Количество коробок
     expectedWeight: Number(box.self_weight || box.weight), // Собственный вес коробки (приоритет self_weight)
-    status: 'awaiting_confirmation' as const, // Коробка ожидает подтверждения
+    status: isReadyToShip ? 'confirmed' : 'awaiting_confirmation' as const, // Коробка автоматически подтверждается для заказов id3
     type: 'box' as const,
     boxSettings: box,
     boxCount: 1,
@@ -279,17 +279,18 @@ const combineBoxesWithItems = (boxes: any[], items: OrderChecklistItem[]): Order
 
 
   // Если есть коробки, разделяем товары по коробкам
-  if (boxes.length > 1 && boxes[0].portionsPerBox && boxes[0].portionsPerBox > 0) {
+  if (boxes.length > 1 && boxes[0].portionsPerBox && boxes[0].portionsPerBox > 0 && !isReadyToShip) {
+    // Обычная логика разделения по коробкам только для неготовых заказов
     const portionsPerBox = boxes[0].portionsPerBox;
-    
+
     const productItems: OrderChecklistItem[] = [];
-    
+
     let currentPortion = 0;
     let currentBoxIndex = 0;
-    
+
     for (const item of items) {
       const itemPortions = item.quantity;
-      
+
       if (currentPortion + itemPortions <= portionsPerBox) {
         // Товар помещается в текущую коробку
         productItems.push({
@@ -304,7 +305,7 @@ const combineBoxesWithItems = (boxes: any[], items: OrderChecklistItem[]): Order
         if (currentBoxIndex < boxes.length - 1) {
           currentBoxIndex++;
           currentPortion = 0;
-          
+
           // Добавляем товар в новую коробку
           productItems.push({
             ...item,
@@ -325,17 +326,17 @@ const combineBoxesWithItems = (boxes: any[], items: OrderChecklistItem[]): Order
         }
       }
     }
-    
+
     const result = [...boxItems, ...productItems];
     return result;
   }
 
-  // Если коробка одна или нет коробок, добавляем товары как обычно
+  // Если коробка одна или нет коробок, или заказ готов к отправке, добавляем товары как обычно
   const productItems = items.map((item, index) => ({
     ...item,
     id: `product_${index + 1}`,
     type: 'product' as const,
-    boxIndex: 0
+    boxIndex: 0 // Все товары в первой коробке для заказов id3
   }));
 
   const result = [...boxItems, ...productItems];
@@ -366,6 +367,7 @@ export default function OrderView() {
   const [showPrintTTN, setShowPrintTTN] = useState(false)
   const [isLoadingNextOrder, setIsLoadingNextOrder] = useState(false); // Состояние загрузки следующего заказа
   const [showNextOrder, setShowNextOrder] = useState(false); // Состояние для показа кнопки "Наступне замовлення"
+  const [isReadyToShip, setIsReadyToShip] = useState(false); // Состояние для отслеживания статуса id3
 
   // Загружаем настройки толерантности веса из базы данных
   useEffect(() => {
@@ -663,15 +665,25 @@ export default function OrderView() {
     
     // Обновляем checklistItems с новыми коробками
     if (expandedItems.length > 0) {
-      // Используем expandedItems вместо checklistItems для консистентности
+      // Используем expandedItems как базовые товары без коробок
       const itemsWithoutBoxes = expandedItems.filter(item => item.type !== 'box');
-      
+
       // Объединяем новые коробки с товарами
-      const combinedItems = combineBoxesWithItems(updatedBoxes, itemsWithoutBoxes);
-      
-      setChecklistItems(combinedItems);
+      const combinedItems = combineBoxesWithItems(updatedBoxes, itemsWithoutBoxes, isReadyToShip);
+
+      // Если заказ готов к отправке, применяем статусы done ко всем товарам
+      const finalItems = isReadyToShip ? combinedItems.map(item => {
+        if (item.type === 'product') {
+          console.log(`📦 Применяем статус done для товара при обновлении коробок: ${item.name}`);
+          return { ...item, status: 'done' as const };
+        }
+        return item;
+      }) : combinedItems;
+
+      console.log('📦 Финальный чек-лист после обновления коробок:', finalItems.map(item => `${item.name} (${item.type}): ${item.status}`));
+      setChecklistItems(finalItems);
     }
-  }, [expandedItems]);
+  }, [expandedItems, isReadyToShip]);
 
   const fetchOrderDetails = async (id: string) => {
     try {
@@ -688,21 +700,64 @@ export default function OrderView() {
         try {
           const expanded = await expandProductSets(data.data.items, apiCall);
           setExpandedItems(expanded);
-          // Инициализируем checklistItems только товарами, без коробок
-          setChecklistItems(expanded);
+
+          // Проверяем статус заказа - если id3 (На відправку), автоматически отмечаем как собранное
+          const orderIsReadyToShip = data.data.status === '3' || data.data.status === 'id3';
+          setIsReadyToShip(orderIsReadyToShip);
+          let processedItems = expanded;
+
+          if (orderIsReadyToShip) {
+            console.log('📦 Заказ имеет статус id3 (На відправку) - автоматически отмечаем как собранный');
+            console.log('📦 Количество товаров до обработки:', expanded.length);
+            processedItems = expanded.map(item => {
+              console.log(`📦 Устанавливаем статус done для товара: ${item.name} (${item.type})`);
+              return {
+                ...item,
+                status: 'done' as const
+              };
+            });
+            console.log('📦 Количество товаров после обработки:', processedItems.length);
+
+            // Автоматически показываем кнопку печати ТТН для заказов со статусом id3
+            setShowPrintTTN(true);
+          }
+
+          // Если есть выбранные коробки, объединяем их с товарами
+          if (selectedBoxes.length > 0) {
+            const itemsWithoutBoxes = processedItems.filter(item => item.type !== 'box');
+            const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, orderIsReadyToShip);
+            setChecklistItems(combinedItems);
+          } else {
+            // Инициализируем checklistItems с обработанными товарами
+            setChecklistItems(processedItems);
+          }
         } catch (error) {
           console.error('Error expanding product sets:', error);
           // В случае ошибки используем оригинальные товары
+          const isReadyToShipFallback = data.data.status === '3' || data.data.status === 'id3';
           const fallbackItems = data.data.items.map((item: any, index: number) => ({
             id: (index + 1).toString(),
             name: item.productName,
             quantity: item.quantity,
             expectedWeight: item.quantity * 0.3, // Fallback для ошибки разворачивания
-            status: 'default' as const,
+            status: isReadyToShipFallback ? 'done' : 'default' as const,
             type: 'product'
           }));
+
           setExpandedItems(fallbackItems);
-          setChecklistItems(fallbackItems);
+
+          // Если есть выбранные коробки, объединяем их с товарами
+          if (selectedBoxes.length > 0) {
+            const itemsWithoutBoxes = fallbackItems.filter(item => item.type !== 'box');
+            const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, isReadyToShipFallback);
+            setChecklistItems(combinedItems);
+          } else {
+            setChecklistItems(fallbackItems);
+          }
+
+          if (isReadyToShipFallback) {
+            setShowPrintTTN(true);
+          }
         } finally {
           setExpandingSets(false);
         }
@@ -845,29 +900,6 @@ export default function OrderView() {
             <OrderTrackingNumber order={orderForAssembly} />
             <DeviationButton />
 
-            {/* Селектор коробок */}
-            {hasItems && !expandingSets && (
-              <BoxSelector
-                totalPortions={orderForAssembly.totalPortions}
-                onBoxesChange={handleBoxesChange}
-                onActiveBoxChange={setActiveBoxIndex}
-                activeBoxIndex={activeBoxIndex}
-                className="bg-white p-6 rounded-lg shadow"
-              />
-            )}
-
-            {/* Отображение веса на весах */}
-            {hasItems && !expandingSets && (
-              <ScaleWeightDisplay
-                currentScaleWeight={checklistItems.filter(item =>
-                  (item.boxIndex || 0) === activeBoxIndex &&
-                  (item.type === 'box' || item.status === 'done')
-                ).reduce((acc, item) => acc + item.expectedWeight, 0)}
-                totalOrderWeight={expandedItems.reduce((sum, item) => sum + item.expectedWeight, 0)}
-                className="mb-4"
-              />
-            )}
-
             {/* Кнопки имитации оборудования */}
             {hasItems && !expandingSets && equipmentState.isSimulationMode && (
               <div className="w-full relative">
@@ -901,6 +933,29 @@ export default function OrderView() {
                   <span>Live</span>
                 </div>
               </div>
+            )}
+
+            {/* Селектор коробок */}
+            {hasItems && !expandingSets && (
+              <BoxSelector
+                totalPortions={orderForAssembly.totalPortions}
+                onBoxesChange={handleBoxesChange}
+                onActiveBoxChange={setActiveBoxIndex}
+                activeBoxIndex={activeBoxIndex}
+                className="bg-white p-6 rounded-lg shadow"
+              />
+            )}
+
+            {/* Отображение веса на весах */}
+            {hasItems && !expandingSets && (
+              <ScaleWeightDisplay
+                currentScaleWeight={checklistItems.filter(item =>
+                  (item.boxIndex || 0) === activeBoxIndex &&
+                  (item.type === 'box' || item.status === 'done')
+                ).reduce((acc, item) => acc + item.expectedWeight, 0)}
+                totalOrderWeight={expandedItems.reduce((sum, item) => sum + item.expectedWeight, 0)}
+                className="mb-4"
+              />
             )}
 
           </RightPanel>

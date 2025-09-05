@@ -3,6 +3,7 @@ import { Table, TableHeader, TableBody, TableColumn, TableRow, TableCell, Pagina
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { TabsFilter } from "./TabsFilter";
+import { cn } from "../lib/utils";
 
 import UkrPoshtaIcon from "/icons/ukr-poshta.svg";
 import NovaPoshtaIcon from "/icons/nova-poshta.svg";
@@ -56,8 +57,8 @@ const columns = [
   { key: "orderNumber", label: "№ Замов.", className: "w-2/16" },
   { key: "orderDate", label: "Дата створення", className: "w-3/16" },
   { key: "ttn", label: "ТТН", className: "w-6/16" },
-  { key: "quantity", label: "Кіл-ть", className: "w-2/16" },
-  { key: "status", label: "Статус", className: "w-3/16" },
+  { key: "quantity", label: "Кіл-ть", className: "w-1/16" },
+  { key: "status", label: "Статус", className: "w-4/16" },
 ];
 
 export function OrdersTable({ className, filter = "all", searchQuery = "", onTabChange }: OrdersTableProps) {
@@ -231,7 +232,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
 
   // Пагинация - теперь только серверная
   const pages = Math.ceil(totalOrders / pageSize);
-  const displayOrders = orders; // Используем все загруженные заказы без дополнительной клиентской пагинации
+  const displayOrders = filteredOrders; // Используем отфильтрованные заказы для отображения
 
   // Сброс страницы при изменении фильтров
   useEffect(() => {
@@ -250,23 +251,23 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
   const getStatusColor = (status: string) => {
     switch (status) {
       case "1": // Новий
-        return "text-blue-600 bg-blue-100 px-2 py-1 rounded-full text-xs";
+        return "text-blue-600 bg-blue-100";
       case "2": // Підтверджено
-        return "text-yellow-950 bg-yellow-200 px-2 py-1 rounded-full text-xs";
+        return "text-yellow-950 bg-yellow-200";
       case "3": // Готовий до відправлення
-        return "text-orange-600 bg-orange-100 px-2 py-1 rounded-full text-xs";
+        return "text-orange-500 bg-orange-100";
       case "4": // Відправлено
-        return "text-purple-600 bg-purple-100 px-2 py-1 rounded-full text-xs";
+        return "text-neutral-600 bg-blue-100";
       case "5": // Продаж
-        return "text-green-600 bg-green-100 px-2 py-1 rounded-full text-xs";
+        return "text-green-600 bg-green-100";
       case "6": // Відмова
-        return "text-red-600 bg-red-100 px-2 py-1 rounded-full text-xs";
+        return "text-red-600 bg-red-100";
       case "7": // Повернення
-        return "text-red-600 bg-red-100 px-2 py-1 rounded-full text-xs";
+        return "text-red-600 bg-red-100";
       case "8": // Видалено
-        return "text-gray-600 bg-gray-100 px-2 py-1 rounded-full text-xs";
+        return "text-gray-600 bg-gray-100";
       default:
-        return "text-gray-600 bg-gray-100 px-2 py-1 rounded-full text-xs";
+        return "text-gray-600 bg-gray-100";
     }
   };
 
@@ -332,7 +333,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
           emptyContent={<div className="text-grey-500/75">Замовлень не знайдено</div>}
           isLoading={loading}
           loadingContent={
-            <div className="text-grey-500 flex items-center justify-center p-10 mt-10">
+            <div className="text-grey-500 bg-white/50 backdrop-blur-sm rounded-lg flex items-center justify-center self-start mt-5 p-10 z-10 shadow-lg">
               <DynamicIcon name="loader-2" className="animate-spin mr-2" size={16} />
               <span>Завантаження замовлень...</span>
             </div>
@@ -360,7 +361,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2">
-                  <span className={getStatusColor(order.status)}>
+                  <span className={cn(getStatusColor(order.status), "px-2 py-1 rounded-full text-xs whitespace-nowrap")}>
                     {order.rawData?.statusText || order.statusText}
                   </span>
                 </div>

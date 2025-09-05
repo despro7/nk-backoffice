@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 
 // Вспомогательная функция для тестирования расчетов (определена ниже после getProductGroup)
 import {
   Button,
   Select,
   SelectItem,
-  SelectSection,
   DateRangePicker,
   Spinner,
   Card,
@@ -14,7 +13,7 @@ import {
   CardFooter,
 } from "@heroui/react";
 import { useApi } from "../hooks/useApi";
-import { parseDate, CalendarDate, getLocalTimeZone, today } from "@internationalized/date";
+import { CalendarDate, getLocalTimeZone, today } from "@internationalized/date";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate } from "../lib/formatUtils";
@@ -508,11 +507,11 @@ const testCalculations = (products: any[], groupKey?: string) => {
     });
 
     // Добавляем разделитель как disabled SelectItem
-    options.push({
-      key: 'divider',
-      label: '───── Товари ─────',
-      isGroup: false,
-    });
+    // options.push({
+    //   key: 'divider',
+    //   label: '───── Товари ─────',
+    //   isGroup: false,
+    // });
 
     // Добавляем товары
     sortedItems.forEach(item => {

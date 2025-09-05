@@ -218,7 +218,6 @@ export class OrderDatabaseService {
    */
   async getStatusCounts() {
     const startTime = Date.now();
-    console.log('🗄️ [DB] orderDatabaseService.getStatusCounts: Starting status counts query');
 
     try {
       // Получаем количество заказов по каждому статусу
@@ -256,7 +255,6 @@ export class OrderDatabaseService {
       counts.all = counts.confirmed + counts.readyToShip + counts.shipped;
 
       const queryTime = Date.now() - startTime;
-      console.log(`✅ [DB] orderDatabaseService.getStatusCounts: Status counts completed in ${queryTime}ms:`, counts);
 
       return counts;
     } catch (error) {
@@ -287,9 +285,9 @@ export class OrderDatabaseService {
       if (filters?.status) {
         where.status = filters.status;
       } else {
-        // Если статус не указан (фильтр "all"), показываем только активные заказы (статусы 2, 3, 4)
+        // Якщо статус не вказано (фільтр "all"), показуємо всі статуси крім невдалих
         where.status = {
-          in: ['2', '3', '4']
+          in: ['1', '2', '3', '4', '5'] // Усі статуси крім "Відхилені (6)", "Повернені (7)", "Видалені (8)"
         };
       }
 
@@ -317,17 +315,12 @@ export class OrderDatabaseService {
     offset?: number;
     sortBy?: 'orderDate' | 'createdAt' | 'lastSynced' | 'orderNumber';
     sortOrder?: 'asc' | 'desc';
+    dateRange?: {
+      start: Date;
+      end: Date;
+    };
   }) {
     const startTime = Date.now();
-    console.log('🗄️ [DB] orderDatabaseService.getOrders: Starting database query');
-    console.log('🔍 [DB] orderDatabaseService.getOrders: Filters:', {
-      status: filters?.status,
-      syncStatus: filters?.syncStatus,
-      limit: filters?.limit || 100,
-      offset: filters?.offset || 0,
-      sortBy: filters?.sortBy || 'createdAt',
-      sortOrder: filters?.sortOrder || 'desc'
-    });
 
     try {
       const where: any = {};
@@ -335,14 +328,22 @@ export class OrderDatabaseService {
       if (filters?.status) {
         where.status = filters.status;
       } else {
-        // Если статус не указан (фильтр "all"), показываем только активные заказы (статусы 2, 3, 4)
+        // Якщо статус не вказано (фільтр "all"), показуємо всі статуси крім невдалих
         where.status = {
-          in: ['2', '3', '4']
+          in: ['1', '2', '3', '4', '5'] // Усі статуси крім "Відхилені (6)", "Повернені (7)", "Видалені (8)"
         };
       }
 
       if (filters?.syncStatus) {
         where.syncStatus = filters.syncStatus;
+      }
+
+      // Добавляем фильтр по дате
+      if (filters?.dateRange) {
+        where.orderDate = {
+          gte: filters.dateRange.start,
+          lte: filters.dateRange.end
+        };
       }
 
       // Определяем сортировку
@@ -354,13 +355,6 @@ export class OrderDatabaseService {
         orderBy.createdAt = 'desc';
       }
 
-      console.log('🔧 [DB] orderDatabaseService.getOrders: Prisma query params:', {
-        where,
-        orderBy,
-        take: filters?.limit || 100,
-        skip: filters?.offset || 0,
-        include: 'OrdersHistory (take: 5)'
-      });
 
       const dbQueryStart = Date.now();
       // Оптимизированный запрос без OrdersHistory для быстрой загрузки списка
@@ -399,10 +393,8 @@ export class OrderDatabaseService {
       });
 
       const dbQueryTime = Date.now() - dbQueryStart;
-      console.log(`✅ [DB] orderDatabaseService.getOrders: Database query completed in ${dbQueryTime}ms, raw results: ${orders.length} orders`);
 
       // Парсим JSON поля
-      console.log('🔄 [DB] orderDatabaseService.getOrders: Parsing JSON fields...');
       const parseStartTime = Date.now();
 
       const parsedOrders = orders.map(order => ({
@@ -412,11 +404,8 @@ export class OrderDatabaseService {
       }));
 
       const parseTime = Date.now() - parseStartTime;
-      console.log(`✅ [DB] orderDatabaseService.getOrders: JSON parsing completed in ${parseTime}ms`);
 
       const totalTime = Date.now() - startTime;
-      console.log(`🏁 [DB] orderDatabaseService.getOrders: Total execution time: ${totalTime}ms`);
-      console.log(`📊 [DB] orderDatabaseService.getOrders: Returning ${parsedOrders.length} parsed orders`);
 
       return parsedOrders;
     } catch (error) {

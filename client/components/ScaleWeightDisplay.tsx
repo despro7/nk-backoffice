@@ -24,7 +24,7 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
       <div className="space-y-3">
         {/* Заголовок */}
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-gray-700">Вага на вагах</span>
+          <span className="text-sm font-medium text-gray-700">Поточна вага</span>
           <div className="flex items-center gap-2">
             <div className={cn(
               "w-2 h-2 rounded-full",
