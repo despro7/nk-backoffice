@@ -67,40 +67,66 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
     if (req.body.info?.webhookEvent === 'status_change') {
       // Синхронизируем конкретный заказ
       try {
-        // Получаем детали заказа из SalesDrive
-        const orderDetails = await salesDriveService.getOrderDetails(orderIdentifier);
-        
+        console.log(`🔍 Looking for existing order in database first...`);
+
+        // Сначала проверим, есть ли заказ в нашей БД
+        let existingOrder = await orderDatabaseService.getOrderByExternalId(orderIdentifier);
+        let orderDetails = null;
+
+        if (existingOrder) {
+          console.log(`✅ Found existing order ${existingOrder.externalId} in database`);
+          // Используем данные из БД как orderDetails
+          orderDetails = {
+            id: existingOrder.id,
+            orderNumber: existingOrder.externalId,
+            status: existingOrder.status,
+            statusText: existingOrder.statusText,
+            items: existingOrder.items ? JSON.parse(existingOrder.items) : [],
+            customerName: existingOrder.customerName,
+            customerPhone: existingOrder.customerPhone,
+            deliveryAddress: existingOrder.deliveryAddress,
+            totalPrice: existingOrder.totalPrice,
+            orderDate: existingOrder.orderDate,
+            shippingMethod: existingOrder.shippingMethod,
+            paymentMethod: existingOrder.paymentMethod,
+            cityName: existingOrder.cityName,
+            provider: existingOrder.provider,
+            pricinaZnizki: existingOrder.pricinaZnizki,
+            sajt: existingOrder.sajt,
+            ttn: existingOrder.ttn,
+            quantity: existingOrder.quantity
+          };
+        } else {
+          console.log(`❌ Order ${orderIdentifier} not found in database, fetching from SalesDrive...`);
+          // Если заказа нет в БД, получаем детали из SalesDrive
+          orderDetails = await salesDriveService.getOrderDetails(orderIdentifier);
+        }
+
         if (orderDetails) {
-          // Проверяем существование в БД
-          const existingOrder = await orderDatabaseService.getOrderByExternalId(orderDetails.orderNumber);
-          
+          console.log(`📋 Order details received:`);
+          console.log(`   - orderIdentifier (from webhook): ${orderIdentifier}`);
+          console.log(`   - orderDetails.orderNumber: ${orderDetails.orderNumber}`);
+          console.log(`   - orderDetails.id: ${orderDetails.id}`);
+
+          // Проверяем существование в БД (уже проверили выше, но перепроверим для надежности)
+          if (!existingOrder) {
+            // Если не найден по orderIdentifier, пробуем найти по orderNumber из деталей
+            existingOrder = await orderDatabaseService.getOrderByExternalId(orderDetails.orderNumber);
+
+            if (!existingOrder && orderDetails.id) {
+              // Если не найден по orderNumber, пробуем найти по id
+              existingOrder = await orderDatabaseService.getOrderByExternalId(orderDetails.id);
+            }
+          }
+
+          console.log(`   - existingOrder found: ${!!existingOrder}`);
+          console.log(`   - orderDetails.orderNumber: ${orderDetails.orderNumber}`);
+          console.log(`   - orderDetails.id: ${orderDetails.id}`);
+
           if (existingOrder) {
-            // Обновляем существующий заказ
-            await orderDatabaseService.updateOrder(orderDetails.orderNumber, {
-              status: orderDetails.status,
-              statusText: orderDetails.statusText,
-              items: orderDetails.items,
-              rawData: orderDetails,
-              customerName: orderDetails.customerName,
-              customerPhone: orderDetails.customerPhone,
-              deliveryAddress: orderDetails.deliveryAddress,
-              totalPrice: orderDetails.totalPrice,
-              orderDate: orderDetails.orderDate,
-              shippingMethod: orderDetails.shippingMethod,
-              paymentMethod: orderDetails.paymentMethod,
-              cityName: orderDetails.cityName,
-              provider: orderDetails.provider
-            });
-            
-            console.log(`✅ Order ${orderDetails.orderNumber} updated via webhook`);
-          } else {
-            // Создаем новый заказ
-            await orderDatabaseService.createOrder({
-              id: orderDetails.id,
-              externalId: orderDetails.orderNumber,
-              orderNumber: orderDetails.orderNumber,
-              ttn: orderDetails.ttn,
-              quantity: orderDetails.quantity,
+            console.log(`🔄 Updating existing order ${existingOrder.externalId}`);
+
+            const updateData = {
               status: orderDetails.status,
               statusText: orderDetails.statusText,
               items: orderDetails.items,
@@ -115,7 +141,51 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               cityName: orderDetails.cityName,
               provider: orderDetails.provider,
               pricinaZnizki: orderDetails.pricinaZnizki,
-              sajt: orderDetails.sajt
+              sajt: orderDetails.sajt,
+              // Обновляем данные из webhook payload если они есть
+              ttn: orderDetails.ttn,
+              quantity: orderDetails.quantity
+            };
+
+            console.log(`📊 Update data:`, {
+              status: updateData.status,
+              statusText: updateData.statusText,
+              hasItems: !!updateData.items,
+              hasRawData: !!updateData.rawData,
+              customerName: updateData.customerName,
+              totalPrice: updateData.totalPrice
+            });
+
+            // Обновляем существующий заказ
+            await orderDatabaseService.updateOrder(existingOrder.externalId, updateData);
+            
+            console.log(`✅ Order ${orderDetails.orderNumber} updated via webhook`);
+          } else {
+            console.log(`🆕 Creating new order ${orderDetails.orderNumber}`);
+
+            // Создаем новый заказ с данными из webhook
+            const webhookData = req.body.data;
+            await orderDatabaseService.createOrder({
+              id: webhookData.id?.toString() || orderDetails.id?.toString(),
+              externalId: webhookData.externalId || orderDetails.orderNumber,
+              orderNumber: webhookData.externalId || orderDetails.orderNumber,
+              ttn: webhookData.ord_novaposhta?.EN || orderDetails.ttn,
+              quantity: webhookData.kilTPorcij || orderDetails.quantity,
+              status: orderDetails.status,
+              statusText: orderDetails.statusText,
+              items: orderDetails.items,
+              rawData: req.body, // Сохраняем полный webhook payload
+              customerName: webhookData.contacts?.[0]?.fName + ' ' + webhookData.contacts?.[0]?.lName,
+              customerPhone: webhookData.contacts?.[0]?.phone?.[0],
+              deliveryAddress: webhookData.shipping_address,
+              totalPrice: webhookData.paymentAmount,
+              orderDate: webhookData.orderTime,
+              shippingMethod: webhookData.shipping_method?.toString(),
+              paymentMethod: webhookData.payment_method?.toString(),
+              cityName: webhookData.ord_novaposhta?.cityName,
+              provider: 'SalesDrive',
+              pricinaZnizki: webhookData.pricinaZnizki,
+              sajt: webhookData.sajt
             });
             
             console.log(`✅ Order ${orderDetails.orderNumber} created via webhook`);
@@ -125,9 +195,15 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
         }
       } catch (error) {
         console.error(`❌ Error processing webhook for order ${orderIdentifier}:`, error);
+        console.error(`   Error details:`, {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        });
         return res.status(500).json({
           success: false,
-          error: 'Failed to process order update'
+          error: 'Failed to process order update',
+          details: error.message
         });
       }
     } else {
