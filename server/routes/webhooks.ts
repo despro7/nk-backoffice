@@ -124,53 +124,53 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           console.log(`   - orderDetails.orderNumber: ${orderDetails.orderNumber}`);
           console.log(`   - orderDetails.id: ${orderDetails.id}`);
 
-          if (existingOrder) {
-            console.log(`🔄 Updating existing order ${existingOrder.externalId}`);
+                  // Маппинг статусов из SalesDrive в нашу систему
+        // В БД статусы хранятся как строки '1', '2', '3' и т.д.
+        const statusMapping: { [key: number]: string } = {
+          1: '1', // Нові
+          2: '2', // Підтверджено
+          3: '3', // На відправку
+          4: '4', // Відправлено
+          5: '5', // Продаж
+          6: '6', // Відмова
+          7: '7', // Повернення
+          8: '8'  // Видалений
+        };
 
-            // Создаем безопасный rawData объект
-            const safeRawData = {
-              webhookType: req.body.info?.webhookType,
-              webhookEvent: req.body.info?.webhookEvent,
-              account: req.body.info?.account,
-              data: {
-                id: req.body.data?.id,
-                externalId: req.body.data?.externalId,
-                statusId: req.body.data?.statusId,
-                orderTime: req.body.data?.orderTime,
-                paymentAmount: req.body.data?.paymentAmount,
-                shipping_address: req.body.data?.shipping_address,
-                contacts: req.body.data?.contacts,
-                products: req.body.data?.products
-              }
-            };
+        // Функция для получения текста статуса
+        const getStatusText = (status: string): string => {
+          const statusTexts: { [key: string]: string } = {
+            '1': 'Нові',
+            '2': 'Підтверджено',
+            '3': 'На відправку',
+            '4': 'Відправлено',
+            '5': 'Продаж',
+            '6': 'Відмова',
+            '7': 'Повернення',
+            '8': 'Видалений'
+          };
+          return statusTexts[status] || 'Невідомий статус';
+        };
 
-            // Маппинг статусов из SalesDrive в нашу систему
-            // В БД статусы хранятся как строки '1', '2', '3' и т.д.
-            const statusMapping: { [key: number]: string } = {
-              1: '1', // Нові
-              2: '2', // Підтверджено
-              3: '3', // На відправку
-              4: '4', // Відправлено
-              5: '5', // Продаж
-              6: '6', // Відмова
-              7: '7', // Повернення
-              8: '8'  // Видалений
-            };
+        if (existingOrder) {
+          console.log(`🔄 Updating existing order ${existingOrder.externalId}`);
 
-            // Функция для получения текста статуса
-            const getStatusText = (status: string): string => {
-              const statusTexts: { [key: string]: string } = {
-                '1': 'Нові',
-                '2': 'Підтверджено',
-                '3': 'На відправку',
-                '4': 'Відправлено',
-                '5': 'Продаж',
-                '6': 'Відмова',
-                '7': 'Повернення',
-                '8': 'Видалений'
-              };
-              return statusTexts[status] || 'Невідомий статус';
-            };
+          // Создаем безопасный rawData объект
+          const safeRawData = {
+            webhookType: req.body.info?.webhookType,
+            webhookEvent: req.body.info?.webhookEvent,
+            account: req.body.info?.account,
+            data: {
+              id: req.body.data?.id,
+              externalId: req.body.data?.externalId,
+              statusId: req.body.data?.statusId,
+              orderTime: req.body.data?.orderTime,
+              paymentAmount: req.body.data?.paymentAmount,
+              shipping_address: req.body.data?.shipping_address,
+              contacts: req.body.data?.contacts,
+              products: req.body.data?.products
+            }
+          };
 
             const webhookData = req.body.data;
             const newStatus = statusMapping[webhookData.statusId] || orderDetails.status;
@@ -274,15 +274,21 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               }
             };
 
-            await orderDatabaseService.createOrder({
-              id: webhookData.id?.toString() || orderDetails.id?.toString(),
-              externalId: webhookData.externalId || orderDetails.orderNumber,
-              orderNumber: webhookData.externalId || orderDetails.orderNumber,
-              ttn: webhookData.ord_novaposhta?.EN || orderDetails.ttn,
-              quantity: webhookData.kilTPorcij || orderDetails.quantity,
-              status: orderDetails.status,
-              statusText: orderDetails.statusText,
-              items: orderDetails.items,
+            // Маппинг статуса для нового заказа из webhook
+            const newOrderStatus = statusMapping[webhookData.statusId] || '1'; // По умолчанию '1' (Нові)
+            const newOrderStatusText = getStatusText(newOrderStatus);
+
+            console.log(`🆕 Creating new order with status: ${newOrderStatus} (${newOrderStatusText})`);
+
+            const createData = {
+              id: webhookData.id?.toString() || orderDetails?.id?.toString(),
+              externalId: webhookData.externalId || orderDetails?.orderNumber,
+              orderNumber: webhookData.externalId || orderDetails?.orderNumber,
+              ttn: webhookData.ord_novaposhta?.EN || orderDetails?.ttn,
+              quantity: webhookData.kilTPorcij || orderDetails?.quantity,
+              status: newOrderStatus,
+              statusText: newOrderStatusText,
+              items: orderDetails?.items,
               rawData: safeRawDataForCreate, // Используем безопасный объект
               customerName: webhookData.contacts?.[0]?.fName + ' ' + webhookData.contacts?.[0]?.lName,
               customerPhone: webhookData.contacts?.[0]?.phone?.[0],
@@ -295,9 +301,52 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               provider: 'SalesDrive',
               pricinaZnizki: webhookData.pricinaZnizki,
               sajt: webhookData.sajt
+            };
+
+            console.log(`📋 Create data:`, {
+              id: createData.id,
+              externalId: createData.externalId,
+              status: createData.status,
+              statusText: createData.statusText,
+              customerName: createData.customerName,
+              totalPrice: createData.totalPrice,
+              hasItems: !!createData.items
             });
-            
-            console.log(`✅ Order ${orderDetails.orderNumber} created via webhook`);
+
+            // Проверяем сериализацию данных перед созданием
+            try {
+              const testItems = createData.items ? JSON.stringify(createData.items) : null;
+              const testRawData = JSON.stringify(createData.rawData);
+
+              console.log(`✅ Data serialization test passed: items=${testItems?.length || 0} chars, rawData=${testRawData.length} chars`);
+            } catch (serializeError) {
+              console.error(`❌ Data serialization failed:`, serializeError);
+              console.log(`   Items type: ${typeof createData.items}`);
+              console.log(`   RawData type: ${typeof createData.rawData}`);
+              // Не создаем заказ если данные не сериализуются
+              return res.status(500).json({
+                success: false,
+                error: 'Data serialization failed',
+                details: serializeError.message
+              });
+            }
+
+            try {
+              await orderDatabaseService.createOrder(createData);
+              console.log(`✅ Order ${createData.externalId} created via webhook`);
+            } catch (createError) {
+              console.error(`❌ Failed to create order:`, createError);
+              console.error(`   Create error details:`, {
+                message: createError.message,
+                code: createError.code,
+                meta: createError.meta
+              });
+              return res.status(500).json({
+                success: false,
+                error: 'Failed to create order',
+                details: createError.message
+              });
+            }
           }
         } else {
           console.warn(`⚠️ Order ${orderIdentifier} not found in SalesDrive`);

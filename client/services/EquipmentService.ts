@@ -57,7 +57,7 @@ export class EquipmentService {
     this.config = {
       connectionType: 'simulation',
       scale: {
-        comPort: 'COM4',
+        comPort: 'COM5',
         baudRate: 9600,
         dataBits: 8,
         stopBits: 1,

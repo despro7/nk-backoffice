@@ -1,6 +1,7 @@
 import React from 'react';
 import { SettingsManager } from '../components/SettingsManager';
 import { ServerStatusSettings } from '../components/ServerStatusSettings';
+import { UserRegistrationManager } from '../components/UserRegistrationManager';
 import { useRoleAccess } from '../hooks/useRoleAccess';
 
 const SettingsAdmin: React.FC = () => {
@@ -20,6 +21,11 @@ const SettingsAdmin: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      {/* Регистрация пользователей */}
+      <section>
+        <UserRegistrationManager />
+      </section>
+
       {/* Настройки статуса сервера */}
       <section>
         <ServerStatusSettings />

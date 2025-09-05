@@ -51,18 +51,18 @@ export class ScaleService {
 
   constructor() {
     this.config = {
-      comPort: 'COM4',
+      comPort: 'COM5',
       baudRate: 9600,
       dataBits: 8,
       stopBits: 1,
       parity: 'none'
     };
 
-    // Протокол для ваг ВТА-60 (може потребувати налаштування)
+    // Протокол для ваг ВТА-60 (простой текстовый формат)
     this.protocol = {
-      startByte: '\x02', // STX
-      endByte: '\x03',   // ETX
-      dataLength: 8,
+      startByte: '',     // Нет стартового байта
+      endByte: '\n',     // Конец строки
+      dataLength: 0,     // Переменная длина
       checksum: false
     };
   }
@@ -168,19 +168,17 @@ export class ScaleService {
   private processWeightData(data: string): void {
     this.weightBuffer += data;
 
-    // Шукаємо повні повідомлення
-    let startIndex = this.weightBuffer.indexOf(this.protocol.startByte);
+    // Шукаємо повні повідомлення (простой текстовый формат)
     let endIndex = this.weightBuffer.indexOf(this.protocol.endByte);
 
-    while (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-      const message = this.weightBuffer.substring(startIndex + 1, endIndex);
+    while (endIndex !== -1) {
+      const message = this.weightBuffer.substring(0, endIndex);
       this.parseWeightMessage(message);
 
       // Видаляємо оброблене повідомлення
       this.weightBuffer = this.weightBuffer.substring(endIndex + 1);
-      
+
       // Шукаємо наступне повідомлення
-      startIndex = this.weightBuffer.indexOf(this.protocol.startByte);
       endIndex = this.weightBuffer.indexOf(this.protocol.endByte);
     }
 
@@ -193,17 +191,27 @@ export class ScaleService {
   // Парсинг повідомлення з ваг
   private parseWeightMessage(message: string): void {
     try {
-      // Прибираємо зайві символи
-      const cleanMessage = message.replace(/[^\d.-]/g, '');
-      
-      if (cleanMessage) {
-        const weight = parseFloat(cleanMessage);
-        
+      console.log('Raw message from scale:', message);
+
+      // Очищаем сообщение от лишних символов
+      let cleanMessage = message.trim();
+
+      // Убираем единицы измерения и другие текстовые части
+      cleanMessage = cleanMessage.replace(/[a-zA-Z\s]/g, '');
+
+      // Ищем числа с точкой (вес в формате 1.234 или 1,234)
+      const weightMatch = cleanMessage.match(/[\d]+[.,][\d]+/);
+
+      if (weightMatch) {
+        // Заменяем запятую на точку для корректного парсинга
+        const weightStr = weightMatch[0].replace(',', '.');
+        const weight = parseFloat(weightStr);
+
         if (!isNaN(weight) && weight >= 0) {
           const scaleData: ScaleData = {
             weight: weight,
             unit: 'kg',
-            isStable: true, // ВТА-60 зазвичай передає стабільну вагу
+            isStable: true, // Предполагаем стабильность
             timestamp: new Date()
           };
 
@@ -212,11 +220,15 @@ export class ScaleService {
             this.onWeightChange(scaleData);
           }
 
-          console.log('Weight received:', scaleData);
+          console.log('✅ Weight parsed successfully:', scaleData);
+        } else {
+          console.log('⚠️ Invalid weight value:', weight);
         }
+      } else {
+        console.log('⚠️ No valid weight found in message:', cleanMessage);
       }
     } catch (error) {
-      console.error('Error parsing weight message:', error);
+      console.error('❌ Error parsing weight message:', error);
     }
   }
 
@@ -305,6 +317,71 @@ export class ScaleService {
       console.error('Scale connection test failed:', error);
       return false;
     }
+  }
+
+  // Тест различных конфигураций подключения
+  public async testConnectionConfigs(): Promise<{config: ScaleConnectionConfig, success: boolean}[]> {
+    const configs: ScaleConnectionConfig[] = [
+      { comPort: 'COM5', baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'none' },
+      { comPort: 'COM5', baudRate: 19200, dataBits: 8, stopBits: 1, parity: 'none' },
+      { comPort: 'COM5', baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'even' },
+      { comPort: 'COM5', baudRate: 19200, dataBits: 8, stopBits: 1, parity: 'even' },
+      { comPort: 'COM5', baudRate: 4800, dataBits: 8, stopBits: 1, parity: 'none' },
+      { comPort: 'COM5', baudRate: 38400, dataBits: 8, stopBits: 1, parity: 'none' }
+    ];
+
+    const results: {config: ScaleConnectionConfig, success: boolean}[] = [];
+
+    console.log('🧪 Тестирование различных конфигураций подключения к весам...\n');
+
+    for (const config of configs) {
+      console.log(`Тестируем: ${config.baudRate} baud, ${config.parity} parity`);
+
+      try {
+        // Обновляем конфигурацию
+        this.updateConfig(config);
+
+        // Пытаемся подключиться
+        const success = await this.connect();
+
+        if (success) {
+          console.log('✅ Подключение успешно');
+
+          // Ждем немного данных (5 секунд)
+          let dataReceived = false;
+          const timeout = setTimeout(() => {
+            if (!dataReceived) {
+              console.log('⚠️ Данные не получены в течение 5 секунд');
+            }
+          }, 5000);
+
+          const originalCallback = this.onWeightChange;
+          this.onWeightChange = (data) => {
+            dataReceived = true;
+            clearTimeout(timeout);
+            console.log(`✅ Получены данные: ${data.weight} кг`);
+          };
+
+          await new Promise(resolve => setTimeout(resolve, 5000));
+
+          // Отключаемся
+          await this.disconnect();
+          this.onWeightChange = originalCallback;
+
+          results.push({ config, success: dataReceived });
+          console.log(`Результат: ${dataReceived ? 'УСПЕХ' : 'ПОДКЛЮЧЕНИЕ БЕЗ ДАННЫХ'}\n`);
+        } else {
+          console.log('❌ Подключение не удалось\n');
+          results.push({ config, success: false });
+        }
+
+      } catch (error) {
+        console.error(`❌ Ошибка при тестировании: ${error.message}\n`);
+        results.push({ config, success: false });
+      }
+    }
+
+    return results;
   }
 }
 

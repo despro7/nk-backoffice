@@ -154,40 +154,37 @@ class ScaleRealTest {
   async testDifferentConfigurations(): Promise<void> {
     console.log('\n🧪 === ТЕСТ РАЗЛИЧНЫХ КОНФИГУРАЦИЙ ===\n');
 
-    const configurations = [
-      { comPort: 'COM1', baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'none' as const },
-      { comPort: 'COM1', baudRate: 19200, dataBits: 8, stopBits: 1, parity: 'none' as const },
-      { comPort: 'COM1', baudRate: 9600, dataBits: 7, stopBits: 1, parity: 'even' as const }
-    ];
+    try {
+      const results = await this.scaleService.testConnectionConfigs();
 
-    for (let i = 0; i < configurations.length; i++) {
-      const config = configurations[i];
-      console.log(`${i + 1}️⃣ Тестирование конфигурации: ${JSON.stringify(config)}`);
-      
-      try {
-        // Обновляем конфигурацию
-        this.scaleService.updateConfig(config);
-        
-        // Пытаемся подключиться
-        const connected = await this.scaleService.connect();
-        
-        if (connected) {
-          console.log('✅ Подключение успешно с этой конфигурацией');
-          
-          // Ждем немного данных
-          await this.waitForData(3000);
-          
-          // Отключаемся
-          await this.scaleService.disconnect();
-        } else {
-          console.log('❌ Подключение не удалось с этой конфигурацией');
+      console.log('\n📊 === РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ КОНФИГУРАЦИЙ ===\n');
+
+      let bestConfig = null;
+      let bestSuccess = false;
+
+      results.forEach((result, index) => {
+        const status = result.success ? '✅' : '❌';
+        console.log(`${index + 1}. ${status} ${result.config.baudRate} baud, ${result.config.parity} parity`);
+
+        if (result.success && !bestSuccess) {
+          bestConfig = result.config;
+          bestSuccess = true;
         }
-        
-      } catch (error) {
-        console.log(`❌ Ошибка с конфигурацией: ${error.message}`);
+      });
+
+      if (bestConfig) {
+        console.log(`\n🎯 Рекомендуемая конфигурация: ${bestConfig.baudRate} baud, ${bestConfig.parity} parity`);
+        console.log('Примените эту конфигурацию в настройках оборудования!');
+      } else {
+        console.log('\n⚠️ Ни одна конфигурация не сработала. Проверьте:');
+        console.log('  - Физическое подключение весов');
+        console.log('  - Драйвер USB-COM конвертера');
+        console.log('  - Питание весов');
+        console.log('  - Кабель подключения');
       }
-      
-      console.log('');
+
+    } catch (error) {
+      console.error('❌ Ошибка при тестировании конфигураций:', error);
     }
   }
 
@@ -300,9 +297,9 @@ async function runScaleRealTests() {
   try {
     // Основной тест
     await tester.testScaleConnection();
-    
-    // Дополнительные тесты (можно включить по желанию)
-    // await tester.testDifferentConfigurations();
+
+    // Дополнительные тесты
+    await tester.testDifferentConfigurations();
     // await tester.testConnectionStability();
     
     // Выводим результаты

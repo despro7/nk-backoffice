@@ -516,7 +516,7 @@ export const SettingsEquipment = () => {
                 label="COM-порт"
                 labelPlacement="outside"
                 className="block text-sm font-medium text-gray-700 mb-1"
-                value={localConfig.scale?.comPort || "COM4"}
+                value={localConfig.scale?.comPort || "COM5"}
                 onChange={(e) =>
                   handleConfigChange("scale", "comPort", e.target.value)
                 }
