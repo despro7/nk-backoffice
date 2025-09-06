@@ -49,7 +49,7 @@ export class ToastService {
         credentials: 'include'
       });
       if (response.ok) {
-        this.settings = await response.json();
+        this.settings = await response.json() as LoggingSettings;
       } else if (response.status === 401) {
         // Користувач не авторизований, використовуємо налаштування за замовчуванням
         console.log('🔧 [ToastService] User not authenticated, using default settings');
