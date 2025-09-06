@@ -47,6 +47,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Кеш для профиля пользователя (5 минут)
+  const profileCacheRef = useRef<{ data: UserWithExpiry | null; timestamp: number } | null>(null);
+  const PROFILE_CACHE_DURATION = 5 * 60 * 1000; // 5 минут
+
   // Глобальное состояние оборудования
   const [equipmentState, equipmentActions] = useEquipment();
 
@@ -58,10 +62,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return 55 * 60 * 1000; // По умолчанию 55 минут
   };
 
-  // Проверяем статус аутентификации при загрузке
+  // Проверяем статус аутентификации при загрузке с небольшой задержкой
   useEffect(() => {
-    log('🔄 Проверяем статус аутентификации при загрузке');
-    checkAuthStatus();
+    const timer = setTimeout(() => {
+      if (process.env.NODE_ENV === 'development') {
+        log('🔄 Проверяем статус аутентификации при загрузке');
+      }
+      checkAuthStatus();
+    }, 100); // Небольшая задержка для предотвращения одновременных запросов
+
+    return () => clearTimeout(timer);
   }, []);
 
   // Умное обновление токенов - обновляем за 5 минут до истечения (тестовый режим)
@@ -131,25 +141,53 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [user]);
 
   const checkAuthStatus = async () => {
-    console.log('🔍 [AuthContext] checkAuthStatus called');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 [AuthContext] checkAuthStatus called');
+    }
+
+    // Проверяем кеш профиля
+    const now = Date.now();
+    if (profileCacheRef.current &&
+        (now - profileCacheRef.current.timestamp) < PROFILE_CACHE_DURATION) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📋 [AuthContext] Using cached profile');
+      }
+      setUser(profileCacheRef.current.data);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const response = await fetch('/api/auth/profile', {
         credentials: 'include'
       });
 
-      console.log('📡 [AuthContext] checkAuthStatus response:', response.status);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📡 [AuthContext] checkAuthStatus response:', response.status);
+      }
 
       if (response.ok) {
         const userData = await response.json();
-        console.log('✅ [AuthContext] checkAuthStatus success, userData:', userData);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ [AuthContext] checkAuthStatus success');
+        }
 
         // Сохраняем информацию о времени жизни токена
         const userWithExpiry = {
           ...userData,
           expiresIn: userData.expiresIn
         };
+
+        // Сохраняем в кеш
+        profileCacheRef.current = {
+          data: userWithExpiry,
+          timestamp: now
+        };
+
         setUser(userWithExpiry);
-        console.log('👤 [AuthContext] User state updated:', userWithExpiry);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('👤 [AuthContext] User state updated');
+        }
         
         // Если токен валиден, планируем следующее обновление
         if (refreshTimeoutRef.current) {
@@ -354,7 +392,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = async () => {
-    log('🚪 Начинаем выход из системы...');
+    if (process.env.NODE_ENV === 'development') {
+      log('🚪 Начинаем выход из системы...');
+    }
     try {
       // Очищаем таймер обновления токена
       if (refreshTimeoutRef.current) {
@@ -366,7 +406,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         method: 'POST',
         credentials: 'include'
       });
-      log('✅ Успешный выход из системы');
+
+      // Очищаем кеш профиля
+      profileCacheRef.current = null;
+
+      if (process.env.NODE_ENV === 'development') {
+        log('✅ Успешный выход из системы');
+      }
 
       // Показываем Toast уведомление
       ToastService.logoutSuccess();
@@ -378,12 +424,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const forceLogout = () => {
-    log('🔄 Принудительный выход из системы');
+    if (process.env.NODE_ENV === 'development') {
+      log('🔄 Принудительный выход из системы');
+    }
     // Очищаем таймер обновления токена
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current);
       refreshTimeoutRef.current = null;
     }
+
+    // Очищаем кеш профиля
+    profileCacheRef.current = null;
+
     setUser(null);
   };
 

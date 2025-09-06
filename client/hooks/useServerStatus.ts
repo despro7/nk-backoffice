@@ -34,10 +34,10 @@ export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
         setIntervalMs(fallbackIntervalMs);
       }
     } catch (error) {
-      if (error.name !== 'AbortError') {
+      if (error.name !== 'AbortError' && process.env.NODE_ENV === 'development') {
         console.error('❌ [useServerStatus] Error fetching interval setting:', error);
-        setIntervalMs(fallbackIntervalMs);
       }
+      setIntervalMs(fallbackIntervalMs);
     }
   }, [fallbackIntervalMs]);
 
@@ -61,7 +61,9 @@ export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
       });
 
     } catch (error) {
-      console.error('❌ [useServerStatus] Error checking server status:', error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('❌ [useServerStatus] Error checking server status:', error);
+      }
       setStatus({
         isOnline: false,
         isLoading: false,

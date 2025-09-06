@@ -20,7 +20,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const location = useLocation();
   const navigate = useNavigate();
 
-  console.log('🔒 [ProtectedRoute] user:', user, 'isLoading:', isLoading, 'pathname:', location.pathname);
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔒 [ProtectedRoute] checking access for:', location.pathname);
+  }
 
   // Следим за изменениями состояния пользователя
   useEffect(() => {
@@ -29,7 +31,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     // Если пользователь только что авторизовался и мы на странице /auth, редиректим
     if (user && location.pathname === '/auth') {
       const lastVisitedPath = localStorage.getItem('lastVisitedPath') || '/';
-      console.log('🚀 [ProtectedRoute] User authenticated, redirecting to:', lastVisitedPath);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🚀 [ProtectedRoute] User authenticated, redirecting to:', lastVisitedPath);
+      }
       navigate(lastVisitedPath, { replace: true });
       localStorage.removeItem('lastVisitedPath');
     }
@@ -44,7 +48,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   if (!user) {
-    console.log('🚫 [ProtectedRoute] User not authenticated, redirecting to /auth');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🚫 [ProtectedRoute] User not authenticated, redirecting to /auth');
+    }
     // Сохраняем текущий путь перед редиректом на /auth
     if (location.pathname !== '/auth' && location.pathname !== '/') {
       localStorage.setItem('lastVisitedPath', location.pathname);
@@ -52,7 +58,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/auth" replace />;
   }
 
-  console.log('✅ [ProtectedRoute] User authenticated, rendering children');
+  if (process.env.NODE_ENV === 'development') {
+    console.log('✅ [ProtectedRoute] User authenticated, rendering children');
+  }
 
   if (!hasAccess(user.role, requiredRoles, minRole)) {
     return (

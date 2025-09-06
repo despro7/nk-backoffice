@@ -59,11 +59,32 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   const scaleService = useRef(new ScaleService());
   const scannerService = useRef(new BarcodeScannerService());
 
+  // Кеш для настроек оборудования (10 минут)
+  const configCacheRef = useRef<{ data: EquipmentConfig | null; timestamp: number } | null>(null);
+  const CONFIG_CACHE_DURATION = 10 * 60 * 1000; // 10 минут
+
 
   // Загрузка конфигурации из БД
   const loadConfig = useCallback(async () => {
     try {
       setIsLoading(true);
+
+      // Проверяем кеш конфигурации
+      const now = Date.now();
+      if (configCacheRef.current &&
+          (now - configCacheRef.current.timestamp) < CONFIG_CACHE_DURATION) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔧 Using cached equipment config');
+        }
+        setConfig({ ...configCacheRef.current.data });
+        updateStatus({
+          isSimulationMode: configCacheRef.current.data?.connectionType === 'simulation',
+          isConnected: configCacheRef.current.data?.connectionType === 'simulation'
+        });
+        setIsLoading(false);
+        return;
+      }
+
       const response = await fetch('/api/settings/equipment', {
         credentials: 'include'
       });
@@ -71,6 +92,12 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
+          // Сохраняем в кеш
+          configCacheRef.current = {
+            data: result.data,
+            timestamp: now
+          };
+
           setConfig({ ...result.data }); // Создаем новый объект
           // Обновляем статус симуляции
           updateStatus({
@@ -80,7 +107,9 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         }
       }
     } catch (error) {
-      console.error('Error loading equipment config:', error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error loading equipment config:', error);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -102,6 +131,12 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
+          // Обновляем кеш
+          configCacheRef.current = {
+            data: newConfig,
+            timestamp: Date.now()
+          };
+
           setConfig({ ...newConfig }); // Создаем новый объект
           // Обновляем статус симуляции
           updateStatus({

@@ -48,6 +48,78 @@ export interface OrderUpdateData {
 
 export class OrderDatabaseService {
   /**
+   * Умная проверка изменений в заказе
+   */
+  detectOrderChanges(existingOrder: any, newData: any): string[] {
+    const changes: string[] = [];
+    const fieldsToCheck = [
+      'status', 'statusText', 'ttn', 'quantity', 'customerName', 'customerPhone',
+      'deliveryAddress', 'totalPrice', 'shippingMethod', 'paymentMethod',
+      'cityName', 'provider', 'pricinaZnizki', 'sajt'
+    ];
+
+    console.log(`🔍 [DEBUG] Detecting changes for order ${newData.orderNumber || existingOrder.externalId}`);
+
+    // Проверяем простые поля
+    for (const field of fieldsToCheck) {
+      if (newData[field] !== undefined && existingOrder[field] !== newData[field]) {
+        console.log(`🔄 [DEBUG] Field '${field}' changed: '${existingOrder[field]}' → '${newData[field]}'`);
+        changes.push(field);
+      }
+    }
+
+    // Проверяем orderDate
+    if (newData.orderDate) {
+      const newDate = new Date(newData.orderDate).toISOString().split('T')[0];
+      const existingDate = existingOrder.orderDate ? new Date(existingOrder.orderDate).toISOString().split('T')[0] : null;
+      if (newDate !== existingDate) {
+        console.log(`🔄 [DEBUG] orderDate changed: '${existingDate}' → '${newDate}'`);
+        changes.push('orderDate');
+      }
+    }
+
+    // Проверяем items (глубокое сравнение)
+    if (newData.items && existingOrder.items) {
+      try {
+        const newItemsStr = JSON.stringify(newData.items);
+        const existingItemsStr = typeof existingOrder.items === 'string'
+          ? existingOrder.items
+          : JSON.stringify(existingOrder.items);
+
+        if (newItemsStr !== existingItemsStr) {
+          console.log(`🔄 [DEBUG] items changed (length: ${newItemsStr.length} vs ${existingItemsStr.length})`);
+          changes.push('items');
+        }
+      } catch (error) {
+        // Если не удалось сравнить, считаем что изменилось
+        console.log(`🔄 [DEBUG] items comparison failed, assuming changed:`, error);
+        changes.push('items');
+      }
+    }
+
+    // Проверяем rawData (глубокое сравнение)
+    if (newData.rawData && existingOrder.rawData) {
+      try {
+        const newRawDataStr = JSON.stringify(newData.rawData);
+        const existingRawDataStr = typeof existingOrder.rawData === 'string'
+          ? existingOrder.rawData
+          : JSON.stringify(existingOrder.rawData);
+
+        if (newRawDataStr !== existingRawDataStr) {
+          console.log(`🔄 [DEBUG] rawData changed (length: ${newRawDataStr.length} vs ${existingRawDataStr.length})`);
+          changes.push('rawData');
+        }
+      } catch (error) {
+        // Если не удалось сравнить, считаем что изменилось
+        console.log(`🔄 [DEBUG] rawData comparison failed, assuming changed:`, error);
+        changes.push('rawData');
+      }
+    }
+
+    console.log(`🔍 [DEBUG] Change detection completed: ${changes.length} changes found [${changes.join(', ')}]`);
+    return changes;
+  }
+  /**
    * Создает новый заказ в БД
    */
   async createOrder(data: OrderCreateData) {
@@ -175,7 +247,7 @@ export class OrderDatabaseService {
     try {
       await prisma.ordersHistory.create({
         data: {
-          orderId,
+          orderId: orderId,
           status,
           statusText,
           source,
@@ -648,8 +720,8 @@ export class OrderDatabaseService {
     statusText: string;
     items: any[];
     rawData: any;
-    ttn?: string;           // Добавляем ttn
-    quantity?: number;       // Добавляем quantity
+    ttn?: string;
+    quantity?: number;
     customerName?: string;
     customerPhone?: string;
     deliveryAddress?: string;
@@ -659,110 +731,223 @@ export class OrderDatabaseService {
     paymentMethod?: string;
     cityName?: string;
     provider?: string;
-  }>) {
+  }>, options: { batchSize?: number; concurrency?: number } = {}) {
     try {
-      console.log(`🔄 Starting batch update of ${ordersData.length} orders...`);
-      
-      const updatedOrders = [];
-      const historyRecords = [];
+      const batchSize = options.batchSize || 50;
+      const concurrency = options.concurrency || 3;
 
-      for (const orderData of ordersData) {
-        try {
-          // Получаем текущий заказ для сравнения
-          const existingOrder = await prisma.order.findUnique({
-            where: { externalId: orderData.orderNumber },
-            select: { 
-              id: true, 
-              status: true,
-              ttn: true,
-              quantity: true
-            }
-          });
+      console.log(`🔄 Starting TRUE batch update of ${ordersData.length} orders (batch: ${batchSize}, concurrency: ${concurrency})...`);
 
-          if (!existingOrder) {
-            console.warn(`⚠️ Order ${orderData.orderNumber} not found for update`);
-            continue;
-          }
+      // Разбиваем на батчи
+      const batches = [];
+      for (let i = 0; i < ordersData.length; i += batchSize) {
+        batches.push(ordersData.slice(i, i + batchSize));
+      }
 
-          // Подготавливаем данные для обновления
-          const updateData: any = {
-            status: orderData.status,
-            statusText: orderData.statusText,
-            items: orderData.items,
-            rawData: orderData.rawData,
-            customerName: orderData.customerName,
-            customerPhone: orderData.customerPhone,
-            deliveryAddress: orderData.deliveryAddress,
-            totalPrice: orderData.totalPrice,
-            orderDate: orderData.orderDate ? new Date(orderData.orderDate) : undefined,
-            shippingMethod: orderData.shippingMethod,
-            paymentMethod: orderData.paymentMethod,
-            cityName: orderData.cityName,
-            provider: orderData.provider,
-            lastSynced: new Date(),
-            syncStatus: 'success',
-            syncError: null
-          };
+      console.log(`📦 Split into ${batches.length} batches of ~${batchSize} orders each`);
 
-          // Добавляем ttn и quantity если они предоставлены
-          if (orderData.ttn !== undefined) {
-            updateData.ttn = orderData.ttn;
-          }
-          if (orderData.quantity !== undefined) {
-            updateData.quantity = orderData.quantity;
-          }
+      let totalUpdated = 0;
+      let totalSkipped = 0;
+      const results = [];
 
-          // Обновляем заказ
-          const updatedOrder = await prisma.order.update({
-            where: { externalId: orderData.orderNumber },
-            data: updateData
-          });
+      // Обрабатываем батчи с контролем параллельности
+      for (let i = 0; i < batches.length; i += concurrency) {
+        const batchSlice = batches.slice(i, i + concurrency);
+        console.log(`🔄 Processing batch group ${Math.floor(i/concurrency) + 1}/${Math.ceil(batches.length/concurrency)} (${batchSlice.length} batches)`);
 
-          updatedOrders.push(updatedOrder);
+        const batchPromises = batchSlice.map(async (batch, batchIndex) => {
+          try {
+            const batchNumber = i + batchIndex + 1;
+            console.log(`📝 Processing batch ${batchNumber}/${batches.length} (${batch.length} orders)`);
 
-          // Создаем запись в истории если изменился статус, ttn или quantity
-          const statusChanged = existingOrder.status !== orderData.status;
-          const ttnChanged = orderData.ttn !== undefined && existingOrder.ttn !== orderData.ttn;
-          const quantityChanged = orderData.quantity !== undefined && existingOrder.quantity !== orderData.quantity;
+            // Создаем bulk update операции
+            const updatePromises = batch.map(async (orderData) => {
+              try {
+                // Получаем существующий заказ для проверки изменений
+                const existingOrder = await prisma.order.findUnique({
+                  where: { externalId: orderData.orderNumber },
+                  select: {
+                    id: true,
+                    status: true,
+                    statusText: true,
+                    ttn: true,
+                    quantity: true,
+                    customerName: true,
+                    customerPhone: true,
+                    deliveryAddress: true,
+                    totalPrice: true,
+                    shippingMethod: true,
+                    paymentMethod: true,
+                    cityName: true,
+                    provider: true,
+                    items: true,
+                    rawData: true
+                  }
+                });
 
-          if (statusChanged || ttnChanged || quantityChanged) {
-            let changeDescription = '';
-            if (statusChanged) changeDescription += `Status: ${existingOrder.status} → ${orderData.status}`;
-            if (ttnChanged) changeDescription += `${changeDescription ? ', ' : ''}TTN: ${existingOrder.ttn} → ${orderData.ttn}`;
-            if (quantityChanged) changeDescription += `${changeDescription ? ', ' : ''}Quantity: ${existingOrder.quantity} → ${orderData.quantity}`;
+                console.log(`🔍 Checking order ${orderData.orderNumber}: ${existingOrder ? 'EXISTS' : 'NOT FOUND'}`);
 
-            historyRecords.push({
-              orderId: existingOrder.id,
-              status: orderData.status,
-              statusText: orderData.statusText,
-              source: 'salesdrive',
-              changedAt: new Date(),
-              notes: changeDescription
+                if (!existingOrder) {
+                  console.log(`🚀 Order ${orderData.orderNumber} not found - will create new order`);
+                  // Создаем новый заказ
+                  try {
+                    console.log(`🆕 Creating new order ${orderData.orderNumber}`);
+                    const createdOrder = await prisma.order.create({
+                      data: {
+                        externalId: orderData.orderNumber,
+                        status: orderData.status || 'unknown',
+                        statusText: orderData.statusText || '',
+                        ttn: orderData.ttn || null,
+                        quantity: orderData.quantity || 0,
+                        customerName: orderData.customerName || '',
+                        customerPhone: orderData.customerPhone || '',
+                        deliveryAddress: orderData.deliveryAddress || '',
+                        totalPrice: orderData.totalPrice || 0,
+                        orderDate: orderData.orderDate ? new Date(orderData.orderDate) : new Date(),
+                        shippingMethod: orderData.shippingMethod || null,
+                        paymentMethod: orderData.paymentMethod || null,
+                        cityName: orderData.cityName || null,
+                        provider: orderData.provider || null,
+                        pricinaZnizki: orderData.pricinaZnizki || null,
+                        sajt: orderData.sajt || null,
+                        items: orderData.items ? JSON.stringify(orderData.items) : null,
+                        rawData: orderData.rawData ? JSON.stringify(orderData.rawData) : null,
+                        lastSynced: new Date(),
+                        syncStatus: 'success',
+                        syncError: null
+                      } as any // Игнорируем типы для создания заказа
+                    });
+                    console.log(`✅ Successfully created order ${orderData.orderNumber} with ID: ${createdOrder.id}`);
+                    return { orderNumber: orderData.orderNumber, action: 'created', reason: 'new order' };
+                  } catch (createError) {
+                    console.error(`❌ Failed to create order ${orderData.orderNumber}:`, createError);
+                    return { orderNumber: orderData.orderNumber, action: 'error', reason: 'create failed' };
+                  }
+                }
+
+                // Умная проверка изменений
+                const changes = this.detectOrderChanges(existingOrder, orderData);
+                console.log(`🔄 Order ${orderData.orderNumber} has ${changes.length} changes: ${changes.join(', ')}`);
+
+                if (changes.length === 0) {
+                  console.log(`⏭️ Order ${orderData.orderNumber} skipped - no changes`);
+                  return { orderNumber: orderData.orderNumber, action: 'skipped', reason: 'no changes' };
+                }
+
+                // Обновляем только если есть изменения
+                const updateData: any = {
+                  lastSynced: new Date(),
+                  syncStatus: 'success',
+                  syncError: null
+                };
+
+                // Применяем только изменившиеся поля
+                if (changes.includes('status')) updateData.status = orderData.status;
+                if (changes.includes('statusText')) updateData.statusText = orderData.statusText;
+                if (changes.includes('ttn')) updateData.ttn = orderData.ttn;
+                if (changes.includes('quantity')) updateData.quantity = orderData.quantity;
+                if (changes.includes('customerName')) updateData.customerName = orderData.customerName;
+                if (changes.includes('customerPhone')) updateData.customerPhone = orderData.customerPhone;
+                if (changes.includes('deliveryAddress')) updateData.deliveryAddress = orderData.deliveryAddress;
+                if (changes.includes('totalPrice')) updateData.totalPrice = orderData.totalPrice;
+                if (changes.includes('shippingMethod')) updateData.shippingMethod = orderData.shippingMethod;
+                if (changes.includes('paymentMethod')) updateData.paymentMethod = orderData.paymentMethod;
+                if (changes.includes('cityName')) updateData.cityName = orderData.cityName;
+                if (changes.includes('provider')) updateData.provider = orderData.provider;
+                if (changes.includes('pricinaZnizki')) updateData.pricinaZnizki = orderData.pricinaZnizki;
+                if (changes.includes('sajt')) updateData.sajt = orderData.sajt;
+
+                // Сериализуем сложные поля
+                if (changes.includes('items')) {
+                  updateData.items = JSON.stringify(orderData.items);
+                }
+                if (changes.includes('rawData')) {
+                  updateData.rawData = JSON.stringify(orderData.rawData);
+                }
+                if (changes.includes('orderDate')) {
+                  updateData.orderDate = new Date(orderData.orderDate);
+                }
+
+                const updatedOrder = await prisma.order.update({
+                  where: { externalId: orderData.orderNumber },
+                  data: updateData
+                });
+
+                // Создаем запись истории только для значимых изменений
+                if (changes.includes('status') || changes.includes('ttn')) {
+                  await this.createOrderHistory(
+                    existingOrder.id,
+                    orderData.status,
+                    orderData.statusText,
+                    'salesdrive',
+                    undefined,
+                    `Bulk update: ${changes.join(', ')}`
+                  );
+                }
+
+                return {
+                  orderNumber: orderData.orderNumber,
+                  action: 'updated',
+                  changedFields: changes
+                };
+
+              } catch (error) {
+                console.error(`❌ Error updating order ${orderData.orderNumber}:`, error);
+                return {
+                  orderNumber: orderData.orderNumber,
+                  action: 'error',
+                  error: error instanceof Error ? error.message : 'Unknown error'
+                };
+              }
             });
+
+            const batchResults = await Promise.all(updatePromises);
+            const updatedInBatch = batchResults.filter(r => r.action === 'updated').length;
+            const createdInBatch = batchResults.filter(r => r.action === 'created').length;
+            const skippedInBatch = batchResults.filter(r => r.action === 'skipped').length;
+            const errorsInBatch = batchResults.filter(r => r.action === 'error').length;
+
+            console.log(`✅ Batch ${batchNumber} completed: +${createdInBatch} created, +${updatedInBatch} updated, ${skippedInBatch} skipped, ${errorsInBatch} errors`);
+
+            return batchResults;
+
+          } catch (error) {
+            console.error(`❌ Error processing batch ${i + batchIndex + 1}:`, error);
+            return [];
           }
+        });
 
-        } catch (error) {
-          console.error(`❌ Error updating order ${orderData.orderNumber}:`, error);
-          throw error;
+        const groupResults = await Promise.all(batchPromises);
+        results.push(...groupResults.flat());
+
+        // Небольшая задержка между группами батчей
+        if (i + concurrency < batches.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
 
-      // Batch создание записей истории
-      if (historyRecords.length > 0) {
-        try {
-          await prisma.ordersHistory.createMany({
-            data: historyRecords
-          });
-          console.log(`✅ Created ${historyRecords.length} history records for changes`);
-        } catch (error) {
-          console.error('❌ Error creating history records batch:', error);
-        }
-      }
+      const totalCreated = results.filter(r => r.action === 'created').length;
+      const totalErrors = results.filter(r => r.action === 'error').length;
 
-      console.log(`✅ Successfully updated ${updatedOrders.length} orders in batch`);
-      return updatedOrders;
+      console.log(`✅ SMART batch update completed:`);
+      console.log(`   📊 Total processed: ${ordersData.length}`);
+      console.log(`   🆕 Created: ${totalCreated}`);
+      console.log(`   ✅ Updated: ${totalUpdated}`);
+      console.log(`   ⏭️ Skipped: ${totalSkipped}`);
+      console.log(`   ❌ Errors: ${totalErrors}`);
+      console.log(`   📈 Efficiency: ${(((totalCreated + totalUpdated) / ordersData.length) * 100).toFixed(1)}%`);
+
+      return {
+        success: true,
+        totalProcessed: ordersData.length,
+        totalCreated,
+        totalUpdated,
+        totalSkipped,
+        totalErrors,
+        results
+      };
     } catch (error) {
-      console.error('❌ Batch update failed:', error);
+      console.error('❌ TRUE batch update failed:', error);
       throw error;
     }
   }
@@ -1014,82 +1199,270 @@ export class OrderDatabaseService {
     provider?: string;
     pricinaZnizki?: string;
     sajt?: string;
-  }>) {
+  }>, options: { batchSize?: number; concurrency?: number } = {}) {
     try {
-      console.log(`🔄 Starting smart batch update of ${ordersData.length} orders...`);
-      
+      const batchSize = options.batchSize || 50;
+      const concurrency = options.concurrency || 3;
+
+      console.log(`🔄 Starting SMART batch update of ${ordersData.length} orders (batch: ${batchSize}, concurrency: ${concurrency})...`);
+
+      // Разбиваем на батчи для параллельной обработки
+      const batches = [];
+      for (let i = 0; i < ordersData.length; i += batchSize) {
+        batches.push(ordersData.slice(i, i + batchSize));
+      }
+
+      console.log(`📦 Split into ${batches.length} smart batches of ~${batchSize} orders each`);
+
       const results = [];
       let totalUpdated = 0;
+      let totalCreated = 0;
       let totalSkipped = 0;
+      let totalErrors = 0;
 
-      for (const orderData of ordersData) {
-        try {
-          // Пытаемся найти заказ по orderNumber как externalId
-          let existingOrder = await this.getOrderByExternalId(orderData.orderNumber);
+      // Обрабатываем батчи с контролем параллельности
+      for (let i = 0; i < batches.length; i += concurrency) {
+        const batchSlice = batches.slice(i, i + concurrency);
+        console.log(`🔄 Processing smart batch group ${Math.floor(i/concurrency) + 1}/${Math.ceil(batches.length/concurrency)} (${batchSlice.length} batches)`);
 
-          // Если не найден, пробуем найти по id (для случаев, когда externalId != orderNumber)
-          if (!existingOrder && orderData.orderNumber) {
-            const orderById = await prisma.order.findUnique({
-              where: { externalId: orderData.orderNumber },
-              include: {
-                OrdersHistory: {
-                  orderBy: { changedAt: 'desc' },
-                  take: 10
-                }
+        // Детальное логирование для отладки
+        console.log(`🔍 [DEBUG] Batch slice contains ${batchSlice.length} batches`);
+        batchSlice.forEach((batch, idx) => {
+          console.log(`🔍 [DEBUG] Batch ${idx + 1}: ${batch.length} orders`);
+          batch.slice(0, 2).forEach((order, orderIdx) => {
+            if (order && order.orderNumber) {
+              console.log(`🔍 [DEBUG] Order ${orderIdx + 1}: ${order.orderNumber} (status: ${order.status || 'N/A'})`);
+            } else {
+              console.log(`🔍 [DEBUG] Order ${orderIdx + 1}: INVALID ORDER OBJECT`);
+            }
+          });
+          if (batch.length > 2) {
+            console.log(`🔍 [DEBUG] ... and ${batch.length - 2} more orders`);
+          }
+        });
+
+        const batchPromises = batchSlice.map(async (batch, batchIndex) => {
+          const batchResults = [];
+
+          for (const orderData of batch) {
+            try {
+              // Проверяем, что orderData существует и имеет необходимые поля
+              if (!orderData || !orderData.orderNumber) {
+                console.error(`❌ [ERROR] Invalid order data:`, orderData);
+                totalErrors++;
+                continue;
               }
-            });
 
-            if (orderById) {
-              existingOrder = {
-                ...orderById,
-                items: orderById.items ? JSON.parse(orderById.items) : [],
-                rawData: orderById.rawData ? JSON.parse(orderById.rawData) : {}
+              console.log(`🔍 [DEBUG] Processing order: ${orderData.orderNumber}, status: ${orderData.status || 'N/A'}`);
+
+              // Получаем существующий заказ для проверки изменений
+              const existingOrder = await prisma.order.findUnique({
+                where: { externalId: orderData.orderNumber },
+                select: {
+                  id: true,
+                  status: true,
+                  statusText: true,
+                  ttn: true,
+                  quantity: true,
+                  customerName: true,
+                  customerPhone: true,
+                  deliveryAddress: true,
+                  totalPrice: true,
+                  shippingMethod: true,
+                  paymentMethod: true,
+                  cityName: true,
+                  provider: true,
+                  items: true,
+                  rawData: true
+                }
+              });
+
+              console.log(`🔍 [DEBUG] Order ${orderData.orderNumber}: ${existingOrder ? 'EXISTS' : 'NOT FOUND'} in database`);
+
+              if (!existingOrder) {
+                console.log(`🆕 [DEBUG] Order ${orderData.orderNumber} not found in database - CREATING NEW`);
+
+                try {
+                  // Создаем новый заказ
+                  const newOrderData = {
+                    id: parseInt(orderData.orderNumber), // Преобразуем orderNumber в число для id
+                    externalId: orderData.orderNumber,
+                    orderNumber: orderData.orderNumber,
+                    ttn: orderData.ttn || '',
+                    quantity: orderData.quantity || 0,
+                    status: orderData.status || 'unknown',
+                    statusText: orderData.statusText || '',
+                    items: orderData.items || [],
+                    rawData: orderData.rawData || {},
+                    customerName: orderData.customerName || '',
+                    customerPhone: orderData.customerPhone || '',
+                    deliveryAddress: orderData.deliveryAddress || '',
+                    totalPrice: orderData.totalPrice || 0,
+                    orderDate: (() => {
+                      if (!orderData.orderDate) return null;
+                      try {
+                        const date = new Date(orderData.orderDate);
+                        // Проверяем что дата валидна
+                        if (isNaN(date.getTime())) {
+                          console.warn(`⚠️ [DEBUG] Invalid orderDate format: ${orderData.orderDate}, using current date`);
+                          return new Date().toISOString();
+                        }
+                        return date.toISOString();
+                      } catch (dateError) {
+                        console.warn(`⚠️ [DEBUG] Failed to parse orderDate: ${orderData.orderDate}, using current date`);
+                        return new Date().toISOString();
+                      }
+                    })(),
+                    shippingMethod: orderData.shippingMethod || '',
+                    paymentMethod: orderData.paymentMethod || '',
+                    cityName: orderData.cityName || '',
+                    provider: orderData.provider || '',
+                    pricinaZnizki: orderData.pricinaZnizki || '',
+                    sajt: orderData.sajt || ''
+                  };
+
+                  const createdOrder = await this.createOrder(newOrderData);
+                  console.log(`✅ [DEBUG] Order ${orderData.orderNumber} successfully created in database (ID: ${createdOrder.id})`);
+
+                  totalCreated++;
+                  batchResults.push({
+                    orderNumber: orderData.orderNumber,
+                    action: 'created',
+                    success: true
+                  });
+
+                  console.log(`📊 [DEBUG] Batch results updated: totalCreated=${totalCreated}`);
+                } catch (createError) {
+                  console.error(`❌ [DEBUG] Failed to create order ${orderData.orderNumber}:`, createError);
+                  totalErrors++;
+                  batchResults.push({
+                    orderNumber: orderData.orderNumber,
+                    action: 'error',
+                    error: createError instanceof Error ? createError.message : 'Create failed'
+                  });
+                }
+
+                continue;
+              }
+
+              // Умная проверка изменений
+              const changes = this.detectOrderChanges(existingOrder, orderData);
+              console.log(`🔍 [DEBUG] Order ${orderData.orderNumber} has ${changes.length} changes: [${changes.join(', ')}]`);
+
+              if (changes.length === 0) {
+                console.log(`⏭️ [DEBUG] Order ${orderData.orderNumber} has no changes - SKIPPING`);
+                totalSkipped++;
+                batchResults.push({
+                  orderNumber: orderData.orderNumber,
+                  action: 'skipped',
+                  reason: 'no changes'
+                });
+                continue;
+              }
+
+              console.log(`✅ [DEBUG] Order ${orderData.orderNumber} will be UPDATED with changes: [${changes.join(', ')}]`);
+
+              // Обновляем только если есть изменения
+              const updateData: any = {
+                lastSynced: new Date(),
+                syncStatus: 'success',
+                syncError: null
               };
+
+              // Применяем только изменившиеся поля
+              if (changes.includes('status')) updateData.status = orderData.status;
+              if (changes.includes('statusText')) updateData.statusText = orderData.statusText;
+              if (changes.includes('ttn')) updateData.ttn = orderData.ttn;
+              if (changes.includes('quantity')) updateData.quantity = orderData.quantity;
+              if (changes.includes('customerName')) updateData.customerName = orderData.customerName;
+              if (changes.includes('customerPhone')) updateData.customerPhone = orderData.customerPhone;
+              if (changes.includes('deliveryAddress')) updateData.deliveryAddress = orderData.deliveryAddress;
+              if (changes.includes('totalPrice')) updateData.totalPrice = orderData.totalPrice;
+              if (changes.includes('shippingMethod')) updateData.shippingMethod = orderData.shippingMethod;
+              if (changes.includes('paymentMethod')) updateData.paymentMethod = orderData.paymentMethod;
+              if (changes.includes('cityName')) updateData.cityName = orderData.cityName;
+              if (changes.includes('provider')) updateData.provider = orderData.provider;
+              if (changes.includes('pricinaZnizki')) updateData.pricinaZnizki = orderData.pricinaZnizki;
+              if (changes.includes('sajt')) updateData.sajt = orderData.sajt;
+
+              // Сериализуем сложные поля
+              if (changes.includes('items')) {
+                updateData.items = JSON.stringify(orderData.items);
+              }
+              if (changes.includes('rawData')) {
+                updateData.rawData = JSON.stringify(orderData.rawData);
+              }
+              if (changes.includes('orderDate')) {
+                updateData.orderDate = new Date(orderData.orderDate);
+              }
+
+              const updateResult = await prisma.order.update({
+                where: { externalId: orderData.orderNumber },
+                data: updateData
+              });
+
+              console.log(`✅ [DEBUG] Order ${orderData.orderNumber} successfully updated in database (ID: ${updateResult.id})`);
+
+              // Создаем запись истории только для значимых изменений
+              if (changes.includes('status') || changes.includes('ttn')) {
+                await this.createOrderHistory(
+                  existingOrder.id,
+                  orderData.status,
+                  orderData.statusText,
+                  'salesdrive',
+                  undefined,
+                  `Smart batch update: ${changes.join(', ')}`
+                );
+                console.log(`📝 [DEBUG] Created history record for order ${orderData.orderNumber}`);
+              }
+
+              totalUpdated++;
+              batchResults.push({
+                orderNumber: orderData.orderNumber,
+                action: 'updated',
+                changedFields: changes
+              });
+
+              console.log(`📊 [DEBUG] Batch results updated: totalUpdated=${totalUpdated}`);
+
+            } catch (error) {
+              console.error(`❌ [DEBUG] Error updating order ${orderData.orderNumber}:`, error);
+              console.error(`❌ [DEBUG] Error details:`, {
+                orderNumber: orderData.orderNumber,
+                status: orderData.status,
+                error: error instanceof Error ? error.message : 'Unknown error'
+              });
+              batchResults.push({
+                orderNumber: orderData.orderNumber,
+                action: 'error',
+                error: error instanceof Error ? error.message : 'Unknown error'
+              });
             }
           }
 
-          if (!existingOrder) {
-            results.push({
-              orderNumber: orderData.orderNumber,
-              action: 'error',
-              error: `Order ${orderData.orderNumber} not found`
-            });
-            continue;
-          }
+          return batchResults;
+        });
 
-          // Используем найденный externalId для обновления
-          const result = await this.updateOrderSmart(existingOrder.externalId, orderData);
-          
-          if (result.updated) {
-            totalUpdated++;
-            results.push({
-              orderNumber: orderData.orderNumber,
-              action: 'updated',
-              changedFields: result.changedFields,
-              previousValues: result.previousValues
-            });
-          } else {
-            totalSkipped++;
-            results.push({
-              orderNumber: orderData.orderNumber,
-              action: 'skipped',
-              reason: 'No changes detected'
-            });
-          }
+        const groupResults = await Promise.all(batchPromises);
+        const flattenedResults = groupResults.flat();
+        results.push(...flattenedResults);
 
-        } catch (error) {
-          console.error(`❌ Error updating order ${orderData.orderNumber}:`, error);
-          results.push({
-            orderNumber: orderData.orderNumber,
-            action: 'error',
-            error: error instanceof Error ? error.message : 'Unknown error'
-          });
+        console.log(`📊 [DEBUG] Group results summary:`);
+        console.log(`   📦 Batches processed: ${groupResults.length}`);
+        console.log(`   📋 Orders processed: ${flattenedResults.length}`);
+        console.log(`   ✅ Updated: ${flattenedResults.filter(r => r.action === 'updated').length}`);
+        console.log(`   ⏭️ Skipped: ${flattenedResults.filter(r => r.action === 'skipped').length}`);
+        console.log(`   ❌ Errors: ${flattenedResults.filter(r => r.action === 'error').length}`);
+
+        // Небольшая задержка между группами батчей
+        if (i + concurrency < batches.length) {
+          await new Promise(resolve => setTimeout(resolve, 50));
         }
       }
 
       // Обновляем кеш только для заказов, у которых изменились items
       const ordersWithItemsChanged = results
-        .filter(result => result.action === 'updated' && result.changedFields.includes('items'))
+        .filter(result => (result.action === 'updated' || result.action === 'created') && result.changedFields && result.changedFields.includes('items'))
         .map(result => ordersData.find(order => order.orderNumber === result.orderNumber))
         .filter(order => order !== undefined);
 
@@ -1111,12 +1484,20 @@ export class OrderDatabaseService {
         console.log(`✅ Updated cache for ${ordersWithItemsChanged.length} orders`);
       }
 
-      console.log(`✅ Smart batch update completed: ${totalUpdated} updated, ${totalSkipped} skipped`);
+      console.log(`✅ SMART batch update completed:`);
+      console.log(`   📊 Total processed: ${ordersData.length}`);
+      console.log(`   🆕 Created: ${totalCreated}`);
+      console.log(`   ✅ Updated: ${totalUpdated}`);
+      console.log(`   ⏭️ Skipped: ${totalSkipped}`);
+      console.log(`   ❌ Errors: ${totalErrors}`);
+      console.log(`   📈 Efficiency: ${(((totalCreated + totalUpdated) / ordersData.length) * 100).toFixed(1)}%`);
 
       return {
         success: true,
+        totalCreated,
         totalUpdated,
         totalSkipped,
+        totalErrors,
         results
       };
 

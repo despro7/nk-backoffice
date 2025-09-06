@@ -37,10 +37,27 @@ export interface CreateSyncHistoryData {
 
 export class SyncHistoryService {
   /**
+   * Парсит поле details из JSON строки обратно в объект
+   */
+  private parseDetails(details: string): any {
+    if (!details) return null;
+    try {
+      return JSON.parse(details);
+    } catch (error) {
+      console.warn('❌ [SYNC HISTORY] Failed to parse details JSON:', error);
+      return details; // Возвращаем как строку, если не удалось распарсить
+    }
+  }
+  /**
    * Создает новую запись в истории синхронизаций
    */
   async createSyncRecord(data: CreateSyncHistoryData): Promise<SyncHistoryRecord> {
     try {
+      // Сериализуем объект details в JSON строку для базы данных
+      const detailsString = typeof data.details === 'object'
+        ? JSON.stringify(data.details)
+        : String(data.details || '');
+
       const record = await prisma.syncHistory.create({
         data: {
           syncType: data.syncType,
@@ -52,7 +69,7 @@ export class SyncHistoryService {
           skippedOrders: data.skippedOrders,
           errors: data.errors,
           duration: data.duration,
-          details: data.details,
+          details: detailsString,
           status: data.status,
           errorMessage: data.errorMessage
         }
@@ -78,8 +95,14 @@ export class SyncHistoryService {
         take: limit
       });
 
-      console.log(`📋 [SYNC HISTORY] Retrieved ${records.length} records`);
-      return records;
+      // Десериализуем поле details из JSON строки обратно в объект
+      const parsedRecords = records.map(record => ({
+        ...record,
+        details: this.parseDetails(record.details)
+      }));
+
+      console.log(`📋 [SYNC HISTORY] Retrieved ${parsedRecords.length} records`);
+      return parsedRecords;
     } catch (error) {
       console.error('❌ [SYNC HISTORY] Failed to get sync history:', error);
       throw error;
@@ -178,8 +201,14 @@ export class SyncHistoryService {
         take: limit
       });
 
-      console.log(`📋 [SYNC HISTORY] Retrieved ${records.length} ${syncType} records`);
-      return records;
+      // Десериализуем поле details из JSON строки обратно в объект
+      const parsedRecords = records.map(record => ({
+        ...record,
+        details: this.parseDetails(record.details)
+      }));
+
+      console.log(`📋 [SYNC HISTORY] Retrieved ${parsedRecords.length} ${syncType} records`);
+      return parsedRecords;
     } catch (error) {
       console.error('❌ [SYNC HISTORY] Failed to get sync history by type:', error);
       throw error;

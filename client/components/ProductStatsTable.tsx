@@ -156,7 +156,9 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
 
     // Проверяем клиентский кеш для текущих фильтров
     if (!force && cache[cacheKey] && (now - cache[cacheKey].timestamp) < CACHE_DURATION) {
-      console.log('📋 Using client cache for filters:', cacheKey);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📋 Using client cache for filters:', cacheKey);
+      }
       setProductStats(cache[cacheKey].data);
       return;
     }
@@ -189,10 +191,9 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       const data: ProductStatsResponse = await response.json();
 
       if (data.success) {
-        console.log('📊 ПОЛУЧЕНЫ ДАННЫЕ:', data.data.length, 'товаров,', data.metadata.totalOrders, 'заказов');
-
-        const totalOrderedQuantity = data.data.reduce((sum, product) => sum + product.orderedQuantity, 0);
-        console.log(`💰 Загальна сума замовлених порцій: ${totalOrderedQuantity} шт.`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('📊 ПОЛУЧЕНЫ ДАННЫЕ:', data.data.length, 'товаров,', data.metadata.totalOrders, 'заказов');
+        }
 
         setProductStats(data.data);
 
@@ -215,11 +216,15 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
   // Функция для загрузки статистики по датам для выбранного товара
   const fetchProductDateStats = useCallback(async (force?: boolean) => {
     if (!selectedProduct) {
-      console.log('⚠️ fetchProductDateStats: no selectedProduct, skipping');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⚠️ fetchProductDateStats: no selectedProduct, skipping');
+      }
       return;
     }
 
-    console.log('📊 fetchProductDateStats called for product:', selectedProduct, 'force:', force);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📊 fetchProductDateStats called for product:', selectedProduct);
+    }
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -243,7 +248,9 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       const data: ProductDateStatsResponse = await response.json();
 
       if (data.success) {
-        console.log('📊 ПОЛУЧЕНЫ ДАННЫЕ ПО ДАТАМ:', data.data.length, 'дней для товара', data.product.name);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('📊 ПОЛУЧЕНЫ ДАННЫЕ ПО ДАТАМ:', data.data.length, 'дней для товара', data.product.name);
+        }
 
         setDateStats(data.data);
         setSelectedProductInfo(data.product);
@@ -328,16 +335,16 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
 
   // Обработчик изменения выбранного товара
   const handleProductChange = useCallback((sku: string) => {
-    console.log('🔄 handleProductChange called with sku:', sku);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔄 handleProductChange called with sku:', sku);
+    }
     setSelectedProduct(sku);
     if (sku) {
       // Переключаемся в режим по датам
-      console.log('📊 Switching to dates mode for product:', sku);
       setViewMode("dates");
       // Не вызываем fetchProductDateStats здесь, он вызовется в useEffect
     } else {
       // Возвращаемся к общему режиму
-      console.log('📊 Switching back to products mode');
       setViewMode("products");
       setDateStats([]);
       setSelectedProductInfo(null);
@@ -362,7 +369,9 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
     setCacheProgress(null);
 
     try {
-      console.log('🚀 Starting cache refresh...');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🚀 Starting cache refresh...');
+      }
 
       // Показываем уведомление о начале
       alert('🚀 Початок оновлення кеша статистики товарів...\nЗамовлення обробляються пачками по 50 шт.\nЦе може зайняти кілька хвилин.');
@@ -383,7 +392,9 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       const result = await response.json();
 
       if (result.success) {
-        console.log('✅ Cache refresh completed:', result.stats);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ Cache refresh completed:', result.stats);
+        }
 
         // Обновляем время последнего обновления кеша
         setLastCacheUpdate(new Date());
@@ -708,12 +719,12 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
                 setDatePresetKey(null);
               }}
               size="lg"
-			  selectorButtonPlacement="start"
-			  selectorIcon={<DynamicIcon name="calendar" size={18} />}
-			  classNames={{
-				inputWrapper: "h-12",
-				segment: "rounded"
-			  }}
+              selectorButtonPlacement="start"
+              selectorIcon={<DynamicIcon name="calendar" size={18} />}
+              classNames={{
+              inputWrapper: "h-12",
+              segment: "rounded"
+              }}
             />
           </I18nProvider>
         </div>

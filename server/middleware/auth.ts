@@ -14,10 +14,8 @@ declare global {
 
 export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    console.log(`🔐 [Middleware] Проверяем токен доступа для ${req.method} ${req.path}...`);
-    console.log(`🔐 [Middleware] Cookies:`, Object.keys(req.cookies || {}));
-    console.log(`🔐 [Middleware] Content-Type:`, req.headers['content-type']);
-    console.log(`🔐 [Middleware] Body:`, req.body);
+    // Минимальное логирование только при ошибках
+    const shouldLog = process.env.NODE_ENV === 'development' && req.path.includes('auth');
 
     // Получаем токены из cookies
     const { accessToken, refreshToken } = await AuthService.getTokenFromCookies(req);
@@ -37,26 +35,9 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
         await AuthService.setAuthCookies(res, refreshResult.token, refreshResult.refreshToken);
         console.log('✅ [Middleware] Токены обновлены, используем новый access token');
 
-        // Импортируем настройки логирования
-        const { loggingSettings } = require('../services/authService');
-
-        // Логируем автоматическое обновление токенов с учетом настроек
-        if (loggingSettings.console.logAccessToken || loggingSettings.console.logRefreshToken) {
-          console.log(`🔄 [Middleware] ТОКЕНЫ АВТОМАТИЧЕСКИ ОБНОВЛЕНЫ:`);
-          console.log(`   👤 Пользователь: ${decoded.email} (ID: ${decoded.userId})`);
-
-          if (loggingSettings.console.logAccessToken) {
-            console.log(`   🔑 Новый access token: ${refreshResult.token.substring(0, 20)}...`);
-          }
-
-          if (loggingSettings.console.logRefreshToken) {
-            console.log(`   🔄 Новый refresh token: ${refreshResult.refreshToken.substring(0, 20)}...`);
-          }
-
-          if (loggingSettings.console.logTokenExpiry) {
-            console.log(`   ⏰ Expires in: ${refreshResult.expiresIn} секунд`);
-            console.log(`   📅 Время обновления: ${new Date().toISOString()}`);
-          }
+        // Минимальное логирование обновления токенов
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🔄 [Middleware] Токены обновлены для пользователя: ${decoded.email}`);
         }
 
         // Добавляем заголовок для Toast уведомления
@@ -86,7 +67,9 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     }
     
     if (!accessToken) {
-      console.log('❌ [Middleware] Access token не найден в cookies и нет refresh token');
+      if (shouldLog) {
+        console.log('❌ [Middleware] Access token не найден');
+      }
       return res.status(401).json({
         message: 'Access token required. Please login first.',
         code: 'NO_TOKEN',
@@ -94,20 +77,12 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       });
     }
 
-    console.log('✅ [Middleware] Access token найден в cookies, проверяем...');
-
     const secret = process.env.JWT_SECRET || 'fallback_secret';
     const decoded = jwt.verify(accessToken, secret) as JwtPayload;
 
-    // Наглядное логирование механизма сравнения токенов
-    console.log('🔍 [Middleware] Механизм сравнения токенов:');
-    console.log(`   🔑 JWT_SECRET установлен: ${secret !== 'fallback_secret' ? '✅' : '❌ (используется fallback)'}`);
-    console.log(`   📝 Тип токена в payload: ${decoded.tokenType}`);
-    console.log(`   👤 Пользователь из токена: ${decoded.email} (ID: ${decoded.userId})`);
-    console.log(`   🔒 Роль пользователя: ${decoded.role}`);
-    console.log(`   ✅ Токен валиден, тип соответствует access`);
-    
-    console.log(`👤 [Middleware] Токен декодирован, пользователь: ${decoded.email} (ID: ${decoded.userId})`);
+    if (shouldLog) {
+      console.log(`👤 [Middleware] Пользователь: ${decoded.email}`);
+    }
     
     // Проверяем тип токена
     if (decoded.tokenType !== 'access') {
@@ -120,16 +95,10 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     }
     
     req.user = decoded;
-    console.log('✅ [Middleware] Токен валиден, пропускаем запрос');
-    
-    // Обновляем активность пользователя
-    try {
-      await AuthService.updateUserActivity(decoded.userId);
-      console.log('✅ [Middleware] Активность пользователя обновлена');
-    } catch (error) {
-      console.error('❌ [Middleware] Failed to update user activity:', error);
-    }
-    
+
+    // Тихое обновление активности пользователя
+    AuthService.updateUserActivity(decoded.userId).catch(() => {});
+
     next();
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {

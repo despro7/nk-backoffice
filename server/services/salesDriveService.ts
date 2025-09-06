@@ -68,6 +68,8 @@ export class SalesDriveService {
     baseDelay: number;
     maxDelay: number;
     jitterRange: number;
+    circuitBreakerTrips: number;
+    lastCircuitBreakerTrip: number;
   };
   private cacheState: {
     data: Map<string, { data: any; timestamp: number; expiresAt: number; accessCount: number; lastAccess: number }>;
@@ -104,7 +106,9 @@ export class SalesDriveService {
       last429Time: 0,
       baseDelay: this.getSetting('orders.baseDelay', 2000), // Начальная задержка 2 секунды
       maxDelay: this.getSetting('orders.maxDelay', 30000), // Максимальная задержка 30 секунд
-      jitterRange: this.getSetting('orders.jitterRange', 1000) // Диапазон jitter ±1 секунда
+      jitterRange: this.getSetting('orders.jitterRange', 1000), // Диапазон jitter ±1 секунда
+      circuitBreakerTrips: 0, // Счетчик срабатываний circuit breaker
+      lastCircuitBreakerTrip: 0 // Время последнего срабатывания
     };
 
     // Инициализация состояния кеширования
@@ -157,20 +161,44 @@ export class SalesDriveService {
     const state = this.rateLimitState;
     const now = Date.now();
 
-    // Если прошло много времени с последнего 429, сбрасываем счетчик
-    if (now - state.last429Time > 60000) { // 1 минута
-      state.consecutive429Errors = 0;
+    // Circuit breaker: если слишком много последовательных ошибок
+    if (state.consecutive429Errors >= 10) {
+      const now = Date.now();
+
+      // Если circuit breaker сработал недавно, увеличиваем счетчик
+      if (now - state.lastCircuitBreakerTrip < 600000) { // 10 минут
+        state.circuitBreakerTrips++;
+      } else {
+        state.circuitBreakerTrips = 1; // Сбрасываем если прошло много времени
+      }
+
+      state.lastCircuitBreakerTrip = now;
+
+      console.log(`🚨 Circuit breaker activated: too many consecutive rate limit errors (${state.consecutive429Errors}), trips: ${state.circuitBreakerTrips}`);
+
+      // Если circuit breaker срабатывает слишком часто, бросаем ошибку для остановки синхронизации
+      if (state.circuitBreakerTrips >= 3) {
+        throw new Error(`CRITICAL_RATE_LIMIT: Circuit breaker tripped ${state.circuitBreakerTrips} times in 10 minutes. Sync stopped to prevent API abuse.`);
+      }
+
+      return state.maxDelay;
     }
 
-    // Экспоненциальная задержка с основанием 2
+    // Если прошло много времени с последнего 429, сбрасываем счетчик
+    if (now - state.last429Time > 300000) { // 5 минут вместо 1
+      state.consecutive429Errors = Math.max(0, state.consecutive429Errors - 2); // Сбрасываем сильнее
+      console.log(`🔄 Reset rate limit counter after 5 minutes, remaining: ${state.consecutive429Errors}`);
+    }
+
+    // Более консервативная экспоненциальная задержка
     const exponentialDelay = Math.min(
-      state.baseDelay * Math.pow(2, state.consecutive429Errors),
+      state.baseDelay * Math.pow(1.5, state.consecutive429Errors), // Основание 1.5 вместо 2
       state.maxDelay
     );
 
     // Добавляем jitter для распределения нагрузки
     const jitter = (Math.random() - 0.5) * 2 * state.jitterRange;
-    const adaptiveDelay = Math.max(500, exponentialDelay + jitter); // Минимум 500мс
+    const adaptiveDelay = Math.max(1000, exponentialDelay + jitter); // Минимум 1 секунда
 
     console.log(`🕐 Rate limit delay calculated: ${Math.round(adaptiveDelay)}ms (attempt ${state.consecutive429Errors + 1})`);
 
@@ -194,8 +222,64 @@ export class SalesDriveService {
   private resetRateLimitState(): void {
     const state = this.rateLimitState;
     if (state.consecutive429Errors > 0) {
-      state.consecutive429Errors = Math.max(0, state.consecutive429Errors - 1);
-      console.log(`✅ Rate limit state reset, consecutive errors: ${state.consecutive429Errors}`);
+      // Более агрессивный сброс при успешных запросах
+      const resetAmount = Math.min(3, Math.ceil(state.consecutive429Errors * 0.3)); // Сбрасываем 30% ошибок
+      state.consecutive429Errors = Math.max(0, state.consecutive429Errors - resetAmount);
+      console.log(`✅ Rate limit state reset by ${resetAmount}, consecutive errors: ${state.consecutive429Errors}`);
+    }
+  }
+
+  /**
+   * Публичный метод для сброса circuit breaker (для экстренных случаев)
+   */
+  public resetCircuitBreaker(): void {
+    this.rateLimitState.consecutive429Errors = 0;
+    this.rateLimitState.circuitBreakerTrips = 0;
+    this.rateLimitState.lastCircuitBreakerTrip = 0;
+    this.rateLimitState.last429Time = 0;
+    console.log('🔄 Circuit breaker manually reset');
+  }
+
+  /**
+   * Тестовый метод для проверки фильтра updateAt
+   */
+  public async testUpdateAtFilter(startDate: string, endDate: string): Promise<any> {
+    console.log('🧪 [TEST] Testing updateAt filter with range:', startDate, 'to', endDate);
+
+    try {
+      const result = await this.fetchOrdersFromDateRangeParallelUpdateAt(startDate, endDate);
+
+      if (result.success && result.data) {
+        console.log('🧪 [TEST] UpdateAt filter test successful:', {
+          ordersCount: result.data.length,
+          timeRange: `${startDate} to ${endDate}`,
+          filterType: 'updateAt'
+        });
+
+        return {
+          success: true,
+          ordersCount: result.data.length,
+          timeRange: `${startDate} to ${endDate}`,
+          filterType: 'updateAt',
+          orders: result.data.slice(0, 3) // Показываем только первые 3 заказа для теста
+        };
+      } else {
+        console.log('🧪 [TEST] UpdateAt filter test failed:', result.error);
+        return {
+          success: false,
+          error: result.error,
+          timeRange: `${startDate} to ${endDate}`,
+          filterType: 'updateAt'
+        };
+      }
+    } catch (error) {
+      console.error('🧪 [TEST] UpdateAt filter test error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timeRange: `${startDate} to ${endDate}`,
+        filterType: 'updateAt'
+      };
     }
   }
 
@@ -462,6 +546,17 @@ export class SalesDriveService {
 
   /**
    * Получает заказы с момента последней синхронизации
+   *
+   * Оптимизация с фильтром updateAt:
+   * - Использует filter[updateAt] вместо filter[orderTime]
+   * - Получает только измененные заказы, а не все созданные
+   * - Значительно сокращает объем данных при частых синхронизациях
+   * - Настраивается через 'orders.filterType' = 'updateAt'
+   *
+   * Преимущества updateAt фильтра:
+   * - Быстрее: получает только актуальные изменения
+   * - Эффективнее: меньше нагрузка на API и сеть
+   * - Точнее: отражает реальные изменения заказов
    */
   async fetchOrdersSinceLastSync(): Promise<SalesDriveApiResponse> {
     try {
@@ -478,37 +573,91 @@ export class SalesDriveService {
         formatted: lastSyncTime.lastSynced ? new Date(lastSyncTime.lastSynced).toISOString() : 'null'
       } : 'No last sync found');
 
-      // Если последняя синхронизация была сегодня, берем заказы за последние 7 дней
+      // Выбираем тип фильтра на основе настроек
+      const filterType = this.getSetting('orders.filterType', 'orderTime');
+
       let startDate: string;
-      if (lastSyncTime?.lastSynced) {
-        const lastSync = new Date(lastSyncTime.lastSynced);
-        const diffDays = Math.floor((now.getTime() - lastSync.getTime()) / (1000 * 60 * 60 * 24));
-        const diffHours = Math.floor((now.getTime() - lastSync.getTime()) / (1000 * 60 * 60));
+      if (filterType === 'updateAt') {
+        // Оптимизация для фильтра updateAt - получаем только измененные заказы
+        if (lastSyncTime?.lastSynced) {
+          const lastSync = new Date(lastSyncTime.lastSynced);
+          const diffHours = Math.floor((now.getTime() - lastSync.getTime()) / (1000 * 60 * 60));
 
-        console.log(`🔄 [SYNC] Time difference: ${diffDays} days, ${diffHours} hours since last sync`);
+          console.log(`🔄 [SYNC] Time difference: ${diffHours} hours since last sync (updateAt filter)`);
 
-        if (diffDays === 0) {
-          // Если синхронизировались сегодня, берем за последние 7 дней
-          const sevenDaysAgo = new Date();
-          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-          startDate = sevenDaysAgo.toISOString().split('T')[0];
-          console.log(`🔄 [SYNC] Last sync was today, fetching orders from last 7 days: ${startDate} to ${currentDate}`);
+          if (diffHours < 2) {
+            // Если синхронизировались недавно (< 2 часов), берем заказы за последние 4 часа
+            const fourHoursAgo = new Date(now.getTime() - (4 * 60 * 60 * 1000));
+            startDate = fourHoursAgo.toISOString();
+            console.log(`🔄 [SYNC] Recent sync, fetching updated orders from last 4 hours: ${startDate}`);
+          } else if (diffHours < 24) {
+            // Если синхронизировались сегодня (< 24 часов), берем заказы с момента последней синхронизации
+            startDate = lastSync.toISOString();
+            console.log(`🔄 [SYNC] Same day sync, fetching updated orders since: ${startDate}`);
+          } else {
+            // Если прошло больше суток, берем заказы за последние 24 часа
+            const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+            startDate = yesterday.toISOString();
+            console.log(`🔄 [SYNC] Old sync, fetching updated orders from last 24 hours: ${startDate}`);
+          }
         } else {
-          // Если синхронизировались раньше, берем с момента последней синхронизации
-          startDate = lastSync.toISOString().split('T')[0];
-          console.log(`🔄 [SYNC] Fetching orders since last sync: ${startDate} to ${currentDate}`);
+          // Если синхронизации не было, берем заказы за последние 24 часа
+          const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+          startDate = yesterday.toISOString();
+          console.log(`🔄 [SYNC] No previous sync, fetching updated orders from last 24 hours: ${startDate}`);
         }
       } else {
-        // Если синхронизации не было, берем за последний месяц
-        const oneMonthAgo = new Date();
-        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-        startDate = oneMonthAgo.toISOString().split('T')[0];
-        console.log(`🔄 [SYNC] No previous sync found, fetching orders from last month: ${startDate} to ${currentDate}`);
+        // Обычная логика для фильтра orderTime
+        if (lastSyncTime?.lastSynced) {
+          const lastSync = new Date(lastSyncTime.lastSynced);
+          const diffDays = Math.floor((now.getTime() - lastSync.getTime()) / (1000 * 60 * 60 * 24));
+          const diffHours = Math.floor((now.getTime() - lastSync.getTime()) / (1000 * 60 * 60));
+
+          console.log(`🔄 [SYNC] Time difference: ${diffDays} days, ${diffHours} hours since last sync`);
+
+          if (diffDays === 0) {
+            // Если синхронизировались сегодня, берем за последние 7 дней
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            startDate = sevenDaysAgo.toISOString().split('T')[0];
+            console.log(`🔄 [SYNC] Last sync was today, fetching orders from last 7 days: ${startDate} to ${currentDate}`);
+          } else {
+            // Если синхронизировались раньше, берем с момента последней синхронизации
+            startDate = lastSync.toISOString().split('T')[0];
+            console.log(`🔄 [SYNC] Fetching orders since last sync: ${startDate} to ${currentDate}`);
+          }
+        } else {
+          // Если синхронизации не было, берем за последний месяц
+          const oneMonthAgo = new Date();
+          oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+          startDate = oneMonthAgo.toISOString().split('T')[0];
+          console.log(`🔄 [SYNC] No previous sync found, fetching orders from last month: ${startDate} to ${currentDate}`);
+        }
       }
 
-      console.log(`🔄 [SYNC] Final date range: ${startDate} to ${currentDate}`);
+      // Определяем endDate в зависимости от фильтра
+      const endDate = filterType === 'updateAt' ? now.toISOString() : currentDate;
+      console.log(`🔄 [SYNC] Final date range: ${startDate} to ${endDate}`);
 
-      return await this.fetchOrdersFromDateRangeParallel(startDate, currentDate);
+      if (filterType === 'updateAt') {
+        console.log(`🔄 [SYNC] Using updateAt filter for optimized sync`);
+
+        try {
+          return await this.fetchOrdersFromDateRangeParallelUpdateAt(startDate, endDate);
+        } catch (error) {
+          console.warn(`⚠️ [SYNC] UpdateAt filter failed, falling back to orderTime filter:`, error);
+
+          // Fallback на orderTime фильтр при ошибке updateAt
+          const fallbackStartDate = startDate.includes('T') ? startDate.split('T')[0] : startDate;
+          const fallbackEndDate = endDate.includes('T') ? endDate.split('T')[0] : endDate;
+
+          console.log(`🔄 [SYNC] Fallback: Using orderTime filter from ${fallbackStartDate} to ${fallbackEndDate}`);
+          return await this.fetchOrdersFromDateRangeParallel(fallbackStartDate, fallbackEndDate);
+        }
+      } else {
+        console.log(`🔄 [SYNC] Using orderTime filter (default)`);
+        return await this.fetchOrdersFromDateRangeParallel(startDate, endDate);
+      }
     } catch (error) {
       console.error('Error fetching orders since last sync:', error);
       return {
@@ -524,7 +673,7 @@ export class SalesDriveService {
   private async fetchOrdersFromDateRangeParallel(startDate: string, endDate: string): Promise<SalesDriveApiResponse> {
     const maxRetries = this.getSetting('orders.retryAttempts', 3);
     const retryDelay = this.getSetting('orders.retryDelay', 2000);
-    const concurrencyLimit = this.getSetting('general.maxConcurrentSyncs', 5); // Загружаем по N страниц параллельно
+    const concurrencyLimit = 1; // SalesDrive: 10 запросов/мин, используем 1 для надежности
 
     console.log(`🔧 [SalesDrive] Using sync settings: retries=${maxRetries}, delay=${retryDelay}ms, concurrency=${concurrencyLimit}`);
 
@@ -537,7 +686,8 @@ export class SalesDriveService {
         console.log(`🔄 Parallel fetching orders from ${startDate} to ${endDate} (attempt ${attempt}/${maxRetries})`);
 
         // Сначала получаем первую страницу, чтобы узнать общее количество
-        const batchSize = this.getSetting('orders.batchSize', 200);
+        // SalesDrive API limit: максимум 100 записей на страницу
+        const batchSize = Math.min(this.getSetting('orders.batchSize', 100), 100);
         const firstPageParams = new URLSearchParams({
           page: '1',
           limit: batchSize.toString(),
@@ -581,7 +731,7 @@ export class SalesDriveService {
 
         const firstPageOrders = firstData.data || [];
         const totalOrders = firstData.totals?.count || firstData.data?.length || 0;
-        const totalPages = Math.ceil(totalOrders / 200);
+        const totalPages = Math.ceil(totalOrders / batchSize);
         const maxAllowedPages = Math.min(totalPages, 100); // Максимум 100 страниц
 
         console.log(`📊 Total orders: ${totalOrders}, Total pages: ${totalPages}, Will fetch: ${maxAllowedPages} pages`);
@@ -640,9 +790,10 @@ export class SalesDriveService {
             }
           }
 
-          // Небольшая задержка между батчами
+          // Задержка между батчами (SalesDrive: 10 запросов/мин = ~6 сек между запросами)
           if (batchIndex < batches.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+            console.log(`⏱️ Waiting 6 seconds before next batch to respect SalesDrive rate limits...`);
+            await new Promise(resolve => setTimeout(resolve, 6000));
           }
         }
 
@@ -673,10 +824,168 @@ export class SalesDriveService {
   }
 
   /**
+   * Получает заказы за определенный период с пагинацией (параллельная версия с фильтром updateAt)
+   */
+  private async fetchOrdersFromDateRangeParallelUpdateAt(startDate: string, endDate: string): Promise<SalesDriveApiResponse> {
+    const maxRetries = this.getSetting('orders.retryAttempts', 3);
+    const retryDelay = this.getSetting('orders.retryDelay', 2000);
+    const concurrencyLimit = 1; // SalesDrive: 10 запросов/мин, используем 1 для надежности
+
+    console.log(`🔧 [SalesDrive UpdateAt] Using sync settings: retries=${maxRetries}, delay=${retryDelay}ms, concurrency=${concurrencyLimit}`);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        if (!this.apiUrl || !this.apiKey) {
+          throw new Error('SalesDrive API credentials not configured');
+        }
+
+        console.log(`🔄 Parallel fetching orders by updateAt from ${startDate} to ${endDate} (attempt ${attempt}/${maxRetries})`);
+
+        // Сначала получаем первую страницу, чтобы узнать общее количество
+        const batchSize = Math.min(this.getSetting('orders.batchSize', 50), 100);
+        const formattedStartDate = this.formatSalesDriveDate(startDate);
+        const formattedEndDate = this.formatSalesDriveDate(endDate);
+
+        console.log(`📅 [Parallel UpdateAt] Formatted dates: ${startDate} -> ${formattedStartDate}, ${endDate} -> ${formattedEndDate}`);
+
+        const firstPageParams = new URLSearchParams({
+          page: '1',
+          limit: batchSize.toString(),
+          'filter[updateAt][from]': formattedStartDate,
+          'filter[updateAt][to]': formattedEndDate,
+          'filter[statusId]': '__ALL__'
+        });
+
+        console.log(`📄 Fetching first page to determine total pages (updateAt filter)...`);
+        const firstResponse = await fetch(`${this.apiUrl}/api/order/list/?${firstPageParams}`, {
+          method: 'GET',
+          headers: {
+            'Form-Api-Key': this.apiKey,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (firstResponse.status === 429) {
+          const adaptiveDelay = this.handleRateLimit();
+          console.log(`Rate limited (429), waiting ${Math.round(adaptiveDelay)}ms before retry...`);
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
+            continue;
+          } else {
+            throw new Error('Rate limit exceeded after all retries');
+          }
+        }
+
+        // Сбрасываем состояние rate limiting при успешном запросе
+        this.resetRateLimitState();
+
+        if (!firstResponse.ok) {
+          throw new Error(`SalesDrive API error: ${firstResponse.status} - ${firstResponse.statusText}`);
+        }
+
+        const firstData = await firstResponse.json() as SalesDriveRawApiResponse;
+
+        if (firstData.status !== 'success') {
+          throw new Error(`SalesDrive API error: ${firstData.message || 'Unknown error'}`);
+        }
+
+        const firstPageOrders = firstData.data || [];
+        const totalOrders = firstData.totals?.count || firstData.data?.length || 0;
+        const totalPages = Math.ceil(totalOrders / batchSize);
+        const maxAllowedPages = Math.min(totalPages, 100); // Максимум 100 страниц
+
+        console.log(`📊 [UpdateAt Filter] Total orders: ${totalOrders}, Total pages: ${totalPages}, Will fetch: ${maxAllowedPages} pages`);
+
+        // Если всего одна страница, возвращаем результат сразу
+        if (maxAllowedPages <= 1) {
+          return {
+            success: true,
+            data: this.formatOrdersList(firstPageOrders),
+          };
+        }
+
+        // Создаем массив промисов для параллельной загрузки
+        const pagePromises: Promise<any[]>[] = [];
+
+        for (let page = 2; page <= maxAllowedPages; page++) {
+          pagePromises.push(this.fetchSinglePageUpdateAt(startDate, endDate, page));
+        }
+
+        // Разбиваем на батчи для контроля concurrency
+        const batches: Promise<any[]>[][] = [];
+        for (let i = 0; i < pagePromises.length; i += concurrencyLimit) {
+          batches.push(pagePromises.slice(i, i + concurrencyLimit));
+        }
+
+        // Выполняем батчи последовательно, но внутри батча - параллельно
+        const allOrders = [...firstPageOrders];
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+          console.log(`🔄 Processing batch ${batchIndex + 1}/${batches.length} (${batches[batchIndex].length} pages) - updateAt filter`);
+
+          const batchResults = await Promise.allSettled(batches[batchIndex]);
+
+          for (const result of batchResults) {
+            if (result.status === 'fulfilled') {
+              allOrders.push(...result.value);
+            } else {
+              const error = result.reason as Error;
+              if (error.message.includes('RATE_LIMIT_429')) {
+                // При rate limiting - повторяем всю пачку с задержкой
+                console.log(`🚦 Rate limit detected in batch, applying adaptive delay...`);
+                const adaptiveDelay = this.handleRateLimit();
+                await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
+
+                // Повторяем текущую пачку
+                const retryBatch = await Promise.allSettled(batches[batchIndex]);
+                for (const retryResult of retryBatch) {
+                  if (retryResult.status === 'fulfilled') {
+                    allOrders.push(...retryResult.value);
+                  }
+                }
+              } else {
+                console.error(`❌ Batch ${batchIndex} failed:`, error.message);
+              }
+            }
+          }
+
+          // Задержка между батчами (SalesDrive: 10 запросов/мин = ~6 сек между запросами)
+          if (batchIndex < batches.length - 1) {
+            console.log(`⏱️ Waiting 6 seconds before next batch to respect SalesDrive rate limits...`);
+            await new Promise(resolve => setTimeout(resolve, 6000));
+          }
+        }
+
+        console.log(`✅ Parallel fetch completed: ${allOrders.length} orders from ${maxAllowedPages} pages (updateAt filter)`);
+
+        return {
+          success: true,
+          data: this.formatOrdersList(allOrders),
+        };
+
+      } catch (error) {
+        console.error(`Error in parallel fetch (attempt ${attempt}):`, error);
+
+        if (attempt === maxRetries) {
+          // Если параллельная загрузка не удалась, пробуем обычную
+          console.log('🔄 Falling back to sequential loading (updateAt)...');
+          return await this.fetchOrdersFromDateRangeUpdateAt(startDate, endDate);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+
+    return {
+      success: false,
+      error: 'Max retries exceeded',
+    };
+  }
+
+  /**
    * Загружает одну страницу заказов с обработкой rate limiting
    */
   private async fetchSinglePage(startDate: string, endDate: string, page: number): Promise<any[]> {
-    const batchSize = this.getSetting('orders.batchSize', 200);
+    const batchSize = this.getSetting('orders.batchSize', 50); // Уменьшаем batch size для меньшей нагрузки
     const params = new URLSearchParams({
       page: page.toString(),
       limit: batchSize.toString(),
@@ -694,8 +1003,202 @@ export class SalesDriveService {
     });
 
     if (response.status === 429) {
-      // При rate limiting в параллельной загрузке - бросаем ошибку для повторной попытки
-      throw new Error(`RATE_LIMIT_429`);
+      // При rate limiting - применяем адаптивную задержку и повторяем
+      console.log(`🚦 Rate limit detected on page ${page}, applying adaptive delay...`);
+      const adaptiveDelay = this.handleRateLimit();
+      await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
+
+      // Повторяем запрос после задержки
+      return await this.fetchSinglePage(startDate, endDate, page);
+    }
+
+    if (!response.ok) {
+      throw new Error(`Page ${page} failed: ${response.status} - ${response.statusText}`);
+    }
+
+    // Сбрасываем состояние rate limiting при успешном запросе
+    this.resetRateLimitState();
+
+    const data = await response.json() as SalesDriveRawApiResponse;
+
+    if (data.status !== 'success') {
+      throw new Error(`Page ${page} API error: ${data.message || 'Unknown error'}`);
+    }
+
+    return data.data || [];
+  }
+
+  /**
+   * Получает заказы за определенный период последовательно (фильтр updateAt)
+   */
+  private async fetchOrdersFromDateRangeUpdateAt(startDate: string, endDate: string): Promise<SalesDriveApiResponse> {
+    const maxRetries = this.getSetting('orders.retryAttempts', 3);
+    const retryDelay = this.getSetting('orders.retryDelay', 2000);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        if (!this.apiUrl || !this.apiKey) {
+          throw new Error('SalesDrive API credentials not configured');
+        }
+
+        console.log(`🔄 Sequential fetching orders by updateAt from ${startDate} to ${endDate} (attempt ${attempt}/${maxRetries})`);
+
+        // Сначала получаем первую страницу, чтобы узнать общее количество
+        const batchSize = Math.min(this.getSetting('orders.batchSize', 50), 100);
+        const formattedStartDate = this.formatSalesDriveDate(startDate);
+        const formattedEndDate = this.formatSalesDriveDate(endDate);
+
+        console.log(`📅 [Sequential UpdateAt] Formatted dates: ${startDate} -> ${formattedStartDate}, ${endDate} -> ${formattedEndDate}`);
+
+        const firstPageParams = new URLSearchParams({
+          page: '1',
+          limit: batchSize.toString(),
+          'filter[updateAt][from]': formattedStartDate,
+          'filter[updateAt][to]': formattedEndDate,
+          'filter[statusId]': '__ALL__'
+        });
+
+        const firstResponse = await fetch(`${this.apiUrl}/api/order/list/?${firstPageParams}`, {
+          method: 'GET',
+          headers: {
+            'Form-Api-Key': this.apiKey,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (firstResponse.status === 429) {
+          const adaptiveDelay = this.handleRateLimit();
+          console.log(`Rate limited (429), waiting ${Math.round(adaptiveDelay)}ms before retry...`);
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
+            continue;
+          } else {
+            throw new Error('Rate limit exceeded after all retries');
+          }
+        }
+
+        this.resetRateLimitState();
+
+        if (!firstResponse.ok) {
+          throw new Error(`SalesDrive API error: ${firstResponse.status} - ${firstResponse.statusText}`);
+        }
+
+        const firstData = await firstResponse.json() as SalesDriveRawApiResponse;
+
+        if (firstData.status !== 'success') {
+          throw new Error(`SalesDrive API error: ${firstData.message || 'Unknown error'}`);
+        }
+
+        const firstPageOrders = firstData.data || [];
+        const totalOrders = firstData.totals?.count || firstData.data?.length || 0;
+        const totalPages = Math.ceil(totalOrders / batchSize);
+        const maxAllowedPages = Math.min(totalPages, 100);
+
+        console.log(`📊 [UpdateAt Sequential] Total orders: ${totalOrders}, Total pages: ${totalPages}, Will fetch: ${maxAllowedPages} pages`);
+
+        if (maxAllowedPages <= 1) {
+          return {
+            success: true,
+            data: this.formatOrdersList(firstPageOrders),
+          };
+        }
+
+        // Загружаем оставшиеся страницы последовательно
+        const allOrders = [...firstPageOrders];
+        for (let page = 2; page <= maxAllowedPages; page++) {
+          console.log(`📄 Fetching page ${page}/${maxAllowedPages} (updateAt filter)`);
+          const pageOrders = await this.fetchSinglePageUpdateAt(startDate, endDate, page);
+          allOrders.push(...pageOrders);
+
+          // Задержка между страницами
+          if (page < maxAllowedPages) {
+            await new Promise(resolve => setTimeout(resolve, 6000));
+          }
+        }
+
+        console.log(`✅ Sequential fetch completed: ${allOrders.length} orders from ${maxAllowedPages} pages (updateAt filter)`);
+
+        return {
+          success: true,
+          data: this.formatOrdersList(allOrders),
+        };
+
+      } catch (error) {
+        console.error(`Error in sequential fetch (attempt ${attempt}):`, error);
+
+        if (attempt === maxRetries) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+
+    return {
+      success: false,
+      error: 'Max retries exceeded',
+    };
+  }
+
+  /**
+   * Конвертирует ISO дату в формат SalesDrive API (РРРР-ММ-ДД ГГ:ХХ:СС)
+   */
+  private formatSalesDriveDate(isoDate: string): string {
+    try {
+      const date = new Date(isoDate);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const seconds = String(date.getSeconds()).padStart(2, '0');
+
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    } catch (error) {
+      console.error('❌ Error formatting date for SalesDrive API:', error);
+      // Fallback: если не получается конвертировать, возвращаем текущую дату
+      const now = new Date();
+      return now.toISOString().split('T')[0] + ' ' + now.toTimeString().split(' ')[0];
+    }
+  }
+
+  /**
+   * Загружает одну страницу заказов с фильтром по updateAt (время изменения)
+   */
+  private async fetchSinglePageUpdateAt(startDate: string, endDate: string, page: number): Promise<any[]> {
+    const batchSize = this.getSetting('orders.batchSize', 50);
+    const formattedStartDate = this.formatSalesDriveDate(startDate);
+    const formattedEndDate = this.formatSalesDriveDate(endDate);
+
+    console.log(`📅 [UpdateAt] Formatted dates: ${startDate} -> ${formattedStartDate}, ${endDate} -> ${formattedEndDate}`);
+
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: batchSize.toString(),
+      'filter[updateAt][from]': formattedStartDate,
+      'filter[updateAt][to]': formattedEndDate,
+      'filter[statusId]': '__ALL__'
+    });
+
+    const response = await fetch(`${this.apiUrl}/api/order/list/?${params}`, {
+      method: 'GET',
+      headers: {
+        'Form-Api-Key': this.apiKey,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (response.status === 429) {
+      // При rate limiting - применяем адаптивную задержку и повторяем
+      console.log(`🚦 Rate limit detected on page ${page}, applying adaptive delay...`);
+      const adaptiveDelay = this.handleRateLimit();
+      await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
+
+      // Повторяем запрос после задержки
+      return await this.fetchSinglePageUpdateAt(startDate, endDate, page);
     }
 
     if (!response.ok) {
@@ -718,7 +1221,29 @@ export class SalesDriveService {
    * Форматирует список заказов
    */
   private formatOrdersList(orders: any[]): SalesDriveOrder[] {
-    return orders.map((order: any) => this.formatOrder(order));
+    if (!Array.isArray(orders)) {
+      console.error('❌ [ERROR] formatOrdersList received non-array:', orders);
+      return [];
+    }
+
+    return orders
+      .filter((order, index) => {
+        if (!order) {
+          console.warn(`⚠️ [WARNING] Skipping null/undefined order at index ${index}`);
+          return false;
+        }
+        return true;
+      })
+      .map((order: any, index) => {
+        try {
+          return this.formatOrder(order);
+        } catch (error) {
+          console.error(`❌ [ERROR] Failed to format order at index ${index}:`, error);
+          console.error('Order data:', order);
+          return null;
+        }
+      })
+      .filter(order => order !== null) as SalesDriveOrder[];
   }
 
   /**
@@ -1018,6 +1543,12 @@ export class SalesDriveService {
    * Форматирует заказ в структурированный вид (с нужным форматом rawData)
    */
   private formatOrder(rawOrder: any): SalesDriveOrder {
+    // Проверяем, что rawOrder существует
+    if (!rawOrder) {
+      console.error('❌ [ERROR] formatOrder received null/undefined rawOrder');
+      throw new Error('Invalid order data: rawOrder is null or undefined');
+    }
+
     // Маппинг статусов
     const statusMap: { [key: number]: string } = {
       1: 'Новий',
@@ -1683,6 +2214,25 @@ export class SalesDriveService {
       console.log('🚀 [SYNC] Starting optimized SalesDrive to Database synchronization...');
       console.log('🚀 [SYNC] Timestamp:', new Date().toISOString());
 
+      // Проверяем circuit breaker перед запуском синхронизации
+      if (this.rateLimitState.circuitBreakerTrips >= 3) {
+        const timeSinceLastTrip = Date.now() - this.rateLimitState.lastCircuitBreakerTrip;
+        if (timeSinceLastTrip < 1800000) { // 30 минут
+          const remainingMinutes = Math.ceil((1800000 - timeSinceLastTrip) / 60000);
+          console.log(`🚫 [SYNC] Circuit breaker active. Sync blocked for ${remainingMinutes} more minutes to prevent API abuse.`);
+          return {
+            success: false,
+            synced: 0,
+            errors: 1,
+            details: [`Circuit breaker active. Try again in ${remainingMinutes} minutes.`]
+          };
+        } else {
+          // Сбрасываем circuit breaker после 30 минут
+          this.rateLimitState.circuitBreakerTrips = 0;
+          console.log('🔄 [SYNC] Circuit breaker reset after 30 minutes');
+        }
+      }
+
       // Получаем только новые/измененные заказы
       const salesDriveResponse = await this.fetchOrdersSinceLastSync();
       
@@ -1978,14 +2528,28 @@ export class SalesDriveService {
   /**
    * Ручная синхронизация заказов с указанным диапазоном дат
    * Получает ВСЕ заказы из диапазона дат (независимо от статуса) и использует force update
+   * Поддерживает чанкинг для больших объемов данных
    */
-  async syncOrdersWithDatabaseManual(startDate: string, endDate?: string): Promise<{ success: boolean; synced: number; errors: number; details: any[]; metadata?: any }> {
+  async syncOrdersWithDatabaseManual(startDate: string, endDate?: string, options: {
+    chunkSize?: number;
+    maxMemoryMB?: number;
+    enableProgress?: boolean;
+    batchSize?: number;
+    concurrency?: number;
+  } = {}): Promise<{ success: boolean; synced: number; errors: number; details: any[]; metadata?: any }> {
     const operationStartTime = Date.now();
     let syncHistoryData: CreateSyncHistoryData | null = null;
 
     try {
       console.log('🔄 [MANUAL SYNC] Starting comprehensive manual sync from:', startDate);
       console.log('🔄 [MANUAL SYNC] Initiated at:', new Date().toISOString());
+
+      // Настройки чанкинга
+      const chunkSize = options.chunkSize || 500; // Размер чанка по умолчанию
+      const maxMemoryMB = options.maxMemoryMB || 100; // Максимальный размер памяти в MB
+      const enableProgress = options.enableProgress !== false;
+
+      console.log(`🔧 [MANUAL SYNC] Chunking settings: size=${chunkSize}, maxMemory=${maxMemoryMB}MB, progress=${enableProgress}`);
 
       // Валидация и форматирование даты начала
       let formattedStartDate: string;
@@ -2072,6 +2636,13 @@ export class SalesDriveService {
       console.log(`📦 [MANUAL SYNC] Retrieved ${salesDriveOrders.length} orders from SalesDrive`);
       console.log(`📊 [MANUAL SYNC] Order statuses present: ${[...new Set(salesDriveOrders.map(o => o.status))].join(', ')}`);
 
+      // Применяем чанкинг для больших объемов данных
+      const shouldUseChunking = salesDriveOrders.length > chunkSize;
+      const estimatedMemoryMB = (JSON.stringify(salesDriveOrders).length / 1024 / 1024);
+
+      console.log(`🔧 [MANUAL SYNC] Memory usage estimate: ${estimatedMemoryMB.toFixed(1)}MB`);
+      console.log(`🔧 [MANUAL SYNC] Using chunking: ${shouldUseChunking} (threshold: ${chunkSize} orders)`);
+
       if (salesDriveOrders.length === 0) {
         console.log('✅ [MANUAL SYNC] No orders found in the specified date range');
 
@@ -2104,32 +2675,108 @@ export class SalesDriveService {
         console.log(`   ${index + 1}. ${order.orderNumber} (${order.status}) - ${order.customerName || 'No name'}`);
       });
 
-      // Используем smart batch update для оптимизации
-      console.log(`🔄 [MANUAL SYNC] Starting smart batch sync of ${salesDriveOrders.length} orders...`);
+      let totalSynced = 0;
+      let totalErrors = 0;
+      let updateResult: any;
+      let updateDuration = 0;
 
-      const updateData = salesDriveOrders.map(o => ({
-        orderNumber: o.orderNumber,
-        status: o.status,
-        statusText: o.statusText,
-        items: o.items,
-        rawData: o.rawData,
-        ttn: o.ttn,
-        quantity: o.quantity,
-        customerName: o.customerName,
-        customerPhone: o.customerPhone,
-        deliveryAddress: o.deliveryAddress,
-        totalPrice: o.totalPrice,
-        orderDate: o.orderDate,
-        shippingMethod: o.shippingMethod,
-        paymentMethod: o.paymentMethod,
-        cityName: o.cityName,
-        provider: o.provider
-      }));
+      if (shouldUseChunking) {
+        // Обработка с чанкингом
+        console.log(`🔄 [MANUAL SYNC] Starting chunked sync of ${salesDriveOrders.length} orders...`);
 
-      const updateStartTime = Date.now();
-      // Используем FORCE update для ручной синхронизации - пересинхронизируем ВСЕ заказы
-      const updateResult = await orderDatabaseService.forceUpdateOrdersBatch(updateData);
-      const updateDuration = (Date.now() - updateStartTime) / 1000;
+        const chunks = [];
+        for (let i = 0; i < salesDriveOrders.length; i += chunkSize) {
+          chunks.push(salesDriveOrders.slice(i, i + chunkSize));
+        }
+
+        console.log(`📦 [MANUAL SYNC] Split into ${chunks.length} chunks of ~${chunkSize} orders each`);
+
+        let totalCreated = 0;
+        let totalUpdated = 0;
+        const updateStartTime = Date.now();
+
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          const chunk = chunks[chunkIndex];
+          console.log(`🔄 [MANUAL SYNC] Processing chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} orders)`);
+
+          const chunkUpdateData = chunk.map(o => ({
+            orderNumber: o.orderNumber,
+            status: o.status,
+            statusText: o.statusText,
+            items: o.items,
+            rawData: o.rawData,
+            ttn: o.ttn,
+            quantity: o.quantity,
+            customerName: o.customerName,
+            customerPhone: o.customerPhone,
+            deliveryAddress: o.deliveryAddress,
+            totalPrice: o.totalPrice,
+            orderDate: o.orderDate,
+            shippingMethod: o.shippingMethod,
+            paymentMethod: o.paymentMethod,
+            cityName: o.cityName,
+            provider: o.provider
+          }));
+
+          try {
+            const chunkResult = await orderDatabaseService.forceUpdateOrdersBatch(chunkUpdateData);
+            totalCreated += chunkResult.totalCreated;
+            totalUpdated += chunkResult.totalUpdated;
+            totalSynced += chunkResult.totalCreated + chunkResult.totalUpdated;
+            totalErrors += chunkResult.totalErrors;
+
+            console.log(`✅ [MANUAL SYNC] Chunk ${chunkIndex + 1} completed: +${chunkResult.totalCreated} created, ${chunkResult.totalUpdated} updated, ${chunkResult.totalErrors} errors`);
+          } catch (chunkError) {
+            console.error(`❌ [MANUAL SYNC] Error processing chunk ${chunkIndex + 1}:`, chunkError);
+            totalErrors += chunk.length;
+          }
+
+          // Очистка памяти между чанками
+          if (global.gc) {
+            global.gc();
+          }
+        }
+
+        updateDuration = (Date.now() - updateStartTime) / 1000;
+        updateResult = {
+          totalCreated: totalCreated,
+          totalUpdated: totalUpdated,
+          totalErrors: totalErrors,
+          totalSkipped: 0
+        };
+
+        console.log(`✅ [MANUAL SYNC] Chunked sync completed in ${updateDuration.toFixed(1)}s`);
+      } else {
+        // Обработка без чанкинга
+        console.log(`🔄 [MANUAL SYNC] Starting direct batch sync of ${salesDriveOrders.length} orders...`);
+
+        const updateData = salesDriveOrders.map(o => ({
+          orderNumber: o.orderNumber,
+          status: o.status,
+          statusText: o.statusText,
+          items: o.items,
+          rawData: o.rawData,
+          ttn: o.ttn,
+          quantity: o.quantity,
+          customerName: o.customerName,
+          customerPhone: o.customerPhone,
+          deliveryAddress: o.deliveryAddress,
+          totalPrice: o.totalPrice,
+          orderDate: o.orderDate,
+          shippingMethod: o.shippingMethod,
+          paymentMethod: o.paymentMethod,
+          cityName: o.cityName,
+          provider: o.provider
+        }));
+
+        const updateStartTime = Date.now();
+        // Используем FORCE update для ручной синхронизации - пересинхронизируем ВСЕ заказы
+        updateResult = await orderDatabaseService.forceUpdateOrdersBatch(updateData);
+        updateDuration = (Date.now() - updateStartTime) / 1000;
+
+        totalSynced = updateResult.totalCreated + updateResult.totalUpdated;
+        totalErrors = updateResult.totalErrors;
+      }
 
       console.log(`📊 [MANUAL SYNC] Force batch update completed in ${updateDuration.toFixed(1)}s:`);
       console.log(`   🆕 Created: ${updateResult.totalCreated} orders`);

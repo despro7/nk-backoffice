@@ -11,6 +11,7 @@ interface SyncSettings {
     retryAttempts: number;
     retryDelay: number;
     enabled: boolean;
+    filterType: string;
   };
   products: {
     syncInterval: number;
@@ -77,8 +78,13 @@ export class SyncSettingsService {
           batchSize: 50,
           retryAttempts: 3,
           retryDelay: 60,
-          enabled: true
+          enabled: true,
+          filterType: 'updateAt' // 'orderTime' или 'updateAt' - фильтр по времени создания или изменения
         },
+
+        // Документация для фильтров:
+        // filterType: 'orderTime' - фильтр по времени создания заказа (все созданные заказы)
+        // filterType: 'updateAt' - фильтр по времени изменения заказа (только измененные заказы, оптимизировано)
 
         products: {
           syncInterval: 6,
