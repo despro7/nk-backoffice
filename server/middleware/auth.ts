@@ -14,8 +14,11 @@ declare global {
 
 export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    console.log('🔐 [Middleware] Проверяем токен доступа...');
-    
+    console.log(`🔐 [Middleware] Проверяем токен доступа для ${req.method} ${req.path}...`);
+    console.log(`🔐 [Middleware] Cookies:`, Object.keys(req.cookies || {}));
+    console.log(`🔐 [Middleware] Content-Type:`, req.headers['content-type']);
+    console.log(`🔐 [Middleware] Body:`, req.body);
+
     // Получаем токены из cookies
     const { accessToken, refreshToken } = await AuthService.getTokenFromCookies(req);
     
@@ -26,13 +29,39 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       try {
         const refreshResult = await AuthService.refreshToken({ refreshToken });
         
-        // Устанавливаем новые cookies
-        await AuthService.setAuthCookies(res, refreshResult.token, refreshResult.refreshToken);
-        console.log('✅ [Middleware] Токены обновлены, используем новый access token');
-        
         // Используем новый access token
         const secret = process.env.JWT_SECRET || 'fallback_secret';
         const decoded = jwt.verify(refreshResult.token, secret) as JwtPayload;
+
+        // Устанавливаем новые cookies
+        await AuthService.setAuthCookies(res, refreshResult.token, refreshResult.refreshToken);
+        console.log('✅ [Middleware] Токены обновлены, используем новый access token');
+
+        // Импортируем настройки логирования
+        const { loggingSettings } = require('../services/authService');
+
+        // Логируем автоматическое обновление токенов с учетом настроек
+        if (loggingSettings.console.logAccessToken || loggingSettings.console.logRefreshToken) {
+          console.log(`🔄 [Middleware] ТОКЕНЫ АВТОМАТИЧЕСКИ ОБНОВЛЕНЫ:`);
+          console.log(`   👤 Пользователь: ${decoded.email} (ID: ${decoded.userId})`);
+
+          if (loggingSettings.console.logAccessToken) {
+            console.log(`   🔑 Новый access token: ${refreshResult.token.substring(0, 20)}...`);
+          }
+
+          if (loggingSettings.console.logRefreshToken) {
+            console.log(`   🔄 Новый refresh token: ${refreshResult.refreshToken.substring(0, 20)}...`);
+          }
+
+          if (loggingSettings.console.logTokenExpiry) {
+            console.log(`   ⏰ Expires in: ${refreshResult.expiresIn} секунд`);
+            console.log(`   📅 Время обновления: ${new Date().toISOString()}`);
+          }
+        }
+
+        // Добавляем заголовок для Toast уведомления
+        res.setHeader('X-Token-Refreshed', 'true');
+        res.setHeader('X-User-Email', decoded.email);
         
         req.user = decoded;
         console.log(`👤 [Middleware] Пользователь авторизован после refresh: ${decoded.email} (ID: ${decoded.userId})`);
@@ -66,9 +95,17 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     }
 
     console.log('✅ [Middleware] Access token найден в cookies, проверяем...');
-    
+
     const secret = process.env.JWT_SECRET || 'fallback_secret';
     const decoded = jwt.verify(accessToken, secret) as JwtPayload;
+
+    // Наглядное логирование механизма сравнения токенов
+    console.log('🔍 [Middleware] Механизм сравнения токенов:');
+    console.log(`   🔑 JWT_SECRET установлен: ${secret !== 'fallback_secret' ? '✅' : '❌ (используется fallback)'}`);
+    console.log(`   📝 Тип токена в payload: ${decoded.tokenType}`);
+    console.log(`   👤 Пользователь из токена: ${decoded.email} (ID: ${decoded.userId})`);
+    console.log(`   🔒 Роль пользователя: ${decoded.role}`);
+    console.log(`   ✅ Токен валиден, тип соответствует access`);
     
     console.log(`👤 [Middleware] Токен декодирован, пользователь: ${decoded.email} (ID: ${decoded.userId})`);
     

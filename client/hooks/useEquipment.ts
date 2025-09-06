@@ -14,6 +14,8 @@ export interface EquipmentState {
   currentWeight: ScaleData | null;
   lastBarcode: BarcodeData | null;
   isConnected: boolean;
+  isScaleConnected: boolean;
+  isScannerConnected: boolean;
   isSimulationMode: boolean;
   config: EquipmentConfig | null;
   isLoading: boolean;
@@ -48,6 +50,10 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   const [lastBarcode, setLastBarcode] = useState<BarcodeData | null>(null);
   const [config, setConfig] = useState<EquipmentConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Отдельные состояния подключения
+  const [isScaleConnected, setIsScaleConnected] = useState(false);
+  const [isScannerConnected, setIsScannerConnected] = useState(false);
   
   const equipmentService = useRef(EquipmentService.getInstance());
   const scaleService = useRef(new ScaleService());
@@ -157,13 +163,14 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       if (!config) {
         return false;
       }
-      
+
       if (config.connectionType === 'simulation') {
-        updateStatus({ 
-          isConnected: true, 
+        updateStatus({
+          isConnected: true,
           lastActivity: new Date(),
-          error: null 
+          error: null
         });
+        setIsScaleConnected(true);
         return true;
       }
 
@@ -175,17 +182,18 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         // Встановлюємо callback для отримання даних з ваг
         scaleService.current.onWeightData((weightData: ScaleData) => {
           setCurrentWeight(weightData);
-          updateStatus({ 
+          updateStatus({
             lastActivity: new Date(),
-            error: null 
+            error: null
           });
         });
-        
-        updateStatus({ 
-          isConnected: true, 
+
+        updateStatus({
+          isConnected: true,
           lastActivity: new Date(),
-          error: null 
+          error: null
         });
+        setIsScaleConnected(true);
       }
       
       return result;
@@ -205,10 +213,11 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     try {
       await scaleService.current.disconnect();
       setCurrentWeight(null);
-      updateStatus({ 
+      updateStatus({
         isConnected: false,
         lastActivity: new Date()
       });
+      setIsScaleConnected(false);
     } catch (error) {
       console.error('Error disconnecting scale:', error);
     }
@@ -223,11 +232,12 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       }
       
       if (config.connectionType === 'simulation') {
-        updateStatus({ 
-          isConnected: true, 
+        updateStatus({
+          isConnected: true,
           lastActivity: new Date(),
-          error: null 
+          error: null
         });
+        setIsScannerConnected(true);
         return true;
       }
 
@@ -247,11 +257,12 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
           }
         });
         
-        updateStatus({ 
-          isConnected: true, 
+        updateStatus({
+          isConnected: true,
           lastActivity: new Date(),
-          error: null 
+          error: null
         });
+        setIsScannerConnected(true);
       }
       
       return result;
@@ -271,10 +282,11 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     try {
       await scannerService.current.disconnect();
       setLastBarcode(null);
-      updateStatus({ 
+      updateStatus({
         isConnected: false,
         lastActivity: new Date()
       });
+      setIsScannerConnected(false);
     } catch (error) {
       console.error('Error disconnecting scanner:', error);
     }
@@ -300,12 +312,15 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         connectionType,
         scale: null,
         scanner: null,
-        port: '',
-        baudRate: 9600,
-        dataBits: 8,
-        stopBits: 1,
-        parity: 'none' as const,
-        websocket: null,
+        serialTerminal: {
+          autoConnect: false,
+          baudRate: 9600,
+          dataBits: 8,
+          stopBits: 1,
+          parity: 'none' as const,
+          bufferSize: 1024,
+          flowControl: 'none' as const
+        },
         simulation: null
       };
       setConfig({ ...tempConfig } as EquipmentConfig); // Создаем новый объект
@@ -416,10 +431,12 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     currentWeight: currentWeight ? { ...currentWeight } : null, // Клонируем currentWeight
     lastBarcode: lastBarcode ? { ...lastBarcode } : null, // Клонируем lastBarcode
     isConnected: status.isConnected,
+    isScaleConnected,
+    isScannerConnected,
     isSimulationMode: status.isSimulationMode,
     config: config ? { ...config } : null, // Клонируем config объект
     isLoading
-  }), [status, currentWeight, lastBarcode, config, isLoading]);
+  }), [status, currentWeight, lastBarcode, config, isLoading, isScaleConnected, isScannerConnected]);
 
 
 

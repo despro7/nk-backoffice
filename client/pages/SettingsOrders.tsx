@@ -935,262 +935,154 @@ const SettingsOrders: React.FC = () => {
           <DynamicIcon name="sliders" size={20} className="text-gray-600 mr-2" />
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Налаштування за типами синхронізації</h2>
-            <p className="text-sm text-gray-600 mt-1">Індивідуальні налаштування для кожного типу даних</p>
           </div>
         </CardHeader>
-        <CardBody className="p-6">
-          <div className="space-y-8">
-            {/* Orders Sync Settings */}
-            <div className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center gap-3 mb-4">
-                <DynamicIcon name="shopping-cart" size={20} className="text-gray-600" />
+        <CardBody className="p-4">
+          <div className="space-y-4">
+            {/* Orders */}
+            <div className="border rounded-md p-3 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <DynamicIcon name="shopping-cart" size={18} className="text-gray-600" />
                 <div className="flex-1">
-                  <h3 className="font-medium text-gray-900">Синхронізація замовлень</h3>
-                  <p className="text-sm text-gray-600">Імпорт нових та оновлення існуючих замовлень з SalesDrive</p>
+                  <span className="font-medium">Замовлення</span>
+                  <span className="block text-xs text-gray-500">Імпорт/оновлення з SalesDrive</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    isSelected={syncSettings.orders.enabled}
-                    onValueChange={(isSelected) => setSyncSettings(prev => ({
-                      ...prev,
-                      orders: {
-                        ...prev.orders,
-                        enabled: isSelected
-                      }
-                    }))}
-                    size="sm"
-                  />
-                  <span className="text-sm text-gray-700">Увімкнено</span>
-                </div>
+                <Switch
+                  isSelected={syncSettings.orders.enabled}
+                  onValueChange={isSelected => setSyncSettings(prev => ({
+                    ...prev, orders: { ...prev.orders, enabled: isSelected }
+                  }))}
+                  size="sm"
+                />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Інтервал (хв)
-                  </label>
-                  <Input
-                    type="number"
-                    value={syncSettings.orders.syncInterval.toString()}
-                    onChange={(e) => setSyncSettings(prev => ({
-                      ...prev,
-                      orders: {
-                        ...prev.orders,
-                        syncInterval: parseInt(e.target.value) || 30
-                      }
-                    }))}
-                    min="5"
-                    max="480"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Пакет (шт)
-                  </label>
-                  <Input
-                    type="number"
-                    value={syncSettings.orders.batchSize.toString()}
-                    onChange={(e) => setSyncSettings(prev => ({
-                      ...prev,
-                      orders: {
-                        ...prev.orders,
-                        batchSize: parseInt(e.target.value) || 50
-                      }
-                    }))}
-                    min="10"
-                    max="200"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Повтори
-                  </label>
-                  <Input
-                    type="number"
-                    value={syncSettings.orders.retryAttempts.toString()}
-                    onChange={(e) => setSyncSettings(prev => ({
-                      ...prev,
-                      orders: {
-                        ...prev.orders,
-                        retryAttempts: parseInt(e.target.value) || 3
-                      }
-                    }))}
-                    min="0"
-                    max="10"
-                  />
-                </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Input
+                  type="number"
+                  label="Інтервал (хв)"
+                  value={syncSettings.orders.syncInterval.toString()}
+                  onChange={e => setSyncSettings(prev => ({
+                    ...prev, orders: { ...prev.orders, syncInterval: parseInt(e.target.value) || 30 }
+                  }))}
+                  min="5" max="480"
+                />
+                <Input
+                  type="number"
+                  label="Пакет (шт)"
+                  value={syncSettings.orders.batchSize.toString()}
+                  onChange={e => setSyncSettings(prev => ({
+                    ...prev, orders: { ...prev.orders, batchSize: parseInt(e.target.value) || 50 }
+                  }))}
+                  min="10" max="200"
+                />
+                <Input
+                  type="number"
+                  label="Повтори"
+                  value={syncSettings.orders.retryAttempts.toString()}
+                  onChange={e => setSyncSettings(prev => ({
+                    ...prev, orders: { ...prev.orders, retryAttempts: parseInt(e.target.value) || 3 }
+                  }))}
+                  min="0" max="10"
+                />
               </div>
             </div>
-
-            {/* Products Sync Settings */}
-            <div className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center gap-3 mb-4">
-                <DynamicIcon name="package" size={20} className="text-gray-600" />
+            {/* Products */}
+            <div className="border rounded-md p-3 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <DynamicIcon name="package" size={18} className="text-gray-600" />
                 <div className="flex-1">
-                  <h3 className="font-medium text-gray-900">Синхронізація товарів</h3>
-                  <p className="text-sm text-gray-600">Оновлення каталогу товарів, цін та комплектацій</p>
+                  <span className="font-medium">Товари</span>
+                  <span className="block text-xs text-gray-500">Оновлення каталогу, цін, комплектацій</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={syncSettings.products.enabled}
-                    onChange={(e) => setSyncSettings(prev => ({
-                      ...prev,
-                      products: {
-                        ...prev.products,
-                        enabled: e.target.checked
-                      }
-                    }))}
-                    className="rounded"
-                  />
-                  <span className="text-sm text-gray-700">Увімкнено</span>
-                </div>
+                <Switch
+                  isSelected={syncSettings.products.enabled}
+                  onValueChange={isSelected => setSyncSettings(prev => ({
+                    ...prev, products: { ...prev.products, enabled: isSelected }
+                  }))}
+                  size="sm"
+                />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Інтервал (год)
-                  </label>
-                  <Input
-                    type="number"
-                    value={syncSettings.products.syncInterval.toString()}
-                    onChange={(e) => setSyncSettings(prev => ({
-                      ...prev,
-                      products: {
-                        ...prev.products,
-                        syncInterval: parseInt(e.target.value) || 6
-                      }
-                    }))}
-                    min="1"
-                    max="24"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Пакет (шт)
-                  </label>
-                  <Input
-                    type="number"
-                    value={syncSettings.products.batchSize.toString()}
-                    onChange={(e) => setSyncSettings(prev => ({
-                      ...prev,
-                      products: {
-                        ...prev.products,
-                        batchSize: parseInt(e.target.value) || 100
-                      }
-                    }))}
-                    min="10"
-                    max="500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Повтори
-                  </label>
-                  <Input
-                    type="number"
-                    value={syncSettings.products.retryAttempts.toString()}
-                    onChange={(e) => setSyncSettings(prev => ({
-                      ...prev,
-                      products: {
-                        ...prev.products,
-                        retryAttempts: parseInt(e.target.value) || 2
-                      }
-                    }))}
-                    min="0"
-                    max="5"
-                  />
-                </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Input
+                  type="number"
+                  label="Інтервал (год)"
+                  value={syncSettings.products.syncInterval.toString()}
+                  onChange={e => setSyncSettings(prev => ({
+                    ...prev, products: { ...prev.products, syncInterval: parseInt(e.target.value) || 6 }
+                  }))}
+                  min="1" max="24"
+                />
+                <Input
+                  type="number"
+                  label="Пакет (шт)"
+                  value={syncSettings.products.batchSize.toString()}
+                  onChange={e => setSyncSettings(prev => ({
+                    ...prev, products: { ...prev.products, batchSize: parseInt(e.target.value) || 100 }
+                  }))}
+                  min="10" max="500"
+                />
+                <Input
+                  type="number"
+                  label="Повтори"
+                  value={syncSettings.products.retryAttempts.toString()}
+                  onChange={e => setSyncSettings(prev => ({
+                    ...prev, products: { ...prev.products, retryAttempts: parseInt(e.target.value) || 2 }
+                  }))}
+                  min="0" max="5"
+                />
               </div>
             </div>
-
-            {/* Stocks Sync Settings */}
-            <div className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center gap-3 mb-4">
-                <DynamicIcon name="warehouse" size={20} className="text-gray-600" />
+            {/* Stocks */}
+            <div className="border rounded-md p-3 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <DynamicIcon name="warehouse" size={18} className="text-gray-600" />
                 <div className="flex-1">
-                  <h3 className="font-medium text-gray-900">Синхронізація залишків</h3>
-                  <p className="text-sm text-gray-600">Оновлення кількості товарів на складах та партіях</p>
+                  <span className="font-medium">Залишки</span>
+                  <span className="block text-xs text-gray-500">Оновлення кількості на складах</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={syncSettings.stocks.enabled}
-                    onChange={(e) => setSyncSettings(prev => ({
-                      ...prev,
-                      stocks: {
-                        ...prev.stocks,
-                        enabled: e.target.checked
-                      }
-                    }))}
-                    className="rounded"
-                  />
-                  <span className="text-sm text-gray-700">Увімкнено</span>
-                </div>
+                <Switch
+                  isSelected={syncSettings.stocks.enabled}
+                  onValueChange={isSelected => setSyncSettings(prev => ({
+                    ...prev, stocks: { ...prev.stocks, enabled: isSelected }
+                  }))}
+                  className="rounded"
+                  size="sm"
+                />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Інтервал (хв)
-                  </label>
-                  <Input
-                    type="number"
-                    value={syncSettings.stocks.syncInterval.toString()}
-                    onChange={(e) => setSyncSettings(prev => ({
-                      ...prev,
-                      stocks: {
-                        ...prev.stocks,
-                        syncInterval: parseInt(e.target.value) || 15
-                      }
-                    }))}
-                    min="5"
-                    max="120"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Пакет (шт)
-                  </label>
-                  <Input
-                    type="number"
-                    value={syncSettings.stocks.batchSize.toString()}
-                    onChange={(e) => setSyncSettings(prev => ({
-                      ...prev,
-                      stocks: {
-                        ...prev.stocks,
-                        batchSize: parseInt(e.target.value) || 200
-                      }
-                    }))}
-                    min="20"
-                    max="1000"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Повтори
-                  </label>
-                  <Input
-                    type="number"
-                    value={syncSettings.stocks.retryAttempts.toString()}
-                    onChange={(e) => setSyncSettings(prev => ({
-                      ...prev,
-                      stocks: {
-                        ...prev.stocks,
-                        retryAttempts: parseInt(e.target.value) || 1
-                      }
-                    }))}
-                    min="0"
-                    max="3"
-                  />
-                </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Input
+                  type="number"
+                  label="Інтервал (хв)"
+                  value={syncSettings.stocks.syncInterval.toString()}
+                  onChange={e => setSyncSettings(prev => ({
+                    ...prev, stocks: { ...prev.stocks, syncInterval: parseInt(e.target.value) || 15 }
+                  }))}
+                  min="5" max="120"
+                />
+                <Input
+                  type="number"
+                  label="Пакет (шт)"
+                  value={syncSettings.stocks.batchSize.toString()}
+                  onChange={e => setSyncSettings(prev => ({
+                    ...prev, stocks: { ...prev.stocks, batchSize: parseInt(e.target.value) || 200 }
+                  }))}
+                  min="20" max="1000"
+                />
+                <Input
+                  type="number"
+                  label="Повтори"
+                  value={syncSettings.stocks.retryAttempts.toString()}
+                  onChange={e => setSyncSettings(prev => ({
+                    ...prev, stocks: { ...prev.stocks, retryAttempts: parseInt(e.target.value) || 1 }
+                  }))}
+                  min="0" max="3"
+                />
               </div>
             </div>
           </div>
-
-          <div className="mt-6 flex justify-end gap-4">
+          <div className="mt-4 flex justify-end">
             <Button
-              onClick={saveSyncSettings}
+              onPress={saveSyncSettings}
               color="primary"
-              size="sm"
               disabled={settingsLoading}
             >
               {settingsLoading ? (
@@ -1201,7 +1093,7 @@ const SettingsOrders: React.FC = () => {
               ) : (
                 <>
                   <DynamicIcon name="save" size={16} />
-                  Зберегти налаштування
+                  Зберегти
                 </>
               )}
             </Button>
@@ -1362,6 +1254,7 @@ const SettingsOrders: React.FC = () => {
                 }}
                 defaultSelectedKeys={[syncHistoryFilter]}
                 className="max-w-xs"
+                aria-label="Виберіть тип синхронізації"
               >
                 <SelectItem key="all">Всі типи</SelectItem>
                 <SelectItem key="manual">Ручна синхронізація</SelectItem>

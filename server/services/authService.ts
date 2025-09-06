@@ -5,6 +5,31 @@ import crypto from 'crypto';
 import { Request, Response } from 'express';
 import { UserType, LoginRequest, RegisterRequest, UpdateProfileRequest, AuthResponse, RefreshTokenRequest, RefreshTokenResponse, sanitizeUser } from "../types/auth.js";
 
+// Импорт настроек логирования с сервера
+let loggingSettings: any = {
+  console: {
+    logAccessToken: true,
+    logRefreshToken: true,
+    logTokenExpiry: true,
+    logFrequency: 5
+  },
+  toast: {
+    logLoginLogout: true,
+    logTokenGenerated: false,
+    logTokenRefreshed: true,
+    logTokenRemoved: true,
+    logTokenExpired: true,
+    logAuthError: true,
+    logRefreshError: true
+  }
+};
+
+// Функция для обновления настроек логирования
+export function updateLoggingSettings(newSettings: any) {
+  loggingSettings = newSettings;
+  console.log('🔧 [AuthService] Настройки логирования обновлены:', loggingSettings);
+}
+
 const prisma = new PrismaClient();
 
 export class AuthService {
@@ -64,13 +89,20 @@ export class AuthService {
     const { accessToken, refreshToken, expiresIn } = await this.generateTokenPair(newUser as UserType);
 
     // Обновляем пользователя с хешем refresh token
+    const refreshExpiryDate = new Date(Date.now() + this.getRefreshTokenExpiryMs());
     await prisma.user.update({
       where: { id: newUser.id },
       data: {
         refreshToken: this.hashToken(refreshToken),
-        refreshTokenExpiresAt: new Date(Date.now() + this.getRefreshTokenExpiryMs()),
+        refreshTokenExpiresAt: refreshExpiryDate,
       },
     });
+
+    // Компактное логирование установки refresh токена
+    console.log(`🔄 [AuthService] Refresh token установлен:`);
+    console.log(`   📅 Истекает: ${refreshExpiryDate.toISOString()}`);
+    console.log(`   ⏰ Через: ${Math.round((refreshExpiryDate.getTime() - Date.now()) / 1000 / 60)} минут`);
+    console.log(`   👤 Пользователь: ${newUser.email} (ID: ${newUser.id})`);
 
     return { 
       token: accessToken, 
@@ -104,15 +136,22 @@ export class AuthService {
     const { accessToken, refreshToken, expiresIn } = await this.generateTokenPair(user as UserType);
 
     // Обновляем время последнего входа, активности и refresh token
+    const refreshExpiryDate = new Date(Date.now() + this.getRefreshTokenExpiryMs());
     await prisma.user.update({
       where: { id: user.id },
       data: {
         lastLoginAt: new Date(),
         lastActivityAt: new Date(),
         refreshToken: this.hashToken(refreshToken),
-        refreshTokenExpiresAt: new Date(Date.now() + this.getRefreshTokenExpiryMs()),
+        refreshTokenExpiresAt: refreshExpiryDate,
       }
     });
+
+    // Компактное логирование установки refresh токена
+    console.log(`🔄 [AuthService] Refresh token установлен:`);
+    console.log(`   📅 Истекает: ${refreshExpiryDate.toISOString()}`);
+    console.log(`   ⏰ Через: ${Math.round((refreshExpiryDate.getTime() - Date.now()) / 1000 / 60)} минут`);
+    console.log(`   👤 Пользователь: ${user.email} (ID: ${user.id})`);
 
     return { 
       token: accessToken, 
@@ -129,9 +168,13 @@ export class AuthService {
       
       // Находим пользователя по refresh токену
       const hashedToken = this.hashToken(refreshTokenData.refreshToken);
+      console.log('🔍 [AuthService] refreshTokenData:', refreshTokenData);
       console.log('🔍 [AuthService] Хешированный refresh token:', hashedToken.substring(0, 20) + '...');
       console.log('🔍 [AuthService] Ищем пользователя по refresh токену...');
       
+      console.log('🔍 [AuthService] hashedToken:', hashedToken);
+      console.log('🔍 [AuthService] new Date():', new Date());
+
       const user = await prisma.user.findFirst({
         where: { 
           refreshToken: hashedToken,
@@ -176,19 +219,46 @@ export class AuthService {
       }
 
       console.log('✅ [AuthService] Все проверки пройдены, обновляем токены...');
-      
+
+      // Логируем обновление токенов с учетом настроек
+      if (loggingSettings.console.logAccessToken || loggingSettings.console.logRefreshToken) {
+        console.log(`🔄 [AuthService] ОБНОВЛЕНИЕ ТОКЕНОВ:`);
+        console.log(`   👤 Пользователь: ${user.email} (ID: ${user.id})`);
+        console.log(`   📅 Время обновления: ${new Date().toISOString()}`);
+      }
+
       // Генерируем новую пару токенов
       const { accessToken, refreshToken, expiresIn } = await this.generateTokenPair(user as UserType);
       console.log(`✅ [AuthService] Новые токены сгенерированы, expiresIn: ${expiresIn} секунд`);
 
       // Обновляем refresh token в базе
+      const refreshExpiryDate = new Date(Date.now() + this.getRefreshTokenExpiryMs());
       await prisma.user.update({
         where: { id: user.id },
         data: {
           refreshToken: this.hashToken(refreshToken),
-          refreshTokenExpiresAt: new Date(Date.now() + this.getRefreshTokenExpiryMs()),
+          refreshTokenExpiresAt: refreshExpiryDate,
         }
       });
+
+      // Компактное логирование установки refresh токена
+      console.log(`🔄 [AuthService] Refresh token установлен:`);
+      console.log(`   📅 Истекает: ${refreshExpiryDate.toISOString()}`);
+      console.log(`   ⏰ Через: ${Math.round((refreshExpiryDate.getTime() - Date.now()) / 1000 / 60)} минут`);
+      console.log(`   👤 Пользователь: ${user.email} (ID: ${user.id})`);
+
+      // Логируем успешное обновление токенов
+      if (loggingSettings.console.logAccessToken || loggingSettings.console.logRefreshToken) {
+        console.log(`✅ [AuthService] ТОКЕНЫ УСПЕШНО ОБНОВЛЕНЫ:`);
+
+        if (loggingSettings.console.logAccessToken) {
+          console.log(`   🔑 Access token: ${accessToken.substring(0, 20)}...`);
+        }
+
+        if (loggingSettings.console.logRefreshToken) {
+          console.log(`   🔄 Refresh token: ${refreshToken.substring(0, 20)}...`);
+        }
+      }
 
       return { token: accessToken, refreshToken, expiresIn };
       
@@ -199,6 +269,22 @@ export class AuthService {
   }
 
   static async logout(userId: number): Promise<void> {
+    // Логируем удаление токенов с учетом настроек
+    if (loggingSettings.console.logAccessToken || loggingSettings.console.logRefreshToken) {
+      console.log(`🗑️ [AuthService] УДАЛЕНИЕ ТОКЕНОВ:`);
+      console.log(`   👤 Пользователь ID: ${userId}`);
+
+      if (loggingSettings.console.logAccessToken) {
+        console.log(`   ❌ Access token: УДАЛЕН`);
+      }
+
+      if (loggingSettings.console.logRefreshToken) {
+        console.log(`   ❌ Refresh token: УДАЛЕН`);
+      }
+
+      console.log(`   📅 Время: ${new Date().toISOString()}`);
+    }
+
     // Очищаем refresh токен пользователя
     await prisma.user.update({
       where: { id: userId },
@@ -207,6 +293,8 @@ export class AuthService {
         refreshTokenExpiresAt: null
       }
     });
+
+    console.log(`✅ [AuthService] Токены успешно удалены для пользователя ${userId}`);
   }
 
   static async updateUserActivity(userId: number): Promise<void> {
@@ -258,9 +346,30 @@ export class AuthService {
 
     // Вычисляем время жизни access токена в секундах
     const expiresIn = this.parseExpiryTime(this.ACCESS_TOKEN_EXPIRES_IN);
-    
-    console.log(`✅ [AuthService] Токены сгенерированы успешно`);
-    console.log(`⏰ [AuthService] Access токен истекает через: ${expiresIn} секунд`);
+    const accessExpiryDate = new Date(Date.now() + expiresIn * 1000);
+    const refreshExpiryMs = this.getRefreshTokenExpiryMs();
+    const refreshExpiryDate = new Date(Date.now() + refreshExpiryMs);
+
+    // Логируем генерацию токенов с учетом настроек
+    if (loggingSettings.console.logAccessToken || loggingSettings.console.logRefreshToken) {
+      console.log(`✅ [AuthService] НОВЫЕ ТОКЕНЫ СГЕНЕРИРОВАНЫ:`);
+      console.log(`   👤 Пользователь: ${user.email} (ID: ${user.id})`);
+
+      if (loggingSettings.console.logAccessToken) {
+        console.log(`   🔑 Access token: ${accessToken.substring(0, 20)}...`);
+      }
+
+      if (loggingSettings.console.logRefreshToken) {
+        console.log(`   🔄 Refresh token: ${refreshToken.substring(0, 20)}...`);
+      }
+
+      if (loggingSettings.console.logTokenExpiry) {
+        console.log(`   ⏰ Access истекает: ${accessExpiryDate.toISOString()}`);
+        console.log(`   ⏰ Refresh истекает: ${refreshExpiryDate.toISOString()}`);
+        console.log(`   📊 Access через: ${expiresIn} сек (${Math.round(expiresIn/60)} мин)`);
+        console.log(`   📊 Refresh через: ${Math.round(refreshExpiryMs/1000/60)} мин (${Math.round(refreshExpiryMs/1000/60/60/24)} дней)`);
+      }
+    }
     
     return { accessToken, refreshToken, expiresIn };
   }

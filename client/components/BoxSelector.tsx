@@ -161,8 +161,8 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
     setTransitionMode(true);
     setRecommendationMode(newMode);
     
-    // Сохраняем выбранный режим в куки на 30 дней
-    setCookie(BOX_MODE_COOKIE, newMode, { expires: 30 });
+    // Сохраняем выбранный режим в куки на 365 дней
+    setCookie(BOX_MODE_COOKIE, newMode, { expires: 365 });
     
     // Проверяем, что кука установилась
     setTimeout(() => {

@@ -24,13 +24,11 @@ export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
         const intervalValue = parseInt(setting.value, 10);
         if (!isNaN(intervalValue) && intervalValue >= 1000) {
           setIntervalMs(intervalValue);
-          console.log(`🔧 [useServerStatus] Using interval from settings: ${intervalValue}ms`);
         } else {
           console.warn(`⚠️ [useServerStatus] Invalid interval value in settings: ${setting.value}, using fallback: ${fallbackIntervalMs}ms`);
           setIntervalMs(fallbackIntervalMs);
         }
       } else {
-        console.log(`🔧 [useServerStatus] No interval setting found (${response.status}), using fallback: ${fallbackIntervalMs}ms`);
         setIntervalMs(fallbackIntervalMs);
       }
     } catch (error) {
@@ -58,7 +56,6 @@ export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
         lastChecked: new Date(),
       });
 
-      console.log(`🔍 [useServerStatus] Server is ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
     } catch (error) {
       console.error('❌ [useServerStatus] Error checking server status:', error);
       setStatus({

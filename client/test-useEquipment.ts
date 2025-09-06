@@ -24,13 +24,6 @@ const mockEquipmentConfig = {
     autoConnect: true,
     timeout: 5000
   },
-  websocket: {
-    url: 'ws://localhost:8080/equipment',
-    autoReconnect: true,
-    reconnectInterval: 5000,
-    maxReconnectAttempts: 10,
-    heartbeatInterval: 30000
-  },
   simulation: {
     enabled: true,
     weightRange: { min: 0.1, max: 5.0 },
@@ -64,7 +57,7 @@ async function testSaveConfig() {
   
   const newConfig = {
     ...mockEquipmentConfig,
-    connectionType: 'websocket' as const,
+    connectionType: 'simulation' as const,
     scale: {
       ...mockEquipmentConfig.scale,
       comPort: 'COM5'
@@ -113,13 +106,7 @@ function testConnectionTypeToggle() {
     connectionType: 'local' as const
   };
   
-  const websocketConfig = {
-    ...mockEquipmentConfig,
-    connectionType: 'websocket' as const
-  };
-
   console.log('✅ Локальне підключення:', localConfig.connectionType);
-  console.log('✅ WebSocket підключення:', websocketConfig.connectionType);
   console.log('📋 Логіка перемикання протестована');
 }
 

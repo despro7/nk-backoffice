@@ -1,9 +1,30 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import EquipmentSettingsService from '../services/settingsService.js';
+import { LoggingSettings } from '../../client/services/ToastService.js';
+import { updateLoggingSettings } from '../services/authService.js';
 
 const router = express.Router();
 const equipmentSettingsService = EquipmentSettingsService.getInstance();
+
+// Хранение настроек логирования в памяти (можно заменить на базу данных)
+let loggingSettings: LoggingSettings = {
+  console: {
+    logAccessToken: true,
+    logRefreshToken: true,
+    logTokenExpiry: true,
+    logFrequency: 5
+  },
+  toast: {
+    logLoginLogout: true,
+    logTokenGenerated: false,
+    logTokenRefreshed: true,
+    logTokenRemoved: true,
+    logTokenExpired: true,
+    logAuthError: true,
+    logRefreshError: true
+  }
+};
 
 // Получить настройки оборудования
 router.get('/equipment', authenticateToken, async (req, res) => {
@@ -447,6 +468,135 @@ router.put('/weight-tolerance/values', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to update weight tolerance settings'
+    });
+  }
+});
+
+// === НАСТРОЙКИ ЛОГИРОВАНИЯ ===
+
+// Получить настройки логирования
+router.get('/logging', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔧 [API] Запрос настроек логирования');
+    console.log('🔧 [API] User:', req.user?.email);
+
+    res.json(loggingSettings);
+  } catch (error) {
+    console.error('Error getting logging settings:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get logging settings'
+    });
+  }
+});
+
+// Супер-простой тестовый маршрут без логики
+router.put('/test-minimal', (req, res) => {
+  console.log('🔧 [MINIMAL] Minimal test route called');
+  return res.status(200).json({ success: true, message: 'Minimal test successful' });
+});
+
+// Простой тестовый маршрут без логики
+router.put('/logging-simple', async (req, res) => {
+  console.log('🔧 [SIMPLE] Simple test route called');
+  return res.json({ success: true, message: 'Simple test successful' });
+});
+
+// Сохранить настройки логирования (тестовый маршрут без аутентификации)
+router.put('/logging-test', async (req, res) => {
+  try {
+    console.log('🔧 [API-TEST] ======= НАЧАЛО ОБРАБОТКИ ЗАПРОСА =======');
+    console.log('🔧 [API-TEST] Method:', req.method);
+    console.log('🔧 [API-TEST] URL:', req.url);
+    console.log('🔧 [API-TEST] Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('🔧 [API-TEST] Parsed body type:', typeof req.body);
+    console.log('🔧 [API-TEST] Parsed body keys:', Object.keys(req.body || {}));
+    console.log('🔧 [API-TEST] Parsed body:', JSON.stringify(req.body, null, 2));
+
+    const newSettings = req.body;
+
+    if (!newSettings || typeof newSettings !== 'object') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid settings data'
+      });
+    }
+
+    if (!newSettings.console || !newSettings.toast) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing console or toast settings'
+      });
+    }
+
+    loggingSettings = newSettings;
+    updateLoggingSettings(newSettings);
+
+    res.json({
+      success: true,
+      message: 'Logging settings saved successfully (test)',
+      data: loggingSettings
+    });
+  } catch (error) {
+    console.error('Error saving logging settings (test):', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to save logging settings (test)'
+    });
+  }
+});
+
+// Сохранить настройки логирования
+router.put('/logging', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔧 [API] Сохранение настроек логирования');
+    console.log('🔧 [API] User:', req.user?.email);
+    console.log('🔧 [API] Request body keys:', Object.keys(req.body || {}));
+    console.log('🔧 [API] Request body type:', typeof req.body);
+    console.log('🔧 [API] Raw request body:', req.body);
+    console.log('🔧 [API] Request body stringified:', JSON.stringify(req.body, null, 2));
+
+    const newSettings = req.body;
+
+    // Валидация настроек
+    if (!newSettings || typeof newSettings !== 'object') {
+      console.log('🔧 [API] Валидация провалилась: newSettings не объект или null');
+      console.log('🔧 [API] newSettings value:', newSettings);
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid logging settings data'
+      });
+    }
+
+    // Проверяем наличие необходимых полей
+    if (!newSettings.console || !newSettings.toast) {
+      console.log('🔧 [API] Валидация провалилась: отсутствуют console или toast поля');
+      console.log('🔧 [API] newSettings.console exists:', !!newSettings.console);
+      console.log('🔧 [API] newSettings.toast exists:', !!newSettings.toast);
+      console.log('🔧 [API] newSettings keys:', Object.keys(newSettings));
+      return res.status(400).json({
+        success: false,
+        error: 'Missing console or toast settings'
+      });
+    }
+
+    loggingSettings = newSettings;
+
+    // Обновляем настройки в authService
+    updateLoggingSettings(newSettings);
+
+    console.log('🔧 [Settings] Настройки логирования обновлены:', loggingSettings);
+
+    res.json({
+      success: true,
+      message: 'Logging settings saved successfully',
+      data: loggingSettings
+    });
+  } catch (error) {
+    console.error('Error saving logging settings:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to save logging settings'
     });
   }
 });

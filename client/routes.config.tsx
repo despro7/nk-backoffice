@@ -15,6 +15,7 @@ import SettingsOrderAssembly from "./pages/SettingsOrderAssembly";
 import SettingsEquipment from "./pages/SettingsEquipment";
 import SettingsOrders from "./pages/SettingsOrders";
 import SettingsAdmin from "./pages/SettingsAdmin";
+import TestSerialCom from "./pages/test-serial-com";
 
 // Определяем роли и их иерархию
 export const ROLES = {
@@ -215,6 +216,17 @@ export const appRoutes: AppRoute[] = [
     parent: 'settings',
     order: 8,
     roles: [ROLES.ADMIN] // Только admin
+  },
+  {
+    path: "/test-serial-com",
+    component: TestSerialCom,
+    title: 'Тестування COM порту та обладнання',
+    pageTitle: 'Тестування COM порту та обладнання | NK Backoffice',
+    navLabel: 'Тест COM порту',
+    icon: <DynamicIcon name="test-tube" size={20} />,
+    inNav: false, // Не показывать в навигации
+    order: 9
+    // Без указания roles или minRole - доступ без авторизации
   },
 ];
 

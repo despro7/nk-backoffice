@@ -94,7 +94,7 @@ export default function Dashboard() {
               <button
                 onClick={handleManualSync}
                 disabled={loading}
-                className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-1 text-sm bg-neutral-600 text-white rounded hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Синхронізація...' : 'Синхронізувати'}
               </button>
@@ -172,6 +172,36 @@ export default function Dashboard() {
               </div>
               <div className="text-sm text-gray-600 mt-1">
                 Продажі
+              </div>
+            </div>
+
+             {/* Відхилені */}
+             <div className="text-center">
+              <div className="text-2xl font-bold text-red-700">
+                {stats.rejected}
+              </div>
+              <div className="text-sm text-gray-600 mt-1">
+                Відхилені
+              </div>
+            </div>
+
+            {/* Повернені */}
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-700">
+                {stats.returned}
+              </div>
+              <div className="text-sm text-gray-600 mt-1">
+                Повернені
+              </div>
+            </div>
+
+            {/* Видалені */}
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-500">
+                {stats.deleted}
+              </div>
+              <div className="text-sm text-gray-600 mt-1">
+                Видалені
               </div>
             </div>
           </div>

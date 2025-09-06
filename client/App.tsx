@@ -1,5 +1,6 @@
 import "./global.css";
 
+import React, { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -12,7 +13,9 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Auth } from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
+import TestSerialCom from "./pages/test-serial-com";
 import { useEquipmentFromAuth } from "./contexts/AuthContext";
+import { ToastService } from "./services/ToastService";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +35,13 @@ const AppRoutes = () => {
             <Dashboard />
           </Layout>
         </ProtectedRoute>
+      } />
+
+      {/* Маршрут без авторизации для тестирования COM порта */}
+      <Route path="/test-serial-com" element={
+        <Layout>
+          <TestSerialCom />
+        </Layout>
       } />
 
       {/* Остальные защищенные роуты */}
@@ -63,14 +73,21 @@ const AppRoutes = () => {
   );
 };
 
+// Компонент для инициализации настроек
+const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  return <>{children}</>;
+};
+
 const App = () => (
   <HeroUIProvider>
     <ToastProvider toastProps={{ radius: "md", shadow: "md" }} placement="bottom-right" toastOffset={30} />
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
-          <ScrollToTop />
-          <AppRoutes />
+          <AppInitializer>
+            <ScrollToTop />
+            <AppRoutes />
+          </AppInitializer>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

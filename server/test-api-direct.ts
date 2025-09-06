@@ -46,13 +46,6 @@ async function testAPIDirect() {
           autoConnect: true,
           timeout: 3000
         },
-        websocket: {
-          url: 'ws://192.168.1.100:8080/equipment',
-          autoReconnect: true,
-          reconnectInterval: 3000,
-          maxReconnectAttempts: 5,
-          heartbeatInterval: 15000
-        },
         simulation: {
           enabled: false,
           weightRange: { min: 0.05, max: 10.0 },

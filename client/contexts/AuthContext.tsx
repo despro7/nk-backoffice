@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useRe
 import { UserType, LoginRequest, RegisterRequest } from '../../server/types/auth';
 import { log } from '@/lib/utils';
 import { useEquipment, EquipmentState, EquipmentActions } from '../hooks/useEquipment';
+import { ToastService } from '../services/ToastService';
 
 // Расширенный тип пользователя с информацией о времени жизни токена
 interface UserWithExpiry extends Omit<UserType, 'password' | 'refreshToken' | 'refreshTokenExpiresAt'> {
@@ -16,6 +17,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   forceLogout: () => void;
   refreshToken: () => Promise<boolean>;
+  checkAuthStatus: () => Promise<void>;
   equipmentState: EquipmentState;
   equipmentActions: EquipmentActions;
 }
@@ -50,22 +52,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Рассчитываем время до истечения токена на основе expiresIn
   const getRefreshDelay = (expiresIn?: number): number => {
-  if (expiresIn) {
-    return Math.max((expiresIn * 1000) - (5 * 60 * 1000), 60000);
-  }
-  return 55 * 60 * 1000; // По умолчанию 55 минут
-};
+    if (expiresIn) {
+      return Math.max((expiresIn * 1000) - (5 * 60 * 1000), 60000);
+    }
+    return 55 * 60 * 1000; // По умолчанию 55 минут
+  };
 
   // Проверяем статус аутентификации при загрузке
   useEffect(() => {
-    // log('🔄 Проверяем статус аутентификации при загрузке');
+    log('🔄 Проверяем статус аутентификации при загрузке');
     checkAuthStatus();
   }, []);
 
   // Умное обновление токенов - обновляем за 5 минут до истечения (тестовый режим)
   useEffect(() => {
     if (user) {
-      // log('👤 Пользователь авторизован, настраиваем обновление токенов');
+      log('👤 Пользователь авторизован, настраиваем обновление токенов');
       
       // Обновляем токен за 5 минут до истечения
       const scheduleTokenRefresh = (expiresIn?: number) => {
@@ -129,20 +131,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [user]);
 
   const checkAuthStatus = async () => {
+    console.log('🔍 [AuthContext] checkAuthStatus called');
     try {
       const response = await fetch('/api/auth/profile', {
         credentials: 'include'
       });
 
+      console.log('📡 [AuthContext] checkAuthStatus response:', response.status);
+
       if (response.ok) {
         const userData = await response.json();
-        
+        console.log('✅ [AuthContext] checkAuthStatus success, userData:', userData);
+
         // Сохраняем информацию о времени жизни токена
         const userWithExpiry = {
           ...userData,
           expiresIn: userData.expiresIn
         };
         setUser(userWithExpiry);
+        console.log('👤 [AuthContext] User state updated:', userWithExpiry);
         
         // Если токен валиден, планируем следующее обновление
         if (refreshTimeoutRef.current) {
@@ -160,14 +167,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } else {
         // Если получили 401, пробуем обновить токен
         if (response.status === 401) {
-          log('⚠️ Получили 401, пробуем обновить токен');
+          console.log('⚠️ [AuthContext] checkAuthStatus: Got 401, attempting token refresh');
           const refreshResult = await refreshToken();
-          if (!refreshResult) {
-            console.error('❌ Не удалось обновить токен, выходим из системы');
+          if (refreshResult) {
+            console.log('✅ [AuthContext] checkAuthStatus: Token refreshed successfully');
+            // После успешного обновления токена, рекурсивно вызываем checkAuthStatus
+            // чтобы обновить состояние пользователя
+            return checkAuthStatus();
+          } else {
+            console.error('❌ [AuthContext] checkAuthStatus: Token refresh failed, logging out');
             setUser(null);
           }
         } else {
-          console.error(`❌ Ошибка ${response.status}, выходим из системы`);
+          console.error(`❌ [AuthContext] checkAuthStatus: Error ${response.status}, logging out`);
           setUser(null);
         }
       }
@@ -192,7 +204,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (response.ok) {
         const data = await response.json();
         log('✅ Токен успешно обновлен');
-        
+
+        // Проверяем, было ли автоматическое обновление токена в middleware
+        const tokenRefreshed = response.headers.get('X-Token-Refreshed');
+        const userEmail = response.headers.get('X-User-Email');
+
+        if (tokenRefreshed === 'true' && userEmail) {
+          ToastService.tokenRefreshed(userEmail);
+        }
+
         // Обновляем информацию о времени жизни токена
         if (data.expiresIn && user) {
           const updatedUser = {
@@ -204,7 +224,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         // Токен обновлен успешно, планируем следующее обновление
         if (refreshTimeoutRef.current) {
+          log('🔧 refreshTimeoutRef', refreshTimeoutRef);
+          log('🔧 refreshTimeoutRef.current', refreshTimeoutRef.current);
           clearTimeout(refreshTimeoutRef.current);
+          log('🔧 Следующее обновление токенов', refreshTimeoutRef.current);
         }
         
         // Используем информацию о времени жизни токена для планирования
@@ -218,6 +241,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         if (error.message.includes('застарів') || error.message.includes('неактивний')) {
           console.error('❌ Токен устарел или неактивен, выходим из системы');
+          ToastService.refreshError();
           forceLogout();
           return false;
         }
@@ -247,7 +271,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (response.ok) {
         const data = await response.json();
         log('✅ Успешный вход, устанавливаем пользователя', data.user);
-        
+
+        // Показываем Toast уведомление
+        ToastService.loginSuccess(data.user.email);
+
         // Сохраняем информацию о времени жизни токена
         const userWithExpiry = {
           ...data.user,
@@ -293,7 +320,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (response.ok) {
         const data = await response.json();
         log('✅ Успешная регистрация, устанавливаем пользователя', data.user);
-        
+
+        // Показываем Toast уведомление
+        ToastService.loginSuccess(data.user.email);
+
         // Сохраняем информацию о времени жизни токена
         const userWithExpiry = {
           ...data.user,
@@ -337,6 +367,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         credentials: 'include'
       });
       log('✅ Успешный выход из системы');
+
+      // Показываем Toast уведомление
+      ToastService.logoutSuccess();
     } catch (error) {
       console.error('❌ Ошибка при выходе:', error);
     } finally {
@@ -362,6 +395,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logout,
     forceLogout,
     refreshToken,
+    checkAuthStatus,
     equipmentState,
     equipmentActions,
   };

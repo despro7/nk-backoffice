@@ -14,7 +14,6 @@ interface UserRegistrationData {
   name: string;
   password: string;
   role: string;
-  roleName: string;
 }
 
 interface RoleOption {
@@ -51,8 +50,7 @@ export const UserRegistrationManager: React.FC = () => {
     email: '',
     name: '',
     password: '',
-    role: ROLES.STOREKEEPER, // Начальная роль - самая низкая в иерархии
-    roleName: ''
+    role: ROLES.STOREKEEPER // Начальная роль - самая низкая в иерархии
   });
 
   // Преобразование ролей из useRoleAccess в формат для Select
@@ -119,6 +117,11 @@ export const UserRegistrationManager: React.FC = () => {
     return true;
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleRegister();
+  };
+
   const handleRegister = async () => {
     if (!validateForm()) return;
 
@@ -138,7 +141,7 @@ export const UserRegistrationManager: React.FC = () => {
           name: userData.name || undefined,
           password: userData.password,
           role: userData.role,
-          roleName: userData.roleName || undefined
+          roleName: availableRoles.find(r => r.value === userData.role)?.label || userData.role
         })
       });
 
@@ -148,8 +151,7 @@ export const UserRegistrationManager: React.FC = () => {
           email: '',
           name: '',
           password: '',
-          role: ROLES.STOREKEEPER,
-          roleName: ''
+          role: ROLES.STOREKEEPER
         });
         fetchUsers(); // Обновляем список пользователей
         setTimeout(() => setSuccess(''), 3000);
@@ -230,7 +232,6 @@ export const UserRegistrationManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold text-gray-900 mb-4">Реєстрація користувачів</h2>
 
       {/* Success/Error сообщения */}
       {(error || success) && (
@@ -241,13 +242,14 @@ export const UserRegistrationManager: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Создание нового пользователя */}
-        <Card>
+        <Card className="p-2">
           <CardHeader>
-            <h3 className="text-lg font-semibold">Створити нового користувача</h3>
+            <h3 className="text-xl font-semibold">Створити нового користувача</h3>
           </CardHeader>
 
           <CardBody className="space-y-4">
-            <div className="grid grid-cols-1 gap-4">
+            <form onSubmit={handleSubmit}>
+              <div className="grid grid-cols-2 gap-4">
               <Input
                 type="email"
                 labelPlacement="outside"
@@ -256,6 +258,7 @@ export const UserRegistrationManager: React.FC = () => {
                 value={userData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
                 isRequired
+                autoComplete="email"
               />
 
               <Input
@@ -265,6 +268,7 @@ export const UserRegistrationManager: React.FC = () => {
                 placeholder="Іван Петренко"
                 value={userData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
+                autoComplete="name"
               />
 
               <Input
@@ -275,6 +279,7 @@ export const UserRegistrationManager: React.FC = () => {
                 value={userData.password}
                 onChange={(e) => handleInputChange('password', e.target.value)}
                 isRequired
+                autoComplete="new-password"
                 endContent={
                   <button
                     className="focus:outline-none"
@@ -308,32 +313,25 @@ export const UserRegistrationManager: React.FC = () => {
                 ))}
               </Select>
 
-              <Input
-                type="text"
-                labelPlacement="outside"
-                label="Назва ролі"
-                placeholder="Наприклад: Продавець, Складський..."
-                value={userData.roleName}
-                onChange={(e) => handleInputChange('roleName', e.target.value)}
-              />
-            </div>
+              </div>
 
-            <HeroButton
-              onPress={handleRegister}
-              disabled={isLoading || !userData.email || !userData.password}
-              color="primary"
-			  size='lg'
-              className="w-full mt-3"
-            >
+              <HeroButton
+                type="submit"
+                disabled={isLoading || !userData.email || !userData.password}
+                color="primary"
+  			        size='lg'
+                className="w-full mt-6"
+              >
               {isLoading ? 'Створення...' : 'Створити користувача'}
             </HeroButton>
+            </form>
           </CardBody>
         </Card>
 
         {/* Список пользователей */}
-        <Card>
+        <Card className="p-2">
           <CardHeader>
-            <h3 className="text-lg font-semibold">Всі користувачі ({users.length})</h3>
+            <h3 className="text-xl font-semibold">Всі користувачі ({users.length})</h3>
           </CardHeader>
           <CardBody className="p-0">
             {usersLoading ? (
@@ -341,34 +339,34 @@ export const UserRegistrationManager: React.FC = () => {
             ) : users.length === 0 ? (
               <div className="p-4 text-center text-gray-500">Немає користувачів</div>
             ) : (
-              <Table aria-label="Users table">
+              <Table aria-label="Users table" classNames={{ wrapper: "p-2 shadow-none" }}>
                 <TableHeader>
                   <TableColumn>Користувач</TableColumn>
                   <TableColumn>Роль</TableColumn>
-                  <TableColumn>Статус</TableColumn>
-                  <TableColumn>Дії</TableColumn>
+                  <TableColumn className="text-center">Статус</TableColumn>
+                  <TableColumn className="text-center">Дії</TableColumn>
                 </TableHeader>
                 <TableBody>
                   {users.map((user) => (
                     <TableRow key={user.id}>
-                      <TableCell>
+                      <TableCell className="vertical-align-top">
                         <div>
                           <div className="font-medium">{user.name || user.email}</div>
-                          <div className="text-sm text-gray-500">{user.email}</div>
+                          <div className="text-xs text-gray-500">{user.email}</div>
                         </div>
                       </TableCell>
                       <TableCell>
                         <span className="text-sm">{user.roleLabel}</span>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="justify-items-center">
                         {user.isActive ? (
                           <CheckCircle className="w-4 h-4 text-green-500" />
                         ) : (
                           <XCircle className="w-4 h-4 text-red-500" />
                         )}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-2">
                           <HeroButton
                             size="sm"
                             variant="light"

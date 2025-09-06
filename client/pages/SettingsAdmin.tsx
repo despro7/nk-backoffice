@@ -2,6 +2,7 @@ import React from 'react';
 import { SettingsManager } from '../components/SettingsManager';
 import { ServerStatusSettings } from '../components/ServerStatusSettings';
 import { UserRegistrationManager } from '../components/UserRegistrationManager';
+import { LoggingSettings } from '../components/LoggingSettings';
 import { useRoleAccess } from '../hooks/useRoleAccess';
 
 const SettingsAdmin: React.FC = () => {
@@ -24,6 +25,11 @@ const SettingsAdmin: React.FC = () => {
       {/* Регистрация пользователей */}
       <section>
         <UserRegistrationManager />
+      </section>
+
+      {/* Настройки логирования */}
+      <section>
+        <LoggingSettings />
       </section>
 
       {/* Настройки статуса сервера */}

@@ -32,6 +32,15 @@ export interface EquipmentSettings {
     autoConnect: boolean;
     timeout: number;
   };
+  serialTerminal: {
+    autoConnect: boolean;
+    baudRate: number;
+    dataBits: number;
+    stopBits: number;
+    parity: string;
+    bufferSize: number;
+    flowControl: string;
+  };
   simulation: {
     enabled: boolean;
     weightRange: { min: number; max: number };
@@ -76,6 +85,15 @@ export class EquipmentSettingsService {
         scanner: {
           autoConnect: true,
           timeout: 5000
+        },
+        serialTerminal: {
+          autoConnect: false,
+          baudRate: 9600,
+          dataBits: 8,
+          stopBits: 1,
+          parity: 'none',
+          bufferSize: 1024,
+          flowControl: 'none'
         },
         simulation: {
           enabled: true,
@@ -168,6 +186,41 @@ export class EquipmentSettingsService {
           key: 'equipment_scanner.timeout',
           value: JSON.stringify(settings.scanner?.timeout ?? 5000),
           description: 'Таймаут сканера'
+        },
+        {
+          key: 'equipment_serialTerminal.autoConnect',
+          value: JSON.stringify(settings.serialTerminal?.autoConnect ?? false),
+          description: 'Автоматическое подключение Serial терминала'
+        },
+        {
+          key: 'equipment_serialTerminal.baudRate',
+          value: JSON.stringify(settings.serialTerminal?.baudRate ?? 9600),
+          description: 'Скорость передачи данных Serial терминала'
+        },
+        {
+          key: 'equipment_serialTerminal.dataBits',
+          value: JSON.stringify(settings.serialTerminal?.dataBits ?? 8),
+          description: 'Биты данных Serial терминала'
+        },
+        {
+          key: 'equipment_serialTerminal.stopBits',
+          value: JSON.stringify(settings.serialTerminal?.stopBits ?? 1),
+          description: 'Стоп-биты Serial терминала'
+        },
+        {
+          key: 'equipment_serialTerminal.parity',
+          value: JSON.stringify(settings.serialTerminal?.parity ?? 'none'),
+          description: 'Парность Serial терминала'
+        },
+        {
+          key: 'equipment_serialTerminal.bufferSize',
+          value: JSON.stringify(settings.serialTerminal?.bufferSize ?? 1024),
+          description: 'Размер буфера Serial терминала'
+        },
+        {
+          key: 'equipment_serialTerminal.flowControl',
+          value: JSON.stringify(settings.serialTerminal?.flowControl ?? 'none'),
+          description: 'Управление потоком Serial терминала'
         },
         {
           key: 'equipment_simulation.enabled',

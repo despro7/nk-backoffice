@@ -63,7 +63,6 @@ router.post('/refresh', async (req: Request, res: Response) => {
   try {
     // Получаем refresh token из cookies
     const { refreshToken } = await AuthService.getTokenFromCookies(req);
-    
     if (!refreshToken) {
       return res.status(401).json({ message: 'Refresh token not found' });
     }

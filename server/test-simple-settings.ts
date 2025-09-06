@@ -48,7 +48,7 @@ async function testSimpleSettings() {
     console.log('\n2️⃣ Тестування збереження нових налаштувань...');
     
     const newSettings = {
-      connectionType: 'websocket',
+      connectionType: 'simulation',
       scale: {
         comPort: 'COM5',
         baudRate: 19200

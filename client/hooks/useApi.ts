@@ -1,7 +1,7 @@
 import { useAuth } from '../contexts/AuthContext';
 
 export const useApi = () => {
-  const { refreshToken, forceLogout } = useAuth();
+  const { refreshToken, forceLogout, checkAuthStatus } = useAuth();
 
   const apiCall = async (url: string, options: RequestInit = {}) => {
     const startTime = Date.now();
@@ -32,7 +32,12 @@ export const useApi = () => {
           const refreshSuccess = await refreshToken();
 
           if (refreshSuccess) {
-            console.log(`✅ [CLIENT] useApi: Token refreshed successfully, retrying request...`);
+            console.log(`✅ [CLIENT] useApi: Token refreshed successfully, updating auth status...`);
+            // Обновляем статус аутентификации в контексте
+            console.log(`🔄 [CLIENT] useApi: Calling checkAuthStatus...`);
+            await checkAuthStatus();
+            console.log(`🎯 [CLIENT] useApi: checkAuthStatus completed`);
+
             // Повторяем оригинальный запрос с новым токеном
             const retryResponse = await fetch(url, {
               ...options,

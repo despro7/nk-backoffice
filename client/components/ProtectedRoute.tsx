@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { hasAccess } from '../routes.config';
 
 interface ProtectedRouteProps {
@@ -10,14 +10,30 @@ interface ProtectedRouteProps {
   fallbackPath?: string;
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
-  children, 
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
+  children,
   requiredRoles,
   minRole,
   fallbackPath = "/"
 }) => {
   const { user, isLoading } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  console.log('🔒 [ProtectedRoute] user:', user, 'isLoading:', isLoading, 'pathname:', location.pathname);
+
+  // Следим за изменениями состояния пользователя
+  useEffect(() => {
+    console.log('👀 [ProtectedRoute] useEffect triggered, user:', user, 'pathname:', location.pathname);
+
+    // Если пользователь только что авторизовался и мы на странице /auth, редиректим
+    if (user && location.pathname === '/auth') {
+      const lastVisitedPath = localStorage.getItem('lastVisitedPath') || '/';
+      console.log('🚀 [ProtectedRoute] User authenticated, redirecting to:', lastVisitedPath);
+      navigate(lastVisitedPath, { replace: true });
+      localStorage.removeItem('lastVisitedPath');
+    }
+  }, [user, location.pathname, navigate]);
 
   if (isLoading) {
     return (
@@ -28,12 +44,15 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   if (!user) {
+    console.log('🚫 [ProtectedRoute] User not authenticated, redirecting to /auth');
     // Сохраняем текущий путь перед редиректом на /auth
     if (location.pathname !== '/auth' && location.pathname !== '/') {
       localStorage.setItem('lastVisitedPath', location.pathname);
     }
     return <Navigate to="/auth" replace />;
   }
+
+  console.log('✅ [ProtectedRoute] User authenticated, rendering children');
 
   if (!hasAccess(user.role, requiredRoles, minRole)) {
     return (

@@ -34,7 +34,7 @@ async function testAPIEndpoints() {
     console.log('2️⃣ Тестування POST /api/settings/equipment...');
     try {
       const testConfig = {
-        connectionType: 'websocket',
+        connectionType: 'simulation',
         scale: {
           comPort: 'COM5',
           baudRate: 19200,
@@ -45,13 +45,6 @@ async function testAPIEndpoints() {
         scanner: {
           autoConnect: true,
           timeout: 3000
-        },
-        websocket: {
-          url: 'ws://192.168.1.100:8080/equipment',
-          autoReconnect: true,
-          reconnectInterval: 3000,
-          maxReconnectAttempts: 5,
-          heartbeatInterval: 15000
         },
         simulation: {
           enabled: false,

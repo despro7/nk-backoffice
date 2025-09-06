@@ -192,7 +192,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
         console.log('📊 ПОЛУЧЕНЫ ДАННЫЕ:', data.data.length, 'товаров,', data.metadata.totalOrders, 'заказов');
 
         const totalOrderedQuantity = data.data.reduce((sum, product) => sum + product.orderedQuantity, 0);
-        console.log(`💰 ОБЩАЯ СУММА ЗАКАЗОВ: ${totalOrderedQuantity} шт.`);
+        console.log(`💰 Загальна сума замовлених порцій: ${totalOrderedQuantity} шт.`);
 
         setProductStats(data.data);
 
@@ -409,12 +409,9 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
 
   // Загрузка данных при изменении фильтров
   useEffect(() => {
-    console.log('🔄 useEffect triggered - viewMode:', viewMode, 'selectedProduct:', selectedProduct, 'statusFilter:', statusFilter);
     if (viewMode === "dates" && selectedProduct) {
-      console.log('📊 Calling fetchProductDateStats from useEffect');
       fetchProductDateStats();
     } else {
-      console.log('📊 Calling fetchProductStats from useEffect');
       fetchProductStats();
     }
   }, [fetchProductStats, viewMode, selectedProduct, statusFilter, dateRange]); // Убрали fetchProductDateStats из зависимостей
@@ -614,7 +611,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
     const options = [<SelectItem key="">Всі товари</SelectItem>];
     productStats.forEach((product) => {
       options.push(
-        <SelectItem key={product.sku}>
+        <SelectItem key={product.sku} textValue={`${product.name} (${product.sku})`}>
           {product.name} ({product.sku})
         </SelectItem>
       );

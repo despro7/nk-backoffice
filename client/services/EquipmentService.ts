@@ -19,7 +19,7 @@ export interface BarcodeData {
 }
 
 export interface EquipmentConfig {
-  connectionType: 'local' | 'websocket' | 'simulation';
+  connectionType: 'local' | 'simulation';
   scale: {
     comPort: string;
     baudRate: number;
@@ -31,12 +31,14 @@ export interface EquipmentConfig {
     autoConnect: boolean;
     timeout: number;
   };
-  websocket: {
-    url: string;
-    autoReconnect: boolean;
-    reconnectInterval: number;
-    maxReconnectAttempts: number;
-    heartbeatInterval: number;
+  serialTerminal: {
+    autoConnect: boolean;
+    baudRate: number;
+    dataBits: number;
+    stopBits: number;
+    parity: 'none' | 'even' | 'odd';
+    bufferSize: number;
+    flowControl: 'none' | 'hardware';
   };
   simulation: {
     enabled: boolean;
@@ -67,12 +69,14 @@ export class EquipmentService {
         autoConnect: true,
         timeout: 5000
       },
-      websocket: {
-        url: 'ws://localhost:8080/equipment',
-        autoReconnect: true,
-        reconnectInterval: 5000,
-        maxReconnectAttempts: 10,
-        heartbeatInterval: 30000
+      serialTerminal: {
+        autoConnect: false,
+        baudRate: 9600,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        bufferSize: 1024,
+        flowControl: 'none'
       },
       simulation: {
         enabled: true,
@@ -113,17 +117,17 @@ export class EquipmentService {
   }
 
   // Встановлення типу підключення
-  public setConnectionType(type: 'local' | 'websocket' | 'simulation'): void {
+  public setConnectionType(type: 'local' | 'simulation'): void {
     this.config.connectionType = type;
     this.isSimulationMode = type === 'simulation';
-    
+
     if (type === 'simulation') {
       this.disconnectScale();
       this.disconnectScanner();
     }
   }
 
-  public getConnectionType(): 'local' | 'websocket' | 'simulation' {
+  public getConnectionType(): 'local' | 'simulation' {
     return this.config.connectionType;
   }
 
@@ -267,11 +271,6 @@ export class EquipmentService {
       return { scale: true, scanner: true };
     }
 
-    if (this.config.connectionType === 'websocket') {
-      // Для WebSocket тестуємо підключення до сервера
-      // TODO: Implement WebSocket connection test
-      return { scale: true, scanner: true };
-    }
 
     // Локальне підключення
     const scaleResult = await this.connectScale();

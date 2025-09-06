@@ -77,14 +77,17 @@ export function createServer() {
   }));
   app.use(express.urlencoded({ extended: true }));
   
-  // Логирование для диагностики
+  // Глобальная диагностика всех PUT/POST запросов
   app.use((req, res, next) => {
-    if (req.method === 'POST' && req.headers['content-type']?.includes('application/json')) {
-      logServer('📥 Входящий JSON запрос:', {
+    if ((req.method === 'PUT' || req.method === 'POST') && req.url.includes('/api/settings/')) {
+      logServer('📥 Settings API request:', {
         method: req.method,
         url: req.url,
         contentType: req.headers['content-type'],
-        bodyLength: req.body ? Object.keys(req.body).length : 0
+        bodyType: typeof req.body,
+        bodyKeys: Object.keys(req.body || {}),
+        hasBody: !!req.body,
+        bodyLength: req.body ? JSON.stringify(req.body).length : 0
       });
     }
     next();
