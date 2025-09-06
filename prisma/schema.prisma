@@ -28,7 +28,7 @@ model User {
 }
 
 model Order {
-  id              String          @id
+  id              Int             @id
   externalId      String          @unique
   ttn             String
   quantity        Int
@@ -51,7 +51,6 @@ model Order {
   syncError       String?
   syncStatus      String          @default("pending")
   totalPrice      Float?
-  processedItems  String?         @db.LongText
   pricinaZnizki   String?
   sajt            String?
   OrdersHistory   OrdersHistory[]
@@ -68,8 +67,8 @@ model Order {
 }
 
 model OrdersHistory {
-  id         String   @id @default(cuid())
-  orderId    String
+  id         Int      @id @default(autoincrement())
+  orderId    Int
   status     String
   statusText String
   changedAt  DateTime @default(now())
@@ -209,7 +208,7 @@ model StockMovementHistory {
 }
 
 model SyncLogs {
-  id               String    @id @default(cuid())
+  id               Int       @id @default(autoincrement())
   type             String
   status           String
   message          String    @db.Text
@@ -232,7 +231,7 @@ model SyncLogs {
 
 
 model SyncHistory {
-  id            String   @id @default(cuid())
+  id            Int      @id @default(autoincrement())
   syncType      String
   startDate     String?
   endDate       String?
@@ -249,4 +248,19 @@ model SyncHistory {
   updatedAt     DateTime @updatedAt
 
   @@map("sync_history")
+}
+
+model OrdersCache {
+  id            Int      @id @default(autoincrement())
+  externalId    String   @unique
+  processedItems String? @db.LongText  // JSON с массивом товаров и их статистикой
+  totalQuantity Int      // Общее кол-во порций/комплектов
+  cacheUpdatedAt DateTime @default(now())
+  cacheVersion  Int      @default(1) // Версия формата кеша
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([externalId])
+  @@index([cacheUpdatedAt])
+  @@map("orders_cache")
 }

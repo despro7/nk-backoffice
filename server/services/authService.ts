@@ -40,11 +40,7 @@ export class AuthService {
   
   // Получаем время жизни access token в миллисекундах для cookies
   private static getAccessTokenCookieMaxAge(): number {
-    const envValue = process.env.ACCESS_TOKEN_COOKIE_MAX_AGE;
-    if (envValue) {
-      return parseInt(envValue) * 60 * 1000; // конвертируем минуты в миллисекундах
-    }
-    return 60 * 60 * 1000; // по умолчанию 1 час
+    return this.parseExpiryTime(this.ACCESS_TOKEN_EXPIRES_IN) * 1000;
   }
 
   // Логируем настройки токенов при инициализации

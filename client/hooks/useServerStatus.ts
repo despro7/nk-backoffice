@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface ServerStatus {
   isOnline: boolean;
@@ -14,10 +14,12 @@ export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
   });
   const [intervalMs, setIntervalMs] = useState<number>(fallbackIntervalMs);
 
-  const fetchIntervalSetting = async () => {
+  const fetchIntervalSetting = useCallback(async (signal?: AbortSignal) => {
     try {
       // Публичная настройка - не отправляем credentials
-      const response = await fetch('/api/settings/server_check_interval');
+      const response = await fetch('/api/settings/server_check_interval', {
+        signal
+      });
 
       if (response.ok) {
         const setting = await response.json();
@@ -32,12 +34,14 @@ export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
         setIntervalMs(fallbackIntervalMs);
       }
     } catch (error) {
-      console.error('❌ [useServerStatus] Error fetching interval setting:', error);
-      setIntervalMs(fallbackIntervalMs);
+      if (error.name !== 'AbortError') {
+        console.error('❌ [useServerStatus] Error fetching interval setting:', error);
+        setIntervalMs(fallbackIntervalMs);
+      }
     }
-  };
+  }, [fallbackIntervalMs]);
 
-  const checkServerStatus = async () => {
+  const checkServerStatus = useCallback(async () => {
     setStatus(prev => ({ ...prev, isLoading: true }));
 
     try {
@@ -64,12 +68,15 @@ export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
         lastChecked: new Date(),
       });
     }
-  };
+  }, []);
 
   useEffect(() => {
     // Сначала получаем настройку интервала
-    fetchIntervalSetting();
-  }, []);
+    const controller = new AbortController();
+    fetchIntervalSetting(controller.signal);
+
+    return () => controller.abort();
+  }, [fetchIntervalSetting]);
 
   useEffect(() => {
     if (intervalMs > 0) {
@@ -81,7 +88,7 @@ export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
 
       return () => clearInterval(interval);
     }
-  }, [intervalMs]);
+  }, [intervalMs, checkServerStatus]);
 
   return {
     ...status,

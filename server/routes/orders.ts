@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { salesDriveService } from '../services/salesDriveService.js';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { syncHistoryService } from '../services/syncHistoryService.js';
+import { ordersCacheService } from '../services/ordersCacheService.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { PrismaClient } from '@prisma/client';
 
@@ -571,7 +572,7 @@ router.post('/fix-items-data', authenticateToken, async (req, res) => {
 
             if (items && Array.isArray(items)) {
               // Обновляем items в базе данных
-              await orderDatabaseService.updateOrder(order.id, {
+              await orderDatabaseService.updateOrder(order.externalId, {
                 items: items
               });
               fixedCount++;
@@ -865,7 +866,7 @@ router.get('/sync/history/:id', authenticateToken, async (req, res) => {
 
     // Находим запись в истории по ID
     const historyRecord = await prisma.syncHistory.findUnique({
-      where: { id: id }
+      where: { id: parseInt(id) }
     });
 
     if (!historyRecord) {
@@ -931,11 +932,15 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
     const productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } } = {};
 
 
+    // Получаем все externalId для bulk-запроса к кешу
+    const orderExternalIds = filteredOrders.map(order => order.externalId);
+
+    // Получаем все кеши одним запросом
+    const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
+
     let processedOrders = 0;
     let cacheHits = 0;
     let cacheMisses = 0;
-
-
 
     // Проходим по всем заказам и собираем статистику из кеша
     for (const order of filteredOrders) {
@@ -946,9 +951,9 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
 
       try {
         // Проверяем, есть ли кешированные данные
-        const processedItems = order.processedItems;
-        if (processedItems && typeof processedItems === 'string') {
-          const cachedStats = JSON.parse(processedItems);
+        const cacheData = orderCaches.get(order.externalId);
+        if (cacheData && cacheData.processedItems) {
+          const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {
             cacheHits++;
 
@@ -1067,15 +1072,20 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
 
     const filteredOrders = orders; // Уже отфильтрованы в БД
 
+    // Получаем все externalId для bulk-запроса к кешу
+    const orderExternalIds = filteredOrders.map(order => order.externalId);
+
+    // Получаем все кеши одним запросом
+    const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
+
     // Собираем статистику по датам для конкретного товара
     const dateStats: { [date: string]: { date: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } } = {};
 
-
     for (const order of filteredOrders) {
       try {
-        const processedItems = order.processedItems;
-        if (processedItems && typeof processedItems === 'string') {
-          const cachedStats = JSON.parse(processedItems);
+        const cacheData = orderCaches.get(order.externalId);
+        if (cacheData && cacheData.processedItems) {
+          const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {
             // Ищем товар с указанным SKU
             const productItem = cachedStats.find(item => item && item.sku === sku);
@@ -1110,9 +1120,9 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
     let productInfo = { name: sku, sku: sku };
     for (const order of filteredOrders.slice().reverse()) {
       try {
-        const processedItems = order.processedItems;
-        if (processedItems && typeof processedItems === 'string') {
-          const cachedStats = JSON.parse(processedItems);
+        const cacheData = orderCaches.get(order.externalId);
+        if (cacheData && cacheData.processedItems) {
+          const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {
             const productItem = cachedStats.find(item => item && item.sku === sku);
             if (productItem) {
@@ -1425,15 +1435,21 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
 
     }
 
+    // Получаем все externalId для bulk-запроса к кешу
+    const orderExternalIds = filteredOrders.map(order => order.externalId);
+
+    // Получаем все кеши одним запросом
+    const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
+
     // Собираем данные по товарам с разбивкой по датам
     const chartData: { [dateKey: string]: { [sku: string]: { name: string; quantity: number } } } = {};
     const productInfo: { [sku: string]: string } = {};
 
     for (const order of filteredOrders) {
       try {
-        const processedItems = order.processedItems;
-        if (processedItems && typeof processedItems === 'string') {
-          const cachedStats = JSON.parse(processedItems);
+        const cacheData = orderCaches.get(order.externalId);
+        if (cacheData && cacheData.processedItems) {
+          const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {
             // Группируем по выбранному периоду
             const orderDate = new Date(order.orderDate);
@@ -1776,6 +1792,12 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       return 'маркетплейси';
     };
 
+    // Получаем все externalId для bulk-запроса к кешу
+    const orderExternalIds = filteredOrders.map(order => order.externalId);
+
+    // Получаем все кеши одним запросом
+    const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
+
     // Собираем данные по дням
     const salesData: { [dateKey: string]: {
       ordersCount: number;
@@ -1812,9 +1834,9 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         let shouldIncludeOrder = false;
         let orderPortions = 0;
 
-        const processedItems = order.processedItems;
-        if (processedItems && typeof processedItems === 'string') {
-          const cachedStats = JSON.parse(processedItems);
+        const cacheData = orderCaches.get(order.externalId);
+        if (cacheData && cacheData.processedItems) {
+          const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {
             for (const item of cachedStats) {
               if (item && item.sku && item.orderedQuantity > 0) {
@@ -1989,6 +2011,12 @@ router.get('/products/chart/status-details', authenticateToken, async (req, res)
     }
 
 
+    // Получаем все externalId для bulk-запроса к кешу
+    const orderExternalIds = filteredOrders.map(order => order.externalId);
+
+    // Получаем все кеши одним запросом
+    const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
+
     // Группируем заказы по статусам для указанной даты
     const statusBreakdown: { [status: string]: { orders: any[], totalPortions: number, products: { [sku: string]: { name: string, quantity: number } } } } = {};
 
@@ -2016,9 +2044,9 @@ router.get('/products/chart/status-details', authenticateToken, async (req, res)
 
         // Парсим товары из кешированных данных
         try {
-          const processedItems = order.processedItems;
-          if (processedItems && typeof processedItems === 'string') {
-            const cachedStats = JSON.parse(processedItems);
+          const cacheData = orderCaches.get(order.externalId);
+          if (cacheData && cacheData.processedItems) {
+            const cachedStats = JSON.parse(cacheData.processedItems);
             if (Array.isArray(cachedStats)) {
               for (const item of cachedStats) {
                 if (item && item.sku && item.orderedQuantity > 0) {

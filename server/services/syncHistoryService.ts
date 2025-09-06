@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 export interface SyncHistoryRecord {
-  id: string;
+  id: number;
   syncType: string; // 'manual', 'automatic', 'background'
   startDate?: string;
   endDate?: string;

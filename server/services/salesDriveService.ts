@@ -1230,8 +1230,7 @@ export class SalesDriveService {
 
   /**
    * Получает детальную информацию о заказе по ID
-   * Примечание: SalesDrive API может не поддерживать получение отдельного заказа
-   * Вместо этого получаем все заказы и фильтруем по ID
+   * Сначала пробуем получить заказ через фильтр по ID, если не получается - получаем все заказы
    */
   async getOrderDetails(orderId: string): Promise<SalesDriveOrder | null> {
     try {
@@ -1239,19 +1238,112 @@ export class SalesDriveService {
         throw new Error('SalesDrive API not configured');
       }
 
-      // Получаем все заказы и ищем нужный по ID
+      console.log(`🔍 Fetching order details for ${orderId}...`);
+
+      // Сначала пробуем получить заказ через фильтр по ID
+      try {
+        const orderDetails = await this.getOrderById(orderId);
+        if (orderDetails) {
+          console.log(`✅ Found order ${orderId} via direct API call`);
+          return orderDetails;
+        }
+      } catch (directError) {
+        console.log(`⚠️ Direct API call failed, falling back to full list:`, directError.message);
+      }
+
+      // Fallback: получаем все заказы и ищем нужный по ID
+      console.log(`🔄 Falling back to fetching all orders...`);
       const allOrders = await this.fetchOrdersFromDate();
-      
+
       if (!allOrders.success || !allOrders.data) {
         throw new Error(allOrders.error || 'Failed to fetch orders');
       }
 
-      const order = allOrders.data.find(o => o.id === orderId || o.orderNumber === orderId);
-      return order || null;
+      const order = allOrders.data.find(o => o.id.toString() === orderId || o.orderNumber === orderId);
+
+      if (order) {
+        console.log(`✅ Found order ${orderId} in full list`);
+        return order;
+      } else {
+        console.log(`❌ Order ${orderId} not found in SalesDrive`);
+        return null;
+      }
     } catch (error) {
       console.error(`Error fetching order details for ${orderId}:`, error);
       return null;
     }
+  }
+
+  /**
+   * Получает заказ по ID через SalesDrive API с фильтром
+   */
+  private async getOrderById(orderId: string): Promise<SalesDriveOrder | null> {
+    const maxRetries = this.getSetting('orders.retryAttempts', 3);
+    const retryDelay = this.getSetting('orders.retryDelay', 2000);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        if (!this.apiUrl || !this.apiKey) {
+          throw new Error('SalesDrive API not configured');
+        }
+
+        // Пробуем получить заказ по ID через фильтр
+        const params = new URLSearchParams({
+          page: '1',
+          limit: '1',
+          'filter[id]': orderId // Фильтр по ID заказа
+        });
+
+        const response = await fetch(`${this.apiUrl}/api/order/list/?${params}`, {
+          method: 'GET',
+          headers: {
+            'Form-Api-Key': this.apiKey,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.status === 429) {
+          const adaptiveDelay = this.handleRateLimit();
+          console.log(`Rate limited (429), waiting ${Math.round(adaptiveDelay)}ms before retry...`);
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
+            continue;
+          } else {
+            throw new Error('Rate limit exceeded after all retries');
+          }
+        }
+
+        this.resetRateLimitState();
+
+        if (!response.ok) {
+          throw new Error(`SalesDrive API error: ${response.status} - ${response.statusText}`);
+        }
+
+        const data = await response.json() as { status: string; message?: string; data?: any[] };
+
+        if (data.status !== 'success') {
+          throw new Error(`SalesDrive API error: ${data.message || 'Unknown error'}`);
+        }
+
+        const orders = data.data || [];
+        if (orders.length > 0) {
+          return this.formatOrder(orders[0]);
+        } else {
+          return null;
+        }
+
+      } catch (error) {
+        console.error(`Error fetching order by ID (attempt ${attempt}):`, error);
+
+        if (attempt === maxRetries) {
+          throw error;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+
+    return null;
   }
 
   /**

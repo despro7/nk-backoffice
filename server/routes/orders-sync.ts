@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { PrismaClient } from '@prisma/client';
 import { syncSettingsService } from '../services/syncSettingsService.js';
+import { ordersCacheService } from '../services/ordersCacheService.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -97,7 +98,7 @@ router.put('/sync/logs/:id', authenticateToken, async (req, res) => {
     if (duration) updateData.duration = BigInt(duration);
 
     const log = await prisma.syncLogs.update({
-      where: { id },
+      where: { id: parseInt(id) },
       data: updateData
     });
 
@@ -156,36 +157,10 @@ router.get('/cache/stats', authenticateToken, async (req, res) => {
   try {
     const totalOrders = await prisma.order.count();
 
-    // Подсчитываем заказы с кешированной статистикой товаров (processedItems не null и не пустое)
-    const cachedOrders = await prisma.order.count({
-      where: {
-        AND: [
-          { processedItems: { not: null } },
-          { processedItems: { not: '' } }
-        ]
-      }
-    });
-
-    // Получить среднее время жизни кеша (с момента последнего обновления)
-    const cacheEntries = await prisma.order.findMany({
-      where: {
-        AND: [
-          { processedItems: { not: null } },
-          { processedItems: { not: '' } }
-        ]
-      },
-      select: {
-        updatedAt: true
-      },
-      take: 1000
-    });
-
-    const now = Date.now();
-    const averageCacheTime = cacheEntries.length > 0
-      ? cacheEntries.reduce((sum, entry) =>
-          sum + (now - entry.updatedAt.getTime()), 0
-        ) / cacheEntries.length
-      : 0;
+    // Получаем статистику кеша из orders_cache
+    const cacheStats = await ordersCacheService.getCacheStatistics();
+    const cachedOrders = cacheStats.totalEntries;
+    const averageCacheTime = cacheStats.averageAge * 60 * 60 * 1000; // в миллисекунды
 
     // Получить hit rate (процент заказов с кешем)
     const cacheHitRate = totalOrders > 0 ? (cachedOrders / totalOrders) * 100 : 0;
@@ -194,12 +169,10 @@ router.get('/cache/stats', authenticateToken, async (req, res) => {
     const totalCacheSize = cachedOrders;
 
     // Получить время последнего обновления кеша
-    const lastCacheUpdate = cacheEntries.length > 0
-      ? cacheEntries.reduce((latest, entry) =>
-          entry.updatedAt > latest ? entry.updatedAt : latest,
-          new Date(0)
-        )
-      : null;
+    const lastCacheUpdate = await prisma.ordersCache.findFirst({
+      orderBy: { cacheUpdatedAt: 'desc' },
+      select: { cacheUpdatedAt: true }
+    });
 
     res.json({
       success: true,
@@ -207,7 +180,7 @@ router.get('/cache/stats', authenticateToken, async (req, res) => {
         totalOrders,
         cachedOrders,
         cacheHitRate,
-        lastCacheUpdate: lastCacheUpdate ? lastCacheUpdate.toISOString() : new Date().toISOString(),
+        lastCacheUpdate: lastCacheUpdate ? lastCacheUpdate.cacheUpdatedAt.toISOString() : new Date().toISOString(),
         averageCacheTime: Math.round(averageCacheTime / 1000), // в секундах
         totalCacheSize
       }
@@ -224,17 +197,8 @@ router.get('/cache/stats', authenticateToken, async (req, res) => {
 // Очистить кеш
 router.post('/cache/clear', authenticateToken, async (req, res) => {
   try {
-    // Очищаем кеш в поле processedItems всех заказов
-    const result = await prisma.order.updateMany({
-      where: {
-        processedItems: {
-          not: null
-        }
-      },
-      data: {
-        processedItems: null
-      }
-    });
+    // Очищаем кеш в таблице orders_cache
+    const result = await prisma.ordersCache.deleteMany({});
 
     res.json({
       success: true,

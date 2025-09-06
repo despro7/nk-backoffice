@@ -1,9 +1,10 @@
 import { PrismaClient } from '@prisma/client';
+import { ordersCacheService } from './ordersCacheService.js';
 
 const prisma = new PrismaClient();
 
 export interface OrderCreateData {
-  id: string;
+  id: number; // Обязательно - SalesDrive ID
   externalId: string;
   orderNumber: string;
   ttn: string;
@@ -41,7 +42,6 @@ export interface OrderUpdateData {
   provider?: string;
   ttn?: string;
   quantity?: number;
-  processedItems?: string; // Кешированная статистика товаров
   pricinaZnizki?: string;
   sajt?: string;
 }
@@ -52,10 +52,10 @@ export class OrderDatabaseService {
    */
   async createOrder(data: OrderCreateData) {
     try {
-      const order = await prisma.order.create({
-        data: {
-          id: data.id,
-          externalId: data.externalId,
+      const order =         await prisma.order.create({
+          data: {
+            id: data.id,
+            externalId: data.externalId,
           ttn: data.ttn,
           quantity: data.quantity,
           status: data.status,
@@ -72,18 +72,17 @@ export class OrderDatabaseService {
           shippingMethod: data.shippingMethod,
           statusText: data.statusText,
           totalPrice: data.totalPrice,
-          processedItems: null, // Инициализируем поле
           pricinaZnizki: data.pricinaZnizki,
           sajt: data.sajt
         }
       });
 
       // Создаем запись в истории
-      await this.createOrderHistory(order.id, data.status, data.statusText, 'salesdrive');
+      await this.createOrderHistory(order.id, data.status, data.statusText || '', 'salesdrive');
 
       // Предварительно рассчитываем и кешируем статистику товаров
       try {
-        await this.updateProcessedItems(order.id);
+        await this.updateOrderCache(order.externalId);
       } catch (cacheError) {
         console.warn(`Failed to cache processed items for order ${order.externalId}:`, cacheError);
         // Не прерываем создание заказа из-за ошибки кеширования
@@ -140,10 +139,6 @@ export class OrderDatabaseService {
         console.log(`✅ RawData serialized, length: ${updateData.rawData.length}`);
       }
 
-      // Обновляем processedItems если переданы
-      if (data.processedItems) {
-        updateData.processedItems = data.processedItems;
-      }
 
       const order = await prisma.order.update({
         where: { externalId },
@@ -158,7 +153,7 @@ export class OrderDatabaseService {
       // Пересчитываем кешированные данные если изменились items
       if (data.items) {
         try {
-          await this.updateProcessedItems(order.id);
+          await this.updateOrderCache(order.externalId);
         } catch (cacheError) {
           console.warn(`Failed to update cached processed items for order ${order.externalId}:`, cacheError);
           // Не прерываем обновление заказа из-за ошибки кеширования
@@ -176,7 +171,7 @@ export class OrderDatabaseService {
   /**
    * Создает запись в истории изменений заказа
    */
-  async createOrderHistory(orderId: string, status: string, statusText: string, source: string, userId?: number, notes?: string) {
+  async createOrderHistory(orderId: number, status: string, statusText: string, source: string, userId?: number, notes?: string) {
     try {
       await prisma.ordersHistory.create({
         data: {
@@ -397,7 +392,6 @@ export class OrderDatabaseService {
           provider: true,
           shippingMethod: true,
           totalPrice: true,
-          processedItems: true,
           pricinaZnizki: true,
           sajt: true
           // Исключаем OrdersHistory для оптимизации скорости
@@ -564,7 +558,7 @@ export class OrderDatabaseService {
           // Создаем заказ
           const order = await prisma.order.create({
             data: {
-              id: orderData.id,
+              id: parseInt(orderData.id),
               externalId: orderData.externalId,
               orderNumber: orderData.orderNumber,
               ttn: orderData.ttn,
@@ -624,7 +618,7 @@ export class OrderDatabaseService {
       const cachePromises = createdOrders.map(async (order) => {
         try {
           const cacheStartTime = Date.now();
-          await this.updateProcessedItems(order.id);
+          await this.updateOrderCache(order.externalId);
           const cacheDuration = Date.now() - cacheStartTime;
 
           console.log(`✅ [CACHE] Order ${order.externalId} cached in ${cacheDuration}ms`);
@@ -1036,7 +1030,7 @@ export class OrderDatabaseService {
           // Если не найден, пробуем найти по id (для случаев, когда externalId != orderNumber)
           if (!existingOrder && orderData.orderNumber) {
             const orderById = await prisma.order.findUnique({
-              where: { id: orderData.orderNumber },
+              where: { externalId: orderData.orderNumber },
               include: {
                 OrdersHistory: {
                   orderBy: { changedAt: 'desc' },
@@ -1106,7 +1100,7 @@ export class OrderDatabaseService {
           try {
             const order = await this.getOrderByExternalId(orderData!.orderNumber);
             if (order) {
-              await this.updateProcessedItems(order.id);
+              await this.updateOrderCache(order.externalId);
             }
           } catch (cacheError) {
             console.warn(`Failed to update cache for order ${orderData!.orderNumber}:`, cacheError);
@@ -1248,9 +1242,9 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Предварительно рассчитывает статистику товаров для заказа
+   * Предварительно рассчитывает статистику товаров для заказа (для кеша)
    */
-  async preprocessOrderItems(orderId: string): Promise<string | null> {
+  async preprocessOrderItemsForCache(orderId: number): Promise<string | null> {
     try {
       // Получаем заказ с товарами
       const order = await prisma.order.findUnique({
@@ -1367,21 +1361,49 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Обновляет кешированную статистику для заказа
+   * Обновляет кеш для заказа
    */
-  async updateProcessedItems(orderId: string): Promise<boolean> {
+  async updateOrderCache(externalId: string): Promise<boolean> {
     try {
-      const processedItems = await this.preprocessOrderItems(orderId);
-
-      await prisma.order.update({
-        where: { id: orderId },
-        data: { processedItems }
+      // Получаем заказ по externalId
+      const order = await prisma.order.findUnique({
+        where: { externalId }
       });
 
-      console.log(`✅ Updated processed items for order ${orderId}`);
+      if (!order) {
+        console.error(`❌ Order with externalId ${externalId} not found`);
+        return false;
+      }
+
+      const processedItems = await this.preprocessOrderItemsForCache(order.id);
+
+      if (!processedItems) {
+        console.warn(`⚠️ No processed items for order ${externalId}`);
+        return false;
+      }
+
+      // Подсчитываем totalQuantity
+      let totalQuantity = order.quantity || 0;
+      try {
+        const items = JSON.parse(processedItems);
+        if (Array.isArray(items)) {
+          totalQuantity = items.reduce((sum: number, item: any) => sum + (item.orderedQuantity || 0), 0);
+        }
+      } catch (parseError) {
+        console.warn(`Failed to parse processed items for total quantity calculation:`, parseError);
+      }
+
+      // Сохраняем в кеш
+      await ordersCacheService.upsertOrderCache({
+        externalId,
+        processedItems,
+        totalQuantity
+      });
+
+      console.log(`✅ Updated cache for order ${externalId}`);
       return true;
     } catch (error) {
-      console.error(`❌ Error updating processed items for order ${orderId}:`, error);
+      console.error(`❌ Error updating cache for order ${externalId}:`, error);
       return false;
     }
   }
@@ -1425,7 +1447,7 @@ export class OrderDatabaseService {
           if (!existingOrder) {
             // Создаем новый заказ
             const newOrderData = {
-              id: orderData.orderNumber, // Используем orderNumber как id для новых заказов
+              id: parseInt(orderData.orderNumber), // Преобразуем orderNumber в число для id
               externalId: orderData.orderNumber,
               orderNumber: orderData.orderNumber,
               ttn: orderData.ttn || '',
@@ -1532,7 +1554,7 @@ export class OrderDatabaseService {
           try {
             const order = await this.getOrderByExternalId(orderData!.orderNumber);
             if (order) {
-              await this.updateProcessedItems(order.id);
+              await this.updateOrderCache(order.externalId);
             }
           } catch (cacheError) {
             console.warn(`Failed to update cache for order ${orderData!.orderNumber}:`, cacheError);

@@ -101,6 +101,16 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           console.log(`❌ Order ${orderIdentifier} not found in database, fetching from SalesDrive...`);
           // Если заказа нет в БД, получаем детали из SalesDrive
           orderDetails = await salesDriveService.getOrderDetails(orderIdentifier);
+
+          // Проверяем, удалось ли получить детали заказа
+          if (!orderDetails) {
+            console.error(`❌ Failed to get order details for ${orderIdentifier} from SalesDrive`);
+            return res.status(400).json({
+              success: false,
+              error: 'Order not found in SalesDrive',
+              orderIdentifier: orderIdentifier
+            });
+          }
         }
 
         if (orderDetails) {
@@ -280,8 +290,41 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
 
             console.log(`🆕 Creating new order with status: ${newOrderStatus} (${newOrderStatusText})`);
 
+            // Валидация обязательных полей перед созданием
+            const requiredFields = {
+              id: webhookData.id || orderDetails?.id,
+              externalId: webhookData.externalId || orderDetails?.orderNumber,
+              orderNumber: webhookData.externalId || orderDetails?.orderNumber
+            };
+
+            if (!requiredFields.id) {
+              console.error(`❌ Missing required field: id`);
+              return res.status(400).json({
+                success: false,
+                error: 'Missing required field: id'
+              });
+            }
+
+            if (!requiredFields.externalId) {
+              console.error(`❌ Missing required field: externalId`);
+              return res.status(400).json({
+                success: false,
+                error: 'Missing required field: externalId'
+              });
+            }
+
+            if (!requiredFields.orderNumber) {
+              console.error(`❌ Missing required field: orderNumber`);
+              return res.status(400).json({
+                success: false,
+                error: 'Missing required field: orderNumber'
+              });
+            }
+
+            console.log(`✅ Required fields validation passed: id=${requiredFields.id}, externalId=${requiredFields.externalId}`);
+
             const createData = {
-              id: webhookData.id?.toString() || orderDetails?.id?.toString(),
+              id: webhookData.id || orderDetails?.id,
               externalId: webhookData.externalId || orderDetails?.orderNumber,
               orderNumber: webhookData.externalId || orderDetails?.orderNumber,
               ttn: webhookData.ord_novaposhta?.EN || orderDetails?.ttn,
