@@ -781,40 +781,9 @@ router.get('/products/stats/demo', authenticateToken, async (req, res) => {
 
 /**
  * POST /api/orders/sync/manual
- * Ручная синхронизация заказов с указанным диапазоном дат
+ * Ручная синхронизация заказов - MOVED TO orders-sync.ts
+ * Этот роут удален, используйте /api/orders/sync/manual из orders-sync.ts
  */
-router.post('/sync/manual', authenticateToken, async (req, res) => {
-  try {
-    const { startDate, endDate } = req.body;
-
-    if (!startDate) {
-      return res.status(400).json({
-        success: false,
-        error: 'startDate is required'
-      });
-    }
-
-    console.log(`🔄 [MANUAL SYNC] Starting manual sync from: ${startDate} to: ${endDate || 'current date'}`);
-
-    // Синхронизируем заказы в указанном диапазоне дат
-    const syncResult = await salesDriveService.syncOrdersWithDatabaseManual(startDate, endDate);
-
-    console.log(`✅ [MANUAL SYNC] Completed: ${syncResult.synced} synced, ${syncResult.errors} errors`);
-
-    res.json({
-      success: true,
-      message: `Manual synchronization completed: ${syncResult.synced} synchronized, ${syncResult.errors} errors`,
-      data: syncResult
-    });
-
-  } catch (error) {
-    console.error('❌ Manual sync error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Помилка ручної синхронізації'
-    });
-  }
-});
 
 /**
  * GET /api/orders/sync/history

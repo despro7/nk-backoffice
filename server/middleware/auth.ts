@@ -12,18 +12,32 @@ declare global {
   }
 }
 
+// Счетчик для отслеживания проверок токенов
+let tokenCheckCount = 0;
+
 export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Минимальное логирование только при ошибках
-    const shouldLog = process.env.NODE_ENV === 'development' && req.path.includes('auth');
+    tokenCheckCount++;
+    console.log(`🔍 [Middleware] #${tokenCheckCount} Проверка токена для пути: ${req.path}`);
+
+    // Расширенное логирование для тестирования
+    const shouldLog = process.env.NODE_ENV === 'development';
 
     // Получаем токены из cookies
     const { accessToken, refreshToken } = await AuthService.getTokenFromCookies(req);
-    
+
+    // Логируем для отладки
+    console.log('🔍 [Middleware] Access token из cookie:', accessToken ? 'присутствует' : 'отсутствует');
+    console.log('🔍 [Middleware] Refresh token из cookie:', refreshToken ? 'присутствует' : 'отсутствует');
+
+    if (accessToken) {
+      console.log('🔍 [Middleware] Access token найден, проверяем его валидность...');
+    }
+
     // Если нет access token, но есть refresh token - пытаемся обновить
     if (!accessToken && refreshToken) {
       console.log('🔄 [Middleware] Access token отсутствует, пытаемся обновить через refresh token...');
-      
+
       try {
         const refreshResult = await AuthService.refreshToken({ refreshToken });
         
@@ -78,12 +92,12 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     }
 
     const secret = process.env.JWT_SECRET || 'fallback_secret';
+    console.log('🔍 [Middleware] Проверяем access token...');
     const decoded = jwt.verify(accessToken, secret) as JwtPayload;
 
-    if (shouldLog) {
-      console.log(`👤 [Middleware] Пользователь: ${decoded.email}`);
-    }
-    
+    console.log(`👤 [Middleware] Access token валиден для пользователя: ${decoded.email}`);
+    console.log(`🔍 [Middleware] Тип токена: ${decoded.tokenType}`);
+
     // Проверяем тип токена
     if (decoded.tokenType !== 'access') {
       console.log('❌ [Middleware] Неверный тип токена:', decoded.tokenType);
@@ -96,13 +110,16 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     
     req.user = decoded;
 
+    console.log(`✅ [Middleware] #${tokenCheckCount} Токен успешно валидирован для ${decoded.email}`);
+
     // Тихое обновление активности пользователя
     AuthService.updateUserActivity(decoded.userId).catch(() => {});
 
     next();
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
-      console.log('⚠️ [Middleware] Токен истек, возвращаем shouldRefresh');
+      console.log('⚠️ [Middleware] Access token истек, возвращаем shouldRefresh');
+      console.log('🔄 [Middleware] Приложение должно автоматически обновить токен через refresh token');
       return res.status(401).json({
         message: 'Access token expired',
         code: 'TOKEN_EXPIRED',
@@ -110,8 +127,14 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
         details: 'Your session has expired. Token will be automatically refreshed.'
       });
     }
-    
-    console.log('❌ [Middleware] Ошибка проверки токена:', error);
+
+    console.log('❌ [Middleware] Ошибка проверки токена:', error.message);
+    if (error.message.includes('invalid signature')) {
+      console.log('❌ [Middleware] Неверная подпись токена - возможно, JWT_SECRET изменился');
+    } else if (error.message.includes('malformed')) {
+      console.log('❌ [Middleware] Поврежденный токен - возможно, ошибка кодирования');
+    }
+
     return res.status(403).json({
       message: 'Invalid token',
       code: 'INVALID_TOKEN',

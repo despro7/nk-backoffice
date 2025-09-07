@@ -35,13 +35,39 @@ router.use('/salesdrive/order-update', (req, res, next) => {
   next();
 });
 
+// Helper function to parse SalesDrive date format to ISO-8601
+function parseSalesDriveDate(dateString: string | null | undefined): string | null {
+  if (!dateString || typeof dateString !== 'string') {
+    return null;
+  }
+
+  try {
+    // SalesDrive format: "YYYY-MM-DD HH:mm:ss"
+    // Convert to ISO-8601: "YYYY-MM-DDTHH:mm:ss.sssZ"
+    const isoString = dateString.replace(' ', 'T') + '.000Z';
+    const date = new Date(isoString);
+
+    // Validate the date
+    if (isNaN(date.getTime())) {
+      console.warn(`⚠️ Invalid SalesDrive date format: ${dateString}`);
+      return null;
+    }
+
+    return date.toISOString();
+  } catch (error) {
+    console.error(`❌ Failed to parse SalesDrive date: ${dateString}`, error);
+    return null;
+  }
+}
+
 /**
  * POST /api/webhooks/salesdrive/order-update
  * WebHook от SalesDrive для обновления заказов
  */
 router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
   try {
-    console.log('🔔 WebHook received - Raw body:', JSON.stringify(req.body, null, 2));
+    // console.log('🔔 WebHook received - Raw body:', JSON.stringify(req.body, null, 2));
+    console.log(`🔍 Webhook event: ${req.body.info?.webhookEvent}`);
 
     const { data } = req.body;
     const orderId = data?.id?.toString();
@@ -64,10 +90,38 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
     const orderIdentifier = externalId || orderId;
 
     // For status_change events, we always update the order
-    if (req.body.info?.webhookEvent === 'status_change') {
+    if ( req.body.info?.webhookEvent === 'status_change' || req.body.info?.webhookEvent === 'new_order' ) {
       // Синхронизируем конкретный заказ
       try {
         console.log(`🔍 Looking for existing order in database first...`);
+
+        // Маппинг статусов из SalesDrive в нашу систему
+        // В БД статусы хранятся как строки '1', '2', '3' и т.д.
+        const statusMapping: { [key: number]: string } = {
+          1: '1', // Новий
+          2: '2', // Підтверджено
+          3: '3', // На відправку
+          4: '4', // Відправлено
+          5: '5', // Продаж
+          6: '6', // Відмова
+          7: '7', // Повернення
+          8: '8'  // Видалений
+        };
+
+        // Функция для получения текста статуса
+        const getStatusText = (status: string): string => {
+          const statusTexts: { [key: string]: string } = {
+            '1': 'Новий',
+            '2': 'Підтверджено',
+            '3': 'На відправку',
+            '4': 'Відправлено',
+            '5': 'Продаж',
+            '6': 'Відмова',
+            '7': 'Повернення',
+            '8': 'Видалений'
+          };
+          return statusTexts[status] || 'Невідомий статус';
+        };
 
         // Сначала проверим, есть ли заказ в нашей БД
         let existingOrder = await orderDatabaseService.getOrderByExternalId(orderIdentifier);
@@ -98,19 +152,32 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             quantity: existingOrder.quantity
           };
         } else {
-          console.log(`❌ Order ${orderIdentifier} not found in database, fetching from SalesDrive...`);
-          // Если заказа нет в БД, получаем детали из SalesDrive
-          orderDetails = await salesDriveService.getOrderDetails(orderIdentifier);
+          console.log(`❌ Order ${orderIdentifier} not found in database, creating from webhook data...`);
 
-          // Проверяем, удалось ли получить детали заказа
-          if (!orderDetails) {
-            console.error(`❌ Failed to get order details for ${orderIdentifier} from SalesDrive`);
-            return res.status(400).json({
-              success: false,
-              error: 'Order not found in SalesDrive',
-              orderIdentifier: orderIdentifier
-            });
-          }
+          // Создаем заказ на основе данных из webhook, без обращения к SalesDrive API
+          // Это более надежный подход, так как webhook содержит все необходимые данные
+          const webhookData = req.body.data;
+          orderDetails = {
+            id: parseInt(webhookData.id) || 0, // Используем внутренний ID из webhook
+            orderNumber: webhookData.externalId || orderIdentifier, // Используем externalId как orderNumber
+            status: webhookData.statusId ? statusMapping[webhookData.statusId] || '1' : '1',
+            statusText: 'Новий', // По умолчанию
+            items: webhookData.products || [],
+            customerName: webhookData.contacts?.[0]?.fName + ' ' + webhookData.contacts?.[0]?.lName || 'Невідомий клієнт',
+            customerPhone: webhookData.contacts?.[0]?.phone?.[0] || '',
+            deliveryAddress: webhookData.shipping_address || '',
+            totalPrice: webhookData.paymentAmount || 0,
+            orderDate: parseSalesDriveDate(webhookData.orderTime) || new Date().toISOString(),
+            shippingMethod: webhookData.shipping_method?.toString() || '',
+            paymentMethod: webhookData.payment_method?.toString() || '',
+            cityName: webhookData.ord_novaposhta?.cityName || '',
+            provider: 'SalesDrive',
+            pricinaZnizki: webhookData.pricinaZnizki || '',
+            sajt: webhookData.sajt ? String(webhookData.sajt) : '',
+            ttn: webhookData.ord_novaposhta?.EN || '',
+            quantity: webhookData.kilTPorcij || 1
+          };
+          console.log(`📋 Created order details from webhook data: id=${orderDetails.id}, orderNumber=${orderDetails.orderNumber}`);
         }
 
         if (orderDetails) {
@@ -125,8 +192,8 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             existingOrder = await orderDatabaseService.getOrderByExternalId(orderDetails.orderNumber);
 
             if (!existingOrder && orderDetails.id) {
-              // Если не найден по orderNumber, пробуем найти по id
-              existingOrder = await orderDatabaseService.getOrderByExternalId(orderDetails.id);
+              // Если не найден по orderNumber, пробуем найти по id (преобразуем в строку)
+              existingOrder = await orderDatabaseService.getOrderByExternalId(orderDetails.id.toString());
             }
           }
 
@@ -134,33 +201,6 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           console.log(`   - orderDetails.orderNumber: ${orderDetails.orderNumber}`);
           console.log(`   - orderDetails.id: ${orderDetails.id}`);
 
-                  // Маппинг статусов из SalesDrive в нашу систему
-        // В БД статусы хранятся как строки '1', '2', '3' и т.д.
-        const statusMapping: { [key: number]: string } = {
-          1: '1', // Нові
-          2: '2', // Підтверджено
-          3: '3', // На відправку
-          4: '4', // Відправлено
-          5: '5', // Продаж
-          6: '6', // Відмова
-          7: '7', // Повернення
-          8: '8'  // Видалений
-        };
-
-        // Функция для получения текста статуса
-        const getStatusText = (status: string): string => {
-          const statusTexts: { [key: string]: string } = {
-            '1': 'Нові',
-            '2': 'Підтверджено',
-            '3': 'На відправку',
-            '4': 'Відправлено',
-            '5': 'Продаж',
-            '6': 'Відмова',
-            '7': 'Повернення',
-            '8': 'Видалений'
-          };
-          return statusTexts[status] || 'Невідомий статус';
-        };
 
         if (existingOrder) {
           console.log(`🔄 Updating existing order ${existingOrder.externalId}`);
@@ -170,16 +210,17 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             webhookType: req.body.info?.webhookType,
             webhookEvent: req.body.info?.webhookEvent,
             account: req.body.info?.account,
-            data: {
-              id: req.body.data?.id,
-              externalId: req.body.data?.externalId,
-              statusId: req.body.data?.statusId,
-              orderTime: req.body.data?.orderTime,
-              paymentAmount: req.body.data?.paymentAmount,
-              shipping_address: req.body.data?.shipping_address,
-              contacts: req.body.data?.contacts,
-              products: req.body.data?.products
-            }
+              data: {
+                id: req.body.data?.id,
+                externalId: req.body.data?.externalId,
+                statusId: req.body.data?.statusId,
+                orderTime: req.body.data?.orderTime,
+                orderDate: parseSalesDriveDate(req.body.data?.orderTime), // Add parsed ISO date
+                paymentAmount: req.body.data?.paymentAmount,
+                shipping_address: req.body.data?.shipping_address,
+                contacts: req.body.data?.contacts,
+                products: req.body.data?.products
+              }
           };
 
             const webhookData = req.body.data;
@@ -276,6 +317,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
                 externalId: webhookData.externalId,
                 statusId: webhookData.statusId,
                 orderTime: webhookData.orderTime,
+                orderDate: parseSalesDriveDate(webhookData.orderTime), // Add parsed ISO date
                 paymentAmount: webhookData.paymentAmount,
                 shipping_address: webhookData.shipping_address,
                 contacts: webhookData.contacts,
@@ -285,16 +327,16 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             };
 
             // Маппинг статуса для нового заказа из webhook
-            const newOrderStatus = statusMapping[webhookData.statusId] || '1'; // По умолчанию '1' (Нові)
+            const newOrderStatus = statusMapping[webhookData.statusId] || '1'; // По умолчанию '1' (Новий)
             const newOrderStatusText = getStatusText(newOrderStatus);
 
             console.log(`🆕 Creating new order with status: ${newOrderStatus} (${newOrderStatusText})`);
 
             // Валидация обязательных полей перед созданием
             const requiredFields = {
-              id: webhookData.id || orderDetails?.id,
-              externalId: webhookData.externalId || orderDetails?.orderNumber,
-              orderNumber: webhookData.externalId || orderDetails?.orderNumber
+              id: orderDetails.id,
+              externalId: orderDetails.orderNumber,
+              orderNumber: orderDetails.orderNumber
             };
 
             if (!requiredFields.id) {
@@ -324,26 +366,26 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             console.log(`✅ Required fields validation passed: id=${requiredFields.id}, externalId=${requiredFields.externalId}`);
 
             const createData = {
-              id: webhookData.id || orderDetails?.id,
-              externalId: webhookData.externalId || orderDetails?.orderNumber,
-              orderNumber: webhookData.externalId || orderDetails?.orderNumber,
-              ttn: webhookData.ord_novaposhta?.EN || orderDetails?.ttn,
-              quantity: webhookData.kilTPorcij || orderDetails?.quantity,
+              id: typeof orderDetails.id === 'string' ? parseInt(orderDetails.id) : orderDetails.id,
+              externalId: orderDetails.orderNumber,
+              orderNumber: orderDetails.orderNumber,
+              ttn: orderDetails.ttn,
+              quantity: orderDetails.quantity,
               status: newOrderStatus,
               statusText: newOrderStatusText,
-              items: orderDetails?.items,
+              items: orderDetails.items,
               rawData: safeRawDataForCreate, // Используем безопасный объект
-              customerName: webhookData.contacts?.[0]?.fName + ' ' + webhookData.contacts?.[0]?.lName,
-              customerPhone: webhookData.contacts?.[0]?.phone?.[0],
-              deliveryAddress: webhookData.shipping_address,
-              totalPrice: webhookData.paymentAmount,
-              orderDate: webhookData.orderTime,
-              shippingMethod: webhookData.shipping_method?.toString(),
-              paymentMethod: webhookData.payment_method?.toString(),
-              cityName: webhookData.ord_novaposhta?.cityName,
-              provider: 'SalesDrive',
-              pricinaZnizki: webhookData.pricinaZnizki,
-              sajt: webhookData.sajt
+              customerName: orderDetails.customerName,
+              customerPhone: orderDetails.customerPhone,
+              deliveryAddress: orderDetails.deliveryAddress,
+              totalPrice: orderDetails.totalPrice,
+              orderDate: orderDetails.orderDate,
+              shippingMethod: orderDetails.shippingMethod,
+              paymentMethod: orderDetails.paymentMethod,
+              cityName: orderDetails.cityName,
+              provider: orderDetails.provider,
+              pricinaZnizki: orderDetails.pricinaZnizki,
+              sajt: orderDetails.sajt
             };
 
             console.log(`📋 Create data:`, {

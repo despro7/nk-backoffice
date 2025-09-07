@@ -31,6 +31,8 @@ import {
   SelectItem,
   SortDescriptor,
   Switch,
+  Radio,
+  RadioGroup,
   addToast,
   DatePicker,
 } from '@heroui/react';
@@ -165,6 +167,7 @@ const SettingsOrders: React.FC = () => {
   const [manualSyncStartDate, setManualSyncStartDate] = useState<CalendarDate | null>(null);
   const [manualSyncEndDate, setManualSyncEndDate] = useState<CalendarDate | null>(null);
   const [manualSyncRunning, setManualSyncRunning] = useState(false);
+  const [manualSyncMode, setManualSyncMode] = useState<'smart' | 'force'>('smart'); // Режим синхронизации
   const [manualSyncResult, setManualSyncResult] = useState<{
     success: boolean;
     message: string;
@@ -193,6 +196,9 @@ const SettingsOrders: React.FC = () => {
       errors: string[];
     };
   } | null>(null);
+
+  // State for current operation session ID
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
   // State for error details modal
   const [selectedLogForDetails, setSelectedLogForDetails] = useState<SyncLog | null>(null);
@@ -584,7 +590,10 @@ const SettingsOrders: React.FC = () => {
 
   // Run selective sync for selected orders
   const runSelectiveSync = async () => {
+    console.log('🔄 [CLIENT] Selective sync button clicked!');
+
     if (selectedOrders.size === 0) {
+      console.log('❌ [CLIENT] No orders selected');
       addToast({
         title: 'Помилка',
         description: 'Оберіть хоча б один замовлення для синхронізації',
@@ -592,6 +601,12 @@ const SettingsOrders: React.FC = () => {
       });
       return;
     }
+
+    console.log('✅ [CLIENT] Starting selective sync with:', {
+      selectedOrdersCount: selectedOrders.size,
+      startDate: manualSyncStartDate?.toString(),
+      endDate: manualSyncEndDate?.toString()
+    });
 
     setManualSyncRunning(true);
     setManualSyncResult(null);
@@ -601,6 +616,8 @@ const SettingsOrders: React.FC = () => {
     addLog(`📅 Period: ${manualSyncStartDate?.toString()} - ${(manualSyncEndDate || today(getLocalTimeZone())).toString()}`);
 
     try {
+      console.log('🌐 [CLIENT] Making request to /api/orders/sync/selective');
+
       const response = await fetch('/api/orders/sync/selective', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -608,43 +625,164 @@ const SettingsOrders: React.FC = () => {
         body: JSON.stringify({
           selectedOrders: Array.from(selectedOrders),
           startDate: manualSyncStartDate?.toString(),
-          endDate: (manualSyncEndDate || today(getLocalTimeZone())).toString()
+          endDate: (manualSyncEndDate || today(getLocalTimeZone())).toString(),
+          syncMode: manualSyncMode
         })
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        setManualSyncResult(result);
-        addLog(`✅ Sync completed: ${result.totalCreated || 0} created, ${result.totalUpdated} updated, ${result.totalSkipped} skipped, ${result.totalErrors} errors`);
+      console.log('📡 [CLIENT] Selective sync response status:', response.status);
+
+      const result = await response.json();
+
+      console.log('✅ [CLIENT] Selective sync server response:', result);
+
+      if (response.ok && result.sessionId) {
+        console.log('🎯 [CLIENT] Starting selective sync progress monitoring for sessionId:', result.sessionId);
+        monitorSyncProgress(result.sessionId);
+
         addToast({
-          title: 'Синхронізація завершена',
-          description: `Створено: ${result.totalCreated || 0}, Оновлено: ${result.totalUpdated}`,
+          title: 'Успіх',
+          description: 'Вибіркова синхронізація запущена, слідкуйте за прогресом',
           color: 'success'
         });
       } else {
-        throw new Error('Failed to run selective sync');
+        throw new Error(result.error || 'Failed to start selective sync');
       }
     } catch (error) {
-      console.error('Error running selective sync:', error);
+      console.error('Error starting selective sync:', error);
       addLog(`❌ Sync failed: ${error}`);
       addToast({
         title: 'Помилка синхронізації',
-        description: 'Не вдалося виконати вибіркову синхронізацію',
+        description: error instanceof Error ? error.message : 'Не вдалося запустити вибіркову синхронізацію',
         color: 'danger'
       });
-    } finally {
       setManualSyncRunning(false);
+      setCurrentSessionId(null);
     }
+  };
+
+  // Мониторинг прогресса предварительного анализа
+  const monitorPreviewProgress = async (sessionId: string) => {
+    console.log('📊 [CLIENT] Starting preview progress monitoring for sessionId:', sessionId);
+
+    let attempts = 0;
+    const maxAttempts = 300; // Максимум 10 минут (300 * 2 сек)
+    let lastProgress = null;
+
+    const checkProgress = async () => {
+      attempts++;
+
+      try {
+        console.log(`📊 [CLIENT] Checking progress attempt ${attempts}/${maxAttempts} for sessionId:`, sessionId);
+
+        const response = await fetch(`/api/orders/sync/preview/progress?sessionId=${encodeURIComponent(sessionId)}`, {
+          credentials: 'include'
+        });
+
+        console.log('📊 [CLIENT] Progress response status:', response.status);
+
+        const result = await response.json();
+
+        console.log('📊 [CLIENT] Progress response:', result);
+
+        if (response.ok && result.success) {
+          if (result.active) {
+            // Анализ активен, обновляем прогресс
+            console.log(`📊 [CLIENT PREVIEW PROGRESS] Active: ${result.progress.stage} - ${result.progress.message} (${result.progress.progressPercent}%)`);
+            setSyncProgress({
+              active: true,
+              progress: result.progress
+            });
+            lastProgress = result.progress;
+
+            // Продолжаем мониторинг
+            setTimeout(checkProgress, 2000);
+          } else if (result.completed && result.result) {
+            // Анализ завершен успешно, получили результат
+            console.log(`📊 [CLIENT PREVIEW PROGRESS] Analysis completed with result!`);
+
+            // Показываем финальный статус
+            setSyncProgress({
+              active: false,
+              progress: {
+                stage: 'completed',
+                message: 'Анализ завершён успешно',
+                processedOrders: result.result.totalFromSalesDrive || 0,
+                totalOrders: result.result.totalFromSalesDrive || 0,
+                currentBatch: 1,
+                totalBatches: 1,
+                progressPercent: 100,
+                elapsedTime: 0,
+                errors: []
+              }
+            });
+
+            // Сохраняем результат и открываем модальное окно
+            setSyncPreview(result.result);
+            setSyncPreviewModal(true);
+
+            // Ждем 2 секунды, чтобы пользователь увидел финальный статус
+            setTimeout(() => {
+              console.log(`📊 [CLIENT PREVIEW PROGRESS] Clearing progress`);
+              setSyncProgress(null);
+            }, 2000);
+
+            return; // Прерываем цикл мониторинга
+          } else {
+            // Анализ завершен без результата или с ошибкой
+            if (lastProgress && (lastProgress.stage === 'completed' || lastProgress.stage === 'error')) {
+              // Показываем финальный статус еще немного времени
+              console.log(`📊 [CLIENT PREVIEW PROGRESS] Completed: ${lastProgress.stage} - ${lastProgress.message} (${lastProgress.progressPercent}%)`);
+              setSyncProgress({
+                active: false,
+                progress: lastProgress
+              });
+
+              // Ждем еще 2 секунды, чтобы пользователь увидел финальный статус
+              setTimeout(() => {
+                console.log(`📊 [CLIENT PREVIEW PROGRESS] Clearing progress`);
+                setSyncProgress(null);
+              }, 2000);
+            } else {
+              // Нет активного анализа
+              console.log(`📊 [CLIENT PREVIEW PROGRESS] No active preview analysis found`);
+              setSyncProgress(null);
+            }
+          }
+        } else {
+          console.error('Failed to get preview progress:', result);
+          // Продолжаем попытки, если это не последняя попытка
+          if (attempts < maxAttempts) {
+            setTimeout(checkProgress, 2000);
+          } else {
+            setSyncProgress(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking preview progress:', error);
+        // Продолжаем попытки при ошибке, если это не последняя попытка
+        if (attempts < maxAttempts) {
+          setTimeout(checkProgress, 2000);
+        } else {
+          setSyncProgress(null);
+        }
+      }
+    };
+
+    // Начинаем мониторинг
+    checkProgress();
   };
 
   // Load sync preview with caching
   const loadSyncPreview = async (startDate: string, endDate?: string) => {
+    console.log('🔄 [CLIENT] loadSyncPreview called with:', { startDate, endDate });
+
     const cacheKey = `${startDate}_${endDate || 'now'}`;
     const cachedResult = syncPreviewCache.get(cacheKey);
 
     // Check cache first
     if (cachedResult) {
-      console.log('Using cached sync preview for:', cacheKey);
+      console.log('💾 [CLIENT] Using cached sync preview for:', cacheKey);
       setSyncPreview(cachedResult);
       // Clear previous selection when loading from cache
       setSelectedOrders(new Set());
@@ -653,7 +791,8 @@ const SettingsOrders: React.FC = () => {
 
     setSyncPreviewLoading(true);
     try {
-      console.log('Loading sync preview from server for:', cacheKey);
+      console.log('🌐 [CLIENT] Making request to /api/orders/sync/preview with:', { startDate, endDate });
+
       const response = await fetch('/api/orders/sync/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -661,24 +800,33 @@ const SettingsOrders: React.FC = () => {
         body: JSON.stringify({ startDate, endDate })
       });
 
+      console.log('📡 [CLIENT] Response status:', response.status);
+      console.log('📡 [CLIENT] Response headers:', Object.fromEntries(response.headers.entries()));
+
       if (response.ok) {
         const data = await response.json();
 
-        // Cache the result on client side
-        if (!data.cached) {
-          setSyncPreviewCache(prev => new Map(prev).set(cacheKey, data.preview));
+        console.log('✅ [CLIENT] Server response data:', data);
+
+        // Начинаем мониторинг прогресса, если есть sessionId
+        if (data.sessionId) {
+          console.log('🎯 [CLIENT] Starting progress monitoring for sessionId:', data.sessionId);
+          setCurrentSessionId(data.sessionId);
+          monitorPreviewProgress(data.sessionId);
+
+          // Для кешированных результатов сразу открываем модальное окно
+          if (data.cached && data.preview) {
+            setSyncPreview(data.preview);
+            setSyncPreviewModal(true);
+            return data.preview;
+          }
+
+          // Для новых результатов ждем завершения анализа через мониторинг
+          return null; // Возвращаем null, результат получим через мониторинг
+        } else {
+          console.log('⚠️ [CLIENT] No sessionId in response');
+          throw new Error('No sessionId received from server');
         }
-        setSyncPreview(data.preview);
-        // Clear previous selection when loading new data
-        setSelectedOrders(new Set());
-
-        addToast({
-          title: data.cached ? 'Попередній перегляд з кеша' : 'Попередній перегляд завантажено',
-          description: data.cached ? 'Дані завантажені з серверного кеша' : 'Кешовано для повторного використання',
-          color: 'success'
-        });
-
-        return data.preview;
       } else {
         throw new Error('Failed to load sync preview');
       }
@@ -692,6 +840,7 @@ const SettingsOrders: React.FC = () => {
       return null;
     } finally {
       setSyncPreviewLoading(false);
+      setCurrentSessionId(null);
     }
   };
 
@@ -748,85 +897,13 @@ const SettingsOrders: React.FC = () => {
     }
   };
 
-  // Отслеживание прогресса синхронизации
-  const monitorSyncProgress = async () => {
-    let attempts = 0;
-    const maxAttempts = 150; // Максимум 5 минут (150 * 2 сек)
-    let lastProgress = null;
-
-    const checkProgress = async () => {
-      attempts++;
-
-      try {
-        const response = await fetch('/api/orders/sync/progress', {
-          credentials: 'include'
-        });
-        const result = await response.json();
-
-        if (response.ok && result.success) {
-          if (result.active) {
-            // Синхронизация активна, обновляем прогресс
-            console.log(`📊 [CLIENT PROGRESS] Active: ${result.progress.stage} - ${result.progress.message} (${result.progress.progressPercent}%)`);
-            setSyncProgress({
-              active: result.active,
-              progress: result.progress
-            });
-            lastProgress = result.progress;
-
-            // Продолжаем мониторинг
-            setTimeout(checkProgress, 2000);
-          } else {
-            // Синхронизация завершена или неактивна
-            if (lastProgress && (lastProgress.stage === 'completed' || lastProgress.stage === 'error')) {
-              // Показываем финальный статус еще немного времени
-              console.log(`📊 [CLIENT PROGRESS] Completed: ${lastProgress.stage} - ${lastProgress.message} (${lastProgress.progressPercent}%)`);
-              setSyncProgress({
-                active: false,
-                progress: lastProgress
-              });
-
-              // Ждем еще 3 секунды, чтобы пользователь увидел финальный статус
-              setTimeout(() => {
-                console.log(`📊 [CLIENT PROGRESS] Clearing progress and reloading data`);
-                setSyncProgress(null);
-                loadSyncLogs();
-                loadSyncHistory();
-              }, 3000);
-            } else {
-              // Нет активной синхронизации
-              console.log(`📊 [CLIENT PROGRESS] No active sync found`);
-              setSyncProgress(null);
-              loadSyncLogs();
-              loadSyncHistory();
-            }
-          }
-        } else {
-          console.error('Failed to get sync progress:', result);
-          // Продолжаем попытки, если это не последняя попытка
-          if (attempts < maxAttempts) {
-            setTimeout(checkProgress, 2000);
-          } else {
-            setSyncProgress(null);
-          }
-        }
-      } catch (error) {
-        console.error('Error checking sync progress:', error);
-        // Продолжаем попытки при ошибке, если это не последняя попытка
-        if (attempts < maxAttempts) {
-          setTimeout(checkProgress, 2000);
-        } else {
-          setSyncProgress(null);
-        }
-      }
-    };
-
-    // Начинаем мониторинг
-    checkProgress();
-  };
 
   // Preview sync before running
   const previewManualSync = async () => {
+    console.log('🔍 [CLIENT] Preview button clicked!');
+
     if (!manualSyncStartDate) {
+      console.log('❌ [CLIENT] No manualSyncStartDate selected');
       addToast({
         title: 'Помилка',
         description: 'Оберіть дату початку синхронізації',
@@ -834,6 +911,11 @@ const SettingsOrders: React.FC = () => {
       });
       return;
     }
+
+    console.log('✅ [CLIENT] Starting preview with dates:', {
+      startDate: manualSyncStartDate.toString(),
+      endDate: manualSyncEndDate?.toString()
+    });
 
     // Если конечная дата не указана, используем текущую дату
     const endDate = manualSyncEndDate || today(getLocalTimeZone());
@@ -849,15 +931,143 @@ const SettingsOrders: React.FC = () => {
     const startDateStr = manualSyncStartDate.toString();
     const endDateStr = endDate.toString();
 
-    const preview = await loadSyncPreview(startDateStr, endDateStr);
-    if (preview) {
-      setSyncPreviewModal(true);
-    }
+    // Запускаем анализ, результат получим через мониторинг прогресса
+    await loadSyncPreview(startDateStr, endDateStr);
+  };
+
+  // Мониторинг прогресса полной синхронизации
+  const monitorSyncProgress = async (sessionId: string) => {
+    console.log('📊 [CLIENT] Starting sync progress monitoring for sessionId:', sessionId);
+
+    let attempts = 0;
+    const maxAttempts = 600; // Максимум 20 минут (600 * 2 сек)
+    let lastProgress = null;
+
+    const checkProgress = async () => {
+      attempts++;
+
+      try {
+        console.log(`📊 [CLIENT] Checking sync progress attempt ${attempts}/${maxAttempts} for sessionId:`, sessionId);
+
+        const response = await fetch(`/api/orders/sync/progress?sessionId=${encodeURIComponent(sessionId)}`, {
+          credentials: 'include'
+        });
+
+        console.log('📊 [CLIENT] Sync progress response status:', response.status);
+
+        const result = await response.json();
+
+        console.log('📊 [CLIENT] Sync progress response:', result);
+
+        if (response.ok && result.success) {
+          if (result.active) {
+            // Синхронизация активна, обновляем прогресс
+            console.log(`📊 [CLIENT SYNC PROGRESS] Active: ${result.progress.stage} - ${result.progress.message} (${result.progress.progressPercent}%)`);
+            setSyncProgress({
+              active: true,
+              progress: result.progress
+            });
+            lastProgress = result.progress;
+
+            // Продолжаем мониторинг
+            setTimeout(checkProgress, 2000);
+          } else if (result.completed && result.result) {
+            // Синхронизация завершена успешно, получили результат
+            console.log(`📊 [CLIENT SYNC PROGRESS] Sync completed with result!`);
+
+            // Показываем финальный статус
+            setSyncProgress({
+              active: false,
+              progress: {
+                stage: 'completed',
+                message: 'Синхронизация завершена успешно',
+                processedOrders: result.result.synced || 0,
+                totalOrders: (result.result.synced || 0) + (result.result.errors || 0),
+                currentBatch: 1,
+                totalBatches: 1,
+                progressPercent: 100,
+                elapsedTime: 0,
+                errors: []
+              }
+            });
+
+            // Сохраняем результат
+            setManualSyncResult({
+              success: result.result.success,
+              message: `Синхронизировано: ${result.result.synced}, Ошибок: ${result.result.errors}`,
+              data: result.result
+            });
+
+            // Ждем 3 секунды, чтобы пользователь увидел финальный статус
+            setTimeout(() => {
+              console.log(`📊 [CLIENT SYNC PROGRESS] Clearing progress`);
+              setSyncProgress(null);
+              setManualSyncRunning(false);
+      setCurrentSessionId(null);
+              setCurrentSessionId(null);
+            }, 3000);
+
+            return; // Прерываем цикл мониторинга
+          } else {
+            // Синхронизация завершилась без результата
+            if (lastProgress && (lastProgress.stage === 'completed' || lastProgress.stage === 'error')) {
+              // Показываем финальный статус еще немного времени
+              console.log(`📊 [CLIENT SYNC PROGRESS] Completed: ${lastProgress.stage} - ${lastProgress.message} (${lastProgress.progressPercent}%)`);
+              setSyncProgress({
+                active: false,
+                progress: lastProgress
+              });
+
+              // Ждем еще 2 секунды, чтобы пользователь увидел финальный статус
+              setTimeout(() => {
+                console.log(`📊 [CLIENT SYNC PROGRESS] Clearing progress`);
+                setSyncProgress(null);
+                setManualSyncRunning(false);
+      setCurrentSessionId(null);
+              }, 2000);
+            } else {
+              // Нет активной синхронизации
+              console.log(`📊 [CLIENT SYNC PROGRESS] No active sync found`);
+              setSyncProgress(null);
+              setManualSyncRunning(false);
+      setCurrentSessionId(null);
+              setCurrentSessionId(null);
+            }
+          }
+        } else {
+          console.error('Failed to get sync progress:', result);
+          // Продолжаем попытки, если это не последняя попытка
+          if (attempts < maxAttempts) {
+            setTimeout(checkProgress, 2000);
+          } else {
+            setSyncProgress(null);
+            setManualSyncRunning(false);
+      setCurrentSessionId(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking sync progress:', error);
+        // Продолжаем попытки при ошибке, если это не последняя попытка
+        if (attempts < maxAttempts) {
+          setTimeout(checkProgress, 2000);
+        } else {
+          setSyncProgress(null);
+          setManualSyncRunning(false);
+      setCurrentSessionId(null);
+        }
+      }
+    };
+
+    // Начинаем мониторинг
+    checkProgress();
   };
 
   // Manual sync
   const runManualSync = async () => {
+    console.log('🔄 [CLIENT] Manual sync button clicked!');
+
     if (!manualSyncStartDate) {
+      console.log('❌ [CLIENT] No manualSyncStartDate selected');
       addToast({
         title: 'Помилка',
         description: 'Оберіть дату початку синхронізації',
@@ -877,11 +1087,18 @@ const SettingsOrders: React.FC = () => {
       return;
     }
 
+    console.log('✅ [CLIENT] Starting manual sync with dates:', {
+      startDate: manualSyncStartDate.toString(),
+      endDate: endDate.toString()
+    });
+
     setManualSyncRunning(true);
     setManualSyncResult(null);
     setSyncProgress(null);
 
     try {
+      console.log('🌐 [CLIENT] Making request to /api/orders/sync/manual');
+
       const response = await fetch('/api/orders/sync/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -891,58 +1108,86 @@ const SettingsOrders: React.FC = () => {
           endDate: endDate.toString(),
           batchSize: syncConfig.batchSize,
           maxConcurrent: syncConfig.maxConcurrent,
-          chunkSize: syncConfig.chunkSize
+          chunkSize: syncConfig.chunkSize,
+          syncMode: manualSyncMode
         })
+      });
+
+      console.log('📡 [CLIENT] Manual sync response status:', response.status);
+
+      const result = await response.json();
+
+      console.log('✅ [CLIENT] Manual sync server response:', result);
+
+      if (response.ok && result.sessionId) {
+        console.log('🎯 [CLIENT] Starting sync progress monitoring for sessionId:', result.sessionId);
+        setCurrentSessionId(result.sessionId);
+        monitorSyncProgress(result.sessionId);
+
+        addToast({
+          title: 'Успіх',
+          description: 'Синхронізація запущена, слідкуйте за прогресом',
+          color: 'success'
+        });
+      } else {
+        throw new Error(result.error || 'Failed to start manual sync');
+      }
+    } catch (error) {
+      console.error('Error starting manual sync:', error);
+      addToast({
+        title: 'Помилка',
+        description: error instanceof Error ? error.message : 'Не вдалося запустити синхронізацію',
+        color: 'danger'
+      });
+      setManualSyncRunning(false);
+      setCurrentSessionId(null);
+    }
+  };
+
+  // Stop operation
+  const stopOperation = async (sessionId: string, operationType: 'preview' | 'sync') => {
+    console.log(`🛑 [CLIENT] Stopping ${operationType} operation with sessionId: ${sessionId}`);
+
+    try {
+      const response = await fetch(`/api/orders/sync/cancel/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
       });
 
       const result = await response.json();
 
-      if (response.ok) {
+      if (response.ok && result.success) {
+        console.log(`✅ [CLIENT] Successfully requested cancellation for ${operationType} operation`);
+
         addToast({
           title: 'Успіх',
-          description: 'Синхронізація запущена в фоні',
+          description: `Запит на зупинку ${operationType === 'preview' ? 'попереднього перегляду' : 'синхронізації'} відправлено`,
           color: 'success'
         });
 
-        // Если доступен прогресс, начинаем мониторинг
-        if (result.progressAvailable) {
-          monitorSyncProgress();
+        // Stop local monitoring
+        if (operationType === 'sync') {
+          setManualSyncRunning(false);
+      setCurrentSessionId(null);
+        } else if (operationType === 'preview') {
+          setSyncPreviewLoading(false);
+      setCurrentSessionId(null);
         }
 
-        // Ждем немного и обновляем логи
-        setTimeout(() => {
-          loadSyncLogs();
-        }, 3000);
+        // Clear session ID
+        setCurrentSessionId(null);
 
       } else {
-        if (response.status === 409) {
-          addToast({
-            title: 'Помилка',
-            description: 'Синхронізація вже виконується',
-            color: 'warning'
-          });
-        } else {
-          setManualSyncResult({
-            success: false,
-            message: result.error || 'Не вдалося виконати синхронізацію',
-            data: result.data
-          });
-          addToast({
-            title: 'Помилка',
-            description: result.error || 'Не вдалося виконати синхронізацію',
-            color: 'danger'
-          });
-        }
+        throw new Error(result.error || 'Failed to cancel operation');
       }
     } catch (error) {
-      console.error('Error running manual sync:', error);
+      console.error('❌ [CLIENT] Error stopping operation:', error);
       addToast({
         title: 'Помилка',
-        description: 'Не вдалося виконати ручну синхронізацію',
+        description: error instanceof Error ? error.message : 'Не вдалося зупинити операцію',
         color: 'danger'
       });
-    } finally {
-      setManualSyncRunning(false);
     }
   };
 
@@ -1269,6 +1514,26 @@ const SettingsOrders: React.FC = () => {
                   }}
                 />
               </I18nProvider>
+            </div>
+
+            <div className="flex items-center gap-4 w-full">
+              <RadioGroup
+                label="Режим синхронізації"
+                orientation="horizontal"
+                value={manualSyncMode}
+                onValueChange={(value) => setManualSyncMode(value as 'smart' | 'force')}
+                classNames={{
+                  base: "flex-1",
+                  label: "text-sm font-medium text-gray-500 mb-0"
+                }}
+              >
+                <Radio value="smart" description="Тільки замовлення з змінами">
+                  Умна синхронізація
+                </Radio>
+                <Radio value="force" description="Всі замовлення">
+                  Повна синхронізація
+                </Radio>
+              </RadioGroup>
 
               <Button
                 onPress={previewManualSync}
@@ -1311,37 +1576,42 @@ const SettingsOrders: React.FC = () => {
                 ) : (
                   <>
                     <DynamicIcon name="play" size={16} />
-                    Запустити синхронізацію
+                    Запустити {manualSyncMode === 'smart' ? 'умну' : 'повну'} синхронізацію
                   </>
                 )}
               </Button>
-
-              <Button
-                onPress={() => {
-                  // Тестовый прогресс-бар
-                  setSyncProgress({
-                    active: true,
-                    progress: {
-                      stage: 'processing',
-                      message: 'Тестовое сообщение прогресса',
-                      processedOrders: 50,
-                      totalOrders: 100,
-                      currentBatch: 1,
-                      totalBatches: 2,
-                      progressPercent: 50,
-                      elapsedTime: 30000,
-                      errors: []
-                    }
-                  });
-                }}
-                color="warning"
-                size="lg"
-                variant="bordered"
-              >
-                <DynamicIcon name="settings" size={16} />
-                Тест прогресса
-              </Button>
             </div>
+
+            {/* Stop buttons - показываются только когда операции выполняются */}
+            {(syncPreviewLoading || manualSyncRunning) && (
+              <div className="flex gap-2 mt-4">
+                {syncPreviewLoading && currentSessionId && (
+                  <Button
+                    onPress={() => stopOperation(currentSessionId, 'preview')}
+                    variant="bordered"
+                    color="danger"
+                    size="lg"
+                    className="flex-1"
+                  >
+                    <DynamicIcon name="x" size={16} className="mr-2" />
+                    Зупинити попередній перегляд
+                  </Button>
+                )}
+
+                {manualSyncRunning && currentSessionId && (
+                  <Button
+                    onPress={() => stopOperation(currentSessionId, 'sync')}
+                    variant="bordered"
+                    color="danger"
+                    size="lg"
+                    className="flex-1"
+                  >
+                    <DynamicIcon name="x" size={16} className="mr-2" />
+                    Зупинити синхронізацію
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Прогресс синхронизации */}
@@ -2064,7 +2334,7 @@ const SettingsOrders: React.FC = () => {
               className="text-white"
             >
               <DynamicIcon name="play" size={16} />
-              Запустити повну синхронізацію
+              Запустити {manualSyncMode === 'smart' ? 'умну' : 'повну'} синхронізацію
             </Button>
           </ModalFooter>
         </ModalContent>

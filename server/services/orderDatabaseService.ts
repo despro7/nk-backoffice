@@ -602,7 +602,7 @@ export class OrderDatabaseService {
    * Batch создание заказов
    */
   async createOrdersBatch(ordersData: Array<{
-    id: string;
+    id: number;
     externalId: string;
     orderNumber: string;
     ttn: string;
@@ -634,7 +634,7 @@ export class OrderDatabaseService {
           // Создаем заказ
           const order = await prisma.order.create({
             data: {
-              id: parseInt(orderData.id),
+              id: orderData.id,
               externalId: orderData.externalId,
               orderNumber: orderData.orderNumber,
               ttn: orderData.ttn,

@@ -150,18 +150,44 @@ export class AuthService {
       // Находим пользователя по refresh токену
       const hashedToken = this.hashToken(refreshTokenData.refreshToken);
 
+      // Логируем для отладки
+      console.log('🔍 [RefreshToken] Получен refresh токен:', refreshTokenData.refreshToken.substring(0, 50) + '...');
+      console.log('🔍 [RefreshToken] Хеш токена:', hashedToken);
+      console.log('🔍 [RefreshToken] Текущая дата:', new Date().toISOString());
+
       const user = await prisma.user.findFirst({
-        where: { 
+        where: {
           refreshToken: hashedToken,
           refreshTokenExpiresAt: { gt: new Date() }
         }
       });
 
       if (!user) {
+        // Дополнительная отладка - ищем пользователя без учета времени истечения
+        const userWithoutExpiry = await prisma.user.findFirst({
+          where: {
+            refreshToken: hashedToken
+          }
+        });
+
+        if (userWithoutExpiry) {
+          console.log('🔍 [RefreshToken] Пользователь найден, но токен истек');
+          console.log('🔍 [RefreshToken] refreshTokenExpiresAt:', userWithoutExpiry.refreshTokenExpiresAt);
+          console.log('🔍 [RefreshToken] Пользователь активен:', userWithoutExpiry.isActive);
+          console.log('🔍 [RefreshToken] Последняя активность:', userWithoutExpiry.lastActivityAt);
+        } else {
+          console.log('🔍 [RefreshToken] Пользователь с таким хешем не найден');
+        }
+
         throw new Error('Невірний або застарілий refresh токен');
       }
 
+      console.log('🔍 [RefreshToken] Пользователь найден:', user.email);
+      console.log('🔍 [RefreshToken] Пользователь активен:', user.isActive);
+      console.log('🔍 [RefreshToken] refreshTokenExpiresAt:', user.refreshTokenExpiresAt);
+
       if (!user.isActive) {
+        console.log('❌ [RefreshToken] Пользователь заблокирован');
         throw new Error('Користувач заблокований');
       }
 
@@ -169,8 +195,13 @@ export class AuthService {
       const lastActivity = user.lastActivityAt || user.lastLoginAt || user.createdAt;
       const timeSinceLastActivity = Date.now() - lastActivity.getTime();
       const daysSinceLastActivity = Math.round(timeSinceLastActivity / (1000 * 60 * 60 * 24));
-      
+
+      console.log('🔍 [RefreshToken] Последняя активность:', lastActivity);
+      console.log('🔍 [RefreshToken] Дней с последней активности:', daysSinceLastActivity);
+      console.log('🔍 [RefreshToken] Порог неактивности (дней):', Math.round(this.USER_ACTIVITY_THRESHOLD / (1000 * 60 * 60 * 24)));
+
       if (timeSinceLastActivity > this.USER_ACTIVITY_THRESHOLD) {
+        console.log('❌ [RefreshToken] Пользователь заблокирован через неактивность');
         // Пользователь неактивен больше месяца, блокируем
         await prisma.user.update({
           where: { id: user.id },
@@ -229,12 +260,14 @@ export class AuthService {
 
   private static async generateTokenPair(user: UserType): Promise<{ accessToken: string, refreshToken: string, expiresIn: number }> {
     const secret = process.env.JWT_SECRET || 'fallback_secret';
-    
+
     if (!secret) {
       throw new Error('JWT_SECRET не настроен');
     }
-    
-    
+
+    console.log('🔍 [TokenGen] ACCESS_TOKEN_EXPIRES_IN:', this.ACCESS_TOKEN_EXPIRES_IN);
+    console.log('🔍 [TokenGen] REFRESH_TOKEN_EXPIRES_IN:', this.REFRESH_TOKEN_EXPIRES_IN);
+
     // Генерируем access токен
     const accessToken = (jwt as any).sign(
       {
@@ -269,8 +302,12 @@ export class AuthService {
     const refreshExpiryMs = this.getRefreshTokenExpiryMs();
     const refreshExpiryDate = new Date(Date.now() + refreshExpiryMs);
 
+    console.log('🔍 [TokenGen] Access token expires in:', expiresIn, 'seconds');
+    console.log('🔍 [TokenGen] Refresh token expires in:', refreshExpiryMs, 'ms');
+    console.log('🔍 [TokenGen] Refresh token expiry date:', refreshExpiryDate.toISOString());
+
     // Логируем генерацию токенов с учетом настроек
-    
+
     return { accessToken, refreshToken, expiresIn };
   }
 
@@ -388,8 +425,10 @@ export class AuthService {
       maxAge: accessTokenMaxAge,
     });
 
-    // Устанавливаем refresh token cookie (30 дней)
-    const refreshTokenMaxAge = 30 * 24 * 60 * 60 * 1000; // 30 дней
+    // Устанавливаем refresh token cookie (используем то же время что и в JWT токене)
+    const refreshTokenMaxAge = this.getRefreshTokenExpiryMs();
+    console.log('🔍 [Cookies] Устанавливаем refresh token cookie с maxAge:', refreshTokenMaxAge, 'ms');
+
     res.cookie('refreshToken', refreshToken, {
       ...cookieOptions,
       maxAge: refreshTokenMaxAge,
@@ -417,20 +456,30 @@ export class AuthService {
     let accessToken = req.cookies?.accessToken;
     let refreshToken = req.cookies?.refreshToken;
 
+    // Логируем для отладки
+    console.log('🔍 [Cookies] Raw accessToken из cookie-parser:', accessToken ? accessToken.substring(0, 30) + '...' : 'null');
+    console.log('🔍 [Cookies] Raw refreshToken из cookie-parser:', refreshToken ? refreshToken.substring(0, 30) + '...' : 'null');
+
     // Если cookie-parser не справился, парсим вручную
     if (!accessToken || !refreshToken) {
       const cookieHeader = req.headers.cookie;
+      console.log('🔍 [Cookies] Cookie header:', cookieHeader);
       if (cookieHeader) {
         const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
           const [key, value] = cookie.trim().split('=');
           if (key && value) {
-            acc[key] = value;
+            acc[key] = decodeURIComponent(value); // Декодируем URL-encoded значения
           }
           return acc;
         }, {} as Record<string, string>);
-        
+
+        console.log('🔍 [Cookies] Parsed cookies:', Object.keys(cookies));
+
         accessToken = accessToken || cookies.accessToken;
         refreshToken = refreshToken || cookies.refreshToken;
+
+        console.log('🔍 [Cookies] После ручного парсинга accessToken:', accessToken ? accessToken.substring(0, 30) + '...' : 'null');
+        console.log('🔍 [Cookies] После ручного парсинга refreshToken:', refreshToken ? refreshToken.substring(0, 30) + '...' : 'null');
       }
     }
 
