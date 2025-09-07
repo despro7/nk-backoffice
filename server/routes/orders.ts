@@ -1178,7 +1178,13 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
  */
 router.get('/cache/info', authenticateToken, async (req, res) => {
   try {
-    const cacheInfo = salesDriveService.getCacheInfo();
+    // TODO: Implement cache info endpoint
+    const cacheInfo = {
+      enabled: false,
+      size: 0,
+      maxSize: 0,
+      entries: []
+    };
 
     res.json({
       success: true,

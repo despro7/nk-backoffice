@@ -187,6 +187,35 @@ export class SyncHistoryService {
   }
 
   /**
+   * Получает последнюю успешную синхронизацию
+   */
+  async getLastSuccessfulSync(): Promise<SyncHistoryRecord | null> {
+    try {
+      const record = await prisma.syncHistory.findFirst({
+        where: {
+          status: 'success'
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      if (record) {
+        // Десериализуем поле details из JSON строки обратно в объект
+        return {
+          ...record,
+          details: this.parseDetails(record.details)
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('❌ [SYNC HISTORY] Failed to get last successful sync:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Получает записи по типу синхронизации
    */
   async getSyncHistoryByType(syncType: 'manual' | 'automatic' | 'background', limit: number = 10): Promise<SyncHistoryRecord[]> {

@@ -2,8 +2,6 @@ import { useState, useEffect } from "react";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { useApi } from "@/hooks/useApi";
 import { formatRelativeDate } from "@/lib/formatUtils";
-import ProductStatsTable from "@/components/ProductStatsTable";
-import ProductStatsChart from "@/components/ProductStatsChart";
 
 interface OrdersStats {
   total: number;
@@ -216,9 +214,9 @@ export default function Dashboard() {
       {isStorekeeper() && (
         <>
         <div className="bg-white rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-6">Статистика по замовленим порціям</h2>
+          <h2 className="text-xl font-semibold mb-6">Статистика для комірника</h2>
           <div className="mb-6">
-            <ProductStatsTable />
+            Тут буде статистика для комірника
           </div>
         </div>
         </>

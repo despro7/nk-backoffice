@@ -67,14 +67,11 @@ export class SalesDriveService {
     last429Time: number;
     baseDelay: number;
     maxDelay: number;
-    jitterRange: number;
-    circuitBreakerTrips: number;
-    lastCircuitBreakerTrip: number;
   };
   private cacheState: {
-    data: Map<string, { data: any; timestamp: number; expiresAt: number; accessCount: number; lastAccess: number }>;
+    data: Map<string, { data: any; timestamp: number; expiresAt: number }>;
     maxSize: number;
-    defaultTTL: number; // Time To Live в миллисекундах
+    defaultTTL: number;
     cleanupInterval: NodeJS.Timeout | null;
   };
   private syncSettings: any = {}; // Настройки синхронизации из БД
@@ -104,11 +101,8 @@ export class SalesDriveService {
     this.rateLimitState = {
       consecutive429Errors: 0,
       last429Time: 0,
-      baseDelay: this.getSetting('orders.baseDelay', 2000), // Начальная задержка 2 секунды
-      maxDelay: this.getSetting('orders.maxDelay', 30000), // Максимальная задержка 30 секунд
-      jitterRange: this.getSetting('orders.jitterRange', 1000), // Диапазон jitter ±1 секунда
-      circuitBreakerTrips: 0, // Счетчик срабатываний circuit breaker
-      lastCircuitBreakerTrip: 0 // Время последнего срабатывания
+      baseDelay: this.getSetting('orders.baseDelay', 5000), // Начальная задержка 5 секунд (увеличена)
+      maxDelay: this.getSetting('orders.maxDelay', 60000) // Максимальная задержка 60 секунд (увеличена)
     };
 
     // Инициализация состояния кеширования
@@ -155,54 +149,28 @@ export class SalesDriveService {
   }
 
   /**
-   * Вычисляет адаптивную задержку при rate limiting
+   * Вычисляет задержку при rate limiting с улучшенной логикой
    */
   private calculateAdaptiveDelay(): number {
     const state = this.rateLimitState;
-    const now = Date.now();
 
-    // Circuit breaker: если слишком много последовательных ошибок
-    if (state.consecutive429Errors >= 10) {
-      const now = Date.now();
+    // Более агрессивная экспоненциальная задержка для предотвращения rate limiting
+    let exponentialDelay;
 
-      // Если circuit breaker сработал недавно, увеличиваем счетчик
-      if (now - state.lastCircuitBreakerTrip < 600000) { // 10 минут
-        state.circuitBreakerTrips++;
-      } else {
-        state.circuitBreakerTrips = 1; // Сбрасываем если прошло много времени
-      }
-
-      state.lastCircuitBreakerTrip = now;
-
-      console.log(`🚨 Circuit breaker activated: too many consecutive rate limit errors (${state.consecutive429Errors}), trips: ${state.circuitBreakerTrips}`);
-
-      // Если circuit breaker срабатывает слишком часто, бросаем ошибку для остановки синхронизации
-      if (state.circuitBreakerTrips >= 3) {
-        throw new Error(`CRITICAL_RATE_LIMIT: Circuit breaker tripped ${state.circuitBreakerTrips} times in 10 minutes. Sync stopped to prevent API abuse.`);
-      }
-
-      return state.maxDelay;
+    if (state.consecutive429Errors === 0) {
+      exponentialDelay = state.baseDelay;
+    } else if (state.consecutive429Errors === 1) {
+      exponentialDelay = state.baseDelay * 2; // 10 секунд
+    } else if (state.consecutive429Errors === 2) {
+      exponentialDelay = state.baseDelay * 4; // 20 секунд
+    } else if (state.consecutive429Errors === 3) {
+      exponentialDelay = state.baseDelay * 8; // 40 секунд
+    } else {
+      // После 3 ошибок используем максимальную задержку
+      exponentialDelay = state.maxDelay;
     }
 
-    // Если прошло много времени с последнего 429, сбрасываем счетчик
-    if (now - state.last429Time > 300000) { // 5 минут вместо 1
-      state.consecutive429Errors = Math.max(0, state.consecutive429Errors - 2); // Сбрасываем сильнее
-      console.log(`🔄 Reset rate limit counter after 5 minutes, remaining: ${state.consecutive429Errors}`);
-    }
-
-    // Более консервативная экспоненциальная задержка
-    const exponentialDelay = Math.min(
-      state.baseDelay * Math.pow(1.5, state.consecutive429Errors), // Основание 1.5 вместо 2
-      state.maxDelay
-    );
-
-    // Добавляем jitter для распределения нагрузки
-    const jitter = (Math.random() - 0.5) * 2 * state.jitterRange;
-    const adaptiveDelay = Math.max(1000, exponentialDelay + jitter); // Минимум 1 секунда
-
-    console.log(`🕐 Rate limit delay calculated: ${Math.round(adaptiveDelay)}ms (attempt ${state.consecutive429Errors + 1})`);
-
-    return adaptiveDelay;
+    return Math.min(exponentialDelay, state.maxDelay); // Не превышаем максимум
   }
 
   /**
@@ -221,67 +189,28 @@ export class SalesDriveService {
    */
   private resetRateLimitState(): void {
     const state = this.rateLimitState;
+
+    // Более агрессивный сброс для быстрого восстановления
     if (state.consecutive429Errors > 0) {
-      // Более агрессивный сброс при успешных запросах
-      const resetAmount = Math.min(3, Math.ceil(state.consecutive429Errors * 0.3)); // Сбрасываем 30% ошибок
-      state.consecutive429Errors = Math.max(0, state.consecutive429Errors - resetAmount);
-      console.log(`✅ Rate limit state reset by ${resetAmount}, consecutive errors: ${state.consecutive429Errors}`);
-    }
-  }
-
-  /**
-   * Публичный метод для сброса circuit breaker (для экстренных случаев)
-   */
-  public resetCircuitBreaker(): void {
-    this.rateLimitState.consecutive429Errors = 0;
-    this.rateLimitState.circuitBreakerTrips = 0;
-    this.rateLimitState.lastCircuitBreakerTrip = 0;
-    this.rateLimitState.last429Time = 0;
-    console.log('🔄 Circuit breaker manually reset');
-  }
-
-  /**
-   * Тестовый метод для проверки фильтра updateAt
-   */
-  public async testUpdateAtFilter(startDate: string, endDate: string): Promise<any> {
-    console.log('🧪 [TEST] Testing updateAt filter with range:', startDate, 'to', endDate);
-
-    try {
-      const result = await this.fetchOrdersFromDateRangeParallelUpdateAt(startDate, endDate);
-
-      if (result.success && result.data) {
-        console.log('🧪 [TEST] UpdateAt filter test successful:', {
-          ordersCount: result.data.length,
-          timeRange: `${startDate} to ${endDate}`,
-          filterType: 'updateAt'
-        });
-
-        return {
-          success: true,
-          ordersCount: result.data.length,
-          timeRange: `${startDate} to ${endDate}`,
-          filterType: 'updateAt',
-          orders: result.data.slice(0, 3) // Показываем только первые 3 заказа для теста
-        };
+      // Сбрасываем полностью после 3 успешных запросов подряд
+      if (state.consecutive429Errors <= 2) {
+        state.consecutive429Errors = 0;
       } else {
-        console.log('🧪 [TEST] UpdateAt filter test failed:', result.error);
-        return {
-          success: false,
-          error: result.error,
-          timeRange: `${startDate} to ${endDate}`,
-          filterType: 'updateAt'
-        };
+        // Для более серьезных случаев уменьшаем постепенно
+        state.consecutive429Errors = Math.max(0, state.consecutive429Errors - 2);
       }
-    } catch (error) {
-      console.error('🧪 [TEST] UpdateAt filter test error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timeRange: `${startDate} to ${endDate}`,
-        filterType: 'updateAt'
-      };
+      console.log(`🔄 Rate limit state reset: ${state.consecutive429Errors} consecutive errors`);
     }
   }
+
+  /**
+   * Сбрасывает состояние rate limiting
+   */
+  public resetRateLimit(): void {
+    this.rateLimitState.consecutive429Errors = 0;
+    this.rateLimitState.last429Time = 0;
+  }
+
 
   /**
    * Запускает автоматическую очистку кеша
@@ -334,62 +263,31 @@ export class SalesDriveService {
       return null;
     }
 
-    // Обновляем статистику доступа
-    entry.accessCount++;
-    entry.lastAccess = now;
-
-    console.log(`💾 Cache hit for key: ${key} (accessed ${entry.accessCount} times)`);
     return entry.data;
   }
 
   /**
-   * Сохраняет данные в кеш с автоматическим управлением размером
+   * Сохраняет данные в кеш
    */
   private setCachedData(key: string, data: any, customTTL?: number): void {
     const now = Date.now();
     const ttl = customTTL || this.cacheState.defaultTTL;
 
-    // Если кеш переполнен, удаляем наименее используемые записи
+    // Если кеш переполнен, удаляем самую старую запись
     if (this.cacheState.data.size >= this.cacheState.maxSize) {
-      this.evictLeastUsedCacheEntries();
+      const firstKey = this.cacheState.data.keys().next().value;
+      if (firstKey) {
+        this.cacheState.data.delete(firstKey);
+      }
     }
 
     this.cacheState.data.set(key, {
       data,
       timestamp: now,
-      expiresAt: now + ttl,
-      accessCount: 1,
-      lastAccess: now
+      expiresAt: now + ttl
     });
-
-    console.log(`💾 Cached data for key: ${key} (TTL: ${Math.round(ttl / 1000)}s)`);
   }
 
-  /**
-   * Удаляет наименее используемые записи из кеша
-   */
-  private evictLeastUsedCacheEntries(): void {
-    const cache = this.cacheState.data;
-    const entries = Array.from(cache.entries());
-
-    // Сортируем по частоте использования и времени последнего доступа
-    entries.sort(([, a], [, b]) => {
-      // Сначала по количеству доступов (меньше - хуже)
-      if (a.accessCount !== b.accessCount) {
-        return a.accessCount - b.accessCount;
-      }
-      // Затем по времени последнего доступа (старше - хуже)
-      return a.lastAccess - b.lastAccess;
-    });
-
-    // Удаляем 25% самых редко используемых записей
-    const toEvict = Math.ceil(entries.length * 0.25);
-    for (let i = 0; i < toEvict; i++) {
-      cache.delete(entries[i][0]);
-    }
-
-    console.log(`🗑️ Evicted ${toEvict} least-used cache entries`);
-  }
 
   /**
    * Генерирует ключ кеша для запроса
@@ -398,25 +296,6 @@ export class SalesDriveService {
     return `${method}:${JSON.stringify(params)}`;
   }
 
-  /**
-   * Интеллектуально определяет TTL для данных на основе их типа и частоты изменений
-   */
-  private determineTTL(method: string, dataSize: number): number {
-    const baseTTL = this.cacheState.defaultTTL;
-
-    // Для больших объемов данных используем более длительное кеширование
-    if (dataSize > 1000) {
-      return baseTTL * 2; // 30 минут
-    }
-
-    // Для часто меняющихся данных (статистика) - короче
-    if (method.includes('stats') || method.includes('sync')) {
-      return baseTTL * 0.5; // 7.5 минут
-    }
-
-    // Для заказов - стандартное время
-    return baseTTL;
-  }
 
   /**
    * Проверяет соединение с SalesDrive API
@@ -501,8 +380,6 @@ export class SalesDriveService {
 
         const data = await response.json() as SalesDriveRawApiResponse;
 
-        console.log(`Received response from SalesDrive:`, data);
-
         // Проверяем структуру ответа согласно документации SalesDrive
         if (data.status !== 'success') {
           throw new Error(`SalesDrive API error: ${data.message || 'Unknown error'}`);
@@ -510,14 +387,11 @@ export class SalesDriveService {
 
         // Согласно документации, заказы находятся в data.data
         const orders = data.data || [];
-        console.log(`Received ${orders.length} orders from SalesDrive`);
 
         // Структурируем и форматируем каждый заказ
         const formattedOrders = orders.map((order: any) => {
           return this.formatOrder(order);
         });
-
-        console.log(`Formatted ${formattedOrders.length} orders`);
 
         return {
           success: true,
@@ -561,17 +435,21 @@ export class SalesDriveService {
   async fetchOrdersSinceLastSync(): Promise<SalesDriveApiResponse> {
     try {
       console.log('🔄 [SYNC] Starting fetchOrdersSinceLastSync...');
+      console.log('🔄 [SYNC] Timestamp:', new Date().toISOString());
+      console.log('🔄 [SYNC] Rate limit state:', {
+        consecutiveErrors: this.rateLimitState.consecutive429Errors,
+        lastErrorTime: this.rateLimitState.last429Time,
+        baseDelay: this.rateLimitState.baseDelay,
+        maxDelay: this.rateLimitState.maxDelay
+      });
 
       // Получаем время последней синхронизации
       const lastSyncTime = await orderDatabaseService.getLastSyncedOrder();
+      console.log('🔄 [SYNC] Last sync time from database:', lastSyncTime?.lastSynced || 'none');
       const now = new Date();
       const currentDate = now.toISOString().split('T')[0];
 
-      console.log('🔄 [SYNC] Current time:', now.toISOString());
-      console.log('🔄 [SYNC] Last sync info:', lastSyncTime ? {
-        lastSynced: lastSyncTime.lastSynced,
-        formatted: lastSyncTime.lastSynced ? new Date(lastSyncTime.lastSynced).toISOString() : 'null'
-      } : 'No last sync found');
+      console.log('🔄 [SYNC] Starting sync from last sync point');
 
       // Выбираем тип фильтра на основе настроек
       const filterType = this.getSetting('orders.filterType', 'orderTime');
@@ -583,28 +461,22 @@ export class SalesDriveService {
           const lastSync = new Date(lastSyncTime.lastSynced);
           const diffHours = Math.floor((now.getTime() - lastSync.getTime()) / (1000 * 60 * 60));
 
-          console.log(`🔄 [SYNC] Time difference: ${diffHours} hours since last sync (updateAt filter)`);
-
           if (diffHours < 2) {
             // Если синхронизировались недавно (< 2 часов), берем заказы за последние 4 часа
             const fourHoursAgo = new Date(now.getTime() - (4 * 60 * 60 * 1000));
             startDate = fourHoursAgo.toISOString();
-            console.log(`🔄 [SYNC] Recent sync, fetching updated orders from last 4 hours: ${startDate}`);
           } else if (diffHours < 24) {
             // Если синхронизировались сегодня (< 24 часов), берем заказы с момента последней синхронизации
             startDate = lastSync.toISOString();
-            console.log(`🔄 [SYNC] Same day sync, fetching updated orders since: ${startDate}`);
           } else {
             // Если прошло больше суток, берем заказы за последние 24 часа
             const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
             startDate = yesterday.toISOString();
-            console.log(`🔄 [SYNC] Old sync, fetching updated orders from last 24 hours: ${startDate}`);
           }
         } else {
           // Если синхронизации не было, берем заказы за последние 24 часа
           const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
           startDate = yesterday.toISOString();
-          console.log(`🔄 [SYNC] No previous sync, fetching updated orders from last 24 hours: ${startDate}`);
         }
       } else {
         // Обычная логика для фильтра orderTime
@@ -613,35 +485,27 @@ export class SalesDriveService {
           const diffDays = Math.floor((now.getTime() - lastSync.getTime()) / (1000 * 60 * 60 * 24));
           const diffHours = Math.floor((now.getTime() - lastSync.getTime()) / (1000 * 60 * 60));
 
-          console.log(`🔄 [SYNC] Time difference: ${diffDays} days, ${diffHours} hours since last sync`);
-
           if (diffDays === 0) {
             // Если синхронизировались сегодня, берем за последние 7 дней
             const sevenDaysAgo = new Date();
             sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
             startDate = sevenDaysAgo.toISOString().split('T')[0];
-            console.log(`🔄 [SYNC] Last sync was today, fetching orders from last 7 days: ${startDate} to ${currentDate}`);
           } else {
             // Если синхронизировались раньше, берем с момента последней синхронизации
             startDate = lastSync.toISOString().split('T')[0];
-            console.log(`🔄 [SYNC] Fetching orders since last sync: ${startDate} to ${currentDate}`);
           }
         } else {
           // Если синхронизации не было, берем за последний месяц
           const oneMonthAgo = new Date();
           oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
           startDate = oneMonthAgo.toISOString().split('T')[0];
-          console.log(`🔄 [SYNC] No previous sync found, fetching orders from last month: ${startDate} to ${currentDate}`);
         }
       }
 
       // Определяем endDate в зависимости от фильтра
       const endDate = filterType === 'updateAt' ? now.toISOString() : currentDate;
-      console.log(`🔄 [SYNC] Final date range: ${startDate} to ${endDate}`);
 
       if (filterType === 'updateAt') {
-        console.log(`🔄 [SYNC] Using updateAt filter for optimized sync`);
-
         try {
           return await this.fetchOrdersFromDateRangeParallelUpdateAt(startDate, endDate);
         } catch (error) {
@@ -670,9 +534,9 @@ export class SalesDriveService {
   /**
    * Получает заказы за определенный период с пагинацией (параллельная версия)
    */
-  private async fetchOrdersFromDateRangeParallel(startDate: string, endDate: string): Promise<SalesDriveApiResponse> {
+  async fetchOrdersFromDateRangeParallel(startDate: string, endDate: string): Promise<SalesDriveApiResponse> {
     const maxRetries = this.getSetting('orders.retryAttempts', 3);
-    const retryDelay = this.getSetting('orders.retryDelay', 2000);
+    const retryDelay = this.getSetting('orders.retryDelay', 3000);
     const concurrencyLimit = 1; // SalesDrive: 10 запросов/мин, используем 1 для надежности
 
     console.log(`🔧 [SalesDrive] Using sync settings: retries=${maxRetries}, delay=${retryDelay}ms, concurrency=${concurrencyLimit}`);
@@ -686,8 +550,8 @@ export class SalesDriveService {
         console.log(`🔄 Parallel fetching orders from ${startDate} to ${endDate} (attempt ${attempt}/${maxRetries})`);
 
         // Сначала получаем первую страницу, чтобы узнать общее количество
-        // SalesDrive API limit: максимум 100 записей на страницу
-        const batchSize = Math.min(this.getSetting('orders.batchSize', 100), 100);
+        // SalesDrive API limit: максимум 100 записей на страницу, но используем меньше для надежности
+        const batchSize = Math.min(this.getSetting('orders.batchSize', 25), 50);
         const firstPageParams = new URLSearchParams({
           page: '1',
           limit: batchSize.toString(),
@@ -744,15 +608,19 @@ export class SalesDriveService {
           };
         }
 
-        // Загружаем оставшиеся страницы параллельно
+        // Загружаем оставшиеся страницы параллельно с контролем количества
         const allOrders = [...firstPageOrders];
         const pagePromises: Promise<any[]>[] = [];
 
-        for (let page = 2; page <= maxAllowedPages; page++) {
+        // Ограничиваем максимальное количество страниц для предотвращения перегрузки
+        const maxPagesToFetch = Math.min(maxAllowedPages - 1, 20); // Максимум 20 страниц за раз
+        console.log(`📊 [Parallel Filter] Limiting to ${maxPagesToFetch} pages to prevent overload`);
+
+        for (let page = 2; page <= Math.min(maxAllowedPages, maxPagesToFetch + 1); page++) {
           pagePromises.push(this.fetchSinglePage(startDate, endDate, page));
         }
 
-        // Разбиваем на батчи для контроля concurrency
+        // Разбиваем на батчи для строгого контроля concurrency
         const batches: Promise<any[]>[][] = [];
         for (let i = 0; i < pagePromises.length; i += concurrencyLimit) {
           batches.push(pagePromises.slice(i, i + concurrencyLimit));
@@ -790,7 +658,7 @@ export class SalesDriveService {
             }
           }
 
-          // Задержка между батчами (SalesDrive: 10 запросов/мин = ~6 сек между запросами)
+          // Задержка между батчами (SalesDrive: 10 запросов/мин = ~6 сек между запросами для надежности)
           if (batchIndex < batches.length - 1) {
             console.log(`⏱️ Waiting 6 seconds before next batch to respect SalesDrive rate limits...`);
             await new Promise(resolve => setTimeout(resolve, 6000));
@@ -828,7 +696,7 @@ export class SalesDriveService {
    */
   private async fetchOrdersFromDateRangeParallelUpdateAt(startDate: string, endDate: string): Promise<SalesDriveApiResponse> {
     const maxRetries = this.getSetting('orders.retryAttempts', 3);
-    const retryDelay = this.getSetting('orders.retryDelay', 2000);
+    const retryDelay = this.getSetting('orders.retryDelay', 3000);
     const concurrencyLimit = 1; // SalesDrive: 10 запросов/мин, используем 1 для надежности
 
     console.log(`🔧 [SalesDrive UpdateAt] Using sync settings: retries=${maxRetries}, delay=${retryDelay}ms, concurrency=${concurrencyLimit}`);
@@ -842,7 +710,7 @@ export class SalesDriveService {
         console.log(`🔄 Parallel fetching orders by updateAt from ${startDate} to ${endDate} (attempt ${attempt}/${maxRetries})`);
 
         // Сначала получаем первую страницу, чтобы узнать общее количество
-        const batchSize = Math.min(this.getSetting('orders.batchSize', 50), 100);
+        const batchSize = Math.min(this.getSetting('orders.batchSize', 25), 50);
         const formattedStartDate = this.formatSalesDriveDate(startDate);
         const formattedEndDate = this.formatSalesDriveDate(endDate);
 
@@ -904,14 +772,18 @@ export class SalesDriveService {
           };
         }
 
-        // Создаем массив промисов для параллельной загрузки
+        // Создаем массив промисов для параллельной загрузки с контролем количества
         const pagePromises: Promise<any[]>[] = [];
 
-        for (let page = 2; page <= maxAllowedPages; page++) {
+        // Ограничиваем максимальное количество страниц для предотвращения перегрузки
+        const maxPagesToFetch = Math.min(maxAllowedPages - 1, 20); // Максимум 20 страниц за раз
+        console.log(`📊 [UpdateAt Filter] Limiting to ${maxPagesToFetch} pages to prevent overload`);
+
+        for (let page = 2; page <= Math.min(maxAllowedPages, maxPagesToFetch + 1); page++) {
           pagePromises.push(this.fetchSinglePageUpdateAt(startDate, endDate, page));
         }
 
-        // Разбиваем на батчи для контроля concurrency
+        // Разбиваем на батчи для строгого контроля concurrency
         const batches: Promise<any[]>[][] = [];
         for (let i = 0; i < pagePromises.length; i += concurrencyLimit) {
           batches.push(pagePromises.slice(i, i + concurrencyLimit));
@@ -948,10 +820,10 @@ export class SalesDriveService {
             }
           }
 
-          // Задержка между батчами (SalesDrive: 10 запросов/мин = ~6 сек между запросами)
+          // Задержка между батчами (SalesDrive: 10 запросов/мин = ~15 сек между запросами для надежности)
           if (batchIndex < batches.length - 1) {
-            console.log(`⏱️ Waiting 6 seconds before next batch to respect SalesDrive rate limits...`);
-            await new Promise(resolve => setTimeout(resolve, 6000));
+            console.log(`⏱️ Waiting 15 seconds before next batch to respect SalesDrive rate limits...`);
+            await new Promise(resolve => setTimeout(resolve, 15000));
           }
         }
 
@@ -985,7 +857,14 @@ export class SalesDriveService {
    * Загружает одну страницу заказов с обработкой rate limiting
    */
   private async fetchSinglePage(startDate: string, endDate: string, page: number): Promise<any[]> {
-    const batchSize = this.getSetting('orders.batchSize', 50); // Уменьшаем batch size для меньшей нагрузки
+    // Дополнительная задержка перед каждым запросом для предотвращения rate limiting
+    if (this.rateLimitState.consecutive429Errors > 0) {
+      const preventiveDelay = Math.min(2000 * this.rateLimitState.consecutive429Errors, 10000);
+      console.log(`🛡️ Preventive delay ${preventiveDelay}ms before page ${page} request`);
+      await new Promise(resolve => setTimeout(resolve, preventiveDelay));
+    }
+
+    const batchSize = this.getSetting('orders.batchSize', 25); // Уменьшаем batch size для меньшей нагрузки
     const params = new URLSearchParams({
       page: page.toString(),
       limit: batchSize.toString(),
@@ -1025,6 +904,7 @@ export class SalesDriveService {
       throw new Error(`Page ${page} API error: ${data.message || 'Unknown error'}`);
     }
 
+
     return data.data || [];
   }
 
@@ -1044,7 +924,7 @@ export class SalesDriveService {
         console.log(`🔄 Sequential fetching orders by updateAt from ${startDate} to ${endDate} (attempt ${attempt}/${maxRetries})`);
 
         // Сначала получаем первую страницу, чтобы узнать общее количество
-        const batchSize = Math.min(this.getSetting('orders.batchSize', 50), 100);
+        const batchSize = Math.min(this.getSetting('orders.batchSize', 25), 50);
         const formattedStartDate = this.formatSalesDriveDate(startDate);
         const formattedEndDate = this.formatSalesDriveDate(endDate);
 
@@ -1169,7 +1049,14 @@ export class SalesDriveService {
    * Загружает одну страницу заказов с фильтром по updateAt (время изменения)
    */
   private async fetchSinglePageUpdateAt(startDate: string, endDate: string, page: number): Promise<any[]> {
-    const batchSize = this.getSetting('orders.batchSize', 50);
+    // Дополнительная задержка перед каждым запросом для предотвращения rate limiting
+    if (this.rateLimitState.consecutive429Errors > 0) {
+      const preventiveDelay = Math.min(2000 * this.rateLimitState.consecutive429Errors, 10000);
+      console.log(`🛡️ Preventive delay ${preventiveDelay}ms before page ${page} request (updateAt)`);
+      await new Promise(resolve => setTimeout(resolve, preventiveDelay));
+    }
+
+    const batchSize = this.getSetting('orders.batchSize', 25);
     const formattedStartDate = this.formatSalesDriveDate(startDate);
     const formattedEndDate = this.formatSalesDriveDate(endDate);
 
@@ -1213,6 +1100,7 @@ export class SalesDriveService {
     if (data.status !== 'success') {
       throw new Error(`Page ${page} API error: ${data.message || 'Unknown error'}`);
     }
+
 
     return data.data || [];
   }
@@ -1360,48 +1248,10 @@ export class SalesDriveService {
     };
   }
 
-  /**
-   * Получает заказы за текущий месяц
-   */
-  async fetchOrdersForCurrentMonth(): Promise<SalesDriveApiResponse> {
-    try {
-      const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      
-      const startDate = startOfMonth.toISOString().split('T')[0];
-      const endDate = endOfMonth.toISOString().split('T')[0];
 
-      console.log(`📅 Fetching orders for current month: ${startDate} to ${endDate}`);
-
-      return await this.fetchOrdersFromDateRangeParallel(startDate, endDate);
-    } catch (error) {
-      console.error('Error fetching orders for current month:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
-  }
 
   /**
-   * Получает заказы за определенный период (публичный метод для внешнего использования)
-   */
-  async fetchOrdersForPeriod(startDate: string, endDate: string): Promise<SalesDriveApiResponse> {
-    try {
-      console.log(`📅 Fetching orders for period: ${startDate} to ${endDate}`);
-      return await this.fetchOrdersFromDateRangeParallel(startDate, endDate);
-    } catch (error) {
-      console.error('Error fetching orders for period:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
-  }
-
-  /**
-   * Получает заказы с расширенными фильтрами (с кешированием)
+   * Получает заказы с расширенными фильтрами (оптимизированная версия)
    */
   async fetchOrdersWithFilters(filters: {
     startDate?: string;
@@ -1428,61 +1278,55 @@ export class SalesDriveService {
         return cachedResult;
       }
 
-      // Сначала получаем все заказы за период
-      const startDate = filters.startDate || '2025-07-01';
-      const endDate = filters.endDate || new Date().toISOString().split('T')[0];
+      // Получаем заказы за период
+      const ordersResponse = await this.fetchOrdersFromDateRangeParallel(
+        filters.startDate || '2025-07-01',
+        filters.endDate || new Date().toISOString().split('T')[0]
+      );
 
-      const allOrdersResponse = await this.fetchOrdersFromDateRangeParallel(startDate, endDate);
-
-      if (!allOrdersResponse.success || !allOrdersResponse.data) {
-        return allOrdersResponse;
+      if (!ordersResponse.success || !ordersResponse.data) {
+        return ordersResponse;
       }
 
-      let filteredOrders = allOrdersResponse.data;
+      let filteredOrders = ordersResponse.data;
 
       // Применяем фильтры
       if (filters.statusIds && filters.statusIds.length > 0) {
         filteredOrders = filteredOrders.filter(order =>
-          filters.statusIds!.includes(order.status)
+          order && order.status && filters.statusIds!.includes(order.status)
         );
-        console.log(`📊 Status filter applied: ${filters.statusIds.join(', ')}, remaining: ${filteredOrders.length}`);
       }
 
       if (filters.minAmount !== undefined) {
         filteredOrders = filteredOrders.filter(order =>
-          (order.totalPrice || 0) >= filters.minAmount!
+          order && (order.totalPrice || 0) >= filters.minAmount!
         );
-        console.log(`📊 Min amount filter applied: ${filters.minAmount}, remaining: ${filteredOrders.length}`);
       }
 
       if (filters.maxAmount !== undefined) {
         filteredOrders = filteredOrders.filter(order =>
-          (order.totalPrice || 0) <= filters.maxAmount!
+          order && (order.totalPrice || 0) <= filters.maxAmount!
         );
-        console.log(`📊 Max amount filter applied: ${filters.maxAmount}, remaining: ${filteredOrders.length}`);
       }
 
       if (filters.paymentMethods && filters.paymentMethods.length > 0) {
         filteredOrders = filteredOrders.filter(order =>
-          order.paymentMethod && filters.paymentMethods!.includes(order.paymentMethod)
+          order && order.paymentMethod && filters.paymentMethods!.includes(order.paymentMethod)
         );
-        console.log(`📊 Payment methods filter applied: ${filters.paymentMethods.join(', ')}, remaining: ${filteredOrders.length}`);
       }
 
       if (filters.shippingMethods && filters.shippingMethods.length > 0) {
         filteredOrders = filteredOrders.filter(order =>
-          order.shippingMethod && filters.shippingMethods!.includes(order.shippingMethod)
+          order && order.shippingMethod && filters.shippingMethods!.includes(order.shippingMethod)
         );
-        console.log(`📊 Shipping methods filter applied: ${filters.shippingMethods.join(', ')}, remaining: ${filteredOrders.length}`);
       }
 
       if (filters.cities && filters.cities.length > 0) {
         filteredOrders = filteredOrders.filter(order =>
-          order.cityName && filters.cities!.some(city =>
+          order && order.cityName && filters.cities!.some(city =>
             order.cityName!.toLowerCase().includes(city.toLowerCase())
           )
         );
-        console.log(`📊 Cities filter applied: ${filters.cities.join(', ')}, remaining: ${filteredOrders.length}`);
       }
 
       // Применяем пагинацию
@@ -1497,7 +1341,7 @@ export class SalesDriveService {
         data: paginatedOrders,
         metadata: {
           totalFiltered: filteredOrders.length,
-          totalAvailable: allOrdersResponse.data.length,
+          totalAvailable: ordersResponse.data.length,
           appliedFilters: filters,
           pagination: {
             limit,
@@ -1508,7 +1352,7 @@ export class SalesDriveService {
       } as SalesDriveApiResponse;
 
       // Кешируем результат
-      const ttl = this.determineTTL('fetchOrdersWithFilters', paginatedOrders.length);
+      const ttl = this.cacheState.defaultTTL;
       this.setCachedData(cacheKey, result, ttl);
 
       return result;
@@ -1521,6 +1365,7 @@ export class SalesDriveService {
       };
     }
   }
+
 
   /**
    * Получает время последней синхронизации из БД
@@ -1548,6 +1393,7 @@ export class SalesDriveService {
       console.error('❌ [ERROR] formatOrder received null/undefined rawOrder');
       throw new Error('Invalid order data: rawOrder is null or undefined');
     }
+
 
     // Маппинг статусов
     const statusMap: { [key: number]: string } = {
@@ -1653,38 +1499,6 @@ export class SalesDriveService {
     return formattedOrder;
   }
 
-  /**
-   * Загружает заказы со статусом "Підтверджено" из SalesDrive
-   */
-  async fetchConfirmedOrders(): Promise<SalesDriveApiResponse> {
-    try {
-      const allOrders = await this.fetchOrdersFromDate();
-      
-      if (!allOrders.success || !allOrders.data) {
-        throw new Error(allOrders.error || 'Failed to fetch orders');
-      }
-
-      // Фильтруем только подтвержденные заказы
-      const confirmedOrders = allOrders.data.filter(order => 
-        order.status === 'Підтверджено' || 
-        order.status === 'confirmed' ||
-        order.status === 'Confirmed'
-      );
-
-      console.log(`Found ${confirmedOrders.length} confirmed orders out of ${allOrders.data.length} total`);
-
-      return {
-        success: true,
-        data: confirmedOrders,
-      };
-    } catch (error) {
-      console.error('Error fetching confirmed orders:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
-  }
 
   /**
    * Обновляет статус заказа в SalesDrive API
@@ -1790,7 +1604,7 @@ export class SalesDriveService {
         throw new Error(allOrders.error || 'Failed to fetch orders');
       }
 
-      const order = allOrders.data.find(o => o.id.toString() === orderId || o.orderNumber === orderId);
+      const order = allOrders.data.find(o => o && (o.id?.toString() === orderId || o.orderNumber === orderId));
 
       if (order) {
         console.log(`✅ Found order ${orderId} in full list`);
@@ -1936,7 +1750,7 @@ export class SalesDriveService {
 
       console.log(`📊 Generating sync statistics for period: ${startDate} to ${endDate}`);
 
-      // Получаем все заказы за период (с ограничением для статистики)
+      // Получаем все заказы за период
       const ordersResponse = await this.fetchOrdersFromDateRangeParallel(startDate, endDate);
 
       if (!ordersResponse.success || !ordersResponse.data) {
@@ -1957,98 +1771,37 @@ export class SalesDriveService {
 
       let totalRevenue = 0;
       const revenues: number[] = [];
-      const productsMap: { [sku: string]: { name: string; quantity: number; revenue: number } } = {};
 
-      // Анализируем каждый заказ
       for (const order of orders) {
-        // Статистика по статусам
-        const statusText = order.statusText || order.status || 'Unknown';
+        if (!order) continue;
+        const statusText = order.statusText || (order.status) || 'Unknown';
         ordersByStatus[statusText] = (ordersByStatus[statusText] || 0) + 1;
 
-        // Статистика по методам оплаты
         if (order.paymentMethod) {
           ordersByPaymentMethod[order.paymentMethod] = (ordersByPaymentMethod[order.paymentMethod] || 0) + 1;
         }
 
-        // Статистика по методам доставки
         if (order.shippingMethod) {
           ordersByShippingMethod[order.shippingMethod] = (ordersByShippingMethod[order.shippingMethod] || 0) + 1;
         }
 
-        // Статистика по городам
         if (order.cityName) {
           ordersByCity[order.cityName] = (ordersByCity[order.cityName] || 0) + 1;
         }
 
-        // Статистика по доходам
-        const revenue = order.totalPrice || 0;
-        totalRevenue += revenue;
-        revenues.push(revenue);
-
-        // Статистика по товарам
-        if (options.includeProductStats && order.items) {
-          for (const item of order.items) {
-            const sku = item.sku || item.productName || 'Unknown';
-            if (!productsMap[sku]) {
-              productsMap[sku] = {
-                name: item.productName || sku,
-                quantity: 0,
-                revenue: 0
-              };
-            }
-            productsMap[sku].quantity += item.quantity || 0;
-            productsMap[sku].revenue += (item.price || 0) * (item.quantity || 0);
-          }
-        }
+        const orderRevenue = order.totalPrice || 0;
+        totalRevenue += orderRevenue;
+        revenues.push(orderRevenue);
       }
 
-      // Рассчитываем статистику доходов
-      const validRevenues = revenues.filter(r => r > 0);
-      const revenueStats = {
-        total: totalRevenue,
-        average: validRevenues.length > 0 ? totalRevenue / validRevenues.length : 0,
-        min: validRevenues.length > 0 ? Math.min(...validRevenues) : 0,
-        max: validRevenues.length > 0 ? Math.max(...validRevenues) : 0
-      };
-
-      // Рассчитываем статистику по товарам
-      let productStats;
-      if (options.includeProductStats) {
-        const topProducts = Object.values(productsMap)
-          .sort((a, b) => b.quantity - a.quantity)
-          .slice(0, 10);
-
-        // Группировка товаров по категориям (простая логика)
-        const productsByCategory: { [category: string]: number } = {};
-        for (const product of Object.values(productsMap)) {
-          const category = this.categorizeProduct(product.name);
-          productsByCategory[category] = (productsByCategory[category] || 0) + product.quantity;
-        }
-
-        productStats = {
-          totalProducts: Object.keys(productsMap).length,
-          productsByCategory,
-          topProducts
-        };
-      }
+      const averageRevenue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+      const minRevenue = revenues.length > 0 ? Math.min(...revenues) : 0;
+      const maxRevenue = revenues.length > 0 ? Math.max(...revenues) : 0;
 
       // Рассчитываем период
       const start = new Date(startDate);
       const end = new Date(endDate);
       const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-
-      // Оцениваем производительность
-      const estimatedApiCalls = Math.ceil(totalOrders / 200) + 1; // +1 для первой страницы
-      const estimatedLoadTime = this.estimateLoadTime(totalOrders, estimatedApiCalls);
-
-      const performance = {
-        estimatedApiCalls,
-        estimatedLoadTime,
-        currentRateLimitState: {
-          consecutiveErrors: this.rateLimitState.consecutive429Errors,
-          lastErrorTime: this.rateLimitState.last429Time
-        }
-      };
 
       console.log(`✅ Sync statistics generated: ${totalOrders} orders analyzed`);
 
@@ -2060,19 +1813,30 @@ export class SalesDriveService {
           ordersByPaymentMethod,
           ordersByShippingMethod,
           ordersByCity,
-          revenueStats,
-          productStats,
+          revenueStats: {
+            total: totalRevenue,
+            average: averageRevenue,
+            min: minRevenue,
+            max: maxRevenue
+          },
           dateRange: {
             startDate,
             endDate,
             days
           },
-          performance
+          performance: {
+            estimatedApiCalls: 1,
+            estimatedLoadTime: '0s',
+            currentRateLimitState: {
+              consecutiveErrors: this.rateLimitState.consecutive429Errors,
+              lastErrorTime: this.rateLimitState.last429Time
+            }
+          }
         }
       };
 
       // Кешируем результат (статистика живет меньше обычных данных)
-      const ttl = this.determineTTL('getSyncStatistics', totalOrders);
+      const ttl = this.cacheState.defaultTTL;
       this.setCachedData(cacheKey, result, ttl);
 
       return result;
@@ -2086,95 +1850,9 @@ export class SalesDriveService {
     }
   }
 
-  /**
-   * Категоризирует товар по названию
-   */
-  private categorizeProduct(productName: string): string {
-    const name = productName.toLowerCase();
 
-    if (name.includes('борщ') || name.includes('суп') || name.includes('перші') || name.includes('перша')) {
-      return 'Перші страви';
-    }
 
-    if (name.includes('кур') || name.includes('свин') || name.includes('ялови') || name.includes('другі') || name.includes('друга')) {
-      return 'Другі страви';
-    }
 
-    if (name.includes('вареник') || name.includes('галушк') || name.includes('пельмен')) {
-      return 'Тісто';
-    }
-
-    if (name.includes('каша') || name.includes('гарнір')) {
-      return 'Гарніри';
-    }
-
-    if (name.includes('салат') || name.includes('закуск')) {
-      return 'Закуски';
-    }
-
-    return 'Інші';
-  }
-
-  /**
-   * Оценивает время загрузки
-   */
-  private estimateLoadTime(orderCount: number, apiCalls: number): string {
-    const baseTimePerCall = 1000; // 1 секунда на вызов
-    const parallelFactor = 5; // параллельные вызовы
-    const rateLimitBuffer = this.rateLimitState.consecutive429Errors * 2000; // дополнительные задержки
-
-    const sequentialTime = apiCalls * baseTimePerCall;
-    const parallelTime = Math.ceil(apiCalls / parallelFactor) * baseTimePerCall;
-    const totalTime = Math.min(sequentialTime, parallelTime) + rateLimitBuffer;
-
-    const minutes = Math.floor(totalTime / 60000);
-    const seconds = Math.floor((totalTime % 60000) / 1000);
-
-    return `${minutes}m ${seconds}s`;
-  }
-
-  /**
-   * Получает информацию о состоянии кеша
-   */
-  getCacheInfo(): {
-    size: number;
-    maxSize: number;
-    hitRate: number;
-    totalAccesses: number;
-    entries: Array<{
-      key: string;
-      size: number;
-      accessCount: number;
-      lastAccess: number;
-      expiresAt: number;
-      ttl: number;
-    }>;
-  } {
-    const cache = this.cacheState.data;
-    const entries = Array.from(cache.entries());
-
-    let totalAccesses = 0;
-
-    const cacheEntries = entries.map(([key, entry]) => {
-      totalAccesses += entry.accessCount;
-      return {
-        key,
-        size: JSON.stringify(entry.data).length,
-        accessCount: entry.accessCount,
-        lastAccess: entry.lastAccess,
-        expiresAt: entry.expiresAt,
-        ttl: entry.expiresAt - entry.timestamp
-      };
-    });
-
-    return {
-      size: cache.size,
-      maxSize: this.cacheState.maxSize,
-      hitRate: totalAccesses > 0 ? (totalAccesses / (totalAccesses + entries.length)) * 100 : 0,
-      totalAccesses,
-      entries: cacheEntries.sort((a, b) => b.accessCount - a.accessCount)
-    };
-  }
 
   /**
    * Очищает весь кеш
@@ -2197,41 +1875,22 @@ export class SalesDriveService {
     return deleted;
   }
 
-  /**
-   * Принудительно обновляет данные (теперь просто логирует)
-   */
-  async refreshCache(): Promise<void> {
-    console.log('Cache refresh requested - now always fetches fresh data from SalesDrive');
-  }
 
   /**
    * Оптимизированная синхронизация с batch операциями
    */
   async syncOrdersWithDatabaseOptimized(): Promise<{ success: boolean; synced: number; errors: number; details: any[]; metadata?: any }> {
     const startTime = Date.now();
+    let apiRequestsCount = 0;
 
     try {
       console.log('🚀 [SYNC] Starting optimized SalesDrive to Database synchronization...');
       console.log('🚀 [SYNC] Timestamp:', new Date().toISOString());
+      console.log('🚀 [SYNC] Rate limit state at start:', {
+        consecutiveErrors: this.rateLimitState.consecutive429Errors,
+        lastErrorTime: this.rateLimitState.last429Time ? new Date(this.rateLimitState.last429Time).toISOString() : 'never'
+      });
 
-      // Проверяем circuit breaker перед запуском синхронизации
-      if (this.rateLimitState.circuitBreakerTrips >= 3) {
-        const timeSinceLastTrip = Date.now() - this.rateLimitState.lastCircuitBreakerTrip;
-        if (timeSinceLastTrip < 1800000) { // 30 минут
-          const remainingMinutes = Math.ceil((1800000 - timeSinceLastTrip) / 60000);
-          console.log(`🚫 [SYNC] Circuit breaker active. Sync blocked for ${remainingMinutes} more minutes to prevent API abuse.`);
-          return {
-            success: false,
-            synced: 0,
-            errors: 1,
-            details: [`Circuit breaker active. Try again in ${remainingMinutes} minutes.`]
-          };
-        } else {
-          // Сбрасываем circuit breaker после 30 минут
-          this.rateLimitState.circuitBreakerTrips = 0;
-          console.log('🔄 [SYNC] Circuit breaker reset after 30 minutes');
-        }
-      }
 
       // Получаем только новые/измененные заказы
       const salesDriveResponse = await this.fetchOrdersSinceLastSync();
@@ -2254,16 +1913,16 @@ export class SalesDriveService {
 
       console.log(`📊 [SYNC] Processing ${salesDriveOrders.length} orders from SalesDrive...`);
       console.log(`📊 [SYNC] Date range: ${salesDriveOrders[0]?.orderDate || 'N/A'} to ${salesDriveOrders[salesDriveOrders.length - 1]?.orderDate || 'N/A'}`);
-      console.log(`📊 [SYNC] Order statuses: ${[...new Set(salesDriveOrders.map(o => o.status))].join(', ')}`);
+      console.log(`📊 [SYNC] Order statuses: ${[...new Set(salesDriveOrders.filter(o => o && o.status).map(o => o.status))].join(', ')}`);
 
       // Группируем заказы для batch операций
-      const orderIds = salesDriveOrders.map(o => o.orderNumber);
+      const orderIds = salesDriveOrders.filter(o => o && o.orderNumber).map(o => o.orderNumber);
       const existingOrders = await orderDatabaseService.getOrdersByExternalIds(orderIds);
       
       // Разделяем на новые и обновляемые
-      const existingIds = new Set(existingOrders.map(o => o.externalId));
-      const newOrders = salesDriveOrders.filter(o => !existingIds.has(o.orderNumber));
-      const updateOrders = salesDriveOrders.filter(o => existingIds.has(o.orderNumber));
+      const existingIds = new Set(existingOrders.filter(o => o && o.externalId).map(o => o.externalId));
+      const newOrders = salesDriveOrders.filter(o => o && o.orderNumber && !existingIds.has(o.orderNumber));
+      const updateOrders = salesDriveOrders.filter(o => o && o.orderNumber && existingIds.has(o.orderNumber));
 
       console.log(`📊 [SYNC] Order classification:`);
       console.log(`   🆕 New orders: ${newOrders.length}`);
@@ -2279,11 +1938,11 @@ export class SalesDriveService {
       // Batch создание новых заказов
       if (newOrders.length > 0) {
         console.log(`📝 [SYNC] Creating ${newOrders.length} new orders...`);
-        console.log(`📝 [SYNC] Sample new orders: ${newOrders.slice(0, 3).map(o => `${o.orderNumber} (${o.status})`).join(', ')}`);
+        console.log(`📝 [SYNC] Sample new orders: ${newOrders.slice(0, 3).filter(o => o && o.orderNumber).map(o => `${o.orderNumber} (${o.status || 'no status'})`).join(', ')}`);
 
         try {
           const startTime = Date.now();
-          await orderDatabaseService.createOrdersBatch(newOrders.map(o => ({
+          await orderDatabaseService.createOrdersBatch(newOrders.filter(o => o && o.orderNumber).map(o => ({
             id: o.id,
             externalId: o.orderNumber,
             orderNumber: o.orderNumber,
@@ -2307,8 +1966,8 @@ export class SalesDriveService {
           })));
           const duration = Date.now() - startTime;
 
-          synced += newOrders.length;
-          details.push(...newOrders.map(o => ({
+          synced += newOrders.filter(o => o && o.orderNumber).length;
+          details.push(...newOrders.filter(o => o && o.orderNumber).map(o => ({
             action: 'created',
             orderNumber: o.orderNumber,
             success: true
@@ -2320,8 +1979,8 @@ export class SalesDriveService {
 
         } catch (error) {
           console.error('❌ [SYNC] Error creating orders batch:', error);
-          errors += newOrders.length;
-          details.push(...newOrders.map(o => ({
+          errors += newOrders.filter(o => o && o.orderNumber).length;
+          details.push(...newOrders.filter(o => o && o.orderNumber).map(o => ({
             action: 'error',
             orderNumber: o.orderNumber,
             success: false,
@@ -2333,11 +1992,11 @@ export class SalesDriveService {
       // Batch обновление существующих заказов с умным обновлением
       if (updateOrders.length > 0) {
         console.log(`🔄 [SYNC] Updating ${updateOrders.length} existing orders...`);
-        console.log(`🔄 [SYNC] Sample update orders: ${updateOrders.slice(0, 3).map(o => `${o.orderNumber} (${o.status})`).join(', ')}`);
+        console.log(`🔄 [SYNC] Sample update orders: ${updateOrders.slice(0, 3).filter(o => o && o.orderNumber).map(o => `${o.orderNumber} (${o.status || 'no status'})`).join(', ')}`);
 
         try {
           const updateStartTime = Date.now();
-          const updateResult = await orderDatabaseService.updateOrdersBatchSmart(updateOrders.map(o => ({
+          const updateResult = await orderDatabaseService.updateOrdersBatchSmart(updateOrders.filter(o => o && o.orderNumber).map(o => ({
             orderNumber: o.orderNumber,
             status: o.status,
             statusText: o.statusText,
@@ -2369,49 +2028,55 @@ export class SalesDriveService {
             
             // Показываем детали по каждому заказу
             updateResult.results.forEach(result => {
+              if (!result) return;
+
               if (result.action === 'updated') {
-                console.log(`   🔄 Order ${result.orderNumber}: ${result.changedFields.join(', ')}`);
-                
+                console.log(`   🔄 Order ${result.orderNumber}: ${result.changedFields?.join(', ') || 'no fields'}`);
+
                 // Показываем конкретные значения для важных полей
-                if (result.previousValues.status && result.changedFields.includes('status')) {
-                  const newStatus = updateOrders.find(o => o.orderNumber === result.orderNumber)?.status;
-                  console.log(`      Status: ${result.previousValues.status} → ${newStatus}`);
+                if (result.previousValues?.status && result.changedFields?.includes('status')) {
+                  const newStatus = updateOrders.find(o => o && o.orderNumber === result.orderNumber)?.status;
+                  console.log(`      Status: ${result.previousValues.status} → ${newStatus || 'no status'}`);
                 }
                 
-                if (result.previousValues.statusText && result.changedFields.includes('statusText')) {
-                  const newStatusText = updateOrders.find(o => o.orderNumber === result.orderNumber)?.statusText;
-                  console.log(`      StatusText: ${result.previousValues.statusText} → ${newStatusText}`);
+                if (result.previousValues?.statusText && result.changedFields?.includes('statusText')) {
+                  const newStatusText = updateOrders.find(o => o && o.orderNumber === result.orderNumber)?.statusText;
+                  console.log(`      StatusText: ${result.previousValues.statusText} → ${newStatusText || 'no statusText'}`);
                 }
-                
-                if (result.previousValues.ttn && result.changedFields.includes('ttn')) {
-                  const newTtn = updateOrders.find(o => o.orderNumber === result.orderNumber)?.ttn;
-                  console.log(`      TTN: ${result.previousValues.ttn} → ${newTtn}`);
+
+                if (result.previousValues?.ttn && result.changedFields?.includes('ttn')) {
+                  const newTtn = updateOrders.find(o => o && o.orderNumber === result.orderNumber)?.ttn;
+                  console.log(`      TTN: ${result.previousValues.ttn} → ${newTtn || 'no ttn'}`);
                 }
-                
-                if (result.previousValues.quantity && result.changedFields.includes('quantity')) {
-                  const newQuantity = updateOrders.find(o => o.orderNumber === result.orderNumber)?.quantity;
-                  console.log(`      Quantity: ${result.previousValues.quantity} → ${newQuantity}`);
+
+                if (result.previousValues?.quantity && result.changedFields?.includes('quantity')) {
+                  const newQuantity = updateOrders.find(o => o && o.orderNumber === result.orderNumber)?.quantity;
+                  console.log(`      Quantity: ${result.previousValues.quantity} → ${newQuantity || 'no quantity'}`);
                 }
-                
-                if (result.previousValues.totalPrice && result.changedFields.includes('totalPrice')) {
-                  const newTotalPrice = updateOrders.find(o => o.orderNumber === result.orderNumber)?.totalPrice;
-                  console.log(`      TotalPrice: ${result.previousValues.totalPrice} → ${newTotalPrice}`);
+
+                if (result.previousValues?.totalPrice && result.changedFields?.includes('totalPrice')) {
+                  const newTotalPrice = updateOrders.find(o => o && o.orderNumber === result.orderNumber)?.totalPrice;
+                  console.log(`      TotalPrice: ${result.previousValues.totalPrice} → ${newTotalPrice || 'no price'}`);
                 }
-                
-                if (result.changedFields.includes('rawData')) {
-                  console.log(`      RawData: Updated (contains ${Object.keys(result.previousValues.rawData || {}).length} → ${Object.keys(updateOrders.find(o => o.orderNumber === result.orderNumber)?.rawData || {}).length} fields)`);
+
+                if (result.changedFields?.includes('rawData')) {
+                  const oldKeys = result.previousValues?.rawData ? Object.keys(result.previousValues.rawData).length : 0;
+                  const newOrder = updateOrders.find(o => o && o.orderNumber === result.orderNumber);
+                  const newKeys = newOrder?.rawData ? Object.keys(newOrder.rawData).length : 0;
+                  console.log(`      RawData: Updated (contains ${oldKeys} → ${newKeys} fields)`);
                 }
-                
-                if (result.changedFields.includes('items')) {
-                  const oldItemsCount = Array.isArray(result.previousValues.items) ? result.previousValues.items.length : 0;
-                  const newItemsCount = Array.isArray(updateOrders.find(o => o.orderNumber === result.orderNumber)?.items) ? updateOrders.find(o => o.orderNumber === result.orderNumber)?.items.length : 0;
+
+                if (result.changedFields?.includes('items')) {
+                  const oldItemsCount = Array.isArray(result.previousValues?.items) ? result.previousValues.items.length : 0;
+                  const newOrder = updateOrders.find(o => o && o.orderNumber === result.orderNumber);
+                  const newItemsCount = Array.isArray(newOrder?.items) ? newOrder.items.length : 0;
                   console.log(`      Items: ${oldItemsCount} → ${newItemsCount} items`);
                 }
                 
               // } else if (result.action === 'skipped') {
-                // console.log(`   ⏭️ Order ${result.orderNumber}: ${result.reason}`);
+                // console.log(`   ⏭️ Order ${result.orderNumber || 'unknown'}: ${result.reason}`);
               } else if (result.action === 'error') {
-                console.log(`   ❌ Order ${result.orderNumber}: ${result.error}`);
+                console.log(`   ❌ Order ${result.orderNumber || 'unknown'}: ${result.error || 'no error'}`);
               }
             });
           }
@@ -2419,13 +2084,13 @@ export class SalesDriveService {
           // Показываем краткую сводку изменений
           if (updateResult.totalUpdated > 0) {
             const statusChanges = updateResult.results
-              .filter(r => r.action === 'updated' && r.changedFields.includes('status'))
+              .filter(r => r && r.action === 'updated' && r.changedFields?.includes('status'))
               .length;
             const ttnChanges = updateResult.results
-              .filter(r => r.action === 'updated' && r.changedFields.includes('ttn'))
+              .filter(r => r && r.action === 'updated' && r.changedFields?.includes('ttn'))
               .length;
             const priceChanges = updateResult.results
-              .filter(r => r.action === 'updated' && r.changedFields.includes('totalPrice'))
+              .filter(r => r && r.action === 'updated' && r.changedFields?.includes('totalPrice'))
               .length;
             
             console.log(`📈 Change types summary:`);
@@ -2438,9 +2103,9 @@ export class SalesDriveService {
           }
 
           synced += updateResult.totalUpdated;
-          details.push(...updateResult.results.map(r => ({ 
-            action: r.action, 
-            orderNumber: r.orderNumber, 
+          details.push(...updateResult.results.filter(r => r).map(r => ({
+            action: r.action,
+            orderNumber: r.orderNumber || 'unknown',
             success: r.action !== 'error',
             ...(r.action === 'updated' && { changedFields: r.changedFields }),
             ...(r.action === 'error' && { error: r.error })
@@ -2449,12 +2114,12 @@ export class SalesDriveService {
           console.log(`✅ Successfully processed ${updateResult.totalUpdated + updateResult.totalSkipped} orders`);
         } catch (error) {
           console.error('❌ Error updating orders batch:', error);
-          errors += updateOrders.length;
-          details.push(...updateOrders.map(o => ({ 
-            action: 'error', 
-            orderNumber: o.orderNumber, 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
+          errors += updateOrders.filter(o => o && o.orderNumber).length;
+          details.push(...updateOrders.filter(o => o && o.orderNumber).map(o => ({
+            action: 'error',
+            orderNumber: o.orderNumber,
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
           })));
         }
       }
@@ -2477,6 +2142,8 @@ export class SalesDriveService {
       console.log(`   ❌ Errors: ${errors}`);
       console.log(`   📈 Overall efficiency: ${totalProcessed > 0 ? ((synced / totalProcessed) * 100).toFixed(1) : 0}%`);
       console.log(`   ⚡ Average time per order: ${totalProcessed > 0 ? (totalDuration / totalProcessed).toFixed(2) : 0}ms`);
+      console.log(`   🌐 Rate limit state at end: ${this.rateLimitState.consecutive429Errors} consecutive errors`);
+      console.log(`   📊 Memory usage: ${process.memoryUsage().heapUsed / 1024 / 1024}MB heap used`);
 
       return {
         success: true,
@@ -2505,6 +2172,46 @@ export class SalesDriveService {
   }
 
   /**
+   * Записывает результат синхронизации в историю
+   */
+  private async recordSyncInHistory(result: { success: boolean; synced: number; errors: number; details: any[]; metadata?: any }, syncType: 'automatic' | 'manual' | 'background' = 'automatic'): Promise<void> {
+    try {
+      const startDate = result.metadata?.startDate;
+      const endDate = result.metadata?.endDate;
+      const totalOrders = result.metadata?.totalProcessed || result.synced + result.errors;
+      const newOrders = result.metadata?.newOrders || 0;
+      const updatedOrders = result.metadata?.updatedOrders || result.synced;
+      const skippedOrders = result.metadata?.skippedOrders || 0;
+      const duration = result.metadata?.totalDuration || 0;
+
+      const historyData: CreateSyncHistoryData = {
+        syncType,
+        startDate,
+        endDate,
+        totalOrders,
+        newOrders,
+        updatedOrders,
+        skippedOrders,
+        errors: result.errors,
+        duration,
+        details: {
+          ...result.metadata,
+          synced: result.synced,
+          errors: result.errors
+        },
+        status: result.success ? 'success' : (result.errors > 0 ? 'partial' : 'failed'),
+        errorMessage: result.errors > 0 ? `${result.errors} orders failed to sync` : undefined
+      };
+
+      await syncHistoryService.createSyncRecord(historyData);
+      console.log(`📝 [SYNC HISTORY] Recorded ${syncType} sync: ${result.success ? 'success' : 'failed'}`);
+    } catch (error) {
+      console.error('❌ [SYNC HISTORY] Failed to record sync in history:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Синхронизирует заказы из SalesDrive с локальной БД (обновленная версия)
    */
   async syncOrdersWithDatabase(): Promise<{ success: boolean; synced: number; errors: number; details: any[] }> {
@@ -2513,14 +2220,37 @@ export class SalesDriveService {
       console.log('🎯 [SYNC] Initiated at:', new Date().toISOString());
 
       // Используем оптимизированный метод
-      return await this.syncOrdersWithDatabaseOptimized();
+      const result = await this.syncOrdersWithDatabaseOptimized();
+
+      // Записываем в историю синхронизаций
+      try {
+        await this.recordSyncInHistory(result, 'automatic');
+      } catch (historyError) {
+        console.error('❌ [SYNC] Failed to record sync in history:', historyError);
+        // Не прерываем выполнение из-за ошибки записи в историю
+      }
+
+      return result;
     } catch (error) {
       console.error('❌ Error during synchronization:', error);
+
+      // Записываем неудачную синхронизацию в историю
+      try {
+        await this.recordSyncInHistory({
+          success: false,
+          synced: 0,
+          errors: 1,
+          details: [{ error: error instanceof Error ? error.message : 'Unknown error' }]
+        }, 'automatic');
+      } catch (historyError) {
+        console.error('❌ [SYNC] Failed to record failed sync in history:', historyError);
+      }
+
       return {
         success: false,
         synced: 0,
-        errors: 0,
-        details: []
+        errors: 1,
+        details: [{ error: error instanceof Error ? error.message : 'Unknown error' }]
       };
     }
   }
@@ -2536,18 +2266,21 @@ export class SalesDriveService {
     enableProgress?: boolean;
     batchSize?: number;
     concurrency?: number;
+    onProgress?: (stage: 'fetching' | 'processing' | 'saving' | 'completed' | 'error', message: string, processedOrders?: number, totalOrders?: number, currentBatch?: number, totalBatches?: number, errors?: string[]) => void;
   } = {}): Promise<{ success: boolean; synced: number; errors: number; details: any[]; metadata?: any }> {
     const operationStartTime = Date.now();
     let syncHistoryData: CreateSyncHistoryData | null = null;
+
+    // Настройки чанкинга
+    const chunkSize = options.chunkSize || 500; // Размер чанка по умолчанию
+    const maxMemoryMB = options.maxMemoryMB || 100; // Максимальный размер памяти в MB
+    const enableProgress = options.enableProgress !== false;
 
     try {
       console.log('🔄 [MANUAL SYNC] Starting comprehensive manual sync from:', startDate);
       console.log('🔄 [MANUAL SYNC] Initiated at:', new Date().toISOString());
 
-      // Настройки чанкинга
-      const chunkSize = options.chunkSize || 500; // Размер чанка по умолчанию
-      const maxMemoryMB = options.maxMemoryMB || 100; // Максимальный размер памяти в MB
-      const enableProgress = options.enableProgress !== false;
+      try {
 
       console.log(`🔧 [MANUAL SYNC] Chunking settings: size=${chunkSize}, maxMemory=${maxMemoryMB}MB, progress=${enableProgress}`);
 
@@ -2634,11 +2367,24 @@ export class SalesDriveService {
 
       const salesDriveOrders = salesDriveResponse.data;
       console.log(`📦 [MANUAL SYNC] Retrieved ${salesDriveOrders.length} orders from SalesDrive`);
-      console.log(`📊 [MANUAL SYNC] Order statuses present: ${[...new Set(salesDriveOrders.map(o => o.status))].join(', ')}`);
+      console.log(`📊 [MANUAL SYNC] Order statuses present: ${[...new Set(salesDriveOrders.filter(o => o && o.status).map(o => o.status))].join(', ')}`);
 
       // Применяем чанкинг для больших объемов данных
       const shouldUseChunking = salesDriveOrders.length > chunkSize;
       const estimatedMemoryMB = (JSON.stringify(salesDriveOrders).length / 1024 / 1024);
+
+      // Создаем чанки если нужно
+      let chunks: SalesDriveOrder[][] = [];
+      if (shouldUseChunking) {
+        for (let i = 0; i < salesDriveOrders.length; i += chunkSize) {
+          chunks.push(salesDriveOrders.slice(i, i + chunkSize));
+        }
+      }
+
+      // Обновляем прогресс с общим количеством заказов
+      if (options.onProgress && enableProgress) {
+        options.onProgress('processing', `Найдено ${salesDriveOrders.length} заказов для синхронизации`, 0, salesDriveOrders.length, 0, shouldUseChunking ? chunks.length : 1);
+      }
 
       console.log(`🔧 [MANUAL SYNC] Memory usage estimate: ${estimatedMemoryMB.toFixed(1)}MB`);
       console.log(`🔧 [MANUAL SYNC] Using chunking: ${shouldUseChunking} (threshold: ${chunkSize} orders)`);
@@ -2671,8 +2417,8 @@ export class SalesDriveService {
 
       // Показываем примеры заказов для отладки
       console.log('📋 [MANUAL SYNC] Sample orders from SalesDrive:');
-      salesDriveOrders.slice(0, 3).forEach((order, index) => {
-        console.log(`   ${index + 1}. ${order.orderNumber} (${order.status}) - ${order.customerName || 'No name'}`);
+      salesDriveOrders.slice(0, 3).filter(order => order && order.orderNumber).forEach((order, index) => {
+        console.log(`   ${index + 1}. ${order.orderNumber} (${order.status || 'no status'}) - ${order.customerName || 'No name'}`);
       });
 
       let totalSynced = 0;
@@ -2683,12 +2429,6 @@ export class SalesDriveService {
       if (shouldUseChunking) {
         // Обработка с чанкингом
         console.log(`🔄 [MANUAL SYNC] Starting chunked sync of ${salesDriveOrders.length} orders...`);
-
-        const chunks = [];
-        for (let i = 0; i < salesDriveOrders.length; i += chunkSize) {
-          chunks.push(salesDriveOrders.slice(i, i + chunkSize));
-        }
-
         console.log(`📦 [MANUAL SYNC] Split into ${chunks.length} chunks of ~${chunkSize} orders each`);
 
         let totalCreated = 0;
@@ -2699,7 +2439,12 @@ export class SalesDriveService {
           const chunk = chunks[chunkIndex];
           console.log(`🔄 [MANUAL SYNC] Processing chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} orders)`);
 
-          const chunkUpdateData = chunk.map(o => ({
+          // Обновляем прогресс перед обработкой чанка
+          if (options.onProgress && enableProgress) {
+            options.onProgress('processing', `Обработка чанка ${chunkIndex + 1}/${chunks.length}`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length);
+          }
+
+          const chunkUpdateData = chunk.filter(o => o && o.orderNumber).map(o => ({
             orderNumber: o.orderNumber,
             status: o.status,
             statusText: o.statusText,
@@ -2726,9 +2471,19 @@ export class SalesDriveService {
             totalErrors += chunkResult.totalErrors;
 
             console.log(`✅ [MANUAL SYNC] Chunk ${chunkIndex + 1} completed: +${chunkResult.totalCreated} created, ${chunkResult.totalUpdated} updated, ${chunkResult.totalErrors} errors`);
+
+            // Обновляем прогресс после обработки чанка
+            if (options.onProgress && enableProgress) {
+              options.onProgress('processing', `Чанк ${chunkIndex + 1}/${chunks.length} обработан: +${chunkResult.totalCreated} создано, ${chunkResult.totalUpdated} обновлено`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length, totalErrors > 0 ? [`${totalErrors} ошибок`] : []);
+            }
           } catch (chunkError) {
             console.error(`❌ [MANUAL SYNC] Error processing chunk ${chunkIndex + 1}:`, chunkError);
             totalErrors += chunk.length;
+
+            // Обновляем прогресс при ошибке
+            if (options.onProgress && enableProgress) {
+              options.onProgress('processing', `Ошибка в чанке ${chunkIndex + 1}/${chunks.length}`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length, [`Ошибка обработки чанка: ${chunkError instanceof Error ? chunkError.message : 'Unknown error'}`]);
+            }
           }
 
           // Очистка памяти между чанками
@@ -2750,7 +2505,12 @@ export class SalesDriveService {
         // Обработка без чанкинга
         console.log(`🔄 [MANUAL SYNC] Starting direct batch sync of ${salesDriveOrders.length} orders...`);
 
-        const updateData = salesDriveOrders.map(o => ({
+        // Обновляем прогресс перед обработкой
+        if (options.onProgress && enableProgress) {
+          options.onProgress('processing', `Обработка ${salesDriveOrders.length} заказов...`, 0, salesDriveOrders.length, 1, 1);
+        }
+
+        const updateData = salesDriveOrders.filter(o => o && o.orderNumber).map(o => ({
           orderNumber: o.orderNumber,
           status: o.status,
           statusText: o.statusText,
@@ -2776,6 +2536,11 @@ export class SalesDriveService {
 
         totalSynced = updateResult.totalCreated + updateResult.totalUpdated;
         totalErrors = updateResult.totalErrors;
+
+        // Обновляем прогресс после обработки
+        if (options.onProgress && enableProgress) {
+          options.onProgress('saving', `Обработка завершена: +${updateResult.totalCreated} создано, ${updateResult.totalUpdated} обновлено`, totalSynced, salesDriveOrders.length, 1, 1, totalErrors > 0 ? [`${totalErrors} ошибок`] : []);
+        }
       }
 
       console.log(`📊 [MANUAL SYNC] Force batch update completed in ${updateDuration.toFixed(1)}s:`);
@@ -2819,10 +2584,10 @@ export class SalesDriveService {
           successRate: parseFloat(successRate),
           dateRange: `${formattedStartDate} to ${formattedEndDate}`,
           batchUpdateDuration: updateDuration,
-          sampleOrders: salesDriveOrders.slice(0, 5).map(o => ({
+          sampleOrders: salesDriveOrders.slice(0, 5).filter(o => o && o.orderNumber).map(o => ({
             orderNumber: o.orderNumber,
-            status: o.status,
-            customerName: o.customerName
+            status: o.status || 'no status',
+            customerName: o.customerName || 'no name'
           }))
         },
         status: status,
@@ -2830,6 +2595,11 @@ export class SalesDriveService {
       };
 
       await syncHistoryService.createSyncRecord(syncHistoryData);
+
+      // Финальное обновление прогресса
+      if (options.onProgress && enableProgress) {
+        options.onProgress('completed', `Синхронизация завершена: ${updateResult.totalCreated + updateResult.totalUpdated} обработано, ${updateResult.totalErrors} ошибок`, totalProcessed, totalProcessed, shouldUseChunking ? chunks.length : 1, shouldUseChunking ? chunks.length : 1, updateResult.totalErrors > 0 ? [`${updateResult.totalErrors} заказов не удалось обработать`] : []);
+      }
 
       const metadata = {
         startDate: formattedStartDate,
@@ -2849,12 +2619,28 @@ export class SalesDriveService {
         success: status === 'success',
         synced: updateResult.totalCreated + updateResult.totalUpdated,
         errors: updateResult.totalErrors,
-        details: updateResult.results,
+        details: updateResult.results || [],
         metadata: metadata
       };
 
+      } catch (innerError) {
+        console.error('❌ [MANUAL SYNC] Error during sync process:', innerError);
+
+        // Обновляем прогресс при внутренней ошибке
+        if (options.onProgress && enableProgress) {
+          options.onProgress('error', 'Ошибка обработки данных', 0, 0, 0, 1, [innerError instanceof Error ? innerError.message : 'Unknown processing error']);
+        }
+
+        throw innerError; // Перебрасываем ошибку во внешний catch
+      }
+
     } catch (error) {
       console.error('❌ [MANUAL SYNC] Critical error during manual sync:', error);
+
+      // Обновляем прогресс при критической ошибке
+      if (options.onProgress && enableProgress) {
+        options.onProgress('error', 'Критическая ошибка синхронизации', 0, 0, 0, 1, [error instanceof Error ? error.message : 'Unknown critical error']);
+      }
 
       const totalDuration = (Date.now() - operationStartTime) / 1000;
 

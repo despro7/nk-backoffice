@@ -818,6 +818,31 @@ export const SettingsEquipment = () => {
             )}
           </div>
 
+          {/* Посилання на повний тест обладнання */}
+          <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-medium text-blue-800 text-sm">Потрібен повний тест обладнання?</h3>
+                <p className="text-blue-600 text-xs mt-1">
+                  Перейдіть до спеціальної сторінки для комплексного тестування ваги та сканера
+                </p>
+              </div>
+              <Button
+                as="a"
+                href="/test-serial-com"
+                target="_blank"
+                rel="noopener noreferrer"
+                color="primary"
+                variant="solid"
+                size="sm"
+                className="ml-4"
+              >
+                <DynamicIcon name="external-link" size={14} className="mr-1" />
+                Відкрити тест
+              </Button>
+            </div>
+          </div>
+
           {/* Міні-термінал */}
           <div className="border border-gray-200 rounded">
             <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center">

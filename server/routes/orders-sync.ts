@@ -52,7 +52,7 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
     console.log(`🔍 [SYNC PREVIEW] Analyzing orders from ${startDate} to ${endDate || 'now'}...`);
 
     // Получаем заказы из SalesDrive
-    const salesDriveResponse = await salesDriveService.fetchOrdersForPeriod(startDate, endDate);
+    const salesDriveResponse = await salesDriveService.fetchOrdersFromDateRangeParallel(startDate, endDate);
 
     if (!salesDriveResponse.success || !salesDriveResponse.data) {
       throw new Error(salesDriveResponse.error || 'Failed to fetch orders from SalesDrive');
@@ -191,7 +191,7 @@ router.post('/sync/selective', authenticateToken, async (req, res) => {
     console.log(`🔄 [SELECTIVE SYNC] Starting selective sync for ${selectedOrders.length} orders...`);
 
     // Получаем заказы из SalesDrive для выбранных номеров
-    const salesDriveResponse = await salesDriveService.fetchOrdersForPeriod(startDate, endDate);
+    const salesDriveResponse = await salesDriveService.fetchOrdersFromDateRangeParallel(startDate, endDate);
 
     if (!salesDriveResponse.success || !salesDriveResponse.data) {
       throw new Error(salesDriveResponse.error || 'Failed to fetch orders from SalesDrive');
@@ -512,6 +512,8 @@ let activeSyncProgress: {
   stage: 'fetching' | 'processing' | 'saving' | 'completed' | 'error';
   message: string;
   errors: string[];
+  lastAccessed?: number; // Время последнего доступа к прогрессу
+  accessCount?: number; // Количество попыток доступа
 } | null = null;
 
 // Получить статус текущей синхронизации
@@ -525,13 +527,19 @@ router.get('/sync/progress', authenticateToken, async (req, res) => {
       });
     }
 
+    // Обновляем время последнего доступа и счетчик
+    activeSyncProgress.lastAccessed = Date.now();
+    activeSyncProgress.accessCount = (activeSyncProgress.accessCount || 0) + 1;
+
     const progress = {
       ...activeSyncProgress,
       elapsedTime: Date.now() - activeSyncProgress.startTime,
-      progressPercent: activeSyncProgress.totalOrders
-        ? Math.round((activeSyncProgress.processedOrders / activeSyncProgress.totalOrders) * 100)
-        : 0
+      progressPercent: activeSyncProgress.totalOrders && activeSyncProgress.totalOrders > 0
+        ? Math.min(Math.round((activeSyncProgress.processedOrders / activeSyncProgress.totalOrders) * 100), 100)
+        : activeSyncProgress.processedOrders > 0 ? 100 : 0
     };
+
+    console.log(`📊 [SYNC PROGRESS] Progress requested: ${progress.stage} - ${progress.message} (${progress.progressPercent}%)`);
 
     res.json({
       success: true,
@@ -593,8 +601,11 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
       totalBatches: 1, // будет обновлено после получения общего количества
       stage: 'fetching',
       message: 'Начинаем получение данных из SalesDrive...',
-      errors: []
+      errors: [],
+      lastAccessed: Date.now(),
+      accessCount: 0
     };
+
 
     // Запускаем синхронизацию в фоне для избежания таймаутов
     setImmediate(async () => {
@@ -607,11 +618,35 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
         activeSyncProgress!.stage = 'fetching';
         activeSyncProgress!.message = 'Получаем заказы из SalesDrive API...';
 
+        // Функция для обновления прогресса
+        const updateProgress = (stage: 'fetching' | 'processing' | 'saving' | 'completed' | 'error', message: string, processedOrders?: number, totalOrders?: number, currentBatch?: number, totalBatches?: number, errors?: string[]) => {
+          if (activeSyncProgress) {
+            activeSyncProgress.stage = stage;
+            activeSyncProgress.message = message;
+            if (processedOrders !== undefined) activeSyncProgress.processedOrders = processedOrders;
+            if (totalOrders !== undefined) activeSyncProgress.totalOrders = totalOrders;
+            if (currentBatch !== undefined) activeSyncProgress.currentBatch = currentBatch;
+            if (totalBatches !== undefined) activeSyncProgress.totalBatches = totalBatches;
+            if (errors !== undefined) activeSyncProgress.errors = errors;
+
+            console.log(`🔄 [SYNC PROGRESS] Updated: ${stage} - ${message} (${processedOrders || 0}/${totalOrders || 0})`);
+          }
+        };
+
+        // Инициализируем прогресс с общим количеством заказов
+        activeSyncProgress!.totalOrders = 0; // будет обновлено после получения данных
+        activeSyncProgress!.processedOrders = 0;
+        activeSyncProgress!.currentBatch = 0;
+        activeSyncProgress!.totalBatches = 1;
+        activeSyncProgress!.stage = 'fetching';
+        activeSyncProgress!.message = 'Начинаем получение данных из SalesDrive...';
+
         // Используем оптимизированную ручную синхронизацию с чанкингом
         const syncResult = await salesDriveService.syncOrdersWithDatabaseManual(startDate, endDate, {
           chunkSize: Math.min((req.body.chunkSize || 1000), 2000), // Размер чанка
           maxMemoryMB: 200, // Максимум 200MB памяти
-          enableProgress: true
+          enableProgress: true,
+          onProgress: updateProgress
         });
 
         // Обновляем прогресс
@@ -644,10 +679,11 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
 
         console.log(`✅ [MANUAL SYNC] Completed: ${syncResult.synced} synced, ${syncResult.errors} errors`);
 
-        // Очищаем прогресс через 5 минут
+        // Очищаем прогресс через 30 минут (увеличено время жизни)
         setTimeout(() => {
+          console.log(`🧹 [SYNC PROGRESS] Cleaning up progress for log ${syncLog.id}`);
           activeSyncProgress = null;
-        }, 5 * 60 * 1000);
+        }, 30 * 60 * 1000);
 
       } catch (error) {
         console.error('❌ [MANUAL SYNC] Critical error:', error);
@@ -669,10 +705,11 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
           }
         });
 
-        // Очищаем прогресс через 1 минуту
+        // Очищаем прогресс через 10 минут при ошибке
         setTimeout(() => {
+          console.log(`🧹 [SYNC PROGRESS] Cleaning up progress after error for log ${syncLog.id}`);
           activeSyncProgress = null;
-        }, 60 * 1000);
+        }, 10 * 60 * 1000);
       }
     });
 
@@ -809,83 +846,9 @@ router.post('/sync/logs/cleanup', authenticateToken, async (req, res) => {
   }
 });
 
-// Тест фильтра updateAt для SalesDrive (проверяет поддержку нового фильтра)
-router.post('/test-update-filter', authenticateToken, async (req, res) => {
-  try {
-    const { salesDriveService } = await import('../services/salesDriveService.js');
 
-    // Тестируем получение заказов за последние 4 часа с фильтром updateAt
-    const fourHoursAgo = new Date(Date.now() - (4 * 60 * 60 * 1000));
-    const now = new Date();
 
-    console.log('🧪 [TEST] Testing updateAt filter...');
-    console.log('🧪 [TEST] Time range:', fourHoursAgo.toISOString(), 'to', now.toISOString());
 
-    try {
-      const result = await salesDriveService.testUpdateAtFilter(fourHoursAgo.toISOString(), now.toISOString());
 
-      res.json({
-        success: true,
-        message: 'UpdateAt filter test completed',
-        data: result
-      });
-    } catch (testError) {
-      console.warn('🧪 [TEST] UpdateAt filter test failed with error:', testError);
-
-      res.json({
-        success: false,
-        message: 'UpdateAt filter test failed',
-        error: testError instanceof Error ? testError.message : 'Unknown error',
-        fallback: 'Consider switching to orderTime filter if updateAt is not supported'
-      });
-    }
-  } catch (error) {
-    console.error('Error testing updateAt filter:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to test updateAt filter'
-    });
-  }
-});
-
-// Сброс circuit breaker для SalesDrive
-router.post('/reset-circuit-breaker', authenticateToken, async (req, res) => {
-  try {
-    const { salesDriveService } = await import('../services/salesDriveService.js');
-
-    // Сбрасываем состояние rate limiting
-    if (salesDriveService && typeof salesDriveService.resetCircuitBreaker === 'function') {
-      salesDriveService.resetCircuitBreaker();
-      res.json({
-        success: true,
-        message: 'Circuit breaker reset successfully'
-      });
-    } else {
-      // Ручной сброс через доступ к приватному свойству (не рекомендуется, но для экстренных случаев)
-      const serviceInstance = (salesDriveService as any);
-      if (serviceInstance && serviceInstance.rateLimitState) {
-        serviceInstance.rateLimitState.consecutive429Errors = 0;
-        serviceInstance.rateLimitState.circuitBreakerTrips = 0;
-        serviceInstance.rateLimitState.lastCircuitBreakerTrip = 0;
-        console.log('🔄 Circuit breaker manually reset via API');
-        res.json({
-          success: true,
-          message: 'Circuit breaker reset successfully (manual)'
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          error: 'SalesDrive service not available or method not found'
-        });
-      }
-    }
-  } catch (error) {
-    console.error('Error resetting circuit breaker:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to reset circuit breaker'
-    });
-  }
-});
 
 export default router;

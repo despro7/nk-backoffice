@@ -173,21 +173,24 @@ export class OrderDatabaseService {
    */
   async updateOrder(externalId: string, data: OrderUpdateData) {
     try {
+
       const updateData: any = {
-        orderDate: data.orderDate,
         lastSynced: new Date(),
         syncStatus: 'success',
-        syncError: null,
-        status: data.status,
-        statusText: data.statusText,
-        customerName: data.customerName,
-        customerPhone: data.customerPhone,
-        deliveryAddress: data.deliveryAddress,
-        cityName: data.cityName,
-        quantity: data.quantity,
-        pricinaZnizki: data.pricinaZnizki,
-        sajt: data.sajt
+        syncError: null
       };
+
+      // Добавляем только определенные поля
+      if (data.orderDate !== undefined) updateData.orderDate = data.orderDate;
+      if (data.status !== undefined) updateData.status = data.status;
+      if (data.statusText !== undefined) updateData.statusText = data.statusText;
+      if (data.customerName !== undefined) updateData.customerName = data.customerName;
+      if (data.customerPhone !== undefined) updateData.customerPhone = data.customerPhone;
+      if (data.deliveryAddress !== undefined) updateData.deliveryAddress = data.deliveryAddress;
+      if (data.cityName !== undefined) updateData.cityName = data.cityName;
+      if (data.quantity !== undefined) updateData.quantity = data.quantity;
+      if (data.pricinaZnizki !== undefined && data.pricinaZnizki !== null) updateData.pricinaZnizki = data.pricinaZnizki;
+      if (data.sajt !== undefined && data.sajt !== null) updateData.sajt = data.sajt;
 
       // Обновляем items если они переданы
       if (data.items) {
@@ -210,6 +213,7 @@ export class OrderDatabaseService {
         updateData.rawData = JSON.stringify(data.rawData);
         console.log(`✅ RawData serialized, length: ${updateData.rawData.length}`);
       }
+
 
 
       const order = await prisma.order.update({
@@ -1481,7 +1485,7 @@ export class OrderDatabaseService {
         });
 
         await Promise.allSettled(cachePromises);
-        console.log(`✅ Updated cache for ${ordersWithItemsChanged.length} orders`);
+        // console.log(`✅ Updated cache for ${ordersWithItemsChanged.length} orders`);
       }
 
       console.log(`✅ SMART batch update completed:`);
@@ -1781,7 +1785,7 @@ export class OrderDatabaseService {
         totalQuantity
       });
 
-      console.log(`✅ Updated cache for order ${externalId}`);
+      // console.log(`✅ Updated cache for order ${externalId}`);
       return true;
     } catch (error) {
       console.error(`❌ Error updating cache for order ${externalId}:`, error);
@@ -1859,6 +1863,7 @@ export class OrderDatabaseService {
             });
           } else {
             // Всегда обновляем существующий заказ (force update)
+
             const updateData = {
               status: orderData.status || existingOrder.status,
               statusText: orderData.statusText || existingOrder.statusText,
@@ -1875,12 +1880,13 @@ export class OrderDatabaseService {
               paymentMethod: orderData.paymentMethod || existingOrder.paymentMethod,
               cityName: orderData.cityName || existingOrder.cityName,
               provider: orderData.provider || existingOrder.provider,
-              pricinaZnizki: orderData.pricinaZnizki || existingOrder.pricinaZnizki,
-              sajt: orderData.sajt || existingOrder.sajt,
+              pricinaZnizki: orderData.pricinaZnizki !== undefined ? orderData.pricinaZnizki : existingOrder.pricinaZnizki,
+              sajt: orderData.sajt !== undefined ? orderData.sajt : existingOrder.sajt,
               lastSynced: new Date(),
               syncStatus: 'success',
               syncError: null
             };
+
 
             // Преобразуем orderDate в Date если это string
             if (updateData.orderDate && typeof updateData.orderDate === 'string') {
@@ -1943,7 +1949,7 @@ export class OrderDatabaseService {
         });
 
         await Promise.allSettled(cachePromises);
-        console.log(`✅ Updated cache for ${ordersToCache.length} orders`);
+        // console.log(`✅ Updated cache for ${ordersToCache.length} orders`);
       }
 
       console.log(`✅ Force batch update completed: ${totalCreated} created, ${totalUpdated} updated, ${totalErrors} errors`);

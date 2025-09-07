@@ -57,7 +57,7 @@ export class OrdersCacheService {
         }
       });
 
-      console.log(`✅ [ORDERS CACHE] ${data.processedItems ? 'Updated' : 'Created'} cache for order ${data.externalId}`);
+      // console.log(`✅ [ORDERS CACHE] ${data.processedItems ? 'Updated' : 'Created'} cache for order ${data.externalId}`);
       return cacheData;
     } catch (error) {
       console.error('❌ [ORDERS CACHE] Failed to upsert order cache:', error);
@@ -77,9 +77,9 @@ export class OrdersCacheService {
       });
 
       if (cache) {
-        console.log(`📋 [ORDERS CACHE] Retrieved cache for order ${externalId}`);
+        // console.log(`📋 [ORDERS CACHE] Retrieved cache for order ${externalId}`);
       } else {
-        console.log(`📋 [ORDERS CACHE] Cache not found for order ${externalId}`);
+        // console.log(`📋 [ORDERS CACHE] Cache not found for order ${externalId}`);
       }
 
       return cache;
@@ -142,9 +142,9 @@ export class OrdersCacheService {
 
       const deleted = result.count > 0;
       if (deleted) {
-        console.log(`🗑️ [ORDERS CACHE] Invalidated cache for order ${externalId}`);
+        // console.log(`🗑️ [ORDERS CACHE] Invalidated cache for order ${externalId}`);
       } else {
-        console.log(`🗑️ [ORDERS CACHE] Cache not found for order ${externalId}`);
+        // console.log(`🗑️ [ORDERS CACHE] Cache not found for order ${externalId}`);
       }
 
       return deleted;
@@ -167,9 +167,9 @@ export class OrdersCacheService {
 
       const deleted = result.count > 0;
       if (deleted) {
-        console.log(`🗑️ [ORDERS CACHE] Deleted cache for order ${externalId}`);
+        // console.log(`🗑️ [ORDERS CACHE] Deleted cache for order ${externalId}`);
       } else {
-        console.log(`🗑️ [ORDERS CACHE] Cache not found for order ${externalId}`);
+        // console.log(`🗑️ [ORDERS CACHE] Cache not found for order ${externalId}`);
       }
 
       return deleted;
@@ -245,7 +245,7 @@ export class OrdersCacheService {
       });
 
       const externalIds = cachedOrders.map(order => order.externalId);
-      console.log(`📋 [ORDERS CACHE] Found ${externalIds.length} orders with cache`);
+      // console.log(`📋 [ORDERS CACHE] Found ${externalIds.length} orders with cache`);
 
       return externalIds;
     } catch (error) {
@@ -285,7 +285,7 @@ export class OrdersCacheService {
         }
       });
 
-      console.log(`📋 [ORDERS CACHE] Retrieved ${caches.length}/${externalIds.length} caches in bulk`);
+      // console.log(`📋 [ORDERS CACHE] Retrieved ${caches.length}/${externalIds.length} caches in bulk`);
 
       return cacheMap;
     } catch (error) {

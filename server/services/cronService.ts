@@ -1,5 +1,6 @@
 import * as cron from 'node-cron';
 import { salesDriveService } from './salesDriveService.js';
+import { syncHistoryService } from './syncHistoryService.js';
 
 export class CronService {
   private syncJob: cron.ScheduledTask | null = null;
@@ -7,6 +8,34 @@ export class CronService {
 
   constructor() {
     console.log('🕐 CronService initialized');
+  }
+
+  /**
+   * Проверяет, была ли последняя успешная синхронизация менее часа назад
+   */
+  private async isSyncFresh(): Promise<boolean> {
+    try {
+      const lastSync = await syncHistoryService.getLastSuccessfulSync();
+      if (!lastSync) {
+        console.log('🔄 [FRESHNESS] No previous sync found, allowing sync');
+        return false; // Нет предыдущей синхронизации, можно запускать
+      }
+
+      const lastSyncTime = new Date(lastSync.createdAt);
+      const now = new Date();
+      const diffHours = (now.getTime() - lastSyncTime.getTime()) / (1000 * 60 * 60);
+
+      if (diffHours < 1) {
+        console.log(`⏰ [FRESHNESS] Last sync was ${Math.round(diffHours * 60)} minutes ago, skipping (less than 1 hour)`);
+        return true; // Синхронизация свежая, пропускаем
+      }
+
+      console.log(`🔄 [FRESHNESS] Last sync was ${Math.round(diffHours)} hours ago, allowing sync`);
+      return false; // Прошло больше часа, можно запускать
+    } catch (error) {
+      console.error('❌ [FRESHNESS] Error checking sync freshness:', error);
+      return false; // В случае ошибки разрешаем синхронизацию
+    }
   }
 
   /**
@@ -25,16 +54,26 @@ export class CronService {
         return;
       }
 
+      // Проверяем свежесть последней синхронизации
+      const isFresh = await this.isSyncFresh();
+      if (isFresh) {
+        console.log('⏰ [FRESHNESS] Skipping scheduled sync - last sync was less than 1 hour ago');
+        console.log('⏰ [FRESHNESS] Next sync attempt in 1 hour');
+        return;
+      }
+
+      console.log('✅ [FRESHNESS] Sync allowed - proceeding with synchronization');
+
       this.isRunning = true;
       console.log('🕐 Running scheduled order sync...');
 
       try {
         const startTime = Date.now();
 
-        // Добавляем таймаут на синхронизацию (10 минут максимум)
+        // Добавляем таймаут на синхронизацию (15 минут максимум для более надежной работы)
         const syncPromise = salesDriveService.syncOrdersWithDatabase();
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Sync timeout after 10 minutes')), 10 * 60 * 1000);
+          setTimeout(() => reject(new Error('Sync timeout after 15 minutes')), 15 * 60 * 1000);
         });
 
         const result = await Promise.race([syncPromise, timeoutPromise]) as { success: boolean; synced: number; errors: number; details: any[] };

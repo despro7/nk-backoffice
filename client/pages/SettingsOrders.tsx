@@ -750,26 +750,73 @@ const SettingsOrders: React.FC = () => {
 
   // Отслеживание прогресса синхронизации
   const monitorSyncProgress = async () => {
+    let attempts = 0;
+    const maxAttempts = 150; // Максимум 5 минут (150 * 2 сек)
+    let lastProgress = null;
+
     const checkProgress = async () => {
+      attempts++;
+
       try {
         const response = await fetch('/api/orders/sync/progress', {
           credentials: 'include'
         });
         const result = await response.json();
 
-        if (response.ok) {
-          setSyncProgress(result);
-
-          // Если синхронизация активна, продолжаем мониторинг
+        if (response.ok && result.success) {
           if (result.active) {
-            setTimeout(checkProgress, 2000); // Проверяем каждые 2 секунды
+            // Синхронизация активна, обновляем прогресс
+            console.log(`📊 [CLIENT PROGRESS] Active: ${result.progress.stage} - ${result.progress.message} (${result.progress.progressPercent}%)`);
+            setSyncProgress({
+              active: result.active,
+              progress: result.progress
+            });
+            lastProgress = result.progress;
+
+            // Продолжаем мониторинг
+            setTimeout(checkProgress, 2000);
           } else {
-            // Синхронизация завершена, обновляем логи
-            loadSyncLogs();
+            // Синхронизация завершена или неактивна
+            if (lastProgress && (lastProgress.stage === 'completed' || lastProgress.stage === 'error')) {
+              // Показываем финальный статус еще немного времени
+              console.log(`📊 [CLIENT PROGRESS] Completed: ${lastProgress.stage} - ${lastProgress.message} (${lastProgress.progressPercent}%)`);
+              setSyncProgress({
+                active: false,
+                progress: lastProgress
+              });
+
+              // Ждем еще 3 секунды, чтобы пользователь увидел финальный статус
+              setTimeout(() => {
+                console.log(`📊 [CLIENT PROGRESS] Clearing progress and reloading data`);
+                setSyncProgress(null);
+                loadSyncLogs();
+                loadSyncHistory();
+              }, 3000);
+            } else {
+              // Нет активной синхронизации
+              console.log(`📊 [CLIENT PROGRESS] No active sync found`);
+              setSyncProgress(null);
+              loadSyncLogs();
+              loadSyncHistory();
+            }
+          }
+        } else {
+          console.error('Failed to get sync progress:', result);
+          // Продолжаем попытки, если это не последняя попытка
+          if (attempts < maxAttempts) {
+            setTimeout(checkProgress, 2000);
+          } else {
+            setSyncProgress(null);
           }
         }
       } catch (error) {
         console.error('Error checking sync progress:', error);
+        // Продолжаем попытки при ошибке, если это не последняя попытка
+        if (attempts < maxAttempts) {
+          setTimeout(checkProgress, 2000);
+        } else {
+          setSyncProgress(null);
+        }
       }
     };
 
@@ -1268,11 +1315,37 @@ const SettingsOrders: React.FC = () => {
                   </>
                 )}
               </Button>
+
+              <Button
+                onPress={() => {
+                  // Тестовый прогресс-бар
+                  setSyncProgress({
+                    active: true,
+                    progress: {
+                      stage: 'processing',
+                      message: 'Тестовое сообщение прогресса',
+                      processedOrders: 50,
+                      totalOrders: 100,
+                      currentBatch: 1,
+                      totalBatches: 2,
+                      progressPercent: 50,
+                      elapsedTime: 30000,
+                      errors: []
+                    }
+                  });
+                }}
+                color="warning"
+                size="lg"
+                variant="bordered"
+              >
+                <DynamicIcon name="settings" size={16} />
+                Тест прогресса
+              </Button>
             </div>
           </div>
 
           {/* Прогресс синхронизации */}
-          {syncProgress?.active && syncProgress.progress && (
+          {syncProgress?.active && syncProgress.progress && syncProgress.progress.message && (
             <div className="mt-6 p-4 rounded-lg border bg-blue-50 border-blue-200">
               <div className="flex items-center gap-2 mb-3">
                 <DynamicIcon name="loader-2" size={16} className="text-blue-600 animate-spin" />
@@ -1374,49 +1447,6 @@ const SettingsOrders: React.FC = () => {
         </CardBody>
       </Card>
       
-      {/* Mini Terminal */}
-      <Card className="mt-6">
-        <CardHeader className="pb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <DynamicIcon name="terminal" size={20} className="text-gray-600" />
-            <h3 className="text-lg font-semibold">Міні-термінал логів</h3>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="bordered"
-              onPress={() => setLogsVisible(!logsVisible)}
-            >
-              {logsVisible ? 'Приховати' : 'Показати'}
-            </Button>
-            <Button
-              size="sm"
-              variant="bordered"
-              color="danger"
-              onPress={clearLogs}
-            >
-              <DynamicIcon name="trash-2" size={14} />
-              Очистити
-            </Button>
-          </div>
-        </CardHeader>
-        {logsVisible && (
-          <CardBody className="p-4">
-            <div className="bg-black text-green-400 font-mono text-sm rounded-lg p-4 h-64 overflow-y-auto">
-              {logs.length === 0 ? (
-                <div className="text-gray-500 italic">Немає логів...</div>
-              ) : (
-                logs.map((log, index) => (
-                  <div key={index} className="mb-1">
-                    {log}
-                  </div>
-                ))
-              )}
-              <div ref={logsEndRef} />
-            </div>
-          </CardBody>
-        )}
-      </Card>
 
       {/* Sync History Table */}
       <Card>
@@ -1428,93 +1458,6 @@ const SettingsOrders: React.FC = () => {
           </div>
         </CardHeader>
         <CardBody className="p-6">
-          {/* Online Sync Statistics */}
-          <div className="bg-blue-50 rounded-lg p-4 mb-6 border border-blue-200">
-            <div className="flex items-center gap-2 mb-3">
-              <DynamicIcon name="activity" size={20} className="text-blue-600" />
-              <h3 className="text-lg font-semibold text-blue-900">Стан синхронізації</h3>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Current Status */}
-              <div className="bg-white rounded-lg p-4 border border-blue-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className={`w-3 h-3 rounded-full ${syncProgress?.active ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
-                  <span className="text-sm font-medium text-gray-900">
-                    {syncProgress?.active ? 'Активна синхронізація' : 'Синхронізація не запущена'}
-                  </span>
-                </div>
-                {syncProgress?.active && syncProgress.progress && (
-                  <div className="space-y-2">
-                    <div className="text-xs text-gray-600">{syncProgress.progress.message}</div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${syncProgress.progress.progressPercent}%` }}
-                      ></div>
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {syncProgress.progress.processedOrders} / {syncProgress.progress.totalOrders || '?'} замовлень
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Last Sync Info */}
-              <div className="bg-white rounded-lg p-4 border border-blue-200">
-                <h4 className="text-sm font-medium text-gray-900 mb-2">Остання синхронізація</h4>
-                {syncHistoryStats?.lastSync ? (
-                  <div className="space-y-1">
-                    <div className="text-xs text-gray-600">
-                      {formatDateTime(syncHistoryStats.lastSync.createdAt)}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                        syncHistoryStats.lastSync.status === 'success'
-                          ? 'bg-green-100 text-green-800'
-                          : syncHistoryStats.lastSync.status === 'partial'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {syncHistoryStats.lastSync.status === 'success' ? 'Успішно' :
-                         syncHistoryStats.lastSync.status === 'partial' ? 'Частково' : 'Помилка'}
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      {syncHistoryStats.lastSync.totalOrders} замовлень, {syncHistoryStats.lastSync.duration.toFixed(1)}с
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-xs text-gray-500">Немає даних</div>
-                )}
-              </div>
-
-              {/* Quick Actions */}
-              <div className="bg-white rounded-lg p-4 border border-blue-200">
-                <h4 className="text-sm font-medium text-gray-900 mb-2">Швидкі дії</h4>
-                <div className="space-y-2">
-                  <Button
-                    size="sm"
-                    variant="light"
-                    onPress={loadSyncLogs}
-                    className="w-full justify-start"
-                  >
-                    <DynamicIcon name="refresh-cw" size={14} />
-                    Оновити статистику
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="light"
-                    onPress={() => setSyncHistoryFilter('manual')}
-                    className="w-full justify-start"
-                  >
-                    <DynamicIcon name="history" size={14} />
-                    Ручні синхронізації
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
 
           {/* Statistics Overview */}
           {syncHistoryStats && (
