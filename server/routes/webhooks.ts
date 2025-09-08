@@ -103,20 +103,27 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
         // Сначала проверим, есть ли заказ в нашей БД
         let existingOrder = await orderDatabaseService.getOrderByExternalId(orderIdentifier);
         let orderDetails = null;
+        
+        const webhookData = req.body.data;
+
+        // Сериализуем items из webhookData.products в нужный формат
+        const items = Array.isArray(webhookData.products) ? webhookData.products.map(p => ({
+            productName: p.name || '',
+            quantity: p.amount || 0,
+            price: p.price || 0,
+            sku: p.sku || ''
+          }))
+        : [];
 
         if (existingOrder) {
-          console.log(`✅ Found existing order ${existingOrder.externalId} in database`);
-
           // Для существующего заказа используем данные из webhook, если они есть, иначе из БД
-          const webhookData = req.body.data;
-
           orderDetails = {
             id: existingOrder.id,
             orderNumber: existingOrder.externalId,
             status: existingOrder.status,
             statusText: existingOrder.statusText,
             // Товары: webhook имеет приоритет над данными из БД
-            items: webhookData.products || existingOrder.items,
+            items: items || existingOrder.items,
             // Контактные данные: webhook имеет приоритет
             customerName: (webhookData.contacts?.[0]?.fName && webhookData.contacts?.[0]?.lName)
               ? webhookData.contacts[0].fName + ' ' + webhookData.contacts[0].lName
@@ -141,20 +148,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             quantity: webhookData.kilTPorcij || existingOrder.quantity
           };
         } else {
-          console.log(`❌ Order ${orderIdentifier} not found in database, creating from webhook data...`);
-
           // Если новый заказ – создаем заказ на основе данных из webhook, без обращения к SalesDrive API
-          const webhookData = req.body.data;
-
-          // Сериализуем items из webhookData.products в нужный формат
-          const items = Array.isArray(webhookData.products) ? webhookData.products.map(p => ({
-              productName: p.name || '',
-              quantity: p.amount || 0,
-              price: p.price || 0,
-              sku: p.sku || ''
-            }))
-          : [];
-
           orderDetails = {
             id: parseInt(webhookData.id) || 0, // Используем внутренний ID из webhook
             orderNumber: webhookData.externalId || orderIdentifier, // Используем externalId как orderNumber
@@ -185,10 +179,9 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           console.log(`   - orderDetails.id: ${orderDetails.id}`);
 
 
-        if (existingOrder) {
-          console.log(`🔄 Updating existing order ${existingOrder.externalId}`);
+          if (existingOrder) {
+            console.log(`🔄 Updating existing order ${existingOrder.externalId}`);
 
-            const webhookData = req.body.data;
             const newStatus = statusMapping[webhookData.statusId] || orderDetails.status;
 
             console.log(`🔄 Status mapping: webhook statusId=${webhookData.statusId} -> status='${newStatus}'`);
@@ -203,7 +196,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             }
 
             // RawData всегда обновляем (для истории изменений)
-            changes.rawData = JSON.stringify(webhookData);
+            changes.rawData = webhookData;
 
             // Сравниваем остальные поля с данными из БД
             const fieldsToCheck = [
@@ -304,16 +297,12 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               console.log(`ℹ️ Cache not updated for order ${existingOrder.externalId} (no items change)`);
             }
           } else {
-            console.log(`🆕 Creating new order ${orderDetails.orderNumber}`);
-
             // Создаем новый заказ с данными из webhook
-            const webhookData = req.body.data;
+            console.log(`🆕 Creating new order ${orderDetails.orderNumber}`);
 
             // Маппинг статуса для нового заказа из webhook
             const newOrderStatus = statusMapping[webhookData.statusId] || '1'; // По умолчанию '1' (Новий)
             const newOrderStatusText = getStatusText(newOrderStatus);
-
-            console.log(`🆕 Creating new order with status: ${newOrderStatus} (${newOrderStatusText})`);
 
             // Валидация обязательных полей перед созданием
             const requiredFields = {
@@ -346,8 +335,6 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               });
             }
 
-            console.log(`✅ Required fields validation passed: id=${requiredFields.id}, externalId=${requiredFields.externalId}`);
-
             const createData = {
               id: typeof orderDetails.id === 'string' ? parseInt(orderDetails.id) : orderDetails.id,
               externalId: orderDetails.orderNumber,
@@ -357,7 +344,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               status: newOrderStatus,
               statusText: newOrderStatusText,
               items: orderDetails.items,
-              rawData: JSON.stringify(webhookData),
+              rawData: webhookData,
               customerName: orderDetails.customerName,
               customerPhone: orderDetails.customerPhone,
               deliveryAddress: orderDetails.deliveryAddress,
