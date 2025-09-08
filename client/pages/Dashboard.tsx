@@ -56,7 +56,7 @@ export default function Dashboard() {
   const handleManualSync = async () => {
     try {
       setLoading(true);
-      const response = await apiCall('/api/orders/sync', { method: 'POST' });
+      const response = await apiCall('/api/orders-sync/sync', { method: 'POST' });
       const data = await response.json();
 
       if (data.success) {

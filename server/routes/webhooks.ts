@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { salesDriveService } from '../services/salesDriveService.js';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
+import { ordersCacheService } from '../services/ordersCacheService.js';
 
 // Добавляем типизацию для webhook payload
 interface SalesDriveWebhookPayload {
@@ -35,30 +36,6 @@ router.use('/salesdrive/order-update', (req, res, next) => {
   next();
 });
 
-// Helper function to parse SalesDrive date format to ISO-8601
-function parseSalesDriveDate(dateString: string | null | undefined): string | null {
-  if (!dateString || typeof dateString !== 'string') {
-    return null;
-  }
-
-  try {
-    // SalesDrive format: "YYYY-MM-DD HH:mm:ss"
-    // Convert to ISO-8601: "YYYY-MM-DDTHH:mm:ss.sssZ"
-    const isoString = dateString.replace(' ', 'T') + '.000Z';
-    const date = new Date(isoString);
-
-    // Validate the date
-    if (isNaN(date.getTime())) {
-      console.warn(`⚠️ Invalid SalesDrive date format: ${dateString}`);
-      return null;
-    }
-
-    return date.toISOString();
-  } catch (error) {
-    console.error(`❌ Failed to parse SalesDrive date: ${dateString}`, error);
-    return null;
-  }
-}
 
 /**
  * POST /api/webhooks/salesdrive/order-update
@@ -129,45 +106,66 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
 
         if (existingOrder) {
           console.log(`✅ Found existing order ${existingOrder.externalId} in database`);
-          // Используем данные из БД как orderDetails
-          // existingOrder.items уже распарсено в getOrderByExternalId
+
+          // Для существующего заказа используем данные из webhook, если они есть, иначе из БД
+          const webhookData = req.body.data;
+
           orderDetails = {
             id: existingOrder.id,
             orderNumber: existingOrder.externalId,
             status: existingOrder.status,
             statusText: existingOrder.statusText,
-            items: existingOrder.items, // Уже распарсено в getOrderByExternalId
-            customerName: existingOrder.customerName,
-            customerPhone: existingOrder.customerPhone,
-            deliveryAddress: existingOrder.deliveryAddress,
-            totalPrice: existingOrder.totalPrice,
-            orderDate: existingOrder.orderDate,
-            shippingMethod: existingOrder.shippingMethod,
-            paymentMethod: existingOrder.paymentMethod,
-            cityName: existingOrder.cityName,
-            provider: existingOrder.provider,
-            pricinaZnizki: existingOrder.pricinaZnizki,
-            sajt: existingOrder.sajt,
-            ttn: existingOrder.ttn,
-            quantity: existingOrder.quantity
+            // Товары: webhook имеет приоритет над данными из БД
+            items: webhookData.products || existingOrder.items,
+            // Контактные данные: webhook имеет приоритет
+            customerName: (webhookData.contacts?.[0]?.fName && webhookData.contacts?.[0]?.lName)
+              ? webhookData.contacts[0].fName + ' ' + webhookData.contacts[0].lName
+              : existingOrder.customerName,
+            customerPhone: webhookData.contacts?.[0]?.phone?.[0] || existingOrder.customerPhone,
+            // Адрес доставки: webhook имеет приоритет
+            deliveryAddress: webhookData.shipping_address || existingOrder.deliveryAddress,
+            // Сумма: webhook имеет приоритет
+            totalPrice: webhookData.paymentAmount || existingOrder.totalPrice,
+            // Дата заказа: webhook имеет приоритет, с обработкой ошибок
+            orderDate: webhookData.orderTime ? new Date(webhookData.orderTime).toISOString() : existingOrder.orderDate,
+            // Способы доставки/оплаты: webhook имеет приоритет
+            shippingMethod: webhookData.shipping_method?.toString() || existingOrder.shippingMethod,
+            paymentMethod: webhookData.payment_method?.toString() || existingOrder.paymentMethod,
+            // Город: webhook имеет приоритет
+            cityName: webhookData.ord_novaposhta?.cityName || existingOrder.cityName,
+            provider: existingOrder.provider, // Provider всегда из БД
+            // Другие поля: webhook имеет приоритет
+            pricinaZnizki: webhookData.pricinaZnizki || existingOrder.pricinaZnizki,
+            sajt: webhookData.sajt ? String(webhookData.sajt) : existingOrder.sajt,
+            ttn: webhookData.ord_novaposhta?.EN || existingOrder.ttn,
+            quantity: webhookData.kilTPorcij || existingOrder.quantity
           };
         } else {
           console.log(`❌ Order ${orderIdentifier} not found in database, creating from webhook data...`);
 
-          // Создаем заказ на основе данных из webhook, без обращения к SalesDrive API
-          // Это более надежный подход, так как webhook содержит все необходимые данные
+          // Если новый заказ – создаем заказ на основе данных из webhook, без обращения к SalesDrive API
           const webhookData = req.body.data;
+
+          // Сериализуем items из webhookData.products в нужный формат
+          const items = Array.isArray(webhookData.products) ? webhookData.products.map(p => ({
+              productName: p.name || '',
+              quantity: p.amount || 0,
+              price: p.price || 0,
+              sku: p.sku || ''
+            }))
+          : [];
+
           orderDetails = {
             id: parseInt(webhookData.id) || 0, // Используем внутренний ID из webhook
             orderNumber: webhookData.externalId || orderIdentifier, // Используем externalId как orderNumber
             status: webhookData.statusId ? statusMapping[webhookData.statusId] || '1' : '1',
             statusText: 'Новий', // По умолчанию
-            items: webhookData.products || [],
+            items: items,
             customerName: webhookData.contacts?.[0]?.fName + ' ' + webhookData.contacts?.[0]?.lName || 'Невідомий клієнт',
             customerPhone: webhookData.contacts?.[0]?.phone?.[0] || '',
             deliveryAddress: webhookData.shipping_address || '',
             totalPrice: webhookData.paymentAmount || 0,
-            orderDate: parseSalesDriveDate(webhookData.orderTime) || new Date().toISOString(),
+            orderDate: webhookData.orderTime ? new Date(webhookData.orderTime).toISOString() : null,
             shippingMethod: webhookData.shipping_method?.toString() || '',
             paymentMethod: webhookData.payment_method?.toString() || '',
             cityName: webhookData.ord_novaposhta?.cityName || '',
@@ -186,101 +184,78 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           console.log(`   - orderDetails.orderNumber: ${orderDetails.orderNumber}`);
           console.log(`   - orderDetails.id: ${orderDetails.id}`);
 
-          // Проверяем существование в БД (уже проверили выше, но перепроверим для надежности)
-          if (!existingOrder) {
-            // Если не найден по orderIdentifier, пробуем найти по orderNumber из деталей
-            existingOrder = await orderDatabaseService.getOrderByExternalId(orderDetails.orderNumber);
-
-            if (!existingOrder && orderDetails.id) {
-              // Если не найден по orderNumber, пробуем найти по id (преобразуем в строку)
-              existingOrder = await orderDatabaseService.getOrderByExternalId(orderDetails.id.toString());
-            }
-          }
-
-          console.log(`   - existingOrder found: ${!!existingOrder}`);
-          console.log(`   - orderDetails.orderNumber: ${orderDetails.orderNumber}`);
-          console.log(`   - orderDetails.id: ${orderDetails.id}`);
-
 
         if (existingOrder) {
           console.log(`🔄 Updating existing order ${existingOrder.externalId}`);
-
-          // Создаем безопасный rawData объект
-          const safeRawData = {
-            webhookType: req.body.info?.webhookType,
-            webhookEvent: req.body.info?.webhookEvent,
-            account: req.body.info?.account,
-              data: {
-                id: req.body.data?.id,
-                externalId: req.body.data?.externalId,
-                statusId: req.body.data?.statusId,
-                orderTime: req.body.data?.orderTime,
-                orderDate: parseSalesDriveDate(req.body.data?.orderTime), // Add parsed ISO date
-                paymentAmount: req.body.data?.paymentAmount,
-                shipping_address: req.body.data?.shipping_address,
-                contacts: req.body.data?.contacts,
-                products: req.body.data?.products
-              }
-          };
 
             const webhookData = req.body.data;
             const newStatus = statusMapping[webhookData.statusId] || orderDetails.status;
 
             console.log(`🔄 Status mapping: webhook statusId=${webhookData.statusId} -> status='${newStatus}'`);
 
-            const updateData = {
-              status: newStatus, // Используем статус из webhook
-              statusText: getStatusText(newStatus),
-              items: orderDetails.items,
-              rawData: safeRawData, // Используем безопасный объект вместо orderDetails
-              customerName: orderDetails.customerName,
-              customerPhone: orderDetails.customerPhone,
-              deliveryAddress: orderDetails.deliveryAddress,
-              totalPrice: orderDetails.totalPrice,
-              orderDate: orderDetails.orderDate,
-              shippingMethod: orderDetails.shippingMethod,
-              paymentMethod: orderDetails.paymentMethod,
-              cityName: orderDetails.cityName,
-              provider: orderDetails.provider,
-              pricinaZnizki: orderDetails.pricinaZnizki,
-              sajt: orderDetails.sajt,
-              // Обновляем данные из webhook payload если они есть
-              ttn: orderDetails.ttn,
-              quantity: orderDetails.quantity
-            };
+            // Проверяем, какие поля действительно изменились
+            const changes: { [key: string]: any } = {};
 
-            console.log(`📊 Update data:`, {
-              oldStatus: existingOrder.status,
-              newStatus: updateData.status,
-              statusText: updateData.statusText,
-              itemsType: typeof updateData.items,
-              rawDataType: typeof updateData.rawData,
-              itemsIsArray: Array.isArray(updateData.items),
-              hasItems: !!updateData.items,
-              hasRawData: !!updateData.rawData,
-              customerName: updateData.customerName,
-              totalPrice: updateData.totalPrice
+            // Статус всегда обновляем (главное изменение в webhook)
+            if (newStatus !== existingOrder.status) {
+              changes.status = newStatus;
+              changes.statusText = getStatusText(newStatus);
+            }
+
+            // RawData всегда обновляем (для истории изменений)
+            changes.rawData = JSON.stringify(webhookData);
+
+            // Сравниваем остальные поля с данными из БД
+            const fieldsToCheck = [
+              { key: 'customerName', newValue: orderDetails.customerName, oldValue: existingOrder.customerName },
+              { key: 'customerPhone', newValue: orderDetails.customerPhone, oldValue: existingOrder.customerPhone },
+              { key: 'deliveryAddress', newValue: orderDetails.deliveryAddress, oldValue: existingOrder.deliveryAddress },
+              { key: 'totalPrice', newValue: orderDetails.totalPrice, oldValue: existingOrder.totalPrice },
+              { key: 'orderDate', newValue: orderDetails.orderDate, oldValue: existingOrder.orderDate },
+              { key: 'shippingMethod', newValue: orderDetails.shippingMethod, oldValue: existingOrder.shippingMethod },
+              { key: 'paymentMethod', newValue: orderDetails.paymentMethod, oldValue: existingOrder.paymentMethod },
+              { key: 'cityName', newValue: orderDetails.cityName, oldValue: existingOrder.cityName },
+              { key: 'pricinaZnizki', newValue: orderDetails.pricinaZnizki, oldValue: existingOrder.pricinaZnizki },
+              { key: 'sajt', newValue: orderDetails.sajt, oldValue: existingOrder.sajt },
+              { key: 'ttn', newValue: orderDetails.ttn, oldValue: existingOrder.ttn },
+              { key: 'quantity', newValue: orderDetails.quantity, oldValue: existingOrder.quantity }
+            ];
+
+            // Проверяем товары отдельно (массив)
+            const itemsChanged = JSON.stringify(orderDetails.items) !== JSON.stringify(existingOrder.items);
+            if (itemsChanged) {
+              changes.items = orderDetails.items;
+            }
+
+            // Добавляем только изменившиеся поля
+            fieldsToCheck.forEach(({ key, newValue, oldValue }) => {
+              if (newValue !== oldValue) {
+                changes[key] = newValue;
+              }
             });
 
-            // Проверяем rawData перед передачей
-            if (updateData.rawData) {
-              try {
-                const testSerialize = JSON.stringify(updateData.rawData);
-                console.log(`✅ RawData serialization test passed, length: ${testSerialize.length}`);
-              } catch (serializeError) {
-                console.error(`❌ RawData serialization failed:`, serializeError);
-                console.log(`   RawData type: ${typeof updateData.rawData}`);
-                console.log(`   RawData keys:`, Object.keys(updateData.rawData || {}));
-                // Не передаем rawData если она не сериализуется
-                updateData.rawData = null;
-              }
-            }
+            const updateData = changes;
+
+            console.log(`📊 Update data (${Object.keys(updateData).length} fields changed):`, {
+              changedFields: Object.keys(updateData),
+              oldStatus: existingOrder.status,
+              newStatus: updateData.status || 'no change',
+              hasItems: !!updateData.items,
+              hasRawData: !!updateData.rawData
+            });
+
 
             // Проверяем items перед передачей
             if (updateData.items) {
               try {
                 const testSerialize = JSON.stringify(updateData.items);
                 console.log(`✅ Items serialization test passed, length: ${testSerialize.length}`);
+
+                // Дополнительная проверка: если items пустой массив, не передаем его
+                if (Array.isArray(updateData.items) && updateData.items.length === 0) {
+                  console.log(`ℹ️ Items array is empty, not updating items in database`);
+                  updateData.items = undefined; // Не передаем пустой массив
+                }
               } catch (serializeError) {
                 console.error(`❌ Items serialization failed:`, serializeError);
                 console.log(`   Items type: ${typeof updateData.items}`);
@@ -290,41 +265,49 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               }
             }
 
+            // Проверяем, изменились ли товары (теперь проверяем только если items в updateData)
+            const webhookHasNewItems = !!updateData.items;
+
+            console.log(`📦 Webhook items check: itemsChanged=${itemsChanged}, hasNewItems=${!!updateData.items}, willUpdateCache=${webhookHasNewItems}`);
+
+            // Если ничего не изменилось, пропускаем обновление
+            if (Object.keys(updateData).length === 0) {
+              console.log(`ℹ️ No changes detected for order ${existingOrder.externalId}, skipping update`);
+              return res.json({
+                success: true,
+                message: `No changes for order ${orderIdentifier}`,
+                timestamp: new Date().toISOString()
+              });
+            }
+
             // Обновляем существующий заказ
             await orderDatabaseService.updateOrder(existingOrder.externalId, updateData);
 
             console.log(`✅ Order ${orderDetails.orderNumber} updated via webhook`);
-            console.log(`   Status changed: ${existingOrder.status} -> ${newStatus}`);
 
-            // Проверяем, действительно ли статус изменился
-            if (existingOrder.status !== newStatus) {
-              console.log(`🎉 Status successfully updated to: ${newStatus}`);
+            // Логируем изменение статуса только если оно было
+            if (updateData.status) {
+              console.log(`   Status changed: ${existingOrder.status} -> ${updateData.status}`);
+              console.log(`🎉 Status successfully updated to: ${updateData.status}`);
+            }
+
+            // Обновляем кеш только если в webhook пришли новые товары
+            if (webhookHasNewItems) {
+              try {
+                await orderDatabaseService.updateOrderCache(existingOrder.externalId);
+                console.log(`✅ Cache updated for order ${existingOrder.externalId} (items changed)`);
+              } catch (cacheError) {
+                console.warn(`⚠️ Failed to update cache for order ${existingOrder.externalId}:`, cacheError);
+                // Не прерываем выполнение из-за ошибки кеширования
+              }
             } else {
-              console.log(`ℹ️ Status remained the same: ${newStatus}`);
+              console.log(`ℹ️ Cache not updated for order ${existingOrder.externalId} (no items change)`);
             }
           } else {
             console.log(`🆕 Creating new order ${orderDetails.orderNumber}`);
 
             // Создаем новый заказ с данными из webhook
             const webhookData = req.body.data;
-            // Создаем безопасный rawData для нового заказа
-            const safeRawDataForCreate = {
-              webhookType: req.body.info?.webhookType,
-              webhookEvent: req.body.info?.webhookEvent,
-              account: req.body.info?.account,
-              data: {
-                id: webhookData.id,
-                externalId: webhookData.externalId,
-                statusId: webhookData.statusId,
-                orderTime: webhookData.orderTime,
-                orderDate: parseSalesDriveDate(webhookData.orderTime), // Add parsed ISO date
-                paymentAmount: webhookData.paymentAmount,
-                shipping_address: webhookData.shipping_address,
-                contacts: webhookData.contacts,
-                products: webhookData.products,
-                ord_novaposhta: webhookData.ord_novaposhta
-              }
-            };
 
             // Маппинг статуса для нового заказа из webhook
             const newOrderStatus = statusMapping[webhookData.statusId] || '1'; // По умолчанию '1' (Новий)
@@ -374,7 +357,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
               status: newOrderStatus,
               statusText: newOrderStatusText,
               items: orderDetails.items,
-              rawData: safeRawDataForCreate, // Используем безопасный объект
+              rawData: JSON.stringify(webhookData),
               customerName: orderDetails.customerName,
               customerPhone: orderDetails.customerPhone,
               deliveryAddress: orderDetails.deliveryAddress,
@@ -401,13 +384,11 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             // Проверяем сериализацию данных перед созданием
             try {
               const testItems = createData.items ? JSON.stringify(createData.items) : null;
-              const testRawData = JSON.stringify(createData.rawData);
 
-              console.log(`✅ Data serialization test passed: items=${testItems?.length || 0} chars, rawData=${testRawData.length} chars`);
+              console.log(`✅ Data serialization test passed: items=${testItems?.length || 0} chars`);
             } catch (serializeError) {
               console.error(`❌ Data serialization failed:`, serializeError);
               console.log(`   Items type: ${typeof createData.items}`);
-              console.log(`   RawData type: ${typeof createData.rawData}`);
               // Не создаем заказ если данные не сериализуются
               return res.status(500).json({
                 success: false,
@@ -417,8 +398,25 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             }
 
             try {
-              await orderDatabaseService.createOrder(createData);
+              const createdOrder = await orderDatabaseService.createOrder(createData);
               console.log(`✅ Order ${createData.externalId} created via webhook`);
+
+              // Проверяем, что кеш был создан автоматически
+              try {
+                const cacheExists = await ordersCacheService.hasOrderCache(createData.externalId);
+                if (cacheExists) {
+                  console.log(`✅ Cache automatically created for new order ${createData.externalId}`);
+                } else {
+                  console.warn(`⚠️ Cache not found for new order ${createData.externalId}, attempting manual creation...`);
+                  // Попытка создать кеш вручную
+                  await orderDatabaseService.updateOrderCache(createData.externalId);
+                  console.log(`✅ Cache manually created for new order ${createData.externalId}`);
+                }
+              } catch (cacheCheckError) {
+                console.warn(`⚠️ Failed to check/create cache for new order ${createData.externalId}:`, cacheCheckError);
+                // Не прерываем выполнение из-за ошибки кеширования
+              }
+
             } catch (createError) {
               console.error(`❌ Failed to create order:`, createError);
               console.error(`   Create error details:`, {

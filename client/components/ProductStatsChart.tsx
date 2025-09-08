@@ -354,7 +354,7 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
       alert('🚀 Початок оновлення кеша статистики товарів...\nЗамовлення обробляються пачками по 50 шт.\nЦе може зайняти кілька хвилин.');
 
       // Вызываем endpoint массового кеширования
-      const response = await apiCall('/api/orders/preprocess-all', {
+      const response = await apiCall('/api/orders-sync/preprocess-all', {
         method: 'POST'
       });
 

@@ -23,7 +23,7 @@ export function LastSyncInfo() {
   const fetchSyncStatus = async () => {
     try {
       setLoading(true);
-      const response = await apiCall('/api/orders/sync/status');
+      const response = await apiCall('/api/orders-sync/sync/status');
       if (response.ok) {
         const data = await response.json();
         setSyncInfo(data.data);

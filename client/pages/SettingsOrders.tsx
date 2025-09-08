@@ -108,8 +108,8 @@ const SettingsOrders: React.FC = () => {
   });
 
   // State for sync history
-  const [syncHistory, setSyncHistory] = useState<any[]>([]);
-  const [syncHistoryLoading, setSyncHistoryLoading] = useState(false);
+  const [_syncHistory, _setSyncHistory] = useState<any[]>([]);
+  const [_syncHistoryLoading, _setSyncHistoryLoading] = useState(false);
   const [syncHistoryFilter, setSyncHistoryFilter] = useState('all');
   const [syncHistoryStats, setSyncHistoryStats] = useState<any>(null);
 
@@ -122,8 +122,8 @@ const SettingsOrders: React.FC = () => {
 
   // Mini terminal for logs
   const [logs, setLogs] = useState<string[]>([]);
-  const [logsVisible, setLogsVisible] = useState(false);
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const [_logsVisible, _setLogsVisible] = useState(false);
+  const logsEndRef = useRef<any>(null);
 
   // State for cache stats
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
@@ -181,6 +181,15 @@ const SettingsOrders: React.FC = () => {
     chunkSize: 1000
   });
 
+  // State for SalesDrive API testing
+  const [apiTestParams, setApiTestParams] = useState({
+    orderId: ''
+  });
+  const [apiTestResult, setApiTestResult] = useState<string>('');
+  const [apiTestLoading, setApiTestLoading] = useState(false);
+  const [apiTestLogs, setApiTestLogs] = useState<string[]>([]);
+  const [apiTestUrl, setApiTestUrl] = useState<string>('');
+
   // State for sync progress
   const [syncProgress, setSyncProgress] = useState<{
     active: boolean;
@@ -203,6 +212,18 @@ const SettingsOrders: React.FC = () => {
   // State for error details modal
   const [selectedLogForDetails, setSelectedLogForDetails] = useState<SyncLog | null>(null);
   const errorDetailsModal = useDisclosure();
+
+  // State for cache validation
+  const [cacheValidationStartDate, setCacheValidationStartDate] = useState<CalendarDate | null>(today(getLocalTimeZone()).subtract({ days: 5 }));
+  const [cacheValidationEndDate, setCacheValidationEndDate] = useState<CalendarDate | null>(null);
+  const [cacheValidationRunning, setCacheValidationRunning] = useState(false);
+  const [cacheValidationForce, setCacheValidationForce] = useState(false);
+  const [cacheValidationMode, setCacheValidationMode] = useState<'period' | 'full'>('period');
+  const [cacheValidationResult, setCacheValidationResult] = useState<{
+    success: boolean;
+    message: string;
+    data?: any;
+  } | null>(null);
 
   // Table sorting
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
@@ -429,7 +450,7 @@ const SettingsOrders: React.FC = () => {
     setSyncLogsLoading(true);
     try {
       // Load sync logs
-      const logsResponse = await fetch('/api/orders/sync/logs', {
+      const logsResponse = await fetch('/api/orders-sync/sync/logs', {
         credentials: 'include'
       });
 
@@ -439,7 +460,7 @@ const SettingsOrders: React.FC = () => {
       }
 
       // Load sync statistics
-      const statsResponse = await fetch('/api/orders/sync/stats', {
+      const statsResponse = await fetch('/api/orders-sync/sync/stats', {
         credentials: 'include'
       });
 
@@ -468,16 +489,16 @@ const SettingsOrders: React.FC = () => {
 
   // Load sync history
   const loadSyncHistory = async () => {
-    setSyncHistoryLoading(true);
+    _setSyncHistoryLoading(true);
     try {
       const queryParams = syncHistoryFilter !== 'all' ? `?type=${syncHistoryFilter}` : '';
-      const response = await fetch(`/api/orders/sync/history${queryParams}`, {
+      const response = await fetch(`/api/orders-sync/sync/history${queryParams}`, {
         credentials: 'include'
       });
 
       if (response.ok) {
         const data = await response.json();
-        setSyncHistory(data.data.history || []);
+        _setSyncHistory(data.data.history || []);
         setSyncHistoryStats(data.data.statistics || null);
       }
     } catch (error) {
@@ -488,7 +509,7 @@ const SettingsOrders: React.FC = () => {
         color: 'danger'
       });
     } finally {
-      setSyncHistoryLoading(false);
+      _setSyncHistoryLoading(false);
     }
   };
 
@@ -578,8 +599,109 @@ const SettingsOrders: React.FC = () => {
     setLogs(prev => [...prev.slice(-49), logEntry]); // Keep last 50 logs
   };
 
-  const clearLogs = () => {
+  const _clearLogs = () => {
     setLogs([]);
+  };
+
+  // Test SalesDrive API endpoint
+  const testSalesDriveAPI = async () => {
+    setApiTestLoading(true);
+    setApiTestLogs([]);
+
+    try {
+      // Если orderId не указан, попробуем получить последний заказ из БД
+      let orderIdToTest = apiTestParams.orderId;
+
+      if (!orderIdToTest) {
+        setApiTestLogs(prev => [...prev, `🔄 [INFO] OrderId не указан, получаем последний заказ из БД...`]);
+
+        try {
+          // Получаем последний заказ из БД
+          const lastOrderResponse = await fetch('/api/orders?limit=1&sort=orderDate:desc', {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+          });
+
+          if (lastOrderResponse.ok) {
+            const lastOrderData = await lastOrderResponse.json();
+            if (lastOrderData.data && lastOrderData.data.length > 0) {
+              orderIdToTest = lastOrderData.data[0].externalId || lastOrderData.data[0].id?.toString();
+              setApiTestLogs(prev => [...prev, `✅ [INFO] Используем последний заказ: ${orderIdToTest}`]);
+            }
+          }
+        } catch (error) {
+          setApiTestLogs(prev => [...prev, `⚠️ [WARNING] Не удалось получить последний заказ: ${error instanceof Error ? error.message : 'Unknown error'}`]);
+        }
+      }
+
+      if (!orderIdToTest) {
+        setApiTestLogs(prev => [...prev, `❌ [ERROR] Не указан orderId и не удалось получить последний заказ`]);
+        setApiTestResult('Error: Не указан orderId');
+        return;
+      }
+
+      // Build query parameters
+      const params = new (window as any).URLSearchParams();
+      params.append('orderId', orderIdToTest);
+
+      const fullUrl = `/api/orders-sync/test-salesdrive?${params.toString()}`;
+      setApiTestUrl(fullUrl);
+
+      setApiTestLogs(prev => [...prev, `🔍 [REQUEST] ${fullUrl}`]);
+      setApiTestLogs(prev => [...prev, `📋 [PARAMS] orderId: ${orderIdToTest}`]);
+
+      // Make request to our backend endpoint
+      const response = await fetch(fullUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include'
+      });
+
+      setApiTestLogs(prev => [...prev, `📡 [RESPONSE] Status: ${response.status}`]);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        setApiTestLogs(prev => [...prev, `❌ [ERROR] ${errorText}`]);
+        setApiTestResult(`Error: ${response.status} - ${response.statusText}`);
+        return;
+      }
+
+      const data = await response.json();
+
+      setApiTestLogs(prev => [...prev, `✅ [SUCCESS] Response received`]);
+      setApiTestLogs(prev => [...prev, `📊 [DATA] Method: ${data.method}`]);
+      setApiTestLogs(prev => [...prev, `📊 [DATA] Found: ${data.meta?.found ? 'Yes' : 'No'}`]);
+
+      if (data.success && data.data) {
+        setApiTestLogs(prev => [...prev, `📦 [ORDER] ID: ${data.data.orderNumber || data.data.id}`]);
+        setApiTestLogs(prev => [...prev, `📦 [ORDER] Status: ${data.data.statusText || data.data.status}`]);
+        setApiTestLogs(prev => [...prev, `📦 [ORDER] Customer: ${data.data.customerName || 'N/A'}`]);
+      }
+
+      setApiTestResult(JSON.stringify(data, null, 2));
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setApiTestLogs(prev => [...prev, `❌ [ERROR] ${errorMessage}`]);
+      setApiTestResult(`Error: ${errorMessage}`);
+    } finally {
+      setApiTestLoading(false);
+    }
+  };
+
+  // Reset API test parameters to defaults
+  const resetApiTestParams = () => {
+    setApiTestParams({
+      orderId: ''
+    });
+    setApiTestResult('');
+    setApiTestLogs([]);
+    setApiTestUrl('');
   };
 
   useEffect(() => {
@@ -616,9 +738,9 @@ const SettingsOrders: React.FC = () => {
     addLog(`📅 Period: ${manualSyncStartDate?.toString()} - ${(manualSyncEndDate || today(getLocalTimeZone())).toString()}`);
 
     try {
-      console.log('🌐 [CLIENT] Making request to /api/orders/sync/selective');
+      console.log('🌐 [CLIENT] Making request to /api/orders-sync/sync/selective');
 
-      const response = await fetch('/api/orders/sync/selective', {
+      const response = await fetch('/api/orders-sync/sync/selective', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -675,7 +797,7 @@ const SettingsOrders: React.FC = () => {
       try {
         console.log(`📊 [CLIENT] Checking progress attempt ${attempts}/${maxAttempts} for sessionId:`, sessionId);
 
-        const response = await fetch(`/api/orders/sync/preview/progress?sessionId=${encodeURIComponent(sessionId)}`, {
+        const response = await fetch(`/api/orders-sync/sync/preview/progress?sessionId=${encodeURIComponent(sessionId)}`, {
           credentials: 'include'
         });
 
@@ -791,9 +913,9 @@ const SettingsOrders: React.FC = () => {
 
     setSyncPreviewLoading(true);
     try {
-      console.log('🌐 [CLIENT] Making request to /api/orders/sync/preview with:', { startDate, endDate });
+      console.log('🌐 [CLIENT] Making request to /api/orders-sync/sync/preview with:', { startDate, endDate });
 
-      const response = await fetch('/api/orders/sync/preview', {
+      const response = await fetch('/api/orders-sync/sync/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -848,7 +970,7 @@ const SettingsOrders: React.FC = () => {
   const loadSyncSettings = async () => {
     setSettingsLoading(true);
     try {
-      const response = await fetch('/api/orders/sync/settings', {
+      const response = await fetch('/api/orders-sync/sync/settings', {
         credentials: 'include'
       });
 
@@ -871,7 +993,7 @@ const SettingsOrders: React.FC = () => {
   // Save sync settings
   const saveSyncSettings = async () => {
     try {
-      const response = await fetch('/api/orders/sync/settings', {
+      const response = await fetch('/api/orders-sync/sync/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -949,7 +1071,7 @@ const SettingsOrders: React.FC = () => {
       try {
         console.log(`📊 [CLIENT] Checking sync progress attempt ${attempts}/${maxAttempts} for sessionId:`, sessionId);
 
-        const response = await fetch(`/api/orders/sync/progress?sessionId=${encodeURIComponent(sessionId)}`, {
+        const response = await fetch(`/api/orders-sync/sync/progress?sessionId=${encodeURIComponent(sessionId)}`, {
           credentials: 'include'
         });
 
@@ -1097,9 +1219,9 @@ const SettingsOrders: React.FC = () => {
     setSyncProgress(null);
 
     try {
-      console.log('🌐 [CLIENT] Making request to /api/orders/sync/manual');
+      console.log('🌐 [CLIENT] Making request to /api/orders-sync/sync/manual');
 
-      const response = await fetch('/api/orders/sync/manual', {
+      const response = await fetch('/api/orders-sync/sync/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -1149,7 +1271,7 @@ const SettingsOrders: React.FC = () => {
     console.log(`🛑 [CLIENT] Stopping ${operationType} operation with sessionId: ${sessionId}`);
 
     try {
-      const response = await fetch(`/api/orders/sync/cancel/${sessionId}`, {
+      const response = await fetch(`/api/orders-sync/cancel/${sessionId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include'
@@ -1230,6 +1352,85 @@ const SettingsOrders: React.FC = () => {
         description: 'Не вдалося очистити кеш',
         color: 'danger'
       });
+    }
+  };
+
+  // Validate and update cache
+  const validateCache = async () => {
+    console.log('🔍 [CLIENT] Cache validation started...');
+
+    if (cacheValidationMode === 'period' && !cacheValidationStartDate) {
+      addToast({
+        title: 'Помилка',
+        description: 'Оберіть дату початку валідації',
+        color: 'danger'
+      });
+      return;
+    }
+
+    setCacheValidationRunning(true);
+    setCacheValidationResult(null);
+
+    addLog('🔍 Starting cache validation...');
+
+    try {
+      const params = new (window as any).URLSearchParams({
+        startDate: cacheValidationStartDate?.toString() || '',
+        force: cacheValidationForce.toString(),
+        mode: cacheValidationMode
+      });
+
+      if (cacheValidationEndDate) {
+        params.append('endDate', cacheValidationEndDate.toString());
+      }
+
+      const response = await fetch(`/api/orders/cache/validate?${params}`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        console.log('✅ [CLIENT] Cache validation completed:', result);
+
+        setCacheValidationResult({
+          success: true,
+          message: 'Валідація кеша завершена успішно',
+          data: result.data
+        });
+
+        addToast({
+          title: 'Успіх',
+          description: `Кеш провалідовано: ${result.data.summary.updated} оновлено, ${result.data.summary.deleted} видалено`,
+          color: 'success'
+        });
+
+        addLog(`✅ Cache validation completed: ${result.data.summary.processed} processed, ${result.data.summary.updated} updated, ${result.data.summary.deleted} deleted`);
+
+        // Refresh cache stats
+        loadCacheStats();
+
+      } else {
+        throw new Error(result.error || 'Cache validation failed');
+      }
+
+    } catch (error) {
+      console.error('❌ [CLIENT] Cache validation error:', error);
+      addLog(`❌ Cache validation failed: ${error}`);
+
+      setCacheValidationResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Помилка валідації кеша'
+      });
+
+      addToast({
+        title: 'Помилка валідації',
+        description: error instanceof Error ? error.message : 'Не вдалося провалідувати кеш',
+        color: 'danger'
+      });
+    } finally {
+      setCacheValidationRunning(false);
     }
   };
 
@@ -1370,7 +1571,7 @@ const SettingsOrders: React.FC = () => {
                 </div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-gray-900">{Math.round(cacheStats.averageCacheTime)}с</div>
+                <div className="text-3xl font-bold text-gray-900">{Math.round(cacheStats.averageCacheTime)}h</div>
                 <div className="text-sm text-gray-600">Середній час життя кеша</div>
               </div>
               <div className="text-center">
@@ -1507,6 +1708,7 @@ const SettingsOrders: React.FC = () => {
                   label="Дата кінця"
                   labelPlacement='outside'
                   value={manualSyncEndDate || today(getLocalTimeZone())}
+                  maxValue={today(getLocalTimeZone())}
                   onChange={(date) => setManualSyncEndDate(date)}
                   classNames={{
                     base: "flex-1",
@@ -1716,7 +1918,329 @@ const SettingsOrders: React.FC = () => {
           )}
         </CardBody>
       </Card>
+
+      {/* Cache Validation */}
+      <Card>
+        <CardHeader className="border-b border-gray-200">
+          <DynamicIcon name="check-circle" size={20} className="text-gray-600 mr-2" />
+          <h2 className="text-lg font-semibold text-gray-900">Валідація кеша замовлень</h2>
+        </CardHeader>
+        <CardBody className="p-6">
+          <div className="flex flex-col gap-4 items-end">
+
+            {/* Настройки валидации */}
+            <div className="w-full mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    isSelected={cacheValidationForce}
+                    onValueChange={setCacheValidationForce}
+                    size="sm"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">Примусова валідація</div>
+                    <div className="text-xs text-gray-600">Оновити всі записи кешу в обраному періоді</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <RadioGroup
+                    label="Режим валідації"
+                    orientation="horizontal"
+                    value={cacheValidationMode}
+                    onValueChange={(value) => {
+                      const newMode = value as 'period' | 'full';
+                      setCacheValidationMode(newMode);
+                      // Очищаем результат при смене режима
+                      setCacheValidationResult(null);
+                    }}
+                    classNames={{
+                      base: "flex-1",
+                      label: "text-sm font-medium text-gray-500 mb-0"
+                    }}
+                  >
+                    <Radio value="period" description="Тільки за період">
+                      За період
+                    </Radio>
+                    <Radio value="full" description="Всі кешовані замовлення">
+                      Повна
+                    </Radio>
+                  </RadioGroup>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-900 mb-1">Пакетна обробка</div>
+                    <div className="text-xs text-gray-600">50 замовлень за пакет</div>
+                    <div className="text-xs text-gray-500">з паузою 500мс між пакетами</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-end gap-4 w-full">
+              <I18nProvider locale="uk-UA">
+                <DatePicker
+                  size="lg"
+                  label={`Дата початку ${cacheValidationMode === 'period' ? '' : '(не обов\'язково)'}`}
+                  labelPlacement='outside'
+                  value={cacheValidationStartDate}
+                  maxValue={today(getLocalTimeZone())}
+                  onChange={setCacheValidationStartDate}
+                  isDisabled={cacheValidationMode === 'full'}
+                  classNames={{
+                    base: "flex-1",
+                    label: "text-sm font-medium text-gray-500 mb-0",
+                    segment: "rounded"
+                  }}
+                />
+              </I18nProvider>
+
+              <I18nProvider locale="uk-UA">
+                <DatePicker
+                  size="lg"
+                  label="Дата кінця (необов'язково)"
+                  labelPlacement='outside'
+                  value={cacheValidationEndDate}
+                  maxValue={today(getLocalTimeZone())}
+                  onChange={setCacheValidationEndDate}
+                  isDisabled={cacheValidationMode === 'full'}
+                  classNames={{
+                    base: "flex-1",
+                    label: "text-sm font-medium text-gray-500 mb-0",
+                  }}
+                />
+              </I18nProvider>
+
+              <Button
+                onPress={validateCache}
+                color="warning"
+                size="lg"
+                className="text-white flex-1"
+                disabled={cacheValidationRunning || (cacheValidationMode === 'period' && !cacheValidationStartDate)}
+              >
+                {cacheValidationRunning ? (
+                  <>
+                    <DynamicIcon name="loader-2" className="mr-2 animate-spin" size={14} />
+                    Валідація...
+                  </>
+                ) : (
+                  <>
+                    <DynamicIcon name="check-circle" size={16} />
+                    Провалідувати кеш ({cacheValidationMode === 'full' ? 'повна' : 'за період'})
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {/* Результаты валидации */}
+            {cacheValidationResult && (
+              <div className={`mt-6 p-4 rounded-lg border w-full ${cacheValidationResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <DynamicIcon
+                    name={cacheValidationResult.success ? "check-circle" : "x-circle"}
+                    size={16}
+                    className={cacheValidationResult.success ? "text-green-600" : "text-red-600"}
+                  />
+                  <span className={`font-medium ${cacheValidationResult.success ? 'text-green-800' : 'text-red-800'}`}>
+                    {cacheValidationResult.success ? 'Валідація завершена успішно' : 'Помилка валідації'}
+                  </span>
+                </div>
+
+                {cacheValidationResult.success && cacheValidationResult.data && (
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                      <div className="text-sm text-blue-800">
+                        <strong>Режим валідації:</strong> {cacheValidationMode === 'full' ? 'Повна валідація (всі замовлення)' : 'Валідація за період'}
+                        {cacheValidationMode === 'period' && (
+                          <div className="mt-1 text-xs">
+                            Період: {cacheValidationStartDate?.toString()} - {(cacheValidationEndDate || today(getLocalTimeZone())).toString()}
+                            <br />
+                            <span className="text-gray-500">
+                              Шукаємо замовлення, оновлені в цьому періоді
+                            </span>
+                          </div>
+                        )}
+
+                        {cacheValidationResult?.data?.summary?.batchesProcessed && (
+                          <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
+                            <div className="text-blue-800 font-medium">
+                              📦 Пакетна обробка завершена
+                            </div>
+                            <div className="text-blue-600 mt-1">
+                              {cacheValidationResult.data.summary.batchesProcessed} пакетів × {cacheValidationResult.data.summary.batchSize} замовлень
+                              <br />
+                              Час обробки: ~{cacheValidationResult.data.summary.estimatedProcessingTime}с
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <div className="font-medium text-gray-900">{cacheValidationResult.data.summary.processed}</div>
+                        <div className="text-gray-600">Оброблено</div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-green-900">{cacheValidationResult.data.summary.updated}</div>
+                        <div className="text-gray-600">Оновлено</div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-blue-900">{cacheValidationResult.data.summary.cacheHitRate}%</div>
+                        <div className="text-gray-600">Хітрейт кеша</div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-orange-900">{cacheValidationResult.data.summary.errors}</div>
+                        <div className="text-gray-600">Помилок</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <div className="font-medium text-blue-900">{cacheValidationResult.data.stats.cacheHits}</div>
+                        <div className="text-gray-600">Попадань у кеш</div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-yellow-900">{cacheValidationResult.data.stats.cacheStale}</div>
+                        <div className="text-gray-600">Застарілих</div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-green-900">{cacheValidationResult.data.stats.itemsUnchanged}</div>
+                        <div className="text-gray-600">Товарів не змінились</div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          незважаючи на дату
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-red-900">{cacheValidationResult.data.stats.cacheMisses}</div>
+                        <div className="text-gray-600">Пропущених</div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-purple-900">{cacheValidationResult.data.stats.totalActual}</div>
+                        <div className="text-gray-600">Знайдено замовлень</div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          в базі даних
+                        </div>
+                      </div>
+                    </div>
+
+                    {cacheValidationResult.data.finalCacheStats && (
+                      <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                        <h4 className="text-sm font-medium text-blue-800 mb-2">Стан кеша після валідації:</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <div className="font-medium text-blue-900">{cacheValidationResult.data.finalCacheStats.totalOrders}</div>
+                            <div className="text-gray-600">Загалом замовлень</div>
+                          </div>
+                          <div>
+                            <div className="font-medium text-blue-900">{cacheValidationResult.data.finalCacheStats.cachedOrders}</div>
+                            <div className="text-gray-600">Кешовано</div>
+                          </div>
+                          <div>
+                            <div className="font-medium text-blue-900">{Math.round(cacheValidationResult.data.finalCacheStats.averageCacheTime)}h</div>
+                            <div className="text-gray-600">Середній час життя</div>
+                          </div>
+                          <div>
+                            <div className="font-medium text-blue-900">{Math.round(cacheValidationResult.data.finalCacheStats.totalCacheSize / 1024)}KB</div>
+                            <div className="text-gray-600">Розмір кеша</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <Button
+                  size="sm"
+                  variant="light"
+                  className="mt-3"
+                  onPress={() => setCacheValidationResult(null)}
+                >
+                  <DynamicIcon name="x" size={14} />
+                  Сховати результат
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardBody>
+      </Card>
       
+      {/* SalesDrive Order List Test */}
+      <Card>
+        <CardHeader className="border-b border-gray-200">
+          <DynamicIcon name="shopping-cart" size={20} className="text-gray-600 mr-2" />
+          <h2 className="text-lg font-semibold text-gray-900">Тест получения заказа из SalesDrive</h2>
+        </CardHeader>
+        <CardBody className="p-6">
+          {/* API Parameters Section */}
+          <div className="space-y-6 mt-4">
+            <div className="flex gap-4">
+              <Input
+                aria-label="Номер замовлення (orderId)"
+                placeholder="Номер замовлення"
+                value={apiTestParams.orderId}
+                onChange={(e) => setApiTestParams(prev => ({ ...prev, orderId: e.target.value }))}
+                size="lg"
+                className='max-w-sm'
+                description="Залиште поле пустим для автоматичного отримання останнього замовлення з БД"
+              />
+
+              {/* Action Buttons */}
+              <div className="flex gap-4">
+                <Button
+                  color="primary"
+                  size="lg"
+                  onPress={testSalesDriveAPI}
+                  isLoading={apiTestLoading}
+                  startContent={!apiTestLoading && <DynamicIcon name="play" size={16} />}
+                >
+                  {apiTestLoading ? 'Тестування...' : 'Отримати JSON'}
+                </Button>
+
+                <Button
+                  color="secondary"
+                  size="lg"
+                  variant="bordered"
+                  onPress={resetApiTestParams}
+                  startContent={<DynamicIcon name="rotate-ccw" size={16} />}
+                >
+                  Очистить
+                </Button>
+              </div>
+            </div>
+
+            
+
+            {/* Response */}
+            {apiTestResult && (
+              <div className="space-y-4">
+                <h3 className="flex items-center gap-2 text-sm font-medium text-gray-900">Ответ API: <span className="text-gray-500 ml-auto font-mono">URL запроса: {apiTestUrl}</span></h3>
+
+                <div className="bg-gray-100 border border-gray-300 rounded-lg p-4 font-mono text-sm overflow-hidden">
+                  <div className="max-h-96 overflow-y-auto">
+                    <pre className="whitespace-pre-wrap break-all">
+                      {apiTestResult}
+                    </pre>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="bordered"
+                    onPress={() => navigator.clipboard.writeText(apiTestResult)}
+                    startContent={<DynamicIcon name="copy" size={14} />}
+                  >
+                    Скопіювати JSON
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </CardBody>
+      </Card>
 
       {/* Sync History Table */}
       <Card>

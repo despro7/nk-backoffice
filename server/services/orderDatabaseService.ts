@@ -58,7 +58,7 @@ export class OrderDatabaseService {
       'cityName', 'provider', 'pricinaZnizki', 'sajt'
     ];
 
-    console.log(`🔍 [DEBUG] Detecting changes for order ${newData.orderNumber || existingOrder.externalId}`);
+    // console.log(`🔍 [DEBUG] Detecting changes for order ${newData.orderNumber || existingOrder.externalId}`);
 
     // Проверяем простые поля
     for (const field of fieldsToCheck) {
@@ -124,28 +124,28 @@ export class OrderDatabaseService {
    */
   async createOrder(data: OrderCreateData) {
     try {
-      const order =         await prisma.order.create({
-          data: {
-            id: data.id,
-            externalId: data.externalId,
-          ttn: data.ttn,
-          quantity: data.quantity,
-          status: data.status,
-          items: JSON.stringify(data.items),
-          rawData: JSON.stringify(data.rawData),
-          cityName: data.cityName,
-          customerName: data.customerName,
-          customerPhone: data.customerPhone,
-          deliveryAddress: data.deliveryAddress,
-          orderDate: data.orderDate,
-          orderNumber: data.orderNumber,
-          paymentMethod: data.paymentMethod,
-          provider: data.provider,
-          shippingMethod: data.shippingMethod,
-          statusText: data.statusText,
-          totalPrice: data.totalPrice,
-          pricinaZnizki: data.pricinaZnizki,
-          sajt: data.sajt
+      const order = await prisma.order.create({
+        data: {
+          id:               data.id,
+          externalId:       data.externalId,
+          ttn:              data.ttn,
+          quantity:         data.quantity,
+          status:           data.status,
+          items:            JSON.stringify(data.items),
+          rawData:          JSON.stringify(data.rawData),
+          cityName:         data.cityName,
+          customerName:     data.customerName,
+          customerPhone:    data.customerPhone,
+          deliveryAddress:  data.deliveryAddress,
+          orderDate:        data.orderDate,
+          orderNumber:      data.orderNumber,
+          paymentMethod:    data.paymentMethod,
+          provider:         data.provider,
+          shippingMethod:   data.shippingMethod,
+          statusText:       data.statusText,
+          totalPrice:       data.totalPrice,
+          pricinaZnizki:    data.pricinaZnizki,
+          sajt:             data.sajt
         }
       });
 
@@ -213,8 +213,6 @@ export class OrderDatabaseService {
         updateData.rawData = JSON.stringify(data.rawData);
         console.log(`✅ RawData serialized, length: ${updateData.rawData.length}`);
       }
-
-
 
       const order = await prisma.order.update({
         where: { externalId },
@@ -293,9 +291,6 @@ export class OrderDatabaseService {
     }
   }
 
-  /**
-   * Получает все заказы с фильтрацией и сортировкой
-   */
   /**
    * Получает счетчики заказов по статусам для табов
    */
@@ -391,6 +386,9 @@ export class OrderDatabaseService {
     }
   }
 
+  /**
+   * Получает все заказы с фильтрацией и сортировкой
+   */
   async getOrders(filters?: {
     status?: string;
     syncStatus?: string;
@@ -634,28 +632,28 @@ export class OrderDatabaseService {
           // Создаем заказ
           const order = await prisma.order.create({
             data: {
-              id: orderData.id,
-              externalId: orderData.externalId,
-              orderNumber: orderData.orderNumber,
-              ttn: orderData.ttn,
-              quantity: orderData.quantity,
-              status: orderData.status,
-              statusText: orderData.statusText,
-              items: JSON.stringify(orderData.items),
-              rawData: JSON.stringify(orderData.rawData),
-              customerName: orderData.customerName,
-              customerPhone: orderData.customerPhone,
-              deliveryAddress: orderData.deliveryAddress,
-              totalPrice: orderData.totalPrice,
-              orderDate: orderData.orderDate ? new Date(orderData.orderDate) : null,
-              shippingMethod: orderData.shippingMethod,
-              paymentMethod: orderData.paymentMethod,
-              cityName: orderData.cityName,
-              provider: orderData.provider,
-              pricinaZnizki: orderData.pricinaZnizki,
-              sajt: orderData.sajt,
-              lastSynced: new Date(),
-              syncStatus: 'success'
+              id:                orderData.id,
+              externalId:        orderData.externalId,
+              orderNumber:       orderData.orderNumber,
+              ttn:               orderData.ttn,
+              quantity:          orderData.quantity,
+              status:            orderData.status,
+              statusText:        orderData.statusText,
+              items:             JSON.stringify(orderData.items),
+              rawData:           JSON.stringify(orderData.rawData),
+              customerName:      orderData.customerName,
+              customerPhone:     orderData.customerPhone,
+              deliveryAddress:   orderData.deliveryAddress,
+              totalPrice:        orderData.totalPrice,
+              orderDate:         orderData.orderDate ? new Date(orderData.orderDate).toISOString() : null,
+              shippingMethod:    orderData.shippingMethod,
+              paymentMethod:     orderData.paymentMethod,
+              cityName:          orderData.cityName,
+              provider:          orderData.provider,
+              pricinaZnizki:     orderData.pricinaZnizki,
+              sajt:              orderData.sajt,
+              lastSynced:        new Date(),
+              syncStatus:        'success'
             }
           });
 
@@ -807,7 +805,7 @@ export class OrderDatabaseService {
                         customerPhone: orderData.customerPhone || '',
                         deliveryAddress: orderData.deliveryAddress || '',
                         totalPrice: orderData.totalPrice || 0,
-                        orderDate: orderData.orderDate ? new Date(orderData.orderDate) : new Date(),
+                        orderDate: orderData.orderDate ? new Date(orderData.orderDate).toISOString() : null,
                         shippingMethod: orderData.shippingMethod || null,
                         paymentMethod: orderData.paymentMethod || null,
                         cityName: orderData.cityName || null,
@@ -1302,21 +1300,7 @@ export class OrderDatabaseService {
                     customerPhone: orderData.customerPhone || '',
                     deliveryAddress: orderData.deliveryAddress || '',
                     totalPrice: orderData.totalPrice || 0,
-                    orderDate: (() => {
-                      if (!orderData.orderDate) return null;
-                      try {
-                        const date = new Date(orderData.orderDate);
-                        // Проверяем что дата валидна
-                        if (isNaN(date.getTime())) {
-                          console.warn(`⚠️ [DEBUG] Invalid orderDate format: ${orderData.orderDate}, using current date`);
-                          return new Date().toISOString();
-                        }
-                        return date.toISOString();
-                      } catch (dateError) {
-                        console.warn(`⚠️ [DEBUG] Failed to parse orderDate: ${orderData.orderDate}, using current date`);
-                        return new Date().toISOString();
-                      }
-                    })(),
+                    orderDate: orderData.orderDate ? new Date(orderData.orderDate).toISOString() : null,
                     shippingMethod: orderData.shippingMethod || '',
                     paymentMethod: orderData.paymentMethod || '',
                     cityName: orderData.cityName || '',

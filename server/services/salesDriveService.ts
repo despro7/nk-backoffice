@@ -1523,45 +1523,13 @@ export class SalesDriveService {
       30: 'Credit'
     };
 
-    // Создаем rawData в нужном формате
-    const formattedRawData = {
-      orderNumber: rawOrder.externalId || rawOrder.id?.toString() || '',
-      trackingNumber: rawOrder.ord_delivery_data?.[0]?.trackingNumber || '',
-      quantity: rawOrder.kilTPorcij || 0,
-      status: rawOrder.statusId?.toString() || '',
-      statusText: statusMap[rawOrder.statusId] || 'Невідомий',
-      items: [],
-      createdAt: rawOrder.orderTime || '',
-      orderDate: rawOrder.orderTime || '',
-      externalId: rawOrder.externalId || '',
-      shippingMethod: shippingMethodMap[rawOrder.shipping_method] || 'Невідомий',
-      paymentMethod: paymentMethodMap[rawOrder.payment_method] || 'Невідомий',
-      cityName: rawOrder.ord_delivery_data?.[0]?.cityName || '',
-      provider: rawOrder.ord_delivery_data?.[0]?.provider || '',
-      customerName: '',
-      customerPhone: '',
-      deliveryAddress: rawOrder.shipping_address || '',
-      totalPrice: rawOrder.paymentAmount || 0
-    };
-
-    // Форматируем состав заказа
-    if (rawOrder.products && Array.isArray(rawOrder.products)) {
-      formattedRawData.items = rawOrder.products.map((item: any) => ({
-        productName: item.text || 'Невідомий товар',
-        quantity: item.amount || 0,
-        price: item.price || 0,
-        sku: item.sku || item.parameter || ''
-      }));
-    }
-
+    let customerName = '';
+    let customerPhone = '';
     // Добавляем информацию о клиенте
     if (rawOrder.primaryContact) {
       const contact = rawOrder.primaryContact;
-      const customerName = `${contact.lName || ''} ${contact.fName || ''} ${contact.mName || ''}`.trim();
-      const customerPhone = Array.isArray(contact.phone) ? contact.phone[0] : contact.phone || '';
-      
-      formattedRawData.customerName = customerName;
-      formattedRawData.customerPhone = customerPhone;
+      customerName = `${contact.lName || ''} ${contact.fName || ''} ${contact.mName || ''}`.trim();
+      customerPhone = Array.isArray(contact.phone) ? contact.phone[0] : contact.phone || '';
     }
 
     // Базовое форматирование для основного объекта
@@ -1573,7 +1541,7 @@ export class SalesDriveService {
       quantity: rawOrder.kilTPorcij || 0,
       status: rawOrder.statusId?.toString() || '',
       statusText: statusMap[rawOrder.statusId] || 'Невідомий',
-      items: formattedRawData.items,  // Используем те же items
+      items: rawOrder.items,  // Используем те же items
       createdAt: rawOrder.orderTime || '',
       orderDate: rawOrder.orderTime || '',
       externalId: rawOrder.externalId || '',
@@ -1581,8 +1549,8 @@ export class SalesDriveService {
       paymentMethod: paymentMethodMap[rawOrder.payment_method] || 'Невідомий',
       cityName: rawOrder.ord_delivery_data?.[0]?.cityName || '',
       provider: rawOrder.ord_delivery_data?.[0]?.provider || '',
-      customerName: formattedRawData.customerName,
-      customerPhone: formattedRawData.customerPhone,
+      customerName: customerName,
+      customerPhone: customerPhone,
       deliveryAddress: rawOrder.shipping_address || '',
       totalPrice: rawOrder.paymentAmount || 0,
       pricinaZnizki: rawOrder.pricinaZnizki ? String(rawOrder.pricinaZnizki) : '',
@@ -1721,7 +1689,7 @@ export class SalesDriveService {
   /**
    * Получает заказ по ID через SalesDrive API с фильтром
    */
-  private async getOrderById(orderId: string): Promise<SalesDriveOrder | null> {
+  async getOrderById(orderId: string): Promise<SalesDriveOrder | null> {
     const maxRetries = this.getSetting('orders.retryAttempts', 3);
     const retryDelay = this.getSetting('orders.retryDelay', 2000);
 
@@ -1731,19 +1699,12 @@ export class SalesDriveService {
           throw new Error('SalesDrive API not configured');
         }
 
-        // Пробуем получить заказ по ID через фильтр
-        // Если orderId - число, ищем по внутреннему ID, если строка - по externalId
-        const isNumericId = /^\d+$/.test(orderId);
+        // Пробуем получить заказ по externalId через фильтр
         const params = new URLSearchParams({
           page: '1',
           limit: '1',
+          'filter[externalId]': orderId
         });
-
-        if (isNumericId) {
-          params.set('filter[id]', orderId); // Фильтр по внутреннему ID
-        } else {
-          params.set('filter[externalId]', orderId); // Фильтр по externalId
-        }
 
         const fullUrl = `${this.apiUrl}/api/order/list/?${params}`;
         console.log(`🔍 [SalesDrive REQUEST] Full request URL: ${fullUrl}`);

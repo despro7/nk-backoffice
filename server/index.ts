@@ -93,6 +93,7 @@ export function createServer() {
     next();
   });
 
+
   // Auth routes
   app.use("/api/auth", authRoutes);
 
@@ -102,8 +103,8 @@ export function createServer() {
   // Orders routes
   app.use("/api/orders", ordersRoutes);
 
-  // Orders sync routes
-  app.use("/api/orders", ordersSyncRoutes);
+  // Orders sync routes (separate prefix to avoid conflicts)
+  app.use("/api/orders-sync", ordersSyncRoutes);
 
   // Products routes
   app.use("/api/products", productsRoutes);

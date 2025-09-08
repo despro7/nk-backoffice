@@ -10,7 +10,6 @@ const prisma = new PrismaClient();
 
 const router = Router();
 
-// Add this simple test endpoint to server/routes/orders.ts
 
 /**
  * GET /api/orders/test
@@ -142,69 +141,6 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * POST /api/orders/sync
- * Синхронизировать заказы из SalesDrive с локальной БД
- */
-router.post('/sync', authenticateToken, async (req, res) => {
-  try {
-    // Проверяем, включена ли синхронизация заказов
-    const { syncSettingsService } = await import('../services/syncSettingsService.js');
-    const isEnabled = await syncSettingsService.isSyncEnabled('orders');
-
-    if (!isEnabled) {
-      return res.status(400).json({
-        success: false,
-        error: 'Синхронизация заказов отключена в настройках'
-      });
-    }
-
-    const result = await salesDriveService.syncOrdersWithDatabase();
-
-    res.json({
-      success: result.success,
-      message: `Synchronized: ${result.synced}, Errors: ${result.errors}`,
-      data: result,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error syncing orders:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
-});
-
-/**
- * GET /api/orders/sync/status
- * Получить статус последней синхронизации
- */
-router.get('/sync/status', authenticateToken, async (req, res) => {
-  try {
-    // Получаем статистику заказов (включая время последней синхронизации)
-    const stats = await orderDatabaseService.getOrderStats();
-    
-    // Получаем информацию о последней синхронизации
-    const lastSyncedOrder = await orderDatabaseService.getLastSyncedOrder();
-    
-    res.json({
-      success: true,
-      data: {
-        lastSync: lastSyncedOrder?.lastSynced || null,
-        totalOrders: stats.total,
-        ordersByStatus: stats.byStatus,
-        syncStatus: 'success'
-      }
-    });
-  } catch (error) {
-    console.error('Error getting sync status:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
-});
 
 /**
  * GET /api/orders/:externalId
@@ -608,83 +544,6 @@ router.post('/fix-items-data', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * POST /api/orders/preprocess-all
- * Предварительно рассчитать статистику для всех заказов
- */
-router.post('/preprocess-all', authenticateToken, async (req, res) => {
-  try {
-    const { user } = req as any;
-
-    // Проверяем права доступа (только ADMIN)
-    if (!user || user.role !== 'admin') {
-      return res.status(403).json({ error: 'Access denied. Admin role required.' });
-    }
-
-
-    const BATCH_SIZE = 50; // Обрабатываем по 50 заказов за раз
-    let totalProcessed = 0;
-    let totalErrors = 0;
-    let totalOrders = 0;
-
-    // Сначала получаем общее количество заказов
-    const allOrders = await orderDatabaseService.getOrders({ limit: 10000 });
-    totalOrders = allOrders.length;
-
-    // Обрабатываем заказы пачками
-    for (let batchStart = 0; batchStart < totalOrders; batchStart += BATCH_SIZE) {
-      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalOrders);
-      const batchOrders = allOrders.slice(batchStart, batchEnd);
-
-
-      // Обрабатываем заказы в текущей пачке
-      const batchPromises = batchOrders.map(async (order) => {
-        try {
-          const success = await (orderDatabaseService as any).updateProcessedItems(order.id);
-          return success ? 'success' : 'error';
-        } catch (error) {
-          console.error(`❌ Error processing order ${order.externalId}:`, error);
-          return 'error';
-        }
-      });
-
-      // Ждем завершения всех заказов в пачке
-      const batchResults = await Promise.all(batchPromises);
-
-      // Подсчитываем результаты пачки
-      const batchProcessed = batchResults.filter(result => result === 'success').length;
-      const batchErrors = batchResults.filter(result => result === 'error').length;
-
-      totalProcessed += batchProcessed;
-      totalErrors += batchErrors;
-
-
-      // Небольшая пауза между пачками для снижения нагрузки
-      if (batchEnd < totalOrders) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
-
-
-    res.json({
-      success: true,
-      message: `Preprocessed ${totalProcessed} orders in ${Math.ceil(totalOrders / BATCH_SIZE)} batches, ${totalErrors} errors`,
-      stats: {
-        totalOrders,
-        processedCount: totalProcessed,
-        errorCount: totalErrors,
-        batchesProcessed: Math.ceil(totalOrders / BATCH_SIZE),
-        batchSize: BATCH_SIZE
-      }
-    });
-  } catch (error) {
-    console.error('Error in preprocess-all:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
-});
 
 /**
  * POST /api/orders/:externalId/cache
@@ -693,10 +552,7 @@ router.post('/preprocess-all', authenticateToken, async (req, res) => {
 router.post('/:externalId/cache', authenticateToken, async (req, res) => {
   try {
     const { externalId } = req.params;
-
-    // Временно убираем проверку авторизации для тестирования
-
-    const success = await (orderDatabaseService as any).updateProcessedItems(externalId);
+    const success = await orderDatabaseService.updateOrderCache(externalId);
 
     if (success) {
       res.json({
@@ -719,59 +575,72 @@ router.post('/:externalId/cache', authenticateToken, async (req, res) => {
 });
 
 /**
- * GET /api/orders/products/stats/demo
- * Демонстрация работы кешированной статистики с тестовыми данными
+ * GET /api/orders/cache/stats
+ * Получить статистику кеша
  */
-router.get('/products/stats/demo', authenticateToken, async (req, res) => {
+router.get('/cache/stats', authenticateToken, async (req, res) => {
   try {
+    const totalOrders = await prisma.order.count();
 
-    // Имитируем работу с кешированными данными
-    const mockCachedStats = [
-      {
-        name: "Борщ з телятиною",
-        sku: "01001",
-        orderedQuantity: 15,
-        stockBalances: { "1": 50, "3": 30, "4": 20 }
-      },
-      {
-        name: "Плов зі свининою",
-        sku: "03002",
-        orderedQuantity: 25,
-        stockBalances: { "1": 40, "3": 25 }
-      },
-      {
-        name: "Каша гречана зі свининою",
-        sku: "03003",
-        orderedQuantity: 18,
-        stockBalances: { "1": 35, "3": 22, "4": 15 }
-      },
-      {
-        name: "Печеня зі свининою",
-        sku: "03001",
-        orderedQuantity: 12,
-        stockBalances: { "1": 28, "3": 18 }
-      }
-    ];
+    // Получаем статистику кеша из orders_cache
+    const cacheStats = await ordersCacheService.getCacheStatistics();
+    const cachedOrders = cacheStats.totalEntries;
+    const averageCacheTime = cacheStats.averageAge * 60 * 60 * 1000; // в миллисекунды
 
-    console.log(`✅ Demo: Processed ${mockCachedStats.length} products from cache`);
+    // Получить hit rate (процент заказов с кешем)
+    const cacheHitRate = totalOrders > 0 ? (cachedOrders / totalOrders) * 100 : 0;
+
+    // Общий размер кеша - количество заказов с кешем
+    const totalCacheSize = cachedOrders;
+
+    // Получить время последнего обновления кеша
+    const lastCacheUpdate = await prisma.ordersCache.findFirst({
+      orderBy: { cacheUpdatedAt: 'desc' },
+      select: { cacheUpdatedAt: true }
+    });
 
     res.json({
       success: true,
-      data: mockCachedStats,
-      metadata: {
-        source: 'cached_data_demo',
-        filters: {
-          status: 'all',
-          dateRange: null
-        },
-        totalProducts: mockCachedStats.length,
-        totalOrders: 5,
-        fetchedAt: new Date().toISOString(),
-        note: 'Demo data showing how cached statistics work - much faster than real-time calculation!'
+      stats: {
+        totalOrders,
+        cachedOrders,
+        cacheHitRate,
+        lastCacheUpdate: lastCacheUpdate ? lastCacheUpdate.cacheUpdatedAt.toISOString() : new Date().toISOString(),
+        averageCacheTime: cacheStats.averageAge, // в годинах
+        totalCacheSize
       }
     });
   } catch (error) {
-    console.error('Error in demo endpoint:', error);
+    console.error('Error fetching cache stats:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch cache stats'
+    });
+  }
+});
+
+
+/**
+ * GET /api/orders/cache/info
+ * Получить информацию о состоянии кеша
+ */
+router.get('/cache/info', authenticateToken, async (req, res) => {
+  try {
+    // TODO: Implement cache info endpoint
+    const cacheInfo = {
+      enabled: false,
+      size: 0,
+      maxSize: 0,
+      entries: []
+    };
+
+    res.json({
+      success: true,
+      data: cacheInfo,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error getting cache info:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -780,84 +649,467 @@ router.get('/products/stats/demo', authenticateToken, async (req, res) => {
 });
 
 /**
- * POST /api/orders/sync/manual
- * Ручная синхронизация заказов - MOVED TO orders-sync.ts
- * Этот роут удален, используйте /api/orders/sync/manual из orders-sync.ts
+ * POST /api/orders/cache/clear
+ * Очистить весь кеш
  */
-
-/**
- * GET /api/orders/sync/history
- * Получить историю синхронизаций
- */
-router.get('/sync/history', authenticateToken, async (req, res) => {
+router.post('/cache/clear', authenticateToken, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit as string) || 20;
-    const syncType = req.query.type as string;
-
-    console.log(`📋 [SYNC HISTORY] Getting sync history (limit: ${limit}, type: ${syncType || 'all'})`);
-
-    let history;
-    if (syncType && ['manual', 'automatic', 'background'].includes(syncType)) {
-      history = await syncHistoryService.getSyncHistoryByType(syncType as 'manual' | 'automatic' | 'background', limit);
-    } else {
-      history = await syncHistoryService.getSyncHistory(limit);
-    }
-
-    // Получаем статистику
-    const stats = await syncHistoryService.getSyncStatistics();
+    const result = salesDriveService.clearCache();
 
     res.json({
       success: true,
-      data: {
-        history: history,
-        statistics: stats
-      }
+      message: `Cache cleared successfully`,
+      data: result,
+      timestamp: new Date().toISOString()
     });
-
   } catch (error) {
-    console.error('❌ Error getting sync history:', error);
+    console.error('Error clearing cache:', error);
     res.status(500).json({
       success: false,
-      error: 'Помилка отримання історії синхронізацій'
+      error: 'Internal server error',
     });
   }
 });
 
 /**
- * GET /api/orders/sync/history/:id
- * Получить детальную информацию о конкретной синхронизации
+ * DELETE /api/orders/cache/:key
+ * Очистить конкретную запись из кеша
  */
-router.get('/sync/history/:id', authenticateToken, async (req, res) => {
+router.delete('/cache/:key', authenticateToken, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { key } = req.params;
+    const deleted = salesDriveService.clearCacheEntry(decodeURIComponent(key));
 
-    console.log(`📋 [SYNC HISTORY] Getting sync details for ID: ${id}`);
+    res.json({
+      success: true,
+      message: deleted ? `Cache entry cleared` : `Cache entry not found`,
+      data: { deleted, key },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error clearing cache entry:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
 
-    // Находим запись в истории по ID
-    const historyRecord = await prisma.syncHistory.findUnique({
-      where: { id: parseInt(id) }
+// Вспомогательные функции для сравнения товаров в заказах
+async function getOrderItemsForComparison(orderId: number): Promise<any[] | null> {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { items: true, externalId: true }
     });
 
-    if (!historyRecord) {
-      return res.status(404).json({
-        success: false,
-        error: 'Запис синхронізації не знайдено'
+    if (!order || !order.items) {
+      return null;
+    }
+
+    let orderItems: any[] = [];
+
+    // Парсим товары заказа
+    if (typeof order.items === 'string') {
+      if (order.items === '[object Object]') {
+        console.warn(`Order has invalid items data`);
+        return null;
+      }
+
+      try {
+        orderItems = JSON.parse(order.items);
+      } catch (parseError) {
+        console.warn(`Failed to parse items for order:`, parseError);
+        return null;
+      }
+    } else if (Array.isArray(order.items)) {
+      orderItems = order.items;
+    }
+
+    return orderItems;
+  } catch (error) {
+    console.error('Error getting order items for comparison:', error);
+    return null;
+  }
+}
+
+function parseCachedOrderItems(processedItems: string | null): any[] | null {
+  if (!processedItems) return null;
+
+  try {
+    const cachedData = JSON.parse(processedItems);
+    if (Array.isArray(cachedData)) {
+      return cachedData;
+    }
+    return null;
+  } catch (error) {
+    console.warn('Failed to parse cached items:', error);
+    return null;
+  }
+}
+
+function compareOrderItems(currentItems: any[], cachedItems: any[]): boolean {
+  if (!currentItems || !cachedItems) return true; // Если не можем сравнить - считаем, что изменились
+
+  // Создаем мапы по SKU для быстрого сравнения
+  const currentMap = new Map();
+  const cachedMap = new Map();
+
+  // Нормализуем текущие товары
+  currentItems.forEach(item => {
+    if (item && item.sku) {
+      currentMap.set(item.sku.toString().toLowerCase(), {
+        sku: item.sku,
+        quantity: item.orderedQuantity || item.quantity || 0,
+        name: item.name || ''
       });
     }
+  });
 
-    res.json({
-      success: true,
-      data: historyRecord
+  // Нормализуем кешированные товары
+  cachedItems.forEach(item => {
+    if (item && item.sku) {
+      cachedMap.set(item.sku.toString().toLowerCase(), {
+        sku: item.sku,
+        quantity: item.orderedQuantity || item.quantity || 0,
+        name: item.name || ''
+      });
+    }
+  });
+
+  // Сравниваем размеры
+  if (currentMap.size !== cachedMap.size) {
+    console.log(`📊 Items count changed: current=${currentMap.size}, cached=${cachedMap.size}`);
+    return true; // Количество товаров изменилось
+  }
+
+  // Сравниваем каждый товар
+  for (const [sku, currentItem] of currentMap) {
+    const cachedItem = cachedMap.get(sku);
+
+    if (!cachedItem) {
+      console.log(`➕ New item found: ${sku}`);
+      return true; // Новый товар
+    }
+
+    if (currentItem.quantity !== cachedItem.quantity) {
+      console.log(`📈 Quantity changed for ${sku}: current=${currentItem.quantity}, cached=${cachedItem.quantity}`);
+      return true; // Количество изменилось
+    }
+  }
+
+  // Проверяем обратное - нет ли удаленных товаров
+  for (const [sku, cachedItem] of cachedMap) {
+    if (!currentMap.has(sku)) {
+      console.log(`➖ Item removed: ${sku}`);
+      return true; // Товар удален
+    }
+  }
+
+  return false; // Товары не изменились
+}
+
+/**
+ * POST /api/orders/cache/validate
+ * Валидировать и обновить кеш заказов
+ */
+router.post('/cache/validate', authenticateToken, async (req, res) => {
+  try {
+    const { startDate, endDate, force, mode } = req.query;
+
+    console.log('🔍 [CACHE VALIDATION] Starting cache validation...', {
+      startDate,
+      endDate,
+      force: force === 'true',
+      mode: mode || 'period'
     });
 
+    let actualOrders: any[];
+    let validationMode: string;
+    let dateRangeFilter: { startDate: Date; endDate: Date } | null = null;
+
+    if (mode === 'full' || !startDate) {
+      // Полная валидация - проверяем заказы за последний год
+      validationMode = 'full';
+
+      console.log('🌐 [CACHE VALIDATION] Full validation mode - getting all orders from database...');
+
+      // Получаем все заказы за последний год из базы данных
+      const fullStartDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+      const fullEndDate = new Date();
+
+      const ordersFromDb = await prisma.order.findMany({
+        where: {
+          orderDate: {
+            gte: fullStartDate,
+            lte: fullEndDate
+          }
+        },
+        select: {
+          id: true,
+          externalId: true,
+          orderDate: true,
+          updatedAt: true
+        }
+      });
+
+      actualOrders = ordersFromDb;
+      console.log(`📊 [CACHE VALIDATION] Found ${ordersFromDb.length} orders in database for full validation`);
+
+    } else {
+      // Валидация за период - проверяем только заказы в выбранном диапазоне
+      validationMode = 'period';
+      const startDateObj = new Date(startDate as string);
+      const endDateObj = endDate ? new Date(endDate as string) : new Date();
+      dateRangeFilter = { startDate: startDateObj, endDate: endDateObj };
+
+      const now = new Date();
+      const daysDiff = Math.ceil((endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24));
+
+      console.log('🌐 [CACHE VALIDATION] Period validation mode - getting orders from database...');
+      console.log(`📅 [CACHE VALIDATION] Date range: ${daysDiff} days (${startDateObj.toISOString()} to ${endDateObj.toISOString()})`);
+
+      // Проверки на корректность дат
+      if (startDateObj > now) {
+        console.warn(`⚠️ [CACHE VALIDATION] Start date is in the future: ${startDateObj.toISOString()}`);
+      }
+      if (endDateObj > now) {
+        console.warn(`⚠️ [CACHE VALIDATION] End date is in the future: ${endDateObj.toISOString()}`);
+      }
+      if (daysDiff > 30) {
+        console.warn(`⚠️ [CACHE VALIDATION] Large date range selected: ${daysDiff} days. Consider using a smaller period.`);
+      }
+      if (daysDiff <= 0) {
+        throw new Error('Invalid date range: start date must be before end date');
+      }
+
+      // Получаем заказы из базы данных за выбранный период
+      console.log(`📅 [CACHE VALIDATION] Searching for orders updated between ${startDateObj.toISOString()} and ${endDateObj.toISOString()}`);
+
+      const ordersFromDb = await prisma.order.findMany({
+        where: {
+          orderDate: {
+            gte: startDateObj,
+            lte: endDateObj
+          }
+        },
+        select: {
+          id: true,
+          externalId: true,
+          orderDate: true,
+          updatedAt: true
+        },
+        orderBy: {
+          orderDate: 'desc'
+        }
+      });
+
+      actualOrders = ordersFromDb;
+      console.log(`📊 [CACHE VALIDATION] Found ${ordersFromDb.length} orders in database for period validation`);
+
+      // Предупреждение если найдено много заказов
+      if (ordersFromDb.length >= 500) {
+        console.warn(`⚠️ [CACHE VALIDATION] Знайдено 500+ замовлень за обраний період. Подумайте над тим, щоб звузити діапазон дат для кращої продуктивності.`);
+      }
+    }
+
+    const actualOrderIds = new Set(actualOrders.map(order => order.externalId));
+    console.log(`📊 [CACHE VALIDATION] Found ${actualOrders.length} orders in database`);
+
+    // Статистика обработки
+    const stats = {
+      totalCached: 0, // Будет рассчитано позже
+      totalActual: actualOrders.length,
+      cacheHits: 0,
+      cacheMisses: 0,
+      cacheStale: 0,
+      itemsUnchanged: 0, // Товары не изменились, хотя дата была новее
+      updated: 0,
+      processed: 0,
+      errors: 0
+    };
+
+    // Получаем кеш для всех найденных заказов
+    const cachedOrdersMap = await ordersCacheService.getMultipleOrderCaches(Array.from(actualOrderIds));
+    stats.totalCached = cachedOrdersMap.size;
+
+    // Создаем мапу заказов из базы данных по externalId
+    const actualOrdersMap = new Map();
+    actualOrders.forEach(order => {
+      actualOrdersMap.set(order.externalId, order);
+    });
+
+    // Проходим по всем заказам из базы данных
+    const toUpdate: string[] = [];
+
+    for (const actualOrder of actualOrders) {
+      stats.processed++;
+
+      try {
+        const externalId = actualOrder.externalId;
+        const cachedOrder = cachedOrdersMap.get(externalId);
+
+        let needsUpdate = force === 'true';
+
+        if (!needsUpdate) {
+          if (!cachedOrder) {
+            // Кеш не существует - нужно создать
+            needsUpdate = true;
+            stats.cacheMisses++;
+            console.log(`⚠️ [CACHE VALIDATION] Cache missing for order ${externalId}`);
+          } else {
+            // Сравниваем даты обновления
+            const cachedDate = new Date(cachedOrder.cacheUpdatedAt);
+            const actualDate = new Date(actualOrder.updatedAt);
+
+            if (actualDate > cachedDate) {
+              // Дата обновления заказа новее даты кеша - проверяем, изменились ли товары
+              console.log(`📅 [CACHE VALIDATION] Order ${externalId} is stale by date (cached: ${cachedDate.toISOString()}, actual: ${actualDate.toISOString()})`);
+
+              // Получаем актуальные товары заказа
+              const currentOrderItems = await getOrderItemsForComparison(actualOrder.id);
+              const cachedOrderItems = parseCachedOrderItems(cachedOrder.processedItems);
+
+              if (currentOrderItems && cachedOrderItems) {
+                // Сравниваем товары
+                const itemsChanged = compareOrderItems(currentOrderItems, cachedOrderItems);
+
+                if (itemsChanged) {
+                  needsUpdate = true;
+                  stats.cacheStale++;
+                  console.log(`📦 [CACHE VALIDATION] Order ${externalId} items changed - cache needs update`);
+                } else {
+                  // Товары не изменились, кеш все еще актуален (несмотря на более новую дату)
+                  stats.itemsUnchanged++;
+                  console.log(`✅ [CACHE VALIDATION] Order ${externalId} items unchanged - cache is still valid despite newer date`);
+                }
+              } else {
+                // Не удалось получить или распарсить товары - обновляем кеш для безопасности
+                needsUpdate = true;
+                stats.cacheStale++;
+                console.log(`⚠️ [CACHE VALIDATION] Could not compare items for order ${externalId} - updating cache anyway`);
+              }
+            } else {
+              stats.cacheHits++;
+              console.log(`✅ [CACHE VALIDATION] Order ${externalId} cache is up to date`);
+            }
+          }
+        } else {
+          console.log(`🔄 [CACHE VALIDATION] Force update enabled for order ${externalId}`);
+        }
+
+        if (needsUpdate) {
+          toUpdate.push(externalId);
+        }
+
+      } catch (error) {
+        console.error(`❌ [CACHE VALIDATION] Error processing order ${actualOrder.externalId}:`, error);
+        stats.errors++;
+      }
+    }
+
+    const batchesCount = Math.ceil(toUpdate.length / 50);
+    console.log(`📊 [CACHE VALIDATION] Validation summary:`, {
+      mode: validationMode,
+      period: dateRangeFilter ? `${dateRangeFilter.startDate.toISOString()} - ${dateRangeFilter.endDate.toISOString()}` : 'all time',
+      processed: stats.processed,
+      cacheHits: stats.cacheHits,
+      cacheMisses: stats.cacheMisses,
+      cacheStale: stats.cacheStale,
+      itemsUnchanged: stats.itemsUnchanged,
+      toUpdate: toUpdate.length,
+      batches: batchesCount,
+      estimatedTime: `${Math.ceil(batchesCount * 0.5)}s (with 500ms pauses)`,
+      efficiency: `${Math.round((stats.itemsUnchanged / (stats.processed - stats.cacheMisses)) * 100) || 0}% items unchanged despite newer dates`
+    });
+
+    console.log(`📊 [CACHE VALIDATION] Processing ${toUpdate.length} orders to update`);
+
+    // Разделяем на пакеты для эффективной обработки
+    const BATCH_SIZE = 50;
+    const batches = [];
+    for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
+      batches.push(toUpdate.slice(i, i + BATCH_SIZE));
+    }
+
+    console.log(`📦 [CACHE VALIDATION] Split into ${batches.length} batches of up to ${BATCH_SIZE} orders each`);
+
+    // Обрабатываем каждый пакет
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      console.log(`🔄 [CACHE VALIDATION] Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} orders)`);
+
+      // Обрабатываем заказы в пакете параллельно
+      const batchPromises = batch.map(async (orderId) => {
+        try {
+          const cacheUpdated = await orderDatabaseService.updateOrderCache(orderId);
+          if (cacheUpdated) {
+            return { orderId, success: true };
+          } else {
+            console.warn(`⚠️ [CACHE VALIDATION] Failed to update cache for orderId ${orderId}`);
+            return { orderId, success: false, error: 'Update failed' };
+          }
+        } catch (error) {
+          console.error(`❌ [CACHE VALIDATION] Error updating cache for orderId ${orderId}:`, error);
+          return { orderId, success: false, error: error.message };
+        }
+      });
+
+      // Ждем завершения всех обновлений в пакете
+      const batchResults = await Promise.all(batchPromises);
+
+      const successCount = batchResults.filter(r => r.success).length;
+      stats.updated += successCount;
+      stats.errors += batchResults.filter(r => !r.success).length;
+
+      console.log(`✅ [CACHE VALIDATION] Batch ${batchIndex + 1} completed: ${successCount}/${batch.length} successful`);
+
+      // Небольшая пауза между пакетами (кроме последнего)
+      if (batchIndex < batches.length - 1) {
+        console.log(`⏳ [CACHE VALIDATION] Waiting 500ms before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    console.log(`🎉 [CACHE VALIDATION] All batches processed successfully`);
+
+    // Получаем финальную статистику кеша
+    const finalCacheStats = await ordersCacheService.getCacheStatistics();
+
+    const result = {
+      success: true,
+      message: `Cache validation completed successfully`,
+      data: {
+        stats,
+        finalCacheStats,
+        summary: {
+          processed: stats.processed,
+          updated: stats.updated,
+          errors: stats.errors,
+          cacheHitRate: stats.totalCached > 0 ? Math.round((stats.cacheHits / stats.totalCached) * 100) : 0,
+          batchesProcessed: batchesCount,
+          batchSize: 50,
+          estimatedProcessingTime: Math.ceil(batchesCount * 0.5),
+          validationDate: new Date().toISOString()
+        }
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    console.log('✅ [CACHE VALIDATION] Validation completed:', result.data.summary);
+
+    res.json(result);
+
   } catch (error) {
-    console.error('❌ Error getting sync details:', error);
+    console.error('❌ [CACHE VALIDATION] Error during cache validation:', error);
     res.status(500).json({
       success: false,
-      error: 'Помилка отримання деталей синхронізації'
+      error: 'Internal server error during cache validation',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
+
 
 /**
  * GET /api/orders/products/stats
@@ -1141,114 +1393,7 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * GET /api/orders/cache/info
- * Получить информацию о состоянии кеша
- */
-router.get('/cache/info', authenticateToken, async (req, res) => {
-  try {
-    // TODO: Implement cache info endpoint
-    const cacheInfo = {
-      enabled: false,
-      size: 0,
-      maxSize: 0,
-      entries: []
-    };
 
-    res.json({
-      success: true,
-      data: cacheInfo,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error getting cache info:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
-});
-
-/**
- * POST /api/orders/cache/clear
- * Очистить весь кеш
- */
-router.post('/cache/clear', authenticateToken, async (req, res) => {
-  try {
-    const result = salesDriveService.clearCache();
-
-    res.json({
-      success: true,
-      message: `Cache cleared successfully`,
-      data: result,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error clearing cache:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
-});
-
-/**
- * DELETE /api/orders/cache/:key
- * Очистить конкретную запись из кеша
- */
-router.delete('/cache/:key', authenticateToken, async (req, res) => {
-  try {
-    const { key } = req.params;
-    const deleted = salesDriveService.clearCacheEntry(decodeURIComponent(key));
-
-    res.json({
-      success: true,
-      message: deleted ? `Cache entry cleared` : `Cache entry not found`,
-      data: { deleted, key },
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error clearing cache entry:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
-});
-
-/**
- * GET /api/orders/sync-statistics
- * Получить статистику по загружаемым данным
- */
-router.get('/sync-statistics', authenticateToken, async (req, res) => {
-  try {
-    const { startDate, endDate, includeProductStats, includeOrderDetails } = req.query;
-
-    const options: any = {};
-
-    if (startDate) options.startDate = startDate as string;
-    if (endDate) options.endDate = endDate as string;
-    if (includeProductStats === 'true') options.includeProductStats = true;
-    if (includeOrderDetails === 'true') options.includeOrderDetails = true;
-
-    console.log('📊 Sync statistics request:', options);
-
-    const result = await salesDriveService.getSyncStatistics(options);
-
-    res.json({
-      success: result.success,
-      data: result.data,
-      error: result.error,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error in sync statistics endpoint:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
-});
 
 /**
  * GET /api/orders/advanced-filter

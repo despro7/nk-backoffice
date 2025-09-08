@@ -2,10 +2,11 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { PrismaClient } from '@prisma/client';
 import { syncSettingsService } from '../services/syncSettingsService.js';
-import { ordersCacheService } from '../services/ordersCacheService.js';
+import { salesDriveService } from '../services/salesDriveService.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
 
 // Хелпер функция для сериализации логов с BigInt полями
 const serializeSyncLog = (log: any) => ({
@@ -18,7 +19,7 @@ const serializeSyncLogs = (logs: any[]) => logs.map(serializeSyncLog);
 
 // Cache for sync previews (in-memory cache)
 const syncPreviewCache = new Map<string, { data: any; timestamp: number; expiresAt: number }>();
-const PREVIEW_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+const _PREVIEW_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 // Прогресс предварительного анализа (используем Map для хранения по sessionId)
 const activePreviewProgressMap = new Map<string, {
@@ -109,7 +110,10 @@ const cleanupOldProgress = () => {
 // Запускаем очистку каждые 5 минут
 setInterval(cleanupOldProgress, 5 * 60 * 1000);
 
-// Предварительный анализ синхронизации
+/**
+ * POST /api/orders-sync/sync/preview
+ * Предварительный анализ синхронизации
+ */
 router.post('/sync/preview', authenticateToken, async (req, res) => {
   console.log('🚀 [PREVIEW REQUEST] Received preview request:', req.body);
 
@@ -205,7 +209,7 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
         console.log(`📊 [ASYNC PREVIEW] Found ${salesDriveOrders.length} orders in SalesDrive for sessionId: ${sessionId}`);
 
         // Обновляем прогресс - этап анализа
-        let analysisProgress = activePreviewProgressMap.get(sessionId);
+        const analysisProgress = activePreviewProgressMap.get(sessionId);
         if (analysisProgress) {
           analysisProgress.stage = 'analyzing';
           analysisProgress.totalOrders = salesDriveOrders.length;
@@ -356,7 +360,10 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
   }
 });
 
-// Выборочная синхронизация выбранных заказов
+/**
+ * POST /api/orders-sync/sync/selective
+ * Выборочная синхронизация выбранных заказов
+ */
 router.post('/sync/selective', authenticateToken, async (req, res) => {
   try {
     const { selectedOrders, startDate, endDate, syncMode = 'smart' } = req.body;
@@ -406,7 +413,7 @@ router.post('/sync/selective', authenticateToken, async (req, res) => {
     console.log(`✅ [SELECTIVE SYNC] Sent immediate response to client for sessionId: ${sessionId}`);
 
     // Запускаем синхронизацию в фоне для избежания таймаутов
-    setImmediate(async () => {
+    (globalThis as any).setImmediate(async () => {
       try {
         const { salesDriveService } = await import('../services/salesDriveService.js');
         const { orderDatabaseService } = await import('../services/orderDatabaseService.js');
@@ -496,20 +503,20 @@ router.post('/sync/selective', authenticateToken, async (req, res) => {
           statusText: order.statusText,
           items: order.items,
           rawData: order.rawData,
-      ttn: order.ttn,
-      quantity: order.quantity,
-      customerName: order.customerName,
-      customerPhone: order.customerPhone,
-      deliveryAddress: order.deliveryAddress,
-      totalPrice: order.totalPrice,
-      orderDate: order.orderDate,
-      shippingMethod: order.shippingMethod,
-      paymentMethod: order.paymentMethod,
-      cityName: order.cityName,
-      provider: order.provider,
-      pricinaZnizki: order.pricinaZnizki,
-      sajt: order.sajt
-    }));
+          ttn: order.ttn,
+          quantity: order.quantity,
+          customerName: order.customerName,
+          customerPhone: order.customerPhone,
+          deliveryAddress: order.deliveryAddress,
+          totalPrice: order.totalPrice,
+          orderDate: order.orderDate,
+          shippingMethod: order.shippingMethod,
+          paymentMethod: order.paymentMethod,
+          cityName: order.cityName,
+          provider: order.provider,
+          pricinaZnizki: order.pricinaZnizki,
+          sajt: order.sajt
+        }));
 
         // Выполняем пакетное обновление в зависимости от режима
         let updateResult;
@@ -628,7 +635,10 @@ router.post('/sync/selective', authenticateToken, async (req, res) => {
   }
 });
 
-// Получить статистику синхронизаций
+/**
+ * GET /api/orders-sync/sync/stats
+ * Получить статистику синхронизаций
+ */
 router.get('/sync/stats', authenticateToken, async (req, res) => {
   try {
     const { syncHistoryService } = await import('../services/syncHistoryService.js');
@@ -665,7 +675,10 @@ router.get('/sync/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// Получить логи синхронизации
+/**
+ * GET /api/orders-sync/sync/logs
+ * Получить логи синхронизации
+ */
 router.get('/sync/logs', authenticateToken, async (req, res) => {
   try {
     const { type, status, limit = 100, offset = 0 } = req.query;
@@ -700,7 +713,10 @@ router.get('/sync/logs', authenticateToken, async (req, res) => {
   }
 });
 
-// Создать лог синхронизации
+/**
+ * POST /api/orders-sync/sync/logs
+ * Создать лог синхронизации
+ */
 router.post('/sync/logs', authenticateToken, async (req, res) => {
   try {
     const { type, status, message, details, recordsProcessed, errors } = req.body;
@@ -730,7 +746,10 @@ router.post('/sync/logs', authenticateToken, async (req, res) => {
   }
 });
 
-// Обновить лог синхронизации
+/**
+ * PUT /api/orders-sync/sync/logs/:id
+ * Обновить лог синхронизации
+ */
 router.put('/sync/logs/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -764,7 +783,10 @@ router.put('/sync/logs/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Получить настройки синхронизации
+/**
+ * GET /api/orders-sync/sync/settings
+ * Получить настройки синхронизации
+ */
 router.get('/sync/settings', authenticateToken, async (req, res) => {
   try {
     const settings = await syncSettingsService.getSyncSettings();
@@ -782,7 +804,11 @@ router.get('/sync/settings', authenticateToken, async (req, res) => {
   }
 });
 
-// Сохранить настройки синхронизации
+
+/**
+ * POST /api/orders-sync/sync/settings
+ * Сохранить настройки синхронизации
+ */
 router.post('/sync/settings', authenticateToken, async (req, res) => {
   try {
     const settings = req.body;
@@ -801,69 +827,123 @@ router.post('/sync/settings', authenticateToken, async (req, res) => {
   }
 });
 
-// Получить статистику кеша
-router.get('/cache/stats', authenticateToken, async (req, res) => {
+
+/**
+ * POST /api/orders/preprocess-all
+ * Предварительно рассчитать статистику для всех заказов
+ */
+router.post('/preprocess-all', authenticateToken, async (req, res) => {
   try {
-    const totalOrders = await prisma.order.count();
+    const { user } = req as any;
 
-    // Получаем статистику кеша из orders_cache
-    const cacheStats = await ordersCacheService.getCacheStatistics();
-    const cachedOrders = cacheStats.totalEntries;
-    const averageCacheTime = cacheStats.averageAge * 60 * 60 * 1000; // в миллисекунды
+    // Проверяем права доступа (только ADMIN)
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin role required.' });
+    }
 
-    // Получить hit rate (процент заказов с кешем)
-    const cacheHitRate = totalOrders > 0 ? (cachedOrders / totalOrders) * 100 : 0;
+    const { orderDatabaseService } = await import('../services/orderDatabaseService.js');
 
-    // Общий размер кеша - количество заказов с кешем
-    const totalCacheSize = cachedOrders;
+    const BATCH_SIZE = 50; // Обрабатываем по 50 заказов за раз
+    let totalProcessed = 0;
+    let totalErrors = 0;
+    let totalOrders = 0;
 
-    // Получить время последнего обновления кеша
-    const lastCacheUpdate = await prisma.ordersCache.findFirst({
-      orderBy: { cacheUpdatedAt: 'desc' },
-      select: { cacheUpdatedAt: true }
-    });
+    // Сначала получаем общее количество заказов
+    const allOrders = await orderDatabaseService.getOrders({ limit: 10000 });
+    totalOrders = allOrders.length;
+
+    // Обрабатываем заказы пачками
+    for (let batchStart = 0; batchStart < totalOrders; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalOrders);
+      const batchOrders = allOrders.slice(batchStart, batchEnd);
+
+
+      // Обрабатываем заказы в текущей пачке
+      const batchPromises = batchOrders.map(async (order) => {
+        try {
+          const success = await orderDatabaseService.updateOrderCache(order.externalId);
+          return success ? 'success' : 'error';
+        } catch (error) {
+          console.error(`❌ Error processing order ${order.externalId}:`, error);
+          return 'error';
+        }
+      });
+
+      // Ждем завершения всех заказов в пачке
+      const batchResults = await Promise.all(batchPromises);
+
+      // Подсчитываем результаты пачки
+      const batchProcessed = batchResults.filter(result => result === 'success').length;
+      const batchErrors = batchResults.filter(result => result === 'error').length;
+
+      totalProcessed += batchProcessed;
+      totalErrors += batchErrors;
+
+
+      // Небольшая пауза между пачками для снижения нагрузки
+      if (batchEnd < totalOrders) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
 
     res.json({
       success: true,
+      message: `Preprocessed ${totalProcessed} orders in ${Math.ceil(totalOrders / BATCH_SIZE)} batches, ${totalErrors} errors`,
       stats: {
         totalOrders,
-        cachedOrders,
-        cacheHitRate,
-        lastCacheUpdate: lastCacheUpdate ? lastCacheUpdate.cacheUpdatedAt.toISOString() : new Date().toISOString(),
-        averageCacheTime: Math.round(averageCacheTime / 1000), // в секундах
-        totalCacheSize
+        processedCount: totalProcessed,
+        errorCount: totalErrors,
+        batchesProcessed: Math.ceil(totalOrders / BATCH_SIZE),
+        batchSize: BATCH_SIZE
       }
     });
   } catch (error) {
-    console.error('Error fetching cache stats:', error);
+    console.error('Error in preprocess-all:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch cache stats'
+      error: 'Internal server error',
     });
   }
 });
 
-// Очистить кеш
-router.post('/cache/clear', authenticateToken, async (req, res) => {
+/**
+ * GET /api/orders/sync-statistics
+ * Получить статистику по загружаемым данным
+ */
+router.get('/sync-statistics', authenticateToken, async (req, res) => {
   try {
-    // Очищаем кеш в таблице orders_cache
-    const result = await prisma.ordersCache.deleteMany({});
+    const { startDate, endDate, includeProductStats, includeOrderDetails } = req.query;
+    const { salesDriveService } = await import('../services/salesDriveService.js');
+
+    const options: any = {};
+
+    if (startDate) options.startDate = startDate as string;
+    if (endDate) options.endDate = endDate as string;
+    if (includeProductStats === 'true') options.includeProductStats = true;
+    if (includeOrderDetails === 'true') options.includeOrderDetails = true;
+
+    console.log('📊 Sync statistics request:', options);
+
+    const result = await salesDriveService.getSyncStatistics(options);
 
     res.json({
-      success: true,
-      message: `Кеш очищен: ${result.count} заказов обновлено`
+      success: result.success,
+      data: result.data,
+      error: result.error,
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Error clearing cache:', error);
+    console.error('Error in sync statistics endpoint:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to clear cache'
+      error: 'Internal server error',
     });
   }
 });
 
 // Глобальное состояние для отслеживания прогресса синхронизации
-let activeSyncProgress: {
+const _activeSyncProgress: {
   logId: number;
   startTime: number;
   totalOrders?: number;
@@ -1014,7 +1094,7 @@ router.get('/sync/preview/progress', authenticateToken, async (req, res) => {
 // Ручная синхронизация с массовой загрузкой и прогрессом
 router.post('/sync/manual', authenticateToken, async (req, res) => {
   try {
-    const { startDate, endDate, batchSize = 100, maxConcurrent = 3, chunkSize, syncMode = 'smart' } = req.body;
+    const { startDate, endDate, batchSize = 100, maxConcurrent = 3, syncMode = 'smart' } = req.body;
 
     if (!startDate) {
       return res.status(400).json({
@@ -1060,7 +1140,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
 
 
     // Запускаем синхронизацию в фоне для избежания таймаутов
-    setImmediate(async () => {
+    (globalThis as any).setImmediate(async () => {
       try {
         const { salesDriveService } = await import('../services/salesDriveService.js');
 
@@ -1220,94 +1300,6 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
   }
 });
 
-// Тест массовой синхронизации
-router.post('/sync/test-batch', authenticateToken, async (req, res) => {
-  try {
-    const { orderDatabaseService } = await import('../services/orderDatabaseService.js');
-    const { testOrdersCount = 10 } = req.body;
-
-    console.log(`🧪 [TEST] Testing batch sync with ${testOrdersCount} test orders...`);
-
-    // Создаем тестовые данные
-    const testOrders = [];
-    for (let i = 1; i <= testOrdersCount; i++) {
-      testOrders.push({
-        orderNumber: `TEST-${i.toString().padStart(3, '0')}`,
-        status: '2', // Подтвержден
-        statusText: 'Підтверджено',
-        items: [{
-          productName: `Test Product ${i}`,
-          quantity: Math.floor(Math.random() * 5) + 1,
-          price: Math.floor(Math.random() * 100) + 50,
-          sku: `SKU-${i}`
-        }],
-        rawData: {
-          orderNumber: `TEST-${i.toString().padStart(3, '0')}`,
-          trackingNumber: `TTN-${i}`,
-          quantity: Math.floor(Math.random() * 5) + 1,
-          status: '2',
-          statusText: 'Підтверджено'
-        },
-        ttn: `TTN-${i}`,
-        quantity: Math.floor(Math.random() * 5) + 1,
-        customerName: `Test Customer ${i}`,
-        customerPhone: '+380501234567',
-        deliveryAddress: `Test Address ${i}`,
-        totalPrice: Math.floor(Math.random() * 500) + 100,
-        orderDate: new Date().toISOString().split('T')[0],
-        shippingMethod: 'Нова Пошта',
-        paymentMethod: 'Післяплата',
-        cityName: 'Київ'
-      });
-    }
-
-    const startTime = Date.now();
-
-    // Тестируем batch создание
-    console.log(`📝 [TEST] Testing batch creation of ${testOrders.length} orders...`);
-    const createResult = await orderDatabaseService.forceUpdateOrdersBatch(testOrders);
-    const createDuration = Date.now() - startTime;
-
-    console.log(`✅ [TEST] Batch creation completed in ${createDuration}ms:`);
-    console.log(`   🆕 Created: ${createResult.totalCreated} orders`);
-    console.log(`   🔄 Updated: ${createResult.totalUpdated} orders`);
-    console.log(`   ❌ Errors: ${createResult.totalErrors} orders`);
-
-    // Очищаем тестовые данные
-    console.log(`🧹 [TEST] Cleaning up test data...`);
-    for (const order of testOrders) {
-      try {
-        await prisma.order.deleteMany({
-          where: { externalId: order.orderNumber }
-        });
-      } catch (e) {
-        // Игнорируем ошибки очистки
-      }
-    }
-
-    res.json({
-      success: true,
-      message: 'Тест массовой синхронизации завершен',
-      results: {
-        totalTestOrders: testOrdersCount,
-        created: createResult.totalCreated,
-        updated: createResult.totalUpdated,
-        errors: createResult.totalErrors,
-        duration: createDuration,
-        ordersPerSecond: Math.round((testOrdersCount / createDuration) * 1000)
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ [TEST] Error during batch test:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Ошибка тестирования массовой синхронизации'
-    });
-  }
-});
-
-
 // Удалить старые логи синхронизации
 router.post('/sync/logs/cleanup', authenticateToken, async (req, res) => {
   try {
@@ -1341,6 +1333,147 @@ router.post('/sync/logs/cleanup', authenticateToken, async (req, res) => {
 
 
 
+
+/**
+ * POST /api/orders/sync
+ * Синхронизировать заказы из SalesDrive с локальной БД
+ */
+router.post('/sync', authenticateToken, async (req, res) => {
+  try {
+    // Проверяем, включена ли синхронизация заказов
+    const isEnabled = await syncSettingsService.isSyncEnabled('orders');
+
+    if (!isEnabled) {
+      return res.status(400).json({
+        success: false,
+        error: 'Синхронизация заказов отключена в настройках'
+      });
+    }
+
+    const { salesDriveService } = await import('../services/salesDriveService.js');
+    const result = await salesDriveService.syncOrdersWithDatabase();
+
+    res.json({
+      success: result.success,
+      message: `Synchronized: ${result.synced}, Errors: ${result.errors}`,
+      data: result,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error syncing orders:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
+
+/**
+ * GET /api/orders/sync/status
+ * Получить статус последней синхронизации
+ */
+router.get('/sync/status', authenticateToken, async (req, res) => {
+  try {
+    const { orderDatabaseService } = await import('../services/orderDatabaseService.js');
+
+    // Получаем статистику заказов (включая время последней синхронизации)
+    const stats = await orderDatabaseService.getOrderStats();
+
+    // Получаем информацию о последней синхронизации
+    const lastSyncedOrder = await orderDatabaseService.getLastSyncedOrder();
+
+    res.json({
+      success: true,
+      data: {
+        lastSync: lastSyncedOrder?.lastSynced || null,
+        totalOrders: stats.total,
+        ordersByStatus: stats.byStatus,
+        syncStatus: 'success'
+      }
+    });
+  } catch (error) {
+    console.error('Error getting sync status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
+
+/**
+ * GET /api/orders/sync/history
+ * Получить историю синхронизаций
+ */
+router.get('/sync/history', authenticateToken, async (req, res) => {
+  try {
+    const { syncHistoryService } = await import('../services/syncHistoryService.js');
+    const limit = parseInt(req.query.limit as string) || 20;
+    const syncType = req.query.type as string;
+
+    console.log(`📋 [SYNC HISTORY] Getting sync history (limit: ${limit}, type: ${syncType || 'all'})`);
+
+    let history;
+    if (syncType && ['manual', 'automatic', 'background'].includes(syncType)) {
+      history = await syncHistoryService.getSyncHistoryByType(syncType as 'manual' | 'automatic' | 'background', limit);
+    } else {
+      history = await syncHistoryService.getSyncHistory(limit);
+    }
+
+    // Получаем статистику
+    const stats = await syncHistoryService.getSyncStatistics();
+
+    res.json({
+      success: true,
+      data: {
+        history: history,
+        statistics: stats
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error getting sync history:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Помилка отримання історії синхронізацій'
+    });
+  }
+});
+
+/**
+ * GET /api/orders/sync/history/:id
+ * Получить детальную информацию о конкретной синхронизации
+ */
+router.get('/sync/history/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log(`📋 [SYNC HISTORY] Getting sync details for ID: ${id}`);
+
+    // Находим запись в истории по ID
+    const historyRecord = await prisma.syncHistory.findUnique({
+      where: { id: parseInt(id) }
+    });
+
+    if (!historyRecord) {
+      return res.status(404).json({
+        success: false,
+        error: 'Запис синхронізації не знайдено'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: historyRecord
+    });
+
+  } catch (error) {
+    console.error('❌ Error getting sync details:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Помилка отримання деталей синхронізації'
+    });
+  }
+});
 
 // Cancel operation endpoint
 router.post('/cancel/:sessionId', authenticateToken, async (req, res) => {
@@ -1380,6 +1513,52 @@ router.post('/cancel/:sessionId', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to cancel operation'
+    });
+  }
+});
+
+/**
+ * GET /api/orders/test-salesdrive
+ * Test SalesDrive API endpoint with custom parameters (uses existing salesDriveService)
+ */
+router.get('/test-salesdrive', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔍 [SALESDRIVE TEST] Testing with params:', req.query);
+
+    // Если передан orderId, используем готовый метод getOrderDetails
+    if (req.query.orderId) {
+      console.log('📋 [SALESDRIVE TEST] Using getOrderById for orderId:', req.query.orderId);
+      const result = await salesDriveService.getOrderById(req.query.orderId as string);
+
+      if (result) {
+        return res.json({
+          success: true,
+          method: 'getOrderById',
+          data: result,
+          meta: {
+            orderId: req.query.orderId,
+            found: true
+          }
+        });
+      } else {
+        return res.json({
+          success: true,
+          method: 'getOrderById',
+          data: null,
+          meta: {
+            orderId: req.query.orderId,
+            found: false,
+            message: 'Order not found'
+          }
+        }); 
+      }
+    }
+
+  } catch (error) {
+    console.error('❌ [SALESDRIVE TEST] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
