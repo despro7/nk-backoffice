@@ -8,6 +8,7 @@ import { useEquipment } from "../hooks/useEquipment";
 import { EquipmentConfig } from "../services/EquipmentService";
 import { Input } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
+import { ToastService } from "../services/ToastService";
 import { addToast } from "@heroui/toast";
 
 // Интерфейсы для Serial терминала
@@ -23,6 +24,7 @@ export const SettingsEquipment = () => {
   const [localConfig, setLocalConfig] = useState<EquipmentConfig | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isConnectingScale, setIsConnectingScale] = useState(false);
 
   // Состояния для Serial терминала
   const [serialConnected, setSerialConnected] = useState(false);
@@ -40,6 +42,13 @@ export const SettingsEquipment = () => {
   const [serialParity, setSerialParity] = useState<'none' | 'even' | 'odd'>('none');
   const [serialBufferSize, setSerialBufferSize] = useState(1024);
   const [serialFlowControl, setSerialFlowControl] = useState<'none' | 'hardware'>('none');
+
+  // Состояние для теста сканера
+  const [scannerTestResult, setScannerTestResult] = useState<string>('');
+  const [scannerTestStatus, setScannerTestStatus] = useState<'idle' | 'waiting' | 'success' | 'error'>('idle');
+  const [scannerTestTimeout, setScannerTestTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [keyboardEvents, setKeyboardEvents] = useState<string[]>([]);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   // Web Serial API поддержка
   const [webSerialSupported, setWebSerialSupported] = useState<boolean | null>(null);
@@ -74,6 +83,133 @@ export const SettingsEquipment = () => {
   const checkWebSerialSupport = useCallback(() => {
     const supported = 'serial' in navigator;
     setWebSerialSupported(supported);
+  }, []);
+
+  // Тест сканера
+  const testScanner = useCallback(() => {
+    if (scannerTestStatus === 'waiting') {
+      // Отменяем тест
+      if (scannerTestTimeout) {
+        clearTimeout(scannerTestTimeout);
+        setScannerTestTimeout(null);
+      }
+      setScannerTestStatus('idle');
+      setScannerTestResult('');
+      // Удаляем тестовый listener если он есть
+      if ((window as any).testScannerListener) {
+        document.removeEventListener('keydown', (window as any).testScannerListener);
+        (window as any).testScannerListener = null;
+      }
+      return;
+    }
+
+    // Начинаем тест
+    setScannerTestStatus('waiting');
+    setScannerTestResult('Ожидание сканирования... (5 сек)');
+
+    // Устанавливаем таймаут на 5 секунд
+    const timeout = setTimeout(() => {
+      setScannerTestStatus('error');
+      setScannerTestResult('Тест не удался - сканер не обнаружен или не работает');
+      setScannerTestTimeout(null);
+      // Удаляем тестовый listener
+      if ((window as any).testScannerListener) {
+        document.removeEventListener('keydown', (window as any).testScannerListener);
+        (window as any).testScannerListener = null;
+      }
+    }, 5000);
+
+    setScannerTestTimeout(timeout);
+
+    // Создаем прямой listener для тестирования
+    let testBuffer = '';
+    let lastTestTime = Date.now();
+
+    const testScannerListener = (event: KeyboardEvent) => {
+      // Проверяем, что событие еще не обработано основным сканером
+      if ((event as any)._barcodeProcessed) {
+        return; // Пропускаем, уже обработано
+      }
+
+      (event as any)._barcodeProcessed = true;
+      const currentTime = Date.now();
+      const timeDiff = currentTime - lastTestTime;
+
+
+      // Если символы приходят быстро (сканер), собираем их
+      if (timeDiff < 300) { // 300ms timeout для теста
+        if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+          testBuffer += event.key;
+        }
+
+        // Если буфер достаточно длинный и прошло время - считаем что сканирование завершено
+        if (testBuffer.length >= 3) {
+          setTimeout(() => {
+            if (testBuffer.length > 0) {
+              // Успешный тест!
+              if (scannerTestTimeout) {
+                clearTimeout(scannerTestTimeout);
+                setScannerTestTimeout(null);
+              }
+              setScannerTestStatus('success');
+              setScannerTestResult(`✅ Успех! Сканер работает.\nОбнаружено: ${testBuffer.length} символов\nПример: ${testBuffer.substring(0, 20)}${testBuffer.length > 20 ? '...' : ''}\nВремя: ${new Date().toLocaleTimeString()}`);
+
+              // Убираем listener
+              document.removeEventListener('keydown', testScannerListener);
+              (window as any).testScannerListener = null;
+
+              // Очищаем результат через 5 секунд
+              setTimeout(() => {
+                setScannerTestStatus('idle');
+                setScannerTestResult('');
+              }, 5000);
+            }
+          }, 200); // Ждем еще немного символов
+        }
+      } else {
+        // Новый цикл сканирования
+        testBuffer = '';
+        if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+          testBuffer += event.key;
+        }
+      }
+
+      lastTestTime = currentTime;
+    };
+
+    // Добавляем listener
+    document.addEventListener('keydown', testScannerListener);
+    (window as any).testScannerListener = testScannerListener;
+
+  }, [scannerTestStatus, scannerTestTimeout]);
+
+  // Диагностика клавиатуры
+  const startKeyboardDiagnostics = useCallback(() => {
+    setShowDiagnostics(true);
+    setKeyboardEvents([]);
+
+    let eventCount = 0;
+    const diagnosticsListener = (event: KeyboardEvent) => {
+      const timestamp = Date.now();
+      const eventInfo = `${new Date(timestamp).toLocaleTimeString()}: ${event.key} (code: ${event.code}, ctrl: ${event.ctrlKey}, alt: ${event.altKey})`;
+
+      setKeyboardEvents(prev => {
+        const newEvents = [...prev, eventInfo];
+        // Ограничиваем до последних 20 событий
+        return newEvents.slice(-20);
+      });
+
+      eventCount++;
+    };
+
+    document.addEventListener('keydown', diagnosticsListener);
+
+    // Автоматически останавливаем через 10 секунд
+    setTimeout(() => {
+      document.removeEventListener('keydown', diagnosticsListener);
+      setShowDiagnostics(false);
+    }, 10000);
+
   }, []);
 
   // Проверка поддержки при загрузке
@@ -156,6 +292,58 @@ export const SettingsEquipment = () => {
 
   // Обертка для использования в onPress
   const handleApplyConfig = () => applyConfig();
+
+  // Обработчик подключения весов
+  const handleScaleConnect = async () => {
+    setIsConnectingScale(true);
+    try {
+      const success = await actions.connectScale();
+      if (success) {
+        addToast({
+          title: "Успіх",
+          description: "Ваги успішно підключено!",
+          color: "success",
+        });
+      } else {
+        addToast({
+          title: "Помилка",
+          description: "Не вдалося підключити ваги!",
+          color: "danger",
+        });
+      }
+    } catch (error) {
+      console.error("Error connecting scale:", error);
+      addToast({
+        title: "Помилка",
+        description: "Помилка підключення ваг!",
+        color: "danger",
+      });
+    } finally {
+      setIsConnectingScale(false);
+    }
+  };
+
+  // Обработчик отключения весов
+  const handleScaleDisconnect = async () => {
+    setIsConnectingScale(true);
+    try {
+      await actions.disconnectScale();
+      addToast({
+        title: "Успіх",
+        description: "Ваги успішно відключено!",
+        color: "success",
+      });
+    } catch (error) {
+      console.error("Error disconnecting scale:", error);
+      addToast({
+        title: "Помилка",
+        description: "Помилка відключення ваг!",
+        color: "danger",
+      });
+    } finally {
+      setIsConnectingScale(false);
+    }
+  };
 
   // Сброс настроек к значениям по умолчанию
   const resetConfig = async () => {
@@ -640,6 +828,287 @@ export const SettingsEquipment = () => {
         </Card>
       )}
 
+      {/* Налаштування конфігурації */}
+      <Card className="bg-gradient-to-r bg-neutral-50">
+        <CardHeader className="border-b border-grey-200">
+          <DynamicIcon
+            name="settings"
+            size={20}
+            className="text-primary mr-2"
+          />
+          <h2 className="text-lg font-semibold text-primary">Конфігурація обладнання</h2>
+        </CardHeader>
+        <CardBody className="p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Налаштування ваг */}
+            <div className="flex flex-col gap-6">
+              <h3 className="font-medium text-gray-400">Налаштування ваг</h3>
+              <Input
+                id="comPort"
+                label="COM-порт"
+                labelPlacement="outside"
+                className="block text-sm font-medium text-gray-700 mb-1"
+                value={localConfig.scale?.comPort || "COM5"}
+                onChange={(e) =>
+                  handleConfigChange("scale", "comPort", e.target.value)
+                }
+              />
+              <Select
+                id="baudRate"
+                label="Швидкість (біт/с)"
+                labelPlacement="outside"
+                defaultSelectedKeys={[localConfig.scale?.baudRate?.toString() || "9600"]}
+                onChange={(e) =>
+                  handleConfigChange(
+                    "scale",
+                    "baudRate",
+                    parseInt(e.target.value),
+                  )
+                }
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                <SelectItem key="9600">9600</SelectItem>
+                <SelectItem key="19200">19200</SelectItem>
+                <SelectItem key="38400">38400</SelectItem>
+                <SelectItem key="57600">57600</SelectItem>
+                <SelectItem key="115200">115200</SelectItem>
+              </Select>
+              <div>
+                <Select
+                  id="dataBits"
+                  label="Біти даних"
+                  labelPlacement="outside"
+                  defaultSelectedKeys={[localConfig.scale?.dataBits?.toString() || "8"]}
+                  onChange={(e) =>
+                    handleConfigChange(
+                      "scale",
+                      "dataBits",
+                      parseInt(e.target.value),
+                    )
+                  }
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
+                  <SelectItem key="7">7</SelectItem>
+                  <SelectItem key="8">8</SelectItem>
+                </Select>
+              </div>
+
+              {/* Кнопки керування вагами */}
+              <div className="flex gap-2 mt-4">
+                <Button
+                  onPress={handleScaleConnect}
+                  disabled={state.isScaleConnected || isConnectingScale}
+                  color="primary"
+                  size="sm"
+                  variant="solid"
+                >
+                  <DynamicIcon name="link" size={14} />
+                  {isConnectingScale ? "Підключення..." : "Підключити ваги"}
+                </Button>
+                <Button
+                  onPress={handleScaleDisconnect}
+                  disabled={!state.isScaleConnected || isConnectingScale}
+                  color="danger"
+                  size="sm"
+                  variant="solid"
+                >
+                  <DynamicIcon name="unlink" size={14} />
+                  Відключити ваги
+                </Button>
+              </div>
+
+              {/* Свитчер автопідключення ваг */}
+              <Switch
+                id="scaleAutoConnect"
+                isSelected={localConfig.scale?.autoConnect || false}
+                onValueChange={(e) =>
+                  handleConfigChange(
+                    "scale",
+                    "autoConnect",
+                    e,
+                  )
+                }
+                color="primary"
+                size="sm"
+                classNames={{
+                  wrapper: "bg-secondary/50",
+                  thumbIcon: "bg-white/50",
+                }}
+              >
+                Авто. підключення ваг</Switch>
+            </div>
+
+            {/* Налаштування сканера */}
+            <div className="flex flex-col gap-6">
+              <h3 className="font-medium text-gray-400">Налаштування сканера</h3>
+              <Input
+                type="number"
+                id="timeout"
+                label="Таймаут (мс)"
+                labelPlacement="outside"
+                className="block text-sm font-medium text-gray-700 mb-1"
+                value={localConfig.scanner?.timeout?.toString() || "5000"}
+                onChange={(e) =>
+                  handleConfigChange(
+                    "scanner",
+                    "timeout",
+                    parseInt(e.target.value),
+                  )}
+              />
+
+              <Input
+                type="number"
+                id="scanTimeout"
+                label="Таймаут сканування (мс)"
+                labelPlacement="outside"
+                className="block text-sm font-medium text-gray-700 mb-1"
+                value={localConfig?.scanner?.scanTimeout?.toString() || "300"}
+                onChange={(e) =>
+                  handleConfigChange(
+                    "scanner",
+                    "scanTimeout",
+                    parseInt(e.target.value),
+                  )}
+              />
+
+              <Switch
+                id="autoConnect"
+                isSelected={localConfig.scanner?.autoConnect || false}
+                onValueChange={(e) =>
+                  handleConfigChange(
+                    "scanner",
+                    "autoConnect",
+                    e,
+                  )
+                }
+                color="primary"
+                size="sm"
+                classNames={{
+                  wrapper: "bg-secondary/50",
+                  thumbIcon: "bg-white/50",
+                }}
+              >
+                Авто. підключення</Switch>
+            </div>
+
+            {/* Тест сканера */}
+            <div className="flex flex-col gap-4 p-4 bg-gray-50 rounded-lg">
+              <h3 className="font-medium text-gray-700">Тест сканера</h3>
+
+              <div className="flex gap-2 items-center flex-wrap">
+                <Button
+                  color={scannerTestStatus === 'waiting' ? 'warning' : 'primary'}
+                  size="sm"
+                  onPress={testScanner}
+                  isDisabled={!state.isScannerConnected && state.status.isSimulationMode === false}
+                >
+                  {scannerTestStatus === 'waiting' ? 'Отменить тест' : 'Тест сканера'}
+                </Button>
+
+                <Button
+                  color="secondary"
+                  size="sm"
+                  variant="bordered"
+                  onPress={startKeyboardDiagnostics}
+                >
+                  Диагностика клавиатуры
+                </Button>
+
+                <Button
+                  color="danger"
+                  size="sm"
+                  variant="bordered"
+                  onPress={() => {
+                    // Сбрасываем состояние сканера
+                    actions.resetScanner();
+                    // Показываем уведомление
+                    addToast({
+                      title: "Состояние сканера сброшено",
+                      color: "success",
+                      timeout: 3000
+                    });
+                  }}
+                >
+                  Сброс сканера
+                </Button>
+
+                {state.isScannerConnected && (
+                  <span className="text-sm text-green-600 flex items-center gap-1">
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                    Сканер подключен
+                  </span>
+                )}
+
+                {!state.isScannerConnected && !state.status.isSimulationMode && (
+                  <span className="text-sm text-orange-600 flex items-center gap-1">
+                    <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                    Сканер не подключен
+                  </span>
+                )}
+              </div>
+
+              {scannerTestResult && (
+                <div className={`p-3 rounded-md text-sm whitespace-pre-line ${
+                  scannerTestStatus === 'success'
+                    ? 'bg-green-50 text-green-700 border border-green-200'
+                    : scannerTestStatus === 'error'
+                    ? 'bg-red-50 text-red-700 border border-red-200'
+                    : 'bg-blue-50 text-blue-700 border border-blue-200'
+                }`}>
+                  {scannerTestResult}
+                </div>
+              )}
+
+              {showDiagnostics && (
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                  <h4 className="font-medium text-blue-700 mb-2">Диагностика клавиатуры (10 сек):</h4>
+                  <div className="text-xs text-blue-600 max-h-32 overflow-y-auto bg-white p-2 rounded border">
+                    {keyboardEvents.length === 0 ? (
+                      <span>Ожидание событий клавиатуры...</span>
+                    ) : (
+                      keyboardEvents.map((event, index) => (
+                        <div key={index} className="font-mono">{event}</div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="text-xs text-gray-500 space-y-1">
+                <div><strong>Тест сканера:</strong> Отсканируйте любой штрих-код в течение 5 секунд</div>
+                <div><strong>Диагностика:</strong> Показывает все события клавиатуры для 10 секунд</div>
+                <div><strong>Совет:</strong> Если сканер не работает, проверьте настройки scanTimeout (200-500ms)</div>
+              </div>
+            </div>
+            
+          </div>
+
+          {/* Кнопка застосування */}
+          <div className="mt-10 flex justify-end gap-4">
+            <Button
+              onPress={resetConfig}
+              color="secondary"
+              variant="bordered"
+              size="md"
+              disabled={isSaving}
+            >
+              <DynamicIcon name="refresh-cw" size={16} />
+              Скинути налаштування
+            </Button>
+
+            <Button
+              onPress={handleApplyConfig}
+              color="primary"
+              size="md"
+              disabled={isSaving}
+            >
+              <DynamicIcon name="save" size={16} />
+              {isSaving ? "Зберігаються..." : "Застосувати налаштування"}
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
+      
       {/* Тестування обладнання (Serial Terminal) */}
       <Card className="bg-gradient-to-r bg-neutral-50">
         <CardHeader className="border-b border-grey-200">
@@ -874,185 +1343,6 @@ export const SettingsEquipment = () => {
                 </div>
               ))}
             </div>
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* Налаштування конфігурації */}
-      <Card className="bg-gradient-to-r bg-neutral-50">
-        <CardHeader className="border-b border-grey-200">
-          <DynamicIcon
-            name="settings"
-            size={20}
-            className="text-primary mr-2"
-          />
-          <h2 className="text-lg font-semibold text-primary">Конфігурація обладнання</h2>
-        </CardHeader>
-        <CardBody className="p-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Налаштування ваг */}
-            <div className="flex flex-col gap-6">
-              <h3 className="font-medium text-gray-400">Налаштування ваг</h3>
-              <Input
-                id="comPort"
-                label="COM-порт"
-                labelPlacement="outside"
-                className="block text-sm font-medium text-gray-700 mb-1"
-                value={localConfig.scale?.comPort || "COM5"}
-                onChange={(e) =>
-                  handleConfigChange("scale", "comPort", e.target.value)
-                }
-              />
-              <Select
-                id="baudRate"
-                label="Швидкість (біт/с)"
-                labelPlacement="outside"
-                defaultSelectedKeys={[localConfig.scale?.baudRate?.toString() || "9600"]}
-                onChange={(e) =>
-                  handleConfigChange(
-                    "scale",
-                    "baudRate",
-                    parseInt(e.target.value),
-                  )
-                }
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                <SelectItem key="9600">9600</SelectItem>
-                <SelectItem key="19200">19200</SelectItem>
-                <SelectItem key="38400">38400</SelectItem>
-                <SelectItem key="57600">57600</SelectItem>
-                <SelectItem key="115200">115200</SelectItem>
-              </Select>
-              <div>
-                <Select
-                  id="dataBits"
-                  label="Біти даних"
-                  labelPlacement="outside"
-                  defaultSelectedKeys={[localConfig.scale?.dataBits?.toString() || "8"]}
-                  onChange={(e) =>
-                    handleConfigChange(
-                      "scale",
-                      "dataBits",
-                      parseInt(e.target.value),
-                    )
-                  }
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  <SelectItem key="7">7</SelectItem>
-                  <SelectItem key="8">8</SelectItem>
-                </Select>
-              </div>
-            </div>
-
-            {/* Налаштування сканера */}
-            <div className="flex flex-col gap-6">
-              <h3 className="font-medium text-gray-400">Налаштування сканера</h3>
-              <Input
-                type="number"
-                id="timeout"
-                label="Таймаут (мс)"
-                labelPlacement="outside"
-                className="block text-sm font-medium text-gray-700 mb-1"
-                value={localConfig.scanner?.timeout?.toString() || "5000"}
-                onChange={(e) =>
-                  handleConfigChange(
-                    "scanner",
-                    "timeout",
-                    parseInt(e.target.value),
-                  )}
-              />
-
-              <Switch
-                id="autoConnect"
-                isSelected={localConfig.scanner?.autoConnect || false}
-                onValueChange={(e) =>
-                  handleConfigChange(
-                    "scanner",
-                    "autoConnect",
-                    e,
-                  )
-                }
-                color="primary"
-                size="sm"
-                classNames={{
-                  wrapper: "bg-secondary/50",
-                  thumbIcon: "bg-white/50",
-                }}
-              >
-                Авто. підключення</Switch>
-            </div>
-
-            {/* Налаштування симуляції */}
-            <div className="flex flex-col gap-6">
-              <h3 className="font-medium text-gray-400">Налаштування симуляції</h3>
-              <div className="flex flex-col gap-2">
-                <label htmlFor="weightRangeMin" className="text-sm font-medium text-gray-700 -mt-1">Діапазон ваги (кг)</label>
-                <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    step="0.1"
-                    id="weightRangeMin"
-                    aria-label="Діапазон ваги (кг)"
-                    labelPlacement="outside"
-                    className="block text-sm font-medium text-gray-700 mb-1"
-                    defaultValue={localConfig.simulation?.weightRange?.min?.toString() || "0.1"}
-                    onChange={(e) =>
-                      handleConfigChange("simulation", "weightRange.min", parseFloat(e.target.value))
-                    }
-                    placeholder="Мін"
-                  />
-                  <Input
-                    type="number"
-                    step="0.1"
-                    id="weightRangeMax"
-                    aria-label="Діапазон ваги"
-                    labelPlacement="outside"
-                    className="block text-sm font-medium text-gray-700 mb-1"
-                    defaultValue={localConfig.simulation?.weightRange?.max?.toString() || "5.0"}
-                    onChange={(e) =>
-                      handleConfigChange("simulation", "weightRange.max", parseFloat(e.target.value))
-                    }
-                    placeholder="Макс"
-                  />
-                </div>
-              </div>
-
-              <Input
-                type="number"
-                id="scanDelay"
-                label="Затримка сканування (мс)"
-                labelPlacement="outside"
-                className="block text-sm font-medium text-gray-700 mb-1"
-                defaultValue={localConfig.simulation?.scanDelay?.toString() || "800"}
-                onChange={(e) =>
-                  handleConfigChange("simulation", "scanDelay", parseInt(e.target.value))
-                }
-              />
-            </div>
-          </div>
-
-          {/* Кнопка застосування */}
-          <div className="mt-10 flex justify-end gap-4">
-            <Button
-              onPress={resetConfig}
-              color="secondary"
-              variant="bordered"
-              size="md"
-              disabled={isSaving}
-            >
-              <DynamicIcon name="refresh-cw" size={16} />
-              Скинути налаштування
-            </Button>
-
-            <Button
-              onPress={handleApplyConfig}
-              color="primary"
-              size="md"
-              disabled={isSaving}
-            >
-              <DynamicIcon name="save" size={16} />
-              {isSaving ? "Зберігаються..." : "Застосувати налаштування"}
-            </Button>
           </div>
         </CardBody>
       </Card>

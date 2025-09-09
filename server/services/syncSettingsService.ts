@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/utils.js';
 
 interface SyncSettings {
   autoSyncEnabled: boolean;
@@ -43,7 +43,6 @@ interface SyncSettings {
 
 export class SyncSettingsService {
   private static instance: SyncSettingsService;
-  private prisma = new PrismaClient();
 
   private constructor() {}
 
@@ -59,7 +58,7 @@ export class SyncSettingsService {
    */
   async getSyncSettings(): Promise<SyncSettings> {
     try {
-      const settings = await this.prisma.settingsBase.findMany({
+      const settings = await prisma.settingsBase.findMany({
         where: {
           category: 'orders_sync',
           isActive: true
@@ -241,7 +240,7 @@ export class SyncSettingsService {
 
       // Общие настройки
       settingPromises.push(
-        this.prisma.settingsBase.upsert({
+        prisma.settingsBase.upsert({
           where: { key: 'auto_sync_enabled' },
           update: { value: settings.autoSyncEnabled.toString() },
           create: {
@@ -255,7 +254,7 @@ export class SyncSettingsService {
       );
 
       settingPromises.push(
-        this.prisma.settingsBase.upsert({
+        prisma.settingsBase.upsert({
           where: { key: 'cache_enabled' },
           update: { value: settings.cacheEnabled.toString() },
           create: {
@@ -269,7 +268,7 @@ export class SyncSettingsService {
       );
 
       settingPromises.push(
-        this.prisma.settingsBase.upsert({
+        prisma.settingsBase.upsert({
           where: { key: 'cache_ttl' },
           update: { value: settings.cacheTtl.toString() },
           create: {
@@ -283,7 +282,7 @@ export class SyncSettingsService {
       );
 
       settingPromises.push(
-        this.prisma.settingsBase.upsert({
+        prisma.settingsBase.upsert({
           where: { key: 'max_concurrent_syncs' },
           update: { value: settings.maxConcurrentSyncs.toString() },
           create: {
@@ -307,7 +306,7 @@ export class SyncSettingsService {
 
       ordersSettings.forEach(({ key, value, desc }) => {
         settingPromises.push(
-          this.prisma.settingsBase.upsert({
+          prisma.settingsBase.upsert({
             where: { key },
             update: { value: value.toString() },
             create: {
@@ -332,7 +331,7 @@ export class SyncSettingsService {
 
       productsSettings.forEach(({ key, value, desc }) => {
         settingPromises.push(
-          this.prisma.settingsBase.upsert({
+          prisma.settingsBase.upsert({
             where: { key },
             update: { value: value.toString() },
             create: {
@@ -357,7 +356,7 @@ export class SyncSettingsService {
 
       stocksSettings.forEach(({ key, value, desc }) => {
         settingPromises.push(
-          this.prisma.settingsBase.upsert({
+          prisma.settingsBase.upsert({
             where: { key },
             update: { value: value.toString() },
             create: {
@@ -387,7 +386,7 @@ export class SyncSettingsService {
 
       dilovodSettings.forEach(({ key, value, desc }) => {
         settingPromises.push(
-          this.prisma.settingsBase.upsert({
+          prisma.settingsBase.upsert({
             where: { key },
             update: { value: value.toString() },
             create: {

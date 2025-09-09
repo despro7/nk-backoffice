@@ -1,10 +1,9 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/utils.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // Получить все товары с пагинацией
 router.get('/', authenticateToken, async (req, res) => {

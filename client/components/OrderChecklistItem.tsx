@@ -16,10 +16,11 @@ interface OrderItem {
 interface OrderChecklistItemProps {
   item: OrderItem;
   isActive: boolean;
+  isBoxConfirmed: boolean;
   onClick: () => void;
 }
 
-const OrderChecklistItem = ({ item, isActive, onClick }: OrderChecklistItemProps) => {
+const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderChecklistItemProps) => {
   const { name, quantity, status, expectedWeight, type, boxSettings } = item;
 
   // Функция для форматирования количества порций
@@ -33,9 +34,7 @@ const OrderChecklistItem = ({ item, isActive, onClick }: OrderChecklistItemProps
     'p-4 rounded-sm flex items-center justify-between outline-2 outline-transparent transition-background transition-colors duration-300 animate-duration-[100ms] cursor-pointer',
     {
       'bg-gray-50 text-neutral-900': status === 'default',
-      // 'outline-2 outline-warning-500': status === 'awaiting_confirmation',
       'bg-warning-400 outline-2 outline-warning-500': status === 'pending' || status === 'awaiting_confirmation',
-      // 'bg-blue-100 border-2 border-blue-400 text-blue-900': status === 'confirmed',
       'bg-success-500 text-white animate-pulse animate-thrice': status === 'success',
       'bg-danger text-white': status === 'error',
       'bg-gray-200 text-gray-500': status === 'done' || status === 'confirmed',
@@ -43,10 +42,14 @@ const OrderChecklistItem = ({ item, isActive, onClick }: OrderChecklistItemProps
   );
 
   const isDone = status === 'done';
-  const isBoxConfirmed = type === 'box' && status === 'confirmed';
+  const isItemBoxConfirmed = type === 'box' && status === 'confirmed';
+
+  // Коробки кликабельны только если ожидают подтверждения
+  // Товары кликабельны только если коробка уже взвешена
+  const isClickable = !isDone && !isItemBoxConfirmed && (type === 'box' ? status === 'awaiting_confirmation' : isBoxConfirmed);
 
   return (
-    <div className={itemStateClasses} onClick={!isDone && !isBoxConfirmed ? onClick : undefined}>
+    <div className={itemStateClasses} onClick={isClickable ? onClick : undefined}>
       <div className="flex items-center gap-4">
         {/* Индикатор статуса */}
         <div className={cn("w-6 h-6 rounded-sm flex items-center justify-center bg-transparent transition-colors duration-300", {
@@ -55,12 +58,8 @@ const OrderChecklistItem = ({ item, isActive, onClick }: OrderChecklistItemProps
           "border-2 border-warning-600": status === 'pending' || status === 'awaiting_confirmation',
           "bg-success-600": status === 'success',
           "border-danger-foreground": status === 'error',
-          // "border-2 border-warning-600": status === 'awaiting_confirmation',
-          // "border-2 border-blue-500 bg-blue-200": status === 'confirmed'
         })}>
-          {(isDone || isBoxConfirmed || status === 'success') && <Check size={18} className="text-white" />}
-          {status === 'awaiting_confirmation' && <span className="text-warning-700 text-xs">?</span>}
-          {/* {status === 'confirmed' && <span className="text-warning-700 text-xs">✓</span>} */}
+          {(isDone || status === 'success') && <Check size={18} className="text-white" />}
         </div>
         <div className="flex items-center gap-2">
           <span className={cn({

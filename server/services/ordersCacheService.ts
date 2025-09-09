@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/utils.js';
 
-const prisma = new PrismaClient();
 
 export interface OrderCacheItem {
   sku: string;

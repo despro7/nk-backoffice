@@ -16,7 +16,7 @@ const SettingsOrderAssembly: React.FC = () => {
       </div>
 
       {/* Настройки коробок */}
-      <section>
+      <section className='mt-10'>
         <BoxSettingsManager />
       </section>
 

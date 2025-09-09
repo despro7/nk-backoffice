@@ -243,19 +243,47 @@ export const formatFileSize = (bytes: number): string => {
  */
 export const formatPhone = (phone: string): string => {
   if (!phone) return "-";
-  
+
   // Убираем все нецифровые символы
   const cleaned = phone.replace(/\D/g, '');
-  
+
   // Если номер начинается с 380, форматируем как +380
   if (cleaned.startsWith('380') && cleaned.length === 12) {
     return `+${cleaned.slice(0, 3)} ${cleaned.slice(3, 5)} ${cleaned.slice(5, 8)} ${cleaned.slice(8, 10)} ${cleaned.slice(10)}`;
   }
-  
+
   // Если номер начинается с 0, форматируем как 0XX
   if (cleaned.startsWith('0') && cleaned.length === 10) {
     return `${cleaned.slice(0, 3)} ${cleaned.slice(3, 6)} ${cleaned.slice(6, 8)} ${cleaned.slice(8)}`;
   }
-  
+
   return phone;
+};
+
+/**
+ * Возвращает CSS классы для цвета статуса заказа
+ * @param status - строка со статусом заказа
+ * @returns строка с CSS классами для цвета
+ */
+export const getStatusColor = (status: string): string => {
+  switch (status) {
+    case "1": // Новий
+      return "text-neutral-600 bg-neutral-100";
+    case "2": // Підтверджено
+      return "text-yellow-950 bg-yellow-200";
+    case "3": // Готовий до відправлення
+      return "text-orange-500 bg-orange-100";
+    case "4": // Відправлено
+      return "text-neutral-600 bg-blue-100";
+    case "5": // Продаж
+      return "text-green-600 bg-green-100";
+    case "6": // Відмова
+      return "text-red-600 bg-red-100";
+    case "7": // Повернення
+      return "text-red-600 bg-red-100";
+    case "8": // Видалено
+      return "text-gray-600 bg-gray-100";
+    default:
+      return "text-gray-600 bg-gray-100";
+  }
 };

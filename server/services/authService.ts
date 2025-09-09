@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/utils.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
@@ -29,7 +29,6 @@ export function updateLoggingSettings(newSettings: any) {
   loggingSettings = newSettings;
 }
 
-const prisma = new PrismaClient();
 
 export class AuthService {
   // Константы для токенов

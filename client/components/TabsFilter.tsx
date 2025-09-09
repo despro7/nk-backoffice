@@ -1,8 +1,8 @@
 import { Tabs, Tab } from "@heroui/tabs";
 
 interface TabsFilterProps {
-  selectedTab: "confirmed" | "readyToShip" | "shipped" | "all";
-  onTabChange: (key: "confirmed" | "readyToShip" | "shipped" | "all") => void;
+  selectedTab: "confirmed" | "readyToShip" | "shipped" | "all" | "all_sum";
+  onTabChange: (key: "confirmed" | "readyToShip" | "shipped" | "all" | "all_sum") => void;
   counts?: {
     confirmed: number;
     readyToShip: number;
@@ -19,7 +19,7 @@ export function TabsFilter({ selectedTab, onTabChange, counts }: TabsFilterProps
       selectedKey={selectedTab}
       onSelectionChange={(key) => {
         console.log('🔄 [CLIENT] TabsFilter: Tab changed to:', key);
-        onTabChange(key as "confirmed" | "readyToShip" | "shipped" | "all");
+        onTabChange(key as "confirmed" | "readyToShip" | "shipped" | "all" | "all_sum");
       }}
       variant="solid"
       color="default"
@@ -35,7 +35,7 @@ export function TabsFilter({ selectedTab, onTabChange, counts }: TabsFilterProps
       <Tab key="confirmed" title={`Підтверджені ${counts ? `(${counts.confirmed})` : ''}`} />
       <Tab key="readyToShip" title={`Готові до відправлення ${counts ? `(${counts.readyToShip})` : ''}`} />
       <Tab key="shipped" title={`Відправлені ${counts ? `(${counts.shipped})` : ''}`} />
-      <Tab key="all" title={`Всі ${counts ? `(${counts.all})` : ''}`} />
+      <Tab key="all_sum" title={`Всі ${counts ? `(${counts.all})` : ''}`} />
     </Tabs>
   );
 }

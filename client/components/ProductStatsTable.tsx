@@ -12,12 +12,22 @@ import {
   DateRangePicker,
   Chip,
   Spinner,
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
 } from "@heroui/react";
 import { useApi } from "../hooks/useApi";
 import { parseDate, CalendarDate, getLocalTimeZone, today } from "@internationalized/date";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate } from "../lib/formatUtils";
+import { addToast } from "@heroui/react";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 
@@ -120,6 +130,10 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
   const [cacheProgress, setCacheProgress] = useState<{ processed: number; total: number; errors: number } | null>(null);
   const [lastCacheUpdate, setLastCacheUpdate] = useState<Date | null>(null);
 
+  // Модальное окно выбора периода для обновления кеша
+  const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
+  const [cachePeriodRange, setCachePeriodRange] = useState<DateRange | null>(null);
+
   // Определение колонок в зависимости от режима
   const columns = useMemo(() => {
     if (viewMode === "dates") {
@@ -195,12 +209,15 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
           console.log('📊 ПОЛУЧЕНЫ ДАННЫЕ:', data.data.length, 'товаров,', data.metadata.totalOrders, 'заказов');
         }
 
-        setProductStats(data.data);
+        // Валидация данных
+        const validatedData = Array.isArray(data.data) ? data.data : [];
+
+        setProductStats(validatedData);
 
         // Сохраняем в клиентский кеш
         setCache(prev => ({
           ...prev,
-          [cacheKey]: { data: data.data, timestamp: now }
+          [cacheKey]: { data: validatedData, timestamp: now }
         }));
 
         // Обновляем время последнего обновления кеша
@@ -252,7 +269,10 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
           console.log('📊 ПОЛУЧЕНЫ ДАННЫЕ ПО ДАТАМ:', data.data.length, 'дней для товара', data.product.name);
         }
 
-        setDateStats(data.data);
+        // Валидация данных
+        const validatedData = Array.isArray(data.data) ? data.data : [];
+
+        setDateStats(validatedData);
         setSelectedProductInfo(data.product);
         setViewMode("dates");
       }
@@ -363,22 +383,70 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
     setCache({}); // Очищаем весь кеш при сбросе фильтров
   }, []);
 
-  // Обновление кеша
-  const refreshCache = async () => {
+  // Обработчики для dropdown меню обновления кеша
+  const handleRefreshAllCache = () => {
+    refreshCache('full');
+  };
+
+  const handleRefreshPeriodCache = () => {
+    setIsPeriodModalOpen(true);
+  };
+
+  const handleConfirmPeriodRefresh = async () => {
+    if (cachePeriodRange?.start && cachePeriodRange?.end) {
+      await refreshCache('period', cachePeriodRange);
+      setIsPeriodModalOpen(false);
+      setCachePeriodRange(null);
+    } else {
+      addToast({
+        title: "Помилка",
+        description: "Будь ласка, оберіть період для оновлення кеша.",
+        color: "warning",
+        timeout: 5000,
+      });
+    }
+  };
+
+  // Обновление кеша с поддержкой разных режимов
+  const refreshCache = async (mode: 'full' | 'period' = 'full', periodRange?: DateRange | null) => {
     setCacheLoading(true);
     setCacheProgress(null);
 
     try {
       if (process.env.NODE_ENV === 'development') {
-        console.log('🚀 Starting cache refresh...');
+        console.log('🚀 Starting cache validation...');
       }
 
       // Показываем уведомление о начале
-      alert('🚀 Початок оновлення кеша статистики товарів...\nЗамовлення обробляються пачками по 50 шт.\nЦе може зайняти кілька хвилин.');
+      const modeText = mode === 'full' ? 'всі записи' : 'період';
+      addToast({
+        title: "Початок оновлення",
+        description: `🚀 Початок валідації та оновлення кеша (${modeText}). Використовується новий метод з інтелектуальною перевіркою.`,
+        color: "primary",
+        timeout: 3000,
+      });
 
-      // Вызываем endpoint массового кеширования
-      const response = await apiCall('/api/orders-sync/preprocess-all', {
-        method: 'POST'
+      // Подготавливаем параметры для нового endpoint
+      const params: any = {
+        force: 'true', // Принудительное обновление всех записей
+        mode: mode     // Режим валидации
+      };
+
+      // Если выбран диапазон дат, используем его для фильтрации
+      const rangeToUse = periodRange || (mode === 'period' ? dateRange : null);
+      if (rangeToUse?.start && rangeToUse?.end) {
+        params.startDate = `${rangeToUse.start.year}-${String(rangeToUse.start.month).padStart(2, '0')}-${String(rangeToUse.start.day).padStart(2, '0')}`;
+        params.endDate = `${rangeToUse.end.year}-${String(rangeToUse.end.month).padStart(2, '0')}-${String(rangeToUse.end.day).padStart(2, '0')}`;
+        params.mode = 'period';
+      }
+
+      // Вызываем новый endpoint валидации кеша
+      const response = await apiCall('/api/orders/cache/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(params)
       });
 
       if (response.status === 403) {
@@ -386,32 +454,57 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       }
 
       if (!response.ok) {
-        throw new Error('Failed to refresh cache');
+        throw new Error('Failed to validate cache');
       }
 
       const result = await response.json();
 
       if (result.success) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('✅ Cache refresh completed:', result.stats);
+          console.log('✅ Cache validation completed:', result.data.stats);
         }
 
         // Обновляем время последнего обновления кеша
         setLastCacheUpdate(new Date());
 
-        // Показываем уведомление об успешном завершении
-        alert(`✅ Кеш статистики успішно оновлено!\nОброблено: ${result.stats.processedCount} замовлень\nПачок: ${result.stats.batchesProcessed} (по ${result.stats.batchSize} замовлень)\nПомилки: ${result.stats.errorCount}`);
+        const stats = result.data.stats;
+        const summary = result.data.summary;
+
+        // Показываем детальное уведомление об успешном завершении
+        const message = `✅ Кеш успішно провалідовано та оновлено!\n\n` +
+          `📊 Статистика:\n` +
+          `• Оброблено: ${stats.processed} замовлень\n` +
+          `• Оновлено: ${stats.updated} замовлень\n` +
+          `• Попадань в кеш: ${stats.cacheHits}\n` +
+          `• Промахів кеша: ${stats.cacheMisses}\n` +
+          `• Застарілих записів: ${stats.cacheStale}\n` +
+          `• Помилки: ${stats.errors}\n\n` +
+          `⚡ Ефективність: ${summary.cacheHitRate}% попадань в кеш\n` +
+          `📦 Пачок: ${summary.batchesProcessed} (по ${summary.batchSize} замовлень)\n` +
+          `⏱️ Час: ~${summary.estimatedProcessingTime} сек`;
+
+        addToast({
+          title: "Успішно оновлено",
+          description: "Кеш статистики успішно провалідовано та оновлено!",
+          color: "success",
+          timeout: 10000,
+        });
 
         // Очищаем клиентский кеш и обновляем данные
         setCache({});
         await fetchProductStats(true); // force = true для принудительного запроса
       } else {
-        throw new Error('Cache refresh failed');
+        throw new Error(result.error || 'Cache validation failed');
       }
 
     } catch (error) {
-      console.error('❌ Error refreshing cache:', error);
-      alert('❌ Помилка при оновленні кеша: ' + error);
+      console.error('❌ Error validating cache:', error);
+      addToast({
+        title: "Помилка",
+        description: "❌ Помилка при валідації кеша: " + error,
+        color: "danger",
+        timeout: 7000,
+      });
     } finally {
       setCacheLoading(false);
       setCacheProgress(null);
@@ -788,7 +881,11 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
           }
           classNames={{
             wrapper: "min-h-128 px-0 shadow-none",
-			// table: "bg-neutral-300",
+            th: [
+              "first:rounded-s-md",
+              "last:rounded-e-md",
+            ],
+			      // table: "bg-neutral-300",
           }}
         >
           <TableHeader>
@@ -1018,17 +1115,86 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
           </Button>
 
           {isAdmin() && (
-            <Button
-              onPress={refreshCache}
-              disabled={cacheLoading}
-              size="sm"
-              variant="flat"
-              className="h-8"
-            >
-              <DynamicIcon name="database" size={14} />
-              {cacheLoading ? "Оновлення..." : "Оновити кеш"}
-            </Button>
+            <Dropdown>
+              <DropdownTrigger>
+                <Button
+                  disabled={cacheLoading}
+                  size="sm"
+                  variant="flat"
+                  className="h-8"
+                >
+                  <DynamicIcon name="database" size={14} />
+                  {cacheLoading ? "Оновлення..." : "Оновити кеш"}
+                </Button>
+              </DropdownTrigger>
+              <DropdownMenu aria-label="Опції оновлення кеша">
+                <DropdownItem
+                  key="refresh-all"
+                  onPress={handleRefreshAllCache}
+                  startContent={<DynamicIcon name="database" size={14} />}
+                >
+                  Оновити всі записи
+                </DropdownItem>
+                <DropdownItem
+                  key="refresh-period"
+                  onPress={handleRefreshPeriodCache}
+                  startContent={<DynamicIcon name="calendar" size={14} />}
+                >
+                  За період
+                </DropdownItem>
+              </DropdownMenu>
+            </Dropdown>
           )}
+
+          {/* Модальное окно выбора периода для обновления кеша */}
+          <Modal
+            isOpen={isPeriodModalOpen}
+            onClose={() => setIsPeriodModalOpen(false)}
+            size="md"
+          >
+            <ModalContent>
+              <ModalHeader>
+                <h3 className="text-lg font-semibold">Обрати період для оновлення кеша</h3>
+              </ModalHeader>
+              <ModalBody>
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600">
+                    Оберіть період, за який потрібно оновити кеш статистики товарів
+                  </p>
+                  <I18nProvider locale="uk-UA">
+                    <DateRangePicker
+                      label="Період"
+                      value={cachePeriodRange}
+                      onChange={setCachePeriodRange}
+                      variant="bordered"
+                      size="sm"
+                      className="w-full"
+                    />
+                  </I18nProvider>
+                </div>
+              </ModalBody>
+              <ModalFooter>
+                <Button
+                  variant="flat"
+                  size="sm"
+                  onPress={() => {
+                    setIsPeriodModalOpen(false);
+                    setCachePeriodRange(null);
+                  }}
+                >
+                  Скасувати
+                </Button>
+                <Button
+                  color="primary"
+                  size="sm"
+                  onPress={handleConfirmPeriodRefresh}
+                  disabled={cacheLoading}
+                >
+                  {cacheLoading ? "Оновлення..." : "Оновити кеш"}
+                </Button>
+              </ModalFooter>
+            </ModalContent>
+          </Modal>
         </div>
       </div>
     </div>

@@ -1,9 +1,8 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/utils.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Вспомогательные функции для работы с остатками
 const WAREHOUSE_IDS = {

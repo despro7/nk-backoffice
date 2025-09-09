@@ -4,9 +4,7 @@ import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { syncHistoryService } from '../services/syncHistoryService.js';
 import { ordersCacheService } from '../services/ordersCacheService.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma, getOrderSourceDetailed, getOrderSourceCategory, getOrderSourceByLevel } from '../lib/utils.js';
 
 const router = Router();
 
@@ -70,6 +68,12 @@ router.get('/', authenticateToken, async (req, res) => {
   const startTime = Date.now();
   const { status, sync, sortBy, sortOrder, limit } = req.query;
 
+  // Парсим статусы: если строка содержит запятую, разбиваем на массив
+  let parsedStatus: string | string[] | undefined = status as string;
+  if (typeof status === 'string' && status.includes(',')) {
+    parsedStatus = status.split(',').map(s => s.trim());
+  }
+
 
   try {
     // Если запрошена синхронизация, сначала синхронизируем
@@ -90,16 +94,16 @@ router.get('/', authenticateToken, async (req, res) => {
     const dbStartTime = Date.now();
 
     const orders = await orderDatabaseService.getOrders({
-      status: status as string,
+      status: parsedStatus,
       limit: parseInt(limit as string) || 100,
       offset: parseInt(req.query.offset as string) || 0,
-      sortBy: (sortBy as 'orderDate' | 'createdAt' | 'lastSynced' | 'orderNumber') || 'createdAt',
+      sortBy: (sortBy as 'orderDate' | 'createdAt' | 'lastSynced' | 'orderNumber') || 'orderDate',
       sortOrder: (sortOrder as 'asc' | 'desc') || 'desc'
     });
 
     // Получаем общее количество заказов для пагинации
     const totalCount = await orderDatabaseService.getOrdersCount({
-      status: status as string
+      status: parsedStatus
     });
 
     // Получаем счетчики по статусам для табов
@@ -118,7 +122,7 @@ router.get('/', authenticateToken, async (req, res) => {
         ordersOnPage: orders.length,
         fetchedAt: new Date().toISOString(),
         lastSynced: orders.length > 0 ? orders[0].lastSynced : null,
-        sortBy: sortBy || 'createdAt',
+        sortBy: sortBy || 'orderDate',
         sortOrder: sortOrder || 'desc',
         limit: parseInt(limit as string) || 100,
         offset: parseInt(req.query.offset as string) || 0,
@@ -815,20 +819,22 @@ function compareOrderItems(currentItems: any[], cachedItems: any[]): boolean {
  */
 router.post('/cache/validate', authenticateToken, async (req, res) => {
   try {
-    const { startDate, endDate, force, mode } = req.query;
+    const { startDate, endDate, force, mode } = req.body;
 
     console.log('🔍 [CACHE VALIDATION] Starting cache validation...', {
       startDate,
       endDate,
       force: force === 'true',
-      mode: mode || 'period'
+      mode: mode || 'full',
+      hasStartDate: !!startDate,
+      hasEndDate: !!endDate
     });
 
     let actualOrders: any[];
     let validationMode: string;
     let dateRangeFilter: { startDate: Date; endDate: Date } | null = null;
 
-    if (mode === 'full' || !startDate) {
+    if (mode === 'full' || (!startDate && mode !== 'period')) {
       // Полная валидация - проверяем заказы за последний год
       validationMode = 'full';
 
@@ -964,7 +970,7 @@ router.post('/cache/validate', authenticateToken, async (req, res) => {
 
             if (actualDate > cachedDate) {
               // Дата обновления заказа новее даты кеша - проверяем, изменились ли товары
-              console.log(`📅 [CACHE VALIDATION] Order ${externalId} is stale by date (cached: ${cachedDate.toISOString()}, actual: ${actualDate.toISOString()})`);
+              console.log(`📅 [CACHE VALIDATION] Order ${externalId} is stale by date (cached: ${cachedDate.toLocaleString( 'uk-UA' )}, actual: ${actualDate.toLocaleString( 'uk-UA' )})`);
 
               // Получаем актуальные товары заказа
               const currentOrderItems = await getOrderItemsForComparison(actualOrder.id);
@@ -1011,7 +1017,7 @@ router.post('/cache/validate', authenticateToken, async (req, res) => {
     const batchesCount = Math.ceil(toUpdate.length / 50);
     console.log(`📊 [CACHE VALIDATION] Validation summary:`, {
       mode: validationMode,
-      period: dateRangeFilter ? `${dateRangeFilter.startDate.toISOString()} - ${dateRangeFilter.endDate.toISOString()}` : 'all time',
+      period: dateRangeFilter ? `${dateRangeFilter.startDate.toLocaleString( 'uk-UA' )} - ${dateRangeFilter.endDate.toLocaleString( 'uk-UA' )}` : 'all time',
       processed: stats.processed,
       cacheHits: stats.cacheHits,
       cacheMisses: stats.cacheMisses,
@@ -1090,10 +1096,10 @@ router.post('/cache/validate', authenticateToken, async (req, res) => {
           batchesProcessed: batchesCount,
           batchSize: 50,
           estimatedProcessingTime: Math.ceil(batchesCount * 0.5),
-          validationDate: new Date().toISOString()
+          validationDate: new Date().toLocaleString( 'uk-UA' )
         }
       },
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toLocaleString( 'uk-UA' )
     };
 
     console.log('✅ [CACHE VALIDATION] Validation completed:', result.data.summary);
@@ -1118,6 +1124,12 @@ router.post('/cache/validate', authenticateToken, async (req, res) => {
 router.get('/products/stats', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync } = req.query;
+
+    // Парсим статусы: если строка содержит запятую, разбиваем на массив
+    let parsedStatus: string | string[] | undefined = status as string;
+    if (typeof status === 'string' && status.includes(',')) {
+      parsedStatus = status.split(',').map(s => s.trim());
+    }
     // console.log('🔍 SERVER RECEIVED:', { status, startDate, endDate, sync });
 
     // Если запрошена синхронизация, сначала синхронизируем
@@ -1140,7 +1152,7 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
 
     // Получаем заказы с фильтрами включая дату
     const orders = await orderDatabaseService.getOrders({
-      status: status as string,
+      status: parsedStatus,
       limit: 10000, // Увеличиваем лимит для получения большего количества данных
       sortBy: 'orderDate',
       sortOrder: 'desc',
@@ -1257,6 +1269,12 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
   try {
     const { sku, status, startDate, endDate, sync } = req.query;
 
+    // Парсим статусы: если строка содержит запятую, разбиваем на массив
+    let parsedStatus: string | string[] | undefined = status as string;
+    if (typeof status === 'string' && status.includes(',')) {
+      parsedStatus = status.split(',').map(s => s.trim());
+    }
+
     if (!sku) {
       return res.status(400).json({
         success: false,
@@ -1284,7 +1302,7 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
 
     // Получаем заказы с фильтрами включая дату
     const orders = await orderDatabaseService.getOrders({
-      status: status as string,
+      status: parsedStatus,
       limit: 10000, // Увеличиваем лимит для получения большего количества данных
       sortBy: 'orderDate',
       sortOrder: 'asc', // Для корректной последовательности дат
@@ -1311,9 +1329,12 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
             // Ищем товар с указанным SKU
             const productItem = cachedStats.find(item => item && item.sku === sku);
             if (productItem) {
-              // Форматируем дату в YYYY-MM-DD
+              // Форматируем дату в YYYY-MM-DD (используем локальное время)
               const orderDate = new Date(order.orderDate);
-              const dateKey = orderDate.toISOString().split('T')[0];
+              const year = orderDate.getFullYear();
+              const month = String(orderDate.getMonth() + 1).padStart(2, '0');
+              const day = String(orderDate.getDate()).padStart(2, '0');
+              const dateKey = `${year}-${month}-${day}`;
 
               if (dateStats[dateKey]) {
                 dateStats[dateKey].orderedQuantity += productItem.orderedQuantity || 0;
@@ -1480,6 +1501,12 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync, groupBy = 'day', products } = req.query;
 
+    // Парсим статусы: если строка содержит запятую, разбиваем на массив
+    let parsedStatus: string | string[] | undefined = status as string;
+    if (typeof status === 'string' && status.includes(',')) {
+      parsedStatus = status.split(',').map(s => s.trim());
+    }
+
     if (!startDate || !endDate) {
       return res.status(400).json({
         success: false,
@@ -1505,7 +1532,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
 
     // Получаем заказы с фильтрами включая дату
     const orders = await orderDatabaseService.getOrders({
-      status: status as string,
+      status: parsedStatus,
       limit: 10000, // Увеличиваем лимит для получения большего количества данных
       sortBy: 'orderDate',
       sortOrder: 'asc',
@@ -1571,33 +1598,28 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
         if (cacheData && cacheData.processedItems) {
           const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {
-            // Группируем по выбранному периоду
+            // Группируем по выбранному периоду - используем ту же логику, что и в таблице
             const orderDate = new Date(order.orderDate);
             let dateKey: string;
 
-            // Конвертируем дату в Киевское время
-            // Сначала получаем локальный offset, затем добавляем разницу до Киевского времени
-            const localOffset = orderDate.getTimezoneOffset() * 60000; // в миллисекундах
-            const kyivOffset = 3 * 60 * 60 * 1000; // UTC+3 для лета
-            const kyivTime = new Date(orderDate.getTime() + localOffset + kyivOffset);
-
             switch (groupBy) {
               case 'hour':
-                dateKey = kyivTime.toISOString().slice(0, 13); // YYYY-MM-DDTHH
+                const hour = String(orderDate.getHours()).padStart(2, '0');
+                dateKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getDate()).padStart(2, '0')}T${hour}`;
                 break;
               case 'day':
-                dateKey = kyivTime.toISOString().slice(0, 10); // YYYY-MM-DD
+                dateKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getDate()).padStart(2, '0')}`;
                 break;
               case 'week':
-                const weekStart = new Date(kyivTime);
-                weekStart.setDate(kyivTime.getDate() - kyivTime.getDay() + 1); // Понедельник
-                dateKey = weekStart.toISOString().slice(0, 10);
+                const weekStart = new Date(orderDate);
+                weekStart.setDate(orderDate.getDate() - orderDate.getDay() + 1); // Понедельник
+                dateKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
                 break;
               case 'month':
-                dateKey = kyivTime.toISOString().slice(0, 7); // YYYY-MM
+                dateKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}`;
                 break;
               default:
-                dateKey = kyivTime.toISOString().slice(0, 10);
+                dateKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getDate()).padStart(2, '0')}`;
             }
 
             if (!chartData[dateKey]) {
@@ -1827,6 +1849,12 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync, products } = req.query;
 
+    // Парсим статусы: если строка содержит запятую, разбиваем на массив
+    let parsedStatus: string | string[] | undefined = status as string;
+    if (typeof status === 'string' && status.includes(',')) {
+      parsedStatus = status.split(',').map(s => s.trim());
+    }
+
     if (!startDate || !endDate) {
       return res.status(400).json({
         success: false,
@@ -1850,7 +1878,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
 
     // Получаем заказы с фильтрами включая дату
     const orders = await orderDatabaseService.getOrders({
-      status: status as string,
+      status: parsedStatus,
       limit: 10000, // Увеличиваем лимит для получения большего количества данных
       sortBy: 'orderDate',
       sortOrder: 'asc',
@@ -1862,13 +1890,6 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
     });
 
     const filteredOrders = orders; // Уже отфильтрованы в БД
-
-
-    // Определения групп товаров
-    const productGroupOptions = [
-      { key: "first_courses", label: "Перші страви" },
-      { key: "main_courses", label: "Другі страви" },
-    ];
 
     // Функция определения группы товара
     const getProductGroup = (productName: string): string => {
@@ -1899,18 +1920,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       filterGroups = groupFilters.map(g => g.replace('group_', ''));
     }
 
-    // Функция определения источника заказа
-    const getOrderSource = (sajt: string): string => {
-      if (!sajt) return 'невідомий';
-
-      // Проверяем точное значение "19" для нашего сайта
-      if (sajt === '19') {
-        return 'сайт';
-      }
-
-      // Все остальные значения считаем маркетплейсами
-      return 'маркетплейси';
-    };
+    // Используем глобальные функции из utils.ts для работы с источниками заказов
 
     // Получаем все externalId для bulk-запроса к кешу
     const orderExternalIds = filteredOrders.map(order => order.externalId);
@@ -1929,12 +1939,24 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       ordersWithDiscountReason: number;
       portionsWithDiscountReason: number;
       discountReasonText: string;
+      orders: Array<{
+        orderNumber: string;
+        portionsCount: number;
+        orderDate: string;
+        externalId: string;
+        status: string;
+        source: string;
+      }>;
     } } = {};
 
     for (const order of filteredOrders) {
       try {
         const orderDate = new Date(order.orderDate);
-        const dateKey = orderDate.toISOString().split('T')[0]; // YYYY-MM-DD
+        // Используем локальную дату вместо UTC для правильного распределения по дням
+        const year = orderDate.getFullYear();
+        const month = String(orderDate.getMonth() + 1).padStart(2, '0');
+        const day = String(orderDate.getDate()).padStart(2, '0');
+        const dateKey = `${year}-${month}-${day}`; // YYYY-MM-DD в локальном времени
 
         if (!salesData[dateKey]) {
           salesData[dateKey] = {
@@ -1946,7 +1968,8 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
             portionsBySource: {},
             ordersWithDiscountReason: 0,
             portionsWithDiscountReason: 0,
-            discountReasonText: ''
+            discountReasonText: '',
+            orders: []
           };
         }
 
@@ -2003,8 +2026,8 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           salesData[dateKey].ordersByStatus[status] += 1;
           salesData[dateKey].portionsByStatus[status] += orderPortions;
 
-          // Статистика по источникам
-          const source = getOrderSource(order.sajt || '');
+          // Статистика по источникам (для общей таблицы - укрупненные категории)
+          const source = getOrderSourceCategory(order.sajt || '');
           if (!salesData[dateKey].ordersBySource[source]) {
             salesData[dateKey].ordersBySource[source] = 0;
             salesData[dateKey].portionsBySource[source] = 0;
@@ -2022,6 +2045,24 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
               salesData[dateKey].discountReasonText = 'Військові/волонтери';
             }
           }
+
+          salesData[dateKey].orders.push({
+            orderNumber: order.orderNumber || order.externalId,
+            portionsCount: orderPortions,
+            orderDate: order.orderDate
+              ? new Date(order.orderDate).toLocaleString('uk-UA', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit'
+                })
+              : '',
+            externalId: order.externalId,
+            status: order.status,
+            source: getOrderSourceDetailed(order.sajt || '')
+          });
         }
 
       } catch (error) {
@@ -2041,7 +2082,8 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         portionsBySource: data.portionsBySource,
         ordersWithDiscountReason: data.ordersWithDiscountReason,
         portionsWithDiscountReason: data.portionsWithDiscountReason,
-        discountReasonText: data.discountReasonText
+        discountReasonText: data.discountReasonText,
+        orders: data.orders.sort((a, b) => new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime())
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -2230,14 +2272,14 @@ router.get('/products/chart/status-details', authenticateToken, async (req, res)
 // Вспомогательная функция для получения текстового представления статуса
 function getStatusText(status: string): string {
   const statusMap: { [key: string]: string } = {
-    '1': 'Нові',
-    '2': 'Підтверджені',
-    '3': 'Готові до відправки',
-    '4': 'Відправлені',
-    '5': 'Продані',
-    '6': 'Відхилені',
-    '7': 'Повернені',
-    '8': 'Видалені'
+    '1': 'Нове',
+    '2': 'Підтверджене',
+    '3': 'Готове до відправки',
+    '4': 'Відправлено',
+    '5': 'Продано',
+    '6': 'Відмовлено',
+    '7': 'Повернено',
+    '8': 'Видалено'
   };
   return statusMap[status] || status;
 }

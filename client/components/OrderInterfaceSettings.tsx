@@ -170,7 +170,7 @@ export const OrderInterfaceSettings: React.FC = () => {
                 </Select>
               </div>
 
-              {/* Розмір сторінки */}
+              {/* Кількість замовлень на сторінку */}
               <div className="space-y-2">
                 <NumberInput
                   value={settings.pageSize}
@@ -184,7 +184,7 @@ export const OrderInterfaceSettings: React.FC = () => {
                   step={1}
                   placeholder="10"
                   labelPlacement="outside"
-                  label="Розмір сторінки"
+                  label="Кількість замовлень на сторінку"
                   className="w-full"
                 />
               </div>

@@ -26,10 +26,12 @@ export interface EquipmentConfig {
     dataBits: number;
     stopBits: number;
     parity: 'none' | 'even' | 'odd';
+    autoConnect: boolean;
   };
   scanner: {
     autoConnect: boolean;
     timeout: number;
+    scanTimeout?: number;
   };
   serialTerminal: {
     autoConnect: boolean;
@@ -63,7 +65,8 @@ export class EquipmentService {
         baudRate: 9600,
         dataBits: 8,
         stopBits: 1,
-        parity: 'none'
+        parity: 'none',
+        autoConnect: false
       },
       scanner: {
         autoConnect: true,

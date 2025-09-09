@@ -8,7 +8,7 @@ import { cn } from "../lib/utils";
 import UkrPoshtaIcon from "/icons/ukr-poshta.svg";
 import NovaPoshtaIcon from "/icons/nova-poshta.svg";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { formatRelativeDate } from "../lib/formatUtils";
+import { formatRelativeDate, getStatusColor } from "../lib/formatUtils";
 
 interface OrderItem {
   productName: string;
@@ -40,9 +40,9 @@ interface Order {
 
 interface OrdersTableProps {
   className?: string;
-  filter?: "confirmed" | "readyToShip" | "shipped" | "all";
+  filter?: "confirmed" | "readyToShip" | "shipped" | "all" | "all_sum";
   searchQuery?: string;
-  onTabChange?: (key: "confirmed" | "readyToShip" | "shipped" | "all") => void;
+  onTabChange?: (key: "confirmed" | "readyToShip" | "shipped" | "all" | "all_sum") => void;
 }
 
 type SortDescriptor = {
@@ -122,15 +122,16 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
       const queryParams = new URLSearchParams({
         limit: currentPageSize.toString(),
         offset: ((pageNum - 1) * currentPageSize).toString(),
-        sortBy: 'createdAt',
+        sortBy: 'orderDate',
         sortOrder: 'desc'
       });
 
       // Добавляем фильтр статуса если он указан
-      if (statusFilter && statusFilter !== 'all') {
+      if (statusFilter) {
         if (statusFilter === 'confirmed') queryParams.set('status', '2');
         else if (statusFilter === 'readyToShip') queryParams.set('status', '3');
         else if (statusFilter === 'shipped') queryParams.set('status', '4');
+        else if (statusFilter === 'all_sum') queryParams.set('status', '2,3,4');
       }
 
       console.log('📡 [CLIENT] OrdersTable: Making API call to /api/orders?' + queryParams.toString());
@@ -246,29 +247,6 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
 
   const handleRowClick = (externalId: string) => {
     navigate(`/orders/${externalId}`);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "1": // Новий
-        return "text-blue-600 bg-blue-100";
-      case "2": // Підтверджено
-        return "text-yellow-950 bg-yellow-200";
-      case "3": // Готовий до відправлення
-        return "text-orange-500 bg-orange-100";
-      case "4": // Відправлено
-        return "text-neutral-600 bg-blue-100";
-      case "5": // Продаж
-        return "text-green-600 bg-green-100";
-      case "6": // Відмова
-        return "text-red-600 bg-red-100";
-      case "7": // Повернення
-        return "text-red-600 bg-red-100";
-      case "8": // Видалено
-        return "text-gray-600 bg-gray-100";
-      default:
-        return "text-gray-600 bg-gray-100";
-    }
   };
 
 

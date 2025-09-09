@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/utils.js';
 import { orderDatabaseService } from './orderDatabaseService.js';
 import { syncSettingsService } from './syncSettingsService.js';
 import { syncHistoryService, CreateSyncHistoryData } from './syncHistoryService.js';
-
-const prisma = new PrismaClient();
 
 // Node.js types for setInterval
 declare const setInterval: (callback: () => void, ms: number) => NodeJS.Timeout;
@@ -1542,7 +1540,7 @@ export class SalesDriveService {
       status: rawOrder.statusId?.toString() || '',
       statusText: statusMap[rawOrder.statusId] || 'Невідомий',
       items: rawOrder.items,  // Используем те же items
-      createdAt: rawOrder.orderTime || '',
+      createdAt: new Date().toISOString(),
       orderDate: rawOrder.orderTime || '',
       externalId: rawOrder.externalId || '',
       shippingMethod: shippingMethodMap[rawOrder.shipping_method] || 'Невідомий',
@@ -2471,7 +2469,14 @@ export class SalesDriveService {
           customerPhone: '',
           deliveryAddress: '',
           totalPrice: order.totalPrice,
-          orderDate: order.orderDate?.toISOString().split('T')[0] || formattedStartDate,
+          // Используем локальную дату вместо UTC для правильного распределения по дням
+          orderDate: order.orderDate ? (() => {
+            const d = new Date(order.orderDate);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          })() : formattedStartDate,
           shippingMethod: '',
           paymentMethod: '',
           cityName: '',

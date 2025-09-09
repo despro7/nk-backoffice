@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/utils.js';
 
 // Локальные типы для SettingsBase (временное решение до обновления Prisma)
 interface SettingsBase {
@@ -14,7 +14,6 @@ interface SettingsBase {
 
 
 
-const prisma = new PrismaClient();
 
 // Временное решение: используем any для обхода проблем с типизацией Prisma
 const settingsBase = prisma.settingsBase as any;
@@ -27,6 +26,7 @@ export interface EquipmentSettings {
     dataBits: number;
     stopBits: number;
     parity: string;
+    autoConnect: boolean;
   };
   scanner: {
     autoConnect: boolean;
@@ -80,7 +80,8 @@ export class EquipmentSettingsService {
           baudRate: 9600,
           dataBits: 8,
           stopBits: 1,
-          parity: 'none'
+          parity: 'none',
+          autoConnect: false
         },
         scanner: {
           autoConnect: true,
@@ -176,6 +177,11 @@ export class EquipmentSettingsService {
           key: 'equipment_scale.parity',
           value: JSON.stringify(settings.scale?.parity ?? 'none'),
           description: 'Парность ваг'
+        },
+        {
+          key: 'equipment_scale.autoConnect',
+          value: JSON.stringify(settings.scale?.autoConnect ?? false),
+          description: 'Автоматическое подключение ваг'
         },
         {
           key: 'equipment_scanner.autoConnect',

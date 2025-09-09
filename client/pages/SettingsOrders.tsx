@@ -232,9 +232,9 @@ const SettingsOrders: React.FC = () => {
   });
 
   // Check if user is admin
-  if (!user || !['admin', 'boss'].includes(user.role)) {
+  if (!user || !['admin'].includes(user.role)) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-full">
         <div className="text-center">
           <DynamicIcon name="lock" size={48} className="mx-auto mb-4 text-gray-400" />
           <h2 className="text-xl font-semibold text-gray-600">Доступ заборонено</h2>
@@ -1444,14 +1444,6 @@ const SettingsOrders: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Налаштування синхронізації даних</h1>
-          <p className="text-gray-600 mt-1">Керуйте синхронізацією замовлень, товарів, залишків та кешуванням</p>
-        </div>
-      </div>
-
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>

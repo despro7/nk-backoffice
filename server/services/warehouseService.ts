@@ -1,7 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/utils.js';
 import { WarehouseMovement, StockMovementHistory, WarehouseMovementItem } from '../types/warehouse.js';
 
-const prisma = new PrismaClient();
 
 export class WarehouseService {
   // Создание документа перемещения

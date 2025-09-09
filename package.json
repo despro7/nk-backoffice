@@ -37,7 +37,9 @@
     "deploy:prepare": "npm run build:production && npm run db:migrate:prod",
     "deploy:start": "pm2 start ecosystem.config.cjs --env production",
     "clean": "rm -rf dist",
-    "rebuild": "npm run clean && npm run build"
+    "rebuild": "npm run clean && npm run build",
+    "lint": "eslint . --ext .js,.ts,.jsx,.tsx --config eslint.config.js",
+    "lint:fix": "eslint . --ext .js,.ts,.jsx,.tsx --config eslint.config.js --fix"
   },
   "dependencies": {
     "@heroui/button": "^2.2.24",

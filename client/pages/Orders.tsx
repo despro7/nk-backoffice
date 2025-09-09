@@ -9,7 +9,7 @@ import { LastSyncInfo } from "@/components/LastSyncInfo";
 
 
 export default function Orders() {
-  const [selectedTab, setSelectedTab] = useState<"confirmed" | "readyToShip" | "shipped" | "all">("confirmed");
+  const [selectedTab, setSelectedTab] = useState<"confirmed" | "readyToShip" | "shipped" | "all" | "all_sum">("confirmed");
   const [searchQuery, setSearchQuery] = useState("");
   const [syncing, setSyncing] = useState(false);
   const { apiCall } = useApi();
@@ -25,7 +25,7 @@ export default function Orders() {
           // Ищем настройку таба по умолчанию
           const defaultTabSetting = allSettings.find((s: any) => s.key === 'orders_default_tab');
           if (defaultTabSetting) {
-            setSelectedTab(defaultTabSetting.value as "confirmed" | "readyToShip" | "shipped" | "all");
+            setSelectedTab(defaultTabSetting.value as "confirmed" | "readyToShip" | "shipped" | "all" | "all_sum");
           }
         }
       } catch (error) {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardBody, CardHeader } from '@heroui/card';
 import { useApi } from '../hooks/useApi';
@@ -7,8 +7,6 @@ import OrderTrackingNumber from '@/components/OrderTrackingNumber';
 import { DeviationButton } from '@/components/DeviationButton';
 import { RightPanel } from '@/components/RightPanel';
 import { BoxSelector } from '@/components/BoxSelector';
-import { SimulationButtons } from '@/components/SimulationButtons';
-import { EquipmentIntegrationGuide } from '@/components/EquipmentIntegrationGuide';
 import { ScaleWeightDisplay } from '@/components/ScaleWeightDisplay';
 
 import { useAuth } from '../contexts/AuthContext';
@@ -18,6 +16,7 @@ import { formatDateOnly, formatTimeOnly } from '../lib/formatUtils';
 import { useEquipmentFromAuth } from '../contexts/AuthContext';
 import { shippingClientService } from '../services/ShippingService';
 import ErrorBoundary from '../components/ErrorBoundary'; // Исправленный путь
+import { addToast } from '@heroui/toast';
 
 // Типы для данных комплектации
 interface OrderChecklistItem {
@@ -32,6 +31,8 @@ interface OrderChecklistItem {
   boxIndex?: number; // Индекс коробки (0, 1, 2...)
   portionsRange?: { start: number; end: number }; // Диапазон порций для коробки
   portionsPerBox?: number; // Количество порций на коробку
+  sku?: string; // SKU товара для поиска по штрих-коду
+  barcode?: string; // Штрих-код товара
 }
 
 interface OrderForAssembly {
@@ -109,7 +110,9 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
                 quantity: item.quantity,
                 expectedWeight: calculateExpectedWeight(product, item.quantity),
                 status: 'default' as const,
-                type: 'product'
+                type: 'product',
+                sku: item.sku,
+                barcode: item.sku // Используем SKU как штрих-код для поиска
               };
             }
             continue;
@@ -143,7 +146,9 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
                     quantity: totalQuantity,
                     expectedWeight: calculateExpectedWeight(component, totalQuantity),
                     status: 'default' as const,
-                    type: 'product'
+                    type: 'product',
+                    sku: setItem.id,
+                    barcode: setItem.id // Используем ID компонента как штрих-код
                   };
                   // console.log(`    ➕ Додано новий компонент: ${componentName}`);
                 }
@@ -181,7 +186,9 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
                   quantity: totalQuantity,
                   expectedWeight: totalQuantity * 0.3, // Fallback для неизвестного компонента
                   status: 'default' as const,
-                  type: 'product'
+                  type: 'product',
+                  sku: setItem.id,
+                  barcode: setItem.id // Используем ID компонента как штрих-код
                 };
               }
             }
@@ -201,7 +208,9 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
               quantity: item.quantity,
               expectedWeight: calculateExpectedWeight(product, item.quantity),
               status: 'default' as const,
-              type: 'product'
+              type: 'product',
+              sku: item.sku,
+              barcode: item.sku // Используем SKU как штрих-код для поиска
             };
             // console.log(`  ➕ Додано новий товар: ${itemName}`);
           }
@@ -219,7 +228,9 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
             quantity: item.quantity,
             expectedWeight: item.quantity * 0.3, // Fallback для неизвестного товара
             status: 'default' as const,
-            type: 'product'
+            type: 'product',
+            sku: item.sku,
+            barcode: item.sku // Используем SKU как штрих-код для поиска
           };
         }
       }
@@ -236,7 +247,9 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
           quantity: item.quantity,
           expectedWeight: item.quantity * 0.3, // Fallback для ошибки
           status: 'default' as const,
-          type: 'product'
+          type: 'product',
+          sku: item.sku,
+          barcode: item.sku // Используем SKU как штрих-код для поиска
         };
       }
     }
@@ -362,12 +375,40 @@ export default function OrderView() {
     percentage: 5,
     absolute: 20 // в граммах
   });
+
+  // Отслеживаем предыдущий вес для расчета накопления
+  const [previousWeight, setPreviousWeight] = useState<number>(0);
+  const [lastWeighTimestamp, setLastWeighTimestamp] = useState<number>(0);
+
   const [lastEquipmentSync, setLastEquipmentSync] = useState<number>(0);
   const [isPrintingTTN, setIsPrintingTTN] = useState(false); // Состояние для отслеживания печати ТТН
   const [showPrintTTN, setShowPrintTTN] = useState(false)
   const [isLoadingNextOrder, setIsLoadingNextOrder] = useState(false); // Состояние загрузки следующего заказа
   const [showNextOrder, setShowNextOrder] = useState(false); // Состояние для показа кнопки "Наступне замовлення"
   const [isReadyToShip, setIsReadyToShip] = useState(false); // Состояние для отслеживания статуса id3
+
+  // Обеспечиваем подключение весов на странице комплектации
+  useEffect(() => {
+    const ensureScaleConnection = async () => {
+      if (!equipmentState.isSimulationMode && !equipmentState.isScaleConnected) {
+        console.log('🔧 OrderView: Обеспечиваем подключение весов...');
+        try {
+          const connected = await equipmentActions.connectScale();
+          if (connected) {
+            console.log('✅ OrderView: Ваги успішно підключені');
+          } else {
+            console.log('❌ OrderView: Не вдалося підключити ваги');
+          }
+        } catch (error) {
+          console.log('⚠️ OrderView: Помилка підключення ваг:', error);
+        }
+      }
+    };
+
+    // Запускаем проверку через 1 секунду после загрузки страницы
+    const timer = setTimeout(ensureScaleConnection, 1000);
+    return () => clearTimeout(timer);
+  }, [equipmentState.isSimulationMode, equipmentState.isScaleConnected, equipmentActions]);
 
   // Загружаем настройки толерантности веса из базы данных
   useEffect(() => {
@@ -389,7 +430,130 @@ export default function OrderView() {
     };
 
     fetchWeightToleranceSettings();
+
+    // Сбрасываем previousWeight при загрузке страницы
+    setPreviousWeight(0);
+    setLastWeighTimestamp(0);
+
+    // Cleanup функция при уходе со страницы
+    return () => {
+      console.log('🔄 OrderView: Уход со страницы, сбрасываем вес');
+      setPreviousWeight(0);
+      setLastWeighTimestamp(0);
+    };
   }, []); // Убрана зависимость apiCall, которая вызывала бесконечный цикл
+
+  // Сбрасываем вес при переходе к другому заказу
+  useEffect(() => {
+    console.log('🔄 OrderView: Изменение externalId, сбрасываем вес для нового заказа');
+    setPreviousWeight(0);
+    setLastWeighTimestamp(0);
+  }, [externalId]);
+
+  // Сбрасываем вес при завершении заказа (все товары done и вес близок к 0)
+  useEffect(() => {
+    const allProductsDone = checklistItems
+      .filter(item => item.type === 'product')
+      .every(item => item.status === 'done');
+
+    const currentWeight = equipmentState.currentWeight?.weight || 0;
+    const weightNearZero = Math.abs(currentWeight) < 0.01; // Вес близок к 0
+
+    // Сбрасываем только если вес еще не сброшен
+    if (allProductsDone && weightNearZero && previousWeight > 0) {
+      console.log('🔄 OrderView: Заказ завершен и вес сброшен, сбрасываем previousWeight');
+      setPreviousWeight(0);
+      setLastWeighTimestamp(0);
+    }
+  }, [checklistItems, equipmentState.currentWeight?.weight, previousWeight]); // Убрали equipmentState.currentWeight из зависимостей
+
+  // Обработка сканирования штрих-кодов
+  const [lastScannedCode, setLastScannedCode] = useState<string>('');
+  const [lastScanTimestamp, setLastScanTimestamp] = useState<number>(() => Date.now() - 3000); // Инициализируем в прошлом
+  const SCAN_COOLDOWN = 2000; // 2 секунды между сканированиями (должно совпадать с BarcodeScannerService)
+
+  // Предотвращение дублирования toast уведомлений
+  const lastToastTimestampsRef = useRef<Record<string, number>>({});
+  const activeToastsRef = useRef<Set<string>>(new Set()); // Активные toast для предотвращения дублирования
+  const TOAST_COOLDOWN = 3000; // 3 секунды между одинаковыми уведомлениями
+  const [debugMode, setDebugMode] = useState<boolean>(false); // Режим отладки - отключает фильтр дубликатов
+
+  // Ref для хранения последнего обработанного кода (чтобы избежать повторной обработки)
+  const lastProcessedCodeRef = useRef<string>('');
+  const lastProcessedTimestampRef = useRef<number>(0);
+
+  // Функция для показа toast с предотвращением дублирования
+  const showToastWithCooldown = useCallback((options: Parameters<typeof addToast>[0], toastKey: string) => {
+    const currentTime = Date.now();
+    const lastToastTime = lastToastTimestampsRef.current[toastKey] || 0;
+    const timeSinceLastToast = currentTime - lastToastTime;
+
+    // Проверяем, не показывается ли уже такой toast
+    if (activeToastsRef.current.has(toastKey)) {
+      console.log(`🚫 Toast "${toastKey}" уже активен, пропускаем`);
+      return;
+    }
+
+    // В режиме отладки или если прошло достаточно времени - показываем toast
+    if (debugMode || timeSinceLastToast >= TOAST_COOLDOWN) {
+      console.log(`🍞 Показываем toast "${toastKey}" (прошло ${timeSinceLastToast}мс)`);
+
+      // Добавляем уникальный ID к toast, чтобы избежать дублирования в HeroUI
+      const uniqueId = `${toastKey}-${currentTime}-${Math.random().toString(36).substr(2, 9)}`;
+      const toastWithId = {
+        ...options,
+        id: uniqueId
+      };
+
+      // Помечаем toast как активный
+      activeToastsRef.current.add(toastKey);
+
+      addToast(toastWithId);
+      lastToastTimestampsRef.current[toastKey] = currentTime;
+
+      // Убираем из активных через timeout (немного больше чем время жизни toast)
+      const cleanupTimeout = (options.timeout || 10000) + 1000;
+      setTimeout(() => {
+        activeToastsRef.current.delete(toastKey);
+        console.log(`🧹 Toast "${toastKey}" очищен из активных`);
+      }, cleanupTimeout);
+    } else {
+      console.log(`🚫 Toast "${toastKey}" пропущен (осталось ${TOAST_COOLDOWN - timeSinceLastToast}мс)`);
+    }
+  }, [TOAST_COOLDOWN, debugMode]);
+
+
+  // useRef для хранения актуальных значений без зависимостей
+  const checklistItemsRef = useRef<OrderChecklistItem[]>([]);
+  const activeBoxIndexRef = useRef<number>(0);
+
+  // Синхронизируем ref с актуальными значениями
+  useEffect(() => {
+    checklistItemsRef.current = checklistItems;
+  }, [checklistItems]);
+
+  useEffect(() => {
+    activeBoxIndexRef.current = activeBoxIndex;
+  }, [activeBoxIndex]);
+
+
+
+  // Функция сброса состояния сканирования
+  const resetScanState = useCallback(() => {
+    setLastScannedCode('');
+    setLastScanTimestamp(Date.now());
+    // Сбрасываем ref чтобы следующий скан прошел
+    lastProcessedCodeRef.current = '';
+    lastProcessedTimestampRef.current = 0;
+    console.log('🔄 [OrderView] Состояние сканирования сброшено');
+    addToast({
+      title: "Стан скинуто",
+      description: "Система готова до нового сканування",
+      color: "primary",
+      timeout: 2000
+    });
+  }, []);
+
   const { user } = useAuth();
 
   // Обновленная функция печати ТТН
@@ -575,76 +739,580 @@ export default function OrderView() {
     let tolerance = 0;
 
     if (weightTolerance.type === 'percentage' || weightTolerance.type === 'combined') {
-      // Процентная погрешность (expectedWeight в кг, переводим в граммы для расчета)
-      tolerance += (expectedWeight * 1000 * weightTolerance.percentage) / 100;
+      // Процентная погрешность (expectedWeight в кг, рассчитываем в кг)
+      tolerance += (expectedWeight * weightTolerance.percentage) / 100;
     }
 
     if (weightTolerance.type === 'absolute' || weightTolerance.type === 'combined') {
-      // Абсолютная погрешность (уже в граммах, переводим в кг для сравнения)
+      // Абсолютная погрешность (в граммах, переводим в кг)
       tolerance += weightTolerance.absolute / 1000;
     }
 
     return tolerance;
   }, [weightTolerance]);
 
-  // Функция для имитации взвешивания с реальным сравнением веса
+  // Функция для имитации взвешивания с реальным сравнением веса (сохраняем для совместимости)
   const handleSimulateWeigh = useCallback((itemId: string) => {
     const currentItem = checklistItems.find(item => item.id === itemId);
     if (!currentItem) return;
 
-    // Имитируем реальное взвешивание с случайной погрешностью
-    const expectedWeight = currentItem.expectedWeight;
-    const tolerance = calculateTolerance(expectedWeight);
-    const randomError = (Math.random() - 0.5) * 2 * tolerance; // Случайная погрешность в пределах ± толерантности
+    // Рассчитываем ожидаемый вес в зависимости от типа элемента
+    let expectedWeight = 0;
+    let tolerance = 0;
+
+    if (currentItem.type === 'box') {
+      // Для коробки ожидаемый вес - это ее собственный вес
+      expectedWeight = currentItem.expectedWeight;
+      tolerance = calculateTolerance(expectedWeight);
+    } else {
+      // Для товара: вес коробки + вес всех завершенных товаров в этой коробке + вес текущего товара
+      const boxItem = checklistItems.find(item =>
+        item.type === 'box' &&
+        (item.boxIndex || 0) === (currentItem.boxIndex || 0)
+      );
+
+      const boxWeight = boxItem ? boxItem.expectedWeight : 0;
+
+      const completedProductsWeight = checklistItems
+        .filter(item =>
+          item.type === 'product' &&
+          (item.boxIndex || 0) === (currentItem.boxIndex || 0) &&
+          item.status === 'done'
+        )
+        .reduce((sum, item) => sum + item.expectedWeight, 0);
+
+      expectedWeight = boxWeight + completedProductsWeight + currentItem.expectedWeight;
+      tolerance = calculateTolerance(currentItem.expectedWeight);
+    }
+
+    // Имитируем вес с учетом накопления
+    const randomError = (Math.random() - 0.5) * 2 * tolerance;
     const simulatedWeight = expectedWeight + randomError;
 
     // Проверяем, попадает ли вес в допустимый диапазон
     const weightDifference = Math.abs(simulatedWeight - expectedWeight);
     const isSuccess = weightDifference <= tolerance;
 
-    setChecklistItems(prevItems => 
-      prevItems.map(item => 
+    setChecklistItems(prevItems =>
+      prevItems.map(item =>
         item.id === itemId ? { ...item, status: isSuccess ? 'success' : 'error' } : item
       )
     );
 
     if (isSuccess) {
               setTimeout(() => {
-          setChecklistItems(prevItems => 
-            prevItems.map(item => 
+          setChecklistItems(prevItems =>
+            prevItems.map(item =>
               item.id === itemId ? { ...item, status: 'done' } : item
             )
           );
-        
+
         // Если это коробка, не выбираем следующий элемент автоматически
         if (currentItem.type === 'box') {
           return;
         }
-        
-        // Автоматически выбираем следующий элемент
-        const currentIndex = checklistItems.findIndex(item => item.id === itemId);
-        const nextItem = checklistItems.find((item, index) => 
-          index > currentIndex && 
-          item.status === 'default' && 
+
+        // Автоматически выбираем первый доступный элемент (не по порядку, а первый доступный)
+        const nextItem = checklistItems.find((item) =>
+          item.status === 'default' &&
           (item.boxIndex || 0) === activeBoxIndex &&
           item.type === 'product'
         );
-        
+
         if (nextItem) {
           handleSimulateScan(nextItem.id);
         }
       }, 1500);
     } else {
-      // Возвращаемся к pending через 2 секунды при ошибке
+      // Возвращаемся к pending через 1 секунду при ошибке (ускорено в 2 раза)
       setTimeout(() => {
-        setChecklistItems(prevItems => 
-          prevItems.map(item => 
+        setChecklistItems(prevItems =>
+          prevItems.map(item =>
             item.id === itemId ? { ...item, status: 'pending' } : item
           )
         );
-      }, 2000);
+      }, 1000);
     }
   }, [checklistItems, activeBoxIndex, calculateTolerance]);
+
+  // Функция для реального взвешивания товара с использованием данных с весов
+  const handleRealWeigh = useCallback(async (itemId: string) => {
+    const currentItem = checklistItems.find(item => item.id === itemId);
+    if (!currentItem) return;
+
+    try {
+      console.log('⚖️ OrderView: Начинаем реальное взвешивание товара:', currentItem.name);
+
+      // Проверяем, подключены ли весы
+      if (equipmentState.isSimulationMode) {
+        console.log('🎭 OrderView: Режим симуляции - используем имитацию взвешивания');
+        // В режиме симуляции вызываем функцию напрямую, без реального получения веса
+        const currentItem = checklistItems.find(item => item.id === itemId);
+        if (!currentItem) return;
+
+        // Рассчитываем ожидаемый вес в зависимости от типа элемента
+        let expectedWeight = 0;
+        let tolerance = 0;
+
+        if (currentItem.type === 'box') {
+          // Для коробки ожидаемый вес - это ее собственный вес
+          expectedWeight = currentItem.expectedWeight;
+          tolerance = calculateTolerance(expectedWeight);
+        } else {
+          // Для товара: вес коробки + вес всех завершенных товаров в этой коробке + вес текущего товара
+          const boxItem = checklistItems.find(item =>
+            item.type === 'box' &&
+            (item.boxIndex || 0) === (currentItem.boxIndex || 0)
+          );
+
+          const boxWeight = boxItem ? boxItem.expectedWeight : 0;
+
+          const completedProductsWeight = checklistItems
+            .filter(item =>
+              item.type === 'product' &&
+              (item.boxIndex || 0) === (currentItem.boxIndex || 0) &&
+              item.status === 'done'
+            )
+            .reduce((sum, item) => sum + item.expectedWeight, 0);
+
+          expectedWeight = boxWeight + completedProductsWeight + currentItem.expectedWeight;
+          tolerance = calculateTolerance(currentItem.expectedWeight);
+        }
+
+        // Имитируем вес с учетом накопления
+        const randomError = (Math.random() - 0.5) * 2 * tolerance;
+        const simulatedWeight = expectedWeight + randomError;
+        const weightDifference = Math.abs(simulatedWeight - expectedWeight);
+        const isSuccess = weightDifference <= tolerance;
+
+        setChecklistItems(prevItems =>
+          prevItems.map(item =>
+            item.id === itemId ? { ...item, status: isSuccess ? 'success' : 'error' } : item
+          )
+        );
+
+        if (isSuccess) {
+          // Обновляем предыдущий вес для следующего товара
+          if (currentItem.type === 'box') {
+            // Для коробки previousWeight = вес коробки
+            setPreviousWeight(currentItem.expectedWeight);
+          } else {
+            // Для товара previousWeight = текущий вес на весах
+            setPreviousWeight(simulatedWeight);
+          }
+          setLastWeighTimestamp(Date.now());
+
+          addToast({
+            title: "Вага підтверджена",
+            description: `${currentItem.name}: ${simulatedWeight.toFixed(2)} кг (очікувалося ${expectedWeight.toFixed(2)} кг)`,
+            color: "success",
+            timeout: 2000
+          });
+
+          setTimeout(() => {
+            setChecklistItems(prevItems =>
+              prevItems.map(item =>
+                item.id === itemId ? { ...item, status: 'done' } : item
+              )
+            );
+
+            if (currentItem.type === 'box') {
+              return;
+            }
+
+            // Выбираем первый доступный элемент (не по порядку, а первый доступный)
+            const nextItem = checklistItems.find((item) =>
+              item.status === 'default' &&
+              (item.boxIndex || 0) === activeBoxIndex &&
+              item.type === 'product'
+            );
+
+            if (nextItem) {
+              handleSimulateScan(nextItem.id);
+            }
+          }, 1500);
+        } else {
+          addToast({
+            title: "Невідповідність ваги",
+            description: `${currentItem.name}: ${simulatedWeight.toFixed(2)} кг (очікувалося ${expectedWeight.toFixed(2)} кг ±${tolerance.toFixed(2)} кг)`,
+            color: "danger",
+            timeout: 4000
+          });
+
+          // Возвращаемся к pending через 1.5 секунды при ошибке (ускорено в 2 раза)
+          setTimeout(() => {
+            setChecklistItems(prevItems =>
+              prevItems.map(item =>
+                item.id === itemId ? { ...item, status: 'pending' } : item
+              )
+            );
+          }, 1500);
+        }
+        return;
+      }
+
+      if (!equipmentState.isScaleConnected) {
+        console.log('⚠️ OrderView: Ваги не подключены');
+        addToast({
+          title: "Ваги не підключені",
+          description: "Підключіть ваги перед зважуванням товару",
+          color: "warning",
+          timeout: 3000
+        });
+        return;
+      }
+
+      // Проверяем, есть ли стабильные данные веса
+      console.log('⚖️ OrderView: Checking weight state:', {
+        hasCurrentWeight: !!equipmentState.currentWeight,
+        currentWeight: equipmentState.currentWeight,
+        isStable: equipmentState.currentWeight?.isStable,
+        weightValue: equipmentState.currentWeight?.weight
+      });
+
+      if (!equipmentState.currentWeight || !equipmentState.currentWeight.isStable) {
+        console.log('⚠️ OrderView: Вес нестабильный или отсутствует');
+        addToast({
+          title: "Вага нестабільна",
+          description: "Зачекайте, поки вага стабілізується",
+          color: "warning",
+          timeout: 2000
+        });
+        return;
+      }
+
+      // Получаем текущий вес с весов
+      const weightData = await equipmentActions.getWeight();
+
+      if (!weightData) {
+        console.log('⚠️ OrderView: Не удалось получить вес с весов');
+        addToast({
+          title: "Помилка зважування",
+          description: "Не вдалося отримати дані з ваг. Перевірте підключення.",
+          color: "warning",
+          timeout: 3000
+        });
+        return;
+      }
+
+      // Проверяем валидность полученного веса
+      const actualWeight = weightData.weight;
+      if (actualWeight > 1000) { // разумные границы для веса товара (убрали проверку на <= 0)
+        console.log('⚠️ OrderView: Получен некорректный вес:', actualWeight);
+        addToast({
+          title: "Некоректна вага",
+          description: `Отримано невірне значення: ${actualWeight.toFixed(2)} кг`,
+          color: "danger",
+          timeout: 3000
+        });
+        return;
+      }
+
+      // Рассчитываем ожидаемый вес в зависимости от типа элемента
+      let expectedWeight = 0;
+      let tolerance = 0;
+
+      if (currentItem.type === 'box') {
+        // Для коробки ожидаемый вес - это ее собственный вес
+        expectedWeight = currentItem.expectedWeight;
+        tolerance = calculateTolerance(expectedWeight);
+      } else {
+        // Для товара: вес коробки + вес всех завершенных товаров в этой коробке + вес текущего товара
+        const boxItem = checklistItems.find(item =>
+          item.type === 'box' &&
+          (item.boxIndex || 0) === (currentItem.boxIndex || 0)
+        );
+
+        const boxWeight = boxItem ? boxItem.expectedWeight : 0;
+
+        const completedProductsWeight = checklistItems
+          .filter(item =>
+            item.type === 'product' &&
+            (item.boxIndex || 0) === (currentItem.boxIndex || 0) &&
+            item.status === 'done'
+          )
+          .reduce((sum, item) => sum + item.expectedWeight, 0);
+
+        expectedWeight = boxWeight + completedProductsWeight + currentItem.expectedWeight;
+        tolerance = calculateTolerance(currentItem.expectedWeight);
+      }
+
+      console.log('⚖️ OrderView: Проверка веса с учетом накопления:', {
+        товар: currentItem.name,
+        тип: currentItem.type,
+        'ожидаемый вес': expectedWeight,
+        'фактический вес': actualWeight,
+        допуск: tolerance
+      });
+
+      // Проверяем, попадает ли вес в допустимый диапазон
+      const weightDifference = Math.abs(actualWeight - expectedWeight);
+      const isSuccess = weightDifference <= tolerance;
+
+      console.log('⚖️ OrderView: Результат проверки:', {
+        разница: weightDifference,
+        успех: isSuccess
+      });
+
+      // Обновляем статус товара
+      setChecklistItems(prevItems =>
+        prevItems.map(item =>
+          item.id === itemId ? { ...item, status: isSuccess ? 'success' : 'error' } : item
+        )
+      );
+
+      // Показываем уведомление о результате
+      if (isSuccess) {
+        // Обновляем предыдущий вес для следующего товара
+        if (currentItem.type === 'box') {
+          // Для коробки previousWeight = вес коробки
+          setPreviousWeight(currentItem.expectedWeight);
+        } else {
+          // Для товара previousWeight = текущий вес на весах
+          setPreviousWeight(actualWeight);
+        }
+        setLastWeighTimestamp(Date.now());
+
+        addToast({
+          title: "Вага підтверджена",
+          description: `${currentItem.name}: ${actualWeight.toFixed(2)} кг (очікувалося ${expectedWeight.toFixed(2)} кг)`,
+          color: "success",
+          timeout: 2000
+        });
+
+        // Через 1.5 секунды переводим в статус "done"
+        setTimeout(() => {
+          setChecklistItems(prevItems =>
+            prevItems.map(item =>
+              item.id === itemId ? { ...item, status: 'done' } : item
+            )
+          );
+
+          // Автоматически выбираем следующий элемент
+          const currentIndex = checklistItems.findIndex(item => item.id === itemId);
+
+          if (currentItem.type === 'box') {
+            // После завершения коробки выбираем первый товар в этой коробке
+            const firstProductInBox = checklistItems.find((item) =>
+              item.type === 'product' &&
+              (item.boxIndex || 0) === (currentItem.boxIndex || 0) &&
+              item.status === 'default'
+            );
+
+            if (firstProductInBox) {
+              handleSimulateScan(firstProductInBox.id);
+            }
+            return;
+          }
+
+          // Для товаров выбираем первый доступный товар в той же коробке
+          const nextItem = checklistItems.find((item) =>
+            item.status === 'default' &&
+            (item.boxIndex || 0) === activeBoxIndex &&
+            item.type === 'product'
+          );
+
+          if (nextItem) {
+            handleSimulateScan(nextItem.id);
+          }
+        }, 1500);
+      } else {
+        addToast({
+          title: "Невідповідність ваги",
+          description: `${currentItem.name}: ${actualWeight.toFixed(2)} кг (очікувалося ${expectedWeight.toFixed(2)} кг ±${tolerance.toFixed(2)} кг)`,
+          color: "danger",
+          timeout: 4000
+        });
+
+        // Возвращаемся к pending через 1.5 секунды при ошибке (ускорено в 2 раза)
+        setTimeout(() => {
+          setChecklistItems(prevItems =>
+            prevItems.map(item =>
+              item.id === itemId ? { ...item, status: 'pending' } : item
+            )
+          );
+        }, 1500);
+      }
+    } catch (error) {
+      console.error('❌ OrderView: Ошибка взвешивания:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Невідома помилка';
+
+      addToast({
+        title: "Помилка зважування",
+        description: `Сталася помилка: ${errorMessage}`,
+        color: "danger",
+        timeout: 2000
+      });
+
+      // Возвращаемся к pending при ошибке (ускорено в 2 раза)
+      setTimeout(() => {
+        setChecklistItems(prevItems =>
+          prevItems.map(item =>
+            item.id === itemId ? { ...item, status: 'pending' } : item
+          )
+        );
+      }, 1000);
+    }
+  }, [checklistItems, activeBoxIndex, calculateTolerance, equipmentActions, equipmentState, addToast, handleSimulateWeigh]);
+
+  // Мемоизированная функция обработки сканирования (без зависимостей от checklistItems и activeBoxIndex)
+  const handleBarcodeScan = useCallback((scannedCode: string) => {
+    const currentTime = Date.now();
+
+    // Проверяем, не обрабатывали ли мы уже этот код
+    const isAlreadyProcessed = scannedCode === lastProcessedCodeRef.current &&
+                               currentTime - lastProcessedTimestampRef.current < SCAN_COOLDOWN;
+
+    if (isAlreadyProcessed && !debugMode) {
+      console.log('⏳ [OrderView] Код уже обработан недавно:', scannedCode);
+      return;
+    }
+
+    // Обновляем ref
+    lastProcessedCodeRef.current = scannedCode;
+    lastProcessedTimestampRef.current = currentTime;
+
+    // Обновляем состояние для совместимости с остальным кодом
+    setLastScanTimestamp(currentTime);
+    setLastScannedCode(scannedCode);
+
+    console.log('📱 [OrderView] Новое сканирование:', scannedCode);
+
+    // Получаем актуальные данные из ref
+    const currentChecklistItems = checklistItemsRef.current;
+    const currentActiveBoxIndex = activeBoxIndexRef.current;
+
+    // Проверяем, взвешена ли текущая коробка
+    const currentBox = currentChecklistItems.find(item =>
+      item.type === 'box' && (item.boxIndex || 0) === currentActiveBoxIndex
+    );
+    const isCurrentBoxConfirmed = currentBox?.status === 'confirmed' || currentBox?.status === 'done';
+
+    // Отладка проверки статуса коробки
+    console.log('🔍 [OrderView] Проверка статуса коробки:', {
+      activeBoxIndex: currentActiveBoxIndex,
+      currentBoxFound: !!currentBox,
+      currentBoxStatus: currentBox?.status,
+      currentBoxName: currentBox?.name,
+      isCurrentBoxConfirmed,
+      checklistItemsCount: currentChecklistItems.length,
+      boxItems: currentChecklistItems.filter(item => item.type === 'box').map(item => ({
+        name: item.name,
+        status: item.status,
+        boxIndex: item.boxIndex
+      }))
+    });
+
+    // Если коробка не взвешена, игнорируем сканирование
+    // Коробка считается взвешенной если она имеет статус 'done' или 'confirmed'
+    const isBoxWeighed = currentBox?.status === 'confirmed' || currentBox?.status === 'done';
+
+    if (!isBoxWeighed) {
+      console.log('🚫 [OrderView] Сканирование заблокировано - коробка не взвешена');
+      showToastWithCooldown({
+        title: "Спочатку зважте коробку",
+        description: "Не можна сканувати товари, поки коробка не буде зважена",
+        color: "warning",
+        timeout: 3000
+      }, "box-not-weighed");
+      return;
+    }
+
+    // Ищем товар по SKU
+    const foundItem = currentChecklistItems.find(item => item.sku === scannedCode);
+
+    if (foundItem) {
+      console.log('✅ [OrderView] Найден товар:', foundItem.name);
+
+      // Проверяем, не имеет ли товар уже статус 'done' - ЗАПРЕЩАЕМ сканирование
+      if (foundItem.status === 'done') {
+        console.log('🚫 [OrderView] Запрещено сканировать товар в статусе done:', foundItem.name);
+        showToastWithCooldown({
+          title: "Сканування заборонено",
+          description: `${foundItem.name} вже завершено - сканування заборонено`,
+          color: "danger",
+          timeout: 3000
+        }, `scan-forbidden-${foundItem.id}`);
+        return;
+      }
+
+      // Проверяем, что товар не в статусе 'awaiting_confirmation' (коробки)
+      if (foundItem.type === 'box' && foundItem.status !== 'awaiting_confirmation') {
+        console.log('🚫 [OrderView] Коробки не сканируются, кроме awaiting_confirmation:', foundItem.name);
+        showToastWithCooldown({
+          title: "Сканування заборонено",
+          description: "Коробки не можна сканувати",
+          color: "warning",
+          timeout: 3000
+        }, `box-scan-forbidden-${foundItem.id}`);
+        return;
+      }
+
+      // Проверяем, что товар находится в активной коробке
+      if ((foundItem.boxIndex || 0) !== currentActiveBoxIndex) {
+        console.log('🚫 [OrderView] Товар не в активной коробке:', foundItem.name);
+        showToastWithCooldown({
+          title: "Неправильна коробка",
+          description: `${foundItem.name} не в поточній коробці`,
+          color: "warning",
+          timeout: 3000
+        }, `wrong-box-${foundItem.id}`);
+        return;
+      }
+
+      // ТОЧНО ТАКАЯ ЖЕ ЛОГИКА КАК В handleItemClick:
+      // 1. Устанавливаем статус 'pending' для найденного товара
+      setChecklistItems(prevItems =>
+        prevItems.map(item => {
+          if (item.id === foundItem.id) {
+            return { ...item, status: 'pending' as const };
+          }
+          // 2. Сбрасываем статус других элементов в default только в активной коробке
+          if (item.status === 'pending' && (item.boxIndex || 0) === currentActiveBoxIndex) {
+            return { ...item, status: 'default' as const };
+          }
+          return item;
+        })
+      );
+
+      // 3. В режиме симуляции запускаем взвешивание сразу после сканирования (как в handleItemClick)
+      if (equipmentState.isSimulationMode) {
+        console.log('🎭 [OrderView] Режим симуляции - запускаем взвешивание после сканирования');
+        setTimeout(() => {
+          // Вызываем handleRealWeigh напрямую (аналогично handleItemClick в OrderChecklist)
+          handleRealWeigh(foundItem.id);
+        }, 300); // Такая же задержка как в handleItemClick
+      }
+
+      // Показываем уведомление
+      addToast({
+        title: "Штрих-код відскановано",
+        description: `${foundItem.name} вибрано для комплектації`,
+        color: "success",
+        timeout: 2000
+      });
+
+    } else {
+      console.log('❌ [OrderView] Товар не найден:', scannedCode);
+
+      // Показываем уведомление об ошибке
+      showToastWithCooldown({
+        title: "Товар не знайдено",
+        description: `Штрих-код ${scannedCode} не відповідає жодному товару`,
+        color: "warning",
+        timeout: 3000
+      }, `item-not-found-${scannedCode}`);
+    }
+  }, [debugMode, SCAN_COOLDOWN, showToastWithCooldown, addToast, setLastScanTimestamp, setLastScannedCode, equipmentState.isSimulationMode, handleRealWeigh]);
+
+  // useEffect только для вызова сканирования при изменении lastBarcode
+  useEffect(() => {
+    if (equipmentState.lastBarcode) {
+      handleBarcodeScan(equipmentState.lastBarcode.code);
+      // Сбрасываем lastBarcode после обработки, чтобы избежать повторных срабатываний
+      equipmentActions.resetScanner();
+    }
+  }, [equipmentState.lastBarcode, handleBarcodeScan, equipmentActions]);
 
     // Обработчик изменения коробок
   const handleBoxesChange = useCallback((boxes: any[], totalWeight: number, boxesInfo?: any) => {
@@ -772,10 +1440,71 @@ export default function OrderView() {
   };
 
   // Подготавливаем данные для комплектации
-  const totalPortions = useMemo(() => 
-    expandedItems.reduce((sum, item) => sum + item.quantity, 0), 
+  const totalPortions = useMemo(() =>
+    expandedItems.reduce((sum, item) => sum + item.quantity, 0),
     [expandedItems]
   );
+
+  // Состояние для текущего ожидаемого веса
+  const [currentScaleWeight, setCurrentScaleWeight] = useState(0);
+
+  // Рассчитываем текущий ожидаемый вес на весах с небольшой задержкой для синхронизации
+  useEffect(() => {
+    const calculateWeight = () => {
+      // Рассчитываем ожидаемый вес на текущем этапе
+      const boxItem = checklistItems.find(item =>
+        item.type === 'box' &&
+        (item.boxIndex || 0) === activeBoxIndex
+      );
+      const boxWeight = boxItem ? boxItem.expectedWeight : 0;
+
+      const completedProductsWeight = checklistItems
+        .filter(item =>
+          item.type === 'product' &&
+          (item.boxIndex || 0) === activeBoxIndex &&
+          item.status === 'done'
+        )
+        .reduce((sum, item) => sum + item.expectedWeight, 0);
+
+      // Ищем элемент в статусе pending (только товары, коробки в awaiting_confirmation не считаются pending)
+      const pendingItem = checklistItems.find(item =>
+        (item.boxIndex || 0) === activeBoxIndex &&
+        item.status === 'pending' &&
+        item.type === 'product' // Только товары могут быть в pending
+      );
+      const pendingWeight = pendingItem ? pendingItem.expectedWeight : 0;
+
+    const calculatedWeight = boxWeight + completedProductsWeight + pendingWeight;
+
+    // Отладка расчета currentScaleWeight
+    console.log('📊 OrderView: Расчет currentScaleWeight (useEffect):', {
+      activeBoxIndex,
+      boxWeight,
+      completedProductsWeight,
+      pendingWeight,
+      pendingItemName: pendingItem?.name,
+      calculatedWeight,
+      previousWeight: currentScaleWeight,
+      boxItem: boxItem ? {
+        name: boxItem.name,
+        status: boxItem.status,
+        boxIndex: boxItem.boxIndex
+      } : null,
+      allBoxes: checklistItems.filter(item => item.type === 'box').map(item => ({
+        name: item.name,
+        status: item.status,
+        boxIndex: item.boxIndex
+      }))
+    });
+
+      setCurrentScaleWeight(calculatedWeight);
+    };
+
+    // Небольшая задержка для синхронизации с асинхронными обновлениями состояния
+    const timeoutId = setTimeout(calculateWeight, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [checklistItems, activeBoxIndex]);
 
   const orderForAssembly: OrderForAssembly = {
     id: externalId,
@@ -888,6 +1617,7 @@ export default function OrderView() {
                 showPrintTTN={showPrintTTN}
                 onNextOrder={handleNextOrder}
                 showNextOrder={showNextOrder}
+                onWeighItem={handleRealWeigh}
               />
             </ErrorBoundary>
           )}
@@ -901,39 +1631,7 @@ export default function OrderView() {
             <DeviationButton />
 
             {/* Кнопки имитации оборудования */}
-            {hasItems && !expandingSets && equipmentState.isSimulationMode && (
-              <div className="w-full relative">
-                <SimulationButtons
-                  showPrintTTN={showPrintTTN}
-                  setShowPrintTTN={setShowPrintTTN}
-                  key={`sim-buttons-${equipmentState.isSimulationMode}`}
-                  items={checklistItems}
-                  activeBoxIndex={activeBoxIndex}
-                  onSimulateScan={handleSimulateScan}
-                  onSimulateWeigh={handleSimulateWeigh}
-                  weightTolerance={calculateTolerance(checklistItems.find(item => item.status === 'pending')?.expectedWeight || 0)}
-                  className="bg-white rounded-lg shadow"
-                />
-                {/* Индикатор реального времени */}
-                <div
-                  className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full border border-green-200 cursor-pointer hover:bg-green-200 transition-colors"
-                  onClick={async () => {
-                    try {
-                      await equipmentActions.refreshConfig();
-                      setLastEquipmentSync(Date.now());
-                    } catch (error) {
-                      console.error('❌ Ошибка ручной синхронизации:', error);
-                    }
-                  }}
-                  title="Нажмите для ручной синхронизации состояния оборудования"
-                >
-                  <div className={`w-2 h-2 rounded-full ${
-                    Date.now() - lastEquipmentSync < 10000 ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'
-                  }`}></div>
-                  <span>Live</span>
-                </div>
-              </div>
-            )}
+            
 
             {/* Селектор коробок */}
             {hasItems && !expandingSets && (
@@ -949,11 +1647,8 @@ export default function OrderView() {
             {/* Отображение веса на весах */}
             {hasItems && !expandingSets && (
               <ScaleWeightDisplay
-                currentScaleWeight={checklistItems.filter(item =>
-                  (item.boxIndex || 0) === activeBoxIndex &&
-                  (item.type === 'box' || item.status === 'done')
-                ).reduce((acc, item) => acc + item.expectedWeight, 0)}
-                totalOrderWeight={expandedItems.reduce((sum, item) => sum + item.expectedWeight, 0)}
+                currentScaleWeight={currentScaleWeight}
+                totalOrderWeight={checklistItems.reduce((sum, item) => sum + item.expectedWeight, 0)}
                 className="mb-4"
               />
             )}
@@ -1045,86 +1740,10 @@ export default function OrderView() {
 				</CardBody>
 				</Card>
 
-				{/* Развернутый состав для комплектации */}
-				<Card>
-				<CardHeader className="border-b border-gray-200">
-          <DynamicIcon name="box" size={20} className="text-gray-600 mr-2" />
-					<h4 className="text-base font-semibold">Розгорнутий склад</h4>
-					<p className="text-sm text-gray-600 ml-auto">Набори розгорнуті на окремі страви</p>
-				</CardHeader>
-				<CardBody>
-					{!hasItems ? (
-						<p className="text-gray-500 text-center py-4">Склад замовлення порожній</p>
-					) : expandedItems && expandedItems.length > 0 ? (
-					<div className="space-y-2">
-						{/* Сводка по развернутым элементам */}
-						<div className="mb-4 p-3 bg-green-50 rounded border-l-4 border-green-400">
-							<div className="text-sm text-green-700">
-								<strong>📊 Сводка:</strong> {expandedItems.length} унікальних страв, 
-								загалом {expandedItems.reduce((sum, item) => sum + item.quantity, 0)} порцій
-							</div>
-							
-							{/* Дополнительная информация о логике суммирования */}
-							{orderAnalysis && orderAnalysis.hasSets && (
-								<div className="mt-2 text-xs text-green-600">
-									<strong>🔄 Логіка сумування:</strong> Однакові страви з різних наборів та окремі страви 
-									автоматично сумуються за назвою. Наприклад, якщо в наборі "А" є "Борщ" ×3, а в наборі "Б" 
-									є "Борщ" ×2, то результат буде "Борщ" ×5.
-								</div>
-							)}
-						</div>
-						
-						{/* Список развернутых элементов */}
-						{expandedItems.map((item: OrderChecklistItem, index: number) => (
-						<div key={index} className="flex justify-between items-center p-3 bg-blue-50 rounded border-l-4 border-blue-400">
-							<div>
-							<p className="font-medium">{item.name}</p>
-							<div className="flex items-center gap-2 text-sm text-gray-600">
-								<span>ID: {item.id}</span>
-								<span>•</span>
-								<span>{item.quantity === 1 ? '1 порція' : item.quantity < 5 ? `${item.quantity} порції` : `${item.quantity} порцій`}</span>
-								{/* Индикатор суммирования */}
-								{item.quantity > 1 && (
-									<span className="text-xs text-blue-500 bg-blue-100 px-1 py-0.5 rounded">
-										{item.quantity > 5 ? 'сумовано' : 'сум'}
-									</span>
-								)}
-							</div>
-							</div>
-							<div className="text-right">
-							<p className="font-medium">{item.quantity} порцій</p>
-							<p className="text-sm text-gray-600">~{item.expectedWeight ? item.expectedWeight.toFixed(1) : '0.0'} кг</p>
-							</div>
-						</div>
-						))}
-						
-						{/* Дополнительная информация о системе */}
-						<div className="mt-4 p-3 bg-blue-50 rounded border-l-4 border-blue-400">
-							<div className="text-xs text-blue-700">
-								<strong>💡 Переваги системи:</strong>
-								<ul className="mt-1 ml-4 space-y-1">
-									<li>• Кладовщик бачить точну кількість кожної страви</li>
-									<li>• Не потрібно пам'ятати, що входить в набори</li>
-									<li>• Автоматичне сумування однакових страв</li>
-									<li>• Зручна комплектація за окремими стравами</li>
-								</ul>
-							</div>
-						</div>
-					</div>
-					) : (
-					<p className="text-gray-500 text-center py-4">Розгорнутий склад не доступний</p>
-					)}
-				</CardBody>
-				</Card>
 			</div>
 
 			{/* Сырые данные */}
 			<div className="flex flex-1 min-w-0 flex-col gap-8">
-        {/* Гид по интеграции оборудования */}
-        {hasItems && !expandingSets && (
-            <EquipmentIntegrationGuide />
-          )}
-
         <Card className="flex-1">
         <CardHeader className="border-b border-gray-200">
                 <DynamicIcon name="code" size={20} className="text-gray-600 mr-2" />

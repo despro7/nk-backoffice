@@ -115,6 +115,15 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           }))
         : [];
 
+        let customerName = '';
+        let customerPhone = '';
+        // Добавляем информацию о клиенте
+        if (webhookData.primaryContact) {
+          const contact = webhookData.primaryContact;
+          customerName = `${contact.lName || ''} ${contact.fName || ''} ${contact.mName || ''}`.trim();
+          customerPhone = Array.isArray(contact.phone) ? contact.phone[0] : contact.phone || '';
+        }
+
         if (existingOrder) {
           // Для существующего заказа используем данные из webhook, если они есть, иначе из БД
           orderDetails = {
@@ -125,10 +134,8 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             // Товары: webhook имеет приоритет над данными из БД
             items: items || existingOrder.items,
             // Контактные данные: webhook имеет приоритет
-            customerName: (webhookData.contacts?.[0]?.fName && webhookData.contacts?.[0]?.lName)
-              ? webhookData.contacts[0].fName + ' ' + webhookData.contacts[0].lName
-              : existingOrder.customerName,
-            customerPhone: webhookData.contacts?.[0]?.phone?.[0] || existingOrder.customerPhone,
+            customerName: customerName || existingOrder.customerName,
+            customerPhone: customerPhone || existingOrder.customerPhone,
             // Адрес доставки: webhook имеет приоритет
             deliveryAddress: webhookData.shipping_address || existingOrder.deliveryAddress,
             // Сумма: webhook имеет приоритет
@@ -139,7 +146,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             shippingMethod: webhookData.shipping_method?.toString() || existingOrder.shippingMethod,
             paymentMethod: webhookData.payment_method?.toString() || existingOrder.paymentMethod,
             // Город: webhook имеет приоритет
-            cityName: webhookData.ord_novaposhta?.cityName || existingOrder.cityName,
+            cityName: existingOrder.cityName,
             provider: existingOrder.provider, // Provider всегда из БД
             // Другие поля: webhook имеет приоритет
             pricinaZnizki: webhookData.pricinaZnizki || existingOrder.pricinaZnizki,
@@ -155,14 +162,14 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             status: webhookData.statusId ? statusMapping[webhookData.statusId] || '1' : '1',
             statusText: 'Новий', // По умолчанию
             items: items,
-            customerName: webhookData.contacts?.[0]?.fName + ' ' + webhookData.contacts?.[0]?.lName || 'Невідомий клієнт',
-            customerPhone: webhookData.contacts?.[0]?.phone?.[0] || '',
+            customerName: customerName || 'Невідомий клієнт',
+            customerPhone: customerPhone || '',
             deliveryAddress: webhookData.shipping_address || '',
             totalPrice: webhookData.paymentAmount || 0,
             orderDate: webhookData.orderTime ? new Date(webhookData.orderTime).toISOString() : null,
             shippingMethod: webhookData.shipping_method?.toString() || '',
             paymentMethod: webhookData.payment_method?.toString() || '',
-            cityName: webhookData.ord_novaposhta?.cityName || '',
+            cityName: webhookData.ord_novaposhta?.cityTemplateName || webhookData.ord_ukrposhta?.cityName || '',
             provider: 'SalesDrive',
             pricinaZnizki: webhookData.pricinaZnizki || '',
             sajt: webhookData.sajt ? String(webhookData.sajt) : '',

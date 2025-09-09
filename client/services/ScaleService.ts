@@ -5,6 +5,7 @@ declare global {
   interface Navigator {
     serial?: {
       requestPort(options?: { filters?: Array<{ usbVendorId?: number; usbProductId?: number }> }): Promise<SerialPort>;
+      getPorts(): Promise<SerialPort[]>;
     };
   }
 
@@ -48,6 +49,7 @@ export class ScaleService {
   private protocol: ScaleProtocol;
   private weightBuffer: string = '';
   private onWeightChange: ((data: ScaleData) => void) | null = null;
+  private onRawData: ((data: string) => void) | null = null;
 
   constructor() {
     this.config = {
@@ -68,21 +70,52 @@ export class ScaleService {
   }
 
   // Підключення до ваг через Web Serial API
-  public async connect(): Promise<boolean> {
+  public async connect(autoConnect: boolean = false): Promise<boolean> {
     try {
       // Перевіряємо підтримку Web Serial API
       if (!('serial' in navigator)) {
-        throw new Error('Web Serial API не підтримується в цьому браузері');
+        console.log('⚠️ ScaleService: Web Serial API не підтримується в цьому браузері');
+        return false;
       }
 
-      // Запитуємо доступ до порту
-      this.port = await navigator.serial.requestPort({
-        filters: [
-          { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340
-          { usbVendorId: 0x067b, usbProductId: 0x2303 }, // Prolific
-          { usbVendorId: 0x0403, usbProductId: 0x6001 }  // FTDI
-        ]
-      });
+      // Проверяем, не подключены ли уже
+      if (this.isConnected && this.port) {
+        console.log('🔧 ScaleService: Ваги вже підключені');
+        return true;
+      }
+
+      console.log('🔧 ScaleService: Запрашиваем доступ к COM порту...');
+
+      // При автоматическом подключении пытаемся найти сохраненный порт
+      if (autoConnect) {
+        try {
+          const ports = await navigator.serial.getPorts();
+          console.log('🔧 ScaleService: Найдено сохраненных портов:', ports.length);
+
+          if (ports.length > 0) {
+            // Используем первый доступный порт
+            this.port = ports[0];
+            console.log('🔧 ScaleService: Используем сохраненный порт');
+          } else {
+            console.log('⚠️ ScaleService: Сохраненных портов не найдено, требуется ручной выбор');
+            return false;
+          }
+        } catch (error) {
+          console.log('⚠️ ScaleService: Не удалось получить сохраненные порты:', error);
+          return false;
+        }
+      } else {
+        // Ручной выбор порта
+        this.port = await navigator.serial.requestPort({
+          // filters: [
+          //   { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340
+          //   { usbVendorId: 0x067b, usbProductId: 0x2303 }, // Prolific
+          //   { usbVendorId: 0x0403, usbProductId: 0x6001 }  // FTDI
+          // ]
+        });
+      }
+
+      console.log('🔧 ScaleService: Відкриваємо порт з налаштуваннями...');
 
       // Відкриваємо порт з налаштуваннями
       await this.port.open({
@@ -94,14 +127,14 @@ export class ScaleService {
       });
 
       this.isConnected = true;
-      console.log('Scale connected successfully');
+      console.log('✅ ScaleService: Ваги успішно підключені');
 
       // Запускаємо читання даних
       this.startReading();
 
       return true;
     } catch (error) {
-      console.error('Failed to connect to scale:', error);
+      console.log('❌ ScaleService: Не вдалося підключити ваги:', error);
       this.isConnected = false;
       return false;
     }
@@ -147,7 +180,7 @@ export class ScaleService {
       while (this.isConnected) {
         try {
           const { value, done } = await this.reader.read();
-          
+
           if (done) break;
 
           if (value) {
@@ -168,6 +201,11 @@ export class ScaleService {
   private processWeightData(data: string): void {
     this.weightBuffer += data;
 
+    // Передаємо сирі дані через callback
+    if (this.onRawData && data.trim()) {
+      this.onRawData(data);
+    }
+
     // Шукаємо повні повідомлення (простой текстовый формат)
     let endIndex = this.weightBuffer.indexOf(this.protocol.endByte);
 
@@ -182,6 +220,16 @@ export class ScaleService {
       endIndex = this.weightBuffer.indexOf(this.protocol.endByte);
     }
 
+    // Если endByte не найден, но данные выглядят как вес - парсим их сразу
+    if (this.weightBuffer.length > 0 && endIndex === -1) {
+      // Проверяем, содержит ли буфер число с точкой
+      const weightMatch = this.weightBuffer.match(/[\d]+[.,][\d]+/);
+      if (weightMatch) {
+        this.parseWeightMessage(this.weightBuffer);
+        this.weightBuffer = ''; // Очищаем буфер после парсинга
+      }
+    }
+
     // Очищаємо буфер якщо він занадто великий
     if (this.weightBuffer.length > 1000) {
       this.weightBuffer = this.weightBuffer.substring(this.weightBuffer.length - 500);
@@ -191,8 +239,6 @@ export class ScaleService {
   // Парсинг повідомлення з ваг
   private parseWeightMessage(message: string): void {
     try {
-      console.log('Raw message from scale:', message);
-
       // Очищаем сообщение от лишних символов
       let cleanMessage = message.trim();
 
@@ -219,13 +265,7 @@ export class ScaleService {
           if (this.onWeightChange) {
             this.onWeightChange(scaleData);
           }
-
-          console.log('✅ Weight parsed successfully:', scaleData);
-        } else {
-          console.log('⚠️ Invalid weight value:', weight);
         }
-      } else {
-        console.log('⚠️ No valid weight found in message:', cleanMessage);
       }
     } catch (error) {
       console.error('❌ Error parsing weight message:', error);
@@ -237,33 +277,63 @@ export class ScaleService {
     this.onWeightChange = callback;
   }
 
+  // Встановлення callback для сирих даних
+  public onRawDataReceived(callback: (data: string) => void): void {
+    this.onRawData = callback;
+  }
+
   // Отримання поточної ваги
   public async getCurrentWeight(): Promise<ScaleData | null> {
     if (!this.isConnected) {
-      throw new Error('Scale is not connected');
-    }
-
-    // Для ВТА-60 можемо надіслати команду запиту ваги
-    try {
-      await this.sendCommand('W'); // Припустимо, що 'W' - команда запиту ваги
-      
-      // Чекаємо відповідь (можна реалізувати через Promise)
-      return new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          resolve(null);
-        }, 2000);
-
-        const originalCallback = this.onWeightChange;
-        this.onWeightChange = (data: ScaleData) => {
-          clearTimeout(timeout);
-          this.onWeightChange = originalCallback;
-          resolve(data);
-        };
-      });
-    } catch (error) {
-      console.error('Error getting current weight:', error);
+      console.log('⚠️ ScaleService: Ваги не підключені');
       return null;
     }
+
+    console.log('🔧 ScaleService: Отримання поточного ваги з буфера...');
+
+    // Проверяем, есть ли данные в буфере
+    if (this.weightBuffer.length > 0) {
+      console.log('🔧 ScaleService: Есть данные в буфере, парсим:', this.weightBuffer);
+
+      // Парсим последний вес из буфера
+      const weightMatch = this.weightBuffer.match(/[\d]+[.,][\d]+/);
+      if (weightMatch) {
+        const weightStr = weightMatch[0].replace(',', '.');
+        const weight = parseFloat(weightStr);
+
+        if (!isNaN(weight) && weight >= 0) {
+          const scaleData: ScaleData = {
+            weight: weight,
+            unit: 'kg',
+            isStable: true,
+            timestamp: new Date()
+          };
+
+          console.log('✅ ScaleService: Возвращаем вес из буфера:', scaleData);
+          return scaleData;
+        }
+      }
+    }
+
+    // Если в буфере нет данных, проверяем последний известный вес через callback
+    console.log('🔧 ScaleService: Буфер пуст, пытаемся получить последний вес...');
+
+    // Ждем немного, вдруг данные придут
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        console.log('⏰ ScaleService: Таймаут ожидания данных от весов');
+        resolve(null);
+      }, 1000); // Уменьшаем таймаут до 1 секунды
+
+      // Если за время ожидания придут данные, используем их
+      const originalCallback = this.onWeightChange;
+      this.onWeightChange = (data: ScaleData) => {
+        console.log('✅ ScaleService: Получены свежие данные:', data);
+        clearTimeout(timeout);
+        this.onWeightChange = originalCallback;
+        resolve(data);
+      };
+    });
   }
 
   // Надсилання команди на ваги

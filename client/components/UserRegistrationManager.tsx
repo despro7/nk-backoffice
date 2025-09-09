@@ -57,9 +57,9 @@ export const UserRegistrationManager: React.FC = () => {
   const availableRoles: RoleOption[] = React.useMemo(() => {
     const roleLabels: Record<string, string> = {
       [ROLES.ADMIN]: 'Адміністратор',
-      [ROLES.BOSS]: 'Начальник',
+      [ROLES.BOSS]: 'Директор',
       [ROLES.SHOP_MANAGER]: 'Менеджер магазину',
-      [ROLES.ADS_MANAGER]: 'Менеджер реклами',
+      [ROLES.ADS_MANAGER]: 'Ads Manager',
       [ROLES.STOREKEEPER]: 'Комірник'
     };
 

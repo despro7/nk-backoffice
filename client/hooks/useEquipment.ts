@@ -19,6 +19,7 @@ export interface EquipmentState {
   isSimulationMode: boolean;
   config: EquipmentConfig | null;
   isLoading: boolean;
+  lastRawScaleData: string;
 }
 
 export interface EquipmentActions {
@@ -28,7 +29,7 @@ export interface EquipmentActions {
   disconnectScanner: () => Promise<void>;
   setConnectionType: (connectionType: 'local' | 'simulation') => void;
   getWeight: () => Promise<ScaleData>;
-
+  resetScanner: () => void;
 
   updateConfig: (config: Partial<EquipmentConfig>) => void;
   loadConfig: () => Promise<void>;
@@ -50,14 +51,19 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   const [lastBarcode, setLastBarcode] = useState<BarcodeData | null>(null);
   const [config, setConfig] = useState<EquipmentConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [lastRawScaleData, setLastRawScaleData] = useState<string>('');
 
   // Отдельные состояния подключения
   const [isScaleConnected, setIsScaleConnected] = useState(false);
   const [isScannerConnected, setIsScannerConnected] = useState(false);
+
+  // Для фильтрации дубликатов сканов
+  const lastProcessedCodeRef = useRef<string>('');
+  const lastProcessedTimeRef = useRef<number>(0);
   
   const equipmentService = useRef(EquipmentService.getInstance());
   const scaleService = useRef(new ScaleService());
-  const scannerService = useRef(new BarcodeScannerService());
+  const scannerService = useRef(BarcodeScannerService.getInstance());
 
   // Кеш для настроек оборудования (10 минут)
   const configCacheRef = useRef<{ data: EquipmentConfig | null; timestamp: number } | null>(null);
@@ -196,10 +202,12 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     try {
       // Используем локальное состояние config
       if (!config) {
+        console.log('⚠️ useEquipment: Конфигурация не загружена, пропускаем подключение');
         return false;
       }
 
       if (config.connectionType === 'simulation') {
+        console.log('🔧 useEquipment: Режим симуляции - подключаем виртуальные весы');
         updateStatus({
           isConnected: true,
           lastActivity: new Date(),
@@ -216,11 +224,19 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       if (result) {
         // Встановлюємо callback для отримання даних з ваг
         scaleService.current.onWeightData((weightData: ScaleData) => {
+          console.log('🔧 useEquipment: Weight data received from scale:', weightData);
           setCurrentWeight(weightData);
+          console.log('🔧 useEquipment: currentWeight updated');
           updateStatus({
             lastActivity: new Date(),
             error: null
           });
+        });
+
+        // Встановлюємо callback для сирих даних з ваг
+        scaleService.current.onRawDataReceived((rawData: string) => {
+          setLastRawScaleData(rawData);
+          console.log('🔧 useEquipment: Raw scale data received:', rawData);
         });
 
         updateStatus({
@@ -284,10 +300,26 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         // Встановлюємо callback для отримання даних з сканера
         scannerService.current.addEventListener((event: ScannerEvent) => {
           if (event.type === 'data' && event.data) {
+            const currentTime = Date.now();
+            const code = event.data.code;
+
+            // Фильтруем дубликаты: если тот же код в течение последних 2 секунд
+            if (code === lastProcessedCodeRef.current &&
+                currentTime - lastProcessedTimeRef.current < 2000) {
+              if (process.env.NODE_ENV === 'development') {
+                console.log('🔄 [useEquipment] Duplicate barcode ignored:', code);
+              }
+              return;
+            }
+
+            // Обновляем референсы для фильтрации дубликатов
+            lastProcessedCodeRef.current = code;
+            lastProcessedTimeRef.current = currentTime;
+
             setLastBarcode(event.data);
-            updateStatus({ 
+            updateStatus({
               lastActivity: new Date(),
-              error: null 
+              error: null
             });
           }
         });
@@ -327,6 +359,19 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     }
   }, [updateStatus]);
 
+  // Сброс состояния сканера
+  const resetScanner = useCallback(() => {
+    try {
+      scannerService.current.resetScannerState();
+      setLastBarcode(null);
+      updateStatus({
+        lastActivity: new Date()
+      });
+    } catch (error) {
+      console.error('Error resetting scanner:', error);
+    }
+  }, [updateStatus]);
+
   // Встановлення режиму підключення
   const setConnectionType = useCallback((connectionType: 'local' | 'simulation') => {
 
@@ -363,27 +408,50 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   }, [updateStatus, config]);
 
   // Отримання ваги
-  const getWeight = useCallback(async (): Promise<ScaleData> => {
+  const getWeight = useCallback(async (): Promise<ScaleData | null> => {
     try {
       // Используем локальное состояние config вместо equipmentService
       if (config?.connectionType === 'simulation') {
+        console.log('🔧 useEquipment: Режим симуляции - генерируем вес');
         const weightData = await equipmentService.current.getWeight();
         setCurrentWeight(weightData);
         return weightData;
       }
 
+      // Если у нас уже есть текущий вес и он свежий (меньше 2 секунд), возвращаем его
+      if (currentWeight && currentWeight.timestamp) {
+        const age = Date.now() - currentWeight.timestamp.getTime();
+        if (age < 2000) { // 2 секунды
+          console.log('🔧 useEquipment: Возвращаем кэшированный вес:', currentWeight);
+          return currentWeight;
+        }
+      }
+
+      console.log('🔧 useEquipment: Запрашиваем свежий вес от реальных весов');
       const weightData = await scaleService.current.getCurrentWeight();
       if (weightData) {
+        console.log('✅ useEquipment: Вес получен:', weightData);
         setCurrentWeight(weightData);
         return weightData;
       } else {
-        throw new Error('Failed to get weight from scale');
+        // Если не удалось получить свежий вес, но есть старый - возвращаем его
+        if (currentWeight) {
+          console.log('⚠️ useEquipment: Возвращаем старый кэшированный вес:', currentWeight);
+          return currentWeight;
+        }
+        console.log('⚠️ useEquipment: Не удалось получить вес от весов');
+        return null;
       }
     } catch (error) {
-      console.error('Error getting weight:', error);
-      throw error;
+      console.log('❌ useEquipment: Помилка отримання ваги:', error);
+      // В случае ошибки возвращаем последний известный вес
+      if (currentWeight) {
+        console.log('⚠️ useEquipment: Возвращаем последний известный вес из-за ошибки:', currentWeight);
+        return currentWeight;
+      }
+      return null;
     }
-  }, [config]);
+  }, [config, currentWeight]);
 
 
   // Оновлення конфігурації
@@ -451,6 +519,44 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
           await connectScale();
           await connectScanner();
         } else {
+          // Автоподключение весов при локальном режиме - ВСЕГДА!
+          if (!isScaleConnected) {
+            try {
+              console.log('🔧 useEquipment: Автоподключение весов в локальном режиме...');
+              // Сначала пытаемся подключиться автоматически к сохраненному порту
+              let scaleConnected = await scaleService.current.connect(true);
+              if (!scaleConnected) {
+                console.log('⚠️ useEquipment: Автоподключение не удалось, пробуем ручной выбор...');
+                // Если автоматическое подключение не удалось, пробуем ручной выбор
+                scaleConnected = await scaleService.current.connect(false);
+              }
+
+              if (scaleConnected) {
+                console.log('✅ useEquipment: Ваги успішно підключені');
+              } else {
+                console.log('❌ useEquipment: Не вдалося підключити ваги');
+              }
+            } catch (error) {
+              console.log('⚠️ useEquipment: Помилка автопідключення ваг:', error);
+              // Не показываем ошибку, так как это автоматическая попытка
+            }
+          }
+
+          // Автоподключение сканера при локальном режиме, если включено
+          if (config.scanner?.autoConnect && !isScannerConnected) {
+            try {
+              console.log('🔧 useEquipment: Автоподключение сканера...');
+              const scannerConnected = await connectScanner();
+              if (scannerConnected) {
+                console.log('✅ useEquipment: Сканер успішно підключений');
+              } else {
+                console.log('❌ useEquipment: Не вдалося підключити сканер');
+              }
+            } catch (error) {
+              console.log('⚠️ useEquipment: Помилка автопідключення сканера:', error);
+              // Не показываем ошибку, так как это автоматическая попытка
+            }
+          }
         }
       } catch (error) {
         console.error('Error initializing equipment:', error);
@@ -459,6 +565,72 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
 
     initEquipment();
   }, [config, isInitialized]); // Зависит от config и isInitialized
+
+  // useEffect для обработки изменений настройки автоподключения весов
+  useEffect(() => {
+    const handleAutoConnectChange = async () => {
+      if (!config || config.connectionType === 'simulation') {
+        return;
+      }
+
+      const shouldAutoConnect = config.scale?.autoConnect;
+
+      if (shouldAutoConnect && !isScaleConnected) {
+        // Включаем автоподключение - пытаемся подключить весы
+        try {
+          await connectScale();
+        } catch (error) {
+          console.log('Автоподключение весов не удалось:', error);
+        }
+      } else if (!shouldAutoConnect && isScaleConnected) {
+        // Выключаем автоподключение - отключаем весы
+        try {
+          await disconnectScale();
+        } catch (error) {
+          console.log('Ошибка отключения весов:', error);
+        }
+      }
+    };
+
+    handleAutoConnectChange();
+  }, [config?.scale?.autoConnect, config?.connectionType, isScaleConnected]); // Зависит от настройки автоподключения и статуса подключения
+
+  // Мониторинг соединения с весами
+  useEffect(() => {
+    if (!config || config.connectionType === 'simulation') {
+      return;
+    }
+
+    const monitorConnection = async () => {
+      try {
+        // Проверяем подключение весов каждые 30 секунд
+        if (!isScaleConnected) {
+          console.log('🔄 useEquipment: Проверка подключения весов...');
+          const scaleConnected = await connectScale();
+          if (scaleConnected) {
+            console.log('✅ useEquipment: Ваги переподключені');
+          }
+        }
+
+        // Проверяем подключение сканера каждые 30 секунд
+        if (config.scanner?.autoConnect && !isScannerConnected) {
+          console.log('🔄 useEquipment: Проверка подключения сканера...');
+          const scannerConnected = await connectScanner();
+          if (scannerConnected) {
+            console.log('✅ useEquipment: Сканер переподключений');
+          }
+        }
+      } catch (error) {
+        console.log('⚠️ useEquipment: Ошибка при проверке подключения:', error);
+      }
+    };
+
+    // Запускаем проверку каждые 30 секунд
+    const intervalId = setInterval(monitorConnection, 30000);
+
+    // Очистка интервала при размонтировании
+    return () => clearInterval(intervalId);
+  }, [config, isScaleConnected, isScannerConnected, connectScale, connectScanner]);
 
   // Створюємо стан - ГЛУБОКОЕ КЛОНИРОВАНИЕ для React
   const state: EquipmentState = useMemo(() => ({
@@ -470,8 +642,9 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     isScannerConnected,
     isSimulationMode: status.isSimulationMode,
     config: config ? { ...config } : null, // Клонируем config объект
-    isLoading
-  }), [status, currentWeight, lastBarcode, config, isLoading, isScaleConnected, isScannerConnected]);
+    isLoading,
+    lastRawScaleData
+  }), [status, currentWeight, lastBarcode, config, isLoading, isScaleConnected, isScannerConnected, lastRawScaleData]);
 
 
 
@@ -486,9 +659,9 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     disconnectScale,
     connectScanner,
     disconnectScanner,
+    resetScanner,
     setConnectionType,
     getWeight,
-
 
     updateConfig,
     loadConfig,

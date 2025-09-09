@@ -6,6 +6,9 @@ datasource db {
   provider          = "mysql"
   url               = env("DATABASE_URL")
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+
+  // Настройки пула подключений для предотвращения таймаутов
+  directUrl         = env("DATABASE_URL")
 }
 
 model User {

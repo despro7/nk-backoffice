@@ -1,9 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { AuthService } from '../services/authService.js';
-import { PrismaClient } from "@prisma/client";
+import { prisma } from '../lib/utils.js';
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // Защищенный роут для всех авторизованных пользователей

@@ -1,9 +1,8 @@
 import express from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from '../lib/utils.js';
 import { authenticateToken } from "../middleware/auth.js";
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // ============================================================================
 // --- АЛГОРИТМ РЕКОМЕНДАЦИЙ КОРОБОК ДЛЯ УПАКОВКИ ---

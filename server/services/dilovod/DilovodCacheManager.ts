@@ -1,16 +1,15 @@
 // Менеджер кеша SKU товаров
 
 import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/utils.js';
 import { WordPressProduct } from './DilovodTypes.js';
 import { logWithTimestamp } from './DilovodUtils.js';
 import { syncSettingsService } from '../syncSettingsService.js';
 
 export class DilovodCacheManager {
-  private prisma: PrismaClient;
   private cacheExpiryHours: number = 24; // Кеш действителен 24 часа (по умолчанию)
 
   constructor() {
-    this.prisma = new PrismaClient();
     this.loadCacheSettings();
   }
 
@@ -73,7 +72,7 @@ export class DilovodCacheManager {
   // Получение кешированных SKU
   private async getCachedSkus(): Promise<string[]> {
     try {
-      const cacheRecord = await this.prisma.settingsWpSku.findFirst({
+      const cacheRecord = await prisma.settingsWpSku.findFirst({
         where: { id: 1 }
       });
 
@@ -113,7 +112,7 @@ export class DilovodCacheManager {
       logWithTimestamp(`Подготавливаем к сохранению ${skus.length} SKU: ${skus.slice(0, 5).join(', ')}${skus.length > 5 ? '...' : ''}`);
       
       // Используем upsert для более надежного обновления
-      await this.prisma.settingsWpSku.upsert({
+      await prisma.settingsWpSku.upsert({
         where: { id: 1 },
         update: {
           skus: skuListJson,
@@ -224,7 +223,7 @@ export class DilovodCacheManager {
       logWithTimestamp('Очищаем кеш SKU...');
       
       // Используем upsert для очистки кеша (устанавливаем пустой массив)
-      await this.prisma.settingsWpSku.upsert({
+      await prisma.settingsWpSku.upsert({
         where: { id: 1 },
         update: {
           skus: JSON.stringify([]),
@@ -263,7 +262,7 @@ export class DilovodCacheManager {
     isExpired: boolean;
   }> {
     try {
-      const cacheRecord = await this.prisma.settingsWpSku.findFirst({
+      const cacheRecord = await prisma.settingsWpSku.findFirst({
         where: { id: 1 }
       });
 
@@ -331,6 +330,6 @@ export class DilovodCacheManager {
 
   // Закрытие соединения с базой данных
   async disconnect(): Promise<void> {
-    await this.prisma.$disconnect();
+    await prisma.$disconnect();
   }
 }

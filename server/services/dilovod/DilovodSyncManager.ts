@@ -1,15 +1,13 @@
 // Менеджер синхронизации товаров с базой данных
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/utils.js';
 import { DilovodProduct, DilovodSyncResult } from './DilovodTypes.js';
 import { logWithTimestamp } from './DilovodUtils.js';
 import { syncSettingsService } from '../syncSettingsService.js';
 
 export class DilovodSyncManager {
-  private prisma: PrismaClient;
-
   constructor() {
-    this.prisma = new PrismaClient();
+    // Используем централизованный prisma из utils.js
   }
 
   // Основная функция синхронизации товаров с базой данных
@@ -49,7 +47,7 @@ export class DilovodSyncManager {
           logWithTimestamp(`Дополнительные цены: ${product.additionalPrices.length}`);
           
           // Проверяем, существует ли товар в базе
-          const existingProduct = await this.prisma.product.findUnique({
+          const existingProduct = await prisma.product.findUnique({
             where: { sku: product.sku }
           });
 
@@ -59,7 +57,7 @@ export class DilovodSyncManager {
           if (existingProduct) {
             // Обновляем существующий товар
             logWithTimestamp(`Обновляем существующий товар ${product.sku}...`);
-            await this.prisma.product.update({
+            await prisma.product.update({
               where: { sku: product.sku },
               data: productData
             });
@@ -67,7 +65,7 @@ export class DilovodSyncManager {
           } else {
             // Создаем новый товар
             logWithTimestamp(`Создаем новый товар ${product.sku}...`);
-            await this.prisma.product.create({
+            await prisma.product.create({
               data: {
                 sku: product.sku,
                 ...productData
@@ -169,10 +167,10 @@ export class DilovodSyncManager {
   }> {
     try {
       // Общее количество товаров
-      const totalProducts = await this.prisma.product.count();
+      const totalProducts = await prisma.product.count();
       
       // Товары с комплектами
-      const productsWithSets = await this.prisma.product.count({
+      const productsWithSets = await prisma.product.count({
         where: {
           set: {
             not: null
@@ -181,7 +179,7 @@ export class DilovodSyncManager {
       });
       
       // Последняя синхронизация
-      const lastSyncProduct = await this.prisma.product.findFirst({
+      const lastSyncProduct = await prisma.product.findFirst({
         orderBy: {
           lastSyncAt: 'desc'
         },
@@ -191,7 +189,7 @@ export class DilovodSyncManager {
       });
       
       // Статистика по категориям
-      const categoriesStats = await this.prisma.product.groupBy({
+      const categoriesStats = await prisma.product.groupBy({
         by: ['categoryName'],
         _count: {
           categoryName: true
@@ -243,7 +241,7 @@ export class DilovodSyncManager {
       
       const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
       
-      const deletedProducts = await this.prisma.product.deleteMany({
+      const deletedProducts = await prisma.product.deleteMany({
         where: {
           lastSyncAt: {
             lt: cutoffDate
@@ -313,7 +311,7 @@ export class DilovodSyncManager {
       
       // Получаем товары
       const [products, total] = await Promise.all([
-        this.prisma.product.findMany({
+        prisma.product.findMany({
           where,
           skip,
           take: limit,
@@ -321,7 +319,7 @@ export class DilovodSyncManager {
             lastSyncAt: 'desc'
           }
         }),
-        this.prisma.product.count({ where })
+        prisma.product.count({ where })
       ]);
       
       const pages = Math.ceil(total / limit);
@@ -344,7 +342,7 @@ export class DilovodSyncManager {
 
   // Закрытие соединения с базой данных
   async disconnect(): Promise<void> {
-    await this.prisma.$disconnect();
+    await prisma.$disconnect();
   }
 
   // Обновление остатков товара в базе данных
@@ -355,7 +353,7 @@ export class DilovodSyncManager {
   ): Promise<{ success: boolean; message: string }> {
     try {
       // Проверяем, существует ли товар
-      const existingProduct = await this.prisma.product.findUnique({
+      const existingProduct = await prisma.product.findUnique({
         where: { sku }
       });
 
@@ -367,7 +365,7 @@ export class DilovodSyncManager {
       }
 
       // Обновляем остатки
-      await this.prisma.product.update({
+      await prisma.product.update({
         where: { sku },
         data: {
           stockBalanceByStock: JSON.stringify({

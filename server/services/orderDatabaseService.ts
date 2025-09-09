@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/utils.js';
 import { ordersCacheService } from './ordersCacheService.js';
-
-const prisma = new PrismaClient();
 
 export interface OrderCreateData {
   id: number; // Обязательно - SalesDrive ID
@@ -70,8 +68,17 @@ export class OrderDatabaseService {
 
     // Проверяем orderDate
     if (newData.orderDate) {
-      const newDate = new Date(newData.orderDate).toISOString().split('T')[0];
-      const existingDate = existingOrder.orderDate ? new Date(existingOrder.orderDate).toISOString().split('T')[0] : null;
+      // Используем локальную дату для правильного сравнения
+      const getLocalDateString = (date: string | Date) => {
+        const d = new Date(date);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const newDate = getLocalDateString(newData.orderDate);
+      const existingDate = existingOrder.orderDate ? getLocalDateString(existingOrder.orderDate) : null;
       if (newDate !== existingDate) {
         console.log(`🔄 [DEBUG] orderDate changed: '${existingDate}' → '${newDate}'`);
         changes.push('orderDate');
@@ -351,7 +358,7 @@ export class OrderDatabaseService {
    * Получает количество заказов с фильтрами (для пагинации)
    */
   async getOrdersCount(filters?: {
-    status?: string;
+    status?: string | string[];
     syncStatus?: string;
   }) {
     const startTime = Date.now();
@@ -361,7 +368,12 @@ export class OrderDatabaseService {
       const where: any = {};
 
       if (filters?.status) {
-        where.status = filters.status;
+        // Если передан массив статусов, используем IN
+        if (Array.isArray(filters.status)) {
+          where.status = { in: filters.status };
+        } else {
+          where.status = filters.status;
+        }
       } else {
         // Якщо статус не вказано (фільтр "all"), показуємо всі статуси крім невдалих
         where.status = {
@@ -390,7 +402,7 @@ export class OrderDatabaseService {
    * Получает все заказы с фильтрацией и сортировкой
    */
   async getOrders(filters?: {
-    status?: string;
+    status?: string | string[];
     syncStatus?: string;
     limit?: number;
     offset?: number;
@@ -407,7 +419,12 @@ export class OrderDatabaseService {
       const where: any = {};
 
       if (filters?.status) {
-        where.status = filters.status;
+        // Если передан массив статусов, используем IN
+        if (Array.isArray(filters.status)) {
+          where.status = { in: filters.status };
+        } else {
+          where.status = filters.status;
+        }
       } else {
         // Якщо статус не вказано (фільтр "all"), показуємо всі статуси крім невдалих
         where.status = {

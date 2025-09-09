@@ -1,11 +1,10 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/utils.js';
 import { syncSettingsService } from '../services/syncSettingsService.js';
 import { salesDriveService } from '../services/salesDriveService.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 
 // Хелпер функция для сериализации логов с BigInt полями
@@ -828,84 +827,6 @@ router.post('/sync/settings', authenticateToken, async (req, res) => {
 });
 
 
-/**
- * POST /api/orders/preprocess-all
- * Предварительно рассчитать статистику для всех заказов
- */
-router.post('/preprocess-all', authenticateToken, async (req, res) => {
-  try {
-    const { user } = req as any;
-
-    // Проверяем права доступа (только ADMIN)
-    if (!user || user.role !== 'admin') {
-      return res.status(403).json({ error: 'Access denied. Admin role required.' });
-    }
-
-    const { orderDatabaseService } = await import('../services/orderDatabaseService.js');
-
-    const BATCH_SIZE = 50; // Обрабатываем по 50 заказов за раз
-    let totalProcessed = 0;
-    let totalErrors = 0;
-    let totalOrders = 0;
-
-    // Сначала получаем общее количество заказов
-    const allOrders = await orderDatabaseService.getOrders({ limit: 10000 });
-    totalOrders = allOrders.length;
-
-    // Обрабатываем заказы пачками
-    for (let batchStart = 0; batchStart < totalOrders; batchStart += BATCH_SIZE) {
-      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalOrders);
-      const batchOrders = allOrders.slice(batchStart, batchEnd);
-
-
-      // Обрабатываем заказы в текущей пачке
-      const batchPromises = batchOrders.map(async (order) => {
-        try {
-          const success = await orderDatabaseService.updateOrderCache(order.externalId);
-          return success ? 'success' : 'error';
-        } catch (error) {
-          console.error(`❌ Error processing order ${order.externalId}:`, error);
-          return 'error';
-        }
-      });
-
-      // Ждем завершения всех заказов в пачке
-      const batchResults = await Promise.all(batchPromises);
-
-      // Подсчитываем результаты пачки
-      const batchProcessed = batchResults.filter(result => result === 'success').length;
-      const batchErrors = batchResults.filter(result => result === 'error').length;
-
-      totalProcessed += batchProcessed;
-      totalErrors += batchErrors;
-
-
-      // Небольшая пауза между пачками для снижения нагрузки
-      if (batchEnd < totalOrders) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
-
-
-    res.json({
-      success: true,
-      message: `Preprocessed ${totalProcessed} orders in ${Math.ceil(totalOrders / BATCH_SIZE)} batches, ${totalErrors} errors`,
-      stats: {
-        totalOrders,
-        processedCount: totalProcessed,
-        errorCount: totalErrors,
-        batchesProcessed: Math.ceil(totalOrders / BATCH_SIZE),
-        batchSize: BATCH_SIZE
-      }
-    });
-  } catch (error) {
-    console.error('Error in preprocess-all:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
-});
 
 /**
  * GET /api/orders/sync-statistics
