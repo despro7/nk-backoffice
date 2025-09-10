@@ -20,6 +20,9 @@ export interface EquipmentState {
   config: EquipmentConfig | null;
   isLoading: boolean;
   lastRawScaleData: string | Uint8Array;
+  // Новые поля для отслеживания состояния polling
+  isActivePolling: boolean;
+  isReservePolling: boolean;
 }
 
 export interface EquipmentActions {
@@ -30,6 +33,12 @@ export interface EquipmentActions {
   setConnectionType: (connectionType: 'local' | 'simulation') => void;
   getWeight: () => Promise<VTAScaleData | null>;
   resetScanner: () => void;
+
+  // Новые методы для активного polling
+  startActivePolling: () => void;
+  stopActivePolling: () => void;
+  startReservePolling: () => void;
+  stopReservePolling: () => void;
 
   updateConfig: (config: Partial<EquipmentConfig>) => void;
   loadConfig: () => Promise<void>;
@@ -64,6 +73,16 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   const equipmentService = useRef(EquipmentService.getInstance());
   const scaleService = useRef(new ScaleService());
   const scannerService = useRef(BarcodeScannerService.getInstance());
+
+  // Состояние для активного polling
+  const [isActivePolling, setIsActivePolling] = useState(false);
+  const [isReservePolling, setIsReservePolling] = useState(false);
+  const activePollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reservePollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Кэш для данных весов
+  const weightCacheRef = useRef<{ data: VTAScaleData; timestamp: number } | null>(null);
+  const WEIGHT_CACHE_DURATION = 500; // 500ms кэш для активного polling
 
   // Кеш для настроек оборудования (10 минут)
   const configCacheRef = useRef<{ data: EquipmentConfig | null; timestamp: number } | null>(null);
@@ -410,23 +429,28 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     }
   }, [updateStatus, config]);
 
-  // Отримання ваги
-  const getWeight = useCallback(async (): Promise<VTAScaleData | null> => {
+  // Отримання ваги с улучшенным кэшированием
+  const getWeight = useCallback(async (useCache: boolean = true): Promise<VTAScaleData | null> => {
     try {
       // Используем локальное состояние config вместо equipmentService
       if (config?.connectionType === 'simulation') {
         console.log('🔧 useEquipment: Режим симуляции - генерируем вес');
         const weightData = await equipmentService.current.getWeight();
         setCurrentWeight(weightData);
+        // Обновляем кэш
+        weightCacheRef.current = {
+          data: weightData,
+          timestamp: Date.now()
+        };
         return weightData;
       }
 
-      // Если у нас уже есть текущий вес и он свежий (меньше 2 секунд), возвращаем его
-      if (currentWeight && currentWeight.timestamp) {
-        const age = Date.now() - currentWeight.timestamp.getTime();
-        if (age < 2000) { // 2 секунды
-          console.log('🔧 useEquipment: Возвращаем кэшированный вес:', currentWeight);
-          return currentWeight;
+      // Проверяем кэш если useCache = true
+      if (useCache && weightCacheRef.current) {
+        const age = Date.now() - weightCacheRef.current.timestamp;
+        if (age < WEIGHT_CACHE_DURATION) {
+          console.log('🔧 useEquipment: Возвращаем кэшированный вес:', weightCacheRef.current.data);
+          return weightCacheRef.current.data;
         }
       }
 
@@ -435,26 +459,31 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       if (weightData) {
         console.log('✅ useEquipment: Вес получен:', weightData);
         setCurrentWeight(weightData);
+        // Обновляем кэш
+        weightCacheRef.current = {
+          data: weightData,
+          timestamp: Date.now()
+        };
         return weightData;
       } else {
-        // Если не удалось получить свежий вес, но есть старый - возвращаем его
-        if (currentWeight) {
-          console.log('⚠️ useEquipment: Возвращаем старый кэшированный вес:', currentWeight);
-          return currentWeight;
+        // Если не удалось получить свежий вес, но есть кэш - возвращаем его
+        if (weightCacheRef.current) {
+          console.log('⚠️ useEquipment: Возвращаем кэшированный вес из-за ошибки:', weightCacheRef.current.data);
+          return weightCacheRef.current.data;
         }
         console.log('⚠️ useEquipment: Не удалось получить вес от весов');
         return null;
       }
     } catch (error) {
       console.log('❌ useEquipment: Помилка отримання ваги:', error);
-      // В случае ошибки возвращаем последний известный вес
-      if (currentWeight) {
-        console.log('⚠️ useEquipment: Возвращаем последний известный вес из-за ошибки:', currentWeight);
-        return currentWeight;
+      // В случае ошибки возвращаем кэшированный вес
+      if (weightCacheRef.current) {
+        console.log('⚠️ useEquipment: Возвращаем кэшированный вес из-за ошибки:', weightCacheRef.current.data);
+        return weightCacheRef.current.data;
       }
       return null;
     }
-  }, [config, currentWeight]);
+  }, [config]);
 
 
   // Оновлення конфігурації
@@ -646,8 +675,11 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     isSimulationMode: status.isSimulationMode,
     config: config ? { ...config } : null, // Клонируем config объект
     isLoading,
-    lastRawScaleData: typeof lastRawScaleData === 'string' ? lastRawScaleData : Array.from(lastRawScaleData).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
-  }), [status, currentWeight, lastBarcode, config, isLoading, isScaleConnected, isScannerConnected, lastRawScaleData]);
+    lastRawScaleData: typeof lastRawScaleData === 'string' ? lastRawScaleData : Array.from(lastRawScaleData).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
+    // Добавляем новые поля состояния polling
+    isActivePolling,
+    isReservePolling
+  }), [status, currentWeight, lastBarcode, config, isLoading, isScaleConnected, isScannerConnected, lastRawScaleData, isActivePolling, isReservePolling]);
 
 
 
@@ -655,6 +687,103 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   const refreshConfig = useCallback(async () => {
     await loadConfig();
   }, [loadConfig]);
+
+  // Активный polling для pending статусов (500ms)
+  const startActivePolling = useCallback(() => {
+    if (isActivePolling || !config || config.connectionType === 'simulation') {
+      return;
+    }
+
+    console.log('🔄 useEquipment: Запуск активного polling (500ms)');
+    setIsActivePolling(true);
+
+    activePollingIntervalRef.current = setInterval(async () => {
+      try {
+        // Получаем свежий вес без кэша для активного polling
+        const freshWeight = await getWeight(false);
+        
+        if (freshWeight && process.env.NODE_ENV === 'development') {
+          console.log('⚖️ useEquipment: Active polling weight:', {
+            weight: freshWeight.weight,
+            isStable: freshWeight.isStable,
+            timestamp: freshWeight.timestamp
+          });
+        }
+      } catch (error) {
+        console.log('⚠️ useEquipment: Ошибка активного polling:', error);
+      }
+    }, 500);
+  }, [isActivePolling, config, getWeight]);
+
+  // Остановка активного polling
+  const stopActivePolling = useCallback(() => {
+    if (!isActivePolling) {
+      return;
+    }
+
+    console.log('⏹️ useEquipment: Остановка активного polling');
+    setIsActivePolling(false);
+
+    if (activePollingIntervalRef.current) {
+      clearInterval(activePollingIntervalRef.current);
+      activePollingIntervalRef.current = null;
+    }
+  }, [isActivePolling]);
+
+  // Резервный polling каждые 5 секунд
+  const startReservePolling = useCallback(() => {
+    if (isReservePolling || !config) {
+      return;
+    }
+
+    console.log('🔄 useEquipment: Запуск резервного polling (5s)');
+    setIsReservePolling(true);
+
+    reservePollingIntervalRef.current = setInterval(async () => {
+      try {
+        // Резервный polling только если не идет активный
+        if (!isActivePolling) {
+          const reserveWeight = await getWeight(false);
+          
+          if (reserveWeight && process.env.NODE_ENV === 'development') {
+            console.log('📊 useEquipment: Reserve polling weight:', {
+              weight: reserveWeight.weight,
+              timestamp: reserveWeight.timestamp
+            });
+          }
+        }
+      } catch (error) {
+        console.log('⚠️ useEquipment: Ошибка резервного polling:', error);
+      }
+    }, 5000);
+  }, [isReservePolling, config, getWeight, isActivePolling]);
+
+  // Остановка резервного polling
+  const stopReservePolling = useCallback(() => {
+    if (!isReservePolling) {
+      return;
+    }
+
+    console.log('⏹️ useEquipment: Остановка резервного polling');
+    setIsReservePolling(false);
+
+    if (reservePollingIntervalRef.current) {
+      clearInterval(reservePollingIntervalRef.current);
+      reservePollingIntervalRef.current = null;
+    }
+  }, [isReservePolling]);
+
+  // Очистка интервалов при размонтировании
+  useEffect(() => {
+    return () => {
+      if (activePollingIntervalRef.current) {
+        clearInterval(activePollingIntervalRef.current);
+      }
+      if (reservePollingIntervalRef.current) {
+        clearInterval(reservePollingIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Створюємо дії
   const actions: EquipmentActions = {
@@ -665,6 +794,12 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     resetScanner,
     setConnectionType,
     getWeight,
+
+    // Новые методы для активного polling
+    startActivePolling,
+    stopActivePolling,
+    startReservePolling,
+    stopReservePolling,
 
     updateConfig,
     loadConfig,

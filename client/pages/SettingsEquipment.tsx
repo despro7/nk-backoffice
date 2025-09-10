@@ -294,9 +294,9 @@ export const SettingsEquipment = () => {
         return;
       }
 
-      // Обновляем конфигурацию
-      const updatedConfig: EquipmentConfig = {
-        ...localConfig,
+    // Обновляем конфигурацию
+    const updatedConfig: EquipmentConfig = {
+      ...localConfig,
         scale: {
           ...localConfig.scale,
           [field]: value,
@@ -305,8 +305,8 @@ export const SettingsEquipment = () => {
 
       console.log('🔧 updateScaleSetting: saving config:', updatedConfig.scale);
 
-      setLocalConfig(updatedConfig);
-      await actions.saveConfig(updatedConfig);
+    setLocalConfig(updatedConfig);
+    await actions.saveConfig(updatedConfig);
 
       console.log('✅ updateScaleSetting: config saved successfully');
 
@@ -344,19 +344,19 @@ export const SettingsEquipment = () => {
         return;
       }
 
-      // Обновляем конфигурацию
-      const updatedConfig: EquipmentConfig = {
-        ...localConfig,
+    // Обновляем конфигурацию
+    const updatedConfig: EquipmentConfig = {
+      ...localConfig,
         serialTerminal: {
           ...localConfig.serialTerminal,
-          [field]: value,
-        }
-      };
+        [field]: value,
+      }
+    };
 
       console.log('🔧 updateSerialTerminalSetting: saving config:', updatedConfig.serialTerminal);
 
-      setLocalConfig(updatedConfig);
-      await actions.saveConfig(updatedConfig);
+    setLocalConfig(updatedConfig);
+    await actions.saveConfig(updatedConfig);
 
       console.log('✅ updateSerialTerminalSetting: config saved successfully');
 
@@ -829,16 +829,16 @@ export const SettingsEquipment = () => {
               <DynamicIcon name="save" size={14} />
               Test Save
             </Button>
-            <Button
-              onPress={resetConfig}
-              color="secondary"
-              variant="bordered"
-              size="sm"
-              disabled={isSaving}
-            >
-              <DynamicIcon name="refresh-cw" size={14} />
-              Скинути до замовчування
-            </Button>
+          <Button
+            onPress={resetConfig}
+            color="secondary"
+            variant="bordered"
+            size="sm"
+            disabled={isSaving}
+          >
+            <DynamicIcon name="refresh-cw" size={14} />
+            Скинути до замовчування
+          </Button>
           </div>
         </CardHeader>
         <CardBody className="p-6">
@@ -987,7 +987,7 @@ export const SettingsEquipment = () => {
                   <div className="flex items-center gap-4">
                     <Button
                       color={vta60TestStatus === 'idle' ? 'primary' : 'default'}
-                      size="sm"
+                  size="sm"
                       onPress={handleVTA60Test}
                       isLoading={vta60TestStatus === 'connecting' || vta60TestStatus === 'waiting'}
                       disabled={vta60TestStatus === 'connecting' || vta60TestStatus === 'waiting'}
@@ -1182,7 +1182,7 @@ export const SettingsEquipment = () => {
               >
                 Авто. підключення</Switch>
             </Card>
-          </div>
+            </div>
 
         </CardBody>
       </Card>
