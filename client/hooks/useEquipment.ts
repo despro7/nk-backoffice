@@ -1,17 +1,17 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import EquipmentService, { 
-  EquipmentStatus, 
-  ScaleData, 
-  BarcodeData, 
-  EquipmentConfig 
+import EquipmentService, {
+  EquipmentStatus,
+  ScaleData,
+  BarcodeData,
+  EquipmentConfig
 } from '../services/EquipmentService';
-import ScaleService from '../services/ScaleService';
+import ScaleService, { VTAScaleData } from '../services/ScaleService';
 import BarcodeScannerService, { ScannerEvent } from '../services/BarcodeScannerService'; 
 
 
 export interface EquipmentState {
   status: EquipmentStatus;
-  currentWeight: ScaleData | null;
+  currentWeight: VTAScaleData | null;
   lastBarcode: BarcodeData | null;
   isConnected: boolean;
   isScaleConnected: boolean;
@@ -19,7 +19,7 @@ export interface EquipmentState {
   isSimulationMode: boolean;
   config: EquipmentConfig | null;
   isLoading: boolean;
-  lastRawScaleData: string;
+  lastRawScaleData: string | Uint8Array;
 }
 
 export interface EquipmentActions {
@@ -28,7 +28,7 @@ export interface EquipmentActions {
   connectScanner: () => Promise<boolean>;
   disconnectScanner: () => Promise<void>;
   setConnectionType: (connectionType: 'local' | 'simulation') => void;
-  getWeight: () => Promise<ScaleData>;
+  getWeight: () => Promise<VTAScaleData | null>;
   resetScanner: () => void;
 
   updateConfig: (config: Partial<EquipmentConfig>) => void;
@@ -47,11 +47,11 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     error: null
   });
 
-  const [currentWeight, setCurrentWeight] = useState<ScaleData | null>(null);
+  const [currentWeight, setCurrentWeight] = useState<VTAScaleData | null>(null);
   const [lastBarcode, setLastBarcode] = useState<BarcodeData | null>(null);
   const [config, setConfig] = useState<EquipmentConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [lastRawScaleData, setLastRawScaleData] = useState<string>('');
+  const [lastRawScaleData, setLastRawScaleData] = useState<string | Uint8Array>('');
 
   // Отдельные состояния подключения
   const [isScaleConnected, setIsScaleConnected] = useState(false);
@@ -67,7 +67,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
 
   // Кеш для настроек оборудования (10 минут)
   const configCacheRef = useRef<{ data: EquipmentConfig | null; timestamp: number } | null>(null);
-  const CONFIG_CACHE_DURATION = 10 * 60 * 1000; // 10 минут
+  const CONFIG_CACHE_DURATION = 15 * 60 * 1000; // 15 минут
 
 
   // Загрузка конфигурации из БД
@@ -77,8 +77,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
 
       // Проверяем кеш конфигурации
       const now = Date.now();
-      if (configCacheRef.current &&
-          (now - configCacheRef.current.timestamp) < CONFIG_CACHE_DURATION) {
+      if (configCacheRef.current && (now - configCacheRef.current.timestamp) < CONFIG_CACHE_DURATION) {
         if (process.env.NODE_ENV === 'development') {
           console.log('🔧 Using cached equipment config');
         }
@@ -223,7 +222,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       const result = await scaleService.current.connect();
       if (result) {
         // Встановлюємо callback для отримання даних з ваг
-        scaleService.current.onWeightData((weightData: ScaleData) => {
+        scaleService.current.onWeightData((weightData: VTAScaleData) => {
           console.log('🔧 useEquipment: Weight data received from scale:', weightData);
           setCurrentWeight(weightData);
           console.log('🔧 useEquipment: currentWeight updated');
@@ -234,9 +233,13 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         });
 
         // Встановлюємо callback для сирих даних з ваг
-        scaleService.current.onRawDataReceived((rawData: string) => {
-          setLastRawScaleData(rawData);
-          console.log('🔧 useEquipment: Raw scale data received:', rawData);
+        scaleService.current.onRawDataReceived((rawData: Uint8Array) => {
+          // Конвертируем Uint8Array в HEX строку для отображения
+          const hexString = Array.from(rawData)
+            .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+            .join(' ');
+          setLastRawScaleData(hexString);
+          console.log('🔧 useEquipment: Raw scale data received:', hexString);
         });
 
         updateStatus({
@@ -394,10 +397,10 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         scanner: null,
         serialTerminal: {
           autoConnect: false,
-          baudRate: 9600,
+          baudRate: 4800,
           dataBits: 8,
+          parity: 'even' as const,
           stopBits: 1,
-          parity: 'none' as const,
           bufferSize: 1024,
           flowControl: 'none' as const
         },
@@ -408,7 +411,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   }, [updateStatus, config]);
 
   // Отримання ваги
-  const getWeight = useCallback(async (): Promise<ScaleData | null> => {
+  const getWeight = useCallback(async (): Promise<VTAScaleData | null> => {
     try {
       // Используем локальное состояние config вместо equipmentService
       if (config?.connectionType === 'simulation') {
@@ -643,7 +646,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     isSimulationMode: status.isSimulationMode,
     config: config ? { ...config } : null, // Клонируем config объект
     isLoading,
-    lastRawScaleData
+    lastRawScaleData: typeof lastRawScaleData === 'string' ? lastRawScaleData : Array.from(lastRawScaleData).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
   }), [status, currentWeight, lastBarcode, config, isLoading, isScaleConnected, isScannerConnected, lastRawScaleData]);
 
 

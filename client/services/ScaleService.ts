@@ -26,46 +26,32 @@ declare global {
 }
 
 export interface ScaleConnectionConfig {
-  comPort: string;
   baudRate: number;
   dataBits: number;
   stopBits: number;
   parity: 'none' | 'even' | 'odd';
 }
 
-export interface ScaleProtocol {
-  startByte: string;
-  endByte: string;
-  dataLength: number;
-  checksum: boolean;
+export interface VTAScaleData extends ScaleData {
+  price?: number;
+  total?: number;
+  rawData?: Uint8Array;
 }
 
 export class ScaleService {
   private port: SerialPort | null = null;
-  private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private isConnected: boolean = false;
   private config: ScaleConnectionConfig;
-  private protocol: ScaleProtocol;
-  private weightBuffer: string = '';
-  private onWeightChange: ((data: ScaleData) => void) | null = null;
-  private onRawData: ((data: string) => void) | null = null;
+  private onWeightChange: ((data: VTAScaleData) => void) | null = null;
+  private onRawData: ((data: Uint8Array) => void) | null = null;
 
   constructor() {
+    // Настройки для ВТА-60: 4800-8E1 по умолчанию
     this.config = {
-      comPort: 'COM5',
-      baudRate: 9600,
+      baudRate: 4800,
       dataBits: 8,
       stopBits: 1,
-      parity: 'none'
-    };
-
-    // Протокол для ваг ВТА-60 (простой текстовый формат)
-    this.protocol = {
-      startByte: '',     // Нет стартового байта
-      endByte: '\n',     // Конец строки
-      dataLength: 0,     // Переменная длина
-      checksum: false
+      parity: 'even'
     };
   }
 
@@ -107,17 +93,17 @@ export class ScaleService {
       } else {
         // Ручной выбор порта
         this.port = await navigator.serial.requestPort({
-          // filters: [
-          //   { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340
-          //   { usbVendorId: 0x067b, usbProductId: 0x2303 }, // Prolific
-          //   { usbVendorId: 0x0403, usbProductId: 0x6001 }  // FTDI
-          // ]
+          filters: [
+            { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340
+            { usbVendorId: 0x067b, usbProductId: 0x2303 }, // Prolific
+            { usbVendorId: 0x0403, usbProductId: 0x6001 }  // FTDI
+          ]
         });
       }
 
-      console.log('🔧 ScaleService: Відкриваємо порт з налаштуваннями...');
+      console.log(`🔧 ScaleService: Відкриваємо порт з налаштуваннями ВТА-60 (${this.config.baudRate}-${this.config.dataBits}${this.config.parity.charAt(0).toUpperCase()}${this.config.stopBits})`);
 
-      // Відкриваємо порт з налаштуваннями
+      // Відкриваємо порт з налаштуваннями для ВТА-60
       await this.port.open({
         baudRate: this.config.baudRate,
         dataBits: this.config.dataBits,
@@ -127,10 +113,7 @@ export class ScaleService {
       });
 
       this.isConnected = true;
-      console.log('✅ ScaleService: Ваги успішно підключені');
-
-      // Запускаємо читання даних
-      this.startReading();
+      console.log('✅ ScaleService: Ваги ВТА-60 успішно підключені');
 
       return true;
     } catch (error) {
@@ -140,19 +123,128 @@ export class ScaleService {
     }
   }
 
+  // Помощник: сборка числа из 6 «цифробайтів» 0x00..0x09, младшие разряды первыми
+  private digits6ToNumber(bytes6: Uint8Array): number {
+    // bytes6: [m1,m2,m3,m4,m5,m6] где m1 — младший разряд [2]
+    let str = '';
+    for (let i = 5; i >= 0; i--) { // разворот разрядов: m6..m1
+      const d = bytes6[i] & 0x0F;
+      if (d > 9) return NaN; // защита от мусора
+      str += d.toString();
+    }
+    // Удалим лидирующие нули, но оставим хотя бы один
+    str = str.replace(/^0+(?!$)/, '');
+    return Number(str);
+  }
+
+  // Расстановка десятичной точки для массы (ВТА-60 обычно 3 знака после точки для кг)
+  private formatMassFromDigits(bytes6: Uint8Array, decimals: number = 3): number {
+    const raw = this.digits6ToNumber(bytes6); // например 1234
+    const factor = Math.pow(10, decimals);
+    return raw / factor; // кг
+  }
+
+  // Расстановка десятичной точки для цены
+  private formatPriceFromDigits(bytes6: Uint8Array, decimals: number = 2): number {
+    const raw = this.digits6ToNumber(bytes6);
+    return raw / Math.pow(10, decimals); // валюта за кг
+  }
+
+  // Расстановка десятичной точки для суммы
+  private formatTotalFromDigits(bytes6: Uint8Array, decimals: number = 2): number {
+    const raw = this.digits6ToNumber(bytes6);
+    return raw / Math.pow(10, decimals);
+  }
+
+  // Чтение одного ответа (18 байт) протокола ВТА-60
+  private async readOneFrame(timeoutMs: number = 1000): Promise<Uint8Array | null> {
+    if (!this.port || !this.isConnected) return null;
+
+    const reader = this.port.readable?.getReader();
+    if (!reader) return null;
+
+    try {
+      const start = performance.now();
+      const buf: number[] = [];
+
+      while (performance.now() - start < timeoutMs) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          for (const b of value) buf.push(b);
+          // Ищем минимум 18 байт подряд — в этом протоколе нет заголовка, просто 18 «цифробайтів»
+          while (buf.length >= 18) {
+            const frame = buf.splice(0, 18); // возьмём первые 18
+            return new Uint8Array(frame);
+          }
+        }
+      }
+      return null; // тайм-аут
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  // Отправка запроса «00 00 03» протокола ВТА-60
+  private async sendPoll(): Promise<void> {
+    if (!this.port || !this.isConnected) {
+      throw new Error('Scale is not connected');
+    }
+
+    try {
+      const writer = this.port.writable?.getWriter();
+      if (!writer) throw new Error('Failed to get writer');
+
+      await writer.write(new Uint8Array([0x00, 0x00, 0x03]));
+      writer.releaseLock();
+    } catch (error) {
+      console.error('Error sending poll to scale:', error);
+      throw error;
+    }
+  }
+
+  // Полный цикл: опрос или ожидание автопередачи, парсинг кадра
+  public async readScaleOnce(usePolling: boolean = true): Promise<VTAScaleData | null> {
+    if (!this.isConnected) return null;
+
+    try {
+      if (usePolling) {
+        await this.sendPoll(); // запрос «масса/цена/сумма»
+      }
+
+      const frame = await this.readOneFrame(1500);
+      if (!frame) throw new Error('Нет ответа (тайм-аут или нестабильная масса)');
+
+      // m1..m6 c1..c6 v1..v6 (младшие сначала)
+      const m = frame.slice(0, 6);
+      const c = frame.slice(6, 12);
+      const v = frame.slice(12, 18);
+
+      // Преобразование (скорректируйте decimals под настройки весов)
+      const massKg = this.formatMassFromDigits(m, 3);    // кг, три знака после точки
+      const price = this.formatPriceFromDigits(c, 2);    // валюта/кг
+      const total = this.formatTotalFromDigits(v, 2);    // валюта
+
+      const scaleData: VTAScaleData = {
+        weight: massKg,
+        unit: 'kg',
+        isStable: true, // Предполагаем стабильность для протокола 0
+        timestamp: new Date(),
+        price: price,
+        total: total,
+        rawData: frame
+      };
+
+      return scaleData;
+    } catch (error) {
+      console.error('❌ Error reading scale data:', error);
+      return null;
+    }
+  }
+
   // Відключення від ваг
   public async disconnect(): Promise<void> {
     try {
-      if (this.reader) {
-        await this.reader.cancel();
-        this.reader = null;
-      }
-
-      if (this.writer) {
-        await this.writer.close();
-        this.writer = null;
-      }
-
       if (this.port) {
         await this.port.close();
         this.port = null;
@@ -165,199 +257,28 @@ export class ScaleService {
     }
   }
 
-  // Запуск читання даних з ваг
-  private async startReading(): Promise<void> {
-    if (!this.port || !this.isConnected) return;
-
-    try {
-      const textDecoder = new TextDecoder();
-      this.reader = this.port.readable?.getReader();
-
-      if (!this.reader) {
-        throw new Error('Failed to get reader');
-      }
-
-      while (this.isConnected) {
-        try {
-          const { value, done } = await this.reader.read();
-
-          if (done) break;
-
-          if (value) {
-            const chunk = textDecoder.decode(value, { stream: true });
-            this.processWeightData(chunk);
-          }
-        } catch (error) {
-          console.error('Error reading from scale:', error);
-          break;
-        }
-      }
-    } catch (error) {
-      console.error('Failed to start reading from scale:', error);
-    }
-  }
-
-  // Обробка даних з ваг
-  private processWeightData(data: string): void {
-    this.weightBuffer += data;
-
-    // Передаємо сирі дані через callback
-    if (this.onRawData && data.trim()) {
-      this.onRawData(data);
-    }
-
-    // Шукаємо повні повідомлення (простой текстовый формат)
-    let endIndex = this.weightBuffer.indexOf(this.protocol.endByte);
-
-    while (endIndex !== -1) {
-      const message = this.weightBuffer.substring(0, endIndex);
-      this.parseWeightMessage(message);
-
-      // Видаляємо оброблене повідомлення
-      this.weightBuffer = this.weightBuffer.substring(endIndex + 1);
-
-      // Шукаємо наступне повідомлення
-      endIndex = this.weightBuffer.indexOf(this.protocol.endByte);
-    }
-
-    // Если endByte не найден, но данные выглядят как вес - парсим их сразу
-    if (this.weightBuffer.length > 0 && endIndex === -1) {
-      // Проверяем, содержит ли буфер число с точкой
-      const weightMatch = this.weightBuffer.match(/[\d]+[.,][\d]+/);
-      if (weightMatch) {
-        this.parseWeightMessage(this.weightBuffer);
-        this.weightBuffer = ''; // Очищаем буфер после парсинга
-      }
-    }
-
-    // Очищаємо буфер якщо він занадто великий
-    if (this.weightBuffer.length > 1000) {
-      this.weightBuffer = this.weightBuffer.substring(this.weightBuffer.length - 500);
-    }
-  }
-
-  // Парсинг повідомлення з ваг
-  private parseWeightMessage(message: string): void {
-    try {
-      // Очищаем сообщение от лишних символов
-      let cleanMessage = message.trim();
-
-      // Убираем единицы измерения и другие текстовые части
-      cleanMessage = cleanMessage.replace(/[a-zA-Z\s]/g, '');
-
-      // Ищем числа с точкой (вес в формате 1.234 или 1,234)
-      const weightMatch = cleanMessage.match(/[\d]+[.,][\d]+/);
-
-      if (weightMatch) {
-        // Заменяем запятую на точку для корректного парсинга
-        const weightStr = weightMatch[0].replace(',', '.');
-        const weight = parseFloat(weightStr);
-
-        if (!isNaN(weight) && weight >= 0) {
-          const scaleData: ScaleData = {
-            weight: weight,
-            unit: 'kg',
-            isStable: true, // Предполагаем стабильность
-            timestamp: new Date()
-          };
-
-          // Викликаємо callback якщо він встановлений
-          if (this.onWeightChange) {
-            this.onWeightChange(scaleData);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error parsing weight message:', error);
-    }
-  }
 
   // Встановлення callback для зміни ваги
-  public onWeightData(callback: (data: ScaleData) => void): void {
+  public onWeightData(callback: (data: VTAScaleData) => void): void {
     this.onWeightChange = callback;
   }
 
   // Встановлення callback для сирих даних
-  public onRawDataReceived(callback: (data: string) => void): void {
+  public onRawDataReceived(callback: (data: Uint8Array) => void): void {
     this.onRawData = callback;
   }
 
   // Отримання поточної ваги
-  public async getCurrentWeight(): Promise<ScaleData | null> {
+  public async getCurrentWeight(): Promise<VTAScaleData | null> {
     if (!this.isConnected) {
       console.log('⚠️ ScaleService: Ваги не підключені');
       return null;
     }
 
-    console.log('🔧 ScaleService: Отримання поточного ваги з буфера...');
+    console.log('🔧 ScaleService: Отправка запроса на получение данных от весов...');
 
-    // Проверяем, есть ли данные в буфере
-    if (this.weightBuffer.length > 0) {
-      console.log('🔧 ScaleService: Есть данные в буфере, парсим:', this.weightBuffer);
-
-      // Парсим последний вес из буфера
-      const weightMatch = this.weightBuffer.match(/[\d]+[.,][\d]+/);
-      if (weightMatch) {
-        const weightStr = weightMatch[0].replace(',', '.');
-        const weight = parseFloat(weightStr);
-
-        if (!isNaN(weight) && weight >= 0) {
-          const scaleData: ScaleData = {
-            weight: weight,
-            unit: 'kg',
-            isStable: true,
-            timestamp: new Date()
-          };
-
-          console.log('✅ ScaleService: Возвращаем вес из буфера:', scaleData);
-          return scaleData;
-        }
-      }
-    }
-
-    // Если в буфере нет данных, проверяем последний известный вес через callback
-    console.log('🔧 ScaleService: Буфер пуст, пытаемся получить последний вес...');
-
-    // Ждем немного, вдруг данные придут
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        console.log('⏰ ScaleService: Таймаут ожидания данных от весов');
-        resolve(null);
-      }, 1000); // Уменьшаем таймаут до 1 секунды
-
-      // Если за время ожидания придут данные, используем их
-      const originalCallback = this.onWeightChange;
-      this.onWeightChange = (data: ScaleData) => {
-        console.log('✅ ScaleService: Получены свежие данные:', data);
-        clearTimeout(timeout);
-        this.onWeightChange = originalCallback;
-        resolve(data);
-      };
-    });
-  }
-
-  // Надсилання команди на ваги
-  private async sendCommand(command: string): Promise<void> {
-    if (!this.port || !this.isConnected) {
-      throw new Error('Scale is not connected');
-    }
-
-    try {
-      this.writer = this.port.writable?.getWriter();
-      
-      if (!this.writer) {
-        throw new Error('Failed to get writer');
-      }
-
-      const encoder = new TextEncoder();
-      const data = encoder.encode(command);
-      await this.writer.write(data);
-      
-      await this.writer.releaseLock();
-    } catch (error) {
-      console.error('Error sending command to scale:', error);
-      throw error;
-    }
+    // Отправляем запрос и ждем ответа
+    return await this.readScaleOnce(true);
   }
 
   // Перевірка з'єднання
@@ -375,34 +296,37 @@ export class ScaleService {
     return { ...this.config };
   }
 
-  // Тестування з'єднання
+  // Тестування з'єднання з ВТА-60
   public async testConnection(): Promise<boolean> {
     try {
       const result = await this.connect();
       if (result) {
+        // Пытаемся получить данные от весов
+        const testData = await this.readScaleOnce(true);
         await this.disconnect();
+        return testData !== null;
       }
-      return result;
+      return false;
     } catch (error) {
       console.error('Scale connection test failed:', error);
       return false;
     }
   }
 
-  // Тест различных конфигураций подключения
-  public async testConnectionConfigs(): Promise<{config: ScaleConnectionConfig, success: boolean}[]> {
+  // Тест различных конфигураций подключения для ВТА-60
+  public async testConnectionConfigs(): Promise<{config: ScaleConnectionConfig, success: boolean, data?: VTAScaleData}[]> {
     const configs: ScaleConnectionConfig[] = [
-      { comPort: 'COM5', baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'none' },
-      { comPort: 'COM5', baudRate: 19200, dataBits: 8, stopBits: 1, parity: 'none' },
-      { comPort: 'COM5', baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'even' },
-      { comPort: 'COM5', baudRate: 19200, dataBits: 8, stopBits: 1, parity: 'even' },
-      { comPort: 'COM5', baudRate: 4800, dataBits: 8, stopBits: 1, parity: 'none' },
-      { comPort: 'COM5', baudRate: 38400, dataBits: 8, stopBits: 1, parity: 'none' }
+      { baudRate: 4800, dataBits: 8, stopBits: 1, parity: 'even' },  // ВТА-60 по умолчанию
+      { baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'even' },
+      { baudRate: 19200, dataBits: 8, stopBits: 1, parity: 'even' },
+      { baudRate: 4800, dataBits: 8, stopBits: 1, parity: 'none' },
+      { baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'none' },
+      { baudRate: 19200, dataBits: 8, stopBits: 1, parity: 'none' }
     ];
 
-    const results: {config: ScaleConnectionConfig, success: boolean}[] = [];
+    const results: {config: ScaleConnectionConfig, success: boolean, data?: VTAScaleData}[] = [];
 
-    console.log('🧪 Тестирование различных конфигураций подключения к весам...\n');
+    console.log('🧪 Тестирование различных конфигураций подключения к ВТА-60...\n');
 
     for (const config of configs) {
       console.log(`Тестируем: ${config.baudRate} baud, ${config.parity} parity`);
@@ -417,29 +341,21 @@ export class ScaleService {
         if (success) {
           console.log('✅ Подключение успешно');
 
-          // Ждем немного данных (5 секунд)
-          let dataReceived = false;
-          const timeout = setTimeout(() => {
-            if (!dataReceived) {
-              console.log('⚠️ Данные не получены в течение 5 секунд');
-            }
-          }, 5000);
+          // Пытаемся получить данные
+          const scaleData = await this.readScaleOnce(true);
 
-          const originalCallback = this.onWeightChange;
-          this.onWeightChange = (data) => {
-            dataReceived = true;
-            clearTimeout(timeout);
-            console.log(`✅ Получены данные: ${data.weight} кг`);
-          };
-
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          if (scaleData) {
+            console.log(`✅ Получены данные: ${scaleData.weight} кг, цена: ${scaleData.price}, сумма: ${scaleData.total}`);
+            console.log(`   Raw: ${Array.from(scaleData.rawData!).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+          } else {
+            console.log('⚠️ Данные не получены');
+          }
 
           // Отключаемся
           await this.disconnect();
-          this.onWeightChange = originalCallback;
 
-          results.push({ config, success: dataReceived });
-          console.log(`Результат: ${dataReceived ? 'УСПЕХ' : 'ПОДКЛЮЧЕНИЕ БЕЗ ДАННЫХ'}\n`);
+          results.push({ config, success: scaleData !== null, data: scaleData || undefined });
+          console.log(`Результат: ${scaleData ? 'УСПЕХ' : 'ПОДКЛЮЧЕНИЕ БЕЗ ДАННЫХ'}\n`);
         } else {
           console.log('❌ Подключение не удалось\n');
           results.push({ config, success: false });
