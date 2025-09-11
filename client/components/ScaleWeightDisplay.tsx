@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useEquipmentFromAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
+import ScaleService from '../services/ScaleService';
 
 interface ScaleWeightDisplayProps {
   currentScaleWeight: number; // Ожидаемый вес на текущем этапе
@@ -26,29 +27,6 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
   const realWeight = equipmentState.currentWeight?.weight || 0;
   const isStable = equipmentState.currentWeight?.isStable || false;
   const isConnected = equipmentState.isScaleConnected; // Используем специфично статус весов
-
-  // Функция для парсинга последнего числа из сырых данных
-  const parseLastWeightFromRaw = useCallback(() => {
-    if (!equipmentState.lastRawScaleData) return null;
-
-    // Конвертируем в строку, если это Uint8Array
-    const rawDataStr = typeof equipmentState.lastRawScaleData === 'string'
-      ? equipmentState.lastRawScaleData
-      : Array.from(equipmentState.lastRawScaleData)
-          .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-          .join(' ');
-
-    // Ищем число с точкой или запятой (в формате 1.234 или 1,234)
-    const weightMatch = rawDataStr.match(/[\d]+[.,][\d]+/);
-    if (weightMatch) {
-      const weightStr = weightMatch[0].replace(',', '.');
-      const weight = parseFloat(weightStr);
-      return !isNaN(weight) && weight >= 0 ? weight : null;
-    }
-    return null;
-  }, [equipmentState.lastRawScaleData]);
-
-  const rawWeight = parseLastWeightFromRaw();
 
   // Логирование обновлений веса (без сохранения истории)
   useEffect(() => {
@@ -84,8 +62,7 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
     try {
       console.log('🔧 ScaleWeightDisplay: Manual scale connection attempt...');
       // Используем ручной выбор порта (autoConnect=false)
-      const ScaleServiceClass = (await import('../services/ScaleService')).default;
-      const scaleInstance = new ScaleServiceClass();
+      const scaleInstance = new ScaleService();
       const connected = await scaleInstance.connect(false);
       if (connected) {
         console.log('✅ ScaleWeightDisplay: Scale connected successfully');
@@ -140,7 +117,7 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
         {/* Текущий вес */}
         <div className="text-center">
           <div className="text-3xl font-bold text-gray-900">
-            {isConnected && rawWeight !== null ? `${rawWeight.toFixed(3)} кг` : '--.--- кг'}
+            {isConnected ? `${realWeight.toFixed(3)} кг` : '--.--- кг'}
           </div>
           <div className="text-sm text-gray-500 mt-1">
             {isConnected ? 'Поточна вага' : 'Ваги не підключені'}
@@ -165,7 +142,7 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
           <div className="mt-3 p-2 bg-gray-50 rounded text-xs border-t">
             <div className="text-gray-600 space-y-1">
               <div>Raw: {equipmentState.lastRawScaleData || '–'}</div>
-              <div>Parsed: {rawWeight !== null ? `${rawWeight.toFixed(3)} кг` : '–'}</div>
+              <div>Parsed: {`${realWeight.toFixed(3)} кг`}</div>
               <div>Updated: {equipmentState.currentWeight?.timestamp?.toLocaleTimeString() || '–'}</div>
               <div className="flex justify-between items-center">
                 <span>Polling:</span>
@@ -195,18 +172,18 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
             </div>
             
             {/* Индикатор разницы (только если весы подключены) */}
-            {isConnected && rawWeight !== null && (
+            {isConnected && (
               <div className="text-center">
                 <span className={cn(
                   "text-sm px-3 py-1 rounded-full font-medium",
-                  Math.abs(rawWeight - currentScaleWeight) < 0.05
+                  Math.abs(realWeight - currentScaleWeight) < 0.05
                     ? "bg-green-100 text-green-800"
-                    : Math.abs(rawWeight - currentScaleWeight) < 0.2
+                    : Math.abs(realWeight - currentScaleWeight) < 0.2
                     ? "bg-yellow-100 text-yellow-800"
                     : "bg-red-100 text-red-800"
                 )}>
                   Різниця: {(() => {
-                    const difference = rawWeight - currentScaleWeight;
+                    const difference = realWeight - currentScaleWeight;
                     return (difference > 0 ? '+' : '') + difference.toFixed(3);
                   })()} кг
                 </span>

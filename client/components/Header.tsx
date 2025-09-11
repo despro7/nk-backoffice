@@ -132,7 +132,7 @@ export function Header({ className }: HeaderProps) {
       </div>
 
       {/* Simulation Mode Switch */}
-      <div className="flex items-center gap-3 w-full justify-center sm:w-auto ml-10">
+      {/* <div className="flex items-center gap-3 w-full justify-center sm:w-auto ml-10">
         <Switch
           isSelected={equipmentState.config?.connectionType === "simulation"}
           onValueChange={toggleSimulationMode}
@@ -156,7 +156,7 @@ export function Header({ className }: HeaderProps) {
             </span>
           </div>
         </Switch>
-      </div>
+      </div> */}
 
       {/* Full Screen Button */}
       <button

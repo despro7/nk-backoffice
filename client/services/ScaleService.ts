@@ -44,6 +44,7 @@ export class ScaleService {
   private config: ScaleConnectionConfig;
   private onWeightChange: ((data: VTAScaleData) => void) | null = null;
   private onRawData: ((data: Uint8Array) => void) | null = null;
+  private reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
   constructor() {
     // Настройки для ВТА-60: 4800-8E1 по умолчанию
@@ -93,11 +94,11 @@ export class ScaleService {
       } else {
         // Ручной выбор порта
         this.port = await navigator.serial.requestPort({
-          filters: [
-            { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340
-            { usbVendorId: 0x067b, usbProductId: 0x2303 }, // Prolific
-            { usbVendorId: 0x0403, usbProductId: 0x6001 }  // FTDI
-          ]
+          // filters: [
+            // { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340
+            // { usbVendorId: 0x067b, usbProductId: 0x2303 }, // Prolific
+            // { usbVendorId: 0x0403, usbProductId: 0x6001 }  // FTDI
+          // ]
         });
       }
 
@@ -158,17 +159,22 @@ export class ScaleService {
 
   // Чтение одного ответа (18 байт) протокола ВТА-60
   private async readOneFrame(timeoutMs: number = 1000): Promise<Uint8Array | null> {
-    if (!this.port || !this.isConnected) return null;
+    if (!this.port || !this.isConnected || !this.port.readable) return null;
 
-    const reader = this.port.readable?.getReader();
-    if (!reader) return null;
+    // Проверяем, не заблокирован ли поток
+    if (this.port.readable.locked) {
+      console.log('⚠️ ScaleService: ReadableStream is locked, skipping read');
+      return null;
+    }
+
+    this.reader = this.port.readable.getReader();
 
     try {
       const start = performance.now();
       const buf: number[] = [];
 
       while (performance.now() - start < timeoutMs) {
-        const { value, done } = await reader.read();
+        const { value, done } = await this.reader.read();
         if (done) break;
         if (value) {
           for (const b of value) buf.push(b);
@@ -181,7 +187,10 @@ export class ScaleService {
       }
       return null; // тайм-аут
     } finally {
-      reader.releaseLock();
+      if (this.reader) {
+        this.reader.releaseLock();
+        this.reader = undefined;
+      }
     }
   }
 
@@ -189,6 +198,12 @@ export class ScaleService {
   private async sendPoll(): Promise<void> {
     if (!this.port || !this.isConnected) {
       throw new Error('Scale is not connected');
+    }
+
+    // Проверяем, не заблокирован ли поток записи
+    if (this.port.writable?.locked) {
+      console.log('⚠️ ScaleService: WritableStream is locked, skipping write');
+      return;
     }
 
     try {
@@ -242,18 +257,62 @@ export class ScaleService {
     }
   }
 
+  // Принудительное освобождение всех reader'ов и writer'ов
+  private forceUnlockStreams(): void {
+    try {
+      if (this.port?.readable?.locked) {
+        console.log('🔓 ScaleService: Принудительно освобождаем ReadableStream');
+        // Попытка получить reader и сразу освободить его
+        const reader = this.port.readable.getReader();
+        reader.releaseLock();
+      }
+      if (this.port?.writable?.locked) {
+        console.log('🔓 ScaleService: Принудительно освобождаем WritableStream');
+        // Попытка получить writer и сразу освободить его
+        const writer = this.port.writable.getWriter();
+        writer.releaseLock();
+      }
+    } catch (error) {
+      console.log('⚠️ ScaleService: Ошибка при принудительном освобождении потоков:', error);
+    }
+  }
+
   // Відключення від ваг
   public async disconnect(): Promise<void> {
     try {
+      if (this.reader) {
+        try {
+          await this.reader.cancel();
+        } catch (error) {
+          console.log('ScaleService: Error cancelling reader on disconnect.', error);
+        } finally {
+          this.reader = undefined;
+        }
+      }
+
+      if (this.port && this.port.writable && this.port.writable.locked) {
+        try {
+          const writer = this.port.writable.getWriter();
+          writer.releaseLock();
+        } catch (error) {
+          console.log('ScaleService: Error unlocking writer on disconnect.', error);
+        }
+      }
+
       if (this.port) {
-        await this.port.close();
-        this.port = null;
+        try {
+          await this.port.close();
+        } catch (error) {
+          console.log('ScaleService: Error closing port on disconnect.', error);
+        } finally {
+          this.port = null;
+        }
       }
 
       this.isConnected = false;
       console.log('Scale disconnected');
     } catch (error) {
-      console.error('Error disconnecting scale:', error);
+      console.error('Error during scale disconnect:', error);
     }
   }
 

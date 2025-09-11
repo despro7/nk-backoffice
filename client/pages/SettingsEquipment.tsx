@@ -11,6 +11,7 @@ import { Select, SelectItem } from "@heroui/select";
 import { Checkbox } from "@heroui/checkbox";
 import { ToastService } from "../services/ToastService";
 import { addToast } from "@heroui/toast";
+import ScaleService from "../services/ScaleService";
 
 
 export const SettingsEquipment = () => {
@@ -501,8 +502,7 @@ export const SettingsEquipment = () => {
     setVta60ParsedData({});
 
     try {
-      // Импортируем ScaleService для теста
-      const { default: ScaleService } = await import('../services/ScaleService');
+      // Создаем экземпляр ScaleService для теста
       const scaleService = new ScaleService();
 
       // Подключаемся с настройками ВТА-60

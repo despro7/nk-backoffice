@@ -34,9 +34,10 @@ interface OrderChecklistProps {
   onNextOrder?: () => void; // Callback для перехода к следующему заказу
   showNextOrder?: boolean;
   onWeighItem?: (itemId: string) => Promise<void>; // Callback для реального взвешивания
+  isAwaitingWeightChange?: boolean; // Флаг для ожидания изменения веса
 }
 
-const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, onNextOrder, showNextOrder, onWeighItem }: OrderChecklistProps) => {
+const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, onNextOrder, showNextOrder, onWeighItem, isAwaitingWeightChange }: OrderChecklistProps) => {
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [equipmentState] = useEquipmentFromAuth(); // <-- Используем глобальное состояние оборудования
 
@@ -71,6 +72,12 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
   const lastItemsRef = useRef<string>(''); // Для отслеживания изменений items
 
   useEffect(() => {
+    // Если мы в режиме ожидания изменения веса, ничего не делаем
+    if (isAwaitingWeightChange) {
+      console.log('⚖️ OrderChecklist: Awaiting weight change, skipping automatic check.');
+      return;
+    }
+
     // Ищем элемент в статусе 'pending' или 'awaiting_confirmation' в текущей коробке
     // НЕ ищем элементы в статусе 'error' (они должны вернуться в pending через таймер)
     const pendingItem = items.find((item) =>
@@ -114,7 +121,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [equipmentState.currentWeight, equipmentState.isScaleConnected, activeBoxIndex]); // Убрали items из зависимостей
+  }, [equipmentState.currentWeight, equipmentState.isScaleConnected, activeBoxIndex, isAwaitingWeightChange]); // Убрали items из зависимостей
 
   // Сбрасываем lastWeightRef при переходе к новой коробке
   useEffect(() => {
