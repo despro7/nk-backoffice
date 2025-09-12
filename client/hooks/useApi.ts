@@ -6,7 +6,7 @@ export const useApi = () => {
   const apiCall = async (url: string, options: RequestInit = {}) => {
     const startTime = Date.now();
     const method = options.method || 'GET';
-    console.log(`🚀 [CLIENT] useApi: Starting ${method} request to ${url}`);
+    // console.log(`🚀 [CLIENT] useApi: Starting ${method} request to ${url}`);
 
     try {
       const response = await fetch(url, {
@@ -19,24 +19,24 @@ export const useApi = () => {
       });
 
       const responseTime = Date.now() - startTime;
-      console.log(`📨 [CLIENT] useApi: ${method} ${url} -> Status: ${response.status} (${responseTime}ms)`);
+      // console.log(`📨 [CLIENT] useApi: ${method} ${url} -> Status: ${response.status} (${responseTime}ms)`);
 
       // Если получили 401, пробуем обновить токен и повторить запрос
       if (response.status === 401) {
-        console.log(`🔐 [CLIENT] useApi: Received 401, attempting token refresh...`);
+        // console.log(`🔐 [CLIENT] useApi: Received 401, attempting token refresh...`);
         const errorData = await response.json().catch(() => ({}));
 
         // Если это expired токен, пробуем обновить
         if (errorData.shouldRefresh || errorData.code === 'TOKEN_EXPIRED') {
-          console.log(`🔄 [CLIENT] useApi: Token expired, refreshing...`);
+          // console.log(`🔄 [CLIENT] useApi: Token expired, refreshing...`);
           const refreshSuccess = await refreshToken();
 
           if (refreshSuccess) {
-            console.log(`✅ [CLIENT] useApi: Token refreshed successfully, updating auth status...`);
+            // console.log(`✅ [CLIENT] useApi: Token refreshed successfully, updating auth status...`);
             // Обновляем статус аутентификации в контексте
-            console.log(`🔄 [CLIENT] useApi: Calling checkAuthStatus...`);
+            // console.log(`🔄 [CLIENT] useApi: Calling checkAuthStatus...`);
             await checkAuthStatus();
-            console.log(`🎯 [CLIENT] useApi: checkAuthStatus completed`);
+            // console.log(`🎯 [CLIENT] useApi: checkAuthStatus completed`);
 
             // Повторяем оригинальный запрос с новым токеном
             const retryResponse = await fetch(url, {
@@ -49,7 +49,7 @@ export const useApi = () => {
             });
 
             const retryTime = Date.now() - startTime;
-            console.log(`🔁 [CLIENT] useApi: Retry ${method} ${url} -> Status: ${retryResponse.status} (${retryTime}ms)`);
+            // console.log(`🔁 [CLIENT] useApi: Retry ${method} ${url} -> Status: ${retryResponse.status} (${retryTime}ms)`);
             return retryResponse;
           } else {
             // Не удалось обновить токен, выходим из системы

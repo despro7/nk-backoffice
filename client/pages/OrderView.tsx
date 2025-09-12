@@ -1050,7 +1050,18 @@ export default function OrderView() {
       }
 
       // Получаем текущий вес с весов
-      const weightData = await equipmentActions.getWeight();
+      // const weightData = await equipmentActions.getWeight();
+
+      let weightData = equipmentState.currentWeight;
+      const weightAge = weightData ? Date.now() - new Date(weightData.timestamp).getTime() : Infinity;
+
+      // Обновляем вес, если он старше 1.5 секунд или отсутствует
+      if (!weightData || weightAge > 1500) {
+        console.log(`⚖️ OrderView: Вес устарел (${weightAge}ms) или отсутствует, обновляем...`);
+        weightData = await equipmentActions.getWeight();
+      } else {
+        console.log(`⚖️ OrderView: Используем недавний вес из состояния (${weightAge}ms).`);
+      }
 
       if (!weightData) {
         console.log('⚠️ OrderView: Не удалось получить вес с весов');

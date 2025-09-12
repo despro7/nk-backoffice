@@ -1,3 +1,5 @@
+import { EQUIPMENT_DEFAULTS } from '../../shared/constants/equipmentDefaults.js';
+
 export interface EquipmentStatus {
   isConnected: boolean;
   isSimulationMode: boolean;
@@ -21,26 +23,22 @@ export interface BarcodeData {
 export interface EquipmentConfig {
   connectionType: 'local' | 'simulation';
   scale: {
-    comPort: string;
     baudRate: number;
     dataBits: number;
     stopBits: number;
     parity: 'none' | 'even' | 'odd';
     autoConnect: boolean;
-  };
+    activePollingInterval: number; // ms
+    reservePollingInterval: number; // ms
+    activePollingDuration: number; // ms
+    maxPollingErrors: number;
+    weightCacheDuration: number; // ms
+    weightThresholdForActive?: number; // kg
+  } | null;
   scanner: {
     autoConnect: boolean;
     timeout: number;
     scanTimeout?: number;
-  };
-  serialTerminal: {
-    autoConnect: boolean;
-    baudRate: number;
-    dataBits: number;
-    stopBits: number;
-    parity: 'none' | 'even' | 'odd';
-    bufferSize: number;
-    flowControl: 'none' | 'hardware';
   };
   simulation: {
     enabled: boolean;
@@ -52,41 +50,15 @@ export interface EquipmentConfig {
 
 export class EquipmentService {
   private static instance: EquipmentService;
-  private isSimulationMode: boolean = true;
+  private isSimulationMode: boolean = false; // По умолчанию local режим
   private scaleConnection: any = null;
   private scannerConnection: any = null;
   private config: EquipmentConfig;
 
   private constructor() {
+    // Используем единые настройки по умолчанию
     this.config = {
-      connectionType: 'simulation',
-      scale: {
-        comPort: 'COM5',
-        baudRate: 9600,
-        dataBits: 8,
-        stopBits: 1,
-        parity: 'none',
-        autoConnect: false
-      },
-      scanner: {
-        autoConnect: true,
-        timeout: 5000
-      },
-      serialTerminal: {
-        autoConnect: false,
-        baudRate: 9600,
-        dataBits: 8,
-        stopBits: 1,
-        parity: 'none',
-        bufferSize: 1024,
-        flowControl: 'none'
-      },
-      simulation: {
-        enabled: true,
-        weightRange: { min: 0.1, max: 5.0 },
-        scanDelay: 800,
-        weightDelay: 1200
-      }
+      ...EQUIPMENT_DEFAULTS
     };
   }
 

@@ -124,7 +124,7 @@ class EquipmentSettingsService {
 
 ```typescript
 const defaultSettings: EquipmentSettings = {
-  connectionType: 'simulation',
+  connectionType: 'local',
   scale: {
     comPort: 'COM4',
     baudRate: 9600,

@@ -1,4 +1,5 @@
 import { prisma } from '../lib/utils.js';
+import { EQUIPMENT_DEFAULTS } from '../../shared/constants/equipmentDefaults.js';
 
 // Локальные типы для SettingsBase (временное решение до обновления Prisma)
 interface SettingsBase {
@@ -12,9 +13,6 @@ interface SettingsBase {
   updatedAt: Date;
 }
 
-
-
-
 // Временное решение: используем any для обхода проблем с типизацией Prisma
 const settingsBase = prisma.settingsBase as any;
 
@@ -27,19 +25,16 @@ export interface EquipmentSettings {
     stopBits: number;
     parity: string;
     autoConnect: boolean;
+    activePollingInterval: number;
+    reservePollingInterval: number;
+    activePollingDuration: number;
+    maxPollingErrors: number;
+    weightCacheDuration: number;
+    weightThresholdForActive: number;
   };
   scanner: {
     autoConnect: boolean;
     timeout: number;
-  };
-  serialTerminal: {
-    autoConnect: boolean;
-    baudRate: number;
-    dataBits: number;
-    stopBits: number;
-    parity: string;
-    bufferSize: number;
-    flowControl: string;
   };
   simulation: {
     enabled: boolean;
@@ -72,37 +67,8 @@ export class EquipmentSettingsService {
         }
       });
 
-      // Значения по умолчанию
-      const defaultSettings: EquipmentSettings = {
-        connectionType: 'simulation',
-        scale: {
-          comPort: 'COM4',
-          baudRate: 9600,
-          dataBits: 8,
-          stopBits: 1,
-          parity: 'none',
-          autoConnect: false
-        },
-        scanner: {
-          autoConnect: true,
-          timeout: 5000
-        },
-        serialTerminal: {
-          autoConnect: false,
-          baudRate: 9600,
-          dataBits: 8,
-          stopBits: 1,
-          parity: 'none',
-          bufferSize: 1024,
-          flowControl: 'none'
-        },
-        simulation: {
-          enabled: true,
-          weightRange: { min: 0.1, max: 5.0 },
-          scanDelay: 800,
-          weightDelay: 1200
-        }
-      };
+      // Используем единые настройки по умолчанию
+      const defaultSettings: EquipmentSettings = EQUIPMENT_DEFAULTS;
 
       if (settings.length === 0) {
         // Если настроек нет, создаем с значениями по умолчанию
@@ -151,7 +117,7 @@ export class EquipmentSettingsService {
         {
           key: 'equipment_connectionType',
           value: JSON.stringify(settings.connectionType ?? 'simulation'),
-          description: 'Тип подключения оборудования'
+          description: 'Тип підключення обладнання'
         },
         {
           key: 'equipment_scale.comPort',
@@ -161,32 +127,62 @@ export class EquipmentSettingsService {
         {
           key: 'equipment_scale.baudRate',
           value: JSON.stringify(settings.scale?.baudRate ?? 9600),
-          description: 'Скорость передачи данных ваг'
+          description: 'Швидкість передачі даних ваг'
         },
         {
           key: 'equipment_scale.dataBits',
           value: JSON.stringify(settings.scale?.dataBits ?? 8),
-          description: 'Биты данных ваг'
+          description: 'Біти даних ваг'
         },
         {
           key: 'equipment_scale.stopBits',
           value: JSON.stringify(settings.scale?.stopBits ?? 1),
-          description: 'Стоп-биты ваг'
+          description: 'Стоп-біти ваг'
         },
         {
           key: 'equipment_scale.parity',
           value: JSON.stringify(settings.scale?.parity ?? 'none'),
-          description: 'Парность ваг'
+          description: 'Парність ваг'
         },
         {
           key: 'equipment_scale.autoConnect',
           value: JSON.stringify(settings.scale?.autoConnect ?? false),
-          description: 'Автоматическое подключение ваг'
+          description: 'Автоматичне підключення ваг'
+        },
+        {
+          key: 'equipment_scale.activePollingInterval',
+          value: JSON.stringify(settings.scale?.activePollingInterval ?? 1000),
+          description: 'Активне опитування ваг (мс)'
+        },
+        {
+          key: 'equipment_scale.reservePollingInterval',
+          value: JSON.stringify(settings.scale?.reservePollingInterval ?? 5000),
+          description: 'Резервне опитування ваг (мс)'
+        },
+        {
+          key: 'equipment_scale.activePollingDuration',
+          value: JSON.stringify(settings.scale?.activePollingDuration ?? 30000),
+          description: 'Тривалість активного опитування ваг (мс)'
+        },
+        {
+          key: 'equipment_scale.maxPollingErrors',
+          value: JSON.stringify(settings.scale?.maxPollingErrors ?? 5),
+          description: 'Максимальна кількість помилок перед зупинкою опитування'
+        },
+        {
+          key: 'equipment_scale.weightCacheDuration',
+          value: JSON.stringify(settings.scale?.weightCacheDuration ?? 500),
+          description: 'Час кешування даних ваг (мс)'
+        },
+        {
+          key: 'equipment_scale.weightThresholdForActive',
+          value: JSON.stringify(settings.scale?.weightThresholdForActive ?? 0.010),
+          description: 'Поріг ваги для переключення на активний polling (кг)'
         },
         {
           key: 'equipment_scanner.autoConnect',
           value: JSON.stringify(settings.scanner?.autoConnect ?? true),
-          description: 'Автоматическое подключение сканера'
+          description: 'Автоматичне підключення сканера'
         },
         {
           key: 'equipment_scanner.timeout',
@@ -194,64 +190,29 @@ export class EquipmentSettingsService {
           description: 'Таймаут сканера'
         },
         {
-          key: 'equipment_serialTerminal.autoConnect',
-          value: JSON.stringify(settings.serialTerminal?.autoConnect ?? false),
-          description: 'Автоматическое подключение Serial терминала'
-        },
-        {
-          key: 'equipment_serialTerminal.baudRate',
-          value: JSON.stringify(settings.serialTerminal?.baudRate ?? 9600),
-          description: 'Скорость передачи данных Serial терминала'
-        },
-        {
-          key: 'equipment_serialTerminal.dataBits',
-          value: JSON.stringify(settings.serialTerminal?.dataBits ?? 8),
-          description: 'Биты данных Serial терминала'
-        },
-        {
-          key: 'equipment_serialTerminal.stopBits',
-          value: JSON.stringify(settings.serialTerminal?.stopBits ?? 1),
-          description: 'Стоп-биты Serial терминала'
-        },
-        {
-          key: 'equipment_serialTerminal.parity',
-          value: JSON.stringify(settings.serialTerminal?.parity ?? 'none'),
-          description: 'Парность Serial терминала'
-        },
-        {
-          key: 'equipment_serialTerminal.bufferSize',
-          value: JSON.stringify(settings.serialTerminal?.bufferSize ?? 1024),
-          description: 'Размер буфера Serial терминала'
-        },
-        {
-          key: 'equipment_serialTerminal.flowControl',
-          value: JSON.stringify(settings.serialTerminal?.flowControl ?? 'none'),
-          description: 'Управление потоком Serial терминала'
-        },
-        {
           key: 'equipment_simulation.enabled',
           value: JSON.stringify(settings.simulation?.enabled ?? true),
-          description: 'Режим симуляции включен'
+          description: 'Режим симуляції ввімкнено'
         },
         {
           key: 'equipment_simulation.weightRange.min',
           value: JSON.stringify(settings.simulation.weightRange?.min ?? 0.1),
-          description: 'Минимальный вес для симуляции'
+          description: 'Мінімальна вага для симуляції'
         },
         {
           key: 'equipment_simulation.weightRange.max',
           value: JSON.stringify(settings.simulation.weightRange?.max ?? 5.0),
-          description: 'Максимальный вес для симуляции'
+          description: 'Максимальна вага для симуляції'
         },
         {
           key: 'equipment_simulation.scanDelay',
           value: JSON.stringify(settings.simulation.scanDelay ?? 800),
-          description: 'Задержка сканирования для симуляции'
+          description: 'Затримка сканування для симуляції'
         },
         {
           key: 'equipment_simulation.weightDelay',
           value: JSON.stringify(settings.simulation.weightDelay ?? 1200),
-          description: 'Задержка веса для симуляции'
+          description: 'Затримка ваги для симуляції'
         }
       ];
 

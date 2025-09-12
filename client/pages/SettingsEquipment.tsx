@@ -2,16 +2,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button, ButtonGroup } from "@heroui/button";
 import { Switch } from "@heroui/switch";
-import { RadioGroup, Radio } from "@heroui/radio";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { useEquipment } from "../hooks/useEquipment";
 import { EquipmentConfig } from "../services/EquipmentService";
 import { Input } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
-import { Checkbox } from "@heroui/checkbox";
-import { ToastService } from "../services/ToastService";
 import { addToast } from "@heroui/toast";
 import ScaleService from "../services/ScaleService";
+import { EQUIPMENT_DEFAULTS } from "../../shared/constants/equipmentDefaults.js";
 
 
 export const SettingsEquipment = () => {
@@ -329,55 +327,6 @@ export const SettingsEquipment = () => {
     }
   };
 
-  // Обновление настроек Serial Terminal с сохранением в БД
-  const updateSerialTerminalSetting = async (field: string, value: any) => {
-    try {
-      console.log('🔧 updateSerialTerminalSetting called:', { field, value, localConfig: !!localConfig });
-
-      if (!localConfig) {
-        console.error('❌ updateSerialTerminalSetting: localConfig is null/undefined');
-        addToast({
-          title: "Помилка",
-          description: "Конфігурація не завантажена",
-          color: "danger",
-          timeout: 3000,
-        });
-        return;
-      }
-
-    // Обновляем конфигурацию
-    const updatedConfig: EquipmentConfig = {
-      ...localConfig,
-        serialTerminal: {
-          ...localConfig.serialTerminal,
-        [field]: value,
-      }
-    };
-
-      console.log('🔧 updateSerialTerminalSetting: saving config:', updatedConfig.serialTerminal);
-
-    setLocalConfig(updatedConfig);
-    await actions.saveConfig(updatedConfig);
-
-      console.log('✅ updateSerialTerminalSetting: config saved successfully');
-
-      // Показываем уведомление об успешном сохранении
-      addToast({
-        title: "Налаштування збережено",
-        description: `Serial налаштування "${getSerialTerminalFieldDisplayName(field)}" оновлено`,
-        color: "success",
-        timeout: 2000,
-      });
-    } catch (error) {
-      console.error('❌ Помилка збереження Serial налаштувань:', error);
-      addToast({
-        title: "Помилка",
-        description: "Не вдалося зберегти Serial налаштування",
-        color: "danger",
-        timeout: 3000,
-      });
-    }
-  };
 
   // Функция для получения отображаемых названий полей сканера
   const getScannerFieldDisplayName = (field: string): string => {
@@ -401,14 +350,6 @@ export const SettingsEquipment = () => {
     return names[field] || field;
   };
 
-  // Функция для получения отображаемых названий полей Serial Terminal
-  const getSerialTerminalFieldDisplayName = (field: string): string => {
-    const names: Record<string, string> = {
-      bufferSize: 'Розмір буфера',
-      flowControl: 'Управління потоком'
-    };
-    return names[field] || field;
-  };
 
   // Застосування конфігурації
   const applyConfig = async (config?: EquipmentConfig) => {
@@ -462,9 +403,22 @@ export const SettingsEquipment = () => {
       }
     } catch (error) {
       console.error("Error connecting scale:", error);
+      
+      let errorDescription = "Помилка підключення ваг!";
+      
+      if (error.name === 'SecurityError' && error.message.includes('user gesture')) {
+        errorDescription = "Натисніть кнопку підключення ще раз для надання дозволу на доступ до COM-порту";
+      } else if (error.name === 'NotFoundError') {
+        errorDescription = "COM-порт не знайдено. Перевірте підключення весов";
+      } else if (error.name === 'NetworkError') {
+        errorDescription = "Помилка з'єднання з COM-портом. Перевірте налаштування";
+      } else if (error.message.includes('already open')) {
+        errorDescription = "COM-порт вже відкритий. Закрийте інші програми або перезавантажте сторінку";
+      }
+      
       addToast({
         title: "Помилка",
-        description: "Помилка підключення ваг!",
+        description: errorDescription,
         color: "danger",
       });
     } finally {
@@ -502,8 +456,8 @@ export const SettingsEquipment = () => {
     setVta60ParsedData({});
 
     try {
-      // Создаем экземпляр ScaleService для теста
-      const scaleService = new ScaleService();
+      // Используем синглтон ScaleService для теста
+      const scaleService = ScaleService.getInstance();
 
       // Подключаемся с настройками ВТА-60
       const connected = await scaleService.connect();
@@ -516,7 +470,8 @@ export const SettingsEquipment = () => {
 
       // Отправляем запрос и получаем данные
       const scaleData = await scaleService.readScaleOnce(true);
-      await scaleService.disconnect();
+      // НЕ отключаемся после теста - оставляем соединение активным для дальнейшего использования
+      // await scaleService.disconnect(); // ← УБРАНО: не отключаемся после теста
 
       if (scaleData && scaleData.rawData) {
         // Форматируем сырые данные в HEX
@@ -539,7 +494,23 @@ export const SettingsEquipment = () => {
     } catch (error) {
       console.error('VTA-60 test error:', error);
       setVta60TestStatus('error');
-      setVta60TestResult(`❌ Помилка: ${error.message}`);
+      
+      // Более явная обработка специфических ошибок Web Serial API
+      let errorMessage = error.message;
+      
+      if (error.name === 'SecurityError' && error.message.includes('user gesture')) {
+        errorMessage = '⚠️ Потрібно дозвіл користувача\n\nНатисніть кнопку "Тестувати ВТА-60" ще раз, щоб надати дозвіл на доступ до COM-порту.\n\nЦе потрібно для безпеки браузера.';
+      } else if (error.name === 'NotFoundError') {
+        errorMessage = '❌ COM-порт не знайдено\n\nПеревірте, що:\n• Веси підключені до комп\'ютера\n• Драйвери встановлені\n• COM-порт доступний в системі';
+      } else if (error.name === 'NetworkError') {
+        errorMessage = '❌ Помилка мережі\n\nПеревірте з\'єднання з COM-портом:\n• Кабель підключений\n• Порт не використовується іншою програмою\n• Налаштування COM-порту правильні';
+      } else if (error.message.includes('already open')) {
+        errorMessage = '⚠️ COM-порт вже відкритий\n\nПорт вже використовується:\n• Закрийте інші програми, що використовують COM-порт\n• Перезавантажте сторінку для скидання з\'єднань\n• Спробуйте відключити та підключити знову';
+      } else if (error.message.includes('Web Serial API')) {
+        errorMessage = '❌ Web Serial API не підтримується\n\nВикористовуйте Chrome або Edge браузер для роботи з COM-портами.';
+      }
+      
+      setVta60TestResult(errorMessage);
     }
   };
 
@@ -844,8 +815,8 @@ export const SettingsEquipment = () => {
         <CardBody className="p-6">
           <div className="flex flex-col xl:flex-row gap-8">
             {/* Налаштування ваг */}
-            <Card className="flex flex-1 flex-col gap-6 p-4">
-              <h3 className="font-medium text-gray-400">Налаштування ваг</h3>
+            <Card className="flex-1 grid grid-cols-2 gap-6 p-4 h-fit">
+              <h3 className="font-medium text-gray-400 col-span-2">Налаштування ваг</h3>
               <Select
                 id="baudRate"
                 label="Швидкість (біт/с)"
@@ -910,37 +881,109 @@ export const SettingsEquipment = () => {
                 <SelectItem key="odd">Odd</SelectItem>
               </Select>
 
+
               <Input
-                id="bufferSize"
+                id="activePollingInterval"
                 type="number"
-                label="Розмір буфера"
+                label="Активний опрос (мс)"
                 labelPlacement="outside"
-                value={localConfig.serialTerminal?.bufferSize?.toString() || "1024"}
+                value={localConfig.scale?.activePollingInterval?.toString() || EQUIPMENT_DEFAULTS.scale.activePollingInterval.toString()}
                 onValueChange={(value) =>
-                  updateSerialTerminalSetting("bufferSize", parseInt(value) || 1024)
+                  updateScaleSetting("activePollingInterval", parseInt(value) || EQUIPMENT_DEFAULTS.scale.activePollingInterval)
                 }
                 className="block text-sm font-medium text-gray-700 mb-1"
-                min="256"
-                max="16384"
+                min="100"
+                max="5000"
               />
 
-              <Select
-                id="flowControl"
-                label="Управління потоком"
+              <Input
+                id="weightThresholdForActive"
+                type="number"
+                label="Поріг ваги для Active Polling (кг)"
                 labelPlacement="outside"
-                selectedKeys={[localConfig.serialTerminal?.flowControl || "none"]}
-                onSelectionChange={(keys) => {
-                  const value = Array.from(keys)[0] as string;
-                  updateSerialTerminalSetting("flowControl", value);
-                }}
+                value={localConfig.scale?.weightThresholdForActive?.toString() || EQUIPMENT_DEFAULTS.scale.weightThresholdForActive.toString()}
+                onValueChange={(value) =>
+                  updateScaleSetting("weightThresholdForActive", parseFloat(value) || EQUIPMENT_DEFAULTS.scale.weightThresholdForActive)
+                }
                 className="block text-sm font-medium text-gray-700 mb-1"
+                min="0.001"
+                max="1.0"
+                step="0.001"
+              />
+
+              <Input
+                id="reservePollingInterval"
+                type="number"
+                label="Резервний опрос (мс)"
+                labelPlacement="outside"
+                value={localConfig.scale?.reservePollingInterval?.toString() || EQUIPMENT_DEFAULTS.scale.reservePollingInterval.toString()}
+                onValueChange={(value) =>
+                  updateScaleSetting("reservePollingInterval", parseInt(value) || EQUIPMENT_DEFAULTS.scale.reservePollingInterval)
+                }
+                className="block text-sm font-medium text-gray-700 mb-1"
+                min="1000"
+                max="30000"
+              />
+
+              <Input
+                id="activePollingDuration"
+                type="number"
+                label="Тривалість активного опитування (мс)"
+                labelPlacement="outside"
+                value={localConfig.scale?.activePollingDuration?.toString() || EQUIPMENT_DEFAULTS.scale.activePollingDuration.toString()}
+                onValueChange={(value) =>
+                  updateScaleSetting("activePollingDuration", parseInt(value) || EQUIPMENT_DEFAULTS.scale.activePollingDuration)
+                }
+                className="block text-sm font-medium text-gray-700 mb-1"
+                min="5000"
+                max="300000"
+              />
+
+              <Input
+                id="maxPollingErrors"
+                type="number"
+                label="Максимальна кількість помилок"
+                labelPlacement="outside"
+                value={localConfig.scale?.maxPollingErrors?.toString() || EQUIPMENT_DEFAULTS.scale.maxPollingErrors.toString()}
+                onValueChange={(value) =>
+                  updateScaleSetting("maxPollingErrors", parseInt(value) || EQUIPMENT_DEFAULTS.scale.maxPollingErrors)
+                }
+                className="block text-sm font-medium text-gray-700 mb-1"
+                min="1"
+                max="20"
+              />
+
+              <Input
+                id="weightCacheDuration"
+                type="number"
+                label="Час кешування даних ваг (мс)"
+                labelPlacement="outside"
+                value={localConfig.scale?.weightCacheDuration?.toString() || EQUIPMENT_DEFAULTS.scale.weightCacheDuration.toString()}
+                onValueChange={(value) =>
+                  updateScaleSetting("weightCacheDuration", parseInt(value) || EQUIPMENT_DEFAULTS.scale.weightCacheDuration)
+                }
+                className="block text-sm font-medium text-gray-700 mb-1"
+                min="100"
+                max="5000"
+              />
+
+              {/* Свитчер автопідключення ваг */}
+              <Switch
+                id="scaleAutoConnect"
+                isSelected={localConfig.scale?.autoConnect || false}
+                onValueChange={(value) => updateScaleSetting("autoConnect", value)}
+                color="primary"
+                size="sm"
+                classNames={{
+                  base: "col-span-2",
+                  wrapper: "bg-secondary/50",
+                  thumbIcon: "bg-white/50",
+                }}
               >
-                <SelectItem key="none">None</SelectItem>
-                <SelectItem key="hardware">Hardware</SelectItem>
-              </Select>
+                Авто. підключення ваг</Switch>
 
               {/* Кнопки керування вагами */}
-              <div className="flex gap-2 mt-4">
+              <div className="flex col-span-2 gap-2 mt-4">
                 <Button
                   onPress={handleScaleConnect}
                   disabled={state.isScaleConnected || isConnectingScale}
@@ -962,20 +1005,6 @@ export const SettingsEquipment = () => {
                   Відключити ваги
                 </Button>
               </div>
-
-              {/* Свитчер автопідключення ваг */}
-              <Switch
-                id="scaleAutoConnect"
-                isSelected={localConfig.scale?.autoConnect || false}
-                onValueChange={(value) => updateScaleSetting("autoConnect", value)}
-                color="primary"
-                size="sm"
-                classNames={{
-                  wrapper: "bg-secondary/50",
-                  thumbIcon: "bg-white/50",
-                }}
-              >
-                Авто. підключення ваг</Switch>
             </Card>
 
             <div className="flex flex-1 flex-col gap-8 h-fit">
@@ -984,7 +1013,7 @@ export const SettingsEquipment = () => {
                 <h3 className="font-medium text-gray-400">Тест вагів ВТА-60</h3>
 
                 <div className="flex flex-col gap-4">
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-col gap-4">
                     <Button
                       color={vta60TestStatus === 'idle' ? 'primary' : 'default'}
                   size="sm"
@@ -998,7 +1027,7 @@ export const SettingsEquipment = () => {
                     </Button>
 
                     <div className="flex-1">
-                      <div className={`text-sm p-2 rounded ${
+                      <div className={`text-sm p-3 rounded whitespace-pre-line ${
                         vta60TestStatus === 'success' ? 'bg-green-50 text-green-700' :
                         vta60TestStatus === 'error' ? 'bg-red-50 text-red-700' :
                         'bg-gray-50 text-gray-600'

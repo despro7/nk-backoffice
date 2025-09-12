@@ -58,7 +58,7 @@ npx ts-node server/test-api-simple.ts
 
 ### Таблиця `settings_base` - 18 записів
 ```sql
-equipment_connectionType: "simulation"     -- Режим симуляції
+equipment_connectionType: "local"          -- Режим локального підключення
 equipment_scale.comPort: "COM4"           -- COM-порт ваг
 equipment_scale.baudRate: 9600            -- Швидкість передачі
 equipment_scale.dataBits: 8               -- Біти даних
@@ -71,7 +71,7 @@ equipment_websocket.autoReconnect: true   -- Автоперепідключен�
 equipment_websocket.reconnectInterval: 5000 -- Інтервал перепідключення
 equipment_websocket.maxReconnectAttempts: 10 -- Макс. спроби
 equipment_websocket.heartbeatInterval: 30000 -- Heartbeat
-equipment_simulation.enabled: true        -- Симуляція увімкнена
+equipment_simulation.enabled: false       -- Симуляція вимкнена
 equipment_simulation.weightRange.min: 0.1 -- Мін. вага
 equipment_simulation.weightRange.max: 5.0 -- Макс. вага
 equipment_simulation.scanDelay: 800       -- Затримка сканування

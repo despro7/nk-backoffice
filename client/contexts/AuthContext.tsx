@@ -333,11 +333,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } else {
         const error = await response.json();
         console.error('❌ Ошибка входа:', error.message);
-        return false;
+        throw new Error(error.message || 'Не вдалося увійти');
       }
     } catch (error) {
       console.error('❌ Ошибка сети при входе:', error);
-      return false;
+      throw error;
     }
   };
 

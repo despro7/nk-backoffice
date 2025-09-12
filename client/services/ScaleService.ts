@@ -1,4 +1,5 @@
 import { ScaleData } from './EquipmentService';
+import { EQUIPMENT_DEFAULTS } from '../../shared/constants/equipmentDefaults.js';
 
 // Типы для Web Serial API (если не поддерживаются браузером)
 declare global {
@@ -39,21 +40,30 @@ export interface VTAScaleData extends ScaleData {
 }
 
 export class ScaleService {
+  private static instance: ScaleService;
   private port: SerialPort | null = null;
   private isConnected: boolean = false;
   private config: ScaleConnectionConfig;
   private onWeightChange: ((data: VTAScaleData) => void) | null = null;
   private onRawData: ((data: Uint8Array) => void) | null = null;
   private reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  private isReading: boolean = false; // Флаг для предотвращения одновременного чтения
 
-  constructor() {
-    // Настройки для ВТА-60: 4800-8E1 по умолчанию
+  private constructor() {
+    // Используем единые настройки по умолчанию
     this.config = {
-      baudRate: 4800,
-      dataBits: 8,
-      stopBits: 1,
-      parity: 'even'
+      baudRate: EQUIPMENT_DEFAULTS.scale.baudRate,
+      dataBits: EQUIPMENT_DEFAULTS.scale.dataBits,
+      stopBits: EQUIPMENT_DEFAULTS.scale.stopBits,
+      parity: EQUIPMENT_DEFAULTS.scale.parity
     };
+  }
+
+  public static getInstance(): ScaleService {
+    if (!ScaleService.instance) {
+      ScaleService.instance = new ScaleService();
+    }
+    return ScaleService.instance;
   }
 
   // Підключення до ваг через Web Serial API
@@ -105,13 +115,22 @@ export class ScaleService {
       console.log(`🔧 ScaleService: Відкриваємо порт з налаштуваннями ВТА-60 (${this.config.baudRate}-${this.config.dataBits}${this.config.parity.charAt(0).toUpperCase()}${this.config.stopBits})`);
 
       // Відкриваємо порт з налаштуваннями для ВТА-60
-      await this.port.open({
-        baudRate: this.config.baudRate,
-        dataBits: this.config.dataBits,
-        stopBits: this.config.stopBits,
-        parity: this.config.parity,
-        bufferSize: 1024
-      });
+      try {
+        await this.port.open({
+          baudRate: this.config.baudRate,
+          dataBits: this.config.dataBits,
+          stopBits: this.config.stopBits,
+          parity: this.config.parity,
+          bufferSize: 1024
+        });
+      } catch (openError) {
+        if (openError.message.includes('already open')) {
+          console.log('⚠️ ScaleService: Порт вже відкритий, використовуємо існуюче з\'єднання');
+          // Порт уже открыт, считаем что подключение успешно
+        } else {
+          throw openError; // Перебрасываем другие ошибки
+        }
+      }
 
       this.isConnected = true;
       console.log('✅ ScaleService: Ваги ВТА-60 успішно підключені');
@@ -220,8 +239,9 @@ export class ScaleService {
 
   // Полный цикл: опрос или ожидание автопередачи, парсинг кадра
   public async readScaleOnce(usePolling: boolean = true): Promise<VTAScaleData | null> {
-    if (!this.isConnected) return null;
+    if (!this.isConnected || this.isReading) return null;
 
+    this.isReading = true;
     try {
       if (usePolling) {
         await this.sendPoll(); // запрос «масса/цена/сумма»
@@ -252,8 +272,13 @@ export class ScaleService {
 
       return scaleData;
     } catch (error) {
-      console.error('❌ Error reading scale data:', error);
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const uptimeSec = Math.floor((now.getTime() - performance.timeOrigin) / 1000);
+      console.error(`❌ Error reading scale data [${timeStr}, +${uptimeSec}s]:`, error);
       return null;
+    } finally {
+      this.isReading = false;
     }
   }
 
@@ -362,7 +387,8 @@ export class ScaleService {
       if (result) {
         // Пытаемся получить данные от весов
         const testData = await this.readScaleOnce(true);
-        await this.disconnect();
+        // НЕ отключаемся после теста - оставляем соединение активным
+        // await this.disconnect(); // ← УБРАНО: не отключаемся после теста
         return testData !== null;
       }
       return false;
@@ -372,62 +398,6 @@ export class ScaleService {
     }
   }
 
-  // Тест различных конфигураций подключения для ВТА-60
-  public async testConnectionConfigs(): Promise<{config: ScaleConnectionConfig, success: boolean, data?: VTAScaleData}[]> {
-    const configs: ScaleConnectionConfig[] = [
-      { baudRate: 4800, dataBits: 8, stopBits: 1, parity: 'even' },  // ВТА-60 по умолчанию
-      { baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'even' },
-      { baudRate: 19200, dataBits: 8, stopBits: 1, parity: 'even' },
-      { baudRate: 4800, dataBits: 8, stopBits: 1, parity: 'none' },
-      { baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'none' },
-      { baudRate: 19200, dataBits: 8, stopBits: 1, parity: 'none' }
-    ];
-
-    const results: {config: ScaleConnectionConfig, success: boolean, data?: VTAScaleData}[] = [];
-
-    console.log('🧪 Тестирование различных конфигураций подключения к ВТА-60...\n');
-
-    for (const config of configs) {
-      console.log(`Тестируем: ${config.baudRate} baud, ${config.parity} parity`);
-
-      try {
-        // Обновляем конфигурацию
-        this.updateConfig(config);
-
-        // Пытаемся подключиться
-        const success = await this.connect();
-
-        if (success) {
-          console.log('✅ Подключение успешно');
-
-          // Пытаемся получить данные
-          const scaleData = await this.readScaleOnce(true);
-
-          if (scaleData) {
-            console.log(`✅ Получены данные: ${scaleData.weight} кг, цена: ${scaleData.price}, сумма: ${scaleData.total}`);
-            console.log(`   Raw: ${Array.from(scaleData.rawData!).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
-          } else {
-            console.log('⚠️ Данные не получены');
-          }
-
-          // Отключаемся
-          await this.disconnect();
-
-          results.push({ config, success: scaleData !== null, data: scaleData || undefined });
-          console.log(`Результат: ${scaleData ? 'УСПЕХ' : 'ПОДКЛЮЧЕНИЕ БЕЗ ДАННЫХ'}\n`);
-        } else {
-          console.log('❌ Подключение не удалось\n');
-          results.push({ config, success: false });
-        }
-
-      } catch (error) {
-        console.error(`❌ Ошибка при тестировании: ${error.message}\n`);
-        results.push({ config, success: false });
-      }
-    }
-
-    return results;
-  }
 }
 
 export default ScaleService;

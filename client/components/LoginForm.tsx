@@ -4,7 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { useServerStatus } from '../hooks/useServerStatus';
 import logo from '/logo.svg';
 import { Alert } from '@heroui/react';
-import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 export const LoginForm: React.FC = () => {
@@ -22,23 +21,21 @@ export const LoginForm: React.FC = () => {
     setError('');
 
     try {
-      const loginSuccess = await login({ email, password });
-      if (loginSuccess) {
-        // Проверяем сохраненный путь и перенаправляем туда
-        const lastVisited = localStorage.getItem('lastVisitedPath');
-        const redirectTo = lastVisited || '/';
-        
-        console.log(`🔄 [LoginForm] Успешный логин, перенаправляем на ${redirectTo}`);
-        
-        // Очищаем сохраненный путь после использования
-        if (lastVisited) {
-          localStorage.removeItem('lastVisitedPath');
-        }
-        
-        navigate(redirectTo, { replace: true });
+      await login({ email, password });
+      // Проверяем сохраненный путь и перенаправляем туда
+      const lastVisited = localStorage.getItem('lastVisitedPath');
+      const redirectTo = lastVisited || '/';
+      
+      console.log(`🔄 [LoginForm] Успешный логин, перенаправляем на ${redirectTo}`);
+      
+      // Очищаем сохраненный путь после использования
+      if (lastVisited) {
+        localStorage.removeItem('lastVisitedPath');
       }
+      
+      navigate(redirectTo, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(err instanceof Error ? err.message : 'Не вдалося увійти');
     } finally {
       setIsLoading(false);
     }

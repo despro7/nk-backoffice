@@ -51,7 +51,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
 
   const [status, setStatus] = useState<EquipmentStatus>({
     isConnected: false,
-    isSimulationMode: true,
+    isSimulationMode: false,
     lastActivity: null,
     error: null
   });
@@ -71,7 +71,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   const lastProcessedTimeRef = useRef<number>(0);
   
   const equipmentService = useRef(EquipmentService.getInstance());
-  const scaleService = useRef(new ScaleService());
+  const scaleService = useRef(ScaleService.getInstance());
   const scannerService = useRef(BarcodeScannerService.getInstance());
 
   // Состояние для активного polling
@@ -80,15 +80,14 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   const activePollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reservePollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const activePollingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isReservePollingRef = useRef<boolean>(false);
   const isActivePollingRef = useRef(false); // Ref для отслеживания состояния в интервалах
   const activePollingErrorCountRef = useRef(0); // Счетчик ошибок активного polling
   const isPollingRef = useRef(false); // Ref for preventing concurrent polling requests
-  const MAX_ACTIVE_POLLING_ERRORS = 5; // Максимальное количество ошибок перед остановкой
+  const [significantWeightDetected, setSignificantWeightDetected] = useState(false);
 
   // Кэш для данных весов
   const weightCacheRef = useRef<{ data: VTAScaleData; timestamp: number } | null>(null);
-  const WEIGHT_CACHE_DURATION = 500; // 500ms кэш для активного polling
-  const ACTIVE_POLLING_TIMEOUT = 30000; // 30 секунд максимум для активного polling
 
   // Кеш для настроек оборудования (15 минут)
   const configCacheRef = useRef<{ data: EquipmentConfig | null; timestamp: number } | null>(null);
@@ -287,7 +286,8 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     }
   }, [updateStatus, config]);
 
-  // Відключення від ваг
+
+  // Полное отключение от ваг (для принудительного отключения)
   const disconnectScale = useCallback(async (): Promise<void> => {
     try {
       await scaleService.current.disconnect();
@@ -420,15 +420,6 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         connectionType,
         scale: null,
         scanner: null,
-        serialTerminal: {
-          autoConnect: false,
-          baudRate: 4800,
-          dataBits: 8,
-          parity: 'even' as const,
-          stopBits: 1,
-          bufferSize: 1024,
-          flowControl: 'none' as const
-        },
         simulation: null
       };
       setConfig({ ...tempConfig } as EquipmentConfig); // Создаем новый объект
@@ -454,7 +445,8 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       // Проверяем кэш если useCache = true
       if (useCache && weightCacheRef.current) {
         const age = Date.now() - weightCacheRef.current.timestamp;
-        if (age < WEIGHT_CACHE_DURATION) {
+        const cacheDuration = config?.scale?.weightCacheDuration || 500;
+        if (age < cacheDuration) {
           console.log('🔧 useEquipment: Возвращаем кэшированный вес:', weightCacheRef.current.data);
           return weightCacheRef.current.data;
         }
@@ -526,12 +518,27 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
 
   // Ініціалізація при монтуванні - только один раз
   useEffect(() => {
-    // Очищення при розмонтуванні
+    // НЕ отключаемся при переходе между страницами - используем синглтон ScaleService
+    // Соединение с весами должно сохраняться между страницами
     return () => {
-      disconnectScale();
-      disconnectScanner();
+      // Останавливаем polling, но НЕ отключаем весы - соединение должно сохраняться
+      // Очищаем интервалы напрямую, без зависимости от stopScalePolling
+      if (activePollingIntervalRef.current) {
+        clearInterval(activePollingIntervalRef.current);
+        activePollingIntervalRef.current = null;
+      }
+      if (reservePollingIntervalRef.current) {
+        clearInterval(reservePollingIntervalRef.current);
+        reservePollingIntervalRef.current = null;
+      }
+      if (activePollingTimeoutRef.current) {
+        clearTimeout(activePollingTimeoutRef.current);
+        activePollingTimeoutRef.current = null;
+      }
+      setCurrentWeight(null);
+      setIsScaleConnected(false);
     };
-  }, []); // Пустой массив зависимостей - запускается только при монтировании
+  }, []); // Пустой массив зависимостей
 
   // Отдельный useEffect для инициализации оборудования при загрузке config
   useEffect(() => {
@@ -695,8 +702,24 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   }, [loadConfig]);
 
   // Функции для управления polling (объявляем заранее)
+  const stopReservePolling = useCallback(() => {
+    if (!isReservePollingRef.current) {
+      return;
+    }
+
+    console.log('⏹️ useEquipment: Остановка резервного polling');
+    setIsReservePolling(false);
+    isReservePollingRef.current = false;
+    isPollingRef.current = false;
+
+    if (reservePollingIntervalRef.current) {
+      clearInterval(reservePollingIntervalRef.current);
+      reservePollingIntervalRef.current = null;
+    }
+  }, []);
+
   const startReservePolling = useCallback(() => {
-    if (isReservePolling || !config) {
+    if (isReservePollingRef.current || !config) {
       return;
     }
 
@@ -707,8 +730,10 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       return;
     }
 
-    console.log('🔄 useEquipment: Запуск резервного polling (5s)');
+    const reservePollingInterval = config?.scale?.reservePollingInterval || 5000;
+    console.log(`🔄 useEquipment: Запуск резервного polling (${reservePollingInterval}ms)`);
     setIsReservePolling(true);
+    isReservePollingRef.current = true;
 
     reservePollingIntervalRef.current = setInterval(async () => {
       if (isPollingRef.current) {
@@ -728,7 +753,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         }
 
         // Резервный polling только если не идет активный
-        if (!isActivePolling) {
+        if (!isActivePollingRef.current) {
           // Проверяем подключение перед попыткой получения веса
           if (!status.isConnected || !isScaleConnected) {
             console.log('🔄 useEquipment: Reserve polling - весы не подключены, пытаемся переподключиться...');
@@ -766,30 +791,21 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
           } else if (!reserveWeight) {
             console.log('⚠️ useEquipment: Reserve polling - вес не получен, возможно потеряно подключение');
           }
+
+          // Если обнаружен значительный вес, инициируем переключение на активный polling
+          const weightThreshold = config?.scale?.weightThresholdForActive || 0.010; // 10 грамм
+          if (reserveWeight && reserveWeight.weight > weightThreshold && !isActivePollingRef.current) {
+            console.log(`⚖️ useEquipment: Обнаружен значительный вес (${reserveWeight.weight} кг) в резервном режиме.`);
+            setSignificantWeightDetected(true);
+          }
         }
       } catch (error) {
         console.log('⚠️ useEquipment: Ошибка резервного polling:', error);
       } finally {
         isPollingRef.current = false;
       }
-    }, 5000);
-  }, [isReservePolling, config, getWeight, isActivePolling, status.isConnected, isScaleConnected, updateStatus]);
-
-  // Остановка резервного polling
-  const stopReservePolling = useCallback(() => {
-    if (!isReservePolling) {
-      return;
-    }
-
-    console.log('⏹️ useEquipment: Остановка резервного polling');
-    setIsReservePolling(false);
-    isPollingRef.current = false;
-
-    if (reservePollingIntervalRef.current) {
-      clearInterval(reservePollingIntervalRef.current);
-      reservePollingIntervalRef.current = null;
-    }
-  }, [isReservePolling]);
+    }, reservePollingInterval);
+  }, [config, getWeight, status.isConnected, isScaleConnected, updateStatus, setSignificantWeightDetected]);
 
   // Активный polling для pending статусов (500ms) - только при подключенных весах
   const startActivePolling = useCallback(() => {
@@ -801,9 +817,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     if (!status.isConnected || !isScaleConnected) {
       console.log('⚠️ useEquipment: Активный polling недоступен - весы не подключены');
       // Запускаем резервный polling вместо активного
-      if (!isReservePolling) {
-        startReservePolling();
-      }
+      startReservePolling();
       return;
     }
 
@@ -814,7 +828,10 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       return;
     }
 
-    console.log('🔄 useEquipment: Запуск активного polling (500ms) на 30 секунд');
+    const activePollingInterval = config?.scale?.activePollingInterval || 1000;
+    const timeout = config?.scale?.activePollingDuration || 30000;
+
+    console.log(`🔄 useEquipment: Запуск активного polling (${activePollingInterval}ms) на ${timeout / 1000} секунд`);
     setIsActivePolling(true);
     isActivePollingRef.current = true;
     activePollingErrorCountRef.current = 0; // Сбрасываем счетчик ошибок
@@ -864,16 +881,14 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
           });
         } else if (!freshWeight) {
           activePollingErrorCountRef.current++;
-          console.log(`⚠️ useEquipment: Активный polling - вес не получен (ошибка ${activePollingErrorCountRef.current}/${MAX_ACTIVE_POLLING_ERRORS})`);
+          const maxErrors = config?.scale?.maxPollingErrors || 5;
+          console.log(`⚠️ useEquipment: Активный polling - вес не получен (ошибка ${activePollingErrorCountRef.current}/${maxErrors})`);
           
           // Если слишком много ошибок, останавливаем активный polling
-          if (activePollingErrorCountRef.current >= MAX_ACTIVE_POLLING_ERRORS) {
+          if (activePollingErrorCountRef.current >= maxErrors) {
             console.log('❌ useEquipment: Слишком много ошибок активного polling, останавливаем и переходим к резервному');
-            const shouldSwitchToReserve = !isReservePolling;
             stopActivePolling();
-            if (shouldSwitchToReserve) {
-              startReservePolling();
-            }
+            startReservePolling();
             return;
           }
           return;
@@ -883,7 +898,8 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         }
       } catch (error) {
         activePollingErrorCountRef.current++;
-        console.log(`⚠️ useEquipment: Ошибка активного polling (ошибка ${activePollingErrorCountRef.current}/${MAX_ACTIVE_POLLING_ERRORS}):`, error);
+        const maxErrors = config?.scale?.maxPollingErrors || 5;
+        console.log(`⚠️ useEquipment: Ошибка активного polling (ошибка ${activePollingErrorCountRef.current}/${maxErrors}):`, error);
         
         // Для ошибок ReadableStream сразу переходим к резервному polling
         if (error instanceof Error && error.message.includes('ReadableStream')) {
@@ -896,42 +912,35 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
             console.log('⚠️ useEquipment: Ошибка при принудительном отключении:', disconnectError);
           }
           
-          const shouldSwitchToReserve = !isReservePolling;
           stopActivePolling();
-          if (shouldSwitchToReserve) {
-            startReservePolling();
-          }
+          startReservePolling();
           return;
         }
         
         // Если слишком много ошибок, останавливаем активный polling
-        if (activePollingErrorCountRef.current >= MAX_ACTIVE_POLLING_ERRORS) {
+        if (activePollingErrorCountRef.current >= maxErrors) {
           console.log('❌ useEquipment: Слишком много ошибок активного polling, останавливаем и переходим к резервному');
-          const shouldSwitchToReserve = !isReservePolling;
           stopActivePolling();
-          if (shouldSwitchToReserve) {
-            startReservePolling();
-          }
+          startReservePolling();
           return;
         }
         return;
       } finally {
         isPollingRef.current = false;
       }
-    }, 500);
+    }, activePollingInterval);
 
     // Устанавливаем таймаут 30 секунд для активного polling
     activePollingTimeoutRef.current = setTimeout(() => {
       console.log('⏰ useEquipment: Таймаут активного polling (30 сек), переходим к резервному');
       console.log('⏰ useEquipment: isActivePolling:', isActivePollingRef.current, 'isReservePolling:', isReservePolling);
       stopActivePolling();
-      if (!isReservePolling) {
-        startReservePolling();
-      }
-    }, ACTIVE_POLLING_TIMEOUT);
+      // Всегда запускаем резервный polling после таймаута активного
+      startReservePolling();
+    }, timeout);
 
-    console.log('⏰ useEquipment: Установлен таймаут на 30 секунд, ID:', activePollingTimeoutRef.current);
-  }, [isActivePolling, config, getWeight, status.isConnected, isScaleConnected, isReservePolling]);
+    console.log(`⏰ useEquipment: Установлен таймаут на ${timeout / 1000} секунд, ID:`, activePollingTimeoutRef.current);
+  }, [config, getWeight, status.isConnected, isScaleConnected]);
 
   // Остановка активного polling
   const stopActivePolling = useCallback(() => {
@@ -954,8 +963,19 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       clearTimeout(activePollingTimeoutRef.current);
       activePollingTimeoutRef.current = null;
     }
-  }, [isActivePolling]);
+  }, []);
 
+  // Переключаемся с резервного на активный polling при обнаружении веса
+  useEffect(() => {
+    if (significantWeightDetected) {
+      if (isReservePollingRef.current) {
+        console.log('⚖️ useEquipment: Переключаемся с резервного на активный polling из-за обнаружения веса.');
+        stopReservePolling();
+        startActivePolling();
+      }
+      setSignificantWeightDetected(false); // Сбрасываем триггер
+    }
+  }, [significantWeightDetected, startActivePolling, stopReservePolling]);
 
   // Синхронизируем ref с состоянием isActivePolling
   useEffect(() => {

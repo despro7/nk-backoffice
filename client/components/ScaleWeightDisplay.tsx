@@ -23,6 +23,8 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
 }) => {
   const [equipmentState, equipmentActions] = useEquipmentFromAuth();
   const [isConnectingScale, setIsConnectingScale] = useState(false);
+  const [pollingCountdown, setPollingCountdown] = useState<number | null>(null);
+  const [activePollingStartTime, setActivePollingStartTime] = useState<number | null>(null);
 
   const realWeight = equipmentState.currentWeight?.weight || 0;
   const isStable = equipmentState.currentWeight?.isStable || false;
@@ -51,6 +53,71 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
     return () => clearInterval(interval);
   }, [isConnected]);
 
+  // Отслеживание времени начала активного polling
+  useEffect(() => {
+    if (equipmentState.isActivePolling && !activePollingStartTime) {
+      setActivePollingStartTime(Date.now());
+    } else if (!equipmentState.isActivePolling) {
+      setActivePollingStartTime(null);
+    }
+  }, [equipmentState.isActivePolling, activePollingStartTime]);
+
+  // Таймер обратного отсчёта для polling
+  useEffect(() => {
+    let countdownInterval: NodeJS.Timeout | null = null;
+
+    if (equipmentState.isActivePolling) {
+      if (activePollingStartTime) {
+        // Для активного polling показываем оставшееся время до окончания activePollingDuration
+        const activePollingDuration = equipmentState.config?.scale?.activePollingDuration || 30000;
+        const elapsed = Date.now() - activePollingStartTime;
+        const remaining = Math.max(0, activePollingDuration - elapsed);
+        
+        setPollingCountdown(Math.ceil(remaining / 1000));
+        
+        countdownInterval = setInterval(() => {
+          const currentElapsed = Date.now() - activePollingStartTime;
+          const currentRemaining = Math.max(0, activePollingDuration - currentElapsed);
+          setPollingCountdown(Math.ceil(currentRemaining / 1000));
+        }, 1000);
+      } else {
+        // Если активный polling запущен, но время начала еще не установлено, показываем интервал
+        const interval = equipmentState.config?.scale?.activePollingInterval || 1000;
+        setPollingCountdown(Math.ceil(interval / 1000));
+        
+        countdownInterval = setInterval(() => {
+          setPollingCountdown(prev => {
+            if (prev === null || prev <= 1) {
+              return Math.ceil(interval / 1000);
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+    } else if (equipmentState.isReservePolling) {
+      // Для резервного polling показываем интервал между запросами
+      const interval = equipmentState.config?.scale?.reservePollingInterval || 5000;
+      setPollingCountdown(Math.ceil(interval / 1000));
+      
+      countdownInterval = setInterval(() => {
+        setPollingCountdown(prev => {
+          if (prev === null || prev <= 1) {
+            return Math.ceil(interval / 1000);
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      setPollingCountdown(null);
+    }
+
+    return () => {
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+      }
+    };
+  }, [equipmentState.isActivePolling, equipmentState.isReservePolling, equipmentState.config?.scale?.activePollingInterval, equipmentState.config?.scale?.reservePollingInterval, equipmentState.config?.scale?.activePollingDuration, activePollingStartTime]);
+
   // Функция для ручного подключения к весам
   const handleManualScaleConnect = async () => {
     if (equipmentState.isSimulationMode) {
@@ -62,7 +129,7 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
     try {
       console.log('🔧 ScaleWeightDisplay: Manual scale connection attempt...');
       // Используем ручной выбор порта (autoConnect=false)
-      const scaleInstance = new ScaleService();
+      const scaleInstance = ScaleService.getInstance();
       const connected = await scaleInstance.connect(false);
       if (connected) {
         console.log('✅ ScaleWeightDisplay: Scale connected successfully');
@@ -84,12 +151,11 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
       <div className="space-y-3">
         {/* Заголовок */}
         <div className="flex items-start justify-between">
-          <span className="text-sm font-medium text-gray-700">Поточна вага</span>
+          
+          <div className="text-sm font-medium text-gray-700">
+            <span className={cn("inline-block w-2 h-2 rounded-full mr-1 mb-0.5", isConnected ? "bg-green-500" : "bg-red-500")} /> Поточна вага
+          </div>
           <div className="flex items-center gap-2">
-            <div className={cn(
-              "w-2 h-2 rounded-full",
-              isConnected ? "bg-green-500" : "bg-red-500"
-            )} />
             {/* Индикатор активного polling */}
             {equipmentState.isActivePolling && (
               <div className="flex items-center gap-1">
@@ -117,11 +183,11 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
         {/* Текущий вес */}
         <div className="text-center">
           <div className="text-3xl font-bold text-gray-900">
-            {isConnected ? `${realWeight.toFixed(3)} кг` : '--.--- кг'}
+            {isConnected ? `${realWeight.toFixed(3)} кг` : '-.--- кг'}
           </div>
-          <div className="text-sm text-gray-500 mt-1">
+          {/* <div className="text-sm text-gray-500 mt-1">
             {isConnected ? 'Поточна вага' : 'Ваги не підключені'}
-          </div>
+          </div> */}
           {/* Индикатор стабильности */}
           {isConnected && (
             <div className="flex justify-center items-center mt-2">
@@ -141,24 +207,45 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
         {process.env.NODE_ENV === 'development' && isConnected && (
           <div className="mt-3 p-2 bg-gray-50 rounded text-xs border-t">
             <div className="text-gray-600 space-y-1">
-              <div>Raw: {equipmentState.lastRawScaleData || '–'}</div>
               <div>Parsed: {`${realWeight.toFixed(3)} кг`}</div>
               <div>Updated: {equipmentState.currentWeight?.timestamp?.toLocaleTimeString() || '–'}</div>
               <div className="flex justify-between items-center">
                 <span>Polling:</span>
-                <span className={cn(
-                  "px-2 py-1 rounded text-xs",
-                  equipmentState.isActivePolling 
-                    ? "bg-blue-100 text-blue-700" 
-                    : equipmentState.isReservePolling 
-                    ? "bg-green-100 text-green-700" 
-                    : "bg-gray-100 text-gray-500"
-                )}>
-                  {equipmentState.isActivePolling ? 'Active (500ms)' : 
-                   equipmentState.isReservePolling ? 'Reserve (5s)' : 
-                   'Stopped'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "px-2 py-1 rounded text-xs",
+                    equipmentState.isActivePolling 
+                      ? "bg-blue-100 text-blue-700" 
+                      : equipmentState.isReservePolling 
+                      ? "bg-green-100 text-green-700" 
+                      : "bg-gray-100 text-gray-500"
+                  )}>
+                    {equipmentState.isActivePolling ? 
+                      `Active (${equipmentState.config?.scale?.activePollingInterval || 1000}ms)` : 
+                     equipmentState.isReservePolling ? 
+                      `Reserve (${equipmentState.config?.scale?.reservePollingInterval || 5000}ms)` : 
+                     'Stopped'}
+                  </span>
+                  {pollingCountdown !== null && (
+                    <span className={cn(
+                      "px-2 py-1 rounded text-xs font-mono",
+                      equipmentState.isActivePolling 
+                        ? "bg-blue-50 text-blue-600 border border-blue-200" 
+                        : "bg-green-50 text-green-600 border border-green-200"
+                    )}>
+                      {equipmentState.isActivePolling ? `${pollingCountdown}s` : `${pollingCountdown}s`}
+                    </span>
+                  )}
+                </div>
               </div>
+              {/* <div className="text-xs text-gray-500 space-y-1">
+                <div>Page: {window.location.pathname}</div>
+                <div>Scale: {isConnected ? 'Connected' : 'Disconnected'}</div>
+                <div>Simulation: {equipmentState.isSimulationMode ? 'Yes' : 'No'}</div>
+                <div>Active Polling: {equipmentState.isActivePolling ? 'Yes' : 'No'}</div>
+                <div>Reserve Polling: {equipmentState.isReservePolling ? 'Yes' : 'No'}</div>
+                <div>Config: {equipmentState.config ? 'Loaded' : 'Not loaded'}</div>
+              </div> */}
             </div>
           </div>
         )}
