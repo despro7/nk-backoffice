@@ -217,9 +217,9 @@ export const SettingsManager: React.FC = () => {
         <div className="space-y-4">
           {settings.map((setting) => (
             <div key={setting.id} className="flex items-center justify-between p-3 border rounded-lg">
-              <div className="flex-1">
-                <div className="flex items-center space-x-4">
-                  <div className="min-w-0 flex-1">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-8 min-w-0">
+                  <div className="flex-1 min-w-fit">
                     <p className="text-sm font-medium text-gray-900">{setting.key}</p>
                     {setting.description && (
                       <p className="text-sm text-gray-500">{setting.description}</p>
@@ -227,7 +227,7 @@ export const SettingsManager: React.FC = () => {
                   </div>
                   
                   {editingKey === setting.key ? (
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center gap-2">
                       <input
                         type="text"
                         value={editingValue}
@@ -251,8 +251,8 @@ export const SettingsManager: React.FC = () => {
                       </Button>
                     </div>
                   ) : (
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm text-gray-900 font-mono bg-gray-100 px-2 py-1 rounded">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="flex-1 min-w-0 break-words text-sm text-gray-900 font-mono bg-gray-100 px-2 py-1 mr-2 rounded">
                         {setting.value}
                       </span>
                       <Button

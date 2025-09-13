@@ -196,6 +196,10 @@ export class OrderDatabaseService {
       if (data.deliveryAddress !== undefined) updateData.deliveryAddress = data.deliveryAddress;
       if (data.cityName !== undefined) updateData.cityName = data.cityName;
       if (data.quantity !== undefined) updateData.quantity = data.quantity;
+      if (data.totalPrice !== undefined) updateData.totalPrice = data.totalPrice;
+      if (data.ttn !== undefined) updateData.ttn = data.ttn;
+      if (data.shippingMethod !== undefined) updateData.shippingMethod = data.shippingMethod;
+      if (data.paymentMethod !== undefined) updateData.paymentMethod = data.paymentMethod;
       if (data.pricinaZnizki !== undefined && data.pricinaZnizki !== null) updateData.pricinaZnizki = data.pricinaZnizki;
       if (data.sajt !== undefined && data.sajt !== null) updateData.sajt = data.sajt;
 
@@ -1304,7 +1308,7 @@ export class OrderDatabaseService {
                 try {
                   // Создаем новый заказ
                   const newOrderData = {
-                    id: parseInt(orderData.orderNumber), // Преобразуем orderNumber в число для id
+                    id: orderData.id,
                     externalId: orderData.orderNumber,
                     orderNumber: orderData.orderNumber,
                     ttn: orderData.ttn || '',

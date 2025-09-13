@@ -1533,20 +1533,27 @@ export class SalesDriveService {
     // Базовое форматирование для основного объекта
     const formattedOrder: SalesDriveOrder = {
       rawData: rawOrder,  // Сохраняем полные сырые данные
-      id: rawOrder.id || 0,  // Оставляем как число для совместимости с OrderCreateData
+      id: rawOrder.id || 0,
       orderNumber: rawOrder.externalId || rawOrder.id?.toString() || '',
       ttn: rawOrder.ord_delivery_data?.[0]?.trackingNumber || '',
       quantity: rawOrder.kilTPorcij || 0,
       status: rawOrder.statusId?.toString() || '',
       statusText: statusMap[rawOrder.statusId] || 'Невідомий',
-      items: rawOrder.items,  // Используем те же items
+      items: rawOrder.products
+        ? rawOrder.products.map((p: any) => ({
+          productName: p.text,
+          quantity: p.amount,
+          price: p.price,
+          sku: p.sku
+        }))
+        : rawOrder.items || [],
       createdAt: new Date().toISOString(),
       orderDate: rawOrder.orderTime || '',
       externalId: rawOrder.externalId || '',
       shippingMethod: shippingMethodMap[rawOrder.shipping_method] || 'Невідомий',
       paymentMethod: paymentMethodMap[rawOrder.payment_method] || 'Невідомий',
       cityName: rawOrder.ord_delivery_data?.[0]?.cityName || '',
-      provider: rawOrder.ord_delivery_data?.[0]?.provider || '',
+      provider: 'SalesDrive',
       customerName: customerName,
       customerPhone: customerPhone,
       deliveryAddress: rawOrder.shipping_address || '',

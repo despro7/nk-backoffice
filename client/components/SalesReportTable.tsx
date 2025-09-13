@@ -531,19 +531,43 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
         0,
       ),
       sourceWebsite: salesData.reduce(
-        (sum, item) => sum + (item.ordersBySource["сайт"] || 0),
+        (sum, item) => sum + (item.ordersBySource["Сайт"] || 0),
         0,
       ),
-      sourceMarketplace: salesData.reduce(
-        (sum, item) => sum + (item.ordersBySource["маркетплейси"] || 0),
+      sourceWebsitePortions: salesData.reduce(
+        (sum, item) => sum + (item.portionsBySource["Сайт"] || 0),
+        0,
+      ),
+      sourceRozetka: salesData.reduce(
+        (sum, item) => sum + (item.ordersBySource["Розетка"] || 0),
+        0,
+      ),
+      sourceRozetkaPortions: salesData.reduce(
+        (sum, item) => sum + (item.portionsBySource["Розетка"] || 0),
+        0,
+      ),
+      sourceProm: salesData.reduce(
+        (sum, item) => sum + (item.ordersBySource["Пром"] || 0),
+        0,
+      ),
+      sourcePromPortions: salesData.reduce(
+        (sum, item) => sum + (item.portionsBySource["Пром"] || 0),
         0,
       ),
       sourceChat: salesData.reduce(
-        (sum, item) => sum + (item.ordersBySource["інше"] || 0),
+        (sum, item) => sum + (item.ordersBySource["Інше"] || 0),
+        0,
+      ),
+      sourceChatPortions: salesData.reduce(
+        (sum, item) => sum + (item.portionsBySource["Інше"] || 0),
         0,
       ),
       discountReason: salesData.reduce(
         (sum, item) => sum + item.ordersWithDiscountReason,
+        0,
+      ),
+      discountReasonPortions: salesData.reduce(
+        (sum, item) => sum + item.portionsWithDiscountReason,
         0,
       ),
     }),
@@ -618,17 +642,22 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
   );
 
   const getAllSourceWebsiteCounts = useMemo(
-    () => salesData.map((item) => item.ordersBySource["сайт"] || 0),
+    () => salesData.map((item) => item.ordersBySource["Сайт"] || 0),
     [salesData],
   );
 
-  const getAllSourceMarketplaceCounts = useMemo(
-    () => salesData.map((item) => item.ordersBySource["маркетплейси"] || 0),
+  const getAllSourceRozetkaCounts = useMemo(
+    () => salesData.map((item) => item.ordersBySource["Розетка"] || 0),
+    [salesData],
+  );
+
+  const getAllSourcePromCounts = useMemo(
+    () => salesData.map((item) => item.ordersBySource["Пром"] || 0),
     [salesData],
   );
 
   const getAllSourceChatCounts = useMemo(
-    () => salesData.map((item) => item.ordersBySource["інше"] || 0),
+    () => salesData.map((item) => item.ordersBySource["Інше"] || 0),
     [salesData],
   );
 
@@ -638,42 +667,48 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
   );
 
   const columns = [
-    { key: "date", label: "Дата", sortable: true, className: "w-2/14" },
+    { key: "date", label: "Дата", sortable: true, className: "w-2/16" },
     {
       key: "ordersCount",
       label: "Замовлення",
       sortable: true,
-      className: "w-2/14 text-center",
+      className: "w-2/16 text-center",
     },
     {
       key: "portionsCount",
       label: "Порції",
       sortable: true,
-      className: "w-2/14 text-center",
+      className: "w-2/16 text-center",
     },
     {
       key: "sourceWebsite",
       label: "Сайт",
       sortable: false,
-      className: "w-2/14 text-center",
+      className: "w-2/16 text-center",
     },
     {
-      key: "sourceMarketplace",
-      label: "Маркетплейси",
+      key: "sourceRozetka",
+      label: "Розетка",
       sortable: false,
-      className: "w-2/14 text-center",
+      className: "w-2/16 text-center",
+    },
+    {
+      key: "sourceProm",
+      label: "Пром",
+      sortable: false,
+      className: "w-2/16 text-center",
     },
     {
       key: "sourceChat",
       label: "Інше",
       sortable: false,
-      className: "w-2/14 text-center",
+      className: "w-2/16 text-center",
     },
     {
       key: "discountReason",
       label: "Зі знижкою",
       sortable: false,
-      className: "w-2/14 text-center",
+      className: "w-2/16 text-center",
     },
   ];
 
@@ -930,17 +965,17 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                     variant="flat"
                     classNames={{
                       base: getValueColor(
-                        item.ordersBySource["сайт"] || 0,
+                        item.ordersBySource["Сайт"] || 0,
                         getAllSourceWebsiteCounts,
                       ).base,
                       content: getValueColor(
-                        item.ordersBySource["сайт"] || 0,
+                        item.ordersBySource["Сайт"] || 0,
                         getAllSourceWebsiteCounts,
                       ).content,
                     }}
                   >
-                    {item.ordersBySource["сайт"] || 0} /{" "}
-                    {item.portionsBySource["сайт"] || 0}
+                    {item.ordersBySource["Сайт"] || 0} /{" "}
+                    {item.portionsBySource["Сайт"] || 0}
                   </Chip>
                 </TableCell>
                 <TableCell className="text-center text-base">
@@ -949,17 +984,17 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                     variant="flat"
                     classNames={{
                       base: getValueColor(
-                        item.ordersBySource["маркетплейси"] || 0,
-                        getAllSourceMarketplaceCounts,
+                        item.ordersBySource["Розетка"] || 0,
+                        getAllSourceRozetkaCounts,
                       ).base,
                       content: getValueColor(
-                        item.ordersBySource["маркетплейси"] || 0,
-                        getAllSourceMarketplaceCounts,
+                        item.ordersBySource["Розетка"] || 0,
+                        getAllSourceRozetkaCounts,
                       ).content,
                     }}
                   >
-                    {item.ordersBySource["маркетплейси"] || 0} /{" "}
-                    {item.portionsBySource["маркетплейси"] || 0}
+                    {item.ordersBySource["Розетка"] || 0} /{" "}
+                    {item.portionsBySource["Розетка"] || 0}
                   </Chip>
                 </TableCell>
                 <TableCell className="text-center text-base">
@@ -968,17 +1003,36 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                     variant="flat"
                     classNames={{
                       base: getValueColor(
-                        item.ordersBySource["інше"] || 0,
+                        item.ordersBySource["Пром"] || 0,
+                        getAllSourcePromCounts,
+                      ).base,
+                      content: getValueColor(
+                        item.ordersBySource["Пром"] || 0,
+                        getAllSourcePromCounts,
+                      ).content,
+                    }}
+                  >
+                    {item.ordersBySource["Пром"] || 0} /{" "}
+                    {item.portionsBySource["Пром"] || 0}
+                  </Chip>
+                </TableCell>
+                <TableCell className="text-center text-base">
+                  <Chip
+                    size="md"
+                    variant="flat"
+                    classNames={{
+                      base: getValueColor(
+                        item.ordersBySource["Інше"] || 0,
                         getAllSourceChatCounts,
                       ).base,
                       content: getValueColor(
-                        item.ordersBySource["інше"] || 0,
+                        item.ordersBySource["Інше"] || 0,
                         getAllSourceChatCounts,
                       ).content,
                     }}
                   >
-                    {item.ordersBySource["інше"] || 0} /{" "}
-                    {item.portionsBySource["інше"] || 0}
+                    {item.ordersBySource["Інше"] || 0} /{" "}
+                    {item.portionsBySource["Інше"] || 0}
                   </Chip>
                 </TableCell>
                 <TableCell className="text-center text-base">
@@ -1009,24 +1063,27 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
         {salesData.length > 0 && (
           <div className="border-t-1 border-gray-200 py-2">
             <div className="flex items-center justify-between">
-              <div className="font-bold text-gray-800 w-2/14 pl-3"></div>
-              <div className="text-center font-bold text-gray-800 w-2/14">
+              <div className="font-bold text-gray-800 w-2/16 pl-3"></div>
+              <div className="text-center font-bold text-gray-800 w-2/16">
                 {totals.ordersCount}
               </div>
-              <div className="text-center font-bold text-gray-800 w-2/14">
+              <div className="text-center font-bold text-gray-800 w-2/16">
                 {totals.portionsCount}
               </div>
-              <div className="text-center font-bold text-gray-800 w-2/14">
-                {totals.sourceWebsite}
+              <div className="text-center font-bold text-gray-800 w-2/16">
+                {totals.sourceWebsite} / {totals.sourceWebsitePortions}
               </div>
-              <div className="text-center font-bold text-gray-800 w-2/14">
-                {totals.sourceMarketplace}
+              <div className="text-center font-bold text-gray-800 w-2/16">
+                {totals.sourceRozetka} / {totals.sourceRozetkaPortions}
               </div>
-              <div className="text-center font-bold text-gray-800 w-2/14">
-                {totals.sourceChat}
+              <div className="text-center font-bold text-gray-800 w-2/16">
+                {totals.sourceProm} / {totals.sourcePromPortions}
               </div>
-              <div className="text-center font-bold text-gray-800 w-2/14">
-                {totals.discountReason}
+              <div className="text-center font-bold text-gray-800 w-2/16">
+                {totals.sourceChat} / {totals.sourceChatPortions}
+              </div>
+              <div className="text-center font-bold text-gray-800 w-2/16">
+                {totals.discountReason} / {totals.discountReasonPortions}
               </div>
             </div>
           </div>

@@ -1075,6 +1075,13 @@ export default function OrderView() {
       }
 
       const actualWeight = weightData.weight;
+
+      // Игнорируем проверку, если вес на весах практически нулевой
+      if (actualWeight < 0.005) { // 5 грамм
+        console.log(`⚖️ OrderView: Вес ${actualWeight.toFixed(3)} кг слишком мал, проверка игнорируется.`);
+        return;
+      }
+
       if (
         failedWeightsRef.current[itemId] !== undefined &&
         Math.abs(failedWeightsRef.current[itemId] - actualWeight) < 0.001

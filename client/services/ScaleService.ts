@@ -116,6 +116,10 @@ export class ScaleService {
 
       // Відкриваємо порт з налаштуваннями для ВТА-60
       try {
+        if (this.port.readable || this.port.writable) {
+          console.log('⚠️ ScaleService: Порт уже открыт, но в другом состоянии. Попытка переоткрытия...');
+          await this.disconnect(); // Попытка закрыть перед открытием
+        }
         await this.port.open({
           baudRate: this.config.baudRate,
           dataBits: this.config.dataBits,
@@ -124,7 +128,7 @@ export class ScaleService {
           bufferSize: 1024
         });
       } catch (openError) {
-        if (openError.message.includes('already open')) {
+        if (openError.message.includes('port is already open')) {
           console.log('⚠️ ScaleService: Порт вже відкритий, використовуємо існуюче з\'єднання');
           // Порт уже открыт, считаем что подключение успешно
         } else {
@@ -138,6 +142,7 @@ export class ScaleService {
       return true;
     } catch (error) {
       console.log('❌ ScaleService: Не вдалося підключити ваги:', error);
+      this.port = null; // Очищаем порт при ошибке
       this.isConnected = false;
       return false;
     }
@@ -307,7 +312,10 @@ export class ScaleService {
     try {
       if (this.reader) {
         try {
-          await this.reader.cancel();
+          // Отменяем чтение и ждем завершения промиса
+          const cancelPromise = this.reader.cancel();
+          // Добавляем таймаут на случай зависания cancel()
+          await Promise.race([cancelPromise, new Promise(resolve => setTimeout(resolve, 500))]);
         } catch (error) {
           console.log('ScaleService: Error cancelling reader on disconnect.', error);
         } finally {
@@ -315,29 +323,27 @@ export class ScaleService {
         }
       }
 
-      if (this.port && this.port.writable && this.port.writable.locked) {
-        try {
-          const writer = this.port.writable.getWriter();
-          writer.releaseLock();
-        } catch (error) {
-          console.log('ScaleService: Error unlocking writer on disconnect.', error);
-        }
-      }
-
       if (this.port) {
-        try {
-          await this.port.close();
-        } catch (error) {
-          console.log('ScaleService: Error closing port on disconnect.', error);
-        } finally {
-          this.port = null;
+        // Принудительно освобождаем потоки, если они заблокированы
+        this.forceUnlockStreams();
+
+        if (this.port.readable || this.port.writable) {
+          try {
+            await this.port.close();
+            console.log('🔧 ScaleService: Порт успешно закрыт');
+          } catch (error) {
+            console.log('ScaleService: Error closing port on disconnect.', error);
+          }
+        } else {
+          console.log('🔧 ScaleService: Порт уже был закрыт');
         }
       }
-
-      this.isConnected = false;
-      console.log('Scale disconnected');
     } catch (error) {
       console.error('Error during scale disconnect:', error);
+    } finally {
+      this.port = null;
+      this.isConnected = false;
+      console.log('Scale disconnected');
     }
   }
 

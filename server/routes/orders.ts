@@ -1922,6 +1922,15 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
 
     // Используем глобальные функции из utils.ts для работы с источниками заказов
 
+    // Карта для маппинга кодов сайтов в названия источников
+    const sourceMapping: Record<string, string> = {
+      '19': 'Сайт',
+      '22': 'Розетка',
+      '24': 'Пром',
+      '28': 'Пром',
+      '31': 'Інше'
+    };
+
     // Получаем все externalId для bulk-запроса к кешу
     const orderExternalIds = filteredOrders.map(order => order.externalId);
 
@@ -2026,14 +2035,16 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           salesData[dateKey].ordersByStatus[status] += 1;
           salesData[dateKey].portionsByStatus[status] += orderPortions;
 
-          // Статистика по источникам (для общей таблицы - укрупненные категории)
-          const source = getOrderSourceCategory(order.sajt || '');
-          if (!salesData[dateKey].ordersBySource[source]) {
-            salesData[dateKey].ordersBySource[source] = 0;
-            salesData[dateKey].portionsBySource[source] = 0;
+          // Статистика по источникам
+          const sourceCode = order.sajt || '';
+          const sourceName = sourceMapping[sourceCode] || 'Інше';
+
+          if (!salesData[dateKey].ordersBySource[sourceName]) {
+            salesData[dateKey].ordersBySource[sourceName] = 0;
+            salesData[dateKey].portionsBySource[sourceName] = 0;
           }
-          salesData[dateKey].ordersBySource[source] += 1;
-          salesData[dateKey].portionsBySource[source] += orderPortions;
+          salesData[dateKey].ordersBySource[sourceName] += 1;
+          salesData[dateKey].portionsBySource[sourceName] += orderPortions;
 
           // Статистика по pricinaZnizki (причина знижки)
           if (order.pricinaZnizki && order.pricinaZnizki.trim() !== '') {

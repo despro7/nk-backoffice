@@ -221,7 +221,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   }, []);
 
   // Підключення до ваг
-  const connectScale = useCallback(async (): Promise<boolean> => {
+  const connectScale = useCallback(async (manual: boolean = false): Promise<boolean> => {
     try {
       // Используем локальное состояние config
       if (!config) {
@@ -242,8 +242,8 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
 
 
 
-      // Локальне підключення
-      const result = await scaleService.current.connect();
+      // Локальне підключення: auto = true (ищем порт), manual = false (запрашиваем порт)
+      const result = await scaleService.current.connect(!manual);
       if (result) {
         // Встановлюємо callback для отримання даних з ваг
         scaleService.current.onWeightData((weightData: VTAScaleData) => {
@@ -564,26 +564,19 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
           await connectScale();
           await connectScanner();
         } else {
-          // Автоподключение весов при локальном режиме - ВСЕГДА!
-          if (!isScaleConnected) {
+          // Автоподключение весов, если включено в настройках
+          if (config.scale?.autoConnect && !isScaleConnected) {
             try {
               console.log('🔧 useEquipment: Автоподключение весов в локальном режиме...');
-              // Сначала пытаемся подключиться автоматически к сохраненному порту
-              let scaleConnected = await scaleService.current.connect(true);
-              if (!scaleConnected) {
-                console.log('⚠️ useEquipment: Автоподключение не удалось, пробуем ручной выбор...');
-                // Если автоматическое подключение не удалось, пробуем ручной выбор
-                scaleConnected = await scaleService.current.connect(false);
-              }
-
+              const scaleConnected = await scaleService.current.connect(true); // Только автоматический режим
               if (scaleConnected) {
-                console.log('✅ useEquipment: Ваги успішно підключені');
+                console.log('✅ useEquipment: Весы успешно подключены');
+                setIsScaleConnected(true);
               } else {
-                console.log('❌ useEquipment: Не вдалося підключити ваги');
+                console.log('⚠️ useEquipment: Автоподключение не удалось, порт не найден или не выбран ранее');
               }
             } catch (error) {
-              console.log('⚠️ useEquipment: Помилка автопідключення ваг:', error);
-              // Не показываем ошибку, так как это автоматическая попытка
+              console.log('⚠️ useEquipment: Ошибка автоподключения весов:', error);
             }
           }
 
@@ -593,12 +586,12 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
               console.log('🔧 useEquipment: Автоподключение сканера...');
               const scannerConnected = await connectScanner();
               if (scannerConnected) {
-                console.log('✅ useEquipment: Сканер успішно підключений');
+                console.log('✅ useEquipment: Сканер успешно подключен');
               } else {
-                console.log('❌ useEquipment: Не вдалося підключити сканер');
+                console.log('⚠️ useEquipment: Не удалось подключить сканер');
               }
             } catch (error) {
-              console.log('⚠️ useEquipment: Помилка автопідключення сканера:', error);
+              console.log('⚠️ useEquipment: Ошибка автоподключения сканера:', error);
               // Не показываем ошибку, так как это автоматическая попытка
             }
           }
@@ -609,73 +602,13 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     };
 
     initEquipment();
-  }, [config, isInitialized]); // Зависит от config и isInitialized
+  }, [config, isInitialized, connectScale, connectScanner]); // Зависит от config и isInitialized
 
   // useEffect для обработки изменений настройки автоподключения весов
-  useEffect(() => {
-    const handleAutoConnectChange = async () => {
-      if (!config || config.connectionType === 'simulation') {
-        return;
-      }
-
-      const shouldAutoConnect = config.scale?.autoConnect;
-
-      if (shouldAutoConnect && !isScaleConnected) {
-        // Включаем автоподключение - пытаемся подключить весы
-        try {
-          await connectScale();
-        } catch (error) {
-          console.log('Автоподключение весов не удалось:', error);
-        }
-      } else if (!shouldAutoConnect && isScaleConnected) {
-        // Выключаем автоподключение - отключаем весы
-        try {
-          await disconnectScale();
-        } catch (error) {
-          console.log('Ошибка отключения весов:', error);
-        }
-      }
-    };
-
-    handleAutoConnectChange();
-  }, [config?.scale?.autoConnect, config?.connectionType, isScaleConnected]); // Зависит от настройки автоподключения и статуса подключения
+  // --- УДАЛЕНО ---
 
   // Мониторинг соединения с весами
-  useEffect(() => {
-    if (!config || config.connectionType === 'simulation') {
-      return;
-    }
-
-    const monitorConnection = async () => {
-      try {
-        // Проверяем подключение весов каждые 30 секунд
-        if (!isScaleConnected) {
-          console.log('🔄 useEquipment: Проверка подключения весов...');
-          const scaleConnected = await connectScale();
-          if (scaleConnected) {
-            console.log('✅ useEquipment: Ваги переподключені');
-          }
-        }
-
-        // Проверяем подключение сканера каждые 30 секунд
-        if (config.scanner?.autoConnect && !isScannerConnected) {
-          console.log('🔄 useEquipment: Проверка подключения сканера...');
-          const scannerConnected = await connectScanner();
-          if (scannerConnected) {
-            console.log('✅ useEquipment: Сканер переподключений');
-          }
-        }
-      } catch (error) {
-        console.log('⚠️ useEquipment: Ошибка при проверке подключения:', error);
-      }
-    };
-
-    // Запускаем проверку каждые 30 секунд
-    const intervalId = setInterval(monitorConnection, 30000);
-
-    // Очистка интервала при размонтировании
-    return () => clearInterval(intervalId);
-  }, [config, isScaleConnected, isScannerConnected, connectScale, connectScanner]);
+  // --- УДАЛЕНО ---
 
   // Створюємо стан - ГЛУБОКОЕ КЛОНИРОВАНИЕ для React
   const state: EquipmentState = useMemo(() => ({
@@ -756,29 +689,28 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         if (!isActivePollingRef.current) {
           // Проверяем подключение перед попыткой получения веса
           if (!status.isConnected || !isScaleConnected) {
-            console.log('🔄 useEquipment: Reserve polling - весы не подключены, пытаемся переподключиться...');
-            try {
-              // Сначала отключаемся для освобождения потоков
-              await scaleService.current.disconnect();
-              // Небольшая задержка для полного освобождения ресурсов
-              await new Promise(resolve => setTimeout(resolve, 100));
-              
-              const connected = await scaleService.current.connect();
-              if (connected) {
-                console.log('✅ useEquipment: Reserve polling - весы переподключены');
-                updateStatus({
-                  isConnected: true,
-                  lastActivity: new Date(),
-                  error: null
-                });
-                setIsScaleConnected(true);
-              } else {
-                console.log('⚠️ useEquipment: Reserve polling - не удалось переподключить весы');
+            // Пытаемся переподключиться только если включен autoConnect
+            if (config?.scale?.autoConnect) {
+              console.log('🔄 useEquipment: Reserve polling - весы не подключены, пытаемся переподключиться...');
+              try {
+                // Сначала отключаемся для освобождения потоков
+                await scaleService.current.disconnect();
+                // Небольшая задержка для полного освобождения ресурсов
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Используем connect(true) для автоматического подключения без запроса
+                const connected = await scaleService.current.connect(true);
+                if (connected) {
+                  console.log('✅ useEquipment: Reserve polling - весы переподключены');
+                  setIsScaleConnected(true); // Обновляем состояние напрямую
+                } else {
+                  console.log('⚠️ useEquipment: Reserve polling - не удалось переподключить весы');
+                }
+              } catch (connectError) {
+                console.log('⚠️ useEquipment: Reserve polling - ошибка переподключения:', connectError);
               }
-            } catch (connectError) {
-              console.log('⚠️ useEquipment: Reserve polling - ошибка переподключения:', connectError);
             }
-            return;
+            return; // В любом случае выходим, т.к. весы не были подключены
           }
 
           const reserveWeight = await getWeight(false);
@@ -932,7 +864,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
 
     // Устанавливаем таймаут 30 секунд для активного polling
     activePollingTimeoutRef.current = setTimeout(() => {
-      console.log('⏰ useEquipment: Таймаут активного polling (30 сек), переходим к резервному');
+      console.log('⏰ useEquipment: Таймаут активного polling (' + String(timeout / 1000) + ' сек), переходим к резервному');
       console.log('⏰ useEquipment: isActivePolling:', isActivePollingRef.current, 'isReservePolling:', isReservePolling);
       stopActivePolling();
       // Всегда запускаем резервный polling после таймаута активного

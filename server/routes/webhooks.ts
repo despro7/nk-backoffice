@@ -105,6 +105,8 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
         let orderDetails = null;
         
         const webhookData = req.body.data;
+        const webhookMeta = req.body.meta.fields;
+        console.log('================= \n webhookMeta:', webhookMeta);
 
         // Сериализуем items из webhookData.products в нужный формат
         const items = Array.isArray(webhookData.products) ? webhookData.products.map(p => ({
@@ -115,13 +117,25 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           }))
         : [];
 
+        // Добавляем информацию о клиенте
         let customerName = '';
         let customerPhone = '';
-        // Добавляем информацию о клиенте
-        if (webhookData.primaryContact) {
-          const contact = webhookData.primaryContact;
-          customerName = `${contact.lName || ''} ${contact.fName || ''} ${contact.mName || ''}`.trim();
-          customerPhone = Array.isArray(contact.phone) ? contact.phone[0] : contact.phone || '';
+
+        if (webhookData.contacts) {
+          const contact = webhookData.contacts;
+          customerName = `${contact[0]?.lName || ''} ${contact[0]?.fName || ''} ${contact[0]?.mName || ''}`.trim();
+          customerPhone = Array.isArray(contact[0].phone) ? contact[0].phone[0] : contact[0].phone || '';
+        }
+
+        // Добавляем информацию о доставке
+        let shippingMethod = '';
+        let paymentMethod = '';
+
+        if (webhookMeta.shipping_method.options) {
+          shippingMethod = webhookMeta.shipping_method.options[0]?.text?.toString() || '';
+        }
+        if (webhookMeta.payment_method.options) {
+          paymentMethod = webhookMeta.payment_method.options[0]?.text?.toString() || '';
         }
 
         if (existingOrder) {
@@ -143,14 +157,14 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             // Дата заказа: webhook имеет приоритет, с обработкой ошибок
             orderDate: webhookData.orderTime ? new Date(webhookData.orderTime).toISOString() : existingOrder.orderDate,
             // Способы доставки/оплаты: webhook имеет приоритет
-            shippingMethod: webhookData.shipping_method?.toString() || existingOrder.shippingMethod,
-            paymentMethod: webhookData.payment_method?.toString() || existingOrder.paymentMethod,
+            shippingMethod: shippingMethod || existingOrder.shippingMethod,
+            paymentMethod: paymentMethod || existingOrder.paymentMethod,
             // Город: webhook имеет приоритет
             cityName: existingOrder.cityName,
             provider: existingOrder.provider, // Provider всегда из БД
             // Другие поля: webhook имеет приоритет
-            pricinaZnizki: webhookData.pricinaZnizki || existingOrder.pricinaZnizki,
-            sajt: webhookData.sajt ? String(webhookData.sajt) : existingOrder.sajt,
+            pricinaZnizki: webhookData.pricinaZnizki != null ? String(webhookData.pricinaZnizki) : existingOrder.pricinaZnizki,
+            sajt: webhookData.sajt != null ? String(webhookData.sajt) : existingOrder.sajt,
             ttn: webhookData.ord_novaposhta?.EN || existingOrder.ttn,
             quantity: webhookData.kilTPorcij || existingOrder.quantity
           };
@@ -167,12 +181,12 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             deliveryAddress: webhookData.shipping_address || '',
             totalPrice: webhookData.paymentAmount || 0,
             orderDate: webhookData.orderTime ? new Date(webhookData.orderTime).toISOString() : null,
-            shippingMethod: webhookData.shipping_method?.toString() || '',
-            paymentMethod: webhookData.payment_method?.toString() || '',
+            shippingMethod: shippingMethod || '',
+            paymentMethod: paymentMethod || '',
             cityName: webhookData.ord_novaposhta?.cityTemplateName || webhookData.ord_ukrposhta?.cityName || '',
             provider: 'SalesDrive',
-            pricinaZnizki: webhookData.pricinaZnizki || '',
-            sajt: webhookData.sajt ? String(webhookData.sajt) : '',
+            pricinaZnizki: webhookData.pricinaZnizki != null ? String(webhookData.pricinaZnizki) : '',
+            sajt: webhookData.sajt != null ? String(webhookData.sajt) : '',
             ttn: webhookData.ord_novaposhta?.EN || '',
             quantity: webhookData.kilTPorcij || 1
           };
@@ -237,7 +251,13 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             const updateData = changes;
 
             console.log(`📊 Update data (${Object.keys(updateData).length} fields changed):`, {
-              changedFields: Object.keys(updateData),
+              changedFields: Object.keys(updateData).map(
+                key => ({
+                  field: key,
+                  from: existingOrder[key],
+                  to: updateData[key]
+                })
+              ),
               oldStatus: existingOrder.status,
               newStatus: updateData.status || 'no change',
               hasItems: !!updateData.items,
