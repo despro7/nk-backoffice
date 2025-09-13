@@ -184,7 +184,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             shippingMethod: shippingMethod || '',
             paymentMethod: paymentMethod || '',
             cityName: webhookData.ord_novaposhta?.cityTemplateName || webhookData.ord_ukrposhta?.cityName || '',
-            provider: 'SalesDrive',
+            provider: webhookData.ord_novaposhta ? 'novaposhta' : webhookData.ord_ukrposhta ? 'ukrposhta' : 'novaposhta',
             pricinaZnizki: webhookData.pricinaZnizki != null ? String(webhookData.pricinaZnizki) : '',
             sajt: webhookData.sajt != null ? String(webhookData.sajt) : '',
             ttn: webhookData.ord_novaposhta?.EN || '',
