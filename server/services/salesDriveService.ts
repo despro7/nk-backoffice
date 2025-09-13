@@ -2076,6 +2076,7 @@ export class SalesDriveService {
         try {
           const updateStartTime = Date.now();
           const updateResult = await orderDatabaseService.updateOrdersBatchSmart(updateOrders.filter(o => o && o.orderNumber).map(o => ({
+            id: o.id,
             orderNumber: o.orderNumber,
             status: o.status,
             statusText: o.statusText,
@@ -2582,6 +2583,7 @@ export class SalesDriveService {
           }
 
           const chunkUpdateData = chunk.filter(o => o && o.orderNumber).map(o => ({
+            id: o.id,
             orderNumber: o.orderNumber,
             status: o.status,
             statusText: o.statusText,
@@ -2659,6 +2661,7 @@ export class SalesDriveService {
         }
 
         const updateData = salesDriveOrders.filter(o => o && o.orderNumber).map(o => ({
+          id: o.id,
           orderNumber: o.orderNumber,
           status: o.status,
           statusText: o.statusText,

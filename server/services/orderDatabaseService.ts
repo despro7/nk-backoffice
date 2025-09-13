@@ -1,3 +1,4 @@
+import { id } from 'zod/v4/locales';
 import { prisma } from '../lib/utils.js';
 import { ordersCacheService } from './ordersCacheService.js';
 
@@ -738,6 +739,7 @@ export class OrderDatabaseService {
    * Batch обновление заказов с оптимизацией (исправленная версия)
    */
   async updateOrdersBatch(ordersData: Array<{
+    id: number;
     orderNumber: string;
     status: string;
     statusText: string;
@@ -754,6 +756,8 @@ export class OrderDatabaseService {
     paymentMethod?: string;
     cityName?: string;
     provider?: string;
+    pricinaZnizki?: string;
+    sajt?: string;
   }>, options: { batchSize?: number; concurrency?: number } = {}) {
     try {
       const batchSize = options.batchSize || 50;
@@ -791,6 +795,8 @@ export class OrderDatabaseService {
                   where: { externalId: orderData.orderNumber },
                   select: {
                     id: true,
+                    pricinaZnizki: true,
+                    sajt: true,
                     status: true,
                     statusText: true,
                     ttn: true,
@@ -817,6 +823,7 @@ export class OrderDatabaseService {
                     console.log(`🆕 Creating new order ${orderData.orderNumber}`);
                     const createdOrder = await prisma.order.create({
                       data: {
+                        id: orderData.id,
                         externalId: orderData.orderNumber,
                         status: orderData.status || 'unknown',
                         statusText: orderData.statusText || '',
@@ -865,6 +872,7 @@ export class OrderDatabaseService {
                 };
 
                 // Применяем только изменившиеся поля
+                if (changes.includes('id')) updateData.id = orderData.id;
                 if (changes.includes('status')) updateData.status = orderData.status;
                 if (changes.includes('statusText')) updateData.statusText = orderData.statusText;
                 if (changes.includes('ttn')) updateData.ttn = orderData.ttn;
@@ -1071,7 +1079,7 @@ export class OrderDatabaseService {
 
       // Проверяем каждое поле (ДОБАВЛЯЕМ rawData!)
       const fieldsToCheck = [
-        'status', 'statusText', 'items', 'ttn', 'quantity',
+        'id', 'status', 'statusText', 'items', 'ttn', 'quantity',
         'customerName', 'customerPhone', 'deliveryAddress',
         'totalPrice', 'orderDate', 'shippingMethod', 'paymentMethod',
         'cityName', 'provider', 'rawData', 'pricinaZnizki', 'sajt'  // ← Добавляем rawData и новые поля!
@@ -1155,7 +1163,7 @@ export class OrderDatabaseService {
 
       // Удаляем поля, которых нет в схеме Order
       const allowedFields = [
-        'status', 'statusText', 'items', 'rawData', 'ttn', 'quantity',
+        'id', 'status', 'statusText', 'items', 'rawData', 'ttn', 'quantity',
         'customerName', 'customerPhone', 'deliveryAddress', 'totalPrice',
         'orderDate', 'shippingMethod', 'paymentMethod', 'cityName', 'provider',
         'lastSynced', 'syncStatus', 'syncError',
@@ -1204,6 +1212,7 @@ export class OrderDatabaseService {
    * Batch обновление с парциальными обновлениями
    */
   async updateOrdersBatchSmart(ordersData: Array<{
+    id: number;
     orderNumber: string;
     status: string;
     statusText: string;
@@ -1308,7 +1317,7 @@ export class OrderDatabaseService {
                 try {
                   // Создаем новый заказ
                   const newOrderData = {
-                    id: orderData.id,
+                    id: parseInt(orderData.id),
                     externalId: orderData.orderNumber,
                     orderNumber: orderData.orderNumber,
                     ttn: orderData.ttn || '',
@@ -1379,6 +1388,7 @@ export class OrderDatabaseService {
               };
 
               // Применяем только изменившиеся поля
+              if (changes.includes('id')) updateData.id = orderData.id;
               if (changes.includes('status')) updateData.status = orderData.status;
               if (changes.includes('statusText')) updateData.statusText = orderData.statusText;
               if (changes.includes('ttn')) updateData.ttn = orderData.ttn;

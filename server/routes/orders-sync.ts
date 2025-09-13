@@ -497,6 +497,7 @@ router.post('/sync/selective', authenticateToken, async (req, res) => {
 
         // Готовим данные для пакетного обновления
         const ordersToUpdate = selectedSalesDriveOrders.map(order => ({
+          id: order.id,
           orderNumber: order.orderNumber,
           status: order.status,
           statusText: order.statusText,
