@@ -34,6 +34,7 @@ export interface EquipmentConfig {
     maxPollingErrors: number;
     weightCacheDuration: number; // ms
     weightThresholdForActive?: number; // kg
+    connectionStrategy?: 'legacy' | 'reconnectOnError' | 'persistentStream';
   } | null;
   scanner: {
     autoConnect: boolean;

@@ -31,6 +31,7 @@ export interface ScaleConnectionConfig {
   dataBits: number;
   stopBits: number;
   parity: 'none' | 'even' | 'odd';
+  connectionStrategy?: 'legacy' | 'reconnectOnError' | 'persistentStream';
 }
 
 export interface VTAScaleData extends ScaleData {
@@ -48,6 +49,8 @@ export class ScaleService {
   private onRawData: ((data: Uint8Array) => void) | null = null;
   private reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   private isReading: boolean = false; // Флаг для предотвращения одновременного чтения
+  private readLoopPromise: Promise<void> | null = null; // Для persistentStream
+  private stopReadLoop: (() => void) | null = null; // Для persistentStream
 
   private constructor() {
     // Используем единые настройки по умолчанию
@@ -55,7 +58,8 @@ export class ScaleService {
       baudRate: EQUIPMENT_DEFAULTS.scale.baudRate,
       dataBits: EQUIPMENT_DEFAULTS.scale.dataBits,
       stopBits: EQUIPMENT_DEFAULTS.scale.stopBits,
-      parity: EQUIPMENT_DEFAULTS.scale.parity
+      parity: EQUIPMENT_DEFAULTS.scale.parity,
+      connectionStrategy: EQUIPMENT_DEFAULTS.scale.connectionStrategy,
     };
   }
 
@@ -138,6 +142,11 @@ export class ScaleService {
 
       this.isConnected = true;
       console.log('✅ ScaleService: Ваги ВТА-60 успішно підключені');
+
+      // Запускаем постоянный цикл чтения, если выбран соответствующий режим
+      if (this.config.connectionStrategy === 'persistentStream') {
+        this.readLoopPromise = this.startReadLoop();
+      }
 
       return true;
     } catch (error) {
@@ -281,9 +290,123 @@ export class ScaleService {
       const timeStr = now.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       const uptimeSec = Math.floor((now.getTime() - performance.timeOrigin) / 1000);
       console.error(`❌ Error reading scale data [${timeStr}, +${uptimeSec}s]:`, error);
+
+      // Реализация стратегии "reconnectOnError"
+      if (this.config.connectionStrategy === 'reconnectOnError') {
+        const errorMessage = error instanceof Error ? error.message : '';
+        if (errorMessage.includes('device has been lost') || errorMessage.includes('closed stream')) {
+          console.log(' reconnectOnError: Обнаружена потеря соединения, попытка переподключения...');
+          this.handleConnectionLoss();
+        }
+      }
+
       return null;
     } finally {
       this.isReading = false;
+    }
+  }
+
+  // Обработчик потери соединения для автоматического переподключения
+  private async handleConnectionLoss(): Promise<void> {
+    if (!this.isConnected) return;
+
+    console.log('🔌 ScaleService: Соединение потеряно. Попытка автоматического переподключения...');
+    await this.disconnect();
+
+    // Пауза перед переподключением
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    try {
+      const reconnected = await this.connect(true); // autoConnect = true
+      if (reconnected) {
+        console.log('✅ ScaleService: Успешно переподключено к весам.');
+      } else {
+        console.log('❌ ScaleService: Не удалось автоматически переподключиться.');
+      }
+    } catch (error) {
+      console.error('❌ ScaleService: Ошибка при попытке переподключения:', error);
+    }
+  }
+
+  // --- Логика для режима "persistentStream" ---
+  private async startReadLoop(): Promise<void> {
+    console.log('🌀 persistentStream: Запуск постоянного цикла чтения...');
+
+    let shouldStop = false;
+    this.stopReadLoop = () => {
+      shouldStop = true;
+      if (this.reader) {
+        this.reader.cancel().catch(() => {});
+      }
+    };
+
+    while (!shouldStop && this.isConnected) {
+      if (!this.port?.readable) {
+        console.log('🌀 persistentStream: Port not readable, stopping loop.');
+        await this.handleConnectionLoss();
+        continue;
+      }
+
+      this.reader = this.port.readable.getReader();
+      const buffer: number[] = [];
+
+      try {
+        while (!shouldStop) {
+          const { value, done } = await this.reader.read();
+          if (done || shouldStop) {
+            break;
+          }
+
+          if (value) {
+            for (const b of value) buffer.push(b);
+            this.onRawData?.(value);
+
+            while (buffer.length >= 18) {
+              const frame = new Uint8Array(buffer.splice(0, 18));
+              const scaleData = this.parseFrame(frame);
+              if (scaleData) {
+                this.onWeightChange?.(scaleData);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('🌀 persistentStream: Ошибка в цикле чтения:', error);
+        if (!shouldStop) {
+          await this.handleConnectionLoss();
+        }
+      } finally {
+        if (this.reader) {
+          this.reader.releaseLock();
+          this.reader = undefined;
+        }
+      }
+    }
+    console.log('🌀 persistentStream: Цикл чтения остановлен.');
+  }
+
+  private parseFrame(frame: Uint8Array): VTAScaleData | null {
+    try {
+      const m = frame.slice(0, 6);
+      const c = frame.slice(6, 12);
+      const v = frame.slice(12, 18);
+
+      const massKg = this.formatMassFromDigits(m, 3);
+      const price = this.formatPriceFromDigits(c, 2);
+      const total = this.formatTotalFromDigits(v, 2);
+
+      return {
+        weight: massKg,
+        unit: 'kg',
+        isStable: true,
+        timestamp: new Date(),
+        price,
+        total,
+        rawData: frame,
+      };
+    } catch (error) {
+      console.error('❌ Ошибка парсинга кадра:', error, frame);
+      return null;
     }
   }
 
@@ -310,6 +433,16 @@ export class ScaleService {
   // Відключення від ваг
   public async disconnect(): Promise<void> {
     try {
+      // Останавливаем цикл чтения для persistentStream
+      if (this.stopReadLoop) {
+        this.stopReadLoop();
+        if (this.readLoopPromise) {
+          await this.readLoopPromise;
+        }
+        this.stopReadLoop = null;
+        this.readLoopPromise = null;
+      }
+
       if (this.reader) {
         try {
           // Отменяем чтение и ждем завершения промиса
@@ -365,6 +498,21 @@ export class ScaleService {
       return null;
     }
 
+    // В режиме persistentStream мы не читаем данные напрямую, а только отправляем запрос
+    if (this.config.connectionStrategy === 'persistentStream') {
+      try {
+        console.log('🌀 persistentStream: Отправка запроса на вес...');
+        await this.sendPoll();
+        // Данные придут через onWeightChange, поэтому здесь возвращаем null
+        // или можно вернуть последнее известное значение, если оно хранится
+        return null;
+      } catch (error) {
+        console.error('🌀 persistentStream: Ошибка отправки запроса:', error);
+        await this.handleConnectionLoss();
+        return null;
+      }
+    }
+
     console.log('🔧 ScaleService: Отправка запроса на получение данных от весов...');
 
     // Отправляем запрос и ждем ответа
@@ -378,7 +526,16 @@ export class ScaleService {
 
   // Оновлення конфігурації
   public updateConfig(newConfig: Partial<ScaleConnectionConfig>): void {
+    const oldStrategy = this.config.connectionStrategy;
     this.config = { ...this.config, ...newConfig };
+
+    // Если стратегия изменилась, нужно переподключиться
+    if (newConfig.connectionStrategy && newConfig.connectionStrategy !== oldStrategy) {
+      console.log(`🔄 Стратегия подключения изменена на: ${newConfig.connectionStrategy}. Требуется переподключение.`);
+      if (this.isConnected) {
+        this.disconnect().then(() => this.connect(true));
+      }
+    }
   }
 
   // Отримання конфігурації

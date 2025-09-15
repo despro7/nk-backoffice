@@ -31,6 +31,7 @@ export interface EquipmentSettings {
     maxPollingErrors: number;
     weightCacheDuration: number;
     weightThresholdForActive: number;
+    connectionStrategy: 'legacy' | 'reconnectOnError' | 'persistentStream';
   };
   scanner: {
     autoConnect: boolean;
@@ -178,6 +179,11 @@ export class EquipmentSettingsService {
           key: 'equipment_scale.weightThresholdForActive',
           value: JSON.stringify(settings.scale?.weightThresholdForActive ?? 0.010),
           description: 'Поріг ваги для переключення на активний polling (кг)'
+        },
+        {
+          key: 'equipment_scale.connectionStrategy',
+          value: JSON.stringify(settings.scale?.connectionStrategy ?? 'legacy'),
+          description: 'Стратегія роботи з COM-портом ваг'
         },
         {
           key: 'equipment_scanner.autoConnect',

@@ -919,11 +919,22 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                 onClick={() => handleOpenDetails(item)}
               >
                 <TableCell className="font-medium text-base">
-                  {new Date(item.date).toLocaleDateString("uk-UA", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    year: "numeric",
-                  })}
+                  {(() => {
+                    const dateObj = new Date(item.date);
+                    const day = dateObj.getDay();
+                    const isWeekend = day === 0 || day === 6;
+                    const dateStr = dateObj.toLocaleDateString("uk-UA", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      weekday: "short",
+                    });
+                    return (
+                      <span className={isWeekend ? "text-gray-400" : ""}>
+                        {dateStr}
+                      </span>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell className="text-center text-base">
                   <Chip

@@ -967,6 +967,23 @@ export const SettingsEquipment = () => {
                 max="5000"
               />
 
+              {/* Стратегія підключення */}
+              <Select
+                id="connectionStrategy"
+                label="Стратегія роботи з портом"
+                labelPlacement="outside"
+                selectedKeys={[localConfig.scale?.connectionStrategy || "legacy"]}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0] as string;
+                  updateScaleSetting("connectionStrategy", value);
+                }}
+                className="block text-sm font-medium text-gray-700 mb-1 col-span-2"
+                >
+                <SelectItem key="legacy">Стандартна (Legacy)</SelectItem>
+                <SelectItem key="reconnectOnError">Перепідключення при помилці</SelectItem>
+                <SelectItem key="persistentStream">Постійний потік</SelectItem>
+              </Select>
+
               {/* Свитчер автопідключення ваг */}
               <Switch
                 id="scaleAutoConnect"
