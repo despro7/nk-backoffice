@@ -289,13 +289,56 @@ export class ScaleService {
       const now = new Date();
       const timeStr = now.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       const uptimeSec = Math.floor((now.getTime() - performance.timeOrigin) / 1000);
-      console.error(`❌ Error reading scale data [${timeStr}, +${uptimeSec}s]:`, error);
+      
+      // Детальная диагностика ошибки
+      const errorInfo = {
+        timestamp: now.toISOString(),
+        timeStr,
+        uptimeSec,
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : 'Unknown',
+          stack: error instanceof Error ? error.stack : undefined
+        },
+        connectionState: {
+          isConnected: this.isConnected,
+          portExists: !!this.port,
+          readableLocked: this.port?.readable?.locked || false,
+          writableLocked: this.port?.writable?.locked || false,
+          isReading: this.isReading
+        },
+        config: this.config
+      };
+      
+      console.error(`❌ ScaleService: Детальная ошибка чтения [${timeStr}, +${uptimeSec}s]:`, errorInfo);
+
+      // Анализ типа ошибки для диагностики
+      if (error instanceof Error) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('device has been lost')) {
+          console.log('🔌 ScaleService: Устройство физически отключено');
+        } else if (msg.includes('closed stream')) {
+          console.log('🔌 ScaleService: Поток был закрыт');
+        } else if (msg.includes('timeout') || msg.includes('тайм-аут')) {
+          console.log('⏱️ ScaleService: Таймаут - весы не отвечают');
+        } else if (msg.includes('locked')) {
+          console.log('🔒 ScaleService: Поток заблокирован другим процессом');
+        } else if (msg.includes('not connected')) {
+          console.log('🔌 ScaleService: Нет активного соединения');
+        } else if (msg.includes('permission denied')) {
+          console.log('🚫 ScaleService: Нет прав доступа к порту');
+        } else if (msg.includes('busy')) {
+          console.log('🔄 ScaleService: Порт занят другим процессом');
+        } else {
+          console.log('❓ ScaleService: Неизвестная ошибка:', error.message);
+        }
+      }
 
       // Реализация стратегии "reconnectOnError"
       if (this.config.connectionStrategy === 'reconnectOnError') {
         const errorMessage = error instanceof Error ? error.message : '';
         if (errorMessage.includes('device has been lost') || errorMessage.includes('closed stream')) {
-          console.log(' reconnectOnError: Обнаружена потеря соединения, попытка переподключения...');
+          console.log('🔄 reconnectOnError: Обнаружена потеря соединения, попытка переподключения...');
           this.handleConnectionLoss();
         }
       }

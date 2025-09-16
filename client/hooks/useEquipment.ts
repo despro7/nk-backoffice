@@ -88,6 +88,10 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
 
   // Кэш для данных весов
   const weightCacheRef = useRef<{ data: VTAScaleData; timestamp: number } | null>(null);
+  
+  // Счетчик попыток переподключения при ошибках
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 3;
 
   // Кеш для настроек оборудования (15 минут)
   const configCacheRef = useRef<{ data: EquipmentConfig | null; timestamp: number } | null>(null);
@@ -426,6 +430,40 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     }
   }, [updateStatus, config]);
 
+  // Попытка переподключения при ошибках
+  const attemptReconnect = useCallback(async (): Promise<boolean> => {
+    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+      console.log(`⚠️ useEquipment: Достигнуто максимальное количество попыток переподключения (${maxReconnectAttempts})`);
+      return false;
+    }
+
+    reconnectAttemptsRef.current++;
+    console.log(`🔄 useEquipment: Попытка переподключения ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`);
+
+    try {
+      // Сначала отключаемся
+      await disconnectScale();
+      
+      // Небольшая пауза перед переподключением
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Пытаемся переподключиться
+      const reconnected = await connectScale();
+      
+      if (reconnected) {
+        console.log('✅ useEquipment: Успешно переподключились к весам');
+        reconnectAttemptsRef.current = 0; // Сбрасываем счетчик при успехе
+        return true;
+      } else {
+        console.log('❌ useEquipment: Не удалось переподключиться к весам');
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ useEquipment: Ошибка при переподключении:', error);
+      return false;
+    }
+  }, [connectScale, disconnectScale]);
+
   // Отримання ваги с улучшенным кэшированием
   const getWeight = useCallback(async (useCache: boolean = true): Promise<VTAScaleData | null> => {
     try {
@@ -464,25 +502,124 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         };
         return weightData;
       } else {
-        // Если не удалось получить свежий вес, но есть кэш - возвращаем его
+        // Если не удалось получить свежий вес, пытаемся переподключиться
+        console.log('⚠️ useEquipment: Не удалось получить свежий вес, пытаемся переподключиться...');
+        
+        const reconnected = await attemptReconnect();
+        if (reconnected) {
+          // После переподключения пытаемся получить вес еще раз
+          console.log('🔄 useEquipment: Переподключились, повторная попытка получения веса...');
+          const retryWeightData = await scaleService.current.getCurrentWeight();
+          if (retryWeightData) {
+            console.log('✅ useEquipment: Вес получен после переподключения:', retryWeightData);
+            setCurrentWeight(retryWeightData);
+            weightCacheRef.current = {
+              data: retryWeightData,
+              timestamp: Date.now()
+            };
+            return retryWeightData;
+          }
+        }
+        
+        // Если переподключение не помогло, возвращаем кэш
         if (weightCacheRef.current) {
-          console.log('⚠️ useEquipment: Возвращаем кэшированный вес из-за ошибки:', weightCacheRef.current.data);
+          console.log('⚠️ useEquipment: Возвращаем кэшированный вес после неудачного переподключения:', weightCacheRef.current.data);
           return weightCacheRef.current.data;
         }
         console.log('⚠️ useEquipment: Не удалось получить вес от весов');
         return null;
       }
     } catch (error) {
-      console.log('❌ useEquipment: Помилка отримання ваги:', error);
-      // В случае ошибки возвращаем кэшированный вес
+      // Детальное логирование ошибки
+      const errorDetails = {
+        message: error instanceof Error ? error.message : String(error),
+        name: error instanceof Error ? error.name : 'Unknown',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
+        connectionStatus: scaleService.current?.isScaleConnected() || false,
+        config: config?.scale
+      };
+      
+      console.log('❌ useEquipment: Детальная ошибка получения веса:', errorDetails);
+      
+      // Анализ типа ошибки
+      if (error instanceof Error) {
+        if (error.message.includes('device has been lost')) {
+          console.log('🔌 useEquipment: Устройство отключено (device lost)');
+        } else if (error.message.includes('closed stream')) {
+          console.log('🔌 useEquipment: Поток закрыт (stream closed)');
+        } else if (error.message.includes('timeout') || error.message.includes('тайм-аут')) {
+          console.log('⏱️ useEquipment: Таймаут при получении данных');
+        } else if (error.message.includes('locked')) {
+          console.log('🔒 useEquipment: Поток заблокирован (stream locked)');
+        } else if (error.message.includes('not connected')) {
+          console.log('🔌 useEquipment: Весы не подключены');
+        } else {
+          console.log('❓ useEquipment: Неизвестная ошибка:', error.message);
+        }
+      }
+      
+      // В случае ошибки пытаемся переподключиться
+      console.log('⚠️ useEquipment: Ошибка получения веса, пытаемся переподключиться...');
+      
+      const reconnected = await attemptReconnect();
+      if (reconnected) {
+        // После переподключения пытаемся получить вес еще раз
+        console.log('🔄 useEquipment: Переподключились, повторная попытка получения веса...');
+        try {
+          const retryWeightData = await scaleService.current.getCurrentWeight();
+          if (retryWeightData) {
+            console.log('✅ useEquipment: Вес получен после переподключения:', retryWeightData);
+            setCurrentWeight(retryWeightData);
+            weightCacheRef.current = {
+              data: retryWeightData,
+              timestamp: Date.now()
+            };
+            return retryWeightData;
+          }
+        } catch (retryError) {
+          console.error('❌ useEquipment: Ошибка при повторной попытке после переподключения:', retryError);
+        }
+      }
+      
+      // Если переподключение не помогло, возвращаем кэшированный вес
       if (weightCacheRef.current) {
-        console.log('⚠️ useEquipment: Возвращаем кэшированный вес из-за ошибки:', weightCacheRef.current.data);
+        console.log('⚠️ useEquipment: Возвращаем кэшированный вес после неудачного переподключения:', weightCacheRef.current.data);
         return weightCacheRef.current.data;
       }
       return null;
     }
-  }, [config]);
+  }, [config, attemptReconnect]);
 
+  // Мониторинг здоровья соединения с весами
+  const checkScaleHealth = useCallback(async () => {
+    if (!scaleService.current || !config?.scale) return;
+    
+    try {
+      const isConnected = scaleService.current.isScaleConnected();
+      const port = (scaleService.current as any).port;
+      
+      const healthInfo = {
+        isConnected,
+        portExists: !!port,
+        readableLocked: port?.readable?.locked || false,
+        writableLocked: port?.writable?.locked || false,
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('🏥 useEquipment: Проверка здоровья весов:', healthInfo);
+      
+      // Если соединение есть, но потоки заблокированы - это проблема
+      if (isConnected && (healthInfo.readableLocked || healthInfo.writableLocked)) {
+        console.warn('⚠️ useEquipment: Обнаружены заблокированные потоки весов');
+      }
+      
+      return healthInfo;
+    } catch (error) {
+      console.error('❌ useEquipment: Ошибка проверки здоровья весов:', error);
+      return null;
+    }
+  }, [config?.scale]);
 
   // Оновлення конфігурації
   const updateConfig = useCallback((newConfig: Partial<EquipmentConfig>) => {
@@ -572,6 +709,8 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
               if (scaleConnected) {
                 console.log('✅ useEquipment: Весы успешно подключены');
                 setIsScaleConnected(true);
+                // Сбрасываем счетчик попыток переподключения при успешном подключении
+                reconnectAttemptsRef.current = 0;
               } else {
                 console.log('⚠️ useEquipment: Автоподключение не удалось, порт не найден или не выбран ранее');
               }
@@ -991,6 +1130,8 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     resetScanner,
     setConnectionType,
     getWeight,
+    checkScaleHealth,
+    attemptReconnect,
     startActivePolling,
     stopActivePolling,
     startReservePolling,
