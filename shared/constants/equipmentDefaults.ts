@@ -13,7 +13,7 @@ export const EQUIPMENT_DEFAULTS = {
     maxPollingErrors: 5,  // Максимальное количество ошибок перед остановкой
     weightCacheDuration: 500,  // Время кэширования данных весов (мс)
     weightThresholdForActive: 0.010, // Порог веса для переключения на активный polling (кг)
-    connectionStrategy: 'legacy' as const // Режим роботи з портом: 'legacy', 'reconnectOnError', 'persistentStream'
+    connectionStrategy: 'persistentStream' as const // Режим роботи з портом: 'legacy', 'reconnectOnError', 'persistentStream'
   },
   scanner: {
     autoConnect: true,

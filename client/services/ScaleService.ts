@@ -51,6 +51,7 @@ export class ScaleService {
   private isReading: boolean = false; // Флаг для предотвращения одновременного чтения
   private readLoopPromise: Promise<void> | null = null; // Для persistentStream
   private stopReadLoop: (() => void) | null = null; // Для persistentStream
+  private lastWeightData: VTAScaleData | null = null; // Последние данные весов для persistentStream
 
   private constructor() {
     // Используем единые настройки по умолчанию
@@ -261,7 +262,7 @@ export class ScaleService {
         await this.sendPoll(); // запрос «масса/цена/сумма»
       }
 
-      const frame = await this.readOneFrame(1500);
+      const frame = await this.readOneFrame(3000); // Увеличиваем таймаут до 3 секунд
       if (!frame) throw new Error('Нет ответа (тайм-аут или нестабильная масса)');
 
       // m1..m6 c1..c6 v1..v6 (младшие сначала)
@@ -383,9 +384,21 @@ export class ScaleService {
       }
     };
 
+    // Интервал для отправки запросов к весам
+    const pollInterval = setInterval(async () => {
+      if (shouldStop || !this.isConnected) return;
+      
+      try {
+        await this.sendPoll();
+      } catch (error) {
+        console.error('🌀 persistentStream: Ошибка отправки запроса:', error);
+      }
+    }, 1000); // Запрос каждую секунду
+
     while (!shouldStop && this.isConnected) {
       if (!this.port?.readable) {
         console.log('🌀 persistentStream: Port not readable, stopping loop.');
+        clearInterval(pollInterval);
         await this.handleConnectionLoss();
         continue;
       }
@@ -416,6 +429,7 @@ export class ScaleService {
       } catch (error) {
         console.error('🌀 persistentStream: Ошибка в цикле чтения:', error);
         if (!shouldStop) {
+          clearInterval(pollInterval);
           await this.handleConnectionLoss();
         }
       } finally {
@@ -425,6 +439,8 @@ export class ScaleService {
         }
       }
     }
+    
+    clearInterval(pollInterval);
     console.log('🌀 persistentStream: Цикл чтения остановлен.');
   }
 
@@ -438,7 +454,7 @@ export class ScaleService {
       const price = this.formatPriceFromDigits(c, 2);
       const total = this.formatTotalFromDigits(v, 2);
 
-      return {
+      const scaleData = {
         weight: massKg,
         unit: 'kg',
         isStable: true,
@@ -447,6 +463,11 @@ export class ScaleService {
         total,
         rawData: frame,
       };
+
+      // Сохраняем последние данные для persistentStream
+      this.lastWeightData = scaleData;
+
+      return scaleData;
     } catch (error) {
       console.error('❌ Ошибка парсинга кадра:', error, frame);
       return null;
@@ -541,19 +562,10 @@ export class ScaleService {
       return null;
     }
 
-    // В режиме persistentStream мы не читаем данные напрямую, а только отправляем запрос
+    // В режиме persistentStream возвращаем последние данные
     if (this.config.connectionStrategy === 'persistentStream') {
-      try {
-        console.log('🌀 persistentStream: Отправка запроса на вес...');
-        await this.sendPoll();
-        // Данные придут через onWeightChange, поэтому здесь возвращаем null
-        // или можно вернуть последнее известное значение, если оно хранится
-        return null;
-      } catch (error) {
-        console.error('🌀 persistentStream: Ошибка отправки запроса:', error);
-        await this.handleConnectionLoss();
-        return null;
-      }
+      console.log('🌀 persistentStream: Возвращаем последние данные весов');
+      return this.lastWeightData;
     }
 
     console.log('🔧 ScaleService: Отправка запроса на получение данных от весов...');

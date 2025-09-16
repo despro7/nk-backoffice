@@ -92,6 +92,10 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   // Счетчик попыток переподключения при ошибках
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 3;
+  
+  // Счетчик таймаутов подряд (для умной обработки)
+  const timeoutCountRef = useRef(0);
+  const maxTimeoutsBeforeReconnect = 3;
 
   // Кеш для настроек оборудования (15 минут)
   const configCacheRef = useRef<{ data: EquipmentConfig | null; timestamp: number } | null>(null);
@@ -444,8 +448,10 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       // Сначала отключаемся
       await disconnectScale();
       
-      // Небольшая пауза перед переподключением
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Экспоненциальная задержка: 1s, 2s, 4s
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), 4000);
+      console.log(`⏳ useEquipment: Пауза ${delay}ms перед переподключением...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
       
       // Пытаемся переподключиться
       const reconnected = await connectScale();
@@ -483,7 +489,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       // Проверяем кэш если useCache = true
       if (useCache && weightCacheRef.current) {
         const age = Date.now() - weightCacheRef.current.timestamp;
-        const cacheDuration = config?.scale?.weightCacheDuration || 500;
+        const cacheDuration = config?.scale?.weightCacheDuration || 2000; // Увеличиваем до 2 секунд
         if (age < cacheDuration) {
           console.log('🔧 useEquipment: Возвращаем кэшированный вес:', weightCacheRef.current.data);
           return weightCacheRef.current.data;
@@ -495,6 +501,8 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       if (weightData) {
         console.log('✅ useEquipment: Вес получен:', weightData);
         setCurrentWeight(weightData);
+        // Сбрасываем счетчик таймаутов при успешном получении
+        timeoutCountRef.current = 0;
         // Обновляем кэш
         weightCacheRef.current = {
           data: weightData,
@@ -542,27 +550,54 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       
       console.log('❌ useEquipment: Детальная ошибка получения веса:', errorDetails);
       
-      // Анализ типа ошибки
+      // Анализ типа ошибки и умная обработка
+      let shouldReconnect = false;
+      
       if (error instanceof Error) {
         if (error.message.includes('device has been lost')) {
           console.log('🔌 useEquipment: Устройство отключено (device lost)');
+          shouldReconnect = true;
         } else if (error.message.includes('closed stream')) {
           console.log('🔌 useEquipment: Поток закрыт (stream closed)');
+          shouldReconnect = true;
         } else if (error.message.includes('timeout') || error.message.includes('тайм-аут')) {
           console.log('⏱️ useEquipment: Таймаут при получении данных');
+          timeoutCountRef.current++;
+          
+          // Переподключаемся только после нескольких таймаутов подряд
+          if (timeoutCountRef.current >= maxTimeoutsBeforeReconnect) {
+            console.log(`⏱️ useEquipment: ${timeoutCountRef.current} таймаутов подряд, пытаемся переподключиться...`);
+            shouldReconnect = true;
+            timeoutCountRef.current = 0; // Сбрасываем счетчик
+          } else {
+            console.log(`⏱️ useEquipment: Таймаут ${timeoutCountRef.current}/${maxTimeoutsBeforeReconnect}, используем кэш`);
+            shouldReconnect = false;
+          }
         } else if (error.message.includes('locked')) {
           console.log('🔒 useEquipment: Поток заблокирован (stream locked)');
+          shouldReconnect = true;
         } else if (error.message.includes('not connected')) {
           console.log('🔌 useEquipment: Весы не подключены');
+          shouldReconnect = true;
         } else {
           console.log('❓ useEquipment: Неизвестная ошибка:', error.message);
+          shouldReconnect = true;
         }
       }
       
-      // В случае ошибки пытаемся переподключиться
-      console.log('⚠️ useEquipment: Ошибка получения веса, пытаемся переподключиться...');
+      // Сбрасываем счетчик таймаутов при успешном получении веса
+      if (error instanceof Error && !error.message.includes('timeout') && !error.message.includes('тайм-аут')) {
+        timeoutCountRef.current = 0;
+      }
       
-      const reconnected = await attemptReconnect();
+      // Переподключаемся только если нужно
+      let reconnected = false;
+      if (shouldReconnect) {
+        console.log('⚠️ useEquipment: Ошибка требует переподключения...');
+        reconnected = await attemptReconnect();
+      } else {
+        console.log('⚠️ useEquipment: Используем кэш без переподключения');
+      }
       if (reconnected) {
         // После переподключения пытаемся получить вес еще раз
         console.log('🔄 useEquipment: Переподключились, повторная попытка получения веса...');
