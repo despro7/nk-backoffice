@@ -359,7 +359,7 @@ export const BoxSettingsManager: React.FC = () => {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Вага коробки:</span>
                     <span className="font-medium">
-                      {Number(box.self_weight).toFixed(2)} кг
+                      {(Number(box.self_weight)).toFixed(3)} кг
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -502,7 +502,7 @@ export const BoxSettingsManager: React.FC = () => {
                 onValueChange={(value) => handleNumberChange("self_weight", value.toString())}
                 min={0}
                 max={5}
-                step={0.01}
+                step={0.001}
                 placeholder="0.15"
                 className="col-span-3"
                 isRequired

@@ -507,7 +507,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
           <div className="flex items-center gap-8">
             {weightInfo.totalOrderWeight > 0 && (
               <span className="text-base leading-[100%] border-1 border-success-700/10 bg-success-700/5 rounded p-1">
-                ~{weightInfo.totalOrderWeight.toFixed(1)} кг
+                ~{weightInfo.totalOrderWeight.toFixed(3)} кг
               </span>
             )}
             <span>
@@ -535,7 +535,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
              <div className="flex items-center gap-8">
                {weightInfo.currentBoxWeight > 0 && (
                  <span className="text-base leading-[100%] border-1 border-success-700/10 bg-success-700/5 rounded p-1">
-                   ~{weightInfo.currentBoxWeight.toFixed(1)} кг
+                   ~{weightInfo.currentBoxWeight.toFixed(3)} кг
                  </span>
                )}
                <span>

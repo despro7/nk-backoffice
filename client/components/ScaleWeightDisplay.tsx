@@ -255,7 +255,7 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
           <div className="pt-3 border-t border-gray-100">
             <div className="flex justify-between items-center text-sm text-gray-700 mb-2">
               <span>Очікувана вага:</span>
-              <span className="font-medium">{currentScaleWeight.toFixed(2)} кг</span>
+              <span className="font-medium">{currentScaleWeight.toFixed(3)} кг</span>
             </div>
             
             {/* Индикатор разницы (только если весы подключены) */}

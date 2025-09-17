@@ -5,10 +5,8 @@ generator client {
 datasource db {
   provider          = "mysql"
   url               = env("DATABASE_URL")
-  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
-
-  // Настройки пула подключений для предотвращения таймаутов
   directUrl         = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 model User {
@@ -33,29 +31,29 @@ model User {
 model Order {
   id              Int             @id
   externalId      String          @unique
-  ttn             String
+  orderDate       DateTime?
   quantity        Int
   status          String
+  statusText      String
   items           String          @db.LongText
-  rawData         String          @db.LongText
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   cityName        String?
   customerName    String?
   customerPhone   String?
+  provider        String?
+  ttn             String
+  sajt            String?
+  pricinaZnizki   String?
+  rawData         String          @db.LongText
   deliveryAddress String?
   lastSynced      DateTime        @default(now())
-  orderDate       DateTime?
   orderNumber     String
   paymentMethod   String?
-  provider        String?
   shippingMethod  String?
-  statusText      String
+  totalPrice      Float?
   syncError       String?
   syncStatus      String          @default("pending")
-  totalPrice      Float?
-  pricinaZnizki   String?
-  sajt            String?
   OrdersHistory   OrdersHistory[]
 
   @@index([status])
@@ -123,7 +121,7 @@ model SettingsBoxes {
   length      Int
   overflow    Int      @default(1)
   weight      Decimal  @db.Decimal(10, 2)
-  self_weight Decimal  @db.Decimal(10, 2)
+  self_weight Decimal  @db.Decimal(10, 3)
   description String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -231,8 +229,6 @@ model SyncLogs {
   @@map("sync_logs")
 }
 
-
-
 model SyncHistory {
   id            Int      @id @default(autoincrement())
   syncType      String
@@ -254,14 +250,14 @@ model SyncHistory {
 }
 
 model OrdersCache {
-  id            Int      @id @default(autoincrement())
-  externalId    String   @unique
-  processedItems String? @db.LongText  // JSON с массивом товаров и их статистикой
-  totalQuantity Int      // Общее кол-во порций/комплектов
+  id             Int      @id @default(autoincrement())
+  externalId     String   @unique
+  processedItems String?  @db.LongText
+  totalQuantity  Int
   cacheUpdatedAt DateTime @default(now())
-  cacheVersion  Int      @default(1) // Версия формата кеша
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  cacheVersion   Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([externalId])
   @@index([cacheUpdatedAt])

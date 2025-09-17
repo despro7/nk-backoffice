@@ -1,18 +1,18 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Button } from '../components/ui/button';
 import { formatDateTime, formatPrice } from '../lib/formatUtils';
-import { 
-  Table, 
-  TableHeader, 
-  TableColumn, 
-  TableBody, 
-  TableRow, 
+import { addToast } from '@heroui/toast';
+import {
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
   TableCell,
   Chip,
   ChipProps,
-  Input,
   Dropdown,
   DropdownTrigger,
   DropdownMenu,
@@ -28,7 +28,7 @@ interface Product {
   currency: string;
   categoryId: number;
   categoryName: string;
-  weight?: number; // Добавляем поле веса
+  weight?: number; // Вес в граммах
   set: any; // Уже распарсенный объект или null
   additionalPrices: any; // Уже распарсенный объект или null
   stockBalanceByStock: any; // Уже распарсенный объект или null
@@ -113,6 +113,12 @@ const ProductSets: React.FC = () => {
   // Состояние для сортировки
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | undefined>(undefined);
 
+  // Состояние для редактирования веса
+  const [editingWeight, setEditingWeight] = useState<{ [key: string]: string }>({});
+  const [savingWeight, setSavingWeight] = useState<string | null>(null);
+  const [forceUpdate, setForceUpdate] = useState(0); // Для принудительного обновления
+  const inputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+
   // Определяем колонки таблицы
   const columns = [
     {
@@ -128,6 +134,11 @@ const ProductSets: React.FC = () => {
     {
       key: 'costPerItem',
       label: 'Ціна',
+      allowsSorting: true,
+    },
+    {
+      key: 'weight',
+      label: 'Вага (гр)',
       allowsSorting: true,
     },
     {
@@ -191,6 +202,9 @@ const ProductSets: React.FC = () => {
           const stockB = parseStockBalance(b.stockBalanceByStock);
           first = stockA["2"] || 0;
           second = stockB["2"] || 0;
+        } else if (sortDescriptor.column === 'weight') {
+          first = a.weight || 0;
+          second = b.weight || 0;
         }
         
         if (first === null || first === undefined) first = '';
@@ -243,6 +257,107 @@ const ProductSets: React.FC = () => {
           <span className="text-sm text-gray-900">
             {formatPrice(product.costPerItem)}
           </span>
+        );
+      
+      case 'weight':
+        const productIdStr = product.id.toString();
+        const isEditing = editingWeight[productIdStr] !== undefined;
+        const isSaving = savingWeight === productIdStr;
+        const currentWeight = product.weight || 0;
+        
+        return (
+          <div className="flex items-center gap-2">
+            {isEditing ? (
+              <div className="flex items-center gap-1">
+                <input
+                  ref={(el) => {
+                    inputRefs.current[productIdStr] = el;
+                  }}
+                  key={`weight-input-${productIdStr}-${forceUpdate}`}
+                  type="number"
+                  defaultValue={editingWeight[productIdStr] ?? ''}
+                  onChange={(e) => {
+                    const newValue = e.target.value;
+                    setEditingWeight(prev => {
+                      const newState = {
+                        ...prev,
+                        [productIdStr]: newValue
+                      };
+                      return newState;
+                    });
+                  }}
+                  className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  min="0"
+                  step="1"
+                  disabled={isSaving}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      finishEditingWeight(productIdStr);
+                    } else if (e.key === 'Escape') {
+                      cancelEditingWeight(productIdStr);
+                    }
+                  }}
+                  autoFocus
+                  placeholder="0"
+                  onFocus={(e) => {
+                    // Выделяем весь текст при фокусе для удобства редактирования
+                    e.target.select();
+                  }}
+                />
+                <Button
+                  size="sm"
+                  color="success"
+                  variant="outline"
+                  onClick={() => finishEditingWeight(productIdStr)}
+                  disabled={isSaving}
+                  className="min-w-0 p-1"
+                >
+                  {isSaving ? (
+                    <DynamicIcon name="loader-2" className="animate-spin" size={12} />
+                  ) : (
+                    <DynamicIcon name="check" size={12} />
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  color="danger"
+                  variant="outline"
+                  onClick={() => cancelEditingWeight(productIdStr)}
+                  disabled={isSaving}
+                  className="min-w-0 p-1"
+                >
+                  <DynamicIcon name="x" size={12} />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <div 
+                  className="text-sm text-gray-900 cursor-pointer hover:bg-gray-100 px-2 py-1 rounded min-w-[60px]"
+                  onClick={() => startEditingWeight(productIdStr, currentWeight)}
+                  title="Нажмите для редактирования"
+                >
+                  {currentWeight || '—'} г
+                </div>
+                {currentWeight === 0 && (
+                  <Button
+                    size="sm"
+                    color="primary"
+                    variant="outline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Автоматически устанавливаем вес по умолчанию на основе категории
+                      const defaultWeight = product.categoryId === 1 ? 420 : 330; // 1 - первые блюда, остальные - вторые
+                      updateProductWeight(productIdStr, defaultWeight);
+                    }}
+                    className="min-w-0 p-1"
+                    title={`Установить вес по умолчанию: ${product.categoryId === 1 ? '420' : '330'}г`}
+                  >
+                    <DynamicIcon name="plus" size={12} />
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
         );
       
       case 'stock1':
@@ -627,6 +742,127 @@ const ProductSets: React.FC = () => {
     }
   };
 
+  // Функция для обновления веса товара
+  const updateProductWeight = async (productId: string, newWeight: number) => {
+    try {
+      setSavingWeight(productId);
+      
+      const response = await fetch(`/api/products/${productId}/weight`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ weight: newWeight }),
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Обновляем локальное состояние
+        setProducts(prevProducts =>
+          prevProducts.map(product =>
+            product.id.toString() === productId ? { ...product, weight: newWeight } : product
+          )
+        );
+        
+        // Очищаем состояние редактирования
+        setEditingWeight(prev => {
+          const newState = { ...prev };
+          delete newState[productId];
+          return newState;
+        });
+        
+        addToast({
+          title: "Успішно оновлено",
+          description: `Вес товара обновлен на ${newWeight}г.`, 
+          color: "success"
+        });
+
+      } else {
+        const errorText = await response.text();
+        
+        try {
+          const error = JSON.parse(errorText);
+          addToast({
+            title: "Помилка",
+            description: `Ошибка обновления веса: ${error.error || 'Неизвестная ошибка'}`, 
+            color: "danger"
+          });
+        } catch {
+          addToast({
+            title: "Помилка",
+            description: `Ошибка обновления веса: ${response.status} ${response.statusText}`, 
+            color: "danger"
+          });
+        }
+      }
+    } catch (error) {
+      addToast({
+        title: "Помилка мережі",
+        description: `Ошибка сети: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`, 
+        color: "danger"
+      });
+    } finally {
+      setSavingWeight(null);
+    }
+  };
+
+  // Функция для начала редактирования веса
+  const startEditingWeight = (productId: string, currentWeight: number) => {
+    setEditingWeight(prev => {
+      const newState = {
+        ...prev,
+        [productId]: currentWeight.toString()
+      };
+      return newState;
+    });
+  };
+
+  // Функция для завершения редактирования веса
+  const finishEditingWeight = (productId: string) => {
+    // Всегда получаем значение из ref (DOM элемента), так как оно актуальное
+    const weightValue = inputRefs.current[productId]?.value;
+    
+    if (weightValue !== undefined && weightValue !== '') {
+      const newWeight = parseInt(weightValue);
+      if (!isNaN(newWeight) && newWeight >= 0) {
+        updateProductWeight(productId, newWeight);
+      } else {
+        addToast({
+          title: "Некоректний ввід",
+          description: 'Введите корректный вес (целое число >= 0)', 
+          color: "warning"
+        });
+        setEditingWeight(prev => {
+          const newState = { ...prev };
+          delete newState[productId];
+          return newState;
+        });
+      }
+    } else {
+      addToast({
+        title: "Відсутній ввід",
+        description: 'Введите вес', 
+        color: "warning"
+      });
+      setEditingWeight(prev => {
+        const newState = { ...prev };
+        delete newState[productId];
+        return newState;
+      });
+    }
+  };
+
+  // Функция для отмены редактирования веса
+  const cancelEditingWeight = (productId: string) => {
+    setEditingWeight(prev => {
+      const newState = { ...prev };
+      delete newState[productId];
+      return newState;
+    });
+  };
+
   // Автоматическое обновление при изменении фильтров
   useEffect(() => {
     fetchProducts();
@@ -800,6 +1036,7 @@ const ProductSets: React.FC = () => {
       {/* Таблица товаров */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <Table
+          key={`products-table-${Object.keys(editingWeight).length}`}
           aria-label="Таблиця товарів та комплектів"
             sortDescriptor={sortDescriptor}
             onSortChange={setSortDescriptor}
@@ -884,29 +1121,24 @@ const ProductSets: React.FC = () => {
 
                 {/* Поиск и фильтры */}
                 <div className="flex flex-col sm:flex-row gap-4">
-                  <div className="flex-1">
-                    <Input
+                  <div className="relative flex-1">
+                    <DynamicIcon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
                       placeholder="Пошук по назві або SKU..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      startContent={<DynamicIcon name="search" size={16} className="text-gray-400" />}
-                      endContent={
-                        searchTerm && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setSearchTerm('')}
-                            className="text-gray-400 hover:text-gray-600"
-                          >
-                            <DynamicIcon name="x" size={14} />
-                          </Button>
-                        )
-                      }
-                      classNames={{
-                        input: "text-sm",
-                        inputWrapper: "h-10"
-                      }}
+                      className="w-full sm:w-auto pl-9 pr-8 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
+                    {searchTerm && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setSearchTerm('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <DynamicIcon name="x" size={14} />
+                      </Button>
+                    )}
                   </div>
                   
                   <div className="w-full sm:w-48">

@@ -130,6 +130,50 @@ router.get('/:sku', authenticateToken, async (req, res) => {
   }
 });
 
+// Обновить вес товара по ID
+router.put('/:id/weight', authenticateToken, async (req, res) => {
+  try {
+    const { user } = req as any;
+    
+    // Проверяем права доступа (только ADMIN и BOSS)
+    if (!['admin', 'boss'].includes(user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { id } = req.params;
+    const { weight } = req.body;
+
+    // Валидация входных данных
+    if (typeof weight !== 'number' || weight < 0) {
+      return res.status(400).json({ error: 'Weight must be a non-negative number' });
+    }
+
+    const productId = parseInt(id);
+
+    // Проверяем, существует ли товар
+    const existingProduct = await prisma.product.findUnique({
+      where: { id: productId }
+    });
+
+    if (!existingProduct) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Обновляем вес товара
+    const updatedProduct = await prisma.product.update({
+      where: { id: productId },
+      data: { weight: weight }
+    });
+
+    res.json({
+      success: true,
+      product: updatedProduct
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Синхронизировать товары с Dilovod
 router.post('/sync', authenticateToken, async (req, res) => {
   try {

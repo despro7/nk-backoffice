@@ -82,7 +82,7 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderCh
         
         {/* Счетчик порций */}
         <span className="px-1 py-0.5 mr-2 rounded bg-gray-950/5 font-normal text-xs">
-          {type === 'box' ? `Вага коробки: ${expectedWeight.toFixed(1)} кг` : `~${expectedWeight.toFixed(1)} кг`}
+          {type === 'box' ? `Вага коробки: ${expectedWeight.toFixed(3)} кг` : `~${expectedWeight.toFixed(3)} кг`}
         </span>
           {type !== 'box' && (
             <span className="font-medium">

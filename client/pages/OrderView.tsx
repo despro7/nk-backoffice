@@ -52,18 +52,22 @@ interface Product {
   sku: string;
   name: string;
   weight?: number; // Вес в граммах
+  categoryId?: number; // ID категории для определения веса по умолчанию
   set: Array<{ id: string; quantity: number }> | null;
 }
 
 // Вспомогательная функция для расчета ожидаемого веса
 const calculateExpectedWeight = (product: Product, quantity: number): number => {
-  // Если есть вес в базе данных, используем его, иначе fallback на 0.3 кг
+  // Если есть вес в базе данных, используем его
   if (product.weight && product.weight > 0) {
     // Конвертируем граммы в килограммы
     return (product.weight * quantity) / 1000;
   }
-  // Fallback на старую логику (0.3 кг на порцию)
-  return quantity * 0.3;
+  
+  // Fallback на вес по умолчанию на основе категории
+  // categoryId === 1 - первые блюда (420г), остальные - вторые блюда (330г)
+  const defaultWeight = product.categoryId === 1 ? 420 : 330;
+  return (defaultWeight * quantity) / 1000;
 };
 
 // Функция для разворачивания наборов товаров
@@ -165,7 +169,7 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
                     id: `${item.sku}_${setItem.id}`,
                     name: componentName,
                     quantity: totalQuantity,
-                    expectedWeight: totalQuantity * 0.3, // Fallback для неизвестного компонента
+                    expectedWeight: totalQuantity * 0.33, // Fallback для неизвестного компонента (330г)
                     status: 'default' as const,
                     type: 'product'
                   };
@@ -180,16 +184,16 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
               if (expandedItems[componentName]) {
                 expandedItems[componentName].quantity += totalQuantity;
               } else {
-                expandedItems[componentName] = {
-                  id: `${item.sku}_${setItem.id}`,
-                  name: componentName,
-                  quantity: totalQuantity,
-                  expectedWeight: totalQuantity * 0.3, // Fallback для неизвестного компонента
-                  status: 'default' as const,
-                  type: 'product',
-                  sku: setItem.id,
-                  barcode: setItem.id // Используем ID компонента как штрих-код
-                };
+                  expandedItems[componentName] = {
+                    id: `${item.sku}_${setItem.id}`,
+                    name: componentName,
+                    quantity: totalQuantity,
+                    expectedWeight: totalQuantity * 0.33, // Fallback для неизвестного компонента (330г)
+                    status: 'default' as const,
+                    type: 'product',
+                    sku: setItem.id,
+                    barcode: setItem.id // Используем ID компонента как штрих-код
+                  };
               }
             }
           }
@@ -226,7 +230,7 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
             id: item.sku,
             name: itemName,
             quantity: item.quantity,
-            expectedWeight: item.quantity * 0.3, // Fallback для неизвестного товара
+            expectedWeight: item.quantity * 0.33, // Fallback для неизвестного товара (330г)
             status: 'default' as const,
             type: 'product',
             sku: item.sku,
@@ -245,7 +249,7 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
           id: item.sku,
           name: itemName,
           quantity: item.quantity,
-          expectedWeight: item.quantity * 0.3, // Fallback для ошибки
+          expectedWeight: item.quantity * 0.33, // Fallback для ошибки (330г)
           status: 'default' as const,
           type: 'product',
           sku: item.sku,
@@ -1612,7 +1616,7 @@ export default function OrderView() {
             id: (index + 1).toString(),
             name: item.productName,
             quantity: item.quantity,
-            expectedWeight: item.quantity * 0.3, // Fallback для ошибки разворачивания
+            expectedWeight: item.quantity * 0.33, // Fallback для ошибки разворачивания (330г)
             status: isReadyToShipFallback ? 'done' : 'default' as const,
             type: 'product'
           }));
