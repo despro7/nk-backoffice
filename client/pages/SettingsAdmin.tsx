@@ -4,6 +4,7 @@ import { ServerStatusSettings } from '../components/ServerStatusSettings';
 import { UserRegistrationManager } from '../components/UserRegistrationManager';
 import { LoggingSettings } from '../components/LoggingSettings';
 import { useRoleAccess } from '../hooks/useRoleAccess';
+import { DateFormatSettings } from "@/components/DateFormatSettings";
 
 const SettingsAdmin: React.FC = () => {
   const { isAdmin } = useRoleAccess();
@@ -35,6 +36,11 @@ const SettingsAdmin: React.FC = () => {
       {/* Настройки статуса сервера */}
       <section>
         <ServerStatusSettings />
+      </section>
+
+      {/* Функция форматрирования даты */}
+      <section>
+        <DateFormatSettings />
       </section>
 
       {/* Общие настройки */}

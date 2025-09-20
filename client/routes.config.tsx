@@ -64,6 +64,7 @@ export interface AppRoute {
   order?: number; // Для сортировки элементов
   roles?: string[]; // Разрешенные роли для доступа
   minRole?: string; // Минимальная роль для доступа
+  hasOwnTitle?: boolean; // Флаг для страниц с собственным заголовком
 }
 
 // Define all routes with role-based access control
@@ -93,12 +94,13 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/orders/:externalId',
     component: OrderView,
-    title: (params) => `Комплектація замовлення №${params.externalId}`,
-    pageTitle: (params) => `Комплектація замовлення №${params.externalId} | NK Backoffice`,
+    title: (params) => `Замовлення №${params.externalId}`,
+    pageTitle: (params) => `Замовлення №${params.externalId} | NK Backoffice`,
     navLabel: 'Деталі замовлення',
     icon: null,
     inNav: false,
-    minRole: ROLES.STOREKEEPER
+    minRole: ROLES.STOREKEEPER,
+    hasOwnTitle: true,
   },
   {
     path: '/warehouse',

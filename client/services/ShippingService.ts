@@ -1,7 +1,12 @@
+import printerService from "./printerService";
+import { ToastService } from "./ToastService";
+import { useEquipmentFromAuth } from '../contexts/AuthContext';
+
 export interface PrintTTNRequest {
   ttn: string;
   provider: 'novaposhta' | 'ukrposhta';
-  format?: 'pdf' | 'html' | 'png';
+  format?: 'pdf' | 'html' | 'png' | 'zpl';
+  printerName?: string;
 }
 
 export interface PrintTTNResponse {
@@ -9,67 +14,65 @@ export interface PrintTTNResponse {
   data?: string;
   message?: string;
   error?: string;
+  format?: 'pdf' | 'zpl';
 }
 
 export class ShippingClientService {
-  async printTTN(request: PrintTTNRequest): Promise<PrintTTNResponse> {
-    const response = await fetch('/api/shipping/print-ttn', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(request),
-    });
-
-    const data = await response.json();
-    return data;
-  }
-
-  async downloadAndPrintTTN(ttn: string, provider: 'novaposhta' | 'ukrposhta'): Promise<void> {
+  async printTTN(request: PrintTTNRequest): Promise<void> {
     try {
-      const result = await this.printTTN({ ttn, provider, format: 'pdf' });
-
-      if (!result.success || !result.data) {
-        throw new Error(result.error || 'Не удалось получить данные для печати');
+      const response = await fetch('/api/shipping/print-ttn', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      });
+  
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Не вдалося отримати дані для друку');
       }
 
-      if (provider === 'ukrposhta') {
-        const printWindow = window.open(result.data, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
-        
-        if (printWindow) {
-          console.log('✅ URL Укрпошты открыт в новой вкладке');
-        } else {
-          window.location.href = result.data;
-        }
-        
+      const result = await response.json();
+
+      if (!result.success || !result.data) {
+        ToastService.show({ title: 'Помилка', description: result.error || 'Не вдалося отримати дані для друку ТТН.', color: 'danger' });
         return;
       }
 
-      if (!this.isValidBase64(result.data)) {
-        throw new Error('Полученные данные не являются корректной base64 строкой');
-      }
-      
-      const pdfBlob = this.base64ToBlob(result.data, 'application/pdf');
-      const url = URL.createObjectURL(pdfBlob);
-      
-      const printWindow = window.open(url, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
-      
-      if (printWindow) {
-        printWindow.onload = () => {
-          setTimeout(() => {
-            printWindow?.print();
-          }, 1000);
-        };
-        
-        setTimeout(() => {
-          URL.revokeObjectURL(url);
-        }, 30000);
+      // PDF может печататься напрямую или через диалог
+      if (request.printerName) {
+        await printerService.printPdf(request.printerName, result.data);
       } else {
-        window.location.href = url;
+        this.printPdfFromBase64(result.data);
       }
-
     } catch (error) {
-      throw error;
+      console.error('Помилка друку:', error);
+    }
+  }
+
+  printPdfFromBase64(base64Data: string): void {
+    if (!this.isValidBase64(base64Data)) {
+      console.error("Invalid base64 string provided for PDF printing.");
+      ToastService.show({ title: 'Помилка даних', description: 'Отримані дані PDF некоректні.', color: 'danger' });
+      return;
+    }
+    const pdfBlob = this.base64ToBlob(base64Data, 'application/pdf');
+    const url = URL.createObjectURL(pdfBlob);
+    
+    const printWindow = window.open(url, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
+    
+    if (printWindow) {
+      printWindow.onload = () => {
+        setTimeout(() => {
+          printWindow?.print();
+        }, 1000);
+      };
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 30000);
+    } else {
+      ToastService.show({ title: 'Помилка', description: 'Не вдалося відкрити вікно для друку. Можливо, воно заблоковане.', color: 'warning' });
     }
   }
 

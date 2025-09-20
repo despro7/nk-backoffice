@@ -13,140 +13,160 @@
  * - formatPercentage: форматирование процентов
  * - formatFileSize: форматирование размера файла
  * - formatPhone: форматирование телефона
+ * - getStatusColor: возвращает CSS классы для цвета статуса заказа
+ * - ORDER_STATUSES: массив статусов заказа
+ * - getStatusLabel: возвращает текстовое название статуса заказа
  */
+
 
 /**
  * Форматирует дату в относительном формате (например, "5 хв тому", "2 год тому", "Вчора в 16:16")
  * @param dateString - строка с датой или null
  * @returns отформатированная строка
+ * 
+ * @example
+ * formatRelativeDate('2024-01-15T10:30:00Z') // "5 хв тому" (если сейчас 10:35)
+ * formatRelativeDate('2024-01-14T15:20:00Z') // "Вчора о 15:20"
+ * formatRelativeDate('2024-01-10T12:00:00Z') // "10.01.2024, 12:00"
+ * formatRelativeDate(null) // "Немає даних"
  */
-export const formatRelativeDate = (dateString: string | null): string => {
-  if (!dateString) return 'Немає даних';
+// export const formatRelativeDate = (dateString: string | null): string => {
+//   if (!dateString) return 'Немає даних';
   
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+//   const date = new Date(dateString);
+//   const now = new Date();
+//   const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
   
-  // Только что
-  if (diffInMinutes < 1) return 'Щойно';
+//   // Только что
+//   if (diffInMinutes < 1) return 'Щойно';
   
-  // Минуты назад
-  if (diffInMinutes < 60) return `${diffInMinutes} хв тому`;
+//   // Минуты назад
+//   if (diffInMinutes < 60) return `${diffInMinutes} хв тому`;
   
-  // Часы назад
-  if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} год тому`;
+//   // Часы назад
+//   if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} год тому`;
   
-  // Дни назад
-  const diffInDays = Math.floor(diffInMinutes / 1440);
+//   // Дни назад
+//   const diffInDays = Math.floor(diffInMinutes / 1440);
   
-  // Вчера
-  if (diffInDays === 1) {
-    return `Вчора о ${date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}`;
-  }
+//   // Вчера
+//   if (diffInDays === 1) {
+//     return `Вчора о ${date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}`;
+//   }
     
-  // Позавчера
-  // if (diffInDays === 2) {
-  //   return `Позавчора о ${date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}`;
-  // }
-  
-  // 3-7 дней назад
-  // if (diffInDays <= 7) {
-  //   const dayNames = ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П\'ятниця', 'Субота'];
-  //   const dayName = dayNames[date.getDay()];
-  //   return `${dayName},
-  //    ${date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
-  // }
-  
-  // Более суток назад - показываем полную дату
-  return date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
+//   // Более суток назад - показываем полную дату
+//   return date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+// };
 
 /**
  * Расширенное форматирование относительной даты с настраиваемыми опциями
  * @param dateString - строка с датой или null
  * @param options - опции форматирования
  * @returns отформатированная строка
+ * 
+ * @example // Если сейчас 15.01.2025, 10:35, то:
+ * formatRelativeDateExtended('2024-01-15T10:30:00Z') // "5 хв тому"
+ * formatRelativeDateExtended('2024-01-14T15:20:00Z') // "Вчора о 15:20"
+ * formatRelativeDateExtended('2024-01-12T15:20:00Z') // "3 дн тому в 15:20"
  */
-export const formatRelativeDateExtended = (
+
+const SHORT_WEEKDAYS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const FULL_WEEKDAYS = ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П\'ятниця', 'Субота'];
+
+export const formatRelativeDate = (
   dateString: string | null, 
   options: {
     showTime?: boolean;
+    showYear?: boolean;
     maxRelativeDays?: number;
+    maxRelativeHours?: number;
     includeWeekdays?: boolean;
+    include2DaysAgo?: boolean;
+    weekdayOnly?: boolean;
+    shortWeekday?: boolean;
   } = {}
 ): string => {
   if (!dateString) return 'Немає даних';
-  
+
   const {
     showTime = true,
+    showYear = true,
     maxRelativeDays = 7,
-    includeWeekdays = true
+    maxRelativeHours = 7,
+    includeWeekdays = false,
+    include2DaysAgo = true,
+    weekdayOnly = false,
+    shortWeekday = false
   } = options;
-  
+
   const date = new Date(dateString);
   const now = new Date();
+
+  // "Щойно", "хв тому", "год тому"
   const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-  
-  // Только что
   if (diffInMinutes < 1) return 'Тільки що';
-  
-  // Минуты назад
   if (diffInMinutes < 60) return `${diffInMinutes} хв тому`;
+  if (diffInMinutes < 1440 && diffInMinutes < maxRelativeHours * 60) return `${Math.floor(diffInMinutes / 60)} год тому`;
+
+  // Сравниваем только даты (без времени) для "Вчора" и "Позавчора"
+  const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffInDays = Math.round((nowDate.getTime() - dateOnly.getTime()) / (1000 * 60 * 60 * 24));
   
-  // Часы назад
-  if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} год тому`;
+  // Дни недели (shortWeekday - короткое название)
+  const dayName = shortWeekday ? SHORT_WEEKDAYS[date.getDay()] : FULL_WEEKDAYS[date.getDay()];
+
+  // Форматируем время
+  const hour = date.getHours();
+  const preposition = hour === 11 ? 'об' : 'о';
+  const timeStr = showTime ? ` ${preposition} ${date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}` : '';
   
-  // Дни назад
-  const diffInDays = Math.floor(diffInMinutes / 1440);
+  // Дата (showYear - показать год, showTime - показать время)
+  const dateStr = date.toLocaleDateString('uk-UA', {
+    day: '2-digit',
+    month: '2-digit',
+    year: showYear ? 'numeric' : undefined,
+    // ...(showTime && { hour: '2-digit', minute: '2-digit' })
+  });
   
-  // Если превышен максимальный диапазон для относительного форматирования
+  // Определяем правильное окончание для "день/дні/днів"
+  const lastDigit = diffInDays % 10;
+  const lastTwoDigits = diffInDays % 100;
+  let dayWord = "днів";
+  if (lastDigit === 1 && lastTwoDigits !== 11) {
+    dayWord = "день";
+  } else if ([2, 3, 4].includes(lastDigit) && ![12, 13, 14].includes(lastTwoDigits)) {
+    dayWord = "дні";
+  }
+
+  // Если разница в днях равна 1 или 2, то возвращаем "Вчора/Позавчора" (showTime? опционально)
+  if (diffInDays === 1) return `Вчора${timeStr}`;
+  if (diffInDays === 2 && include2DaysAgo) return `Позавчора${timeStr}`;
+
+  // weekdayOnly - только день недели
+  if (weekdayOnly) {
+    return dayName;
+  }
+
+  // В остальных случаях возвращаем дату согласно логике
   if (diffInDays > maxRelativeDays) {
-    if (showTime) {
-      return date.toLocaleDateString('uk-UA', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } else {
-      return date.toLocaleDateString('uk-UA', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
-    }
+    return `${dateStr}${timeStr}`;
+  } else if (includeWeekdays) {
+    return `${dayName}, ${dateStr}${timeStr}`;
+  } else {
+    return `${diffInDays} ${dayWord} тому,${timeStr}`;
   }
-  
-  // Вчера
-  if (diffInDays === 1) {
-    const timeStr = showTime ? ` в ${date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}` : '';
-    return `Вчора${timeStr}`;
-  }
-  
-  // Позавчера
-  if (diffInDays === 2) {
-    const timeStr = showTime ? ` в ${date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}` : '';
-    return `Позавчора${timeStr}`;
-  }
-  
-  // 3-7 дней назад с названиями дней недели
-  if (diffInDays <= 7 && includeWeekdays) {
-    const dayNames = ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П\'ятниця', 'Субота'];
-    const dayName = dayNames[date.getDay()];
-    const timeStr = showTime ? ` в ${date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}` : '';
-    return `${dayName}${timeStr}`;
-  }
-  
-  // Просто количество дней назад
-  const timeStr = showTime ? ` в ${date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}` : '';
-  return `${diffInDays} дн тому${timeStr}`;
+
 };
 
 /**
  * Форматирует дату в стандартном украинском формате
  * @param dateString - строка с датой
  * @returns отформатированная строка
+ * 
+ * @example
+ * formatDate('2024-01-15T10:30:00Z') // "15.01.2024, 10:30"
+ * formatDate(null) // "-"
  */
 export const formatDate = (dateString: string): string => {
   if (!dateString) return "-";
@@ -164,6 +184,10 @@ export const formatDate = (dateString: string): string => {
  * Форматирует дату и время в украинском формате
  * @param dateString - строка с датой
  * @returns отформатированная строка
+ * 
+ * @example
+ * formatDateTime('2024-01-15T10:30:00Z') // "15.01.2024, 10:30"
+ * formatDateTime(null) // "-"
  */
 export const formatDateTime = (dateString: string): string => {
   if (!dateString) return "-";
@@ -174,6 +198,10 @@ export const formatDateTime = (dateString: string): string => {
  * Форматирует только дату в украинском формате
  * @param dateString - строка с датой
  * @returns отформатированная строка
+ * 
+ * @example
+ * formatDateOnly('2024-01-15T10:30:00Z') // "15.01.2024"
+ * formatDateOnly(null) // "-"
  */
 export const formatDateOnly = (dateString: string): string => {
   if (!dateString) return "-";
@@ -184,6 +212,9 @@ export const formatDateOnly = (dateString: string): string => {
  * Форматирует только время в украинском формате
  * @param dateString - строка с датой
  * @returns отформатированная строка
+ * 
+ * @example
+ * formatTimeOnly('2024-01-15T10:30:00Z') // "10:30"
  */
 export const formatTimeOnly = (dateString: string): string => {
   if (!dateString) return "-";
@@ -194,6 +225,11 @@ export const formatTimeOnly = (dateString: string): string => {
  * Форматирует цену в украинской валюте
  * @param price - цена в числах
  * @returns отформатированная строка
+ * 
+ * @example
+ * formatPrice(1000) // "1 000 грн"
+ * formatPrice(1000.5) // "1 000.50 грн"
+ * formatPrice(1000000) // "1 000 000 грн"
  */
 export const formatPrice = (price: number): string => {
   return new Intl.NumberFormat('uk-UA', {
@@ -206,6 +242,11 @@ export const formatPrice = (price: number): string => {
  * Форматирует число с разделителями тысяч
  * @param number - число для форматирования
  * @returns отформатированная строка
+ * 
+ * @example
+ * formatNumber(1000) // "1 000"
+ * formatNumber(1000.5) // "1 000.50"
+ * formatNumber(1000000) // "1 000 000"
  */
 export const formatNumber = (number: number): string => {
   return new Intl.NumberFormat('uk-UA').format(number);
@@ -216,6 +257,10 @@ export const formatNumber = (number: number): string => {
  * @param value - значение от 0 до 1
  * @param decimals - количество знаков после запятой
  * @returns отформатированная строка
+ * 
+ * @example
+ * formatPercentage(0.5) // "50.0%"
+ * formatPercentage(0.5, 2) // "50.00%"
  */
 export const formatPercentage = (value: number, decimals: number = 1): string => {
   return `${(value * 100).toFixed(decimals)}%`;
@@ -225,6 +270,11 @@ export const formatPercentage = (value: number, decimals: number = 1): string =>
  * Форматирует размер файла в читаемом виде
  * @param bytes - размер в байтах
  * @returns отформатированная строка
+ * 
+ * @example
+ * formatFileSize(100) // "100 Б"
+ * formatFileSize(1000) // "1 КБ"
+ * formatFileSize(1000000) // "1 МБ"
  */
 export const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 Б';
@@ -240,6 +290,11 @@ export const formatFileSize = (bytes: number): string => {
  * Форматирует телефонный номер в украинском формате
  * @param phone - строка с телефоном
  * @returns отформатированная строка
+ * 
+ * @example
+ * formatPhone('380671234567') // "+380 67 123 45 67"
+ * formatPhone('0671234567') // "067 123 45 67"
+ * formatPhone(null) // "-"
  */
 export const formatPhone = (phone: string): string => {
   if (!phone) return "-";
@@ -286,4 +341,29 @@ export const getStatusColor = (status: string): string => {
     default:
       return "text-gray-600 bg-gray-100";
   }
+};
+
+export const ORDER_STATUSES = [
+  { key: "all", label: "Усі статуси" },
+  { key: "1", label: "Нове замовлення" },
+  { key: "2", label: "Підтверджено" },
+  { key: "3", label: "Готове до відправки" },
+  { key: "4", label: "Відправлено" },
+  { key: "5", label: "Доставлено" },
+  { key: "6", label: "Повернення" },
+  { key: "7", label: "Скасовано" },
+  { key: "8", label: "Видалено" },
+  // Для совместимости со старыми статусами
+  { key: "id3", label: "Готове до відправки" },
+];
+
+/**
+ * Возвращает текстовое название статуса заказа
+ * @param statusKey - ключ статуса
+ * @returns строка с названием статуса
+ */
+export const getStatusLabel = (statusKey: string | null | undefined): string => {
+  if (!statusKey) return "Невідомо";
+  const status = ORDER_STATUSES.find((s) => s.key === statusKey);
+  return status ? status.label : statusKey;
 };

@@ -1,6 +1,4 @@
 import { addToast } from "@heroui/react";
-import * as Icons from 'lucide-react';
-import React from 'react';
 
 export interface ToastOptions {
   title: string;
@@ -32,10 +30,10 @@ export interface LoggingSettings {
 }
 
 export class ToastService {
-  private static defaultOptions: Partial<ToastOptions> = {
-	variant: "flat",
-	color: "default",
-	hideIcon: true,
+    private static defaultOptions: Partial<ToastOptions> = {
+    variant: "flat",
+    color: "default",
+    hideIcon: true,
     timeout: 10000,
     shouldShowTimeoutProgress: true
   };

@@ -12,13 +12,10 @@ interface TabsFilterProps {
 }
 
 export function TabsFilter({ selectedTab, onTabChange, counts }: TabsFilterProps) {
-  console.log('🎯 [CLIENT] TabsFilter: Rendering with selectedTab:', selectedTab, 'counts:', counts);
-
   return (
     <Tabs
       selectedKey={selectedTab}
       onSelectionChange={(key) => {
-        console.log('🔄 [CLIENT] TabsFilter: Tab changed to:', key);
         onTabChange(key as "confirmed" | "readyToShip" | "shipped" | "all" | "all_sum");
       }}
       variant="solid"

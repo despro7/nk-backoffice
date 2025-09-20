@@ -1553,7 +1553,7 @@ export class SalesDriveService {
       shippingMethod: shippingMethodMap[rawOrder.shipping_method] || 'Невідомий',
       paymentMethod: paymentMethodMap[rawOrder.payment_method] || 'Невідомий',
       cityName: rawOrder.ord_delivery_data?.[0]?.cityName || '',
-      provider: rawOrder.ord_novaposhta ? 'novaposhta' : rawOrder.ord_ukrposhta ? 'ukrposhta' : 'novaposhta',
+      provider: rawOrder.ord_delivery_data?.[0]?.provider || rawOrder.ord_delivery || 'novaposhta',
       customerName: customerName,
       customerPhone: customerPhone,
       deliveryAddress: rawOrder.shipping_address || '',

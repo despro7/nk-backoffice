@@ -10,6 +10,7 @@ import { appRoutes } from "./routes.config";
 import { Layout } from "./components/Layout";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { AuthProvider } from "./contexts/AuthContext";
+import { DebugProvider } from "./contexts/DebugContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Auth } from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
@@ -84,10 +85,12 @@ const App = () => (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
-          <AppInitializer>
-            <ScrollToTop />
-            <AppRoutes />
-          </AppInitializer>
+          <DebugProvider>
+            <AppInitializer>
+              <ScrollToTop />
+              <AppRoutes />
+            </AppInitializer>
+          </DebugProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

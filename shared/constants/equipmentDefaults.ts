@@ -24,6 +24,10 @@ export const EQUIPMENT_DEFAULTS = {
     weightRange: { min: 0.1, max: 5.0 },
     scanDelay: 800,
     weightDelay: 1200
+  },
+  printer: {
+    enabled: false,
+    name: ''
   }
 } as const;
 

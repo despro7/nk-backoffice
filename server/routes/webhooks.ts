@@ -145,24 +145,16 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             orderNumber: existingOrder.externalId,
             status: existingOrder.status,
             statusText: existingOrder.statusText,
-            // Товары: webhook имеет приоритет над данными из БД
             items: items || existingOrder.items,
-            // Контактные данные: webhook имеет приоритет
             customerName: customerName || existingOrder.customerName,
             customerPhone: customerPhone || existingOrder.customerPhone,
-            // Адрес доставки: webhook имеет приоритет
             deliveryAddress: webhookData.shipping_address || existingOrder.deliveryAddress,
-            // Сумма: webhook имеет приоритет
             totalPrice: webhookData.paymentAmount || existingOrder.totalPrice,
-            // Дата заказа: webhook имеет приоритет, с обработкой ошибок
             orderDate: webhookData.orderTime ? new Date(webhookData.orderTime).toISOString() : existingOrder.orderDate,
-            // Способы доставки/оплаты: webhook имеет приоритет
             shippingMethod: shippingMethod || existingOrder.shippingMethod,
             paymentMethod: paymentMethod || existingOrder.paymentMethod,
-            // Город: webhook имеет приоритет
             cityName: existingOrder.cityName,
-            provider: existingOrder.provider, // Provider всегда из БД
-            // Другие поля: webhook имеет приоритет
+            provider: existingOrder.provider,
             pricinaZnizki: webhookData.pricinaZnizki != null ? String(webhookData.pricinaZnizki) : existingOrder.pricinaZnizki,
             sajt: webhookData.sajt != null ? String(webhookData.sajt) : existingOrder.sajt,
             ttn: webhookData.ord_novaposhta?.EN || existingOrder.ttn,

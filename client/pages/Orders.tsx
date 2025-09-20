@@ -6,6 +6,7 @@ import { NumberPad } from "@/components/NumberPad";
 import { DeviationButton } from "@/components/DeviationButton";
 import { useApi } from "@/hooks/useApi";
 import { LastSyncInfo } from "@/components/LastSyncInfo";
+import { formatRelativeDate } from "@/lib/formatUtils";
 
 
 export default function Orders() {
@@ -36,8 +37,6 @@ export default function Orders() {
 
     loadDefaultTab();
   }, []);
-
-  console.log('🎯 [CLIENT] Orders: Initialized with selectedTab:', selectedTab);
 
   const handleNumberClick = (number: string) => {
     setSearchQuery(searchQuery + number);

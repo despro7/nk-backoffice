@@ -1,7 +1,7 @@
 export interface ShippingProvider {
   name: string;
   apiKey: string;
-  baseUrl: string;
+  baseUrl?: string;
   bearerToken?: string;
   counterpartyToken?: string;
   statusBearerToken?: string;
@@ -10,13 +10,14 @@ export interface ShippingProvider {
 export interface PrintTTNRequest {
   ttn: string;
   provider: 'novaposhta' | 'ukrposhta';
-  format?: 'pdf' | 'html' | 'png';
+  format?: 'pdf' | 'html' | 'png' | 'zpl';
 }
 
 export interface PrintTTNResponse {
   success: boolean;
   data?: string;
   error?: string;
+  format?: 'pdf' | 'zpl';
 }
 
 export interface NovaPoshtaApiResponse {
@@ -51,7 +52,6 @@ export class ShippingService {
     this.providers.ukrposhta = {
       name: 'Укрпошта',
       apiKey: process.env.UKR_POSHTA_API_KEY || '',
-      baseUrl: 'https://api.ukrposhta.ua',
       bearerToken: process.env.UKR_POSHTA_BEARER_ECOM || '',
       counterpartyToken: process.env.UKR_POSHTA_COUNTERPARTY_TOKEN || '',
       statusBearerToken: process.env.UKR_POSHTA_BEARER_STATUS || ''
@@ -85,7 +85,11 @@ export class ShippingService {
   }
 
   private async printNovaPoshtaTTN(request: PrintTTNRequest, provider: ShippingProvider): Promise<PrintTTNResponse> {
-    // Сначала попробуем printMarkings - специальный метод для наклеек
+    if (!provider.baseUrl) {
+      throw new Error('Base URL для Нової Пошти не налаштовано');
+    }
+
+    // Сначала пробуем printMarkings - специальный метод для наклеек
     try {
       const markingsPayload = {
         apiKey: provider.apiKey,
@@ -93,7 +97,8 @@ export class ShippingService {
         calledMethod: 'printMarkings',
         methodProperties: {
           DocumentRefs: [request.ttn],
-          Type: 'pdf'
+          Type: 'pdf',
+          Copies: '1'
         }
       };
 
@@ -109,73 +114,94 @@ export class ShippingService {
       if (markingsResponse.ok) {
         const pdfBuffer = await markingsResponse.arrayBuffer();
         const base64PDF = Buffer.from(pdfBuffer).toString('base64');
-        
-        return {
-          success: true,
-          data: base64PDF
-        };
+        return { success: true, data: base64PDF, format: 'pdf' };
       }
-    } catch (markingsError) {
-      // Игнорируем ошибку и пробуем обычный метод
+    } catch (error) {
+      console.error('NovaPoshta printMarkings failed, falling back to printDocument:', error);
     }
 
-    // Если printMarkings не сработал, пробуем printDocument с дополнительными параметрами
+    // Если printMarkings не сработал, пробуем printDocument
     const payload = {
       apiKey: provider.apiKey,
       modelName: 'InternetDocument',
       calledMethod: 'printDocument',
       methodProperties: {
         DocumentRefs: [request.ttn],
-        Type: request.format || 'pdf',
-        // Попробуем другие параметры для получения наклейки
-        PageFormat: 'A6',
-        PrintFormat: 'sticker',
-        StickerFormat: 'A6'
+        Type: 'pdf',
+        Copies: '1'
       }
     };
 
     const response = await fetch(provider.baseUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Accept': request.format === 'pdf' ? 'application/pdf' : 'application/json'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`Помилка від API Нової Пошти (статус ${response.status}): ${errorText}`);
     }
 
-    if (request.format === 'pdf' || !request.format) {
-      const pdfBuffer = await response.arrayBuffer();
-      const base64PDF = Buffer.from(pdfBuffer).toString('base64');
-      
-      return {
-        success: true,
-        data: base64PDF
-      };
-    }
-
-    const data = await response.json() as NovaPoshtaApiResponse;
-
-    if (data.success !== true) {
-      throw new Error(data.errors?.[0] || data.warnings?.[0] || 'Ошибка API Нова Пошта');
-    }
+    const pdfBuffer = await response.arrayBuffer();
+    const base64PDF = Buffer.from(pdfBuffer).toString('base64');
 
     return {
       success: true,
-      data: data.data?.[0]?.Data
+      data: base64PDF,
+      format: 'pdf'
     };
   }
 
   private async printUkrPoshtaTTN(request: PrintTTNRequest, provider: ShippingProvider): Promise<PrintTTNResponse> {
-    const printUrl = `https://ok.ukrposhta.ua/ua/lk/print/sticker/${request.ttn}`;
-    
-    return {
-      success: true,
-      data: printUrl
-    };
+    if (!provider.bearerToken || !provider.counterpartyToken) {
+      throw new Error('Токени Bearer або Counterparty для Укрпошти не налаштовано');
+    }
+
+    try {
+      const ttn = request.ttn;
+      const url = `https://www.ukrposhta.ua/forms/ecom/0.0.1/shipments/${ttn}/sticker?token=${provider.counterpartyToken}`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${provider.bearerToken}`,
+          'Accept': 'application/pdf'
+        }
+      });
+
+      if (!response.ok) {
+        let errorText = `Помилка API Укрпошти: ${response.status} ${response.statusText}`;
+        try {
+          const errorBody = await response.text();
+          try {
+            const errorJson = JSON.parse(errorBody);
+            errorText += ` - ${errorJson.message || JSON.stringify(errorJson)}`;
+          } catch(e) {
+            errorText += ` - ${errorBody}`;
+          }
+        } catch (e) {
+          // Ignore if body can't be read
+        }
+        throw new Error(errorText);
+      }
+
+      const pdfBuffer = await response.arrayBuffer();
+      const base64PDF = Buffer.from(pdfBuffer).toString('base64');
+
+      return {
+        success: true,
+        data: base64PDF,
+        format: 'pdf'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Невідома помилка при отриманні стікера Укрпошти'
+      };
+    }
   }
 
   async getTTNStatus(ttn: string, provider: 'novaposhta' | 'ukrposhta'): Promise<any> {

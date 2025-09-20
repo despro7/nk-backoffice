@@ -29,6 +29,7 @@ router.post('/print-ttn', authenticateToken, async (req, res) => {
       res.json({
         success: true,
         data: result.data,
+        format: result.format, // Добавляем формат в ответ
         message: `Наклейка ТТН ${ttn} успешно сгенерирована`
       });
     } else {
@@ -71,6 +72,27 @@ router.get('/ttn-status/:ttn/:provider', authenticateToken, async (req, res) => 
       success: false,
       error: 'Не удалось получить статус ТТН'
     });
+  }
+});
+
+router.post('/ttn-zpl', authenticateToken, async (req, res) => {
+  try {
+    const { ttn, provider } = req.body;
+
+    if (!ttn || !provider) {
+      return res.status(400).json({ success: false, error: 'Необходимо указать ttn и provider' });
+    }
+
+    const result = await shippingService.printTTN({ ttn, provider, format: 'zpl' });
+
+    if (result.success) {
+      res.json({ success: true, data: result.data, format: result.format });
+    } else {
+      res.status(400).json({ success: false, error: result.error || 'Не вдалося отримати ZPL-код' });
+    }
+  } catch (error) {
+    console.error('Error getting ZPL for TTN:', error);
+    res.status(500).json({ success: false, error: 'Внутрішня помилка сервера' });
   }
 });
 

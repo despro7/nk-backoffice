@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { Table, TableHeader, TableBody, TableColumn, TableRow, TableCell, Pagination } from "@heroui/react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { Table, TableHeader, TableBody, TableColumn, TableRow, TableCell, Pagination, Tooltip } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { TabsFilter } from "./TabsFilter";
@@ -30,6 +30,7 @@ interface Order {
   deliveryAddress?: string;
   totalPrice?: number;
   orderDate: string;
+  updatedAt: string;
   externalId?: string;
   shippingMethod?: string;
   paymentMethod?: string;
@@ -50,13 +51,10 @@ type SortDescriptor = {
   direction: "ascending" | "descending";
 };
 
-// Начальное значение, будет заменено настройками из БД
-let ITEMS_PER_PAGE = 10;
-
 const columns = [
   { key: "orderNumber", label: "№ Замов.", className: "w-2/16" },
   { key: "orderDate", label: "Дата створення", className: "w-3/16" },
-  { key: "ttn", label: "ТТН", className: "w-6/16" },
+  { key: "ttn", label: "ТТН", className: "w-3/16" },
   { key: "quantity", label: "Кіл-ть", className: "w-1/16" },
   { key: "status", label: "Статус", className: "w-4/16" },
 ];
@@ -66,7 +64,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [totalOrders, setTotalOrders] = useState(0);
-  const [pageSize, setPageSize] = useState<number>(10);
+  const [pageSize, setPageSize] = useState<number>(8);
   const [statusCounts, setStatusCounts] = useState<{
     confirmed: number;
     readyToShip: number;
@@ -108,22 +106,18 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
     loadPageSize();
   }, []);
 
-  console.log('🎯 [CLIENT] OrdersTable: Initialized with filter:', filter, `(default: all)`);
-  console.log('📏 [CLIENT] OrdersTable: Page size:', pageSize);
-
   // Загрузка заказов с пагинацией и фильтрацией
-  const fetchOrders = async (pageNum: number = 1, currentPageSize: number = pageSize, statusFilter?: string) => {
+  const fetchOrders = async (pageNum: number = 1, currentPageSize: number = pageSize, statusFilter?: string, currentSortDescriptor: SortDescriptor = sortDescriptor) => {
     const startTime = Date.now();
-    console.log(`🔄 [CLIENT] OrdersTable: Starting orders fetch (page ${pageNum}, size ${currentPageSize}, status: ${statusFilter || 'all'})...`);
-
+    
     setLoading(true);
     try {
       // Запрашиваем только нужную страницу заказов
       const queryParams = new URLSearchParams({
         limit: currentPageSize.toString(),
         offset: ((pageNum - 1) * currentPageSize).toString(),
-        sortBy: 'orderDate',
-        sortOrder: 'desc'
+        sortBy: currentSortDescriptor.column,
+        sortOrder: currentSortDescriptor.direction === "ascending" ? "asc" : "desc"
       });
 
       // Добавляем фильтр статуса если он указан
@@ -134,23 +128,11 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
         else if (statusFilter === 'all_sum') queryParams.set('status', '2,3,4');
       }
 
-      console.log('📡 [CLIENT] OrdersTable: Making API call to /api/orders?' + queryParams.toString());
       const response = await apiCall('/api/orders?' + queryParams.toString());
 
-      console.log('📡 [CLIENT] OrdersTable: API response status:', response.status);
       const data = await response.json();
 
-      const fetchTime = Date.now() - startTime;
-      console.log('✅ [CLIENT] OrdersTable: API response received in', fetchTime, 'ms');
-      console.log('📊 [CLIENT] OrdersTable: Response data:', {
-        success: data.success,
-        ordersOnPage: data.data?.length || 0,
-        totalOrders: data.metadata?.totalOrders || 0,
-        hasData: !!data.data
-      });
-
       if (data.success) {
-        console.log('📦 [CLIENT] OrdersTable: Setting orders to state, count:', data.data?.length || 0);
         setOrders(data.data || []);
         setTotalOrders(data.metadata?.totalOrders || 0);
 
@@ -170,8 +152,6 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
       console.error('❌ [CLIENT] OrdersTable: Error fetching orders after', errorTime, 'ms:', error);
     } finally {
       setLoading(false);
-      const totalTime = Date.now() - startTime;
-      console.log('🏁 [CLIENT] OrdersTable: Fetch completed in', totalTime, 'ms');
     }
   };
 
@@ -190,66 +170,32 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
     return filtered;
   }, [orders, searchQuery]); // Убрали filter из зависимостей
 
-  // Сортировка заказов
-  const sortedOrders = useMemo(() => {
-    if (!sortDescriptor.column) return filteredOrders;
-
-    return [...filteredOrders].sort((a, b) => {
-      let aValue: any;
-      let bValue: any;
-
-      switch (sortDescriptor.column) {
-        case "orderNumber":
-          aValue = a.orderNumber;
-          bValue = b.orderNumber;
-          break;
-        case "orderDate":
-          aValue = new Date(a.orderDate).getTime();
-          bValue = new Date(b.orderDate).getTime();
-          break;
-        case "ttn":
-          aValue = a.ttn || "";
-          bValue = b.ttn || "";
-          break;
-        case "quantity":
-          aValue = a.quantity;
-          bValue = b.quantity;
-          break;
-        case "status":
-          aValue = a.status;
-          bValue = b.status;
-          break;
-        default:
-          return 0;
-      }
-
-      if (sortDescriptor.direction === "ascending") {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
-    });
-  }, [filteredOrders, sortDescriptor]);
-
   // Пагинация - теперь только серверная
   const pages = Math.ceil(totalOrders / pageSize);
   const displayOrders = filteredOrders; // Используем отфильтрованные заказы для отображения
 
-  // Сброс страницы при изменении фильтров
-  useEffect(() => {
-    setPage(1);
-  }, [filter, searchQuery]);
-
   // Загружаем заказы при изменении фильтра или страницы
   useEffect(() => {
-    fetchOrders(page, pageSize, filter);
-  }, [page, filter, pageSize]); // Добавляем filter в зависимости
+    // При изменении фильтра или поискового запроса, всегда возвращаемся на первую страницу
+    if (page !== 1) {
+      setPage(1);
+      return; // Прерываем текущее выполнение, чтобы избежать лишнего запроса
+    }
+    fetchOrders(1, pageSize, filter, sortDescriptor);
+  }, [filter, searchQuery]);
+
+  // Загружаем заказы при изменении страницы, размера страницы или сортировки
+  useEffect(() => {
+    fetchOrders(page, pageSize, filter, sortDescriptor);
+  }, [page, pageSize, sortDescriptor]);
 
   const handleRowClick = (externalId: string) => {
     navigate(`/orders/${externalId}`);
   };
 
-
+  const onSortChange = useCallback((descriptor: SortDescriptor) => {
+    setSortDescriptor(descriptor);
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -266,7 +212,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
       <Table
         aria-label="Orders table"
         sortDescriptor={sortDescriptor}
-        onSortChange={(descriptor) => setSortDescriptor(descriptor as SortDescriptor)}
+        onSortChange={(descriptor) => onSortChange(descriptor as SortDescriptor)}
         radius="lg"
         classNames={{
           base: "max-w-7xl",
@@ -275,7 +221,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
             "first:rounded-s-sm",
             "last:rounded-e-sm",
             "bg-neutral-100",
-            "text-neutral-500", 
+            "text-neutral-500",
             "border-b-0",
             "text-[13px]",
             "font-semibold",
@@ -326,23 +272,28 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
                 {order.orderNumber}
               </TableCell>
               <TableCell onClick={() => handleRowClick(order.externalId)}>
-                {formatRelativeDate(order.orderDate)}
+                {formatRelativeDate(order.orderDate, { maxRelativeDays: 30 })}
               </TableCell>
               <TableCell onClick={() => handleRowClick(order.externalId)}>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   <img src={order.provider === "novaposhta" ? NovaPoshtaIcon : UkrPoshtaIcon} alt={order.shippingMethod} className="w-5 h-5" />
-                  <span>{order.ttn}</span>
+                  <span>
+                    {order.ttn ? `..${order.ttn.slice(-4)}` : ""}
+                  </span>
                 </div>
               </TableCell>
               <TableCell onClick={() => handleRowClick(order.externalId)}>
                 {order.quantity}
               </TableCell>
               <TableCell>
-                <div className="flex items-center gap-2">
-                  <span className={cn(getStatusColor(order.status), "px-2 py-1 rounded-full text-xs whitespace-nowrap")}>
-                    {order.rawData?.statusText || order.statusText}
-                  </span>
-                </div>
+                <span className={cn(getStatusColor(order.status), "px-2 py-1 rounded-full text-xs whitespace-nowrap")}>
+                  {order.rawData?.statusText || order.statusText}
+                </span>
+                {order.updatedAt && (
+                <span className="text-xs text-gray-500 ml-2">
+                    {formatRelativeDate(order.updatedAt, { include2DaysAgo: false, showYear: false, includeWeekdays: true, shortWeekday: true })}
+                </span>
+                )}
               </TableCell>
             </TableRow>
           )}
@@ -356,7 +307,6 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
             total={pages}
             page={page}
             onChange={(newPage) => {
-              console.log(`📄 [CLIENT] OrdersTable: Changing to page ${newPage}`);
               setPage(newPage);
             }}
             showControls

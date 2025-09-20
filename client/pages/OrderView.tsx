@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, CardBody, CardHeader } from '@heroui/card';
+import { Card, CardBody, CardHeader, Chip, Button } from '@heroui/react';
 import { useApi } from '../hooks/useApi';
 import OrderChecklist from '@/components/OrderChecklist';
 import OrderTrackingNumber from '@/components/OrderTrackingNumber';
@@ -8,15 +8,18 @@ import { DeviationButton } from '@/components/DeviationButton';
 import { RightPanel } from '@/components/RightPanel';
 import { BoxSelector } from '@/components/BoxSelector';
 import { ScaleWeightDisplay } from '@/components/ScaleWeightDisplay';
+import { DebugModeSwitch } from '@/components/DebugModeSwitch';
 
 import { useAuth } from '../contexts/AuthContext';
 import { Code } from '@heroui/code';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { formatDateOnly, formatTimeOnly } from '../lib/formatUtils';
+import { formatDateOnly, formatTimeOnly, getStatusColor, getStatusLabel } from '../lib/formatUtils';
 import { useEquipmentFromAuth } from '../contexts/AuthContext';
+import { useDebug } from '../contexts/DebugContext';
 import { shippingClientService } from '../services/ShippingService';
 import ErrorBoundary from '../components/ErrorBoundary'; // Исправленный путь
 import { addToast } from '@heroui/toast';
+import PrinterService from '../services/printerService';
 
 // Типы для данных комплектации
 interface OrderChecklistItem {
@@ -277,13 +280,17 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
 
 // Функция для объединения коробок с товарами
 const combineBoxesWithItems = (boxes: any[], items: OrderChecklistItem[], isReadyToShip: boolean = false): OrderChecklistItem[] => {
+  // Проверяем, что у нас есть валидные коробки
+  if (!boxes || boxes.length === 0) {
+    return items;
+  }
 
   // Создаем уникальные коробки, избегая дублирования
   const boxItems: OrderChecklistItem[] = boxes.map((box, index) => ({
     id: `box_${index + 1}`, // Используем уникальный индекс вместо box.id для избежания дублирования
-    name: box.name, // Используем реальное название коробки из базы данных
+    name: box.name || `Коробка ${index + 1}`, // Используем реальное название коробки из базы данных или fallback
     quantity: 1, // Количество коробок
-    expectedWeight: Number(box.self_weight || box.weight), // Собственный вес коробки (приоритет self_weight)
+    expectedWeight: Number(box.self_weight || box.weight || 0), // Собственный вес коробки (приоритет self_weight)
     status: isReadyToShip ? 'confirmed' : 'awaiting_confirmation' as const, // Коробка автоматически подтверждается для заказов id3
     type: 'box' as const,
     boxSettings: box,
@@ -380,6 +387,10 @@ export default function OrderView() {
     absolute: 20 // в граммах
   });
 
+  // ADDED FOR DEBUGGING: Log checklistItems changes
+  useEffect(() => {
+  }, [checklistItems]);
+
   // Отслеживаем предыдущий вес для расчета накопления
   const [previousWeight, setPreviousWeight] = useState<number>(0);
   const [lastWeighTimestamp, setLastWeighTimestamp] = useState<number>(0);
@@ -394,6 +405,7 @@ export default function OrderView() {
 
   const [isAwaitingWeightChange, setIsAwaitingWeightChange] = useState(false);
   const previousWeightOnSuccessRef = useRef<number | null>(null);
+  const { isDebugMode } = useDebug();
 
   // Обеспечиваем подключение весов на странице комплектации
   useEffect(() => {
@@ -465,6 +477,14 @@ export default function OrderView() {
       fetchOrderDetails(externalId);
     }
   }, [externalId]);
+
+  useEffect(() => {
+    if (order) {
+      const date = order.orderDate ? ` від ${formatDateOnly(order.orderDate)}` : '';
+      const status = order.status ? ` [${getStatusLabel(order.status)}]` : '';
+      document.title = `Замовлення №${order.orderNumber || externalId}${date}${status} | NK Backoffice`;
+    }
+  }, [order, externalId]);
 
   // После успешного взвешивания, этот useEffect будет ждать, пока вес не изменится (товар уберут)
   useEffect(() => {
@@ -597,7 +617,6 @@ export default function OrderView() {
       return;
     }
 
-    // Предотвращаем множественные вызовы
     if (isPrintingTTN) {
       return;
     }
@@ -605,25 +624,26 @@ export default function OrderView() {
     try {
       setIsPrintingTTN(true);
 
-      await shippingClientService.downloadAndPrintTTN(
-        order.ttn,
-        order.provider as 'novaposhta' | 'ukrposhta'
-      );
+      const canUseDirectPrint = equipmentState.config?.printer?.enabled && equipmentState.config?.printer?.name;
 
-      // Показываем кнопку "Наступне замовлення" через 2 секунды после успешной печати
+      await shippingClientService.printTTN({
+        ttn: order.ttn,
+        provider: order.provider as 'novaposhta' | 'ukrposhta',
+        printerName: canUseDirectPrint ? equipmentState.config.printer.name : undefined
+      });
+
       setTimeout(() => {
         setShowNextOrder(true);
       }, 2000);
 
     } catch (error) {
       console.error('❌ Ошибка печати ТТН:', error);
-
       const errorMessage = error instanceof Error ? error.message : 'Невідома помилка';
       alert(`Помилка друку ТТН: ${errorMessage}`);
     } finally {
       setIsPrintingTTN(false);
     }
-  }, [order?.ttn, order?.provider, order?.orderNumber, isPrintingTTN]);
+  }, [order?.ttn, order?.provider, isPrintingTTN, equipmentState.config]);
 
   // Функция для перехода к следующему заказу
   const handleNextOrder = useCallback(async () => {
@@ -746,11 +766,11 @@ export default function OrderView() {
     }
   }, [externalId, apiCall, isLoadingNextOrder, navigate]);
 
-  useEffect(() => {
-    if (externalId) {
-      fetchOrderDetails(externalId);
-    }
-  }, [externalId]);
+  // useEffect(() => {
+  //   if (externalId) {
+  //     fetchOrderDetails(externalId);
+  //   }
+  // }, [externalId]);
 
   // Функция для имитации сканирования
   const handleSimulateScan = useCallback((itemId: string) => {
@@ -1495,6 +1515,12 @@ export default function OrderView() {
 
     // Обработчик изменения коробок
   const handleBoxesChange = useCallback((boxes: any[], totalWeight: number, boxesInfo?: any) => {
+    // Проверяем, что у нас есть валидные коробки и товары
+    if (!boxes || boxes.length === 0 || expandedItems.length === 0) {
+      console.log('📦 OrderView: Пропускаем обновление коробок - нет коробок или товаров');
+      return;
+    }
+
     // Сначала обновляем информацию о коробках
     let updatedBoxes = boxes;
     if (boxesInfo) {
@@ -1510,38 +1536,35 @@ export default function OrderView() {
     setBoxesTotalWeight(totalWeight);
     setActiveBoxIndex(0); // Сбрасываем активную коробку при изменении
 
-    // Обновляем checklistItems с новыми коробками
-    if (expandedItems.length > 0) {
-      // Используем expandedItems как базовые товары без коробок
-      const itemsWithoutBoxes = expandedItems.filter(item => item.type !== 'box');
+    // Используем expandedItems как базовые товары без коробок
+    const itemsWithoutBoxes = expandedItems.filter(item => item.type !== 'box');
 
-      // Объединяем новые коробки с товарами
-      const combinedItems = combineBoxesWithItems(updatedBoxes, itemsWithoutBoxes, isReadyToShip);
+    // Объединяем новые коробки с товарами
+    const combinedItems = combineBoxesWithItems(updatedBoxes, itemsWithoutBoxes, isReadyToShip);
 
-      // Если заказ готов к отправке, применяем статусы done ко всем товарам
-      const finalItems = isReadyToShip ? combinedItems.map(item => {
-        if (item.type === 'product') {
-          console.log(`📦 Применяем статус done для товара при обновлении коробок: ${item.name}`);
-          return { ...item, status: 'done' as const };
-        }
-        return item;
-      }) : combinedItems;
+    // Если заказ готов к отправке, применяем статусы done ко всем товарам
+    const finalItems = isReadyToShip ? combinedItems.map(item => {
+      if (item.type === 'product') {
+        console.log(`📦 Применяем статус done для товара при обновлении коробок: ${item.name}`);
+        return { ...item, status: 'done' as const };
+      }
+      return item;
+    }) : combinedItems;
 
-      console.log('📦 Финальный чек-лист после обновления коробок:', finalItems.map(item => `${item.name} (${item.type}): ${item.status}`));
-      setChecklistItems(finalItems);
+    // console.log('📦 Финальный чек-лист после обновления коробок:', finalItems.map(item => `${item.name} (${item.type}): ${item.status}`));
+    setChecklistItems(finalItems);
 
-      // Запускаем активный polling если есть awaiting_confirmation коробки
-      const hasAwaitingBoxes = finalItems.some(item =>
-        item.type === 'box' && item.status === 'awaiting_confirmation'
-      );
-      if (hasAwaitingBoxes && !equipmentState.isSimulationMode) {
-        if (equipmentState.isScaleConnected) {
-          console.log('📦 OrderView: Найдены awaiting_confirmation коробки, запускаем активный polling');
-          equipmentActions.startActivePolling();
-        } else {
-          console.log('📦 OrderView: Найдены awaiting_confirmation коробки, но весы не подключены - запускаем резервный polling');
-          equipmentActions.startReservePolling();
-        }
+    // Запускаем активный polling если есть awaiting_confirmation коробки
+    const hasAwaitingBoxes = finalItems.some(item =>
+      item.type === 'box' && item.status === 'awaiting_confirmation'
+    );
+    if (hasAwaitingBoxes && !equipmentState.isSimulationMode) {
+      if (equipmentState.isScaleConnected) {
+        console.log('📦 OrderView: Найдены awaiting_confirmation коробки, запускаем активный polling');
+        equipmentActions.startActivePolling();
+      } else {
+        console.log('📦 OrderView: Найдены awaiting_confirmation коробки, но весы не подключены - запускаем резервный polling');
+        equipmentActions.startReservePolling();
       }
     }
   }, [expandedItems, isReadyToShip, equipmentState.isSimulationMode, equipmentState.isScaleConnected]); // Убираем equipmentActions
@@ -1549,6 +1572,7 @@ export default function OrderView() {
   const fetchOrderDetails = async (id: string) => {
     try {
       setLoading(true);
+      setChecklistItems([]);
       // Сбрасываем состояние кнопки "Наступне замовлення" при загрузке нового заказа
       setShowNextOrder(false);
       const response = await apiCall(`/api/orders/${id}`);
@@ -1587,22 +1611,29 @@ export default function OrderView() {
           if (selectedBoxes.length > 0) {
             const itemsWithoutBoxes = processedItems.filter(item => item.type !== 'box');
             const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, orderIsReadyToShip);
-            setChecklistItems(combinedItems);
+            
+            // Проверяем, что combinedItems содержит валидные данные
+            if (combinedItems && combinedItems.length > 0) {
+              setChecklistItems(combinedItems);
 
-            // Запускаем активный polling если есть awaiting_confirmation коробки
-            const hasAwaitingBoxes = combinedItems.some(item =>
-              item.type === 'box' && item.status === 'awaiting_confirmation'
-            );
-            if (hasAwaitingBoxes && !isReadyToShip) {
-              setTimeout(() => {
-                if (equipmentState.isScaleConnected) {
-                  console.log('📦 OrderView: Найдены awaiting_confirmation коробки при загрузке заказа, запускаем активный polling');
-                  equipmentActions.startActivePolling();
-                } else {
-                  console.log('📦 OrderView: Найдены awaiting_confirmation коробки, но весы не подключены - запускаем резервный polling');
-                  equipmentActions.startReservePolling();
-                }
-              }, 100); // Небольшая задержка для инициализации
+              // Запускаем активный polling если есть awaiting_confirmation коробки
+              const hasAwaitingBoxes = combinedItems.some(item =>
+                item.type === 'box' && item.status === 'awaiting_confirmation'
+              );
+              if (hasAwaitingBoxes && !isReadyToShip) {
+                setTimeout(() => {
+                  if (equipmentState.isScaleConnected) {
+                    console.log('📦 OrderView: Найдены awaiting_confirmation коробки при загрузке заказа, запускаем активный polling');
+                    equipmentActions.startActivePolling();
+                  } else {
+                    console.log('📦 OrderView: Найдены awaiting_confirmation коробки, но весы не подключены - запускаем резервный polling');
+                    equipmentActions.startReservePolling();
+                  }
+                }, 100); // Небольшая задержка для инициализации
+              }
+            } else {
+              console.log('📦 OrderView: combinedItems пустой, используем processedItems');
+              setChecklistItems(processedItems);
             }
           } else {
             // Инициализируем checklistItems с обработанными товарами
@@ -1627,22 +1658,29 @@ export default function OrderView() {
           if (selectedBoxes.length > 0) {
             const itemsWithoutBoxes = fallbackItems.filter(item => item.type !== 'box');
             const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, isReadyToShipFallback);
-            setChecklistItems(combinedItems);
+            
+            // Проверяем, что combinedItems содержит валидные данные
+            if (combinedItems && combinedItems.length > 0) {
+              setChecklistItems(combinedItems);
 
-            // Запускаем активный polling если есть awaiting_confirmation коробки
-            const hasAwaitingBoxes = combinedItems.some(item =>
-              item.type === 'box' && item.status === 'awaiting_confirmation'
-            );
-            if (hasAwaitingBoxes && !isReadyToShipFallback) {
-              setTimeout(() => {
-                if (equipmentState.isScaleConnected) {
-                  console.log('📦 OrderView: Найдены awaiting_confirmation коробки при загрузке заказа (fallback), запускаем активный polling');
-                  equipmentActions.startActivePolling();
-                } else {
-                  console.log('📦 OrderView: Найдены awaiting_confirmation коробки, но весы не подключены - запускаем резервный polling');
-                  equipmentActions.startReservePolling();
-                }
-              }, 100); // Небольшая задержка для инициализации
+              // Запускаем активный polling если есть awaiting_confirmation коробки
+              const hasAwaitingBoxes = combinedItems.some(item =>
+                item.type === 'box' && item.status === 'awaiting_confirmation'
+              );
+              if (hasAwaitingBoxes && !isReadyToShipFallback) {
+                setTimeout(() => {
+                  if (equipmentState.isScaleConnected) {
+                    console.log('📦 OrderView: Найдены awaiting_confirmation коробки при загрузке заказа (fallback), запускаем активный polling');
+                    equipmentActions.startActivePolling();
+                  } else {
+                    console.log('📦 OrderView: Найдены awaiting_confirmation коробки, но весы не подключены - запускаем резервный polling');
+                    equipmentActions.startReservePolling();
+                  }
+                }, 100); // Небольшая задержка для инициализации
+              }
+            } else {
+              console.log('📦 OrderView: combinedItems пустой (fallback), используем fallbackItems');
+              setChecklistItems(fallbackItems);
             }
           } else {
             setChecklistItems(fallbackItems);
@@ -1702,25 +1740,25 @@ export default function OrderView() {
     const calculatedWeight = boxWeight + completedProductsWeight + pendingWeight;
 
     // Отладка расчета currentScaleWeight
-    console.log('📊 OrderView: Расчет currentScaleWeight (useEffect):', {
-      activeBoxIndex,
-      boxWeight,
-      completedProductsWeight,
-      pendingWeight,
-      pendingItemName: pendingItem?.name,
-      calculatedWeight,
-      previousWeight: currentScaleWeight,
-      boxItem: boxItem ? {
-        name: boxItem.name,
-        status: boxItem.status,
-        boxIndex: boxItem.boxIndex
-      } : null,
-      allBoxes: checklistItems.filter(item => item.type === 'box').map(item => ({
-        name: item.name,
-        status: item.status,
-        boxIndex: item.boxIndex
-      }))
-    });
+    // console.log('📊 OrderView: Расчет currentScaleWeight (useEffect):', {
+    //   activeBoxIndex,
+    //   boxWeight,
+    //   completedProductsWeight,
+    //   pendingWeight,
+    //   pendingItemName: pendingItem?.name,
+    //   calculatedWeight,
+    //   previousWeight: currentScaleWeight,
+    //   boxItem: boxItem ? {
+    //     name: boxItem.name,
+    //     status: boxItem.status,
+    //     boxIndex: boxItem.boxIndex
+    //   } : null,
+    //   allBoxes: checklistItems.filter(item => item.type === 'box').map(item => ({
+    //     name: item.name,
+    //     status: item.status,
+    //     boxIndex: item.boxIndex
+    //   }))
+    // });
 
       setCurrentScaleWeight(calculatedWeight);
     };
@@ -1801,7 +1839,37 @@ export default function OrderView() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
+      <h1 className="text-primary font-inter text-3xl font-semibold leading-[100%] tracking-[-0.64px] h-10 flex items-center gap-4">
+        <Button
+          color="secondary"
+          variant="flat"
+          className="text-neutral-500 min-w-fit"
+          onPress={() => navigate("/orders")}
+        >
+          <DynamicIcon name="arrow-left" size={20} />
+        </Button>
+        <span>
+          Замовлення №{order.orderNumber || externalId}
+          {order.orderDate && (
+            <span className="font-normal text-xl ml-3 text-gray-500">
+              від {formatDateOnly(order.orderDate)}
+            </span>
+          )}
+        </span>
+        {order.status && (
+          <Chip
+            size="md"
+            variant="flat"
+            classNames={{
+              base: getStatusColor(order.status) + " shadow-container",
+              content: "font-semibold",
+            }}
+          >
+            {getStatusLabel(order.status)}
+          </Chip>
+        )}
+      </h1>
       {/* Блок комплектации */}
       <div className="flex flex-col xl:flex-row items-start gap-8 w-full">
         {/* Левая колонка - Чек-лист комплектации */}
@@ -1855,9 +1923,6 @@ export default function OrderView() {
           <RightPanel>
             <OrderTrackingNumber order={orderForAssembly} />
             <DeviationButton />
-
-            {/* Кнопки имитации оборудования */}
-            
 
             {/* Селектор коробок */}
             {hasItems && !expandingSets && (

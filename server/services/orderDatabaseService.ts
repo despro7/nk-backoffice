@@ -153,7 +153,8 @@ export class OrderDatabaseService {
           statusText:       data.statusText,
           totalPrice:       data.totalPrice,
           pricinaZnizki:    data.pricinaZnizki,
-          sajt:             data.sajt
+          sajt:             data.sajt,
+          updatedAt:        data.rawData?.updateAt ? new Date(data.rawData.updateAt) : new Date()
         }
       });
 
@@ -223,6 +224,9 @@ export class OrderDatabaseService {
           keys: typeof data.rawData === 'object' ? Object.keys(data.rawData || {}).length : 'N/A'
         });
         updateData.rawData = JSON.stringify(data.rawData);
+        if (data.rawData.updateAt) {
+          updateData.updatedAt = new Date(data.rawData.updateAt);
+        }
         console.log(`✅ RawData serialized, length: ${updateData.rawData.length}`);
       }
 
@@ -675,7 +679,8 @@ export class OrderDatabaseService {
               pricinaZnizki:     orderData.pricinaZnizki,
               sajt:              orderData.sajt,
               lastSynced:        new Date(),
-              syncStatus:        'success'
+              syncStatus:        'success',
+              updatedAt:         orderData.rawData?.updateAt ? new Date(orderData.rawData.updateAt) : new Date()
             }
           });
 
@@ -844,7 +849,8 @@ export class OrderDatabaseService {
                         rawData: orderData.rawData ? JSON.stringify(orderData.rawData) : null,
                         lastSynced: new Date(),
                         syncStatus: 'success',
-                        syncError: null
+                        syncError: null,
+                        updatedAt: orderData.rawData?.updateAt ? new Date(orderData.rawData.updateAt) : new Date()
                       } as any // Игнорируем типы для создания заказа
                     });
                     console.log(`✅ Successfully created order ${orderData.orderNumber} with ID: ${createdOrder.id}`);
@@ -897,6 +903,10 @@ export class OrderDatabaseService {
                 }
                 if (changes.includes('orderDate')) {
                   updateData.orderDate = new Date(orderData.orderDate);
+                }
+
+                if (orderData.rawData?.updateAt) {
+                  updateData.updatedAt = new Date(orderData.rawData.updateAt);
                 }
 
                 const updatedOrder = await prisma.order.update({
@@ -1167,7 +1177,7 @@ export class OrderDatabaseService {
         'customerName', 'customerPhone', 'deliveryAddress', 'totalPrice',
         'orderDate', 'shippingMethod', 'paymentMethod', 'cityName', 'provider',
         'lastSynced', 'syncStatus', 'syncError',
-        'pricinaZnizki', 'sajt'  // ✅ ДОБАВИТЬ НОВЫЕ ПОЛЯ
+        'pricinaZnizki', 'sajt', 'updatedAt'  // ✅ ДОБАВИТЬ НОВЫЕ ПОЛЯ
       ];
       
       Object.keys(updateData).forEach(key => {
@@ -1336,7 +1346,10 @@ export class OrderDatabaseService {
                     cityName: orderData.cityName || '',
                     provider: orderData.provider || '',
                     pricinaZnizki: orderData.pricinaZnizki || '',
-                    sajt: orderData.sajt || ''
+                    sajt: orderData.sajt || '',
+                    lastSynced: new Date(),
+                    syncStatus: 'success',
+                    updatedAt: orderData.rawData?.updateAt ? new Date(orderData.rawData.updateAt) : new Date()
                   };
 
                   const createdOrder = await this.createOrder(newOrderData);
@@ -1413,6 +1426,10 @@ export class OrderDatabaseService {
               }
               if (changes.includes('orderDate')) {
                 updateData.orderDate = new Date(orderData.orderDate);
+              }
+
+              if (orderData.rawData?.updateAt) {
+                updateData.updatedAt = new Date(orderData.rawData.updateAt);
               }
 
               const updateResult = await prisma.order.update({
@@ -1866,7 +1883,10 @@ export class OrderDatabaseService {
               cityName: orderData.cityName || '',
               provider: orderData.provider || '',
               pricinaZnizki: orderData.pricinaZnizki || '',
-              sajt: orderData.sajt || ''
+              sajt: orderData.sajt || '',
+              lastSynced: new Date(),
+              syncStatus: 'success',
+              updatedAt: orderData.rawData?.updateAt ? new Date(orderData.rawData.updateAt) : new Date()
             };
 
             await this.createOrder(newOrderData);
@@ -1899,7 +1919,8 @@ export class OrderDatabaseService {
               sajt: orderData.sajt !== undefined ? orderData.sajt : existingOrder.sajt,
               lastSynced: new Date(),
               syncStatus: 'success',
-              syncError: null
+              syncError: null,
+              updatedAt: orderData.rawData?.updateAt ? new Date(orderData.rawData.updateAt) : new Date()
             };
 
 
@@ -1916,6 +1937,10 @@ export class OrderDatabaseService {
             // Преобразуем items в строку если это массив
             if (updateData.items && Array.isArray(updateData.items)) {
               updateData.items = JSON.stringify(updateData.items);
+            }
+
+            if (orderData.rawData?.updateAt) {
+              updateData.updatedAt = new Date(orderData.rawData.updateAt);
             }
 
             await prisma.order.update({

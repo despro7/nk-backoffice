@@ -47,6 +47,10 @@ export interface EquipmentConfig {
     scanDelay: number;
     weightDelay: number;
   };
+  printer?: {
+    enabled: boolean;
+    name: string;
+  };
 }
 
 export class EquipmentService {

@@ -23,6 +23,12 @@ interface OrderChecklistItemProps {
 const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderChecklistItemProps) => {
   const { name, quantity, status, expectedWeight, type, boxSettings } = item;
 
+  // Проверяем, что у нас есть валидные данные для отображения
+  if (!name || !status || expectedWeight === undefined) {
+    console.warn('OrderChecklistItem: Невалидные данные для элемента:', item);
+    return null;
+  }
+
   // Функция для форматирования количества порций
   const formatQuantity = (qty: number) => {
     if (qty === 1) return '1 порція';

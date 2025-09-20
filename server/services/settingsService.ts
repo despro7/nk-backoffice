@@ -43,6 +43,10 @@ export interface EquipmentSettings {
     scanDelay: number;
     weightDelay: number;
   };
+  printer?: {
+    enabled: boolean;
+    name: string;
+  };
 }
 
 export class EquipmentSettingsService {
@@ -219,6 +223,16 @@ export class EquipmentSettingsService {
           key: 'equipment_simulation.weightDelay',
           value: JSON.stringify(settings.simulation.weightDelay ?? 1200),
           description: 'Затримка ваги для симуляції'
+        },
+        {
+          key: 'equipment_printer.enabled',
+          value: JSON.stringify(settings.printer?.enabled ?? false),
+          description: 'Прямий друк через QZ Tray увімкнено'
+        },
+        {
+          key: 'equipment_printer.name',
+          value: JSON.stringify(settings.printer?.name ?? ''),
+          description: "Ім'я принтера для прямого друку"
         }
       ];
 

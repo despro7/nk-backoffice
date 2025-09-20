@@ -26,7 +26,7 @@ import { useApi } from "../hooks/useApi";
 import { CalendarDate, getLocalTimeZone, today } from "@internationalized/date";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { formatRelativeDate, getStatusColor } from "../lib/formatUtils";
+import { formatRelativeDate, getStatusColor, getStatusLabel, ORDER_STATUSES } from "../lib/formatUtils";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { addToast } from "@heroui/react";
@@ -78,18 +78,6 @@ type SortDescriptor = {
   column: string;
   direction: "ascending" | "descending";
 };
-
-const statusOptions = [
-  { key: "all", label: "Всі статуси" },
-  { key: "1", label: "Нові" },
-  { key: "2", label: "Підтверджені" },
-  { key: "3", label: "Готові до відправки" },
-  { key: "4", label: "Відправлені" },
-  { key: "5", label: "Продані" },
-  { key: "6", label: "Відхилені" },
-  { key: "7", label: "Повернені" },
-  { key: "8", label: "Видалені" },
-];
 
 // Опции товаров (для фильтрации)
 const productOptions = [
@@ -575,10 +563,10 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
   );
 
   // Получение статуса по ключу
-  const getStatusLabel = (statusKey: string) => {
-    const status = statusOptions.find((s) => s.key === statusKey);
-    return status ? status.label : statusKey;
-  };
+  // const getStatusLabel = (statusKey: string) => {
+  //   const status = statusOptions.find((s) => s.key === statusKey);
+  //   return status ? status.label : statusKey;
+  // };
 
   // Обработчик открытия модального окна с деталями
   const handleOpenDetails = (dateData: SalesData) => {
@@ -736,7 +724,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
               innerWrapper: "gap-2",
             }}
           >
-            {statusOptions.map((option) => (
+            {ORDER_STATUSES.map((option) => (
               <SelectItem key={option.key}>{option.label}</SelectItem>
             ))}
           </Select>

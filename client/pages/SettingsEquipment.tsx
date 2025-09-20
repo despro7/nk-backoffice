@@ -3,17 +3,18 @@ import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button, ButtonGroup } from "@heroui/button";
 import { Switch } from "@heroui/switch";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { useEquipment } from "../hooks/useEquipment";
+import { useEquipmentFromAuth } from "../contexts/AuthContext";
 import { EquipmentConfig } from "../services/EquipmentService";
 import { Input } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
 import { addToast } from "@heroui/toast";
 import ScaleService from "../services/ScaleService";
+import PrinterService from "../services/printerService";
 import { EQUIPMENT_DEFAULTS } from "../../shared/constants/equipmentDefaults.js";
 
 
 export const SettingsEquipment = () => {
-  const [state, actions] = useEquipment();
+  const [state, actions] = useEquipmentFromAuth();
   const [localConfig, setLocalConfig] = useState<EquipmentConfig | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
@@ -32,10 +33,47 @@ export const SettingsEquipment = () => {
   const [vta60ParsedData, setVta60ParsedData] = useState<{weight?: number, price?: number, total?: number}>({});
   const [keyboardEvents, setKeyboardEvents] = useState<string[]>([]);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [printers, setPrinters] = useState<string[]>([]);
 
   // Web Serial API поддержка
   const [webSerialSupported, setWebSerialSupported] = useState<boolean | null>(null);
 
+  const handleFindPrinters = async () => {
+    const foundPrinters = await PrinterService.findPrinters();
+    const printerNames = foundPrinters.map((p) => p.name);
+    setPrinters(printerNames);
+    if (printerNames.length > 0) {
+      handleConfigChange("printer", "name", printerNames[0]);
+      addToast({
+        title: 'Принтери знайдено',
+        description: `Знайдено ${printerNames.length} принтерів. Вибрано перший.`,
+        color: 'success',
+      });
+    } else {
+      addToast({
+        title: 'Принтери не знайдено',
+        description: 'Перевірте підключення та роботу QZ Tray.',
+        color: 'warning',
+      });
+    }
+  };
+
+  const handleTestPrint = async () => {
+    if (!localConfig?.printer?.name) {
+      addToast({
+        title: 'Помилка',
+        description: 'Ім\'я принтера не вказано в налаштуваннях.',
+        color: 'danger',
+      });
+      return;
+    }
+    const testZpl = `
+    ^XA
+    ^FO50,50^A0N,50,50^FDTest Print OK^FS
+    ^XZ
+    `;
+    await PrinterService.printZpl(localConfig.printer.name, testZpl);
+  };
 
 
   // Инициализация локальной конфигурации при загрузке из БД
@@ -327,6 +365,48 @@ export const SettingsEquipment = () => {
     }
   };
 
+  // Обновление настроек принтера с сохранением в БД
+  const updatePrinterSetting = async (field: string, value: any) => {
+    try {
+      if (!localConfig) {
+        addToast({
+          title: "Помилка",
+          description: "Конфігурація не завантажена",
+          color: "danger",
+          timeout: 3000,
+        });
+        return;
+      }
+
+      const updatedConfig: EquipmentConfig = {
+        ...localConfig,
+        printer: {
+          ...(localConfig.printer || { enabled: false, name: '' }),
+          [field]: value,
+        },
+      };
+
+      setLocalConfig(updatedConfig);
+      await actions.saveConfig(updatedConfig);
+
+      addToast({
+        title: "Налаштування збережено",
+        description: `Налаштування принтера "${getPrinterFieldDisplayName(
+          field
+        )}" оновлено`,
+        color: "success",
+        timeout: 2000,
+      });
+    } catch (error) {
+      console.error('❌ Помилка збереження налаштувань принтера:', error);
+      addToast({
+        title: "Помилка",
+        description: "Не вдалося зберегти налаштування принтера",
+        color: "danger",
+        timeout: 3000,
+      });
+    }
+  };
 
   // Функция для получения отображаемых названий полей сканера
   const getScannerFieldDisplayName = (field: string): string => {
@@ -334,6 +414,15 @@ export const SettingsEquipment = () => {
       timeout: 'Таймаут',
       scanTimeout: 'Таймаут сканування',
       autoConnect: 'Автопідключення'
+    };
+    return names[field] || field;
+  };
+
+  // Функция для получения отображаемых названий полей принтера
+  const getPrinterFieldDisplayName = (field: string): string => {
+    const names: Record<string, string> = {
+      enabled: 'Прямий друк',
+      name: "Ім'я принтера",
     };
     return names[field] || field;
   };
@@ -1025,6 +1114,73 @@ export const SettingsEquipment = () => {
             </Card>
 
             <div className="flex flex-1 flex-col gap-8 h-fit">
+              {/* Налаштування принтера QZ Tray */}
+              <Card className="flex w-full flex-col gap-6 p-4 h-fit">
+                <h3 className="font-medium text-gray-400">Налаштування принтера (QZ Tray)</h3>
+
+                <Switch
+                  id="printerEnabled"
+                  isSelected={localConfig.printer?.enabled || false}
+                  onValueChange={(value) => updatePrinterSetting("enabled", value)}
+                  color="primary"
+                >
+                  Увімкнути прямий друк
+                </Switch>
+
+                <Input
+                  id="printerName"
+                  label="Ім'я принтера"
+                  labelPlacement="outside"
+                  value={localConfig.printer?.name || ""}
+                  onValueChange={(value) => updatePrinterSetting("name", value)}
+                  placeholder="Наприклад, Zebra ZD410"
+                  disabled={!localConfig.printer?.enabled}
+                />
+
+                {printers.length > 0 && (
+                  <Select
+                    label="Виберіть принтер"
+                    labelPlacement="outside"
+                    selectedKeys={[localConfig.printer?.name || ""]}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0] as string;
+                      updatePrinterSetting("name", value);
+                    }}
+                  >
+                    {printers.map((printer) => (
+                      <SelectItem key={printer}>
+                        {printer}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                )}
+
+                <div className="flex gap-2">
+                  <Button
+                    color="primary"
+                    size="sm"
+                    onPress={handleTestPrint}
+                    disabled={!localConfig.printer?.enabled}
+                  >
+                    <DynamicIcon name="printer" size={14} />
+                    Тест друку
+                  </Button>
+                  <Button
+                    color="secondary"
+                    variant="flat"
+                    size="sm"
+                    onPress={handleFindPrinters}
+                    disabled={!localConfig.printer?.enabled}
+                  >
+                    <DynamicIcon name="search" size={14} />
+                    Знайти принтери
+                  </Button>
+                </div>
+                <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+                  <strong>QZ Tray:</strong> Дозволяє друкувати ZPL/EPL етикетки напряму на термопринтер.
+                </div>
+              </Card>
+
               {/* Тест весов ВТА-60 */}
               <Card className="flex w-full flex-col gap-6 p-4 h-fit">
                 <h3 className="font-medium text-gray-400">Тест вагів ВТА-60</h3>

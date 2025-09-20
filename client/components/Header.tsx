@@ -9,18 +9,22 @@ import { DynamicIcon } from "lucide-react/dynamic";
 import CountdownTimer from "./CountdownTimer";
 import { useEquipmentFromAuth } from "../contexts/AuthContext";
 import { addToast } from "@heroui/toast";
+import { DebugModeSwitch } from "./DebugModeSwitch";
+import { useDebug } from "../contexts/DebugContext";
 
 interface HeaderProps {
   className?: string;
+  onDebugModeChange?: (isEnabled: boolean) => void;
 }
 
-export function Header({ className }: HeaderProps) {
+export function Header({ className, onDebugModeChange }: HeaderProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const api = useApi();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [equipmentState, equipmentActions] = useEquipmentFromAuth();
   const { isOnline, isLoading } = useServerStatus();
+  const { setDebugMode } = useDebug();
   
   // Убираем лишние состояния - используем только equipmentState.isLoading
 
@@ -112,7 +116,7 @@ export function Header({ className }: HeaderProps) {
       </div>
 
       {/* Server Status Indicator - Center */}
-      <div className="flex items-center gap-2 justify-center sm:w-auto ml-10">
+      {/* <div className="flex items-center gap-2 justify-center sm:w-auto ml-10">
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-sm">
           {isLoading ? (
             <div className="animate-spin rounded-full h-3 w-3 border-b border-neutral-400"></div>
@@ -129,34 +133,10 @@ export function Header({ className }: HeaderProps) {
             {isOnline ? 'Online' : 'Offline'}
           </span>
         </div>
-      </div>
-
-      {/* Simulation Mode Switch */}
-      {/* <div className="flex items-center gap-3 w-full justify-center sm:w-auto ml-10">
-        <Switch
-          isSelected={equipmentState.config?.connectionType === "simulation"}
-          onValueChange={toggleSimulationMode}
-          color="warning"
-          size="sm"
-          isDisabled={equipmentState.isLoading || !equipmentState.config}
-          classNames={{
-            wrapper: "bg-secondary/50 transition-all duration-300",
-            thumbIcon: "bg-white/50",
-            base: "transition-all duration-300",
-          }}
-        >
-          <div className="flex items-center gap-2 transition-opacity duration-200">
-            {equipmentState.isLoading && (
-              <div className="animate-spin rounded-full h-3 w-3 border-b border-current opacity-70"></div>
-            )}
-            <span className={`text-sm text-neutral-600 transition-all duration-200 ${
-              equipmentState.isLoading ? 'opacity-70' : 'opacity-100'
-            }`}>
-              {equipmentState.isLoading ? 'Зберігається...' : 'Режим симуляції'}
-            </span>
-          </div>
-        </Switch>
       </div> */}
+
+      {/* Debug Mode Switch */}
+      <DebugModeSwitch onDebugModeChange={onDebugModeChange} />
 
       {/* Full Screen Button */}
       <button

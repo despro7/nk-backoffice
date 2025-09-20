@@ -4,6 +4,7 @@ import OrderChecklistItem from './OrderChecklistItem';
 import { Progress } from './ui/progress';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useEquipmentFromAuth } from '../contexts/AuthContext';
+import { useDebug } from '../contexts/DebugContext';
 
 
 // Убираем функцию handlePrintTTN - она должна быть только в OrderView
@@ -35,11 +36,13 @@ interface OrderChecklistProps {
   showNextOrder?: boolean;
   onWeighItem?: (itemId: string) => Promise<void>; // Callback для реального взвешивания
   isAwaitingWeightChange?: boolean; // Флаг для ожидания изменения веса
+  isDebugMode?: boolean; // Флаг дебаг-режима
 }
 
 const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, onNextOrder, showNextOrder, onWeighItem, isAwaitingWeightChange }: OrderChecklistProps) => {
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [equipmentState] = useEquipmentFromAuth(); // <-- Используем глобальное состояние оборудования
+  const { isDebugMode } = useDebug(); // <-- Используем контекст дебага
 
   // Синхронизируем активный элемент при изменении items
   useEffect(() => {
@@ -64,7 +67,12 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       );
     }
 
-    setActiveItemId(newActiveItem?.id || null);
+    // Устанавливаем активный элемент только если он действительно найден и валиден
+    if (newActiveItem && newActiveItem.id) {
+      setActiveItemId(newActiveItem.id);
+    } else {
+      setActiveItemId(null);
+    }
   }, [items, activeBoxIndex]);
 
   // Автоматическое взвешивание при изменении состояния оборудования
@@ -597,7 +605,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
         )}
 
         {/* Кнопка "Распечатать ТТН" */}
-        {(isOrderComplete || (equipmentState.isSimulationMode && showPrintTTN)) && (
+        {(isOrderComplete || (equipmentState.isSimulationMode && showPrintTTN) || isDebugMode) && (
           <Button
             onPress={onPrintTTN}
             disabled={false} // Убираем локальное состояние, используем глобальное из OrderView
