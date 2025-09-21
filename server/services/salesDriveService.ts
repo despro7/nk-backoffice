@@ -253,57 +253,6 @@ export class SalesDriveService {
     }
   }
 
-  /**
-   * Получает данные из кеша или null если данных нет или они просрочены
-   */
-  private getCachedData(key: string): any | null {
-    const entry = this.cacheState.data.get(key);
-
-    if (!entry) {
-      return null;
-    }
-
-    const now = Date.now();
-
-    // Проверяем срок годности
-    if (now > entry.expiresAt) {
-      this.cacheState.data.delete(key);
-      return null;
-    }
-
-    return entry.data;
-  }
-
-  /**
-   * Сохраняет данные в кеш
-   */
-  private setCachedData(key: string, data: any, customTTL?: number): void {
-    const now = Date.now();
-    const ttl = customTTL || this.cacheState.defaultTTL;
-
-    // Если кеш переполнен, удаляем самую старую запись
-    if (this.cacheState.data.size >= this.cacheState.maxSize) {
-      const firstKey = this.cacheState.data.keys().next().value;
-      if (firstKey) {
-        this.cacheState.data.delete(firstKey);
-      }
-    }
-
-    this.cacheState.data.set(key, {
-      data,
-      timestamp: now,
-      expiresAt: now + ttl
-    });
-  }
-
-
-  /**
-   * Генерирует ключ кеша для запроса
-   */
-  private generateCacheKey(method: string, params: any): string {
-    return `${method}:${JSON.stringify(params)}`;
-  }
-
 
   /**
    * Проверяет соединение с SalesDrive API
