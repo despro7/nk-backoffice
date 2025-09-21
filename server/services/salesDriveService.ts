@@ -2,6 +2,7 @@ import { prisma } from '../lib/utils.js';
 import { orderDatabaseService } from './orderDatabaseService.js';
 import { syncSettingsService } from './syncSettingsService.js';
 import { syncHistoryService, CreateSyncHistoryData } from './syncHistoryService.js';
+import type { SyncSettings } from './syncSettingsService.js';
 
 // Node.js types for setInterval
 declare const setInterval: (callback: () => void, ms: number) => NodeJS.Timeout;
@@ -121,13 +122,19 @@ export class SalesDriveService {
   /**
    * Загружает настройки синхронизации из БД
    */
-  private async loadSyncSettings(): Promise<void> {
+  private async loadSyncSettings(forceRefresh = false): Promise<SyncSettings | null> {
+    if (this.syncSettings && !forceRefresh) {
+      return this.syncSettings;
+    }
+
     try {
-      this.syncSettings = await syncSettingsService.getSyncSettings();
-      console.log('✅ [SalesDrive] Sync settings loaded from database');
+      const settings = await syncSettingsService.getSyncSettings();
+      this.syncSettings = settings;
+      return settings;
     } catch (error) {
       console.error('❌ [SalesDrive] Failed to load sync settings, using defaults:', error);
       this.syncSettings = {};
+      return null;
     }
   }
 
@@ -309,7 +316,7 @@ export class SalesDriveService {
 
       // Используем правильный эндпоинт SalesDrive API
       const fullUrl = `${this.apiUrl}/api/order/list/?page=1&limit=1`;
-      console.log(`🔍 [SalesDrive REQUEST] Full request URL: ${fullUrl}`);
+      console.log(`🔍 [SalesDrive GET] Full request URL: \x1b[36m${fullUrl}\x1b[0m`);
       console.log(`🔍 [SalesDrive REQUEST] Headers:`, {
         'Form-Api-Key': this.apiKey.substring(0, 10) + '...', // Mask API key for security
         'Content-Type': 'application/json',
@@ -330,108 +337,6 @@ export class SalesDriveService {
     }
   }
 
-  /**
-   * Загружает все заказы с 01.07.2025 из SalesDrive с retry логикой
-   */
-  async fetchOrdersFromDate(): Promise<SalesDriveApiResponse> {
-    const maxRetries = this.getSetting('orders.retryAttempts', 3);
-    const retryDelay = this.getSetting('orders.retryDelay', 2000); // задержка между попытками
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        if (!this.apiUrl || !this.apiKey) {
-          throw new Error('SalesDrive API credentials not configured');
-        }
-
-        // Дата начала: 01.07.2025
-        const startDate = '2025-07-01';
-        const currentDate = new Date().toISOString().split('T')[0];
-
-        console.log(`Fetching orders from ${startDate} to ${currentDate} (attempt ${attempt}/${maxRetries})`);
-
-        // Параметры для API запроса согласно документации SalesDrive
-        const batchSize = this.getSetting('orders.batchSize', 50);
-        const params = new URLSearchParams({
-          page: '1',
-          limit: batchSize.toString(), // Используем настройку batch size
-          'filter[orderTime][from]': startDate,
-          'filter[orderTime][to]': currentDate,
-          'filter[statusId]': '__ALL__' // Все статусы, включая удаленные
-        });
-
-        const fullUrl = `${this.apiUrl}/api/order/list/?${params}`;
-        console.log(`🔍 [SalesDrive REQUEST] Full request URL: ${fullUrl}`);
-        console.log(`🔍 [SalesDrive REQUEST] Headers:`, {
-          'Form-Api-Key': this.apiKey.substring(0, 10) + '...', // Mask API key for security
-          'Content-Type': 'application/json',
-        });
-
-        const response = await fetch(fullUrl, {
-          method: 'GET',
-          headers: {
-            'Form-Api-Key': this.apiKey,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (response.status === 429) {
-          // Rate limiting - используем адаптивную задержку
-          const adaptiveDelay = this.handleRateLimit();
-          console.log(`Rate limited (429), waiting ${Math.round(adaptiveDelay)}ms before retry...`);
-          if (attempt < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
-            continue;
-          } else {
-            throw new Error('Rate limit exceeded after all retries');
-          }
-        }
-
-        // Сбрасываем состояние rate limiting при успешном запросе
-        this.resetRateLimitState();
-
-        if (!response.ok) {
-          throw new Error(`SalesDrive API error: ${response.status} - ${response.statusText}`);
-        }
-
-        const data = await response.json() as SalesDriveRawApiResponse;
-
-        // Проверяем структуру ответа согласно документации SalesDrive
-        if (data.status !== 'success') {
-          throw new Error(`SalesDrive API error: ${data.message || 'Unknown error'}`);
-        }
-
-        // Согласно документации, заказы находятся в data.data
-        const orders = data.data || [];
-
-        // Структурируем и форматируем каждый заказ
-        const formattedOrders = orders.map((order: any) => {
-          return this.formatOrder(order);
-        });
-
-        return {
-          success: true,
-          data: formattedOrders,
-        };
-      } catch (error) {
-        console.error(`Error fetching SalesDrive orders (attempt ${attempt}):`, error);
-        
-        if (attempt === maxRetries) {
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          };
-        }
-        
-        // Ждем перед следующим попыткой
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      }
-    }
-
-    return {
-      success: false,
-      error: 'Max retries exceeded',
-    };
-  }
 
   /**
    * Получает заказы с момента последней синхронизации
@@ -498,7 +403,6 @@ export class SalesDriveService {
         if (lastSyncTime?.lastSynced) {
           const lastSync = new Date(lastSyncTime.lastSynced);
           const diffDays = Math.floor((now.getTime() - lastSync.getTime()) / (1000 * 60 * 60 * 24));
-          const diffHours = Math.floor((now.getTime() - lastSync.getTime()) / (1000 * 60 * 60));
 
           if (diffDays === 0) {
             // Если синхронизировались сегодня, берем за последние 7 дней
@@ -554,7 +458,7 @@ export class SalesDriveService {
     endDate: string,
     options: { onProgress?: (stage: 'fetching' | 'processing' | 'saving' | 'completed' | 'error', message: string, processed: number, total: number) => void } = {}
   ): Promise<SalesDriveApiResponse> {
-    console.log(`🚀 [SalesDrive] fetchOrdersFromDateRangeParallel called with dates: ${startDate} to ${endDate}`);
+    // console.log(`🚀 [SalesDrive] fetchOrdersFromDateRangeParallel called with dates: ${startDate} to ${endDate}`);
 
     const maxRetries = this.getSetting('orders.retryAttempts', 3);
     const retryDelay = this.getSetting('orders.retryDelay', 3000);
@@ -566,7 +470,7 @@ export class SalesDriveService {
       console.log(`🔄 [SalesDrive] Starting attempt ${attempt}/${maxRetries}`);
 
       try {
-        console.log(`🔐 [SalesDrive] Checking credentials: apiUrl=${!!this.apiUrl}, apiKey=${!!this.apiKey}`);
+        // console.log(`🔐 [SalesDrive] Checking credentials: apiUrl=${!!this.apiUrl}, apiKey=${!!this.apiKey}`);
 
         if (!this.apiUrl || !this.apiKey) {
           console.error(`❌ [SalesDrive] API credentials missing: apiUrl=${this.apiUrl ? 'SET' : 'MISSING'}, apiKey=${this.apiKey ? 'SET' : 'MISSING'}`);
@@ -576,7 +480,6 @@ export class SalesDriveService {
         console.log(`🔄 Parallel fetching orders from ${startDate} to ${endDate} (attempt ${attempt}/${maxRetries})`);
 
         // Сначала получаем первую страницу, чтобы узнать общее количество
-        // SalesDrive API limit: максимум 100 записей на страницу, используем оптимальный размер для минимизации запросов
         const batchSize = Math.min(this.getSetting('orders.batchSize', 100), 100); // Максимум 100 заказов на страницу
         console.log(`📏 [SalesDrive] Using optimal batch size: ${batchSize} orders per page (minimizes API calls)`);
         const firstPageParams = new URLSearchParams({
@@ -584,16 +487,12 @@ export class SalesDriveService {
           limit: batchSize.toString(),
           'filter[orderTime][from]': startDate,
           'filter[orderTime][to]': endDate,
-          'filter[statusId]': '__ALL__'
+          'filter[statusId]': '__NOTDELETED__'
         });
 
-        console.log(`📄 Fetching first page to determine total pages...`);
+        // console.log(`📄 Fetching first page to determine total pages...`);
         const firstPageFullUrl = `${this.apiUrl}/api/order/list/?${firstPageParams}`;
-        console.log(`🔍 [SalesDrive REQUEST] Full request URL: ${firstPageFullUrl}`);
-        console.log(`🔍 [SalesDrive REQUEST] Headers:`, {
-          'Form-Api-Key': this.apiKey.substring(0, 10) + '...', // Mask API key for security
-          'Content-Type': 'application/json',
-        });
+        console.log(`🔍 [SalesDrive REQUEST] First page request URL: \x1b[36m${firstPageFullUrl}\x1b[0m`);
 
         const firstResponse = await fetch(firstPageFullUrl, {
           method: 'GET',
@@ -652,7 +551,6 @@ export class SalesDriveService {
         const pagePromises: Promise<any[]>[] = [];
 
         // Оптимизируем количество страниц - с batchSize=100, для большинства случаев хватит 1-5 страниц
-        const maxPagesToFetch = maxAllowedPages - 1; // Загружаем все необходимые страницы
         console.log(`📊 [Parallel Filter] Will fetch all ${maxAllowedPages} pages (${Math.ceil(totalOrders / batchSize)} pages needed for ${totalOrders} orders)`);
 
         for (let page = 2; page <= maxAllowedPages; page++) {
@@ -703,7 +601,7 @@ export class SalesDriveService {
 
           // Задержка между батчами (SalesDrive: 10 запросов/мин = ~6 сек между запросами для надежности)
           if (batchIndex < batches.length - 1) {
-            console.log(`⏱️ Waiting 6 seconds before next batch to respect SalesDrive rate limits...`);
+            // console.log(`⏱️ Waiting 6 seconds before next batch to respect SalesDrive rate limits...`);
             await new Promise(resolve => setTimeout(resolve, 6000));
           }
         }
@@ -729,10 +627,11 @@ export class SalesDriveService {
         });
 
         if (attempt === maxRetries) {
-          console.error(`❌ All ${maxRetries} attempts failed, falling back to sequential loading...`);
-          // Если параллельная загрузка не удалась, пробуем обычную
-          console.log('🔄 Falling back to sequential loading...');
-          return await this.fetchOrdersFromDateRange(startDate, endDate);
+          console.error(`❌ All ${maxRetries} attempts failed`);
+          return {
+            success: false,
+            error: 'Max retries exceeded for parallel loading'
+          };
         }
 
         console.log(`⏳ Waiting ${retryDelay}ms before retry ${attempt + 1}/${maxRetries}...`);
@@ -777,16 +676,12 @@ export class SalesDriveService {
           limit: batchSize.toString(),
           'filter[updateAt][from]': formattedStartDate,
           'filter[updateAt][to]': formattedEndDate,
-          'filter[statusId]': '__ALL__'
+          'filter[statusId]': '__NOTDELETED__'
         });
 
         console.log(`📄 Fetching first page to determine total pages (updateAt filter)...`);
         const firstPageFullUrl = `${this.apiUrl}/api/order/list/?${firstPageParams}`;
-        console.log(`🔍 [SalesDrive REQUEST] Full request URL: ${firstPageFullUrl}`);
-        console.log(`🔍 [SalesDrive REQUEST] Headers:`, {
-          'Form-Api-Key': this.apiKey.substring(0, 10) + '...', // Mask API key for security
-          'Content-Type': 'application/json',
-        });
+        console.log(`🔍 [SalesDrive REQUEST] First page request URL: \x1b[36m${firstPageFullUrl}\x1b[0m`);
 
         const firstResponse = await fetch(firstPageFullUrl, {
           method: 'GET',
@@ -816,6 +711,8 @@ export class SalesDriveService {
 
         const firstData = await firstResponse.json() as SalesDriveRawApiResponse;
 
+        console.log('🔍 [SalesDrive DEBUG] Full response from first page:', JSON.stringify(firstData, null, 2));
+
         if (firstData.status !== 'success') {
           throw new Error(`SalesDrive API error: ${firstData.message || 'Unknown error'}`);
         }
@@ -839,7 +736,7 @@ export class SalesDriveService {
         const pagePromises: Promise<any[]>[] = [];
 
         // Оптимизируем количество страниц для UpdateAt фильтра
-        const maxPagesToFetch = maxAllowedPages - 1; // Загружаем все необходимые страницы
+        // const maxPagesToFetch = maxAllowedPages - 1; // Загружаем все необходимые страницы
         console.log(`📊 [UpdateAt Filter] Will fetch all ${maxAllowedPages} pages (${Math.ceil(totalOrders / batchSize)} pages needed for ${totalOrders} orders)`);
 
         for (let page = 2; page <= maxAllowedPages; page++) {
@@ -901,9 +798,11 @@ export class SalesDriveService {
         console.error(`Error in parallel fetch (attempt ${attempt}):`, error);
 
         if (attempt === maxRetries) {
-          // Если параллельная загрузка не удалась, пробуем обычную
-          console.log('🔄 Falling back to sequential loading (updateAt)...');
-          return await this.fetchOrdersFromDateRangeUpdateAt(startDate, endDate);
+          console.error(`❌ All ${maxRetries} attempts failed for updateAt filter`);
+          return {
+            success: false,
+            error: 'Max retries exceeded for updateAt parallel loading'
+          };
         }
 
         await new Promise(resolve => setTimeout(resolve, retryDelay));
@@ -927,21 +826,17 @@ export class SalesDriveService {
       await new Promise(resolve => setTimeout(resolve, preventiveDelay));
     }
 
-    const batchSize = this.getSetting('orders.batchSize', 25); // Уменьшаем batch size для меньшей нагрузки
+    const batchSize = this.getSetting('orders.batchSize', 100); // Увеличиваем batch size до 100 для эффективности
     const params = new URLSearchParams({
       page: page.toString(),
       limit: batchSize.toString(),
       'filter[orderTime][from]': startDate,
       'filter[orderTime][to]': endDate,
-      'filter[statusId]': '__ALL__'
+      'filter[statusId]': '__NOTDELETED__'
     });
 
     const fullUrl = `${this.apiUrl}/api/order/list/?${params}`;
-    console.log(`🔍 [SalesDrive REQUEST] Full request URL: ${fullUrl}`);
-    console.log(`🔍 [SalesDrive REQUEST] Headers:`, {
-      'Form-Api-Key': this.apiKey.substring(0, 10) + '...', // Mask API key for security
-      'Content-Type': 'application/json',
-    });
+    console.log(`🔍 [SalesDrive REQUEST] Full request URL (page ${page}): \x1b[36m${fullUrl}\x1b[0m`);
 
     const response = await fetch(fullUrl, {
       method: 'GET',
@@ -1005,15 +900,11 @@ export class SalesDriveService {
           limit: batchSize.toString(),
           'filter[updateAt][from]': formattedStartDate,
           'filter[updateAt][to]': formattedEndDate,
-          'filter[statusId]': '__ALL__'
+          'filter[statusId]': '__NOTDELETED__'
         });
 
         const firstPageFullUrl = `${this.apiUrl}/api/order/list/?${firstPageParams}`;
-        console.log(`🔍 [SalesDrive REQUEST] Full request URL: ${firstPageFullUrl}`);
-        console.log(`🔍 [SalesDrive REQUEST] Headers:`, {
-          'Form-Api-Key': this.apiKey.substring(0, 10) + '...', // Mask API key for security
-          'Content-Type': 'application/json',
-        });
+        console.log(`🔍 [SalesDrive GET] First page request URL: \x1b[36m${firstPageFullUrl}\x1b[0m`);
 
         const firstResponse = await fetch(firstPageFullUrl, {
           method: 'GET',
@@ -1144,15 +1035,11 @@ export class SalesDriveService {
       limit: batchSize.toString(),
       'filter[updateAt][from]': formattedStartDate,
       'filter[updateAt][to]': formattedEndDate,
-      'filter[statusId]': '__ALL__'
+      'filter[statusId]': '__NOTDELETED__'
     });
 
     const fullUrl = `${this.apiUrl}/api/order/list/?${params}`;
-    console.log(`🔍 [SalesDrive REQUEST] Full request URL: ${fullUrl}`);
-    console.log(`🔍 [SalesDrive REQUEST] Headers:`, {
-      'Form-Api-Key': this.apiKey.substring(0, 10) + '...', // Mask API key for security
-      'Content-Type': 'application/json',
-    });
+    console.log(`🔍 [SalesDrive GET] Full request URL: \x1b[36m${fullUrl}\x1b[0m`);
 
     const response = await fetch(fullUrl, {
       method: 'GET',
@@ -1218,244 +1105,9 @@ export class SalesDriveService {
       .filter(order => order !== null) as SalesDriveOrder[];
   }
 
-  /**
-   * Получает заказы за определенный период с пагинацией (последовательная версия для fallback)
-   */
-  private async fetchOrdersFromDateRange(startDate: string, endDate: string): Promise<SalesDriveApiResponse> {
-    const maxRetries = this.getSetting('orders.retryAttempts', 3);
-    const retryDelay = this.getSetting('orders.retryDelay', 2000);
-    const allOrders: any[] = [];
-    let currentPage = 1;
-    const maxPages = this.getSetting('orders.maxPages', 100); // Максимальное количество страниц
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        if (!this.apiUrl || !this.apiKey) {
-          throw new Error('SalesDrive API credentials not configured');
-        }
-
-        console.log(`🔄 Fetching orders from ${startDate} to ${endDate} (attempt ${attempt}/${maxRetries})`);
-
-        // Получаем заказы постранично
-        while (currentPage <= maxPages) {
-          const batchSize = this.getSetting('orders.batchSize', 200);
-          const params = new URLSearchParams({
-            page: currentPage.toString(),
-            limit: batchSize.toString(), // Используем настройку batch size
-            'filter[orderTime][from]': startDate,
-            'filter[orderTime][to]': endDate,
-            'filter[statusId]': '__ALL__'
-          });
-
-          console.log(`📄 Fetching page ${currentPage}...`);
-
-          const fullUrl = `${this.apiUrl}/api/order/list/?${params}`;
-          console.log(`🔍 [SalesDrive REQUEST] Full request URL: ${fullUrl}`);
-          console.log(`🔍 [SalesDrive REQUEST] Headers:`, {
-            'Form-Api-Key': this.apiKey.substring(0, 10) + '...', // Mask API key for security
-            'Content-Type': 'application/json',
-          });
-
-          const response = await fetch(fullUrl, {
-            method: 'GET',
-            headers: {
-              'Form-Api-Key': this.apiKey,
-              'Content-Type': 'application/json',
-            },
-          });
-
-          if (response.status === 429) {
-            const adaptiveDelay = this.handleRateLimit();
-            console.log(`Rate limited (429), waiting ${Math.round(adaptiveDelay)}ms before retry...`);
-            if (attempt < maxRetries) {
-              await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
-              break;
-            } else {
-              throw new Error('Rate limit exceeded after all retries');
-            }
-          }
-
-          // Сбрасываем состояние rate limiting при успешном запросе
-          this.resetRateLimitState();
-
-          if (!response.ok) {
-            throw new Error(`SalesDrive API error: ${response.status} - ${response.statusText}`);
-          }
-
-          const data = await response.json() as SalesDriveRawApiResponse;
-
-          if (data.status !== 'success') {
-            throw new Error(`SalesDrive API error: ${data.message || 'Unknown error'}`);
-          }
-
-          const orders = data.data || [];
-          console.log(`📄 Page ${currentPage}: received ${orders.length} orders`);
-
-          if (orders.length === 0) {
-            console.log(`📄 No more orders on page ${currentPage}, stopping pagination`);
-            break;
-          }
-
-          allOrders.push(...orders);
-
-          // Проверяем, есть ли еще страницы
-          if (orders.length < batchSize) {
-            console.log(`📄 Last page reached (${orders.length} orders), stopping pagination`);
-            break;
-          }
-
-          currentPage++;
-
-          // Небольшая задержка между страницами
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-
-        console.log(`✅ Total orders received: ${allOrders.length} from ${currentPage} pages`);
-
-        const formattedOrders = allOrders.map((order: any) => this.formatOrder(order));
-
-        return {
-          success: true,
-          data: formattedOrders,
-        };
-
-      } catch (error) {
-        console.error(`Error fetching SalesDrive orders (attempt ${attempt}):`, error);
-        
-        if (attempt === maxRetries) {
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          };
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      }
-    }
-
-    return {
-      success: false,
-      error: 'Max retries exceeded',
-    };
-  }
 
 
 
-  /**
-   * Получает заказы с расширенными фильтрами (оптимизированная версия)
-   */
-  async fetchOrdersWithFilters(filters: {
-    startDate?: string;
-    endDate?: string;
-    statusIds?: string[];
-    minAmount?: number;
-    maxAmount?: number;
-    paymentMethods?: string[];
-    shippingMethods?: string[];
-    cities?: string[];
-    limit?: number;
-    offset?: number;
-  }): Promise<SalesDriveApiResponse> {
-    try {
-      console.log('🔍 Fetching orders with advanced filters:', filters);
-
-      // Генерируем ключ кеша
-      const cacheKey = this.generateCacheKey('fetchOrdersWithFilters', filters);
-
-      // Проверяем кеш
-      const cachedResult = this.getCachedData(cacheKey);
-      if (cachedResult) {
-        console.log('✅ Returning cached result for advanced filters');
-        return cachedResult;
-      }
-
-      // Получаем заказы за период
-      const ordersResponse = await this.fetchOrdersFromDateRangeParallel(
-        filters.startDate || '2025-07-01',
-        filters.endDate || new Date().toISOString().split('T')[0]
-      );
-
-      if (!ordersResponse.success || !ordersResponse.data) {
-        return ordersResponse;
-      }
-
-      let filteredOrders = ordersResponse.data;
-
-      // Применяем фильтры
-      if (filters.statusIds && filters.statusIds.length > 0) {
-        filteredOrders = filteredOrders.filter(order =>
-          order && order.status && filters.statusIds!.includes(order.status)
-        );
-      }
-
-      if (filters.minAmount !== undefined) {
-        filteredOrders = filteredOrders.filter(order =>
-          order && (order.totalPrice || 0) >= filters.minAmount!
-        );
-      }
-
-      if (filters.maxAmount !== undefined) {
-        filteredOrders = filteredOrders.filter(order =>
-          order && (order.totalPrice || 0) <= filters.maxAmount!
-        );
-      }
-
-      if (filters.paymentMethods && filters.paymentMethods.length > 0) {
-        filteredOrders = filteredOrders.filter(order =>
-          order && order.paymentMethod && filters.paymentMethods!.includes(order.paymentMethod)
-        );
-      }
-
-      if (filters.shippingMethods && filters.shippingMethods.length > 0) {
-        filteredOrders = filteredOrders.filter(order =>
-          order && order.shippingMethod && filters.shippingMethods!.includes(order.shippingMethod)
-        );
-      }
-
-      if (filters.cities && filters.cities.length > 0) {
-        filteredOrders = filteredOrders.filter(order =>
-          order && order.cityName && filters.cities!.some(city =>
-            order.cityName!.toLowerCase().includes(city.toLowerCase())
-          )
-        );
-      }
-
-      // Применяем пагинацию
-      const limit = filters.limit || 1000;
-      const offset = filters.offset || 0;
-      const paginatedOrders = filteredOrders.slice(offset, offset + limit);
-
-      console.log(`✅ Advanced filtering completed: ${paginatedOrders.length} orders returned from ${filteredOrders.length} filtered`);
-
-      const result = {
-        success: true,
-        data: paginatedOrders,
-        metadata: {
-          totalFiltered: filteredOrders.length,
-          totalAvailable: ordersResponse.data.length,
-          appliedFilters: filters,
-          pagination: {
-            limit,
-            offset,
-            hasMore: offset + limit < filteredOrders.length
-          }
-        }
-      } as SalesDriveApiResponse;
-
-      // Кешируем результат
-      const ttl = this.cacheState.defaultTTL;
-      this.setCachedData(cacheKey, result, ttl);
-
-      return result;
-
-    } catch (error) {
-      console.error('Error fetching orders with filters:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
-  }
 
 
   /**
@@ -1568,8 +1220,6 @@ export class SalesDriveService {
 
   /**
    * Обновляет статус заказа в SalesDrive API
-   * Примечание: SalesDrive API может не поддерживать обновление статуса через API
-   * В реальной реализации может потребоваться другой подход
    */
   async updateSalesDriveOrderStatus(externalId: string, status: string): Promise<boolean> {
     try {
@@ -1581,13 +1231,7 @@ export class SalesDriveService {
 
       // Подготавливаем URL для обновления заказа
       const updateUrl = `${this.apiUrl}/api/order/update/`;
-      console.log(`📡 Making request to: ${updateUrl}`);
-      console.log(`🔍 [SalesDrive REQUEST] Full request URL: ${updateUrl}`);
-      console.log(`🔍 [SalesDrive REQUEST] Method: POST`);
-      console.log(`🔍 [SalesDrive REQUEST] Headers:`, {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey.substring(0, 10)}...`, // Mask API key for security
-      });
+      console.log(`📡 [SalesDrive POST] Making API request to: \x1b[36m${updateUrl}\x1b[0m`);
 
       // Маппинг статусов: "id3" -> числовой ID в SalesDrive
       // Нужно настроить соответствие в зависимости от вашей конфигурации SalesDrive
@@ -1647,7 +1291,6 @@ export class SalesDriveService {
 
   /**
    * Получает детальную информацию о заказе по ID
-   * Сначала пробуем получить заказ через фильтр по ID, если не получается - получаем все заказы
    */
   async getOrderDetails(orderId: string): Promise<SalesDriveOrder | null> {
     try {
@@ -1657,30 +1300,10 @@ export class SalesDriveService {
 
       console.log(`🔍 Fetching order details for ${orderId}...`);
 
-      // Сначала пробуем получить заказ через фильтр по ID
-      try {
-        const orderDetails = await this.getOrderById(orderId);
-        if (orderDetails) {
-          console.log(`✅ Found order ${orderId} via direct API call`);
-          return orderDetails;
-        }
-      } catch (directError) {
-        console.log(`⚠️ Direct API call failed, falling back to full list:`, directError.message);
-      }
-
-      // Fallback: получаем все заказы и ищем нужный по ID
-      console.log(`🔄 Falling back to fetching all orders...`);
-      const allOrders = await this.fetchOrdersFromDate();
-
-      if (!allOrders.success || !allOrders.data) {
-        throw new Error(allOrders.error || 'Failed to fetch orders');
-      }
-
-      const order = allOrders.data.find(o => o && ((o.id?.toString() === orderId) || (o.id === parseInt(orderId)) || o.orderNumber === orderId));
-
-      if (order) {
-        console.log(`✅ Found order ${orderId} in full list`);
-        return order;
+      const orderDetails = await this.getOrderById(orderId);
+      if (orderDetails) {
+        console.log(`✅ Found order ${orderId} via direct API call`);
+        return orderDetails;
       } else {
         console.log(`❌ Order ${orderId} not found in SalesDrive`);
         return null;
@@ -1712,11 +1335,7 @@ export class SalesDriveService {
         });
 
         const fullUrl = `${this.apiUrl}/api/order/list/?${params}`;
-        console.log(`🔍 [SalesDrive REQUEST] Full request URL: ${fullUrl}`);
-        console.log(`🔍 [SalesDrive REQUEST] Headers:`, {
-          'Form-Api-Key': this.apiKey.substring(0, 10) + '...', // Mask API key for security
-          'Content-Type': 'application/json',
-        });
+        console.log(`🔍 [SalesDrive GET] Full request URL: \x1b[36m${fullUrl}\x1b[0m`);
 
         const response = await fetch(fullUrl, {
           method: 'GET',
@@ -1770,164 +1389,6 @@ export class SalesDriveService {
     return null;
   }
 
-  /**
-   * Получает статистику по загружаемым данным
-   */
-  async getSyncStatistics(options: {
-    startDate?: string;
-    endDate?: string;
-    includeOrderDetails?: boolean;
-    includeProductStats?: boolean;
-  } = {}): Promise<{
-    success: boolean;
-    data?: {
-      totalOrders: number;
-      ordersByStatus: { [status: string]: number };
-      ordersByPaymentMethod: { [method: string]: number };
-      ordersByShippingMethod: { [method: string]: number };
-      ordersByCity: { [city: string]: number };
-      revenueStats: {
-        total: number;
-        average: number;
-        min: number;
-        max: number;
-      };
-      productStats?: {
-        totalProducts: number;
-        productsByCategory: { [category: string]: number };
-        topProducts: Array<{ name: string; quantity: number; revenue: number }>;
-      };
-      dateRange: {
-        startDate: string;
-        endDate: string;
-        days: number;
-      };
-      performance: {
-        estimatedApiCalls: number;
-        estimatedLoadTime: string;
-        currentRateLimitState: {
-          consecutiveErrors: number;
-          lastErrorTime: number;
-        };
-      };
-    };
-    error?: string;
-  }> {
-    try {
-      const startDate = options.startDate || '2025-07-01';
-      const endDate = options.endDate || new Date().toISOString().split('T')[0];
-
-      // Генерируем ключ кеша
-      const cacheKey = this.generateCacheKey('getSyncStatistics', options);
-
-      // Проверяем кеш
-      const cachedResult = this.getCachedData(cacheKey);
-      if (cachedResult) {
-        console.log('✅ Returning cached statistics');
-        return cachedResult;
-      }
-
-      console.log(`📊 Generating sync statistics for period: ${startDate} to ${endDate}`);
-
-      // Получаем все заказы за период
-      const ordersResponse = await this.fetchOrdersFromDateRangeParallel(startDate, endDate);
-
-      if (!ordersResponse.success || !ordersResponse.data) {
-        return {
-          success: false,
-          error: ordersResponse.error || 'Failed to fetch orders for statistics'
-        };
-      }
-
-      const orders = ordersResponse.data;
-
-      // Рассчитываем базовую статистику
-      const totalOrders = orders.length;
-      const ordersByStatus: { [status: string]: number } = {};
-      const ordersByPaymentMethod: { [method: string]: number } = {};
-      const ordersByShippingMethod: { [method: string]: number } = {};
-      const ordersByCity: { [city: string]: number } = {};
-
-      let totalRevenue = 0;
-      const revenues: number[] = [];
-
-      for (const order of orders) {
-        if (!order) continue;
-        const statusText = order.statusText || (order.status) || 'Unknown';
-        ordersByStatus[statusText] = (ordersByStatus[statusText] || 0) + 1;
-
-        if (order.paymentMethod) {
-          ordersByPaymentMethod[order.paymentMethod] = (ordersByPaymentMethod[order.paymentMethod] || 0) + 1;
-        }
-
-        if (order.shippingMethod) {
-          ordersByShippingMethod[order.shippingMethod] = (ordersByShippingMethod[order.shippingMethod] || 0) + 1;
-        }
-
-        if (order.cityName) {
-          ordersByCity[order.cityName] = (ordersByCity[order.cityName] || 0) + 1;
-        }
-
-        const orderRevenue = order.totalPrice || 0;
-        totalRevenue += orderRevenue;
-        revenues.push(orderRevenue);
-      }
-
-      const averageRevenue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-      const minRevenue = revenues.length > 0 ? Math.min(...revenues) : 0;
-      const maxRevenue = revenues.length > 0 ? Math.max(...revenues) : 0;
-
-      // Рассчитываем период
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-
-      console.log(`✅ Sync statistics generated: ${totalOrders} orders analyzed`);
-
-      const result = {
-        success: true,
-        data: {
-          totalOrders,
-          ordersByStatus,
-          ordersByPaymentMethod,
-          ordersByShippingMethod,
-          ordersByCity,
-          revenueStats: {
-            total: totalRevenue,
-            average: averageRevenue,
-            min: minRevenue,
-            max: maxRevenue
-          },
-          dateRange: {
-            startDate,
-            endDate,
-            days
-          },
-          performance: {
-            estimatedApiCalls: 1,
-            estimatedLoadTime: '0s',
-            currentRateLimitState: {
-              consecutiveErrors: this.rateLimitState.consecutive429Errors,
-              lastErrorTime: this.rateLimitState.last429Time
-            }
-          }
-        }
-      };
-
-      // Кешируем результат (статистика живет меньше обычных данных)
-      const ttl = this.cacheState.defaultTTL;
-      this.setCachedData(cacheKey, result, ttl);
-
-      return result;
-
-    } catch (error) {
-      console.error('Error generating sync statistics:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-  }
 
 
 
@@ -1960,7 +1421,6 @@ export class SalesDriveService {
    */
   async syncOrdersWithDatabaseOptimized(): Promise<{ success: boolean; synced: number; errors: number; details: any[]; metadata?: any }> {
     const startTime = Date.now();
-    let apiRequestsCount = 0;
 
     try {
       console.log('🚀 [SYNC] Starting optimized SalesDrive to Database synchronization...');
@@ -2292,7 +1752,7 @@ export class SalesDriveService {
   }
 
   /**
-   * Синхронизирует заказы из SalesDrive с локальной БД (обновленная версия)
+   * Синхронизирует заказы из SalesDrive с локальной БД (CRON task каждый час)
    */
   async syncOrdersWithDatabase(): Promise<{ success: boolean; synced: number; errors: number; details: any[] }> {
     try {
@@ -2361,8 +1821,8 @@ export class SalesDriveService {
     const syncMode = options.syncMode || 'smart'; // По умолчанию используем умную синхронизацию
 
     try {
-      console.log('🔄 [MANUAL SYNC] Starting comprehensive manual sync from:', startDate);
-      console.log('🔄 [MANUAL SYNC] Initiated at:', new Date().toISOString());
+      // console.log('🔄 [MANUAL SYNC] Starting comprehensive manual sync from:', startDate);
+      // console.log('🔄 [MANUAL SYNC] Initiated at:', new Date().toISOString());
 
       try {
 
@@ -2376,7 +1836,7 @@ export class SalesDriveService {
           throw new Error('Invalid start date format');
         }
         formattedStartDate = startDateObj.toISOString().split('T')[0];
-        console.log('📅 [MANUAL SYNC] Formatted start date:', formattedStartDate);
+        // console.log('📅 [MANUAL SYNC] Formatted start date:', formattedStartDate);
       } catch (dateError) {
         console.error('❌ [MANUAL SYNC] Invalid start date:', startDate, dateError);
 
@@ -2412,7 +1872,7 @@ export class SalesDriveService {
             throw new Error('Invalid end date format');
           }
           formattedEndDate = endDateObj.toISOString().split('T')[0];
-          console.log('📅 [MANUAL SYNC] Formatted end date:', formattedEndDate);
+          // console.log('📅 [MANUAL SYNC] Formatted end date:', formattedEndDate);
         } catch (dateError) {
           console.error('❌ [MANUAL SYNC] Invalid end date:', endDate, dateError);
           formattedEndDate = new Date().toISOString().split('T')[0];
@@ -2423,9 +1883,9 @@ export class SalesDriveService {
         console.log('📅 [MANUAL SYNC] No end date provided, using current date');
       }
 
-      console.log(`🔍 [MANUAL SYNC] Fetching ALL orders from ${formattedStartDate} to ${formattedEndDate} (no status filtering)`);
-      console.log(`🔧 [MANUAL SYNC] API URL configured: ${!!this.apiUrl}`);
-      console.log(`🔧 [MANUAL SYNC] API Key configured: ${!!this.apiKey}`);
+      console.log(`📅 [MANUAL SYNC] Fetching ALL orders from ${formattedStartDate} to ${formattedEndDate} (no status filtering)`);
+      // console.log(`🔧 [MANUAL SYNC] API URL configured: ${!!this.apiUrl}`);
+      // console.log(`🔧 [MANUAL SYNC] API Key configured: ${!!this.apiKey}`);
 
       const salesDriveResponse = await this.fetchOrdersFromDateRangeParallel(formattedStartDate, formattedEndDate, {
         onProgress: (stage, message, processed, total) => {
@@ -2442,66 +1902,21 @@ export class SalesDriveService {
 
       if (!salesDriveResponse.success || !salesDriveResponse.data) {
         const errorMsg = salesDriveResponse.error || 'Failed to fetch orders from SalesDrive';
+        console.error(`❌ [MANUAL SYNC] SalesDrive API not available: ${errorMsg}`);
 
-        console.warn(`⚠️ [MANUAL SYNC] SalesDrive API not available: ${errorMsg}`);
-        console.log(`🔄 [MANUAL SYNC] Falling back to database-only operation`);
-
-        // Если SalesDrive недоступен, работаем только с существующими данными в БД
-        const existingOrders = await prisma.order.findMany({
-          where: {
-            orderDate: {
-              gte: new Date(formattedStartDate),
-              lte: new Date(formattedEndDate)
-            }
-          },
-          select: {
-            id: true,
-            externalId: true,
-            status: true,
-            customerName: true,
-            totalPrice: true,
-            orderDate: true
+        return {
+          success: false,
+          synced: 0,
+          errors: 1,
+          details: [{ action: 'error', error: 'SalesDrive API недоступен' }],
+          metadata: {
+            totalDuration: (Date.now() - operationStartTime) / 1000,
+            error: errorMsg
           }
-        });
-
-        console.log(`📊 [MANUAL SYNC] Found ${existingOrders.length} existing orders in database`);
-
-        // Создаем mock данные для обработки
-        const mockSalesDriveOrders = existingOrders.map(order => ({
-          orderNumber: order.externalId,
-          status: order.status,
-          statusText: 'Existing',
-          items: [],
-          rawData: {},
-          customerName: order.customerName,
-          customerPhone: '',
-          deliveryAddress: '',
-          totalPrice: order.totalPrice,
-          // Используем локальную дату вместо UTC для правильного распределения по дням
-          orderDate: order.orderDate ? (() => {
-            const d = new Date(order.orderDate);
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-          })() : formattedStartDate,
-          shippingMethod: '',
-          paymentMethod: '',
-          cityName: '',
-          provider: '',
-          pricinaZnizki: '',
-          sajt: '',
-          ttn: '',
-          quantity: 0
-        }));
-
-        console.log(`🔄 [MANUAL SYNC] Using ${mockSalesDriveOrders.length} existing orders for smart sync`);
-
-        // Используем mock данные вместо реальных из SalesDrive
-        salesDriveOrders = mockSalesDriveOrders;
-      } else {
-        salesDriveOrders = salesDriveResponse.data || [];
+        };
       }
+
+      salesDriveOrders = salesDriveResponse.data || [];
 
       console.log(`📦 [MANUAL SYNC] Retrieved ${salesDriveOrders.length} orders from SalesDrive`);
       console.log(`📊 [MANUAL SYNC] Order statuses present: ${[...new Set(salesDriveOrders.filter(o => o && o.status).map(o => o.status))].join(', ')}`);
@@ -2511,7 +1926,7 @@ export class SalesDriveService {
       const estimatedMemoryMB = (JSON.stringify(salesDriveOrders).length / 1024 / 1024);
 
       // Создаем чанки если нужно
-      let chunks: SalesDriveOrder[][] = [];
+      const chunks: SalesDriveOrder[][] = [];
       if (shouldUseChunking) {
         for (let i = 0; i < salesDriveOrders.length; i += chunkSize) {
           chunks.push(salesDriveOrders.slice(i, i + chunkSize));
@@ -2551,12 +1966,6 @@ export class SalesDriveService {
           details: []
         };
       }
-
-      // Показываем примеры заказов для отладки
-      console.log('📋 [MANUAL SYNC] Sample orders from SalesDrive:');
-      salesDriveOrders.slice(0, 3).filter(order => order && order.orderNumber).forEach((order, index) => {
-        console.log(`   ${index + 1}. ${order.orderNumber} (${order.status || 'no status'}) - ${order.customerName || 'No name'}`);
-      });
 
       let totalSynced = 0;
       let totalErrors = 0;
@@ -2757,6 +2166,7 @@ export class SalesDriveService {
           dateRange: `${formattedStartDate} to ${formattedEndDate}`,
           batchUpdateDuration: updateDuration,
           syncMode,
+          changes: updateResult.changesSummary || {},
           sampleOrders: salesDriveOrders.slice(0, 5).filter(o => o && o.orderNumber).map(o => ({
             orderNumber: o.orderNumber,
             status: o.status || 'no status',

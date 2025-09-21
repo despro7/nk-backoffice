@@ -1,9 +1,13 @@
 import js from '@eslint/js';
 import tseslint from '@typescript-eslint/eslint-plugin';
 import tsparser from '@typescript-eslint/parser';
+import globals from 'globals';
+import reactPlugin from 'eslint-plugin-react';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
   js.configs.recommended,
+  reactPlugin.configs.flat.recommended, // <-- Добавляем рекомендованный конфиг
   {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
@@ -35,8 +39,14 @@ export default [
     },
     plugins: {
       '@typescript-eslint': tseslint,
+      'react-hooks': reactHooks,
     },
     rules: {
+      ...reactHooks.configs.recommended.rules,
+      // React specific rules (if using React)
+      'react/react-in-jsx-scope': 'off', // Not needed with new JSX transform
+      'react/prop-types': 'off', // TypeScript handles prop validation
+
       // TypeScript specific rules
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/explicit-function-return-type': 'off',
@@ -51,15 +61,13 @@ export default [
       'no-unused-vars': 'off', // Turn off base rule as it can report incorrect errors
       'no-undef': 'error', // Keep no-undef for actual undefined variables
       'no-case-declarations': 'off', // Allow declarations in case blocks
-
-      // React specific rules (if using React)
-      'react/prop-types': 'off', // TypeScript handles prop validation
     },
   },
   {
     files: ['**/*.{js,jsx}'],
     languageOptions: {
       globals: {
+        ...globals.browser,
         window: 'readonly',
         document: 'readonly',
         navigator: 'readonly',
@@ -110,6 +118,7 @@ export default [
     files: ['client/**/*.{ts,tsx,js,jsx}'],
     languageOptions: {
       globals: {
+        ...globals.browser,
         // Browser globals for client-side code
         window: 'readonly',
         document: 'readonly',

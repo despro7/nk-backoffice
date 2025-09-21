@@ -49,8 +49,9 @@ export class OrderDatabaseService {
   /**
    * Умная проверка изменений в заказе
    */
-  detectOrderChanges(existingOrder: any, newData: any): string[] {
+  detectOrderChanges(existingOrder: any, newData: any): { fields: string[], details: any } {
     const changes: string[] = [];
+    const changeDetails: any = {};
     const fieldsToCheck = [
       'status', 'statusText', 'ttn', 'quantity', 'customerName', 'customerPhone',
       'deliveryAddress', 'totalPrice', 'shippingMethod', 'paymentMethod',
@@ -64,6 +65,10 @@ export class OrderDatabaseService {
       if (newData[field] !== undefined && existingOrder[field] !== newData[field]) {
         console.log(`🔄 [DEBUG] Field '${field}' changed: '${existingOrder[field]}' → '${newData[field]}'`);
         changes.push(field);
+        changeDetails[field] = {
+          oldValue: existingOrder[field],
+          newValue: newData[field]
+        };
       }
     }
 
@@ -83,6 +88,10 @@ export class OrderDatabaseService {
       if (newDate !== existingDate) {
         console.log(`🔄 [DEBUG] orderDate changed: '${existingDate}' → '${newDate}'`);
         changes.push('orderDate');
+        changeDetails.orderDate = {
+          oldValue: existingDate,
+          newValue: newDate
+        };
       }
     }
 
@@ -97,11 +106,22 @@ export class OrderDatabaseService {
         if (newItemsStr !== existingItemsStr) {
           console.log(`🔄 [DEBUG] items changed (length: ${newItemsStr.length} vs ${existingItemsStr.length})`);
           changes.push('items');
+          changeDetails.items = {
+            oldValue: existingOrder.items,
+            newValue: newData.items,
+            oldLength: existingItemsStr.length,
+            newLength: newItemsStr.length
+          };
         }
       } catch (error) {
         // Если не удалось сравнить, считаем что изменилось
         console.log(`🔄 [DEBUG] items comparison failed, assuming changed:`, error);
         changes.push('items');
+        changeDetails.items = {
+          oldValue: existingOrder.items,
+          newValue: newData.items,
+          error: 'Comparison failed'
+        };
       }
     }
 
@@ -116,16 +136,27 @@ export class OrderDatabaseService {
         if (newRawDataStr !== existingRawDataStr) {
           console.log(`🔄 [DEBUG] rawData changed (length: ${newRawDataStr.length} vs ${existingRawDataStr.length})`);
           changes.push('rawData');
+          changeDetails.rawData = {
+            oldValue: existingOrder.rawData,
+            newValue: newData.rawData,
+            oldLength: existingRawDataStr.length,
+            newLength: newRawDataStr.length
+          };
         }
       } catch (error) {
         // Если не удалось сравнить, считаем что изменилось
         console.log(`🔄 [DEBUG] rawData comparison failed, assuming changed:`, error);
         changes.push('rawData');
+        changeDetails.rawData = {
+          oldValue: existingOrder.rawData,
+          newValue: newData.rawData,
+          error: 'Comparison failed'
+        };
       }
     }
 
-    console.log(`🔍 [DEBUG] Change detection completed: ${changes.length} changes found [${changes.join(', ')}]`);
-    return changes;
+    // console.log(`🔍 [DEBUG] Change detection completed: ${changes.length} changes found [${changes.join(', ')}]`);
+    return { fields: changes, details: changeDetails };
   }
   /**
    * Создает новый заказ в БД
@@ -371,7 +402,7 @@ export class OrderDatabaseService {
     syncStatus?: string;
   }) {
     const startTime = Date.now();
-    console.log('🗄️ [DB] orderDatabaseService.getOrdersCount: Starting count query');
+    // console.log('🗄️ [DB] orderDatabaseService.getOrdersCount: Starting count query');
 
     try {
       const where: any = {};
@@ -397,7 +428,7 @@ export class OrderDatabaseService {
       const count = await prisma.order.count({ where });
 
       const queryTime = Date.now() - startTime;
-      console.log(`✅ [DB] orderDatabaseService.getOrdersCount: Count query completed in ${queryTime}ms, result: ${count}`);
+      // console.log(`✅ [DB] orderDatabaseService.getOrdersCount: Count query completed in ${queryTime}ms, result: ${count}`);
 
       return count;
     } catch (error) {
@@ -778,8 +809,8 @@ export class OrderDatabaseService {
 
       console.log(`📦 Split into ${batches.length} batches of ~${batchSize} orders each`);
 
-      let totalUpdated = 0;
-      let totalSkipped = 0;
+      const totalUpdated = 0;
+      const totalSkipped = 0;
       const results = [];
 
       // Обрабатываем батчи с контролем параллельности
@@ -815,11 +846,12 @@ export class OrderDatabaseService {
                     cityName: true,
                     provider: true,
                     items: true,
-                    rawData: true
+                    rawData: true,
+                    orderDate: true
                   }
                 });
 
-                console.log(`🔍 Checking order ${orderData.orderNumber}: ${existingOrder ? 'EXISTS' : 'NOT FOUND'}`);
+                // console.log(`🔍 Checking order ${orderData.orderNumber}: ${existingOrder ? 'EXISTS' : 'NOT FOUND'}`);
 
                 if (!existingOrder) {
                   console.log(`🚀 Order ${orderData.orderNumber} not found - will create new order`);
@@ -862,7 +894,8 @@ export class OrderDatabaseService {
                 }
 
                 // Умная проверка изменений
-                const changes = this.detectOrderChanges(existingOrder, orderData);
+                const changeResult = this.detectOrderChanges(existingOrder, orderData);
+                const changes = changeResult.fields;
                 console.log(`🔄 Order ${orderData.orderNumber} has ${changes.length} changes: ${changes.join(', ')}`);
 
                 if (changes.length === 0) {
@@ -1283,7 +1316,7 @@ export class OrderDatabaseService {
           }
         });
 
-        const batchPromises = batchSlice.map(async (batch, batchIndex) => {
+        const batchPromises = batchSlice.map(async (batch) => {
           const batchResults = [];
 
           for (const orderData of batch) {
@@ -1295,7 +1328,7 @@ export class OrderDatabaseService {
                 continue;
               }
 
-              console.log(`🔍 [DEBUG] Processing order: ${orderData.orderNumber}, status: ${orderData.status || 'N/A'}`);
+              // console.log(`🔍 [DEBUG] Processing order: ${orderData.orderNumber}, status: ${orderData.status || 'N/A'}`);
 
               // Получаем существующий заказ для проверки изменений
               const existingOrder = await prisma.order.findUnique({
@@ -1315,14 +1348,17 @@ export class OrderDatabaseService {
                   cityName: true,
                   provider: true,
                   items: true,
-                  rawData: true
+                  rawData: true,
+                  orderDate: true,
+                  pricinaZnizki: true,
+                  sajt: true
                 }
               });
 
-              console.log(`🔍 [DEBUG] Order ${orderData.orderNumber}: ${existingOrder ? 'EXISTS' : 'NOT FOUND'} in database`);
+              // console.log(`🔍 [DEBUG] Order ${orderData.orderNumber}: ${existingOrder ? 'EXISTS' : 'NOT FOUND'} in database`);
 
               if (!existingOrder) {
-                console.log(`🆕 [DEBUG] Order ${orderData.orderNumber} not found in database - CREATING NEW`);
+                // console.log(`🆕 [DEBUG] Order ${orderData.orderNumber} not found in database - CREATING NEW`);
 
                 try {
                   // Создаем новый заказ
@@ -1377,11 +1413,12 @@ export class OrderDatabaseService {
               }
 
               // Умная проверка изменений
-              const changes = this.detectOrderChanges(existingOrder, orderData);
-              console.log(`🔍 [DEBUG] Order ${orderData.orderNumber} has ${changes.length} changes: [${changes.join(', ')}]`);
+              const changeResult = this.detectOrderChanges(existingOrder, orderData);
+              const changes = changeResult.fields;
+              // console.log(`🔍 [DEBUG] Order ${orderData.orderNumber} has ${changes.length} changes: [${changes.join(', ')}]`);
 
               if (changes.length === 0) {
-                console.log(`⏭️ [DEBUG] Order ${orderData.orderNumber} has no changes - SKIPPING`);
+                // console.log(`⏭️ [DEBUG] Order ${orderData.orderNumber} has no changes - SKIPPING`);
                 totalSkipped++;
                 batchResults.push({
                   orderNumber: orderData.orderNumber,
@@ -1456,7 +1493,8 @@ export class OrderDatabaseService {
               batchResults.push({
                 orderNumber: orderData.orderNumber,
                 action: 'updated',
-                changedFields: changes
+                changedFields: changes,
+                changeDetails: changeResult.details
               });
 
               console.log(`📊 [DEBUG] Batch results updated: totalUpdated=${totalUpdated}`);
@@ -1528,13 +1566,23 @@ export class OrderDatabaseService {
       console.log(`   ❌ Errors: ${totalErrors}`);
       console.log(`   📈 Efficiency: ${(((totalCreated + totalUpdated) / ordersData.length) * 100).toFixed(1)}%`);
 
+      // Собираем детальную информацию об изменениях
+      const changesSummary: any = {};
+      results.forEach(result => {
+        if (result.action === 'updated' && result.changeDetails) {
+          const orderNumber = result.orderNumber;
+          changesSummary[orderNumber] = result.changeDetails;
+        }
+      });
+
       return {
         success: true,
         totalCreated,
         totalUpdated,
         totalSkipped,
         totalErrors,
-        results
+        results,
+        changesSummary
       };
 
     } catch (error) {

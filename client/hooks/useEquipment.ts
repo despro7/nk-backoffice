@@ -77,9 +77,9 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   // Состояние для активного polling
   const [isActivePolling, setIsActivePolling] = useState(false);
   const [isReservePolling, setIsReservePolling] = useState(false);
-  const activePollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const reservePollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const activePollingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const activePollingIntervalRef = useRef<number | null>(null);
+  const reservePollingIntervalRef = useRef<number | null>(null);
+  const activePollingTimeoutRef = useRef<number | null>(null);
   const isReservePollingRef = useRef<boolean>(false);
   const isActivePollingRef = useRef(false); // Ref для отслеживания состояния в интервалах
   const activePollingErrorCountRef = useRef(0); // Счетчик ошибок активного polling
@@ -451,7 +451,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       // Экспоненциальная задержка: 1s, 2s, 4s
       const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), 4000);
       console.log(`⏳ useEquipment: Пауза ${delay}ms перед переподключением...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise(resolve => window.setTimeout(resolve, delay));
       
       // Пытаемся переподключиться
       const reconnected = await connectScale();
@@ -842,7 +842,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     setIsReservePolling(true);
     isReservePollingRef.current = true;
 
-    reservePollingIntervalRef.current = setInterval(async () => {
+    reservePollingIntervalRef.current = window.setInterval(async () => {
       if (isPollingRef.current) {
         if (process.env.NODE_ENV === 'development') {
           console.log('... Reserve polling request in progress, skipping this interval');
@@ -870,7 +870,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
                 // Сначала отключаемся для освобождения потоков
                 await scaleService.current.disconnect();
                 // Небольшая задержка для полного освобождения ресурсов
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => window.setTimeout(resolve, 100));
                 
                 // Используем connect(true) для автоматического подключения без запроса
                 const connected = await scaleService.current.connect(true);
@@ -953,7 +953,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       activePollingTimeoutRef.current = null;
     }
 
-    activePollingIntervalRef.current = setInterval(async () => {
+    activePollingIntervalRef.current = window.setInterval(async () => {
       if (isPollingRef.current) {
         if (process.env.NODE_ENV === 'development') {
           console.log('... Active polling request in progress, skipping this interval');
@@ -1037,7 +1037,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     }, activePollingInterval);
 
     // Устанавливаем таймаут 30 секунд для активного polling
-    activePollingTimeoutRef.current = setTimeout(() => {
+    activePollingTimeoutRef.current = window.setTimeout(() => {
       console.log('⏰ useEquipment: Таймаут активного polling (' + String(timeout / 1000) + ' сек), переходим к резервному');
       console.log('⏰ useEquipment: isActivePolling:', isActivePollingRef.current, 'isReservePolling:', isReservePolling);
       stopActivePolling();

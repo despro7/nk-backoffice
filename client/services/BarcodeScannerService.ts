@@ -22,7 +22,7 @@ export class BarcodeScannerService {
   private buffer: string = '';
   private lastScanTime: number = 0;
   private scanTimeout: number = 500;
-  private endScanTimer: NodeJS.Timeout | null = null;
+  private endScanTimer: number | null = null;
   private lastScanTimestamp: number = 0;
 
   // Singleton метод для получения инстанса
@@ -144,7 +144,7 @@ export class BarcodeScannerService {
             if (this.endScanTimer) {
               clearTimeout(this.endScanTimer);
             }
-            this.endScanTimer = setTimeout(() => {
+            this.endScanTimer = window.setTimeout(() => {
               if (this.buffer.length >= 3 && this.buffer.trim()) {
                 this.processScannedCode();
               }
@@ -163,7 +163,7 @@ export class BarcodeScannerService {
         this.buffer += event.key;
 
 
-        this.endScanTimer = setTimeout(() => {
+        this.endScanTimer = window.setTimeout(() => {
           if (this.buffer.length >= 3 && this.buffer.trim()) {
             this.processScannedCode();
           }
@@ -314,11 +314,11 @@ export class BarcodeScannerService {
     try {
       const result = await this.connect();
       if (result) {
-        setTimeout(() => {
+        window.setTimeout(() => {
           this.simulateScan();
         }, 100);
 
-        setTimeout(() => {
+        window.setTimeout(() => {
           this.disconnect();
         }, 2000);
       }

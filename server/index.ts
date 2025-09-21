@@ -11,7 +11,7 @@ import settingsRoutes from "./routes/settings.js";
 import webhookRoutes from './routes/webhooks.js';
 import warehouseRoutes from './routes/warehouse.js';
 import ordersSyncRoutes from './routes/orders-sync.js';
-import { cronService } from './services/cronService.js';
+import { cronService, forceStopAllCronJobs } from './services/cronService.js';
 import { logServer } from './lib/utils.js';
 import shippingRoutes from './routes/shipping.js';
 
@@ -148,19 +148,8 @@ const app = createServer();
 const port = process.env.PORT || 3001;
 
 app.listen(port, () => {
-  console.log(`\n\n🚀 Server is running on http://localhost:${port}`);
-  console.log(`🌐 CORS allowed origins: ${[
-    '\n    ' + process.env.CLIENT_URL || 
-    '\n    http://localhost:3000',
-    '\n    http://localhost:3000',
-    '\n    http://localhost:5173',
-    '\n    http://localhost:8080',
-    '\n    https://localhost:3000',
-    '\n    https://localhost:5173',
-    '\n    https://localhost:8080'
-  ].join(', ')}`);
-  console.log(`📋 Available endpoints:`);
-  console.log(`   GET   /api/ping`);
+  console.log(`\n🚀 Server is running on http://localhost:${port}`);
+  console.log(`\n📋 Available API endpoints:`);
   console.log(`   GET   /api/health`);
   console.log(`   GET   /api/orders`);
   console.log(`   GET   /api/orders/test`);
@@ -171,17 +160,28 @@ app.listen(port, () => {
   console.log(`   POST  /api/webhooks/salesdrive/test`);
   console.log(`   GET   /api/webhooks/salesdrive/health`);
   
-  // Запускаем cron-задачи
-  cronService.startAll();
+  // Start cron jobs after ensuring any old ones are stopped.
+  console.log('🚀 Starting cron tasks...');
+  forceStopAllCronJobs(); // Clean up any orphaned jobs from previous runs
+  cronService.startAll(); // Start new jobs
 });
 
 // Graceful shutdown
-const shutdown = (signal: string) => {
-  console.log(`\n🛑 ${signal} received, shutting down...`);
-  cronService.stopAll();
-  // Уменьшаем задержку перед выходом
-  setTimeout(() => process.exit(0), 100);
-};
+// Attach shutdown handlers only once per process lifetime to avoid HMR duplication.
+if (!(process as any).__SHUTDOWN_HANDLER_ATTACHED__) {
+  const shutdown = (signal: string) => {
+    console.log(`\n🛑 ${signal} received, shutting down gracefully...`);
 
-process.once('SIGTERM', () => shutdown('SIGTERM'));
-process.once('SIGINT', () => shutdown('SIGINT'));
+    // Используем глобальную функцию, чтобы гарантированно остановить все задачи
+    forceStopAllCronJobs();
+
+    // Даем небольшую задержку для завершения логов перед выходом
+    setTimeout(() => process.exit(0), 200);
+  };
+
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
+
+  (process as any).__SHUTDOWN_HANDLER_ATTACHED__ = true;
+  // console.log('🔧 Shutdown handlers attached.');
+}

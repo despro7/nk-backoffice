@@ -6,7 +6,6 @@ import { NumberPad } from "@/components/NumberPad";
 import { DeviationButton } from "@/components/DeviationButton";
 import { useApi } from "@/hooks/useApi";
 import { LastSyncInfo } from "@/components/LastSyncInfo";
-import { formatRelativeDate } from "@/lib/formatUtils";
 
 
 export default function Orders() {

@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Button, NumberInput, Select, SelectItem } from '@heroui/react';
 import { Card, CardHeader, CardBody } from '@heroui/react';
 
-interface WeightToleranceSettings {
+interface WeightToleranceSettingsType {
   type: 'percentage' | 'absolute' | 'combined';
   percentage: number;
   absolute: number;
 }
 
 interface WeightToleranceSettingsProps {
-  onSave?: (settings: WeightToleranceSettings) => void;
+  onSave?: (settings: WeightToleranceSettingsType) => void;
 }
 
 const TOLERANCE_TYPES = [
@@ -19,7 +19,7 @@ const TOLERANCE_TYPES = [
 ] as const;
 
 export const WeightToleranceSettings: React.FC<WeightToleranceSettingsProps> = ({ onSave }) => {
-  const [settings, setSettings] = useState<WeightToleranceSettings>({
+  const [settings, setSettings] = useState<WeightToleranceSettingsType>({
     type: 'combined',
     percentage: 5,
     absolute: 20
@@ -95,7 +95,7 @@ export const WeightToleranceSettings: React.FC<WeightToleranceSettingsProps> = (
             <Select
               selectedKeys={[settings.type]}
               onSelectionChange={(keys) => {
-                const selected = Array.from(keys)[0] as WeightToleranceSettings['type'];
+                const selected = Array.from(keys)[0] as WeightToleranceSettingsType['type'];
                 setSettings(prev => ({ ...prev, type: selected }));
               }}
               placeholder="Виберіть тип похибки"

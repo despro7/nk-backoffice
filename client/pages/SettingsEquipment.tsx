@@ -24,7 +24,7 @@ export const SettingsEquipment = () => {
   // Состояние для теста сканера
   const [scannerTestResult, setScannerTestResult] = useState<string>('');
   const [scannerTestStatus, setScannerTestStatus] = useState<'idle' | 'waiting' | 'success' | 'error'>('idle');
-  const [scannerTestTimeout, setScannerTestTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [scannerTestTimeout, setScannerTestTimeout] = useState<number | null>(null);
 
   // Состояние для теста весов ВТА-60
   const [vta60TestResult, setVta60TestResult] = useState<string>('Очікування тесту...');
@@ -111,8 +111,8 @@ export const SettingsEquipment = () => {
     setScannerTestStatus('waiting');
     setScannerTestResult('Ожидание сканирования... (5 сек)');
 
-    // Устанавливаем таймаут на 5 секунд
-    const timeout = setTimeout(() => {
+    // Устанавливаем таймаут на 10 секунд
+    const timeout = window.setTimeout(() => {
       setScannerTestStatus('error');
       setScannerTestResult('Тест не удался - сканер не обнаружен или не работает');
       setScannerTestTimeout(null);
@@ -121,7 +121,7 @@ export const SettingsEquipment = () => {
         document.removeEventListener('keydown', (window as any).testScannerListener);
         (window as any).testScannerListener = null;
       }
-    }, 5000);
+    }, 10000);
 
     setScannerTestTimeout(timeout);
 
@@ -148,7 +148,7 @@ export const SettingsEquipment = () => {
 
         // Если буфер достаточно длинный и прошло время - считаем что сканирование завершено
         if (testBuffer.length >= 3) {
-          setTimeout(() => {
+          window.setTimeout(() => {
             if (testBuffer.length > 0) {
               // Успешный тест!
               if (scannerTestTimeout) {
@@ -163,10 +163,10 @@ export const SettingsEquipment = () => {
               (window as any).testScannerListener = null;
 
               // Очищаем результат через 5 секунд
-              setTimeout(() => {
+              window.setTimeout(() => {
                 setScannerTestStatus('idle');
                 setScannerTestResult('');
-              }, 5000);
+              }, 10000);
             }
           }, 200); // Ждем еще немного символов
         }
@@ -209,7 +209,7 @@ export const SettingsEquipment = () => {
     document.addEventListener('keydown', diagnosticsListener);
 
     // Автоматически останавливаем через 10 секунд
-    setTimeout(() => {
+    window.setTimeout(() => {
       document.removeEventListener('keydown', diagnosticsListener);
       setShowDiagnostics(false);
     }, 10000);

@@ -45,7 +45,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<UserWithExpiry | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const refreshTimeoutRef = useRef<number | null>(null);
 
   // Кеш для профиля пользователя (5 минут)
   const profileCacheRef = useRef<{ data: UserWithExpiry | null; timestamp: number } | null>(null);
@@ -86,7 +86,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         
         const refreshDelay = getRefreshDelay(expiresIn);
-        refreshTimeoutRef.current = setTimeout(() => {
+        refreshTimeoutRef.current = window.setTimeout(() => {
           refreshToken();
         }, refreshDelay);
       };
@@ -199,7 +199,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           getRefreshDelay(userData.expiresIn) : 
           60000;
         
-        refreshTimeoutRef.current = setTimeout(() => {
+        refreshTimeoutRef.current = window.setTimeout(() => {
           refreshToken();
         }, refreshDelay);
       } else {
@@ -270,7 +270,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         // Используем информацию о времени жизни токена для планирования
         const refreshDelay = data.expiresIn ? getRefreshDelay(data.expiresIn) : 60000;
-        refreshTimeoutRef.current = setTimeout(() => refreshToken(), refreshDelay);
+        refreshTimeoutRef.current = window.setTimeout(() => refreshToken(), refreshDelay);
         
         return true;
       } else {
@@ -327,7 +327,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         // Используем информацию о времени жизни токена для планирования
         const refreshDelay = data.expiresIn ? getRefreshDelay(data.expiresIn) : 60000;
-        refreshTimeoutRef.current = setTimeout(() => refreshToken(), refreshDelay);
+        refreshTimeoutRef.current = window.setTimeout(() => refreshToken(), refreshDelay);
         
         return true;
       } else {
@@ -376,7 +376,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         // Используем информацию о времени жизни токена для планирования
         const refreshDelay = data.expiresIn ? getRefreshDelay(data.expiresIn) : 60000;
-        refreshTimeoutRef.current = setTimeout(() => refreshToken(), refreshDelay);
+        refreshTimeoutRef.current = window.setTimeout(() => refreshToken(), refreshDelay);
 
         
         return true;

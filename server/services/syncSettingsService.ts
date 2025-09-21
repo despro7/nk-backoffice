@@ -1,6 +1,6 @@
 import { prisma } from '../lib/utils.js';
 
-interface SyncSettings {
+export interface SyncSettings {
   autoSyncEnabled: boolean;
   cacheEnabled: boolean;
   cacheTtl: number;

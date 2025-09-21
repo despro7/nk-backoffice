@@ -4,14 +4,14 @@ import { Select, SelectItem } from '@heroui/react';
 import { useApi } from '../hooks/useApi';
 import { Card, CardHeader, CardBody } from '@heroui/react';
 
-interface OrderInterfaceSettings {
+interface OrderInterfaceSettingsType {
   defaultTab: "confirmed" | "readyToShip" | "shipped" | "all";
   pageSize: number;
 }
 
-const DEFAULT_SETTINGS: OrderInterfaceSettings = {
+const DEFAULT_SETTINGS: OrderInterfaceSettingsType = {
   defaultTab: "confirmed",
-  pageSize: 10
+  pageSize: 8
 };
 
 const TAB_OPTIONS = [
@@ -21,11 +21,12 @@ const TAB_OPTIONS = [
   { value: "all", label: "Всі" }
 ] as const;
 
-const PAGE_SIZE_OPTIONS = [5, 10, 15, 20, 25, 50] as const;
 
 export const OrderInterfaceSettings: React.FC = () => {
   const { apiCall } = useApi();
-  const [settings, setSettings] = useState<OrderInterfaceSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<OrderInterfaceSettingsType | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -42,7 +43,7 @@ export const OrderInterfaceSettings: React.FC = () => {
         const pageSizeSetting = allSettings.find((s: any) => s.key === 'orders_page_size');
 
         setSettings({
-          defaultTab: (defaultTabSetting?.value as OrderInterfaceSettings['defaultTab']) || DEFAULT_SETTINGS.defaultTab,
+          defaultTab: (defaultTabSetting?.value as OrderInterfaceSettingsType['defaultTab']) || DEFAULT_SETTINGS.defaultTab,
           pageSize: parseInt(pageSizeSetting?.value) || DEFAULT_SETTINGS.pageSize
         });
       }
@@ -154,7 +155,7 @@ export const OrderInterfaceSettings: React.FC = () => {
                 <Select
                   selectedKeys={[settings.defaultTab]}
                   onSelectionChange={(keys) => {
-                    const selected = Array.from(keys)[0] as OrderInterfaceSettings['defaultTab'];
+                    const selected = Array.from(keys)[0] as OrderInterfaceSettingsType['defaultTab'];
                     setSettings(prev => ({ ...prev, defaultTab: selected }));
                   }}
                   placeholder="Виберіть таб"

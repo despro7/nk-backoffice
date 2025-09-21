@@ -18,7 +18,7 @@ let tokenCheckCount = 0;
 export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
     tokenCheckCount++;
-    console.log(`🔍 [Middleware] #${tokenCheckCount} Проверка токена для пути: ${req.path}`);
+    // console.log(`🔍 [Middleware] #${tokenCheckCount} Проверка токена для пути: ${req.path}`);
 
     // Расширенное логирование для тестирования
     const shouldLog = process.env.NODE_ENV === 'development';
@@ -27,60 +27,27 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     const { accessToken, refreshToken } = await AuthService.getTokenFromCookies(req);
 
     // Логируем для отладки
-    console.log('🔍 [Middleware] Access token из cookie:', accessToken ? 'присутствует' : 'отсутствует');
-    console.log('🔍 [Middleware] Refresh token из cookie:', refreshToken ? 'присутствует' : 'отсутствует');
+    // console.log('🔍 [Middleware] Access token из cookie:', accessToken ? 'присутствует' : 'отсутствует');
+    // console.log('🔍 [Middleware] Refresh token из cookie:', refreshToken ? 'присутствует' : 'отсутствует');
 
     if (accessToken) {
-      console.log('🔍 [Middleware] Access token найден, проверяем его валидность...');
-    }
-
-    // Если нет access token, но есть refresh token - пытаемся обновить
-    if (!accessToken && refreshToken) {
-      console.log('🔄 [Middleware] Access token отсутствует, пытаемся обновить через refresh token...');
-
-      try {
-        const refreshResult = await AuthService.refreshToken({ refreshToken });
-        
-        // Используем новый access token
-        const secret = process.env.JWT_SECRET || 'fallback_secret';
-        const decoded = jwt.verify(refreshResult.token, secret) as JwtPayload;
-
-        // Устанавливаем новые cookies
-        await AuthService.setAuthCookies(res, refreshResult.token, refreshResult.refreshToken);
-        console.log('✅ [Middleware] Токены обновлены, используем новый access token');
-
-        // Минимальное логирование обновления токенов
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`🔄 [Middleware] Токены обновлены для пользователя: ${decoded.email}`);
-        }
-
-        // Добавляем заголовок для Toast уведомления
-        res.setHeader('X-Token-Refreshed', 'true');
-        res.setHeader('X-User-Email', decoded.email);
-        
-        req.user = decoded;
-        console.log(`👤 [Middleware] Пользователь авторизован после refresh: ${decoded.email} (ID: ${decoded.userId})`);
-        
-        // Обновляем активность пользователя
-        try {
-          await AuthService.updateUserActivity(decoded.userId);
-          console.log('✅ [Middleware] Активность пользователя обновлена');
-        } catch (error) {
-          console.error('❌ [Middleware] Failed to update user activity:', error);
-        }
-        
-        return next();
-      } catch (refreshError) {
-        console.log('❌ [Middleware] Не удалось обновить токен:', refreshError);
-              return res.status(401).json({
-        message: 'Session expired. Please login again.',
-        code: 'REFRESH_FAILED',
-        shouldRefresh: false
-      });
-      }
+      // console.log('🔍 [Middleware] Access token найден, проверяем его валидность...');
     }
     
     if (!accessToken) {
+      // Если access token отсутствует, но есть refresh token,
+      // это сигнал для клиента, что нужно попытаться обновить токен.
+      // Это покрывает случай, когда cookie access token истек.
+      if (refreshToken) {
+        console.log('⚠️ [Middleware] Access token отсутствует, но refresh token есть. Требуется обновление.');
+        return res.status(401).json({
+          message: 'Access token required, refresh needed',
+          code: 'TOKEN_EXPIRED', // Используем тот же код, что и для истекшего токена
+          shouldRefresh: true,
+        });
+      }
+
+      // Если нет ни access, ни refresh токена, то пользователь не авторизован.
       if (shouldLog) {
         console.log('❌ [Middleware] Access token не найден');
       }
@@ -92,11 +59,11 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     }
 
     const secret = process.env.JWT_SECRET || 'fallback_secret';
-    console.log('🔍 [Middleware] Проверяем access token...');
+    // console.log('🔍 [Middleware] Проверяем access token...');
     const decoded = jwt.verify(accessToken, secret) as JwtPayload;
 
-    console.log(`👤 [Middleware] Access token валиден для пользователя: ${decoded.email}`);
-    console.log(`🔍 [Middleware] Тип токена: ${decoded.tokenType}`);
+    // console.log(`👤 [Middleware] Access token валиден для пользователя: ${decoded.email}`);
+    // console.log(`🔍 [Middleware] Тип токена: ${decoded.tokenType}`);
 
     // Проверяем тип токена
     if (decoded.tokenType !== 'access') {
@@ -110,7 +77,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     
     req.user = decoded;
 
-    console.log(`✅ [Middleware] #${tokenCheckCount} Токен успешно валидирован для ${decoded.email}`);
+    // console.log(`✅ [Middleware] #${tokenCheckCount} Токен успешно валидирован для ${decoded.email}`);
 
     // Тихое обновление активности пользователя
     AuthService.updateUserActivity(decoded.userId).catch(() => {});

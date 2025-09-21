@@ -74,7 +74,7 @@ const SHORT_WEEKDAYS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const FULL_WEEKDAYS = ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П\'ятниця', 'Субота'];
 
 export const formatRelativeDate = (
-  dateString: string | null, 
+  dateString: string | null | Date, 
   options: {
     showTime?: boolean;
     showYear?: boolean;
@@ -189,7 +189,7 @@ export const formatDate = (dateString: string): string => {
  * formatDateTime('2024-01-15T10:30:00Z') // "15.01.2024, 10:30"
  * formatDateTime(null) // "-"
  */
-export const formatDateTime = (dateString: string): string => {
+export const formatDateTime = (dateString: string | Date): string => {
   if (!dateString) return "-";
   return new Date(dateString).toLocaleString('uk-UA');
 };
@@ -366,4 +366,38 @@ export const getStatusLabel = (statusKey: string | null | undefined): string => 
   if (!statusKey) return "Невідомо";
   const status = ORDER_STATUSES.find((s) => s.key === statusKey);
   return status ? status.label : statusKey;
+};
+
+
+/**
+ * Форматирует продолжительность в читаемый формат
+ * @param duration - продолжительность (в миллисекундах или секундах, зависит от options.unit)
+ * @param options - { unit: "s" | "ms" } (по умолчанию "ms")
+ * @returns отформатированная строка, например "1год 2хв 3с"
+ * 
+ * @example
+ * formatDuration(77653, { unit: "ms" }) // "1хв 17с"
+ * formatDuration(78, { unit: "s" }) // "1хв 18с"
+ * formatDuration(3661, { unit: "s" }) // "1год 1с"
+ */
+export const formatDuration = (
+  duration: number,
+  options: { unit?: "s" | "ms" } = { unit: "ms" }
+): string => {
+  const unit = options.unit || "ms";
+  if (typeof duration !== "number" || duration <= 0) return "0с";
+
+  // Приводим к миллисекундам для расчёта
+  const ms = unit === "s" ? duration * 1000 : duration;
+
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+  const secs = Math.floor((ms % (1000 * 60)) / 1000);
+
+  let result = '';
+  if (hours > 0) result += `${hours}год `;
+  if (minutes > 0) result += `${minutes}хв `;
+  if (secs > 0 || result === '') result += `${secs}с`;
+
+  return result.trim();
 };

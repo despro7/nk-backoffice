@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
-
-import { formatDateTime } from '../lib/formatUtils';
+import { SyncHistory } from '../components/SyncHistory';
+import { formatDateTime, formatRelativeDate, formatDuration } from '../lib/formatUtils';
 import {
   Table,
   TableHeader,
@@ -35,9 +35,14 @@ import {
   RadioGroup,
   addToast,
   DatePicker,
+  Progress,
+  Tooltip,
+  getKeyValue,
+  Spinner,
 } from '@heroui/react';
 import { I18nProvider } from '@react-aria/i18n';
 import { CalendarDate, getLocalTimeZone, today } from '@internationalized/date';
+import { SyncHistoryRecord } from '../types/sync';
 
 interface SyncLog {
   id: string;
@@ -108,10 +113,12 @@ const SettingsOrders: React.FC = () => {
   });
 
   // State for sync history
-  const [_syncHistory, _setSyncHistory] = useState<any[]>([]);
+  const [_syncHistory, _setSyncHistory] = useState<SyncHistoryRecord[]>([]);
   const [_syncHistoryLoading, _setSyncHistoryLoading] = useState(false);
   const [syncHistoryFilter, setSyncHistoryFilter] = useState('all');
   const [syncHistoryStats, setSyncHistoryStats] = useState<any>(null);
+  const [selectedHistory, setSelectedHistory] = useState<SyncHistoryRecord | null>(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
   // State for sync preview
   const [syncPreview, setSyncPreview] = useState<any>(null);
@@ -1221,6 +1228,8 @@ const SettingsOrders: React.FC = () => {
     try {
       console.log('🌐 [CLIENT] Making request to /api/orders-sync/sync/manual');
 
+      // Отправляем POST-запрос на ручной запуск синхронизации заказов
+      // Передаем выбранные даты, параметры батча и режим синхронизации
       const response = await fetch('/api/orders-sync/sync/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1441,6 +1450,165 @@ const SettingsOrders: React.FC = () => {
     loadCacheStats();
     loadSyncSettings();
   }, []);
+
+  // MODAL HANDLERS
+  const openDetailsModal = (item: SyncHistoryRecord) => {
+    setSelectedHistory(item);
+    setIsDetailsModalOpen(true);
+  };
+
+  // Table columns for sync history
+  const syncHistoryColumns = [
+    { key: 'id', label: 'ID', allowsSorting: true },
+    { key: 'createdAt', label: 'Дата', allowsSorting: true },
+    { key: 'syncType', label: 'Тип', allowsSorting: true },
+    { key: 'status', label: 'Статус', allowsSorting: true },
+    { key: 'progress', label: 'Прогрес', allowsSorting: false },
+    { key: 'stats', label: 'Статистика', allowsSorting: false },
+    { key: 'duration', label: 'Час', allowsSorting: true },
+    { key: 'actions', label: 'Дії', allowsSorting: false },
+  ];
+
+  // Filtered and sorted sync history
+  const filteredSyncHistory = useMemo(() => {
+    let filtered = [..._syncHistory];
+
+    // Sort
+    if (sortDescriptor?.column) {
+      filtered.sort((a, b) => {
+        let first: any = a[sortDescriptor.column as keyof SyncHistoryRecord];
+        let second: any = b[sortDescriptor.column as keyof SyncHistoryRecord];
+
+        if (first === null || first === undefined) first = '';
+        if (second === null || second === undefined) second = '';
+
+        let cmp = 0;
+        if (first < second) cmp = -1;
+        else if (first > second) cmp = 1;
+
+        return sortDescriptor.direction === 'descending' ? -cmp : cmp;
+      });
+    }
+
+    return filtered;
+  }, [_syncHistory, sortDescriptor]);
+
+  // Render sync history cells
+  const renderSyncHistoryCell = (item: SyncHistoryRecord, columnKey: React.Key) => {
+    switch (columnKey) {
+      case 'id':
+        return <span className="font-mono text-sm text-gray-700">#{item.id}</span>;
+      case 'createdAt':
+        return (
+          <div className="text-sm text-gray-900 flex flex-col">
+            <span>{formatDateTime(item.createdAt)}</span>
+            <span className="text-xs text-gray-500">{formatRelativeDate(item.createdAt)}</span>
+          </div>
+        );
+      case 'syncType':
+        const typeLabels: { [key: string]: string } = {
+          manual: 'Manual',
+          automatic: 'Auto',
+          background: 'Background'
+        };
+        const typeColors: { [key: string]: 'primary' | 'secondary' | 'default' } = {
+          manual: 'primary',
+          automatic: 'secondary',
+          background: 'default'
+        };
+        return (
+          <Chip
+            color={typeColors[item.syncType] || 'default'}
+            variant="flat"
+            size="sm"
+          >
+            {typeLabels[item.syncType] || item.syncType}
+          </Chip>
+        );
+      case 'status':
+        const statusConfig = {
+          success: { label: 'Успішно', color: 'success', icon: 'check-circle' },
+          partial: { label: 'Частково', color: 'warning', icon: 'alert-triangle' },
+          failed: { label: 'Помилка', color: 'danger', icon: 'x-circle' }
+        };
+        const config = statusConfig[item.status as keyof typeof statusConfig] || { label: item.status, color: 'default', icon: 'help-circle' };
+        return (
+          <Chip color={config.color as any} variant="dot" size="sm">
+            {config.label}
+          </Chip>
+        );
+      case 'progress':
+        let progressValue = 0;
+        let progressColor: "success" | "warning" | "danger" = "success";
+        if (item.status === 'success') {
+          progressValue = 100;
+          progressColor = 'success';
+        } else if (item.status === 'failed') {
+          progressValue = 100;
+          progressColor = 'danger';
+        } else if (item.status === 'partial') {
+          progressValue = item.totalOrders > 0 ? Math.round(((item.newOrders + item.updatedOrders) / item.totalOrders) * 100) : 0;
+          progressColor = 'warning';
+        }
+        return (
+          <div className="w-32">
+            <Progress
+              aria-label="progress"
+              value={progressValue}
+              color={progressColor}
+              size="sm"
+              showValueLabel={item.status !== 'failed'}
+            />
+             {item.status === 'failed' && <span className="text-xs text-danger-500">Помилка виконання</span>}
+          </div>
+        );
+      case 'stats':
+        return (
+          <div className="flex items-center gap-2 text-xs">
+            <Tooltip content="Нові">
+              <div className="flex items-center gap-1 text-green-600">
+                <DynamicIcon name="plus-circle" size={12} />
+                <span>{item.newOrders}</span>
+              </div>
+            </Tooltip>
+            <Tooltip content="Оновлені">
+              <div className="flex items-center gap-1 text-blue-600">
+                <DynamicIcon name="refresh-cw" size={12} />
+                <span>{item.updatedOrders}</span>
+              </div>
+            </Tooltip>
+             <Tooltip content="Пропущені">
+              <div className="flex items-center gap-1 text-gray-500">
+                <DynamicIcon name="skip-forward" size={12} />
+                <span>{item.skippedOrders}</span>
+              </div>
+            </Tooltip>
+             <Tooltip content="Помилки">
+              <div className="flex items-center gap-1 text-red-600">
+                <DynamicIcon name="x-octagon" size={12} />
+                <span>{item.errors}</span>
+              </div>
+            </Tooltip>
+          </div>
+        );
+      case 'duration':
+        return (
+          <span className="text-sm text-gray-700">{formatDuration(item.duration)}</span>
+        );
+      case 'actions':
+        return (
+          <div className="relative flex items-center gap-2">
+            <Tooltip content="Переглянути деталі">
+              <Button isIconOnly size="sm" variant="light" onPress={() => openDetailsModal(item)}>
+                <DynamicIcon name="eye" className="text-lg text-default-400" />
+              </Button>
+            </Tooltip>
+          </div>
+        );
+      default:
+        return <span>{getKeyValue(item, columnKey as string)}</span>;
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -1722,7 +1890,7 @@ const SettingsOrders: React.FC = () => {
                 }}
               >
                 <Radio value="smart" description="Тільки замовлення з змінами">
-                  Умна синхронізація
+                  Smart-синхронізація
                 </Radio>
                 <Radio value="force" description="Всі замовлення">
                   Повна синхронізація
@@ -1730,17 +1898,17 @@ const SettingsOrders: React.FC = () => {
               </RadioGroup>
 
               <Button
-                onPress={previewManualSync}
+                onPress={syncPreviewLoading ? () => stopOperation(currentSessionId, 'preview') : previewManualSync}
                 variant="bordered"
-                color="primary"
+                color={syncPreviewLoading ? "danger" : "primary"}
                 size="lg"
-                disabled={manualSyncRunning || syncPreviewLoading || !manualSyncStartDate}
+                disabled={manualSyncRunning || !manualSyncStartDate}
                 className="flex-1"
               >
                 {syncPreviewLoading ? (
                   <>
-                    <DynamicIcon name="loader-2" className="mr-2 animate-spin" size={14} />
-                    Аналіз...
+                    <DynamicIcon name="x" size={16} className="mr-2" />
+                    Зупинити аналіз
                   </>
                 ) : (
                   <>
@@ -1756,56 +1924,26 @@ const SettingsOrders: React.FC = () => {
               </Button>
 
               <Button
-                onPress={runManualSync}
-                color="success"
+                onPress={manualSyncRunning ? () => stopOperation(currentSessionId, 'sync') : runManualSync}
+                color={manualSyncRunning ? "danger" : "success"}
                 size="lg"
                 className="text-white flex-1"
-                disabled={manualSyncRunning || !manualSyncStartDate}
+                disabled={!manualSyncStartDate}
               >
                 {manualSyncRunning ? (
                   <>
-                    <DynamicIcon name="loader-2" className="mr-2 animate-spin" size={14} />
-                    Синхронізація...
+                    <DynamicIcon name="x" size={16} className="mr-2" />
+                    Зупинити синхронізацію
                   </>
                 ) : (
                   <>
                     <DynamicIcon name="play" size={16} />
-                    Запустити {manualSyncMode === 'smart' ? 'умну' : 'повну'} синхронізацію
+                    Запустити {manualSyncMode === 'smart' ? 'smart' : 'повну'} синхронізацію
                   </>
                 )}
               </Button>
             </div>
 
-            {/* Stop buttons - показываются только когда операции выполняются */}
-            {(syncPreviewLoading || manualSyncRunning) && (
-              <div className="flex gap-2 mt-4">
-                {syncPreviewLoading && currentSessionId && (
-                  <Button
-                    onPress={() => stopOperation(currentSessionId, 'preview')}
-                    variant="bordered"
-                    color="danger"
-                    size="lg"
-                    className="flex-1"
-                  >
-                    <DynamicIcon name="x" size={16} className="mr-2" />
-                    Зупинити попередній перегляд
-                  </Button>
-                )}
-
-                {manualSyncRunning && currentSessionId && (
-                  <Button
-                    onPress={() => stopOperation(currentSessionId, 'sync')}
-                    variant="bordered"
-                    color="danger"
-                    size="lg"
-                    className="flex-1"
-                  >
-                    <DynamicIcon name="x" size={16} className="mr-2" />
-                    Зупинити синхронізацію
-                  </Button>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Прогресс синхронизации */}
@@ -2235,155 +2373,7 @@ const SettingsOrders: React.FC = () => {
       </Card>
 
       {/* Sync History Table */}
-      <Card>
-        <CardHeader className="border-b border-gray-200">
-          <DynamicIcon name="history" size={20} className="text-gray-600 mr-2" />
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Історія синхронізацій</h2>
-            <p className="text-sm text-gray-600 mt-1">Детальна історія всіх операцій синхронізації з статистикою</p>
-          </div>
-        </CardHeader>
-        <CardBody className="p-6">
-
-          {/* Statistics Overview */}
-          {syncHistoryStats && (
-            <div className="bg-gray-50 rounded-lg p-4 mb-6">
-              <h3 className="text-sm font-medium text-gray-900 mb-3">Статистика синхронізацій</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <div className="font-medium text-gray-900">{syncHistoryStats.totalSyncs}</div>
-                  <div className="text-gray-600">Загалом синхронізацій</div>
-                </div>
-                <div>
-                  <div className="font-medium text-gray-900">{syncHistoryStats.manualSyncs}</div>
-                  <div className="text-gray-600">Ручних синхронізацій</div>
-                </div>
-                <div>
-                  <div className="font-medium text-gray-900">{syncHistoryStats.averageDuration.toFixed(1)}с</div>
-                  <div className="text-gray-600">Середній час</div>
-                </div>
-                <div>
-                  <div className="font-medium text-gray-900">{syncHistoryStats.successRate}%</div>
-                  <div className="text-gray-600">Успішність</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Тип синхронізації</label>
-              <Select
-                value={syncHistoryFilter}
-                onSelectionChange={(keys) => {
-                  const selected = Array.from(keys)[0] as string;
-                  setSyncHistoryFilter(selected || 'all');
-                }}
-                defaultSelectedKeys={[syncHistoryFilter]}
-                className="max-w-xs"
-                aria-label="Виберіть тип синхронізації"
-              >
-                <SelectItem key="all">Всі типи</SelectItem>
-                <SelectItem key="manual">Ручна синхронізація</SelectItem>
-                <SelectItem key="automatic">Автоматична</SelectItem>
-                <SelectItem key="background">Фонова</SelectItem>
-              </Select>
-            </div>
-
-            <Dropdown>
-              <DropdownTrigger>
-                <Button variant="bordered" className="justify-between">
-                  {syncLogsFilter.status || 'Всі статуси'}
-                  <DynamicIcon name="chevron-down" size={16} />
-                </Button>
-              </DropdownTrigger>
-              <DropdownMenu
-                selectedKeys={syncLogsFilter.status ? [syncLogsFilter.status] : []}
-                onSelectionChange={(keys) => {
-                  const selected = Array.from(keys)[0] as string;
-                  setSyncLogsFilter(prev => ({ ...prev, status: selected || '' }));
-                }}
-                selectionMode="single"
-              >
-                <DropdownItem key="">Всі статуси</DropdownItem>
-                <DropdownItem key="success">Успішно</DropdownItem>
-                <DropdownItem key="error">Помилка</DropdownItem>
-                <DropdownItem key="running">Виконується</DropdownItem>
-              </DropdownMenu>
-            </Dropdown>
-
-            <Button
-              onPress={() => setSyncLogsFilter({
-                type: '',
-                status: '',
-                dateFrom: null,
-                dateTo: null,
-                searchTerm: ''
-              })}
-              variant="bordered"
-              size="sm"
-            >
-              <DynamicIcon name="x" size={16} />
-              Очистити
-            </Button>
-          </div>
-
-          {/* Table */}
-          <Table
-            aria-label="Таблиця логів синхронізації"
-            sortDescriptor={sortDescriptor}
-            onSortChange={setSortDescriptor}
-            classNames={{
-              wrapper: "min-h-[400px]",
-            }}
-          >
-            <TableHeader columns={syncLogColumns}>
-              {(column) => (
-                <TableColumn
-                  key={column.key}
-                  allowsSorting={column.allowsSorting}
-                  align="start"
-                >
-                  {column.label}
-                </TableColumn>
-              )}
-            </TableHeader>
-            <TableBody
-              items={filteredSyncLogs}
-              emptyContent="Логи синхронізації не знайдено"
-              isLoading={syncLogsLoading}
-              loadingContent={
-                <div className="flex items-center justify-center p-8">
-                  <DynamicIcon name="loader-2" className="animate-spin mr-2" size={16} />
-                  <span>Завантаження логів...</span>
-                </div>
-              }
-            >
-              {(item: SyncLog) => (
-                <TableRow key={item.id}>
-                  {(columnKey) => (
-                    <TableCell>{renderSyncLogCell(item, columnKey)}</TableCell>
-                  )}
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-
-          {/* Refresh Button */}
-          <div className="mt-6 flex justify-end">
-            <Button
-              onPress={loadSyncLogs}
-              variant="bordered"
-              size="sm"
-              disabled={syncLogsLoading}
-            >
-              <DynamicIcon name="refresh-cw" size={16} />
-              Оновити логи
-            </Button>
-          </div>
-        </CardBody>
-      </Card>
+      <SyncHistory />
 
       {/* Sync Settings by Type */}
       <Card>

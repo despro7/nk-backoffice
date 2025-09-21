@@ -175,7 +175,7 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
     // Запускаем анализ в фоне
     (async () => {
       try {
-        console.log(`🔄 [ASYNC PREVIEW] Starting background analysis for sessionId: ${sessionId}`);
+        // console.log(`🔄 [ASYNC PREVIEW] Starting background analysis for sessionId: ${sessionId}`);
 
         // Check for cancellation before starting
         if (cancelledOperations.get(sessionId)) {
@@ -257,7 +257,8 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
           preview.stats.new++;
         } else {
           // Проверяем изменения
-          const changes = orderDatabaseService.detectOrderChanges(existingOrder, order);
+          const changeResult = orderDatabaseService.detectOrderChanges(existingOrder, order);
+          const changes = changeResult.fields;
 
           if (changes.length === 0) {
             // Без изменений
@@ -569,7 +570,7 @@ router.post('/sync/selective', authenticateToken, async (req, res) => {
             status: updateResult.totalErrors > 0 ? 'partial' : 'success',
             message: `Выборочная синхронизация завершена: ${updateResult.totalUpdated} обновлено, ${totalCreated} создано`,
             finishedAt: new Date(),
-            duration: BigInt(duration),
+            duration: duration,
             recordsProcessed: selectedSalesDriveOrders.length,
             details: JSON.stringify({
               sessionId,
@@ -611,7 +612,7 @@ router.post('/sync/selective', authenticateToken, async (req, res) => {
             status: 'error',
             message: 'Критическая ошибка выборочной синхронизации',
             finishedAt: new Date(),
-            duration: BigInt(Date.now() - syncLog.startedAt.getTime()),
+            duration: Date.now() - syncLog.startedAt.getTime(),
             errors: JSON.stringify([asyncError instanceof Error ? asyncError.message : 'Unknown error'])
           }
         });
@@ -763,7 +764,7 @@ router.put('/sync/logs/:id', authenticateToken, async (req, res) => {
     };
 
     if (finishedAt) updateData.finishedAt = new Date(finishedAt);
-    if (duration) updateData.duration = BigInt(duration);
+    if (duration) updateData.duration = duration;
 
     const log = await prisma.syncLogs.update({
       where: { id: parseInt(id) },
@@ -847,12 +848,13 @@ router.get('/sync-statistics', authenticateToken, async (req, res) => {
 
     console.log('📊 Sync statistics request:', options);
 
-    const result = await salesDriveService.getSyncStatistics(options);
+    // Используем syncHistoryService вместо удаленной функции
+    const { syncHistoryService } = await import('../services/syncHistoryService.js');
+    const result = await syncHistoryService.getSyncStatistics();
 
     res.json({
-      success: result.success,
-      data: result.data,
-      error: result.error,
+      success: true,
+      data: result,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -930,7 +932,7 @@ router.get('/sync/progress', authenticateToken, async (req, res) => {
         : progress.processedOrders > 0 ? 100 : 0
     };
 
-    console.log(`📊 [SYNC PROGRESS] Progress requested: ${progressResponse.stage} - ${progressResponse.message} (${progressResponse.progressPercent}%) for sessionId: ${sessionId}`);
+    // console.log(`📊 [SYNC PROGRESS] Progress requested: ${progressResponse.stage} - ${progressResponse.message} (${progressResponse.progressPercent}%)`);
 
     res.json({
       success: true,
@@ -1028,7 +1030,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
     // Создаем sessionId для отслеживания прогресса
     const sessionId = `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    console.log(`🔑 [MANUAL SYNC] Generated sessionId: ${sessionId}`);
+    // console.log(`🔑 [MANUAL SYNC] Generated sessionId: ${sessionId}`);
 
     // Создаем лог о начале синхронизации
     const syncLog = await prisma.syncLogs.create({
@@ -1048,7 +1050,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
       }
     });
 
-    console.log(`📝 [MANUAL SYNC] Created sync log with ID: ${syncLog.id}`);
+    // console.log(`📝 [MANUAL SYNC] Created sync log with ID: ${syncLog.id}`);
 
     // Возвращаем ответ клиенту сразу, чтобы он начал мониторинг
     res.json({
@@ -1058,7 +1060,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
       logId: syncLog.id
     });
 
-    console.log(`✅ [MANUAL SYNC] Sent immediate response to client for sessionId: ${sessionId}`);
+    // console.log(`✅ [MANUAL SYNC] Sent immediate response to client for sessionId: ${sessionId}`);
 
 
     // Запускаем синхронизацию в фоне для избежания таймаутов
@@ -1066,7 +1068,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
       try {
         const { salesDriveService } = await import('../services/salesDriveService.js');
 
-        console.log(`🚀 [ASYNC MANUAL SYNC] Starting mass sync from ${startDate} to ${endDate || 'current date'} for sessionId: ${sessionId}`);
+        console.log(`🚀 [ASYNC MANUAL SYNC] Starting mass sync from ${startDate} to ${endDate || 'current date'}`);
 
         // Check for cancellation before starting
         if (cancelledOperations.get(sessionId)) {
@@ -1108,7 +1110,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
             if (totalBatches !== undefined) progress.totalBatches = totalBatches;
             if (errors !== undefined) progress.errors = errors;
 
-            console.log(`🔄 [ASYNC SYNC PROGRESS] Updated: ${stage} - ${message} (${processedOrders || 0}/${totalOrders || 0}) for sessionId: ${sessionId}`);
+            console.log(`🔄 [ASYNC SYNC PROGRESS] Updated: ${stage} - ${message} (${processedOrders || 0}/${totalOrders || 0})`);
           }
         };
 
@@ -1156,15 +1158,21 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
               ? `Синхронизация завершена: ${syncResult.synced} заказов обработано`
               : `Синхронизация завершена с ошибками: ${syncResult.errors} ошибок`,
             finishedAt: new Date(),
-            duration: BigInt(duration),
+            duration: duration,
             recordsProcessed: syncResult.synced + syncResult.errors,
             details: JSON.stringify({
-              ...syncResult.metadata,
+              sessionId,
+              totalCreated: syncResult.metadata?.newOrders || 0,
+              totalUpdated: syncResult.metadata?.updatedOrders || 0,
+              totalSkipped: syncResult.metadata?.skippedOrders || 0,
+              totalErrors: syncResult.errors,
+              totalProcessed: syncResult.metadata?.totalProcessed || (syncResult.synced + syncResult.errors),
               duration,
               success: syncResult.success,
               synced: syncResult.synced,
               errors: syncResult.errors,
-              sessionId
+              efficiency: syncResult.metadata?.efficiency || 0,
+              averageTimePerOrder: syncResult.metadata?.averageTimePerOrder || 0
             }),
             errors: syncResult.errors > 0 ? JSON.stringify([`${syncResult.errors} заказов не удалось обработать`]) : null
           }
@@ -1196,7 +1204,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
             status: 'error',
             message: 'Критическая ошибка синхронизации',
             finishedAt: new Date(),
-            duration: BigInt(Date.now() - syncLog.startedAt.getTime()),
+            duration: Date.now() - syncLog.startedAt.getTime(),
             errors: JSON.stringify([error instanceof Error ? error.message : 'Unknown critical error'])
           }
         });
@@ -1212,7 +1220,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
     });
 
     // Ответ уже отправлен выше, вся обработка происходит в фоне
-    console.log(`✅ [MANUAL SYNC] Background processing started for sessionId: ${sessionId}`);
+    // console.log(`✅ [MANUAL SYNC] Background processing started for sessionId: ${sessionId}`);
   } catch (error) {
     console.error('Error starting manual sync:', error);
     res.status(500).json({
@@ -1330,15 +1338,25 @@ router.get('/sync/history', authenticateToken, async (req, res) => {
   try {
     const { syncHistoryService } = await import('../services/syncHistoryService.js');
     const limit = parseInt(req.query.limit as string) || 20;
+    const page = parseInt(req.query.page as string) || 1;
+    const offset = (page - 1) * limit;
     const syncType = req.query.type as string;
+    const sortColumn = req.query.sortColumn as string || 'createdAt';
+    const sortDirection = req.query.sortDirection as string || 'desc';
 
-    console.log(`📋 [SYNC HISTORY] Getting sync history (limit: ${limit}, type: ${syncType || 'all'})`);
+    console.log(`📋 [SYNC HISTORY] Getting sync history (limit: ${limit}, page: ${page}, type: ${syncType || 'all'}, sort: ${sortColumn} ${sortDirection})`);
 
-    let history;
+    let result;
     if (syncType && ['manual', 'automatic', 'background'].includes(syncType)) {
-      history = await syncHistoryService.getSyncHistoryByType(syncType as 'manual' | 'automatic' | 'background', limit);
+      result = await syncHistoryService.getSyncHistoryByType(
+        syncType as 'manual' | 'automatic' | 'background', 
+        limit, 
+        offset,
+        sortColumn,
+        sortDirection
+      );
     } else {
-      history = await syncHistoryService.getSyncHistory(limit);
+      result = await syncHistoryService.getSyncHistory(limit, offset, sortColumn, sortDirection);
     }
 
     // Получаем статистику
@@ -1347,7 +1365,9 @@ router.get('/sync/history', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       data: {
-        history: history,
+        history: result.records,
+        totalPages: Math.ceil(result.total / limit),
+        totalRecords: result.total,
         statistics: stats
       }
     });
@@ -1481,6 +1501,48 @@ router.get('/test-salesdrive', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * DELETE /api/orders-sync/sync/history/delete
+ * Удалить записи истории синхронизации
+ */
+router.delete('/sync/history/delete', authenticateToken, async (req, res) => {
+  try {
+    const { ids } = req.body;
+    
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'IDs array is required'
+      });
+    }
+
+    const { syncHistoryService } = await import('../services/syncHistoryService.js');
+    
+    // Удаляем записи по ID
+    const deletedCount = await prisma.syncHistory.deleteMany({
+      where: {
+        id: {
+          in: ids.map(id => parseInt(id))
+        }
+      }
+    });
+
+    console.log(`🗑️ [SYNC HISTORY] Deleted ${deletedCount.count} records`);
+
+    res.json({
+      success: true,
+      deletedCount: deletedCount.count,
+      message: `Successfully deleted ${deletedCount.count} records`
+    });
+  } catch (error) {
+    console.error('❌ Error deleting sync history records:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete records'
     });
   }
 });

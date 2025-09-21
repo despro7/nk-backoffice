@@ -8,6 +8,9 @@ import { prisma, getOrderSourceDetailed, getOrderSourceCategory, getOrderSourceB
 
 const router = Router();
 
+// Cache for aggregated statistics to improve performance on repeated requests
+const statsCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
  * GET /api/orders/test
@@ -79,15 +82,11 @@ router.get('/', authenticateToken, async (req, res) => {
     // Если запрошена синхронизация, сначала синхронизируем
     if (sync === 'true') {
       const syncStartTime = Date.now();
-
       const syncResult = await salesDriveService.syncOrdersWithDatabase();
-
       const syncDuration = Date.now() - syncStartTime;
-
       if (!syncResult.success) {
         console.warn('⚠️ [SERVER] GET /api/orders: Sync completed with errors:', syncResult.errors);
       }
-    } else {
     }
 
     // Получаем заказы из локальной БД с сортировкой
@@ -300,7 +299,13 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
  */
 router.get('/raw/all', authenticateToken, async (req, res) => {
   try {
-    const allOrders = await salesDriveService.fetchOrdersFromDate();
+    // Используем параллельную загрузку за последний месяц
+    const endDate = new Date().toISOString().split('T')[0];
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 1);
+    const startDateStr = startDate.toISOString().split('T')[0];
+    
+    const allOrders = await salesDriveService.fetchOrdersFromDateRangeParallel(startDateStr, endDate);
     
     if (!allOrders.success) {
       return res.status(500).json({
@@ -1125,6 +1130,16 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync } = req.query;
 
+    const cacheKey = `stats-products-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}`;
+    if (sync !== 'true') {
+      const cached = statsCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+        console.log(`✅ [STATS CACHE] HIT: Returning cached product stats for key: ${cacheKey}`);
+        cached.data.metadata.source = 'local_stats_cache';
+        return res.json(cached.data);
+      }
+    }
+
     // Парсим статусы: если строка содержит запятую, разбиваем на массив
     let parsedStatus: string | string[] | undefined = status as string;
     if (typeof status === 'string' && status.includes(',')) {
@@ -1238,7 +1253,7 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       }
     });
 
-    res.json({
+    const response = {
       success: true,
       data: productStatsArray,
       metadata: {
@@ -1251,7 +1266,12 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
         totalOrders: filteredOrders.length,
         fetchedAt: new Date().toISOString()
       }
-    });
+    };
+
+    statsCache.set(cacheKey, { data: response, timestamp: Date.now() });
+    console.log(`✅ [STATS CACHE] MISS: Calculated and cached product stats for key: ${cacheKey}`);
+
+    res.json(response);
   } catch (error) {
     console.error('Error getting products stats:', error);
     res.status(500).json({
@@ -1416,82 +1436,6 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
 
 
 
-/**
- * GET /api/orders/advanced-filter
- * Получить заказы с расширенными фильтрами
- */
-router.get('/advanced-filter', authenticateToken, async (req, res) => {
-  try {
-    const {
-      startDate,
-      endDate,
-      statusIds,
-      minAmount,
-      maxAmount,
-      paymentMethods,
-      shippingMethods,
-      cities,
-      limit,
-      offset,
-      sync
-    } = req.query;
-
-    // Если запрошена синхронизация, сначала синхронизируем
-    if (sync === 'true') {
-      console.log('🔄 Sync requested for advanced filter, starting synchronization...');
-      const syncResult = await salesDriveService.syncOrdersWithDatabase();
-
-      if (!syncResult.success) {
-        console.warn('⚠️ Sync completed with errors:', syncResult.errors);
-      }
-    }
-
-    // Парсим параметры фильтров
-    const filters: any = {};
-
-    if (startDate) filters.startDate = startDate as string;
-    if (endDate) filters.endDate = endDate as string;
-
-    if (statusIds) {
-      filters.statusIds = Array.isArray(statusIds) ? statusIds as string[] : [statusIds as string];
-    }
-
-    if (minAmount) filters.minAmount = parseFloat(minAmount as string);
-    if (maxAmount) filters.maxAmount = parseFloat(maxAmount as string);
-
-    if (paymentMethods) {
-      filters.paymentMethods = Array.isArray(paymentMethods) ? paymentMethods as string[] : [paymentMethods as string];
-    }
-
-    if (shippingMethods) {
-      filters.shippingMethods = Array.isArray(shippingMethods) ? shippingMethods as string[] : [shippingMethods as string];
-    }
-
-    if (cities) {
-      filters.cities = Array.isArray(cities) ? cities as string[] : [cities as string];
-    }
-
-    if (limit) filters.limit = parseInt(limit as string);
-    if (offset) filters.offset = parseInt(offset as string);
-
-    console.log('🔍 Advanced filter request:', filters);
-
-    const result = await salesDriveService.fetchOrdersWithFilters(filters);
-
-    res.json({
-      success: result.success,
-      data: result.data,
-      metadata: result.metadata,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error in advanced filter endpoint:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
-});
 
 /**
  * GET /api/orders/products/chart
@@ -1500,6 +1444,18 @@ router.get('/advanced-filter', authenticateToken, async (req, res) => {
 router.get('/products/chart', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync, groupBy = 'day', products } = req.query;
+
+    const productsKey = Array.isArray(products) ? [...products].sort().join(',') : products || 'all';
+    const cacheKey = `stats-chart-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${groupBy}-${productsKey}`;
+
+    if (sync !== 'true') {
+      const cached = statsCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+        console.log(`✅ [STATS CACHE] HIT: Returning cached chart data for key: ${cacheKey}`);
+        cached.data.metadata.source = 'local_stats_cache';
+        return res.json(cached.data);
+      }
+    }
 
     // Парсим статусы: если строка содержит запятую, разбиваем на массив
     let parsedStatus: string | string[] | undefined = status as string;
@@ -1812,7 +1768,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
 
     // console.log(`✅ CHART DATA GENERATED: ${totalDataArray.length} points, ${actualProductCount} products in data, ${Object.keys(productInfo).length} total products info`);
 
-    res.json({
+    const response = {
       success: true,
       data: totalDataArray,
       products: productInfo,
@@ -1831,7 +1787,12 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
         totalOrders: filteredOrders.length,
         fetchedAt: new Date().toISOString()
       }
-    });
+    };
+
+    statsCache.set(cacheKey, { data: response, timestamp: Date.now() });
+    console.log(`✅ [STATS CACHE] MISS: Calculated and cached chart data for key: ${cacheKey}`);
+
+    res.json(response);
   } catch (error) {
     console.error('Error getting products chart data:', error);
     res.status(500).json({
@@ -1848,6 +1809,18 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
 router.get('/sales/report', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync, products } = req.query;
+
+    const productsKey = Array.isArray(products) ? [...products].sort().join(',') : products || 'all';
+    const cacheKey = `stats-report-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${productsKey}`;
+
+    if (sync !== 'true') {
+      const cached = statsCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+        console.log(`✅ [STATS CACHE] HIT: Returning cached sales report for key: ${cacheKey}`);
+        cached.data.metadata.source = 'local_stats_cache';
+        return res.json(cached.data);
+      }
+    }
 
     // Парсим статусы: если строка содержит запятую, разбиваем на массив
     let parsedStatus: string | string[] | undefined = status as string;
@@ -2100,7 +2073,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
 
     console.log(`✅ SALES REPORT GENERATED: ${salesDataArray.length} days`);
 
-    res.json({
+    const response = {
       success: true,
       data: salesDataArray,
       metadata: {
@@ -2115,7 +2088,12 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         totalOrders: filteredOrders.length,
         fetchedAt: new Date().toISOString()
       }
-    });
+    };
+
+    statsCache.set(cacheKey, { data: response, timestamp: Date.now() });
+    console.log(`✅ [STATS CACHE] MISS: Calculated and cached sales report for key: ${cacheKey}`);
+
+    res.json(response);
   } catch (error) {
     console.error('Error getting sales report data:', error);
     res.status(500).json({

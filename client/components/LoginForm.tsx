@@ -53,7 +53,7 @@ export const LoginForm: React.FC = () => {
         
         <Alert
           title="Сервер недоступний"
-          description={<>Зверніться до адміністратора в телеграм: <a href="https://t.me/despro7" target="_blank">@despro7</a></>}
+          description={<>Зверніться до адміністратора в телеграм: <a href="https://t.me/despro7" target="_blank" rel="noreferrer">@despro7</a></>}
           color="danger"
           variant="faded"
           hideIcon={true}

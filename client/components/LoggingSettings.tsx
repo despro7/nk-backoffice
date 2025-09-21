@@ -27,12 +27,12 @@ export interface ToastLoggingSettings {
   logRefreshError: boolean;
 }
 
-export interface LoggingSettings {
+export interface LoggingSettingsType {
   console: ConsoleLoggingSettings;
   toast: ToastLoggingSettings;
 }
 
-const defaultSettings: LoggingSettings = {
+const defaultSettings: LoggingSettingsType = {
   console: {
     logAccessToken: true,
     logRefreshToken: true,
@@ -51,7 +51,7 @@ const defaultSettings: LoggingSettings = {
 };
 
 export const LoggingSettings: React.FC = () => {
-  const [settings, setSettings] = useState<LoggingSettings>(defaultSettings);
+  const [settings, setSettings] = useState<LoggingSettingsType>(defaultSettings);
   const [isLoading, setIsLoading] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);

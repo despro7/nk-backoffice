@@ -232,7 +232,7 @@ export default function WarehouseMovement() {
     const rightPanelRef = useRef(null);
 
     // Функция для загрузки данных черновика в товары
-    const loadDraftIntoProducts = (products, draftItems, draftDeviations = []) => {
+    const loadDraftIntoProducts = useCallback((products, draftItems, draftDeviations = []) => {
         // Проверяем, что draftItems является массивом
         if (!Array.isArray(draftItems)) {
             return products;
@@ -271,8 +271,9 @@ export default function WarehouseMovement() {
         setSelectedProductIds(selectedIds);
         
         console.log(`🏪 [WarehouseMovement] Выбрано ${selectedIds.size} товаров из черновика`);
-    };
+    }, []);
 
+    
     // Загрузка данных при монтировании компонента
     useEffect(() => {
         const loadData = async () => {
@@ -281,13 +282,26 @@ export default function WarehouseMovement() {
             
             try {
                 // Загружаем товары, черновики и завершенные акты параллельно
-                const [productsData, draftsData, completedData] = await Promise.all([
+                const [productsData, draftsData] = await Promise.all([
                     getProductsForMovement(),
                     getDrafts(),
-                    loadCompletedActs()
                 ]);
+
+                // Загружаем завершенные акты отдельно
+                setLoadingCompleted(true);
+                try {
+                    const result = await getMovements({
+                        status: 'sent',
+                        limit: 50
+                    });
+                    setCompletedActs(result?.movements || []);
+                } catch (error) {
+                    console.error('🚨 [WarehouseMovement] Ошибка загрузки завершенных актов:', error);
+                } finally {
+                    setLoadingCompleted(false);
+                }
                 
-                                // Устанавливаем товары
+                // Устанавливаем товары
                 if (productsData && productsData.products && Array.isArray(productsData.products)) {
                     setProducts(productsData.products);
                 } else {
@@ -314,7 +328,6 @@ export default function WarehouseMovement() {
         };
 
         loadData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Загружаем только один раз при монтировании
 
     useEffect(() => {
@@ -452,7 +465,18 @@ export default function WarehouseMovement() {
                 console.log('✅ [WarehouseMovement] Документ збережено локально:', result);
                 alert('Накладну успішно збережено!');
                 // Обновляем список завершенных актов
-                await loadCompletedActs();
+                setLoadingCompleted(true);
+                try {
+                    const result = await getMovements({
+                        status: 'sent',
+                        limit: 50
+                    });
+                    setCompletedActs(result?.movements || []);
+                } catch (error) {
+                    console.error('🚨 [WarehouseMovement] Ошибка загрузки завершенных актов:', error);
+                } finally {
+                    setLoadingCompleted(false);
+                }
             } else {
                 throw new Error('Не вдалося зберегти документ');
             }
@@ -463,22 +487,6 @@ export default function WarehouseMovement() {
             setIsSending(false);
         }
     };
-
-    // Загрузка завершенных актов
-    const loadCompletedActs = useCallback(async () => {
-        setLoadingCompleted(true);
-        try {
-            const result = await getMovements({
-                status: 'sent',
-                limit: 50
-            });
-            setCompletedActs(result?.movements || []);
-        } catch (error) {
-            console.error('🚨 [WarehouseMovement] Ошибка загрузки завершенных актов:', error);
-        } finally {
-            setLoadingCompleted(false);
-        }
-    }, [getMovements]);
 
     // Функция просмотра акта
     const handleViewAct = useCallback((act) => {

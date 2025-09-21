@@ -1,15 +1,16 @@
-import { defineConfig, Plugin } from "vite";
+import { defineConfig, Plugin, searchForWorkspaceRoot } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import { createServer } from "./server";
+// import { cronService, forceStopAllCronJobs } from "./server/services/cronService.js"; - No longer needed here
 
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
     fs: {
-      allow: ["./client", "./shared"],
+      allow: [searchForWorkspaceRoot(process.cwd()), "./client", "./shared"],
       deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", "server/**"],
     },
   },
@@ -37,6 +38,8 @@ function expressPlugin(): Plugin {
     configureServer(server) {
       const app = createServer();
       server.middlewares.use(app);
+      // Cron job cleanup is now handled by the server module itself on reload,
+      // so no specific HMR handling is needed here anymore.
     },
   };
 }

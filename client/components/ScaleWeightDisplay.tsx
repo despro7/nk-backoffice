@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useEquipmentFromAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
 import ScaleService from '../services/ScaleService';
@@ -9,23 +9,15 @@ interface ScaleWeightDisplayProps {
   className?: string;
 }
 
-interface WeightHistory {
-  weight: number;
-  timestamp: Date;
-  isStable: boolean;
-  rawMessage?: string;
-}
-
 export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
   currentScaleWeight,
-  totalOrderWeight,
   className = ''
 }) => {
   const [equipmentState, equipmentActions] = useEquipmentFromAuth();
   const [isConnectingScale, setIsConnectingScale] = useState(false);
   const [pollingCountdown, setPollingCountdown] = useState<number | null>(null);
   const [activePollingStartTime, setActivePollingStartTime] = useState<number | null>(null);
-
+  
   const realWeight = equipmentState.currentWeight?.weight || 0;
   const isStable = equipmentState.currentWeight?.isStable || false;
   const isConnected = equipmentState.isScaleConnected; // Используем специфично статус весов
@@ -64,7 +56,7 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
 
   // Таймер обратного отсчёта для polling
   useEffect(() => {
-    let countdownInterval: NodeJS.Timeout | null = null;
+    let countdownInterval: number | null = null;
 
     if (equipmentState.isActivePolling) {
       if (activePollingStartTime) {
@@ -75,7 +67,7 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
         
         setPollingCountdown(Math.ceil(remaining / 1000));
         
-        countdownInterval = setInterval(() => {
+        countdownInterval = window.setInterval(() => {
           const currentElapsed = Date.now() - activePollingStartTime;
           const currentRemaining = Math.max(0, activePollingDuration - currentElapsed);
           setPollingCountdown(Math.ceil(currentRemaining / 1000));
@@ -85,7 +77,7 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
         const interval = equipmentState.config?.scale?.activePollingInterval || 1000;
         setPollingCountdown(Math.ceil(interval / 1000));
         
-        countdownInterval = setInterval(() => {
+        countdownInterval = window.setInterval(() => {
           setPollingCountdown(prev => {
             if (prev === null || prev <= 1) {
               return Math.ceil(interval / 1000);
@@ -99,7 +91,7 @@ export const ScaleWeightDisplay: React.FC<ScaleWeightDisplayProps> = ({
       const interval = equipmentState.config?.scale?.reservePollingInterval || 5000;
       setPollingCountdown(Math.ceil(interval / 1000));
       
-      countdownInterval = setInterval(() => {
+      countdownInterval = window.setInterval(() => {
         setPollingCountdown(prev => {
           if (prev === null || prev <= 1) {
             return Math.ceil(interval / 1000);

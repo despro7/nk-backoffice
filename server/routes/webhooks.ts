@@ -101,7 +101,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
         };
 
         // Сначала проверим, есть ли заказ в нашей БД
-        let existingOrder = await orderDatabaseService.getOrderByExternalId(orderIdentifier);
+        const existingOrder = await orderDatabaseService.getOrderByExternalId(orderIdentifier);
         let orderDetails = null;
         
         const webhookData = req.body.data;

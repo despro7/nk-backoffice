@@ -85,14 +85,28 @@ export class SyncHistoryService {
   /**
    * Получает последние N записей истории синхронизаций
    */
-  async getSyncHistory(limit: number = 20): Promise<SyncHistoryRecord[]> {
+  async getSyncHistory(
+    limit: number = 20, 
+    offset: number = 0, 
+    sortColumn: string = 'createdAt', 
+    sortDirection: string = 'desc'
+  ): Promise<{ records: SyncHistoryRecord[], total: number }> {
     try {
-      const records = await prisma.syncHistory.findMany({
-        orderBy: {
-          createdAt: 'desc'
-        },
-        take: limit
-      });
+      // Валидация и маппинг колонок
+      const validColumns = ['id', 'createdAt', 'syncType', 'status', 'duration', 'totalOrders', 'newOrders', 'updatedOrders', 'errors'];
+      const column = validColumns.includes(sortColumn) ? sortColumn : 'createdAt';
+      const direction = sortDirection === 'ascending' ? 'asc' : 'desc';
+
+      const [records, total] = await Promise.all([
+        prisma.syncHistory.findMany({
+          orderBy: {
+            [column]: direction
+          },
+          take: limit,
+          skip: offset
+        }),
+        prisma.syncHistory.count()
+      ]);
 
       // Десериализуем поле details из JSON строки обратно в объект
       const parsedRecords = records.map(record => ({
@@ -100,8 +114,8 @@ export class SyncHistoryService {
         details: this.parseDetails(record.details)
       }));
 
-      console.log(`📋 [SYNC HISTORY] Retrieved ${parsedRecords.length} records`);
-      return parsedRecords;
+      console.log(`📋 [SYNC HISTORY] Retrieved ${parsedRecords.length} of ${total} records`);
+      return { records: parsedRecords, total };
     } catch (error) {
       console.error('❌ [SYNC HISTORY] Failed to get sync history:', error);
       throw error;
@@ -119,23 +133,41 @@ export class SyncHistoryService {
     averageDuration: number;
     lastSync: SyncHistoryRecord | null;
     successRate: number;
+    totalSize: number;
   }> {
     try {
-      const [totalRecords, manualCount, autoCount, backgroundCount, avgDuration, lastRecord] = await Promise.all([
+      const totalSizeQuery =
+        prisma.$queryRaw`SELECT SUM(CHAR_LENGTH(details)) as total_size FROM \`sync_history\``;
+
+      const [
+        totalRecords,
+        manualCount,
+        autoCount,
+        backgroundCount,
+        avgDuration,
+        lastRecord,
+        totalSizeResult,
+      ] = await Promise.all([
         prisma.syncHistory.count(),
-        prisma.syncHistory.count({ where: { syncType: 'manual' } }),
-        prisma.syncHistory.count({ where: { syncType: 'automatic' } }),
-        prisma.syncHistory.count({ where: { syncType: 'background' } }),
+        prisma.syncHistory.count({ where: { syncType: "manual" } }),
+        prisma.syncHistory.count({ where: { syncType: "automatic" } }),
+        prisma.syncHistory.count({ where: { syncType: "background" } }),
         prisma.syncHistory.aggregate({
           _avg: {
-            duration: true
-          }
+            duration: true,
+          },
+          where: {
+            duration: {
+              gt: 0,
+            },
+          },
         }),
         prisma.syncHistory.findFirst({
           orderBy: {
-            createdAt: 'desc'
-          }
-        })
+            createdAt: "desc",
+          },
+        }),
+        totalSizeQuery,
       ]);
 
       const successCount = await prisma.syncHistory.count({
@@ -144,7 +176,9 @@ export class SyncHistoryService {
         }
       });
 
-      const successRate = totalRecords > 0 ? (successCount / totalRecords) * 100 : 0;
+      const successRate =
+        totalRecords > 0 ? (successCount / totalRecords) * 100 : 0;
+      const totalSize = Number((totalSizeResult as any)?.[0]?.total_size || 0);
 
       return {
         totalSyncs: totalRecords,
@@ -153,10 +187,11 @@ export class SyncHistoryService {
         backgroundSyncs: backgroundCount,
         averageDuration: avgDuration._avg.duration || 0,
         lastSync: lastRecord,
-        successRate: Math.round(successRate * 100) / 100
+        successRate: Math.round(successRate * 100) / 100,
+        totalSize,
       };
     } catch (error) {
-      console.error('❌ [SYNC HISTORY] Failed to get sync statistics:', error);
+      console.error("❌ [SYNC HISTORY] Failed to get sync statistics:", error);
       throw error;
     }
   }
@@ -217,17 +252,31 @@ export class SyncHistoryService {
   /**
    * Получает записи по типу синхронизации
    */
-  async getSyncHistoryByType(syncType: 'manual' | 'automatic' | 'background', limit: number = 10): Promise<SyncHistoryRecord[]> {
+  async getSyncHistoryByType(
+    syncType: 'manual' | 'automatic' | 'background', 
+    limit: number = 10, 
+    offset: number = 0,
+    sortColumn: string = 'createdAt',
+    sortDirection: string = 'desc'
+  ): Promise<{ records: SyncHistoryRecord[], total: number }> {
     try {
-      const records = await prisma.syncHistory.findMany({
-        where: {
-          syncType: syncType
-        },
-        orderBy: {
-          createdAt: 'desc'
-        },
-        take: limit
-      });
+      // Валидация и маппинг колонок
+      const validColumns = ['id', 'createdAt', 'syncType', 'status', 'duration', 'totalOrders', 'newOrders', 'updatedOrders', 'errors'];
+      const column = validColumns.includes(sortColumn) ? sortColumn : 'createdAt';
+      const direction = sortDirection === 'ascending' ? 'asc' : 'desc';
+
+      const where = { syncType };
+      const [records, total] = await Promise.all([
+        prisma.syncHistory.findMany({
+          where,
+          orderBy: {
+            [column]: direction
+          },
+          take: limit,
+          skip: offset
+        }),
+        prisma.syncHistory.count({ where })
+      ]);
 
       // Десериализуем поле details из JSON строки обратно в объект
       const parsedRecords = records.map(record => ({
@@ -235,8 +284,8 @@ export class SyncHistoryService {
         details: this.parseDetails(record.details)
       }));
 
-      console.log(`📋 [SYNC HISTORY] Retrieved ${parsedRecords.length} ${syncType} records`);
-      return parsedRecords;
+      console.log(`📋 [SYNC HISTORY] Retrieved ${parsedRecords.length} of ${total} ${syncType} records`);
+      return { records: parsedRecords, total };
     } catch (error) {
       console.error('❌ [SYNC HISTORY] Failed to get sync history by type:', error);
       throw error;

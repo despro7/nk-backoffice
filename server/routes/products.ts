@@ -15,7 +15,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    let where: any = {};
+    const where: any = {};
     
     if (search) {
       where.OR = [
