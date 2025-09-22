@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { hasAccess } from '../routes.config';
+import { log } from '@/lib/utils';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -21,12 +22,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const navigate = useNavigate();
 
   if (process.env.NODE_ENV === 'development') {
-    console.log('🔒 [ProtectedRoute] checking access for:', location.pathname);
+    log('🔒 [ProtectedRoute] checking access for:', location.pathname);
   }
 
   // Следим за изменениями состояния пользователя
   useEffect(() => {
-    console.log('👀 [ProtectedRoute] useEffect triggered, user:', user, 'pathname:', location.pathname);
+    // console.log('👀 [ProtectedRoute] useEffect triggered, user:', user, 'pathname:', location.pathname);
 
     // Если пользователь только что авторизовался и мы на странице /auth, редиректим
     if (user && location.pathname === '/auth') {

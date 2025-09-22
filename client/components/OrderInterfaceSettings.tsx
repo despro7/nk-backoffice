@@ -87,6 +87,8 @@ export const OrderInterfaceSettings: React.FC = () => {
   const handleSaveSettings = async () => {
     setIsSaving(true);
     try {
+      if (!settings) return;
+      
       const promises = [
         saveSetting(
           'orders_default_tab',
@@ -153,10 +155,10 @@ export const OrderInterfaceSettings: React.FC = () => {
               <div className="space-y-2">
                 
                 <Select
-                  selectedKeys={[settings.defaultTab]}
+                  selectedKeys={settings ? [settings.defaultTab] : []}
                   onSelectionChange={(keys) => {
                     const selected = Array.from(keys)[0] as OrderInterfaceSettingsType['defaultTab'];
-                    setSettings(prev => ({ ...prev, defaultTab: selected }));
+                    setSettings(prev => prev ? { ...prev, defaultTab: selected } : null);
                   }}
                   placeholder="Виберіть таб"
                   className="w-full"
@@ -174,10 +176,10 @@ export const OrderInterfaceSettings: React.FC = () => {
               {/* Кількість замовлень на сторінку */}
               <div className="space-y-2">
                 <NumberInput
-                  value={settings.pageSize}
+                  value={settings?.pageSize || DEFAULT_SETTINGS.pageSize}
                   onValueChange={(num) => {
                     if (num > 0 && num <= 100) {
-                      setSettings(prev => ({ ...prev, pageSize: num }));
+                      setSettings(prev => prev ? { ...prev, pageSize: num } : DEFAULT_SETTINGS);
                     }
                   }}
                   min={1}

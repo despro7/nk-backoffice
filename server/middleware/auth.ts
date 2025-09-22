@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { JwtPayload } from '../types/auth.js';
 import { AuthService } from '../services/authService.js';
+import { AuthSettingsService } from '../services/authSettingsService.js';
 
 // Расширяем интерфейс Request для добавления пользователя
 declare global {
@@ -32,6 +33,49 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
 
     if (accessToken) {
       // console.log('🔍 [Middleware] Access token найден, проверяем его валидность...');
+      
+      // Проверяем время истечения токена ДО его валидации
+      try {
+        const secret = process.env.JWT_SECRET || 'fallback_secret';
+        const decoded = jwt.decode(accessToken) as any;
+        
+        if (decoded && decoded.exp) {
+          const now = Math.floor(Date.now() / 1000);
+          const timeUntilExpiry = decoded.exp - now;
+          
+          // Получаем настройки из БД
+          const settings = await AuthSettingsService.getAuthSettings();
+          
+          // Если автоматическое обновление включено и токен истекает в ближайшее время
+          if (settings.middlewareAutoRefreshEnabled && timeUntilExpiry <= settings.middlewareRefreshThresholdSeconds && timeUntilExpiry > 0) {
+            console.log(`⚠️ [Middleware] Access token истекает через ${timeUntilExpiry} секунд, обновляем...`);
+            
+            if (refreshToken) {
+              try {
+                const refreshResult = await AuthService.refreshToken({ refreshToken });
+                
+                // Устанавливаем новые cookies
+                await AuthService.setAuthCookies(res, refreshResult.token, refreshResult.refreshToken);
+                
+                console.log('✅ [Middleware] Токен успешно обновлен автоматически');
+                
+                // Устанавливаем заголовок для уведомления клиента об обновлении
+                res.setHeader('X-Token-Refreshed', 'true');
+                res.setHeader('X-User-Email', decoded.email || 'unknown');
+                
+                // Продолжаем с обычной валидацией токена
+                // (не возвращаем ответ, а продолжаем выполнение)
+              } catch (refreshError) {
+                console.log('❌ [Middleware] Ошибка автоматического обновления токена:', refreshError.message);
+                // Продолжаем с обычной валидацией
+              }
+            }
+          }
+        }
+      } catch (decodeError) {
+        // Если не удалось декодировать токен, продолжаем с обычной валидацией
+        console.log('⚠️ [Middleware] Не удалось декодировать токен для проверки времени:', decodeError.message);
+      }
     }
     
     if (!accessToken) {
@@ -73,6 +117,13 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
         code: 'INVALID_TOKEN_TYPE',
         details: 'The provided token is not an access token'
       });
+    }
+    
+    // Рассчитываем оставшееся время жизни токена
+    if (decoded.exp) {
+      const now = Math.floor(Date.now() / 1000);
+      decoded.expiresIn = Math.max(0, decoded.exp - now);
+      console.log(`⏱️ [Middleware] Токен истекает через: ${decoded.expiresIn} сек`);
     }
     
     req.user = decoded;

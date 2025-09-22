@@ -50,47 +50,103 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Кеш для профиля пользователя (5 минут)
   const profileCacheRef = useRef<{ data: UserWithExpiry | null; timestamp: number } | null>(null);
   const PROFILE_CACHE_DURATION = 5 * 60 * 1000; // 5 минут
+  
 
   // Глобальное состояние оборудования
   const [equipmentState, equipmentActions] = useEquipment();
 
-  // Рассчитываем время до истечения токена на основе expiresIn
+  // Настройки авторизации из БД
+  const [authSettings, setAuthSettings] = useState<any>(null);
+
+  // Загружаем настройки авторизации
+  const loadAuthSettings = async () => {
+    try {
+      const response = await fetch('/api/auth/settings', {
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const settings = await response.json();
+        setAuthSettings(settings);
+      }
+    } catch (error) {
+      console.error('❌ Ошибка загрузки настроек авторизации:', error);
+    }
+  };
+
+  // Рассчитываем время до истечения токена на основе expiresIn и настроек
   const getRefreshDelay = (expiresIn?: number): number => {
     if (expiresIn) {
-      return Math.max((expiresIn * 1000) - (5 * 60 * 1000), 60000);
+      // Используем настройки из БД или значения по умолчанию
+      const thresholdMinutes = authSettings?.clientRefreshThresholdMinutes || 10;
+      const isEnabled = authSettings?.clientAutoRefreshEnabled !== false;
+      
+      if (!isEnabled) {
+        return 24 * 60 * 60 * 1000; // 24 часа если отключено
+      }
+      
+      return Math.max((expiresIn * 1000) - (thresholdMinutes * 60 * 1000), 60000);
     }
-    return 55 * 60 * 1000; // По умолчанию 55 минут
+    return 50 * 60 * 1000; // По умолчанию 50 минут
   };
+
+  // Функция планирования обновления токена (вынесена отдельно для переиспользования)
+  const scheduleTokenRefresh = (expiresIn?: number) => {
+    // Используем fallback настройки если authSettings еще не загружены
+    const fallbackSettings = {
+      clientRefreshThresholdMinutes: 10,
+      clientAutoRefreshEnabled: true
+    };
+    
+    const currentSettings = authSettings || fallbackSettings;
+    const isEnabled = currentSettings.clientAutoRefreshEnabled !== false;
+    
+    log('🔧 [AuthContext] scheduleTokenRefresh', { expiresIn, currentSettings, isEnabled });
+    
+    if (isEnabled) {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+      
+      const refreshDelay = getRefreshDelay(expiresIn);
+      log(`⏰ [AuthContext] Планируем обновление токена через ${refreshDelay / 1000} секунд`);
+      
+      refreshTimeoutRef.current = window.setTimeout(() => {
+        log('🔄 [AuthContext] Запускаем автоматическое обновление токена');
+        refreshToken();
+      }, refreshDelay);
+    } else {
+      log('⚠️ [AuthContext] Автоматическое обновление токенов отключено в настройках');
+    }
+  };
+
+  // Загружаем настройки авторизации при инициализации
+  useEffect(() => {
+    loadAuthSettings();
+  }, []);
 
   // Проверяем статус аутентификации при загрузке с небольшой задержкой
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (process.env.NODE_ENV === 'development') {
-        log('🔄 Проверяем статус аутентификации при загрузке');
-      }
+      // if (process.env.NODE_ENV === 'development') {
+        // log('🔄 Проверяем статус аутентификации при загрузке');
+      // }
       checkAuthStatus();
     }, 100); // Небольшая задержка для предотвращения одновременных запросов
 
     return () => clearTimeout(timer);
   }, []);
 
-  // Умное обновление токенов - обновляем за 5 минут до истечения (тестовый режим)
+  // Умное обновление токенов - планируем обновление при изменении пользователя или настроек
   useEffect(() => {
     if (user) {
-      log('👤 Пользователь авторизован, настраиваем обновление токенов');
+      if (!authSettings) {
+        // Если настройки еще не загружены, планируем с fallback значениями
+        log('👤 Пользователь авторизован, планируем обновление токенов (настройки загружаются...)');
+      } else {
+        // Если настройки загружены, планируем с реальными значениями
+        log('👤⚙️ Пользователь авторизован и настройки загружены, планируем обновление токенов');
+      }
       
-      // Обновляем токен за 5 минут до истечения
-      const scheduleTokenRefresh = (expiresIn?: number) => {
-        if (refreshTimeoutRef.current) {
-          clearTimeout(refreshTimeoutRef.current);
-        }
-        
-        const refreshDelay = getRefreshDelay(expiresIn);
-        refreshTimeoutRef.current = window.setTimeout(() => {
-          refreshToken();
-        }, refreshDelay);
-      };
-
       scheduleTokenRefresh(user.expiresIn);
 
       return () => {
@@ -99,7 +155,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       };
     }
-  }, [user]);
+  }, [user, authSettings]);
 
   // Обработка активности пользователя и восстановление сессии
   useEffect(() => {
@@ -141,14 +197,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [user]);
 
   const checkAuthStatus = async () => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 [AuthContext] checkAuthStatus called');
-    }
+    // if (process.env.NODE_ENV === 'development') {
+      // console.log('🔍 [AuthContext] checkAuthStatus called');
+    // }
 
     // Проверяем кеш профиля
     const now = Date.now();
-    if (profileCacheRef.current &&
-        (now - profileCacheRef.current.timestamp) < PROFILE_CACHE_DURATION) {
+    
+    // Отключаем кеш для коротких токенов (меньше 5 минут)
+    const shouldUseCache = profileCacheRef.current &&
+      (now - profileCacheRef.current.timestamp) < PROFILE_CACHE_DURATION &&
+      (!profileCacheRef.current.data?.expiresIn || 
+       profileCacheRef.current.data.expiresIn >= 300); // 300 секунд = 5 минут
+
+    if (shouldUseCache) {
       if (process.env.NODE_ENV === 'development') {
         console.log('📋 [AuthContext] Using cached profile');
       }
@@ -157,20 +219,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return;
     }
 
+    // Если кеш отключен для коротких токенов, логируем это
+    if (profileCacheRef.current && 
+        profileCacheRef.current.data?.expiresIn && 
+        profileCacheRef.current.data.expiresIn < 300) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🚫 [AuthContext] Cache disabled for short token (expiresIn < 5min)');
+      }
+    }
+
     try {
       const response = await fetch('/api/auth/profile', {
         credentials: 'include'
       });
 
-      if (process.env.NODE_ENV === 'development') {
-        console.log('📡 [AuthContext] checkAuthStatus response:', response.status);
-      }
+      // if (process.env.NODE_ENV === 'development') {
+        // console.log('📡 [AuthContext] checkAuthStatus response:', response.status);
+      // }
 
       if (response.ok) {
         const userData = await response.json();
-        if (process.env.NODE_ENV === 'development') {
-          console.log('✅ [AuthContext] checkAuthStatus success');
-        }
+        // if (process.env.NODE_ENV === 'development') {
+          // console.log('✅ [AuthContext] checkAuthStatus success');
+        // }
 
         // Сохраняем информацию о времени жизни токена
         const userWithExpiry = {
@@ -185,23 +256,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
 
         setUser(userWithExpiry);
-        if (process.env.NODE_ENV === 'development') {
-          console.log('👤 [AuthContext] User state updated');
-        }
+        // if (process.env.NODE_ENV === 'development') {
+          // console.log('👤 [AuthContext] User state updated');
+        // }
         
-        // Если токен валиден, планируем следующее обновление
-        if (refreshTimeoutRef.current) {
-          clearTimeout(refreshTimeoutRef.current);
-        }
-        
-        // Используем информацию о времени жизни токена для планирования
-        const refreshDelay = userData.expiresIn ? 
-          getRefreshDelay(userData.expiresIn) : 
-          60000;
-        
-        refreshTimeoutRef.current = window.setTimeout(() => {
-          refreshToken();
-        }, refreshDelay);
+        // Токен валиден, useEffect автоматически перепланирует обновление при setUser
       } else {
         // Если получили 401, пробуем обновить токен
         if (response.status === 401) {
@@ -230,14 +289,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const refreshToken = async (): Promise<boolean> => {
-    log('🔄 Начинаем обновление токена...');
+    // log('🔄 Начинаем обновление токена...');
     try {
       const response = await fetch('/api/auth/refresh', {
         method: 'POST',
         credentials: 'include'
       });
 
-      log(`📡 Ответ на обновление токена: ${response.status} ${response.statusText}`);
+      // log(`📡 Ответ на обновление токена: ${response.status} ${response.statusText}`);
 
       if (response.ok) {
         const data = await response.json();
@@ -260,17 +319,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser(updatedUser);
         }
         
-        // Токен обновлен успешно, планируем следующее обновление
-        if (refreshTimeoutRef.current) {
-          log('🔧 refreshTimeoutRef', refreshTimeoutRef);
-          log('🔧 refreshTimeoutRef.current', refreshTimeoutRef.current);
-          clearTimeout(refreshTimeoutRef.current);
-          log('🔧 Следующее обновление токенов', refreshTimeoutRef.current);
-        }
-        
-        // Используем информацию о времени жизни токена для планирования
-        const refreshDelay = data.expiresIn ? getRefreshDelay(data.expiresIn) : 60000;
-        refreshTimeoutRef.current = window.setTimeout(() => refreshToken(), refreshDelay);
+        // Токен обновлен успешно, useEffect автоматически перепланирует обновление при setUser
         
         return true;
       } else {
@@ -320,14 +369,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
         setUser(userWithExpiry);
         
-        // Планируем обновление токена
-        if (refreshTimeoutRef.current) {
-          clearTimeout(refreshTimeoutRef.current);
-        }
-        
-        // Используем информацию о времени жизни токена для планирования
-        const refreshDelay = data.expiresIn ? getRefreshDelay(data.expiresIn) : 60000;
-        refreshTimeoutRef.current = window.setTimeout(() => refreshToken(), refreshDelay);
+        // useEffect автоматически запланирует обновление токена при setUser
         
         return true;
       } else {
@@ -369,14 +411,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
         setUser(userWithExpiry);
         
-        // Планируем обновление токена
-        if (refreshTimeoutRef.current) {
-          clearTimeout(refreshTimeoutRef.current);
-        }
-        
-        // Используем информацию о времени жизни токена для планирования
-        const refreshDelay = data.expiresIn ? getRefreshDelay(data.expiresIn) : 60000;
-        refreshTimeoutRef.current = window.setTimeout(() => refreshToken(), refreshDelay);
+        // useEffect автоматически запланирует обновление токена при setUser
 
         
         return true;

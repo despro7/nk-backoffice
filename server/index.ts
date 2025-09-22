@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.js";
+import authSettingsRoutes from "./routes/auth-settings.js";
 import protectedRoutes from "./routes/protected.js";
 import ordersRoutes from "./routes/orders.js";
 import productsRoutes from "./routes/products.js";
@@ -96,6 +97,7 @@ export function createServer() {
 
   // Auth routes
   app.use("/api/auth", authRoutes);
+  app.use("/api/auth", authSettingsRoutes);
 
   // Protected routes
   app.use("/api/protected", protectedRoutes);

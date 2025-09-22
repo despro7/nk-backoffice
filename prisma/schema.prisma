@@ -245,6 +245,7 @@ model SyncHistory {
   errorMessage  String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  category      String?
 
   @@map("sync_history")
 }
@@ -262,4 +263,15 @@ model OrdersCache {
   @@index([externalId])
   @@index([cacheUpdatedAt])
   @@map("orders_cache")
+}
+
+model AuthSettings {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique @db.VarChar(100)
+  value       String   @db.VarChar(255)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  @@map("auth_settings")
 }

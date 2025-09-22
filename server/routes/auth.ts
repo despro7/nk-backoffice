@@ -105,7 +105,14 @@ router.get('/profile', authenticateToken, async (req: Request, res: Response) =>
     }
 
     const { password, ...userWithoutPassword } = user;
-    res.json(userWithoutPassword);
+    
+    // Добавляем информацию о времени жизни токена из middleware
+    const response = {
+      ...userWithoutPassword,
+      expiresIn: req.user!.expiresIn
+    };
+    
+    res.json(response);
   } catch (error) {
     res.status(500).json({ message: 'Failed to get profile' });
   }

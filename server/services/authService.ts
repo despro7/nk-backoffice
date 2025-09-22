@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { Request, Response } from 'express';
 import { UserType, LoginRequest, RegisterRequest, UpdateProfileRequest, AuthResponse, RefreshTokenRequest, RefreshTokenResponse, sanitizeUser } from "../types/auth.js";
+import { AuthSettingsService } from './authSettingsService.js';
 
 // Импорт настроек логирования с сервера
 let loggingSettings: any = {
@@ -31,14 +32,15 @@ export function updateLoggingSettings(newSettings: any) {
 
 
 export class AuthService {
-  // Константы для токенов
-  private static readonly ACCESS_TOKEN_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h'; // 1 час
-  private static readonly REFRESH_TOKEN_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '30d'; // 30 дней
-  private static readonly USER_ACTIVITY_THRESHOLD = 30 * 24 * 60 * 60 * 1000; // 30 дней в миллисекундах
+  // Получаем настройки из БД
+  private static async getSettings() {
+    return await AuthSettingsService.getAuthSettings();
+  }
   
   // Получаем время жизни access token в миллисекундах для cookies
-  private static getAccessTokenCookieMaxAge(): number {
-    return this.parseExpiryTime(this.ACCESS_TOKEN_EXPIRES_IN) * 1000;
+  private static async getAccessTokenCookieMaxAge(): Promise<number> {
+    const settings = await this.getSettings();
+    return AuthSettingsService.parseExpiryTimeMs(settings.accessTokenExpiresIn);
   }
 
   // Настройки токенов (без логирования)
@@ -80,7 +82,7 @@ export class AuthService {
     const { accessToken, refreshToken, expiresIn } = await this.generateTokenPair(newUser as UserType);
 
     // Обновляем пользователя с хешем refresh token
-    const refreshExpiryDate = new Date(Date.now() + this.getRefreshTokenExpiryMs());
+    const refreshExpiryDate = new Date(Date.now() + await this.getRefreshTokenExpiryMs());
     await prisma.user.update({
       where: { id: newUser.id },
       data: {
@@ -123,7 +125,7 @@ export class AuthService {
     const { accessToken, refreshToken, expiresIn } = await this.generateTokenPair(user as UserType);
 
     // Обновляем время последнего входа, активности и refresh token
-    const refreshExpiryDate = new Date(Date.now() + this.getRefreshTokenExpiryMs());
+    const refreshExpiryDate = new Date(Date.now() + await this.getRefreshTokenExpiryMs());
     await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -190,15 +192,18 @@ export class AuthService {
         throw new Error('Користувач заблокований');
       }
 
+      const settings = await this.getSettings();
+
       // Проверяем, не слишком ли давно пользователь был активен
       const lastActivity = user.lastActivityAt || user.lastLoginAt || user.createdAt;
       const timeSinceLastActivity = Date.now() - lastActivity.getTime();
+      const userActivityThresholdMs = settings.userActivityThresholdDays * 24 * 60 * 60 * 1000;
 
       // console.log('🔍 [RefreshToken] Последняя активность:', lastActivity);
       // console.log('🔍 [RefreshToken] Дней с последней активности:', daysSinceLastActivity);
-      // console.log('🔍 [RefreshToken] Порог неактивности (дней):', Math.round(this.USER_ACTIVITY_THRESHOLD / (1000 * 60 * 60 * 24)));
+      // console.log('🔍 [RefreshToken] Порог неактивности (дней):', settings.userActivityThresholdDays);
 
-      if (timeSinceLastActivity > this.USER_ACTIVITY_THRESHOLD) {
+      if (timeSinceLastActivity > userActivityThresholdMs) {
         console.log('❌ [RefreshToken] Пользователь заблокирован через неактивность');
         // Пользователь неактивен больше месяца, блокируем
         await prisma.user.update({
@@ -216,7 +221,7 @@ export class AuthService {
       const { accessToken, refreshToken, expiresIn } = await this.generateTokenPair(user as UserType);
 
       // Обновляем refresh token в базе
-      const refreshExpiryDate = new Date(Date.now() + this.getRefreshTokenExpiryMs());
+      const refreshExpiryDate = new Date(Date.now() + await this.getRefreshTokenExpiryMs());
       await prisma.user.update({
         where: { id: user.id },
         data: {
@@ -263,8 +268,10 @@ export class AuthService {
       throw new Error('JWT_SECRET не настроен');
     }
 
-    // console.log('🔍 [TokenGen] ACCESS_TOKEN_EXPIRES_IN:', this.ACCESS_TOKEN_EXPIRES_IN);
-    // console.log('🔍 [TokenGen] REFRESH_TOKEN_EXPIRES_IN:', this.REFRESH_TOKEN_EXPIRES_IN);
+    const settings = await this.getSettings();
+
+    // console.log('🔍 [TokenGen] ACCESS_TOKEN_EXPIRES_IN:', settings.accessTokenExpiresIn);
+    // console.log('🔍 [TokenGen] REFRESH_TOKEN_EXPIRES_IN:', settings.refreshTokenExpiresIn);
 
     // Генерируем access токен
     const accessToken = (jwt as any).sign(
@@ -277,7 +284,7 @@ export class AuthService {
         tokenType: 'access'
       },
       secret,
-      { expiresIn: this.ACCESS_TOKEN_EXPIRES_IN }
+      { expiresIn: settings.accessTokenExpiresIn }
     );
 
     // Генерируем refresh токен
@@ -291,13 +298,13 @@ export class AuthService {
         tokenType: 'refresh'
       },
       secret,
-      { expiresIn: this.REFRESH_TOKEN_EXPIRES_IN }
+      { expiresIn: settings.refreshTokenExpiresIn }
     );
 
     // Вычисляем время жизни access токена в секундах
-    const expiresIn = this.parseExpiryTime(this.ACCESS_TOKEN_EXPIRES_IN);
+    const expiresIn = AuthSettingsService.parseExpiryTime(settings.accessTokenExpiresIn);
     const accessExpiryDate = new Date(Date.now() + expiresIn * 1000);
-    const refreshExpiryMs = this.getRefreshTokenExpiryMs();
+    const refreshExpiryMs = AuthSettingsService.parseExpiryTimeMs(settings.refreshTokenExpiresIn);
     const refreshExpiryDate = new Date(Date.now() + refreshExpiryMs);
 
     // console.log('🔍 [TokenGen] Access token expires in:', expiresIn, 'seconds');
@@ -326,18 +333,9 @@ export class AuthService {
     }
   }
 
-  private static getRefreshTokenExpiryMs(): number {
-    const expiryTime = this.REFRESH_TOKEN_EXPIRES_IN;
-    const unit = expiryTime.slice(-1);
-    const value = parseInt(expiryTime.slice(0, -1));
-    
-    switch (unit) {
-      case 's': return value * 1000;
-      case 'm': return value * 60 * 1000;
-      case 'h': return value * 60 * 60 * 1000;
-      case 'd': return value * 24 * 60 * 60 * 1000;
-      default: return 30 * 24 * 60 * 60 * 1000; // 30 дней по умолчанию
-    }
+  private static async getRefreshTokenExpiryMs(): Promise<number> {
+    const settings = await this.getSettings();
+    return AuthSettingsService.parseExpiryTimeMs(settings.refreshTokenExpiresIn);
   }
 
   static async getUserById(id: number): Promise<UserType | null> {
@@ -416,15 +414,17 @@ export class AuthService {
       path: '/'
     };
 
-    // Устанавливаем access token cookie (настраивается через переменные окружения)
-    const accessTokenMaxAge = this.getAccessTokenCookieMaxAge();
+    const settings = await this.getSettings();
+
+    // Устанавливаем access token cookie (настраивается через БД)
+    const accessTokenMaxAge = await this.getAccessTokenCookieMaxAge();
     res.cookie('accessToken', accessToken, {
       ...cookieOptions,
       maxAge: accessTokenMaxAge,
     });
 
     // Устанавливаем refresh token cookie (используем то же время что и в JWT токене)
-    const refreshTokenMaxAge = this.getRefreshTokenExpiryMs();
+    const refreshTokenMaxAge = AuthSettingsService.parseExpiryTimeMs(settings.refreshTokenExpiresIn);
     // console.log('🔍 [Cookies] Устанавливаем refresh token cookie с maxAge:', refreshTokenMaxAge, 'ms');
 
     res.cookie('refreshToken', refreshToken, {

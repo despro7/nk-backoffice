@@ -21,6 +21,18 @@ export const useApi = () => {
       const responseTime = Date.now() - startTime;
       // console.log(`📨 [CLIENT] useApi: ${method} ${url} -> Status: ${response.status} (${responseTime}ms)`);
 
+      // Проверяем, был ли токен обновлен автоматически (через заголовки)
+      if (response.status === 200) {
+        const tokenRefreshed = response.headers.get('X-Token-Refreshed');
+        if (tokenRefreshed === 'true') {
+          console.log('✅ [CLIENT] useApi: Token was refreshed automatically by server');
+          // Обновляем статус аутентификации в контексте
+          await checkAuthStatus();
+          // Возвращаем оригинальный ответ (токен уже обновлен в cookies)
+          return response;
+        }
+      }
+
       // Если получили 401, пробуем обновить токен и повторить запрос
       if (response.status === 401) {
         // console.log(`🔐 [CLIENT] useApi: Received 401, attempting token refresh...`);

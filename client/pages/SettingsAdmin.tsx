@@ -3,6 +3,7 @@ import { SettingsManager } from '../components/SettingsManager';
 import { ServerStatusSettings } from '../components/ServerStatusSettings';
 import { UserRegistrationManager } from '../components/UserRegistrationManager';
 import { LoggingSettings } from '../components/LoggingSettings';
+import { AuthSettings } from '../components/AuthSettings';
 import { useRoleAccess } from '../hooks/useRoleAccess';
 import { DateFormatSettings } from "@/components/DateFormatSettings";
 
@@ -23,6 +24,11 @@ const SettingsAdmin: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      {/* Настройки авторизации */}
+      <section>
+        <AuthSettings />
+      </section>
+
       {/* Регистрация пользователей */}
       <section>
         <UserRegistrationManager />

@@ -157,12 +157,32 @@ export class SalesDriveService {
   }
 
   /**
-   * Вычисляет задержку при rate limiting с улучшенной логикой
+   * Вычисляет задержку между запросами на основе количества страниц
+   * Логика: если Total pages > 10 но не < 100, ставим задержку 8 сек
+   */
+  private calculateRequestDelay(totalPages: number): number {
+    // Если страниц больше 10, используем задержку 8 секунд
+    // Это обеспечивает максимум 7.5 запросов в минуту (безопасно для лимита 10/мин)
+    if (totalPages > 10 && totalPages < 100) {
+      return 8000; // 8 секунд
+    }
+    
+    // Для небольшого количества страниц используем меньшую задержку
+    if (totalPages <= 10) {
+      return 3000; // 3 секунды для быстрой обработки
+    }
+    
+    // Для очень больших объемов используем максимальную задержку
+    return 10000; // 10 секунд для больших объемов
+  }
+
+  /**
+   * Вычисляет адаптивную задержку при получении 429 ошибки
    */
   private calculateAdaptiveDelay(): number {
     const state = this.rateLimitState;
 
-    // Более агрессивная экспоненциальная задержка для предотвращения rate limiting
+    // Экспоненциальная задержка для обработки 429 ошибок
     let exponentialDelay;
 
     if (state.consecutive429Errors === 0) {
@@ -441,7 +461,7 @@ export class SalesDriveService {
 
         // console.log(`📄 Fetching first page to determine total pages...`);
         const firstPageFullUrl = `${this.apiUrl}/api/order/list/?${firstPageParams}`;
-        console.log(`🔍 [SalesDrive REQUEST] First page request URL: \x1b[36m${firstPageFullUrl}\x1b[0m`);
+        console.log(`🔍 [SalesDrive REQUEST] Full request URL (page 1): \x1b[36m${firstPageFullUrl}\x1b[0m`);
 
         const firstResponse = await fetch(firstPageFullUrl, {
           method: 'GET',
@@ -494,6 +514,10 @@ export class SalesDriveService {
             data: this.formatOrdersList(firstPageOrders),
           };
         }
+
+        // Вычисляем задержку на основе количества страниц
+        const requestDelay = this.calculateRequestDelay(maxAllowedPages);
+        console.log(`⏱️ [SalesDrive] Using dynamic delay: ${requestDelay}ms (based on ${maxAllowedPages} pages)`);
 
         // Загружаем оставшиеся страницы параллельно с контролем количества
         const allOrders = [...firstPageOrders];
@@ -548,10 +572,10 @@ export class SalesDriveService {
             }
           }
 
-          // Задержка между батчами (SalesDrive: 10 запросов/мин = ~6 сек между запросами для надежности)
+          // Динамическая задержка между батчами на основе количества страниц
           if (batchIndex < batches.length - 1) {
-            // console.log(`⏱️ Waiting 6 seconds before next batch to respect SalesDrive rate limits...`);
-            await new Promise(resolve => setTimeout(resolve, 6000));
+            console.log(`⏱️ Waiting ${requestDelay}ms before next batch (dynamic delay based on ${maxAllowedPages} pages)...`);
+            await new Promise(resolve => setTimeout(resolve, requestDelay));
           }
         }
 
@@ -681,6 +705,10 @@ export class SalesDriveService {
           };
         }
 
+        // Вычисляем задержку на основе количества страниц
+        const requestDelay = this.calculateRequestDelay(maxAllowedPages);
+        console.log(`⏱️ [SalesDrive UpdateAt] Using dynamic delay: ${requestDelay}ms (based on ${maxAllowedPages} pages)`);
+
         // Создаем массив промисов для параллельной загрузки с контролем количества
         const pagePromises: Promise<any[]>[] = [];
 
@@ -729,10 +757,10 @@ export class SalesDriveService {
             }
           }
 
-          // Задержка между батчами (SalesDrive: 10 запросов/мин = ~15 сек между запросами для надежности)
+          // Динамическая задержка между батчами на основе количества страниц
           if (batchIndex < batches.length - 1) {
-            console.log(`⏱️ Waiting 15 seconds before next batch to respect SalesDrive rate limits...`);
-            await new Promise(resolve => setTimeout(resolve, 15000));
+            console.log(`⏱️ Waiting ${requestDelay}ms before next batch (dynamic delay based on ${maxAllowedPages} pages)...`);
+            await new Promise(resolve => setTimeout(resolve, requestDelay));
           }
         }
 
@@ -768,13 +796,6 @@ export class SalesDriveService {
    * Загружает одну страницу заказов с обработкой rate limiting
    */
   private async fetchSinglePage(startDate: string, endDate: string, page: number): Promise<any[]> {
-    // Дополнительная задержка перед каждым запросом для предотвращения rate limiting
-    if (this.rateLimitState.consecutive429Errors > 0) {
-      const preventiveDelay = Math.min(2000 * this.rateLimitState.consecutive429Errors, 10000);
-      console.log(`🛡️ Preventive delay ${preventiveDelay}ms before page ${page} request`);
-      await new Promise(resolve => setTimeout(resolve, preventiveDelay));
-    }
-
     const batchSize = this.getSetting('orders.batchSize', 100); // Увеличиваем batch size до 100 для эффективности
     const params = new URLSearchParams({
       page: page.toString(),
@@ -900,6 +921,10 @@ export class SalesDriveService {
           };
         }
 
+        // Вычисляем задержку на основе количества страниц
+        const requestDelay = this.calculateRequestDelay(maxAllowedPages);
+        console.log(`⏱️ [SalesDrive Sequential UpdateAt] Using dynamic delay: ${requestDelay}ms (based on ${maxAllowedPages} pages)`);
+
         // Загружаем оставшиеся страницы последовательно
         const allOrders = [...firstPageOrders];
         for (let page = 2; page <= maxAllowedPages; page++) {
@@ -907,9 +932,10 @@ export class SalesDriveService {
           const pageOrders = await this.fetchSinglePageUpdateAt(startDate, endDate, page);
           allOrders.push(...pageOrders);
 
-          // Задержка между страницами
+          // Динамическая задержка между страницами на основе количества страниц
           if (page < maxAllowedPages) {
-            await new Promise(resolve => setTimeout(resolve, 6000));
+            console.log(`⏱️ Waiting ${requestDelay}ms before next page (dynamic delay based on ${maxAllowedPages} pages)...`);
+            await new Promise(resolve => setTimeout(resolve, requestDelay));
           }
         }
 
@@ -966,13 +992,6 @@ export class SalesDriveService {
    * Загружает одну страницу заказов с фильтром по updateAt (время изменения)
    */
   private async fetchSinglePageUpdateAt(startDate: string, endDate: string, page: number): Promise<any[]> {
-    // Дополнительная задержка перед каждым запросом для предотвращения rate limiting
-    if (this.rateLimitState.consecutive429Errors > 0) {
-      const preventiveDelay = Math.min(2000 * this.rateLimitState.consecutive429Errors, 10000);
-      console.log(`🛡️ Preventive delay ${preventiveDelay}ms before page ${page} request (updateAt)`);
-      await new Promise(resolve => setTimeout(resolve, preventiveDelay));
-    }
-
     const batchSize = this.getSetting('orders.batchSize', 25);
     const formattedStartDate = this.formatSalesDriveDate(startDate);
     const formattedEndDate = this.formatSalesDriveDate(endDate);

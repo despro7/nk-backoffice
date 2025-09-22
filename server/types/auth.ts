@@ -46,6 +46,9 @@ export interface JwtPayload {
   name: PrismaUser["name"];
   roleName: PrismaUser["roleName"];
   tokenType: 'access' | 'refresh'; // Тип токена
+  exp?: number; // Время истечения токена (стандартное JWT поле)
+  iat?: number; // Время создания токена (стандартное JWT поле)
+  expiresIn?: number; // Оставшееся время жизни токена в секундах (рассчитывается в middleware)
 }
 
 export function sanitizeUser(user: UserType): Omit<UserType, "password" | "refreshToken" | "refreshTokenExpiresAt"> {

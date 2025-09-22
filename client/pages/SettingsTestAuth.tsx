@@ -1,10 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useApi } from '../hooks/useApi';
+import { Button } from '@heroui/react';
 
 const SettingsTestAuth: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshToken } = useAuth();
+  const { apiCall } = useApi();
   const [tokenInfo, setTokenInfo] = useState<any>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [logs, setLogs] = useState<string[]>([]);
+  const [tokenExpiryInfo, setTokenExpiryInfo] = useState<any>(null);
+  const [tokenCreatedAt, setTokenCreatedAt] = useState<number | null>(null);
+  const [refreshCountdown, setRefreshCountdown] = useState<number | null>(null);
+  const [authSettings, setAuthSettings] = useState<any>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
 
   // Обновляем время каждую секунду
   useEffect(() => {
@@ -15,9 +24,231 @@ const SettingsTestAuth: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Функция автоскролла логов
+  const scrollLogsToBottom = () => {
+    if (logsContainerRef.current) {
+      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+    }
+  };
+
+  // Добавляем лог
+  const addLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [...prev, `[${timestamp}] ${message}`]);
+  };
+
+  // Загружаем настройки авторизации
+  const loadAuthSettings = async () => {
+    try {
+      const response = await fetch('/api/auth/settings', {
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const settings = await response.json();
+        setAuthSettings(settings);
+        addLog(`⚙️ ExpiresIn: ${settings.accessTokenExpiresIn} |  clientRefresh: ${settings.clientRefreshThresholdMinutes}м |  middlewareRefres: ${settings.middlewareRefreshThresholdSeconds}с`);
+      } else {
+        addLog(`❌ Ошибка загрузки настроек: ${response.status}`);
+      }
+    } catch (error) {
+      addLog(`❌ Ошибка загрузки настроек: ${error.message}`);
+    }
+  };
+
+  // Автоскролл при добавлении новых логов
+  useEffect(() => {
+    scrollLogsToBottom();
+  }, [logs]);
+
+  // Получаем информацию о времени истечения токена
+  const getTokenExpiryInfo = () => {
+    if (user?.expiresIn && tokenCreatedAt) {
+      const now = Date.now();
+      const expiresAt = tokenCreatedAt + (user.expiresIn * 1000);
+      const timeLeft = Math.max(0, expiresAt - now);
+      const minutesLeft = Math.floor(timeLeft / 60000);
+      const secondsLeft = Math.floor((timeLeft % 60000) / 1000);
+      
+      // Рассчитываем прогресс для жизненного цикла токена
+      const totalLifetime = user.expiresIn * 1000;
+      const elapsed = totalLifetime - timeLeft;
+      
+      // Рассчитываем время до обновления токена
+      // Используем реальные настройки из БД
+      const clientRefreshThresholdMinutes = authSettings?.clientRefreshThresholdMinutes || 10;
+      const middlewareRefreshThresholdSeconds = authSettings?.middlewareRefreshThresholdSeconds || 300;
+      
+      // Используем clientRefreshThresholdMinutes для всех токенов
+      const refreshThresholdMinutes = clientRefreshThresholdMinutes;
+        
+      const refreshAt = expiresAt - (refreshThresholdMinutes * 60 * 1000);
+      const timeToRefresh = Math.max(0, refreshAt - now);
+      const refreshMinutesLeft = Math.floor(timeToRefresh / 60000);
+      const refreshSecondsLeft = Math.floor((timeToRefresh % 60000) / 1000);
+      
+      // Для коротких токенов (меньше 10 минут) используем упрощенную логику
+      let progressPercentage;
+      let currentStage = 1;
+      
+      if (totalLifetime < 10 * 60 * 1000) {
+        // Для коротких токенов: используем clientRefreshThresholdMinutes для определения этапов
+        const clientThresholdMs = clientRefreshThresholdMinutes * 60 * 1000;
+        const middlewareThresholdMs = middlewareRefreshThresholdSeconds * 1000;
+        const refreshPoint = (totalLifetime - clientThresholdMs) / totalLifetime * 100;
+        const middlewarePoint = (totalLifetime - middlewareThresholdMs) / totalLifetime * 100;
+        
+        if (elapsed < (totalLifetime - clientThresholdMs)) {
+          // Этап 1: Движение к точке обновления AuthContext
+          progressPercentage = (elapsed / (totalLifetime - clientThresholdMs)) * refreshPoint;
+          currentStage = 1;
+        } else if (elapsed < (totalLifetime - middlewareThresholdMs)) {
+          // Этап 2: Движение к точке проверки Middleware (если AuthContext пропустил)
+          const stage2Start = totalLifetime - clientThresholdMs;
+          const stage2End = totalLifetime - middlewareThresholdMs;
+          const stage2Progress = (elapsed - stage2Start) / (stage2End - stage2Start);
+          progressPercentage = refreshPoint + (stage2Progress * (middlewarePoint - refreshPoint));
+          currentStage = 2;
+        } else {
+          // Этап 3: Движение к истечению токена
+          const stage3Start = totalLifetime - middlewareThresholdMs;
+          const stage3Progress = (elapsed - stage3Start) / middlewareThresholdMs;
+          progressPercentage = middlewarePoint + (stage3Progress * (100 - middlewarePoint));
+          currentStage = 3;
+        }
+      } else {
+        // Для длинных токенов: используем полную логику с точками обновления
+        const refreshPoint = (totalLifetime - (refreshThresholdMinutes * 60 * 1000)) / totalLifetime * 100;
+        const middlewarePoint = (totalLifetime - (middlewareRefreshThresholdSeconds * 1000)) / totalLifetime * 100;
+        
+        if (elapsed < (totalLifetime - (refreshThresholdMinutes * 60 * 1000))) {
+          // Этап 1: Движение к точке обновления AuthContext
+          progressPercentage = (elapsed / (totalLifetime - (refreshThresholdMinutes * 60 * 1000))) * refreshPoint;
+          currentStage = 1;
+        } else if (elapsed < (totalLifetime - (middlewareRefreshThresholdSeconds * 1000))) {
+          // Этап 2: Движение к точке проверки Middleware (если AuthContext пропустил)
+          const stage2Start = totalLifetime - (refreshThresholdMinutes * 60 * 1000);
+          const stage2End = totalLifetime - (middlewareRefreshThresholdSeconds * 1000);
+          const stage2Progress = (elapsed - stage2Start) / (stage2End - stage2Start);
+          progressPercentage = refreshPoint + (stage2Progress * (middlewarePoint - refreshPoint));
+          currentStage = 2;
+        } else {
+          // Этап 3: Движение к истечению токена
+          const stage3Start = totalLifetime - (middlewareRefreshThresholdSeconds * 1000);
+          const stage3Progress = (elapsed - stage3Start) / (middlewareRefreshThresholdSeconds * 1000);
+          progressPercentage = middlewarePoint + (stage3Progress * (100 - middlewarePoint));
+          currentStage = 3;
+        }
+      }
+      
+      // Вычисляем позиции этапов в процентах
+      const clientThresholdMs = clientRefreshThresholdMinutes * 60 * 1000;
+      const middlewareThresholdMs = middlewareRefreshThresholdSeconds * 1000;
+      
+      const stage1Position = 0; // Начало
+      const stage2Position = ((totalLifetime - clientThresholdMs) / totalLifetime) * 100;
+      const stage3Position = ((totalLifetime - middlewareThresholdMs) / totalLifetime) * 100;
+      const stage4Position = 100; // Конец
+
+      // Вычисляем время до каждого этапа
+      const timeToStage2 = Math.max(0, clientThresholdMs - timeLeft);
+      const timeToStage3 = Math.max(0, middlewareThresholdMs - timeLeft);
+      const timeToStage4 = timeLeft; // Время до истечения
+
+      setTokenExpiryInfo({
+        expiresIn: user.expiresIn,
+        timeLeft: timeLeft,
+        minutesLeft,
+        secondsLeft,
+        expiresAt: new Date(expiresAt).toLocaleTimeString(),
+        progressPercentage: Math.max(0, Math.min(100, progressPercentage)),
+        currentStage,
+        refreshMinutesLeft,
+        refreshSecondsLeft,
+        timeToRefresh,
+        stagePositions: {
+          stage1: stage1Position,
+          stage2: stage2Position,
+          stage3: stage3Position,
+          stage4: stage4Position
+        },
+        stageTimes: {
+          stage2: {
+            minutes: Math.floor(timeToStage2 / 60000),
+            seconds: Math.floor((timeToStage2 % 60000) / 1000)
+          },
+          stage3: {
+            minutes: Math.floor(timeToStage3 / 60000),
+            seconds: Math.floor((timeToStage3 % 60000) / 1000)
+          },
+          stage4: {
+            minutes: Math.floor(timeToStage4 / 60000),
+            seconds: Math.floor((timeToStage4 % 60000) / 1000)
+          }
+        }
+      });
+      
+      // Обновляем таймер обратного отсчёта до обновления
+      if (timeToRefresh > 0) {
+        setRefreshCountdown(timeToRefresh);
+      } else {
+        setRefreshCountdown(null);
+      }
+    } else {
+      // Если нет информации о токене, показываем пустое состояние
+      setTokenExpiryInfo(null);
+      setRefreshCountdown(null);
+    }
+  };
+
+  // Обновляем информацию о токене каждую секунду
+  useEffect(() => {
+    getTokenExpiryInfo();
+    const interval = setInterval(getTokenExpiryInfo, 1000);
+    return () => clearInterval(interval);
+  }, [user, tokenCreatedAt, authSettings]);
+
+  // Слушаем изменения пользователя для обновления времени создания токена
+  useEffect(() => {
+    if (user && !tokenCreatedAt) {
+      setTokenCreatedAt(Date.now());
+    }
+  }, [user, tokenCreatedAt]);
+
+  // Слушаем изменения expiresIn для обновления времени создания токена при обновлении токена
+  useEffect(() => {
+    if (user?.expiresIn && tokenCreatedAt) {
+      // Если токен был обновлен (expiresIn изменился), обновляем время создания
+      setTokenCreatedAt(Date.now());
+    }
+  }, [user?.expiresIn]);
+
+  // Инициализация логов и токена
+  useEffect(() => {
+    addLog('🚀 Страница тестирования токенов загружена');
+    loadAuthSettings(); // Загружаем настройки авторизации
+    if (user) {
+      addLog(`👤 Пользователь: ${user.email}`);
+      // Устанавливаем время создания токена как текущее время (приблизительно)
+      // В реальном приложении это время должно приходить с сервера
+      setTokenCreatedAt(Date.now());
+    }
+  }, [user]);
+
+  // Тестируем API запрос
+  const testApiCall = async () => {
+    try {
+      addLog('🔄 Тестируем API запрос...');
+      const response = await apiCall('/api/settings/equipment');
+      addLog(`✅ API запрос успешен: ${response.status}`);
+    } catch (error) {
+      addLog(`❌ API запрос ошибка: ${error.message}`);
+    }
+  };
+
   // Проверяем информацию о токене
   const checkTokenInfo = async () => {
     try {
+      addLog('🔍 Проверяем информацию о токене...');
       const response = await fetch('/api/auth/profile', {
         credentials: 'include'
       });
@@ -29,12 +260,14 @@ const SettingsTestAuth: React.FC = () => {
           user: userData,
           timestamp: new Date().toISOString()
         });
+        addLog('✅ Токен валиден');
       } else {
         setTokenInfo({
           status: 'invalid',
           error: response.status,
           timestamp: new Date().toISOString()
         });
+        addLog(`❌ Токен невалиден: ${response.status}`);
       }
     } catch (error) {
       setTokenInfo({
@@ -42,96 +275,30 @@ const SettingsTestAuth: React.FC = () => {
         error: error,
         timestamp: new Date().toISOString()
       });
+      addLog(`❌ Ошибка проверки токена: ${error.message}`);
     }
   };
 
   // Тестируем refresh токена
   const testRefreshToken = async () => {
     try {
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        credentials: 'include'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        alert(`✅ Токен обновлен успешно!\nExpiresIn: ${data.expiresIn} секунд`);
+      addLog('🔄 Ручное обновление токена...');
+      const success = await refreshToken();
+      if (success) {
+        addLog('✅ Токен обновлен успешно');
+        // Обновляем время создания токена
+        setTokenCreatedAt(Date.now());
+        // Принудительно обновляем информацию о токене
+        getTokenExpiryInfo();
         checkTokenInfo(); // Обновляем информацию
       } else {
-        const error = await response.json();
-        alert(`❌ Ошибка обновления токена: ${error.message}`);
+        addLog('❌ Ошибка обновления токена');
       }
     } catch (error) {
-      alert(`❌ Сетевая ошибка: ${error}`);
+      addLog(`❌ Ошибка: ${error.message}`);
     }
   };
 
-  // Проверяем cookies
-  const checkCookies = () => {
-    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
-      const [key, value] = cookie.trim().split('=');
-      if (key && value) {
-        acc[key] = value;
-      }
-      return acc;
-    }, {} as Record<string, string>);
-
-    console.log('🍪 Все доступные cookies:', cookies);
-    console.log('🍪 Сырые cookies:', document.cookie);
-    
-    // Проверяем localStorage
-    console.log('💾 localStorage:', localStorage);
-    const localStorageTokens = Object.keys(localStorage).filter(key => 
-      key.toLowerCase().includes('token') || 
-      key.toLowerCase().includes('auth') || 
-      key.toLowerCase().includes('jwt')
-    );
-    
-    // Проверяем sessionStorage
-    console.log('📱 sessionStorage:', sessionStorage);
-    const sessionStorageTokens = Object.keys(sessionStorage).filter(key => 
-      key.toLowerCase().includes('token') || 
-      key.toLowerCase().includes('auth') || 
-      key.toLowerCase().includes('jwt')
-    );
-    
-    // Проверяем разные возможные варианты имен куки
-    const possibleNames = [
-      'accessToken', 'access_token', 'access-token',
-      'refreshToken', 'refresh_token', 'refresh-token',
-      'token', 'auth_token', 'jwt'
-    ];
-    
-    const foundTokens = possibleNames.filter(name => cookies[name]);
-    
-    let resultMessage = '';
-    
-    if (foundTokens.length > 0) {
-      resultMessage += `✅ Найденные токены в cookies:\n${foundTokens.map(name => `${name}: ${cookies[name]?.substring(0, 20)}...`).join('\n')}\n\n`;
-    }
-    
-    if (localStorageTokens.length > 0) {
-      resultMessage += `✅ Найденные токены в localStorage:\n${localStorageTokens.map(name => `${name}: ${localStorage.getItem(name)?.substring(0, 20)}...`).join('\n')}\n\n`;
-    }
-    
-    if (sessionStorageTokens.length > 0) {
-      resultMessage += `✅ Найденные токены в sessionStorage:\n${sessionStorageTokens.map(name => `${name}: ${sessionStorage.getItem(name)?.substring(0, 20)}...`).join('\n')}\n\n`;
-    }
-    
-    if (foundTokens.length === 0 && localStorageTokens.length === 0 && sessionStorageTokens.length === 0) {
-      resultMessage = `🔒 Токены НЕ найдены в доступных для JavaScript местах хранения.\n\n` +
-        `📝 Объяснение:\n` +
-        `• Ваши токены работают через HTTP-only cookies (безопасность)\n` +
-        `• HTTP-only cookies НЕ доступны для JavaScript (защита от XSS)\n` +
-        `• Токены автоматически отправляются с каждым запросом\n` +
-        `• Это нормально и безопасно!\n\n` +
-        `🍪 Доступные cookies:\n${Object.keys(cookies).length > 0 ? Object.keys(cookies).join(', ') : 'Нет cookies'}\n\n` +
-        `📡 Сырые cookies:\n${document.cookie || 'Пусто'}`;
-    }
-    
-    console.log('🔍 Результат поиска токенов:', resultMessage);
-    alert(resultMessage);
-  };
 
   // Проверяем настройки токенов
   const checkTokenSettings = () => {
@@ -174,135 +341,303 @@ const SettingsTestAuth: React.FC = () => {
   }
 
   return (
-    <div className="max-w-4xl">
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">🔐 Тест системы авторизации</h1>
-          
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Информация о пользователе */}
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h2 className="text-lg font-semibold text-blue-900 mb-3">👤 Информация о пользователе</h2>
-            <div className="space-y-2 text-sm">
-              <p><strong>ID:</strong> {user.id}</p>
-              <p><strong>Email:</strong> {user.email}</p>
-              <p><strong>Имя:</strong> {user.name}</p>
-              <p><strong>Роль:</strong> {user.roleName}</p>
-              <p><strong>Последний вход:</strong> {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Неизвестно'}</p>
-              <p><strong>Последняя активность:</strong> {user.lastActivityAt ? new Date(user.lastActivityAt).toLocaleString() : 'Неизвестно'}</p>
+    <div className="space-y-6">
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* User Info Card */}
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+              <span className="text-blue-600 text-lg">👤</span>
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Пользователь</h3>
+              <p className="text-sm text-gray-500">{user.email}</p>
             </div>
           </div>
+          <div className="space-y-1 text-sm">
+            <p><span className="text-gray-500">ID:</span> <span className="font-mono">{user.id}</span></p>
+            <p><span className="text-gray-500">Роль:</span> <span className="font-medium">{user.roleName}</span></p>
+            <p><span className="text-gray-500">Активность:</span> {user.lastActivityAt ? new Date(user.lastActivityAt).toLocaleTimeString() : 'Неизвестно'}</p>
+          </div>
+        </div>
 
-          {/* Текущее время */}
-          <div className="bg-green-50 p-4 rounded-lg">
-            <h2 className="text-lg font-semibold text-green-900 mb-3">⏰ Текущее время</h2>
-            <div className="space-y-2 text-sm">
-              <p><strong>Локальное время:</strong> {currentTime.toLocaleString()}</p>
-              <p><strong>UTC время:</strong> {currentTime.toISOString()}</p>
-              <p><strong>Timestamp:</strong> {currentTime.getTime()}</p>
+        {/* Token Info Card */}
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+              <span className="text-green-600 text-lg">🔑</span>
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Токен</h3>
+              <p className="text-sm text-gray-500">{tokenExpiryInfo ? `${tokenExpiryInfo.expiresIn} сек` : 'Неизвестно'}</p>
             </div>
           </div>
+          {tokenExpiryInfo ? (
+            <div className="space-y-1 text-sm">
+              <p><span className="text-gray-500">Создан:</span> {new Date(tokenCreatedAt || 0).toLocaleTimeString()}</p>
+              <p><span className="text-gray-500">Истекает:</span> {tokenExpiryInfo.expiresAt} / через <span className="text-red-600">{tokenExpiryInfo.minutesLeft}м {tokenExpiryInfo.secondsLeft}с</span></p>
+              {tokenExpiryInfo.timeToRefresh > 0 && authSettings.clientAutoRefreshEnabled && (
+                <p><span className="text-gray-500">Обновление через:</span> <span className="font-medium text-blue-600">{tokenExpiryInfo.refreshMinutesLeft}м {tokenExpiryInfo.refreshSecondsLeft}с</span></p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">Нет информации о токене</p>
+          )}
+        </div>
+
+        {/* Status Card */}
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+              <span className="text-purple-600 text-lg">📊</span>
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Статус</h3>
+              <p className="text-sm text-gray-500">Система авторизации</p>
+            </div>
+          </div>
+          <div className="space-y-1 text-sm">
+            <p><span className="text-gray-500">Логи:</span> <span className="font-medium">{logs.length}</span></p>
+            <p><span className="text-gray-500">Время:</span> {currentTime.toLocaleTimeString()}</p>
+            <p><span className="text-gray-500">Токен:</span> <span className={`font-medium ${tokenExpiryInfo ? 'text-green-600' : 'text-red-600'}`}>
+              {tokenExpiryInfo ? 'Активен' : 'Неактивен'}
+            </span></p>
+          </div>
+        </div>
+
+        {/* Auth Settings Card */}
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+              <span className="text-orange-600 text-lg">⚙️</span>
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Настройки</h3>
+              <p className="text-sm text-gray-500">Авторизация</p>
+            </div>
+          </div>
+          {authSettings ? (
+            <div className="space-y-1 text-sm">
+              <p><span className="text-gray-500">Клиент (браузер):</span> <span className="font-medium">{authSettings.clientRefreshThresholdMinutes}м</span> <span className={`font-medium ${authSettings.clientAutoRefreshEnabled ? 'text-green-600' : 'text-red-600'}`}>
+                {authSettings.clientAutoRefreshEnabled ? 'Вкл' : 'Выкл'}
+              </span></p>
+              <p><span className="text-gray-500">Middleware (сервер):</span> <span className="font-medium">{authSettings.middlewareRefreshThresholdSeconds}с</span> <span className={`font-medium ${authSettings.middlewareAutoRefreshEnabled ? 'text-green-600' : 'text-red-600'}`}>
+                {authSettings.middlewareAutoRefreshEnabled ? 'Вкл' : 'Выкл'}
+              </span></p>
+              <p><span className="text-gray-500">Обновление токена:</span> <span className={`font-medium ${authSettings.tokenRefreshEnabled ? 'text-green-600' : 'text-red-600'}`}>
+                {authSettings.tokenRefreshEnabled ? 'Вкл' : 'Выкл'}
+              </span></p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">Загрузка настроек...</p>
+          )}
         </div>
       </div>
 
-      {/* Тестирование токенов */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">🧪 Тестирование токенов</h2>
+      {/* Token Lifecycle Progress */}
+      {tokenExpiryInfo && (
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">🔄 Жизненный цикл токена <span className='ml-2'>{Math.round(tokenExpiryInfo.progressPercentage || 0)}%</span></h2>
+            <div className="text-sm text-gray-500">
+              Этап {tokenExpiryInfo.currentStage} из 3
+            </div>
+          </div>
           
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          {/* Progress Bar with Stages */}
+          <div className="relative mb-24">
+            {/* Progress Line */}
+            <div className="relative h-3 bg-gray-200 rounded-full mb-8">
+              <div 
+                className={`absolute top-0 left-0 h-3 rounded-full transition-all duration-1000 ${
+                  tokenExpiryInfo.currentStage === 1 ? 'bg-gradient-to-r from-blue-500 to-green-500' :
+                  tokenExpiryInfo.currentStage === 2 ? 'bg-gradient-to-r from-green-500 to-orange-500' :
+                  'bg-gradient-to-r from-orange-500 to-red-500'
+                }`}
+                style={{ width: `${tokenExpiryInfo.progressPercentage || 0}%` }}
+              ></div>
+            </div>
+
+            {/* Stage Markers */}
+            <div className="relative">
+              {/* Stage 1: Login */}
+              <div className="absolute left-2 bottom-0 transform">
+                <div className={`w-6 h-6 rounded-full border-3 border-white shadow-lg flex items-center justify-center ${
+                  tokenExpiryInfo.currentStage >= 1 ? 'bg-blue-500' : 'bg-gray-300'
+                }`}>
+                  <span className="text-white text-xs font-bold">1</span>
+                </div>
+                <div className="absolute top-8 left-1/2 transform -translate-x-1/2 text-center">
+                  <p className="text-sm font-medium text-gray-900">Вход</p>
+                  <p className="text-xs text-gray-600">получаем токен</p>
+                </div>
+              </div>
+
+              {/* Stage 2: AuthContext Refresh */}
+              <div 
+                className="absolute bottom-0 transform -translate-x-1/2"
+                style={{ left: `${tokenExpiryInfo.stagePositions?.stage2 || 83.33}%` }}
+              >
+                <div className={`w-6 h-6 rounded-full border-3 border-white shadow-lg flex items-center justify-center ${
+                  tokenExpiryInfo.currentStage >= 2 ? 'bg-green-500' : 'bg-gray-300'
+                }`}>
+                  <span className="text-white text-xs font-bold">2</span>
+                </div>
+                <div className="absolute top-8 left-1/2 transform -translate-x-1/2 text-center">
+                  <p className="text-sm font-medium text-gray-900">AuthContext</p>
+                  <p className="text-xs text-gray-600">
+                    {tokenExpiryInfo.stageTimes?.stage2 && tokenExpiryInfo.stageTimes.stage2.minutes > 0 ? (
+                      <>через <span className="text-green-600">{tokenExpiryInfo.stageTimes.stage2.minutes}м {tokenExpiryInfo.stageTimes.stage2.seconds}с</span></>
+                    ) : (
+                      <>за <span className="text-green-600">{authSettings?.clientRefreshThresholdMinutes || 10} мин</span> до истечения</>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Stage 3: Middleware Check */}
+              <div 
+                className="absolute bottom-0 transform -translate-x-1/2"
+                style={{ left: `${tokenExpiryInfo.stagePositions?.stage3 || 91.67}%` }}
+              >
+                <div className={`w-6 h-6 rounded-full border-3 border-white shadow-lg flex items-center justify-center ${
+                  tokenExpiryInfo.currentStage >= 3 ? 'bg-orange-500' : 'bg-gray-300'
+                }`}>
+                  <span className="text-white text-xs font-bold">3</span>
+                </div>
+                <div className="absolute top-8 left-1/2 transform -translate-x-1/2 text-center">
+                  <p className="text-sm font-medium text-gray-900">Middleware</p>
+                  <p className="text-xs text-gray-600">
+                    {tokenExpiryInfo.stageTimes?.stage3 && tokenExpiryInfo.stageTimes.stage3.minutes > 0 ? (
+                      <>через <span className="text-orange-600">{tokenExpiryInfo.stageTimes.stage3.minutes}м {tokenExpiryInfo.stageTimes.stage3.seconds}с</span></>
+                    ) : (
+                      <>за <span className="text-orange-600">{authSettings?.middlewareRefreshThresholdSeconds || 300} сек</span> до истечения</>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Stage 4: Token Expiry */}
+              <div className="absolute right-2 bottom-0 transform">
+                <div className={`w-6 h-6 rounded-full border-3 border-white shadow-lg flex items-center justify-center ${
+                  tokenExpiryInfo.progressPercentage >= 100 ? 'bg-red-500' : 'bg-gray-300'
+                }`}>
+                  <span className="text-white text-xs font-bold">4</span>
+                </div>
+                <div className="absolute top-8 left-1/2 transform -translate-x-1/2 text-center">
+                  <p className="text-sm font-medium text-gray-900">Истечение</p>
+                  <p className="text-xs text-gray-600">через<span className="text-red-600 block">{tokenExpiryInfo.expiresIn || 300} сек</span></p>
+                </div>
+              </div>
+            </div>
+
+            {/* Current Position Indicator */}
+            <div 
+              className="absolute top-0 transform -translate-x-1/2 transition-all duration-1000"
+              style={{ left: `${tokenExpiryInfo.progressPercentage || 0}%` }}
+            >
+            </div>
+          </div>
+
+          
+        </div>
+      )}
+
+      {/* Testing Section */}
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">🧪 Тестирование токенов</h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          <button
+            onClick={testApiCall}
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          >
+            <span>🚀</span>
+            <span>Тест API запроса</span>
+          </button>
+            
           <button
             onClick={checkTokenInfo}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
           >
-            🔍 Проверить токен
+            <span>🔍</span>
+            <span>Проверить токен</span>
           </button>
             
           <button
             onClick={testRefreshToken}
-            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
           >
-            🔄 Обновить токен
-          </button>
-            
-          <button
-            onClick={checkCookies}
-            className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 transition-colors"
-          >
-            🍪 Проверить cookies
+            <span>🔄</span>
+            <span>Обновить токен</span>
           </button>
           
           <button
-            onClick={checkTokenSettings}
-            className="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 transition-colors"
+            onClick={() => setLogs([])}
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors font-medium"
           >
-            ⚙️ Настройки токенов
+            <span>🗑️</span>
+            <span>Очистить логи</span>
           </button>
         </div>
 
-        {/* Результат тестирования */}
-        {tokenInfo && (
-          <div className={`p-4 rounded-lg ${
-            tokenInfo.status === 'valid' ? 'bg-green-50 border border-green-200' :
-            tokenInfo.status === 'invalid' ? 'bg-red-50 border border-red-200' :
-            'bg-yellow-50 border border-yellow-200'
-          }`}>
-            <h3 className="font-semibold mb-2">
-              {tokenInfo.status === 'valid' ? '✅ Токен валиден' :
-               tokenInfo.status === 'invalid' ? '❌ Токен невалиден' :
-               '⚠️ Ошибка проверки'}
-            </h3>
-            <pre className="text-sm overflow-auto">
-              {JSON.stringify(tokenInfo, null, 2)}
-            </pre>
+        <div className="flex flex-col md:flex-row gap-8">
+          {/* Logs Section */}
+           <div className="min-w-3/5 w-full bg-gray-50 text-neutral-800 p-2 font-mono text-sm rounded-md border">
+             <div 
+               ref={logsContainerRef}
+               className="overflow-y-auto min-h-40 max-h-110 p-2"
+             >
+              {logs.length === 0 ? (
+                <div className="text-gray-500 text-center py-8">
+                  Логи пусты. Выполните тестирование для просмотра записей.
+                </div>
+              ) : (
+                logs.map((log, index) => (
+                  <div key={index} className="mb-1">{log}</div>
+                ))
+              )}
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Логи консоли */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">📋 Логи консоли</h2>
-        <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm h-64 overflow-auto">
-          <p>🔐 Откройте DevTools → Console для просмотра логов авторизации</p>
-          <p>📡 Все запросы к API логируются с временными метками</p>
-          <p>⏰ Таймеры обновления токенов показывают точное время</p>
-          <p>⚠️ Ошибки авторизации детально логируются</p>
+          {/* Test Results */}
+          {tokenInfo && (
+            <div className={`min-w-0 p-4 rounded-lg border ${
+              tokenInfo.status === 'valid' ? 'bg-green-50 border-green-200' :
+              tokenInfo.status === 'invalid' ? 'bg-red-50 border-red-200' :
+              'bg-yellow-50 border-yellow-200'
+            }`}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">
+                  {tokenInfo.status === 'valid' ? '✅' :
+                   tokenInfo.status === 'invalid' ? '❌' :
+                   '⚠️'}
+                </span>
+                <h3 className="font-semibold text-gray-900">
+                  {tokenInfo.status === 'valid' ? 'Токен валиден' :
+                   tokenInfo.status === 'invalid' ? 'Токен невалиден' :
+                   'Ошибка проверки'}
+                </h3>
+              <button
+                onClick={() => setTokenInfo(null)}
+                className="ml-auto flex items-center gap-1 px-2 py-1 text-gray-400 hover:text-gray-700 rounded transition-colors"
+                title="Закрыть результаты"
+                aria-label="Закрыть"
+                type="button"
+              >
+                <span className="text-sm">✖️</span>
+              </button>
+              </div>
+              <div className="p-2">
+                <pre className="text-sm text-gray-700 overflow-auto">
+                  {JSON.stringify(tokenInfo, null, 2)}
+                </pre>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
 
-      {/* Инструкции */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">📖 Инструкции по тестированию</h2>
-          
-        <div className="space-y-4 text-sm">
-          <div className="bg-blue-50 p-3 rounded">
-            <h3 className="font-semibold text-blue-900">1. Проверка токена</h3>
-            <p>Нажмите "Проверить токен" для проверки текущего состояния авторизации</p>
-          </div>
-            
-          <div className="bg-green-50 p-3 rounded">
-            <h3 className="font-semibold text-green-900">2. Обновление токена</h3>
-            <p>Нажмите "Обновить токен" для принудительного обновления access token</p>
-          </div>
-            
-          <div className="bg-purple-50 p-3 rounded">
-            <h3 className="font-semibold text-purple-900">3. Проверка cookies</h3>
-            <p>Нажмите "Проверить cookies" для проверки наличия токенов в браузере</p>
-          </div>
-            
-          <div className="bg-yellow-50 p-3 rounded">
-            <h3 className="font-semibold text-yellow-900">4. Мониторинг логов</h3>
-            <p>Откройте DevTools → Console для просмотра детальных логов авторизации</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Кнопка выхода */}
-      <div className="text-center mt-6">
-        <button
-          onClick={logout}
-          className="bg-red-600 text-white px-6 py-2 rounded hover:bg-red-700 transition-colors"
-        >
-          🚪 Выйти из системы
-        </button>
       </div>
     </div>
   );

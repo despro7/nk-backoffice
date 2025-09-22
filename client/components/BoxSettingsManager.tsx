@@ -31,6 +31,7 @@ interface BoxFormData {
   length: number;
   weight: number;
   self_weight: number;
+  overflow: number;
   description: string;
   isActive: boolean;
 }
@@ -45,6 +46,7 @@ const initialFormData: BoxFormData = {
   length: 0,
   weight: 0,
   self_weight: 0,
+  overflow: 0,
   description: "",
   isActive: true,
 };
@@ -94,6 +96,7 @@ export const BoxSettingsManager: React.FC = () => {
         length: box.length,
         weight: Number(box.weight),
         self_weight: Number(box.self_weight),
+        overflow: Number(box.overflow),
         description: box.description || "",
         isActive: box.isActive,
       });
@@ -413,7 +416,7 @@ export const BoxSettingsManager: React.FC = () => {
       />
 
       {/* Модальное окно для создания/редактирования */}
-      <Modal isOpen={isOpen} onClose={closeModal} size="2xl">
+      <Modal isOpen={isOpen} onClose={closeModal} size="3xl">
         <ModalContent>
           <ModalHeader>
             {editingBox ? "Редагувати коробку" : "Додати нову коробку"}
@@ -493,7 +496,7 @@ export const BoxSettingsManager: React.FC = () => {
                 value={formData.weight}
                 onValueChange={(value) => handleNumberChange("weight", value.toString())}
                 placeholder="5.00"
-                className="col-span-3"
+                className="col-span-2"
                 isRequired
               />
               <NumberInput
@@ -504,7 +507,17 @@ export const BoxSettingsManager: React.FC = () => {
                 max={5}
                 step={0.001}
                 placeholder="0.15"
-                className="col-span-3"
+                className="col-span-2"
+                isRequired
+              />
+              <NumberInput
+                label="Переповнення"
+                value={formData.overflow}
+                onValueChange={(value) => handleNumberChange("overflow", value.toString())}
+                min={0}
+                step={1}
+                placeholder="0"
+                className="col-span-2"
                 isRequired
               />
 

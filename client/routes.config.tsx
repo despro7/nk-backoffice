@@ -150,7 +150,7 @@ export const appRoutes: AppRoute[] = [
   {
     path: "/settings/test-auth",
     component: SettingsTestAuth,
-    title: 'Тест JWT Авторизації',
+    title: 'Тест системи авторизації (JWT)',
     pageTitle: 'Тестова сторінка | NK Backoffice',
     navLabel: 'Тест авторизації',
     icon: <DynamicIcon name="user-lock" size={20} className="max-w-full max-h-full" />,
