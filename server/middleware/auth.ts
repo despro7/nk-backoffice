@@ -16,6 +16,10 @@ declare global {
 // Счетчик для отслеживания проверок токенов
 let tokenCheckCount = 0;
 
+// Глобальная блокировка для предотвращения параллельных обновлений токенов
+let refreshInProgress = false;
+let refreshPromise: Promise<any> | null = null;
+
 export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
     tokenCheckCount++;
@@ -48,26 +52,46 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
           
           // Если автоматическое обновление включено и токен истекает в ближайшее время
           if (settings.middlewareAutoRefreshEnabled && timeUntilExpiry <= settings.middlewareRefreshThresholdSeconds && timeUntilExpiry > 0) {
-            console.log(`⚠️ [Middleware] Access token истекает через ${timeUntilExpiry} секунд, обновляем...`);
+            console.log(`⚠️  [Middleware] Access token истекает через ${timeUntilExpiry} секунд, обновляем...`);
             
             if (refreshToken) {
-              try {
-                const refreshResult = await AuthService.refreshToken({ refreshToken });
+              // Проверяем блокировку обновлений
+              if (refreshInProgress) {
+                console.log('⏭️ [Middleware] Обновление уже в процессе, пропускаем этот запрос (избегаем блокировки пула БД)');
+                // НЕ ждем - просто продолжаем с текущим токеном
+                // Это избегает исчерпания пула соединений к БД
+              } else {
+                // Устанавливаем блокировку и начинаем обновление
+                refreshInProgress = true;
+                console.log('🔒 [Middleware] Установлена блокировка обновления токенов');
                 
-                // Устанавливаем новые cookies
-                await AuthService.setAuthCookies(res, refreshResult.token, refreshResult.refreshToken);
+                refreshPromise = (async () => {
+                  try {
+                    const refreshResult = await AuthService.refreshToken({ refreshToken });
+                    
+                    // Устанавливаем новые cookies
+                    await AuthService.setAuthCookies(res, refreshResult.token, refreshResult.refreshToken);
+                    
+                    console.log('✅ [Middleware] Токен успешно обновлен автоматически');
+                    
+                    // Устанавливаем заголовок для уведомления клиента об обновлении
+                    res.setHeader('X-Token-Refreshed', 'true');
+                    res.setHeader('X-User-Email', decoded.email || 'unknown');
+                    
+                    return refreshResult;
+                  } catch (refreshError) {
+                    console.log('❌ [Middleware] Ошибка автоматического обновления токена:', refreshError.message);
+                    throw refreshError;
+                  } finally {
+                    // Освобождаем блокировку
+                    refreshInProgress = false;
+                    refreshPromise = null;
+                    console.log('🔓 [Middleware] Блокировка обновления токенов снята');
+                  }
+                })();
                 
-                console.log('✅ [Middleware] Токен успешно обновлен автоматически');
-                
-                // Устанавливаем заголовок для уведомления клиента об обновлении
-                res.setHeader('X-Token-Refreshed', 'true');
-                res.setHeader('X-User-Email', decoded.email || 'unknown');
-                
-                // Продолжаем с обычной валидацией токена
-                // (не возвращаем ответ, а продолжаем выполнение)
-              } catch (refreshError) {
-                console.log('❌ [Middleware] Ошибка автоматического обновления токена:', refreshError.message);
-                // Продолжаем с обычной валидацией
+                // НЕ ждем завершения - запускаем обновление в фоне
+                // Продолжаем с текущим токеном, чтобы не блокировать пул БД
               }
             }
           }
@@ -83,7 +107,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       // это сигнал для клиента, что нужно попытаться обновить токен.
       // Это покрывает случай, когда cookie access token истек.
       if (refreshToken) {
-        console.log('⚠️ [Middleware] Access token отсутствует, но refresh token есть. Требуется обновление.');
+        console.log('⚠️  [Middleware] Access token отсутствует, но refresh token есть. Требуется обновление.');
         return res.status(401).json({
           message: 'Access token required, refresh needed',
           code: 'TOKEN_EXPIRED', // Используем тот же код, что и для истекшего токена
@@ -123,7 +147,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     if (decoded.exp) {
       const now = Math.floor(Date.now() / 1000);
       decoded.expiresIn = Math.max(0, decoded.exp - now);
-      console.log(`⏱️ [Middleware] Токен истекает через: ${decoded.expiresIn} сек`);
+      console.log(`⏱️  [Middleware] Токен истекает через: ${decoded.expiresIn} сек`);
     }
     
     req.user = decoded;

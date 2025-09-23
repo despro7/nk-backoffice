@@ -32,3 +32,4 @@ dist-ssr
 /generated/prisma
 
 temp-payload.json
+logging-settings.json

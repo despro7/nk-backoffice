@@ -398,12 +398,16 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
 
       // Вызываем новый endpoint валидации кеша
       console.log("🚀 [CLIENT] Sending cache validation request:", params);
-      const response = await apiCall("/api/orders/cache/validate", {
+      
+      // Создаем query параметры из объекта params
+      const queryParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        queryParams.append(key, String(value));
+      });
+      
+      const response = await apiCall(`/api/orders/cache/validate?${queryParams}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(params),
+        credentials: "include"
       });
 
       if (response.status === 403) {

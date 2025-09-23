@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Button, ButtonGroup } from "@heroui/button";
+import { Button } from "@heroui/button";
 import { Switch } from "@heroui/switch";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { useEquipmentFromAuth } from "../contexts/AuthContext";
@@ -915,7 +915,10 @@ export const SettingsEquipment = () => {
                   const value = Array.from(keys)[0] as string;
                   updateScaleSetting("baudRate", parseInt(value));
                 }}
-                className="block text-sm font-medium text-gray-700 mb-1"
+                classNames={{
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                  value: "block text-sm font-medium text-gray-700 mb-1"
+                }}
               >
                 <SelectItem key="4800">4800</SelectItem>
                 <SelectItem key="9600">9600</SelectItem>
@@ -933,7 +936,10 @@ export const SettingsEquipment = () => {
                   const value = Array.from(keys)[0] as string;
                   updateScaleSetting("dataBits", parseInt(value));
                 }}
-                className="block text-sm font-medium text-gray-700 mb-1"
+                classNames={{
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                  value: "block text-sm font-medium text-gray-700 mb-1"
+                }}
               >
                 <SelectItem key="7">7</SelectItem>
                 <SelectItem key="8">8</SelectItem>
@@ -948,7 +954,10 @@ export const SettingsEquipment = () => {
                   const value = Array.from(keys)[0] as string;
                   updateScaleSetting("stopBits", parseInt(value));
                 }}
-                className="block text-sm font-medium text-gray-700 mb-1"
+                classNames={{
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                  value: "block text-sm font-medium text-gray-700 mb-1"
+                }}
               >
                 <SelectItem key="1">1</SelectItem>
                 <SelectItem key="2">2</SelectItem>
@@ -963,7 +972,10 @@ export const SettingsEquipment = () => {
                   const value = Array.from(keys)[0] as string;
                   updateScaleSetting("parity", value);
                 }}
-                className="block text-sm font-medium text-gray-700 mb-1"
+                classNames={{
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                  value: "block text-sm font-medium text-gray-700 mb-1"
+                }}
               >
                 <SelectItem key="none">None</SelectItem>
                 <SelectItem key="even">Even</SelectItem>
@@ -974,13 +986,16 @@ export const SettingsEquipment = () => {
               <Input
                 id="activePollingInterval"
                 type="number"
-                label="Активний опрос (мс)"
+                label="Інтервал активного опитування (мс)"
                 labelPlacement="outside"
                 value={localConfig.scale?.activePollingInterval?.toString() || EQUIPMENT_DEFAULTS.scale.activePollingInterval.toString()}
                 onValueChange={(value) =>
                   updateScaleSetting("activePollingInterval", parseInt(value) || EQUIPMENT_DEFAULTS.scale.activePollingInterval)
                 }
-                className="block text-sm font-medium text-gray-700 mb-1"
+                classNames={{
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                  input: "block text-sm font-medium text-gray-700 mb-1"
+                }}
                 min="100"
                 max="5000"
               />
@@ -994,7 +1009,10 @@ export const SettingsEquipment = () => {
                 onValueChange={(value) =>
                   updateScaleSetting("weightThresholdForActive", parseFloat(value) || EQUIPMENT_DEFAULTS.scale.weightThresholdForActive)
                 }
-                className="block text-sm font-medium text-gray-700 mb-1"
+                classNames={{
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                  input: "block text-sm font-medium text-gray-700 mb-1"
+                }}
                 min="0.001"
                 max="1.0"
                 step="0.001"
@@ -1003,13 +1021,16 @@ export const SettingsEquipment = () => {
               <Input
                 id="reservePollingInterval"
                 type="number"
-                label="Резервний опрос (мс)"
+                label="Інтервал резервного опитування (мс)"
                 labelPlacement="outside"
                 value={localConfig.scale?.reservePollingInterval?.toString() || EQUIPMENT_DEFAULTS.scale.reservePollingInterval.toString()}
                 onValueChange={(value) =>
                   updateScaleSetting("reservePollingInterval", parseInt(value) || EQUIPMENT_DEFAULTS.scale.reservePollingInterval)
                 }
-                className="block text-sm font-medium text-gray-700 mb-1"
+                classNames={{
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                  input: "block text-sm font-medium text-gray-700 mb-1"
+                }}
                 min="1000"
                 max="30000"
               />
@@ -1023,7 +1044,10 @@ export const SettingsEquipment = () => {
                 onValueChange={(value) =>
                   updateScaleSetting("activePollingDuration", parseInt(value) || EQUIPMENT_DEFAULTS.scale.activePollingDuration)
                 }
-                className="block text-sm font-medium text-gray-700 mb-1"
+                classNames={{
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                  input: "block text-sm font-medium text-gray-700 mb-1"
+                }}
                 min="5000"
                 max="300000"
               />
@@ -1037,7 +1061,10 @@ export const SettingsEquipment = () => {
                 onValueChange={(value) =>
                   updateScaleSetting("maxPollingErrors", parseInt(value) || EQUIPMENT_DEFAULTS.scale.maxPollingErrors)
                 }
-                className="block text-sm font-medium text-gray-700 mb-1"
+                classNames={{
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                  input: "block text-sm font-medium text-gray-700 mb-1"
+                }}
                 min="1"
                 max="20"
               />
@@ -1051,7 +1078,10 @@ export const SettingsEquipment = () => {
                 onValueChange={(value) =>
                   updateScaleSetting("weightCacheDuration", parseInt(value) || EQUIPMENT_DEFAULTS.scale.weightCacheDuration)
                 }
-                className="block text-sm font-medium text-gray-700 mb-1"
+                classNames={{
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                  input: "block text-sm font-medium text-gray-700 mb-1"
+                }}
                 min="100"
                 max="5000"
               />
@@ -1066,7 +1096,11 @@ export const SettingsEquipment = () => {
                   const value = Array.from(keys)[0] as string;
                   updateScaleSetting("connectionStrategy", value);
                 }}
-                className="block text-sm font-medium text-gray-700 mb-1 col-span-2"
+                classNames={{
+                  base: "col-span-2",
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                  value: "block text-sm font-medium text-gray-700 mb-1"
+                }}
                 >
                 <SelectItem key="legacy">Стандартна (Legacy)</SelectItem>
                 <SelectItem key="reconnectOnError">Перепідключення при помилці</SelectItem>
@@ -1114,76 +1148,10 @@ export const SettingsEquipment = () => {
             </Card>
 
             <div className="flex flex-1 flex-col gap-8 h-fit">
-              {/* Налаштування принтера QZ Tray */}
+              
+              {/* Тест ваг ВТА-60 */}
               <Card className="flex w-full flex-col gap-6 p-4 h-fit">
-                <h3 className="font-medium text-gray-400">Налаштування принтера (QZ Tray)</h3>
-
-                <Switch
-                  id="printerEnabled"
-                  isSelected={localConfig.printer?.enabled || false}
-                  onValueChange={(value) => updatePrinterSetting("enabled", value)}
-                  color="primary"
-                >
-                  Увімкнути прямий друк
-                </Switch>
-
-                <Input
-                  id="printerName"
-                  label="Ім'я принтера"
-                  labelPlacement="outside"
-                  value={localConfig.printer?.name || ""}
-                  onValueChange={(value) => updatePrinterSetting("name", value)}
-                  placeholder="Наприклад, Zebra ZD410"
-                  disabled={!localConfig.printer?.enabled}
-                />
-
-                {printers.length > 0 && (
-                  <Select
-                    label="Виберіть принтер"
-                    labelPlacement="outside"
-                    selectedKeys={[localConfig.printer?.name || ""]}
-                    onSelectionChange={(keys) => {
-                      const value = Array.from(keys)[0] as string;
-                      updatePrinterSetting("name", value);
-                    }}
-                  >
-                    {printers.map((printer) => (
-                      <SelectItem key={printer}>
-                        {printer}
-                      </SelectItem>
-                    ))}
-                  </Select>
-                )}
-
-                <div className="flex gap-2">
-                  <Button
-                    color="primary"
-                    size="sm"
-                    onPress={handleTestPrint}
-                    disabled={!localConfig.printer?.enabled}
-                  >
-                    <DynamicIcon name="printer" size={14} />
-                    Тест друку
-                  </Button>
-                  <Button
-                    color="secondary"
-                    variant="flat"
-                    size="sm"
-                    onPress={handleFindPrinters}
-                    disabled={!localConfig.printer?.enabled}
-                  >
-                    <DynamicIcon name="search" size={14} />
-                    Знайти принтери
-                  </Button>
-                </div>
-                <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
-                  <strong>QZ Tray:</strong> Дозволяє друкувати ZPL/EPL етикетки напряму на термопринтер.
-                </div>
-              </Card>
-
-              {/* Тест весов ВТА-60 */}
-              <Card className="flex w-full flex-col gap-6 p-4 h-fit">
-                <h3 className="font-medium text-gray-400">Тест вагів ВТА-60</h3>
+                <h3 className="font-medium text-gray-400">Тест ваг ВТА-60</h3>
 
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-4">
@@ -1259,6 +1227,111 @@ export const SettingsEquipment = () => {
                 </div>
               </Card>
 
+              {/* Налаштування принтера QZ Tray */}
+              <Card className="flex w-full flex-col gap-6 p-4 h-fit">
+                <h3 className="font-medium text-gray-400">Налаштування принтера (QZ Tray)</h3>
+
+                <Switch
+                  id="printerEnabled"
+                  isSelected={localConfig.printer?.enabled || false}
+                  onValueChange={(value) => updatePrinterSetting("enabled", value)}
+                  color="primary"
+                >
+                  Увімкнути прямий друк
+                </Switch>
+
+                <Input
+                  id="printerName"
+                  label="Ім'я принтера"
+                  labelPlacement="outside"
+                  value={localConfig.printer?.name || ""}
+                  onValueChange={(value) => updatePrinterSetting("name", value)}
+                  placeholder="Наприклад, Zebra ZD410"
+                  disabled={!localConfig.printer?.enabled}
+                />
+
+                {printers.length > 0 && (
+                  <Select
+                    label="Виберіть принтер"
+                    labelPlacement="outside"
+                    selectedKeys={[localConfig.printer?.name || ""]}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0] as string;
+                      updatePrinterSetting("name", value);
+                    }}
+                  >
+                    {printers.map((printer) => (
+                      <SelectItem key={printer}>
+                        {printer}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                )}
+
+                <div className="flex gap-2">
+                  <Button
+                    color="primary"
+                    size="sm"
+                    onPress={handleTestPrint}
+                    disabled={!localConfig.printer?.enabled}
+                  >
+                    <DynamicIcon name="printer" size={14} />
+                    Тест друку
+                  </Button>
+                  <Button
+                    color="secondary"
+                    variant="flat"
+                    size="sm"
+                    onPress={handleFindPrinters}
+                    disabled={!localConfig.printer?.enabled}
+                    className="text-gray-600"
+                  >
+                    <DynamicIcon name="search" size={14} />
+                    Знайти принтери
+                  </Button>
+                </div>
+                <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+                  <strong>QZ Tray:</strong> Дозволяє друкувати ZPL/EPL етикетки напряму на термопринтер.
+                </div>
+              </Card>
+            </div>
+
+            <div className="flex flex-1 flex-col gap-8 h-fit">
+              {/* Налаштування сканера */}
+              <Card className="flex w-full flex-col gap-6 p-4 h-fit">
+                <h3 className="font-medium text-gray-400">Налаштування сканера</h3>
+                <Input
+                  type="number"
+                  id="timeout"
+                  label="Таймаут (мс)"
+                  labelPlacement="outside"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                  value={localConfig.scanner?.timeout?.toString() || "5000"}
+                  onValueChange={(value) => updateScannerSetting("timeout", parseInt(value))}
+                />
+                <Input
+                  type="number"
+                  id="scanTimeout"
+                  label="Таймаут сканування (мс)"
+                  labelPlacement="outside"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                  value={localConfig?.scanner?.scanTimeout?.toString() || "300"}
+                  onValueChange={(value) => updateScannerSetting("scanTimeout", parseInt(value))}
+                />
+                <Switch
+                  id="autoConnect"
+                  isSelected={localConfig.scanner?.autoConnect || false}
+                  onValueChange={(value) => updateScannerSetting("autoConnect", value)}
+                  color="primary"
+                  size="sm"
+                  classNames={{
+                    wrapper: "bg-secondary/50",
+                    thumbIcon: "bg-white/50",
+                  }}
+                >
+                  Авто. підключення</Switch>
+              </Card>
+              
               {/* Тест сканера */}
               <Card className="flex w-full flex-col gap-4 h-fit p-4">
                 <div className="flex justify-between items-center">
@@ -1350,42 +1423,7 @@ export const SettingsEquipment = () => {
                 </div>
               </Card>
             </div>
-            {/* Налаштування сканера */}
-            <Card className="flex flex-1 flex-col gap-6 p-4 h-fit">
-              <h3 className="font-medium text-gray-400">Налаштування сканера</h3>
-              <Input
-                type="number"
-                id="timeout"
-                label="Таймаут (мс)"
-                labelPlacement="outside"
-                className="block text-sm font-medium text-gray-700 mb-1"
-                value={localConfig.scanner?.timeout?.toString() || "5000"}
-                onValueChange={(value) => updateScannerSetting("timeout", parseInt(value))}
-              />
-              <Input
-                type="number"
-                id="scanTimeout"
-                label="Таймаут сканування (мс)"
-                labelPlacement="outside"
-                className="block text-sm font-medium text-gray-700 mb-1"
-                value={localConfig?.scanner?.scanTimeout?.toString() || "300"}
-                onValueChange={(value) => updateScannerSetting("scanTimeout", parseInt(value))}
-              />
-              <Switch
-                id="autoConnect"
-                isSelected={localConfig.scanner?.autoConnect || false}
-                onValueChange={(value) => updateScannerSetting("autoConnect", value)}
-                color="primary"
-                size="sm"
-                classNames={{
-                  wrapper: "bg-secondary/50",
-                  thumbIcon: "bg-white/50",
-                }}
-              >
-                Авто. підключення</Switch>
-            </Card>
-            </div>
-
+          </div>
         </CardBody>
       </Card>
       

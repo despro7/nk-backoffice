@@ -24,11 +24,6 @@ const SettingsAdmin: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* Настройки авторизации */}
-      <section>
-        <AuthSettings />
-      </section>
-
       {/* Регистрация пользователей */}
       <section>
         <UserRegistrationManager />
@@ -37,6 +32,11 @@ const SettingsAdmin: React.FC = () => {
       {/* Настройки логирования */}
       <section>
         <LoggingSettings />
+      </section>
+
+      {/* Настройки авторизации */}
+      <section>
+        <AuthSettings />
       </section>
 
       {/* Настройки статуса сервера */}

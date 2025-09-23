@@ -9,6 +9,7 @@ import ordersRoutes from "./routes/orders.js";
 import productsRoutes from "./routes/products.js";
 import boxesRoutes from "./routes/boxes.js";
 import settingsRoutes from "./routes/settings.js";
+import loggingRoutes from "./routes/logging.js";
 import webhookRoutes from './routes/webhooks.js';
 import warehouseRoutes from './routes/warehouse.js';
 import ordersSyncRoutes from './routes/orders-sync.js';
@@ -114,7 +115,8 @@ export function createServer() {
   // Boxes routes
   app.use("/api/boxes", boxesRoutes);
 
-  // Settings routes
+  // Settings routes (специфичные роуты должны быть первыми)
+  app.use("/api/settings/logging", loggingRoutes);
   app.use("/api/settings", settingsRoutes);
 
   // Warehouse routes

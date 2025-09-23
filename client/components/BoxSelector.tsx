@@ -4,6 +4,7 @@ import { useApi } from '../hooks/useApi';
 import { SettingsBoxes, BoxRecommendationsResponse, BoxRecommendationMode } from '../types/boxes';
 import { setCookie, getCookie, deleteCookie, areCookiesEnabled } from '../lib/cookieUtils';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { LoggingService } from '../services/LoggingService';
 
 interface BoxSelectorProps {
   totalPortions: number;
@@ -155,8 +156,7 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
 
   // Функция для обновления рекомендаций при изменении режима
   const handleModeChange = useCallback((newMode: BoxRecommendationMode) => {
-    console.log('handleModeChange called with:', newMode);
-    console.log('Setting cookie:', BOX_MODE_COOKIE, 'to:', newMode);
+    LoggingService.orderAssemblyLog('📦 Зміна режиму коробок:', newMode);
     
     setTransitionMode(true);
     setRecommendationMode(newMode);
@@ -205,17 +205,14 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
 
   // Синхронизируем режим с куками при монтировании
   useEffect(() => {
-    console.log('Initializing recommendation mode from cookies...');
-    console.log('Cookies enabled:', areCookiesEnabled());
-    console.log('All cookies:', document.cookie);
+    LoggingService.orderAssemblyLog('📦 Ініціалізація режиму коробок з cookies...');
     
     const savedMode = getCookie(BOX_MODE_COOKIE);
-    console.log('Saved mode from cookie:', savedMode);
     if (savedMode === 'spacious' || savedMode === 'economical') {
-      console.log('Setting recommendation mode to:', savedMode);
+      LoggingService.orderAssemblyLog('📦 Встановлено режим з cookie:', savedMode);
       setRecommendationMode(savedMode);
     } else {
-      console.log('No valid cookie found, using default mode: economical');
+      LoggingService.orderAssemblyLog('📦 Використання режиму за замовчуванням: economical');
     }
   }, [BOX_MODE_COOKIE]);
 

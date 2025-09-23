@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useApi } from "@/hooks/useApi";
 import { useServerStatus } from "@/hooks/useServerStatus";
-import { cn, log } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, User, Switch } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import CountdownTimer from "./CountdownTimer";

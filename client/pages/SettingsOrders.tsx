@@ -1698,7 +1698,7 @@ const SettingsOrders: React.FC = () => {
 
             <div className="flex items-center gap-3">
               <Switch
-                isSelected={syncSettings.cacheLoggingEnabled}
+                isSelected={!!syncSettings.cacheLoggingEnabled}
                 onValueChange={(isSelected) => setSyncSettings(prev => ({
                   ...prev,
                   cacheLoggingEnabled: isSelected

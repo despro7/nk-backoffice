@@ -7,6 +7,7 @@ import {
   DilovodSetComponent
 } from './DilovodTypes.js';
 import { DilovodApiClient } from './DilovodApiClient.js';
+import { getDilovodConfig as getDefaultDilovodConfig, logWithTimestamp as logTS } from './DilovodUtils.js';
 import {
   getPriceTypeNameById,
   logWithTimestamp,
@@ -78,9 +79,10 @@ export class DilovodDataProcessor {
   }
 
   // Создание маппинга ID -> SKU
-  private createIdToSkuMapping(pricesResponse: DilovodPricesResponse[]): { [key: string]: string } {
+  private createIdToSkuMapping(pricesResponse: DilovodPricesResponse[] | any): { [key: string]: string } {
     const mapping: { [key: string]: string } = {};
     
+    if (!Array.isArray(pricesResponse)) return mapping;
     pricesResponse.forEach((row) => {
       const id = row.id;
       const sku = row.sku;
@@ -93,9 +95,10 @@ export class DilovodDataProcessor {
   }
 
   // Создание маппинга цен по товарам
-  private createPricesMapping(pricesResponse: DilovodPricesResponse[]): { [key: string]: Array<{ priceType: string; price: string }> } {
+  private createPricesMapping(pricesResponse: DilovodPricesResponse[] | any): { [key: string]: Array<{ priceType: string; price: string }> } {
     const mapping: { [key: string]: Array<{ priceType: string; price: string }> } = {};
     
+    if (!Array.isArray(pricesResponse)) return mapping;
     pricesResponse.forEach((row) => {
       const id = row.id;
       if (!mapping[id]) {
@@ -112,9 +115,10 @@ export class DilovodDataProcessor {
   }
 
   // Создание маппинга товаров
-  private createGoodsMapping(goodsResponse: DilovodGoodsResponse[]): { [key: string]: DilovodGoodsResponse } {
+  private createGoodsMapping(goodsResponse: DilovodGoodsResponse[] | any): { [key: string]: DilovodGoodsResponse } {
     const mapping: { [key: string]: DilovodGoodsResponse } = {};
     
+    if (!Array.isArray(goodsResponse)) return mapping;
     goodsResponse.forEach((good) => {
       mapping[good.id] = good;
     });
@@ -147,6 +151,16 @@ export class DilovodDataProcessor {
         } else {
           good.set = []; // не комплект, массив set будет []
         }
+        
+        // Разрешаем название категории через каталог: берём presentation у родителя
+        try {
+          const parentId = good.parent;
+          const parentGood = parentId ? goodsById[parentId] : undefined;
+          const parentName = (parentGood as any)?.presentation || (parentGood as any)?.name || undefined;
+          if (parentName) {
+            (good as any).categoryNameResolved = parentName;
+          }
+        } catch {}
         
         // Задержка для всех товаров, чтобы не перегружать API
         if (index < pricesResponse.length - 1) { // Не задерживаемся после последнего товара
@@ -218,6 +232,17 @@ export class DilovodDataProcessor {
   ): DilovodProduct[] {
     const result: DilovodProduct[] = [];
     
+    // Подготавливаем нормализованную карту категорий (мерджим дефолт и БД)
+    const normalizedCategoriesMap: { [key: string]: number } = {};
+    const mergedCategoriesMap = {
+      ...(getDefaultDilovodConfig().categoriesMap || {}),
+      ...(this.config.categoriesMap || {})
+    } as Record<string, number>;
+    Object.entries(mergedCategoriesMap).forEach(([key, value]) => {
+      const normKey = this.normalizeCategoryName(key);
+      if (normKey) normalizedCategoriesMap[normKey] = value as number;
+    });
+    
     processedGoods.forEach((good) => {
       let costPerItem = '';
       const additionalPrices: Array<{ priceType: string; priceValue: string }> = [];
@@ -243,7 +268,28 @@ export class DilovodDataProcessor {
 
       // Получаем название и категорию
       const productName = this.extractProductName(good);
-      const categoryName = this.extractCategoryName(good);
+      const categoryNameRaw = (good as any).categoryNameResolved || this.extractCategoryName(good);
+      const categoryName = categoryNameRaw?.toString()?.trim() || 'Без категории';
+      const normalizedName = this.normalizeCategoryName(categoryName);
+      let mappedCategoryId = normalizedName in normalizedCategoriesMap
+        ? normalizedCategoriesMap[normalizedName]
+        : 0;
+
+      // Heuristic fallback: категоризация по подстроке, если маппинг не сработал
+      if (!mappedCategoryId) {
+        if (normalizedName.includes('перш')) {
+          mappedCategoryId = 1;
+        } else if (normalizedName.includes('друг')) {
+          mappedCategoryId = 2;
+        } else if (normalizedName.includes('набор') || normalizedName.includes('набори') || normalizedName.includes('комплект')) {
+          mappedCategoryId = 3;
+        }
+      }
+
+      if (!mappedCategoryId) {
+        // Лог для диагностики неподдержанных категорий
+        try { logTS('⚠️ Unmapped category name', { categoryName, normalizedName, categoriesMap: normalizedCategoriesMap }); } catch {}
+      }
 
       result.push({
         id: good.sku,
@@ -252,7 +298,7 @@ export class DilovodDataProcessor {
         costPerItem: costPerItem,
         currency: "UAH",
         category: {
-          id: this.config.categoriesMap[categoryName] || 0,
+          id: mappedCategoryId,
           name: categoryName
         },
         set: good.set || [],
@@ -274,6 +320,11 @@ export class DilovodDataProcessor {
     return good['parent__pr'] || good['parentName'] || "Без категории";
   }
 
+  // Нормализация названия категории для сравнения
+  private normalizeCategoryName(name: string | undefined): string {
+    return (name || '').toString().trim().toLowerCase();
+  }
+
   // Удаление дубликатов по SKU
   private removeDuplicates(products: DilovodProduct[]): DilovodProduct[] {
     const unique: { [key: string]: DilovodProduct } = {};
@@ -286,9 +337,10 @@ export class DilovodDataProcessor {
   }
   
   // Удаление дубликатов цен по ID товара (оставляем только один экземпляр каждого товара)
-  private removeDuplicatePrices(pricesResponse: DilovodPricesResponse[]): DilovodPricesResponse[] {
+  private removeDuplicatePrices(pricesResponse: DilovodPricesResponse[] | any): DilovodPricesResponse[] {
     const unique: { [key: string]: DilovodPricesResponse } = {};
     
+    if (!Array.isArray(pricesResponse)) return [];
     pricesResponse.forEach((item) => {
       // Используем ID товара как ключ для уникальности
       if (!unique[item.id]) {

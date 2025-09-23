@@ -1,4 +1,5 @@
 // Утилиты для работы с куками
+import { LoggingService } from '../services/LoggingService';
 
 /**
  * Устанавливает куку с указанным именем, значением и опциями
@@ -32,6 +33,7 @@ export function setCookie(name: string, value: string, options: {
   }
   
   document.cookie = cookieString;
+  LoggingService.cookieLog(`🍪 Cookie встановлено: ${name}=${value}`, { expires, path, secure, sameSite });
 }
 
 /**
@@ -47,10 +49,13 @@ export function getCookie(name: string): string | null {
       cookie = cookie.substring(1, cookie.length);
     }
     if (cookie.indexOf(nameEQ) === 0) {
-      return decodeURIComponent(cookie.substring(nameEQ.length, cookie.length));
+      const value = decodeURIComponent(cookie.substring(nameEQ.length, cookie.length));
+      LoggingService.cookieLog(`🍪 Cookie прочитано: ${name}=${value}`);
+      return value;
     }
   }
   
+  LoggingService.cookieLog(`🍪 Cookie не знайдено: ${name}`);
   return null;
 }
 
@@ -59,6 +64,7 @@ export function getCookie(name: string): string | null {
  */
 export function deleteCookie(name: string, path: string = '/'): void {
   setCookie(name, '', { expires: -1, path });
+  LoggingService.cookieLog(`🍪 Cookie видалено: ${name}`, { path });
 }
 
 /**

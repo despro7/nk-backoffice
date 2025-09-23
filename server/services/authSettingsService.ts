@@ -75,7 +75,7 @@ export class AuthSettingsService {
         expires: Date.now() + this.CACHE_DURATION
       };
 
-      console.log(`✅ [AuthSettings] Настройка ${key} обновлена: ${value}`);
+      // console.log(`✅ [AuthSettings] Настройка ${key} обновлена: ${value}`);
     } catch (error) {
       console.error(`❌ [AuthSettings] Ошибка установки настройки ${key}:`, error);
       throw error;

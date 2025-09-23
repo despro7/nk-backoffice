@@ -1,5 +1,6 @@
 import { ScaleData } from './EquipmentService';
 import { EQUIPMENT_DEFAULTS } from '../../shared/constants/equipmentDefaults.js';
+import { LoggingService } from './LoggingService';
 
 // Типы для Web Serial API (если не поддерживаются браузером)
 declare global {
@@ -76,34 +77,34 @@ export class ScaleService {
     try {
       // Перевіряємо підтримку Web Serial API
       if (!('serial' in navigator)) {
-        console.log('⚠️ ScaleService: Web Serial API не підтримується в цьому браузері');
+        LoggingService.equipmentLog('⚠️ ScaleService: Web Serial API не підтримується в цьому браузері');
         return false;
       }
 
       // Проверяем, не подключены ли уже
       if (this.isConnected && this.port) {
-        console.log('🔧 ScaleService: Ваги вже підключені');
+        LoggingService.equipmentLog('🔧 ScaleService: Ваги вже підключені');
         return true;
       }
 
-      console.log('🔧 ScaleService: Запрашиваем доступ к COM порту...');
+      LoggingService.equipmentLog('🔧 ScaleService: Запрашиваем доступ к COM порту...');
 
       // При автоматическом подключении пытаемся найти сохраненный порт
       if (autoConnect) {
         try {
           const ports = await navigator.serial.getPorts();
-          console.log('🔧 ScaleService: Найдено сохраненных портов:', ports.length);
+          LoggingService.equipmentLog('🔧 ScaleService: Найдено сохраненных портов:', ports.length);
 
           if (ports.length > 0) {
             // Используем первый доступный порт
             this.port = ports[0];
-            console.log('🔧 ScaleService: Используем сохраненный порт');
+            LoggingService.equipmentLog('🔧 ScaleService: Используем сохраненный порт');
           } else {
-            console.log('⚠️ ScaleService: Сохраненных портов не найдено, требуется ручной выбор');
+            LoggingService.equipmentLog('⚠️ ScaleService: Сохраненных портов не найдено, требуется ручной выбор');
             return false;
           }
         } catch (error) {
-          console.log('⚠️ ScaleService: Не удалось получить сохраненные порты:', error);
+          LoggingService.equipmentLog('⚠️ ScaleService: Не удалось получить сохраненные порты:', error);
           return false;
         }
       } else {
@@ -142,7 +143,7 @@ export class ScaleService {
       }
 
       this.isConnected = true;
-      console.log('✅ ScaleService: Ваги ВТА-60 успішно підключені');
+      LoggingService.equipmentLog('✅ ScaleService: Ваги ВТА-60 успішно підключені');
 
       // Запускаем постоянный цикл чтения, если выбран соответствующий режим
       if (this.config.connectionStrategy === 'persistentStream') {

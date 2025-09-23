@@ -5,321 +5,346 @@ import {
   CardBody,
   CardFooter,
   Switch,
-  Input,
   Button
 } from '@heroui/react';
-import { ToastService } from '../services/ToastService';
+import { LoggingService, LoggingSettings as LoggingSettingsType, ConsoleLoggingSettings, ToastLoggingSettings } from '../services/LoggingService';
+import { DynamicIcon } from 'lucide-react/dynamic';
 
-export interface ConsoleLoggingSettings {
-  logAccessToken: boolean;
-  logRefreshToken: boolean;
-  logTokenExpiry: boolean;
-  logFrequency: number; // в минутах
-}
-
-export interface ToastLoggingSettings {
-  logLoginLogout: boolean;
-  logTokenGenerated: boolean;
-  logTokenRefreshed: boolean;
-  logTokenRemoved: boolean;
-  logTokenExpired: boolean;
-  logAuthError: boolean;
-  logRefreshError: boolean;
-}
-
-export interface LoggingSettingsType {
-  console: ConsoleLoggingSettings;
-  toast: ToastLoggingSettings;
-}
-
-const defaultSettings: LoggingSettingsType = {
-  console: {
-    logAccessToken: true,
-    logRefreshToken: true,
-    logTokenExpiry: true,
-    logFrequency: 5
-  },
-  toast: {
-    logLoginLogout: true,
-    logTokenGenerated: false,
-    logTokenRefreshed: true,
-    logTokenRemoved: true,
-    logTokenExpired: true,
-    logAuthError: true,
-    logRefreshError: true
-  }
-};
-
-export const LoggingSettings: React.FC = () => {
-  const [settings, setSettings] = useState<LoggingSettingsType>(defaultSettings);
+export const LoggingSettingsComponent: React.FC = () => {
+  const [settings, setSettings] = useState<LoggingSettingsType | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Завантажуємо налаштування при монтуванні
+  // Загружаем настройки при монтировании
   useEffect(() => {
     loadSettings();
   }, []);
 
   const loadSettings = async () => {
     try {
-      console.log('🔧 [LoggingSettings] Завантажуємо налаштування логування...');
+      LoggingService.loggingSettingsLog('🔧 Завантажуємо налаштування логування...');
 
-      // Перевіряємо наявність cookies перед запитом
-      const hasCookies = document.cookie.includes('accessToken') || document.cookie.includes('refreshToken');
-      console.log('🔧 [LoggingSettings] Cookies присутні:', hasCookies);
+      // Получаем настройки из LoggingService
+      const currentSettings = LoggingService.getSettings();
+      setSettings(currentSettings);
+      setIsInitialized(true);
+      LoggingService.loggingSettingsLog('🔧 Настройки загружены из LoggingService:', currentSettings);
 
-      if (!hasCookies) {
-        console.log('🔧 [LoggingSettings] Cookies не знайдено, використовуємо налаштування за замовчуванням');
-        setSettings(defaultSettings);
-        setIsInitialized(true);
-        return;
-      }
-
-      const response = await fetch('/api/settings/logging', {
-        credentials: 'include',
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Content-Type': 'application/json'
-        }
-      });
-
-      console.log(`🔧 [LoggingSettings] Відповідь сервера: ${response.status} ${response.statusText}`);
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('🔧 [LoggingSettings] Налаштування успішно завантажено:', data);
-
-        // Проверяем структуру полученных данных
-        if (data && data.console && data.toast) {
-          setSettings(data);
-          setIsInitialized(true);
-
-          // Обновляем настройки в ToastService
-          ToastService.updateSettings(data);
-          console.log('🔧 [LoggingSettings] Настройки переданы в ToastService');
-        } else {
-          console.error('🔧 [LoggingSettings] Получены некорректные данные:', data);
-          setSettings(defaultSettings);
-          setIsInitialized(true);
-        }
-      } else if (response.status === 401) {
-        console.log('🔧 [LoggingSettings] Користувач не авторизований, використовуємо налаштування за замовчуванням');
-        // Спробуємо перевірити профіль користувача
-        try {
-          const profileResponse = await fetch('/api/auth/profile', {
-            credentials: 'include'
-          });
-          if (profileResponse.ok) {
-            console.log('🔧 [LoggingSettings] Профіль доступний, можливо токени закінчилися - пробуємо знову');
-            // Повторюємо запит через невелику затримку
-            setTimeout(() => loadSettings(), 1000);
-          } else {
-            setSettings(defaultSettings);
-            setIsInitialized(true);
-          }
-        } catch {
-          setSettings(defaultSettings);
-          setIsInitialized(true);
-        }
-      } else {
-        console.error(`🔧 [LoggingSettings] Помилка завантаження налаштувань: ${response.status}`);
-        // У разі інших помилок теж використовуємо налаштування за замовчуванням
-        setSettings(defaultSettings);
-        setIsInitialized(true);
-      }
     } catch (error) {
-      console.error('🔧 [LoggingSettings] Помилка мережі при завантаженні налаштувань:', error);
-      // У разі помилки мережі використовуємо налаштування за замовчуванням
-      setSettings(defaultSettings);
+      console.error('🔧 [LoggingSettings] Ошибка при загрузке настроек:', error);
+      // При ошибке используем пустое состояние - компонент покажет лоадер
       setIsInitialized(true);
     }
   };
 
   const saveSettings = async () => {
+    if (!settings) return;
+    
     setIsLoading(true);
     try {
-      console.log('🔧 [LoggingSettings] Сохранение настроек логирования...');
-      console.log('🔧 [LoggingSettings] Отправляемые данные:', JSON.stringify(settings, null, 2));
-      console.log('🔧 [LoggingSettings] Инициализировано:', isInitialized);
+      LoggingService.loggingSettingsLog('🔧 Сохранение настроек логирования...');
+      LoggingService.loggingSettingsLog('🔧 Отправляемые данные:', JSON.stringify(settings, null, 2));
 
-      // Проверяем, что настройки инициализированы
-      if (!isInitialized) {
-        console.error('🔧 [LoggingSettings] Настройки не инициализированы, ждем загрузки...');
-        ToastService.show({
-          title: "⏳ Зачекайте",
-          description: "Завантаження налаштувань...",
-          color: "warning"
-        });
-        setIsLoading(false);
-        return;
-      }
+      // Применяем настройки локально сразу (для немедленного эффекта)
+      LoggingService.updateSettings(settings);
+      LoggingService.loggingSettingsLog('🔧 Настройки применены локально');
 
-      // Проверяем структуру данных перед отправкой
-      if (!settings || !settings.console || !settings.toast) {
-        console.error('🔧 [LoggingSettings] Некорректная структура настроек:', settings);
-        ToastService.show({
-          title: "❌ Помилка валідації",
-          description: "Налаштування мають некоректну структуру",
-          color: "danger"
-        });
-        setIsLoading(false);
-        return;
-      }
-
-      const requestBody = JSON.stringify(settings);
-      console.log('🔧 [LoggingSettings] Request body length:', requestBody.length);
-      console.log('🔧 [LoggingSettings] Request body preview:', requestBody.substring(0, 200) + '...');
-
-      const response = await fetch('/api/settings/logging', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        credentials: 'include',
-        body: requestBody
-      });
-
-      console.log(`🔧 [LoggingSettings] Ответ сервера: ${response.status} ${response.statusText}`);
-
-      if (response.ok) {
-        const savedData = await response.json();
-        console.log('🔧 [LoggingSettings] Успешный ответ сервера:', savedData);
+      // Пытаемся сохранить на сервер
+      const success = await LoggingService.saveSettings(settings);
+      
+      if (success) {
         setHasChanges(false);
 
-        // Оновлюємо налаштування в ToastService
-        ToastService.updateSettings(settings);
+        // Показываем уведомление об успешном сохранении
+        LoggingService.toastSystemNotification(
+          "✅ Налаштування збережено",
+          "Налаштування логування успішно оновлено на сервер",
+          "success"
+        );
 
-        // Показуємо сповіщення про успішне збереження (с учетом настроек)
-        ToastService.show({
-          title: "✅ Налаштування збережено",
-          description: "Налаштування логування успішно оновлено",
-          color: "success"
-        });
-
-        console.log('🔧 [LoggingSettings] Настройки сохранены и обновлены в ToastService');
+        LoggingService.loggingSettingsLog('🔧 Настройки успешно сохранены на сервер');
       } else {
-        // Получаем тело ответа об ошибке
-        let errorMessage = 'Неизвестная ошибка';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || 'Ошибка сервера';
-          console.error('🔧 [LoggingSettings] Ответ сервера с ошибкой:', errorData);
-        } catch (e) {
-          console.error('🔧 [LoggingSettings] Не удалось распарсить ответ сервера');
-        }
-
-        console.error(`🔧 [LoggingSettings] Ошибка сохранения: ${errorMessage}`);
-        ToastService.show({
-          title: "❌ Помилка збереження",
-          description: errorMessage,
-          color: "danger"
-        });
+        // Настройки уже применены локально, просто уведомляем о проблеме с сервером
+        LoggingService.toastSystemNotification(
+          "⚠️ Налаштування застосовано локально",
+          "Зміни діють, але не збережено на сервер",
+          "warning"
+        );
       }
+      
     } catch (error) {
       console.error('Error saving logging settings:', error);
+      LoggingService.toastSystemNotification(
+        "❌ Помилка збереження",
+        "Не вдалося зберегти налаштування",
+        "danger"
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  const updateConsoleSetting = (key: keyof ConsoleLoggingSettings, value: boolean | number) => {
-    setSettings(prev => ({
+  const updateConsoleSetting = (key: keyof ConsoleLoggingSettings, value: boolean) => {
+    if (!settings) return;
+    
+    setSettings(prev => prev ? {
       ...prev,
       console: {
         ...prev.console,
         [key]: value
       }
-    }));
+    } : prev);
     setHasChanges(true);
   };
 
   const updateToastSetting = (key: keyof ToastLoggingSettings, value: boolean) => {
-    setSettings(prev => ({
+    if (!settings) return;
+    
+    setSettings(prev => prev ? {
       ...prev,
       toast: {
         ...prev.toast,
         [key]: value
       }
-    }));
+    } : prev);
     setHasChanges(true);
   };
 
   const resetToDefaults = () => {
+    const defaultSettings: LoggingSettingsType = {
+      console: {
+        authContextLogs: true,
+        apiCallLogs: false,
+        routingLogs: false,
+        equipmentLogs: true,
+        debugLogs: false,
+        performanceLogs: false,
+        // Новые категории по умолчанию
+        loggingSettingsLogs: false,
+        orderAssemblyLogs: false,
+        cookieLogs: false,
+        warehouseMovementLogs: false,
+        productSetsLogs: false
+      },
+      toast: {
+        authSuccess: true,
+        authErrors: true,
+        tokenRefresh: true,
+        tokenExpiry: true,
+        apiErrors: true,
+        equipmentStatus: true,
+        systemNotifications: true
+      }
+    };
+    
     setSettings(defaultSettings);
     setHasChanges(true);
   };
 
   // Функции для демонстрации настроек
-  const demonstrateConsoleLog = (type: string) => {
-    const timestamp = new Date().toISOString();
+  const demonstrateConsoleLog = (type: keyof ConsoleLoggingSettings) => {
     switch (type) {
-      case 'accessToken':
-        console.log(`🔑 [AuthService] Access token: eyJhbGciOiJIUzI1NiIs...`);
+      case 'authContextLogs':
+        LoggingService.authLog('🔑 Демо: Токен успешно обновлен', { expiresIn: 120 });
         break;
-      case 'refreshToken':
-        console.log(`🔄 [AuthService] Refresh token: eyJhbGciOiJIUzI1NiIs...`);
+      case 'apiCallLogs':
+        LoggingService.apiLog('🚀 Демо: API запрос GET /api/orders -> 200 (150ms)');
         break;
-      case 'tokenExpiry':
-        console.log(`⏰ [AuthService] Access закінчується через: 3600 сек`);
+      case 'routingLogs':
+        LoggingService.routeLog('🧭 Демо: Переход на страницу /settings/logging');
+        break;
+      case 'equipmentLogs':
+        LoggingService.equipmentLog('⚖️ Демо: Весы VTA-60 подключены, вес: 1.25 кг');
+        break;
+      case 'debugLogs':
+        LoggingService.debugLog('🐛 Демо: Отладочная информация', { state: 'active', count: 5 });
+        break;
+      case 'performanceLogs':
+        LoggingService.perfLog('⚡ Демо: Рендер компонента за 15ms');
+        break;
+      // Новые категории демонстрации
+      case 'loggingSettingsLogs':
+        LoggingService.loggingSettingsLog('⚙️ Демо: Налаштування логування збережено');
+        break;
+      case 'orderAssemblyLogs':
+        LoggingService.orderAssemblyLog('📦 Демо: Замовлення №12345 готове до відправки');
+        break;
+      case 'cookieLogs':
+        LoggingService.cookieLog('🍪 Демо: Cookie "user_theme" збережено зі значенням "dark"');
+        break;
+      case 'warehouseMovementLogs':
+        LoggingService.warehouseMovementLog('🏭 Демо: Складський документ #WM-001 створено');
+        break;
+      case 'productSetsLogs':
+        LoggingService.productSetsLog('🛒 Демо: Набір товарів створено');
         break;
     }
   };
 
-  const demonstrateToast = (type: string) => {
+  const demonstrateToast = (type: keyof ToastLoggingSettings) => {
     switch (type) {
-      case 'loginLogout':
-        ToastService.show({
-          title: "✅ Авторизація успішна",
-          description: `Ласкаво просимо, demo@example.com`,
-          color: "success"
-        });
+      case 'authSuccess':
+        LoggingService.toastAuthSuccess('demo@example.com');
         break;
-      case 'tokenGenerated':
-        ToastService.show({
-          title: "🔑 Нові токени створено",
-          description: `Токени успішно створені для користувача demo@example.com`,
-          color: "success"
-        });
+      case 'authErrors':
+        LoggingService.toastAuthError('Невірні облікові дані');
         break;
-      case 'tokenRefreshed':
-        ToastService.show({
-          title: "🔄 Токени оновлено",
-          description: `Сесія автоматично оновлена для demo@example.com`,
-          color: "success"
-        });
+      case 'tokenRefresh':
+        LoggingService.toastTokenRefreshed('demo@example.com');
         break;
-      case 'tokenRemoved':
-        ToastService.show({
-          title: "🗑️ Токени видалено",
-          description: `Сесія завершена для користувача demo@example.com`,
-          color: "default"
-        });
+      case 'tokenExpiry':
+        LoggingService.toastTokenExpired();
         break;
-      case 'tokenExpired':
-        ToastService.show({
-          title: "⏰ Сесія закінчилася",
-          description: "Ваша сесія закінчилася. Виконується автоматичне оновлення...",
-          color: "default"
-        });
+      case 'apiErrors':
+        LoggingService.toastApiError('Не вдалося завантажити дані');
         break;
-      case 'authError':
-        ToastService.show({
-          title: "❌ Помилка авторизації",
-          description: "Невірні облікові дані",
-          color: "danger"
-        });
+      case 'equipmentStatus':
+        LoggingService.toastEquipmentStatus('⚖️ Весы підключено', 'VTA-60 успішно підключені');
         break;
-      case 'refreshError':
-        ToastService.show({
-          title: "❌ Помилка оновлення сесії",
-          description: "Не вдалося оновити токени. Будь ласка, увійдіть знову.",
-          color: "danger"
-        });
+      case 'systemNotifications':
+        LoggingService.toastSystemNotification('🔔 Системне повідомлення', 'Демо сповіщення працює!');
         break;
     }
   };
+
+  // Конфигурация настроек для UI
+  const consoleSettingsConfig: Array<{
+    key: keyof ConsoleLoggingSettings;
+    label: string;
+    description: string;
+    color: 'primary' | 'success' | 'warning' | 'danger';
+  }> = [
+    {
+      key: 'authContextLogs',
+      label: 'Логи авторизації (AuthContext)',
+      description: 'Логи токенів, входу/виходу, обновлення сессий',
+      color: 'primary'
+    },
+    {
+      key: 'apiCallLogs',
+      label: 'API запити',
+      description: 'Логи HTTP запитів і відповідей сервера',
+      color: 'success'
+    },
+    {
+      key: 'routingLogs',
+      label: 'Маршрутизація',
+      description: 'Логи переходів між сторінками',
+      color: 'primary'
+    },
+    {
+      key: 'equipmentLogs',
+      label: 'Обладнання (ваги, принтери)',
+      description: 'Логи підключення і роботи обладнання',
+      color: 'warning'
+    },
+    {
+      key: 'debugLogs',
+      label: 'Відладочні логи',
+      description: 'Технічна інформація для розробників',
+      color: 'danger'
+    },
+    {
+      key: 'performanceLogs',
+      label: 'Продуктивність',
+      description: 'Логи часу виконання і продуктивності',
+      color: 'success'
+    },
+    // Новые категории логирования
+    {
+      key: 'loggingSettingsLogs',
+      label: 'Налаштування логування',
+      description: 'Логи роботи системи керування логами',
+      color: 'primary'
+    },
+    {
+      key: 'orderAssemblyLogs',
+      label: 'Комплектація замовлень',
+      description: 'Логи процесу збирання та обробки замовлень',
+      color: 'warning'
+    },
+    {
+      key: 'productSetsLogs',
+      label: 'Набір товарів',
+      description: 'Логи роботи з наборами товарів',
+      color: 'success'
+    },
+    {
+      key: 'cookieLogs',
+      label: 'Робота з Cookies',
+      description: 'Логи збереження та читання cookies',
+      color: 'success'
+    },
+    {
+      key: 'warehouseMovementLogs',
+      label: 'Складські переміщення',
+      description: 'Логи операцій з складськими документами та рухом товарів',
+      color: 'danger'
+    }
+  ];
+
+  const toastSettingsConfig: Array<{
+    key: keyof ToastLoggingSettings;
+    label: string;
+    description: string;
+    color: 'primary' | 'success' | 'warning' | 'danger';
+  }> = [
+    {
+      key: 'authSuccess',
+      label: 'Успішна авторизація',
+      description: 'Повідомлення про вхід і вихід з системи',
+      color: 'success'
+    },
+    {
+      key: 'authErrors',
+      label: 'Помилки авторизації',
+      description: 'Сповіщення про помилки входу і токенів',
+      color: 'danger'
+    },
+    {
+      key: 'tokenRefresh',
+      label: 'Оновлення токенів',
+      description: 'Повідомлення про автоматичне оновлення сесії',
+      color: 'success'
+    },
+    {
+      key: 'tokenExpiry',
+      label: 'Закінчення токенів',
+      description: 'Попередження про закінчення сесії',
+      color: 'warning'
+    },
+    {
+      key: 'apiErrors',
+      label: 'Помилки API',
+      description: 'Сповіщення про помилки запросів до сервера',
+      color: 'danger'
+    },
+    {
+      key: 'equipmentStatus',
+      label: 'Статус обладнання',
+      description: 'Повідомлення про підключення весов, принтерів',
+      color: 'primary'
+    },
+    {
+      key: 'systemNotifications',
+      label: 'Системні сповіщення',
+      description: 'Загальні повідомлення системи',
+      color: 'primary'
+    }
+  ];
+
+  if (!isInitialized || !settings) {
+    return (
+      <Card className="w-full p-2">
+        <CardBody className="flex items-center justify-center p-8">
+          <div className="text-center">
+            <div className="text-lg">⏳ Завантаження налаштувань...</div>
+          </div>
+        </CardBody>
+      </Card>
+    );
+  }
 
   return (
     <Card className="w-full p-2">
@@ -328,300 +353,85 @@ export const LoggingSettings: React.FC = () => {
           <div>
             <h3 className="text-xl font-semibold">Налаштування логування</h3>
             <p className="text-sm text-gray-600">
-              Керування логуванням токенів та сповіщень
+              Керування консольними логами та Toast сповіщеннями
             </p>
           </div>
         </div>
       </CardHeader>
 
       <CardBody className="space-y-6">
-        <div className="flex gap-4">
-			{/* Логування в консолі браузера */}
-			<div className="space-y-4 flex-1">
-			  <h4 className="text-md font-bold">
-				Логування в консолі браузера
-			  </h4>
-			  <div className="space-y-4">
-				            <div className="flex items-start gap-3">
-              <Switch
-                size="sm"
-                isSelected={settings.console.logAccessToken}
-                onValueChange={(value) => updateConsoleSetting('logAccessToken', value)}
-                className="mt-1"
-              />
-              <div className="flex-1">
-                <div className="font-medium text-sm">Загальні дані по access токенах</div>
-                <div className="flex items-center gap-2 mt-1">
-                  <Button
+        <div className="flex gap-6">
+          {/* Консольні логи */}
+          <div className="space-y-4 flex-1">
+            <h4 className="text-lg font-bold">
+              Логування в консолі браузера
+            </h4>
+            <div className="space-y-4">
+              {consoleSettingsConfig.map((config) => (
+                <div key={config.key} className="flex items-start gap-3">
+                  <Switch
                     size="sm"
-                    variant="light"
-                    color="primary"
-                    onPress={() => demonstrateConsoleLog('accessToken')}
-                    className="h-6 px-2 text-xs"
-                  >
-                    Перевірити
-                  </Button>
-                  <span className="text-xs text-gray-500">
-                    Перевірте консоль браузера
-                  </span>
+                    isSelected={settings.console[config.key]}
+                    onValueChange={(value) => updateConsoleSetting(config.key, value)}
+                    className="mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">
+                      {config.label}
+                      <Button
+                          size="sm"
+                          variant="flat"
+                          color="default"
+                          onPress={() => {demonstrateConsoleLog(config.key); LoggingService.toastSystemNotification('🔔 Тестування', 'Перевірте консоль браузера (F12)', 'default')}}
+                          className="h-6 px-2 text-xs ml-2 gap-1"
+                        >
+                        <DynamicIcon name="bell-ring" strokeWidth={1.5} size={12} /> Тестувати
+                        </Button>
+                    </div>
+                    <div className="text-xs text-gray-500 mb-1">{config.description}</div>
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
-				<div className="flex items-start gap-3">
-				  <Switch
-					size="sm"
-					isSelected={settings.console.logRefreshToken}
-					onValueChange={(value) => updateConsoleSetting('logRefreshToken', value)}
-					className="mt-1"
-				  />
-				  <div className="flex-1">
-					<div className="font-medium text-sm">Загальні дані по refresh токенах</div>
-					<div className="flex items-center gap-2 mt-1">
-					  <Button
-						size="sm"
-						variant="light"
-						color="primary"
-						onPress={() => demonstrateConsoleLog('refreshToken')}
-						className="h-6 px-2 text-xs"
-					  >
-						Перевірити
-					  </Button>
-					  <span className="text-xs text-gray-500">
-						Перевірте консоль браузера
-					  </span>
-					</div>
-				  </div>
-				</div>
-				<div className="flex items-start gap-3">
-				  <Switch
-					size="sm"
-					isSelected={settings.console.logTokenExpiry}
-					onValueChange={(value) => updateConsoleSetting('logTokenExpiry', value)}
-					className="mt-1"
-				  />
-				  <div className="flex-1">
-					<div className="font-medium text-sm">Час до закінчення токенів</div>
-					<div className="flex items-center gap-2 mt-1">
-					  <Button
-						size="sm"
-						variant="light"
-						color="primary"
-						onPress={() => demonstrateConsoleLog('tokenExpiry')}
-						className="h-6 px-2 text-xs"
-					  >
-						Перевірити
-					  </Button>
-					  <span className="text-xs text-gray-500">
-						Перевірте консоль браузера
-					  </span>
-					</div>
-				  </div>
-				</div>
-				<div className="flex items-start gap-3">
-				  <div className="w-10"></div>
-				  <div className="flex-1">
-					<div className="font-medium text-sm mb-2">Частота логування</div>
-					<div className="flex items-center gap-2">
-					  <Input
-						type="number"
-						value={settings.console.logFrequency.toString()}
-						onValueChange={(value) => updateConsoleSetting('logFrequency', parseInt(value) || 5)}
-						className="max-w-24"
-						size="sm"
-						min={1}
-						max={60}
-					  />
-					  <span className="text-sm text-gray-600">хвилин</span>
-					</div>
-				  </div>
-				</div>
-			  </div>
-			</div>
+          </div>
 
-			{/* Логування в Toast */}
-			<div className="space-y-4 flex-1">
-			  <h4 className="text-md font-bold">
-				Логування в Toast сповіщеннях
-			  </h4>
-			  <div className="space-y-4">
-				<div className="flex items-start gap-3">
-				  <Switch
-					size="sm"
-					isSelected={settings.toast.logLoginLogout}
-					onValueChange={(value) => updateToastSetting('logLoginLogout', value)}
-					className="mt-1"
-				  />
-				  <div className="flex-1">
-					<div className="font-medium text-sm">Вхід та вихід з системи</div>
-					<div className="flex items-center gap-2 mt-1">
-					  <Button
-						size="sm"
-						variant="light"
-						color="success"
-						onPress={() => demonstrateToast('loginLogout')}
-						className="h-6 px-2 text-xs"
-					  >
-						Перевірити
-					  </Button>
-					  <span className="text-xs text-gray-500">
-						Приклад: "✅ Авторизація успішна"
-					  </span>
-					</div>
-				  </div>
-				</div>
-				<div className="flex items-start gap-3">
-				  <Switch
-					size="sm"
-					isSelected={settings.toast.logTokenGenerated}
-					onValueChange={(value) => updateToastSetting('logTokenGenerated', value)}
-					className="mt-1"
-				  />
-				  <div className="flex-1">
-					<div className="font-medium text-sm">Генерація нових токенів</div>
-					<div className="flex items-center gap-2 mt-1">
-					  <Button
-						size="sm"
-						variant="light"
-						color="success"
-						onPress={() => demonstrateToast('tokenGenerated')}
-						className="h-6 px-2 text-xs"
-					  >
-						Перевірити
-					  </Button>
-					  <span className="text-xs text-gray-500">
-						Приклад: "🔑 Нові токени створено"
-					  </span>
-					</div>
-				  </div>
-				</div>
-				<div className="flex items-start gap-3">
-				  <Switch
-					size="sm"
-					isSelected={settings.toast.logTokenRefreshed}
-					onValueChange={(value) => updateToastSetting('logTokenRefreshed', value)}
-					className="mt-1"
-				  />
-				  <div className="flex-1">
-					<div className="font-medium text-sm">Оновлення токенів</div>
-					<div className="flex items-center gap-2 mt-1">
-					  <Button
-						size="sm"
-						variant="light"
-						color="success"
-						onPress={() => demonstrateToast('tokenRefreshed')}
-						className="h-6 px-2 text-xs"
-					  >
-						Перевірити
-					  </Button>
-					  <span className="text-xs text-gray-500">
-						Приклад: "🔄 Токени оновлено"
-					  </span>
-					</div>
-				  </div>
-				</div>
-				<div className="flex items-start gap-3">
-				  <Switch
-					size="sm"
-					isSelected={settings.toast.logTokenRemoved}
-					onValueChange={(value) => updateToastSetting('logTokenRemoved', value)}
-					className="mt-1"
-				  />
-				  <div className="flex-1">
-					<div className="font-medium text-sm">Видалення токенів</div>
-					<div className="flex items-center gap-2 mt-1">
-					  <Button
-						size="sm"
-						variant="light"
-						color="warning"
-						onPress={() => demonstrateToast('tokenRemoved')}
-						className="h-6 px-2 text-xs"
-					  >
-						Перевірити
-					  </Button>
-					  <span className="text-xs text-gray-500">
-						Приклад: "🗑️ Токени видалено"
-					  </span>
-					</div>
-				  </div>
-				</div>
-				<div className="flex items-start gap-3">
-				  <Switch
-					size="sm"
-					isSelected={settings.toast.logTokenExpired}
-					onValueChange={(value) => updateToastSetting('logTokenExpired', value)}
-					className="mt-1"
-				  />
-				  <div className="flex-1">
-					<div className="font-medium text-sm">Закінчення терміну токенів</div>
-					<div className="flex items-center gap-2 mt-1">
-					  <Button
-						size="sm"
-						variant="light"
-						color="warning"
-						onPress={() => demonstrateToast('tokenExpired')}
-						className="h-6 px-2 text-xs"
-					  >
-						Перевірити
-					  </Button>
-					  <span className="text-xs text-gray-500">
-						Приклад: "⏰ Сесія закінчилася"
-					  </span>
-					</div>
-				  </div>
-				</div>
-				<div className="flex items-start gap-3">
-				  <Switch
-					size="sm"
-					isSelected={settings.toast.logAuthError}
-					onValueChange={(value) => updateToastSetting('logAuthError', value)}
-					className="mt-1"
-				  />
-				  <div className="flex-1">
-					<div className="font-medium text-sm">Помилки авторизації</div>
-					<div className="flex items-center gap-2 mt-1">
-					  <Button
-						size="sm"
-						variant="light"
-						color="danger"
-						onPress={() => demonstrateToast('authError')}
-						className="h-6 px-2 text-xs"
-					  >
-						Перевірити
-					  </Button>
-					  <span className="text-xs text-gray-500">
-						Приклад: "❌ Помилка авторизації"
-					  </span>
-					</div>
-				  </div>
-				</div>
-				<div className="flex items-start gap-3">
-				  <Switch
-					size="sm"
-					isSelected={settings.toast.logRefreshError}
-					onValueChange={(value) => updateToastSetting('logRefreshError', value)}
-					className="mt-1"
-				  />
-				  <div className="flex-1">
-					<div className="font-medium text-sm">Помилки оновлення сесії</div>
-					<div className="flex items-center gap-2 mt-1">
-					  <Button
-						size="sm"
-						variant="light"
-						color="danger"
-						onPress={() => demonstrateToast('refreshError')}
-						className="h-6 px-2 text-xs"
-					  >
-						Перевірити
-					  </Button>
-					  <span className="text-xs text-gray-500">
-						Приклад: "❌ Помилка оновлення сесії"
-					  </span>
-					</div>
-				  </div>
-				</div>
-			  </div>
-			</div>
-		</div>
+          {/* Toast сповіщення */}
+          <div className="space-y-4 flex-1">
+            <h4 className="text-lg font-bold">
+              Toast сповіщення
+            </h4>
+            <div className="space-y-4">
+              {toastSettingsConfig.map((config) => (
+                <div key={config.key} className="flex items-start gap-3">
+                  <Switch
+                    size="sm"
+                    isSelected={settings.toast[config.key]}
+                    onValueChange={(value) => updateToastSetting(config.key, value)}
+                    className="mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">{config.label}</div>
+                    <div className="text-xs text-gray-500 mb-1">{config.description}</div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="light"
+                        color={config.color}
+                        onPress={() => demonstrateToast(config.key)}
+                        className="h-6 px-2 text-xs"
+                      >
+                        Перевірити
+                      </Button>
+                      <span className="text-xs text-gray-400">
+                        Демо сповіщення
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </CardBody>
 
       <CardFooter className="flex flex-col gap-4">
@@ -639,31 +449,15 @@ export const LoggingSettings: React.FC = () => {
             color="default"
             variant="light"
             onPress={resetToDefaults}
-            isDisabled={!hasChanges}
           >
             Скинути до типових
           </Button>
 
-          <div className="ml-auto flex gap-2">
-            <Button
-              color="secondary"
-              variant="light"
-              onPress={() => demonstrateConsoleLog('accessToken')}
-              size="sm"
-            >
-              🧪 Тест консолі
-            </Button>
-            <Button
-              color="secondary"
-              variant="light"
-              onPress={() => demonstrateToast('loginLogout')}
-              size="sm"
-            >
-              🔔 Тест Toast
-            </Button>
-          </div>
         </div>
       </CardFooter>
     </Card>
   );
 };
+
+// Экспорт для обратной совместимости
+export const LoggingSettings = LoggingSettingsComponent;

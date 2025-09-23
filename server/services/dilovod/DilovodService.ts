@@ -138,10 +138,12 @@ export class DilovodService {
       // Получаем товары с ценами
       const pricesResponse = await this.apiClient.getGoodsWithPrices(skuList);
       logWithTimestamp(`Получено ${pricesResponse.length} товаров с ценами`);
+      logWithTimestamp('RAW pricesResponse (first 2):', Array.isArray(pricesResponse) ? pricesResponse.slice(0, 2) : pricesResponse);
       
       // Получаем товары из каталога для дополнительной информации
       const goodsResponse = await this.apiClient.getGoodsFromCatalog(skuList);
       logWithTimestamp(`Получено ${goodsResponse.length} товаров из каталога`);
+      logWithTimestamp('RAW goodsResponse (first 2):', Array.isArray(goodsResponse) ? goodsResponse.slice(0, 2) : goodsResponse);
       
       // Обрабатываем данные через процессор
       const result = await this.dataProcessor.processGoodsWithSets(pricesResponse, goodsResponse);

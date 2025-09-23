@@ -6,6 +6,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { DeviationButton } from "@/components/DeviationButton";
 import { motion, AnimatePresence } from 'framer-motion';
 import { useWarehouse } from '@/hooks/useWarehouse';
+import { LoggingService } from '@/services/LoggingService';
 
 const PORTIONS_PER_BOX = 24;
 
@@ -270,7 +271,7 @@ export default function WarehouseMovement() {
         );
         setSelectedProductIds(selectedIds);
         
-        console.log(`🏪 [WarehouseMovement] Выбрано ${selectedIds.size} товаров из черновика`);
+        LoggingService.warehouseMovementLog(`🏪 Выбрано ${selectedIds.size} товаров из черновика`);
     }, []);
 
     
@@ -278,7 +279,7 @@ export default function WarehouseMovement() {
     useEffect(() => {
         const loadData = async () => {
             setInitialLoading(true);
-            console.log('🏪 [WarehouseMovement] Начинаем загрузку данных...');
+            LoggingService.warehouseMovementLog('🏪 Начинаем загрузку данных...');
             
             try {
                 // Загружаем товары, черновики и завершенные акты параллельно
@@ -411,7 +412,7 @@ export default function WarehouseMovement() {
             
             if (savedDraft && savedDraft.status === 'draft') {
                 // Обновляем существующий черновик
-                console.log('🏪 [WarehouseMovement] Обновляем существующий черновик:', savedDraft.id);
+                LoggingService.warehouseMovementLog('🏪 Обновляем существующий черновик:', savedDraft.id);
                 const updateData = {
                     items: items,
                     deviations: deviations,
@@ -420,7 +421,7 @@ export default function WarehouseMovement() {
                 result = await updateDraft(savedDraft.id, updateData);
             } else {
                 // Создаём новый черновик
-                console.log('🏪 [WarehouseMovement] Создаём новый черновик');
+                LoggingService.warehouseMovementLog('🏪 Создаём новый черновик');
                 const movementData = {
                     sourceWarehouse: 'Основний склад',
                     destinationWarehouse: 'Малий склад',

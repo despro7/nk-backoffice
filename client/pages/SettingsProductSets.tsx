@@ -19,6 +19,7 @@ import {
   DropdownItem,
   SortDescriptor
 } from '@heroui/react';
+import { LoggingService } from '@/services/LoggingService';
 
 interface Product {
   id: string;
@@ -118,6 +119,16 @@ const ProductSets: React.FC = () => {
   const [savingWeight, setSavingWeight] = useState<string | null>(null);
   const [forceUpdate, setForceUpdate] = useState(0); // Для принудительного обновления
   const inputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+
+  // Индекс для быстрого и стабильного поиска товаров по SKU
+  const productsBySku = useMemo(() => {
+    const map = new Map<string, Product>();
+    for (const product of allProducts) {
+      const key = product.sku?.toString().trim().toLowerCase();
+      if (key) map.set(key, product);
+    }
+    return map;
+  }, [allProducts]);
 
   // Определяем колонки таблицы
   const columns = [
@@ -346,11 +357,11 @@ const ProductSets: React.FC = () => {
                     onClick={(e) => {
                       e.stopPropagation();
                       // Автоматически устанавливаем вес по умолчанию на основе категории
-                      const defaultWeight = product.categoryId === 1 ? 420 : 330; // 1 - первые блюда, остальные - вторые
+                      const defaultWeight = product.categoryId === 1 ? 410 : 330; // 1 - первые блюда, остальные - вторые
                       updateProductWeight(productIdStr, defaultWeight);
                     }}
                     className="min-w-0 p-1"
-                    title={`Установить вес по умолчанию: ${product.categoryId === 1 ? '420' : '330'}г`}
+                    title={`Установить вес по умолчанию: ${product.categoryId === 1 ? '410' : '330'}г`}
                   >
                     <DynamicIcon name="plus" size={12} />
                   </Button>
@@ -389,7 +400,9 @@ const ProductSets: React.FC = () => {
                   <div className="font-medium">Комплект ({setData.length} позицій)</div>
                   <div className="text-xs text-gray-500">
                     {setData.map((item, index) => {
-                      const componentProduct = allProducts.find(p => p.sku === item.id);
+                      const targetSku = String(item.id).trim().toLowerCase();
+                      const componentProduct = productsBySku.get(targetSku) ||
+                        allProducts.find(p => p.id?.toString() === String(item.id));
                       const componentName = componentProduct?.name || item.id;
                       
                       return (
@@ -449,14 +462,31 @@ const ProductSets: React.FC = () => {
         
         // Отладочная информация для первого товара
         if (data.products.length > 0) {
-          console.log('Первый товар - структура данных:', {
-            product: data.products[0].name,
-            stockBalanceByStock: data.products[0].stockBalanceByStock,
-            stockType: typeof data.products[0].stockBalanceByStock,
-            set: data.products[0].set,
-            setType: typeof data.products[0].set,
-            hasStockData: !!data.products[0].stockBalanceByStock
+          const firstProduct = data.products[0];
+          LoggingService.productSetsLog('🛒 [SettingsProductSets] Перший товар - структура даних:', {
+            categoryId: firstProduct.categoryId,
+            categoryIdType: typeof firstProduct.categoryId,
+            categoryIdIsNull: firstProduct.categoryId === null,
+            categoryIdIsUndefined: firstProduct.categoryId === undefined,
+            categoryName: firstProduct.categoryName,
+            hasStockData: !!firstProduct.stockBalanceByStock,
+            product: firstProduct.name,
+            set: firstProduct.set,
+            setType: typeof firstProduct.set,
+            stockBalanceByStock: firstProduct.stockBalanceByStock,
+            stockType: typeof firstProduct.stockBalanceByStock,
+            fullProduct: firstProduct, // Полная структура товара
           });
+          
+          LoggingService.productSetsLog('🛒 [SettingsProductSets] Все товары - categoryId статистика:', 
+            data.products.map(p => ({
+              sku: p.sku,
+              name: p.name,
+              categoryId: p.categoryId,
+              categoryIdType: typeof p.categoryId,
+              categoryName: p.categoryName
+            }))
+          );
         }
       }
     } catch (error) {
@@ -653,6 +683,53 @@ const ProductSets: React.FC = () => {
       }
     } catch (error) {
       alert(`Ошибка сети: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
+    }
+  };
+
+  // Тест получения одного товара по SKU напрямую из Dilovod
+  const testSingleDilovodProduct = async () => {
+    if (!['admin', 'boss'].includes(user?.role || '')) {
+      addToast({
+        title: "Недостатньо прав",
+        description: 'Лише адміністратори можуть виконувати цей тест',
+        color: "warning"
+      });
+      return;
+    }
+
+    const sku = window.prompt('Введіть SKU для перевірки в Dilovod:');
+    if (!sku) return;
+
+    try {
+      const response = await fetch(`/api/products/dilovod/${encodeURIComponent(sku)}`, {
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        addToast({
+          title: "Помилка",
+          description: `Не вдалося отримати товар: ${err.error || response.statusText}`,
+          color: "danger"
+        });
+        LoggingService.productSetsLog('🧪 [SingleDilovodTest] Помилка отримання товару:', err);
+        return;
+      }
+
+      const data = await response.json();
+      const product = data.product;
+      LoggingService.productSetsLog('🧪 [SingleDilovodTest] Результат товару:', product);
+      addToast({
+        title: "Товар отримано",
+        description: `SKU: ${product.sku}, Категорія: ${product.category?.name || '—'} (id: ${product.category?.id ?? '—'})`,
+        color: "success"
+      });
+    } catch (error) {
+      addToast({
+        title: "Помилка мережі",
+        description: `Помилка: ${error instanceof Error ? error.message : 'Невідома помилка'}`,
+        color: "danger"
+      });
     }
   };
 
@@ -1036,7 +1113,7 @@ const ProductSets: React.FC = () => {
       {/* Таблица товаров */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <Table
-          key={`products-table-${Object.keys(editingWeight).length}`}
+          key={`products-table-${Object.keys(editingWeight).length}-${allProducts.length}`}
           aria-label="Таблиця товарів та комплектів"
             sortDescriptor={sortDescriptor}
             onSortChange={setSortDescriptor}
@@ -1108,6 +1185,15 @@ const ProductSets: React.FC = () => {
                      >
                        <DynamicIcon name="package-x" className="mr-2" size={14} />
                        Тест комплектацій
+                    </Button>
+                    <Button
+                      onClick={testSingleDilovodProduct}
+                      disabled={!['admin', 'boss'].includes(user?.role || '')}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <DynamicIcon name="search" className="mr-2" size={14} />
+                      Тест SKU (Dilovod)
                     </Button>
                    </div>
                    

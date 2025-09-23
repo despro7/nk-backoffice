@@ -252,7 +252,7 @@ export class WarehouseService {
   // Получить товары для перемещения между складами
   static async getProductsForMovement() {
     try {
-      console.log('🏪 [WarehouseService] Получение товаров для перемещения...');
+      console.log('🏭 [WarehouseService] Получение товаров для перемещения...');
 
       // Получаем товары из базы данных
       const products = await prisma.product.findMany({
@@ -264,7 +264,7 @@ export class WarehouseService {
         orderBy: { name: 'asc' }
       });
 
-      console.log(`🏪 [WarehouseService] Найдено ${products.length} товаров с остатками`);
+      console.log(`🏭 [WarehouseService] Найдено ${products.length} товаров с остатками`);
 
       // Фильтруем товары с остатками на основном складе и парсим JSON
       const productsWithStock = products

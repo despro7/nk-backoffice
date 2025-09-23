@@ -20,9 +20,37 @@ export class DilovodApiClient {
   private apiUrl: string;
   private apiKey: string;
   private config: ReturnType<typeof getDilovodConfig>;
+  private ready: Promise<void>;
 
   constructor() {
-    this.loadConfig();
+    // Инициализируем и сохраняем промис готовности, чтобы ожидать перед запросами
+    this.ready = this.loadConfig();
+  }
+
+  private async ensureReady(): Promise<void> {
+    if (this.ready) {
+      await this.ready;
+    }
+    if (!this.apiUrl || !this.apiKey) {
+      // Последняя попытка перезагрузить конфиг
+      await this.loadConfig();
+      if (!this.apiUrl || !this.apiKey) {
+        throw new Error('Dilovod API URL/API KEY is not configured');
+      }
+    }
+  }
+
+  private normalizeToArray<T>(data: any): T[] {
+    if (Array.isArray(data)) return data as T[];
+    if (data == null) return [] as T[];
+    // Некоторые ответы могут приходить как { data: [...] } или { rows: [...] }
+    const possibleArrays = [data.data, data.rows, data.result, data.items];
+    for (const candidate of possibleArrays) {
+      if (Array.isArray(candidate)) return candidate as T[];
+    }
+    // Если пришел одиночный объект – оборачиваем в массив
+    if (typeof data === 'object') return [data as T];
+    return [] as T[];
   }
 
   /**
@@ -62,6 +90,10 @@ export class DilovodApiClient {
   // Основной метод для выполнения запросов к API
   async makeRequest<T = any>(request: DilovodApiRequest): Promise<T> {
     try {
+      // Гарантируем, что конфигурация загружена перед первым запросом
+      if (this.ready) {
+        await this.ready;
+      }
       logWithTimestamp('Отправляем запрос к Dilovod API:', request);
       
       const response = await fetch(this.apiUrl, {
@@ -96,6 +128,7 @@ export class DilovodApiClient {
 
   // Получение товаров с ценами
   async getGoodsWithPrices(skuList: string[]): Promise<DilovodPricesResponse[]> {
+    await this.ensureReady();
     const request: DilovodApiRequest = {
       version: "0.25",
       key: this.apiKey,
@@ -123,11 +156,13 @@ export class DilovodApiClient {
       }
     };
 
-    return this.makeRequest<DilovodPricesResponse[]>(request);
+    const resp = await this.makeRequest<any>(request);
+    return this.normalizeToArray<DilovodPricesResponse>(resp);
   }
 
   // Получение товаров из каталога
   async getGoodsFromCatalog(skuList: string[]): Promise<DilovodGoodsResponse[]> {
+    await this.ensureReady();
     const request: DilovodApiRequest = {
       version: "0.25",
       key: this.apiKey,
@@ -150,11 +185,13 @@ export class DilovodApiClient {
       }
     };
 
-    return this.makeRequest<DilovodGoodsResponse[]>(request);
+    const resp = await this.makeRequest<any>(request);
+    return this.normalizeToArray<DilovodGoodsResponse>(resp);
   }
 
   // Получение детальной информации об объекте (для комплектов)
   async getObject(id: string): Promise<DilovodObjectResponse> {
+    await this.ensureReady();
     const request: DilovodApiRequest = {
       version: "0.25",
       key: this.apiKey,
@@ -168,6 +205,7 @@ export class DilovodApiClient {
   // Тест подключения к API
   async testConnection(): Promise<boolean> {
     try {
+      await this.ensureReady();
       const request: DilovodApiRequest = {
         version: "0.25",
         key: this.apiKey,
@@ -190,6 +228,7 @@ export class DilovodApiClient {
 
   // Получение остатков товаров
   async getStockBalance(skuList: string[]): Promise<any[]> {
+    await this.ensureReady();
     const request: DilovodApiRequest = {
       version: "0.25",
       key: this.apiKey,

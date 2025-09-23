@@ -132,7 +132,7 @@ export class DilovodSyncManager {
       name: product.name,
       costPerItem: product.costPerItem ? parseFloat(product.costPerItem) : null,
       currency: product.currency,
-      categoryId: product.category.id || null,
+      categoryId: product.category.id ?? null,
       categoryName: product.category.name,
       weight: weight, // Добавляем вес
       set: product.set.length > 0 ? JSON.stringify(product.set) : null,

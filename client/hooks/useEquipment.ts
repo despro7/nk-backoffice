@@ -7,6 +7,7 @@ import EquipmentService, {
 } from '../services/EquipmentService';
 import ScaleService, { VTAScaleData } from '../services/ScaleService';
 import BarcodeScannerService, { ScannerEvent } from '../services/BarcodeScannerService'; 
+import { LoggingService } from '@/services/LoggingService';
 
 
 export interface EquipmentState {
@@ -110,9 +111,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       // Проверяем кеш конфигурации
       const now = Date.now();
       if (configCacheRef.current && (now - configCacheRef.current.timestamp) < CONFIG_CACHE_DURATION) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🔧 Using cached equipment config');
-        }
+        LoggingService.equipmentLog('🔧 Using cached equipment config');
         setConfig({ ...configCacheRef.current.data });
         updateStatus({
           isSimulationMode: configCacheRef.current.data?.connectionType === 'simulation',
@@ -233,12 +232,12 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     try {
       // Используем локальное состояние config
       if (!config) {
-        console.log('⚠️ useEquipment: Конфигурация не загружена, пропускаем подключение');
+        LoggingService.equipmentLog('⚠️ [useEquipment]: Конфигурация не загружена, пропускаем подключение');
         return false;
       }
 
       if (config.connectionType === 'simulation') {
-        console.log('🔧 useEquipment: Режим симуляции - подключаем виртуальные весы');
+        LoggingService.equipmentLog('🔧 [useEquipment]: Режим симуляции - подключаем виртуальные весы');
         updateStatus({
           isConnected: true,
           lastActivity: new Date(),
@@ -255,9 +254,9 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       if (result) {
         // Встановлюємо callback для отримання даних з ваг
         scaleService.current.onWeightData((weightData: VTAScaleData) => {
-          console.log('🔧 useEquipment: Weight data received from scale:', weightData);
+          LoggingService.equipmentLog('🔧 [useEquipment]: Weight data received from scale:', weightData);
           setCurrentWeight(weightData);
-          console.log('🔧 useEquipment: currentWeight updated');
+          LoggingService.equipmentLog('🔧 [useEquipment]: currentWeight updated');
           updateStatus({
             lastActivity: new Date(),
             error: null
@@ -271,7 +270,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
             .map(b => b.toString(16).padStart(2, '0').toUpperCase())
             .join(' ');
           setLastRawScaleData(hexString);
-          console.log('🔧 useEquipment: Raw scale data received:', hexString);
+          LoggingService.equipmentLog('🔧 [useEquipment]: Raw scale data received:', hexString);
         });
 
         updateStatus({
@@ -343,7 +342,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
             if (code === lastProcessedCodeRef.current &&
                 currentTime - lastProcessedTimeRef.current < 2000) {
               if (process.env.NODE_ENV === 'development') {
-                console.log('🔄 [useEquipment] Duplicate barcode ignored:', code);
+                LoggingService.equipmentLog('🔄 [useEquipment] Duplicate barcode ignored:', code);
               }
               return;
             }
@@ -437,12 +436,12 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   // Попытка переподключения при ошибках
   const attemptReconnect = useCallback(async (): Promise<boolean> => {
     if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-      console.log(`⚠️ useEquipment: Достигнуто максимальное количество попыток переподключения (${maxReconnectAttempts})`);
+      LoggingService.equipmentLog(`⚠️ [useEquipment]: Достигнуто максимальное количество попыток переподключения (${maxReconnectAttempts})`);
       return false;
     }
 
     reconnectAttemptsRef.current++;
-    console.log(`🔄 useEquipment: Попытка переподключения ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`);
+    LoggingService.equipmentLog(`🔄 [useEquipment]: Попытка переподключения ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`);
 
     try {
       // Сначала отключаемся
@@ -450,22 +449,22 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       
       // Экспоненциальная задержка: 1s, 2s, 4s
       const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), 4000);
-      console.log(`⏳ useEquipment: Пауза ${delay}ms перед переподключением...`);
+      LoggingService.equipmentLog(`⏳ [useEquipment]: Пауза ${delay}ms перед повторным подключением...`);
       await new Promise(resolve => window.setTimeout(resolve, delay));
       
       // Пытаемся переподключиться
       const reconnected = await connectScale();
       
       if (reconnected) {
-        console.log('✅ useEquipment: Успешно переподключились к весам');
+        LoggingService.equipmentLog('✅ [useEquipment]: Успешно переподключились к весам');
         reconnectAttemptsRef.current = 0; // Сбрасываем счетчик при успехе
         return true;
       } else {
-        console.log('❌ useEquipment: Не удалось переподключиться к весам');
+        LoggingService.equipmentLog('❌ [useEquipment]: Не удалось переподключиться к весам');
         return false;
       }
     } catch (error) {
-      console.error('❌ useEquipment: Ошибка при переподключении:', error);
+      console.error('❌ [useEquipment]: Ошибка при повторном подключении:', error);
       return false;
     }
   }, [connectScale, disconnectScale]);
@@ -475,7 +474,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     try {
       // Используем локальное состояние config вместо equipmentService
       if (config?.connectionType === 'simulation') {
-        console.log('🔧 useEquipment: Режим симуляции - генерируем вес');
+        LoggingService.equipmentLog('🔧 [useEquipment]: Режим симуляции - генерируем вес');
         const weightData = await equipmentService.current.getWeight();
         setCurrentWeight(weightData);
         // Обновляем кэш
@@ -491,15 +490,15 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         const age = Date.now() - weightCacheRef.current.timestamp;
         const cacheDuration = config?.scale?.weightCacheDuration || 2000; // Увеличиваем до 2 секунд
         if (age < cacheDuration) {
-          console.log('🔧 useEquipment: Возвращаем кэшированный вес:', weightCacheRef.current.data);
+          LoggingService.equipmentLog('🔧 [useEquipment]: Возвращаем кэшированный вес:', weightCacheRef.current.data);
           return weightCacheRef.current.data;
         }
       }
 
-      console.log('🔧 useEquipment: Запрашиваем свежий вес от реальных весов');
+      LoggingService.equipmentLog('🔧 [useEquipment]: Запрашиваем свежий вес от реальных весов');
       const weightData = await scaleService.current.getCurrentWeight();
       if (weightData) {
-        console.log('✅ useEquipment: Вес получен:', weightData);
+        LoggingService.equipmentLog('✅ [useEquipment]: Вес получен:', weightData);
         setCurrentWeight(weightData);
         // Сбрасываем счетчик таймаутов при успешном получении
         timeoutCountRef.current = 0;
@@ -511,15 +510,15 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         return weightData;
       } else {
         // Если не удалось получить свежий вес, пытаемся переподключиться
-        console.log('⚠️ useEquipment: Не удалось получить свежий вес, пытаемся переподключиться...');
+        LoggingService.equipmentLog('⚠️ [useEquipment]: Не удалось получить свежий вес, пытаемся переподключиться...');
         
         const reconnected = await attemptReconnect();
         if (reconnected) {
           // После переподключения пытаемся получить вес еще раз
-          console.log('🔄 useEquipment: Переподключились, повторная попытка получения веса...');
+          LoggingService.equipmentLog('🔄 [useEquipment]: Переподключились, повторная попытка получения веса...');
           const retryWeightData = await scaleService.current.getCurrentWeight();
           if (retryWeightData) {
-            console.log('✅ useEquipment: Вес получен после переподключения:', retryWeightData);
+            LoggingService.equipmentLog('✅ [useEquipment]: Вес получен после переподключения:', retryWeightData);
             setCurrentWeight(retryWeightData);
             weightCacheRef.current = {
               data: retryWeightData,
@@ -531,10 +530,10 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         
         // Если переподключение не помогло, возвращаем кэш
         if (weightCacheRef.current) {
-          console.log('⚠️ useEquipment: Возвращаем кэшированный вес после неудачного переподключения:', weightCacheRef.current.data);
+          LoggingService.equipmentLog('⚠️ [useEquipment]: Возвращаем кэшированный вес после неудачного переподключения:', weightCacheRef.current.data);
           return weightCacheRef.current.data;
         }
-        console.log('⚠️ useEquipment: Не удалось получить вес от весов');
+        LoggingService.equipmentLog('⚠️ [useEquipment]: Не удалось получить вес от весов');
         return null;
       }
     } catch (error) {
@@ -548,39 +547,39 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         config: config?.scale
       };
       
-      console.log('❌ useEquipment: Детальная ошибка получения веса:', errorDetails);
+      LoggingService.equipmentLog('❌ [useEquipment]: Детальная ошибка получения веса:', errorDetails);
       
       // Анализ типа ошибки и умная обработка
       let shouldReconnect = false;
       
       if (error instanceof Error) {
         if (error.message.includes('device has been lost')) {
-          console.log('🔌 useEquipment: Устройство отключено (device lost)');
+          LoggingService.equipmentLog('🔌 [useEquipment]: Устройство отключено (device lost)');
           shouldReconnect = true;
         } else if (error.message.includes('closed stream')) {
-          console.log('🔌 useEquipment: Поток закрыт (stream closed)');
+          LoggingService.equipmentLog('🔌 [useEquipment]: Поток закрыт (stream closed)');
           shouldReconnect = true;
         } else if (error.message.includes('timeout') || error.message.includes('тайм-аут')) {
-          console.log('⏱️ useEquipment: Таймаут при получении данных');
+          LoggingService.equipmentLog('⏱️ [useEquipment]: Таймаут при получении данных');
           timeoutCountRef.current++;
           
           // Переподключаемся только после нескольких таймаутов подряд
           if (timeoutCountRef.current >= maxTimeoutsBeforeReconnect) {
-            console.log(`⏱️ useEquipment: ${timeoutCountRef.current} таймаутов подряд, пытаемся переподключиться...`);
+            LoggingService.equipmentLog(`⏱️ [useEquipment]: ${timeoutCountRef.current} таймаутов подряд, пытаемся переподключиться...`);
             shouldReconnect = true;
             timeoutCountRef.current = 0; // Сбрасываем счетчик
           } else {
-            console.log(`⏱️ useEquipment: Таймаут ${timeoutCountRef.current}/${maxTimeoutsBeforeReconnect}, используем кэш`);
+            LoggingService.equipmentLog(`⏱️ [useEquipment]: Таймаут ${timeoutCountRef.current}/${maxTimeoutsBeforeReconnect}, используем кэш`);
             shouldReconnect = false;
           }
         } else if (error.message.includes('locked')) {
-          console.log('🔒 useEquipment: Поток заблокирован (stream locked)');
+          LoggingService.equipmentLog('🔒 [useEquipment]: Поток заблокирован (stream locked)');
           shouldReconnect = true;
         } else if (error.message.includes('not connected')) {
-          console.log('🔌 useEquipment: Весы не подключены');
+          LoggingService.equipmentLog('🔌 [useEquipment]: Весы не подключены');
           shouldReconnect = true;
         } else {
-          console.log('❓ useEquipment: Неизвестная ошибка:', error.message);
+          LoggingService.equipmentLog('❓ [useEquipment]: Неизвестная ошибка:', error.message);
           shouldReconnect = true;
         }
       }
@@ -593,18 +592,18 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       // Переподключаемся только если нужно
       let reconnected = false;
       if (shouldReconnect) {
-        console.log('⚠️ useEquipment: Ошибка требует переподключения...');
+        LoggingService.equipmentLog('⚠️ [useEquipment]: Ошибка требует переподключения...');
         reconnected = await attemptReconnect();
       } else {
-        console.log('⚠️ useEquipment: Используем кэш без переподключения');
+        LoggingService.equipmentLog('⚠️ [useEquipment]: Используем кэш без переподключения');
       }
       if (reconnected) {
         // После переподключения пытаемся получить вес еще раз
-        console.log('🔄 useEquipment: Переподключились, повторная попытка получения веса...');
+        LoggingService.equipmentLog('🔄 [useEquipment]: Переподключились, повторная попытка получения веса...');
         try {
           const retryWeightData = await scaleService.current.getCurrentWeight();
           if (retryWeightData) {
-            console.log('✅ useEquipment: Вес получен после переподключения:', retryWeightData);
+            LoggingService.equipmentLog('✅ [useEquipment]: Вес получен после переподключения:', retryWeightData);
             setCurrentWeight(retryWeightData);
             weightCacheRef.current = {
               data: retryWeightData,
@@ -613,13 +612,13 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
             return retryWeightData;
           }
         } catch (retryError) {
-          console.error('❌ useEquipment: Ошибка при повторной попытке после переподключения:', retryError);
+          LoggingService.equipmentLog('❌ [useEquipment]: Ошибка при повторной попытке после переподключения:', retryError);
         }
       }
       
       // Если переподключение не помогло, возвращаем кэшированный вес
       if (weightCacheRef.current) {
-        console.log('⚠️ useEquipment: Возвращаем кэшированный вес после неудачного переподключения:', weightCacheRef.current.data);
+        LoggingService.equipmentLog('⚠️ [useEquipment]: Возвращаем кэшированный вес после неудачного переподключения:', weightCacheRef.current.data);
         return weightCacheRef.current.data;
       }
       return null;
@@ -642,16 +641,16 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         timestamp: new Date().toISOString()
       };
       
-      console.log('🏥 useEquipment: Проверка здоровья весов:', healthInfo);
+      LoggingService.equipmentLog('🏥 [useEquipment]: Проверка здоровья весов:', healthInfo);
       
       // Если соединение есть, но потоки заблокированы - это проблема
       if (isConnected && (healthInfo.readableLocked || healthInfo.writableLocked)) {
-        console.warn('⚠️ useEquipment: Обнаружены заблокированные потоки весов');
+        LoggingService.equipmentLog('⚠️ [useEquipment]: Обнаружены заблокированные потоки весов');
       }
       
       return healthInfo;
     } catch (error) {
-      console.error('❌ useEquipment: Ошибка проверки здоровья весов:', error);
+      LoggingService.equipmentLog('❌ [useEquipment]: Ошибка проверки здоровья весов:', error);
       return null;
     }
   }, [config?.scale]);
@@ -681,7 +680,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         scannerService.current.updateConfig(newConfig.scanner);
       }
     } else {
-      console.log('🔧 useEquipment: Config not loaded yet, cannot update');
+      LoggingService.equipmentLog('🔧 [useEquipment]: Конфигурация еще не загружена, невозможно обновить');
     }
   }, [updateStatus, config]);
 
@@ -739,33 +738,33 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
           // Автоподключение весов, если включено в настройках
           if (config.scale?.autoConnect && !isScaleConnected) {
             try {
-              console.log('🔧 useEquipment: Автоподключение весов в локальном режиме...');
+              LoggingService.equipmentLog('🔧 [useEquipment]: Автоподключение весов в локальном режиме...');
               const scaleConnected = await scaleService.current.connect(true); // Только автоматический режим
               if (scaleConnected) {
-                console.log('✅ useEquipment: Весы успешно подключены');
+                LoggingService.equipmentLog('✅ [useEquipment]: Весы успешно подключены');
                 setIsScaleConnected(true);
                 // Сбрасываем счетчик попыток переподключения при успешном подключении
                 reconnectAttemptsRef.current = 0;
               } else {
-                console.log('⚠️ useEquipment: Автоподключение не удалось, порт не найден или не выбран ранее');
+                LoggingService.equipmentLog('⚠️ [useEquipment]: Автоподключение не удалось, порт не найден или не выбран ранее');
               }
             } catch (error) {
-              console.log('⚠️ useEquipment: Ошибка автоподключения весов:', error);
+              LoggingService.equipmentLog('⚠️ [useEquipment]: Ошибка автоподключения весов:', error);
             }
           }
 
           // Автоподключение сканера при локальном режиме, если включено
           if (config.scanner?.autoConnect && !isScannerConnected) {
             try {
-              console.log('🔧 useEquipment: Автоподключение сканера...');
+              LoggingService.equipmentLog('🔧 [useEquipment]: Автоподключение сканера...');
               const scannerConnected = await connectScanner();
               if (scannerConnected) {
-                console.log('✅ useEquipment: Сканер успешно подключен');
+                LoggingService.equipmentLog('✅ [useEquipment]: Сканер успешно подключен');
               } else {
-                console.log('⚠️ useEquipment: Не удалось подключить сканер');
+                LoggingService.equipmentLog('⚠️ [useEquipment]: Не удалось подключить сканер');
               }
             } catch (error) {
-              console.log('⚠️ useEquipment: Ошибка автоподключения сканера:', error);
+              LoggingService.equipmentLog('⚠️ [useEquipment]: Ошибка автоподключения сканера:', error);
               // Не показываем ошибку, так как это автоматическая попытка
             }
           }
@@ -814,7 +813,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       return;
     }
 
-    console.log('⏹️ useEquipment: Остановка резервного polling');
+    LoggingService.equipmentLog('⏹️ [useEquipment]: Остановка резервного polling');
     setIsReservePolling(false);
     isReservePollingRef.current = false;
     isPollingRef.current = false;
@@ -833,19 +832,19 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     // Проверяем, что мы на странице заказа (OrderView)
     const isOnOrderPage = window.location.pathname.includes('/orders/');
     if (!isOnOrderPage) {
-      console.log('⚠️ useEquipment: Резервный polling доступен только на странице заказа');
+      LoggingService.equipmentLog('⚠️ [useEquipment]: Резервный polling доступен только на странице заказа');
       return;
     }
 
     const reservePollingInterval = config?.scale?.reservePollingInterval || 5000;
-    console.log(`🔄 useEquipment: Запуск резервного polling (${reservePollingInterval}ms)`);
+    LoggingService.equipmentLog(`🔄 [useEquipment]: Запуск резервного polling (${reservePollingInterval}ms)`);
     setIsReservePolling(true);
     isReservePollingRef.current = true;
 
     reservePollingIntervalRef.current = window.setInterval(async () => {
       if (isPollingRef.current) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('... Reserve polling request in progress, skipping this interval');
+          LoggingService.equipmentLog('... Reserve polling request in progress, skipping this interval');
         }
         return;
       }
@@ -854,7 +853,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         // Проверяем, что мы все еще на странице заказа
         const isOnOrderPage = window.location.pathname.includes('/orders/');
         if (!isOnOrderPage) {
-          console.log('⚠️ useEquipment: Покинули страницу заказа, останавливаем резервный polling');
+          LoggingService.equipmentLog('⚠️ [useEquipment]: Покинули страницу заказа, останавливаем резервный polling');
           stopReservePolling();
           return;
         }
@@ -865,7 +864,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
           if (!status.isConnected || !isScaleConnected) {
             // Пытаемся переподключиться только если включен autoConnect
             if (config?.scale?.autoConnect) {
-              console.log('🔄 useEquipment: Reserve polling - весы не подключены, пытаемся переподключиться...');
+              LoggingService.equipmentLog('🔄 [useEquipment]: Reserve polling - весы не подключены, пытаемся переподключиться...');
               try {
                 // Сначала отключаемся для освобождения потоков
                 await scaleService.current.disconnect();
@@ -875,13 +874,13 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
                 // Используем connect(true) для автоматического подключения без запроса
                 const connected = await scaleService.current.connect(true);
                 if (connected) {
-                  console.log('✅ useEquipment: Reserve polling - весы переподключены');
+                  LoggingService.equipmentLog('✅ [useEquipment]: Reserve polling - весы переподключены');
                   setIsScaleConnected(true); // Обновляем состояние напрямую
                 } else {
-                  console.log('⚠️ useEquipment: Reserve polling - не удалось переподключить весы');
+                  LoggingService.equipmentLog('⚠️ [useEquipment]: Reserve polling - не удалось переподключить весы');
                 }
               } catch (connectError) {
-                console.log('⚠️ useEquipment: Reserve polling - ошибка переподключения:', connectError);
+                LoggingService.equipmentLog('⚠️ [useEquipment]: Reserve polling - ошибка переподключения:', connectError);
               }
             }
             return; // В любом случае выходим, т.к. весы не были подключены
@@ -890,23 +889,23 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
           const reserveWeight = await getWeight(false);
 
           if (reserveWeight && process.env.NODE_ENV === 'development') {
-            console.log('📊 useEquipment: Reserve polling weight:', {
+            LoggingService.equipmentLog('📊 [useEquipment]: Reserve polling weight:', {
               weight: reserveWeight.weight,
               timestamp: reserveWeight.timestamp
             });
           } else if (!reserveWeight) {
-            console.log('⚠️ useEquipment: Reserve polling - вес не получен, возможно потеряно подключение');
+            LoggingService.equipmentLog('⚠️ [useEquipment]: Reserve polling - вес не получен, возможно потеряно подключение');
           }
 
           // Если обнаружен значительный вес, инициируем переключение на активный polling
           const weightThreshold = config?.scale?.weightThresholdForActive || 0.010; // 10 грамм
           if (reserveWeight && reserveWeight.weight > weightThreshold && !isActivePollingRef.current) {
-            console.log(`⚖️ useEquipment: Обнаружен значительный вес (${reserveWeight.weight} кг) в резервном режиме.`);
+            LoggingService.equipmentLog(`⚖️ [useEquipment]: Обнаружен значительный вес (${reserveWeight.weight} кг) в резервном режиме.`);
             setSignificantWeightDetected(true);
           }
         }
       } catch (error) {
-        console.log('⚠️ useEquipment: Ошибка резервного polling:', error);
+        LoggingService.equipmentLog('⚠️ [useEquipment]: Ошибка резервного polling:', error);
       } finally {
         isPollingRef.current = false;
       }
@@ -921,7 +920,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
 
     // Проверяем, что весы подключены
     if (!status.isConnected || !isScaleConnected) {
-      console.log('⚠️ useEquipment: Активный polling недоступен - весы не подключены');
+      LoggingService.equipmentLog('⚠️ [useEquipment]: Активный polling недоступен - весы не подключены');
       // Запускаем резервный polling вместо активного
       startReservePolling();
       return;
@@ -930,14 +929,14 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     // Проверяем, что мы на странице заказа (OrderView)
     const isOnOrderPage = window.location.pathname.includes('/orders/');
     if (!isOnOrderPage) {
-      console.log('⚠️ useEquipment: Активный polling доступен только на странице заказа');
+      LoggingService.equipmentLog('⚠️ [useEquipment]: Активный polling доступен только на странице заказа');
       return;
     }
 
     const activePollingInterval = config?.scale?.activePollingInterval || 1000;
     const timeout = config?.scale?.activePollingDuration || 30000;
 
-    console.log(`🔄 useEquipment: Запуск активного polling (${activePollingInterval}ms) на ${timeout / 1000} секунд`);
+    LoggingService.equipmentLog(`🔄 [useEquipment]: Запуск активного polling (${activePollingInterval}ms) на ${timeout / 1000} секунд`);
     setIsActivePolling(true);
     isActivePollingRef.current = true;
     activePollingErrorCountRef.current = 0; // Сбрасываем счетчик ошибок
@@ -956,7 +955,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     activePollingIntervalRef.current = window.setInterval(async () => {
       if (isPollingRef.current) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('... Active polling request in progress, skipping this interval');
+          LoggingService.equipmentLog('... Active polling request in progress, skipping this interval');
         }
         return;
       }
@@ -964,14 +963,14 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         isPollingRef.current = true;
         // Проверяем, не остановлен ли polling
         if (!isActivePollingRef.current) {
-          console.log('⚠️ useEquipment: Активный polling остановлен');
+          LoggingService.equipmentLog('⚠️ [useEquipment]: Активный polling остановлен');
           return;
         }
 
         // Проверяем, что мы все еще на странице заказа
         const isOnOrderPage = window.location.pathname.includes('/orders/');
         if (!isOnOrderPage) {
-          console.log('⚠️ useEquipment: Покинули страницу заказа, останавливаем активный polling');
+          LoggingService.equipmentLog('⚠️ [useEquipment]: Покинули страницу заказа, останавливаем активный polling');
           stopActivePolling();
           return;
         }
@@ -980,7 +979,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         const freshWeight = await getWeight(false);
 
         if (freshWeight && process.env.NODE_ENV === 'development') {
-          console.log('⚖️ useEquipment: Active polling weight:', {
+          LoggingService.equipmentLog('⚖️ [useEquipment]: Active polling weight:', {
             weight: freshWeight.weight,
             isStable: freshWeight.isStable,
             timestamp: freshWeight.timestamp
@@ -988,11 +987,11 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         } else if (!freshWeight) {
           activePollingErrorCountRef.current++;
           const maxErrors = config?.scale?.maxPollingErrors || 5;
-          console.log(`⚠️ useEquipment: Активный polling - вес не получен (ошибка ${activePollingErrorCountRef.current}/${maxErrors})`);
+          LoggingService.equipmentLog(`⚠️ [useEquipment]: Активный polling - вес не получен (ошибка ${activePollingErrorCountRef.current}/${maxErrors})`);
           
           // Если слишком много ошибок, останавливаем активный polling
           if (activePollingErrorCountRef.current >= maxErrors) {
-            console.log('❌ useEquipment: Слишком много ошибок активного polling, останавливаем и переходим к резервному');
+            LoggingService.equipmentLog('❌ [useEquipment]: Слишком много ошибок активного polling, останавливаем и переходим к резервному');
             stopActivePolling();
             startReservePolling();
             return;
@@ -1005,17 +1004,17 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       } catch (error) {
         activePollingErrorCountRef.current++;
         const maxErrors = config?.scale?.maxPollingErrors || 5;
-        console.log(`⚠️ useEquipment: Ошибка активного polling (ошибка ${activePollingErrorCountRef.current}/${maxErrors}):`, error);
+        LoggingService.equipmentLog(`⚠️ [useEquipment]: Ошибка активного polling (ошибка ${activePollingErrorCountRef.current}/${maxErrors}):`, error);
         
         // Для ошибок ReadableStream сразу переходим к резервному polling
         if (error instanceof Error && error.message.includes('ReadableStream')) {
-          console.log('❌ useEquipment: Ошибка ReadableStream, принудительно отключаемся и переходим к резервному polling');
+          LoggingService.equipmentLog('❌ [useEquipment]: Ошибка ReadableStream, принудительно отключаемся и переходим к резервному polling');
           // Принудительно отключаемся для освобождения потоков
           try {
             await scaleService.current.disconnect();
             await new Promise(resolve => setTimeout(resolve, 100));
           } catch (disconnectError) {
-            console.log('⚠️ useEquipment: Ошибка при принудительном отключении:', disconnectError);
+            LoggingService.equipmentLog('⚠️ [useEquipment]: Ошибка при принудительном отключении:', disconnectError);
           }
           
           stopActivePolling();
@@ -1025,7 +1024,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         
         // Если слишком много ошибок, останавливаем активный polling
         if (activePollingErrorCountRef.current >= maxErrors) {
-          console.log('❌ useEquipment: Слишком много ошибок активного polling, останавливаем и переходим к резервному');
+          LoggingService.equipmentLog('❌ [useEquipment]: Слишком много ошибок активного polling, останавливаем и переходим к резервному');
           stopActivePolling();
           startReservePolling();
           return;
@@ -1038,14 +1037,14 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
 
     // Устанавливаем таймаут 30 секунд для активного polling
     activePollingTimeoutRef.current = window.setTimeout(() => {
-      console.log('⏰ useEquipment: Таймаут активного polling (' + String(timeout / 1000) + ' сек), переходим к резервному');
-      console.log('⏰ useEquipment: isActivePolling:', isActivePollingRef.current, 'isReservePolling:', isReservePolling);
+      LoggingService.equipmentLog('⏰ [useEquipment]: Таймаут активного polling (' + String(timeout / 1000) + ' сек), переходим к резервному');
+      LoggingService.equipmentLog('⏰ [useEquipment]: ' + '\n' + 'isActivePolling: ' + isActivePollingRef.current + '\n' + 'isReservePolling: ' + isReservePolling);
       stopActivePolling();
       // Всегда запускаем резервный polling после таймаута активного
       startReservePolling();
     }, timeout);
 
-    console.log(`⏰ useEquipment: Установлен таймаут на ${timeout / 1000} секунд, ID:`, activePollingTimeoutRef.current);
+    LoggingService.equipmentLog(`⏰ [useEquipment]: Установлен таймаут на ${timeout / 1000} секунд, ID:`, activePollingTimeoutRef.current);
   }, [config, getWeight, status.isConnected, isScaleConnected]);
 
   // Остановка активного polling
@@ -1054,7 +1053,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
       return;
     }
 
-    console.log('⏹️ useEquipment: Остановка активного polling');
+    LoggingService.equipmentLog('⏹️ [useEquipment]: Остановка активного polling');
     setIsActivePolling(false);
     isActivePollingRef.current = false;
     activePollingErrorCountRef.current = 0;
@@ -1075,7 +1074,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   useEffect(() => {
     if (significantWeightDetected) {
       if (isReservePollingRef.current) {
-        console.log('⚖️ useEquipment: Переключаемся с резервного на активный polling из-за обнаружения веса.');
+        LoggingService.equipmentLog('⚖️ [useEquipment]: Переключаемся с резервного на активный polling из-за обнаружения веса.');
         stopReservePolling();
         startActivePolling();
       }
@@ -1098,7 +1097,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         lastPath = currentPath;
         const isOnOrderPage = currentPath.includes('/orders/');
         if (!isOnOrderPage) {
-          console.log('🔄 useEquipment: Переход на другую страницу, останавливаем все polling');
+          LoggingService.equipmentLog('🔄 [useEquipment]: Переход на другую страницу, останавливаем все polling');
           if (isActivePolling) {
             stopActivePolling();
           }

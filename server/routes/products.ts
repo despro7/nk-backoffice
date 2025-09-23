@@ -2,6 +2,7 @@ import express from 'express';
 import { prisma } from '../lib/utils.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
+import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 
 const router = express.Router();
 
@@ -79,6 +80,38 @@ router.get('/', authenticateToken, async (req, res) => {
   } catch (error) {
     logWithTimestamp('Error fetching products:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Получить один товар напрямую из Dilovod по SKU (без полной синхронизации)
+router.get('/dilovod/:sku', authenticateToken, async (req, res) => {
+  try {
+    const { user } = req as any;
+    if (!['admin', 'boss'].includes(user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { sku } = req.params;
+    const dilovodService = new DilovodService();
+    logWithTimestamp(`API: Получаем товар из Dilovod по SKU=${sku}`);
+
+    let products;
+    try {
+      products = await dilovodService.getGoodsInfoWithSetsOptimized([sku]);
+    } catch (e: any) {
+      const msg = handleDilovodApiError(e, 'get single product');
+      return res.status(502).json({ error: msg });
+    }
+
+    const product = products.find(p => p.sku === sku);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found in Dilovod' });
+    }
+
+    return res.json({ product });
+  } catch (error) {
+    logWithTimestamp('Error fetching single product from Dilovod:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

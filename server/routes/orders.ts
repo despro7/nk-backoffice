@@ -824,12 +824,12 @@ function compareOrderItems(currentItems: any[], cachedItems: any[]): boolean {
  */
 router.post('/cache/validate', authenticateToken, async (req, res) => {
   try {
-    const { startDate, endDate, force, mode } = req.body;
+    const { startDate, endDate, force, mode } = req.query;
 
     console.log('🔍 [CACHE VALIDATION] Starting cache validation...', {
       startDate,
       endDate,
-      force: force === 'true',
+      force: force,
       mode: mode || 'full',
       hasStartDate: !!startDate,
       hasEndDate: !!endDate
@@ -870,8 +870,8 @@ router.post('/cache/validate', authenticateToken, async (req, res) => {
     } else {
       // Валидация за период - проверяем только заказы в выбранном диапазоне
       validationMode = 'period';
-      const startDateObj = new Date(startDate as string);
-      const endDateObj = endDate ? new Date(endDate as string) : new Date();
+      const startDateObj = new Date(startDate as string + ' 00:00:00');
+      const endDateObj = endDate ? new Date(endDate as string + ' 23:59:59') : new Date();
       dateRangeFilter = { startDate: startDateObj, endDate: endDateObj };
 
       const now = new Date();

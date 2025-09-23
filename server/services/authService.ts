@@ -151,11 +151,7 @@ export class AuthService {
       // Находим пользователя по refresh токену
       const hashedToken = this.hashToken(refreshTokenData.refreshToken);
 
-      // Логируем для отладки
-      // console.log('🔍 [RefreshToken] Получен refresh токен:', refreshTokenData.refreshToken.substring(0, 50) + '...');
-      // console.log('🔍 [RefreshToken] Хеш токена:', hashedToken);
-      // console.log('🔍 [RefreshToken] Текущая дата:', new Date().toISOString());
-
+      // Ищем пользователя с валидным токеном
       const user = await prisma.user.findFirst({
         where: {
           refreshToken: hashedToken,
@@ -164,22 +160,6 @@ export class AuthService {
       });
 
       if (!user) {
-        // Дополнительная отладка - ищем пользователя без учета времени истечения
-        const userWithoutExpiry = await prisma.user.findFirst({
-          where: {
-            refreshToken: hashedToken
-          }
-        });
-
-        if (userWithoutExpiry) {
-          // console.log('🔍 [RefreshToken] Пользователь найден, но токен истек');
-          // console.log('🔍 [RefreshToken] refreshTokenExpiresAt:', userWithoutExpiry.refreshTokenExpiresAt);
-          // console.log('🔍 [RefreshToken] Пользователь активен:', userWithoutExpiry.isActive);
-          // console.log('🔍 [RefreshToken] Последняя активность:', userWithoutExpiry.lastActivityAt);
-        } else {
-          // console.log('🔍 [RefreshToken] Пользователь с таким хешем не найден');
-        }
-
         throw new Error('Невірний або застарілий refresh токен');
       }
 

@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { hasAccess } from '../routes.config';
-import { log } from '@/lib/utils';
+import { LoggingService } from '../services/LoggingService';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -22,7 +22,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const navigate = useNavigate();
 
   if (process.env.NODE_ENV === 'development') {
-    log('🔒 [ProtectedRoute] checking access for:', location.pathname);
+    LoggingService.routeLog('🔒 [ProtectedRoute] checking access for:', location.pathname);
   }
 
   // Следим за изменениями состояния пользователя
@@ -33,7 +33,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     if (user && location.pathname === '/auth') {
       const lastVisitedPath = localStorage.getItem('lastVisitedPath') || '/';
       if (process.env.NODE_ENV === 'development') {
-        console.log('🚀 [ProtectedRoute] User authenticated, redirecting to:', lastVisitedPath);
+        LoggingService.routeLog('🚀 [ProtectedRoute] User authenticated, redirecting to:', lastVisitedPath);
       }
       navigate(lastVisitedPath, { replace: true });
       localStorage.removeItem('lastVisitedPath');
@@ -50,7 +50,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   if (!user) {
     if (process.env.NODE_ENV === 'development') {
-      console.log('🚫 [ProtectedRoute] User not authenticated, redirecting to /auth');
+      LoggingService.routeLog('🚫 [ProtectedRoute] User not authenticated, redirecting to /auth');
     }
     // Сохраняем текущий путь перед редиректом на /auth
     if (location.pathname !== '/auth' && location.pathname !== '/') {
@@ -60,7 +60,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   if (process.env.NODE_ENV === 'development') {
-    console.log('✅ [ProtectedRoute] User authenticated, rendering children');
+    LoggingService.routeLog('✅ [ProtectedRoute] User authenticated, rendering children');
   }
 
   if (!hasAccess(user.role, requiredRoles, minRole)) {

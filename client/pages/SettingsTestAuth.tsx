@@ -1,19 +1,73 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
-import { Button } from '@heroui/react';
 
 const SettingsTestAuth: React.FC = () => {
-  const { user, logout, refreshToken } = useAuth();
+  const { user, refreshToken } = useAuth();
   const { apiCall } = useApi();
   const [tokenInfo, setTokenInfo] = useState<any>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [logs, setLogs] = useState<string[]>([]);
   const [tokenExpiryInfo, setTokenExpiryInfo] = useState<any>(null);
-  const [tokenCreatedAt, setTokenCreatedAt] = useState<number | null>(null);
   const [refreshCountdown, setRefreshCountdown] = useState<number | null>(null);
   const [authSettings, setAuthSettings] = useState<any>(null);
+  const [tokenCreatedAt, setTokenCreatedAt] = useState<number | null>(null);
+  const [lastExpiresIn, setLastExpiresIn] = useState<number | null>(null);
+
+  // Функции для работы с localStorage
+  const getStoredTokenData = (userId: string) => {
+    try {
+      const stored = localStorage.getItem(`tokenData_${userId}`);
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const setStoredTokenData = (userId: string, tokenCreatedAt: number, expiresIn: number) => {
+    try {
+      localStorage.setItem(`tokenData_${userId}`, JSON.stringify({
+        tokenCreatedAt,
+        lastExpiresIn: expiresIn,
+        timestamp: Date.now()
+      }));
+    } catch {
+      // Игнорируем ошибки localStorage
+    }
+  };
+
   const logsContainerRef = useRef<HTMLDivElement>(null);
+
+  // Функция для конвертации времени из строкового формата в секунды
+  const parseTimeToSeconds = (timeString: string): number => {
+    if (!timeString) return 0;
+    
+    const regex = /(\d+)([smhd])/g;
+    let totalSeconds = 0;
+    let match;
+    
+    while ((match = regex.exec(timeString)) !== null) {
+      const value = parseInt(match[1]);
+      const unit = match[2];
+      
+      switch (unit) {
+        case 's':
+          totalSeconds += value;
+          break;
+        case 'm':
+          totalSeconds += value * 60;
+          break;
+        case 'h':
+          totalSeconds += value * 60 * 60;
+          break;
+        case 'd':
+          totalSeconds += value * 60 * 60 * 24;
+          break;
+      }
+    }
+    
+    return totalSeconds;
+  };
 
   // Обновляем время каждую секунду
   useEffect(() => {
@@ -60,28 +114,42 @@ const SettingsTestAuth: React.FC = () => {
     scrollLogsToBottom();
   }, [logs]);
 
+  // Состояние tokenExpiryInfo отслеживается
+
   // Получаем информацию о времени истечения токена
-  const getTokenExpiryInfo = () => {
-    if (user?.expiresIn && tokenCreatedAt) {
+  const getTokenExpiryInfo = useCallback(() => {    
+    if (user?.expiresIn && tokenCreatedAt && authSettings?.accessTokenExpiresIn) {
       const now = Date.now();
-      const expiresAt = tokenCreatedAt + (user.expiresIn * 1000);
+      
+      // Правильные расчеты времени
+      const accessTokenExpiresInSeconds = parseTimeToSeconds(authSettings?.accessTokenExpiresIn || '1h');
+      const totalLifetime = accessTokenExpiresInSeconds * 1000;
+      
+      // Проверяем актуальность tokenCreatedAt
+      const elapsed = now - tokenCreatedAt;
+      let correctedTokenCreatedAt = tokenCreatedAt;
+      
+      // Коррекция tokenCreatedAt больше не нужна - время уже правильное
+      
+      // expiresAt - время когда токен истечет (на основе полного времени жизни)
+      const expiresAt = correctedTokenCreatedAt + totalLifetime;
+      
+      // ТЕСТ: используем user.expiresIn как реальное оставшееся время
+      const staticTimeLeft = Math.max(0, user.expiresIn * 1000);
       const timeLeft = Math.max(0, expiresAt - now);
       const minutesLeft = Math.floor(timeLeft / 60000);
       const secondsLeft = Math.floor((timeLeft % 60000) / 1000);
       
-      // Рассчитываем прогресс для жизненного цикла токена
-      const totalLifetime = user.expiresIn * 1000;
-      const elapsed = totalLifetime - timeLeft;
+      
+      // elapsed - сколько времени прошло с (исправленного) создания токена  
+      const correctedElapsed = now - correctedTokenCreatedAt;
       
       // Рассчитываем время до обновления токена
-      // Используем реальные настройки из БД
       const clientRefreshThresholdMinutes = authSettings?.clientRefreshThresholdMinutes || 10;
       const middlewareRefreshThresholdSeconds = authSettings?.middlewareRefreshThresholdSeconds || 300;
       
-      // Используем clientRefreshThresholdMinutes для всех токенов
-      const refreshThresholdMinutes = clientRefreshThresholdMinutes;
-        
-      const refreshAt = expiresAt - (refreshThresholdMinutes * 60 * 1000);
+      // refreshAt - когда должно произойти обновление токена (на основе настроек)
+      const refreshAt = expiresAt - (clientRefreshThresholdMinutes * 60 * 1000);
       const timeToRefresh = Math.max(0, refreshAt - now);
       const refreshMinutesLeft = Math.floor(timeToRefresh / 60000);
       const refreshSecondsLeft = Math.floor((timeToRefresh % 60000) / 1000);
@@ -97,44 +165,44 @@ const SettingsTestAuth: React.FC = () => {
         const refreshPoint = (totalLifetime - clientThresholdMs) / totalLifetime * 100;
         const middlewarePoint = (totalLifetime - middlewareThresholdMs) / totalLifetime * 100;
         
-        if (elapsed < (totalLifetime - clientThresholdMs)) {
+        if (correctedElapsed < (totalLifetime - clientThresholdMs)) {
           // Этап 1: Движение к точке обновления AuthContext
-          progressPercentage = (elapsed / (totalLifetime - clientThresholdMs)) * refreshPoint;
+          progressPercentage = (correctedElapsed / (totalLifetime - clientThresholdMs)) * refreshPoint;
           currentStage = 1;
-        } else if (elapsed < (totalLifetime - middlewareThresholdMs)) {
+        } else if (correctedElapsed >= (totalLifetime - clientThresholdMs) && correctedElapsed < (totalLifetime - middlewareThresholdMs)) {
           // Этап 2: Движение к точке проверки Middleware (если AuthContext пропустил)
           const stage2Start = totalLifetime - clientThresholdMs;
           const stage2End = totalLifetime - middlewareThresholdMs;
-          const stage2Progress = (elapsed - stage2Start) / (stage2End - stage2Start);
+          const stage2Progress = (correctedElapsed - stage2Start) / (stage2End - stage2Start);
           progressPercentage = refreshPoint + (stage2Progress * (middlewarePoint - refreshPoint));
           currentStage = 2;
         } else {
           // Этап 3: Движение к истечению токена
           const stage3Start = totalLifetime - middlewareThresholdMs;
-          const stage3Progress = (elapsed - stage3Start) / middlewareThresholdMs;
+          const stage3Progress = (correctedElapsed - stage3Start) / middlewareThresholdMs;
           progressPercentage = middlewarePoint + (stage3Progress * (100 - middlewarePoint));
           currentStage = 3;
         }
       } else {
         // Для длинных токенов: используем полную логику с точками обновления
-        const refreshPoint = (totalLifetime - (refreshThresholdMinutes * 60 * 1000)) / totalLifetime * 100;
+        const refreshPoint = (totalLifetime - (clientRefreshThresholdMinutes * 60 * 1000)) / totalLifetime * 100;
         const middlewarePoint = (totalLifetime - (middlewareRefreshThresholdSeconds * 1000)) / totalLifetime * 100;
         
-        if (elapsed < (totalLifetime - (refreshThresholdMinutes * 60 * 1000))) {
+        if (correctedElapsed < (totalLifetime - (clientRefreshThresholdMinutes * 60 * 1000))) {
           // Этап 1: Движение к точке обновления AuthContext
-          progressPercentage = (elapsed / (totalLifetime - (refreshThresholdMinutes * 60 * 1000))) * refreshPoint;
+          progressPercentage = (correctedElapsed / (totalLifetime - (clientRefreshThresholdMinutes * 60 * 1000))) * refreshPoint;
           currentStage = 1;
-        } else if (elapsed < (totalLifetime - (middlewareRefreshThresholdSeconds * 1000))) {
+        } else if (correctedElapsed >= (totalLifetime - (clientRefreshThresholdMinutes * 60 * 1000)) && correctedElapsed < (totalLifetime - (middlewareRefreshThresholdSeconds * 1000))) {
           // Этап 2: Движение к точке проверки Middleware (если AuthContext пропустил)
-          const stage2Start = totalLifetime - (refreshThresholdMinutes * 60 * 1000);
+          const stage2Start = totalLifetime - (clientRefreshThresholdMinutes * 60 * 1000);
           const stage2End = totalLifetime - (middlewareRefreshThresholdSeconds * 1000);
-          const stage2Progress = (elapsed - stage2Start) / (stage2End - stage2Start);
+          const stage2Progress = (correctedElapsed - stage2Start) / (stage2End - stage2Start);
           progressPercentage = refreshPoint + (stage2Progress * (middlewarePoint - refreshPoint));
           currentStage = 2;
         } else {
           // Этап 3: Движение к истечению токена
           const stage3Start = totalLifetime - (middlewareRefreshThresholdSeconds * 1000);
-          const stage3Progress = (elapsed - stage3Start) / (middlewareRefreshThresholdSeconds * 1000);
+          const stage3Progress = (correctedElapsed - stage3Start) / (middlewareRefreshThresholdSeconds * 1000);
           progressPercentage = middlewarePoint + (stage3Progress * (100 - middlewarePoint));
           currentStage = 3;
         }
@@ -150,15 +218,18 @@ const SettingsTestAuth: React.FC = () => {
       const stage4Position = 100; // Конец
 
       // Вычисляем время до каждого этапа
-      const timeToStage2 = Math.max(0, clientThresholdMs - timeLeft);
-      const timeToStage3 = Math.max(0, middlewareThresholdMs - timeLeft);
+      const timeToStage2 = Math.max(0, timeLeft - clientThresholdMs);
+      const timeToStage3 = Math.max(0, timeLeft - middlewareThresholdMs);
       const timeToStage4 = timeLeft; // Время до истечения
 
-      setTokenExpiryInfo({
-        expiresIn: user.expiresIn,
+      // Жизненный цикл обновляется
+      
+      const newTokenExpiryInfo = {
+        expiresIn: accessTokenExpiresInSeconds,
         timeLeft: timeLeft,
         minutesLeft,
         secondsLeft,
+        tokenCreatedAt: correctedTokenCreatedAt,
         expiresAt: new Date(expiresAt).toLocaleTimeString(),
         progressPercentage: Math.max(0, Math.min(100, progressPercentage)),
         currentStage,
@@ -185,7 +256,9 @@ const SettingsTestAuth: React.FC = () => {
             seconds: Math.floor((timeToStage4 % 60000) / 1000)
           }
         }
-      });
+      };
+      
+      setTokenExpiryInfo(newTokenExpiryInfo);
       
       // Обновляем таймер обратного отсчёта до обновления
       if (timeToRefresh > 0) {
@@ -193,34 +266,52 @@ const SettingsTestAuth: React.FC = () => {
       } else {
         setRefreshCountdown(null);
       }
+      
     } else {
       // Если нет информации о токене, показываем пустое состояние
       setTokenExpiryInfo(null);
       setRefreshCountdown(null);
     }
-  };
+  }, [user?.expiresIn, tokenCreatedAt, authSettings?.accessTokenExpiresIn, authSettings?.clientRefreshThresholdMinutes, authSettings?.middlewareRefreshThresholdSeconds, user?.id, authSettings?.clientAutoRefreshEnabled]);
+
+  // Отслеживаем изменения expiresIn для определения обновления токена
+  useEffect(() => {
+    if (user?.expiresIn && authSettings?.accessTokenExpiresIn && user?.id) {
+      const currentExpiresIn = user.expiresIn;
+      const userId = user.id.toString();
+      
+      
+      // Если это первая установка или токен обновился (больше чем предыдущее значение)
+      if (!tokenCreatedAt || (lastExpiresIn && currentExpiresIn > lastExpiresIn)) {
+        const now = Date.now();
+        const accessTokenExpiresInSeconds = parseTimeToSeconds(authSettings.accessTokenExpiresIn);
+        
+        // user.expiresIn = оставшееся время, поэтому tokenCreatedAt = now - (полное_время - оставшееся_время)
+        const calculatedTokenCreatedAt = now - ((accessTokenExpiresInSeconds - currentExpiresIn) * 1000);
+        
+        
+        setTokenCreatedAt(calculatedTokenCreatedAt);
+        setLastExpiresIn(currentExpiresIn);
+        setStoredTokenData(userId, calculatedTokenCreatedAt, currentExpiresIn);
+        
+        if (lastExpiresIn && currentExpiresIn > lastExpiresIn) {
+          addLog(`🔄 Токен обновлен. Время создания: ${new Date(calculatedTokenCreatedAt).toLocaleTimeString()}`);
+        }
+      }
+      // Просто обновляем lastExpiresIn для отслеживания изменений
+      else {
+        setLastExpiresIn(currentExpiresIn);
+      }
+    }
+  }, [user?.expiresIn, user?.id, authSettings?.accessTokenExpiresIn]);
 
   // Обновляем информацию о токене каждую секунду
   useEffect(() => {
     getTokenExpiryInfo();
     const interval = setInterval(getTokenExpiryInfo, 1000);
     return () => clearInterval(interval);
-  }, [user, tokenCreatedAt, authSettings]);
+  }, [getTokenExpiryInfo]);
 
-  // Слушаем изменения пользователя для обновления времени создания токена
-  useEffect(() => {
-    if (user && !tokenCreatedAt) {
-      setTokenCreatedAt(Date.now());
-    }
-  }, [user, tokenCreatedAt]);
-
-  // Слушаем изменения expiresIn для обновления времени создания токена при обновлении токена
-  useEffect(() => {
-    if (user?.expiresIn && tokenCreatedAt) {
-      // Если токен был обновлен (expiresIn изменился), обновляем время создания
-      setTokenCreatedAt(Date.now());
-    }
-  }, [user?.expiresIn]);
 
   // Инициализация логов и токена
   useEffect(() => {
@@ -228,9 +319,6 @@ const SettingsTestAuth: React.FC = () => {
     loadAuthSettings(); // Загружаем настройки авторизации
     if (user) {
       addLog(`👤 Пользователь: ${user.email}`);
-      // Устанавливаем время создания токена как текущее время (приблизительно)
-      // В реальном приложении это время должно приходить с сервера
-      setTokenCreatedAt(Date.now());
     }
   }, [user]);
 
@@ -286,8 +374,6 @@ const SettingsTestAuth: React.FC = () => {
       const success = await refreshToken();
       if (success) {
         addLog('✅ Токен обновлен успешно');
-        // Обновляем время создания токена
-        setTokenCreatedAt(Date.now());
         // Принудительно обновляем информацию о токене
         getTokenExpiryInfo();
         checkTokenInfo(); // Обновляем информацию
@@ -326,6 +412,30 @@ const SettingsTestAuth: React.FC = () => {
     
     console.log('🔧 Настройки токенов:', { localDelay, envDelay, default: 55 });
     alert(resultMessage);
+  };
+
+  // Очистка localStorage для токена
+  const clearTokenStorage = () => {
+    if (user?.id) {
+      const userId = user.id.toString();
+      try {
+        localStorage.removeItem(`tokenData_${userId}`);
+        addLog('🧹 localStorage очищен для токена');
+        
+        // Пересчитываем tokenCreatedAt
+        const now = Date.now();
+        const accessTokenExpiresInSeconds = parseTimeToSeconds(authSettings?.accessTokenExpiresIn || '1h');
+        const calculatedTokenCreatedAt = now - ((accessTokenExpiresInSeconds - user.expiresIn) * 1000);
+        
+        setTokenCreatedAt(calculatedTokenCreatedAt);
+        setLastExpiresIn(user.expiresIn);
+        setStoredTokenData(userId, calculatedTokenCreatedAt, user.expiresIn);
+        
+        addLog(`🔧 Время создания токена пересчитано: ${new Date(calculatedTokenCreatedAt).toLocaleTimeString()}`);
+      } catch (error) {
+        addLog(`❌ Ошибка очистки localStorage: ${error.message}`);
+      }
+    }
   };
 
   if (!user) {
@@ -370,12 +480,12 @@ const SettingsTestAuth: React.FC = () => {
             </div>
             <div>
               <h3 className="font-semibold text-gray-900">Токен</h3>
-              <p className="text-sm text-gray-500">{tokenExpiryInfo ? `${tokenExpiryInfo.expiresIn} сек` : 'Неизвестно'}</p>
+              <p className="text-sm text-gray-500">{tokenExpiryInfo ? `${Math.floor(tokenExpiryInfo.expiresIn / 60)}мин общее время` : 'Неизвестно'}</p>
             </div>
           </div>
           {tokenExpiryInfo ? (
             <div className="space-y-1 text-sm">
-              <p><span className="text-gray-500">Создан:</span> {new Date(tokenCreatedAt || 0).toLocaleTimeString()}</p>
+              <p><span className="text-gray-500">Создан:</span> {tokenExpiryInfo.tokenCreatedAt ? new Date(tokenExpiryInfo.tokenCreatedAt).toLocaleTimeString() : 'Неизвестно'}</p>
               <p><span className="text-gray-500">Истекает:</span> {tokenExpiryInfo.expiresAt} / через <span className="text-red-600">{tokenExpiryInfo.minutesLeft}м {tokenExpiryInfo.secondsLeft}с</span></p>
               {tokenExpiryInfo.timeToRefresh > 0 && authSettings.clientAutoRefreshEnabled && (
                 <p><span className="text-gray-500">Обновление через:</span> <span className="font-medium text-blue-600">{tokenExpiryInfo.refreshMinutesLeft}м {tokenExpiryInfo.refreshSecondsLeft}с</span></p>
@@ -419,14 +529,14 @@ const SettingsTestAuth: React.FC = () => {
           </div>
           {authSettings ? (
             <div className="space-y-1 text-sm">
-              <p><span className="text-gray-500">Клиент (браузер):</span> <span className="font-medium">{authSettings.clientRefreshThresholdMinutes}м</span> <span className={`font-medium ${authSettings.clientAutoRefreshEnabled ? 'text-green-600' : 'text-red-600'}`}>
-                {authSettings.clientAutoRefreshEnabled ? 'Вкл' : 'Выкл'}
+              <p className="flex items-center"><span className="text-gray-500">Клиент (браузер):</span> <span className="font-medium ml-1">{authSettings.clientRefreshThresholdMinutes}м</span> <span className={`font-medium ml-auto text-xs px-2 py-0.5 rounded-full ${authSettings.clientAutoRefreshEnabled ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'}`}>
+                {authSettings.clientAutoRefreshEnabled ? 'вкл' : 'выкл'}
               </span></p>
-              <p><span className="text-gray-500">Middleware (сервер):</span> <span className="font-medium">{authSettings.middlewareRefreshThresholdSeconds}с</span> <span className={`font-medium ${authSettings.middlewareAutoRefreshEnabled ? 'text-green-600' : 'text-red-600'}`}>
-                {authSettings.middlewareAutoRefreshEnabled ? 'Вкл' : 'Выкл'}
+              <p className="flex items-center"><span className="text-gray-500">Middleware (сервер):</span> <span className="font-medium ml-1">{authSettings.middlewareRefreshThresholdSeconds}с</span> <span className={`font-medium ml-auto text-xs px-2 py-0.5 rounded-full ${authSettings.middlewareAutoRefreshEnabled ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'}`}>
+                {authSettings.middlewareAutoRefreshEnabled ? 'вкл' : 'выкл'}
               </span></p>
-              <p><span className="text-gray-500">Обновление токена:</span> <span className={`font-medium ${authSettings.tokenRefreshEnabled ? 'text-green-600' : 'text-red-600'}`}>
-                {authSettings.tokenRefreshEnabled ? 'Вкл' : 'Выкл'}
+              <p className="flex items-center"><span className="text-gray-500">tokenRefreshEnabled:</span> <span className={`font-medium ml-auto text-xs px-2 py-0.5 rounded-full ${authSettings.tokenRefreshEnabled ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'}`}>
+                {authSettings.tokenRefreshEnabled ? 'вкл' : 'выкл'}
               </span></p>
             </div>
           ) : (
@@ -476,7 +586,8 @@ const SettingsTestAuth: React.FC = () => {
 
               {/* Stage 2: AuthContext Refresh */}
               <div 
-                className="absolute bottom-0 transform -translate-x-1/2"
+                className={`absolute bottom-0 transform -translate-x-1/2 ${!authSettings?.clientAutoRefreshEnabled && 'opacity-50 grayscale'
+                }`}
                 style={{ left: `${tokenExpiryInfo.stagePositions?.stage2 || 83.33}%` }}
               >
                 <div className={`w-6 h-6 rounded-full border-3 border-white shadow-lg flex items-center justify-center ${
@@ -487,10 +598,12 @@ const SettingsTestAuth: React.FC = () => {
                 <div className="absolute top-8 left-1/2 transform -translate-x-1/2 text-center">
                   <p className="text-sm font-medium text-gray-900">AuthContext</p>
                   <p className="text-xs text-gray-600">
-                    {tokenExpiryInfo.stageTimes?.stage2 && tokenExpiryInfo.stageTimes.stage2.minutes > 0 ? (
-                      <>через <span className="text-green-600">{tokenExpiryInfo.stageTimes.stage2.minutes}м {tokenExpiryInfo.stageTimes.stage2.seconds}с</span></>
-                    ) : (
+                    {tokenExpiryInfo.stageTimes?.stage2 && tokenExpiryInfo.stageTimes.stage2.minutes < 5 && authSettings?.clientAutoRefreshEnabled ? (
+                      <>через <span className="text-green-600">{tokenExpiryInfo.stageTimes.stage2.minutes}м {tokenExpiryInfo.stageTimes.stage2.seconds}с</span></>
+                    ) : authSettings?.clientAutoRefreshEnabled ? (
                       <>за <span className="text-green-600">{authSettings?.clientRefreshThresholdMinutes || 10} мин</span> до истечения</>
+                    ) : (
+                      <>отключено</>
                     )}
                   </p>
                 </div>
@@ -509,10 +622,17 @@ const SettingsTestAuth: React.FC = () => {
                 <div className="absolute top-8 left-1/2 transform -translate-x-1/2 text-center">
                   <p className="text-sm font-medium text-gray-900">Middleware</p>
                   <p className="text-xs text-gray-600">
-                    {tokenExpiryInfo.stageTimes?.stage3 && tokenExpiryInfo.stageTimes.stage3.minutes > 0 ? (
-                      <>через <span className="text-orange-600">{tokenExpiryInfo.stageTimes.stage3.minutes}м {tokenExpiryInfo.stageTimes.stage3.seconds}с</span></>
+                    {tokenExpiryInfo.stageTimes?.stage3 && tokenExpiryInfo.stageTimes.stage3.minutes > 1 ? ( // Если осталось больше 2 минут
+                      <>
+                        за <span className="text-orange-600">
+                          {(authSettings?.middlewareRefreshThresholdSeconds || 300) > 60 ? `${Math.floor((authSettings?.middlewareRefreshThresholdSeconds || 300) / 60)} мин`
+                            : `${authSettings?.middlewareRefreshThresholdSeconds || 300} сек`}
+                        </span> до истечения
+                      </>
+                    ) : tokenExpiryInfo.stageTimes?.stage3 && tokenExpiryInfo.stageTimes.stage3.minutes >= 0 && authSettings?.middlewareAutoRefreshEnabled ? ( // Если осталось меньше 2 минут
+                      <>через <span className="text-orange-600">{tokenExpiryInfo.stageTimes.stage3.minutes}м {tokenExpiryInfo.stageTimes.stage3.seconds}с</span></>
                     ) : (
-                      <>за <span className="text-orange-600">{authSettings?.middlewareRefreshThresholdSeconds || 300} сек</span> до истечения</>
+                      <>отключено</>
                     )}
                   </p>
                 </div>
@@ -527,7 +647,7 @@ const SettingsTestAuth: React.FC = () => {
                 </div>
                 <div className="absolute top-8 left-1/2 transform -translate-x-1/2 text-center">
                   <p className="text-sm font-medium text-gray-900">Истечение</p>
-                  <p className="text-xs text-gray-600">через<span className="text-red-600 block">{tokenExpiryInfo.expiresIn || 300} сек</span></p>
+                  <p className="text-xs text-gray-600">через<span className="text-red-600 block">{tokenExpiryInfo.minutesLeft}м {tokenExpiryInfo.secondsLeft}с</span></p>
                 </div>
               </div>
             </div>
@@ -548,7 +668,7 @@ const SettingsTestAuth: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">🧪 Тестирование токенов</h2>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
           <button
             onClick={testApiCall}
             className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
@@ -571,6 +691,14 @@ const SettingsTestAuth: React.FC = () => {
           >
             <span>🔄</span>
             <span>Обновить токен</span>
+          </button>
+
+          <button
+            onClick={clearTokenStorage}
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium"
+          >
+            <span>🧹</span>
+            <span>Сброс данных</span>
           </button>
           
           <button

@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { UserType, LoginRequest, RegisterRequest } from '../../server/types/auth';
-import { log } from '@/lib/utils';
 import { useEquipment, EquipmentState, EquipmentActions } from '../hooks/useEquipment';
-import { ToastService } from '../services/ToastService';
+import { LoggingService } from '../services/LoggingService';
+import { formatDuration } from '@/lib/formatUtils';
 
 // Расширенный тип пользователя с информацией о времени жизни токена
 interface UserWithExpiry extends Omit<UserType, 'password' | 'refreshToken' | 'refreshTokenExpiresAt'> {
@@ -61,15 +61,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Загружаем настройки авторизации
   const loadAuthSettings = async () => {
     try {
+      LoggingService.authLog('🔄 [AuthContext] Загружаем настройки авторизации...');
       const response = await fetch('/api/auth/settings', {
         credentials: 'include'
       });
+      
+      // LoggingService.authLog(`📡 [AuthContext] Ответ настроек авторизации: ${response.status} ${response.statusText}`);
+      
       if (response.ok) {
         const settings = await response.json();
+        LoggingService.authLog('✅ [AuthContext] Настройки авторизации загружены:', settings);
         setAuthSettings(settings);
+      } else {
+        LoggingService.authLog(`⚠️ [AuthContext] Не удалось загрузить настройки авторизации: ${response.status}`);
       }
     } catch (error) {
       console.error('❌ Ошибка загрузки настроек авторизации:', error);
+      LoggingService.authLog('❌ [AuthContext] Ошибка загрузки настроек авторизации:', error);
     }
   };
 
@@ -100,7 +108,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const currentSettings = authSettings || fallbackSettings;
     const isEnabled = currentSettings.clientAutoRefreshEnabled !== false;
     
-    log('🔧 [AuthContext] scheduleTokenRefresh', { expiresIn, currentSettings, isEnabled });
+    // LoggingService.authLog('🔧 [AuthContext] scheduleTokenRefresh', { expiresIn, currentSettings, isEnabled });
     
     if (isEnabled) {
       if (refreshTimeoutRef.current) {
@@ -108,14 +116,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       
       const refreshDelay = getRefreshDelay(expiresIn);
-      log(`⏰ [AuthContext] Планируем обновление токена через ${refreshDelay / 1000} секунд`);
+      LoggingService.authLog(`⏰ [AuthContext] Планируем обновление токена через ${formatDuration(refreshDelay, { unit: 'ms' })}`);
       
       refreshTimeoutRef.current = window.setTimeout(() => {
-        log('🔄 [AuthContext] Запускаем автоматическое обновление токена');
-        refreshToken();
+        LoggingService.authLog('🔄 [AuthContext] Запускаем автоматическое обновление токена');
+        refreshToken(); 
       }, refreshDelay);
     } else {
-      log('⚠️ [AuthContext] Автоматическое обновление токенов отключено в настройках');
+      // LoggingService.authLog('⚠️ [AuthContext] Автоматическое обновление токенов отключено в настройках');
     }
   };
 
@@ -123,6 +131,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     loadAuthSettings();
   }, []);
+
+  // Перезагружаем настройки авторизации только при смене пользователя (не при первой загрузке)
+  const prevUserIdRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (user && prevUserIdRef.current !== undefined && prevUserIdRef.current !== user.id) {
+      // Реальная смена пользователя - перезагружаем настройки
+      LoggingService.authLog('🔄 [AuthContext] Смена пользователя обнаружена, перезагружаем настройки...');
+      loadAuthSettings();
+    }
+    prevUserIdRef.current = user?.id;
+  }, [user?.id]);
 
   // Проверяем статус аутентификации при загрузке с небольшой задержкой
   useEffect(() => {
@@ -137,14 +156,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   // Умное обновление токенов - планируем обновление при изменении пользователя или настроек
+  const prevTokenRefreshKey = useRef<string>('');
   useEffect(() => {
     if (user) {
-      if (!authSettings) {
-        // Если настройки еще не загружены, планируем с fallback значениями
-        log('👤 Пользователь авторизован, планируем обновление токенов (настройки загружаются...)');
-      } else {
-        // Если настройки загружены, планируем с реальными значениями
-        log('👤⚙️ Пользователь авторизован и настройки загружены, планируем обновление токенов');
+      // Создаем уникальный ключ для предотвращения повторного логирования
+      const currentKey = `${user.id}-${user.expiresIn}-${authSettings?.clientAutoRefreshEnabled}-${authSettings?.middlewareAutoRefreshEnabled}`;
+      
+      if (prevTokenRefreshKey.current !== currentKey) {
+        if (!authSettings) {
+          // Если настройки еще не загружены, планируем с fallback значениями
+          LoggingService.authLog('👤 Пользователь авторизован (настройки пока не загружены...) \n🔄 [Fallback] Автообновление токенов за 10 минут до истечения');
+        } else {
+          // Если настройки загружены, планируем с реальными значениями
+          LoggingService.authLog(`👤 Пользователь авторизован и настройки успешно загружены! 
+🔄 clientAutoRefresh: ${authSettings.clientAutoRefreshEnabled ? 'ВКЛ (за ' + authSettings.clientRefreshThresholdMinutes + ' минут до истечения)' : 'ВЫКЛ'}
+🔄 middlewareRefresh: ${authSettings.middlewareRefreshThresholdSeconds ? 'ВКЛ (за ' + authSettings.middlewareRefreshThresholdSeconds + ' сек до истечения)' : 'ВЫКЛ'}
+🔄 expiresIn: ${Math.floor(user.expiresIn / 60) > 0 && (Math.floor(user.expiresIn / 60) + 'мин')} ${user.expiresIn % 60} сек`);
+        }
+        
+        prevTokenRefreshKey.current = currentKey;
       }
       
       scheduleTokenRefresh(user.expiresIn);
@@ -197,9 +227,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [user]);
 
   const checkAuthStatus = async () => {
-    // if (process.env.NODE_ENV === 'development') {
-      // console.log('🔍 [AuthContext] checkAuthStatus called');
-    // }
+    // LoggingService.authLog('🔍 [AuthContext] checkAuthStatus called');
 
     // Проверяем кеш профиля
     const now = Date.now();
@@ -211,9 +239,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
        profileCacheRef.current.data.expiresIn >= 300); // 300 секунд = 5 минут
 
     if (shouldUseCache) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('📋 [AuthContext] Using cached profile');
-      }
+      LoggingService.authLog('📋 [AuthContext] Using cached profile');
       setUser(profileCacheRef.current.data);
       setIsLoading(false);
       return;
@@ -223,9 +249,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (profileCacheRef.current && 
         profileCacheRef.current.data?.expiresIn && 
         profileCacheRef.current.data.expiresIn < 300) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('🚫 [AuthContext] Cache disabled for short token (expiresIn < 5min)');
-      }
+      LoggingService.authLog('🚫 [AuthContext] Cache disabled for short token (expiresIn < 5min)');
     }
 
     try {
@@ -233,15 +257,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         credentials: 'include'
       });
 
-      // if (process.env.NODE_ENV === 'development') {
-        // console.log('📡 [AuthContext] checkAuthStatus response:', response.status);
-      // }
+      // LoggingService.authLog('📡 [AuthContext] checkAuthStatus response:', response.status);
 
       if (response.ok) {
         const userData = await response.json();
-        // if (process.env.NODE_ENV === 'development') {
-          // console.log('✅ [AuthContext] checkAuthStatus success');
-        // }
+        LoggingService.authLog('✅ [AuthContext] checkAuthStatus success');
 
         // Сохраняем информацию о времени жизни токена
         const userWithExpiry = {
@@ -264,10 +284,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } else {
         // Если получили 401, пробуем обновить токен
         if (response.status === 401) {
-          console.log('⚠️ [AuthContext] checkAuthStatus: Got 401, attempting token refresh');
+          LoggingService.authLog('⚠️ [AuthContext] checkAuthStatus: Got 401, attempting token refresh');
           const refreshResult = await refreshToken();
           if (refreshResult) {
-            console.log('✅ [AuthContext] checkAuthStatus: Token refreshed successfully');
+            LoggingService.authLog('✅ [AuthContext] checkAuthStatus: Token refreshed successfully');
             // После успешного обновления токена, рекурсивно вызываем checkAuthStatus
             // чтобы обновить состояние пользователя
             return checkAuthStatus();
@@ -300,14 +320,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (response.ok) {
         const data = await response.json();
-        log('✅ Токен успешно обновлен');
+        LoggingService.authLog('✅ Токен успешно обновлен');
 
         // Проверяем, было ли автоматическое обновление токена в middleware
         const tokenRefreshed = response.headers.get('X-Token-Refreshed');
         const userEmail = response.headers.get('X-User-Email');
 
         if (tokenRefreshed === 'true' && userEmail) {
-          ToastService.tokenRefreshed(userEmail);
+          LoggingService.toastTokenRefreshed(userEmail);
         }
 
         // Обновляем информацию о времени жизни токена
@@ -328,7 +348,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         if (error.message.includes('застарів') || error.message.includes('неактивний')) {
           console.error('❌ Токен устарел или неактивен, выходим из системы');
-          ToastService.refreshError();
+          LoggingService.toastRefreshError();
           forceLogout();
           return false;
         }
@@ -342,7 +362,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const login = async (credentials: LoginRequest): Promise<boolean> => {
-    log('🔑 Начинаем вход в систему...', { email: credentials.email });
+    LoggingService.authLog('🔑 [AuthContext]: Начинаем вход в систему...', { email: credentials.email });
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
@@ -353,14 +373,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         body: JSON.stringify(credentials),
       });
 
-      log(`📡 Ответ на вход: ${response.status} ${response.statusText}`);
+      LoggingService.authLog(`📡 [AuthContext]: Ответ на вход: ${response.status} ${response.statusText}`);
 
       if (response.ok) {
         const data = await response.json();
-        log('✅ Успешный вход, устанавливаем пользователя', data.user);
+        LoggingService.authLog('✅ [AuthContext]: Успешный вход, устанавливаем пользователя', data.user);
+
+        // Повторно инициализируем LoggingService для загрузки актуальных настроек
+        await LoggingService.initialize();
+        LoggingService.authLog('🔄 [AuthContext]: LoggingService переинициализирован после входа');
+
+        // Перезагружаем настройки авторизации
+        await loadAuthSettings();
 
         // Показываем Toast уведомление
-        ToastService.loginSuccess(data.user.email);
+        LoggingService.toastAuthSuccess(data.user.email);
 
         // Сохраняем информацию о времени жизни токена
         const userWithExpiry = {
@@ -384,7 +411,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const register = async (userData: RegisterRequest): Promise<boolean> => {
-    log('📝 Начинаем регистрацию...', { email: userData.email });
+    LoggingService.authLog('📝 [AuthContext]: Начинаем регистрацию...', { email: userData.email });
     try {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
@@ -395,14 +422,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         body: JSON.stringify(userData),
       });
 
-      log(`📡 Ответ на регистрацию: ${response.status} ${response.statusText}`);
+      LoggingService.authLog(`📡 [AuthContext]: Ответ на регистрацию: ${response.status} ${response.statusText}`);
 
       if (response.ok) {
         const data = await response.json();
-        log('✅ Успешная регистрация, устанавливаем пользователя', data.user);
+        LoggingService.authLog('✅ [AuthContext]: Успешная регистрация, устанавливаем пользователя', data.user);
 
         // Показываем Toast уведомление
-        ToastService.loginSuccess(data.user.email);
+        LoggingService.toastAuthSuccess(data.user.email);
 
         // Сохраняем информацию о времени жизни токена
         const userWithExpiry = {
@@ -427,9 +454,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = async () => {
-    if (process.env.NODE_ENV === 'development') {
-      log('🚪 Начинаем выход из системы...');
-    }
+    LoggingService.authLog('🔚 [AuthContext]: Начинаем выход из системы...');
     try {
       // Очищаем таймер обновления токена
       if (refreshTimeoutRef.current) {
@@ -445,12 +470,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Очищаем кеш профиля
       profileCacheRef.current = null;
 
-      if (process.env.NODE_ENV === 'development') {
-        log('✅ Успешный выход из системы');
-      }
+      LoggingService.authLog('✅ [AuthContext]: Успешный выход из системы');
 
       // Показываем Toast уведомление
-      ToastService.logoutSuccess();
+      LoggingService.toastLogoutSuccess();
     } catch (error) {
       console.error('❌ Ошибка при выходе:', error);
     } finally {
@@ -459,9 +482,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const forceLogout = () => {
-    if (process.env.NODE_ENV === 'development') {
-      log('🔄 Принудительный выход из системы');
-    }
+    LoggingService.authLog('⛔ [AuthContext]: Принудительный выход из системы');
     // Очищаем таймер обновления токена
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current);

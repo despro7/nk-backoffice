@@ -245,7 +245,7 @@ export const AuthSettings: React.FC = () => {
               />
               <div className="flex-1">
                 <div className="font-medium text-sm">Автоматическое обновление токенов</div>
-                <div className="text-xs text-gray-400">Включить/отключить обновление токенов</div>
+                <div className="text-xs text-gray-400">tokenRefreshEnabled - true/false</div>
               </div>
               </div>
 
