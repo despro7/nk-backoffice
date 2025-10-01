@@ -14,31 +14,39 @@
   --breakpoint-xl: 1280px;
   --breakpoint-2xl: 1536px;
 
+  /* Основні кольори */
   --color-primary: #374151;
   --color-primary-foreground: #ffffff;
+
   --color-secondary: #9ca3af;
   --color-secondary-foreground: #ffffff;
+
   --color-background: #e5e7eb;
   --color-background-paper: #ffffff;
+
   --color-danger: #e3484b;
   --color-danger-foreground: #ffffff;
   --color-danger-400: #eb5541;
   --color-danger-500: #e3484b;
   --color-danger-700: #da291c;
+
   --color-success-100: #e9f2e0;
   --color-success-200: #bfef90;
   --color-success-400: #cbdeb7;
   --color-success-500: #5bb434;
   --color-success-600: #409b18;
   --color-success-700: #5e8f2d;
+
   --color-warning-400: #ffebad;
   --color-warning-500: #ebcb69;
   --color-warning-600: #e2bf55;
   --color-warning-700: #dbab19;
   --color-warning-800: #886f22;
+  
   --color-common-dark: #1b1c1e;
   --color-common-white: #ffffff;
   --color-common-black: #000000;
+
   --color-grey-50: #f6f6f6;
   --color-grey-100: #f0f0f0;
   --color-grey-200: #e5e5e5;
@@ -47,6 +55,7 @@
   --color-grey-600: #6f6f6f;
   --color-grey-700: #555555;
   --color-grey-800: #444444;
+
   --color-neutral-50: #f9fafb;
   --color-neutral-100: #f3f4f6;
   --color-neutral-200: #e5e7eb;
@@ -57,6 +66,7 @@
   --color-neutral-700: #374151;
   --color-neutral-800: #1f2937;
   --color-neutral-900: #111827;
+
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));

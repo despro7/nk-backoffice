@@ -327,42 +327,6 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
 
   return (
     <div className="w-full flex flex-col gap-8">
-      {/* Свитчер режима рекомендаций */}
-      <div className="flex flex-col gap-3">
-        <Switch
-          isSelected={recommendationMode === 'economical'}
-          onValueChange={(checked) => handleModeChange(checked ? 'economical' : 'spacious')}
-          color="danger"
-          classNames={{
-            base: cn(
-              "inline-flex flex-row-reverse w-full bg-white items-center",
-              "justify-between cursor-pointer rounded-lg gap-3 px-2 py-4 pr-5",
-              "data-[selected=true]:ring-danger data-[selected=true]:ring-2",
-              "transition-transform duration-200 ease-in-out",
-              `${transitionMode ? "opacity-75 scale-[0.98]" : "opacity-100 scale-100"}`
-            ),
-            wrapper: "p-0 h-4 overflow-visible",
-            thumb: cn(
-              "w-6 h-6 border-2 shadow-lg",
-              "group-data-[hover=true]:border-danger",
-              //selected
-              "group-data-[selected=true]:ms-6",
-              "group-data-[selected=true]:border-danger",
-              // pressed
-              "group-data-[pressed=true]:w-7",
-              "group-data-pressed:group-data-selected:ms-4",
-            ),
-          }}
-        >
-          <div className="flex flex-col gap-2">
-            <p className="text-medium font-semibold leading-[1.1]">
-              Економічний режим пакування {recommendationMode === 'economical' && <span className="bg-danger rounded px-1 py-0.5 text-white text-[10px] tracking-wider">УВІМКНЕНО</span>}
-            </p>
-            <p className="text-[13px] leading-snug text-default-400">Мінімальна кількість коробок, можливе переповнення.</p>
-          </div>
-        </Switch>
-      </div>
-
       {/* Заголовок */}
       {/* <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">
@@ -446,13 +410,7 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
             className="flex-1 cursor-pointer"
             onClick={() => onActiveBoxChange?.(index)}
           >
-            <Card 
-              className={`duration-300 ease-in-out ${
-                isActive ? 'ring-2 ring-blue-500 border-blue-600' : 'border-gray-200 hover:border-blue-300'
-              } ${
-                transitionMode ? 'opacity-75 transform scale-[0.98]' : 'opacity-100 transform scale-100'
-              }`}
-            >
+            <Card className={`transition-shadow duration-300 ease-in-out ${isActive && 'ring-2 ring-lime-600/80'}`}>
               <CardHeader className="flex items-center justify-between gap-2">
                 <span className="text-base font-semibold px-1 py-0 duration-200 flex items-center gap-2">
                   <DynamicIcon name="package" size={20} strokeWidth={1.5} /> 
@@ -501,21 +459,42 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
         );
       })}
 
-      {/* Общая информация */}
-      {/* {selectedBoxes.length > 0 && (
-        <div className={`border rounded-lg p-3 ${isBoxesValid ? 'bg-gray-50 border-gray-200' : 'bg-red-50 border-red-200'}`}>
-          <div className={`text-sm ${isBoxesValid ? 'text-gray-700' : 'text-red-800'}`}>
-            <p><strong>Всього коробок:</strong> {selectedBoxes.length}</p>
-            <p><strong>Загальна вага коробок:</strong> {totalBoxesWeight.toFixed(1)} кг</p>
-            <p><strong>Максимальна місткість:</strong> {totalMaxCapacity} порцій</p>
-            {!isBoxesValid && (
-              <p className="font-semibold mt-2">
-                ⚠️ Увага: Деякі коробки не вміщують свою частину замовлення ({getPortionsPerBox} порцій на коробку)
-              </p>
-            )}
+      {/* Світчер режиму экономичного пакування */}
+      <div className="flex flex-col gap-3">
+        <Switch
+          isSelected={recommendationMode === 'economical'}
+          onValueChange={(checked) => handleModeChange(checked ? 'economical' : 'spacious')}
+          color="danger"
+          classNames={{
+            base: cn(
+              "inline-flex flex-row-reverse w-full bg-white items-center",
+              "justify-between cursor-pointer rounded-lg gap-3 px-2 py-4 pr-5",
+              "data-[selected=true]:ring-danger data-[selected=true]:ring-2",
+              "transition-transform duration-200 ease-in-out",
+              `${transitionMode ? "opacity-75 scale-[0.98]" : "opacity-100 scale-100"}`
+            ),
+            wrapper: "p-0 h-4 overflow-visible",
+            thumb: cn(
+              "w-6 h-6 border-2 shadow-lg",
+              "group-data-[hover=true]:border-danger",
+              //selected
+              "group-data-[selected=true]:ms-6",
+              "group-data-[selected=true]:border-danger",
+              // pressed
+              "group-data-[pressed=true]:w-7",
+              "group-data-pressed:group-data-selected:ms-4",
+            ),
+          }}
+        >
+          <div className="flex flex-col gap-2">
+            <p className="text-medium font-semibold leading-[1.1]">
+              Економічний режим пакування {recommendationMode === 'economical' && <span className="bg-danger rounded px-1 py-0.5 text-white text-[10px] tracking-wider">УВІМКНЕНО</span>}
+            </p>
+            <p className="text-[13px] leading-snug text-default-400">Мінімальна кількість коробок, можливе переповнення.</p>
           </div>
-        </div>
-      )} */}
+        </Switch>
+      </div>
+
     </div>
   );
 };

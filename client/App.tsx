@@ -9,7 +9,7 @@ import NotFound from "./pages/NotFound";
 import { appRoutes } from "./routes.config";
 import { Layout } from "./components/Layout";
 import { ScrollToTop } from "./components/ScrollToTop";
-import { AuthProvider } from "./contexts/AuthContext";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { DebugProvider } from "./contexts/DebugContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Auth } from "./pages/Auth";
@@ -17,12 +17,31 @@ import Dashboard from "./pages/Dashboard";
 import TestSerialCom from "./pages/test-serial-com";
 import { useEquipmentFromAuth } from "./contexts/AuthContext";
 import { ToastService } from "./services/ToastService";
+import { LoggingService } from "./services/LoggingService";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
 // Компонент для рендеринга маршрутов с поддержкой ключей
 const AppRoutes = () => {
   const [equipmentState] = useEquipmentFromAuth();
+
+  // Инициализация при загрузке приложения
+  useEffect(() => {
+    // ToastService автоматически инициализируется при первом использовании
+  }, []);
+
+  // Показываем загрузку, если состояние оборудования еще не инициализировано
+  if (!equipmentState) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Завантаження...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Routes>
@@ -50,7 +69,7 @@ const AppRoutes = () => {
         // Для OrderView добавляем key, зависящий от состояния оборудования
         const isOrderView = route.path === '/orders/:externalId';
         const key = isOrderView
-          ? `order-view-${equipmentState.isSimulationMode}-${equipmentState.config?.connectionType}`
+          ? `order-view-${equipmentState.config?.scale?.connectionStrategy}`
           : route.path;
 
         return (
@@ -74,8 +93,49 @@ const AppRoutes = () => {
   );
 };
 
-// Компонент для инициализации настроек
+
+// Компонент для глобальної ініціалізації сервісів (логування, toast)
 const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isReady, setIsReady] = React.useState(false);
+  const { user, isLoading: authLoading } = useAuth();
+
+  React.useEffect(() => {
+    (async () => {
+      // Always initialize logging first
+      await LoggingService.initialize();
+
+      // Wait until AuthContext finished initial check
+      if (authLoading) return;
+
+      if (user) {
+        // ToastService will be initialized by AuthContext when user is set.
+      } else {
+        // Apply local defaults to avoid 401 network requests
+        ToastService.updateSettings({
+          authSuccess: true,
+          authErrors: true,
+          tokenRefresh: true,
+          tokenExpiry: true,
+          apiErrors: true,
+          equipmentStatus: true,
+          systemNotifications: true,
+        });
+      }
+
+      setIsReady(true);
+    })();
+  }, [authLoading, user]);
+
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Завантаження налаштувань застосунку...</p>
+        </div>
+      </div>
+    );
+  }
   return <>{children}</>;
 };
 
@@ -88,7 +148,9 @@ const App = () => (
           <DebugProvider>
             <AppInitializer>
               <ScrollToTop />
-              <AppRoutes />
+              <ErrorBoundary>
+                <AppRoutes />
+              </ErrorBoundary>
             </AppInitializer>
           </DebugProvider>
         </AuthProvider>

@@ -60,7 +60,6 @@ export default function Orders() {
 
         {/* Right Column - Control Panel */}
         <RightPanel className="pt-16">
-          <LastSyncInfo />
           <SearchInput 
             value={searchQuery} 
             onChange={(value) => setSearchQuery(value)}
@@ -70,6 +69,7 @@ export default function Orders() {
             onNumberClick={handleNumberClick}
             onBackspace={handleBackspace}
           />
+          <LastSyncInfo />
           <DeviationButton />
         </RightPanel>
       </div>

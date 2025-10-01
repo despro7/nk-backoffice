@@ -59,37 +59,17 @@ export function LastSyncInfo() {
 
   if (loading) {
     return (
-      <Card className="border-gray-200">
-        <CardBody className="p-4">
-          <div className="flex items-center gap-2 text-gray-500">
-            <DynamicIcon name="loader-2" size={16} className="animate-spin" />
-            <span className="text-sm">Завантаження...</span>
-          </div>
-        </CardBody>
-      </Card>
+      <div className="w-full flex items-center justify-center gap-2 text-neutral-400">
+        <DynamicIcon name="loader-2" size={16} className="animate-spin" />
+        <span className="text-sm">Завантаження...</span>
+      </div>
     );
   }
 
   return (
-    <Card className="border-0 shadow-none bg-neutral-100 w-full">
-      <CardBody className="p-4">
-        <div className="space-y-3">
-          {/* Заголовок */}
-          <div className="flex items-center gap-2">
-            <DynamicIcon name="refresh-cw" size={16} className="text-blue-500" />
-            <h3 className="text-sm font-medium text-gray-700">Остання синхронізація: <span className="text-neutral-500/80">{formatRelativeDate(syncInfo?.lastSync)}</span></h3>
-          </div>
-
-          {/* Статус синхронизации */}
-          {/* <div className="flex items-center gap-2">
-            {getStatusIcon()}
-            <span className={`text-sm font-medium ${getStatusColor()}`}>
-              {syncInfo?.syncStatus === 'success' ? 'Успішно' : 'Потребує уваги'}
-            </span>
-          </div> */}
-
-        </div>
-      </CardBody>
-    </Card>
+    <div className="w-full flex items-center justify-center gap-2 text-neutral-400">
+      <DynamicIcon name="refresh-cw" size={16} />
+      <span className="text-sm">Остання синхронізація: <span className="text-neutral-500/60">{formatRelativeDate(syncInfo?.lastSync)}</span></span>
+    </div>
   );
 }

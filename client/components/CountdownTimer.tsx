@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import NumberFlow, { NumberFlowGroup } from '@number-flow/react';
 
 const CountdownTimer = () => {
-  const [timeLeft, setTimeLeft] = useState('');
+  const [seconds, setSeconds] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -10,17 +11,10 @@ const CountdownTimer = () => {
       const difference = nextDispatchTime.getTime() - now.getTime();
 
       if (difference > 0) {
-        const totalHours = Math.floor(difference / (1000 * 60 * 60));
-        const minutes = Math.floor((difference / 1000 / 60) % 60);
-        const seconds = Math.floor((difference / 1000) % 60);
-        setTimeLeft(
-          `${String(totalHours).padStart(2, '0')}:${String(minutes).padStart(
-            2,
-            '0'
-          )}:${String(seconds).padStart(2, '0')}`
-        );
+        const totalSeconds = Math.floor(difference / 1000);
+        setSeconds(totalSeconds);
       } else {
-        setTimeLeft('00:00:00');
+        setSeconds(0);
       }
     }, 1000);
 
@@ -53,10 +47,34 @@ const CountdownTimer = () => {
     return sortedDispatchTimes[0];
   };
 
+  const hh = Math.floor(seconds / 3600);
+  const mm = Math.floor((seconds % 3600) / 60);
+  const ss = seconds % 60;
+
   return (
-    <span className="font-inter text-[22px] font-medium leading-[100%]">
-      {timeLeft}
-    </span>
+    <NumberFlowGroup>
+      <div
+        className="font-inter text-[22px] font-medium leading-[100%] flex items-baseline"
+        style={{ fontVariantNumeric: 'tabular-nums' }}
+      >
+        <NumberFlow trend={-1} value={hh} format={{ minimumIntegerDigits: 2 }} />
+        <NumberFlow
+          prefix=":"
+          trend={-1}
+          value={mm}
+          digits={{ 1: { max: 5 } }}
+          format={{ minimumIntegerDigits: 2 }}
+        />
+        <NumberFlow
+          prefix=":"
+          trend={-1}
+          value={ss}
+          digits={{ 1: { max: 5 } }}
+          format={{ minimumIntegerDigits: 2 }}
+          animated={false}
+        />
+      </div>
+    </NumberFlowGroup>
   );
 };
 

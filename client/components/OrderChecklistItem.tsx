@@ -36,23 +36,26 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderCh
     return `${qty} порцій`;
   };
 
+  const isDone = status === 'done';
+  const isItemBoxConfirmed = type === 'box' && status === 'confirmed';
+  const isBoxDone = type === 'box' && status === 'done';
+
   const itemStateClasses = cn(
-    'p-4 rounded-sm flex items-center justify-between outline-2 outline-transparent transition-background transition-colors duration-300 animate-duration-[100ms] cursor-pointer',
+    'p-4 rounded-sm flex items-center justify-between outline-2 outline-transparent transition-background transition-colors duration-300 animate-duration-[100ms]',
     {
-      'bg-gray-50 text-neutral-900': status === 'default',
-      'bg-warning-400 outline-2 outline-warning-500': status === 'pending' || status === 'awaiting_confirmation',
-      'bg-success-500 text-white animate-pulse animate-thrice': status === 'success',
-      'bg-danger text-white': status === 'error',
+      'bg-gray-50 text-neutral-900 cursor-pointer': status === 'default',
+      'bg-warning-400 outline-2 outline-warning-500 cursor-pointer': status === 'pending' || status === 'awaiting_confirmation',
+      'bg-success-500 text-white animate-pulse animate-thrice cursor-pointer': status === 'success',
+      'bg-danger text-white cursor-pointer': status === 'error',
       'bg-gray-200 text-gray-500': status === 'done' || status === 'confirmed',
+      'cursor-not-allowed opacity-75': isBoxDone, // Заблокированная коробка
     }
   );
 
-  const isDone = status === 'done';
-  const isItemBoxConfirmed = type === 'box' && status === 'confirmed';
-
   // Коробки кликабельны только если ожидают подтверждения
   // Товары кликабельны только если коробка уже взвешена
-  const isClickable = !isDone && !isItemBoxConfirmed && (type === 'box' ? status === 'awaiting_confirmation' : isBoxConfirmed);
+  // Коробки с статусом 'done' полностью заблокированы от повторного взвешивания
+  const isClickable = !isDone && !isItemBoxConfirmed && !isBoxDone && (type === 'box' ? status === 'awaiting_confirmation' : isBoxConfirmed);
 
   return (
     <div className={itemStateClasses} onClick={isClickable ? onClick : undefined}>
@@ -72,10 +75,10 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderCh
             "font-semibold": type === 'box',
             "font-normal": type === 'product'
           })}>
-            {name}
+            {name} {type !== 'box' && (<span>× <span className="text-[18px] font-mono rounded-sm bg-gray-950/5 px-2.5 py-1">{quantity}</span></span>)}
           </span>
           {type === 'box' && boxSettings && (
-            <span className="text-xs bg-gray-950/5 px-2 py-1 rounded">
+            <span className="text-[13px] tabular-nums bg-gray-950/5 px-2 py-1 rounded">
               {boxSettings.width}×{boxSettings.height}×{boxSettings.length} см
             </span>
           )}
@@ -83,18 +86,19 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderCh
       </div>
       
       <div className="flex items-center gap-4">
-        {/* Индикатор ошибки */}
+        {/* Індикатор помилки */}
         {status === 'error' && <X size={24} />}
         
-        {/* Счетчик порций */}
-        <span className="px-1 py-0.5 mr-2 rounded bg-gray-950/5 font-normal text-xs">
-          {type === 'box' ? `Вага коробки: ${expectedWeight.toFixed(3)} кг` : `~${expectedWeight.toFixed(3)} кг`}
+        {/* Лічильник порцій */}
+        <span className="text-[13px] tabular-nums">
+          ~{expectedWeight.toFixed(3)} кг
+          {/* {type === 'box' ? `Вага коробки: ${expectedWeight.toFixed(3)} кг` : `~${expectedWeight.toFixed(3)} кг`} */}
         </span>
-          {type !== 'box' && (
+          {/* {type !== 'box' && (
             <span className="font-medium">
               {formatQuantity(quantity)}
             </span>
-          )}
+          )} */}
       </div>
     </div>
   );

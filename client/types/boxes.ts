@@ -42,6 +42,7 @@ export interface BoxRecommendationsResponse {
   details?: string[];
 }
 
+// Тип для запиту рекомендацій коробок
 export interface BoxRecommendationsRequest {
   items: Array<{
     name: string;
@@ -51,7 +52,7 @@ export interface BoxRecommendationsRequest {
   boxSettings?: SettingsBoxes;
 }
 
-// Тип для элемента чек-листа с коробкой
+// Тип для елемента чек-листа з коробкою
 export interface OrderChecklistItemWithBox {
   id: string;
   name: string;

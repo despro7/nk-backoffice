@@ -139,6 +139,9 @@ export const formatRelativeDate = (
     dayWord = "дні";
   }
 
+  // Если разница в днях равна 0, то возвращаем "Сьогодні"
+  if (diffInDays === 0) return `Сьогодні${timeStr}`;
+  
   // Если разница в днях равна 1 или 2, то возвращаем "Вчора/Позавчора" (showTime? опционально)
   if (diffInDays === 1) return `Вчора${timeStr}`;
   if (diffInDays === 2 && include2DaysAgo) return `Позавчора${timeStr}`;
@@ -400,4 +403,47 @@ export const formatDuration = (
   if (secs > 0 || result === '') result += `${secs}с`;
 
   return result.trim();
+};
+
+/**
+ * Форматирует номер отслеживания (ТТН) в читаемый формат
+ * @param trackingId - номер отслеживания
+ * @param provider - провайдер доставки ('novaposhta' или 'ukrposhta')
+ * @returns отформатированная строка
+ * 
+ * @example
+ * formatTrackingNumber('20451232665506', 'novaposhta') // "20 4512 3266 5506"
+ * formatTrackingNumber('0503769495578', 'ukrposhta') // "05037 6949 5578"
+ */
+export const formatTrackingNumber = (trackingId: string, provider: string): string => {
+  if (!trackingId || trackingId === 'Не вказано') {
+    return 'ТТН не вказано';
+  }
+
+  // Убираем все пробелы и приводим к строке
+  const cleanId = trackingId.toString().replace(/\s/g, '');
+  
+  if (provider === 'novaposhta') {
+    // Формат Нової Пошти: 20 4512 3266 5506
+    if (cleanId.length === 14) {
+      const part1 = cleanId.slice(0, 2);
+      const part2 = cleanId.slice(2, 6);
+      const part3 = cleanId.slice(6, 10);
+      const part4 = cleanId.slice(10, 14);
+      
+      return `${part1} ${part2} ${part3} ${part4}`;
+    }
+  } else if (provider === 'ukrposhta') {
+    // Формат Укрпошти: 05037 6949 5578
+    if (cleanId.length === 13) {
+      const part1 = cleanId.slice(0, 5);
+      const part2 = cleanId.slice(5, 9);
+      const part3 = cleanId.slice(9, 13);
+      
+      return `${part1} ${part2} ${part3}`;
+    }
+  }
+  
+  // Если формат не распознан, возвращаем как есть
+  return trackingId;
 };

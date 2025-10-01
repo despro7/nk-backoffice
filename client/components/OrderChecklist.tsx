@@ -34,20 +34,28 @@ interface OrderChecklistProps {
   showPrintTTN?: boolean;
   onNextOrder?: () => void; // Callback для перехода к следующему заказу
   showNextOrder?: boolean;
-  onWeighItem?: (itemId: string) => Promise<void>; // Callback для реального взвешивания
-  isAwaitingWeightChange?: boolean; // Флаг для ожидания изменения веса
   isDebugMode?: boolean; // Флаг дебаг-режима
 }
 
-const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, onNextOrder, showNextOrder, onWeighItem, isAwaitingWeightChange }: OrderChecklistProps) => {
+const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, onNextOrder, showNextOrder }: OrderChecklistProps) => {
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [equipmentState] = useEquipmentFromAuth(); // <-- Используем глобальное состояние оборудования
   const { isDebugMode } = useDebug(); // <-- Используем контекст дебага
 
   // Синхронизируем активный элемент при изменении items
   useEffect(() => {
-    // Сначала ищем элемент со статусом 'pending'
-    let newActiveItem = items.find((item) => item.status === 'pending');
+    // console.log('🔄 [OrderChecklist] Синхронизация активного элемента:', {
+    //   activeBoxIndex,
+    //   items: items
+    //     .filter(item => (item.boxIndex || 0) === activeBoxIndex)
+    //     .map(item => ({ name: item.name, type: item.type, status: item.status }))
+    // });
+
+    // Сначала ищем элемент со статусом 'pending' в текущей коробке
+    let newActiveItem = items.find((item) => 
+      item.status === 'pending' && 
+      (item.boxIndex || 0) === activeBoxIndex
+    );
 
     // Если нет pending, ищем коробку текущей коробки, которая ожидает подтверждения
     if (!newActiveItem) {
@@ -58,7 +66,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       );
     }
 
-    // Если коробка уже подтверждена, ищем первый товар в коробке
+    // Если коробка уже подтверждена, ищем первый товар в коробке со статусом 'default'
     if (!newActiveItem) {
       newActiveItem = items.find((item) =>
         item.type === 'product' &&
@@ -66,6 +74,13 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
         item.status === 'default'
       );
     }
+
+    // console.log('🎯 [OrderChecklist] Выбранный активный элемент:', newActiveItem?.name || 'нет');
+    // console.log('📋 [OrderChecklist] Статусы товаров в коробке:', 
+    //   items
+    //     .filter(item => (item.boxIndex || 0) === activeBoxIndex && item.type === 'product')
+    //     .map(item => ({ name: item.name, status: item.status }))
+    // );
 
     // Устанавливаем активный элемент только если он действительно найден и валиден
     if (newActiveItem && newActiveItem.id) {
@@ -75,67 +90,6 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     }
   }, [items, activeBoxIndex]);
 
-  // Автоматическое взвешивание при изменении состояния оборудования
-  const lastWeightRef = useRef<number | null>(null);
-  const lastItemsRef = useRef<string>(''); // Для отслеживания изменений items
-
-  useEffect(() => {
-    // Если мы в режиме ожидания изменения веса, ничего не делаем
-    if (isAwaitingWeightChange) {
-      console.log('⚖️ OrderChecklist: Awaiting weight change, skipping automatic check.');
-      return;
-    }
-
-    // Ищем элемент в статусе 'pending' или 'awaiting_confirmation' в текущей коробке
-    // НЕ ищем элементы в статусе 'error' (они должны вернуться в pending через таймер)
-    const pendingItem = items.find((item) =>
-      (item.boxIndex || 0) === activeBoxIndex &&
-      (item.status === 'pending' || item.status === 'awaiting_confirmation')
-    );
-
-    // Получаем текущий вес
-    const currentWeight = equipmentState.currentWeight?.weight;
-
-    // Создаем строку для сравнения items (без зависимостей от ссылок)
-    const currentItemsKey = JSON.stringify(items.map(item => ({
-      id: item.id,
-      status: item.status,
-      boxIndex: item.boxIndex
-    })));
-
-    // Проверяем, изменились ли items
-    const itemsChanged = lastItemsRef.current !== currentItemsKey;
-
-    // Если items изменились, сбрасываем lastWeightRef
-    if (itemsChanged) {
-      lastWeightRef.current = null;
-      lastItemsRef.current = currentItemsKey;
-    }
-
-    // Если есть элемент в ожидании, весы подключены и стабильны,
-    // и вес изменился с момента последнего взвешивания
-    if (pendingItem && equipmentState.isScaleConnected && equipmentState.currentWeight?.isStable && currentWeight !== null) {
-      // Проверяем, изменился ли вес
-      const weightChanged = lastWeightRef.current === null || Math.abs(currentWeight - lastWeightRef.current) > 0.001;
-
-      if (weightChanged) {
-        lastWeightRef.current = currentWeight;
-
-        // Небольшая задержка, чтобы избежать слишком частых вызовов
-        const timeoutId = setTimeout(() => {
-          handleWeighItem(pendingItem.id);
-        }, 500); // Увеличиваем задержку до 500мс
-
-        return () => clearTimeout(timeoutId);
-      }
-    }
-  }, [equipmentState.currentWeight, equipmentState.isScaleConnected, activeBoxIndex, isAwaitingWeightChange]); // Убрали items из зависимостей
-
-  // Сбрасываем lastWeightRef при переходе к новой коробке
-  useEffect(() => {
-    lastWeightRef.current = null;
-    lastItemsRef.current = '';
-  }, [activeBoxIndex]);
 
 
   const packedPortions = useMemo(() => {
@@ -253,6 +207,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     const clickedItem = items.find(item => item.id === itemId);
 
     // Коробки не кликабельны, кроме awaiting_confirmation
+    // Коробки со статусом 'done' полностью заблокированы от повторного взвешивания
     if (clickedItem?.type === 'box' && clickedItem?.status !== 'awaiting_confirmation') {
       return;
     }
@@ -278,14 +233,6 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
           }
         });
 
-        // В режиме симуляции запускаем взвешивание сразу после клика
-        if (equipmentState.isSimulationMode) {
-          setTimeout(() => {
-            handleWeighItem(itemId);
-          }, 300); // Небольшая задержка для имитации реального процесса
-        }
-        // В реальном режиме взвешивание происходит только при изменении веса
-        // (это обрабатывается в useEffect выше)
       }
   };
 
@@ -313,111 +260,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     }
   };
 
-  // Обработка взвешивания товара (реальное или имитация)
-  const handleWeighItem = async (itemId: string) => {
-    const currentItem = items.find(item => item.id === itemId);
-    if (!currentItem) {
-      console.log('⚠️ OrderChecklist: Товар не найден:', itemId);
-      return;
-    }
 
-    console.log('⚖️ OrderChecklist: Начинаем взвешивание товара:', currentItem.name, '(статус:', currentItem.status + ')');
-
-    // Если передан callback для реального взвешивания, используем его
-    if (onWeighItem) {
-      console.log('⚖️ OrderChecklist: Используем реальное взвешивание');
-      try {
-        await onWeighItem(itemId);
-      } catch (error) {
-        console.error('❌ OrderChecklist: Ошибка при реальном взвешивании:', error);
-        // Fallback на имитацию при ошибке
-        handleSimulateWeigh(itemId);
-      }
-      return;
-    }
-
-    // Fallback: имитация взвешивания (если callback не передан)
-    console.log('🎭 OrderChecklist: Используем имитацию взвешивания');
-    handleSimulateWeigh(itemId);
-  };
-
-  // Имитация взвешивания (вспомогательная функция)
-  const handleSimulateWeigh = (itemId: string) => {
-    const currentItem = items.find(item => item.id === itemId);
-    if (!currentItem) {
-      return;
-    }
-
-    const isSuccess = Math.random() > 0.1;
-
-    if (onItemStatusChange) {
-      onItemStatusChange(itemId, isSuccess ? 'success' : 'error');
-
-      if (isSuccess) {
-        setTimeout(() => {
-          onItemStatusChange(itemId, 'done');
-
-          // Если это коробка, обрабатываем по-особому
-          if (currentItem.type === 'box') {
-            handleBoxComplete(itemId);
-          } else {
-            // Автоматически выбираем первый доступный элемент (не по порядку, а первый доступный)
-            const nextItem = items.find((item) =>
-              item.status === 'default' &&
-              (item.boxIndex || 0) === (currentItem.boxIndex || 0) &&
-              item.type === 'product'
-            );
-            if (nextItem) {
-              handleItemClick(nextItem.id);
-            } else {
-              setActiveItemId(null);
-            }
-          }
-        }, 1500); // Возвращаемся к "done" через 1.5 секунды
-      }
-    }
-  };
-
-  // Имитация сканирования штрихкода
-  const handleScanBarcode = (itemId: string) => {
-    const currentItem = items.find(item => item.id === itemId);
-    if (!currentItem) {
-      return;
-    }
-
-    // Симуляция сканирования (95% успеха)
-    const isSuccess = Math.random() > 0.05;
-
-    if (isSuccess && onItemStatusChange) {
-      // Сначала показываем "success" (успешное сканирование)
-      onItemStatusChange(itemId, 'success');
-
-      // Через 1 секунду переходим к "done"
-      setTimeout(() => {
-        onItemStatusChange(itemId, 'done');
-        
-        // Автоматически выбираем первый доступный элемент (не по порядку, а первый доступный)
-        const nextItem = items.find((item) => 
-          item.status === 'default' && 
-          (item.boxIndex || 0) === (currentItem.boxIndex || 0) &&
-          item.type === 'product'
-        );
-        if (nextItem) {
-          handleItemClick(nextItem.id);
-        } else {
-          setActiveItemId(null);
-        }
-      }, 1000);
-    } else if (onItemStatusChange) {
-      // Ошибка сканирования
-      onItemStatusChange(itemId, 'error');
-
-      // Через 1 секунду возвращаемся к "default" (ускорено в 2 раза)
-      setTimeout(() => {
-        onItemStatusChange(itemId, 'default');
-      }, 1000);
-    }
-  };
 
   // Создаем кастомный компонент для табов
   const CustomBoxTabs = ({ 
@@ -582,13 +425,14 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
             return boxIndex === activeBoxIndex;
           })
           .map((item) => (
-            <OrderChecklistItem
-              key={item.id}
-              item={item}
-              isActive={activeItemId === item.id}
-              isBoxConfirmed={isCurrentBoxConfirmed}
-              onClick={() => handleItemClick(item.id)}
-            />
+            <div key={item.id} className="relative">
+              <OrderChecklistItem
+                item={item}
+                isActive={activeItemId === item.id}
+                isBoxConfirmed={isCurrentBoxConfirmed}
+                onClick={() => handleItemClick(item.id)}
+              />
+            </div>
           ))}
       </div>
 
@@ -605,7 +449,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
         )}
 
         {/* Кнопка "Распечатать ТТН" */}
-        {(isOrderComplete || (equipmentState.isSimulationMode && showPrintTTN) || isDebugMode) && (
+        {(isOrderComplete || showPrintTTN || isDebugMode) && (
           <Button
             onPress={onPrintTTN}
             disabled={false} // Убираем локальное состояние, используем глобальное из OrderView

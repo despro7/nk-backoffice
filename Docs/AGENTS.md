@@ -7,10 +7,10 @@ While the starter comes with a express server, only create endpoint when strictl
 ## Tech Stack
 
 - **PNPM**: Prefer pnpm
-- **Frontend**: React 18 + React Router 6 (spa) + TypeScript + Vite + TailwindCSS 3
+- **Frontend**: React 18 + React Router 6 (spa) + TypeScript + Vite + TailwindCSS 4
 - **Backend**: Express server integrated with Vite dev server
 - **Testing**: Vitest
-- **UI**: Radix UI + TailwindCSS 3 + Lucide React icons
+- **UI**: Radix UI + TailwindCSS 4 + Lucide React icons
 
 ## Project Structure
 
@@ -19,7 +19,7 @@ client/                   # React SPA frontend
 ├── pages/                # Route components (Index.tsx = home)
 ├── components/ui/        # Pre-built UI component library
 ├── App.tsx                # App entry point and with SPA routing setup
-└── global.css            # TailwindCSS 3 theming and global styles
+└── global.css            # TailwindCSS 4 theming and global styles
 
 server/                   # Express API backend
 ├── index.ts              # Main server setup (express config + routes)
@@ -53,7 +53,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 ### Styling System
 
-- **Primary**: TailwindCSS 3 utility classes
+- **Primary**: TailwindCSS 4 utility classes
 - **Theme and design tokens**: Configure in `client/global.css` 
 - **UI components**: Pre-built library in `client/components/ui/`
 - **Utility**: `cn()` function combines `clsx` + `tailwind-merge` for conditional classes
@@ -90,11 +90,11 @@ Path aliases:
 ## Development Commands
 
 ```bash
-pnpm dev        # Start dev server (client + server)
-pnpm build      # Production build
-pnpm start      # Start production server
-pnpm typecheck  # TypeScript validation
-pnpm test          # Run Vitest tests
+npm dev        # Start dev server (client + server)
+npm build      # Production build
+npm start      # Start production server
+npm typecheck  # TypeScript validation
+npm test          # Run Vitest tests
 ```
 
 ## Adding Features

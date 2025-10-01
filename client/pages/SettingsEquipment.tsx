@@ -1,3 +1,4 @@
+import { playTone, playNotificationSound, playSoundChoice } from '../lib/soundUtils';
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
@@ -11,6 +12,8 @@ import { addToast } from "@heroui/toast";
 import ScaleService from "../services/ScaleService";
 import PrinterService from "../services/printerService";
 import { EQUIPMENT_DEFAULTS } from "../../shared/constants/equipmentDefaults.js";
+import { WeightDisplayWidget } from "../components/WeightDisplayWidget";
+import { Spinner } from "@heroui/react";
 
 
 export const SettingsEquipment = () => {
@@ -31,6 +34,49 @@ export const SettingsEquipment = () => {
   const [vta60TestStatus, setVta60TestStatus] = useState<'idle' | 'connecting' | 'waiting' | 'success' | 'error'>('idle');
   const [vta60RawData, setVta60RawData] = useState<string>('');
   const [vta60ParsedData, setVta60ParsedData] = useState<{weight?: number, price?: number, total?: number}>({});
+
+  // Состояние для режима тестирования в реальном времени
+  const [realtimeTestStatus, setRealtimeTestStatus] = useState<'idle' | 'running' | 'paused' | 'stopping'>('idle');
+  const [realtimeTestResults, setRealtimeTestResults] = useState<Array<{
+    timestamp: Date;
+    rawData: string;
+    parsedData: {weight?: number, price?: number, total?: number};
+    success: boolean;
+    error?: string;
+    isStable?: boolean;
+    isUnstable?: boolean;
+    warning?: boolean;
+  }>>([]);
+  const [realtimeTestInterval, setRealtimeTestInterval] = useState<NodeJS.Timeout | null>(null);
+  const [realtimeTestTimeout, setRealtimeTestTimeout] = useState<NodeJS.Timeout | null>(null);
+  const realtimeTestStatusRef = useRef<'idle' | 'running' | 'paused' | 'stopping'>('idle');
+  const realtimeResultsRef = useRef<HTMLDivElement>(null);
+  const [isLogsExpanded, setIsLogsExpanded] = useState(false);
+
+
+  // Хелпер для выбора интервала опроса из настроек
+  const getActivePollingMs = (): number => {
+    const fallback = EQUIPMENT_DEFAULTS.scale.activePollingInterval;
+    const cfg = localConfig?.scale?.activePollingInterval;
+    return typeof cfg === 'number' && cfg > 0 ? cfg : fallback;
+  };
+  const lastStableWeightRef = useRef<number | null>(null);
+
+  // Функция для автоматической прокрутки к новым записям (вниз)
+  const scrollToLatestResult = () => {
+    if (realtimeResultsRef.current) {
+      realtimeResultsRef.current.scrollTop = realtimeResultsRef.current.scrollHeight;
+    }
+  };
+
+  // Звук событий взвешивания с учетом настроек
+  const playEventSound = (event: 'stable' | 'unstable' | 'error') => {
+    const soundKey = event === 'stable' ? (localConfig as any)?.scale?.stableSound
+                  : event === 'unstable' ? (localConfig as any)?.scale?.unstableSound
+                  : (localConfig as any)?.scale?.errorSound;
+    const choice = (soundKey as string) || 'default';
+    playSoundChoice(choice, event);
+  };
   const [keyboardEvents, setKeyboardEvents] = useState<string[]>([]);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [printers, setPrinters] = useState<string[]>([]);
@@ -221,6 +267,18 @@ export const SettingsEquipment = () => {
     checkWebSerialSupport();
   }, [checkWebSerialSupport]);
 
+  // Очистка интервалов при размонтировании компонента
+  useEffect(() => {
+    return () => {
+      if (realtimeTestInterval) {
+        clearInterval(realtimeTestInterval);
+      }
+      if (realtimeTestTimeout) {
+        clearTimeout(realtimeTestTimeout);
+      }
+    };
+  }, [realtimeTestInterval, realtimeTestTimeout]);
+
   // Оновлення локальної конфігурації
   const handleConfigChange = (
     section: keyof EquipmentConfig,
@@ -315,13 +373,37 @@ export const SettingsEquipment = () => {
     }
   };
 
-  // Обновление настроек весов с сохранением в БД
-  const updateScaleSetting = async (field: string, value: any) => {
-    try {
-      console.log('🔧 updateScaleSetting called:', { field, value, localConfig: !!localConfig });
+  // Обновление настроек весов только в локальном состоянии (без автосохранения)
+  const updateScaleSetting = (field: string, value: any) => {
+    if (!localConfig) {
+      console.error('❌ updateScaleSetting: localConfig is null/undefined');
+      addToast({
+        title: "Помилка",
+        description: "Конфігурація не завантажена",
+        color: "danger",
+        timeout: 3000,
+      });
+      return;
+    }
 
+    // Обновляем конфигурацию только в локальном состоянии
+    const updatedConfig: EquipmentConfig = {
+      ...localConfig,
+      scale: {
+        ...localConfig.scale,
+        [field]: value,
+      }
+    };
+
+    setLocalConfig(updatedConfig);
+  };
+
+  // Ручное сохранение настроек весов
+  const [isScaleSaving, setIsScaleSaving] = useState(false);
+
+  const saveScaleSettings = async () => {
+    try {
       if (!localConfig) {
-        console.error('❌ updateScaleSetting: localConfig is null/undefined');
         addToast({
           title: "Помилка",
           description: "Конфігурація не завантажена",
@@ -331,37 +413,26 @@ export const SettingsEquipment = () => {
         return;
       }
 
-    // Обновляем конфигурацию
-    const updatedConfig: EquipmentConfig = {
-      ...localConfig,
-        scale: {
-          ...localConfig.scale,
-          [field]: value,
-        }
-      };
+      setIsScaleSaving(true);
 
-      console.log('🔧 updateScaleSetting: saving config:', updatedConfig.scale);
+      await actions.saveConfig(localConfig);
 
-    setLocalConfig(updatedConfig);
-    await actions.saveConfig(updatedConfig);
-
-      console.log('✅ updateScaleSetting: config saved successfully');
-
-      // Показываем уведомление об успешном сохранении
       addToast({
         title: "Налаштування збережено",
-        description: `Налаштування ваг "${getScaleFieldDisplayName(field)}" оновлено`,
+        description: "Налаштування ваг збережено успішно",
         color: "success",
         timeout: 2000,
       });
     } catch (error) {
-      console.error('❌ Помилка збереження налаштувань ваг:', error);
+      console.error('❌ saveScaleSettings error:', error);
       addToast({
-        title: "Помилка",
+        title: "Помилка збереження",
         description: "Не вдалося зберегти налаштування ваг",
         color: "danger",
         timeout: 3000,
       });
+    } finally {
+      setIsScaleSaving(false);
     }
   };
 
@@ -434,7 +505,8 @@ export const SettingsEquipment = () => {
       dataBits: 'Біти даних',
       stopBits: 'Стоп-біти',
       parity: 'Парність',
-      autoConnect: 'Автопідключення'
+      autoConnect: 'Автопідключення',
+      amplitudeSpikeThresholdKg: 'Поріг сплеску ваги (кг)'
     };
     return names[field] || field;
   };
@@ -548,6 +620,16 @@ export const SettingsEquipment = () => {
       // Используем синглтон ScaleService для теста
       const scaleService = ScaleService.getInstance();
 
+      // Проверяем состояние весов перед подключением
+      const status = await scaleService.checkScaleStatus();
+      console.log('🔧 Scale status before connection:', status);
+      
+      if (status.readableLocked || status.writableLocked) {
+        setVta60TestResult('⚠️ Потік даних заблокований. Спробуйте скинути з\'єднання.');
+        setVta60TestStatus('error');
+        return;
+      }
+
       // Подключаемся с настройками ВТА-60
       const connected = await scaleService.connect();
       if (!connected) {
@@ -557,8 +639,18 @@ export const SettingsEquipment = () => {
       setVta60TestStatus('waiting');
       setVta60TestResult('Відправка запиту 00 00 03...');
 
-      // Отправляем запрос и получаем данные
-      const scaleData = await scaleService.readScaleOnce(true);
+      // Отправляем запрос и получаем данные с таймаутом
+      const readPromise = scaleService.readScaleOnce(true);
+      const timeoutPromise = new Promise<null>((resolve) => {
+        setTimeout(() => {
+          console.log('⏱️ Test timeout reached, cancelling operation');
+          scaleService.cancelCurrentReadOperation();
+          resolve(null);
+        }, 10000); // Таймаут 10 секунд для теста
+      });
+
+      const scaleData = await Promise.race([readPromise, timeoutPromise]);
+      
       // НЕ отключаемся после теста - оставляем соединение активным для дальнейшего использования
       // await scaleService.disconnect(); // ← УБРАНО: не отключаемся после теста
 
@@ -576,9 +668,15 @@ export const SettingsEquipment = () => {
         });
 
         setVta60TestStatus('success');
-        setVta60TestResult('✅ Дані успішно отримані від ВТА-60');
+        setVta60TestResult(`✅ Дані успішно отримані від ВТА-60\nВага: ${scaleData.weight.toFixed(3)} кг`);
       } else {
-        throw new Error('Не отримано відповіді від вагів');
+        // Проверяем, была ли операция отменена
+        const status = await scaleService.checkScaleStatus();
+        if (!status.connected) {
+          throw new Error('З\'єднання було втрачено під час тесту');
+        } else {
+          throw new Error('Не отримано відповіді від вагів (можливо нестабільна вага)');
+        }
       }
     } catch (error) {
       console.error('VTA-60 test error:', error);
@@ -597,10 +695,430 @@ export const SettingsEquipment = () => {
         errorMessage = '⚠️ COM-порт вже відкритий\n\nПорт вже використовується:\n• Закрийте інші програми, що використовують COM-порт\n• Перезавантажте сторінку для скидання з\'єднань\n• Спробуйте відключити та підключити знову';
       } else if (error.message.includes('Web Serial API')) {
         errorMessage = '❌ Web Serial API не підтримується\n\nВикористовуйте Chrome або Edge браузер для роботи з COM-портами.';
+      } else if (error.message.includes('ReadableStream is locked')) {
+        errorMessage = '🔒 Потік даних заблокований\n\nСпробуйте:\n• Відключити та знову підключити ваги\n• Перезавантажити сторінку\n• Закрити інші вкладки, що використовують ваги';
+      } else if (error.message.includes('timeout') || error.message.includes('тайм-аут') || error.message.includes('нестабильна') || error.message.includes('немає відповіді')) {
+        errorMessage = '⏱️ Таймаут очікування відповіді\n\nМожливі причини:\n• Ваги показують нестабільну вагу (покладіть або приберіть предмет)\n• Ваги не готові до роботи\n• Кабель підключений неправильно\n• Налаштування порту неправильні (4800-8E1)';
+      } else if (error.message.includes('некоректні')) {
+        errorMessage = '⚠️ Отримано некоректні дані від вагів\n\nПеревірте:\n• Ваги працюють правильно\n• Немає електромагнітних перешкод\n• Кабель підключений надійно';
+      } else if (error.message.includes('втрачено')) {
+        errorMessage = '🔌 З\'єднання було втрачено\n\nСпробуйте:\n• Скинути з\'єднання\n• Перевірити підключення кабелю\n• Перезавантажити сторінку';
       }
       
       setVta60TestResult(errorMessage);
     }
+  };
+
+  // Обработчик для режима тестирования в реальном времени
+  const handleRealtimeTest = async () => {
+    if (realtimeTestStatus === 'idle') {
+      // Запуск тестирования
+      setRealtimeTestStatus('running');
+      realtimeTestStatusRef.current = 'running';
+      setRealtimeTestResults([]);
+      
+      // Звуковой сигнал при запуске тестирования
+  playNotificationSound('success');
+      
+      try {
+        const scaleService = ScaleService.getInstance();
+        
+        // Проверяем состояние весов
+        const status = await scaleService.checkScaleStatus();
+        if (status.readableLocked || status.writableLocked) {
+          setRealtimeTestStatus('idle');
+          setRealtimeTestResults([{
+            timestamp: new Date(),
+            rawData: '',
+            parsedData: {},
+            success: false,
+            error: 'Потік даних заблокований. Спробуйте скинути з\'єднання.'
+          }]);
+          setTimeout(scrollToLatestResult, 10);
+          return;
+        }
+
+        // Подключаемся к весам
+        const connected = await scaleService.connect();
+        if (!connected) {
+          setRealtimeTestStatus('idle');
+          setRealtimeTestResults([{
+            timestamp: new Date(),
+            rawData: '',
+            parsedData: {},
+            success: false,
+            error: 'Не вдалося підключитися до ВТА-60'
+          }]);
+          setTimeout(scrollToLatestResult, 10);
+          // Звуковой сигнал при ошибке подключения
+          playNotificationSound('error');
+          return;
+        }
+
+        // Запускаем интервал для непрерывного опроса (из настроек)
+        const interval = setInterval(async () => {
+          // Проверяем состояние через ref
+          if (realtimeTestStatusRef.current !== 'running') {
+            clearInterval(interval);
+            return;
+          }
+
+          try {
+            const scaleData = await scaleService.readScaleOnce(true);
+            
+            if (scaleData && scaleData.rawData) {
+              const hexData = Array.from(scaleData.rawData)
+                .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+                .join(' ');
+
+              const parsedData = {
+                weight: scaleData.weight,
+                price: scaleData.price,
+                total: scaleData.total
+              };
+
+              // Разбор байтов и расширенная диагностика нестабильности/ошибок кадра
+              const bytes = hexData.split(' ').filter(Boolean).map(h => parseInt(h, 16));
+              const lastByte = bytes[bytes.length - 1];
+              const suffix2 = bytes.slice(-2).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+
+              const serviceStable = suffix2 === '00 00';
+              const serviceUnstableKnown = suffix2 === '00 04';
+              // Любой иной суффикс, отличный от 00 00 и 00 04, считаем нестабильным
+              const serviceUnstableOther = !serviceStable && !serviceUnstableKnown;
+
+              // Амплитудный порог сплеска (кг) из настроек, по умолчанию 5кг
+              const spikeThresholdKg = (localConfig?.scale as any)?.amplitudeSpikeThresholdKg ?? 5;
+              const lastStable = lastStableWeightRef.current;
+              const weight = typeof parsedData.weight === 'number' ? parsedData.weight : null;
+              const jumpedTooMuch = lastStable !== null && weight !== null && Math.abs(weight - lastStable) >= spikeThresholdKg;
+
+              // Итоговая классификация: суффикс задаёт стабильность; всплеск по амплитуде помечает warning
+              // Fake zero: кадр стабилен, но внутри есть ненулевые «цифробайты», а weight==0
+              const hasInnerDigitsOnZero = serviceStable && weight === 0 && bytes.slice(0, -2).some(b => b !== 0);
+
+              const isUnstable = serviceUnstableKnown || serviceUnstableOther || hasInnerDigitsOnZero;
+              const isStable = serviceStable && !isUnstable;
+              
+
+              // Логирование только критических ошибок
+              if (parsedData.weight && (parsedData.weight < 0 || parsedData.weight > 1000)) {
+                console.warn('⚠️ Realtime test: Invalid weight detected:', parsedData.weight);
+              }
+              
+              setRealtimeTestResults(prev => {
+                // Проверяем, не дублируется ли последняя запись
+                const lastResult = prev[prev.length - 1];
+                const isDuplicate = lastResult && 
+                  lastResult.success && 
+                  lastResult.parsedData.weight === parsedData.weight &&
+                  lastResult.parsedData.price === parsedData.price &&
+                  lastResult.parsedData.total === parsedData.total;
+                
+                if (isDuplicate) {
+                  return prev; // Не добавляем дубликат
+                }
+                
+                // Фильтрация «плохих» кадров: лишние служебные байты (06/08) на конце или всплески 00 09 00 02
+                if (isUnstable && !isStable) {
+                  // Звук под нестабільність
+                  playEventSound('unstable');
+                  let reason = '';
+                  if (serviceUnstableOther) {
+                    reason = `Нестабільний кадр: невідомий суфікс ${suffix2}`;
+                  } else if (hasInnerDigitsOnZero) {
+                    reason = 'Нестабільний кадр: нульова вага з внутрішніми ненульовими байтами';
+                  } else {
+                    reason = 'Нестабільний кадр';
+                  }
+
+                  const warnResults = [...prev, {
+                    timestamp: new Date(),
+                    rawData: hexData,
+                    parsedData: parsedData,
+                    success: false,
+                    error: reason,
+                    isStable: false,
+                    isUnstable: true,
+                    warning: true
+                  }];
+                  return warnResults.slice(-50);
+                }
+
+                // Звук при каждой стабилизации
+                if (isStable) {
+                  playEventSound('stable');
+                }
+
+                // Обновляем последний стабильный вес
+                if (isStable && typeof parsedData.weight === 'number') {
+                  lastStableWeightRef.current = parsedData.weight;
+                }
+
+                // Если кадр стабильный, но рывок по амплитуде — помечаем предупреждением
+                if (isStable && jumpedTooMuch) {
+                  const warnResults = [...prev, {
+                    timestamp: new Date(),
+                    rawData: hexData,
+                    parsedData: parsedData,
+                    success: false,
+                    error: `Стрибок ваги ≥ ${spikeThresholdKg}кг`,
+                    isStable: false,
+                    isUnstable: true,
+                    warning: true
+                  }];
+                  return warnResults.slice(-50);
+                }
+
+                const newResults = [...prev, {
+                  timestamp: new Date(),
+                  rawData: hexData,
+                  parsedData: parsedData,
+                  success: true,
+                  isStable: isStable,
+                  isUnstable: isUnstable,
+                  warning: false
+                }];
+                // Ограничиваем количество записей до 50 для производительности
+                return newResults.slice(-50);
+              });
+              // Автоматическая прокрутка к новой записи
+              setTimeout(scrollToLatestResult, 10);
+            } else {
+              setRealtimeTestResults(prev => {
+                const newResults = [...prev, {
+                  timestamp: new Date(),
+                  rawData: '',
+                  parsedData: {},
+                  success: false,
+                  error: 'Немає даних від вагів (нормально при зміні грузу)'
+                }];
+                return newResults.slice(-50);
+              });
+              // Автоматическая прокрутка к новой записи
+              setTimeout(scrollToLatestResult, 10);
+            }
+          } catch (error) {
+            setRealtimeTestResults(prev => {
+              const newResults = [...prev, {
+                timestamp: new Date(),
+                rawData: '',
+                parsedData: {},
+                success: false,
+                error: error.message
+              }];
+              return newResults.slice(-50);
+            });
+            // Автоматическая прокрутка к новой записи
+            setTimeout(scrollToLatestResult, 10);
+          }
+        }, getActivePollingMs());
+
+        setRealtimeTestInterval(interval);
+
+        // Устанавливаем таймаут на 5 минут
+        const timeout = setTimeout(() => {
+          handleStopRealtimeTest();
+        }, 5 * 60 * 1000); // 5 минут
+
+        setRealtimeTestTimeout(timeout);
+
+      } catch (error) {
+        console.error('Realtime test start error:', error);
+        setRealtimeTestStatus('idle');
+        setRealtimeTestResults([{
+          timestamp: new Date(),
+          rawData: '',
+          parsedData: {},
+          success: false,
+          error: error.message
+        }]);
+        setTimeout(scrollToLatestResult, 10);
+        // Звуковой сигнал при ошибке
+        playNotificationSound('error');
+      }
+    } else {
+      // Остановка тестирования
+      handleStopRealtimeTest();
+    }
+  };
+
+  // Пауза/возобновление режима тестирования в реальном времени
+  const handlePauseResumeRealtimeTest = () => {
+    if (realtimeTestStatus === 'running') {
+      // Пауза
+      setRealtimeTestStatus('paused');
+      realtimeTestStatusRef.current = 'paused';
+      
+      // Звуковой сигнал при паузе
+  playNotificationSound('unstable');
+      
+      // Очищаем интервал, но оставляем таймаут для продолжения отсчета
+      if (realtimeTestInterval) {
+        clearInterval(realtimeTestInterval);
+        setRealtimeTestInterval(null);
+      }
+      // Таймаут остается активным - тест автоматически остановится через 5 минут
+
+      // Добавляем запись о паузе
+      setRealtimeTestResults(prev => [{
+        timestamp: new Date(),
+        rawData: '',
+        parsedData: {},
+        success: true,
+        error: 'Тестування призупинено'
+      }, ...prev]);
+      setTimeout(scrollToLatestResult, 10);
+    } else if (realtimeTestStatus === 'paused') {
+      // Возобновление
+      setRealtimeTestStatus('running');
+      realtimeTestStatusRef.current = 'running';
+      
+      // Звуковой сигнал при возобновлении тестирования
+  playNotificationSound('success');
+      
+      // Запускаем интервал заново (та же логика, что и при старте)
+      const interval = setInterval(async () => {
+        if (realtimeTestStatusRef.current !== 'running') {
+          clearInterval(interval);
+          return;
+        }
+
+        try {
+          const scaleService = ScaleService.getInstance();
+          const scaleData = await scaleService.readScaleOnce(true);
+          
+          if (scaleData && scaleData.rawData) {
+            const hexData = Array.from(scaleData.rawData)
+              .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+              .join(' ');
+
+            const parsedData = {
+              weight: scaleData.weight,
+              price: scaleData.price,
+              total: scaleData.total
+            };
+            
+            // Полная логика стабильности/нестабильности и фильтров
+            const bytes = hexData.split(' ').filter(Boolean).map(h => parseInt(h, 16));
+            const lastByte = bytes[bytes.length - 1];
+            const suffix2 = bytes.slice(-2).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+            const serviceStable = suffix2 === '00 00';
+            const serviceUnstable = suffix2 === '00 04';
+            const hasErrTail = lastByte === 0x08 || lastByte === 0x06;
+            const hasSpikeSignature = hexData.includes('00 09 00 02');
+            const spikeThresholdKg = (localConfig?.scale as any)?.amplitudeSpikeThresholdKg ?? 5;
+            const lastStable = lastStableWeightRef.current;
+            const weight = typeof parsedData.weight === 'number' ? parsedData.weight : null;
+            const jumpedTooMuch = lastStable !== null && weight !== null && Math.abs(weight - lastStable) >= spikeThresholdKg;
+            const isUnstable = serviceUnstable || hasErrTail || (hasSpikeSignature && jumpedTooMuch);
+            const isStable = serviceStable && !hasErrTail && !(hasSpikeSignature && jumpedTooMuch);
+
+            setRealtimeTestResults(prev => {
+              const lastResult = prev[prev.length - 1];
+              const isDuplicate = lastResult && lastResult.success &&
+                lastResult.parsedData.weight === parsedData.weight &&
+                lastResult.parsedData.price === parsedData.price &&
+                lastResult.parsedData.total === parsedData.total;
+              if (isDuplicate) return prev;
+
+              if (hasErrTail || (hasSpikeSignature && jumpedTooMuch)) {
+                const reason = hasErrTail
+                  ? `Нестабільний кадр: службовий байт ${lastByte?.toString(16).toUpperCase()} в кінці`
+                  : `Нестабільний кадр: підпис 00 09 00 02 + сплеск ≥ ${spikeThresholdKg}кг`;
+                const warnResults = [...prev, {
+                  timestamp: new Date(), rawData: hexData, parsedData, success: false,
+                  error: reason, isStable: false, isUnstable: true, warning: true
+                }];
+                return warnResults.slice(-50);
+              }
+
+              if (isStable) {
+                playEventSound('stable');
+              }
+              if (isStable && typeof parsedData.weight === 'number') {
+                lastStableWeightRef.current = parsedData.weight;
+              }
+              const newResults = [...prev, {
+                timestamp: new Date(), rawData: hexData, parsedData,
+                success: true, isStable, isUnstable, warning: false
+              }];
+              return newResults.slice(-50);
+            });
+            setTimeout(scrollToLatestResult, 10);
+          } else {
+            setRealtimeTestResults(prev => {
+              const newResults = [...prev, {
+                timestamp: new Date(),
+                rawData: '',
+                parsedData: {},
+                success: false,
+                error: 'Немає даних від вагів'
+              }];
+              return newResults.slice(-50);
+            });
+            setTimeout(scrollToLatestResult, 10);
+          }
+        } catch (error) {
+          setRealtimeTestResults(prev => {
+            const newResults = [...prev, {
+              timestamp: new Date(),
+              rawData: '',
+              parsedData: {},
+              success: false,
+              error: error.message
+            }];
+            return newResults.slice(-50);
+          });
+          setTimeout(scrollToLatestResult, 10);
+        }
+      }, getActivePollingMs());
+
+      setRealtimeTestInterval(interval);
+
+      // Добавляем запись о возобновлении
+      setRealtimeTestResults(prev => [{
+        timestamp: new Date(),
+        rawData: '',
+        parsedData: {},
+        success: true,
+        error: 'Тестування відновлено'
+      }, ...prev]);
+      setTimeout(scrollToLatestResult, 10);
+    }
+  };
+
+  // Остановка режима тестирования в реальном времени
+  const handleStopRealtimeTest = async () => {
+    setRealtimeTestStatus('stopping');
+    realtimeTestStatusRef.current = 'stopping';
+    
+    // Очищаем интервал и таймаут
+    if (realtimeTestInterval) {
+      clearInterval(realtimeTestInterval);
+      setRealtimeTestInterval(null);
+    }
+    
+    if (realtimeTestTimeout) {
+      clearTimeout(realtimeTestTimeout);
+      setRealtimeTestTimeout(null);
+    }
+
+    // Добавляем запись о остановке
+    setRealtimeTestResults(prev => [{
+      timestamp: new Date(),
+      rawData: '',
+      parsedData: {},
+      success: true,
+      error: 'Тестування зупинено'
+    }, ...prev]);
+    setTimeout(scrollToLatestResult, 10);
+
+    setRealtimeTestStatus('idle');
+    realtimeTestStatusRef.current = 'idle';
+    
+    // Звуковой сигнал при остановке тестирования
+  playNotificationSound('success');
   };
 
   // Сброс настроек к значениям по умолчанию
@@ -634,64 +1152,6 @@ export const SettingsEquipment = () => {
     }
   };
 
-  // Перемикання типу підключення
-  const setConnectionType = (type: "local" | "simulation") => {
-    actions.setConnectionType(type);
-    // Не трогаем локальный стейт, чтобы не было рассинхрона
-  };
-
-  // Перемикання режиму симуляції
-  const toggleSimulation = async (enabled: boolean) => {
-    if (!localConfig) return;
-    const newConnectionType: "local" | "simulation" = enabled ? "simulation" : "local";
-
-    const updatedConfig: EquipmentConfig = localConfig ? {
-      ...localConfig,
-      connectionType: newConnectionType,
-      simulation: {
-        enabled: enabled,
-        weightRange: {
-          min: localConfig.simulation?.weightRange?.min ?? 0.1,
-          max: localConfig.simulation?.weightRange?.max ?? 5.0
-        },
-        scanDelay: localConfig.simulation?.scanDelay ?? 800,
-        weightDelay: localConfig.simulation?.weightDelay ?? 1200
-      }
-    } : localConfig;
-
-    console.log("🔄 Обновляем конфиг в toggleSimulation:", JSON.stringify(updatedConfig, null, 2));
-
-    setLocalConfig(updatedConfig);
-    // Сохраняем изменение в БД
-    await applyConfig(updatedConfig);
-  };
-
-  // Перемикання типу підключення (только когда не в режиме симуляции)
-  const handleConnectionTypeChange = async (value: string) => {
-    if (!localConfig) return;
-    const newConnectionType: "local" | "simulation" = value as "local" | "simulation";
-    const isSimulation = newConnectionType === "simulation";
-
-    const updatedConfig: EquipmentConfig = localConfig ? {
-      ...localConfig,
-      connectionType: newConnectionType,
-      simulation: {
-        enabled: isSimulation,
-        weightRange: {
-          min: localConfig.simulation?.weightRange?.min ?? 0.1,
-          max: localConfig.simulation?.weightRange?.max ?? 5.0
-        },
-        scanDelay: localConfig.simulation?.scanDelay ?? 800,
-        weightDelay: localConfig.simulation?.weightDelay ?? 1200
-      }
-    } : localConfig;
-
-    console.log("🔄 Обновляем конфиг в handleConnectionTypeChange:", JSON.stringify(updatedConfig, null, 2));
-
-    setLocalConfig(updatedConfig);
-    // Сохраняем изменение в БД
-    await applyConfig(updatedConfig);
-  };
 
 
 
@@ -709,33 +1169,6 @@ export const SettingsEquipment = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-6 ml-auto">
-          {/* Свитчер режиму симуляції */}
-          <div className="flex items-center gap-3 border-1 border-r-gray-400 pr-6">
-            <Switch
-              isSelected={localConfig.connectionType === "simulation"}
-              onValueChange={toggleSimulation}
-              color="success"
-              size="sm"
-              classNames={{
-                wrapper: "bg-secondary/50",
-                thumbIcon: "bg-white/50",
-              }}
-            >
-              Режим симуляції</Switch>
-          </div>
-
-          {/* RadioGroup для типу підключення */}
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-gray-700">Тип підключення:</span>
-            <div className="flex flex-row items-center gap-2 bg-primary text-white rounded-lg px-3 py-1 text-sm">
-              <DynamicIcon name="usb" size={16} />
-              <span>Serial Port</span>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Статус обладнання */}
       <Card className="bg-gradient-to-r bg-neutral-50">
@@ -904,7 +1337,7 @@ export const SettingsEquipment = () => {
         <CardBody className="p-6">
           <div className="flex flex-col xl:flex-row gap-8">
             {/* Налаштування ваг */}
-            <Card className="flex-1 grid grid-cols-2 gap-6 p-4 h-fit">
+            <Card className={`flex-1 grid grid-cols-2 gap-6 p-4 h-fit ${isScaleSaving ? "opacity-60 pointer-events-none" : ""}`}>
               <h3 className="font-medium text-gray-400 col-span-2">Налаштування ваг</h3>
               <Select
                 id="baudRate"
@@ -917,7 +1350,6 @@ export const SettingsEquipment = () => {
                 }}
                 classNames={{
                   label: "block text-xs font-medium text-gray-700 mb-1",
-                  value: "block text-sm font-medium text-gray-700 mb-1"
                 }}
               >
                 <SelectItem key="4800">4800</SelectItem>
@@ -938,7 +1370,6 @@ export const SettingsEquipment = () => {
                 }}
                 classNames={{
                   label: "block text-xs font-medium text-gray-700 mb-1",
-                  value: "block text-sm font-medium text-gray-700 mb-1"
                 }}
               >
                 <SelectItem key="7">7</SelectItem>
@@ -956,7 +1387,6 @@ export const SettingsEquipment = () => {
                 }}
                 classNames={{
                   label: "block text-xs font-medium text-gray-700 mb-1",
-                  value: "block text-sm font-medium text-gray-700 mb-1"
                 }}
               >
                 <SelectItem key="1">1</SelectItem>
@@ -974,7 +1404,6 @@ export const SettingsEquipment = () => {
                 }}
                 classNames={{
                   label: "block text-xs font-medium text-gray-700 mb-1",
-                  value: "block text-sm font-medium text-gray-700 mb-1"
                 }}
               >
                 <SelectItem key="none">None</SelectItem>
@@ -994,7 +1423,6 @@ export const SettingsEquipment = () => {
                 }
                 classNames={{
                   label: "block text-xs font-medium text-gray-700 mb-1",
-                  input: "block text-sm font-medium text-gray-700 mb-1"
                 }}
                 min="100"
                 max="5000"
@@ -1011,7 +1439,6 @@ export const SettingsEquipment = () => {
                 }
                 classNames={{
                   label: "block text-xs font-medium text-gray-700 mb-1",
-                  input: "block text-sm font-medium text-gray-700 mb-1"
                 }}
                 min="0.001"
                 max="1.0"
@@ -1029,7 +1456,6 @@ export const SettingsEquipment = () => {
                 }
                 classNames={{
                   label: "block text-xs font-medium text-gray-700 mb-1",
-                  input: "block text-sm font-medium text-gray-700 mb-1"
                 }}
                 min="1000"
                 max="30000"
@@ -1046,7 +1472,6 @@ export const SettingsEquipment = () => {
                 }
                 classNames={{
                   label: "block text-xs font-medium text-gray-700 mb-1",
-                  input: "block text-sm font-medium text-gray-700 mb-1"
                 }}
                 min="5000"
                 max="300000"
@@ -1063,7 +1488,6 @@ export const SettingsEquipment = () => {
                 }
                 classNames={{
                   label: "block text-xs font-medium text-gray-700 mb-1",
-                  input: "block text-sm font-medium text-gray-700 mb-1"
                 }}
                 min="1"
                 max="20"
@@ -1080,11 +1504,97 @@ export const SettingsEquipment = () => {
                 }
                 classNames={{
                   label: "block text-xs font-medium text-gray-700 mb-1",
-                  input: "block text-sm font-medium text-gray-700 mb-1"
                 }}
                 min="100"
                 max="5000"
               />
+
+              <Input
+                id="amplitudeSpikeThresholdKg"
+                type="number"
+                label="Поріг сплеску ваги (кг)"
+                labelPlacement="outside"
+                value={(localConfig.scale as any)?.amplitudeSpikeThresholdKg?.toString() || "5"}
+                onValueChange={(value) =>
+                  updateScaleSetting("amplitudeSpikeThresholdKg", parseFloat(value) || 5)
+                }
+                classNames={{
+                  label: "block text-xs font-medium text-gray-700 mb-1",
+                }}
+                min="0.5"
+                step="0.5"
+                max="200"
+              />
+
+              {/* Звуки подій зважування */}
+              <Select
+                id="stableSound"
+                label="Звук стабільного кадру"
+                labelPlacement="outside"
+                selectedKeys={[((localConfig as any)?.scale?.stableSound || 'default')]}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0] as string;
+                  updateScaleSetting('stableSound', value);
+                  // Предпрослушка
+                  playSoundChoice(value, 'stable');
+                }}
+                classNames={{ label: "block text-xs font-medium text-gray-700 mb-1" }}
+              >
+                <SelectItem key="default">Default</SelectItem>
+                <SelectItem key="soft">Soft</SelectItem>
+                <SelectItem key="sharp">Sharp</SelectItem>
+                <SelectItem key="double">Double</SelectItem>
+                <SelectItem key="beep3">Beep x3</SelectItem>
+                <SelectItem key="chime">Chime</SelectItem>
+                <SelectItem key="low">Low</SelectItem>
+                <SelectItem key="off">Off</SelectItem>
+              </Select>
+
+              <Select
+                id="unstableSound"
+                label="Звук нестабільного кадру"
+                labelPlacement="outside"
+                selectedKeys={[((localConfig as any)?.scale?.unstableSound || 'default')]}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0] as string;
+                  updateScaleSetting('unstableSound', value);
+                  // Предпрослушка
+                  playSoundChoice(value, 'unstable');
+                }}
+                classNames={{ label: "block text-xs font-medium text-gray-700 mb-1" }}
+              >
+                <SelectItem key="default">Default</SelectItem>
+                <SelectItem key="soft">Soft</SelectItem>
+                <SelectItem key="sharp">Sharp</SelectItem>
+                <SelectItem key="double">Double</SelectItem>
+                <SelectItem key="beep3">Beep x3</SelectItem>
+                <SelectItem key="chime">Chime</SelectItem>
+                <SelectItem key="low">Low</SelectItem>
+                <SelectItem key="off">Off</SelectItem>
+              </Select>
+
+              <Select
+                id="errorSound"
+                label="Звук помилки"
+                labelPlacement="outside"
+                selectedKeys={[((localConfig as any)?.scale?.errorSound || 'default')]}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0] as string;
+                  updateScaleSetting('errorSound', value);
+                  // Предпрослушка
+                  playSoundChoice(value, 'error');
+                }}
+                classNames={{ label: "block text-xs font-medium text-gray-700 mb-1" }}
+              >
+                <SelectItem key="default">Default</SelectItem>
+                <SelectItem key="soft">Soft</SelectItem>
+                <SelectItem key="sharp">Sharp</SelectItem>
+                <SelectItem key="double">Double</SelectItem>
+                <SelectItem key="beep3">Beep x3</SelectItem>
+                <SelectItem key="chime">Chime</SelectItem>
+                <SelectItem key="low">Low</SelectItem>
+                <SelectItem key="off">Off</SelectItem>
+              </Select>
 
               {/* Стратегія підключення */}
               <Select
@@ -1099,7 +1609,6 @@ export const SettingsEquipment = () => {
                 classNames={{
                   base: "col-span-2",
                   label: "block text-xs font-medium text-gray-700 mb-1",
-                  value: "block text-sm font-medium text-gray-700 mb-1"
                 }}
                 >
                 <SelectItem key="legacy">Стандартна (Legacy)</SelectItem>
@@ -1122,60 +1631,257 @@ export const SettingsEquipment = () => {
               >
                 Авто. підключення ваг</Switch>
 
-              {/* Кнопки керування вагами */}
-              <div className="flex col-span-2 gap-2 mt-4">
+              {/* Кнопка сохранения настроек весов */}
+              <div className="flex col-span-2 mt-4">
                 <Button
-                  onPress={handleScaleConnect}
-                  disabled={state.isScaleConnected || isConnectingScale}
+                  isLoading={isScaleSaving}
+                  onPress={saveScaleSettings}
                   color="primary"
                   size="sm"
                   variant="solid"
                 >
-                  <DynamicIcon name="link" size={14} />
-                  {isConnectingScale ? "Підключення..." : "Підключити ваги"}
-                </Button>
-                <Button
-                  onPress={handleScaleDisconnect}
-                  disabled={!state.isScaleConnected || isConnectingScale}
-                  color="danger"
-                  size="sm"
-                  variant="solid"
-                >
-                  <DynamicIcon name="unlink" size={14} />
-                  Відключити ваги
+                  <DynamicIcon name="save" size={14} />
+                  Зберегти налаштування ваг
                 </Button>
               </div>
+              {isScaleSaving && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/70 z-20">
+                  <Spinner size="lg" color="primary" />
+                  <span className="mt-2 text-gray-700 font-medium">Налаштування зберігаються...</span>
+                </div>
+              )}
             </Card>
 
             <div className="flex flex-1 flex-col gap-8 h-fit">
+              
+              {/* Віджет поточної ваги */}
+              <WeightDisplayWidget
+                onWeightChange={(weight) => {
+                  console.log('Weight changed:', weight);
+                }}
+                className="w-full"
+              />
               
               {/* Тест ваг ВТА-60 */}
               <Card className="flex w-full flex-col gap-6 p-4 h-fit">
                 <h3 className="font-medium text-gray-400">Тест ваг ВТА-60</h3>
 
                 <div className="flex flex-col gap-4">
-                  <div className="flex flex-col gap-4">
-                    <Button
-                      color={vta60TestStatus === 'idle' ? 'primary' : 'default'}
-                  size="sm"
-                      onPress={handleVTA60Test}
-                      isLoading={vta60TestStatus === 'connecting' || vta60TestStatus === 'waiting'}
-                      disabled={vta60TestStatus === 'connecting' || vta60TestStatus === 'waiting'}
-                    >
-                      {vta60TestStatus === 'connecting' ? 'Підключення...' :
-                      vta60TestStatus === 'waiting' ? 'Очікування відповіді...' :
-                      'Тестувати ВТА-60'}
-                    </Button>
-
-                    <div className="flex-1">
-                      <div className={`text-sm p-3 rounded whitespace-pre-line ${
-                        vta60TestStatus === 'success' ? 'bg-green-50 text-green-700' :
-                        vta60TestStatus === 'error' ? 'bg-red-50 text-red-700' :
-                        'bg-gray-50 text-gray-600'
-                      }`}>
-                        {vta60TestResult}
-                      </div>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <Button
+                        color={vta60TestStatus === 'idle' ? 'primary' : 'default'}
+                        size="sm"
+                        onPress={handleVTA60Test}
+                        isLoading={vta60TestStatus === 'connecting' || vta60TestStatus === 'waiting'}
+                        disabled={vta60TestStatus === 'connecting' || vta60TestStatus === 'waiting' || realtimeTestStatus === 'running'}
+                      >
+                        {vta60TestStatus === 'connecting' ? 'Підключення...' :
+                        vta60TestStatus === 'waiting' ? 'Очікування відповіді...' :
+                        'Тестувати'}
+                      </Button>
+                      
+                      <Button
+                        color={realtimeTestStatus === 'running' ? 'danger' : 'primary'}
+                        size="sm"
+                        onPress={handleRealtimeTest}
+                        isLoading={realtimeTestStatus === 'stopping'}
+                        disabled={vta60TestStatus === 'connecting' || vta60TestStatus === 'waiting'}
+                        className="flex-1"
+                      >
+                        {realtimeTestStatus === 'running' ? 'Зупинити тест' :
+                        realtimeTestStatus === 'stopping' ? 'Зупинення...' :
+                        'Зважування в реальному часі'}
+                      </Button>
+                      
+                      {(realtimeTestStatus === 'running' || realtimeTestStatus === 'paused') && (
+                        <Button
+                          // color={realtimeTestStatus === 'paused' ? 'success' : 'warning'}
+                          size="sm"
+                          variant="bordered"
+                          onPress={handlePauseResumeRealtimeTest}
+                          disabled={vta60TestStatus === 'connecting' || vta60TestStatus === 'waiting'}
+                        >
+                          {realtimeTestStatus === 'paused' ? '▶️' : '⏸️'}
+                        </Button>
+                      )}
                     </div>
+
+
+                    {/* Результаты тестирования в реальном времени */}
+                    {(realtimeTestStatus !== 'idle' || realtimeTestResults.length > 0) && (
+                      <div className="mb-0">
+                        <div className="flex items-center gap-2 justify-between">
+                          {/* Кнопка отмены текущей операции */}
+                          <Button
+                            color="danger"
+                            size="sm"
+                            onPress={async () => {
+                              try {
+                                setVta60TestResult('Скасування поточної операції...');
+                                const scaleService = ScaleService.getInstance();
+                                scaleService.cancelCurrentReadOperation();
+                                setVta60TestStatus('idle');
+                                setVta60TestResult('Операцію скасовано. Спробуйте тест ще раз.');
+                              } catch (error) {
+                                console.error('Error cancelling operation:', error);
+                                setVta60TestResult(`❌ Помилка скасування: ${error.message}`);
+                              }
+                            }}
+                            disabled={vta60TestStatus !== 'waiting'}
+                            className="flex-1"
+                          >
+                            Скасувати операцію
+                          </Button>
+                          {/* Кнопка сброса соединения с весами */}
+                          <Button
+                            color="warning"
+                            size="sm"
+                            onPress={async () => {
+                              try {
+                                setVta60TestResult('Скидання з\'єднання з вагами...');
+                                const scaleService = ScaleService.getInstance();
+                                const resetSuccess = await scaleService.forceReset();
+                                if (resetSuccess) {
+                                  setVta60TestResult('✅ З\'єднання успішно скинуто. Тепер спробуйте тест ще раз.');
+                                } else {
+                                  setVta60TestResult('❌ Не вдалося скинути з\'єднання. Перевірте підключення ваг.');
+                                }
+                              } catch (error) {
+                                console.error('Error resetting scale connection:', error);
+                                setVta60TestResult(`❌ Помилка скидання: ${error.message}`);
+                              }
+                            }}
+                            disabled={vta60TestStatus === 'connecting' || vta60TestStatus === 'waiting'}
+                            className="flex-1"
+                          >
+                            Скинути з'єднання
+                          </Button>
+                          {realtimeTestResults.length > 0 && (
+                            <Button
+                              size="sm"
+                              color="danger"
+                              variant="light"
+                              onPress={() => setRealtimeTestResults([])}
+                              disabled={realtimeTestStatus === 'running'}
+                            >
+                              Очистити
+                            </Button>
+                          )}
+                        </div>
+                    
+                        <div className="flex items-center justify-between mt-4 mb-2">
+                          <h4 className="text-sm font-medium text-gray-600">
+                            Тестування в реальному часі
+                            {realtimeTestStatus === 'running' && (
+                              <span className="ml-2 text-xs text-green-600">● Активний</span>
+                            )}
+                            {realtimeTestStatus === 'paused' && (
+                              <span className="ml-2 text-xs text-yellow-600">⏸️ Призупинено</span>
+                            )}
+                          </h4>
+                          <Button
+                            size="sm"
+                            variant="light"
+                            color={isLogsExpanded ? 'secondary' : 'primary'}
+                            onPress={() => setIsLogsExpanded(v => !v)}
+                          >
+                            {isLogsExpanded ? 'Зменшити логи' : 'Розгорнути логи'}
+                          </Button>
+                        </div>
+                        
+                        <div className={`overflow-y-auto border rounded ${isLogsExpanded ? 'max-h-[60vh]' : 'max-h-80'}`} ref={realtimeResultsRef}>
+                          {realtimeTestResults.length === 0 ? (
+                            <div className="p-3 text-sm text-gray-500 text-center">
+                              {realtimeTestStatus === 'running' ? 'Очікування даних...' : 'Немає результатів'}
+                            </div>
+                          ) : (
+                            <div className="space-y-1 p-2">
+                              {realtimeTestResults.map((result, index) => (
+                                <div
+                                  key={index}
+                                  className={`p-2 rounded text-xs ${
+                                    result.success
+                                      ? 'bg-green-50 border-l-2 border-green-400'
+                                      : result.warning
+                                        ? 'bg-yellow-50 border-l-2 border-yellow-400'
+                                        : 'bg-red-50 border-l-2 border-red-400'
+                                  } ${index < 3 ? 'ring-1 ring-blue-200 bg-blue-50/30' : ''}`}
+                                >
+                                  <div className="flex justify-between items-start">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2 text-gray-600 font-mono">
+                                        <span>{result.timestamp.toLocaleTimeString()}</span>
+                                        {index >= realtimeTestResults.length - 3 && (
+                                          <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded">
+                                            СВІЖЕ
+                                          </span>
+                                        )}
+                                        {result.isUnstable && (
+                                          <span className="text-xs bg-yellow-500 text-white px-1.5 py-0.5 rounded">
+                                            НЕСТАБІЛЬНО
+                                          </span>
+                                        )}
+                                        {result.isStable && (
+                                          <span className="text-xs bg-green-500 text-white px-1.5 py-0.5 rounded">
+                                            СТАБІЛЬНО
+                                          </span>
+                                        )}
+                                      </div>
+                                      {result.success ? (
+                                        <div className="mt-1">
+                                          {result.parsedData.weight !== undefined && (
+                                            <div className="text-green-700">
+                                              <strong>Вага:</strong> {result.parsedData.weight} кг
+                                            </div>
+                                          )}
+                                          {/* {result.parsedData.price !== undefined && (
+                                            <div className="text-green-700">
+                                              <strong>Ціна:</strong> {result.parsedData.price} грн
+                                            </div>
+                                          )}
+                                          {result.parsedData.total !== undefined && (
+                                            <div className="text-green-700">
+                                              <strong>Сума:</strong> {result.parsedData.total} грн
+                                            </div>
+                                          )} */}
+                                          {result.rawData && (
+                                            <div className="text-gray-500 mt-1 font-mono text-xs">
+                                              HEX: {result.rawData}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="text-red-700 mt-1">
+                                          <strong>Помилка:</strong> {result.error}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        
+                        {realtimeTestStatus === 'running' && (
+                          <div className="mt-2 text-xs text-gray-500">
+                            Автоматичне зупинення через 5 хвилин
+                          </div>
+                        )}
+                        {realtimeTestStatus === 'paused' && (
+                          <div className="mt-2 text-xs text-yellow-600">
+                            Тестування призупинено. Логи збережені. Натисніть "Відновити" для продовження.
+                          </div>
+                        )}
+                        
+                        <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded mt-4">
+                          <p className="mb-2"><strong>Статуси:</strong> 🟢 СТАБІЛЬНО - ваги стабільні, 🟡 НЕСТАБІЛЬНО - ваги нестабільні (при постановці/знятті грузу)</p>
+                          <p className="mb-2"><strong>Звукові сигнали:</strong> 🔊 Запуск/зупинка тесту, 🎵 Стабілізація вагів, ⚠️ Помилки підключення</p>
+                          <p><strong>Примітка:</strong> Повідомлення "Немає даних від вагів" - це нормально при зміні грузу на вагах</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {vta60RawData && (
@@ -1221,9 +1927,6 @@ export const SettingsEquipment = () => {
                     </div>
                   )}
 
-                  <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
-                    <strong>Протокол ВТА-60:</strong> 4800-8E1, запит 00 00 03, 18 байт відповіді з цифробайтами
-                  </div>
                 </div>
               </Card>
 
@@ -1342,7 +2045,7 @@ export const SettingsEquipment = () => {
                       On
                     </span>
                   )}
-                  {!state.isScannerConnected && !state.status.isSimulationMode && (
+                  {!state.isScannerConnected && (
                     <span className="text-sm text-red-600 flex items-center gap-1">
                       <span className="w-2 h-2 bg-red-500 rounded-full"></span>
                       Off
@@ -1354,7 +2057,7 @@ export const SettingsEquipment = () => {
                     color={scannerTestStatus === 'waiting' ? 'warning' : 'primary'}
                     size="sm"
                     onPress={testScanner}
-                    isDisabled={!state.isScannerConnected && state.status.isSimulationMode === false}
+                    isDisabled={!state.isScannerConnected}
                   >
                     {scannerTestStatus === 'waiting' ? 'Отменить тест' : 'Тест сканера'}
                   </Button>

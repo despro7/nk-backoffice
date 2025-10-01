@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button, NumberInput, Select, SelectItem } from '@heroui/react';
 import { Card, CardHeader, CardBody } from '@heroui/react';
+import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface WeightToleranceSettingsType {
   type: 'percentage' | 'absolute' | 'combined';
@@ -167,7 +168,7 @@ export const WeightToleranceSettings: React.FC<WeightToleranceSettingsProps> = (
               variant="solid"
               color="primary"
             >
-              {isLoading ? 'Збереження...' : 'Зберегти'}
+             <DynamicIcon name="save" size={14} /> {isLoading ? 'Збереження...' : 'Зберегти'}
             </Button>
           </div>
         </div>

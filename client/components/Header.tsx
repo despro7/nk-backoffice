@@ -65,75 +65,19 @@ export function Header({ className, onDebugModeChange }: HeaderProps) {
   };
 
   
-  // Переключение режима симуляции
-  const toggleSimulationMode = async (enabled: boolean) => {
-    const newConnectionType: "local" | "simulation" = enabled ? "simulation" : "local";
-
-    try {
-      // 1. Всегда обновляем состояние, даже если config еще не загружен
-      equipmentActions.updateConfig({ connectionType: newConnectionType });
-      equipmentActions.setConnectionType(newConnectionType);
-
-      // 2. Отправляем запрос на сервер только если config уже загружен
-      if (equipmentState.config) {
-        await fetch('/api/settings/equipment/connectionType', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ value: newConnectionType })
-        });
-      }
-
-      addToast({
-        title: "Успіх",
-        description: <span>Режим симуляції <b>{enabled ? 'активовано' : 'вимкнено'}</b></span>,
-        color: "warning",
-        variant: "solid",
-      });
-
-    } catch (error) {
-      console.error('❌ Error:', error);
-
-      addToast({
-        title: "Помилка",
-        description: "Не вдалося змінити режим симуляції",
-        color: "danger",
-      });
-    }
-  };
 
   return (
     <header className={cn("flex flex-col sm:flex-row justify-between items-center px-8 py-4 sm:px-xl border-b border-grey-200 bg-background-paper gap-4 sm:gap-0", className)}>
       {/* Timer Section */}
       <div className="flex items-center gap-2.5 w-full sm:w-auto justify-center sm:justify-start text-neutral-500">
-        <div className="flex items-center gap-1.5 w-[138px] wrap-break-word px-2.5 py-2 rounded-sm bg-neutral-100">
-          <DynamicIcon name="hourglass" size={18} color="currentColor" className="flex-shrink-0" />
+        <div className="flex items-center gap-1.5 wrap-break-word px-2.5 py-1 rounded-sm bg-neutral-100">
+          {/* <DynamicIcon name="hourglass" size={18} color="currentColor" className="flex-shrink-0" /> */}
           <CountdownTimer />
         </div>
         <div className="w-[100px] text-[13px] leading-[110%] text-neutral-400">
           до наступного відправлення
         </div>
       </div>
-
-      {/* Server Status Indicator - Center */}
-      {/* <div className="flex items-center gap-2 justify-center sm:w-auto ml-10">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-sm">
-          {isLoading ? (
-            <div className="animate-spin rounded-full h-3 w-3 border-b border-neutral-400"></div>
-          ) : (
-            <div
-              className={`w-2 h-2 rounded-full ${
-                isOnline ? 'bg-green-600' : 'bg-red-500'
-              }`}
-            />
-          )}
-          <span className={`text-sm font-medium ${
-            isOnline ? 'text-green-600' : 'text-red-700'
-          }`}>
-            {isOnline ? 'Online' : 'Offline'}
-          </span>
-        </div>
-      </div> */}
 
       {/* Debug Mode Switch */}
       <DebugModeSwitch onDebugModeChange={onDebugModeChange} />
@@ -187,15 +131,15 @@ export function Header({ className, onDebugModeChange }: HeaderProps) {
                 as="button"
                 avatarProps={{
                   isBordered: false,
+                  className: "w-[36px] h-[36px] bg-linear-to-br from-[#e0d7f2] to-[#a3b8ff] from-20% to-80%",
                   showFallback: true,
-                  color: "secondary",
-                  fallback: <DynamicIcon name="user-round" size={20} color="white" />,
-                  // src: "https://i.pravatar.cc/150?u=a048581f4e29026701d21",
+                  fallback: <DynamicIcon name="user-round" size={18} color="white" />,
+                  // src: "https://api.dicebear.com/9.x/initials/svg?seed=" + user.name + "&backgroundColor=a3b8ff,7ca3d8,8fa3c6&backgroundType=gradientLinear&backgroundRotation=30&chars=1",
                 }}
                 classNames={{
                   base: "cursor-pointer transition-transform",
-                  name: "text-grey-700 text-base font-semibold",
-                  description: "text-grey-500 text-[13px] leading-[110%]"
+                  name: "text-grey-700 text-sm font-semibold",
+                  description: "text-grey-500 text-[12px] leading-[110%]"
                 }}
                 name={user.name || user.email}
                 description={user.roleName || user.role || 'Користувач'}

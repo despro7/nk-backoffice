@@ -33,7 +33,7 @@ export function NumberPad({ onNumberClick, onBackspace }: NumberPadProps) {
               size="lg"
               disableRipple={true}
               className={`
-                flex-1 h-full rounded-none text-gray-700 text-[26px] font-semibold
+                flex-1 h-full rounded-none text-gray-600 text-[26px] font-semibold
                 ${colIndex === 1 ? 'border-x border-gray-200' : ''}
                 hover:bg-gray-50 active:bg-gray-100 data-[pressed=true]:scale-100 data-[pressed=true]:bg-neutral-200`}
             >

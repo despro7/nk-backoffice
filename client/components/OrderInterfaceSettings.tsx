@@ -3,6 +3,7 @@ import { Button, NumberInput } from '@heroui/react';
 import { Select, SelectItem } from '@heroui/react';
 import { useApi } from '../hooks/useApi';
 import { Card, CardHeader, CardBody } from '@heroui/react';
+import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface OrderInterfaceSettingsType {
   defaultTab: "confirmed" | "readyToShip" | "shipped" | "all";
@@ -202,7 +203,7 @@ export const OrderInterfaceSettings: React.FC = () => {
                 color="primary"
                 // className="bg-blue-600 hover:bg-blue-700 text-white"
               >
-                {isSaving ? 'Збереження...' : 'Зберегти'}
+                <DynamicIcon name="save" size={14} /> {isSaving ? 'Збереження...' : 'Зберегти'}
               </Button>
               {/* <Button
                 onPress={handleResetToDefaults}

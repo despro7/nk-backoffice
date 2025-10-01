@@ -100,7 +100,9 @@ export function DesignSystemDemo() {
     warning: {
       "400": "#ffebad",
       "500": "#ebcb69",
-      "700": "#dbab19"
+      "600": "#e2bf55",
+      "700": "#dbab19",
+      "800": "#886f22",
     }
   };
 

@@ -611,7 +611,7 @@ const SettingsTestAuth: React.FC = () => {
 
               {/* Stage 3: Middleware Check */}
               <div 
-                className="absolute bottom-0 transform -translate-x-1/2"
+                className={`absolute bottom-0 transform -translate-x-1/2 ${!authSettings?.clientAutoRefreshEnabled && 'opacity-50 grayscale'}`}
                 style={{ left: `${tokenExpiryInfo.stagePositions?.stage3 || 91.67}%` }}
               >
                 <div className={`w-6 h-6 rounded-full border-3 border-white shadow-lg flex items-center justify-center ${
@@ -647,7 +647,11 @@ const SettingsTestAuth: React.FC = () => {
                 </div>
                 <div className="absolute top-8 left-1/2 transform -translate-x-1/2 text-center">
                   <p className="text-sm font-medium text-gray-900">Истечение</p>
-                  <p className="text-xs text-gray-600">через<span className="text-red-600 block">{tokenExpiryInfo.minutesLeft}м {tokenExpiryInfo.secondsLeft}с</span></p>
+                  {tokenExpiryInfo.minutesLeft > 0 ? (
+                    <p className="text-xs text-gray-600">через<span className="text-red-600 block">{tokenExpiryInfo.minutesLeft}м {tokenExpiryInfo.secondsLeft}с</span></p>
+                  ) : (
+                    <p className="text-xs text-red-600">истекло</p>
+                  )}
                 </div>
               </div>
             </div>

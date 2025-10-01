@@ -5,10 +5,9 @@ import { useApi } from "../hooks/useApi";
 import { TabsFilter } from "./TabsFilter";
 import { cn } from "../lib/utils";
 
-import UkrPoshtaIcon from "/icons/ukr-poshta.svg";
-import NovaPoshtaIcon from "/icons/nova-poshta.svg";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate, getStatusColor } from "../lib/formatUtils";
+import { formatTrackingNumberWithIcon } from "@/lib/formatUtilsJSX";
 
 interface OrderItem {
   productName: string;
@@ -52,11 +51,11 @@ type SortDescriptor = {
 };
 
 const columns = [
-  { key: "orderNumber", label: "№ Замов.", className: "w-2/16" },
-  { key: "orderDate", label: "Дата створення", className: "w-3/16" },
-  { key: "ttn", label: "ТТН", className: "w-3/16" },
-  { key: "quantity", label: "Кіл-ть", className: "w-1/16" },
-  { key: "status", label: "Статус", className: "w-4/16" },
+  { key: "orderNumber", label: "№ Замов.", className: "w-2/10" },
+  { key: "orderDate", label: "Дата створення", className: "w-3/10" },
+  { key: "ttn", label: "ТТН", className: "w-2/10" },
+  { key: "quantity", label: "Кіл-ть", className: "w-1/10" },
+  { key: "status", label: "Статус", className: "w-2/10" },
 ];
 
 export function OrdersTable({ className, filter = "all", searchQuery = "", onTabChange }: OrdersTableProps) {
@@ -235,7 +234,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
             "font-normal", 
             "leading-[130%]",
             "px-2.5",
-            "py-6",
+            "py-3",
             "last:border-b-0",
           ],
           tbody: "divide-y divide-grey-200"
@@ -271,15 +270,18 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
               <TableCell onClick={() => handleRowClick(order.externalId)}>
                 {order.orderNumber}
               </TableCell>
-              <TableCell onClick={() => handleRowClick(order.externalId)}>
+              <TableCell onClick={() => handleRowClick(order.externalId)} className="text-[15px]">
                 {formatRelativeDate(order.orderDate, { maxRelativeDays: 30 })}
               </TableCell>
               <TableCell onClick={() => handleRowClick(order.externalId)}>
-                <div className="flex items-center gap-1">
-                  <img src={order.provider === "novaposhta" ? NovaPoshtaIcon : UkrPoshtaIcon} alt={order.shippingMethod} className="w-5 h-5" />
-                  <span>
-                    {order.ttn ? `..${order.ttn.slice(-4)}` : ""}
-                  </span>
+                <div className="flex items-center gap-1.5 whitespace-nowrap">
+                  {order.ttn && formatTrackingNumberWithIcon(order.ttn, {
+                    provider: order.provider,
+                    iconSize: 'absolute',
+                    iconSizeValue: '1.2rem',
+                    compactMode: true,
+                    boldLastGroup: false
+                  })}
                 </div>
               </TableCell>
               <TableCell onClick={() => handleRowClick(order.externalId)}>
@@ -290,8 +292,8 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
                   {order.rawData?.statusText || order.statusText}
                 </span>
                 {order.updatedAt && (
-                <span className="text-xs text-gray-500 ml-2">
-                    {formatRelativeDate(order.updatedAt, { include2DaysAgo: false, showYear: false, includeWeekdays: true, shortWeekday: true })}
+                <span className="block text-xs text-gray-500 ml-2 mt-1">
+                    {formatRelativeDate(order.updatedAt, { maxRelativeDays: 30, include2DaysAgo: false, showYear: false, includeWeekdays: true, shortWeekday: true })}
                 </span>
                 )}
               </TableCell>

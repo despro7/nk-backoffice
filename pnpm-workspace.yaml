@@ -1,6 +1,0 @@
-onlyBuiltDependencies:
-  - '@heroui/shared-utils'
-  - '@heroui/theme'
-  - '@swc/core'
-  - '@tailwindcss/oxide'
-  - esbuild

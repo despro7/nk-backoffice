@@ -3,6 +3,7 @@ import { SettingsManager } from '../components/SettingsManager';
 import { ServerStatusSettings } from '../components/ServerStatusSettings';
 import { UserRegistrationManager } from '../components/UserRegistrationManager';
 import { LoggingSettings } from '../components/LoggingSettings';
+import { ToastSettings } from '@/components/ToastSettings';
 import { AuthSettings } from '../components/AuthSettings';
 import { useRoleAccess } from '../hooks/useRoleAccess';
 import { DateFormatSettings } from "@/components/DateFormatSettings";
@@ -24,32 +25,40 @@ const SettingsAdmin: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* Регистрация пользователей */}
+      {/* Реєстрація користувачів */}
       <section>
         <UserRegistrationManager />
       </section>
 
-      {/* Настройки логирования */}
+      {/* Налаштування логування і toast */}
       <section>
-        <LoggingSettings />
+        <h2 className="text-2xl font-semibold mb-2">Налаштування логування</h2>
+		    <p className="text-sm text-gray-600 mb-4">Керування консольними логами та Toast сповіщеннями</p>
+        <div className="flex flex-col md:flex-row gap-6">
+          {/* Консольні логи */}
+          <LoggingSettings />
+          
+          {/* Toast сповіщення */}
+          <ToastSettings />
+        </div>
       </section>
 
-      {/* Настройки авторизации */}
+      {/* Налаштування авторизації */}
       <section>
         <AuthSettings />
       </section>
 
-      {/* Настройки статуса сервера */}
+      {/* Налаштування статусу сервера */}
       <section>
         <ServerStatusSettings />
       </section>
 
-      {/* Функция форматрирования даты */}
+      {/* Функція форматування дати */}
       <section>
         <DateFormatSettings />
       </section>
 
-      {/* Общие настройки */}
+      {/* Загальні налаштування */}
       <section>
         <SettingsManager />
       </section>
