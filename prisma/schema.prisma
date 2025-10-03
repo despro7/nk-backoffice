@@ -275,3 +275,28 @@ model AuthSettings {
 
   @@map("auth_settings")
 }
+
+model ShippingProvider {
+  id                Int      @id @default(autoincrement())
+  name              String   @db.VarChar(100)  // "Нова Пошта", "Укрпошта"
+  providerType      String   @db.VarChar(20)   // "novaposhta", "ukrposhta"
+  senderName        String   @db.VarChar(200)  // "Магазин №1", "Склад №2"
+  isActive          Boolean  @default(false)   // Активний провайдер
+  order             Int      @default(0)       // Порядок сортування
+  
+  // API ключі для Нової Пошти
+  apiKey            String?  @db.VarChar(500)  // API ключ НП
+  
+  // API ключі для Укрпошти
+  bearerEcom        String?  @db.VarChar(500)  // Bearer токен для ecom
+  counterpartyToken String?  @db.VarChar(500)  // Counterparty токен
+  bearerStatus      String?  @db.VarChar(500)  // Bearer токен для статусів
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([providerType])
+  @@index([isActive])
+  @@index([order])
+  @@map("shipping_providers")
+}

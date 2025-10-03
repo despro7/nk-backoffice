@@ -221,4 +221,19 @@
     -webkit-animation: jello-horizontal 0.9s ;
             animation: jello-horizontal 0.9s ;
   }
+
+  /* Сумісність з розширеннями автозаповнення */
+  .ui-front {
+    z-index: 1000;
+  }
+
+  /* Покращення для popover елементів автозаповнення */
+  [data-bs-autocomplete] {
+    position: relative;
+  }
+
+  /* Запобігання конфліктам з bootstrap autofill */
+  .bootstrap-autofill-overlay {
+    z-index: 1050 !important;
+  }
 }

@@ -1108,7 +1108,7 @@ export default function OrderView() {
 
       await shippingClientService.printTTN({
         ttn: order.ttn,
-        provider: order.provider as 'novaposhta' | 'ukrposhta',
+        // provider тепер опціональний - використовується активний провайдер з БД
         printerName: canUseDirectPrint ? equipmentState.config.printer.name : undefined
       });
 

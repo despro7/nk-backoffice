@@ -4,7 +4,7 @@ import { useEquipmentFromAuth } from '../contexts/AuthContext';
 
 export interface PrintTTNRequest {
   ttn: string;
-  provider: 'novaposhta' | 'ukrposhta';
+  provider?: 'novaposhta' | 'ukrposhta'; // Тепер опціональний, якщо не вказано - використовується активний
   format?: 'pdf' | 'html' | 'png' | 'zpl';
   printerName?: string;
 }
@@ -18,14 +18,48 @@ export interface PrintTTNResponse {
 }
 
 export class ShippingClientService {
+  /**
+   * Отримує активний провайдер доставки
+   */
+  async getActiveProvider(): Promise<{ provider: 'novaposhta' | 'ukrposhta' } | null> {
+    try {
+      const response = await fetch('/api/shipping-providers/active');
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        return { provider: result.data.providerType };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting active provider:', error);
+      return null;
+    }
+  }
+
   async printTTN(request: PrintTTNRequest): Promise<void> {
     try {
+      // Якщо провайдер не вказаний, використовуємо активний
+      let finalRequest = { ...request };
+      if (!finalRequest.provider) {
+        const activeProvider = await this.getActiveProvider();
+        if (activeProvider) {
+          finalRequest.provider = activeProvider.provider;
+        } else {
+          ToastService.show({ 
+            title: 'Помилка', 
+            description: 'Не знайдено активного провайдера доставки. Налаштуйте провайдера в налаштуваннях.', 
+            color: 'danger' 
+          });
+          return;
+        }
+      }
+
       const response = await fetch('/api/shipping/print-ttn', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify(finalRequest),
       });
   
       if (!response.ok) {

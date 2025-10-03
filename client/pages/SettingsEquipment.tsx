@@ -1978,26 +1978,25 @@ export const SettingsEquipment = () => {
                 <h3 className="font-medium text-gray-400">Налаштування принтера (QZ Tray)</h3>
 
                 <Switch
-                  id="printerEnabled"
-                  isSelected={localConfig.printer?.enabled || false}
-                  onValueChange={(value) => updatePrinterSetting("enabled", value)}
-                  color="primary"
-                >
-                  Увімкнути прямий друк
-                </Switch>
-
-                <Switch
                   id="autoPrintOnComplete"
                   isSelected={localConfig.printer?.autoPrintOnComplete || false}
                   onValueChange={(value) => updatePrinterSetting("autoPrintOnComplete", value)}
                   color="primary"
-                  isDisabled={!localConfig.printer?.enabled}
                   classNames={{
                     wrapper: "bg-secondary/50",
                     thumbIcon: "bg-white/50",
                   }}
                 >
                   Автоматичний друк при завершенні замовлення
+                </Switch>
+
+                <Switch
+                  id="printerEnabled"
+                  isSelected={localConfig.printer?.enabled || false}
+                  onValueChange={(value) => updatePrinterSetting("enabled", value)}
+                  color="primary"
+                >
+                  Увімкнути прямий друк
                 </Switch>
 
                 <Input

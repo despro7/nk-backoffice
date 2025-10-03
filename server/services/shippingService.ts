@@ -43,6 +43,7 @@ export class ShippingService {
   private providers: { [key: string]: ShippingProvider } = {};
 
   constructor() {
+    // Fallback до env змінних якщо БД порожня
     this.providers.novaposhta = {
       name: 'Нова Пошта',
       apiKey: process.env.NOVA_POSHTA_API_KEY || '',
@@ -58,23 +59,66 @@ export class ShippingService {
     };
   }
 
-  async printTTN(request: PrintTTNRequest): Promise<PrintTTNResponse> {
+  /**
+   * Завантажує активний провайдер з БД
+   */
+  private async loadActiveProvider(): Promise<ShippingProvider | null> {
     try {
-      const provider = this.providers[request.provider];
+      const { shippingProviderService } = await import('./shippingProviderService.js');
+      const activeProvider = await shippingProviderService.getActiveProvider();
       
-      if (!provider) {
-        throw new Error(`Провайдер ${request.provider} не настроен`);
+      if (!activeProvider) {
+        return null;
       }
 
-      if (request.provider === 'novaposhta') {
+      // Конвертуємо з БД в формат для API
+      const provider: ShippingProvider = {
+        name: activeProvider.name,
+        apiKey: activeProvider.apiKey || '',
+        baseUrl: activeProvider.providerType === 'novaposhta' 
+          ? 'https://api.novaposhta.ua/v2.0/json/' 
+          : undefined,
+        bearerToken: activeProvider.bearerEcom || '',
+        counterpartyToken: activeProvider.counterpartyToken || '',
+        statusBearerToken: activeProvider.bearerStatus || ''
+      };
+
+      return provider;
+    } catch (error) {
+      console.error('Помилка завантаження активного провайдера з БД:', error);
+      return null;
+    }
+  }
+
+  async printTTN(request: PrintTTNRequest): Promise<PrintTTNResponse> {
+    try {
+      // Спочатку намагаємося використати активний провайдер з БД
+      const activeProvider = await this.loadActiveProvider();
+      
+      let provider: ShippingProvider;
+      let providerType = request.provider;
+
+      if (activeProvider) {
+        // Використовуємо активний провайдер з БД
+        provider = activeProvider;
+        providerType = activeProvider.name.includes('Нова Пошта') ? 'novaposhta' : 'ukrposhta';
+      } else {
+        // Fallback до env змінних
+        provider = this.providers[request.provider];
+        if (!provider) {
+          throw new Error(`Провайдер ${request.provider} не настроен`);
+        }
+      }
+
+      if (providerType === 'novaposhta') {
         if (!provider.apiKey) {
           throw new Error('API ключ Нова Пошта не настроен');
         }
         return await this.printNovaPoshtaTTN(request, provider);
-      } else if (request.provider === 'ukrposhta') {
+      } else if (providerType === 'ukrposhta') {
         return await this.printUkrPoshtaTTN(request, provider);
       } else {
-        throw new Error(`Неподдерживаемый провайдер: ${request.provider}`);
+        throw new Error(`Неподдерживаемый провайдер: ${providerType}`);
       }
     } catch (error) {
       return {

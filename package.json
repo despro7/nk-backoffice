@@ -43,6 +43,7 @@
     "lint:fix": "eslint . --ext .js,.ts,.jsx,.tsx --config eslint.config.js --fix"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "^18.0.1",
     "@heroui/button": "^2.2.24",
     "@heroui/modal": "^2.2.21",
     "@heroui/react": "^2.8.2",
@@ -81,6 +82,7 @@
     "@types/node-fetch": "^2.6.13",
     "@types/qz-tray": "^2.2.2",
     "@types/react": "^18.3.23",
+    "@types/react-beautiful-dnd": "^13.1.8",
     "@types/react-dom": "^18.3.7",
     "@typescript-eslint/eslint-plugin": "^8.41.0",
     "@typescript-eslint/parser": "^8.41.0",
