@@ -19,6 +19,7 @@ import { useEquipmentFromAuth } from "./contexts/AuthContext";
 import { ToastService } from "./services/ToastService";
 import { LoggingService } from "./services/LoggingService";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { initAudioContext } from "./lib/soundUtils";
 
 const queryClient = new QueryClient();
 
@@ -36,7 +37,7 @@ const AppRoutes = () => {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-600">Завантаження...</p>
         </div>
       </div>
@@ -99,6 +100,28 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const [isReady, setIsReady] = React.useState(false);
   const { user, isLoading: authLoading } = useAuth();
 
+  // Инициализация AudioContext при первом пользовательском взаимодействии
+  React.useEffect(() => {
+    const handleFirstUserInteraction = () => {
+      initAudioContext();
+      // Удаляем обработчики после первого взаимодействия
+      document.removeEventListener('click', handleFirstUserInteraction);
+      document.removeEventListener('keydown', handleFirstUserInteraction);
+      document.removeEventListener('touchstart', handleFirstUserInteraction);
+    };
+
+    // Добавляем обработчики для различных типов пользовательских взаимодействий
+    document.addEventListener('click', handleFirstUserInteraction);
+    document.addEventListener('keydown', handleFirstUserInteraction);
+    document.addEventListener('touchstart', handleFirstUserInteraction);
+
+    return () => {
+      document.removeEventListener('click', handleFirstUserInteraction);
+      document.removeEventListener('keydown', handleFirstUserInteraction);
+      document.removeEventListener('touchstart', handleFirstUserInteraction);
+    };
+  }, []);
+
   React.useEffect(() => {
     (async () => {
       // Always initialize logging first
@@ -130,7 +153,7 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-600">Завантаження налаштувань застосунку...</p>
         </div>
       </div>

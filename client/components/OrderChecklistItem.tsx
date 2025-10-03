@@ -43,19 +43,21 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderCh
   const itemStateClasses = cn(
     'p-4 rounded-sm flex items-center justify-between outline-2 outline-transparent transition-background transition-colors duration-300 animate-duration-[100ms]',
     {
-      'bg-gray-50 text-neutral-900 cursor-pointer': status === 'default',
+      'bg-gray-50 text-neutral-900 cursor-pointer outline-1 outline-neutral-200': status === 'default',
       'bg-warning-400 outline-2 outline-warning-500 cursor-pointer': status === 'pending' || status === 'awaiting_confirmation',
       'bg-success-500 text-white animate-pulse animate-thrice cursor-pointer': status === 'success',
       'bg-danger text-white cursor-pointer': status === 'error',
       'bg-gray-200 text-gray-500': status === 'done' || status === 'confirmed',
-      'cursor-not-allowed opacity-75': isBoxDone, // Заблокированная коробка
+      // 'cursor-not-allowed opacity-75': isBoxDone,
     }
   );
 
   // Коробки кликабельны только если ожидают подтверждения
   // Товары кликабельны только если коробка уже взвешена
-  // Коробки с статусом 'done' полностью заблокированы от повторного взвешивания
-  const isClickable = !isDone && !isItemBoxConfirmed && !isBoxDone && (type === 'box' ? status === 'awaiting_confirmation' : isBoxConfirmed);
+  // const isClickable = !isDone && !isItemBoxConfirmed && !isBoxDone && (type === 'box' ? status === 'awaiting_confirmation' : isBoxConfirmed && status === 'default');
+  const isClickable = isBoxConfirmed && type === 'product' && status === 'default';
+
+  // console.log('🔄 [OrderChecklistItem] item:', item);
 
   return (
     <div className={itemStateClasses} onClick={isClickable ? onClick : undefined}>

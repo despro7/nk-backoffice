@@ -12,6 +12,21 @@ class PrinterService {
   private connectionAttempts = 0;
   private maxConnectionAttempts = 5;
 
+  /**
+   * Перевіряє чи є base64 рядок PDF файлом
+   */
+  private isPdfBase64(base64Data: string): boolean {
+    try {
+      // Декодуємо base64
+      const decoded = atob(base64Data);
+      
+      // PDF файли починаються з %PDF-
+      return decoded.startsWith('%PDF-');
+    } catch {
+      return false;
+    }
+  }
+
   private constructor() {
     // Конфигурация для поиска websocket
     qz.api.setPromiseType((resolver) => new Promise(resolver));
@@ -95,6 +110,11 @@ class PrinterService {
     try {
       if (!(await this.connect())) {
         throw new Error("Немає з'єднання з QZ Tray");
+      }
+
+      // Валідація PDF даних
+      if (!this.isPdfBase64(base64Pdf)) {
+        throw new Error("Отримані дані не є валідним PDF файлом. Можливо, API повернув помилку замість PDF.");
       }
 
       const config = qz.configs.create(printerName);

@@ -17,8 +17,6 @@ export interface EquipmentState {
   config: EquipmentConfig | null;
   isLoading: boolean;
   lastRawScaleData: string | Uint8Array;
-  isActivePolling: boolean;
-  isReservePolling: boolean;
 }
 
 export interface EquipmentActions {
@@ -28,12 +26,6 @@ export interface EquipmentActions {
   disconnectScanner: () => Promise<void>;
   getWeight: () => Promise<VTAScaleData | null>;
   resetScanner: () => void;
-
-  // Новые методы для активного polling
-  startActivePolling: () => void;
-  stopActivePolling: () => void;
-  startReservePolling: () => void;
-  stopReservePolling: () => void;
 
   updateConfig: (config: Partial<EquipmentConfig>) => void;
   loadConfig: () => Promise<void>;
@@ -68,17 +60,6 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
   const scaleService = useRef(ScaleService.getInstance());
   const scannerService = useRef(BarcodeScannerService.getInstance());
 
-  // Стан для активного polling
-  const [isActivePolling, setIsActivePolling] = useState(false);
-  const [isReservePolling, setIsReservePolling] = useState(false);
-  const activePollingIntervalRef = useRef<number | null>(null);
-  const reservePollingIntervalRef = useRef<number | null>(null);
-  const activePollingTimeoutRef = useRef<number | null>(null);
-  const isReservePollingRef = useRef<boolean>(false);
-  const isActivePollingRef = useRef(false); // Ref для відстеження стану в інтервалах
-  const activePollingErrorCountRef = useRef(0); // Лічильник помилок активного polling
-  const isPollingRef = useRef(false); // Ref для запобігання одночасним запитам на опитування
-  const [significantWeightDetected, setSignificantWeightDetected] = useState(false);
 
   // Кеш для даних ваг
   const weightCacheRef = useRef<{ data: VTAScaleData; timestamp: number } | null>(null);
@@ -342,9 +323,10 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
             const currentTime = Date.now();
             const code = event.data.code;
 
-            // Фильтруем дубликаты: если тот же код в течение последних 2 секунд
+            // Фильтруем дубликаты: если тот же код в течение последних scanTimeout * 2
+            const duplicateTimeout = config?.scanner?.scanTimeout ? config.scanner.scanTimeout * 2 : 600;
             if (code === lastProcessedCodeRef.current &&
-              currentTime - lastProcessedTimeRef.current < 2000) {
+              currentTime - lastProcessedTimeRef.current < duplicateTimeout) {
               if (process.env.NODE_ENV === 'development') {
                 LoggingService.equipmentLog('🔄 [useEquipment] Duplicate barcode ignored:', code);
               }
@@ -650,20 +632,6 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     // НЕ отключаемся при переходе между страницами - используем синглтон ScaleService
     // Соединение с весами должно сохраняться между страницами
     return () => {
-      // Останавливаем polling, но НЕ отключаем весы - соединение должно сохраняться
-      // Очищаем интервалы напрямую, без зависимости от stopScalePolling
-      if (activePollingIntervalRef.current) {
-        clearInterval(activePollingIntervalRef.current);
-        activePollingIntervalRef.current = null;
-      }
-      if (reservePollingIntervalRef.current) {
-        clearInterval(reservePollingIntervalRef.current);
-        reservePollingIntervalRef.current = null;
-      }
-      if (activePollingTimeoutRef.current) {
-        clearTimeout(activePollingTimeoutRef.current);
-        activePollingTimeoutRef.current = null;
-      }
       setCurrentWeight(null);
       setIsScaleConnected(false);
     };
@@ -679,6 +647,14 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         }
 
         setIsInitialized(true);
+
+        // Застосовуємо конфігурацію до сервісів
+        if (config.scale) {
+          scaleService.current.updateConfig(config.scale);
+        }
+        if (config.scanner) {
+          scannerService.current.updateConfig(config.scanner);
+        }
 
         // Перевіряємо початковий статус
         updateStatus({
@@ -708,7 +684,7 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
         // Автоподключение сканера, если включено
         if (config.scanner?.autoConnect && !isScannerConnected) {
             try {
-              LoggingService.equipmentLog('🔧 [useEquipment]: Автоподключение сканера...');
+              // LoggingService.equipmentLog('🔧 [useEquipment]: Автоподключение сканера...');
               const scannerConnected = await connectScanner();
               if (scannerConnected) {
                 LoggingService.equipmentLog('✅ [useEquipment]: Сканер успешно подключен');
@@ -728,12 +704,6 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     initEquipment();
   }, [config, isInitialized, connectScale, connectScanner]); // Зависит от config и isInitialized
 
-  // useEffect для обработки изменений настройки автоподключения весов
-  // --- УДАЛЕНО ---
-
-  // Мониторинг соединения с весами
-  // --- УДАЛЕНО ---
-
   // Створюємо стан - ГЛУБОКОЕ КЛОНИРОВАНИЕ для React
   const state: EquipmentState = useMemo(() => ({
     status: { ...status }, // Клонируем status объект
@@ -744,11 +714,8 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     isScannerConnected,
     config: config ? { ...config } : null, // Клонируем config объект
     isLoading,
-    lastRawScaleData: typeof lastRawScaleData === 'string' ? lastRawScaleData : Array.from(lastRawScaleData).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
-    // Добавляем новые поля состояния polling
-    isActivePolling,
-    isReservePolling
-  }), [status, currentWeight, lastBarcode, config, isLoading, isScaleConnected, isScannerConnected, lastRawScaleData, isActivePolling, isReservePolling]);
+    lastRawScaleData: typeof lastRawScaleData === 'string' ? lastRawScaleData : Array.from(lastRawScaleData).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
+  }), [status, currentWeight, lastBarcode, config, isLoading, isScaleConnected, isScannerConnected, lastRawScaleData]);
 
 
 
@@ -757,333 +724,8 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     await loadConfig();
   }, [loadConfig]);
 
-  // Функции для управления polling (объявляем заранее)
-  const stopReservePolling = useCallback(() => {
-    if (!isReservePollingRef.current) {
-      return;
-    }
 
-    LoggingService.equipmentLog('⏹️ [useEquipment]: Остановка резервного polling');
-    setIsReservePolling(false);
-    isReservePollingRef.current = false;
-    isPollingRef.current = false;
 
-    if (reservePollingIntervalRef.current) {
-      clearInterval(reservePollingIntervalRef.current);
-      reservePollingIntervalRef.current = null;
-    }
-  }, []);
-
-  const startReservePolling = useCallback(() => {
-    if (isReservePollingRef.current || !config) {
-      return;
-    }
-
-    // Проверяем, что мы на странице заказа (OrderView)
-    const isOnOrderPage = window.location.pathname.includes('/orders/');
-    if (!isOnOrderPage) {
-      LoggingService.equipmentLog('⚠️ [useEquipment]: Резервный polling доступен только на странице заказа');
-      return;
-    }
-
-    const reservePollingInterval = config?.scale?.reservePollingInterval || 5000;
-    LoggingService.equipmentLog(`🔄 [useEquipment]: Запуск резервного polling (${reservePollingInterval}ms)`);
-    setIsReservePolling(true);
-    isReservePollingRef.current = true;
-
-    reservePollingIntervalRef.current = window.setInterval(async () => {
-      if (isPollingRef.current) {
-        if (process.env.NODE_ENV === 'development') {
-          LoggingService.equipmentLog('... Reserve polling request in progress, skipping this interval');
-        }
-        return;
-      }
-      try {
-        isPollingRef.current = true;
-        // Проверяем, что мы все еще на странице заказа
-        const isOnOrderPage = window.location.pathname.includes('/orders/');
-        if (!isOnOrderPage) {
-          LoggingService.equipmentLog('⚠️ [useEquipment]: Покинули страницу заказа, останавливаем резервный polling');
-          stopReservePolling();
-          return;
-        }
-
-        // Резервный polling только если не идет активный
-        if (!isActivePollingRef.current) {
-          // Проверяем подключение перед попыткой получения веса
-          if (!status.isConnected || !isScaleConnected) {
-            // Пытаемся переподключиться только если включен autoConnect
-            if (config?.scale?.autoConnect) {
-              LoggingService.equipmentLog('🔄 [useEquipment]: Reserve polling - весы не подключены, пытаемся переподключиться...');
-              try {
-                // Сначала отключаемся для освобождения потоков
-                await scaleService.current.disconnect();
-                // Небольшая задержка для полного освобождения ресурсов
-                await new Promise(resolve => window.setTimeout(resolve, 100));
-
-                // Используем connect(true) для автоматического подключения без запроса
-                const connected = await scaleService.current.connect(true);
-                if (connected) {
-                  LoggingService.equipmentLog('✅ [useEquipment]: Reserve polling - весы переподключены');
-                  setIsScaleConnected(true); // Обновляем состояние напрямую
-                } else {
-                  LoggingService.equipmentLog('⚠️ [useEquipment]: Reserve polling - не удалось переподключить весы');
-                }
-              } catch (connectError) {
-                LoggingService.equipmentLog('⚠️ [useEquipment]: Reserve polling - ошибка переподключения:', connectError);
-              }
-            }
-            return; // В любом случае выходим, т.к. весы не были подключены
-          }
-
-          const reserveWeight = await getWeight(false);
-
-          if (reserveWeight && process.env.NODE_ENV === 'development') {
-            LoggingService.equipmentLog('📊 [useEquipment]: Reserve polling weight:', {
-              weight: reserveWeight.weight,
-              timestamp: reserveWeight.timestamp
-            });
-          } else if (!reserveWeight) {
-            LoggingService.equipmentLog('⚠️ [useEquipment]: Reserve polling - вес не получен, возможно потеряно подключение');
-          }
-
-          // Если обнаружен значительный вес, инициируем переключение на активный polling
-          const weightThreshold = config?.scale?.weightThresholdForActive || 0.010; // 10 грамм
-          if (reserveWeight && reserveWeight.weight > weightThreshold && !isActivePollingRef.current) {
-            LoggingService.equipmentLog(`⚖️ [useEquipment]: Обнаружен значительный вес (${reserveWeight.weight} кг) в резервном режиме.`);
-            setSignificantWeightDetected(true);
-          }
-        }
-      } catch (error) {
-        LoggingService.equipmentLog('⚠️ [useEquipment]: Ошибка резервного polling:', error);
-      } finally {
-        isPollingRef.current = false;
-      }
-    }, reservePollingInterval);
-  }, [config, getWeight, status.isConnected, isScaleConnected, updateStatus, setSignificantWeightDetected]);
-
-  // Активный polling для pending статусов (500ms) - только при подключенных весах
-  const startActivePolling = useCallback(() => {
-    if (isActivePollingRef.current || !config) {
-      return;
-    }
-
-    // Проверяем, что весы подключены
-    if (!status.isConnected || !isScaleConnected) {
-      LoggingService.equipmentLog('⚠️ [useEquipment]: Активный polling недоступен - весы не подключены');
-      // Запускаем резервный polling вместо активного
-      startReservePolling();
-      return;
-    }
-
-    // Проверяем, что мы на странице заказа (OrderView)
-    const isOnOrderPage = window.location.pathname.includes('/orders/');
-    if (!isOnOrderPage) {
-      LoggingService.equipmentLog('⚠️ [useEquipment]: Активный polling доступен только на странице заказа');
-      return;
-    }
-
-    const activePollingInterval = config?.scale?.activePollingInterval || 1000;
-    const timeout = config?.scale?.activePollingDuration || 30000;
-
-    LoggingService.equipmentLog(`🔄 [useEquipment]: Запуск активного polling (${activePollingInterval}ms) на ${timeout / 1000} секунд`);
-    setIsActivePolling(true);
-    isActivePollingRef.current = true;
-    activePollingErrorCountRef.current = 0; // Сбрасываем счетчик ошибок
-
-    // Останавливаем резервный polling если он был запущен
-    if (isReservePolling) {
-      stopReservePolling();
-    }
-
-    // Очищаем предыдущий таймаут, если он существует
-    if (activePollingTimeoutRef.current) {
-      clearTimeout(activePollingTimeoutRef.current);
-      activePollingTimeoutRef.current = null;
-    }
-
-    activePollingIntervalRef.current = window.setInterval(async () => {
-      if (isPollingRef.current) {
-        if (process.env.NODE_ENV === 'development') {
-          LoggingService.equipmentLog('... Active polling request in progress, skipping this interval');
-        }
-        return;
-      }
-      try {
-        isPollingRef.current = true;
-        // Проверяем, не остановлен ли polling
-        if (!isActivePollingRef.current) {
-          LoggingService.equipmentLog('⚠️ [useEquipment]: Активный polling остановлен');
-          return;
-        }
-
-        // Проверяем, что мы все еще на странице заказа
-        const isOnOrderPage = window.location.pathname.includes('/orders/');
-        if (!isOnOrderPage) {
-          LoggingService.equipmentLog('⚠️ [useEquipment]: Покинули страницу заказа, останавливаем активный polling');
-          stopActivePolling();
-          return;
-        }
-
-        // Получаем свежий вес без кэша для активного polling
-        const freshWeight = await getWeight(false);
-
-        if (freshWeight && process.env.NODE_ENV === 'development') {
-          LoggingService.equipmentLog('⚖️ [useEquipment]: Active polling weight:', {
-            weight: freshWeight.weight,
-            isStable: freshWeight.isStable,
-            timestamp: freshWeight.timestamp
-          });
-        } else if (!freshWeight) {
-          activePollingErrorCountRef.current++;
-          const maxErrors = config?.scale?.maxPollingErrors || 5;
-          LoggingService.equipmentLog(`⚠️ [useEquipment]: Активный polling - вес не получен (ошибка ${activePollingErrorCountRef.current}/${maxErrors})`);
-
-          // Если слишком много ошибок, останавливаем активный polling
-          if (activePollingErrorCountRef.current >= maxErrors) {
-            LoggingService.equipmentLog('❌ [useEquipment]: Слишком много ошибок активного polling, останавливаем и переходим к резервному');
-            stopActivePolling();
-            startReservePolling();
-            return;
-          }
-          return;
-        } else {
-          // Сбрасываем счетчик ошибок при успешном получении веса
-          activePollingErrorCountRef.current = 0;
-        }
-      } catch (error) {
-        activePollingErrorCountRef.current++;
-        const maxErrors = config?.scale?.maxPollingErrors || 5;
-        LoggingService.equipmentLog(`⚠️ [useEquipment]: Ошибка активного polling (ошибка ${activePollingErrorCountRef.current}/${maxErrors}):`, error);
-
-        // Для ошибок ReadableStream сразу переходим к резервному polling
-        if (error instanceof Error && error.message.includes('ReadableStream')) {
-          LoggingService.equipmentLog('❌ [useEquipment]: Ошибка ReadableStream, принудительно отключаемся и переходим к резервному polling');
-          // Принудительно отключаемся для освобождения потоков
-          try {
-            await scaleService.current.disconnect();
-            await new Promise(resolve => setTimeout(resolve, 100));
-          } catch (disconnectError) {
-            LoggingService.equipmentLog('⚠️ [useEquipment]: Ошибка при принудительном отключении:', disconnectError);
-          }
-
-          stopActivePolling();
-          startReservePolling();
-          return;
-        }
-
-        // Если слишком много ошибок, останавливаем активный polling
-        if (activePollingErrorCountRef.current >= maxErrors) {
-          LoggingService.equipmentLog('❌ [useEquipment]: Слишком много ошибок активного polling, останавливаем и переходим к резервному');
-          stopActivePolling();
-          startReservePolling();
-          return;
-        }
-        return;
-      } finally {
-        isPollingRef.current = false;
-      }
-    }, activePollingInterval);
-
-    // Устанавливаем таймаут 30 секунд для активного polling
-    activePollingTimeoutRef.current = window.setTimeout(() => {
-      LoggingService.equipmentLog('⏰ [useEquipment]: Таймаут активного polling (' + String(timeout / 1000) + ' сек), переходим к резервному');
-      LoggingService.equipmentLog('⏰ [useEquipment]: ' + '\n' + 'isActivePolling: ' + isActivePollingRef.current + '\n' + 'isReservePolling: ' + isReservePolling);
-      stopActivePolling();
-      // Всегда запускаем резервный polling после таймаута активного
-      startReservePolling();
-    }, timeout);
-
-    LoggingService.equipmentLog(`⏰ [useEquipment]: Установлен таймаут на ${timeout / 1000} секунд, ID:`, activePollingTimeoutRef.current);
-  }, [config, getWeight, status.isConnected, isScaleConnected]);
-
-  // Остановка активного polling
-  const stopActivePolling = useCallback(() => {
-    if (!isActivePollingRef.current) {
-      return;
-    }
-
-    LoggingService.equipmentLog('⏹️ [useEquipment]: Остановка активного polling');
-    setIsActivePolling(false);
-    isActivePollingRef.current = false;
-    activePollingErrorCountRef.current = 0;
-    isPollingRef.current = false;
-
-    if (activePollingIntervalRef.current) {
-      clearInterval(activePollingIntervalRef.current);
-      activePollingIntervalRef.current = null;
-    }
-
-    if (activePollingTimeoutRef.current) {
-      clearTimeout(activePollingTimeoutRef.current);
-      activePollingTimeoutRef.current = null;
-    }
-  }, []);
-
-  // Переключаемся с резервного на активный polling при обнаружении веса
-  useEffect(() => {
-    if (significantWeightDetected) {
-      if (isReservePollingRef.current) {
-        LoggingService.equipmentLog('⚖️ [useEquipment]: Переключаемся с резервного на активный polling из-за обнаружения веса.');
-        stopReservePolling();
-        startActivePolling();
-      }
-      setSignificantWeightDetected(false); // Сбрасываем триггер
-    }
-  }, [significantWeightDetected, startActivePolling, stopReservePolling]);
-
-  // Синхронизируем ref с состоянием isActivePolling
-  useEffect(() => {
-    isActivePollingRef.current = isActivePolling;
-  }, [isActivePolling]);
-
-  // Слушатель изменений URL для остановки polling при переходе между страницами
-  useEffect(() => {
-    let lastPath = window.location.pathname;
-
-    const handleLocationChange = () => {
-      const currentPath = window.location.pathname;
-      if (currentPath !== lastPath) {
-        lastPath = currentPath;
-        const isOnOrderPage = currentPath.includes('/orders/');
-        if (!isOnOrderPage) {
-          LoggingService.equipmentLog('🔄 [useEquipment]: Переход на другую страницу, останавливаем все polling');
-          if (isActivePolling) {
-            stopActivePolling();
-          }
-          if (isReservePolling) {
-            stopReservePolling();
-          }
-        }
-      }
-    };
-
-    // Слушаем изменения URL (для SPA)
-    window.addEventListener('popstate', handleLocationChange);
-
-    // Также проверяем при каждом рендере (для программной навигации)
-    const interval = setInterval(handleLocationChange, 2000); // Увеличиваем интервал до 2 секунд
-
-    return () => {
-      window.removeEventListener('popstate', handleLocationChange);
-      clearInterval(interval);
-    };
-  }, [isActivePolling, isReservePolling, stopActivePolling, stopReservePolling]);
-
-  // Очистка интервалов и таймаутов при размонтировании
-  useEffect(() => {
-    return () => {
-      if (activePollingIntervalRef.current) {
-        clearInterval(activePollingIntervalRef.current);
-      }
-      if (reservePollingIntervalRef.current) {
-        clearInterval(reservePollingIntervalRef.current);
-      }
-      if (activePollingTimeoutRef.current) {
-        clearTimeout(activePollingTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // Створюємо дії с мемоизацией для предотвращения пересоздания
   const actions: EquipmentActions = useMemo(() => ({
@@ -1093,12 +735,6 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     disconnectScanner,
     resetScanner,
     getWeight,
-
-    // Новые методы для активного polling
-    startActivePolling,
-    stopActivePolling,
-    startReservePolling,
-    stopReservePolling,
 
     updateConfig,
     loadConfig,
@@ -1114,10 +750,6 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     getWeight,
     checkScaleHealth,
     attemptReconnect,
-    startActivePolling,
-    stopActivePolling,
-    startReservePolling,
-    stopReservePolling,
     updateConfig,
     loadConfig,
     saveConfig,

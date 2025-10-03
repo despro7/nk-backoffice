@@ -3,45 +3,92 @@
 
 export type SoundEvent = 'pending' | 'success' | 'done' | 'error' | 'stable' | 'unstable';
 
-export function playTone(frequency: number, duration: number, waveform: OscillatorType = 'sine', volume = 0.3) {
+// Глобальный AudioContext для избежания предупреждений
+let globalAudioContext: AudioContext | null = null;
+let isAudioContextInitialized = false;
+
+// Инициализация AudioContext при первом пользовательском взаимодействии
+export function initAudioContext(): AudioContext | null {
+  if (isAudioContextInitialized && globalAudioContext) {
+    return globalAudioContext;
+  }
+
   try {
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-    oscillator.type = waveform;
-    gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + duration);
-  } catch {}
+    globalAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    isAudioContextInitialized = true;
+    return globalAudioContext;
+  } catch (error) {
+    console.warn('Не удалось создать AudioContext:', error);
+    return null;
+  }
+}
+
+// Функция для возобновления AudioContext если он приостановлен
+async function ensureAudioContextResumed(): Promise<AudioContext | null> {
+  const audioContext = initAudioContext();
+  if (!audioContext) return null;
+
+  if (audioContext.state === 'suspended') {
+    try {
+      await audioContext.resume();
+    } catch (error) {
+      console.warn('Не удалось возобновить AudioContext:', error);
+      return null;
+    }
+  }
+
+  return audioContext;
+}
+
+export function playTone(frequency: number, duration: number, waveform: OscillatorType = 'sine', volume = 0.3) {
+  ensureAudioContextResumed().then(audioContext => {
+    if (!audioContext) return;
+
+    try {
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+      oscillator.type = waveform;
+      gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + duration);
+    } catch (error) {
+      console.warn('Ошибка воспроизведения тона:', error);
+    }
+  });
 }
 
 export function playNotificationSound(type: 'success' | 'unstable' | 'error') {
-  try {
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    let frequency = 800;
-    let duration = 0.2;
-    let waveform: OscillatorType = 'sine';
-    switch (type) {
-      case 'error': frequency = 400; duration = 0.5; break;
-      case 'unstable': frequency = 520; duration = 0.15; waveform = 'triangle'; break;
-      case 'success':
-      default: frequency = 800; duration = 0.2; break;
+  ensureAudioContextResumed().then(audioContext => {
+    if (!audioContext) return;
+
+    try {
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      let frequency = 800;
+      let duration = 0.2;
+      let waveform: OscillatorType = 'sine';
+      switch (type) {
+        case 'error': frequency = 400; duration = 0.5; break;
+        case 'unstable': frequency = 520; duration = 0.15; waveform = 'triangle'; break;
+        case 'success':
+        default: frequency = 800; duration = 0.2; break;
+      }
+      oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+      oscillator.type = waveform;
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + duration);
+    } catch (error) {
+      console.warn('Ошибка воспроизведения уведомления:', error);
     }
-    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-    oscillator.type = waveform;
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + duration);
-  } catch {}
+  });
 }
 
 export function playSoundChoice(choice: string, event: SoundEvent) {

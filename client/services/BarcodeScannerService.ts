@@ -1,10 +1,14 @@
 import { BarcodeData } from './EquipmentService';
+import { LoggingService } from './LoggingService';
 
 export interface ScannerConfig {
   autoConnect: boolean;
   timeout: number;
   continuousMode: boolean;
   scanTimeout?: number;
+  minScanSpeed?: number;
+  maxScanSpeed?: number;
+  minBarcodeLength?: number;
 }
 
 export interface ScannerEvent {
@@ -21,9 +25,14 @@ export class BarcodeScannerService {
   private keyboardListener: ((event: KeyboardEvent) => void) | null = null;
   private buffer: string = '';
   private lastScanTime: number = 0;
-  private scanTimeout: number = 500;
+  private scanTimeout: number = 300;
   private endScanTimer: number | null = null;
   private lastScanTimestamp: number = 0;
+  private lastScannedCode: string = '';
+  private keyTimestamps: number[] = [];
+  private minScanSpeed: number = 50; // Мінімальна швидкість між символами (мс)
+  private maxScanSpeed: number = 200; // Максимальна швидкість між символами (мс)
+  private minBarcodeLength: number = 5; // Мінімальна довжина баркоду
 
   // Singleton метод для получения инстанса
   public static getInstance(): BarcodeScannerService {
@@ -46,11 +55,20 @@ export class BarcodeScannerService {
       autoConnect: true,
       timeout: 5000,
       continuousMode: true,
-      scanTimeout: 500
+      scanTimeout: 300
     };
 
     if (this.config.scanTimeout !== undefined) {
       this.scanTimeout = this.config.scanTimeout;
+    }
+    if (this.config.minScanSpeed !== undefined) {
+      this.minScanSpeed = this.config.minScanSpeed;
+    }
+    if (this.config.maxScanSpeed !== undefined) {
+      this.maxScanSpeed = this.config.maxScanSpeed;
+    }
+    if (this.config.minBarcodeLength !== undefined) {
+      this.minBarcodeLength = this.config.minBarcodeLength;
     }
 
     // Первый код всегда обрабатывается
@@ -111,6 +129,16 @@ export class BarcodeScannerService {
         return;
       }
 
+      // Ігноруємо якщо користувач вводить в поле вводу
+      const activeElement = document.activeElement;
+      if (activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        (activeElement as HTMLElement).contentEditable === 'true'
+      )) {
+        return;
+      }
+
       // Игнорируем модификаторы и специальные клавиши
       if (event.ctrlKey || event.altKey || event.metaKey ||
           event.key === 'Shift' || event.key === 'Control' || event.key === 'Alt' ||
@@ -132,43 +160,48 @@ export class BarcodeScannerService {
 
 
       const currentTime = Date.now();
-
-      if (currentTime - this.lastScanTime < this.scanTimeout) {
-        // Продолжаем сканирование
-        if (event.key === 'Enter' || event.key === 'Tab' || event.key === 'Return') {
-          this.processScannedCode();
-        } else {
-          this.buffer += event.key;
-
-          if (this.buffer.length >= 3) {
-            if (this.endScanTimer) {
-              clearTimeout(this.endScanTimer);
-            }
-            this.endScanTimer = window.setTimeout(() => {
-              if (this.buffer.length >= 3 && this.buffer.trim()) {
-                this.processScannedCode();
-              }
-            }, this.scanTimeout * 1.5);
-          }
-        }
-      } else {
-        // Новый скан - полный сброс состояния
-        if (this.endScanTimer) {
-          clearTimeout(this.endScanTimer);
-          this.endScanTimer = null;
-        }
-
-        // Полный сброс буфера и всех связанных переменных
-        this.buffer = '';
-        this.buffer += event.key;
-
-
-        this.endScanTimer = window.setTimeout(() => {
-          if (this.buffer.length >= 3 && this.buffer.trim()) {
-            this.processScannedCode();
-          }
-        }, this.scanTimeout * 1.5);
+      
+      // Зберігаємо час натискання для аналізу швидкості
+      this.keyTimestamps.push(currentTime);
+      
+      // Зберігаємо лише останні 10 натискань
+      if (this.keyTimestamps.length > 10) {
+        this.keyTimestamps.shift();
       }
+
+      // Очищаємо попередній таймер якщо він є
+      if (this.endScanTimer) {
+        clearTimeout(this.endScanTimer);
+        this.endScanTimer = null;
+      }
+
+      // Додаємо символ до буфера
+      this.buffer += event.key;
+
+      // Якщо натиснули Enter/Tab - обробляємо код негайно
+      if (event.key === 'Enter' || event.key === 'Tab' || event.key === 'Return') {
+        this.processScannedCode();
+        return;
+      }
+
+      // Встановлюємо таймер для автоматичної обробки коду
+      // Якщо протягом scanTimeout не буде нових символів - обробляємо код
+      this.endScanTimer = window.setTimeout(() => {
+        if (this.buffer.length >= this.minBarcodeLength && this.buffer.trim()) {
+          // Перевіряємо швидкість вводу - має бути характерною для сканера
+          if (this.isLikelyBarcodeScanner()) {
+            this.processScannedCode();
+          } else {
+            // Швидкість не відповідає сканеру - очищаємо буфер
+            this.buffer = '';
+            this.keyTimestamps = [];
+          }
+        } else {
+          // Якщо код занадто короткий - очищаємо буфер
+          this.buffer = '';
+          this.keyTimestamps = [];
+        }
+      }, this.scanTimeout);
 
       this.lastScanTime = currentTime;
     };
@@ -201,8 +234,9 @@ export class BarcodeScannerService {
       if (cleanCode.length >= 3 && cleanCode.length <= 50) {
         const currentTime = Date.now();
 
-        // ПРОСТАЯ ЛОГИКА: если прошло меньше 2 секунд, игнорируем
-        if (currentTime - this.lastScanTimestamp < 2000) {
+        // Фільтруємо дублікати: якщо той самий код протягом останніх scanTimeout * 2
+        if (cleanCode === this.lastScannedCode && 
+            currentTime - this.lastScanTimestamp < this.scanTimeout * 2) {
           this.buffer = '';
           return;
         }
@@ -221,6 +255,7 @@ export class BarcodeScannerService {
 
 
         this.lastScanTimestamp = currentTime;
+        this.lastScannedCode = cleanCode;
 
         this.emitEvent({
           type: 'data',
@@ -232,6 +267,36 @@ export class BarcodeScannerService {
 
       this.buffer = '';
     }
+  }
+
+  private isLikelyBarcodeScanner(): boolean {
+    if (this.keyTimestamps.length < 3) {
+      return false;
+    }
+
+    // Обчислюємо середню швидкість між символами
+    let totalInterval = 0;
+    for (let i = 1; i < this.keyTimestamps.length; i++) {
+      totalInterval += this.keyTimestamps[i] - this.keyTimestamps[i - 1];
+    }
+    const averageInterval = totalInterval / (this.keyTimestamps.length - 1);
+
+    // Перевіряємо чи швидкість відповідає сканеру баркодів
+    const isCorrectSpeed = averageInterval >= this.minScanSpeed && averageInterval <= this.maxScanSpeed;
+    
+    // Перевіряємо чи всі інтервали приблизно однакові (стабільна швидкість)
+    let consistentSpeed = true;
+    for (let i = 1; i < this.keyTimestamps.length; i++) {
+      const interval = this.keyTimestamps[i] - this.keyTimestamps[i - 1];
+      if (interval < this.minScanSpeed * 0.5 || interval > this.maxScanSpeed * 1.5) {
+        consistentSpeed = false;
+        break;
+      }
+    }
+
+    LoggingService.equipmentLog(`🔍 [BarcodeScanner] Speed analysis: avg=${averageInterval.toFixed(1)}ms, consistent=${consistentSpeed}, likely=${isCorrectSpeed && consistentSpeed}`);
+
+    return isCorrectSpeed && consistentSpeed;
   }
 
   private detectBarcodeType(code: string): string {
@@ -304,6 +369,15 @@ export class BarcodeScannerService {
     if (newConfig.scanTimeout !== undefined) {
       this.scanTimeout = newConfig.scanTimeout;
     }
+    if (newConfig.minScanSpeed !== undefined) {
+      this.minScanSpeed = newConfig.minScanSpeed;
+    }
+    if (newConfig.maxScanSpeed !== undefined) {
+      this.maxScanSpeed = newConfig.maxScanSpeed;
+    }
+    if (newConfig.minBarcodeLength !== undefined) {
+      this.minBarcodeLength = newConfig.minBarcodeLength;
+    }
   }
 
   public getConfig(): ScannerConfig {
@@ -341,6 +415,8 @@ export class BarcodeScannerService {
     this.buffer = '';
     this.lastScanTime = 0;
     this.lastScanTimestamp = Date.now() - 3000; // Чтобы следующий скан прошел
+    this.lastScannedCode = '';
+    this.keyTimestamps = [];
 
     if (this.endScanTimer) {
       clearTimeout(this.endScanTimer);

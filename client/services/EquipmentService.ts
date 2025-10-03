@@ -38,10 +38,15 @@ export interface EquipmentConfig {
     autoConnect: boolean;
     timeout: number;
     scanTimeout?: number;
+    minScanSpeed?: number;
+    maxScanSpeed?: number;
+    minBarcodeLength?: number;
   };
   printer?: {
     enabled: boolean;
     name: string;
+    autoPrintOnComplete?: boolean;
+    autoPrintDelayMs?: number;
   };
 }
 

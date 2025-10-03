@@ -332,7 +332,7 @@ router.get('/weight-tolerance/values', authenticateToken, async (req, res) => {
     const { PrismaClient } = await import('@prisma/client');
     const prisma = new PrismaClient();
 
-    const [typeSetting, percentageSetting, absoluteSetting] = await Promise.all([
+    const [typeSetting, percentageSetting, absoluteSetting, maxToleranceSetting, minToleranceSetting, maxPortionsSetting, minPortionsSetting] = await Promise.all([
       prisma.settingsBase.findUnique({
         where: { key: 'weight_tolerance_type' }
       }),
@@ -341,13 +341,29 @@ router.get('/weight-tolerance/values', authenticateToken, async (req, res) => {
       }),
       prisma.settingsBase.findUnique({
         where: { key: 'weight_tolerance_absolute' }
+      }),
+      prisma.settingsBase.findUnique({
+        where: { key: 'weight_tolerance_max' }
+      }),
+      prisma.settingsBase.findUnique({
+        where: { key: 'weight_tolerance_min' }
+      }),
+      prisma.settingsBase.findUnique({
+        where: { key: 'weight_tolerance_max_portions' }
+      }),
+      prisma.settingsBase.findUnique({
+        where: { key: 'weight_tolerance_min_portions' }
       })
     ]);
 
     res.json({
       type: typeSetting?.value || 'combined',
       percentage: percentageSetting ? parseFloat(percentageSetting.value) : 5,
-      absolute: absoluteSetting ? parseFloat(absoluteSetting.value) : 20
+      absolute: absoluteSetting ? parseFloat(absoluteSetting.value) : 20,
+      maxTolerance: maxToleranceSetting ? parseFloat(maxToleranceSetting.value) : 30,
+      minTolerance: minToleranceSetting ? parseFloat(minToleranceSetting.value) : 10,
+      maxPortions: maxPortionsSetting ? parseInt(maxPortionsSetting.value) : 12,
+      minPortions: minPortionsSetting ? parseInt(minPortionsSetting.value) : 1
     });
   } catch (error) {
     console.error('Error getting weight tolerance settings:', error);
@@ -362,47 +378,58 @@ router.put('/weight-tolerance/values', authenticateToken, async (req, res) => {
   try {
     const { PrismaClient } = await import('@prisma/client');
     const prisma = new PrismaClient();
-    
-    const { type, percentage, absolute } = req.body;
 
-    if (!type || percentage === undefined || absolute === undefined) {
+    const { maxTolerance, minTolerance, maxPortions, minPortions } = req.body;
+
+    if (maxTolerance === undefined || minTolerance === undefined || maxPortions === undefined || minPortions === undefined) {
       return res.status(400).json({
         success: false,
-        error: 'Type, percentage and absolute values are required'
+        error: 'MaxTolerance, minTolerance, maxPortions and minPortions values are required'
       });
     }
 
     // Використовуємо upsert для створення або оновлення налаштувань
     await Promise.all([
       prisma.settingsBase.upsert({
-        where: { key: 'weight_tolerance_type' },
-        update: { value: type },
+        where: { key: 'weight_tolerance_max' },
+        update: { value: maxTolerance?.toString() || '30' },
         create: {
-          key: 'weight_tolerance_type',
-          value: type,
-          description: 'Тип похибки ваг',
+          key: 'weight_tolerance_max',
+          value: maxTolerance?.toString() || '30',
+          description: 'Максимальна похибка ваги (г)',
           category: 'weight_tolerance',
           isActive: true
         }
       }),
       prisma.settingsBase.upsert({
-        where: { key: 'weight_tolerance_percentage' },
-        update: { value: percentage.toString() },
+        where: { key: 'weight_tolerance_min' },
+        update: { value: minTolerance?.toString() || '10' },
         create: {
-          key: 'weight_tolerance_percentage',
-          value: percentage.toString(),
-          description: 'Відсоткова похибка ваги',
+          key: 'weight_tolerance_min',
+          value: minTolerance?.toString() || '10',
+          description: 'Мінімальна похибка ваги (г)',
           category: 'weight_tolerance',
           isActive: true
         }
       }),
       prisma.settingsBase.upsert({
-        where: { key: 'weight_tolerance_absolute' },
-        update: { value: absolute.toString() },
+        where: { key: 'weight_tolerance_max_portions' },
+        update: { value: maxPortions?.toString() || '12' },
         create: {
-          key: 'weight_tolerance_absolute',
-          value: absolute.toString(),
-          description: 'Абсолютна похибка ваги в грамах',
+          key: 'weight_tolerance_max_portions',
+          value: maxPortions?.toString() || '12',
+          description: 'Максимальна кількість порцій для максимальної похибки',
+          category: 'weight_tolerance',
+          isActive: true
+        }
+      }),
+      prisma.settingsBase.upsert({
+        where: { key: 'weight_tolerance_min_portions' },
+        update: { value: minPortions?.toString() || '1' },
+        create: {
+          key: 'weight_tolerance_min_portions',
+          value: minPortions?.toString() || '1',
+          description: 'Мінімальна кількість порцій для максимальної похибки',
           category: 'weight_tolerance',
           isActive: true
         }
@@ -410,9 +437,14 @@ router.put('/weight-tolerance/values', authenticateToken, async (req, res) => {
     ]);
 
     res.json({
-      type: type,
-      percentage: parseFloat(percentage),
-      absolute: parseFloat(absolute)
+      // Старые настройки для обратной совместимости (всегда возвращаем фиксированные значения)
+      type: 'combined',
+      percentage: 5,
+      absolute: 20,
+      maxTolerance: parseFloat(maxTolerance || 30),
+      minTolerance: parseFloat(minTolerance || 10),
+      maxPortions: parseInt(maxPortions || 12),
+      minPortions: parseInt(minPortions || 1)
     });
   } catch (error) {
     console.error('Error updating weight tolerance settings:', error);

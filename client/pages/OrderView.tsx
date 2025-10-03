@@ -20,6 +20,20 @@ import { addToast } from '@heroui/toast';
 import PrinterService from '../services/printerService';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { WeightDisplayWidget } from '@/components/WeightDisplayWidget';
+import { LoggingService } from '@/services/LoggingService';
+import { calcTolerance, calcBoxTolerance, calcCumulativeTolerance } from '@/lib/utils';
+import { ToastService } from '@/services/ToastService';
+
+// Интерфейс для настроек tolerance
+interface ToleranceSettings {
+  type: 'percentage' | 'absolute' | 'combined';
+  percentage: number;
+  absolute: number;
+  maxTolerance: number;
+  minTolerance: number;
+  maxPortions: number;
+  minPortions: number;
+}
 
 // Типы для данных комплектации
 interface OrderChecklistItem {
@@ -391,17 +405,32 @@ export default function OrderView() {
     const allCollected = checklistItems.length > 0 && checklistItems.every(item =>
       item.status === 'done' || item.status === 'confirmed' || item.status === 'success'
     );
-    setIsWeightWidgetActive(!allCollected);
+    setIsWeightWidgetActive(!allCollected && equipmentState.isScaleConnected);
     setIsWeightWidgetPaused(allCollected);
   }, [checklistItems]);
 
+  // --- Керування polling режимами ---
+  const [pollingMode, setPollingMode] = useState<'active' | 'reserve' | 'auto'>('auto');
+  const activePollingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [lastWeightActivityTime, setLastWeightActivityTime] = useState<number>(Date.now());
+
   // --- Sound settings state ---
-  type OrderSoundEvent = 'pending' | 'success' | 'done' | 'error';
+  type OrderSoundEvent = 'pending' | 'success' | 'error';
   const [orderSoundSettings, setOrderSoundSettings] = useState<Record<OrderSoundEvent, string>>({
     pending: 'default',
     success: 'default',
-    done: 'default',
     error: 'default',
+  });
+
+  // --- Tolerance settings state ---
+  const [toleranceSettings, setToleranceSettings] = useState<ToleranceSettings>({
+    type: 'combined',
+    percentage: 5,
+    absolute: 20,
+    maxTolerance: 30,
+    minTolerance: 10,
+    maxPortions: 12,
+    minPortions: 1
   });
 
   // Завантажуємо налаштування звуків з API під час монтування
@@ -416,10 +445,22 @@ export default function OrderView() {
       .catch(() => {/* ignore */});
   }, []);
 
+  // Завантажуємо налаштування tolerance з API під час монтування
+  useEffect(() => {
+    fetch('/api/settings/weight-tolerance/values', { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          setToleranceSettings(data);
+        }
+      })
+      .catch(() => {/* ignore */});
+  }, []);
+
   // Універсальна функція для програвання звуку статусу з урахуванням налаштувань
   const playOrderStatusSound = (status: string) => {
     // status: 'pending' | 'success' | 'done' | 'error' | ...
-    if (['pending', 'success', 'done', 'error'].includes(status)) {
+    if (['pending', 'success', 'error'].includes(status)) {
       playSoundChoice(orderSoundSettings[status as OrderSoundEvent], status as OrderSoundEvent);
     }
   };
@@ -434,7 +475,7 @@ export default function OrderView() {
       if (!prevItem) return;
       if (prevItem.status !== item.status) {
         // Only play for tracked statuses
-        if (["pending", "success", "done", "error"].includes(item.status)) {
+        if (["pending", "success", "error"].includes(item.status)) {
           playOrderStatusSound(item.status);
         }
       }
@@ -446,6 +487,9 @@ export default function OrderView() {
   const [showPrintTTN, setShowPrintTTN] = useState(false); // Стан для показу кнопки друку ТТН
   const [isLoadingNextOrder, setIsLoadingNextOrder] = useState(false); // Стан для завантаження наступного замовлення
   const [showNextOrder, setShowNextOrder] = useState(false); // Стан для показу кнопки "Наступне замовлення"
+  const [nextOrderNumber, setNextOrderNumber] = useState<string | undefined>(); // Номер наступного замовлення
+  const [nextOrderDate, setNextOrderDate] = useState<string | undefined>(); // Дата наступного замовлення
+  const [showNoMoreOrders, setShowNoMoreOrders] = useState(false); // Стан для показу повідомлення про відсутність замовлень
   const [isReadyToShip, setIsReadyToShip] = useState(false); // Стан для відстеження статусу id3
   const { isDebugMode } = useDebug(); // Режим відладки з контексту
 
@@ -456,6 +500,7 @@ export default function OrderView() {
       fetchOrderDetails(externalId);
     }
   }, [externalId]);
+
 
   // Оновлюємо title сторінки при зміні замовлення
   useEffect(() => {
@@ -536,7 +581,6 @@ export default function OrderView() {
   }, [activeBoxIndex]);
 
 
-
   // Функція скидання стану сканування
   const resetScanState = useCallback(() => {
     setLastScannedCode('');
@@ -553,23 +597,97 @@ export default function OrderView() {
     });
   }, []);
 
+  // Функції для керування polling режимами
+  const startActivePolling = useCallback(() => {
+    const activePollingInterval = equipmentState.config?.scale?.activePollingInterval || 1000;
+    const activePollingDuration = equipmentState.config?.scale?.activePollingDuration || 30000;
+    const reservePollingInterval = equipmentState.config?.scale?.reservePollingInterval || 5000;
+
+    // LoggingService.equipmentLog(`🔄 [OrderView] Запуск активного polling на ${activePollingDuration / 1000} секунд з інтервалом ${activePollingInterval}мс`);
+    setPollingMode('active');
+    setLastWeightActivityTime(Date.now());
+    
+    // Очищаємо попередній таймаут
+    if (activePollingTimeoutRef.current) {
+      clearTimeout(activePollingTimeoutRef.current);
+      activePollingTimeoutRef.current = null;
+    }
+    
+    // Встановлюємо новий таймаут для повернення до резервного режиму
+    activePollingTimeoutRef.current = setTimeout(() => {
+      LoggingService.equipmentLog('⏰ [OrderView] Таймаут активного polling, переходимо до резервного');
+      setPollingMode('reserve');
+    }, activePollingDuration);
+  }, [equipmentState.config?.scale?.activePollingDuration]);
+
+  const handlePollingModeChange = useCallback((mode: 'active' | 'reserve') => {
+    LoggingService.equipmentLog(`🔄 [OrderView] WeightDisplayWidget змінив режим polling на: ${mode}`);
+    setPollingMode(mode);
+  }, []);
+
+  // Запуск активного polling при завантаженні сторінки замовлення
+  useEffect(() => {
+    if (externalId && equipmentState.config?.scale) {
+      LoggingService.equipmentLog('🔄 [OrderView] Завантаження сторінки замовлення - запускаємо активний polling');
+      startActivePolling();
+    }
+
+    // Очищення таймаутів при розмонтуванні
+    return () => {
+      if (activePollingTimeoutRef.current) {
+        clearTimeout(activePollingTimeoutRef.current);
+        activePollingTimeoutRef.current = null;
+      }
+    };
+  }, [externalId, startActivePolling]);
+
+  // Вычисляем накопленную погрешность для отображения в WeightDisplayWidget
+  const getCumulativeTolerance = useCallback(() => {
+    // Получаем общее количество порций на платформе для расчета динамической tolerance
+    const currentBoxItems = checklistItems.filter(item =>
+      (item.boxIndex || 0) === activeBoxIndex
+    );
+
+    // Подсчитываем количество порций, которые уже на платформе + ожидающие взвешивания (pending)
+    let totalPortions = 0;
+    currentBoxItems.forEach(item => {
+      if (item.type === 'product' && item.status !== 'default') {
+        // Количество порций = quantity (если указано) или 1
+        totalPortions += item.quantity || 1;
+      }
+    });
+
+    // console.log('⚖️ [OrderView] Порції на платформі (+ очікують взвешивания):', totalPortions);
+
+    // Получаем вес коробки
+    const boxItem = currentBoxItems.find(item => item.type === 'box');
+    const boxWeight = boxItem ? boxItem.expectedWeight : 0;
+
+    // Рассчитываем накопленную tolerance
+    return calcCumulativeTolerance(
+      boxWeight,
+      totalPortions,
+      toleranceSettings
+    );
+  }, [checklistItems, activeBoxIndex, toleranceSettings]);
+
   // Вычисляем ожидаемый вес для отображения в WeightDisplayWidget
   const getExpectedWeight = useCallback(() => {
     // 1. Коробка в статусе awaiting_confirmation
     const awaitingBox = checklistItems.find(item =>
-      item.status === 'awaiting_confirmation' &&
       item.type === 'box' &&
+      ['awaiting_confirmation', 'error', 'default'].includes(item.status) &&
       (item.boxIndex || 0) === activeBoxIndex
     );
     if (awaitingBox) {
-      console.log('[getExpectedWeight] Коробка awaiting_confirmation:', awaitingBox.name, awaitingBox.expectedWeight);
+      // LoggingService.equipmentLog(`📦 [getExpectedWeight] Коробка awaiting_confirmation: ${awaitingBox.name}, ${awaitingBox.expectedWeight}`);
       return awaitingBox.expectedWeight;
     }
 
     // 2. Товар в статусе pending
     const pendingItem = checklistItems.find(item =>
-      item.status === 'pending' &&
       item.type === 'product' &&
+      ['pending', 'error'].includes(item.status) &&
       (item.boxIndex || 0) === activeBoxIndex
     );
 
@@ -584,7 +702,7 @@ export default function OrderView() {
     const boxItem = currentBoxItems.find(item => item.type === 'box');
     if (boxItem && ['done', 'confirmed', 'success'].includes(boxItem.status)) {
       cumulativeWeight += boxItem.expectedWeight;
-      console.log('[getExpectedWeight] Коробка учтена:', boxItem.name, boxItem.status, boxItem.expectedWeight);
+      // LoggingService.equipmentLog(`📦 [getExpectedWeight] Коробка учтена: ${boxItem.name}, ${boxItem.status}, ${boxItem.expectedWeight}`);
     }
 
     // 5. Вес товаров: считаем done и success как взвешенные
@@ -593,13 +711,13 @@ export default function OrderView() {
     );
     doneItems.forEach(item => {
       cumulativeWeight += item.expectedWeight;
-      console.log('[getExpectedWeight] Товар учтен:', item.name, item.status, item.expectedWeight);
+      // LoggingService.equipmentLog(`📦 [getExpectedWeight] Товар учтен: ${item.name}, ${item.status}, ${item.expectedWeight}`);
     });
 
     // 6. Если есть pending, добавляем его вес
     if (pendingItem) {
       cumulativeWeight += pendingItem.expectedWeight;
-      console.log('[getExpectedWeight] Текущий pending:', pendingItem.name, pendingItem.expectedWeight);
+      // LoggingService.equipmentLog(`📦 [getExpectedWeight] Текущий pending: ${pendingItem.name}, ${pendingItem.expectedWeight}`);
     } else {
       // 7. Если есть error, ожидаем именно его (НЕ переходим к следующему default)
       const errorItem = currentBoxItems.find(item =>
@@ -607,7 +725,7 @@ export default function OrderView() {
       );
       if (errorItem) {
         cumulativeWeight += errorItem.expectedWeight;
-        console.log('[getExpectedWeight] Ожидаем повторное взвешивание error:', errorItem.name, errorItem.expectedWeight);
+        // LoggingService.equipmentLog(`📦 [getExpectedWeight] Ожидаем повторное взвешивание error: ${errorItem.name}, ${errorItem.expectedWeight}`);
       } else {
         // 8. Если нет error/pending, ищем следующий default
         const nextItem = currentBoxItems.find(item =>
@@ -615,27 +733,27 @@ export default function OrderView() {
         );
         if (nextItem) {
           cumulativeWeight += nextItem.expectedWeight;
-          console.log('[getExpectedWeight] Следующий default:', nextItem.name, nextItem.expectedWeight);
+          // LoggingService.equipmentLog(`📦 [getExpectedWeight] Следующий default: ${nextItem.name}, ${nextItem.expectedWeight}`);
         }
       }
     }
 
     // 8. Логируем итоговое значение
     if (currentBoxItems.length > 0) {
-      console.log('[getExpectedWeight] Итог:', cumulativeWeight);
+      // LoggingService.equipmentLog(`📦 [getExpectedWeight] Итог: ${cumulativeWeight}`);
       return cumulativeWeight;
     } else {
-      console.log('[getExpectedWeight] В коробке нет товаров');
+      // LoggingService.equipmentLog('📦 [getExpectedWeight] В коробке нет товаров');
       return null;
     }
   }, [checklistItems, activeBoxIndex]);
 
   // Обработка изменения веса от WeightDisplayWidget
   const handleWeightChange = useCallback((weight: number | null) => {
-    console.log('⚖️ [OrderView] Получен вес от WeightDisplayWidget:', weight);
+    // LoggingService.equipmentLog(`📦 ⚖️ [OrderView] Получен вес от WeightDisplayWidget: ${weight}`);
     
     if (weight === null) {
-      // console.log('⚖️ [OrderView] Вес null, игнорируем');
+      // LoggingService.equipmentLog('📦 ⚖️ [OrderView] Вес null, игнорируем');
       return;
     }
 
@@ -699,9 +817,9 @@ export default function OrderView() {
         
         // Для коробки ожидаемый вес - это только вес коробки
         const expectedWeight = awaitingBox.expectedWeight;
-        const tolerance = Math.max(expectedWeight * 0.2, 0.1); // 20% или минимум 100г
-        const minWeight = expectedWeight - tolerance;
-        const maxWeight = expectedWeight + tolerance;
+        const tolerance = calcBoxTolerance(expectedWeight); // 10% или минимум 10г
+        const minWeight = expectedWeight - tolerance / 1000; // переводим граммы в кг
+        const maxWeight = expectedWeight + tolerance / 1000; // переводим граммы в кг
 
         const isWeightValid = weight >= minWeight && weight <= maxWeight;
 
@@ -786,10 +904,10 @@ export default function OrderView() {
           });
 
           // Показываем уведомление об ошибке
-          addToast({
-            title: "Вага коробки не відповідає",
-            description: `${awaitingBox.name}: ${weight.toFixed(3)} кг (очікувано: ${expectedWeight.toFixed(3)} ± ${tolerance.toFixed(3)} кг)`,
-            color: "warning",
+          ToastService.show({
+            title: `${awaitingBox.name}: Поточна вага не коректна!`,
+            description: `Очікувано: ${expectedWeight.toFixed(3)}кг ± ${tolerance.toFixed(0)}г. Фактична вага: ${weight.toFixed(3)}кг`,
+            color: "danger",
             timeout: 5000
           });
 
@@ -808,10 +926,6 @@ export default function OrderView() {
 
           return updatedItems;
         }
-      } else if (completedBox) {
-        console.log('🚫 [OrderView] Коробка уже взвешена (статус:', completedBox.status, '), пропускаем взвешивание коробки:', completedBox.name);
-      } else {
-        console.log('ℹ️ [OrderView] Нет коробки для взвешивания, переходим к товарам');
       }
 
       // Если коробка не ожидает взвешивания, ищем товар со статусом 'pending'
@@ -833,27 +947,61 @@ export default function OrderView() {
 
       // Вычисляем ожидаемый накопительный вес
       const expectedCumulativeWeight = calculateExpectedCumulativeWeight(pendingItem);
-      const tolerance = pendingItem.expectedWeight * 0.1; // 10% допуск для товара
-      const minWeight = expectedCumulativeWeight - tolerance;
-      const maxWeight = expectedCumulativeWeight + tolerance;
+
+      // Получаем общее количество порций на платформе для расчета динамической tolerance
+      const currentBoxItems = prevItems.filter(item =>
+        (item.boxIndex || 0) === activeBoxIndex
+      );
+
+      // Подсчитываем общее количество порций, которые будут на платформе после добавления текущего товара
+      let totalPortions = 0;
+
+      // Добавляем все уже взвешенные порции
+      currentBoxItems.forEach(item => {
+        if (item.type === 'product' && ['done', 'success', 'confirmed'].includes(item.status)) {
+          totalPortions += item.quantity || 1;
+        }
+      });
+
+      // Добавляем текущий товар, который мы взвешиваем
+      totalPortions += pendingItem.quantity || 1;
+
+      // Получаем вес коробки
+      const boxItem = currentBoxItems.find(item => item.type === 'box');
+      const boxWeight = boxItem && (boxItem.status === 'done' || boxItem.status === 'confirmed' || boxItem.status === 'success')
+        ? boxItem.expectedWeight
+        : 0;
+
+      // Рассчитываем накопленную tolerance
+      const cumulativeTolerance = calcCumulativeTolerance(
+        boxWeight,
+        totalPortions,
+        toleranceSettings
+      );
+
+      // console.log('⚖️ [OrderView] Загальна кількість порцій (після додавання товару):', totalPortions);
+      // console.log('⚖️ [OrderView] Накопичена похибка:', cumulativeTolerance);
+
+      const minWeight = expectedCumulativeWeight - cumulativeTolerance / 1000; // переводим граммы в кг
+      const maxWeight = expectedCumulativeWeight + cumulativeTolerance / 1000; // переводим граммы в кг
 
       const isWeightValid = weight >= minWeight && weight <= maxWeight;
 
-      console.log('⚖️ [OrderView] Взвешиваем товар:', pendingItem.name);
-      console.log('⚖️ [OrderView] Накопительная проверка веса:', {
-        currentItem: pendingItem.name,
-        currentItemWeight: pendingItem.expectedWeight,
-        expectedCumulative: expectedCumulativeWeight,
-        received: weight,
-        tolerance: tolerance,
-        min: minWeight,
-        max: maxWeight,
-        isValid: isWeightValid
-      });
+      // console.log('⚖️ [OrderView] Взвешиваем товар:', pendingItem.name);
+      // console.log('⚖️ [OrderView] Накопительная проверка веса:', {
+      //   currentItem: pendingItem.name,
+      //   currentItemWeight: pendingItem.expectedWeight,
+      //   expectedCumulative: expectedCumulativeWeight,
+      //   received: weight,
+      //   tolerance: tolerance,
+      //   min: minWeight,
+      //   max: maxWeight,
+      //   isValid: isWeightValid
+      // });
 
       if (isWeightValid) {
         // Вес соответствует - переводим в success, затем в done
-        console.log('✅ [OrderView] Вес товара соответствует ожидаемому');
+        // console.log('✅ [OrderView] Вес товара соответствует ожидаемому');
         
         const updatedItems = prevItems.map(item => {
           if (item.id === pendingItem.id) {
@@ -915,9 +1063,9 @@ export default function OrderView() {
         });
 
         // Показываем уведомление об ошибке
-        addToast({
+        ToastService.show({
           title: "Вага не відповідає",
-          description: `${pendingItem.name}: ${weight.toFixed(3)} кг (очікувано: ${expectedCumulativeWeight.toFixed(3)} ± ${tolerance.toFixed(3)} кг)`,
+          description: `${pendingItem.name}: ${weight.toFixed(3)}кг (очікувано: ${expectedCumulativeWeight.toFixed(3)} ± ${(cumulativeTolerance).toFixed(0)}г)`,
           color: "danger",
           timeout: 5000
         });
@@ -966,7 +1114,9 @@ export default function OrderView() {
 
       setTimeout(() => {
         setShowNextOrder(true);
-      }, 2000);
+        // Получаем номер следующего заказа
+        fetchNextOrderNumber();
+      }, 1000);
 
     } catch (error) {
       console.error('❌ Ошибка печати ТТН:', error);
@@ -977,73 +1127,90 @@ export default function OrderView() {
     }
   }, [order?.ttn, order?.provider, isPrintingTTN, equipmentState.config]);
 
+  // Универсальная функция для получения следующего заказа с умной логикой поиска
+  const getNextOrder = useCallback(async (filterByStatus: boolean = true) => {
+    if (!externalId) return null;
+
+    try {
+      
+      // Получаем список заказов, отсортированный по дате (новые сначала)
+      const response = await apiCall('/api/orders?limit=100&sortBy=orderDate&sortOrder=desc');
+      
+      if (!response.ok) {
+        console.warn('⚠️ [GET NEXT ORDER] Не удалось получить список заказов');
+        return null;
+      }
+
+      const ordersData = await response.json();
+      let orders = ordersData.data;
+      
+      // Фильтруем заказы по статусу '2' (в обработке), если требуется
+      if (filterByStatus) {
+        const originalOrders = orders.length;
+        orders = orders.filter((order: any) => order.status === '2');
+      }
+      
+      if (orders.length === 0) {
+        console.warn('⚠️ [GET NEXT ORDER] Нет заказов для перехода');
+        return null;
+      }
+      
+      // Находим текущий заказ в отфильтрованном списке
+      const currentOrderIndex = orders.findIndex((order: any) => order.externalId === externalId);
+      
+      if (currentOrderIndex === -1) {
+        console.warn('⚠️ [GET NEXT ORDER] Текущий заказ не найден в отфильтрованном списке');
+        console.warn('⚠️ [GET NEXT ORDER] Доступные заказы:', orders.map((o: any) => ({ id: o.externalId, status: o.status, number: o.orderNumber, date: o.orderDate })));
+        return null;
+      }
+
+      // Умная логика поиска следующего заказа:
+      // 1. Сначала ищем следующий по дате (более новый)
+      // 2. Если нет, ищем предыдущий по дате (более старый)
+      let nextOrder = null;
+      let searchType = '';
+
+      // 1. Ищем следующий по дате (более новый заказ)
+      if (currentOrderIndex > 0) {
+        nextOrder = orders[currentOrderIndex - 1]; // Более новый заказ (индекс меньше)
+        searchType = 'следующий по дате (более новый)';
+      } else {
+        // 2. Если нет более новых, ищем предыдущий по дате (более старый)
+        if (currentOrderIndex < orders.length - 1) {
+          nextOrder = orders[currentOrderIndex + 1]; // Более старый заказ (индекс больше)
+          searchType = 'предыдущий по дате (более старый)';
+        } else {
+          return null;
+        }
+      }
+      return {
+        ...nextOrder,
+        formattedDate: nextOrder.orderDate ? new Date(nextOrder.orderDate).toLocaleDateString('uk-UA') : null
+      };
+    } catch (error) {
+      console.error('❌ [GET NEXT ORDER] Ошибка получения следующего заказа:', error);
+      return null;
+    }
+  }, [externalId, apiCall]);
+
   // Функция для перехода к следующему заказу
   const handleNextOrder = useCallback(async () => {
-    console.log('🚀 [NEXT ORDER] Нажата кнопка "Наступне замовлення"');
-    console.log('📋 [NEXT ORDER] Текущий externalId:', externalId);
-    console.log('⏳ [NEXT ORDER] isLoadingNextOrder:', isLoadingNextOrder);
-
     if (!externalId || isLoadingNextOrder) {
-      console.log('❌ [NEXT ORDER] Прерываем выполнение: externalId отсутствует или уже выполняется');
       return;
     }
 
     try {
-      console.log('🔄 [NEXT ORDER] Начинаем выполнение...');
       setIsLoadingNextOrder(true);
 
-      // 1. Получаем список заказов для нахождения следующего
-      console.log('📊 [NEXT ORDER] Шаг 1: Получаем список заказов...');
-      const response = await apiCall('/api/orders?limit=100&sortBy=orderDate&sortOrder=desc');
-      console.log('📊 [NEXT ORDER] Ответ от API:', response.ok ? 'OK' : 'ERROR', response.status);
-
-      if (!response.ok) {
-        throw new Error('Не вдалося отримати список замовлень');
+      // 1. Получаем следующий заказ с фильтрацией по статусу '2' (в обработке)
+      const nextOrder = await getNextOrder(true); // Фильтруем по статусу '2'
+      
+      if (!nextOrder) {
+        throw new Error('Не знайдено наступного замовлення зі статусом 2 (в обробці)');
       }
-
-      const ordersData = await response.json();
-      const orders = ordersData.data;
-      console.log('📊 [NEXT ORDER] Получено заказов:', orders.length);
-      console.log('📊 [NEXT ORDER] Первые 3 заказа:', orders.slice(0, 3).map(o => ({ id: o.externalId, number: o.orderNumber })));
-
-      // 2. Находим текущий заказ в списке
-      console.log('🔍 [NEXT ORDER] Шаг 2: Ищем текущий заказ в списке...');
-      const currentOrderIndex = orders.findIndex((order: any) => order.externalId === externalId);
-      console.log('🔍 [NEXT ORDER] Индекс текущего заказа:', currentOrderIndex);
-
-      if (currentOrderIndex === -1) {
-        throw new Error('Поточне замовлення не знайдено в списку');
-      }
-
-      console.log('✅ [NEXT ORDER] Текущий заказ найден:', {
-        externalId: orders[currentOrderIndex].externalId,
-        orderNumber: orders[currentOrderIndex].orderNumber,
-        index: currentOrderIndex
-      });
-
-      // 3. Определяем следующий заказ
-      console.log('🎯 [NEXT ORDER] Шаг 3: Определяем следующий заказ...');
-      let nextOrderIndex = currentOrderIndex + 1;
-      console.log('🎯 [NEXT ORDER] Предварительный индекс следующего заказа:', nextOrderIndex);
-
-      if (nextOrderIndex >= orders.length) {
-        // Если это последний заказ, переходим к первому
-        console.log('🔄 [NEXT ORDER] Достигнут конец списка, переходим к первому заказу');
-        nextOrderIndex = 0;
-      }
-
-      const nextOrder = orders[nextOrderIndex];
-      console.log('✅ [NEXT ORDER] Следующий заказ определен:', {
-        externalId: nextOrder.externalId,
-        orderNumber: nextOrder.orderNumber,
-        index: nextOrderIndex,
-        isFirstOrder: nextOrderIndex === 0 && currentOrderIndex === orders.length - 1
-      });
-
-      // 4. Меняем статус текущего заказа на "id3" (Готове до видправки)
-      console.log('📝 [NEXT ORDER] Шаг 4: Меняем статус текущего заказа...');
+      
+      // 2. Меняем статус текущего заказа на "id3" (Готове до видправки)
       const statusPayload = { status: 'id3' };
-      console.log('📝 [NEXT ORDER] Отправляем статус:', statusPayload);
 
       const statusResponse = await apiCall(`/api/orders/${externalId}/status`, {
         method: 'PUT',
@@ -1053,7 +1220,6 @@ export default function OrderView() {
         body: JSON.stringify(statusPayload),
       });
 
-      console.log('📝 [NEXT ORDER] Ответ от API статуса:', statusResponse.ok ? 'OK' : 'ERROR', statusResponse.status);
 
       if (!statusResponse.ok) {
         const errorText = await statusResponse.text();
@@ -1073,17 +1239,15 @@ export default function OrderView() {
         }
       }
 
-      // 5. Переходим к следующему заказу без перезагрузки страницы
-      console.log('🏁 [NEXT ORDER] Шаг 5: Переходим к следующему заказу...');
+      // 3. Переходим к следующему заказу без перезагрузки страницы
       const nextOrderUrl = `/orders/${nextOrder.externalId}`;
-      console.log('🏁 [NEXT ORDER] URL следующего заказа:', nextOrderUrl);
-
       navigate(nextOrderUrl);
-      console.log('✅ [NEXT ORDER] Навигация выполнена успешно');
 
       // Сбрасываем состояние кнопки для следующего заказа
       setShowNextOrder(false);
-      console.log('🔄 [NEXT ORDER] Состояние кнопки сброшено');
+      setNextOrderNumber(undefined);
+      setNextOrderDate(undefined);
+      setShowNoMoreOrders(false);
 
     } catch (error) {
       console.error('❌ [NEXT ORDER] Ошибка перехода к следующему заказу:', error);
@@ -1093,39 +1257,37 @@ export default function OrderView() {
       });
       alert(`Помилка: ${error instanceof Error ? error.message : 'Невідома помилка'}`);
     } finally {
-      console.log('🏁 [NEXT ORDER] Завершение выполнения функции');
       setIsLoadingNextOrder(false);
     }
-  }, [externalId, apiCall, isLoadingNextOrder, navigate]);
+  }, [externalId, isLoadingNextOrder, navigate, getNextOrder]);
+
+  // Функция для получения номера следующего заказа
+  const fetchNextOrderNumber = useCallback(async () => {
+    
+    // Сначала пробуем с фильтрацией по статусу '2' (в обработке)
+    const nextOrder = await getNextOrder(true);
+    if (nextOrder) {
+      setNextOrderNumber(nextOrder.orderNumber);
+      setNextOrderDate(nextOrder.formattedDate);
+      setShowNoMoreOrders(false); // Скрываем сообщение об отсутствии заказов
+    } else {
+      
+      // Если не найден с фильтрацией, пробуем без фильтрации для диагностики
+      const nextOrderWithoutFilter = await getNextOrder(false);
+      if (nextOrderWithoutFilter) {
+        // Не устанавливаем номер, так как заказ не подходит по статусу
+        setShowNoMoreOrders(true); // Показываем сообщение об отсутствии подходящих заказов
+      } else {
+        setShowNoMoreOrders(true); // Показываем сообщение об отсутствии заказов
+      }
+    }
+  }, [getNextOrder]);
 
   // useEffect(() => {
   //   if (externalId) {
   //     fetchOrderDetails(externalId);
   //   }
   // }, [externalId]);
-
-  // Функция для имитации сканирования
-  const handleSimulateScan = useCallback((itemId: string) => {
-    setChecklistItems(prevItems =>
-      prevItems.map(item => {
-        if (item.id === itemId) {
-          return { ...item, status: 'pending' };
-        }
-        // Сбрасываем статус других элементов в default
-        if (item.status === 'pending' && (item.boxIndex || 0) === activeBoxIndex) {
-          return { ...item, status: 'default' as const };
-        }
-        return item;
-      })
-    );
-
-    // Запускаем активный polling при переходе в pending статус
-    if (equipmentState.isScaleConnected) {
-      equipmentActions.startActivePolling();
-    } else {
-      equipmentActions.startReservePolling();
-    }
-  }, [activeBoxIndex, equipmentState.isScaleConnected]); // Убрана зависимость equipmentActions
 
   // Функция для установки статуса awaiting_confirmation для коробки
   const setBoxAwaitingConfirmation = useCallback((boxId: string) => {
@@ -1138,13 +1300,9 @@ export default function OrderView() {
       })
     );
 
-    // Запускаем активный polling при установке awaiting_confirmation для коробки
-    if (equipmentState.isScaleConnected) {
-      equipmentActions.startActivePolling();
-    } else {
-      equipmentActions.startReservePolling();
-    }
-  }, [equipmentState.isScaleConnected]); // Убрана зависимость equipmentActions
+    // Запускаємо активний polling при встановленні awaiting_confirmation для коробки
+    startActivePolling(); 
+  }, [startActivePolling]);
 
 
 
@@ -1350,6 +1508,9 @@ export default function OrderView() {
       setChecklistItems([]);
       // Сбрасываем состояние кнопки "Наступне замовлення" при загрузке нового заказа
       setShowNextOrder(false);
+      setNextOrderNumber(undefined);
+      setNextOrderDate(undefined);
+      setShowNoMoreOrders(false);
       const response = await apiCall(`/api/orders/${id}`);
       const data = await response.json();
       
@@ -1598,17 +1759,17 @@ export default function OrderView() {
                       return item;
                     })
                   );
-                  // Запускаємо polling ваги, якщо потрібно
-                  if (equipmentState.isScaleConnected) {
-                    equipmentActions.startActivePolling();
-                  } else {
-                    equipmentActions.startReservePolling();
-                  }
+                  // Запускаємо активний polling при переході товару в pending статус
+                  // console.log('🔄 [OrderView] Товар переведений в pending - запускаємо активний polling');
+                  startActivePolling();
                 }}
                 onPrintTTN={handlePrintTTN}
                 showPrintTTN={showPrintTTN}
                 onNextOrder={handleNextOrder}
                 showNextOrder={showNextOrder}
+                nextOrderNumber={nextOrderNumber}
+                nextOrderDate={nextOrderDate}
+                showNoMoreOrders={showNoMoreOrders}
               />
             </ErrorBoundary>
           )}
@@ -1636,9 +1797,12 @@ export default function OrderView() {
             <WeightDisplayWidget
               onWeightChange={handleWeightChange}
               expectedWeight={getExpectedWeight()}
+              cumulativeTolerance={getCumulativeTolerance()}
               className="w-full"
               isActive={isWeightWidgetActive}
               isPaused={isWeightWidgetPaused}
+              pollingMode={pollingMode}
+              onPollingModeChange={handlePollingModeChange}
             />
 
 

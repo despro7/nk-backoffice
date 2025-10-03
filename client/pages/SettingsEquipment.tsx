@@ -23,6 +23,20 @@ export const SettingsEquipment = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isConnectingScale, setIsConnectingScale] = useState(false);
 
+  // Debounce для налаштувань сканера
+  const scannerDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [scannerPendingChanges, setScannerPendingChanges] = useState<{[key: string]: any}>({});
+
+  // Функция для получения отображаемых названий полей сканера
+  const getScannerFieldDisplayName = (field: string): string => {
+    const names: Record<string, string> = {
+      timeout: 'Таймаут',
+      scanTimeout: 'Таймаут сканування',
+      autoConnect: 'Автопідключення'
+    };
+    return names[field] || field;
+  };
+
 
   // Состояние для теста сканера
   const [scannerTestResult, setScannerTestResult] = useState<string>('');
@@ -276,6 +290,10 @@ export const SettingsEquipment = () => {
       if (realtimeTestTimeout) {
         clearTimeout(realtimeTestTimeout);
       }
+      // Очищаем debounce таймаут для сканера
+      if (scannerDebounceTimeoutRef.current) {
+        clearTimeout(scannerDebounceTimeoutRef.current);
+      }
     };
   }, [realtimeTestInterval, realtimeTestTimeout]);
 
@@ -324,54 +342,87 @@ export const SettingsEquipment = () => {
 
 
   // Обновление настроек сканера с сохранением в БД
-  const updateScannerSetting = async (field: string, value: any) => {
+  // Debounced збереження налаштувань сканера
+  const debouncedSaveScannerSettings = useCallback(async (pendingChanges: {[key: string]: any}) => {
+    if (!localConfig || Object.keys(pendingChanges).length === 0) {
+      return;
+    }
+
     try {
-      console.log('🔧 updateScannerSetting called:', { field, value, localConfig: !!localConfig });
-
-      if (!localConfig) {
-        console.error('❌ updateScannerSetting: localConfig is null/undefined');
-        addToast({
-          title: "Помилка",
-          description: "Конфігурація не завантажена",
-          color: "danger",
-          timeout: 3000,
-        });
-        return;
-      }
-
       // Обновляем конфигурацию
       const updatedConfig: EquipmentConfig = {
         ...localConfig,
         scanner: {
           ...localConfig.scanner,
-          [field]: value,
+          ...pendingChanges,
         }
       };
-
-      console.log('🔧 updateScannerSetting: saving config:', updatedConfig.scanner);
 
       setLocalConfig(updatedConfig);
       await actions.saveConfig(updatedConfig);
 
-      console.log('✅ updateScannerSetting: config saved successfully');
-
       // Показываем уведомление об успешном сохранении
+      const changedFields = Object.keys(pendingChanges);
       addToast({
         title: "Налаштування збережено",
-        description: `Налаштування сканера "${getScannerFieldDisplayName(field)}" оновлено`,
+        description: `Налаштування сканера оновлено: ${changedFields.map(field => getScannerFieldDisplayName(field)).join(', ')}`,
         color: "success",
         timeout: 2000,
       });
+
+      // Очищаем pending changes
+      setScannerPendingChanges({});
     } catch (error) {
       console.error('❌ Помилка збереження налаштувань сканера:', error);
       addToast({
-        title: "Помилка",
+        title: "Помилка збереження",
         description: "Не вдалося зберегти налаштування сканера",
         color: "danger",
         timeout: 3000,
       });
     }
-  };
+  }, [localConfig, actions, getScannerFieldDisplayName]);
+
+  // Обновление настроек сканера с debounce
+  const updateScannerSetting = useCallback((field: string, value: any) => {
+
+    if (!localConfig) {
+      addToast({
+        title: "Помилка",
+        description: "Конфігурація не завантажена",
+        color: "danger",
+        timeout: 3000,
+      });
+      return;
+    }
+
+    // Обновляем локальную конфигурацию сразу для UI
+    const updatedConfig: EquipmentConfig = {
+      ...localConfig,
+      scanner: {
+        ...localConfig.scanner,
+        [field]: value,
+      }
+    };
+    setLocalConfig(updatedConfig);
+
+    // Добавляем изменение в pending changes
+    const newPendingChanges = {
+      ...scannerPendingChanges,
+      [field]: value,
+    };
+    setScannerPendingChanges(newPendingChanges);
+
+    // Очищаем предыдущий таймаут
+    if (scannerDebounceTimeoutRef.current) {
+      clearTimeout(scannerDebounceTimeoutRef.current);
+    }
+
+    // Устанавливаем новый таймаут на 1 секунду
+    scannerDebounceTimeoutRef.current = setTimeout(() => {
+      debouncedSaveScannerSettings(newPendingChanges);
+    }, 1000);
+  }, [localConfig, scannerPendingChanges, debouncedSaveScannerSettings]);
 
   // Обновление настроек весов только в локальном состоянии (без автосохранения)
   const updateScaleSetting = (field: string, value: any) => {
@@ -479,21 +530,13 @@ export const SettingsEquipment = () => {
     }
   };
 
-  // Функция для получения отображаемых названий полей сканера
-  const getScannerFieldDisplayName = (field: string): string => {
-    const names: Record<string, string> = {
-      timeout: 'Таймаут',
-      scanTimeout: 'Таймаут сканування',
-      autoConnect: 'Автопідключення'
-    };
-    return names[field] || field;
-  };
-
   // Функция для получения отображаемых названий полей принтера
   const getPrinterFieldDisplayName = (field: string): string => {
     const names: Record<string, string> = {
       enabled: 'Прямий друк',
       name: "Ім'я принтера",
+      autoPrintOnComplete: 'Автоматичний друк при завершенні замовлення',
+      autoPrintDelayMs: 'Затримка перед автоматичним друком',
     };
     return names[field] || field;
   };
@@ -1943,6 +1986,35 @@ export const SettingsEquipment = () => {
                   Увімкнути прямий друк
                 </Switch>
 
+                <Switch
+                  id="autoPrintOnComplete"
+                  isSelected={localConfig.printer?.autoPrintOnComplete || false}
+                  onValueChange={(value) => updatePrinterSetting("autoPrintOnComplete", value)}
+                  color="primary"
+                  isDisabled={!localConfig.printer?.enabled}
+                  classNames={{
+                    wrapper: "bg-secondary/50",
+                    thumbIcon: "bg-white/50",
+                  }}
+                >
+                  Автоматичний друк при завершенні замовлення
+                </Switch>
+
+                <Input
+                  id="autoPrintDelayMs"
+                  type="number"
+                  label="Затримка перед автоматичним друком (мс)"
+                  labelPlacement="outside"
+                  value={localConfig.printer?.autoPrintDelayMs?.toString() || "3000"}
+                  onValueChange={(value) => updatePrinterSetting("autoPrintDelayMs", parseInt(value) || 3000)}
+                  placeholder="3000"
+                  isDisabled={!localConfig.printer?.enabled || !localConfig.printer?.autoPrintOnComplete}
+                  min="1000"
+                  max="10000"
+                  step="500"
+                  description="Мінімум 1 секунда, максимум 10 секунд"
+                />
+
                 <Input
                   id="printerName"
                   label="Ім'я принтера"
@@ -1993,8 +2065,10 @@ export const SettingsEquipment = () => {
                     Знайти принтери
                   </Button>
                 </div>
-                <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
-                  <strong>QZ Tray:</strong> Дозволяє друкувати ZPL/EPL етикетки напряму на термопринтер.
+                <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded space-y-1">
+                  <p><strong>QZ Tray:</strong> Дозволяє друкувати ZPL/EPL етикетки напряму на термопринтер.</p>
+                  <p><strong>Автоматичний друк:</strong> Друкувати ТТН автоматично при завершенні замовлення, показі ТТН або в режимі налагодження.</p>
+                  <p><strong>Затримка:</strong> Час очікування перед автоматичним друком (1-10 секунд). Дозволяє користувачу побачити завершення замовлення.</p>
                 </div>
               </Card>
             </div>
@@ -2002,11 +2076,13 @@ export const SettingsEquipment = () => {
             <div className="flex flex-1 flex-col gap-8 h-fit">
               {/* Налаштування сканера */}
               <Card className="flex w-full flex-col gap-6 p-4 h-fit">
-                <h3 className="font-medium text-gray-400">Налаштування сканера</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium text-gray-400">Налаштування сканера</h3>
+                </div>
                 <Input
                   type="number"
                   id="timeout"
-                  label="Таймаут (мс)"
+                  label="Таймаут підключення сканера (мс)"
                   labelPlacement="outside"
                   className="block text-sm font-medium text-gray-700 mb-1"
                   value={localConfig.scanner?.timeout?.toString() || "5000"}
@@ -2015,11 +2091,42 @@ export const SettingsEquipment = () => {
                 <Input
                   type="number"
                   id="scanTimeout"
-                  label="Таймаут сканування (мс)"
+                  label="Таймаут сканування баркоду (мс)"
                   labelPlacement="outside"
                   className="block text-sm font-medium text-gray-700 mb-1"
                   value={localConfig?.scanner?.scanTimeout?.toString() || "300"}
                   onValueChange={(value) => updateScannerSetting("scanTimeout", parseInt(value))}
+                />
+                <Input
+                  type="number"
+                  id="minScanSpeed"
+                  label="Мінімальна швидкість сканування (мс)"
+                  labelPlacement="outside"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                  value={localConfig?.scanner?.minScanSpeed?.toString() || "50"}
+                  onValueChange={(value) => updateScannerSetting("minScanSpeed", parseInt(value))}
+                  description="Мінімальний інтервал між символами для розпізнавання як сканер"
+                />
+                <Input
+                  type="number"
+                  id="maxScanSpeed"
+                  label="Максимальна швидкість сканування (мс)"
+                  labelPlacement="outside"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                  value={localConfig?.scanner?.maxScanSpeed?.toString() || "200"}
+                  onValueChange={(value) => updateScannerSetting("maxScanSpeed", parseInt(value))}
+                  description="Максимальний інтервал між символами для розпізнавання як сканер"
+                />
+                <Input
+                  type="number"
+                  id="minBarcodeLength"
+                  label="Мінімальна довжина баркоду"
+                  labelPlacement="outside"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                  value={localConfig?.scanner?.minBarcodeLength?.toString() || "5"}
+                  min={0}
+                  onValueChange={(value) => updateScannerSetting("minBarcodeLength", parseInt(value))}
+                  description="Мінімальна кількість символів для обробки як баркод"
                 />
                 <Switch
                   id="autoConnect"
@@ -2123,6 +2230,7 @@ export const SettingsEquipment = () => {
                 <div className="text-xs text-gray-500 space-y-1">
                   <div><strong>Тест сканера:</strong> Відскануйте будь-який штрих-код протягом 5 секунд</div>
                   <div><strong>Порада:</strong> Якщо сканер не працює, перевірте налаштування scanTimeout (200-500ms)</div>
+                  <div><strong>Розпізнавання:</strong> Сканер розрізняє реальне сканування від вводу з клавіатури за швидкістю та довжиною</div>
                 </div>
               </Card>
             </div>

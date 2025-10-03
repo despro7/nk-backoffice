@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card } from '@heroui/react';
 import { Button } from '@heroui/button';
 import NumberFlow from '@number-flow/react';
@@ -12,29 +12,29 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 interface WeightDisplayWidgetProps {
   onWeightChange?: (weight: number | null) => void;
   expectedWeight?: number | null; // Очікувана вага для відображення
+  cumulativeTolerance?: number | null; // Накопичена похибка для відображення (в грамах)
   className?: string;
   isActive?: boolean; // Додаємо для автоматичного керування
   isPaused?: boolean; // Додаємо для фіксації ваги
+  pollingMode?: 'active' | 'reserve' | 'auto'; // Режим polling
+  onPollingModeChange?: (mode: 'active' | 'reserve') => void; // Callback при зміні режиму
 }
 
 export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) => {
   const {
     onWeightChange,
     expectedWeight,
+    cumulativeTolerance,
     className = '',
     isActive: isActiveProp,
-    isPaused: isPausedProp
+    isPaused: isPausedProp,
+    pollingMode = 'auto',
+    onPollingModeChange
   } = props;
-  // Логування змін expectedWeight
+
   const prevExpectedWeightRef = useRef<number | null | undefined>(expectedWeight);
   useEffect(() => {
     if (prevExpectedWeightRef.current !== expectedWeight) {
-      // eslint-disable-next-line no-console
-      // console.log('[WeightDisplayWidget] expectedWeight изменился:', {
-      //   prev: prevExpectedWeightRef.current,
-      //   next: expectedWeight,
-      //   time: new Date().toLocaleTimeString()
-      // });
       prevExpectedWeightRef.current = expectedWeight;
     }
   }, [expectedWeight]);
@@ -42,7 +42,10 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
   // Отримуємо параметри з налаштувань
   const [state] = useEquipmentFromAuth();
   const spikeThreshold = (state.config?.scale as any)?.amplitudeSpikeThresholdKg ?? 2.0;
-  const pollingInterval = (state.config?.scale as any)?.activePollingInterval ?? 1000;
+  const activePollingInterval = (state.config?.scale as any)?.activePollingInterval ?? 1000;
+  const reservePollingInterval = (state.config?.scale as any)?.reservePollingInterval ?? 5000;
+  const activePollingDuration = (state.config?.scale as any)?.activePollingDuration ?? 30000;
+  const weightThresholdForActive = (state.config?.scale as any)?.weightThresholdForActive ?? 0.010;
 
   // Стани компонента
   const [isActive, setIsActive] = useState(!!isActiveProp);
@@ -52,6 +55,7 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
       setIsActive(isActiveProp);
     }
   }, [isActiveProp]);
+
   const [isPaused, setIsPaused] = useState(!!isPausedProp);
   // Синхронізуємо локальний isPaused зі значенням пропа (для автоматичного режиму)
   useEffect(() => {
@@ -59,6 +63,11 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
       setIsPaused(isPausedProp);
     }
   }, [isPausedProp]);
+
+  // Стани для керування polling режимами
+  const [currentPollingMode, setCurrentPollingMode] = useState<'active' | 'reserve'>(pollingMode === 'active' ? 'active' : 'reserve');
+  const [activePollingTimeout, setActivePollingTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [lastWeightChangeTime, setLastWeightChangeTime] = useState<number>(Date.now());
   const [currentWeight, setCurrentWeight] = useState<number | null>(null);
   const [isStable, setIsStable] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -219,7 +228,7 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
 
   // Основна функція читання ваги з поліпшеною логікою
   const readWeight = async () => {
-    if (!isActive) return;
+    if (!isActive || !isConnected) return;
 
     try {
       const scaleService = ScaleService.getInstance();
@@ -306,7 +315,8 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
                   // console.log(`WeightDisplayWidget: Реальное изменение веса: ${lastDisplayedWeightRef.current}кг -> 0кг`);
                   lastDisplayedWeightRef.current = 0;
                   setLastUpdate(new Date());
-                  onWeightChange?.(0);
+                  // Відкладаємо виклик callback після завершення рендеру
+                  queueMicrotask(() => onWeightChange?.(0));
                 }
                 
                 // Скидаємо лічильник після показу
@@ -387,7 +397,11 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
                 // console.log(`WeightDisplayWidget: Реальное изменение веса: ${lastDisplayedWeightRef.current}кг -> ${weight}кг`);
                 lastDisplayedWeightRef.current = weight;
                 setLastUpdate(new Date());
-                onWeightChange?.(weight);
+                // Відкладаємо виклик callback після завершення рендеру
+                queueMicrotask(() => onWeightChange?.(weight));
+                
+                // Перевіряємо активність ваги для перемикання режиму
+                checkWeightActivity(weight);
               }
             }
           }
@@ -478,7 +492,15 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
     currentWeightRef.current = null;
     lastDisplayedWeightRef.current = null;
     anomalousValueRef.current = null;
-    
+
+    // Скидаємо стан polling режимів - синхронізуємо з пропом
+    if (pollingMode !== 'auto') {
+      setCurrentPollingMode(pollingMode === 'active' ? 'active' : 'reserve');
+    } else {
+      setCurrentPollingMode('reserve');
+    }
+    setLastWeightChangeTime(Date.now());
+
     // Очищаємо таймери
     if (tareTimeoutRef.current) {
       clearTimeout(tareTimeoutRef.current);
@@ -487,6 +509,10 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
     if (errorTimeoutRef.current) {
       clearTimeout(errorTimeoutRef.current);
       errorTimeoutRef.current = null;
+    }
+    if (activePollingTimeout) {
+      clearTimeout(activePollingTimeout);
+      setActivePollingTimeout(null);
     }
   };
 
@@ -515,15 +541,78 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
     }
   };
 
+  // Функції для керування polling режимами
+  const switchToActivePolling = useCallback(() => {
+    setCurrentPollingMode(prevMode => {
+      if (prevMode === 'active') return prevMode;
+
+      setLastWeightChangeTime(Date.now());
+      queueMicrotask(() => onPollingModeChange?.('active'));
+
+      // Очищаємо попередній таймаут
+      if (activePollingTimeout) {
+        clearTimeout(activePollingTimeout);
+        setActivePollingTimeout(null);
+      }
+
+      // Встановлюємо таймаут для повернення до резервного режиму
+      const timeout = setTimeout(() => {
+        LoggingService.equipmentLog('⏰ [WeightDisplayWidget]: Таймаут активного polling, переходимо до резервного');
+        setCurrentPollingMode(currentMode => {
+          if (currentMode === 'active') {
+            // Синхронізуємо з пропом через callback
+            queueMicrotask(() => onPollingModeChange?.('reserve'));
+            return 'reserve';
+          }
+          return currentMode;
+        });
+      }, activePollingDuration);
+
+      setActivePollingTimeout(timeout);
+
+      return 'active';
+    });
+  }, [activePollingDuration, onPollingModeChange]);
+
+  const switchToReservePolling = useCallback(() => {
+    setCurrentPollingMode(prevMode => {
+      if (prevMode === 'reserve') return prevMode;
+
+      queueMicrotask(() => onPollingModeChange?.('reserve'));
+
+      // Очищаємо таймаут активного polling
+      if (activePollingTimeout) {
+        clearTimeout(activePollingTimeout);
+        setActivePollingTimeout(null);
+      }
+
+      return 'reserve';
+    });
+  }, [onPollingModeChange]);
+
+  // Функція для перевірки чи потрібно перемикатися на активний режим
+  const checkWeightActivity = useCallback((weight: number) => {
+    if (!isActive || !weight || weight < weightThresholdForActive) return;
+
+    const timeSinceLastChange = Date.now() - lastWeightChangeTime;
+    if (timeSinceLastChange > 1000) { // Мінімум 1 секунда між змінами
+      LoggingService.equipmentLog(`⚖️ [WeightDisplayWidget]: Виявлено активність ваги (${weight}кг), переключаємося на активний режим`);
+      switchToActivePolling();
+    }
+  }, [isActive, weightThresholdForActive, lastWeightChangeTime, switchToActivePolling]);
+
   // Запуск/зупинення моніторингу
   useEffect(() => {
-    if (isActive) {
+    if (isActive && isConnected) {
       // Перевіряємо підключення
       checkConnection();
       connectionCheckRef.current = setInterval(checkConnection, 5000);
 
+      // Визначаємо інтервал залежно від режиму polling
+      const pollingInterval = currentPollingMode === 'active' ? activePollingInterval : reservePollingInterval;
+      
       // Запускаємо читання ваги
-      LoggingService.equipmentLog(`⚖️ [WeightDisplayWidget]: Запуск моніторингу з інтервалом ${pollingInterval}мс`);
+      LoggingService.equipmentLog(`⚖️ [WeightDisplayWidget]: Запуск моніторингу в режимі ${currentPollingMode} з інтервалом ${pollingInterval}мс`);
       readWeight();
       intervalRef.current = setInterval(readWeight, pollingInterval);
     } else {
@@ -540,15 +629,20 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
         clearTimeout(stableWeightTimeoutRef.current);
         stableWeightTimeoutRef.current = null;
       }
+      if (activePollingTimeout) {
+        clearTimeout(activePollingTimeout);
+        setActivePollingTimeout(null);
+      }
 
       // Скидаємо стан
       setCurrentWeight(null);
       setIsStable(false);
-      setIsConnected(false);
+      // setIsConnected(false);
       setIsPaused(false);
       setIsError(false);
       setErrorMessage(null);
       setLastUpdate(null);
+      setCurrentPollingMode('reserve');
       lastStableWeightRef.current = null;
       weightStabilityRef.current = null;
       currentWeightRef.current = null;
@@ -562,8 +656,19 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
       if (stableWeightTimeoutRef.current) clearTimeout(stableWeightTimeoutRef.current);
       if (tareTimeoutRef.current) clearTimeout(tareTimeoutRef.current);
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+      if (activePollingTimeout) clearTimeout(activePollingTimeout);
     };
-  }, [isActive, pollingInterval]);
+  }, [isActive, currentPollingMode, activePollingInterval, reservePollingInterval, activePollingTimeout]);
+
+  // Обробка зміни pollingMode пропа
+  useEffect(() => {
+    if (pollingMode === 'active') {
+      switchToActivePolling();
+    } else if (pollingMode === 'reserve') {
+      switchToReservePolling();
+    }
+    // Для 'auto' режиму не робимо нічого - використовуємо внутрішню логіку
+  }, [pollingMode]);
 
   // Управління паузою - зупиняємо/запускаємо інтервали
   useEffect(() => {
@@ -586,6 +691,7 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
         checkConnection();
         connectionCheckRef.current = setInterval(checkConnection, 5000);
         readWeight();
+        const pollingInterval = currentPollingMode === 'active' ? activePollingInterval : reservePollingInterval;
         intervalRef.current = setInterval(readWeight, pollingInterval);
         LoggingService.equipmentLog(`⚖️ [WeightDisplayWidget]: Відновлення - інтервали запущені`);
       }
@@ -595,94 +701,114 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (connectionCheckRef.current) clearInterval(connectionCheckRef.current);
     };
-  }, [isPaused, isActive, pollingInterval]);
+  }, [isPaused, isActive, currentPollingMode, activePollingInterval, reservePollingInterval]);
 
   const getStatusColor = (): string => {
-    if (isError) return 'text-red-500';
-    if (!isConnected) return 'text-red-500';
-    if (isPaused) return 'text-orange-500';
-    if (!isStable) return 'text-yellow-500';
+    if (isError) return 'text-red-600';
+    if (!isConnected) return 'text-red-600';
+    if (!isActive) return 'text-neutral-400';
+    if (isPaused) return 'text-yellow-600';
+    if (!isStable) return 'text-yellow-600/75';
     return 'text-green-500';
   };
 
-  const getStatusText = (): string => {
-    if (isError) return errorMessage || 'Помилка';
-    if (!isConnected) return 'Не підключено';
-    if (isPaused) return 'На паузі';
-    if (!isStable) return 'Нестабільно';
-    return 'Стабільно';
+  const getStatusText = (): string | React.ReactNode => {
+    if (isError) return <>
+      <DynamicIcon name="alert-circle" size={14} />
+      {errorMessage || 'Помилка'}
+    </>;
+    if (!isConnected) return <>
+      <DynamicIcon name="alert-circle" size={14} />
+      Не підключено
+    </>;
+    if (!isActive) return 'Читання даних зупинено';
+    if (isPaused) return <>
+      <DynamicIcon name="pause-circle" size={14} />
+      На паузі
+    </>;
+    if (!isStable) return <>
+      <DynamicIcon name="signal-medium" size={14} />
+      Нестабільно
+    </>;
+    return <>
+      <DynamicIcon name="signal-high" size={14} />
+      Стабільно
+    </>;
   };
 
   return (
-    <Card className={`p-4 ${className}`}>
-      <div className="flex flex-col items-center space-y-3">
-        <div className="flex items-center justify-between w-full">
-          <h3 className="text-sm font-medium text-gray-600">Поточна вага</h3>
+    <Card className={`${className} bg-transparent shadow-none`}>
+      <div className="flex flex-col items-center gap-3 px-3 py-5 bg-white rounded-b-lg">
+        <div className="text-3xl flex gap-1.5 font-bold">
+            
+          {/* Поточна вага (кг) */}
+          <div className="flex flex-col items-center">
+            <span className={`w-full text-center text-xs font-normal ${isError ? 'text-red-600' : 'text-neutral-400'}`}>Поточна вага</span>
+            <NumberFlow
+              value={currentWeight || 0}
+              format={{ minimumFractionDigits: 3, maximumFractionDigits: 3 }}
+              className={`tabular-nums transition-colors duration-300 ${!isActive ? 'text-neutral-300' : isError ? 'text-red-600' : 'text-neutral-700'}`}
+            />
+          </div>
+            
+          <DynamicIcon className="text-gray-400 mt-8" name="arrow-right" strokeWidth={2} size={14} />
+            
+          {/* Очікувана вага (кг) */}
+          <div className="flex flex-col items-center">
+            <span className="w-full text-center text-xs font-normal text-neutral-400">Очікувана вага</span>
+            <div className="flex items-center gap-1">
+              <NumberFlow
+                value={expectedWeight || 0}
+                format={{ minimumFractionDigits: 3, maximumFractionDigits: 3 }}
+                className="tabular-nums text-neutral-700"
+              />
+              <NumberFlow
+                value={cumulativeTolerance || 0}
+                format={{ maximumFractionDigits: 0 }}
+                prefix='±'
+                suffix='г'
+                className="tabular-nums font-medium text-[13px] text-yellow-900/75 bg-yellow-400/30 rounded-full border-1 border-yellow-900/5 px-1.5 py-[1px]"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* {lastUpdate && (
+          <div className="text-xs text-gray-400">
+            Оновлено: {lastUpdate.toLocaleTimeString()}
+          </div>
+        )} */}
+
+      </div>
+      <div className="flex items-center justify-between w-full p-3">
+
+          {/* <h3 className={`text-xs font-medium ml-1 ${getStatusColor()}`}> */}
+          <h3 className={`flex items-center gap-1 text-xs font-medium ${getStatusColor()}`}>
+            {getStatusText()}
+          </h3>
           <div className="flex items-center gap-2">
             {isActive && (
               <Button
-                color="warning"
+                color="default"
                 size="sm"
                 onPress={togglePause}
-                className="text-xs"
+                className="text-xs h-7 text-neutral-600"
                 isIconOnly
               >
-                {isPaused ? <Play size={16} /> : <Pause size={16} />}
+                {isPaused ? <Play size={12} /> : <Pause size={12} />}
               </Button>
             )}
             <Button
               color={isActive ? 'danger' : 'primary'}
+              variant="flat"
               size="sm"
               onPress={isActive ? stopWeighing : startWeighing}
-              className="text-xs"
+              className={`text-xs h-7 ${isConnected ? (isActive ? 'text-red-700' : 'text-neutral-600') : 'bg-red-400 text-white'}`}
             >
-              {isActive ? 'Зупинити' : 'Запустити'}
+              {isConnected ? (isActive ? 'Stop' : 'Start') : 'Connect'}
             </Button>
           </div>
         </div>
-        
-        <div className="text-center">
-          <div className={`text-3xl flex items-center gap-1.5 font-bold mb-1 ${isError ? 'text-red-500' : 'text-gray-900'}`}>
-            <div className="">
-              <NumberFlow
-                value={currentWeight || 0}
-                format={{ minimumFractionDigits: 3, maximumFractionDigits: 3 }}
-                className="tabular-nums"
-              />
-              <span className={`text-lg ml-1 ${isError ? 'text-red-500' : 'text-gray-500'}`}>кг</span>
-            </div>
-            {expectedWeight !== null && expectedWeight !== undefined && (
-              <div className="flex items-center gap-1.5">
-                <DynamicIcon name="arrow-right" strokeWidth={2} size={14} />
-                <div className="text-3xl text-gray-600">
-                  <NumberFlow
-                    value={expectedWeight}
-                    format={{ minimumFractionDigits: 3, maximumFractionDigits: 3 }}
-                    className="tabular-nums"
-                  />
-                  <span className="text-lg text-gray-500 ml-1">кг</span>
-                </div>
-              </div>
-            )}
-          </div>
-          
-          <div className={`text-xs font-medium ${getStatusColor()}`}>
-            {getStatusText()}
-          </div>
-        </div>
-
-        {lastUpdate && (
-          <div className="text-xs text-gray-400">
-            Оновлено: {lastUpdate.toLocaleTimeString()}
-          </div>
-        )}
-
-        {!isActive && (
-          <div className="text-xs text-gray-400">
-            Натисніть "Запустити" для початку зважування
-          </div>
-        )}
-      </div>
     </Card>
   );
 };

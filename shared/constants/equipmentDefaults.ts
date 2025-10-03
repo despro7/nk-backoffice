@@ -25,11 +25,17 @@ export const EQUIPMENT_DEFAULTS = {
   },
   scanner: {
     autoConnect: true,
-    timeout: 5000
+    timeout: 5000,
+    scanTimeout: 300,
+    minScanSpeed: 50,     // Мінімальна швидкість між символами (мс)
+    maxScanSpeed: 200,    // Максимальна швидкість між символами (мс)
+    minBarcodeLength: 5   // Мінімальна довжина баркоду
   },
   printer: {
     enabled: false,
-    name: ''
+    name: '',
+    autoPrintOnComplete: false,
+    autoPrintDelayMs: 3000
   }
 } as const;
 

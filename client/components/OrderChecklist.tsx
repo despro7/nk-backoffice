@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { playSoundChoice } from '../lib/soundUtils';
 import { Button } from '@heroui/button';
 import OrderChecklistItem from './OrderChecklistItem';
 import { Progress } from './ui/progress';
@@ -34,13 +35,33 @@ interface OrderChecklistProps {
   showPrintTTN?: boolean;
   onNextOrder?: () => void; // Callback для перехода к следующему заказу
   showNextOrder?: boolean;
+  nextOrderNumber?: string; // Номер наступного замовлення
+  nextOrderDate?: string; // Дата наступного замовлення
+  showNoMoreOrders?: boolean; // Показувати повідомлення про відсутність замовлень
   isDebugMode?: boolean; // Флаг дебаг-режима
 }
 
-const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, onNextOrder, showNextOrder }: OrderChecklistProps) => {
+const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders }: OrderChecklistProps) => {
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [equipmentState] = useEquipmentFromAuth(); // <-- Используем глобальное состояние оборудования
+  const [soundSettings, setSoundSettings] = useState<Record<string, string>>({});
   const { isDebugMode } = useDebug(); // <-- Используем контекст дебага
+
+  // Завантажуємо налаштування звуку
+  useEffect(() => {
+    fetch('/api/settings/equipment', { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+        if (data?.data?.orderSoundSettings) {
+          setSoundSettings(data.data.orderSoundSettings);
+        }
+      })
+      .catch(() => {
+        // Використовуємо дефолтні налаштування при помилці
+        setSoundSettings({ done: 'macos_glass' });
+      });
+  }, []);
+
 
   // Синхронизируем активный элемент при изменении items
   useEffect(() => {
@@ -197,6 +218,71 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     return allProductItems.length > 0 && allProductItems.every(item => item.status === 'done');
   }, [items]);
 
+  // Проигрываем звук, когда появляется кнопка печати ТТН
+  const wasPrintVisibleRef = useRef(false);
+  useEffect(() => {
+    const isPrintVisible = !!(showPrintTTN || isOrderComplete || isDebugMode);
+    if (isPrintVisible && !wasPrintVisibleRef.current) {
+      // Використовуємо налаштування звуку для події 'done'
+      const doneSound = soundSettings.done || 'macos_glass';
+      playSoundChoice(doneSound, 'done');
+    }
+    wasPrintVisibleRef.current = isPrintVisible;
+  }, [showPrintTTN, isOrderComplete, isDebugMode, soundSettings.done]);
+
+  // Автоматичний друк при виконанні умов
+  const wasAutoPrintTriggeredRef = useRef(false);
+  const [isAutoPrinting, setIsAutoPrinting] = useState(false);
+  const [autoPrintCountdown, setAutoPrintCountdown] = useState(0);
+  
+  useEffect(() => {
+    const shouldAutoPrint = !!(isOrderComplete || showPrintTTN || isDebugMode);
+    const autoPrintEnabled = equipmentState.config?.printer?.autoPrintOnComplete;
+    
+    // Перевіряємо чи потрібно автоматично друкувати
+    if (shouldAutoPrint && autoPrintEnabled && !wasAutoPrintTriggeredRef.current && onPrintTTN) {
+      console.log('🖨️ [OrderChecklist] Автоматичний друк ТТН:', { 
+        isOrderComplete, 
+        showPrintTTN, 
+        isDebugMode, 
+        autoPrintEnabled 
+      });
+      
+      // Отримуємо затримку з налаштувань (за замовчуванням 3 секунди)
+      const autoPrintDelay = equipmentState.config?.printer?.autoPrintDelayMs ?? 3000;
+      const delaySeconds = Math.ceil(autoPrintDelay / 1000);
+      
+      // Запускаємо анімацію підготовки до автоматичного друку
+      setIsAutoPrinting(true);
+      setAutoPrintCountdown(delaySeconds);
+      
+      // Затримка для того, щоб користувач побачив завершення замовлення та анімацію
+      setTimeout(() => {
+        onPrintTTN();
+        wasAutoPrintTriggeredRef.current = true;
+        setIsAutoPrinting(false);
+        setAutoPrintCountdown(0);
+      }, autoPrintDelay);
+    }
+    
+    // Скидаємо прапорець при зміні замовлення
+    if (!shouldAutoPrint) {
+      wasAutoPrintTriggeredRef.current = false;
+      setIsAutoPrinting(false);
+      setAutoPrintCountdown(0);
+    }
+  }, [isOrderComplete, showPrintTTN, isDebugMode, equipmentState.config?.printer?.autoPrintOnComplete, onPrintTTN]);
+
+  // Анімація відліку для автоматичного друку
+  useEffect(() => {
+    if (autoPrintCountdown > 0) {
+      const timer = setTimeout(() => {
+        setAutoPrintCountdown(prev => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [autoPrintCountdown]);
+
   // Проверяем, есть ли следующая коробка
   const hasNextBox = useMemo(() => {
     const totalBoxes = items.filter(item => item.type === 'box').length;
@@ -236,135 +322,23 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       }
   };
 
-  // Обработка завершения коробки
-  const handleBoxComplete = (itemId: string) => {
-    if (onItemStatusChange) {
-      onItemStatusChange(itemId, 'done');
-      
-      // Автоматически выбираем первый товар в коробке
-      // Находим коробку по itemId, чтобы получить её boxIndex
-      const boxItem = items.find(item => item.id === itemId);
-      const boxIndex = boxItem?.boxIndex || 0;
-      
-      const firstProduct = items.find((item) => 
-        item.type === 'product' && 
-        (item.boxIndex || 0) === boxIndex && 
-        item.status === 'default'
-      );
-      
-      if (firstProduct) {
-        handleItemClick(firstProduct.id);
-      } else {
-        setActiveItemId(null);
-      }
-    }
-  };
-
-
-
-  // Создаем кастомный компонент для табов
-  const CustomBoxTabs = ({ 
-    items, 
-    activeBoxIndex, 
-    onActiveBoxChange, 
-    totalPortions 
-  }: {
-    items: OrderItem[];
-    activeBoxIndex: number;
-    onActiveBoxChange: (index: number) => void;
-    totalPortions: number;
-  }) => {
-    const boxCount = items.filter((item) => item.type === "box").length;
-    
-    if (boxCount <= 1) return null;
-
-    return (
-      <div className="mb-4">
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {Array.from({ length: boxCount }, (_, index) => {
-            const boxItems = items.filter(
-              (item) =>
-                (item.boxIndex || 0) === index && item.type === "product",
-            );
-            const boxPortions = boxItems.reduce(
-              (sum, item) => sum + item.quantity,
-              0,
-            );
-            const boxItem = items.find(item => item.type === "box" && (item.boxIndex || 0) === index);
-            const boxName = boxItem?.name || `Коробка ${index + 1}`;
-            const isActive = index === activeBoxIndex;
-
-            return (
-              <button
-                key={index}
-                onClick={() => onActiveBoxChange(index)}
-                className={`flex-1 min-w-0 p-3 bg-white border rounded-lg transition-all duration-200 ${
-                  isActive 
-                    ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50' 
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className={`text-base font-semibold px-1 py-0 flex items-center gap-2 ${
-                    isActive ? 'text-blue-700' : 'text-gray-700'
-                  }`}>
-                    <DynamicIcon name="package" size={20} strokeWidth={1.5} /> 
-                    {boxName}
-                  </span>
-                  <div className={`text-sm px-1 ${
-                    isActive ? 'text-blue-600' : 'text-gray-600'
-                  }`}>
-                    {boxPortions} порций
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="space-y-4 bg-white p-4 rounded-lg shadow">
-      {/* Убираем стандартные табы, так как теперь коробки переключаются через BoxSelector */}
-      {/* {items.filter((item) => item.type === "box").length > 1 && (
-        <Tabs
-          selectedKey={activeBoxIndex.toString()}
-          onSelectionChange={(key) => onActiveBoxChange?.(Number(key))}
-          variant="solid"
-          color="default"
-          size="lg"
-          classNames={{
-          tabList: "gap-2 p-[6px] bg-gray-100 rounded-lg w-full",
-          cursor: "bg-blue-500 text-white shadow-sm rounded-md",
-          tab: "px-3 py-1.5 text-sm font-normal flex-1 data-[hover-unselected=true]:opacity-100 text-neutral-500",
-          tabContent: "group-data-[selected=true]:text-white text-neutral-400"
-        }}
-      >
-        {Array.from(
-          { length: items.filter((item) => item.type === "box").length },
-          (_, index) => {
-            // ... existing tab logic ...
-          }
-        )}
-      </Tabs>
-    )} */}
 
       {/* Общий прогресс-бар заказа */}
       <div className="bg-success-100 p-4 rounded-sm mb-4">
         <div className="flex justify-between items-center text-success-700 text-lg font-medium">
-          <span>Загальна кількість порцій</span>
-          <div className="flex items-center gap-8">
-            {weightInfo.totalOrderWeight > 0 && (
-              <span className="text-base leading-[100%] border-1 border-success-700/10 bg-success-700/5 rounded p-1">
-                ~{weightInfo.totalOrderWeight.toFixed(3)} кг
-              </span>
-            )}
+          <div className="flex items-center gap-4">
+            <span>Загальна кількість порцій:</span>
             <span>
               {totalPackedPortions} / {totalPortions}
             </span>
           </div>
+          {weightInfo.totalOrderWeight > 0 && (
+            <span className="text-base tabular-nums leading-[100%] border-1 border-success-700/10 bg-success-700/5 rounded p-1">
+              ~{weightInfo.totalOrderWeight.toFixed(3)} кг
+            </span>
+          )}
         </div>
 
         <Progress
@@ -372,42 +346,6 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
           className="mt-2"
         />
       </div>
-
-             {/* Прогресс-бар текущей коробки */}
-       {/* {items.filter((item) => item.type === "box").length > 1 && (
-         <div className="bg-success-100 p-4 rounded-sm mb-4">
-           <div className="flex justify-between items-center text-success-700 text-lg font-medium">
-             <span>
-               {(() => {
-                 const boxItem = items.find(item => item.type === "box" && (item.boxIndex || 0) === activeBoxIndex);
-                 return boxItem?.name || `Коробка ${activeBoxIndex + 1}`;
-               })()} - Кількість порцій
-             </span>
-             <div className="flex items-center gap-8">
-               {weightInfo.currentBoxWeight > 0 && (
-                 <span className="text-base leading-[100%] border-1 border-success-700/10 bg-success-700/5 rounded p-1">
-                   ~{weightInfo.currentBoxWeight.toFixed(3)} кг
-                 </span>
-               )}
-               <span>
-                 {packedPortions} / {currentBoxTotalPortions}
-               </span>
-             </div>
-           </div>
-
-           {currentBoxTotalPortions > 0 ? (
-             <Progress
-               value={(packedPortions / currentBoxTotalPortions) * 100}
-               className="mt-2"
-             />
-           ) : (
-             <div className="mt-2 text-center text-sm text-gray-500">
-               Немає товарів у поточній коробці
-             </div>
-           )}
-         </div>
-       )} */}
-
 
       {/* Отладочная информация (только при проблемах) */}
       {currentBoxTotalPortions === 0 && (
@@ -450,23 +388,74 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
 
         {/* Кнопка "Распечатать ТТН" */}
         {(isOrderComplete || showPrintTTN || isDebugMode) && (
-          <Button
-            onPress={onPrintTTN}
-            disabled={false} // Убираем локальное состояние, используем глобальное из OrderView
-            className="mt-6 w-full bg-danger text-white p-8 rounded-md text-lg font-medium hover:bg-danger-500 shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            Роздрукувати ТТН <DynamicIcon name="printer" size={20} strokeWidth={1.5} />
-          </Button>
+          <div className="mt-6 space-y-2">
+            {/* Індикатор автоматичного друку */}
+            {/* {equipmentState.config?.printer?.autoPrintOnComplete && (
+              <div className={`flex items-center justify-center gap-2 text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded-md border border-blue-200 transition-all duration-300 ${
+                isAutoPrinting ? 'animate-pulse bg-gradient-to-r from-blue-50 to-purple-50' : ''
+              }`}>
+                <DynamicIcon name="zap" size={16} className={`text-blue-500 ${isAutoPrinting ? 'animate-bounce' : ''}`} />
+                <span className="font-medium">
+                  {isAutoPrinting ? 'Підготовка до автоматичного друку...' : 'Автоматичний друк увімкнено'}
+                </span>
+              </div>
+            )} */}
+            
+            <Button
+              onPress={onPrintTTN}
+              disabled={false} // Убираем локальное состояние, используем глобальное из OrderView
+              className={`w-full p-8 rounded-md text-lg font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-all duration-300 ${
+                isAutoPrinting 
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white animate-pulse' 
+                  : 'bg-danger text-white hover:bg-danger-500'
+              }`}
+            >
+              {isAutoPrinting ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>Автоматичний друк через {autoPrintCountdown}с...</span>
+                  </div>
+                  <DynamicIcon name="printer" size={20} strokeWidth={1.5} className="animate-bounce" />
+                </>
+              ) : (
+                <>
+                  Роздрукувати ТТН 
+                  <DynamicIcon name="printer" size={20} strokeWidth={1.5} />
+                </>
+              )}
+            </Button>
+          </div>
         )}
 
         {/* Кнопка "Наступне замовлення" */}
-        {showNextOrder && (
+        {showNextOrder && nextOrderNumber && (
           <Button
             onPress={onNextOrder}
             className="mt-3 w-full bg-primary text-white p-8 rounded-md text-lg font-medium shadow-sm flex items-center justify-center gap-2"
           >
-            Наступне замовлення <DynamicIcon name="arrow-right-circle" size={20} strokeWidth={1.5} />
+            Наступне замовлення №{nextOrderNumber}{nextOrderDate && <span className="font-normal">(від {nextOrderDate})</span>}
+            <DynamicIcon name="arrow-right-circle" size={20} strokeWidth={1.5} />
           </Button>
+        )}
+
+        {/* Повідомлення про відсутність замовлень */}
+        {showNoMoreOrders && (
+          <div className="mt-3 w-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 text-center">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                <DynamicIcon name="check-circle" size={24} className="text-blue-600" strokeWidth={1.5} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold text-blue-900">
+                  Всі замовлення виконані! 🎉
+                </h3>
+                <p className="text-blue-700 text-sm">
+                  Наразі більше замовлень для комплектування немає в наявності
+                </p>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

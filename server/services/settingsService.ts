@@ -41,10 +41,16 @@ export interface EquipmentSettings {
   scanner: {
     autoConnect: boolean;
     timeout: number;
+    scanTimeout?: number;
+    minScanSpeed?: number;
+    maxScanSpeed?: number;
+    minBarcodeLength?: number;
   };
   printer?: {
     enabled: boolean;
     name: string;
+    autoPrintOnComplete?: boolean;
+    autoPrintDelayMs?: number;
   };
 }
 
@@ -264,6 +270,26 @@ export class EquipmentSettingsService {
         key: 'equipment_scanner.timeout',
         value: JSON.stringify(scannerSettings.timeout ?? 5000),
         description: 'Таймаут сканера'
+      },
+      {
+        key: 'equipment_scanner.scanTimeout',
+        value: JSON.stringify(scannerSettings.scanTimeout ?? 300),
+        description: 'Таймаут сканування баркоду (мс)'
+      },
+      {
+        key: 'equipment_scanner.minScanSpeed',
+        value: JSON.stringify(scannerSettings.minScanSpeed ?? 50),
+        description: 'Мінімальна швидкість сканування (мс)'
+      },
+      {
+        key: 'equipment_scanner.maxScanSpeed',
+        value: JSON.stringify(scannerSettings.maxScanSpeed ?? 200),
+        description: 'Максимальна швидкість сканування (мс)'
+      },
+      {
+        key: 'equipment_scanner.minBarcodeLength',
+        value: JSON.stringify(scannerSettings.minBarcodeLength ?? 5),
+        description: 'Мінімальна довжина баркоду'
       }
     ];
 
@@ -285,6 +311,16 @@ export class EquipmentSettingsService {
         key: 'equipment_printer.name',
         value: JSON.stringify(printerSettings.name ?? ''),
         description: "Ім'я принтера для прямого друку"
+      },
+      {
+        key: 'equipment_printer.autoPrintOnComplete',
+        value: JSON.stringify(printerSettings.autoPrintOnComplete ?? false),
+        description: 'Автоматичний друк при завершенні замовлення'
+      },
+      {
+        key: 'equipment_printer.autoPrintDelayMs',
+        value: JSON.stringify(printerSettings.autoPrintDelayMs ?? 3000),
+        description: 'Затримка перед автоматичним друком (мс)'
       }
     ];
 

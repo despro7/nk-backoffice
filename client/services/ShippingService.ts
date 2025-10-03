@@ -36,7 +36,38 @@ export class ShippingClientService {
       const result = await response.json();
 
       if (!result.success || !result.data) {
-        ToastService.show({ title: 'Помилка', description: result.error || 'Не вдалося отримати дані для друку ТТН.', color: 'danger' });
+        const errorMessage = result.error || 'Не вдалося отримати дані для друку ТТН.';
+        console.error('API Error:', result);
+        ToastService.show({ title: 'Помилка', description: errorMessage, color: 'danger' });
+        return;
+      }
+
+      // Додаткова валідація PDF даних
+      if (!this.isValidPdfBase64(result.data)) {
+        // Спробуємо розшифрувати BASE64 якщо це можливо
+        const decodedError = this.tryDecodeBase64Error(result.data);
+        // console.error('Invalid PDF data received:', result.data);
+        
+        let errorMessage = 'Отримані дані не є валідним PDF файлом. Можливо, сервер повернув помилку.';
+        
+        if (decodedError) {
+          console.error('Decoded error data:', decodedError);
+          
+          // Формуємо більш детальне повідомлення про помилку
+          if (decodedError.errors && Array.isArray(decodedError.errors)) {
+            errorMessage = `Помилка сервера: ${decodedError.errors.join(', ')}${decodedError.errorCodes ? `, коди помилок: ${decodedError.errorCodes.join(', ')}` : decodedError.error}`;
+          } else if (decodedError.error) {
+            errorMessage = `Помилка сервера: ${decodedError.error}`;
+          } else if (decodedError.message) {
+            errorMessage = `Помилка сервера: ${decodedError.message}`;
+          }
+        }
+        
+        ToastService.show({ 
+          title: 'Помилка даних', 
+          description: errorMessage, 
+          color: 'danger' 
+        });
         return;
       }
 
@@ -48,6 +79,11 @@ export class ShippingClientService {
       }
     } catch (error) {
       console.error('Помилка друку:', error);
+      ToastService.show({ 
+        title: 'Помилка друку', 
+        description: error.message || 'Сталася невідома помилка при друку ТТН.', 
+        color: 'danger' 
+      });
     }
   }
 
@@ -82,6 +118,53 @@ export class ShippingClientService {
       return base64Regex.test(str) && str.length % 4 === 0;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Перевіряє чи є base64 рядок PDF файлом
+   */
+  private isValidPdfBase64(base64Data: string): boolean {
+    try {
+      // Спочатку перевіряємо чи це валідний base64
+      if (!this.isValidBase64(base64Data)) {
+        return false;
+      }
+
+      // Декодуємо base64
+      const decoded = atob(base64Data);
+      
+      // PDF файли починаються з %PDF-
+      return decoded.startsWith('%PDF-');
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Спробує розшифрувати BASE64 рядок як JSON помилку
+   */
+  private tryDecodeBase64Error(base64Data: string): any {
+    try {
+      // Перевіряємо чи це валідний base64
+      if (!this.isValidBase64(base64Data)) {
+        return null;
+      }
+
+      // Декодуємо base64
+      const decoded = atob(base64Data);
+      
+      // Спробуємо розпарсити як JSON
+      const parsed = JSON.parse(decoded);
+      
+      // Перевіряємо чи це схоже на помилку API
+      if (typeof parsed === 'object' && (parsed.errors || parsed.error || parsed.success === false)) {
+        return parsed;
+      }
+      
+      return null;
+    } catch {
+      return null;
     }
   }
 
