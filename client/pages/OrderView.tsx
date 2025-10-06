@@ -50,6 +50,7 @@ interface OrderChecklistItem {
   portionsPerBox?: number; // Количество порций на коробку
   sku?: string; // SKU товара для поиска по штрих-коду
   barcode?: string; // Штрих-код товара
+  manualOrder?: number; // Ручне сортування
 }
 
 interface OrderForAssembly {
@@ -70,6 +71,7 @@ interface Product {
   name: string;
   weight?: number; // Вес в граммах
   categoryId?: number; // ID категории для определения веса по умолчанию
+  manualOrder?: number; // Ручне сортування
   set: Array<{ id: string; quantity: number }> | null;
 }
 
@@ -133,7 +135,8 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
                 status: 'default' as const,
                 type: 'product',
                 sku: item.sku,
-                barcode: item.sku // Используем SKU как штрих-код для поиска
+                barcode: item.sku, // Используем SKU как штрих-код для поиска
+                manualOrder: product.manualOrder
               };
             }
             continue;
@@ -169,7 +172,8 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
                     status: 'default' as const,
                     type: 'product',
                     sku: setItem.id,
-                    barcode: setItem.id // Используем ID компонента как штрих-код
+                    barcode: setItem.id, // Используем ID компонента как штрих-код
+                    manualOrder: component.manualOrder
                   };
                   // console.log(`    ➕ Додано новий компонент: ${componentName}`);
                 }
@@ -188,7 +192,8 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
                     quantity: totalQuantity,
                     expectedWeight: totalQuantity * 0.33, // Fallback для неизвестного компонента (330г)
                     status: 'default' as const,
-                    type: 'product'
+                    type: 'product',
+                    manualOrder: 999 // Fallback для неизвестного компонента
                   };
                 }
               }
@@ -209,7 +214,8 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
                     status: 'default' as const,
                     type: 'product',
                     sku: setItem.id,
-                    barcode: setItem.id // Используем ID компонента как штрих-код
+                    barcode: setItem.id, // Используем ID компонента как штрих-код
+                    manualOrder: 999 // Fallback для неизвестного компонента
                   };
               }
             }
@@ -231,7 +237,8 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
               status: 'default' as const,
               type: 'product',
               sku: item.sku,
-              barcode: item.sku // Используем SKU как штрих-код для поиска
+              barcode: item.sku, // Используем SKU как штрих-код для поиска
+              manualOrder: product.manualOrder
             };
             // console.log(`  ➕ Додано новий товар: ${itemName}`);
           }
@@ -251,7 +258,8 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
             status: 'default' as const,
             type: 'product',
             sku: item.sku,
-            barcode: item.sku // Используем SKU как штрих-код для поиска
+            barcode: item.sku, // Используем SKU как штрих-код для поиска
+            manualOrder: 999 // Fallback для неизвестного товара
           };
         }
       }
@@ -270,7 +278,8 @@ const expandProductSets = async (orderItems: any[], apiCall: any): Promise<Order
           status: 'default' as const,
           type: 'product',
           sku: item.sku,
-          barcode: item.sku // Используем SKU как штрих-код для поиска
+          barcode: item.sku, // Используем SKU как штрих-код для поиска
+          manualOrder: 999 // Fallback для ошибки
         };
       }
     }

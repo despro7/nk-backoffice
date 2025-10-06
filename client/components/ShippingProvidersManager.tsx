@@ -305,7 +305,7 @@ export const ShippingProvidersManager: React.FC = () => {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-row items-center justify-between p-5">
         <div>
           <h3 className="text-lg font-semibold">Провайдери доставки</h3>
           <p className="text-sm text-gray-600">Управління API ключами для різних відправників</p>
@@ -319,7 +319,7 @@ export const ShippingProvidersManager: React.FC = () => {
         </Button>
       </CardHeader>
       
-      <CardBody>
+      <CardBody className="p-5">
         {loading ? (
           <div className="text-center py-8">Завантаження...</div>
         ) : (
@@ -354,12 +354,12 @@ export const ShippingProvidersManager: React.FC = () => {
                                 <img 
                                   src={getProviderIcon(provider.providerType)} 
                                   alt={getProviderTypeLabel(provider.providerType)}
-                                  className="w-6 h-6"
+                                  className={`w-6 h-6 ${provider.isActive ? 'grayscale-0' : 'grayscale opacity-50'}`}
                                 />
 
                                 <div className="flex-1">
                                   <div className="flex items-center gap-3">
-                                    <h4 className="font-medium">{provider.senderName}</h4>
+                                    <h4 className={`font-medium ${provider.isActive ? 'text-gray-900' : 'text-gray-400'}`}>{provider.senderName}</h4>
                                     {provider.isActive && (
                                       <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded flex items-center gap-1">
                                         <Check className="w-3 h-3" />
@@ -367,7 +367,7 @@ export const ShippingProvidersManager: React.FC = () => {
                                       </span>
                                     )}
                                   </div>
-                                  <p className="text-sm text-gray-600">{provider.name}</p>
+                                  <p className={`text-sm ${provider.isActive ? 'text-gray-600' : 'text-gray-400'}`}>{provider.name}</p>
                                 </div>
                               </div>
                               
@@ -375,8 +375,8 @@ export const ShippingProvidersManager: React.FC = () => {
                                 {!provider.isActive && (
                                   <Button
                                     size="sm"
-                                    color="success"
                                     variant="flat"
+                                    startContent={<Check className="w-4 h-4" />}
                                     onPress={() => handleActivateProvider(provider.id)}
                                   >
                                     Активувати

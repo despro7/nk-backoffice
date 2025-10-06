@@ -167,6 +167,13 @@ class ShippingProviderService {
   }
 
   async updateProviderOrder(providers: { id: number; order: number }[]): Promise<void> {
+    // Валідація даних
+    for (const provider of providers) {
+      if (typeof provider.id !== 'number' || typeof provider.order !== 'number') {
+        throw new Error(`Невалідні дані провайдера: id=${provider.id}, order=${provider.order}`);
+      }
+    }
+    
     // Оновлюємо порядок для всіх провайдерів
     await Promise.all(
       providers.map(provider => 

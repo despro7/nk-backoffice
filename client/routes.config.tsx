@@ -169,7 +169,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 2,
-    roles: [ROLES.ADMIN, ROLES.BOSS] // Только admin и boss
+    // roles: [ROLES.ADMIN, ROLES.BOSS] // Только admin и boss
   },
   {
     path: "/settings/order-assembly",

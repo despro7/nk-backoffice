@@ -12,11 +12,12 @@ import { addToast } from "@heroui/toast";
 import ScaleService from "../services/ScaleService";
 import PrinterService from "../services/printerService";
 import { EQUIPMENT_DEFAULTS } from "../../shared/constants/equipmentDefaults.js";
-import { WeightDisplayWidget } from "../components/WeightDisplayWidget";
 import { Spinner } from "@heroui/react";
+import { useRoleAccess } from '@/hooks/useRoleAccess';
 
 
 export const SettingsEquipment = () => {
+  const { isAdmin } = useRoleAccess();
   const [state, actions] = useEquipmentFromAuth();
   const [localConfig, setLocalConfig] = useState<EquipmentConfig | null>(null);
 
@@ -1201,7 +1202,7 @@ export const SettingsEquipment = () => {
   // Если конфигурация еще не загружена, показываем загрузку
   if (!localConfig) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-full">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Завантаження налаштувань...</p>
@@ -1308,74 +1309,76 @@ export const SettingsEquipment = () => {
             />
             <h2 className="text-lg font-semibold text-primary">Конфігурація обладнання</h2>
           </div>
-          <div className="flex gap-2 ml-auto">
-            <Button
-              onPress={() => {
-                console.log('🔍 DEBUG: Current localConfig:', localConfig);
-                console.log('🔍 DEBUG: Scanner state:', localConfig?.scanner);
-                addToast({
-                  title: "Дебаг",
-                  description: "Перевірте консоль браузера (F12)",
-                  color: "primary",
-                  timeout: 3000,
-                });
-              }}
-              color="primary"
-              variant="ghost"
-              size="sm"
-            >
-              <DynamicIcon name="bug" size={14} />
-              Debug
-            </Button>
-            <Button
-              onPress={async () => {
-                try {
-                  console.log('🧪 Testing save functionality...');
-                  if (!localConfig) {
+          {isAdmin() && (
+            <div className="flex gap-2 ml-auto">
+              <Button
+                onPress={() => {
+                  console.log('🔍 DEBUG: Current localConfig:', localConfig);
+                  console.log('🔍 DEBUG: Scanner state:', localConfig?.scanner);
+                  addToast({
+                    title: "Дебаг",
+                    description: "Перевірте консоль браузера (F12)",
+                    color: "primary",
+                    timeout: 3000,
+                  });
+                }}
+                color="primary"
+                variant="ghost"
+                size="sm"
+              >
+                <DynamicIcon name="bug" size={14} />
+                Debug
+              </Button>
+              <Button
+                onPress={async () => {
+                  try {
+                    console.log('🧪 Testing save functionality...');
+                    if (!localConfig) {
+                      addToast({
+                        title: "Тест",
+                        description: "Конфігурація не завантажена",
+                        color: "warning",
+                        timeout: 3000,
+                      });
+                      return;
+                    }
+
+                    await actions.saveConfig(localConfig);
                     addToast({
-                      title: "Тест",
-                      description: "Конфігурація не завантажена",
-                      color: "warning",
+                      title: "Тест успішний",
+                      description: "Збереження працює нормально",
+                      color: "success",
                       timeout: 3000,
                     });
-                    return;
+                  } catch (error) {
+                    console.error('❌ Test save failed:', error);
+                    addToast({
+                      title: "Тест провалений",
+                      description: "Збереження не працює",
+                      color: "danger",
+                      timeout: 3000,
+                    });
                   }
-
-                  await actions.saveConfig(localConfig);
-                  addToast({
-                    title: "Тест успішний",
-                    description: "Збереження працює нормально",
-                    color: "success",
-                    timeout: 3000,
-                  });
-                } catch (error) {
-                  console.error('❌ Test save failed:', error);
-                  addToast({
-                    title: "Тест провалений",
-                    description: "Збереження не працює",
-                    color: "danger",
-                    timeout: 3000,
-                  });
-                }
-              }}
-              color="success"
-              variant="ghost"
-              size="sm"
-            >
-              <DynamicIcon name="save" size={14} />
-              Test Save
-            </Button>
-          <Button
-            onPress={resetConfig}
-            color="secondary"
-            variant="bordered"
-            size="sm"
-            disabled={isSaving}
-          >
-            <DynamicIcon name="refresh-cw" size={14} />
-            Скинути до замовчування
-          </Button>
-          </div>
+                }}
+                color="success"
+                variant="ghost"
+                size="sm"
+              >
+                <DynamicIcon name="save" size={14} />
+                Test Save
+              </Button>
+              <Button
+                onPress={resetConfig}
+                color="secondary"
+                variant="bordered"
+                size="sm"
+                disabled={isSaving}
+              >
+                <DynamicIcon name="refresh-cw" size={14} />
+                Скинути до замовчування
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardBody className="p-6">
           <div className="flex flex-col xl:flex-row gap-8">
@@ -1697,14 +1700,6 @@ export const SettingsEquipment = () => {
 
             <div className="flex flex-1 flex-col gap-8 h-fit">
               
-              {/* Віджет поточної ваги */}
-              <WeightDisplayWidget
-                onWeightChange={(weight) => {
-                  console.log('Weight changed:', weight);
-                }}
-                className="w-full"
-              />
-              
               {/* Тест ваг ВТА-60 */}
               <Card className="flex w-full flex-col gap-6 p-4 h-fit">
                 <h3 className="font-medium text-gray-400">Тест ваг ВТА-60</h3>
@@ -1979,6 +1974,7 @@ export const SettingsEquipment = () => {
 
                 <Switch
                   id="autoPrintOnComplete"
+                  size="sm"
                   isSelected={localConfig.printer?.autoPrintOnComplete || false}
                   onValueChange={(value) => updatePrinterSetting("autoPrintOnComplete", value)}
                   color="primary"
@@ -1989,20 +1985,11 @@ export const SettingsEquipment = () => {
                 >
                   Автоматичний друк при завершенні замовлення
                 </Switch>
-
-                <Switch
-                  id="printerEnabled"
-                  isSelected={localConfig.printer?.enabled || false}
-                  onValueChange={(value) => updatePrinterSetting("enabled", value)}
-                  color="primary"
-                >
-                  Увімкнути прямий друк
-                </Switch>
-
+                
                 <Input
                   id="autoPrintDelayMs"
                   type="number"
-                  label="Затримка перед автоматичним друком (мс)"
+                  label="Затримка перед автом. друком (мс)"
                   labelPlacement="outside"
                   value={localConfig.printer?.autoPrintDelayMs?.toString() || "3000"}
                   onValueChange={(value) => updatePrinterSetting("autoPrintDelayMs", parseInt(value) || 3000)}
@@ -2013,6 +2000,16 @@ export const SettingsEquipment = () => {
                   step="500"
                   description="Мінімум 1 секунда, максимум 10 секунд"
                 />
+                
+                <Switch
+                  id="printerEnabled"
+                  size="sm"
+                  isSelected={localConfig.printer?.enabled || false}
+                  onValueChange={(value) => updatePrinterSetting("enabled", value)}
+                  color="primary"
+                >
+                  Увімкнути прямий друк
+                </Switch>
 
                 <Input
                   id="printerName"

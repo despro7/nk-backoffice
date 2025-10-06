@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button } from './ui/button';
+import { Button } from '@heroui/react';
 
 interface SettingsBase {
   id: number;
@@ -148,8 +148,8 @@ export const SettingsManager: React.FC = () => {
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900">Додати нове налаштування</h3>
           <Button
-            onClick={() => setIsCreating(!isCreating)}
-            variant="outline"
+            onPress={() => setIsCreating(!isCreating)}
+            variant="flat"
             size="sm"
           >
             {isCreating ? 'Скасувати' : 'Додати'}
@@ -200,7 +200,7 @@ export const SettingsManager: React.FC = () => {
             </div>
 
             <Button
-              onClick={handleCreateSetting}
+              onPress={handleCreateSetting}
               disabled={isLoading || !newSetting.key || !newSetting.value}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
@@ -235,7 +235,7 @@ export const SettingsManager: React.FC = () => {
                         className="px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                       <Button
-                        onClick={() => handleUpdateSetting(setting.key)}
+                        onPress={() => handleUpdateSetting(setting.key)}
                         disabled={isLoading}
                         size="sm"
                         className="bg-green-600 hover:bg-green-700 text-white"
@@ -243,8 +243,8 @@ export const SettingsManager: React.FC = () => {
                         Зберегти
                       </Button>
                       <Button
-                        onClick={cancelEditing}
-                        variant="outline"
+                        onPress={cancelEditing}
+                        variant="flat"
                         size="sm"
                       >
                         Скасувати
@@ -256,15 +256,15 @@ export const SettingsManager: React.FC = () => {
                         {setting.value}
                       </span>
                       <Button
-                        onClick={() => startEditing(setting)}
-                        variant="outline"
+                        onPress={() => startEditing(setting)}
+                        variant="flat"
                         size="sm"
                       >
                         Редагувати
                       </Button>
                       <Button
-                        onClick={() => handleDeleteSetting(setting.key)}
-                        variant="outline"
+                        onPress={() => handleDeleteSetting(setting.key)}
+                        variant="flat"
                         size="sm"
                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
                       >

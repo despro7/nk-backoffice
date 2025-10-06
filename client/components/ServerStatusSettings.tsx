@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button } from './ui/button';
+import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface ServerStatusSettingsData {
@@ -132,7 +132,7 @@ export const ServerStatusSettings: React.FC = () => {
               </p>
             </div>
             <Button
-              onClick={handleCreateSetting}
+              onPress={handleCreateSetting}
               disabled={isLoading}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
@@ -173,7 +173,7 @@ export const ServerStatusSettings: React.FC = () => {
                         step="1000"
                       />
                       <Button
-                        onClick={() => handleUpdateSetting(setting.key)}
+                        onPress={() => handleUpdateSetting(setting.key)}
                         disabled={isLoading}
                         size="sm"
                         className="bg-green-600 hover:bg-green-700 text-white"
@@ -181,8 +181,8 @@ export const ServerStatusSettings: React.FC = () => {
                         <DynamicIcon name="check" size={16} />
                       </Button>
                       <Button
-                        onClick={cancelEditing}
-                        variant="outline"
+                        onPress={cancelEditing}
+                        variant="flat"
                         size="sm"
                       >
                         <DynamicIcon name="x" size={16} />
@@ -194,8 +194,8 @@ export const ServerStatusSettings: React.FC = () => {
                         {setting.key === 'server_check_interval' ? `${setting.value}мс` : setting.value}
                       </span>
                       <Button
-                        onClick={() => startEditing(setting)}
-                        variant="outline"
+                        onPress={() => startEditing(setting)}
+                        variant="flat"
                         size="sm"
                       >
                         <DynamicIcon name="edit" size={16} />

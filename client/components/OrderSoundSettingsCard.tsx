@@ -74,7 +74,7 @@ export const OrderSoundSettingsCard: React.FC = () => {
 							label={
 								event === 'pending' ? 'Очікування (pending)' :
 								event === 'success' ? 'Успіх (success)' :
-								event === 'done' ? 'Завершено (done)' :
+								event === 'done' ? 'Замовлення завершено' :
 								event === 'error' ? 'Помилка (error)' : event
 							}
 							labelPlacement="outside"

@@ -1,5 +1,6 @@
 import { Check, X } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
 
 interface OrderItem {
   id: string;
@@ -11,6 +12,7 @@ interface OrderItem {
   boxSettings?: any;
   boxCount?: number;
   boxIndex?: number;
+  manualOrder?: number;
 }
 
 interface OrderChecklistItemProps {
@@ -30,11 +32,13 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderCh
   }
 
   // Функция для форматирования количества порций
-  const formatQuantity = (qty: number) => {
-    if (qty === 1) return '1 порція';
-    if (qty < 5) return `${qty} порції`;
-    return `${qty} порцій`;
-  };
+  // const formatQuantity = (qty: number) => {
+  //   if (qty === 1) return '1 порція';
+  //   if (qty < 5) return `${qty} порції`;
+  //   return `${qty} порцій`;
+  // };
+
+  const { isAdmin } = useRoleAccess();
 
   const isDone = status === 'done';
   const isItemBoxConfirmed = type === 'box' && status === 'confirmed';
@@ -79,6 +83,7 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderCh
           })}>
             {name} {type !== 'box' && (<span>× <span className="text-[18px] font-mono rounded-sm bg-gray-950/5 px-2.5 py-1">{quantity}</span></span>)}
           </span>
+          {item.manualOrder && isAdmin() && (<span className="text-[13px] text-neutral-300 tabular-nums">#{item.manualOrder}</span>)}
           {type === 'box' && boxSettings && (
             <span className="text-[13px] tabular-nums bg-gray-950/5 px-2 py-1 rounded">
               {boxSettings.width}×{boxSettings.height}×{boxSettings.length} см

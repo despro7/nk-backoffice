@@ -743,7 +743,7 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
             
           {/* Поточна вага (кг) */}
           <div className="flex flex-col items-center">
-            <span className={`w-full text-center text-xs font-normal ${isError ? 'text-red-600' : 'text-neutral-400'}`}>Поточна вага</span>
+            <span className={`w-full text-xs font-normal ${isError ? 'text-red-600' : 'text-neutral-400'}`}>Поточна вага</span>
             <NumberFlow
               value={currentWeight || 0}
               format={{ minimumFractionDigits: 3, maximumFractionDigits: 3 }}
@@ -755,7 +755,7 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
             
           {/* Очікувана вага (кг) */}
           <div className="flex flex-col items-center">
-            <span className="w-full text-center text-xs font-normal text-neutral-400">Очікувана вага</span>
+            <span className="w-full text-xs font-normal text-neutral-400">Очікувана вага</span>
             <div className="flex items-center gap-1">
               <NumberFlow
                 value={expectedWeight || 0}

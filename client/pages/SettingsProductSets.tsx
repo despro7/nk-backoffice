@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useAuth } from '../contexts/AuthContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { Button } from '../components/ui/button';
 import { formatDateTime, formatPrice } from '../lib/formatUtils';
 import { addToast } from '@heroui/toast';
 import {
@@ -17,9 +17,11 @@ import {
   DropdownTrigger,
   DropdownMenu,
   DropdownItem,
-  SortDescriptor
+  SortDescriptor,
+  Button,
 } from '@heroui/react';
 import { LoggingService } from '@/services/LoggingService';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
 
 interface Product {
   id: string;
@@ -30,6 +32,7 @@ interface Product {
   categoryId: number;
   categoryName: string;
   weight?: number; // Вес в граммах
+  manualOrder?: number; // Ручне сортування
   set: any; // Уже распарсенный объект или null
   additionalPrices: any; // Уже распарсенный объект или null
   stockBalanceByStock: any; // Уже распарсенный объект или null
@@ -57,6 +60,7 @@ interface StatsResponse {
 
 const ProductSets: React.FC = () => {
   const { user } = useAuth();
+  const { isAdmin } = useRoleAccess();
   const [products, setProducts] = useState<Product[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]); // Все товары для поиска названий в комплектах
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -111,14 +115,20 @@ const ProductSets: React.FC = () => {
     errors: string[];
   } | null>(null);
 
-  // Состояние для сортировки
-  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | undefined>(undefined);
+  // Состояние для сортировки (дефолт: ручний порядок по зростанню)
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | undefined>({
+    column: 'manualOrder',
+    direction: 'ascending'
+  } as any);
 
   // Состояние для редактирования веса
   const [editingWeight, setEditingWeight] = useState<{ [key: string]: string }>({});
   const [savingWeight, setSavingWeight] = useState<string | null>(null);
   const [forceUpdate, setForceUpdate] = useState(0); // Для принудительного обновления
   const inputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+
+  // Стан для підтвердження видалення ваги
+  const [deleteConfirmProductId, setDeleteConfirmProductId] = useState<string | null>(null);
 
   // Индекс для быстрого и стабильного поиска товаров по SKU
   const productsBySku = useMemo(() => {
@@ -132,6 +142,11 @@ const ProductSets: React.FC = () => {
 
   // Определяем колонки таблицы
   const columns = [
+    {
+      key: 'manualOrder',
+      label: '№',
+      allowsSorting: true,
+    },
     {
       key: 'name',
       label: 'Товар',
@@ -216,6 +231,9 @@ const ProductSets: React.FC = () => {
         } else if (sortDescriptor.column === 'weight') {
           first = a.weight || 0;
           second = b.weight || 0;
+        } else if (sortDescriptor.column === 'manualOrder') {
+          first = (a.manualOrder ?? 0);
+          second = (b.manualOrder ?? 0);
         }
         
         if (first === null || first === undefined) first = '';
@@ -235,6 +253,99 @@ const ProductSets: React.FC = () => {
   // Функция для рендеринга ячеек
   const renderCell = (product: Product, columnKey: React.Key) => {
     switch (columnKey) {
+      case 'manualOrder': {
+        const productIdStr = product.id.toString();
+        const isEditing = editingWeight[`manual-${productIdStr}`] !== undefined;
+        const isSaving = savingWeight === `manual-${productIdStr}`;
+        const currentOrder = product as any;
+        const currentManualOrder = (currentOrder.manualOrder ?? 0) as number;
+
+        const startEditingManual = () => {
+          setEditingWeight(prev => ({ ...prev, [`manual-${productIdStr}`]: String(currentManualOrder) }));
+          setForceUpdate(v => v + 1);
+        };
+        const cancelEditingManual = () => {
+          setEditingWeight(prev => {
+            const next = { ...prev };
+            delete next[`manual-${productIdStr}`];
+            return next;
+          });
+        };
+        const finishEditingManual = async () => {
+          const value = inputRefs.current[`manual-${productIdStr}` as any]?.value ?? editingWeight[`manual-${productIdStr}`];
+          if (value === undefined || value === '') {
+            cancelEditingManual();
+            return;
+          }
+          const newOrder = parseInt(String(value));
+          if (isNaN(newOrder) || newOrder < 0) {
+            addToast({ title: 'Некоректне значення', description: 'Вкажіть ціле число ≥ 0', color: 'warning' });
+            cancelEditingManual();
+            return;
+          }
+          try {
+            setSavingWeight(`manual-${productIdStr}`);
+            const response = await fetch(`/api/products/${productIdStr}/manual-order`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ manualOrder: newOrder }),
+              credentials: 'include'
+            });
+            if (!response.ok) {
+              const err = await response.json().catch(() => ({}));
+              addToast({ title: 'Помилка', description: `Не вдалося оновити: ${err.error || response.statusText}`, color: 'danger' });
+            } else {
+              setProducts(prev => prev.map(p => p.id === product.id ? ({ ...p, ...(p as any), manualOrder: newOrder } as any) : p));
+              addToast({ title: 'Оновлено', description: `Номер встановлено: ${newOrder}`, color: 'success' });
+            }
+          } finally {
+            setSavingWeight(null);
+            cancelEditingManual();
+          }
+        };
+
+        return (
+          <div className="flex items-center gap-1">
+            {isEditing ? (
+              <>
+                <input
+                  ref={(el) => { (inputRefs.current as any)[`manual-${productIdStr}`] = el; }}
+                  key={`manual-input-${productIdStr}-${forceUpdate}`}
+                  type="number"
+                  defaultValue={editingWeight[`manual-${productIdStr}`] ?? ''}
+                  onChange={(e) => setEditingWeight(prev => ({ ...prev, [`manual-${productIdStr}`]: e.target.value }))}
+                  className="w-12 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  min="0"
+                  step="1"
+                  disabled={isSaving}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') finishEditingManual();
+                    else if (e.key === 'Escape') cancelEditingManual();
+                  }}
+                  onWheel={e => e.currentTarget.blur()}
+                  autoFocus
+                  placeholder="0"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <Button size="sm" color="success" variant="flat" onPress={() => finishEditingManual()} disabled={isSaving} className="min-w-0 p-1">
+                  {isSaving ? <DynamicIcon name="loader-2" className="animate-spin" size={12} /> : <DynamicIcon name="check" size={12} />}
+                </Button>
+                <Button size="sm" color="danger" variant="flat" onPress={() => cancelEditingManual()} disabled={isSaving} className="min-w-0 p-1">
+                  <DynamicIcon name="x" size={12} />
+                </Button>
+              </>
+            ) : (
+              <div
+                className="text-sm text-gray-900 cursor-pointer hover:bg-gray-100 px-2 py-1 rounded min-w-[36px] text-center"
+                onClick={() => startEditingManual()}
+                title="Натисніть для редагування"
+              >
+                {currentManualOrder}
+              </div>
+            )}
+          </div>
+        );
+      }
       case 'name':
         return (
           <div>
@@ -254,7 +365,7 @@ const ProductSets: React.FC = () => {
       
       case 'category':
         const categoryColor: ChipProps["color"] = 
-          product.categoryId === 1 ? "danger" :
+          product.categoryId === 1 ? "warning" :
           product.categoryId === 2 ? "success" : "secondary";
         
         return (
@@ -297,7 +408,8 @@ const ProductSets: React.FC = () => {
                       return newState;
                     });
                   }}
-                  className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  onWheel={e => e.currentTarget.blur()}
+                  className="w-12 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   min="0"
                   step="1"
                   disabled={isSaving}
@@ -311,17 +423,17 @@ const ProductSets: React.FC = () => {
                   autoFocus
                   placeholder="0"
                   onFocus={(e) => {
-                    // Выделяем весь текст при фокусе для удобства редактирования
+                    // Виділяємо весь текст при фокусі для зручності редагування
                     e.target.select();
                   }}
                 />
                 <Button
                   size="sm"
                   color="success"
-                  variant="outline"
-                  onClick={() => finishEditingWeight(productIdStr)}
+                  variant="flat"
+                  onPress={() => finishEditingWeight(productIdStr)}
                   disabled={isSaving}
-                  className="min-w-0 p-1"
+                  className="min-w-8 p-1"
                 >
                   {isSaving ? (
                     <DynamicIcon name="loader-2" className="animate-spin" size={12} />
@@ -331,11 +443,11 @@ const ProductSets: React.FC = () => {
                 </Button>
                 <Button
                   size="sm"
-                  color="danger"
-                  variant="outline"
-                  onClick={() => cancelEditingWeight(productIdStr)}
+                  color="default"
+                  variant="flat"
+                  onPress={() => cancelEditingWeight(productIdStr)}
                   disabled={isSaving}
-                  className="min-w-0 p-1"
+                  className="min-w-8 p-1 text-neutral-600"
                 >
                   <DynamicIcon name="x" size={12} />
                 </Button>
@@ -343,27 +455,42 @@ const ProductSets: React.FC = () => {
             ) : (
               <div className="flex items-center gap-1">
                 <div 
-                  className="text-sm text-gray-900 cursor-pointer hover:bg-gray-100 px-2 py-1 rounded min-w-[60px]"
+                  className="text-sm text-gray-900 cursor-pointer hover:bg-gray-100 px-1.5 py-1 rounded min-w-[50px] whitespace-nowrap tabular-nums underline underline-offset-3 decoration-dotted"
                   onClick={() => startEditingWeight(productIdStr, currentWeight)}
-                  title="Нажмите для редактирования"
+                  title="Натисніть для редагування"
                 >
                   {currentWeight || '—'} г
                 </div>
                 {currentWeight === 0 && (
                   <Button
                     size="sm"
-                    color="primary"
-                    variant="outline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // Автоматически устанавливаем вес по умолчанию на основе категории
-                      const defaultWeight = product.categoryId === 1 ? 410 : 330; // 1 - первые блюда, остальные - вторые
+                    color="default"
+                    variant="flat"
+                    onPress={(e) => {
+                      (e as any).stopPropagation();
+                      // Автоматично встановлюємо вагу за замовчуванням на основі категорії
+                      const defaultWeight = product.categoryId === 1 ? 410 : 330; // 1 - перші страви, решта - другі
                       updateProductWeight(productIdStr, defaultWeight);
                     }}
-                    className="min-w-0 p-1"
-                    title={`Установить вес по умолчанию: ${product.categoryId === 1 ? '410' : '330'}г`}
+                    className="min-w-8 p-1 text-neutral-600"
+                    title={`Встановити вагу за замовчуванням: ${product.categoryId === 1 ? '410' : '330'}г`}
                   >
                     <DynamicIcon name="plus" size={12} />
+                  </Button>
+                )}
+                {currentWeight > 0 && (
+                  <Button
+                    size="sm"
+                    color="danger"
+                    variant="flat"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteConfirmProductId(productIdStr);
+                    }}
+                    className="min-w-8 p-1"
+                    title="Видалити вагу"
+                  >
+                    <DynamicIcon name="trash-2" size={12} />
                   </Button>
                 )}
               </div>
@@ -440,7 +567,9 @@ const ProductSets: React.FC = () => {
     try {
       const params = new URLSearchParams({
         page: currentPage.toString(),
-        limit: '100' // Увеличиваем лимит для загрузки всех товаров
+        limit: '100', // Збільшуємо ліміт для завантаження всіх товарів
+        sortBy: (sortDescriptor?.column as string) || 'manualOrder',
+        sortOrder: sortDescriptor?.direction === 'ascending' ? 'asc' : 'desc'
       });
 
       if (searchTerm) {
@@ -533,10 +662,10 @@ const ProductSets: React.FC = () => {
 
   // Синхронизация товаров с Dilovod
   const syncProductsWithDilovod = async () => {
-    if (!['admin', 'boss'].includes(user?.role || '')) {
+    if (!isAdmin()) {
       setSyncStatus({
         isRunning: false,
-        message: 'У вас нет прав для выполнения синхронизации',
+        message: 'У вас немає прав для виконання синхронізації',
         syncedProducts: 0,
         syncedSets: 0,
         errors: ['Access denied']
@@ -546,7 +675,7 @@ const ProductSets: React.FC = () => {
 
     setSyncStatus({
       isRunning: true,
-      message: 'Начинаем синхронизацию...',
+      message: 'Починаємо синхронізацію...',
       syncedProducts: 0,
       syncedSets: 0,
       errors: []
@@ -656,7 +785,7 @@ const ProductSets: React.FC = () => {
 
   // Тестирование получения комплектов
   const testSetsOnly = async () => {
-    if (!['admin', 'boss'].includes(user?.role || '')) {
+    if (!isAdmin()) {
       alert('У вас нет прав для выполнения тестирования');
       return;
     }
@@ -688,7 +817,7 @@ const ProductSets: React.FC = () => {
 
   // Тест получения одного товара по SKU напрямую из Dilovod
   const testSingleDilovodProduct = async () => {
-    if (!['admin', 'boss'].includes(user?.role || '')) {
+    if (!isAdmin()) {
       addToast({
         title: "Недостатньо прав",
         description: 'Лише адміністратори можуть виконувати цей тест',
@@ -970,17 +1099,17 @@ const ProductSets: React.FC = () => {
 
 
 
-  if (!user || !['admin', 'boss'].includes(user.role)) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <DynamicIcon name="lock" size={48} className="mx-auto mb-4 text-gray-400" />
-          <h2 className="text-xl font-semibold text-gray-600">Доступ заборонено</h2>
-          <p className="text-gray-500">У вас немає прав для перегляду цієї сторінки</p>
-        </div>
-      </div>
-    );
-  }
+  // if (!user || !['admin', 'boss'].includes(user.role)) {
+  //   return (
+  //     <div className="flex items-center justify-center min-h-full">
+  //       <div className="text-center">
+  //         <DynamicIcon name="lock" size={48} className="mx-auto mb-4 text-gray-400" />
+  //         <h2 className="text-xl font-semibold text-gray-600">Доступ заборонено</h2>
+  //         <p className="text-gray-500">У вас немає прав для перегляду цієї сторінки</p>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className="max-w-full">
@@ -1017,8 +1146,8 @@ const ProductSets: React.FC = () => {
               )}
             </h3>
             <Button
-              onClick={clearSyncStatus}
-              variant="outline"
+              onPress={clearSyncStatus}
+              variant="flat"
               size="sm"
               className="text-gray-500 hover:text-gray-700"
             >
@@ -1138,71 +1267,61 @@ const ProductSets: React.FC = () => {
                    </div>
                   
                   {/* Кнопки действий */}
-                  <div className="flex flex-wrap gap-4 pb-6">
+                  <div className={`flex flex-wrap gap-4 pb-6 ${!isAdmin() ? 'hidden' : ''}`} >
                     <Button
-                      onClick={syncProductsWithDilovod}
-                      disabled={syncStatus?.isRunning || !['admin', 'boss'].includes(user?.role || '')}
-                      size="sm"
+                      onPress={syncProductsWithDilovod}
+                      disabled={syncStatus?.isRunning || !isAdmin()}
                       color="primary"
                     >
                       {syncStatus?.isRunning ? (
                         <>
-                          <DynamicIcon name="loader-2" className="mr-2 animate-spin" size={14} />
+                          <DynamicIcon name="loader-2" className="animate-spin" size={14} />
                           Синхронізація...
                         </>
                       ) : (
                         <>
-                          <DynamicIcon name="refresh-cw" className="mr-2" size={14} />
+                          <DynamicIcon name="refresh-cw" size={14} />
                           Синхронізувати товари з Dilovod
                         </>
                       )}
                     </Button>
 
                     <Button
-                      onClick={syncStockBalances}
-                      disabled={stockSyncing || !['admin', 'boss'].includes(user?.role || '')}
-                      size="sm"
+                      onPress={syncStockBalances}
+                      disabled={stockSyncing || !isAdmin()}
                       color="success"
+                      className="text-white"
                     >
                       {stockSyncing ? (
                         <>
-                          <DynamicIcon name="loader-2" className="mr-2 animate-spin" size={14} />
+                          <DynamicIcon name="loader-2" className="animate-spin" size={14} />
                           Синхронізація залишків...
                         </>
                       ) : (
                         <>
-                          <DynamicIcon name="refresh-cw" className="mr-2" size={14} />
+                          <DynamicIcon name="refresh-cw" size={14} />
                           Оновити залишки з Dilovod
                         </>
                       )}
                     </Button>
 
                     <Button
-                       onClick={testSetsOnly}
-                       disabled={!['admin', 'boss'].includes(user?.role || '')}
-                       size="sm"
-                       variant="outline"
+                       onPress={testSetsOnly}
+                       disabled={!isAdmin()}
+                       variant="flat"
                      >
-                       <DynamicIcon name="package-x" className="mr-2" size={14} />
+                       <DynamicIcon name="package-x" size={14} />
                        Тест комплектацій
                     </Button>
                     <Button
-                      onClick={testSingleDilovodProduct}
-                      disabled={!['admin', 'boss'].includes(user?.role || '')}
-                      size="sm"
-                      variant="outline"
+                      onPress={testSingleDilovodProduct}
+                      disabled={!isAdmin()}
+                      variant="flat"
                     >
-                      <DynamicIcon name="search" className="mr-2" size={14} />
+                      <DynamicIcon name="search" size={14} />
                       Тест SKU (Dilovod)
                     </Button>
                    </div>
-                   
-                   {/* Информация о правах доступа */}
-                   {!['admin', 'boss'].includes(user?.role || '') && (
-                     <p className="text-xs text-default-400 mt-2 text-center">
-                       Тільки адміністратори можуть виконувати синхронізацію
-                     </p>
-                   )}
                 </div>
 
                 {/* Поиск и фильтры */}
@@ -1219,7 +1338,7 @@ const ProductSets: React.FC = () => {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setSearchTerm('')}
+                        onPress={() => setSearchTerm('')}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                       >
                         <DynamicIcon name="x" size={14} />
@@ -1231,7 +1350,7 @@ const ProductSets: React.FC = () => {
                     <Dropdown>
                       <DropdownTrigger>
                         <Button 
-                          variant="outline" 
+                          variant="flat" 
                           className="w-full justify-between"
                         >
                           {selectedCategory || 'Всі категорії'}
@@ -1264,7 +1383,7 @@ const ProductSets: React.FC = () => {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => {
+                      onPress={() => {
                         setSearchTerm('');
                         setSelectedCategory('');
                       }}
@@ -1316,9 +1435,9 @@ const ProductSets: React.FC = () => {
         <div className="mt-6 flex justify-center">
           <nav className="flex space-x-2">
             <Button
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              onPress={() => setCurrentPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
-              variant="secondary"
+              variant="flat"
               size="sm"
             >
               Попередня
@@ -1329,9 +1448,9 @@ const ProductSets: React.FC = () => {
             </span>
             
             <Button
-              onClick={() => setCurrentPage(Math.min(pagination.pages, currentPage + 1))}
+              onPress={() => setCurrentPage(Math.min(pagination.pages, currentPage + 1))}
               disabled={currentPage === pagination.pages}
-              variant="secondary"
+              variant="flat"
               size="sm"
             >
               Наступна
@@ -1341,39 +1460,58 @@ const ProductSets: React.FC = () => {
       )}
 
       {/* Тестовые кнопки */}
-      <div className="mt-6 p-4 border rounded-lg bg-gray-50">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Тестування Dilovod API</h2>
-        </div>
-        
-        <div className="flex gap-4">
-          <Button onClick={testDilovodConnection} variant="outline">
-            Тест підключення
-          </Button>
-
-          <Button onClick={testBalanceBySku} variant="outline">
-            Залишки по SKU
-          </Button>
-
-          <Button onClick={clearSkuCache} className='bg-danger text-white hover:bg-danger-400'>
-            Очистити кеш SKU з WordPress
-          </Button>
-
-          <Button onClick={clearTestResults} className='ml-auto bg-transparent border-1.5 border-danger text-danger hover:bg-danger-50'>
-            Очистити логи
-          </Button>
-        </div>
-        
-        {/* Результаты тестов */}
-        {testResults && (
-          <div className="mt-4">
-            <h3 className="text-md font-medium mb-2">Результати тестів:</h3>
-            <pre className="bg-gray-100 p-3 rounded text-sm overflow-auto max-h-96 font-mono">
-              {testResults}
-            </pre>
+      {isAdmin() && (
+        <div className="mt-6 p-4 border rounded-lg bg-gray-50">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Тестування Dilovod API</h2>
           </div>
-        )}
-      </div>
+          
+          <div className="flex gap-4">
+            <Button onPress={testDilovodConnection} variant="flat">
+              Тест підключення
+            </Button>
+
+            <Button onPress={testBalanceBySku} variant="flat">
+              Залишки по SKU
+            </Button>
+
+            <Button onPress={clearSkuCache} className='bg-danger text-white hover:bg-danger-400'>
+              Очистити кеш SKU з WordPress
+            </Button>
+
+            <Button onPress={clearTestResults} className='ml-auto bg-transparent border-1.5 border-danger text-danger hover:bg-danger-50'>
+              Очистити логи
+            </Button>
+          </div>
+          
+          {/* Результаты тестов */}
+          {testResults && (
+            <div className="mt-4">
+              <h3 className="text-md font-medium mb-2">Результати тестів:</h3>
+              <pre className="bg-gray-100 p-3 rounded text-sm overflow-auto max-h-96 font-mono">
+                {testResults}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+
+      
+      {/* Модал підтвердження видалення ваги */}
+      <ConfirmModal
+        isOpen={!!deleteConfirmProductId}
+        title="Підтвердження видалення"
+        message="Видалити вагу товару? Значення буде скинуто до 0 г."
+        confirmText="Видалити"
+        cancelText="Скасувати"
+        onCancel={() => setDeleteConfirmProductId(null)}
+        onConfirm={() => {
+          if (deleteConfirmProductId) {
+            updateProductWeight(deleteConfirmProductId, 0);
+          }
+          setDeleteConfirmProductId(null);
+        }}
+      />
     </div>
   );
 };

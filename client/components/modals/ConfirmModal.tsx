@@ -14,8 +14,8 @@ export function ConfirmModal({
   isOpen,
   title,
   message,
-  confirmText = "Да",
-  cancelText = "Нет",
+  confirmText = "Так",
+  cancelText = "Ні",
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {

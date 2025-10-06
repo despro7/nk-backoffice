@@ -33,14 +33,14 @@ export function BaseModal({
         </ModalHeader>
         <ModalBody>{message}</ModalBody>
         <ModalFooter>
-          {cancelText && (
-            <Button variant="flat" onPress={onCancel}>
-              {cancelText}
-            </Button>
-          )}
           {confirmText && (
             <Button color={confirmColor} onPress={onConfirm}>
               {confirmText}
+            </Button>
+          )}
+          {cancelText && (
+            <Button variant="flat" onPress={onCancel}>
+              {cancelText}
             </Button>
           )}
         </ModalFooter>

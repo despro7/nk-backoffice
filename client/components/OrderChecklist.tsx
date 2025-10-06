@@ -23,6 +23,7 @@ interface OrderItem {
   boxIndex?: number; // Индекс коробки (0, 1, 2...)
   portionsRange?: { start: number; end: number }; // Диапазон порций для коробки
   portionsPerBox?: number; // Количество порций на коробку
+  manualOrder?: number; // Ручне сортування
 }
 
 interface OrderChecklistProps {
@@ -354,13 +355,30 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
         </div>
       )}
 
-      {/* Список позиций для комплектации */}
+      {/* Список позицій для комплектації */}
       <div className="space-y-2 mb-0">
         {items
           .filter((item) => {
-            // Фильтруем элементы по текущей коробке
+            // Фільтруємо елементи за поточною коробкою
             const boxIndex = item.boxIndex || 0;
             return boxIndex === activeBoxIndex;
+          })
+          .sort((a, b) => {
+            // Спочатку сортуємо по manualOrder, потім по типу, потім по імені
+            const aManualOrder = a.manualOrder ?? 999;
+            const bManualOrder = b.manualOrder ?? 999;
+            
+            if (aManualOrder !== bManualOrder) {
+              return aManualOrder - bManualOrder;
+            }
+            
+            // Якщо manualOrder однаковий, спочатку коробки, потім товари
+            if (a.type !== b.type) {
+              return a.type === 'box' ? -1 : 1;
+            }
+            
+            // Для однакового типу сортуємо по імені
+            return a.name.localeCompare(b.name);
           })
           .map((item) => (
             <div key={item.id} className="relative">

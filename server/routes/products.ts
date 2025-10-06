@@ -29,12 +29,22 @@ router.get('/', authenticateToken, async (req, res) => {
       where.categoryName = category;
     }
 
+    const sortBy = (req.query.sortBy as string) || 'lastSyncAt';
+    const sortOrder = (req.query.sortOrder as string) === 'asc' ? 'asc' : 'desc';
+
+    const orderBy: any = {};
+    if (['lastSyncAt', 'name', 'categoryName', 'weight', 'manualOrder'].includes(sortBy)) {
+      orderBy[sortBy] = sortOrder;
+    } else {
+      orderBy['lastSyncAt'] = 'desc';
+    }
+
     const [products, total] = await Promise.all([
       prisma.product.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { lastSyncAt: 'desc' }
+        orderBy
       }),
       prisma.product.count({ where })
     ]);
@@ -202,6 +212,38 @@ router.put('/:id/weight', authenticateToken, async (req, res) => {
       success: true,
       product: updatedProduct
     });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Обновить ручной порядок (manualOrder) товара по ID
+router.put('/:id/manual-order', authenticateToken, async (req, res) => {
+  try {
+    const { user } = req as any;
+    if (!['admin', 'boss'].includes(user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { id } = req.params;
+    const { manualOrder } = req.body;
+
+    if (typeof manualOrder !== 'number' || manualOrder < 0) {
+      return res.status(400).json({ error: 'manualOrder must be a non-negative number' });
+    }
+
+    const productId = parseInt(id);
+    const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
+    if (!existingProduct) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const updatedProduct = await prisma.product.update({
+      where: { id: productId },
+      data: ({ manualOrder } as any)
+    });
+
+    res.json({ success: true, product: updatedProduct });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
   }

@@ -103,10 +103,12 @@ model Product {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   weight              Int?
+  manualOrder         Int?     @default(0)
 
   @@index([sku])
   @@index([categoryId])
   @@index([lastSyncAt])
+  @@index([manualOrder])
   @@map("products")
 }
 

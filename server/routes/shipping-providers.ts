@@ -92,6 +92,36 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 /**
+ * PUT /api/shipping-providers/order
+ * Оновити порядок провайдерів
+ */
+router.put('/order', authenticateToken, async (req, res) => {
+  try {
+    const { providers } = req.body;
+
+    if (!Array.isArray(providers)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Необхідно передати масив провайдерів з id та order'
+      });
+    }
+
+    await shippingProviderService.updateProviderOrder(providers);
+
+    res.json({
+      success: true,
+      message: 'Порядок провайдерів успішно оновлено'
+    });
+  } catch (error) {
+    console.error('Error updating provider order:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Не вдалося оновити порядок провайдерів'
+    });
+  }
+});
+
+/**
  * PUT /api/shipping-providers/:id
  * Оновити провайдера
  */
@@ -235,36 +265,6 @@ router.post('/:id/validate', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Не вдалося валідувати провайдера'
-    });
-  }
-});
-
-/**
- * PUT /api/shipping-providers/order
- * Оновити порядок провайдерів
- */
-router.put('/order', authenticateToken, async (req, res) => {
-  try {
-    const { providers } = req.body;
-
-    if (!Array.isArray(providers)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Необхідно передати масив провайдерів з id та order'
-      });
-    }
-
-    await shippingProviderService.updateProviderOrder(providers);
-
-    res.json({
-      success: true,
-      message: 'Порядок провайдерів успішно оновлено'
-    });
-  } catch (error) {
-    console.error('Error updating provider order:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Не вдалося оновити порядок провайдерів'
     });
   }
 });

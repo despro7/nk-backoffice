@@ -344,7 +344,7 @@ export const BoxSettingsManager: React.FC = () => {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Місткість:</span>
                     <span className="font-medium">
-                      {box.qntFrom}-{box.qntTo} порций
+                      {box.qntFrom}-{box.qntTo} порцій
                     </span>
                   </div>
                   <div className="flex justify-between">
