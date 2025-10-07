@@ -106,7 +106,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
   }, []);
 
   // Загрузка заказов с пагинацией и фильтрацией
-  const fetchOrders = async (pageNum: number = 1, currentPageSize: number = pageSize, statusFilter?: string, currentSortDescriptor: SortDescriptor = sortDescriptor) => {
+  const fetchOrders = async (pageNum: number = 1, currentPageSize: number = pageSize, statusFilter?: string, currentSortDescriptor: SortDescriptor = sortDescriptor, search?: string) => {
     const startTime = Date.now();
     
     setLoading(true);
@@ -125,6 +125,11 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
         else if (statusFilter === 'readyToShip') queryParams.set('status', '3');
         else if (statusFilter === 'shipped') queryParams.set('status', '4');
         else if (statusFilter === 'all_sum') queryParams.set('status', '2,3,4');
+      }
+
+      // Добавляем поиск если указан
+      if (search && search.trim() !== '') {
+        queryParams.set('search', search.trim());
       }
 
       const response = await apiCall('/api/orders?' + queryParams.toString());
@@ -154,24 +159,9 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
     }
   };
 
-  // Фильтрация заказов (только по поиску, статус уже отфильтрован на сервере)
-  const filteredOrders = useMemo(() => {
-    let filtered = orders;
-
-    // Фильтр по поиску
-    if (searchQuery) {
-      filtered = filtered.filter(order =>
-        order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.ttn.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    return filtered;
-  }, [orders, searchQuery]); // Убрали filter из зависимостей
-
-  // Пагинация - теперь только серверная
+  // Пагинация - теперь только серверная (поиск тоже на сервере)
   const pages = Math.ceil(totalOrders / pageSize);
-  const displayOrders = filteredOrders; // Используем отфильтрованные заказы для отображения
+  const displayOrders = orders; // Используем заказы напрямую с сервера
 
   // Загружаем заказы при изменении фильтра или страницы
   useEffect(() => {
@@ -180,12 +170,12 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
       setPage(1);
       return; // Прерываем текущее выполнение, чтобы избежать лишнего запроса
     }
-    fetchOrders(1, pageSize, filter, sortDescriptor);
+    fetchOrders(1, pageSize, filter, sortDescriptor, searchQuery);
   }, [filter, searchQuery]);
 
   // Загружаем заказы при изменении страницы, размера страницы или сортировки
   useEffect(() => {
-    fetchOrders(page, pageSize, filter, sortDescriptor);
+    fetchOrders(page, pageSize, filter, sortDescriptor, searchQuery);
   }, [page, pageSize, sortDescriptor]);
 
   const handleRowClick = (externalId: string) => {

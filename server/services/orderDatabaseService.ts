@@ -400,6 +400,7 @@ export class OrderDatabaseService {
   async getOrdersCount(filters?: {
     status?: string | string[];
     syncStatus?: string;
+    search?: string;
   }) {
     const startTime = Date.now();
     // console.log('🗄️ [DB] orderDatabaseService.getOrdersCount: Starting count query');
@@ -423,6 +424,16 @@ export class OrderDatabaseService {
 
       if (filters?.syncStatus) {
         where.syncStatus = filters.syncStatus;
+      }
+
+      // Добавляем фильтр по поиску (номер замовлення або ТТН)
+      // Для MySQL используем contains без mode (MySQL по умолчанию case-insensitive для VARCHAR)
+      if (filters?.search && filters.search.trim() !== '') {
+        const searchTerm = filters.search.trim();
+        where.OR = [
+          { orderNumber: { contains: searchTerm } },
+          { ttn: { contains: searchTerm } }
+        ];
       }
 
       const count = await prisma.order.count({ where });
@@ -452,6 +463,7 @@ export class OrderDatabaseService {
       start: Date;
       end: Date;
     };
+    search?: string;
   }) {
     const startTime = Date.now();
 
@@ -482,6 +494,16 @@ export class OrderDatabaseService {
           gte: filters.dateRange.start,
           lte: filters.dateRange.end
         };
+      }
+
+      // Добавляем фильтр по поиску (номер замовлення або ТТН)
+      // Для MySQL используем contains без mode (MySQL по умолчанию case-insensitive для VARCHAR)
+      if (filters?.search && filters.search.trim() !== '') {
+        const searchTerm = filters.search.trim();
+        where.OR = [
+          { orderNumber: { contains: searchTerm } },
+          { ttn: { contains: searchTerm } }
+        ];
       }
 
       // Определяем сортировку

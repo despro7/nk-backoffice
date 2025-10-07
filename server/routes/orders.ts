@@ -69,7 +69,7 @@ router.get('/test', authenticateToken, async (req, res) => {
  */
 router.get('/', authenticateToken, async (req, res) => {
   const startTime = Date.now();
-  const { status, sync, sortBy, sortOrder, limit } = req.query;
+  const { status, sync, sortBy, sortOrder, limit, search } = req.query;
 
   // Парсим статусы: если строка содержит запятую, разбиваем на массив
   let parsedStatus: string | string[] | undefined = status as string;
@@ -97,12 +97,14 @@ router.get('/', authenticateToken, async (req, res) => {
       limit: parseInt(limit as string) || 100,
       offset: parseInt(req.query.offset as string) || 0,
       sortBy: (sortBy as 'orderDate' | 'createdAt' | 'lastSynced' | 'orderNumber') || 'orderDate',
-      sortOrder: (sortOrder as 'asc' | 'desc') || 'desc'
+      sortOrder: (sortOrder as 'asc' | 'desc') || 'desc',
+      search: search as string
     });
 
     // Получаем общее количество заказов для пагинации
     const totalCount = await orderDatabaseService.getOrdersCount({
-      status: parsedStatus
+      status: parsedStatus,
+      search: search as string
     });
 
     // Получаем счетчики по статусам для табов
