@@ -178,8 +178,8 @@ router.put('/:id/weight', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
     
-    // Проверяем права доступа (только ADMIN и BOSS)
-    if (!['admin', 'boss'].includes(user.role)) {
+    // Проверяем права доступа (ADMIN, BOSS и STOREKEEPER)
+    if (!['admin', 'boss', 'storekeeper'].includes(user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -221,7 +221,7 @@ router.put('/:id/weight', authenticateToken, async (req, res) => {
 router.put('/:id/manual-order', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
-    if (!['admin', 'boss'].includes(user.role)) {
+    if (!['admin', 'boss', 'storekeeper'].includes(user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 

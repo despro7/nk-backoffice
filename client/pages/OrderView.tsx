@@ -23,6 +23,7 @@ import { WeightDisplayWidget } from '@/components/WeightDisplayWidget';
 import { LoggingService } from '@/services/LoggingService';
 import { calcTolerance, calcBoxTolerance, calcCumulativeTolerance } from '@/lib/utils';
 import { ToastService } from '@/services/ToastService';
+import { ConfirmModal } from '@/components/modals/ConfirmModal';
 
 // Интерфейс для настроек tolerance
 interface ToleranceSettings {
@@ -87,6 +88,27 @@ const calculateExpectedWeight = (product: Product, quantity: number): number => 
   // categoryId === 1 - первые блюда (420г), остальные - вторые блюда (330г)
   const defaultWeight = product.categoryId === 1 ? 420 : 330;
   return (defaultWeight * quantity) / 1000;
+};
+
+// Функция сортировки элементов по manualOrder -> type -> name
+const sortChecklistItems = (items: OrderChecklistItem[]): OrderChecklistItem[] => {
+  return [...items].sort((a, b) => {
+    // Спочатку сортуємо по manualOrder, потім по типу, потім по імені
+    const aManualOrder = a.manualOrder ?? 999;
+    const bManualOrder = b.manualOrder ?? 999;
+    
+    if (aManualOrder !== bManualOrder) {
+      return aManualOrder - bManualOrder;
+    }
+    
+    // Якщо manualOrder однаковий, спочатку коробки, потім товари
+    if (a.type !== b.type) {
+      return a.type === 'box' ? -1 : 1;
+    }
+    
+    // Для однакового типу сортуємо по імені
+    return a.name.localeCompare(b.name);
+  });
 };
 
 // Функция для разворачивания наборов товаров
@@ -405,6 +427,7 @@ export default function OrderView() {
   const [boxesTotalWeight, setBoxesTotalWeight] = useState<number>(0);
   const [activeBoxIndex, setActiveBoxIndex] = useState<number>(0);
   const [checklistItems, setChecklistItems] = useState<OrderChecklistItem[]>([]);
+  const [showPrintConfirmModal, setShowPrintConfirmModal] = useState(false);
 
   // --- Автоматичний запуск/зупинка ваги ---
   const [isWeightWidgetActive, setIsWeightWidgetActive] = useState(false);
@@ -879,13 +902,17 @@ export default function OrderView() {
               })
             );
 
-            // Автоматически выбираем первый товар в коробке
+            // Автоматически выбираем первый товар в коробке с учетом сортировки
             setChecklistItems(prevItems => {
-              const firstProduct = prevItems.find(item => 
+              const currentBoxItems = prevItems.filter(item => 
                 item.type === 'product' && 
                 (item.boxIndex || 0) === activeBoxIndex && 
                 item.status === 'default'
               );
+              
+              // Сортируем и берем первый элемент
+              const sortedItems = sortChecklistItems(currentBoxItems);
+              const firstProduct = sortedItems[0];
 
               if (firstProduct) {
                 // console.log('🔄 [OrderView] Автоматически выбираем первый товар:', firstProduct.name);
@@ -1038,13 +1065,17 @@ export default function OrderView() {
             })
           );
 
-          // Автоматически выбираем следующий товар в коробке
+          // Автоматически выбираем следующий товар в коробке с учетом сортировки
           setChecklistItems(prevItems => {
-            const nextItem = prevItems.find(item => 
+            const currentBoxItems = prevItems.filter(item => 
               item.type === 'product' && 
               (item.boxIndex || 0) === activeBoxIndex && 
               item.status === 'default'
             );
+            
+            // Сортируем и берем первый элемент
+            const sortedItems = sortChecklistItems(currentBoxItems);
+            const nextItem = sortedItems[0];
 
             if (nextItem) {
               console.log('🔄 [OrderView] Автоматически выбираем следующий товар:', nextItem.name);
@@ -1791,7 +1822,11 @@ export default function OrderView() {
             
             {/* OrderTrackingNumber */}
             <div className="w-full">
-              <div className="bg-neutral-50 p-4 rounded-lg">
+              <div 
+                className="bg-neutral-50 p-4 rounded-lg cursor-pointer hover:bg-neutral-100 transition-colors active:scale-[0.98] transform"
+                onClick={() => setShowPrintConfirmModal(true)}
+                title="Натисніть для друку ТТН"
+              >
                 <div className="flex items-center gap-2.5 text-2xl font-mono tracking-wider text-primary">
                   {formatTrackingNumberWithIcon(orderForAssembly.shipping.trackingId, {
                     provider: orderForAssembly.shipping.provider,
@@ -1935,6 +1970,20 @@ export default function OrderView() {
     </div>
   	</>
   )}
+    
+      {/* Модальне вікно підтвердження друку ТТН */}
+      <ConfirmModal
+        isOpen={showPrintConfirmModal}
+        title="Підтвердження друку ТТН"
+        message={`Ви дійсно хочете роздрукувати ТТН ${order?.ttn || ''} для замовлення №${order?.orderNumber || externalId}?`}
+        confirmText="Так, друкувати"
+        cancelText="Скасувати"
+        onConfirm={() => {
+          setShowPrintConfirmModal(false);
+          handlePrintTTN();
+        }}
+        onCancel={() => setShowPrintConfirmModal(false)}
+      />
     </div>
   );
 }

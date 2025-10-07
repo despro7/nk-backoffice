@@ -60,7 +60,7 @@ interface StatsResponse {
 
 const ProductSets: React.FC = () => {
   const { user } = useAuth();
-  const { isAdmin } = useRoleAccess();
+  const { isAdmin, canEditProducts } = useRoleAccess();
   const [products, setProducts] = useState<Product[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]); // Все товары для поиска названий в комплектах
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -336,9 +336,9 @@ const ProductSets: React.FC = () => {
               </>
             ) : (
               <div
-                className="text-sm text-gray-900 cursor-pointer hover:bg-gray-100 px-2 py-1 rounded min-w-[36px] text-center"
-                onClick={() => startEditingManual()}
-                title="Натисніть для редагування"
+                className={`text-sm text-gray-900 ${canEditProducts() ? 'cursor-pointer hover:bg-gray-100' : 'cursor-not-allowed opacity-60'} px-2 py-1 rounded min-w-[36px] text-center`}
+                onClick={() => canEditProducts() && startEditingManual()}
+                title={canEditProducts() ? "Натисніть для редагування" : "Немає прав для редагування"}
               >
                 {currentManualOrder}
               </div>
@@ -455,13 +455,13 @@ const ProductSets: React.FC = () => {
             ) : (
               <div className="flex items-center gap-1">
                 <div 
-                  className="text-sm text-gray-900 cursor-pointer hover:bg-gray-100 px-1.5 py-1 rounded min-w-[50px] whitespace-nowrap tabular-nums underline underline-offset-3 decoration-dotted"
-                  onClick={() => startEditingWeight(productIdStr, currentWeight)}
-                  title="Натисніть для редагування"
+                  className={`text-sm text-gray-900 ${canEditProducts() ? 'cursor-pointer hover:bg-gray-100' : 'cursor-not-allowed opacity-60'} px-1.5 py-1 rounded min-w-[50px] whitespace-nowrap tabular-nums underline underline-offset-3 decoration-dotted`}
+                  onClick={() => canEditProducts() && startEditingWeight(productIdStr, currentWeight)}
+                  title={canEditProducts() ? "Натисніть для редагування" : "Немає прав для редагування"}
                 >
                   {currentWeight || '—'} г
                 </div>
-                {currentWeight === 0 && (
+                {canEditProducts() && currentWeight === 0 && (
                   <Button
                     size="sm"
                     color="default"
@@ -478,7 +478,7 @@ const ProductSets: React.FC = () => {
                     <DynamicIcon name="plus" size={12} />
                   </Button>
                 )}
-                {currentWeight > 0 && (
+                {canEditProducts() && currentWeight > 0 && (
                   <Button
                     size="sm"
                     color="danger"

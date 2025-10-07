@@ -11,6 +11,27 @@ import { useDebug } from '../contexts/DebugContext';
 // Убираем функцию handlePrintTTN - она должна быть только в OrderView
 // Убираем все неиспользуемые переменные и импорты
 
+// Функция сортировки элементов по manualOrder -> type -> name
+const sortChecklistItems = <T extends { manualOrder?: number; type: string; name: string }>(items: T[]): T[] => {
+  return [...items].sort((a, b) => {
+    // Спочатку сортуємо по manualOrder, потім по типу, потім по імені
+    const aManualOrder = a.manualOrder ?? 999;
+    const bManualOrder = b.manualOrder ?? 999;
+    
+    if (aManualOrder !== bManualOrder) {
+      return aManualOrder - bManualOrder;
+    }
+    
+    // Якщо manualOrder однаковий, спочатку коробки, потім товари
+    if (a.type !== b.type) {
+      return a.type === 'box' ? -1 : 1;
+    }
+    
+    // Для однакового типу сортуємо по імені
+    return a.name.localeCompare(b.name);
+  });
+};
+
 interface OrderItem {
   id: string;
   name: string;
@@ -88,13 +109,17 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       );
     }
 
-    // Если коробка уже подтверждена, ищем первый товар в коробке со статусом 'default'
+    // Если коробка уже подтверждена, ищем первый товар в коробке со статусом 'default' с учетом сортировки
     if (!newActiveItem) {
-      newActiveItem = items.find((item) =>
+      const defaultProducts = items.filter((item) =>
         item.type === 'product' &&
         (item.boxIndex || 0) === activeBoxIndex &&
         item.status === 'default'
       );
+      
+      // Сортируем и берем первый элемент
+      const sortedProducts = sortChecklistItems(defaultProducts);
+      newActiveItem = sortedProducts[0];
     }
 
     // console.log('🎯 [OrderChecklist] Выбранный активный элемент:', newActiveItem?.name || 'нет');
@@ -357,39 +382,22 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
 
       {/* Список позицій для комплектації */}
       <div className="space-y-2 mb-0">
-        {items
-          .filter((item) => {
+        {sortChecklistItems(
+          items.filter((item) => {
             // Фільтруємо елементи за поточною коробкою
             const boxIndex = item.boxIndex || 0;
             return boxIndex === activeBoxIndex;
           })
-          .sort((a, b) => {
-            // Спочатку сортуємо по manualOrder, потім по типу, потім по імені
-            const aManualOrder = a.manualOrder ?? 999;
-            const bManualOrder = b.manualOrder ?? 999;
-            
-            if (aManualOrder !== bManualOrder) {
-              return aManualOrder - bManualOrder;
-            }
-            
-            // Якщо manualOrder однаковий, спочатку коробки, потім товари
-            if (a.type !== b.type) {
-              return a.type === 'box' ? -1 : 1;
-            }
-            
-            // Для однакового типу сортуємо по імені
-            return a.name.localeCompare(b.name);
-          })
-          .map((item) => (
-            <div key={item.id} className="relative">
-              <OrderChecklistItem
-                item={item}
-                isActive={activeItemId === item.id}
-                isBoxConfirmed={isCurrentBoxConfirmed}
-                onClick={() => handleItemClick(item.id)}
-              />
-            </div>
-          ))}
+        ).map((item) => (
+          <div key={item.id} className="relative">
+            <OrderChecklistItem
+              item={item}
+              isActive={activeItemId === item.id}
+              isBoxConfirmed={isCurrentBoxConfirmed}
+              onClick={() => handleItemClick(item.id)}
+            />
+          </div>
+        ))}
       </div>
 
       {/* Кнопки навигации */}

@@ -14,6 +14,7 @@ export const useRoleAccess = () => {
   const isShopManager = () => canAccess([ROLES.SHOP_MANAGER, ROLES.BOSS, ROLES.ADMIN]);
   const isAdsManager = () => canAccess([ROLES.ADS_MANAGER, ROLES.SHOP_MANAGER, ROLES.BOSS, ROLES.ADMIN]);
   const isStorekeeper = () => canAccess([ROLES.STOREKEEPER, ROLES.ADS_MANAGER, ROLES.SHOP_MANAGER, ROLES.BOSS, ROLES.ADMIN]);
+  const canEditProducts = () => canAccess([ROLES.STOREKEEPER, ROLES.BOSS, ROLES.ADMIN]);
 
   return {
     user,
@@ -23,6 +24,7 @@ export const useRoleAccess = () => {
     isShopManager,
     isAdsManager,
     isStorekeeper,
+    canEditProducts,
     ROLES
   };
 };
