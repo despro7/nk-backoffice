@@ -77,33 +77,32 @@ D7cF3cD7cF3c
  * PRODUCTION: Підпис виконується на сервері для безпеки
  * DEVELOPMENT: Повертає порожній підпис (QZ Tray в dev mode може працювати без підпису)
  */
-async function signMessage(messageToSign: string): Promise<string> {
+function signMessage(messageToSign: string): Promise<string> {
   // Якщо є змінна середовища для використання серверного підпису
   const useServerSigning = import.meta.env.VITE_QZ_USE_SERVER_SIGNING === 'true';
   
   if (useServerSigning) {
-    try {
-      const response = await fetch('/api/qz-tray/sign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: messageToSign })
-      });
-      
+    return fetch('/api/qz-tray/sign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: messageToSign })
+    })
+    .then(response => {
       if (!response.ok) {
         console.error('Server signing failed:', response.statusText);
         return ''; // Fallback to unsigned in dev mode
       }
-      
-      const data = await response.json();
-      return data.signature;
-    } catch (error) {
+      return response.json();
+    })
+    .then(data => data.signature)
+    .catch(error => {
       console.error('Error signing message:', error);
       return ''; // Fallback to unsigned in dev mode
-    }
+    });
   }
   
   // Dev mode: повертаємо порожній підпис
-  return '';
+  return Promise.resolve('');
 }
 
 /**
