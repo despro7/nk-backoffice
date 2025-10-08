@@ -41,6 +41,11 @@ read -p "Підрозділ (можна залишити порожнім): " OR
 read -p "Common Name (наприклад, localhost або домен): " COMMON_NAME
 read -p "Email: " EMAIL
 
+# Якщо OU пустий, використати значення за замовчуванням
+if [ -z "$ORG_UNIT" ]; then
+    ORG_UNIT="IT Department"
+fi
+
 # Створити конфігураційний файл для OpenSSL
 CONFIG_FILE="$CERT_DIR/openssl.cnf"
 cat > "$CONFIG_FILE" << EOF

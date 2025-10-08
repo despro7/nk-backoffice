@@ -1,7 +1,7 @@
 {
   "name": "nk-backoffice-app",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.1",
   "type": "module",
   "pkg": {
     "assets": [
