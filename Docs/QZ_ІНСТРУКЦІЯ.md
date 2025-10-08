@@ -23,7 +23,7 @@ sudo yum install openssl
 
 ### 2️⃣ На сервері: Згенерувати сертифікат
 ```bash
-cd /home/backoffice.nk-food.shop/app/
+cd /home/Backoffice.nk-food.shop/app/
 
 # Дати права на виконання (один раз)
 chmod +x scripts/generate-qz-certificate.sh
