@@ -44,8 +44,8 @@ router.post('/sign', async (req: Request, res: Response) => {
     // Читаємо приватний ключ
     const privateKey = fs.readFileSync(privateKeyPath, 'utf8');
 
-    // Створюємо підпис
-    const sign = crypto.createSign('SHA256');
+    // Створюємо підпис з SHA512 (QZ Tray вимагає SHA512!)
+    const sign = crypto.createSign('RSA-SHA512');
     sign.update(message);
     sign.end();
 
