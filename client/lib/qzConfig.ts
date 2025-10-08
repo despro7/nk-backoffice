@@ -110,15 +110,15 @@ async function signMessage(messageToSign: string): Promise<string> {
  * Ініціалізація QZ Tray з сертифікатом
  */
 export function initializeQzTray(): void {
-  // Налаштування типу промісів
-  qz.api.setPromiseType((resolver: any) => new Promise(resolver));
+  // Налаштування типу промісів (для сумісності з сучасними браузерами)
+  qz.api.setPromiseType(resolver => resolver);
 
-  // Налаштування сертифіката (для продакшену)
+  // Налаштування сертифіката
   qz.security.setCertificatePromise(() => {
     return Promise.resolve(DEMO_CERTIFICATE);
   });
 
-  // Налаштування підпису (для продакшену)
+  // Налаштування підпису
   qz.security.setSignaturePromise((toSign: string) => {
     return signMessage(toSign);
   });
