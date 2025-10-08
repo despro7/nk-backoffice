@@ -1,6 +1,7 @@
 import qz from 'qz-tray';
 import type { PrintData } from 'qz-tray';
 import { addToast } from '@heroui/toast';
+import { initializeQzTray } from '../lib/qzConfig';
 
 interface Printer {
   name: string;
@@ -11,6 +12,7 @@ class PrinterService {
   private static instance: PrinterService;
   private connectionAttempts = 0;
   private maxConnectionAttempts = 5;
+  private isInitialized = false;
 
   /**
    * Перевіряє чи є base64 рядок PDF файлом
@@ -28,8 +30,18 @@ class PrinterService {
   }
 
   private constructor() {
-    // Конфигурация для поиска websocket
-    qz.api.setPromiseType((resolver) => new Promise(resolver));
+    // Ініціалізація QZ Tray з сертифікатом
+    this.initialize();
+  }
+
+  /**
+   * Ініціалізація QZ Tray
+   */
+  private initialize(): void {
+    if (!this.isInitialized) {
+      initializeQzTray();
+      this.isInitialized = true;
+    }
   }
 
   public static getInstance(): PrinterService {

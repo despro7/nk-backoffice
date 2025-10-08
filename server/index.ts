@@ -16,6 +16,7 @@ import { cronService, forceStopAllCronJobs } from './services/cronService.js';
 import { logServer } from './lib/utils.js';
 import shippingRoutes from './routes/shipping.js';
 import shippingProvidersRoutes from './routes/shipping-providers.js';
+import qzTrayRoutes from './routes/qz-tray.js';
 
 // Увеличиваем лимит listeners для process events
 process.setMaxListeners(20);
@@ -127,6 +128,9 @@ export function createServer() {
   // Добавляем роуты для работы с перевозчиками
   app.use('/api/shipping', shippingRoutes);
   app.use('/api/shipping-providers', shippingProvidersRoutes);
+
+  // QZ Tray routes
+  app.use("/api/qz-tray", qzTrayRoutes);
 
   // Example API routes
   app.get("/api/ping", (_req, res) => {

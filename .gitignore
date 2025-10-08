@@ -33,3 +33,10 @@ dist-ssr
 
 temp-payload.json
 logging-settings.json
+
+# QZ Tray certificates (never commit private keys!)
+certificates/
+*.pem
+*.crt
+*.csr
+*.key

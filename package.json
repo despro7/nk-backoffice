@@ -40,7 +40,9 @@
     "clean": "rm -rf dist",
     "rebuild": "npm run clean && npm run build",
     "lint": "eslint . --ext .js,.ts,.jsx,.tsx --config eslint.config.js",
-    "lint:fix": "eslint . --ext .js,.ts,.jsx,.tsx --config eslint.config.js --fix"
+    "lint:fix": "eslint . --ext .js,.ts,.jsx,.tsx --config eslint.config.js --fix",
+    "qz:test": "bash scripts/test-qz-connection.sh",
+    "qz:cert": "bash scripts/generate-qz-certificate.sh"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
