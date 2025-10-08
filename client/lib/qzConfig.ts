@@ -45,29 +45,20 @@ ROHbpM7hl7L2MXFPSkNgJmGVqQ==
 export function initializeQzTray(): void {
   const useServerSigning = import.meta.env.VITE_QZ_USE_SERVER_SIGNING === 'true';
   
-  console.log('🔧 QZ Tray initialization');
-  console.log('  VITE_QZ_USE_SERVER_SIGNING:', import.meta.env.VITE_QZ_USE_SERVER_SIGNING);
-  console.log('  useServerSigning:', useServerSigning);
-  
   if (!useServerSigning) {
     // РЕЖИМ БЕЗ СЕРТИФІКАТІВ (з ручним підтвердженням)
-    console.log('  Mode: UNSIGNED (manual confirmation required)');
+    console.log('QZ Tray: UNSIGNED mode (manual confirmation required)');
     return;
   }
 
   // РЕЖИМ З СЕРТИФІКАТАМИ (без підтверджень)
-  console.log('  Mode: SIGNED (configuring certificate and signature)');
-  
   try {
     qz.security.setCertificatePromise(function(resolve: any, reject: any) {
-      console.log('  📜 Certificate promise called');
-      
       // Отримати сертифікат з сервера
       fetch('/api/qz-tray/certificate')
         .then(response => {
-          console.log('    Certificate response status:', response.status);
           if (!response.ok) {
-            console.warn('    Failed to get certificate from server, using demo certificate');
+            console.warn('Failed to get certificate from server, using demo');
             resolve(DEMO_CERTIFICATE);
           } else {
             return response.json();
@@ -75,25 +66,19 @@ export function initializeQzTray(): void {
         })
         .then(data => {
           if (data && data.certificate) {
-            console.log('    ✓ Using server certificate');
             resolve(data.certificate);
           } else {
-            console.log('    ✓ Using demo certificate');
             resolve(DEMO_CERTIFICATE);
           }
         })
         .catch(error => {
-          console.error('    Error fetching certificate:', error);
+          console.error('Error fetching certificate:', error);
           resolve(DEMO_CERTIFICATE);
         });
     });
 
     qz.security.setSignaturePromise(function(toSign: string) {
-      console.log('  🔐 Signature promise called for message length:', toSign.length);
-      
       return function(resolve: any, reject: any) {
-        console.log('    Sending sign request to server...');
-        
         // Підписати на сервері
         fetch('/api/qz-tray/sign', {
           method: 'POST',
@@ -101,7 +86,6 @@ export function initializeQzTray(): void {
           body: JSON.stringify({ message: toSign })
         })
           .then(response => {
-            console.log('    Sign response status:', response.status);
             if (!response.ok) {
               reject('Server signing failed: ' + response.statusText);
             } else {
@@ -109,19 +93,18 @@ export function initializeQzTray(): void {
             }
           })
           .then(data => {
-            console.log('    ✓ Signature received:', data.signature.substring(0, 50) + '...');
             resolve(data.signature);
           })
           .catch(error => {
-            console.error('    Error signing message:', error);
+            console.error('Error signing message:', error);
             reject(error);
           });
       };
     });
 
-    console.log('  ✓ QZ Tray configured with certificate and signature handlers');
+    console.log('QZ Tray: SIGNED mode (automatic printing enabled)');
   } catch (error) {
-    console.error('  ✗ QZ Tray initialization error:', error);
+    console.error('QZ Tray initialization error:', error);
   }
 }
 

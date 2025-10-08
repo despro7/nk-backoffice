@@ -12,14 +12,10 @@ const router = Router();
  * і ніколи не передається клієнту
  */
 router.post('/sign', async (req: Request, res: Response) => {
-  console.log('🔐 QZ Tray /sign endpoint called');
-  console.log('  Message length:', req.body?.message?.length || 0);
-  
   try {
     const { message } = req.body;
 
     if (!message) {
-      console.error('  ✗ No message provided');
       res.status(400).json({ 
         error: 'Message is required',
         message: 'Повідомлення для підпису не надано' 
@@ -51,8 +47,6 @@ router.post('/sign', async (req: Request, res: Response) => {
 
     // Підписуємо і конвертуємо в base64
     const signature = sign.sign(privateKey, 'base64');
-
-    console.log('  ✓ Signature created:', signature.substring(0, 50) + '...');
 
     // Повертаємо підпис
     res.json({ 
