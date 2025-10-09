@@ -411,6 +411,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Перезавантажуємо налаштування авторизації
         await loadAuthSettings();
 
+        // Оновлюємо конфігурацію обладнання після авторизації
+        if (equipmentActions?.refreshConfig) {
+          LoggingService.authLog('🔄 [AuthContext]: Оновлюємо конфігурацію обладнання після входу');
+          await equipmentActions.refreshConfig();
+        }
+
         // Показуємо Toast повідомлення
         ToastService.loginSuccess(data.user.email);
 

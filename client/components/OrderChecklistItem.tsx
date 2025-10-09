@@ -19,19 +19,25 @@ interface OrderChecklistItemProps {
   item: OrderItem;
   isActive: boolean;
   isBoxConfirmed: boolean;
+  currentBoxTotalPortions: number;
+  currentBoxTotalWeight: {
+    currentBoxWeight: number;
+    currentScaleWeight: number;
+    totalOrderWeight: number;
+  };
   onClick: () => void;
 }
 
-const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderChecklistItemProps) => {
+const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick }: OrderChecklistItemProps) => {
   const { name, quantity, status, expectedWeight, type, boxSettings } = item;
 
-  // Проверяем, что у нас есть валидные данные для отображения
+  // Перевіряємо, що у нас є валідні дані для відображення
   if (!name || !status || expectedWeight === undefined) {
     console.warn('OrderChecklistItem: Невалидные данные для элемента:', item);
     return null;
   }
 
-  // Функция для форматирования количества порций
+  // Функція для форматування кількості порцій
   // const formatQuantity = (qty: number) => {
   //   if (qty === 1) return '1 порція';
   //   if (qty < 5) return `${qty} порції`;
@@ -41,7 +47,6 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderCh
   const { isAdmin } = useRoleAccess();
 
   const isDone = status === 'done';
-  const isItemBoxConfirmed = type === 'box' && status === 'confirmed';
   const isBoxDone = type === 'box' && status === 'done';
 
   const itemStateClasses = cn(
@@ -51,13 +56,12 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderCh
       'bg-warning-400 outline-2 outline-warning-500 cursor-pointer': status === 'pending' || status === 'awaiting_confirmation',
       'bg-success-500 text-white animate-pulse animate-thrice cursor-pointer': status === 'success',
       'bg-danger text-white cursor-pointer': status === 'error',
-      'bg-gray-200 text-gray-500': status === 'done' || status === 'confirmed',
+      'bg-gray-200 text-gray-500': status === 'done',
       // 'cursor-not-allowed opacity-75': isBoxDone,
     }
   );
 
-  // Коробки кликабельны только если ожидают подтверждения
-  // Товары кликабельны только если коробка уже взвешена
+  // Коробки/Товари клікабельні тільки якщо очікують підтвердження
   // const isClickable = !isDone && !isItemBoxConfirmed && !isBoxDone && (type === 'box' ? status === 'awaiting_confirmation' : isBoxConfirmed && status === 'default');
   const isClickable = isBoxConfirmed && type === 'product' && status === 'default';
 
@@ -66,10 +70,10 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderCh
   return (
     <div className={itemStateClasses} onClick={isClickable ? onClick : undefined}>
       <div className="flex items-center gap-4">
-        {/* Индикатор статуса */}
+        {/* Індикатор статусу */}
         <div className={cn("w-6 h-6 rounded-sm flex items-center justify-center bg-transparent transition-colors duration-300", {
-          "bg-gray-400": isDone || status === 'confirmed',
-          "border-2 border-gray-400": !isDone && status !== 'success' && status !== 'awaiting_confirmation' && status !== 'confirmed',
+          "bg-gray-400": isDone,
+          "border-2 border-gray-400": !isDone && status !== 'success' && status !== 'awaiting_confirmation',
           "border-2 border-warning-600": status === 'pending' || status === 'awaiting_confirmation',
           "bg-success-600": status === 'success',
           "border-danger-foreground": status === 'error',
@@ -83,11 +87,18 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, onClick }: OrderCh
           })}>
             {name} {type !== 'box' && (<span>× <span className="text-[18px] font-mono rounded-sm bg-gray-950/5 px-2.5 py-1">{quantity}</span></span>)}
           </span>
-          {item.manualOrder && isAdmin() && (<span className="text-[13px] text-neutral-300 tabular-nums">#{item.manualOrder}</span>)}
+          {/* {item.manualOrder && isAdmin() && (<span className="text-[13px] text-neutral-300 tabular-nums">#{item.manualOrder}</span>)} */}
           {type === 'box' && boxSettings && (
+            <>
             <span className="text-[13px] tabular-nums bg-gray-950/5 px-2 py-1 rounded">
               {boxSettings.width}×{boxSettings.height}×{boxSettings.length} см
             </span>
+            {(currentBoxTotalWeight.totalOrderWeight && currentBoxTotalWeight.totalOrderWeight > 0 && currentBoxTotalWeight.totalOrderWeight !== currentBoxTotalWeight.currentBoxWeight) && (
+              <span className={`text-[14px] font-medium ${item.status === 'awaiting_confirmation' && 'text-warning-800'}`}>
+                {currentBoxTotalPortions} порцій / {currentBoxTotalWeight.currentBoxWeight.toFixed(2)} кг
+              </span>
+            )}
+            </>
           )}
         </div>
       </div>

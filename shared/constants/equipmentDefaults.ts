@@ -5,8 +5,8 @@ export const EQUIPMENT_DEFAULTS = {
     stopBits: 1,
     parity: 'even' as const,  // ВТА-60 стандарт
     autoConnect: false,
-    activePollingInterval: 1000,  // Активний опрос (мс)
-    reservePollingInterval: 5000,  // Резервний опрос (мс)
+    activePollingInterval: 250,  // Активний опрос (мс)
+    reservePollingInterval: 1000,  // Резервний опрос (мс)
     activePollingDuration: 30000,  // Тривалість активного polling (мс)
     maxPollingErrors: 5,  // Максимальна кількість помилок перед зупинкою
     weightCacheDuration: 500,  // Час кешування даних ваг (мс)
@@ -25,10 +25,10 @@ export const EQUIPMENT_DEFAULTS = {
   },
   scanner: {
     autoConnect: true,
-    timeout: 5000,
+    timeout: 10000,
     scanTimeout: 300,
-    minScanSpeed: 50,     // Мінімальна швидкість між символами (мс)
-    maxScanSpeed: 200,    // Максимальна швидкість між символами (мс)
+    minScanSpeed: 5,     // Мінімальна швидкість між символами (мс)
+    maxScanSpeed: 100,    // Максимальна швидкість між символами (мс)
     minBarcodeLength: 5   // Мінімальна довжина баркоду
   },
   printer: {

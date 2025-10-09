@@ -6,38 +6,14 @@ import { Progress } from './ui/progress';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useEquipmentFromAuth } from '../contexts/AuthContext';
 import { useDebug } from '../contexts/DebugContext';
-
-
-// Убираем функцию handlePrintTTN - она должна быть только в OrderView
-// Убираем все неиспользуемые переменные и импорты
-
-// Функция сортировки элементов по manualOrder -> type -> name
-const sortChecklistItems = <T extends { manualOrder?: number; type: string; name: string }>(items: T[]): T[] => {
-  return [...items].sort((a, b) => {
-    // Спочатку сортуємо по manualOrder, потім по типу, потім по імені
-    const aManualOrder = a.manualOrder ?? 999;
-    const bManualOrder = b.manualOrder ?? 999;
-    
-    if (aManualOrder !== bManualOrder) {
-      return aManualOrder - bManualOrder;
-    }
-    
-    // Якщо manualOrder однаковий, спочатку коробки, потім товари
-    if (a.type !== b.type) {
-      return a.type === 'box' ? -1 : 1;
-    }
-    
-    // Для однакового типу сортуємо по імені
-    return a.name.localeCompare(b.name);
-  });
-};
+import { sortChecklistItems } from '@/lib/orderAssemblyUtils';
 
 interface OrderItem {
   id: string;
   name: string;
   quantity: number;
   expectedWeight: number;
-  status: 'default' | 'pending' | 'success' | 'error' | 'done' | 'awaiting_confirmation' | 'confirmed';
+  status: 'default' | 'pending' | 'success' | 'error' | 'done' | 'awaiting_confirmation';
   type: 'box' | 'product';
   boxSettings?: any;
   boxCount?: number;
@@ -55,6 +31,7 @@ interface OrderChecklistProps {
   onItemStatusChange?: (itemId: string, status: OrderItem['status']) => void;
   onPrintTTN?: () => void; // Callback для печати ТТН
   showPrintTTN?: boolean;
+  wasOpenedAsReady?: boolean; // Чи було замовлення відкрите вже зібраним (без автодруку)
   onNextOrder?: () => void; // Callback для перехода к следующему заказу
   showNextOrder?: boolean;
   nextOrderNumber?: string; // Номер наступного замовлення
@@ -63,7 +40,7 @@ interface OrderChecklistProps {
   isDebugMode?: boolean; // Флаг дебаг-режима
 }
 
-const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders }: OrderChecklistProps) => {
+const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders }: OrderChecklistProps) => {
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [equipmentState] = useEquipmentFromAuth(); // <-- Используем глобальное состояние оборудования
   const [soundSettings, setSoundSettings] = useState<Record<string, string>>({});
@@ -85,22 +62,22 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
   }, []);
 
 
-  // Синхронизируем активный элемент при изменении items
+  // Синхронізуємо активний елемент при зміні items
   useEffect(() => {
-    // console.log('🔄 [OrderChecklist] Синхронизация активного элемента:', {
+    // console.log('🔄 [OrderChecklist] Синхронізація активного елемента:', {
     //   activeBoxIndex,
     //   items: items
     //     .filter(item => (item.boxIndex || 0) === activeBoxIndex)
     //     .map(item => ({ name: item.name, type: item.type, status: item.status }))
     // });
 
-    // Сначала ищем элемент со статусом 'pending' в текущей коробке
+    // Спочатку шукаємо елемент зі статусом 'pending' в поточній коробці
     let newActiveItem = items.find((item) => 
       item.status === 'pending' && 
       (item.boxIndex || 0) === activeBoxIndex
     );
 
-    // Если нет pending, ищем коробку текущей коробки, которая ожидает подтверждения
+    // Якщо немає pending, шукаємо коробку поточної коробки, яка очікує підтвердження
     if (!newActiveItem) {
       newActiveItem = items.find((item) =>
         item.type === 'box' &&
@@ -109,7 +86,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       );
     }
 
-    // Если коробка уже подтверждена, ищем первый товар в коробке со статусом 'default' с учетом сортировки
+    // Якщо коробка уже підтверджена, шукаємо перший товар в коробці зі статусом 'default' з урахуванням сортування
     if (!newActiveItem) {
       const defaultProducts = items.filter((item) =>
         item.type === 'product' &&
@@ -117,19 +94,19 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
         item.status === 'default'
       );
       
-      // Сортируем и берем первый элемент
+      // Сортуємо і беремо перший елемент
       const sortedProducts = sortChecklistItems(defaultProducts);
       newActiveItem = sortedProducts[0];
     }
 
-    // console.log('🎯 [OrderChecklist] Выбранный активный элемент:', newActiveItem?.name || 'нет');
-    // console.log('📋 [OrderChecklist] Статусы товаров в коробке:', 
+    // console.log('🎯 [OrderChecklist] Вибраний активний елемент:', newActiveItem?.name || 'нет');
+    // console.log('📋 [OrderChecklist] Статуси товарів в коробці:', 
     //   items
     //     .filter(item => (item.boxIndex || 0) === activeBoxIndex && item.type === 'product')
     //     .map(item => ({ name: item.name, status: item.status }))
     // );
 
-    // Устанавливаем активный элемент только если он действительно найден и валиден
+    // Встановлюємо активний елемент тільки якщо він дійсно знайдений і валідний
     if (newActiveItem && newActiveItem.id) {
       setActiveItemId(newActiveItem.id);
     } else {
@@ -140,7 +117,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
 
 
   const packedPortions = useMemo(() => {
-    // Используем items для корректного подсчета
+    // Використовуємо items для коректного підрахунку
     const currentBoxItems = items.filter(item => 
       item.type === 'product' && (item.boxIndex || 0) === activeBoxIndex
     );
@@ -155,9 +132,9 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     return packed;
   }, [items, activeBoxIndex]);
 
-  // Вычисляем вес активной коробки и общий вес заказа
+  // Вираховуємо вагу активної коробки і загальний вага замовлення
   const weightInfo = useMemo(() => {
-    // Вес активной коробки
+    // Вага активної коробки
     const currentBoxItems = items.filter(item =>
       (item.boxIndex || 0) === activeBoxIndex
     );
@@ -167,7 +144,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       return acc + itemTotalWeight;
     }, 0);
 
-    // Текущий вес на весах (вес коробки + вес завершенных товаров)
+    // Поточний вага на вагах (вага коробки + вага завершених товарів)
     const currentScaleWeight = currentBoxItems.reduce((acc, item) => {
       if (item.type === 'box' || item.status === 'done') {
         return acc + item.expectedWeight;
@@ -175,7 +152,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       return acc;
     }, 0);
 
-    // Общий вес всего заказа (товары + коробки)
+    // Загальний вага всього замовлення (товарі + коробки)
     const allProductItems = items.filter(item => item.type === 'product');
     const allBoxItems = items.filter(item => item.type === 'box');
 
@@ -197,9 +174,9 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     };
   }, [items, activeBoxIndex]);
 
-  // Вычисляем общее количество порций для текущей коробки
+  // Вираховуємо загальну кількість порцій для поточної коробки
   const currentBoxTotalPortions = useMemo(() => {
-    // Используем items для консистентности с packedPortions
+    // Використовуємо items для консистентності з packedPortions
     const currentBoxItems = items.filter(item => 
       item.type === 'product' && (item.boxIndex || 0) === activeBoxIndex
     );
@@ -211,40 +188,40 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     return total;
   }, [items, activeBoxIndex]);
 
-  // Проверяем, завершена ли текущая коробка
+  // Перевіряємо, чи завершена поточна коробка
   const isCurrentBoxComplete = useMemo(() => {
     const currentBoxItems = items.filter(item => 
       item.type === 'product' && (item.boxIndex || 0) === activeBoxIndex
     );
     
-    // Коробка завершена, если все товары в ней собраны
+    // Коробка завершена, якщо всі товари в ній зібрані
     return currentBoxItems.length > 0 && currentBoxItems.every(item => item.status === 'done');
   }, [items, activeBoxIndex]);
 
-  // Проверяем, взвешена ли текущая коробка
+  // Перевіряємо, чи зважена поточна коробка
   const isCurrentBoxConfirmed = useMemo(() => {
     const currentBox = items.find(item =>
       item.type === 'box' && (item.boxIndex || 0) === activeBoxIndex
     );
 
-    // Коробка считается взвешенной если она имеет статус 'confirmed' или 'done'
-    return currentBox?.status === 'confirmed' || currentBox?.status === 'done';
+    // Коробка вважається зваженою, якщо вона має статус 'done'
+    return currentBox?.status === 'done';
   }, [items, activeBoxIndex]);
 
-  // Подсчитываем общее количество упакованных порций по всему заказу
+  // Вираховуємо загальну кількість упакованих порцій по всьому замовленню
   const totalPackedPortions = useMemo(() => {
     return items
       .filter(item => item.type === 'product' && item.status === 'done')
       .reduce((acc, item) => acc + item.quantity, 0);
   }, [items]);
 
-  // Проверяем, завершен ли весь заказ
+  // Перевіряємо, чи завершено всє замовлення
   const isOrderComplete = useMemo(() => {
     const allProductItems = items.filter(item => item.type === 'product');
     return allProductItems.length > 0 && allProductItems.every(item => item.status === 'done');
   }, [items]);
 
-  // Проигрываем звук, когда появляется кнопка печати ТТН
+  // Програємо звук, коли з'являється кнопка друку ТТН
   const wasPrintVisibleRef = useRef(false);
   useEffect(() => {
     const isPrintVisible = !!(showPrintTTN || isOrderComplete || isDebugMode);
@@ -266,12 +243,14 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     const autoPrintEnabled = equipmentState.config?.printer?.autoPrintOnComplete;
     
     // Перевіряємо чи потрібно автоматично друкувати
-    if (shouldAutoPrint && autoPrintEnabled && !wasAutoPrintTriggeredRef.current && onPrintTTN) {
+    // НЕ друкуємо автоматично, якщо замовлення було відкрите вже зібраним
+    if (shouldAutoPrint && autoPrintEnabled && !wasAutoPrintTriggeredRef.current && onPrintTTN && !wasOpenedAsReady) {
       console.log('🖨️ [OrderChecklist] Автоматичний друк ТТН:', { 
         isOrderComplete, 
         showPrintTTN, 
         isDebugMode, 
-        autoPrintEnabled 
+        autoPrintEnabled,
+        wasOpenedAsReady
       });
       
       // Отримуємо затримку з налаштувань (за замовчуванням 3 секунди)
@@ -297,7 +276,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       setIsAutoPrinting(false);
       setAutoPrintCountdown(0);
     }
-  }, [isOrderComplete, showPrintTTN, isDebugMode, equipmentState.config?.printer?.autoPrintOnComplete, onPrintTTN]);
+  }, [isOrderComplete, showPrintTTN, isDebugMode, equipmentState.config?.printer?.autoPrintOnComplete, onPrintTTN, wasOpenedAsReady]);
 
   // Анімація відліку для автоматичного друку
   useEffect(() => {
@@ -309,33 +288,38 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     }
   }, [autoPrintCountdown]);
 
-  // Проверяем, есть ли следующая коробка
+  // Перевіряємо, чи є наступна коробка
   const hasNextBox = useMemo(() => {
     const totalBoxes = items.filter(item => item.type === 'box').length;
     return activeBoxIndex < totalBoxes - 1;
   }, [items, activeBoxIndex]);
 
+  // Перевіряємо, чи є попередня коробка
+  const hasPrevBox = useMemo(() => {
+    return activeBoxIndex > 0;
+  }, [activeBoxIndex]);
+
   const handleItemClick = (itemId: string) => {
     const clickedItem = items.find(item => item.id === itemId);
 
-    // Коробки не кликабельны, кроме awaiting_confirmation
-    // Коробки со статусом 'done' полностью заблокированы от повторного взвешивания
+    // Коробки не клікабельні, крім awaiting_confirmation
+    // Коробки зі статусом 'done' повністю заблоковані від повторного зважування
     if (clickedItem?.type === 'box' && clickedItem?.status !== 'awaiting_confirmation') {
       return;
     }
 
-    // Товары не кликабельны, пока коробка не взвешена
+    // Товари не клікабельні, поки коробка не зважена
     if (clickedItem?.type === 'product' && !isCurrentBoxConfirmed) {
       return;
     }
 
     setActiveItemId(itemId);
 
-    // Обновляем статус через callback
+    // Оновлюємо статус через callback
     if (onItemStatusChange) {
         onItemStatusChange(itemId, 'pending');
-        // Сбрасываем статус других элементов в default
-        // Находим текущий элемент, чтобы получить его boxIndex
+        // Скидаємо статус інших елементів в default
+        // Шукаємо поточний елемент, щоб отримати його boxIndex
         const currentItem = items.find(item => item.id === itemId);
         const currentBoxIndex = currentItem?.boxIndex || 0;
 
@@ -351,7 +335,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
   return (
     <div className="space-y-4 bg-white p-4 rounded-lg shadow">
 
-      {/* Общий прогресс-бар заказа */}
+      {/* Загальний прогрес-бар замовлення */}
       <div className="bg-success-100 p-4 rounded-sm mb-4">
         <div className="flex justify-between items-center text-success-700 text-lg font-medium">
           <div className="flex items-center gap-4">
@@ -373,7 +357,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
         />
       </div>
 
-      {/* Отладочная информация (только при проблемах) */}
+      {/* Відладочна інформація (тільки при проблемах) */}
       {currentBoxTotalPortions === 0 && (
         <div className="text-xs text-orange-600 mt-1">
           ⚠️ Немає товарів у поточній коробці
@@ -394,42 +378,49 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
               item={item}
               isActive={activeItemId === item.id}
               isBoxConfirmed={isCurrentBoxConfirmed}
+              currentBoxTotalPortions={currentBoxTotalPortions}
+              currentBoxTotalWeight={weightInfo}
               onClick={() => handleItemClick(item.id)}
             />
           </div>
         ))}
       </div>
 
-      {/* Кнопки навигации */}
+      {/* Кнопки навігації */}
       <div className="space-y-3">
-        {/* Кнопка "Следующая коробка" */}
-        {isCurrentBoxComplete && hasNextBox && (
-          <Button
-            onPress={() => onActiveBoxChange && onActiveBoxChange(activeBoxIndex + 1)}
-            className="mt-6 w-full bg-blue-600 text-white p-8 rounded-md text-lg font-medium hover:bg-blue-700 shadow-sm flex items-center justify-center gap-2"
-          >
-            Наступна коробка <DynamicIcon name="arrow-right" size={20} strokeWidth={1.5} />
-          </Button>
+        {/* Навігація між коробками */}
+        {(hasPrevBox || hasNextBox) && (
+          <div className={`mt-6 gap-3 ${hasPrevBox && hasNextBox ? 'grid grid-cols-2' : 'flex'}`}>
+            {/* Кнопка "Попередня коробка" */}
+            {hasPrevBox && (
+              <Button
+                onPress={() => onActiveBoxChange && onActiveBoxChange(activeBoxIndex - 1)}
+                className="w-full bg-lime-600/80 text-white p-8 rounded-md text-lg font-medium shadow-sm flex items-center justify-center gap-2"
+              >
+                <DynamicIcon name="arrow-left" size={20} strokeWidth={1.5} />
+                Попередня коробка
+              </Button>
+            )}
+            
+            {/* Кнопка "Наступна коробка" - показується тільки якщо коробка завершена */}
+            {isCurrentBoxComplete && hasNextBox && (
+              <Button
+                onPress={() => onActiveBoxChange && onActiveBoxChange(activeBoxIndex + 1)}
+                className="w-full bg-lime-600 text-white p-8 rounded-md text-lg font-medium shadow-sm flex items-center justify-center gap-2"
+              >
+                Наступна коробка <DynamicIcon name="arrow-right" size={20} strokeWidth={1.5} />
+              </Button>
+            )}
+          </div>
         )}
 
-        {/* Кнопка "Распечатать ТТН" */}
+        {/* Кнопка "Роздрукувати ТТН" */}
         {(isOrderComplete || showPrintTTN || isDebugMode) && (
           <div className="mt-6 space-y-2">
-            {/* Індикатор автоматичного друку */}
-            {/* {equipmentState.config?.printer?.autoPrintOnComplete && (
-              <div className={`flex items-center justify-center gap-2 text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded-md border border-blue-200 transition-all duration-300 ${
-                isAutoPrinting ? 'animate-pulse bg-gradient-to-r from-blue-50 to-purple-50' : ''
-              }`}>
-                <DynamicIcon name="zap" size={16} className={`text-blue-500 ${isAutoPrinting ? 'animate-bounce' : ''}`} />
-                <span className="font-medium">
-                  {isAutoPrinting ? 'Підготовка до автоматичного друку...' : 'Автоматичний друк увімкнено'}
-                </span>
-              </div>
-            )} */}
             
             <Button
               onPress={onPrintTTN}
-              disabled={false} // Убираем локальное состояние, используем глобальное из OrderView
+              disabled={false} // Прибираємо локальний стан, використовуємо глобальний з OrderView
               className={`w-full p-8 rounded-md text-lg font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-all duration-300 ${
                 isAutoPrinting 
                   ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white animate-pulse' 

@@ -721,6 +721,8 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
 
   // Принудительное обновление конфигурации
   const refreshConfig = useCallback(async () => {
+    // Інвалідуємо кеш перед завантаженням
+    configCacheRef.current = null;
     await loadConfig();
   }, [loadConfig]);
 

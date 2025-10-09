@@ -2,22 +2,22 @@ import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 /**
- * Объединяет классы Tailwind CSS в одну строку
- * @param inputs - массив классов
- * @returns строка с объединенными классами
+ * Об'єднує класи Tailwind CSS в один рядок
+ * @param inputs - масив класів
+ * @returns рядок з об'єднаними класами
  */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 /**
- * Рассчитывает динамическую похибку ваги для заданного количества порций
- * @param portions - количество порций
- * @param maxTolerance - максимальная похибка (г)
- * @param minTolerance - минимальная похибка (г)
- * @param minPortions - минимальное количество порций для максимальной похибки
- * @param maxPortions - максимальное количество порций для минимальной похибки
- * @returns рассчитанная похибка в граммах с точностью до 2 знаков после запятой
+ * Розраховує динамічну похибку ваги для заданої кількості порцій
+ * @param portions - кількість порцій
+ * @param maxTolerance - максимальна похибка (г)
+ * @param minTolerance - мінімальна похибка (г)
+ * @param minPortions - мінімальна кількість порцій для максимальної похибки
+ * @param maxPortions - максимальна кількість порцій для мінімальної похибки
+ * @returns розрахована похибка в грамах з точністю до 2 знаків після коми
  */
 export function calcTolerance(
   portions: number,
@@ -34,20 +34,20 @@ export function calcTolerance(
 }
 
 /**
- * Рассчитывает похибку для коробки (10% от веса коробки, минимум 10г)
- * @param expectedWeight - ожидаемый вес коробки в кг
- * @returns рассчитанная похибка в граммах
+ * Розраховує похибку для коробки (10% від ваги коробки, мінімум 10г)
+ * @param expectedWeight - очікувана вага коробки в кг
+ * @returns розрахована похибка в грамах
  */
 export function calcBoxTolerance(expectedWeight: number): number {
-  return Math.max(expectedWeight * 0.1, 0.01) * 1000; // переводим в граммы
+  return Math.max(expectedWeight * 0.1, 0.01) * 1000; // переводимо в грами
 }
 
 /**
- * Рассчитывает накопленную похибку для всех элементов на платформе
- * @param boxWeight - вес коробки в кг
- * @param totalPortions - общее количество порций всех товаров на платформе
- * @param toleranceSettings - настройки похибки (maxTolerance, minTolerance, minPortions, maxPortions)
- * @returns общая накопиченная похибка в граммах
+ * Розраховує накопичену похибку для всіх елементів на платформі
+ * @param boxWeight - вага коробки в кг
+ * @param totalPortions - загальна кількість порцій всіх товарів на платформі
+ * @param toleranceSettings - налаштування похибки (maxTolerance, minTolerance, minPortions, maxPortions)
+ * @returns загальна накопичена похибка в грамах
  */
 export function calcCumulativeTolerance(
   boxWeight: number,

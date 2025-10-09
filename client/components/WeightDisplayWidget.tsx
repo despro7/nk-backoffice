@@ -220,7 +220,7 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
     }
     
     const difference = Math.abs(weight - lastDisplayedWeightRef.current);
-    const changeThreshold = 0.1; // 100г поріг для реальної зміни
+    const changeThreshold = 0.015; // 15г поріг для реальної зміни
     
     return difference >= changeThreshold;
   };
