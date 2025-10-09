@@ -13,7 +13,7 @@ interface ServerStatusWithModal {
 }
 
 export const useServerStatusWithModal = (fallbackIntervalMs: number = 30000) => {
-  const { isOnline, isLoading, lastChecked, checkServerStatus } = useServerStatus(fallbackIntervalMs);
+  const { isOnline, isLoading, lastChecked, serverStartTime: serverStartTimeFromApi, checkServerStatus } = useServerStatus(fallbackIntervalMs);
   const [showModal, setShowModal] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const [serverStartTime, setServerStartTime] = useState<Date | null>(null);
@@ -21,7 +21,7 @@ export const useServerStatusWithModal = (fallbackIntervalMs: number = 30000) => 
   const previousStatusRef = useRef<boolean | null>(null);
   const hasShownOfflineModalRef = useRef(false);
 
-  // Функция для форматирования времени работы
+  // Функція для форматування часу роботи
   const formatUptime = useCallback((startTime: Date) => {
     const now = new Date();
     const diffMs = now.getTime() - startTime.getTime();
@@ -38,7 +38,7 @@ export const useServerStatusWithModal = (fallbackIntervalMs: number = 30000) => 
     }
   }, []);
 
-  // Обновляем uptime каждую минуту
+  // Оновлюємо uptime щохвилини
   useEffect(() => {
     if (!serverStartTime) return;
 
@@ -46,34 +46,34 @@ export const useServerStatusWithModal = (fallbackIntervalMs: number = 30000) => 
       setUptime(formatUptime(serverStartTime));
     };
 
-    updateUptime(); // Обновляем сразу
-    const interval = setInterval(updateUptime, 60000); // Каждую минуту
+    updateUptime(); // Оновлюємо відразу
+    const interval = setInterval(updateUptime, 60000); // Щохвилини
 
     return () => clearInterval(interval);
   }, [serverStartTime, formatUptime]);
 
-  // Отслеживаем изменения статуса сервера
+  // Синхронізуємо serverStartTime з даними з API
+  useEffect(() => {
+    if (serverStartTimeFromApi) {
+      setServerStartTime(serverStartTimeFromApi);
+    }
+  }, [serverStartTimeFromApi]);
+
+  // Відстежуємо зміни статусу сервера
   useEffect(() => {
     const previousStatus = previousStatusRef.current;
     
-    // Если статус изменился с online на offline
+    // Якщо статус змінився з online на offline
     if (previousStatus === true && isOnline === false && !isLoading) {
       setIsOffline(true);
       setShowModal(true);
       hasShownOfflineModalRef.current = true;
     }
-    // Если статус изменился с offline на online
+    // Якщо статус змінився з offline на online
     else if (previousStatus === false && isOnline === true && !isLoading) {
       setIsOffline(false);
       setShowModal(true);
-      hasShownOfflineModalRef.current = false; // Сбрасываем флаг для следующего отключения
-      
-      // Устанавливаем время начала работы сервера
-      setServerStartTime(new Date());
-    }
-    // Если сервер онлайн и это первая проверка
-    else if (previousStatus === null && isOnline === true && !isLoading) {
-      setServerStartTime(new Date());
+      hasShownOfflineModalRef.current = false; // Скидаємо прапор для наступного вимкнення
     }
 
     previousStatusRef.current = isOnline;

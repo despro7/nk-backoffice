@@ -5,34 +5,34 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HeroUIProvider, ToastProvider } from "@heroui/react";
-import NotFound from "./pages/NotFound";
 import { appRoutes } from "./routes.config";
 import { Layout } from "./components/Layout";
 import { ScrollToTop } from "./components/ScrollToTop";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { DebugProvider } from "./contexts/DebugContext";
-import { ProtectedRoute } from "./components/ProtectedRoute";
+import { useEquipmentFromAuth } from "./contexts/AuthContext";
+import NotFound from "./pages/NotFound";
 import { Auth } from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import TestSerialCom from "./pages/test-serial-com";
-import { useEquipmentFromAuth } from "./contexts/AuthContext";
 import { ToastService } from "./services/ToastService";
 import { LoggingService } from "./services/LoggingService";
-import ErrorBoundary from "./components/ErrorBoundary";
 import { initAudioContext } from "./lib/soundUtils";
 
 const queryClient = new QueryClient();
 
-// Компонент для рендеринга маршрутов с поддержкой ключей
+// Компонент для рендерінгу маршрутів із підтримкою ключів
 const AppRoutes = () => {
   const [equipmentState] = useEquipmentFromAuth();
 
-  // Инициализация при загрузке приложения
+  // Ініціалізація під час завантаження застосунку
   useEffect(() => {
-    // ToastService автоматически инициализируется при первом использовании
+    // ToastService автоматично ініціалізується під час першого використання
   }, []);
 
-  // Показываем загрузку, если состояние оборудования еще не инициализировано
+  // Показуємо завантаження, якщо стан обладнання ще не ініціалізовано
   if (!equipmentState) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -46,10 +46,10 @@ const AppRoutes = () => {
 
   return (
     <Routes>
-      {/* Страница авторизации без Layout */}
+      {/* Сторінка авторизації без Layout */}
       <Route path="/auth" element={<Auth />} />
 
-      {/* Главная страница */}
+      {/* Головна сторінка */}
       <Route path="/" element={
         <ProtectedRoute>
           <Layout>
@@ -58,16 +58,16 @@ const AppRoutes = () => {
         </ProtectedRoute>
       } />
 
-      {/* Маршрут без авторизации для тестирования COM порта */}
+      {/* Маршрут без авторизації для тестування COM порту */}
       <Route path="/test-serial-com" element={
         <Layout>
           <TestSerialCom />
         </Layout>
       } />
 
-      {/* Остальные защищенные роуты */}
+      {/* Решта захищених роутів */}
       {appRoutes.slice(1).map((route) => {
-        // Для OrderView добавляем key, зависящий от состояния оборудования
+        // Для OrderView додаємо key, що залежить від стану обладнання
         const isOrderView = route.path === '/orders/:externalId';
         const key = isOrderView
           ? `order-view-${equipmentState.config?.scale?.connectionStrategy}`
@@ -88,7 +88,7 @@ const AppRoutes = () => {
         );
       })}
 
-      {/* 404 страница */}
+      {/* 404 сторінка */}
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
@@ -100,17 +100,17 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const [isReady, setIsReady] = React.useState(false);
   const { user, isLoading: authLoading } = useAuth();
 
-  // Инициализация AudioContext при первом пользовательском взаимодействии
+  // Ініціалізація AudioContext під час першої користувацької взаємодії
   React.useEffect(() => {
     const handleFirstUserInteraction = () => {
       initAudioContext();
-      // Удаляем обработчики после первого взаимодействия
+      // Видаляємо обробники після першої взаємодії
       document.removeEventListener('click', handleFirstUserInteraction);
       document.removeEventListener('keydown', handleFirstUserInteraction);
       document.removeEventListener('touchstart', handleFirstUserInteraction);
     };
 
-    // Добавляем обработчики для различных типов пользовательских взаимодействий
+    // Додаємо обробники для різних типів користувацьких взаємодій
     document.addEventListener('click', handleFirstUserInteraction);
     document.addEventListener('keydown', handleFirstUserInteraction);
     document.addEventListener('touchstart', handleFirstUserInteraction);

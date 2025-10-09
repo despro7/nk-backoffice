@@ -4,6 +4,7 @@ interface ServerStatus {
   isOnline: boolean;
   isLoading: boolean;
   lastChecked: Date | null;
+  serverStartTime: Date | null;
 }
 
 export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
@@ -11,12 +12,13 @@ export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
     isOnline: true,
     isLoading: false,
     lastChecked: null,
+    serverStartTime: null,
   });
   const [intervalMs, setIntervalMs] = useState<number>(fallbackIntervalMs);
 
   const fetchIntervalSetting = useCallback(async (signal?: AbortSignal) => {
     try {
-      // Публичная настройка - не отправляем credentials
+      // Публічне налаштування - не надсилаємо credentials
       const response = await fetch('/api/settings/server_check_interval', {
         signal
       });
@@ -50,30 +52,46 @@ export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
         headers: {
           'Content-Type': 'application/json',
         },
-        // Не используем credentials чтобы избежать CORS проблем при проверке статуса
+        // Не використовуємо credentials, щоб уникнути CORS проблем під час перевірки статусу
       });
 
-      const isOnline = response.ok;
-      setStatus({
-        isOnline,
-        isLoading: false,
-        lastChecked: new Date(),
-      });
+      if (response.ok) {
+        const data = await response.json();
+        // Обчислюємо реальний час запуску сервера на основі uptime (у секундах)
+        const serverStartTime = data.uptime 
+          ? new Date(Date.now() - data.uptime * 1000)
+          : null;
+        
+        setStatus({
+          isOnline: true,
+          isLoading: false,
+          lastChecked: new Date(),
+          serverStartTime,
+        });
+      } else {
+        setStatus(prev => ({
+          isOnline: false,
+          isLoading: false,
+          lastChecked: new Date(),
+          serverStartTime: prev.serverStartTime,
+        }));
+      }
 
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
         console.error('❌ [useServerStatus] Error checking server status:', error);
       }
-      setStatus({
+      setStatus(prev => ({
         isOnline: false,
         isLoading: false,
         lastChecked: new Date(),
-      });
+        serverStartTime: prev.serverStartTime,
+      }));
     }
   }, []);
 
   useEffect(() => {
-    // Сначала получаем настройку интервала
+    // Спочатку отримуємо налаштування інтервалу
     const controller = new AbortController();
     fetchIntervalSetting(controller.signal);
 
@@ -82,10 +100,10 @@ export const useServerStatus = (fallbackIntervalMs: number = 30000) => {
 
   useEffect(() => {
     if (intervalMs > 0) {
-      // Проверяем статус сразу при монтировании
+      // Перевіряємо статус відразу при монтуванні
       checkServerStatus();
 
-      // Устанавливаем периодическую проверку
+      // Встановлюємо періодичну перевірку
       const interval = setInterval(checkServerStatus, intervalMs);
 
       return () => clearInterval(interval);
