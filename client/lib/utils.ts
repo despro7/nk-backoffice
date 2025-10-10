@@ -17,6 +17,8 @@ export function cn(...inputs: ClassValue[]) {
  * @param minTolerance - мінімальна похибка (г)
  * @param minPortions - мінімальна кількість порцій для максимальної похибки
  * @param maxPortions - максимальна кількість порцій для мінімальної похибки
+ * @param portionMultiplier - коефіцієнт множення для екстра-зменшення похибки
+ * @param toleranceReductionPercent - відсоток від minTolerance для екстра-зменшення
  * @returns розрахована похибка в грамах з точністю до 2 знаків після коми
  */
 export function calcTolerance(
@@ -24,9 +26,17 @@ export function calcTolerance(
   maxTolerance: number = 30,
   minTolerance: number = 10,
   minPortions: number = 1,
-  maxPortions: number = 12
+  maxPortions: number = 12,
+  portionMultiplier: number = 2,
+  toleranceReductionPercent: number = 60
 ): number {
   if (portions <= minPortions) return maxTolerance;
+  
+  // Якщо кількість порцій >= portionMultiplier * maxPortions, похибка зменшується до toleranceReductionPercent% від minTolerance
+  if (portions >= portionMultiplier * maxPortions) {
+    return +(minTolerance * (toleranceReductionPercent / 100)).toFixed(2);
+  }
+  
   if (portions >= maxPortions) return minTolerance;
 
   const t = (portions - minPortions) / (maxPortions - minPortions);
@@ -46,7 +56,7 @@ export function calcBoxTolerance(expectedWeight: number): number {
  * Розраховує накопичену похибку для всіх елементів на платформі
  * @param boxWeight - вага коробки в кг
  * @param totalPortions - загальна кількість порцій всіх товарів на платформі
- * @param toleranceSettings - налаштування похибки (maxTolerance, minTolerance, minPortions, maxPortions)
+ * @param toleranceSettings - налаштування похибки
  * @returns загальна накопичена похибка в грамах
  */
 export function calcCumulativeTolerance(
@@ -57,6 +67,8 @@ export function calcCumulativeTolerance(
     minTolerance: number;
     minPortions: number;
     maxPortions: number;
+    portionMultiplier?: number;
+    toleranceReductionPercent?: number;
   }
 ): number {
   const boxTolerance = calcBoxTolerance(boxWeight);
@@ -65,7 +77,9 @@ export function calcCumulativeTolerance(
     toleranceSettings.maxTolerance,
     toleranceSettings.minTolerance,
     toleranceSettings.minPortions,
-    toleranceSettings.maxPortions
+    toleranceSettings.maxPortions,
+    toleranceSettings.portionMultiplier || 2,
+    toleranceSettings.toleranceReductionPercent || 60
   ) * totalPortions;
 
   return boxTolerance + itemTolerance;

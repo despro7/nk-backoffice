@@ -332,16 +332,7 @@ router.get('/weight-tolerance/values', authenticateToken, async (req, res) => {
     const { PrismaClient } = await import('@prisma/client');
     const prisma = new PrismaClient();
 
-    const [typeSetting, percentageSetting, absoluteSetting, maxToleranceSetting, minToleranceSetting, maxPortionsSetting, minPortionsSetting] = await Promise.all([
-      prisma.settingsBase.findUnique({
-        where: { key: 'weight_tolerance_type' }
-      }),
-      prisma.settingsBase.findUnique({
-        where: { key: 'weight_tolerance_percentage' }
-      }),
-      prisma.settingsBase.findUnique({
-        where: { key: 'weight_tolerance_absolute' }
-      }),
+    const [maxToleranceSetting, minToleranceSetting, maxPortionsSetting, minPortionsSetting, portionMultiplierSetting, toleranceReductionSetting] = await Promise.all([
       prisma.settingsBase.findUnique({
         where: { key: 'weight_tolerance_max' }
       }),
@@ -353,17 +344,22 @@ router.get('/weight-tolerance/values', authenticateToken, async (req, res) => {
       }),
       prisma.settingsBase.findUnique({
         where: { key: 'weight_tolerance_min_portions' }
+      }),
+      prisma.settingsBase.findUnique({
+        where: { key: 'weight_tolerance_portion_multiplier' }
+      }),
+      prisma.settingsBase.findUnique({
+        where: { key: 'weight_tolerance_reduction_percent' }
       })
     ]);
 
     res.json({
-      type: typeSetting?.value || 'combined',
-      percentage: percentageSetting ? parseFloat(percentageSetting.value) : 5,
-      absolute: absoluteSetting ? parseFloat(absoluteSetting.value) : 20,
       maxTolerance: maxToleranceSetting ? parseFloat(maxToleranceSetting.value) : 30,
       minTolerance: minToleranceSetting ? parseFloat(minToleranceSetting.value) : 10,
       maxPortions: maxPortionsSetting ? parseInt(maxPortionsSetting.value) : 12,
-      minPortions: minPortionsSetting ? parseInt(minPortionsSetting.value) : 1
+      minPortions: minPortionsSetting ? parseInt(minPortionsSetting.value) : 1,
+      portionMultiplier: portionMultiplierSetting ? parseFloat(portionMultiplierSetting.value) : 2,
+      toleranceReductionPercent: toleranceReductionSetting ? parseFloat(toleranceReductionSetting.value) : 60
     });
   } catch (error) {
     console.error('Error getting weight tolerance settings:', error);
@@ -379,7 +375,7 @@ router.put('/weight-tolerance/values', authenticateToken, async (req, res) => {
     const { PrismaClient } = await import('@prisma/client');
     const prisma = new PrismaClient();
 
-    const { maxTolerance, minTolerance, maxPortions, minPortions } = req.body;
+    const { maxTolerance, minTolerance, maxPortions, minPortions, portionMultiplier, toleranceReductionPercent } = req.body;
 
     if (maxTolerance === undefined || minTolerance === undefined || maxPortions === undefined || minPortions === undefined) {
       return res.status(400).json({
@@ -433,18 +429,38 @@ router.put('/weight-tolerance/values', authenticateToken, async (req, res) => {
           category: 'weight_tolerance',
           isActive: true
         }
+      }),
+      prisma.settingsBase.upsert({
+        where: { key: 'weight_tolerance_portion_multiplier' },
+        update: { value: portionMultiplier?.toString() || '2' },
+        create: {
+          key: 'weight_tolerance_portion_multiplier',
+          value: portionMultiplier?.toString() || '2',
+          description: 'Коефіцієнт множення порцій для екстра-зменшення похибки',
+          category: 'weight_tolerance',
+          isActive: true
+        }
+      }),
+      prisma.settingsBase.upsert({
+        where: { key: 'weight_tolerance_reduction_percent' },
+        update: { value: toleranceReductionPercent?.toString() || '60' },
+        create: {
+          key: 'weight_tolerance_reduction_percent',
+          value: toleranceReductionPercent?.toString() || '60',
+          description: 'Процент зменшення похибки при великій кількості порцій',
+          category: 'weight_tolerance',
+          isActive: true
+        }
       })
     ]);
 
     res.json({
-      // Старые настройки для обратной совместимости (всегда возвращаем фиксированные значения)
-      type: 'combined',
-      percentage: 5,
-      absolute: 20,
       maxTolerance: parseFloat(maxTolerance || 30),
       minTolerance: parseFloat(minTolerance || 10),
       maxPortions: parseInt(maxPortions || 12),
-      minPortions: parseInt(minPortions || 1)
+      minPortions: parseInt(minPortions || 1),
+      portionMultiplier: parseFloat(portionMultiplier || 2),
+      toleranceReductionPercent: parseFloat(toleranceReductionPercent || 60)
     });
   } catch (error) {
     console.error('Error updating weight tolerance settings:', error);

@@ -1,38 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { Button, NumberInput, Select, SelectItem } from '@heroui/react';
+import { Button, NumberInput } from '@heroui/react';
 import { Card, CardHeader, CardBody } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface WeightToleranceSettingsType {
-  type: 'percentage' | 'absolute' | 'combined';
-  percentage: number;
-  absolute: number;
   maxTolerance: number;
   minTolerance: number;
   maxPortions: number;
   minPortions: number;
+  portionMultiplier: number;
+  toleranceReductionPercent: number;
 }
 
 interface WeightToleranceSettingsProps {
   onSave?: (settings: WeightToleranceSettingsType) => void;
 }
 
-// Убираем старые типы tolerance - теперь используем только динамическую логику
-// const TOLERANCE_TYPES = [
-//   { value: 'combined', label: 'Комбінована', description: 'Використовує обидва типи похибок' },
-//   { value: 'percentage', label: 'Тільки відсоткова', description: 'Використовує тільки відсоткову похибку' },
-//   { value: 'absolute', label: 'Тільки абсолютна', description: 'Використовує тільки абсолютну похибку' }
-// ] as const;
-
 export const WeightToleranceSettings: React.FC<WeightToleranceSettingsProps> = ({ onSave }) => {
   const [settings, setSettings] = useState<WeightToleranceSettingsType>({
-    type: 'combined',
-    percentage: 5,
-    absolute: 20,
     maxTolerance: 30,
     minTolerance: 10,
     maxPortions: 12,
-    minPortions: 1
+    minPortions: 1,
+    portionMultiplier: 2,
+    toleranceReductionPercent: 60
   });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -48,13 +39,12 @@ export const WeightToleranceSettings: React.FC<WeightToleranceSettingsProps> = (
       if (response.ok) {
         const data = await response.json();
         setSettings({
-          type: data.type || 'combined',
-          percentage: data.percentage || 5,
-          absolute: data.absolute || 20,
           maxTolerance: data.maxTolerance || 30,
           minTolerance: data.minTolerance || 10,
           maxPortions: data.maxPortions || 12,
-          minPortions: data.minPortions || 1
+          minPortions: data.minPortions || 1,
+          portionMultiplier: data.portionMultiplier || 2,
+          toleranceReductionPercent: data.toleranceReductionPercent || 60
         });
       }
     } catch (error) {
@@ -72,27 +62,24 @@ export const WeightToleranceSettings: React.FC<WeightToleranceSettingsProps> = (
         },
         credentials: 'include',
         body: JSON.stringify({
-          // Старые настройки убираем - они не используются в новой логике
-          // type: settings.type,
-          // percentage: settings.percentage,
-          // absolute: settings.absolute,
           maxTolerance: settings.maxTolerance,
           minTolerance: settings.minTolerance,
           maxPortions: settings.maxPortions,
-          minPortions: settings.minPortions
+          minPortions: settings.minPortions,
+          portionMultiplier: settings.portionMultiplier,
+          toleranceReductionPercent: settings.toleranceReductionPercent
         })
       });
 
       if (response.ok) {
         const updatedSettings = await response.json();
         setSettings({
-          type: updatedSettings.type || 'combined',
-          percentage: updatedSettings.percentage || 5,
-          absolute: updatedSettings.absolute || 20,
           maxTolerance: updatedSettings.maxTolerance || 30,
           minTolerance: updatedSettings.minTolerance || 10,
           maxPortions: updatedSettings.maxPortions || 12,
-          minPortions: updatedSettings.minPortions || 1
+          minPortions: updatedSettings.minPortions || 1,
+          portionMultiplier: updatedSettings.portionMultiplier || 2,
+          toleranceReductionPercent: updatedSettings.toleranceReductionPercent || 60
         });
         onSave?.(updatedSettings);
       } else {
@@ -161,7 +148,7 @@ export const WeightToleranceSettings: React.FC<WeightToleranceSettingsProps> = (
                 label="Мінімальна похибка (г)"
                 className="w-full"
               />
-              <p className="text-xs text-gray-500">Похибка для 12+ порцій товару</p>
+              <p className="text-xs text-gray-500">Похибка для {settings.maxPortions}+ порцій (при x{settings.portionMultiplier} більше зменшується до {settings.toleranceReductionPercent}%)</p>
             </div>
 
             {/* Максимальное количество порций */}
@@ -203,53 +190,47 @@ export const WeightToleranceSettings: React.FC<WeightToleranceSettingsProps> = (
               />
               <p className="text-xs text-gray-500">Кількість порцій для максимальної похибки</p>
             </div>
-          </div>
 
-            {/* Старые настройки (для обратной совместимости) */}
-            <div className="border-t pt-4">
-              <h4 className="font-medium text-gray-900 mb-3">Застарілі налаштування (не використовуються)</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 opacity-50">
-                {/* Похибка у відсотках */}
-                <div className="space-y-2">
-                  <NumberInput
-                    value={settings.percentage}
-                    onValueChange={(num) => {
-                      if (num >= 0) {
-                        setSettings(prev => ({ ...prev, percentage: num }));
-                      }
-                    }}
-                    min={0}
-                    max={100}
-                    step={0.1}
-                    placeholder="5"
-                    labelPlacement="outside"
-                    label="Похибка у відсотках (%)"
-                    className="w-full"
-                    disabled
-                  />
-                </div>
-
-                {/* Абсолютне значення */}
-                <div className="space-y-2">
-                  <NumberInput
-                    value={settings.absolute}
-                    onValueChange={(num) => {
-                      if (num >= 0) {
-                        setSettings(prev => ({ ...prev, absolute: num }));
-                      }
-                    }}
-                    min={0}
-                    max={1000}
-                    step={1}
-                    placeholder="20"
-                    labelPlacement="outside"
-                    label="Абсолютне значення (гр.)"
-                    className="w-full"
-                    disabled
-                  />
-                </div>
-              </div>
+            {/* Коефіцієнт множення */}
+            <div className="space-y-2">
+              <NumberInput
+                value={settings.portionMultiplier}
+                onValueChange={(num) => {
+                  if (num >= 1) {
+                    setSettings(prev => ({ ...prev, portionMultiplier: num }));
+                  }
+                }}
+                min={1}
+                max={10}
+                step={0.1}
+                placeholder="2"
+                labelPlacement="outside"
+                label="Коефіцієнт множення порцій"
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500">При кількості порцій ≥ {settings.maxPortions} × {settings.portionMultiplier} = {(settings.maxPortions * settings.portionMultiplier).toFixed(0)}</p>
             </div>
+
+            {/* Процент зменшення */}
+            <div className="space-y-2">
+              <NumberInput
+                value={settings.toleranceReductionPercent}
+                onValueChange={(num) => {
+                  if (num >= 1 && num <= 100) {
+                    setSettings(prev => ({ ...prev, toleranceReductionPercent: num }));
+                  }
+                }}
+                min={1}
+                max={100}
+                step={1}
+                placeholder="60"
+                labelPlacement="outside"
+                label="Процент зменшення похибки (%)"
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500">Похибка зменшиться до {((settings.minTolerance * settings.toleranceReductionPercent) / 100).toFixed(1)}г</p>
+            </div>
+          </div>
           </div>
 
           {/* Кнопки действий */}

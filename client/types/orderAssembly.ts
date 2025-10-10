@@ -30,13 +30,12 @@ export interface OrderForAssembly {
 
 // Інтерфейс для налаштувань tolerance
 export interface ToleranceSettings {
-  type: 'percentage' | 'absolute' | 'combined';
-  percentage: number;
-  absolute: number;
   maxTolerance: number;
   minTolerance: number;
   maxPortions: number;
   minPortions: number;
+  portionMultiplier?: number;
+  toleranceReductionPercent?: number;
 }
 
 // Типи для налаштувань звуків
