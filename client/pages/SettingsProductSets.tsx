@@ -37,6 +37,7 @@ interface Product {
   additionalPrices: any; // Уже распарсенный объект или null
   stockBalanceByStock: any; // Уже распарсенный объект или null
   lastSyncAt: string;
+  isOutdated?: boolean; // Чи застарілий товар (немає в WordPress)
 }
 
 interface ProductsResponse {
@@ -349,7 +350,10 @@ const ProductSets: React.FC = () => {
       case 'name':
         return (
           <div>
-            <div className="text-sm font-bold text-gray-900">{product.name}</div>
+            <div className="text-sm font-bold text-gray-900">
+              {product.name}
+              {product.isOutdated && (<span className="text-xs py-0.5 px-1.5 ml-2 rounded bg-red-500 text-white font-medium">Застарілий</span>)}
+            </div>
             <div className="text-sm font-normal text-gray-500">
               {product.weight && (
                 <span className="flex gap-1 items-center">
@@ -927,27 +931,6 @@ const ProductSets: React.FC = () => {
     }
   };
 
-  const clearSkuCache = async () => {
-    try {
-      console.log('Очищаем кеш SKU...');
-      const response = await fetch('/api/products/clear-sku-cache', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include'
-      });
-      
-      const result = await response.json();
-      console.log('Результат очистки кеша SKU:', result);
-      
-      addTestResult(result);
-    } catch (error) {
-      console.error('Ошибка очистки кеша SKU:', error);
-      addTestResult({ error: 'Ошибка: ' + error });
-    }
-  };
-
   // Функция для обновления веса товара
   const updateProductWeight = async (productId: string, newWeight: number) => {
     try {
@@ -1161,14 +1144,36 @@ const ProductSets: React.FC = () => {
             </p>
             
             {!syncStatus.isRunning && syncStatus.syncedProducts > 0 && (
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="font-medium text-gray-700">Синхронизировано товаров:</span>
-                  <span className="ml-2 text-green-600 font-semibold">{syncStatus.syncedProducts}</span>
-                </div>
-                <div>
-                  <span className="font-medium text-gray-700">Комплектов:</span>
-                  <span className="ml-2 text-blue-600 font-semibold">{syncStatus.syncedSets}</span>
+              <div className="space-y-3">
+                <div className="flex items-center gap-4 text-sm flex-wrap">
+                  {(syncStatus as any).createdProducts > 0 && (
+                    <div className="flex items-center gap-2">
+                      <DynamicIcon name="plus-circle" size={16} className="text-green-600" />
+                      <span className="font-medium text-gray-700">Створено:</span>
+                      <span className="text-green-600 font-semibold">{(syncStatus as any).createdProducts}</span>
+                    </div>
+                  )}
+                  {(syncStatus as any).updatedProducts > 0 && (
+                    <div className="flex items-center gap-2">
+                      <DynamicIcon name="refresh-cw" size={16} className="text-blue-600" />
+                      <span className="font-medium text-gray-700">Оновлено:</span>
+                      <span className="text-blue-600 font-semibold">{(syncStatus as any).updatedProducts}</span>
+                    </div>
+                  )}
+                  {(syncStatus as any).skippedProducts > 0 && (
+                    <div className="flex items-center gap-2">
+                      <DynamicIcon name="skip-forward" size={16} className="text-gray-500" />
+                      <span className="font-medium text-gray-700">Пропущено:</span>
+                      <span className="text-gray-600 font-semibold">{(syncStatus as any).skippedProducts}</span>
+                    </div>
+                  )}
+                  {syncStatus.syncedSets > 0 && (
+                    <div className="flex items-center gap-2">
+                      <DynamicIcon name="package" size={16} className="text-purple-600" />
+                      <span className="font-medium text-gray-700">Комплектів:</span>
+                      <span className="text-purple-600 font-semibold">{syncStatus.syncedSets}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1420,7 +1425,10 @@ const ProductSets: React.FC = () => {
               }
             >
               {(item: Product) => (
-                <TableRow key={item.id}>
+                <TableRow 
+                  key={item.id}
+                  className={item.isOutdated ? 'grayscale-50 opacity-50 bg-red-50' : ''}
+                >
                   {(columnKey) => (
                     <TableCell>{renderCell(item, columnKey)}</TableCell>
                   )}
@@ -1473,10 +1481,6 @@ const ProductSets: React.FC = () => {
 
             <Button onPress={testBalanceBySku} variant="flat">
               Залишки по SKU
-            </Button>
-
-            <Button onPress={clearSkuCache} className='bg-danger text-white hover:bg-danger-400'>
-              Очистити кеш SKU з WordPress
             </Button>
 
             <Button onPress={clearTestResults} className='ml-auto bg-transparent border-1.5 border-danger text-danger hover:bg-danger-50'>

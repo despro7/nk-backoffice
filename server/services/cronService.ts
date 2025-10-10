@@ -1,6 +1,7 @@
 import * as cron from 'node-cron';
 import { salesDriveService } from './salesDriveService.js';
 import { syncHistoryService } from './syncHistoryService.js';
+import { DilovodService } from './dilovod/DilovodService.js';
 
 
 // --- Process-level Cron Job Registry ---
@@ -54,12 +55,16 @@ let isCronJobActive = false;
 
 export class CronService {
   private syncJob: cron.ScheduledTask | null = null;
+  private productsSyncJob: cron.ScheduledTask | null = null;
   private isTaskRunning = false;
+  private isProductsSyncRunning = false;
   private static instance: CronService | null = null;
+  private dilovodService: DilovodService;
 
   private constructor() {
     // Ensure any jobs from a previous HMR instance are stopped.
     forceStopAllCronJobs();
+    this.dilovodService = new DilovodService();
   }
 
   static getInstance(): CronService {
@@ -141,19 +146,74 @@ export class CronService {
     }
   }
 
-  getStatus(): { isRunning: boolean; hasSyncJob: boolean } {
+  startProductsSync(): void {
+    if (this.productsSyncJob) {
+      console.log('⚠️  Products sync cron job already running.');
+      return;
+    }
+
+    // Синхронізація товарів з Dilovod 3 рази на день: 06:00, 14:00, 22:00 (Київський час)
+    this.productsSyncJob = cron.schedule('0 6,14,22 * * *', async () => {
+      if (this.isProductsSyncRunning) {
+        console.log('⏳ Previous products sync is still running, skipping this scheduled run.');
+        return;
+      }
+
+      console.log('🕐 Running scheduled products sync from Dilovod...');
+      this.isProductsSyncRunning = true;
+      try {
+        const startTime = Date.now();
+        const result = await this.dilovodService.syncProductsWithDilovod();
+        const duration = Date.now() - startTime;
+        
+        if (result.success) {
+          console.log(`✅ Scheduled products sync completed in ${duration}ms: ${result.syncedProducts} products synced, ${result.syncedSets} sets`);
+        } else {
+          console.log(`⚠️  Scheduled products sync completed with errors in ${duration}ms: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('❌ Scheduled products sync failed:', error);
+      } finally {
+        this.isProductsSyncRunning = false;
+      }
+    }, {
+      timezone: "Europe/Kiev"
+    });
+
+    this.productsSyncJob.start();
+    cronJobsRegistry.add(this.productsSyncJob);
+    console.log('✅ Products sync cron job started (06:00, 14:00, 22:00 Kyiv time).');
+  }
+
+  stopProductsSync(): void {
+    if (this.productsSyncJob) {
+      this.productsSyncJob.stop();
+      if (typeof (this.productsSyncJob as any).destroy === 'function') {
+        (this.productsSyncJob as any).destroy();
+      }
+      cronJobsRegistry.delete(this.productsSyncJob);
+      this.productsSyncJob = null;
+      console.log('🛑 Products sync cron job stopped.');
+    }
+  }
+
+  getStatus(): { isRunning: boolean; hasSyncJob: boolean; isProductsSyncRunning: boolean; hasProductsSyncJob: boolean } {
     return {
       isRunning: this.isTaskRunning,
       hasSyncJob: isCronJobActive,
+      isProductsSyncRunning: this.isProductsSyncRunning,
+      hasProductsSyncJob: this.productsSyncJob !== null,
     };
   }
 
   startAll(): void {
     this.startOrderSync();
+    this.startProductsSync();
   }
 
   stopAll(): void {
     this.stopOrderSync();
+    this.stopProductsSync();
   }
 }
 

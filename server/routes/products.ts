@@ -424,25 +424,6 @@ router.post('/test-sets-only', authenticateToken, async (req, res) => {
   }
 });
 
-// Очистить кеш SKU
-router.post('/clear-sku-cache', authenticateToken, async (req, res) => {
-  try {
-    const { user } = req as any;
-    
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const dilovodService = new DilovodService();
-    const result = await dilovodService.clearSkuCache();
-    
-    res.json(result);
-  } catch (error) {
-    logWithTimestamp('Error clearing SKU cache:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 // Получить остатки товаров с возможностью синхронизации
 router.get('/stock/balance', authenticateToken, async (req, res) => {
   try {

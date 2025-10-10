@@ -39,8 +39,11 @@ export interface DilovodApiResponse<T = any> {
 export interface DilovodSyncResult {
   success: boolean;
   message: string;
-  syncedProducts: number;
+  syncedProducts: number; // Для зворотної сумісності (created + updated)
   syncedSets: number;
+  createdProducts?: number; // Кількість створених товарів
+  updatedProducts?: number; // Кількість оновлених товарів
+  skippedProducts?: number; // Кількість пропущених товарів (без змін)
   errors: string[];
 }
 

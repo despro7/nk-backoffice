@@ -104,11 +104,14 @@ model Product {
   updatedAt           DateTime @updatedAt
   weight              Int?
   manualOrder         Int?     @default(0)
+  dilovodDataHash     String?  @db.VarChar(64)
+  isOutdated          Boolean  @default(false)
 
   @@index([sku])
   @@index([categoryId])
   @@index([lastSyncAt])
   @@index([manualOrder])
+  @@index([isOutdated])
   @@map("products")
 }
 

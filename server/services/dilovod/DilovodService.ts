@@ -1,5 +1,6 @@
 // Основной сервис Dilovod - координатор всех модулей
 
+import { PrismaClient } from '@prisma/client';
 import {
   DilovodApiClient,
   DilovodCacheManager,
@@ -8,7 +9,8 @@ import {
   DilovodProduct,
   DilovodSyncResult,
   DilovodTestResult,
-  DilovodStockBalance
+  DilovodStockBalance,
+  WordPressProduct
 } from './index.js';
 import { logWithTimestamp } from './DilovodUtils.js';
 import { syncSettingsService } from '../syncSettingsService.js';
@@ -50,9 +52,9 @@ export class DilovodService {
 
       logWithTimestamp('✅ Синхронизация Dilovod включена, продолжаем...');
 
-      // Шаг 1: Получение SKU товаров из WordPress
+      // Шаг 1: Получение SKU товаров из WordPress (прямой запрос без кеша)
       logWithTimestamp('📋 Шаг 1: Получение SKU товаров из WordPress...');
-      const skus = await this.cacheManager.getInStockSkusFromWordPress();
+      const skus = await this.fetchSkusDirectlyFromWordPress();
       
       if (skus.length === 0) {
         logWithTimestamp('❌ Не найдено SKU товаров для синхронизации');
@@ -108,6 +110,10 @@ export class DilovodService {
       logWithTimestamp('\n📋 Шаг 3: Синхронизация с базой данных...');
       const syncResult = await this.syncManager.syncProductsToDatabase(dilovodProducts);
       
+      // Шаг 4: Позначення застарілих товарів (які є в БД але немає в WordPress)
+      logWithTimestamp('\n📋 Шаг 4: Позначення застарілих товарів...');
+      await this.syncManager.markOutdatedProducts(skus);
+      
       logWithTimestamp('\n✅ === СИНХРОНИЗАЦИЯ ЗАВЕРШЕНА ===');
       logWithTimestamp(`Результат: ${syncResult.message}`);
       logWithTimestamp(`Успешно: ${syncResult.success ? 'ДА' : 'НЕТ'}`);
@@ -161,7 +167,7 @@ export class DilovodService {
     try {
       logWithTimestamp('Получаем остатки товаров по списку SKU...');
       
-      const skus = await this.cacheManager.getInStockSkusFromWordPress();
+      const skus = await this.fetchSkusDirectlyFromWordPress();
       if (skus.length === 0) {
         return [];
       }
@@ -296,7 +302,7 @@ export class DilovodService {
     try {
       logWithTimestamp('\n🧪 === ТЕСТ ПОЛУЧЕНИЯ КОМПЛЕКТОВ ===');
       
-      const skus = await this.cacheManager.getInStockSkusFromWordPress();
+      const skus = await this.fetchSkusDirectlyFromWordPress();
       if (skus.length === 0) {
         return {
           success: false,
@@ -357,12 +363,7 @@ export class DilovodService {
 
   // Получение SKU для тестирования
   async getTestSkus(): Promise<string[]> {
-    return this.cacheManager.getInStockSkusFromWordPress();
-  }
-
-  // Очистка кеша SKU
-  async clearSkuCache(): Promise<{ success: boolean; message: string }> {
-    return this.cacheManager.clearSkuCache();
+    return this.fetchSkusDirectlyFromWordPress();
   }
 
   // Получение статистики кеша
@@ -420,6 +421,78 @@ export class DilovodService {
     deletedCount: number;
   }> {
     return this.syncManager.cleanupOldProducts(daysOld);
+  }
+
+  // ===== ПРИВАТНІ МЕТОДИ =====
+
+  // Прямий запит SKU з WordPress (без кешу)
+  private async fetchSkusDirectlyFromWordPress(): Promise<string[]> {
+    try {
+      if (!process.env.WORDPRESS_DATABASE_URL) {
+        throw new Error('WORDPRESS_DATABASE_URL не настроен в переменных окружения');
+      }
+
+      logWithTimestamp('Подключаемся к WordPress базе данных...');
+      logWithTimestamp(`URL подключения: ${process.env.WORDPRESS_DATABASE_URL.replace(/\/\/.*@/, '//***@')}`);
+      
+      // Создаем отдельное подключение к WordPress базе данных
+      const wordpressDb = new PrismaClient({
+        datasources: {
+          db: {
+            url: process.env.WORDPRESS_DATABASE_URL
+          }
+        }
+      });
+
+      try {
+        logWithTimestamp('Выполняем SQL запрос к WordPress базе...');
+        
+        // Получаем SKU товаров
+        const products = await wordpressDb.$queryRaw<WordPressProduct[]>`
+          SELECT DISTINCT 
+            pm.meta_value as sku,
+            COALESCE(CAST(pm2.meta_value AS SIGNED), 1) as stock_quantity
+          FROM wp_postmeta pm
+          INNER JOIN wp_posts p ON pm.post_id = p.ID
+          LEFT JOIN wp_postmeta pm2 ON pm.post_id = pm2.post_id AND pm2.meta_key = '_stock'
+          WHERE pm.meta_key = '_sku'
+            AND pm.meta_value IS NOT NULL
+            AND pm.meta_value != ''
+            AND p.post_type = 'product'
+            AND p.post_status = 'publish'
+          ORDER BY pm.meta_value
+        `;
+
+        logWithTimestamp(`SQL запрос выполнен успешно. Получено ${products.length} записей из WordPress`);
+        
+        if (products.length === 0) {
+          logWithTimestamp('Предупреждение: SQL запрос вернул 0 записей.');
+          return [];
+        }
+
+        // Фильтруем только валидные SKU
+        const validSkus = products
+          .filter(product => product.sku && product.sku.trim() !== '')
+          .map(product => product.sku.trim());
+
+        logWithTimestamp(`После фильтрации осталось ${validSkus.length} валидных SKU`);
+        
+        if (validSkus.length > 0) {
+          logWithTimestamp(`Примеры валидных SKU: ${validSkus.slice(0, 5).join(', ')}`);
+        }
+
+        return validSkus;
+
+      } finally {
+        // Всегда закрываем соединение
+        await wordpressDb.$disconnect();
+        logWithTimestamp('Соединение с WordPress базой закрыто');
+      }
+      
+    } catch (error) {
+      logWithTimestamp('Ошибка получения SKU из WordPress:', error);
+      throw error;
+    }
   }
 
   // ===== ЗАКРЫТИЕ СОЕДИНЕНИЙ =====

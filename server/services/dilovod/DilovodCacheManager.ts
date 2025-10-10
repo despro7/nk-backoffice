@@ -217,43 +217,6 @@ export class DilovodCacheManager {
     }
   }
 
-  // Очистка кеша SKU
-  async clearSkuCache(): Promise<{ success: boolean; message: string }> {
-    try {
-      logWithTimestamp('Очищаем кеш SKU...');
-      
-      // Используем upsert для очистки кеша (устанавливаем пустой массив)
-      await prisma.settingsWpSku.upsert({
-        where: { id: 1 },
-        update: {
-          skus: JSON.stringify([]),
-          totalCount: 0,
-          lastUpdated: new Date()
-        },
-        create: {
-          id: 1,
-          skus: JSON.stringify([]),
-          totalCount: 0,
-          lastUpdated: new Date()
-        }
-      });
-      
-      logWithTimestamp('Кеш SKU успешно очищен');
-      
-      return {
-        success: true,
-        message: 'Кеш SKU успешно очищен'
-      };
-    } catch (error) {
-      logWithTimestamp('Ошибка очистки кеша SKU:', error);
-      
-      return {
-        success: false,
-        message: `Ошибка очистки кеша: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`
-      };
-    }
-  }
-
   // Получение статистики кеша
   async getCacheStats(): Promise<{
     hasCache: boolean;
@@ -300,9 +263,6 @@ export class DilovodCacheManager {
   async forceRefreshCache(): Promise<{ success: boolean; message: string; skuCount: number }> {
     try {
       logWithTimestamp('Принудительное обновление кеша SKU...');
-      
-      // Очищаем старый кеш
-      await this.clearSkuCache();
       
       // Получаем свежие данные
       const freshSkus = await this.fetchFreshSkusFromWordPress();

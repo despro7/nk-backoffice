@@ -35,6 +35,7 @@
     "db:migrate:prod": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
+    "postinstall": "prisma generate",
     "deploy:prepare": "npm run build:production && npm run db:migrate:prod",
     "deploy:start": "pm2 start ecosystem.config.cjs --env production",
     "clean": "rm -rf dist",

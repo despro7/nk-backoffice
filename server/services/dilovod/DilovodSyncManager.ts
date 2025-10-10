@@ -1,5 +1,6 @@
 // Менеджер синхронизации товаров с базой данных
 
+import crypto from 'crypto';
 import { prisma } from '../../lib/utils.js';
 import { DilovodProduct, DilovodSyncResult } from './DilovodTypes.js';
 import { logWithTimestamp } from './DilovodUtils.js';
@@ -10,6 +11,25 @@ export class DilovodSyncManager {
     // Используем централизованный prisma из utils.js
   }
 
+  // Вычисление хеша данных товара из Dilovod (для определения изменений)
+  private calculateDataHash(product: DilovodProduct): string {
+    // Хешируем только данные которые приходят из Dilovod
+    // НЕ включаем weight и manualOrder - это локальные данные
+    const dataToHash = {
+      name: product.name,
+      costPerItem: product.costPerItem,
+      currency: product.currency,
+      categoryId: product.category.id,
+      categoryName: product.category.name,
+      set: product.set,
+      additionalPrices: product.additionalPrices,
+      dilovodId: product.id
+    };
+    
+    const dataString = JSON.stringify(dataToHash);
+    return crypto.createHash('sha256').update(dataString).digest('hex');
+  }
+
   // Основная функция синхронизации товаров с базой данных
   async syncProductsToDatabase(dilovodProducts: DilovodProduct[]): Promise<DilovodSyncResult> {
     try {
@@ -17,7 +37,9 @@ export class DilovodSyncManager {
       logWithTimestamp(`Получено ${dilovodProducts.length} товаров для синхронизации`);
       
       const errors: string[] = [];
-      let syncedProducts = 0;
+      let createdProducts = 0;
+      let updatedProducts = 0;
+      let skippedProducts = 0;
       let syncedSets = 0;
 
       for (const product of dilovodProducts) {
@@ -51,20 +73,36 @@ export class DilovodSyncManager {
             where: { sku: product.sku }
           });
 
-          const productData = this.prepareProductData(product);
-          logWithTimestamp(`Данные для сохранения:`, JSON.stringify(productData, null, 2));
+          // Вычисляем хеш данных из Dilovod
+          const newDataHash = this.calculateDataHash(product);
 
           if (existingProduct) {
-            // Обновляем существующий товар
-            logWithTimestamp(`Обновляем существующий товар ${product.sku}...`);
-            await prisma.product.update({
-              where: { sku: product.sku },
-              data: productData
-            });
-            logWithTimestamp(`✅ Товар ${product.sku} обновлен`);
+            // Проверяем, изменились ли данные
+            const dataChanged = existingProduct.dilovodDataHash !== newDataHash;
+            
+            if (dataChanged) {
+              logWithTimestamp(`🔄 Данные товара ${product.sku} изменились, обновляем...`);
+              
+              const productData = this.prepareProductData(product, false); // false = существующий товар
+              logWithTimestamp(`Данные для обновления:`, JSON.stringify(productData, null, 2));
+              
+              await prisma.product.update({
+                where: { sku: product.sku },
+                data: productData
+              });
+              logWithTimestamp(`✅ Товар ${product.sku} обновлен`);
+              updatedProducts++;
+            } else {
+              logWithTimestamp(`⏭️  Товар ${product.sku} не изменился, пропускаем обновление`);
+              skippedProducts++;
+            }
           } else {
             // Создаем новый товар
-            logWithTimestamp(`Создаем новый товар ${product.sku}...`);
+            logWithTimestamp(`➕ Создаем новый товар ${product.sku}...`);
+            
+            const productData = this.prepareProductData(product, true); // true = новый товар
+            logWithTimestamp(`Данные для создания:`, JSON.stringify(productData, null, 2));
+            
             await prisma.product.create({
               data: {
                 sku: product.sku,
@@ -72,9 +110,8 @@ export class DilovodSyncManager {
               }
             });
             logWithTimestamp(`✅ Товар ${product.sku} создан`);
+            createdProducts++;
           }
-
-          syncedProducts++;
           
           // Подсчитываем комплекты
           if (product.set && product.set.length > 0) {
@@ -91,23 +128,39 @@ export class DilovodSyncManager {
         }
       }
 
+      const totalProcessed = createdProducts + updatedProducts + skippedProducts;
+      
       logWithTimestamp(`\n=== РЕЗУЛЬТАТ СИНХРОНИЗАЦИИ ===`);
-      logWithTimestamp(`Синхронизировано товаров: ${syncedProducts}`);
-      logWithTimestamp(`Синхронизировано комплектов: ${syncedSets}`);
-      logWithTimestamp(`Ошибок: ${errors.length}`);
+      logWithTimestamp(`📊 Всього оброблено товарів: ${totalProcessed}`);
+      logWithTimestamp(`  ➕ Створено нових: ${createdProducts}`);
+      logWithTimestamp(`  🔄 Оновлено: ${updatedProducts}`);
+      logWithTimestamp(`  ⏭️  Пропущено (без змін): ${skippedProducts}`);
+      logWithTimestamp(`  🎯 Комплектів: ${syncedSets}`);
+      logWithTimestamp(`  ❌ Помилок: ${errors.length}`);
       
       if (errors.length > 0) {
-        logWithTimestamp(`Список ошибок:`);
+        logWithTimestamp(`\nСписок помилок:`);
         errors.forEach((error, index) => {
-          logWithTimestamp(`${index + 1}. ${error}`);
+          logWithTimestamp(`  ${index + 1}. ${error}`);
         });
       }
 
+      const message = [
+        `Оброблено ${totalProcessed} товарів`,
+        createdProducts > 0 ? `створено ${createdProducts}` : null,
+        updatedProducts > 0 ? `оновлено ${updatedProducts}` : null,
+        skippedProducts > 0 ? `пропущено ${skippedProducts}` : null,
+        syncedSets > 0 ? `комплектів ${syncedSets}` : null,
+      ].filter(Boolean).join(', ');
+
       return {
         success: errors.length === 0,
-        message: `Синхронизировано ${syncedProducts} товаров, ${syncedSets} комплектов`,
-        syncedProducts,
+        message,
+        syncedProducts: createdProducts + updatedProducts, // Для зворотної сумісності
         syncedSets,
+        createdProducts,
+        updatedProducts,
+        skippedProducts,
         errors
       };
 
@@ -124,22 +177,38 @@ export class DilovodSyncManager {
   }
 
   // Подготовка данных товара для сохранения
-  private prepareProductData(product: DilovodProduct): any {
-    // Автоматически определяем вес по ID категории
-    const weight = this.determineWeightByCategory(product.category.id);
+  private prepareProductData(product: DilovodProduct, isNew: boolean): any {
+    // Вычисляем хеш данных из Dilovod
+    const dilovodDataHash = this.calculateDataHash(product);
     
-    return {
+    const data: any = {
       name: product.name,
       costPerItem: product.costPerItem ? parseFloat(product.costPerItem) : null,
       currency: product.currency,
       categoryId: product.category.id ?? null,
       categoryName: product.category.name,
-      weight: weight, // Добавляем вес
       set: product.set.length > 0 ? JSON.stringify(product.set) : null,
       additionalPrices: product.additionalPrices.length > 0 ? JSON.stringify(product.additionalPrices) : null,
       dilovodId: product.id,
+      dilovodDataHash: dilovodDataHash,
       lastSyncAt: new Date()
     };
+    
+    // Вес і manualOrder встановлюємо ТІЛЬКИ для нових товарів
+    // Для існуючих товарів НЕ перезаписуємо (захист локальних змін)
+    if (isNew) {
+      const weight = this.determineWeightByCategory(product.category.id);
+      data.weight = weight;
+      logWithTimestamp(`⚖️  Устанавливаем вес для нового товара: ${weight ?? 'не определен'} г`);
+      
+      const manualOrder = this.determineManualOrderByCategory(product.category.id);
+      data.manualOrder = manualOrder;
+      logWithTimestamp(`📋 Устанавливаем порядок сортировки: ${manualOrder}`);
+    } else {
+      logWithTimestamp(`🔒 Вес і порядок сортування не оновлюються (защита локальних змін)`);
+    }
+    
+    return data;
   }
 
   // Определение веса товара по категории
@@ -156,6 +225,27 @@ export class DilovodSyncManager {
     
     // По умолчанию не устанавливаем вес
     return null;
+  }
+
+  // Визначення порядку сортування за категорією
+  private determineManualOrderByCategory(categoryId: number): number {
+    // Перші страви - 1000
+    if (categoryId === 1) {
+      return 1000;
+    }
+    
+    // Другі страви - 2000
+    if (categoryId === 2) {
+      return 2000;
+    }
+    
+    // Комплекти - 3000
+    if (categoryId === 3) {
+      return 3000;
+    }
+    
+    // За замовчуванням - 0 (в кінці списку)
+    return 0;
   }
 
   // Получение статистики синхронизации
@@ -386,6 +476,65 @@ export class DilovodSyncManager {
         success: false,
         message: `Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`
       };
+    }
+  }
+
+  // Позначення застарілих товарів (які є в БД але немає в WordPress)
+  async markOutdatedProducts(currentSkus: string[]): Promise<void> {
+    try {
+      logWithTimestamp(`Позначаємо застарілі товари...`);
+      logWithTimestamp(`Отримано ${currentSkus.length} актуальних SKU з WordPress`);
+      
+      // Створюємо Set для швидкого пошуку
+      const currentSkusSet = new Set(currentSkus.map(sku => sku.toLowerCase().trim()));
+      
+      // Отримуємо всі товари з БД
+      const allProducts = await prisma.product.findMany({
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          isOutdated: true
+        }
+      });
+      
+      logWithTimestamp(`Всього товарів в БД: ${allProducts.length}`);
+      
+      let markedAsOutdated = 0;
+      let unmarkedAsOutdated = 0;
+      
+      for (const product of allProducts) {
+        const productSku = product.sku.toLowerCase().trim();
+        const isInWordPress = currentSkusSet.has(productSku);
+        
+        // Якщо товар НЕ в WordPress але НЕ позначений як застарілий - позначаємо
+        if (!isInWordPress && !product.isOutdated) {
+          await prisma.product.update({
+            where: { id: product.id },
+            data: { isOutdated: true }
+          });
+          logWithTimestamp(`  ⚠️  Товар ${product.sku} (${product.name}) позначено як застарілий`);
+          markedAsOutdated++;
+        }
+        
+        // Якщо товар Є в WordPress але позначений як застарілий - знімаємо позначку
+        if (isInWordPress && product.isOutdated) {
+          await prisma.product.update({
+            where: { id: product.id },
+            data: { isOutdated: false }
+          });
+          logWithTimestamp(`  ✅ Товар ${product.sku} (${product.name}) знову актуальний`);
+          unmarkedAsOutdated++;
+        }
+      }
+      
+      logWithTimestamp(`\n📊 Результат позначення застарілих товарів:`);
+      logWithTimestamp(`  ⚠️  Позначено як застарілих: ${markedAsOutdated}`);
+      logWithTimestamp(`  ✅ Знято позначку застарілості: ${unmarkedAsOutdated}`);
+      
+    } catch (error) {
+      logWithTimestamp('Помилка позначення застарілих товарів:', error);
+      // Не кидаємо помилку, щоб не зупиняти синхронізацію
     }
   }
 }
