@@ -77,6 +77,8 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
             const itemName = item.productName;
             if (expandedItems[itemName]) {
               expandedItems[itemName].quantity += item.quantity;
+              // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
+              expandedItems[itemName].expectedWeight = calculateExpectedWeight(product, expandedItems[itemName].quantity);
             } else {
               expandedItems[itemName] = {
                 id: item.sku,
@@ -111,6 +113,8 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
                 // Сумуємо з існуючими компонентами
                 if (expandedItems[componentName]) {
                   expandedItems[componentName].quantity += totalQuantity;
+                  // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
+                  expandedItems[componentName].expectedWeight = calculateExpectedWeight(component, expandedItems[componentName].quantity);
                 } else {
                   expandedItems[componentName] = {
                     id: `${item.sku}_${setItem.id}`,
@@ -132,6 +136,8 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
                 
                 if (expandedItems[componentName]) {
                   expandedItems[componentName].quantity += totalQuantity;
+                  // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
+                  expandedItems[componentName].expectedWeight = expandedItems[componentName].quantity * 0.33;
                 } else {
                   expandedItems[componentName] = {
                     id: `${item.sku}_${setItem.id}`,
@@ -152,6 +158,8 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
               
               if (expandedItems[componentName]) {
                 expandedItems[componentName].quantity += totalQuantity;
+                // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
+                expandedItems[componentName].expectedWeight = expandedItems[componentName].quantity * 0.33;
               } else {
                 expandedItems[componentName] = {
                   id: `${item.sku}_${setItem.id}`,
@@ -172,6 +180,8 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
           const itemName = item.productName;
           if (expandedItems[itemName]) {
             expandedItems[itemName].quantity += item.quantity;
+            // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
+            expandedItems[itemName].expectedWeight = calculateExpectedWeight(product, expandedItems[itemName].quantity);
           } else {
             expandedItems[itemName] = {
               id: item.sku,
@@ -192,6 +202,8 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
         const itemName = item.productName;
         if (expandedItems[itemName]) {
           expandedItems[itemName].quantity += item.quantity;
+          // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
+          expandedItems[itemName].expectedWeight = expandedItems[itemName].quantity * 0.33;
         } else {
           expandedItems[itemName] = {
             id: item.sku,
@@ -212,6 +224,8 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
       const itemName = item.productName;
       if (expandedItems[itemName]) {
         expandedItems[itemName].quantity += item.quantity;
+        // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
+        expandedItems[itemName].expectedWeight = expandedItems[itemName].quantity * 0.33;
       } else {
         expandedItems[itemName] = {
           id: item.sku,
