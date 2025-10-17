@@ -212,8 +212,7 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
     }
 
     // Перевіряємо, чи змінились порції або режим
-    const shouldFetch = totalPortions !== lastTotalPortions || 
-                       (recommendations && recommendations.mode !== recommendationMode);
+    const shouldFetch = totalPortions !== lastTotalPortions || (recommendations && recommendations.mode !== recommendationMode);
 
     if (shouldFetch) {
       // Якщо змінюється тільки режим, не показуємо повне завантаження
@@ -457,7 +456,7 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
           color="danger"
           classNames={{
             base: cn(
-              "inline-flex flex-row-reverse w-full bg-white items-center",
+              "inline-flex flex-row-reverse w-full bg-white items-center max-w-full",
               "justify-between cursor-pointer rounded-lg gap-3 px-2 py-4 pr-5",
               "data-[selected=true]:ring-danger data-[selected=true]:ring-2",
               "transition-transform duration-200 ease-in-out",
@@ -476,11 +475,10 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
             ),
           }}
         >
-          <div className="flex flex-col gap-2">
-            <p className="text-medium font-semibold leading-[1.1]">
-              Економічний режим пакування {recommendationMode === 'economical' && <span className="bg-danger rounded px-1 py-0.5 text-white text-[10px] tracking-wider">УВІМКНЕНО</span>}
-            </p>
-            <p className="text-[13px] leading-snug text-default-400">Мінімальна кількість коробок, можливе переповнення.</p>
+          <div className="flex items-center gap-2">
+            <p className="text-medium font-semibold leading-[1.1]">Економія коробок</p>
+            <span className={`${recommendationMode === 'economical' ? 'bg-danger text-white' : 'bg-grey-200'} rounded px-1 py-0.5 text-[10px] font-normal leading-normal self-start`}>{recommendationMode === 'economical' ? 'ON' : 'OFF'}</span>
+            {/* <p className="text-[13px] leading-snug text-default-400">Мінімальна кількість коробок, можливе переповнення.</p> */}
           </div>
         </Switch>
       </div>

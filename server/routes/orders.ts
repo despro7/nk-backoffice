@@ -70,6 +70,8 @@ router.get('/test', authenticateToken, async (req, res) => {
 router.get('/', authenticateToken, async (req, res) => {
   const startTime = Date.now();
   const { status, sync, sortBy, sortOrder, limit, search } = req.query;
+  const include = (req.query.include as string | undefined)?.split(',').map(s => s.trim()).filter(Boolean) || [];
+  const fields = (req.query.fields as string | undefined)?.split(',').map(s => s.trim()).filter(Boolean) || [];
 
   // Парсим статусы: если строка содержит запятую, разбиваем на массив
   let parsedStatus: string | string[] | undefined = status as string;
@@ -98,7 +100,13 @@ router.get('/', authenticateToken, async (req, res) => {
       offset: parseInt(req.query.offset as string) || 0,
       sortBy: (sortBy as 'orderDate' | 'createdAt' | 'lastSynced' | 'orderNumber') || 'orderDate',
       sortOrder: (sortOrder as 'asc' | 'desc') || 'desc',
-      search: search as string
+      search: search as string,
+      // @ts-ignore: extended filters with include flags supported by service
+      includeItems: include.includes('items'),
+      // @ts-ignore
+      includeRaw: include.includes('rawData'),
+      // @ts-ignore: dynamic fields whitelist supported by service
+      fields
     });
 
     // Получаем общее количество заказов для пагинации

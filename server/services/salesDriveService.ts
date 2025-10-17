@@ -504,7 +504,7 @@ export class SalesDriveService {
 
         // Обновляем прогресс - начинаем получение данных
         if (options.onProgress) {
-          options.onProgress('fetching', `Получаем заказы из SalesDrive API...`, firstPageOrders.length, totalOrders);
+          options.onProgress('fetching', `Отримуємо замовлення з SalesDrive API...`, firstPageOrders.length, totalOrders);
         }
 
         // Если всего одна страница, возвращаем результат сразу
@@ -547,7 +547,7 @@ export class SalesDriveService {
               allOrders.push(...result.value);
               // Обновляем прогресс после получения данных
               if (options.onProgress) {
-                options.onProgress('fetching', `Получаем заказы из SalesDrive API...`, allOrders.length, totalOrders);
+                options.onProgress('fetching', `Отримуємо замовлення з SalesDrive API...`, allOrders.length, totalOrders);
               }
             } else {
               const error = result.reason as Error;
@@ -583,7 +583,7 @@ export class SalesDriveService {
 
         // Финальное обновление прогресса
         if (options.onProgress) {
-          options.onProgress('fetching', `Заказы получены из SalesDrive API`, allOrders.length, totalOrders);
+          options.onProgress('fetching', `Замовлення отримані з SalesDrive API`, allOrders.length, totalOrders);
         }
 
         return {
@@ -1903,7 +1903,7 @@ export class SalesDriveService {
 
       // Обновляем прогресс с общим количеством заказов
       if (options.onProgress && enableProgress) {
-        options.onProgress('processing', `Найдено ${salesDriveOrders.length} заказов для синхронизации`, 0, salesDriveOrders.length, 0, shouldUseChunking ? chunks.length : 1);
+        options.onProgress('processing', `Знайдено ${salesDriveOrders.length} замовлень для синхронізації`, 0, salesDriveOrders.length, 0, shouldUseChunking ? chunks.length : 1);
       }
 
       console.log(`🔧 [MANUAL SYNC] Memory usage estimate: ${estimatedMemoryMB.toFixed(1)}MB`);
@@ -1956,7 +1956,7 @@ export class SalesDriveService {
 
           // Обновляем прогресс перед обработкой чанка
           if (options.onProgress && enableProgress) {
-            options.onProgress('processing', `Обработка чанка ${chunkIndex + 1}/${chunks.length}`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length);
+            options.onProgress('processing', `Обробка чанка ${chunkIndex + 1}/${chunks.length}`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length);
           }
 
           const chunkUpdateData = chunk.filter(o => o && o.orderNumber).map(o => ({
@@ -2001,7 +2001,7 @@ export class SalesDriveService {
 
             // Обновляем прогресс после обработки чанка
             if (options.onProgress && enableProgress) {
-              options.onProgress('processing', `Чанк ${chunkIndex + 1}/${chunks.length} обработан: +${chunkResult.totalCreated} создано, ${chunkResult.totalUpdated} обновлено`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length, totalErrors > 0 ? [`${totalErrors} ошибок`] : []);
+              options.onProgress('processing', `Чанк ${chunkIndex + 1}/${chunks.length} оброблений: +${chunkResult.totalCreated} створено, ${chunkResult.totalUpdated} оновлено`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length, totalErrors > 0 ? [`${totalErrors} помилок`] : []);
             }
           } catch (chunkError) {
             console.error(`❌ [MANUAL SYNC] Error processing chunk ${chunkIndex + 1}:`, chunkError);
@@ -2009,7 +2009,7 @@ export class SalesDriveService {
 
             // Обновляем прогресс при ошибке
             if (options.onProgress && enableProgress) {
-              options.onProgress('processing', `Ошибка в чанке ${chunkIndex + 1}/${chunks.length}`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length, [`Ошибка обработки чанка: ${chunkError instanceof Error ? chunkError.message : 'Unknown error'}`]);
+              options.onProgress('processing', `Помилка в чанку ${chunkIndex + 1}/${chunks.length}`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length, [`Помилка обробки чанку: ${chunkError instanceof Error ? chunkError.message : 'Unknown error'}`]);
             }
           }
 
@@ -2034,7 +2034,7 @@ export class SalesDriveService {
 
         // Обновляем прогресс перед обработкой
         if (options.onProgress && enableProgress) {
-          options.onProgress('processing', `Обработка ${salesDriveOrders.length} заказов...`, 0, salesDriveOrders.length, 1, 1);
+          options.onProgress('processing', `Обробка ${salesDriveOrders.length} замовлень...`, 0, salesDriveOrders.length, 1, 1);
         }
 
         const updateData = salesDriveOrders.filter(o => o && o.orderNumber).map(o => ({
@@ -2077,9 +2077,9 @@ export class SalesDriveService {
         // Обновляем прогресс после обработки
         if (options.onProgress && enableProgress) {
           const progressMessage = syncMode === 'smart'
-            ? `Обработка завершена: +${updateResult.totalCreated} создано, ${updateResult.totalUpdated} обновлено, ${totalSkipped} пропущено`
-            : `Обработка завершена: +${updateResult.totalCreated} создано, ${updateResult.totalUpdated} обновлено`;
-          options.onProgress('saving', progressMessage, totalSynced, salesDriveOrders.length, 1, 1, totalErrors > 0 ? [`${totalErrors} ошибок`] : []);
+            ? `Обробка завершена: +${updateResult.totalCreated} створено, ${updateResult.totalUpdated} оновлено, ${totalSkipped} пропущено`
+            : `Обробка завершена: +${updateResult.totalCreated} створено, ${updateResult.totalUpdated} оновлено`;
+          options.onProgress('saving', progressMessage, totalSynced, salesDriveOrders.length, 1, 1, totalErrors > 0 ? [`${totalErrors} помилок`] : []);
         }
       }
 
@@ -2150,9 +2150,9 @@ export class SalesDriveService {
       // Финальное обновление прогресса
       if (options.onProgress && enableProgress) {
         const completedMessage = syncMode === 'smart'
-          ? `Синхронизация завершена: +${updateResult.totalCreated} создано, ${updateResult.totalUpdated} обновлено, ${updateResult.totalSkipped || 0} пропущено`
-          : `Синхронизация завершена: ${updateResult.totalCreated + updateResult.totalUpdated} обработано, ${updateResult.totalErrors} ошибок`;
-        const errors = updateResult.totalErrors > 0 ? [`${updateResult.totalErrors} заказов не удалось обработать`] : [];
+          ? `Синхронізація завершена: +${updateResult.totalCreated} створено, ${updateResult.totalUpdated} оновлено, ${updateResult.totalSkipped || 0} пропущено`
+          : `Синхронізація завершена: ${updateResult.totalCreated + updateResult.totalUpdated} оброблено, ${updateResult.totalErrors} помилок`;
+        const errors = updateResult.totalErrors > 0 ? [`${updateResult.totalErrors} замовлень не вдалося обробити`] : [];
         options.onProgress('completed', completedMessage, totalProcessed, totalProcessed, shouldUseChunking ? chunks.length : 1, shouldUseChunking ? chunks.length : 1, errors);
       }
 
@@ -2193,10 +2193,10 @@ export class SalesDriveService {
 
         // Обновляем прогресс при внутренней ошибке
         if (options.onProgress && enableProgress) {
-          options.onProgress('error', 'Ошибка обработки данных', 0, 0, 0, 1, [innerError instanceof Error ? innerError.message : 'Unknown processing error']);
+          options.onProgress('error', 'Помилка обробки даних', 0, 0, 0, 1, [innerError instanceof Error ? innerError.message : 'Unknown processing error']);
         }
 
-        throw innerError; // Перебрасываем ошибку во внешний catch
+        throw innerError; // Перекидаємо помилку в зовнішній catch
       }
 
     } catch (error) {
@@ -2204,12 +2204,12 @@ export class SalesDriveService {
 
       // Обновляем прогресс при критической ошибке
       if (options.onProgress && enableProgress) {
-        options.onProgress('error', 'Критическая ошибка синхронизации', 0, 0, 0, 1, [error instanceof Error ? error.message : 'Unknown critical error']);
+        options.onProgress('error', 'Критична помилка синхронізації', 0, 0, 0, 1, [error instanceof Error ? error.message : 'Unknown critical error']);
       }
 
       const totalDuration = (Date.now() - operationStartTime) / 1000;
 
-      // Записываем критическую ошибку в историю
+      // Записуємо критичну помилку в історію
       try {
         await syncHistoryService.createSyncRecord({
           syncType: 'manual',

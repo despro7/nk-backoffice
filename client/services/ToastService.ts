@@ -1,10 +1,13 @@
 import { addToast } from "@heroui/react";
+import { createElement } from "react";
 import { ToastSettingsTypes } from '../types/toast';
+import { DynamicIcon } from 'lucide-react/dynamic';
 
 export interface ToastOptions {
 	title: string;
 	description?: string;
 	hideIcon?: boolean;
+	icon?: React.ReactNode;
 	variant?: "flat" | "solid" | "bordered";
 	color?: "default" | "primary" | "secondary" | "success" | "warning" | "danger";
 	timeout?: number;
@@ -19,6 +22,7 @@ export class ToastService {
 		variant: "flat",
 		color: "default",
 		hideIcon: true,
+		icon: createElement(DynamicIcon, { name: "check-circle", strokeWidth: 2, color: "currentColor" }),
 		timeout: 10000,
 		shouldShowTimeoutProgress: true
 	};
@@ -84,6 +88,7 @@ export class ToastService {
 			description: mergedOptions.description,
 			variant: mergedOptions.variant,
 			hideIcon: mergedOptions.hideIcon,
+			icon: mergedOptions.icon,
 			color: mergedOptions.color,
 			timeout: mergedOptions.timeout,
 			shouldShowTimeoutProgress: mergedOptions.shouldShowTimeoutProgress,

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { playSoundChoice } from '../lib/soundUtils';
 import { Button } from '@heroui/button';
 import OrderChecklistItem from './OrderChecklistItem';
@@ -7,6 +8,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { useEquipmentFromAuth } from '../contexts/AuthContext';
 import { useDebug } from '../contexts/DebugContext';
 import { sortChecklistItems } from '@/lib/orderAssemblyUtils';
+import { LoggingService } from '@/services/LoggingService';
 
 interface OrderItem {
   id: string;
@@ -41,6 +43,7 @@ interface OrderChecklistProps {
 }
 
 const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders }: OrderChecklistProps) => {
+  const navigate = useNavigate();
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [equipmentState] = useEquipmentFromAuth(); // <-- Используем глобальное состояние оборудования
   const [soundSettings, setSoundSettings] = useState<Record<string, string>>({});
@@ -245,10 +248,10 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     // Перевіряємо чи потрібно автоматично друкувати
     // НЕ друкуємо автоматично, якщо замовлення було відкрите вже зібраним
     if (shouldAutoPrint && autoPrintEnabled && !wasAutoPrintTriggeredRef.current && onPrintTTN && !wasOpenedAsReady) {
-      console.log('🖨️ [OrderChecklist] Автоматичний друк ТТН:', { 
+      LoggingService.equipmentLog('🖨️ [OrderChecklist] Автоматичний друк ТТН:', { 
         isOrderComplete, 
         showPrintTTN, 
-        isDebugMode, 
+        isDebugMode,
         autoPrintEnabled,
         wasOpenedAsReady
       });
@@ -460,17 +463,26 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
         {showNoMoreOrders && (
           <div className="mt-3 w-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 text-center">
             <div className="flex flex-col items-center gap-3">
-              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                <DynamicIcon name="check-circle" size={24} className="text-blue-600" strokeWidth={1.5} />
-              </div>
+              <span className="text-5xl">🎉</span>
               <div className="space-y-1">
                 <h3 className="text-lg font-semibold text-blue-900">
-                  Всі замовлення виконані! 🎉
+                  Всі підтверджені замовлення виконані!
                 </h3>
-                <p className="text-blue-700 text-sm">
-                  Наразі більше замовлень для комплектування немає в наявності
+                <p className="text-blue-900 text-sm">
+                  Наразі більше немає замовлень для комплектування
                 </p>
               </div>
+              {/* Додаткова кнопка-допомога на випадок відсутності наступного замовлення */}
+              {onNextOrder && (
+                <Button
+                  // onPress={() => { onNextOrder(); navigate('/orders'); }}
+                  onPress={() => { navigate('/orders'); }}
+                  className="mt-3 bg-primary text-white p-6 rounded-md text-base font-medium shadow-sm flex items-center justify-center gap-2"
+                >
+                  Повернутися до всіх замовлень
+                  <DynamicIcon name="undo-2" size={20} strokeWidth={1.5} />
+                </Button>
+              )}
             </div>
           </div>
         )}

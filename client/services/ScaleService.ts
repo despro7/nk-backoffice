@@ -127,12 +127,12 @@ export class ScaleService {
         });
       }
 
-      console.log(`🔧 ScaleService: Відкриваємо порт з налаштуваннями ВТА-60 (${this.config.baudRate}-${this.config.dataBits}${this.config.parity.charAt(0).toUpperCase()}${this.config.stopBits})`);
+      LoggingService.equipmentLog(`🔧 ScaleService: Відкриваємо порт з налаштуваннями ВТА-60 (${this.config.baudRate}-${this.config.dataBits}${this.config.parity.charAt(0).toUpperCase()}${this.config.stopBits})`);
 
       // Відкриваємо порт з налаштуваннями для ВТА-60
       try {
         if (this.port.readable || this.port.writable) {
-          console.log('⚠️ ScaleService: Порт уже открыт, но в другом состоянии. Попытка переоткрытия...');
+          LoggingService.equipmentLog('⚠️ ScaleService: Порт уже открыт, но в другом состоянии. Попытка переоткрытия...');
           await this.disconnect(); // Попытка закрыть перед открытием
         }
         await this.port.open({
@@ -144,7 +144,7 @@ export class ScaleService {
         });
       } catch (openError) {
         if (openError.message.includes('port is already open')) {
-          console.log('⚠️ ScaleService: Порт вже відкритий, використовуємо існуюче з\'єднання');
+          LoggingService.equipmentLog('⚠️ ScaleService: Порт вже відкритий, використовуємо існуюче з\'єднання');
           // Порт уже открыт, считаем что подключение успешно
         } else {
           throw openError; // Перебрасываем другие ошибки
@@ -161,7 +161,7 @@ export class ScaleService {
 
       return true;
     } catch (error) {
-      console.log('❌ ScaleService: Не вдалося підключити ваги:', error);
+      LoggingService.equipmentLog('❌ ScaleService: Не вдалося підключити ваги:', error);
       this.port = null; // Очищаем порт при ошибке
       this.isConnected = false;
       return false;
@@ -265,13 +265,13 @@ export class ScaleService {
   // Чтение одного ответа (18 байт) протокола ВТА-60 с таймаутом и отменой
   private async readOneFrame(timeoutMs: number = 1000): Promise<Uint8Array | null> {
     if (!this.port || !this.isConnected || !this.port.readable) {
-      console.log('⚠️ ScaleService: Port not available for reading');
+      LoggingService.equipmentLog('⚠️ ScaleService: Port not available for reading');
       return null;
     }
 
     // Проверяем, не заблокирован ли поток
     if (this.port.readable.locked) {
-      console.log('⚠️ ScaleService: ReadableStream is locked, attempting to recover...');
+      LoggingService.equipmentLog('⚠️ ScaleService: ReadableStream is locked, attempting to recover...');
       
       // Если у нас есть активный reader, пытаемся его освободить
       if (this.reader) {
@@ -280,7 +280,7 @@ export class ScaleService {
           await this.reader.cancel();
           this.reader.releaseLock();
         } catch (e) {
-          console.log('⚠️ ScaleService: Error releasing locked reader:', e);
+          LoggingService.equipmentLog('⚠️ ScaleService: Error releasing locked reader:', e);
         } finally {
           this.reader = undefined;
         }
@@ -288,7 +288,7 @@ export class ScaleService {
       
       // Если поток все еще заблокирован, возвращаем null
       if (this.port.readable.locked) {
-        console.log('⚠️ ScaleService: ReadableStream still locked after recovery attempt');
+        LoggingService.equipmentLog('⚠️ ScaleService: ReadableStream still locked after recovery attempt');
         return null;
       }
     }
@@ -297,7 +297,7 @@ export class ScaleService {
     try {
       this.reader = this.port.readable.getReader();
     } catch (e) {
-      console.log('⚠️ ScaleService: Failed to get reader:', e);
+      LoggingService.equipmentLog('⚠️ ScaleService: Failed to get reader:', e);
       return null;
     }
     
@@ -323,7 +323,7 @@ export class ScaleService {
       return new Promise<Uint8Array | null>((resolve, reject) => {
         // Таймер для таймаута
         const timeoutId = setTimeout(() => {
-          console.log('⏱️ ScaleService: Read timeout reached');
+          LoggingService.equipmentLog('⏱️ ScaleService: Read timeout reached');
           cancelOperation();
           resolve(null);
         }, timeoutMs);
@@ -333,14 +333,14 @@ export class ScaleService {
           // Проверяем, не отменена ли операция
           if (cancelled) {
             clearTimeout(timeoutId);
-            console.log('ℹ️ ScaleService: Read operation was cancelled');
+            LoggingService.equipmentLog('ℹ️ ScaleService: Read operation was cancelled');
             resolve(null);
             return;
           }
 
           // Проверяем, не истекло ли время
           if (performance.now() - start >= timeoutMs) {
-            console.log('⏱️ ScaleService: Read operation timeout');
+            LoggingService.equipmentLog('⏱️ ScaleService: Read operation timeout');
             cancelOperation();
             resolve(null);
             return;
@@ -350,7 +350,7 @@ export class ScaleService {
             // Проверяем, есть ли reader
             if (!this.reader) {
               clearTimeout(timeoutId);
-              console.log('⚠️ ScaleService: Reader is not available');
+              LoggingService.equipmentLog('⚠️ ScaleService: Reader is not available');
               resolve(null);
               return;
             }
@@ -360,14 +360,14 @@ export class ScaleService {
             // Проверяем, не отменена ли операция после await
             if (cancelled) {
               clearTimeout(timeoutId);
-              console.log('ℹ️ ScaleService: Read operation was cancelled after await');
+              LoggingService.equipmentLog('ℹ️ ScaleService: Read operation was cancelled after await');
               resolve(null);
               return;
             }
             
             if (done) {
               clearTimeout(timeoutId);
-              console.log('ℹ️ ScaleService: Read operation completed (done=true)');
+              LoggingService.equipmentLog('ℹ️ ScaleService: Read operation completed (done=true)');
               resolve(null);
               return;
             }
@@ -379,7 +379,7 @@ export class ScaleService {
                 clearTimeout(timeoutId);
                 const frame = buf.splice(0, 18); // возьмём первые 18
                 if (this.shouldLog()) {
-                  console.log('✅ ScaleService: Successfully read 18-byte frame');
+                  LoggingService.equipmentLog('✅ ScaleService: Successfully read 18-byte frame');
                 }
                 resolve(new Uint8Array(frame));
                 return;
@@ -412,10 +412,10 @@ export class ScaleService {
           // Проверяем, заблокирован ли reader перед освобождением
           this.reader.releaseLock();
           if (this.shouldLog()) {
-            console.log('✅ ScaleService: Reader successfully released');
+            LoggingService.equipmentLog('✅ ScaleService: Reader successfully released');
           }
         } catch (e) {
-          console.log('⚠️ ScaleService: Error releasing reader in finally block:', e);
+          LoggingService.equipmentLog('⚠️ ScaleService: Error releasing reader in finally block:', e);
         }
         this.reader = undefined;
       }
@@ -427,24 +427,24 @@ export class ScaleService {
   // Отправка команды тарувания «00 00 01» протокола ВТА-60
   public async tare(): Promise<boolean> {
     if (!this.port || !this.isConnected) {
-      console.log('⚠️ ScaleService: Весы не подключены для команды Tare');
+      LoggingService.equipmentLog('⚠️ ScaleService: Весы не подключены для команды Tare');
       return false;
     }
 
     // Проверяем, не заблокирован ли поток записи
     if (this.port.writable?.locked) {
-      console.log('⚠️ ScaleService: WritableStream заблокирован для команды Tare');
+      LoggingService.equipmentLog('⚠️ ScaleService: WritableStream заблокирован для команды Tare');
       return false;
     }
 
     try {
       const writer = this.port.writable?.getWriter();
       if (!writer) {
-        console.log('⚠️ ScaleService: Не удалось получить writer для команды Tare');
+        LoggingService.equipmentLog('⚠️ ScaleService: Не удалось получить writer для команды Tare');
         return false;
       }
 
-      console.log('⚖️ ScaleService: Отправляем команду Tare (00 00 01)');
+      LoggingService.equipmentLog('⚖️ ScaleService: Отправляем команду Tare (00 00 01)');
       
       // Добавляем таймаут для операции записи
       const writePromise = writer.write(new Uint8Array([0x00, 0x00, 0x01]));
@@ -453,7 +453,7 @@ export class ScaleService {
           try {
             writer.releaseLock();
           } catch (e) {
-            console.log('⚠️ ScaleService: Ошибка освобождения writer при таймауте Tare:', e);
+            LoggingService.equipmentLog('⚠️ ScaleService: Ошибка освобождения writer при таймауте Tare:', e);
           }
           reject(new Error('Таймаут при отправке команды Tare'));
         }, 2000)
@@ -465,7 +465,7 @@ export class ScaleService {
       // Освобождаем writer
       writer.releaseLock();
       
-      console.log('✅ ScaleService: Команда Tare отправлена успешно');
+      LoggingService.equipmentLog('✅ ScaleService: Команда Tare отправлена успешно');
       return true;
       
     } catch (error) {
@@ -482,7 +482,7 @@ export class ScaleService {
 
     // Проверяем, не заблокирован ли поток записи
     if (this.port.writable?.locked) {
-      console.log('⚠️ ScaleService: WritableStream is locked, attempting to recover...');
+      LoggingService.equipmentLog('⚠️ ScaleService: WritableStream is locked, attempting to recover...');
       
       // Простое решение - ждем немного и пытаемся снова
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -493,9 +493,9 @@ export class ScaleService {
         try {
           const writer = this.port.writable.getWriter();
           writer.releaseLock();
-          console.log('✅ ScaleService: WritableStream unlocked successfully');
+          LoggingService.equipmentLog('✅ ScaleService: WritableStream unlocked successfully');
         } catch (e) {
-          console.log('⚠️ ScaleService: Failed to unlock WritableStream:', e);
+          LoggingService.equipmentLog('⚠️ ScaleService: Failed to unlock WritableStream:', e);
           throw new Error('WritableStream is locked, cannot send poll request');
         }
       }
@@ -512,7 +512,7 @@ export class ScaleService {
           try {
             writer.releaseLock();
           } catch (e) {
-            console.log('⚠️ ScaleService: Error releasing writer on timeout:', e);
+            LoggingService.equipmentLog('⚠️ ScaleService: Error releasing writer on timeout:', e);
           }
           reject(new Error('Timeout while writing to scale'));
         }, 2000)
@@ -524,7 +524,7 @@ export class ScaleService {
       // Освобождаем writer только если операция завершена успешно
       writer.releaseLock();
       if (this.shouldLog()) {
-        console.log('✅ ScaleService: Poll request sent successfully');
+        LoggingService.equipmentLog('✅ ScaleService: Poll request sent successfully');
       }
     } catch (error) {
       console.error('Error sending poll to scale:', error);
@@ -542,7 +542,7 @@ export class ScaleService {
   public async readScaleOnce(usePolling: boolean = true): Promise<VTAScaleData | null> {
     // Проверяем, не выполняется ли уже чтение
     if (this.isReading) {
-      console.log('⚠️ ScaleService: Read operation already in progress');
+      LoggingService.equipmentLog('⚠️ ScaleService: Read operation already in progress');
       // Ждем немного и пробуем снова
       await new Promise(resolve => setTimeout(resolve, 100));
       // Если все еще читаем, возвращаем null
@@ -566,7 +566,7 @@ export class ScaleService {
       const timeoutPromise = new Promise<null>((resolve) => {
         setTimeout(() => {
           if (this.shouldLog()) {
-            console.log('⏱️ ScaleService: Global timeout for readScaleOnce reached');
+            LoggingService.equipmentLog('⏱️ ScaleService: Global timeout for readScaleOnce reached');
           }
           // Отменяем текущую операцию чтения
           if (this.cancelCurrentOperation) {
@@ -595,7 +595,7 @@ export class ScaleService {
 
       // Проверяем, являются ли данные валидными
       if (isNaN(massKg) || isNaN(price) || isNaN(total)) {
-        console.log('⚠️ ScaleService: Invalid data received from scale');
+        LoggingService.equipmentLog('⚠️ ScaleService: Invalid data received from scale');
         return null; // Не выбрасываем ошибку, а возвращаем null для непрерывного режима
       }
 
@@ -648,7 +648,7 @@ export class ScaleService {
   private async handleConnectionLoss(): Promise<void> {
     if (!this.isConnected) return;
 
-    console.log('🔌 ScaleService: Соединение потеряно. Попытка автоматического переподключения...');
+    LoggingService.equipmentLog('🔌 ScaleService: Соединение потеряно. Попытка автоматического переподключения...');
     await this.disconnect();
 
     // Пауза перед переподключением
@@ -657,9 +657,9 @@ export class ScaleService {
     try {
       const reconnected = await this.connect(true); // autoConnect = true
       if (reconnected) {
-        console.log('✅ ScaleService: Успешно переподключено к весам.');
+        LoggingService.equipmentLog('✅ ScaleService: Успешно переподключено к весам.');
       } else {
-        console.log('❌ ScaleService: Не удалось автоматически переподключиться.');
+        LoggingService.equipmentLog('❌ ScaleService: Не удалось автоматически переподключиться.');
       }
     } catch (error) {
       console.error('❌ ScaleService: Ошибка при попытке переподключения:', error);
@@ -668,7 +668,7 @@ export class ScaleService {
 
   // --- Логика для режима "persistentStream" ---
   private async startReadLoop(): Promise<void> {
-    console.log('🌀 persistentStream: Запуск постоянного цикла чтения...');
+    LoggingService.equipmentLog('🌀 persistentStream: Запуск постоянного цикла чтения...');
 
     let shouldStop = false;
     this.stopReadLoop = () => {
@@ -691,7 +691,7 @@ export class ScaleService {
 
     while (!shouldStop && this.isConnected) {
       if (!this.port?.readable) {
-        console.log('🌀 persistentStream: Port not readable, stopping loop.');
+        LoggingService.equipmentLog('🌀 persistentStream: Port not readable, stopping loop.');
         clearInterval(pollInterval);
         await this.handleConnectionLoss();
         continue;
@@ -735,7 +735,7 @@ export class ScaleService {
     }
     
     clearInterval(pollInterval);
-    console.log('🌀 persistentStream: Цикл чтения остановлен.');
+    LoggingService.equipmentLog('🌀 persistentStream: Цикл чтения остановлен.');
   }
 
   private parseFrame(frame: Uint8Array): VTAScaleData | null {
@@ -778,12 +778,12 @@ export class ScaleService {
     try {
       if (this.port?.readable) {
         if (this.port.readable.locked) {
-          console.log('🔓 ScaleService: Принудительно освобождаем ReadableStream');
+          LoggingService.equipmentLog('🔓 ScaleService: Принудительно освобождаем ReadableStream');
           try {
             // Попытка получить reader и сразу освободить его
             const reader = this.port.readable.getReader();
             reader.releaseLock();
-            console.log('✅ ScaleService: ReadableStream successfully unlocked via get/release');
+            LoggingService.equipmentLog('✅ ScaleService: ReadableStream successfully unlocked via get/release');
           } catch (e) {
             // Если не удалось получить reader, пытаемся отменить поток
             try {
@@ -791,51 +791,51 @@ export class ScaleService {
               reader.cancel().then(() => {
                 try {
                   reader.releaseLock();
-                  console.log('✅ ScaleService: ReadableStream successfully unlocked via cancel/release');
+                  LoggingService.equipmentLog('✅ ScaleService: ReadableStream successfully unlocked via cancel/release');
                 } catch (e3) {
-                  console.log('⚠️ ScaleService: Error releasing reader after cancel:', e3);
+                  LoggingService.equipmentLog('⚠️ ScaleService: Error releasing reader after cancel:', e3);
                 }
               }).catch((e2) => {
-                console.log('⚠️ ScaleService: Error cancelling reader:', e2);
+                LoggingService.equipmentLog('⚠️ ScaleService: Error cancelling reader:', e2);
                 // Просто пытаемся освободить
                 try {
                   const reader = this.port.readable.getReader();
                   reader.releaseLock();
-                  console.log('✅ ScaleService: ReadableStream unlocked via direct release');
+                  LoggingService.equipmentLog('✅ ScaleService: ReadableStream unlocked via direct release');
                 } catch (e4) {
-                  console.log('⚠️ ScaleService: Error releasing reader directly:', e4);
+                  LoggingService.equipmentLog('⚠️ ScaleService: Error releasing reader directly:', e4);
                 }
               });
             } catch (e5) {
-              console.log('⚠️ ScaleService: Не удалось освободить ReadableStream:', e5);
+              LoggingService.equipmentLog('⚠️ ScaleService: Не удалось освободить ReadableStream:', e5);
             }
           }
         } else {
-          console.log('ℹ️ ScaleService: ReadableStream is not locked');
+          LoggingService.equipmentLog('ℹ️ ScaleService: ReadableStream is not locked');
         }
       } else {
-        console.log('ℹ️ ScaleService: ReadableStream is not available');
+        LoggingService.equipmentLog('ℹ️ ScaleService: ReadableStream is not available');
       }
       
       if (this.port?.writable) {
         if (this.port.writable.locked) {
-          console.log('🔓 ScaleService: Принудительно освобождаем WritableStream');
+          LoggingService.equipmentLog('🔓 ScaleService: Принудительно освобождаем WritableStream');
           try {
             // Попытка получить writer и сразу освободить его
             const writer = this.port.writable.getWriter();
             writer.releaseLock();
-            console.log('✅ ScaleService: WritableStream successfully unlocked');
+            LoggingService.equipmentLog('✅ ScaleService: WritableStream successfully unlocked');
           } catch (e) {
-            console.log('⚠️ ScaleService: Не удалось освободить WritableStream:', e);
+            LoggingService.equipmentLog('⚠️ ScaleService: Не удалось освободить WritableStream:', e);
           }
         } else {
-          console.log('ℹ️ ScaleService: WritableStream is not locked');
+          LoggingService.equipmentLog('ℹ️ ScaleService: WritableStream is not locked');
         }
       } else {
-        console.log('ℹ️ ScaleService: WritableStream is not available');
+        LoggingService.equipmentLog('ℹ️ ScaleService: WritableStream is not available');
       }
     } catch (error) {
-      console.log('⚠️ ScaleService: Ошибка при принудительном освобождении потоков:', error);
+      LoggingService.equipmentLog('⚠️ ScaleService: Ошибка при принудительном освобождении потоков:', error);
     }
   }
 
@@ -851,7 +851,7 @@ export class ScaleService {
 
       // Останавливаем цикл чтения для persistentStream
       if (this.stopReadLoop) {
-        console.log('🔄 ScaleService: Stopping read loop');
+        LoggingService.equipmentLog('🔄 ScaleService: Stopping read loop');
         this.stopReadLoop();
         if (this.readLoopPromise) {
           // Добавляем таймаут для ожидания завершения цикла
@@ -861,7 +861,7 @@ export class ScaleService {
               new Promise(resolve => setTimeout(resolve, 1000))
             ]);
           } catch (e) {
-            console.log('⚠️ ScaleService: Error waiting for read loop to stop:', e);
+            LoggingService.equipmentLog('⚠️ ScaleService: Error waiting for read loop to stop:', e);
           }
         }
         this.stopReadLoop = null;
@@ -870,7 +870,7 @@ export class ScaleService {
 
       // Отменяем reader, если он есть
       if (this.reader) {
-        console.log('🔄 ScaleService: Cancelling reader');
+        LoggingService.equipmentLog('🔄 ScaleService: Cancelling reader');
         try {
           // Отменяем чтение и ждем завершения промиса
           const cancelPromise = this.reader.cancel();
@@ -890,7 +890,7 @@ export class ScaleService {
 
       // Закрываем порт
       if (this.port) {
-        console.log('🔄 ScaleService: Closing port');
+        LoggingService.equipmentLog('🔄 ScaleService: Closing port');
         // Принудительно освобождаем потоки, если они заблокированы
         this.forceUnlockStreams();
 
@@ -927,18 +927,18 @@ export class ScaleService {
   // Отримання поточної ваги
   public async getCurrentWeight(): Promise<VTAScaleData | null> {
     if (!this.isConnected) {
-      console.log('⚠️ ScaleService: Ваги не підключені');
+      LoggingService.equipmentLog('⚠️ ScaleService: Ваги не підключені');
       return null;
     }
 
     // В режиме persistentStream возвращаем последние данные
     if (this.config.connectionStrategy === 'persistentStream') {
-      console.log('🌀 persistentStream: Возвращаем последние данные весов');
+      LoggingService.equipmentLog('🌀 persistentStream: Возвращаем последние данные весов');
       return this.lastWeightData;
     }
 
     if (this.shouldLog()) {
-      console.log('🔧 ScaleService: Отправка запроса на получение данных от весов...');
+      LoggingService.equipmentLog('🔧 ScaleService: Отправка запроса на получение данных от весов...');
     }
 
     // Отправляем запрос и ждем ответа
@@ -961,18 +961,18 @@ export class ScaleService {
   
   // Отмена текущей операции чтения
   public cancelCurrentReadOperation(): void {
-    console.log('🔄 ScaleService: Attempting to cancel current read operation');
+    LoggingService.equipmentLog('🔄 ScaleService: Attempting to cancel current read operation');
     if (this.cancelCurrentOperation) {
-      console.log('🔄 ScaleService: Отмена текущей операции чтения');
+      LoggingService.equipmentLog('🔄 ScaleService: Отмена текущей операции чтения');
       try {
         this.cancelCurrentOperation();
-        console.log('✅ ScaleService: Current read operation cancelled successfully');
+        LoggingService.equipmentLog('✅ ScaleService: Current read operation cancelled successfully');
       } catch (e) {
-        console.log('⚠️ ScaleService: Error during cancellation:', e);
+        LoggingService.equipmentLog('⚠️ ScaleService: Error during cancellation:', e);
       }
       this.cancelCurrentOperation = null;
     } else {
-      console.log('ℹ️ ScaleService: Нет активной операции чтения для отмены');
+      LoggingService.equipmentLog('ℹ️ ScaleService: Нет активной операции чтения для отмены');
     }
   }
 
@@ -983,7 +983,7 @@ export class ScaleService {
 
     // Если стратегия изменилась, нужно переподключиться
     if (newConfig.connectionStrategy && newConfig.connectionStrategy !== oldStrategy) {
-      console.log(`🔄 Стратегия подключения изменена на: ${newConfig.connectionStrategy}. Требуется переподключение.`);
+      LoggingService.equipmentLog(`🔄 Стратегия подключения изменена на: ${newConfig.connectionStrategy}. Требуется переподключение.`);
       if (this.isConnected) {
         this.disconnect().then(() => this.connect(true));
       }
@@ -1032,11 +1032,11 @@ export class ScaleService {
   // Принудительный сброс соединения с весами
   public async forceReset(): Promise<boolean> {
     try {
-      console.log('🔄 ScaleService: Принудительный сброс соединения с весами');
+      LoggingService.equipmentLog('🔄 ScaleService: Принудительный сброс соединения с весами');
       
       // Отменяем текущую операцию чтения, если она есть
       if (this.cancelCurrentOperation) {
-        console.log('🔄 ScaleService: Отмена текущей операции перед сбросом');
+        LoggingService.equipmentLog('🔄 ScaleService: Отмена текущей операции перед сбросом');
         this.cancelCurrentOperation();
         this.cancelCurrentOperation = null;
       }
@@ -1051,10 +1051,10 @@ export class ScaleService {
       const reconnected = await this.connect();
       
       if (reconnected) {
-        console.log('✅ ScaleService: Соединение успешно восстановлено после сброса');
+        LoggingService.equipmentLog('✅ ScaleService: Соединение успешно восстановлено после сброса');
         return true;
       } else {
-        console.log('❌ ScaleService: Не удалось восстановить соединение после сброса');
+        LoggingService.equipmentLog('❌ ScaleService: Не удалось восстановить соединение после сброса');
         return false;
       }
     } catch (error) {

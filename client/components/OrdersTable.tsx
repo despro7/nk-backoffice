@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Table, TableHeader, TableBody, TableColumn, TableRow, TableCell, Pagination, Tooltip } from "@heroui/react";
+import { Table, TableHeader, TableBody, TableColumn, TableRow, TableCell, Pagination, Popover, PopoverContent, PopoverTrigger, Button } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { TabsFilter } from "./TabsFilter";
@@ -18,7 +18,6 @@ interface OrderItem {
 
 interface Order {
   id: string;
-  orderNumber: string;
   ttn: string;
   quantity: number;
   status: string;
@@ -35,7 +34,6 @@ interface Order {
   paymentMethod?: string;
   cityName?: string;
   provider?: string;
-  rawData: any;
 }
 
 interface OrdersTableProps {
@@ -51,7 +49,7 @@ type SortDescriptor = {
 };
 
 const columns = [
-  { key: "orderNumber", label: "№ Замов.", className: "w-2/10" },
+  { key: "externalId", label: "№ Замов.", className: "w-2/10" },
   { key: "orderDate", label: "Дата створення", className: "w-3/10" },
   { key: "ttn", label: "ТТН", className: "w-2/10" },
   { key: "quantity", label: "Кіл-ть", className: "w-1/10" },
@@ -112,10 +110,14 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
     setLoading(true);
     try {
       // Запрашиваем только нужную страницу заказов
+      // Если пользователь сортирует по колонке "Статус", фактически сортируем по updatedAt
+      const sortByParam = currentSortDescriptor.column === 'status' ? 'updatedAt' : currentSortDescriptor.column;
+
       const queryParams = new URLSearchParams({
         limit: currentPageSize.toString(),
         offset: ((pageNum - 1) * currentPageSize).toString(),
-        sortBy: currentSortDescriptor.column,
+        sortBy: sortByParam,
+        fields: 'id,externalId,orderDate,ttn,quantity,status,statusText,updatedAt',
         sortOrder: currentSortDescriptor.direction === "ascending" ? "asc" : "desc"
       });
 
@@ -258,7 +260,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
               className="cursor-pointer hover:bg-gray-50"
             >
               <TableCell onClick={() => handleRowClick(order.externalId)}>
-                {order.orderNumber}
+                {order.externalId}
               </TableCell>
               <TableCell onClick={() => handleRowClick(order.externalId)} className="text-[15px]">
                 {formatRelativeDate(order.orderDate, { maxRelativeDays: 30 })}
@@ -278,14 +280,31 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
                 {order.quantity}
               </TableCell>
               <TableCell>
-                <span className={cn(getStatusColor(order.status), "px-2 py-1 rounded-full text-xs whitespace-nowrap")}>
-                  {order.rawData?.statusText || order.statusText}
-                </span>
-                {order.updatedAt && (
-                <span className="block text-xs text-gray-500 ml-2 mt-1">
-                    {formatRelativeDate(order.updatedAt, { maxRelativeDays: 30, include2DaysAgo: false, showYear: false, includeWeekdays: true, shortWeekday: true })}
-                </span>
-                )}
+                <Popover showArrow offset={20} placement="right">
+                  <PopoverTrigger>
+                    <div className="w-fit">
+                      <span className={cn(getStatusColor(order.status), "px-2 py-1 rounded-full text-xs whitespace-nowrap")}>
+                        {order.statusText}
+                      </span>
+                      {order.updatedAt && (
+                      <span className="block text-xs text-gray-500 ml-2 mt-1">
+                          {formatRelativeDate(order.updatedAt, { maxRelativeDays: 1, include2DaysAgo: false, showYear: false, includeWeekdays: true, shortWeekday: true })}
+                      </span>
+                      )}
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent>
+                    <div className="px-1 py-1">
+                      {/* <div className="text-small font-bold">точний час</div> */}
+                      <div className="text-small">
+                        {order.updatedAt ? new Date(order.updatedAt).toLocaleString('uk-UA', {
+                          day: '2-digit', month: '2-digit', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit', second: '2-digit'
+                        }) : ''}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </TableCell>
             </TableRow>
           )}

@@ -159,7 +159,7 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
       processedOrders: 0,
       totalOrders: 0,
       stage: 'fetching',
-      message: 'Получаем заказы из SalesDrive...',
+      message: 'Отримуємо замовлення з SalesDrive...',
       errors: [],
       lastAccessed: now,
       accessCount: 0
@@ -817,7 +817,7 @@ router.post('/sync/settings', authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Настройки синхронизации сохранены'
+      message: 'Налаштування синхронізації збережені'
     });
   } catch (error) {
     console.error('Error saving sync settings:', error);
@@ -916,7 +916,7 @@ router.get('/sync/progress', authenticateToken, async (req, res) => {
       return res.json({
         success: true,
         active: false,
-        message: 'Нет активной синхронизации'
+        message: 'Немає активної синхронізації'
       });
     }
 
@@ -983,7 +983,7 @@ router.get('/sync/preview/progress', authenticateToken, async (req, res) => {
       return res.json({
         success: true,
         active: false,
-        message: 'Нет активного анализа предварительного просмотра'
+        message: 'Немає активного аналізу попереднього перегляду'
       });
     }
 
@@ -1023,7 +1023,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
     if (!startDate) {
       return res.status(400).json({
         success: false,
-        error: 'Дата начала обязательна'
+        error: 'Дата початку обов\'язкова'
       });
     }
 
@@ -1037,7 +1037,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
       data: {
         type: 'orders',
         status: 'running',
-        message: `Ручная синхронизация заказов с ${startDate}${endDate ? ` по ${endDate}` : ''}`,
+        message: `Ручна синхронізація замовлень з ${startDate}${endDate ? ` по ${endDate}` : ''}`,
         startedAt: new Date(),
         details: JSON.stringify({
           startDate,
@@ -1056,7 +1056,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       sessionId,
-      message: 'Синхронизация запущена, следите за прогрессом',
+      message: 'Синхронізацію запущено, стежте за прогресом',
       logId: syncLog.id
     });
 
@@ -1092,7 +1092,7 @@ router.post('/sync/manual', authenticateToken, async (req, res) => {
           currentBatch: 0,
           totalBatches: 1,
           stage: 'fetching',
-          message: 'Получаем заказы из SalesDrive API...',
+          message: 'Отримуємо замовлення з SalesDrive API...',
           errors: [],
           lastAccessed: Date.now(),
           accessCount: 0

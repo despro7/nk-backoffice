@@ -27,12 +27,12 @@ export function useOrderNavigation({
   /**
    * Універсальна функція для отримання наступного замовлення з розумною логікою пошуку
    */
-  const getNextOrder = useCallback(async (filterByStatus: boolean = true) => {
+  const getNextOrder = useCallback(async () => {
     if (!externalId) return null;
 
-    try {
-      // Отримуємо список замовлень, відсортований за датою (нові спочатку)
-      const response = await apiCall('/api/orders?limit=100&sortBy=orderDate&sortOrder=desc&status=2');
+    try {      
+      // Отримуємо список замовлень в статусі 2 (Підтверджено), відсортований за датою (нові спочатку)
+      const response = await apiCall('/api/orders?limit=100&sortBy=orderDate&sortOrder=desc&status=2&fields=id,externalId,orderDate,status');
       
       if (!response.ok) {
         console.warn('⚠️ [useOrderNavigation] Не вдалося отримати список замовлень');
@@ -42,6 +42,8 @@ export function useOrderNavigation({
       const ordersData = await response.json();
       const orders = ordersData.data;
       
+      console.log('🔍 [useOrderNavigation] Отримані замовлення:', orders);
+      
       if (orders.length === 0) {
         console.warn('⚠️ [useOrderNavigation] Немає замовлень для переходу');
         return null;
@@ -49,6 +51,8 @@ export function useOrderNavigation({
       
       // Знаходимо поточне замовлення у відфільтрованому списку
       const currentOrderIndex = orders.findIndex((order: any) => order.externalId === externalId);
+
+      console.log('🔍 [useOrderNavigation] Поточне замовлення:', currentOrderIndex);
       
       if (currentOrderIndex === -1) {
         console.warn('⚠️ [useOrderNavigation] Поточне замовлення не знайдено в відфільтрованому списку');
@@ -71,6 +75,8 @@ export function useOrderNavigation({
           return null;
         }
       }
+
+		  console.log('🔍 [useOrderNavigation] Наступне замовлення:', nextOrder);
       
       return {
         ...nextOrder,
@@ -81,6 +87,42 @@ export function useOrderNavigation({
       return null;
     }
   }, [externalId, apiCall]);
+
+	/**
+	 * Допоміжна функція: оновити статус поточного замовлення до "id3" (Готове до відправки)
+	 */
+	const updateCurrentOrderStatusToReady = useCallback(async () => {
+		if (!externalId) return;
+		const statusPayload = { status: 'id3' };
+		try {
+			const statusResponse = await apiCall(`/api/orders/${externalId}/status`, {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(statusPayload),
+			});
+
+			if (!statusResponse.ok) {
+				const errorText = await statusResponse.text();
+				console.warn('⚠️ [useOrderNavigation] Не вдалося оновити статус в SalesDrive:', errorText);
+				return;
+			}
+
+			const statusData = await statusResponse.json();
+			if (statusData.success) {
+				if (statusData.salesDriveUpdated) {
+					console.log('✅ [useOrderNavigation] Статус замовлення оновлено в SalesDrive на "id3" (Готове до відправлення)');
+				} else {
+					console.warn('⚠️ [useOrderNavigation] Статус оновлено локально, але не вдалося оновити в SalesDrive');
+				}
+			} else {
+				console.warn('⚠️ [useOrderNavigation] Помилка при оновленні статусу:', statusData.error);
+			}
+		} catch (error) {
+			console.error('❌ [useOrderNavigation] Помилка оновлення статусу поточного замовлення:', error);
+		}
+	}, [externalId, apiCall]);
 
   /**
    * Функція для друку ТТН
@@ -98,7 +140,9 @@ export function useOrderNavigation({
     try {
       setIsPrintingTTN(true);
 
-      const canUseDirectPrint = equipmentConfig?.printer?.enabled && equipmentConfig?.printer?.name;
+      // Забороняємо прямий друк у dev режимі
+      const isDev = typeof process !== "undefined" && process.env.NODE_ENV === 'development';
+      const canUseDirectPrint = equipmentConfig?.printer?.enabled && equipmentConfig?.printer?.name && isDev;
 
       await shippingClientService.printTTN({
         ttn: order.ttn,
@@ -123,7 +167,7 @@ export function useOrderNavigation({
   /**
    * Функція для переходу до наступного замовлення
    */
-  const handleNextOrder = useCallback(async () => {
+	const handleNextOrder = useCallback(async () => {
     if (!externalId || isLoadingNextOrder) {
       return;
     }
@@ -131,41 +175,18 @@ export function useOrderNavigation({
     try {
       setIsLoadingNextOrder(true);
 
-      // 1. Отримуємо наступне замовлення з фільтрацією за статусом '2' (в обробці)
-      const nextOrder = await getNextOrder(true);
+      // 1. Отримуємо наступне замовлення
+      const nextOrder = await getNextOrder();
       
       if (!nextOrder) {
-        throw new Error('Не знайдено наступного замовлення зі статусом 2 (в обробці)');
+        // Якщо наступного немає — завершуємо поточне як готове і показуємо банер
+        setShowNoMoreOrders(true);
+        throw new Error('Не знайдено наступного замовлення зі статусом 2 (Підтверджено)');
+        return;
       }
-      
-      // 2. Змінюємо статус поточного замовлення на "id3" (Готове до відправки)
-      const statusPayload = { status: 'id3' };
 
-      const statusResponse = await apiCall(`/api/orders/${externalId}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(statusPayload),
-      });
-
-      if (!statusResponse.ok) {
-        const errorText = await statusResponse.text();
-        console.warn('⚠️ [useOrderNavigation] Не вдалося оновити статус в SalesDrive:', errorText);
-        // Продовжуємо, навіть якщо оновлення статусу не вдалося
-      } else {
-        // Перевіряємо результат оновлення статусу
-        const statusData = await statusResponse.json();
-        if (statusData.success) {
-          if (statusData.salesDriveUpdated) {
-            console.log('✅ [useOrderNavigation] Статус замовлення успішно оновлен в SalesDrive на "id3" (Готове до видправки)');
-          } else {
-            console.warn('⚠️ [useOrderNavigation] Статус оновлено локально, але не вдалося оновити в SalesDrive');
-          }
-        } else {
-          console.warn('⚠️ [useOrderNavigation] Помилка при оновленні статусу:', statusData.error);
-        }
-      }
+			// 2. Змінюємо статус поточного замовлення на "id3" (Готове до відправки)
+			await updateCurrentOrderStatusToReady();
 
       // 3. Переходимо до наступного замовлення без перезавантаження сторінки
       const nextOrderUrl = `/orders/${nextOrder.externalId}`;
@@ -188,24 +209,17 @@ export function useOrderNavigation({
   /**
    * Функція для отримання номера наступного замовлення
    */
-  const fetchNextOrderNumber = useCallback(async () => {
-    // Спочатку пробуємо з фільтрацією за статусом '2' (в обробці)
-    const nextOrder = await getNextOrder(true);
+	const fetchNextOrderNumber = useCallback(async () => {
+    const nextOrder = await getNextOrder();
     if (nextOrder) {
-      setNextOrderNumber(nextOrder.orderNumber);
+      setNextOrderNumber(nextOrder.externalId);
       setNextOrderDate(nextOrder.formattedDate);
       setShowNoMoreOrders(false);
     } else {
-      // Якщо не знайдено з фільтрацією, пробуємо без фільтрації для діагностики
-      const nextOrderWithoutFilter = await getNextOrder(false);
-      if (nextOrderWithoutFilter) {
-        // Не встановлюємо номер, так як замовлення не підходить за статусом
-        setShowNoMoreOrders(true);
-      } else {
-        setShowNoMoreOrders(true);
-      }
+      setShowNoMoreOrders(true);
+      await updateCurrentOrderStatusToReady();
     }
-  }, [getNextOrder]);
+	}, [getNextOrder, updateCurrentOrderStatusToReady]);
 
   return {
     isPrintingTTN,

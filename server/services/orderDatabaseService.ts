@@ -464,6 +464,9 @@ export class OrderDatabaseService {
       end: Date;
     };
     search?: string;
+    includeItems?: boolean;
+    includeRaw?: boolean;
+    fields?: string[];
   }) {
     const startTime = Date.now();
 
@@ -518,52 +521,77 @@ export class OrderDatabaseService {
 
       const dbQueryStart = Date.now();
       // Оптимизированный запрос без OrdersHistory для быстрой загрузки списка
+      // Базовий whitelist полів, які дозволено вибирати
+      const allowedFields: Record<string, boolean> = {
+        id: true,
+        externalId: true,
+        orderNumber: true,
+        ttn: true,
+        quantity: true,
+        status: true,
+        statusText: true,
+        createdAt: true,
+        updatedAt: true,
+        lastSynced: true,
+        cityName: true,
+        customerName: true,
+        customerPhone: true,
+        deliveryAddress: true,
+        orderDate: true,
+        paymentMethod: true,
+        provider: true,
+        shippingMethod: true,
+        totalPrice: true,
+        pricinaZnizki: true,
+        sajt: true
+      };
+
+      let select: any;
+      if (filters?.fields && Array.isArray(filters.fields) && filters.fields.length > 0) {
+        // Формуємо select тільки з дозволених полів
+        select = {};
+        for (const f of filters.fields) {
+          if (allowedFields[f]) select[f] = true;
+        }
+        // Захист: якщо після фільтрації нічого не лишилось — додаємо мінімум ключове поле
+        if (Object.keys(select).length === 0) {
+          select = { id: true };
+        }
+      } else {
+        // Повний дефолтний набір (без важких items/rawData)
+        select = { ...allowedFields };
+      }
+      if (filters?.includeItems) select.items = true;
+      if (filters?.includeRaw) select.rawData = true;
+
       const orders = await prisma.order.findMany({
         where,
         orderBy,
         take: filters?.limit || 100,
         skip: filters?.offset || 0,
-        select: {
-          id: true,
-          externalId: true,
-          orderNumber: true,
-          ttn: true,
-          quantity: true,
-          status: true,
-          statusText: true,
-          items: true,
-          rawData: true,
-          createdAt: true,
-          updatedAt: true,
-          lastSynced: true,
-          cityName: true,
-          customerName: true,
-          customerPhone: true,
-          deliveryAddress: true,
-          orderDate: true,
-          paymentMethod: true,
-          provider: true,
-          shippingMethod: true,
-          totalPrice: true,
-          pricinaZnizki: true,
-          sajt: true
-          // Исключаем OrdersHistory для оптимизации скорости
-        }
+        select
       });
 
       const dbQueryTime = Date.now() - dbQueryStart;
 
-      // Парсим JSON поля
+      // Парсим JSON поля только если они были выбраны
       const parseStartTime = Date.now();
-
-      const parsedOrders = orders.map(order => ({
-        ...order,
-        items: order.items ? JSON.parse(order.items) : [],
-        rawData: order.rawData ? JSON.parse(order.rawData) : {}
-      }));
+      const parsedOrders = orders.map(order => {
+        const result: any = { ...order };
+        if (filters?.includeItems) {
+          result.items = order.hasOwnProperty('items') && (order as any).items
+            ? JSON.parse((order as any).items)
+            : [];
+        }
+        if (filters?.includeRaw) {
+          result.rawData = order.hasOwnProperty('rawData') && (order as any).rawData
+            ? JSON.parse((order as any).rawData)
+            : {};
+        }
+        return result;
+      });
 
       const parseTime = Date.now() - parseStartTime;
-
       const totalTime = Date.now() - startTime;
 
       return parsedOrders;

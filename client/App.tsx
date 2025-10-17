@@ -164,7 +164,7 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 const App = () => (
   <HeroUIProvider>
-    <ToastProvider toastProps={{ radius: "md", shadow: "md" }} placement="bottom-right" toastOffset={30} />
+    <ToastProvider toastProps={{ radius: "md", shadow: "md", classNames: { icon: "fill-none" } }} placement="bottom-right" toastOffset={30} />
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>

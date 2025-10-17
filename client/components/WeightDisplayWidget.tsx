@@ -525,11 +525,11 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
   const sendTareCommand = async () => {
     try {
       const scaleService = ScaleService.getInstance();
-      console.log('WeightDisplayWidget: Отправляем команду Tare...');
+      LoggingService.equipmentLog('⚖️ [WeightDisplayWidget]: Отправляем команду Tare...');
       
       const success = await scaleService.tare();
       if (success) {
-        console.log('WeightDisplayWidget: Команда Tare виконана успішно');
+        LoggingService.equipmentLog('⚖️ [WeightDisplayWidget]: Команда Tare виконана успішно');
         setIsError(false);
         setErrorMessage(null);
         lastSuccessfulReadRef.current = Date.now();
