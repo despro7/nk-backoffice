@@ -1,4 +1,5 @@
 import { prisma } from '../lib/utils.js';
+import { Prisma } from '@prisma/client';
 
 
 export interface OrderCacheItem {
@@ -13,6 +14,7 @@ export interface OrderCacheData {
   externalId: string;
   processedItems: string | null; // JSON string с массивом OrderCacheItem[]
   totalQuantity: number;
+  totalWeight?: Prisma.Decimal | number | string | null;
   cacheUpdatedAt: Date;
   cacheVersion: number;
   createdAt: Date;
@@ -23,12 +25,14 @@ export interface CreateOrderCacheData {
   externalId: string;
   processedItems: string | null;
   totalQuantity: number;
+  totalWeight?: number;
   cacheVersion?: number;
 }
 
 export interface UpdateOrderCacheData {
   processedItems?: string | null;
   totalQuantity?: number;
+  totalWeight?: number;
   cacheVersion?: number;
 }
 
@@ -45,6 +49,7 @@ export class OrdersCacheService {
         update: {
           processedItems: data.processedItems,
           totalQuantity: data.totalQuantity,
+          totalWeight: typeof data.totalWeight === 'number' ? Number(data.totalWeight.toFixed(2)) : undefined,
           cacheUpdatedAt: new Date(),
           cacheVersion: data.cacheVersion || 1
         },
@@ -52,11 +57,14 @@ export class OrdersCacheService {
           externalId: data.externalId,
           processedItems: data.processedItems,
           totalQuantity: data.totalQuantity,
+          totalWeight: typeof data.totalWeight === 'number' ? Number(data.totalWeight.toFixed(2)) : undefined,
           cacheVersion: data.cacheVersion || 1
         }
       });
-
-      // console.log(`✅ [ORDERS CACHE] ${data.processedItems ? 'Updated' : 'Created'} cache for order ${data.externalId}`);
+      // Преобразуем totalWeight к number если тип Decimal
+      if (cacheData && cacheData.totalWeight != null && typeof cacheData.totalWeight === 'object' && typeof cacheData.totalWeight.toNumber === 'function') {
+        (cacheData as any).totalWeight = cacheData.totalWeight.toNumber();
+      }
       return cacheData;
     } catch (error) {
       console.error('❌ [ORDERS CACHE] Failed to upsert order cache:', error);
@@ -140,11 +148,11 @@ export class OrdersCacheService {
       });
 
       const deleted = result.count > 0;
-      if (deleted) {
+      // if (deleted) {
         // console.log(`🗑️ [ORDERS CACHE] Invalidated cache for order ${externalId}`);
-      } else {
+      // } else {
         // console.log(`🗑️ [ORDERS CACHE] Cache not found for order ${externalId}`);
-      }
+      // }
 
       return deleted;
     } catch (error) {
@@ -165,11 +173,11 @@ export class OrdersCacheService {
       });
 
       const deleted = result.count > 0;
-      if (deleted) {
+      // if (deleted) {
         // console.log(`🗑️ [ORDERS CACHE] Deleted cache for order ${externalId}`);
-      } else {
+      // } else {
         // console.log(`🗑️ [ORDERS CACHE] Cache not found for order ${externalId}`);
-      }
+      // }
 
       return deleted;
     } catch (error) {

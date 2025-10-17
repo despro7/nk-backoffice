@@ -1881,9 +1881,7 @@ export class OrderDatabaseService {
   async updateOrderCache(externalId: string): Promise<boolean> {
     try {
       // Получаем заказ по externalId
-      const order = await prisma.order.findUnique({
-        where: { externalId }
-      });
+      const order = await prisma.order.findUnique({ where: { externalId } });
 
       if (!order) {
         console.error(`❌ Order with externalId ${externalId} not found`);
@@ -1891,7 +1889,6 @@ export class OrderDatabaseService {
       }
 
       const processedItems = await this.preprocessOrderItemsForCache(order.id);
-
       if (!processedItems) {
         console.warn(`⚠️ No processed items for order ${externalId}`);
         return false;
@@ -1908,14 +1905,43 @@ export class OrderDatabaseService {
         console.warn(`Failed to parse processed items for total quantity calculation:`, parseError);
       }
 
+      // ---- Подсчитываем totalWeight (кг) ----
+      let totalWeight = 0;
+      try {
+        const items = JSON.parse(order.items);
+        if (Array.isArray(items)) {
+          for (const item of items) {
+            if (!item || !item.sku || !item.quantity) continue;
+            // Берем product по SKU
+            const product = await this.getProductBySku(item.sku);
+            if (product && product.weight) {
+              totalWeight += (product.weight * item.quantity) / 1000; // Преобразуем из грамм в кг
+            } else if (product && product.set && Array.isArray(product.set) && product.set.length > 0) {
+              // Комплект — рахуємо вагу по складникам
+              for (const setItem of product.set) {
+                if (setItem && setItem.id && setItem.quantity) {
+                  const component = await this.getProductBySku(setItem.id);
+                  if (component && component.weight) {
+                    totalWeight += (component.weight * setItem.quantity * item.quantity) / 1000;
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Failed to calculate total weight for cache:`, err);
+      }
+      // ---- END totalWeight ----
+
       // Сохраняем в кеш
       await ordersCacheService.upsertOrderCache({
         externalId,
         processedItems,
-        totalQuantity
+        totalQuantity,
+        totalWeight
       });
 
-      // console.log(`✅ Updated cache for order ${externalId}`);
       return true;
     } catch (error) {
       console.error(`❌ Error updating cache for order ${externalId}:`, error);

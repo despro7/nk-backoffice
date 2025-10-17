@@ -149,7 +149,7 @@ export function OrderAssemblyRightPanel({
               classNames={{
                 base: cn(
                   "inline-flex flex-row-reverse w-full bg-white items-center max-w-full",
-                  "justify-between cursor-pointer rounded-lg gap-3 px-2 py-4 pr-5",
+                  "justify-between cursor-pointer rounded-large gap-3 px-2 py-4 pr-5",
                   "data-[selected=true]:ring-danger data-[selected=true]:ring-2",
                   "transition-transform duration-200 ease-in-out",
                   `${autoPrintTransition ? "opacity-75 scale-[0.98]" : "opacity-100 scale-100"}`

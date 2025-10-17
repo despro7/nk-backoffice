@@ -260,6 +260,7 @@ model OrdersCache {
   externalId     String   @unique
   processedItems String?  @db.LongText
   totalQuantity  Int
+  totalWeight    Decimal? @db.Decimal(10,2) // Додаємо вагу у кг
   cacheUpdatedAt DateTime @default(now())
   cacheVersion   Int      @default(1)
   createdAt      DateTime @default(now())

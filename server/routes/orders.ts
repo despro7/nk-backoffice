@@ -155,121 +155,112 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 
+// Кеш для статистики веса (5 минут)
+const weightStatsCache = new Map();
+const WEIGHT_STATS_CACHE_TTL = 5 * 60 * 1000; // 5 минут
+
 /**
- * GET /api/orders/:externalId
- * Получить детали конкретного заказа по externalId (номеру заказа из SalesDrive)
+ * GET /api/orders/weight-stats
+ * Получить статистику веса заказов по статусам для комірника
  */
-router.get('/:externalId', authenticateToken, async (req, res) => {
+router.get('/weight-stats', authenticateToken, async (req, res) => {
   try {
-    const { externalId } = req.params; // Изменили с id на externalId
-    
-    if (!externalId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Order external ID is required'
-      });
+    console.log('📊 [WEIGHT STATS] Запрос статистики веса заказов (через CACHE)');
+    const cacheKey = 'weight-stats';
+    const cached = weightStatsCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < WEIGHT_STATS_CACHE_TTL) {
+      console.log('📊 [WEIGHT STATS] Возвращаем данные из кеша');
+      return res.json(cached.data);
     }
 
-    
-    // Получаем детали заказа по externalId
-    const orderDetails = await orderDatabaseService.getOrderByExternalId(externalId);
-    
-    if (!orderDetails) {
-      return res.status(404).json({
-        success: false,
-        error: 'Order not found'
-      });
-    }
+    const aWeekAgo = new Date();
+    aWeekAgo.setDate(aWeekAgo.getDate() - 7);
+    aWeekAgo.setHours(0, 0, 0, 0);
 
-    // Возвращаем полные данные заказа
-    res.json({
+    // 1. Витягуємо тільки externalId + status за останній тиждень
+    const orders = await prisma.order.findMany({
+      where: {
+        status: { in: ['2', '3', '4'] },
+        orderDate: { gte: aWeekAgo },
+      },
+      select: { externalId: true, status: true }
+    });
+
+    const orderIdsByStatus: { [status: string]: string[] } = { '2': [], '3': [], '4': [] };
+    for (const order of orders) {
+      if (order.status && order.externalId) {
+        if (!orderIdsByStatus[order.status]) orderIdsByStatus[order.status] = [];
+        orderIdsByStatus[order.status].push(order.externalId);
+      }
+    }
+    // Об'єднання всіх externalId для bulk кеш-запиту
+    const allExternalIds = orders.map(o => o.externalId);
+
+    // 2. Bulk отримаємо кеші
+    const ordersCacheMap = await ordersCacheService.getMultipleOrderCaches(allExternalIds);
+
+    // 3. Агрегація по статусу
+    let confirmedWeightKg = 0;
+    let readyToShipWeightKg = 0;
+    let shippedWeightKg = 0;
+    let confirmedCount = 0;
+    let readyToShipCount = 0;
+    let shippedCount = 0;
+
+    for (const status of ['2', '3', '4']) {
+      for (const externalId of orderIdsByStatus[status] || []) {
+        const cache = ordersCacheMap.get(externalId);
+        if (cache && cache.totalWeight != null && !isNaN(Number(cache.totalWeight))) {
+          const w = Number(cache.totalWeight);
+          if (status === '2') { confirmedWeightKg += w; confirmedCount++; }
+          else if (status === '3') { readyToShipWeightKg += w; readyToShipCount++; }
+          else if (status === '4') { shippedWeightKg += w; shippedCount++; }
+        }
+      }
+    }
+    // Новий total: тільки підтверджені + готові до відправки (без shipped)
+    const activeTotalWeightKg = confirmedWeightKg + readyToShipWeightKg;
+    const activeTotalCount = confirmedCount + readyToShipCount;
+    const response = {
       success: true,
       data: {
-        id: orderDetails.id,
-        externalId: orderDetails.externalId, // Добавили externalId в ответ
-        orderNumber: orderDetails.orderNumber,
-        ttn: orderDetails.ttn,
-        quantity: orderDetails.quantity,
-        status: orderDetails.status,
-        statusText: orderDetails.statusText,
-        items: orderDetails.items,
-        customerName: orderDetails.customerName,
-        customerPhone: orderDetails.customerPhone,
-        deliveryAddress: orderDetails.deliveryAddress,
-        totalPrice: orderDetails.totalPrice,
-        createdAt: orderDetails.createdAt,
-        orderDate: orderDetails.orderDate,
-        shippingMethod: orderDetails.shippingMethod,
-        paymentMethod: orderDetails.paymentMethod,
-        cityName: orderDetails.cityName,
-        provider: orderDetails.provider,
-        rawData: orderDetails.rawData
+        confirmed: {
+          count: confirmedCount,
+          weight: confirmedWeightKg,
+          weightText: `${confirmedWeightKg.toFixed(2)} кг`
+        },
+        readyToShip: {
+          count: readyToShipCount,
+          weight: readyToShipWeightKg,
+          weightText: `${readyToShipWeightKg.toFixed(2)} кг`
+        },
+        // shipped: {
+        //   count: shippedCount,
+        //   weight: shippedWeightKg,
+        //   weightText: `${shippedWeightKg.toFixed(2)} кг`
+        // },
+        total: {
+          count: activeTotalCount,
+          weight: activeTotalWeightKg,
+          weightText: `${activeTotalWeightKg.toFixed(2)} кг`
+        }
+      },
+      metadata: {
+        calculatedAt: new Date().toISOString(),
+        totalOrdersProcessed: orders.length
       }
+    };
+    weightStatsCache.set(cacheKey, {
+      data: response,
+      timestamp: Date.now()
     });
-
+    res.json(response);
   } catch (error) {
-    console.error('❌ Error fetching order details:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch order details',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-/**
- * PUT /api/orders/:externalId/status
- * Обновить статус заказа в SalesDrive
- */
-router.put('/:externalId/status', authenticateToken, async (req, res) => {
-  try {
-    const { externalId } = req.params; // Изменили с id на externalId
-    const { status } = req.body;
-
-    if (!status) {
-      return res.status(400).json({
-        success: false,
-        error: 'Status is required',
-      });
-    }
-
-    // Получаем заказ для получения orderNumber
-    const order = await orderDatabaseService.getOrderByExternalId(externalId);
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        error: 'Order not found',
-      });
-    }
-
-    // Обновляем статус в SalesDrive
-    const result = await salesDriveService.updateSalesDriveOrderStatus(order.orderNumber, status);
-
-    if (result) {
-      res.json({
-        success: true,
-        message: 'Order status updated successfully in SalesDrive',
-        externalId: externalId,
-        orderNumber: order.orderNumber,
-        newStatus: status,
-        salesDriveUpdated: true,
-        updatedAt: new Date().toISOString()
-      });
-    } else {
-      console.warn(`⚠️ Failed to update order ${order.orderNumber} status in SalesDrive`);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to update order status in SalesDrive',
-        externalId: externalId,
-        orderNumber: order.orderNumber,
-        newStatus: status
-      });
-    }
-  } catch (error) {
-    console.error('Error updating order status:', error);
+    console.error('❌ [WEIGHT STATS] Ошибка получения статистики веса (через кеш):', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
@@ -563,6 +554,124 @@ router.post('/fix-items-data', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/orders/:externalId
+ * Получить детали конкретного заказа по externalId (номеру заказа из SalesDrive)
+ */
+router.get('/:externalId', authenticateToken, async (req, res) => {
+  try {
+    const { externalId } = req.params; // Изменили с id на externalId
+    
+    if (!externalId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Order external ID is required'
+      });
+    }
+
+    
+    // Получаем детали заказа по externalId
+    const orderDetails = await orderDatabaseService.getOrderByExternalId(externalId);
+    
+    if (!orderDetails) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found'
+      });
+    }
+
+    // Возвращаем полные данные заказа
+    res.json({
+      success: true,
+      data: {
+        id: orderDetails.id,
+        externalId: orderDetails.externalId, // Добавили externalId в ответ
+        orderNumber: orderDetails.orderNumber,
+        ttn: orderDetails.ttn,
+        quantity: orderDetails.quantity,
+        status: orderDetails.status,
+        statusText: orderDetails.statusText,
+        items: orderDetails.items,
+        customerName: orderDetails.customerName,
+        customerPhone: orderDetails.customerPhone,
+        deliveryAddress: orderDetails.deliveryAddress,
+        totalPrice: orderDetails.totalPrice,
+        createdAt: orderDetails.createdAt,
+        orderDate: orderDetails.orderDate,
+        shippingMethod: orderDetails.shippingMethod,
+        paymentMethod: orderDetails.paymentMethod,
+        cityName: orderDetails.cityName,
+        provider: orderDetails.provider,
+        rawData: orderDetails.rawData
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching order details:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch order details',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * PUT /api/orders/:externalId/status
+ * Обновить статус заказа в SalesDrive
+ */
+router.put('/:externalId/status', authenticateToken, async (req, res) => {
+  try {
+    const { externalId } = req.params; // Изменили с id на externalId
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        error: 'Status is required',
+      });
+    }
+
+    // Получаем заказ для получения orderNumber
+    const order = await orderDatabaseService.getOrderByExternalId(externalId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found',
+      });
+    }
+
+    // Обновляем статус в SalesDrive
+    const result = await salesDriveService.updateSalesDriveOrderStatus(order.orderNumber, status);
+
+    if (result) {
+      res.json({
+        success: true,
+        message: 'Order status updated successfully in SalesDrive',
+        externalId: externalId,
+        orderNumber: order.orderNumber,
+        newStatus: status,
+        salesDriveUpdated: true,
+        updatedAt: new Date().toISOString()
+      });
+    } else {
+      console.warn(`⚠️ Failed to update order ${order.orderNumber} status in SalesDrive`);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to update order status in SalesDrive',
+        externalId: externalId,
+        orderNumber: order.orderNumber,
+        newStatus: status
+      });
+    }
+  } catch (error) {
+    console.error('Error updating order status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
 
 /**
  * POST /api/orders/:externalId/cache
@@ -637,7 +746,6 @@ router.get('/cache/stats', authenticateToken, async (req, res) => {
     });
   }
 });
-
 
 /**
  * GET /api/orders/cache/info
@@ -1443,9 +1551,6 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
     });
   }
 });
-
-
-
 
 /**
  * GET /api/orders/products/chart

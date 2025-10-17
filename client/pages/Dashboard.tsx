@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { useApi } from "@/hooks/useApi";
 import { formatRelativeDate } from "@/lib/formatUtils";
+import WeightStatsTable from "@/components/WeightStatsTable";
+import OrdersStatsSummary from "@/components/OrdersStatsSummary";
+import { Button } from "@heroui/button";
 
 interface OrdersStats {
   total: number;
@@ -89,120 +92,28 @@ export default function Dashboard() {
               </div>
             )}
             {isAdmin() && (
-              <button
-                onClick={handleManualSync}
-                disabled={loading}
-                className="px-3 py-1 text-sm bg-neutral-600 text-white rounded hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            <Button
+              color="default"
+              onPress={handleManualSync}
+              disabled={loading}
+              className="bg-neutral-600 text-white h-8 px-3 rounded-sm"
               >
-                {loading ? 'Синхронізація...' : 'Синхронізувати'}
-              </button>
+              {loading ? 'Синхронізація...' : 'Синхронізувати'}
+            </Button>
             )}
           </div>
         </div>
-        
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="text-center">
-                <div className="animate-pulse">
-                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2 mx-auto"></div>
-                  <div className="h-8 bg-gray-200 rounded w-1/2 mx-auto"></div>
-                </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {Array.from({ length: 9 }).map((_, i) => (
+              <div key={i} className="flex flex-col justify-center p-6 bg-white rounded-md border border-neutral-200 min-h-[70px]">
+                <div className="animate-pulse w-12 h-8 bg-gray-200 rounded mb-2" />
+                <div className="animate-pulse w-26 h-4 bg-gray-100 rounded" />
               </div>
             ))}
           </div>
         ) : stats ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-            {/* Общее количество заказов */}
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">
-                {stats.total}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">
-                Всього замовлень
-              </div>
-            </div>
-
-            {/* Новые заказы */}
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">
-                {stats.new}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">
-                Нові
-              </div>
-            </div>
-
-            {/* Подтвержденные заказы */}
-            <div className="text-center">
-              <div className="text-2xl font-bold text-yellow-600">
-                {stats.confirmed}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">
-                Підтверджені
-              </div>
-            </div>
-
-            {/* Готовы к отправке */}
-            <div className="text-center">
-              <div className="text-2xl font-bold text-orange-600">
-                {stats.readyToShip}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">
-                Готові до відправки
-              </div>
-            </div>
-
-            {/* Отправленные */}
-            <div className="text-center">
-              <div className="text-2xl font-bold text-purple-600">
-                {stats.shipped}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">
-                Відправлені
-              </div>
-            </div>
-
-            {/* Продажи */}
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
-                {stats.sold}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">
-                Продажі
-              </div>
-            </div>
-
-             {/* Відхилені */}
-             <div className="text-center">
-              <div className="text-2xl font-bold text-red-700">
-                {stats.rejected}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">
-                Відхилені
-              </div>
-            </div>
-
-            {/* Повернені */}
-            <div className="text-center">
-              <div className="text-2xl font-bold text-red-700">
-                {stats.returned}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">
-                Повернені
-              </div>
-            </div>
-
-            {/* Видалені */}
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-500">
-                {stats.deleted}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">
-                Видалені
-              </div>
-            </div>
-          </div>
+          <OrdersStatsSummary stats={stats} />
         ) : (
           <div className="text-center text-gray-500">
             Не вдалося завантажити статистику
@@ -212,14 +123,9 @@ export default function Dashboard() {
 
       {/* Блок для storekeeper и выше */}
       {isStorekeeper() && (
-        <>
-        <div className="bg-white rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-6">Статистика для комірника</h2>
-          <div className="mb-6">
-            Тут буде статистика для комірника
-          </div>
+        <div className="mb-6">
+          <WeightStatsTable />
         </div>
-        </>
       )}
 
       {/* Блок для ads-manager и выше */}

@@ -1,4 +1,4 @@
-import { playTone, playNotificationSound, playSoundChoice } from '../lib/soundUtils';
+import { playNotificationSound, playSoundChoice } from '../lib/soundUtils';
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
