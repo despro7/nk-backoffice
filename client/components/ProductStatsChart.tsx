@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 
 // Вспомогательная функция для тестирования расчетов (определена ниже после getProductGroup)
 import {
@@ -100,43 +100,45 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
   const getCurrentDate = () => today(getLocalTimeZone());
 
   const datePresets = [
-    { key: "today", label: "Сьогодні", getRange: () => {
-      const todayDate = getCurrentDate();
-      return { start: todayDate, end: todayDate };
-    }},
-    { key: "yesterday", label: "Вчора", getRange: () => {
-      const yesterday = getCurrentDate().subtract({ days: 1 });
-      return { start: yesterday, end: yesterday };
-    }},
+    // { key: "today", label: "Сьогодні", getRange: () => {
+    //   const todayDate = getCurrentDate();
+    //   return { start: todayDate, end: todayDate };
+    // }},
+    // { key: "yesterday", label: "Вчора", getRange: () => {
+    //   const yesterday = getCurrentDate().subtract({ days: 1 });
+    //   return { start: yesterday, end: yesterday };
+    // }},
     { key: "thisWeek", label: "Цього тижня", getRange: () => {
       const todayDate = getCurrentDate();
-      const startOfWeek = todayDate.subtract({ days: todayDate.day - 1 }); // Понедельник
+      const dayOfWeek = todayDate.toDate(getLocalTimeZone()).getDay(); // 0 = Sunday, 1 = Monday, etc.
+      const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 2; // To get to Monday
+      const startOfWeek = todayDate.subtract({ days: daysToSubtract });
       return { start: startOfWeek, end: todayDate };
     }},
     { key: "last7Days", label: "Останні 7 днів", getRange: () => {
       const todayDate = getCurrentDate();
-      const weekAgo = todayDate.subtract({ days: 6 });
+      const weekAgo = todayDate.subtract({ days: 5 });
       return { start: weekAgo, end: todayDate };
     }},
     { key: "last14Days", label: "Останні 14 днів", getRange: () => {
       const todayDate = getCurrentDate();
-      const twoWeeksAgo = todayDate.subtract({ days: 13 });
+      const twoWeeksAgo = todayDate.subtract({ days: 12 });
       return { start: twoWeeksAgo, end: todayDate };
     }},
 	{ key: "last30Days", label: "Останні 30 днів", getRange: () => {
 		const todayDate = getCurrentDate();
-		const twoWeeksAgo = todayDate.subtract({ days: 29 });
+		const twoWeeksAgo = todayDate.subtract({ days: 28 });
 		return { start: twoWeeksAgo, end: todayDate };
 	}},
     { key: "thisMonth", label: "Цього місяця", getRange: () => {
       const todayDate = getCurrentDate();
-      const startOfMonth = todayDate.subtract({ days: todayDate.day - 1 });
+      const startOfMonth = todayDate.subtract({ days: todayDate.day - 2 });
       return { start: startOfMonth, end: todayDate };
     }},
     { key: "lastMonth", label: "Минулого місяця", getRange: () => {
       const todayDate = getCurrentDate();
       const lastMonth = todayDate.subtract({ months: 1 });
-      const startOfLastMonth = lastMonth.subtract({ days: lastMonth.day - 1 });
+      const startOfLastMonth = lastMonth.subtract({ days: lastMonth.day - 2 });
       // Для последнего дня месяца используем приблизительное значение
       const endOfLastMonth = startOfLastMonth.add({ days: 30 }); // Примерно 30 дней
       return { start: startOfLastMonth, end: endOfLastMonth };
@@ -194,11 +196,17 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
   const CACHE_DURATION = 30000; // 30 секунд кеширования на клиенте
 
   // Загрузка данных для графика
+  const firstLoadRef = useRef(true);
   const fetchChartData = useCallback(async (force?: boolean) => {
     if (!dateRange?.start || !dateRange?.end) {
-      // console.log('⚠️ No date range selected for chart');
       setChartData([]);
       return;
+    }
+
+    // Artificial delay before first fetch to avoid race condition
+    if (firstLoadRef.current) {
+      await new Promise(res => setTimeout(res, 30));
+      firstLoadRef.current = false;
     }
 
     // Создаем ключ кеша на основе фильтров
@@ -209,7 +217,6 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
 
     // Проверяем клиентский кеш для текущих фильтров
     if (!force && cache[cacheKey] && (now - cache[cacheKey].timestamp) < CACHE_DURATION) {
-      // console.log('📋 Using client cache for chart:', cacheKey);
       setChartData(cache[cacheKey].data);
       return;
     }
@@ -236,19 +243,15 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
         selectedSKUs.forEach(sku => {
           params.append("products", sku);
         });
-        // console.log('📦 Filtering chart by products:', selectedSKUs);
       }
 
       const queryString = params.toString();
       const url = `/api/orders/products/chart?${queryString}`;
 
-      // console.log('📊 Fetching chart data from:', url);
       const response = await apiCall(url);
       const data = await response.json();
 
       if (data.success) {
-        // console.log('📊 Chart data received:', data.data.length, 'points');
-        // Валидация данных
         const validatedData = Array.isArray(data.data) ? data.data : [];
 
         setChartData(validatedData);
@@ -274,7 +277,13 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
   }, [statusFilter, dateRange?.start, dateRange?.end, groupBy, selectedProducts, apiCall]);
 
   // Загрузка статистики товаров (для фильтров)
+  const firstProductStatsLoadRef = useRef(true);
   const fetchProductStats = useCallback(async (force?: boolean) => {
+    // Artificial delay before first fetch to avoid race condition
+    if (firstProductStatsLoadRef.current) {
+      await new Promise(res => setTimeout(res, 30));
+      firstProductStatsLoadRef.current = false;
+    }
     // Создаем ключ кеша на основе фильтров
     const cacheKey = `${statusFilter}_${dateRange ? `${dateRange.start?.toString()}_${dateRange.end?.toString()}` : 'no_date'}`;
 
@@ -282,7 +291,6 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
 
     // Проверяем клиентский кеш для текущих фильтров
     if (!force && cache[cacheKey] && (now - cache[cacheKey].timestamp) < CACHE_DURATION) {
-      // console.log('📋 Using client cache for filters:', cacheKey);
       setProductStats(cache[cacheKey].data);
       return;
     }

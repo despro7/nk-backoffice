@@ -5,6 +5,7 @@ import { UserRegistrationManager } from '../components/UserRegistrationManager';
 import { LoggingSettings } from '../components/LoggingSettings';
 import { ToastSettings } from '@/components/ToastSettings';
 import { AuthSettings } from '../components/AuthSettings';
+import { ReportingDayStartHourSettings } from '../components/ReportingDayStartHourSettings';
 import { useRoleAccess } from '../hooks/useRoleAccess';
 import { DateFormatSettings } from "@/components/DateFormatSettings";
 
@@ -33,7 +34,7 @@ const SettingsAdmin: React.FC = () => {
       {/* Налаштування логування і toast */}
       <section>
         <h2 className="text-2xl font-semibold mb-2">Налаштування логування</h2>
-		    <p className="text-sm text-gray-600 mb-4">Керування консольними логами та Toast сповіщеннями</p>
+        <p className="text-sm text-gray-600 mb-4">Керування консольними логами та Toast сповіщеннями</p>
         <div className="flex flex-col md:flex-row gap-6">
           {/* Консольні логи */}
           <LoggingSettings />
@@ -48,12 +49,15 @@ const SettingsAdmin: React.FC = () => {
         <AuthSettings />
       </section>
 
-      {/* Налаштування статусу сервера */}
-      <section>
+      <section className='flex flex-col md:flex-row gap-6'>
+        {/* Налаштування статусу сервера */}
         <ServerStatusSettings />
+
+        {/* Налаштування години звітного дня */}
+        <ReportingDayStartHourSettings />
       </section>
 
-      {/* Функція форматування дати */}
+      {/* Налаштування форматування дати */}
       <section>
         <DateFormatSettings />
       </section>

@@ -4,7 +4,7 @@ import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { syncHistoryService } from '../services/syncHistoryService.js';
 import { ordersCacheService } from '../services/ordersCacheService.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { prisma, getOrderSourceDetailed, getOrderSourceCategory, getOrderSourceByLevel } from '../lib/utils.js';
+import { prisma, getOrderSourceDetailed, getOrderSourceCategory, getOrderSourceByLevel, getReportingDayStartHour, getReportingDate, getReportingDateRange } from '../lib/utils.js';
 
 const router = Router();
 
@@ -1258,6 +1258,9 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       }
     }
 
+    // Получаем час начала звітного дня
+    const dayStartHour = await getReportingDayStartHour();
+
     // Парсим статусы: если строка содержит запятую, разбиваем на массив
     let parsedStatus: string | string[] | undefined = status as string;
     if (typeof status === 'string' && status.includes(',')) {
@@ -1275,11 +1278,22 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       }
     }
 
-    // Фильтруем по дате если указаны даты
+    // Фильтруем по дате если указаны даты (с учетом dayStartHour)
     let dateRangeFilter = undefined;
     if (startDate && endDate) {
-      const start = new Date(startDate as string + ' 00:00:00');
-      const end = new Date(endDate as string + ' 23:59:59');
+      // startDate це звітна дата (YYYY-MM-DD)
+      // Звітна дата 18.10 починається з 17.10 16:00:00
+      // Тому віднімаємо один день перед отриманням діапазону
+      const startDateObj = new Date(startDate as string);
+      startDateObj.setDate(startDateObj.getDate() - 1);
+      const startDateString = startDateObj.toISOString().split('T')[0];
+      const { start } = getReportingDateRange(startDateString, dayStartHour);
+      
+      // endDate це остання звітна дата (YYYY-MM-DD)
+      // Звітна дата 20.10 закінчується 20.10 15:59:59
+      // (наступного дня 16:00 мінус 1 секунда)
+      const { end } = getReportingDateRange(endDate as string, dayStartHour);
+      
       dateRangeFilter = { start, end };
     }
 
@@ -1367,7 +1381,8 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       totalOrders: filteredOrders.length,
       filters: {
         status: status || 'all',
-        dateRange: startDate && endDate ? { startDate, endDate } : null
+        dateRange: startDate && endDate ? { startDate, endDate } : null,
+        dayStartHour
       }
     });
 
@@ -1378,7 +1393,8 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
         source: 'local_database',
         filters: {
           status: status || 'all',
-          dateRange: startDate && endDate ? { startDate, endDate } : null
+          dateRange: startDate && endDate ? { startDate, endDate } : null,
+          dayStartHour
         },
         totalProducts: productStatsArray.length,
         totalOrders: filteredOrders.length,
@@ -1407,6 +1423,9 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
   try {
     const { sku, status, startDate, endDate, sync } = req.query;
 
+    // Получаем час начала звітного дня
+    const dayStartHour = await getReportingDayStartHour();
+
     // Парсим статусы: если строка содержит запятую, разбиваем на массив
     let parsedStatus: string | string[] | undefined = status as string;
     if (typeof status === 'string' && status.includes(',')) {
@@ -1430,11 +1449,22 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
       }
     }
 
-    // Фильтруем по дате если указаны даты
+    // Фильтруем по дате если указаны даты (с учетом dayStartHour)
     let dateRangeFilter = undefined;
     if (startDate && endDate) {
-      const start = new Date(startDate as string + ' 00:00:00');
-      const end = new Date(endDate as string + ' 23:59:59');
+      // startDate це звітна дата (YYYY-MM-DD)
+      // Звітна дата 18.10 починається з 17.10 16:00:00
+      // Тому віднімаємо один день перед отриманням діапазону
+      const startDateObj = new Date(startDate as string);
+      startDateObj.setDate(startDateObj.getDate() - 1);
+      const startDateString = startDateObj.toISOString().split('T')[0];
+      const { start } = getReportingDateRange(startDateString, dayStartHour);
+      
+      // endDate це остання звітна дата (YYYY-MM-DD)
+      // Звітна дата 20.10 закінчується 20.10 15:59:59
+      // (наступного дня 16:00 мінус 1 секунда)
+      const { end } = getReportingDateRange(endDate as string, dayStartHour);
+      
       dateRangeFilter = { start, end };
     }
 
@@ -1455,7 +1485,7 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
     // Получаем все кеши одним запросом
     const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
 
-    // Собираем статистику по датам для конкретного товара
+    // Собираем статистику по датам для конкретного товара (используя звітні дати)
     const dateStats: { [date: string]: { date: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } } = {};
 
     for (const order of filteredOrders) {
@@ -1467,20 +1497,16 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
             // Ищем товар с указанным SKU
             const productItem = cachedStats.find(item => item && item.sku === sku);
             if (productItem) {
-              // Форматируем дату в YYYY-MM-DD (используем локальное время)
-              const orderDate = new Date(order.orderDate);
-              const year = orderDate.getFullYear();
-              const month = String(orderDate.getMonth() + 1).padStart(2, '0');
-              const day = String(orderDate.getDate()).padStart(2, '0');
-              const dateKey = `${year}-${month}-${day}`;
+              // Используем звітну дату вместо простой даты
+              const reportingDate = getReportingDate(order.orderDate, dayStartHour);
 
-              if (dateStats[dateKey]) {
-                dateStats[dateKey].orderedQuantity += productItem.orderedQuantity || 0;
+              if (dateStats[reportingDate]) {
+                dateStats[reportingDate].orderedQuantity += productItem.orderedQuantity || 0;
                 // Обновляем остатки на складах (берем последние данные)
-                dateStats[dateKey].stockBalances = productItem.stockBalances || {};
+                dateStats[reportingDate].stockBalances = productItem.stockBalances || {};
               } else {
-                dateStats[dateKey] = {
-                  date: dateKey,
+                dateStats[reportingDate] = {
+                  date: reportingDate,
                   orderedQuantity: productItem.orderedQuantity || 0,
                   stockBalances: productItem.stockBalances || {}
                 };
@@ -1523,7 +1549,8 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
       filters: {
         sku,
         status: status || 'all',
-        dateRange: startDate && endDate ? { startDate, endDate } : null
+        dateRange: startDate && endDate ? { startDate, endDate } : null,
+        dayStartHour
       }
     });
 
@@ -1536,7 +1563,8 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
         filters: {
           sku,
           status: status || 'all',
-          dateRange: startDate && endDate ? { startDate, endDate } : null
+          dateRange: startDate && endDate ? { startDate, endDate } : null,
+          dayStartHour
         },
         totalDates: dateStatsArray.length,
         totalOrders: filteredOrders.length,
@@ -1560,8 +1588,11 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync, groupBy = 'day', products } = req.query;
 
+    // Получаем час начала звітного дня
+    const dayStartHour = await getReportingDayStartHour();
+
     const productsKey = Array.isArray(products) ? [...products].sort().join(',') : products || 'all';
-    const cacheKey = `stats-chart-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${groupBy}-${productsKey}`;
+    const cacheKey = `stats-chart-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${groupBy}-${productsKey}-${dayStartHour}`;
 
     if (sync !== 'true') {
       const cached = statsCache.get(cacheKey);
@@ -1595,9 +1626,16 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
       }
     }
 
-    // Фильтруем по дате
-    const start = new Date(startDate as string + ' 00:00:00');
-    const end = new Date(endDate as string + ' 23:59:59');
+    // Фильтруем по дате (с учетом dayStartHour)
+    // startDate це звітна дата 18.10 - починається з 17.10 16:00:00
+    const startDateObj = new Date(startDate as string);
+    startDateObj.setDate(startDateObj.getDate() - 1);
+    const startDateString = startDateObj.toISOString().split('T')[0];
+    const { start } = getReportingDateRange(startDateString, dayStartHour);
+    
+    // endDate це звітна дата 20.10 - закінчується 20.10 15:59:59
+    // (наступного дня 16:00 мінус 1 секунда)
+    const { end } = getReportingDateRange(endDate as string, dayStartHour);
 
     // console.log(`📅 Filtering chart data by date range: ${start.toISOString()} to ${end.toISOString()}`);
 
@@ -1659,7 +1697,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
     // Получаем все кеши одним запросом
     const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
 
-    // Собираем данные по товарам с разбивкой по датам
+    // Собираем данные по товарам с разбивкой по датам (используя звітні дати)
     const chartData: { [dateKey: string]: { [sku: string]: { name: string; quantity: number } } } = {};
     const productInfo: { [sku: string]: string } = {};
 
@@ -1669,28 +1707,30 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
         if (cacheData && cacheData.processedItems) {
           const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {
-            // Группируем по выбранному периоду - используем ту же логику, что и в таблице
-            const orderDate = new Date(order.orderDate);
+            // Получаем звітну дату для цього замовлення
+            const reportingDate = getReportingDate(order.orderDate, dayStartHour);
+            const orderDateForGrouping = new Date(reportingDate);
+            
             let dateKey: string;
 
             switch (groupBy) {
               case 'hour':
-                const hour = String(orderDate.getHours()).padStart(2, '0');
-                dateKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getDate()).padStart(2, '0')}T${hour}`;
+                const hour = String(orderDateForGrouping.getHours()).padStart(2, '0');
+                dateKey = `${orderDateForGrouping.getFullYear()}-${String(orderDateForGrouping.getMonth() + 1).padStart(2, '0')}-${String(orderDateForGrouping.getDate()).padStart(2, '0')}T${hour}`;
                 break;
               case 'day':
-                dateKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getDate()).padStart(2, '0')}`;
+                dateKey = `${orderDateForGrouping.getFullYear()}-${String(orderDateForGrouping.getMonth() + 1).padStart(2, '0')}-${String(orderDateForGrouping.getDate()).padStart(2, '0')}`;
                 break;
               case 'week':
-                const weekStart = new Date(orderDate);
-                weekStart.setDate(orderDate.getDate() - orderDate.getDay() + 1); // Понедельник
+                const weekStart = new Date(orderDateForGrouping);
+                weekStart.setDate(orderDateForGrouping.getDate() - orderDateForGrouping.getDay() + 1); // Понедельник
                 dateKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
                 break;
               case 'month':
-                dateKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}`;
+                dateKey = `${orderDateForGrouping.getFullYear()}-${String(orderDateForGrouping.getMonth() + 1).padStart(2, '0')}`;
                 break;
               default:
-                dateKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getDate()).padStart(2, '0')}`;
+                dateKey = `${orderDateForGrouping.getFullYear()}-${String(orderDateForGrouping.getMonth() + 1).padStart(2, '0')}-${String(orderDateForGrouping.getDate()).padStart(2, '0')}`;
             }
 
             if (!chartData[dateKey]) {
@@ -1894,7 +1934,8 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
           dateRange: { startDate, endDate },
           groupBy,
           products: filterProducts,
-          groups: filterGroups
+          groups: filterGroups,
+          dayStartHour
         },
         totalPoints: totalDataArray.length,
         totalProducts: actualProductCount, // Реальное количество товаров в данных
@@ -1925,8 +1966,11 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync, products } = req.query;
 
+    // Получаем час начала звітного дня
+    const dayStartHour = await getReportingDayStartHour();
+
     const productsKey = Array.isArray(products) ? [...products].sort().join(',') : products || 'all';
-    const cacheKey = `stats-report-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${productsKey}`;
+    const cacheKey = `stats-report-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${productsKey}-${dayStartHour}`;
 
     if (sync !== 'true') {
       const cached = statsCache.get(cacheKey);
@@ -1960,9 +2004,16 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       }
     }
 
-    // Фильтруем по дате
-    const start = new Date(startDate as string + ' 00:00:00');
-    const end = new Date(endDate as string + ' 23:59:59');
+    // Фильтруем по дате (с учетом dayStartHour)
+    // startDate це звітна дата 18.10 - починається з 17.10 16:00:00
+    const startDateObj = new Date(startDate as string);
+    startDateObj.setDate(startDateObj.getDate() - 1);
+    const startDateString = startDateObj.toISOString().split('T')[0];
+    const { start } = getReportingDateRange(startDateString, dayStartHour);
+    
+    // endDate це звітна дата 20.10 - закінчується 20.10 15:59:59
+    // (наступного дня 16:00 мінус 1 секунда)
+    const { end } = getReportingDateRange(endDate as string, dayStartHour);
 
     // Получаем заказы с фильтрами включая дату
     const orders = await orderDatabaseService.getOrders({
@@ -2025,7 +2076,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
     // Получаем все кеши одним запросом
     const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
 
-    // Собираем данные по дням
+    // Собираем данные по дням (используя звітні дати)
     const salesData: { [dateKey: string]: {
       ordersCount: number;
       portionsCount: number;
@@ -2048,12 +2099,9 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
 
     for (const order of filteredOrders) {
       try {
-        const orderDate = new Date(order.orderDate);
-        // Используем локальную дату вместо UTC для правильного распределения по дням
-        const year = orderDate.getFullYear();
-        const month = String(orderDate.getMonth() + 1).padStart(2, '0');
-        const day = String(orderDate.getDate()).padStart(2, '0');
-        const dateKey = `${year}-${month}-${day}`; // YYYY-MM-DD в локальном времени
+        // Используем звітну дату вместо просто локальной даты
+        const reportingDate = getReportingDate(order.orderDate, dayStartHour);
+        const dateKey = reportingDate; // YYYY-MM-DD в форматі звітної дати
 
         if (!salesData[dateKey]) {
           salesData[dateKey] = {
@@ -2115,13 +2163,13 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           salesData[dateKey].portionsCount += orderPortions;
 
           // Статистика по статусам
-          const status = order.status;
-          if (!salesData[dateKey].ordersByStatus[status]) {
-            salesData[dateKey].ordersByStatus[status] = 0;
-            salesData[dateKey].portionsByStatus[status] = 0;
+          const ordStatus = order.status;
+          if (!salesData[dateKey].ordersByStatus[ordStatus]) {
+            salesData[dateKey].ordersByStatus[ordStatus] = 0;
+            salesData[dateKey].portionsByStatus[ordStatus] = 0;
           }
-          salesData[dateKey].ordersByStatus[status] += 1;
-          salesData[dateKey].portionsByStatus[status] += orderPortions;
+          salesData[dateKey].ordersByStatus[ordStatus] += 1;
+          salesData[dateKey].portionsByStatus[ordStatus] += orderPortions;
 
           // Статистика по источникам
           const sourceCode = order.sajt || '';
@@ -2197,7 +2245,8 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           status: status || 'all',
           dateRange: { startDate, endDate },
           products: filterProducts,
-          groups: filterGroups
+          groups: filterGroups,
+          dayStartHour
         },
         totalDays: salesDataArray.length,
         totalOrders: filteredOrders.length,

@@ -12,9 +12,6 @@ export function useOrderSettings() {
 
   // --- Tolerance settings state ---
   const [toleranceSettings, setToleranceSettings] = useState<ToleranceSettings>({
-    type: 'combined',
-    percentage: 5,
-    absolute: 20,
     maxTolerance: 30,
     minTolerance: 10,
     maxPortions: 12,

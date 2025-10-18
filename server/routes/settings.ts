@@ -325,6 +325,59 @@ router.put('/toast', authenticateToken, async (req, res) => {
   }
 });
 
+// === REPORTING DAY START HOUR SETTINGS ===
+// Get reporting day start hour
+router.get('/reporting-day-start-hour', authenticateToken, async (req, res) => {
+  try {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    const setting = await prisma.settingsBase.findUnique({
+      where: { key: 'reporting_day_start_hour' }
+    });
+    if (!setting) {
+      // Return default value (midnight 00:00) for backward compatibility
+      return res.json({ dayStartHour: 0 });
+    }
+    res.json({ dayStartHour: parseInt(setting.value) || 0 });
+  } catch (error) {
+    console.error('Error getting reporting day start hour:', error);
+    res.status(500).json({ success: false, error: 'Failed to get reporting day start hour' });
+  }
+});
+
+// Save reporting day start hour
+router.put('/reporting-day-start-hour', authenticateToken, async (req, res) => {
+  try {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    const { dayStartHour } = req.body;
+    
+    if (dayStartHour === undefined || dayStartHour < 0 || dayStartHour > 23) {
+      return res.status(400).json({
+        success: false,
+        error: 'dayStartHour must be a number between 0 and 23'
+      });
+    }
+
+    await prisma.settingsBase.upsert({
+      where: { key: 'reporting_day_start_hour' },
+      update: { value: dayStartHour.toString() },
+      create: {
+        key: 'reporting_day_start_hour',
+        value: dayStartHour.toString(),
+        description: 'Start hour for reporting day (0-23, 0 = midnight)',
+        category: 'reporting',
+        isActive: true
+      }
+    });
+    
+    res.json({ success: true, message: 'Reporting day start hour updated successfully', dayStartHour });
+  } catch (error) {
+    console.error('Error saving reporting day start hour:', error);
+    res.status(500).json({ success: false, error: 'Failed to save reporting day start hour' });
+  }
+});
+
 // === WEIGHT TOLERANCE SETTINGS ===
 // Спеціальні роути для налаштувань похибки ваги
 router.get('/weight-tolerance/values', authenticateToken, async (req, res) => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Table,
   TableHeader,
@@ -162,7 +162,13 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
   const CACHE_DURATION = 30000; // 30 секунд кеширования на клиенте
 
   // Загрузка статистики товаров
+  const firstProductStatsLoadRef = useRef(true);
   const fetchProductStats = useCallback(async (force?: boolean) => {
+    // Artificial delay before first fetch to avoid race condition
+    if (firstProductStatsLoadRef.current) {
+      await new Promise(res => setTimeout(res, 30));
+      firstProductStatsLoadRef.current = false;
+    }
     // Создаем ключ кеша на основе фильтров
     const cacheKey = `${statusFilter}_${dateRange ? `${dateRange.start?.toString()}_${dateRange.end?.toString()}` : 'no_date'}`;
 

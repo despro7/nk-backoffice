@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Table,
   TableHeader,
@@ -30,6 +30,7 @@ import { formatRelativeDate, getStatusColor, getStatusLabel, ORDER_STATUSES } fr
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { addToast } from "@heroui/react";
+import { useAuth } from "../contexts/AuthContext";
 
 interface SalesData {
   date: string;
@@ -89,6 +90,7 @@ const productOptions = [
 export default function SalesReportTable({ className }: SalesReportTableProps) {
   const { isAdmin } = useRoleAccess();
   const { apiCall } = useApi();
+  const { isLoading: isAuthLoading } = useAuth();
   const [salesData, setSalesData] = useState<SalesData[]>([]);
   const [loading, setLoading] = useState(false);
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
@@ -126,28 +128,30 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
   const getCurrentDate = () => today(getLocalTimeZone());
 
   const datePresets = [
-    {
-      key: "today",
-      label: "Сьогодні",
-      getRange: () => {
-        const todayDate = getCurrentDate();
-        return { start: todayDate, end: todayDate };
-      },
-    },
-    {
-      key: "yesterday",
-      label: "Вчора",
-      getRange: () => {
-        const yesterday = getCurrentDate().subtract({ days: 1 });
-        return { start: yesterday, end: yesterday };
-      },
-    },
+    // {
+    //   key: "today",
+    //   label: "Сьогодні",
+    //   getRange: () => {
+    //     const todayDate = getCurrentDate();
+    //     return { start: todayDate, end: todayDate };
+    //   },
+    // },
+    // {
+    //   key: "yesterday",
+    //   label: "Вчора",
+    //   getRange: () => {
+    //     const yesterday = getCurrentDate().subtract({ days: 1 });
+    //     return { start: yesterday, end: yesterday };
+    //   },
+    // },
     {
       key: "thisWeek",
       label: "Цього тижня",
       getRange: () => {
         const todayDate = getCurrentDate();
-        const startOfWeek = todayDate.subtract({ days: todayDate.day - 1 }); // Понедельник
+        const dayOfWeek = todayDate.toDate(getLocalTimeZone()).getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 2; // To get to Monday
+        const startOfWeek = todayDate.subtract({ days: daysToSubtract });
         return { start: startOfWeek, end: todayDate };
       },
     },
@@ -156,7 +160,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
       label: "Останні 7 днів",
       getRange: () => {
         const todayDate = getCurrentDate();
-        const weekAgo = todayDate.subtract({ days: 6 });
+        const weekAgo = todayDate.subtract({ days: 5 });
         return { start: weekAgo, end: todayDate };
       },
     },
@@ -165,7 +169,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
       label: "Останні 14 днів",
       getRange: () => {
         const todayDate = getCurrentDate();
-        const twoWeeksAgo = todayDate.subtract({ days: 13 });
+        const twoWeeksAgo = todayDate.subtract({ days: 12 });
         return { start: twoWeeksAgo, end: todayDate };
       },
     },
@@ -174,7 +178,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
       label: "Останні 30 днів",
       getRange: () => {
         const todayDate = getCurrentDate();
-        const twoWeeksAgo = todayDate.subtract({ days: 29 });
+        const twoWeeksAgo = todayDate.subtract({ days: 28 });
         return { start: twoWeeksAgo, end: todayDate };
       },
     },
@@ -183,7 +187,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
       label: "Цього місяця",
       getRange: () => {
         const todayDate = getCurrentDate();
-        const startOfMonth = todayDate.subtract({ days: todayDate.day - 1 });
+        const startOfMonth = new CalendarDate(todayDate.year, todayDate.month, 2);
         return { start: startOfMonth, end: todayDate };
       },
     },
@@ -192,12 +196,8 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
       label: "Минулого місяця",
       getRange: () => {
         const todayDate = getCurrentDate();
-        const lastMonth = todayDate.subtract({ months: 1 });
-        const startOfLastMonth = lastMonth.subtract({
-          days: lastMonth.day - 1,
-        });
-        // Для последнего дня месяца используем приблизительное значение
-        const endOfLastMonth = startOfLastMonth.add({ days: 30 }); // Примерно 30 дней
+        const startOfLastMonth = new CalendarDate(todayDate.year, todayDate.month - 1, 1);
+        const endOfLastMonth = new CalendarDate(todayDate.year, todayDate.month, 1).subtract({ days: 1 });
         return { start: startOfLastMonth, end: endOfLastMonth };
       },
     },
@@ -234,8 +234,13 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
   );
 
   // Загрузка данных для таблицы
+  const firstLoadRef = useRef(true);
   const fetchSalesData = useCallback(
     async (force?: boolean) => {
+      if (firstLoadRef.current) {
+        await new Promise((res) => setTimeout(res, 30));
+        firstLoadRef.current = false;
+      }
       if (!dateRange?.start || !dateRange?.end) {
         setSalesData([]);
         return;
@@ -271,6 +276,10 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
         const endDate = `${dateRange.end.year}-${String(dateRange.end.month).padStart(2, "0")}-${String(dateRange.end.day).padStart(2, "0")}`;
         params.append("startDate", startDate);
         params.append("endDate", endDate);
+
+        // Для одиночних днів агрегуємо в один запис
+        const singleDay = datePresetKey === "today" || datePresetKey === "yesterday";
+        params.append("singleDay", singleDay.toString());
 
         // Добавляем выбранные товары
         if (selectedProducts.size > 0) {
@@ -472,6 +481,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
 
   // Загрузка данных при изменении фильтров
   useEffect(() => {
+    if (isAuthLoading) return; // Чекаємо, поки авторизація ініціалізується
     if (dateRange?.start && dateRange?.end) {
       fetchSalesData();
     } else {
@@ -483,6 +493,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
     dateRange?.end,
     statusFilter,
     selectedProducts,
+    isAuthLoading,
   ]);
 
   // Инициализация времени последнего обновления
