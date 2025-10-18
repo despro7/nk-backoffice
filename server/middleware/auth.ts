@@ -147,7 +147,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     if (decoded.exp) {
       const now = Math.floor(Date.now() / 1000);
       decoded.expiresIn = Math.max(0, decoded.exp - now);
-      console.log(`⏱️  [Middleware] Токен истекает через: ${decoded.expiresIn} сек`);
+      // console.log(`⏱️  [Middleware] Токен истекает через: ${decoded.expiresIn} сек`);
     }
     
     req.user = decoded;

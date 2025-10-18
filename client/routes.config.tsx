@@ -27,8 +27,8 @@ export const ROLES = {
 } as const;
 
 export const ROLE_HIERARCHY = {
-  [ROLES.STOREKEEPER]: 1,
-  [ROLES.ADS_MANAGER]: 2,
+  [ROLES.ADS_MANAGER]: 1,
+  [ROLES.STOREKEEPER]: 2,
   [ROLES.SHOP_MANAGER]: 3,
   [ROLES.BOSS]: 4,
   [ROLES.ADMIN]: 5
@@ -169,6 +169,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 2,
+    minRole: ROLES.STOREKEEPER  // storekeeper и выше
     // roles: [ROLES.ADMIN, ROLES.BOSS] // Только admin и boss
   },
   {

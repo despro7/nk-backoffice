@@ -1626,15 +1626,12 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
       }
     }
 
-    // Фильтруем по дате (с учетом dayStartHour)
-    // startDate це звітна дата 18.10 - починається з 17.10 16:00:00
-    const startDateObj = new Date(startDate as string);
-    startDateObj.setDate(startDateObj.getDate() - 1);
-    const startDateString = startDateObj.toISOString().split('T')[0];
-    const { start } = getReportingDateRange(startDateString, dayStartHour);
+    // Фільтруємо по даті (з урахуванням dayStartHour)
+    // startDate та endDate вже правильно конвертовані на клієнті через convertCalendarRangeToReportingRange
+    // Тому просто використовуємо їх безпосередньо
+    const { start } = getReportingDateRange(startDate as string, dayStartHour);
     
-    // endDate це звітна дата 20.10 - закінчується 20.10 15:59:59
-    // (наступного дня 16:00 мінус 1 секунда)
+    // endDate це звітна дата - закінчується в кінці звітного дня
     const { end } = getReportingDateRange(endDate as string, dayStartHour);
 
     // console.log(`📅 Filtering chart data by date range: ${start.toISOString()} to ${end.toISOString()}`);
@@ -1709,28 +1706,35 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
           if (Array.isArray(cachedStats)) {
             // Получаем звітну дату для цього замовлення
             const reportingDate = getReportingDate(order.orderDate, dayStartHour);
-            const orderDateForGrouping = new Date(reportingDate);
             
             let dateKey: string;
 
             switch (groupBy) {
               case 'hour':
-                const hour = String(orderDateForGrouping.getHours()).padStart(2, '0');
-                dateKey = `${orderDateForGrouping.getFullYear()}-${String(orderDateForGrouping.getMonth() + 1).padStart(2, '0')}-${String(orderDateForGrouping.getDate()).padStart(2, '0')}T${hour}`;
+                // Для годин використовуємо реальну дату та час замовлення
+                const realYear = order.orderDate.getFullYear();
+                const realMonth = String(order.orderDate.getMonth() + 1).padStart(2, '0');
+                const realDay = String(order.orderDate.getDate()).padStart(2, '0');
+                const realHour = String(order.orderDate.getHours()).padStart(2, '0');
+                dateKey = `${realYear}-${realMonth}-${realDay}T${realHour}`;
                 break;
               case 'day':
+                const orderDateForGrouping = new Date(reportingDate);
                 dateKey = `${orderDateForGrouping.getFullYear()}-${String(orderDateForGrouping.getMonth() + 1).padStart(2, '0')}-${String(orderDateForGrouping.getDate()).padStart(2, '0')}`;
                 break;
               case 'week':
-                const weekStart = new Date(orderDateForGrouping);
-                weekStart.setDate(orderDateForGrouping.getDate() - orderDateForGrouping.getDay() + 1); // Понедельник
+                const orderDateForWeek = new Date(reportingDate);
+                const weekStart = new Date(orderDateForWeek);
+                weekStart.setDate(orderDateForWeek.getDate() - orderDateForWeek.getDay() + 1); // Понедельник
                 dateKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
                 break;
               case 'month':
-                dateKey = `${orderDateForGrouping.getFullYear()}-${String(orderDateForGrouping.getMonth() + 1).padStart(2, '0')}`;
+                const orderDateForMonth = new Date(reportingDate);
+                dateKey = `${orderDateForMonth.getFullYear()}-${String(orderDateForMonth.getMonth() + 1).padStart(2, '0')}`;
                 break;
               default:
-                dateKey = `${orderDateForGrouping.getFullYear()}-${String(orderDateForGrouping.getMonth() + 1).padStart(2, '0')}-${String(orderDateForGrouping.getDate()).padStart(2, '0')}`;
+                const orderDateForDefault = new Date(reportingDate);
+                dateKey = `${orderDateForDefault.getFullYear()}-${String(orderDateForDefault.getMonth() + 1).padStart(2, '0')}-${String(orderDateForDefault.getDate()).padStart(2, '0')}`;
             }
 
             if (!chartData[dateKey]) {
@@ -1964,13 +1968,14 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
  */
 router.get('/sales/report', authenticateToken, async (req, res) => {
   try {
-    const { status, startDate, endDate, sync, products } = req.query;
+    const { status, startDate, endDate, sync, products, singleDay } = req.query;
 
     // Получаем час начала звітного дня
     const dayStartHour = await getReportingDayStartHour();
 
     const productsKey = Array.isArray(products) ? [...products].sort().join(',') : products || 'all';
-    const cacheKey = `stats-report-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${productsKey}-${dayStartHour}`;
+    const singleDayKey = singleDay === 'true' ? 'single' : 'range';
+    const cacheKey = `stats-report-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${productsKey}-${dayStartHour}-${singleDayKey}`;
 
     if (sync !== 'true') {
       const cached = statsCache.get(cacheKey);
@@ -2005,15 +2010,24 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
     }
 
     // Фильтруем по дате (с учетом dayStartHour)
-    // startDate це звітна дата 18.10 - починається з 17.10 16:00:00
-    const startDateObj = new Date(startDate as string);
-    startDateObj.setDate(startDateObj.getDate() - 1);
-    const startDateString = startDateObj.toISOString().split('T')[0];
-    const { start } = getReportingDateRange(startDateString, dayStartHour);
+    let start: Date, end: Date;
     
-    // endDate це звітна дата 20.10 - закінчується 20.10 15:59:59
-    // (наступного дня 16:00 мінус 1 секунда)
-    const { end } = getReportingDateRange(endDate as string, dayStartHour);
+    if (singleDay === 'true' && startDate === endDate) {
+      // Для однієї дати: startDate це календарна дата, треба знайти правильний звітний день
+      // Календарна дата 16.10 може належати до звітного дня 16.10 або 17.10 залежно від часу
+      // Оскільки користувач вибрав 16.10, він хоче бачити дані за 16.10 як звітний день
+      const calendarDateStr = startDate as string;
+      const reportingRange = getReportingDateRange(calendarDateStr, dayStartHour);
+      start = reportingRange.start;
+      end = reportingRange.end;
+      console.log(`📅 Single day mode: календарна дата ${startDate} → звітний день ${startDate}, range: ${start.toISOString()} - ${end.toISOString()}`);
+    } else {
+      // Для діапазону дат: startDate та endDate це календарні дати
+      // Конвертуємо їх напряму без зсувів
+      start = getReportingDateRange(startDate as string, dayStartHour).start;
+      end = getReportingDateRange(endDate as string, dayStartHour).end;
+      console.log(`📅 Date range mode: ${startDate} - ${endDate}, range: ${start.toISOString()} - ${end.toISOString()}`);
+    }
 
     // Получаем заказы с фильтрами включая дату
     const orders = await orderDatabaseService.getOrders({

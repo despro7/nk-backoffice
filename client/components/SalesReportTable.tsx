@@ -26,7 +26,7 @@ import { useApi } from "../hooks/useApi";
 import { CalendarDate, getLocalTimeZone, today } from "@internationalized/date";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { formatRelativeDate, getStatusColor, getStatusLabel, ORDER_STATUSES } from "../lib/formatUtils";
+import { formatRelativeDate, getStatusColor, getStatusLabel, ORDER_STATUSES, convertCalendarRangeToReportingRange, createStandardDatePresets } from "../lib";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { addToast } from "@heroui/react";
@@ -125,113 +125,22 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
   );
 
   // Предустановленные диапазоны дат
-  const getCurrentDate = () => today(getLocalTimeZone());
-
-  const datePresets = [
-    // {
-    //   key: "today",
-    //   label: "Сьогодні",
-    //   getRange: () => {
-    //     const todayDate = getCurrentDate();
-    //     return { start: todayDate, end: todayDate };
-    //   },
-    // },
-    // {
-    //   key: "yesterday",
-    //   label: "Вчора",
-    //   getRange: () => {
-    //     const yesterday = getCurrentDate().subtract({ days: 1 });
-    //     return { start: yesterday, end: yesterday };
-    //   },
-    // },
-    {
-      key: "thisWeek",
-      label: "Цього тижня",
-      getRange: () => {
-        const todayDate = getCurrentDate();
-        const dayOfWeek = todayDate.toDate(getLocalTimeZone()).getDay(); // 0 = Sunday, 1 = Monday, etc.
-        const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 2; // To get to Monday
-        const startOfWeek = todayDate.subtract({ days: daysToSubtract });
-        return { start: startOfWeek, end: todayDate };
-      },
-    },
-    {
-      key: "last7Days",
-      label: "Останні 7 днів",
-      getRange: () => {
-        const todayDate = getCurrentDate();
-        const weekAgo = todayDate.subtract({ days: 5 });
-        return { start: weekAgo, end: todayDate };
-      },
-    },
-    {
-      key: "last14Days",
-      label: "Останні 14 днів",
-      getRange: () => {
-        const todayDate = getCurrentDate();
-        const twoWeeksAgo = todayDate.subtract({ days: 12 });
-        return { start: twoWeeksAgo, end: todayDate };
-      },
-    },
-    {
-      key: "last30Days",
-      label: "Останні 30 днів",
-      getRange: () => {
-        const todayDate = getCurrentDate();
-        const twoWeeksAgo = todayDate.subtract({ days: 28 });
-        return { start: twoWeeksAgo, end: todayDate };
-      },
-    },
-    {
-      key: "thisMonth",
-      label: "Цього місяця",
-      getRange: () => {
-        const todayDate = getCurrentDate();
-        const startOfMonth = new CalendarDate(todayDate.year, todayDate.month, 2);
-        return { start: startOfMonth, end: todayDate };
-      },
-    },
-    {
-      key: "lastMonth",
-      label: "Минулого місяця",
-      getRange: () => {
-        const todayDate = getCurrentDate();
-        const startOfLastMonth = new CalendarDate(todayDate.year, todayDate.month - 1, 1);
-        const endOfLastMonth = new CalendarDate(todayDate.year, todayDate.month, 1).subtract({ days: 1 });
-        return { start: startOfLastMonth, end: endOfLastMonth };
-      },
-    },
-    {
-      key: "thisYear",
-      label: "Цього року",
-      getRange: () => {
-        const todayDate = getCurrentDate();
-        const startOfYear = new CalendarDate(todayDate.year, 1, 1);
-        return { start: startOfYear, end: todayDate };
-      },
-    },
-    {
-      key: "lastYear",
-      label: "Минулого року",
-      getRange: () => {
-        const todayDate = getCurrentDate();
-        const startOfLastYear = new CalendarDate(todayDate.year - 1, 1, 1);
-        const endOfLastYear = new CalendarDate(todayDate.year - 1, 12, 31);
-        return { start: startOfLastYear, end: endOfLastYear };
-      },
-    },
-  ];
+  const datePresets = useMemo(() => createStandardDatePresets(), []);
 
   // Фильтры
   const [statusFilter, setStatusFilter] = useState("all");
   const [datePresetKey, setDatePresetKey] = useState<string>("last7Days");
   const [dateRange, setDateRange] = useState<DateRange | null>(() => {
-    const preset = datePresets.find((p) => p.key === "last7Days");
+    const presets = createStandardDatePresets();
+    const preset = presets.find((p) => p.key === "last7Days");
     return preset ? preset.getRange() : null;
   });
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(
     new Set(),
   );
+
+  // Налаштування звітного дня
+  const [dayStartHour, setDayStartHour] = useState<number>(0); // Default to midnight
 
   // Загрузка данных для таблицы
   const firstLoadRef = useRef(true);
@@ -271,14 +180,14 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
           params.append("status", statusFilter);
         }
 
-        // Конвертируем CalendarDate в строку YYYY-MM-DD
-        const startDate = `${dateRange.start.year}-${String(dateRange.start.month).padStart(2, "0")}-${String(dateRange.start.day).padStart(2, "0")}`;
-        const endDate = `${dateRange.end.year}-${String(dateRange.end.month).padStart(2, "0")}-${String(dateRange.end.day).padStart(2, "0")}`;
-        params.append("startDate", startDate);
-        params.append("endDate", endDate);
+        // Конвертируем CalendarDate в звітні дати з урахуванням dayStartHour
+        const reportingDates = convertCalendarRangeToReportingRange(dateRange, dayStartHour);
+        params.append("startDate", reportingDates.startDate);
+        params.append("endDate", reportingDates.endDate);
 
         // Для одиночних днів агрегуємо в один запис
-        const singleDay = datePresetKey === "today" || datePresetKey === "yesterday";
+        const isPresetSingleDay = datePresetKey === "today" || datePresetKey === "yesterday";
+        const singleDay = isPresetSingleDay || reportingDates.isSingleDate;
         params.append("singleDay", singleDay.toString());
 
         // Добавляем выбранные товары
@@ -320,7 +229,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
         setLoading(false);
       }
     },
-    [statusFilter, dateRange?.start, dateRange?.end, selectedProducts, apiCall],
+    [statusFilter, dateRange?.start, dateRange?.end, selectedProducts, apiCall, dayStartHour],
   );
 
   // Обертка для кнопки обновления данных
@@ -493,6 +402,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
     dateRange?.end,
     statusFilter,
     selectedProducts,
+    dayStartHour, // Додаємо dayStartHour як dependency
     isAuthLoading,
   ]);
 
@@ -502,6 +412,26 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
       setLastCacheUpdate(new Date());
     }
   }, [lastCacheUpdate]);
+
+  // Отримання налаштувань звітного дня при ініціалізації
+  useEffect(() => {
+    const fetchDayStartHour = async () => {
+      try {
+        const response = await apiCall('/api/settings/reporting-day-start-hour');
+        const data = await response.json();
+        if (data.dayStartHour !== undefined) {
+          setDayStartHour(data.dayStartHour);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch dayStartHour, using default (0):', error);
+        // Keep default value of 0
+      }
+    };
+
+    if (!isAuthLoading) {
+      fetchDayStartHour();
+    }
+  }, [apiCall, isAuthLoading]);
 
   // Сортировка данных
   const sortedItems = useMemo(() => {
@@ -1123,7 +1053,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
         isOpen={isDetailsModalOpen}
         onOpenChange={setIsDetailsModalOpen}
         size="4xl"
-        scrollBehavior="inside"
+        scrollBehavior="outside"
       >
         <ModalContent>
           {(onClose) => (
@@ -1168,7 +1098,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                     <div className="flex gap-4">
                       <div className="flex flex-1 flex-col gap-4">
                         {/* Источники */}
-                        <div className="flex-1 bg-neutral-50 rounded-lg p-3">
+                        <div className="flex-1 border-1 border-neutral-200 rounded-lg p-3">
                           <h4 className="text-sm font-semibold mb-2 text-neutral-700">
                             По джерелах
                           </h4>
@@ -1195,25 +1125,26 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                             })}
                           </div>
                         </div>
-                        {/* Скидки */}
-                        <div className="flex-1 bg-neutral-50 rounded-lg p-3">
-                          <h4 className="text-sm font-semibold mb-2 text-neutral-700">
-                            Зі знижкою
-                          </h4>
-                          <div className="flex justify-between items-center font-medium text-neutral-800">
-                            {selectedDateDetails.discountReasonText && (
-                              <span className="text-sm text-neutral-500">
-                                {selectedDateDetails.discountReasonText}
-                              </span>
-                            )}
-                            {selectedDateDetails.ordersWithDiscountReason} /{" "}
-                            {selectedDateDetails.portionsWithDiscountReason}
-                          </div>
+                      </div>
+
+                      {/* Скидки */}
+                      <div className="flex-1 border-1 border-neutral-200 rounded-lg p-3">
+                        <h4 className="text-sm font-semibold mb-2 text-neutral-700">
+                          Зі знижкою
+                        </h4>
+                        <div className="flex justify-between items-center font-medium text-neutral-800">
+                          {selectedDateDetails.discountReasonText && (
+                            <span className="text-sm text-neutral-500">
+                              {selectedDateDetails.discountReasonText}
+                            </span>
+                          )}
+                          {selectedDateDetails.ordersWithDiscountReason} /{" "}
+                          {selectedDateDetails.portionsWithDiscountReason}
                         </div>
                       </div>
 
                       {/* Статусы */}
-                      <div className="flex-1 bg-neutral-50 rounded-lg p-3">
+                      <div className="flex-1 border-1 border-neutral-200 rounded-lg p-3">
                         <h4 className="text-sm font-semibold mb-2 text-neutral-700">
                           По статусах
                         </h4>

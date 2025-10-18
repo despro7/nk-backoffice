@@ -22,13 +22,14 @@ import {
   ModalFooter,
 } from "@heroui/react";
 import { useApi } from "../hooks/useApi";
-import { CalendarDate, getLocalTimeZone, today } from "@internationalized/date";
+import { CalendarDate } from "@internationalized/date";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate } from "../lib/formatUtils";
 import { addToast } from "@heroui/react";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
+import { createStandardDatePresets, convertCalendarRangeToReportingRange } from "../lib/dateReportingUtils";
 import {
   AreaChart,
   Area,
@@ -96,65 +97,8 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
 
   // Фильтры
 
-  // Предустановленные диапазоны дат
-  const getCurrentDate = () => today(getLocalTimeZone());
-
-  const datePresets = [
-    // { key: "today", label: "Сьогодні", getRange: () => {
-    //   const todayDate = getCurrentDate();
-    //   return { start: todayDate, end: todayDate };
-    // }},
-    // { key: "yesterday", label: "Вчора", getRange: () => {
-    //   const yesterday = getCurrentDate().subtract({ days: 1 });
-    //   return { start: yesterday, end: yesterday };
-    // }},
-    { key: "thisWeek", label: "Цього тижня", getRange: () => {
-      const todayDate = getCurrentDate();
-      const dayOfWeek = todayDate.toDate(getLocalTimeZone()).getDay(); // 0 = Sunday, 1 = Monday, etc.
-      const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 2; // To get to Monday
-      const startOfWeek = todayDate.subtract({ days: daysToSubtract });
-      return { start: startOfWeek, end: todayDate };
-    }},
-    { key: "last7Days", label: "Останні 7 днів", getRange: () => {
-      const todayDate = getCurrentDate();
-      const weekAgo = todayDate.subtract({ days: 5 });
-      return { start: weekAgo, end: todayDate };
-    }},
-    { key: "last14Days", label: "Останні 14 днів", getRange: () => {
-      const todayDate = getCurrentDate();
-      const twoWeeksAgo = todayDate.subtract({ days: 12 });
-      return { start: twoWeeksAgo, end: todayDate };
-    }},
-	{ key: "last30Days", label: "Останні 30 днів", getRange: () => {
-		const todayDate = getCurrentDate();
-		const twoWeeksAgo = todayDate.subtract({ days: 28 });
-		return { start: twoWeeksAgo, end: todayDate };
-	}},
-    { key: "thisMonth", label: "Цього місяця", getRange: () => {
-      const todayDate = getCurrentDate();
-      const startOfMonth = todayDate.subtract({ days: todayDate.day - 2 });
-      return { start: startOfMonth, end: todayDate };
-    }},
-    { key: "lastMonth", label: "Минулого місяця", getRange: () => {
-      const todayDate = getCurrentDate();
-      const lastMonth = todayDate.subtract({ months: 1 });
-      const startOfLastMonth = lastMonth.subtract({ days: lastMonth.day - 2 });
-      // Для последнего дня месяца используем приблизительное значение
-      const endOfLastMonth = startOfLastMonth.add({ days: 30 }); // Примерно 30 дней
-      return { start: startOfLastMonth, end: endOfLastMonth };
-    }},
-    { key: "thisYear", label: "Цього року", getRange: () => {
-      const todayDate = getCurrentDate();
-      const startOfYear = new CalendarDate(todayDate.year, 1, 1);
-      return { start: startOfYear, end: todayDate };
-    }},
-    { key: "lastYear", label: "Минулого року", getRange: () => {
-      const todayDate = getCurrentDate();
-      const startOfLastYear = new CalendarDate(todayDate.year - 1, 1, 1);
-      const endOfLastYear = new CalendarDate(todayDate.year - 1, 12, 31);
-      return { start: startOfLastYear, end: endOfLastYear };
-    }}
-  ];
+  // Використовуємо централізовані preset'и дат
+  const datePresets = createStandardDatePresets();
 
   const [statusFilter, setStatusFilter] = useState("all");
   const [datePresetKey, setDatePresetKey] = useState<string>("last30Days");
@@ -162,6 +106,9 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
     const preset = datePresets.find(p => p.key === "last30Days");
     return preset ? preset.getRange() : null;
   });
+
+  // Налаштування звітного дня
+  const [dayStartHour, setDayStartHour] = useState<number>(0);
 
   // Опции групп товаров
   const productGroupOptions = [
@@ -230,11 +177,10 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
         params.append("status", statusFilter);
       }
 
-      // Конвертируем CalendarDate в строку YYYY-MM-DD
-      const startDate = `${dateRange.start.year}-${String(dateRange.start.month).padStart(2, '0')}-${String(dateRange.start.day).padStart(2, '0')}`;
-      const endDate = `${dateRange.end.year}-${String(dateRange.end.month).padStart(2, '0')}-${String(dateRange.end.day).padStart(2, '0')}`;
-      params.append("startDate", startDate);
-      params.append("endDate", endDate);
+      // Конвертуємо CalendarDate діапазон в звітні дати з урахуванням dayStartHour
+      const reportingDates = convertCalendarRangeToReportingRange({ start: dateRange.start, end: dateRange.end }, dayStartHour);
+      params.append("startDate", reportingDates.startDate);
+      params.append("endDate", reportingDates.endDate);
       params.append("groupBy", groupBy);
 
       // Добавляем выбранные товары
@@ -274,7 +220,7 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, dateRange?.start, dateRange?.end, groupBy, selectedProducts, apiCall]);
+  }, [statusFilter, dateRange?.start, dateRange?.end, groupBy, selectedProducts, apiCall, dayStartHour]);
 
   // Загрузка статистики товаров (для фильтров)
   const firstProductStatsLoadRef = useRef(true);
@@ -305,11 +251,10 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
       }
 
       if (dateRange?.start && dateRange?.end) {
-        // Конвертируем CalendarDate в строку YYYY-MM-DD
-        const startDate = `${dateRange.start.year}-${String(dateRange.start.month).padStart(2, '0')}-${String(dateRange.start.day).padStart(2, '0')}`;
-        const endDate = `${dateRange.end.year}-${String(dateRange.end.month).padStart(2, '0')}-${String(dateRange.end.day).padStart(2, '0')}`;
-        params.append("startDate", startDate);
-        params.append("endDate", endDate);
+        // Конвертуємо CalendarDate діапазон в звітні дати з урахуванням dayStartHour
+        const reportingDates = convertCalendarRangeToReportingRange(dateRange, dayStartHour);
+        params.append("startDate", reportingDates.startDate);
+        params.append("endDate", reportingDates.endDate);
       }
 
       const queryString = params.toString();
@@ -338,7 +283,7 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, dateRange?.start, dateRange?.end, cache, CACHE_DURATION]);
+  }, [statusFilter, dateRange?.start, dateRange?.end, cache, CACHE_DURATION, dayStartHour]);
 
   // Обертка для кнопки обновления данных
   const handleRefreshData = useCallback(() => {
@@ -359,7 +304,7 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
     if (dateRange?.start && dateRange?.end) {
       fetchChartData(true).catch(console.error);
     }
-  }, [fetchProductStats, fetchChartData, statusFilter, dateRange, groupBy, selectedProducts]);
+  }, [fetchProductStats, fetchChartData, statusFilter, dateRange, groupBy, selectedProducts, dayStartHour]);
 
   // Функция сброса фильтров
   const resetFilters = useCallback(() => {
@@ -420,8 +365,9 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
       // Если выбран диапазон дат, используем его для фильтрации
       const rangeToUse = periodRange || (mode === 'period' ? dateRange : null);
       if (rangeToUse?.start && rangeToUse?.end) {
-        params.startDate = `${rangeToUse.start.year}-${String(rangeToUse.start.month).padStart(2, '0')}-${String(rangeToUse.start.day).padStart(2, '0')}`;
-        params.endDate = `${rangeToUse.end.year}-${String(rangeToUse.end.month).padStart(2, '0')}-${String(rangeToUse.end.day).padStart(2, '0')}`;
+        const reportingDates = convertCalendarRangeToReportingRange(rangeToUse, dayStartHour);
+        params.startDate = reportingDates.startDate;
+        params.endDate = reportingDates.endDate;
         params.mode = 'period';
       }
 
@@ -520,6 +466,23 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
       setLastCacheUpdate(new Date());
     }
   }, [lastCacheUpdate]);
+
+  // Отримання налаштувань звітного дня при ініціалізації
+  useEffect(() => {
+    const fetchDayStartHour = async () => {
+      try {
+        const response = await apiCall('/api/settings/reporting-day-start-hour');
+        const data = await response.json();
+        if (data.dayStartHour !== undefined) {
+          setDayStartHour(data.dayStartHour);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch dayStartHour, using default (0):', error);
+      }
+    };
+
+    fetchDayStartHour();
+  }, [apiCall]);
 
   // Сортировка данных
   const sortedItems = useMemo(() => {
