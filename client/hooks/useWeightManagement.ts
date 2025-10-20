@@ -199,6 +199,7 @@ export function useWeightManagement({
             title: "Коробка зважена",
             description: `${awaitingBox.name}: ${weight.toFixed(3)} кг (очікувано: ${expectedWeight.toFixed(3)} кг)`,
             color: "success",
+            icon: ToastService.createIcon("check-circle", 20),
             timeout: 3000
           });
 
@@ -252,6 +253,8 @@ export function useWeightManagement({
             title: `${awaitingBox.name}: Поточна вага не коректна!`,
             description: `Очікувано: ${expectedWeight.toFixed(3)}кг ± ${tolerance.toFixed(0)}г. Фактична вага: ${weight.toFixed(3)}кг`,
             color: "danger",
+            hideIcon: false,
+            icon: ToastService.createIcon("alert-circle", 20),
             timeout: 5000
           });
 
@@ -335,6 +338,8 @@ export function useWeightManagement({
         addToast({
           title: "Вага відповідає",
           description: `${pendingItem.name}: ${weight.toFixed(3)} кг (очікувано: ${expectedCumulativeWeight.toFixed(3)} кг)`,
+          hideIcon: false,
+          icon: ToastService.createIcon("check-circle", 20),
           color: "success",
           timeout: 3000
         });
@@ -378,7 +383,7 @@ export function useWeightManagement({
         return updatedItems;
       } else {
         // Вага не відповідає - переводимо в error
-        console.log('❌ [useWeightManagement] Вес товара не соответствует ожидаемому');
+        // console.log('❌ [useWeightManagement] Вага товару не відповідає очікуваній');
         
         const updatedItems = prevItems.map(item => {
           if (item.id === pendingItem.id) {
@@ -392,12 +397,14 @@ export function useWeightManagement({
           title: "Вага не відповідає",
           description: `${pendingItem.name}: ${weight.toFixed(3)}кг (очікувано: ${expectedCumulativeWeight.toFixed(3)} ± ${(cumulativeTolerance).toFixed(0)}г)`,
           color: "danger",
+          hideIcon: false,
+          icon: ToastService.createIcon("scale", 20),
           timeout: 5000
         });
 
         // Через 2 секунди повертаємо в pending для повторного зважування
         setTimeout(() => {
-          console.log('🔄 [useWeightManagement] Товар повертається в статус pending:', pendingItem.name);
+          // console.log('🔄 [useWeightManagement] Товар повертається в статус pending:', pendingItem.name);
           setChecklistItems(prevItems =>
             prevItems.map(item => {
               if (item.id === pendingItem.id) {

@@ -622,7 +622,7 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
  */
 router.put('/:externalId/status', authenticateToken, async (req, res) => {
   try {
-    const { externalId } = req.params; // Изменили с id на externalId
+    const { externalId } = req.params;
     const { status } = req.body;
 
     if (!status) {
@@ -632,35 +632,24 @@ router.put('/:externalId/status', authenticateToken, async (req, res) => {
       });
     }
 
-    // Получаем заказ для получения orderNumber
-    const order = await orderDatabaseService.getOrderByExternalId(externalId);
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        error: 'Order not found',
-      });
-    }
-
     // Обновляем статус в SalesDrive
-    const result = await salesDriveService.updateSalesDriveOrderStatus(order.orderNumber, status);
+    const result = await salesDriveService.updateSalesDriveOrderStatus(externalId, status);
 
     if (result) {
       res.json({
         success: true,
         message: 'Order status updated successfully in SalesDrive',
         externalId: externalId,
-        orderNumber: order.orderNumber,
         newStatus: status,
         salesDriveUpdated: true,
         updatedAt: new Date().toISOString()
       });
     } else {
-      console.warn(`⚠️ Failed to update order ${order.orderNumber} status in SalesDrive`);
+      console.warn(`⚠️ Failed to update order ${externalId} status in SalesDrive`);
       res.status(500).json({
         success: false,
         error: 'Failed to update order status in SalesDrive',
         externalId: externalId,
-        orderNumber: order.orderNumber,
         newStatus: status
       });
     }

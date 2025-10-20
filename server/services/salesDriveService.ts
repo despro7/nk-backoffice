@@ -1201,22 +1201,12 @@ export class SalesDriveService {
       const updateUrl = `${this.apiUrl}/api/order/update/`;
       console.log(`📡 [SalesDrive POST] Making API request to: \x1b[36m${updateUrl}\x1b[0m`);
 
-      // Маппинг статусов: "id3" -> числовой ID в SalesDrive
-      // Нужно настроить соответствие в зависимости от вашей конфигурации SalesDrive
-      const statusMapping: { [key: string]: string } = {
-        'id3': '3', // Готове до видправки - замените на правильный ID из вашего SalesDrive
-        // Добавьте другие соответствия по необходимости
-      };
-
-      const statusId = statusMapping[status] || status;
-      console.log(`🔄 Mapped status "${status}" to statusId "${statusId}"`);
-
       // Формируем тело запроса согласно документации
       const requestBody = {
         form: this.formKey,
         externalId: externalId,
         data: {
-          statusId: statusId
+          statusId: status
         }
       };
 
@@ -1226,8 +1216,8 @@ export class SalesDriveService {
       const response = await fetch(updateUrl, {
         method: 'POST',
         headers: {
+          'X-Api-Key': this.apiKey,
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify(requestBody),
       });

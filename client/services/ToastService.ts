@@ -18,14 +18,16 @@ export interface ToastOptions {
 
 
 export class ToastService {
-	private static defaultOptions: Partial<ToastOptions> = {
-		variant: "flat",
-		color: "default",
-		hideIcon: true,
-		icon: createElement(DynamicIcon, { name: "check-circle", strokeWidth: 2, color: "currentColor" }),
-		timeout: 10000,
-		shouldShowTimeoutProgress: true
-	};
+	private static get defaultOptions(): Partial<ToastOptions> {
+		return {
+			variant: "flat",
+			color: "default",
+			hideIcon: true,
+			icon: ToastService.createIcon("check-circle"),
+			timeout: 10000,
+			shouldShowTimeoutProgress: true
+		};
+	}
 
 	private static settings: ToastSettingsTypes | null = null;
 
@@ -73,6 +75,11 @@ export class ToastService {
 		if (typeof val === 'boolean') return val;
 		// Якщо ключ не знайдено — за замовчуванням показуємо
 		return true;
+	}
+
+	// Helper функція для створення іконок
+	static createIcon(iconName: string, size: number = 20) {
+		return createElement(DynamicIcon, { name: iconName as any, size, color: "currentColor" });
 	}
 
 	static show(options: ToastOptions) {

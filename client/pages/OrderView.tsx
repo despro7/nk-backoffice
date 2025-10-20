@@ -306,6 +306,7 @@ export default function OrderView() {
       const date = order.orderDate ? ` від ${new Date(order.orderDate).toLocaleDateString('uk-UA')}` : '';
       const status = order.statusText ? ` [${order.statusText}]` : '';
       document.title = `Замовлення №${order.orderNumber || externalId}${date}${status} | NK Backoffice`;
+      LoggingService.orderAssemblyLog(`📝 Відриваємо замовлення #${order.orderNumber}`);
     }
   }, [order, externalId]);
 

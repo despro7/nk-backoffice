@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { playSoundChoice } from '../lib/soundUtils';
 import { Button } from '@heroui/button';
@@ -9,6 +9,7 @@ import { useEquipmentFromAuth } from '../contexts/AuthContext';
 import { useDebug } from '../contexts/DebugContext';
 import { sortChecklistItems } from '@/lib/orderAssemblyUtils';
 import { LoggingService } from '@/services/LoggingService';
+import { smoothScrollToElement } from '@/lib/scrollUtils';
 
 interface OrderItem {
   id: string;
@@ -48,6 +49,8 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
   const [equipmentState] = useEquipmentFromAuth(); // <-- Используем глобальное состояние оборудования
   const [soundSettings, setSoundSettings] = useState<Record<string, string>>({});
   const { isDebugMode } = useDebug(); // <-- Используем контекст дебага
+  const noMoreOrdersRef = useRef<HTMLDivElement>(null);
+  const printTTNRef = useRef<HTMLDivElement>(null);
 
   // Завантажуємо налаштування звуку
   useEffect(() => {
@@ -67,13 +70,6 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
 
   // Синхронізуємо активний елемент при зміні items
   useEffect(() => {
-    // console.log('🔄 [OrderChecklist] Синхронізація активного елемента:', {
-    //   activeBoxIndex,
-    //   items: items
-    //     .filter(item => (item.boxIndex || 0) === activeBoxIndex)
-    //     .map(item => ({ name: item.name, type: item.type, status: item.status }))
-    // });
-
     // Спочатку шукаємо елемент зі статусом 'pending' в поточній коробці
     let newActiveItem = items.find((item) => 
       item.status === 'pending' && 
@@ -102,13 +98,6 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       newActiveItem = sortedProducts[0];
     }
 
-    // console.log('🎯 [OrderChecklist] Вибраний активний елемент:', newActiveItem?.name || 'нет');
-    // console.log('📋 [OrderChecklist] Статуси товарів в коробці:', 
-    //   items
-    //     .filter(item => (item.boxIndex || 0) === activeBoxIndex && item.type === 'product')
-    //     .map(item => ({ name: item.name, status: item.status }))
-    // );
-
     // Встановлюємо активний елемент тільки якщо він дійсно знайдений і валідний
     if (newActiveItem && newActiveItem.id) {
       setActiveItemId(newActiveItem.id);
@@ -116,7 +105,6 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       setActiveItemId(null);
     }
   }, [items, activeBoxIndex]);
-
 
 
   const packedPortions = useMemo(() => {
@@ -255,6 +243,13 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
         autoPrintEnabled,
         wasOpenedAsReady
       });
+
+      smoothScrollToElement(printTTNRef, {
+        duration: 1000,
+        delay: 300,
+        offset: 100,
+        position: 'bottom'
+      });
       
       // Отримуємо затримку з налаштувань (за замовчуванням 3 секунди)
       const autoPrintDelay = equipmentState.config?.printer?.autoPrintDelayMs ?? 3000;
@@ -279,7 +274,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       setIsAutoPrinting(false);
       setAutoPrintCountdown(0);
     }
-  }, [isOrderComplete, showPrintTTN, isDebugMode, equipmentState.config?.printer?.autoPrintOnComplete, onPrintTTN, wasOpenedAsReady]);
+  }, [isOrderComplete, showPrintTTN, isDebugMode, equipmentState.config?.printer?.autoPrintOnComplete, wasOpenedAsReady]);
 
   // Анімація відліку для автоматичного друку
   useEffect(() => {
@@ -290,6 +285,18 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       return () => clearTimeout(timer);
     }
   }, [autoPrintCountdown]);
+
+  // Автоскролл до блоку "Немає більше замовлень"
+  useEffect(() => {
+    if (showNoMoreOrders) {
+      smoothScrollToElement(noMoreOrdersRef, {
+        duration: 1000,
+        delay: 300,
+        offset: 50,
+        position: 'bottom'
+      });
+    }
+  }, [showNoMoreOrders]);
 
   // Перевіряємо, чи є наступна коробка
   const hasNextBox = useMemo(() => {
@@ -419,8 +426,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
 
         {/* Кнопка "Роздрукувати ТТН" */}
         {(isOrderComplete || showPrintTTN || isDebugMode) && (
-          <div className="mt-6 space-y-2">
-            
+          <div ref={printTTNRef} className="mt-6 space-y-2">
             <Button
               onPress={onPrintTTN}
               disabled={false} // Прибираємо локальний стан, використовуємо глобальний з OrderView
@@ -461,9 +467,9 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
 
         {/* Повідомлення про відсутність замовлень */}
         {showNoMoreOrders && (
-          <div className="mt-3 w-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 text-center">
+          <div ref={noMoreOrdersRef} className="mt-3 w-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 text-center">
             <div className="flex flex-col items-center gap-3">
-              <span className="text-5xl">🎉</span>
+              <img src="/icons/party-horn.svg" className="w-15 h-15" />
               <div className="space-y-1">
                 <h3 className="text-lg font-semibold text-blue-900">
                   Всі підтверджені замовлення виконані!
@@ -472,17 +478,13 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
                   Наразі більше немає замовлень для комплектування
                 </p>
               </div>
-              {/* Додаткова кнопка-допомога на випадок відсутності наступного замовлення */}
-              {onNextOrder && (
-                <Button
-                  // onPress={() => { onNextOrder(); navigate('/orders'); }}
-                  onPress={() => { navigate('/orders'); }}
-                  className="mt-3 bg-primary text-white p-6 rounded-md text-base font-medium shadow-sm flex items-center justify-center gap-2"
-                >
-                  Повернутися до всіх замовлень
-                  <DynamicIcon name="undo-2" size={20} strokeWidth={1.5} />
-                </Button>
-              )}
+              <Button
+                onPress={() => { navigate('/orders'); }}
+                className="mt-3 bg-primary text-white p-6 rounded-md text-base font-medium shadow-sm flex items-center justify-center gap-2"
+              >
+                Повернутися до всіх замовлень
+                <DynamicIcon name="undo-2" size={20} strokeWidth={1.5} />
+              </Button>
             </div>
           </div>
         )}

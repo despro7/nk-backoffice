@@ -248,13 +248,13 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
         
         // Перевіряємо, скільки часу минуло без успішної відповіді
         const timeSinceLastSuccess = Date.now() - lastSuccessfulReadRef.current;
-        
-        if (timeSinceLastSuccess >= 5000) { // 5 секунд
+
+        if (timeSinceLastSuccess >= 8000) { // 8 секунд
           setIsError(true);
           setErrorMessage('Дані з ваг відсутні');
-          
-          // Через 10 секунд надсилаємо команду Tare
-          if (timeSinceLastSuccess >= 10000 && !tareTimeoutRef.current) {
+
+          // Через 20 секунд надсилаємо команду Tare
+          if (timeSinceLastSuccess >= 20000 && !tareTimeoutRef.current) {
             tareTimeoutRef.current = setTimeout(() => {
               sendTareCommand();
               tareTimeoutRef.current = null;

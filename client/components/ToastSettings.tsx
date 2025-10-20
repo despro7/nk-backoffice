@@ -70,15 +70,19 @@ export const ToastSettings: React.FC = () => {
       await ToastService.saveSettings(settings);
       setHasChanges(false);
       ToastService.show({
-        title: '✅ Налаштування toast збережено',
+        title: 'Налаштування toast збережено',
         description: 'Toast-налаштування успішно оновлено',
         color: 'success',
+        hideIcon: false,
+        icon: ToastService.createIcon("check-circle", 20),
       });
     } catch (error) {
       ToastService.show({
-        title: '❌ Помилка збереження',
+        title: 'Помилка збереження',
         description: 'Не вдалося зберегти toast-налаштування',
         color: 'danger',
+        hideIcon: false,
+        icon: ToastService.createIcon("alert-circle", 20),
       });
     } finally {
       setIsLoading(false);
