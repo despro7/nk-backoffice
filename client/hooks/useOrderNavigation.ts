@@ -142,7 +142,7 @@ export function useOrderNavigation({
 
       // Забороняємо прямий друк у dev режимі
       const isDev = typeof process !== "undefined" && process.env.NODE_ENV === 'development';
-      const canUseDirectPrint = equipmentConfig?.printer?.enabled && equipmentConfig?.printer?.name && isDev;
+      const canUseDirectPrint = equipmentConfig?.printer?.enabled && equipmentConfig?.printer?.name && !isDev;
 
       await shippingClientService.printTTN({
         ttn: order.ttn,
