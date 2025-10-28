@@ -8,24 +8,21 @@ import { PrismaClient } from '@prisma/client';
 /**
  * Детальное отображение источников для модального окна (По джерелах)
  */
-const SOURCE_MAP_DETAILED: Record<string, string> = {
-  '19': 'nk-food.shop',
-  '22': 'rozetka',
-  '24': 'prom.ua',
-  '28': 'prom.ua',
-  '31': 'інше'
-};
+const SOURCE_MAP_DETAILED: Record<string, string> = Object.fromEntries([
+  ['19', 'nk-food.shop'],
+  ...['22', '39'].map(k => [k, 'rozetka']),
+  ...['24', '28'].map(k => [k, 'prom.ua']),
+  ['31', 'інше']
+]);
 
 /**
  * Укрупненные категории источников для общей таблицы
  */
-const SOURCE_CATEGORY_MAP: Record<string, string> = {
-  '19': 'сайт',           // nk-food.shop - собственный сайт
-  '22': 'маркетплейси',   // rozetka - маркетплейс Rozetka
-  '24': 'маркетплейси',   // prom.ua - маркетплейс Prom.ua
-  '28': 'маркетплейси',   // prom.ua - маркетплейс Prom.ua (альтернативный код)
-  '31': 'інше'            // інші джерела
-};
+const SOURCE_CATEGORY_MAP: Record<string, string> = Object.fromEntries([
+  ['19', 'сайт'],
+  ...['22', '24', '28'].map(k => [k, 'маркетплейси']),
+  ['31', 'інше'] // інші джерела
+]);
 
 /**
  * Получить детальный источник заказа для модального окна

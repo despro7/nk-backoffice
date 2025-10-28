@@ -557,7 +557,6 @@ router.post('/fix-items-data', authenticateToken, async (req, res) => {
 /**
  * POST /api/orders/calculate-actual-quantity
  * Тестовий ендпоінт для перевірки логіки calculateActualQuantity
- * Тіло: { items: [...], initialQuantity?: number }
  */
 router.post('/calculate-actual-quantity', authenticateToken, async (req, res) => {
   try {
@@ -2055,7 +2054,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
     // Функция определения группы товара
     const getProductGroup = (productName: string): string => {
       const name = productName.toLowerCase();
-      if (name.includes('борщ') || name.includes('суп') || name.includes('бульйон') || name.includes('перший') || name.includes('перша')) {
+      if (name.includes('борщ') || name.includes('суп') || name.includes('перший') || name.includes('перша')) {
         return 'first_courses';
       }
       // По умолчанию все остальные товары считаем вторыми блюдами
@@ -2080,8 +2079,6 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       filterProducts = individualProducts;
       filterGroups = groupFilters.map(g => g.replace('group_', ''));
     }
-
-    // Используем глобальные функции из utils.ts для работы с источниками заказов
 
     // Карта для маппинга кодов сайтов в названия источников
     const sourceMapping: Record<string, string> = {
@@ -2195,7 +2192,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
 
           // Статистика по источникам
           const sourceCode = order.sajt || '';
-          const sourceName = sourceMapping[sourceCode] || 'Інше';
+          const sourceName = getOrderSourceDetailed(sourceCode) || 'Інше';
 
           if (!salesData[dateKey].ordersBySource[sourceName]) {
             salesData[dateKey].ordersBySource[sourceName] = 0;

@@ -464,35 +464,35 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
         0,
       ),
       sourceWebsite: salesData.reduce(
-        (sum, item) => sum + (item.ordersBySource["Сайт"] || 0),
+        (sum, item) => sum + (item.ordersBySource["nk-food.shop"] || 0),
         0,
       ),
       sourceWebsitePortions: salesData.reduce(
-        (sum, item) => sum + (item.portionsBySource["Сайт"] || 0),
+        (sum, item) => sum + (item.portionsBySource["nk-food.shop"] || 0),
         0,
       ),
       sourceRozetka: salesData.reduce(
-        (sum, item) => sum + (item.ordersBySource["Розетка"] || 0),
+        (sum, item) => sum + (item.ordersBySource["rozetka"] || 0),
         0,
       ),
       sourceRozetkaPortions: salesData.reduce(
-        (sum, item) => sum + (item.portionsBySource["Розетка"] || 0),
+        (sum, item) => sum + (item.portionsBySource["rozetka"] || 0),
         0,
       ),
       sourceProm: salesData.reduce(
-        (sum, item) => sum + (item.ordersBySource["Пром"] || 0),
+        (sum, item) => sum + (item.ordersBySource["prom.ua"] || 0),
         0,
       ),
       sourcePromPortions: salesData.reduce(
-        (sum, item) => sum + (item.portionsBySource["Пром"] || 0),
+        (sum, item) => sum + (item.portionsBySource["prom.ua"] || 0),
         0,
       ),
       sourceChat: salesData.reduce(
-        (sum, item) => sum + (item.ordersBySource["Інше"] || 0),
+        (sum, item) => sum + (item.ordersBySource["інше"] || 0),
         0,
       ),
       sourceChatPortions: salesData.reduce(
-        (sum, item) => sum + (item.portionsBySource["Інше"] || 0),
+        (sum, item) => sum + (item.portionsBySource["інше"] || 0),
         0,
       ),
       discountReason: salesData.reduce(
@@ -575,22 +575,22 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
   );
 
   const getAllSourceWebsiteCounts = useMemo(
-    () => salesData.map((item) => item.ordersBySource["Сайт"] || 0),
+    () => salesData.map((item) => item.ordersBySource["nk-food.shop"] || 0),
     [salesData],
   );
 
   const getAllSourceRozetkaCounts = useMemo(
-    () => salesData.map((item) => item.ordersBySource["Розетка"] || 0),
+    () => salesData.map((item) => item.ordersBySource["rozetka"] || 0),
     [salesData],
   );
 
   const getAllSourcePromCounts = useMemo(
-    () => salesData.map((item) => item.ordersBySource["Пром"] || 0),
+    () => salesData.map((item) => item.ordersBySource["prom.ua"] || 0),
     [salesData],
   );
 
   const getAllSourceChatCounts = useMemo(
-    () => salesData.map((item) => item.ordersBySource["Інше"] || 0),
+    () => salesData.map((item) => item.ordersBySource["інше"] || 0),
     [salesData],
   );
 
@@ -909,17 +909,17 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                     variant="flat"
                     classNames={{
                       base: getValueColor(
-                        item.ordersBySource["Сайт"] || 0,
+                        item.ordersBySource["nk-food.shop"] || 0,
                         getAllSourceWebsiteCounts,
                       ).base,
                       content: getValueColor(
-                        item.ordersBySource["Сайт"] || 0,
+                        item.ordersBySource["nk-food.shop"] || 0,
                         getAllSourceWebsiteCounts,
                       ).content,
                     }}
                   >
-                    {item.ordersBySource["Сайт"] || 0} /{" "}
-                    {item.portionsBySource["Сайт"] || 0}
+                    {item.ordersBySource["nk-food.shop"] || 0} /{" "}
+                    {item.portionsBySource["nk-food.shop"] || 0}
                   </Chip>
                 </TableCell>
                 <TableCell className="text-center text-base">
@@ -928,17 +928,17 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                     variant="flat"
                     classNames={{
                       base: getValueColor(
-                        item.ordersBySource["Розетка"] || 0,
+                        item.ordersBySource["rozetka"] || 0,
                         getAllSourceRozetkaCounts,
                       ).base,
                       content: getValueColor(
-                        item.ordersBySource["Розетка"] || 0,
+                        item.ordersBySource["rozetka"] || 0,
                         getAllSourceRozetkaCounts,
                       ).content,
                     }}
                   >
-                    {item.ordersBySource["Розетка"] || 0} /{" "}
-                    {item.portionsBySource["Розетка"] || 0}
+                    {item.ordersBySource["rozetka"] || 0} /{" "}
+                    {item.portionsBySource["rozetka"] || 0}
                   </Chip>
                 </TableCell>
                 <TableCell className="text-center text-base">
@@ -947,17 +947,17 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                     variant="flat"
                     classNames={{
                       base: getValueColor(
-                        item.ordersBySource["Пром"] || 0,
+                        item.ordersBySource["prom.ua"] || 0,
                         getAllSourcePromCounts,
                       ).base,
                       content: getValueColor(
-                        item.ordersBySource["Пром"] || 0,
+                        item.ordersBySource["prom.ua"] || 0,
                         getAllSourcePromCounts,
                       ).content,
                     }}
                   >
-                    {item.ordersBySource["Пром"] || 0} /{" "}
-                    {item.portionsBySource["Пром"] || 0}
+                    {item.ordersBySource["prom.ua"] || 0} /{" "}
+                    {item.portionsBySource["prom.ua"] || 0}
                   </Chip>
                 </TableCell>
                 <TableCell className="text-center text-base">
@@ -966,17 +966,17 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                     variant="flat"
                     classNames={{
                       base: getValueColor(
-                        item.ordersBySource["Інше"] || 0,
+                        item.ordersBySource["інше"] || 0,
                         getAllSourceChatCounts,
                       ).base,
                       content: getValueColor(
-                        item.ordersBySource["Інше"] || 0,
+                        item.ordersBySource["інше"] || 0,
                         getAllSourceChatCounts,
                       ).content,
                     }}
                   >
-                    {item.ordersBySource["Інше"] || 0} /{" "}
-                    {item.portionsBySource["Інше"] || 0}
+                    {item.ordersBySource["інше"] || 0} /{" "}
+                    {item.portionsBySource["інше"] || 0}
                   </Chip>
                 </TableCell>
                 <TableCell className="text-center text-base">
