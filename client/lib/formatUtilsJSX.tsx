@@ -62,6 +62,11 @@ export const formatTrackingNumberWithIcon = (
       onProviderDetected(provider);
     }
   }
+  
+  // Если провайдер все еще не определен, попробуем автоматически определить его
+  if (!provider) {
+    provider = detectTrackingProvider(trackingId);
+  }
 
   const isNovaPoshta = provider === 'novaposhta';
   const isUkrPoshta = provider === 'ukrposhta';

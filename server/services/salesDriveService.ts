@@ -1150,13 +1150,20 @@ export class SalesDriveService {
       customerPhone = Array.isArray(contact.phone) ? contact.phone[0] : contact.phone || '';
     }
 
+    // Обчислюємо quantity: спочатку спробуємо kilTPorcij, якщо порожнє — сумуємо amount товарів
+    let quantity = rawOrder.kilTPorcij || 0;
+    if (!quantity && rawOrder.products && Array.isArray(rawOrder.products)) {
+      // Обчислюємо quantity через orderDatabaseService.calculateActualQuantityPublic
+      quantity = orderDatabaseService.calculateActualQuantityPublic(rawOrder.products.map((p: any) => ({ sku: p.sku, quantity: p.amount })));
+    }
+
     // Базовое форматирование для основного объекта
     const formattedOrder: SalesDriveOrder = {
       rawData: rawOrder,  // Сохраняем полные сырые данные
       id: rawOrder.id || 0,
       orderNumber: rawOrder.externalId || rawOrder.id?.toString() || '',
       ttn: rawOrder.ord_delivery_data?.[0]?.trackingNumber || '',
-      quantity: rawOrder.kilTPorcij || 0,
+      quantity: quantity,
       status: rawOrder.statusId?.toString() || '',
       statusText: statusMap[rawOrder.statusId] || 'Невідомий',
       items: rawOrder.products
@@ -1189,13 +1196,13 @@ export class SalesDriveService {
   /**
    * Обновляет статус заказа в SalesDrive API
    */
-  async updateSalesDriveOrderStatus(externalId: string, status: string): Promise<boolean> {
+  async updateSalesDriveOrderStatus(id: string, status: string): Promise<boolean> {
     try {
       if (!this.apiUrl || !this.apiKey || !this.formKey) {
         throw new Error('SalesDrive API not fully configured');
       }
 
-      console.log(`🔄 Updating order ${externalId} status to ${status} in SalesDrive`);
+      console.log(`🔄 Updating order ${id} status to ${status} in SalesDrive`);
 
       // Подготавливаем URL для обновления заказа
       const updateUrl = `${this.apiUrl}/api/order/update/`;
@@ -1204,7 +1211,7 @@ export class SalesDriveService {
       // Формируем тело запроса согласно документации
       const requestBody = {
         form: this.formKey,
-        externalId: externalId,
+        id: id,
         data: {
           statusId: status
         }
@@ -1234,7 +1241,7 @@ export class SalesDriveService {
       console.log(`✅ SalesDrive response:`, responseData);
 
       if (responseData.success) {
-        console.log(`✅ Successfully updated order ${externalId} status to ${status} in SalesDrive`);
+        console.log(`✅ Successfully updated order ${id} status to ${status} in SalesDrive`);
         return true;
       } else {
         console.error(`❌ SalesDrive returned error:`, responseData);

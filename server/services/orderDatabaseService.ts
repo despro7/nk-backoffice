@@ -591,10 +591,14 @@ export class OrderDatabaseService {
         return result;
       });
 
+      // Якщо потрібно поле quantity, воно вже коректно обраховане при додаванні/оновленні замовлення
+      // з врахуванням комплектів (наборів товарів), тому fallback на кеш більше не потрібен
+      let finalOrders = parsedOrders;
+
       const parseTime = Date.now() - parseStartTime;
       const totalTime = Date.now() - startTime;
 
-      return parsedOrders;
+      return finalOrders;
     } catch (error) {
       const errorTime = Date.now() - startTime;
       console.error(`❌ [DB] orderDatabaseService.getOrders: Error after ${errorTime}ms:`, error);
@@ -736,6 +740,9 @@ export class OrderDatabaseService {
 
       for (const orderData of ordersData) {
         try {
+          // Обчислюємо актуальну quantity з врахуванням комплектів
+          const actualQuantity = await this.calculateActualQuantity(orderData.items, orderData.quantity);
+
           // Создаем заказ
           const order = await prisma.order.create({
             data: {
@@ -743,7 +750,7 @@ export class OrderDatabaseService {
               externalId:        orderData.externalId,
               orderNumber:       orderData.orderNumber,
               ttn:               orderData.ttn,
-              quantity:          orderData.quantity,
+              quantity:          actualQuantity,
               status:            orderData.status,
               statusText:        orderData.statusText,
               items:             JSON.stringify(orderData.items),
@@ -1487,12 +1494,18 @@ export class OrderDatabaseService {
                 syncError: null
               };
 
+              // Обчислюємо актуальну quantity з врахуванням комплектів
+              let actualQuantity = orderData.quantity;
+              if (changes.includes('quantity') || changes.includes('items')) {
+                actualQuantity = await this.calculateActualQuantity(orderData.items, orderData.quantity);
+              }
+
               // Применяем только изменившиеся поля
               if (changes.includes('id')) updateData.id = orderData.id;
               if (changes.includes('status')) updateData.status = orderData.status;
               if (changes.includes('statusText')) updateData.statusText = orderData.statusText;
               if (changes.includes('ttn')) updateData.ttn = orderData.ttn;
-              if (changes.includes('quantity')) updateData.quantity = orderData.quantity;
+              if (changes.includes('quantity') || changes.includes('items')) updateData.quantity = actualQuantity;
               if (changes.includes('customerName')) updateData.customerName = orderData.customerName;
               if (changes.includes('customerPhone')) updateData.customerPhone = orderData.customerPhone;
               if (changes.includes('deliveryAddress')) updateData.deliveryAddress = orderData.deliveryAddress;
@@ -1757,7 +1770,92 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Предварительно рассчитывает статистику товаров для заказа (для кеша)
+   * Публічний метод для API: обгортка над calculateActualQuantity
+   */
+  async calculateActualQuantityPublic(items: any[], initialQuantity: number = 0): Promise<number> {
+    return this.calculateActualQuantity(items, initialQuantity);
+  }
+
+  /**
+   * Обчислює актуальну quantity з врахуванням комплектів (наборів)
+   * Якщо kilTPorcij порожнє або 0 — рахує сумму всіх компонентів комплектів та звичайних товарів
+   * (така ж логіка як в preprocessOrderItemsForCache)
+   *
+   * @param items - масив товарів (SKU)
+   * @param initialQuantity - початкова кількість (опціонально)
+   */
+  private async calculateActualQuantity(items: any[], initialQuantity: number = 0): Promise<number> {
+    try {
+      // Якщо є явне значення кількості (kilTPorcij) — використовуємо його
+      if (initialQuantity && initialQuantity > 2) {
+        return initialQuantity;
+      }
+
+      // Якщо initialQuantity порожнє, або від 0 до 2 — обраховуємо з товарів (як в preprocessOrderItemsForCache)
+      if (!Array.isArray(items) || items.length === 0) {
+        return 0;
+      }
+
+      // Збираємо статистику за товарами (як в preprocessOrderItemsForCache)
+      const productStats: { [key: string]: number } = {};
+
+      for (const item of items) {
+        if (!item || !item.sku || !item.quantity) continue;
+
+        try {
+          const product = await this.getProductBySku(item.sku);
+
+          if (product) {
+            // Перевіряємо, чи це комплект (набір товарів)
+            if (product.set && Array.isArray(product.set) && product.set.length > 0) {
+              // Розкладаємо комплект на окремі компоненти (як в preprocessOrderItemsForCache)
+              for (const setItem of product.set) {
+                if (setItem && typeof setItem === 'object' && setItem.id && setItem.quantity) {
+                  const component = await this.getProductBySku(setItem.id);
+                  if (component) {
+                    const componentSku = component.sku;
+                    const totalQuantity = item.quantity * setItem.quantity;
+                    
+                    if (productStats[componentSku]) {
+                      productStats[componentSku] += totalQuantity;
+                    } else {
+                      productStats[componentSku] = totalQuantity;
+                    }
+                  }
+                }
+              }
+            } else {
+              // Для звичайного товару: просто додаємо кількість
+              if (productStats[item.sku]) {
+                productStats[item.sku] += item.quantity;
+              } else {
+                productStats[item.sku] = item.quantity;
+              }
+            }
+          }
+        } catch (productError) {
+          console.warn(`⚠️ Error processing product ${item.sku} for quantity calculation:`, productError);
+          // При помилці — додаємо quantity як є
+          if (productStats[item.sku]) {
+            productStats[item.sku] += item.quantity;
+          } else {
+            productStats[item.sku] = item.quantity;
+          }
+        }
+      }
+
+      // Обчислюємо totalQuantity як суму всіх orderedQuantity (як в preprocessOrderItemsForCache)
+      const totalQuantity = Object.values(productStats).reduce((sum, qty) => sum + qty, 0);
+
+      return totalQuantity;
+    } catch (error) {
+      console.warn(`⚠️ Error calculating actual quantity:`, error);
+      return initialQuantity || 0;
+    }
+  }
+
+  /**
+   * Предварительно рассчитывает статистику товарів для замовлення (для кеша)
    */
   async preprocessOrderItemsForCache(orderId: number): Promise<string | null> {
     try {
@@ -1947,7 +2045,7 @@ export class OrderDatabaseService {
       console.error(`❌ Error updating cache for order ${externalId}:`, error);
       return false;
     }
-  }
+ }
   /**
    * Force обновление заказов (всегда обновляет, без проверки изменений)
    * Используется для ручной синхронизации, когда нужно пересинхронизировать все заказы
@@ -1987,12 +2085,15 @@ export class OrderDatabaseService {
 
           if (!existingOrder) {
             // Создаем новый заказ
+            // Обчислюємо актуальну quantity з врахуванням комплектів
+            const actualQuantity = await this.calculateActualQuantity(orderData.items || [], orderData.quantity);
+
             const newOrderData = {
               id: parseInt(orderData.orderNumber), // Преобразуем orderNumber в число для id
               externalId: orderData.orderNumber,
               orderNumber: orderData.orderNumber,
               ttn: orderData.ttn || '',
-              quantity: orderData.quantity || 0,
+              quantity: actualQuantity,
               status: orderData.status || 'unknown',
               statusText: orderData.statusText || '',
               items: orderData.items || [],
@@ -2022,6 +2123,11 @@ export class OrderDatabaseService {
             });
           } else {
             // Всегда обновляем существующий заказ (force update)
+            // Обчислюємо актуальну quantity з врахуванням комплектів
+            const actualQuantity = await this.calculateActualQuantity(
+              orderData.items || (typeof existingOrder.items === 'string' ? JSON.parse(existingOrder.items) : existingOrder.items),
+              orderData.quantity !== undefined ? orderData.quantity : existingOrder.quantity
+            );
 
             const updateData = {
               status: orderData.status || existingOrder.status,
@@ -2029,7 +2135,7 @@ export class OrderDatabaseService {
               items: orderData.items || existingOrder.items,
               rawData: orderData.rawData || existingOrder.rawData,
               ttn: orderData.ttn || existingOrder.ttn,
-              quantity: orderData.quantity !== undefined ? orderData.quantity : existingOrder.quantity,
+              quantity: actualQuantity,
               customerName: orderData.customerName || existingOrder.customerName,
               customerPhone: orderData.customerPhone || existingOrder.customerPhone,
               deliveryAddress: orderData.deliveryAddress || existingOrder.deliveryAddress,

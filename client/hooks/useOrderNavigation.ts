@@ -5,12 +5,14 @@ import { formatDate } from '../lib/formatUtils';
 
 interface UseOrderNavigationProps {
   externalId: string | undefined;
+  id: number;
   apiCall: (url: string, options?: RequestInit) => Promise<Response>;
   equipmentConfig: any;
 }
 
 export function useOrderNavigation({
   externalId,
+  id,
   apiCall,
   equipmentConfig
 }: UseOrderNavigationProps) {
@@ -24,6 +26,9 @@ export function useOrderNavigation({
   const [nextOrderNumber, setNextOrderNumber] = useState<string | undefined>();
   const [nextOrderDate, setNextOrderDate] = useState<string | undefined>();
   const [showNoMoreOrders, setShowNoMoreOrders] = useState(false);
+  // Стан для модалки помилки
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorModalText, setErrorModalText] = useState<string | null>(null);
 
   /**
    * Універсальна функція для отримання наступного замовлення з розумною логікою пошуку
@@ -93,10 +98,10 @@ export function useOrderNavigation({
 	 * Допоміжна функція: оновити статус поточного замовлення до "3" (Готове до відправки)
 	 */
 	const updateCurrentOrderStatusToReady = useCallback(async () => {
-		if (!externalId) return;
+		if (!id) return;
 		const statusPayload = { status: '3' };
 		try {
-			const statusResponse = await apiCall(`/api/orders/${externalId}/status`, {
+			const statusResponse = await apiCall(`/api/orders/${id}/status`, {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -104,11 +109,13 @@ export function useOrderNavigation({
 				body: JSON.stringify(statusPayload),
 			});
 
-			if (!statusResponse.ok) {
-				const errorText = await statusResponse.text();
-				console.warn('⚠️ [useOrderNavigation] Не вдалося оновити статус в SalesDrive:', errorText);
-				return;
-			}
+      if (!statusResponse.ok) {
+        const errorText = await statusResponse.text();
+        setErrorModalText(errorText || 'Не вдалося оновити статус в SalesDrive');
+        setShowErrorModal(true);
+        console.warn('⚠️ [useOrderNavigation] Не вдалося оновити статус в SalesDrive:', errorText);
+        return;
+      }
 
 			const statusData = await statusResponse.json();
 			if (statusData.success) {
@@ -155,6 +162,13 @@ export function useOrderNavigation({
    */
   const handlePrintTTN = useCallback(async (order: any) => {
     // console.log('🖨️ [useOrderNavigation] handlePrintTTN викликано');
+
+    setTimeout(() => {
+      // console.log('🖨️ [useOrderNavigation] setTimeout виконується');
+      setShowNextOrder(true);
+      // Отримуємо номер наступного замовлення
+      fetchNextOrderNumber();
+    }, 1000);
     
     if (!order?.ttn || !order?.provider) {
       alert('ТТН або провайдер не знайдені в даних замовлення');
@@ -177,13 +191,6 @@ export function useOrderNavigation({
         ttn: order.ttn,
         printerName: canUseDirectPrint ? equipmentConfig.printer.name : undefined
       });
-
-      setTimeout(() => {
-        // console.log('🖨️ [useOrderNavigation] setTimeout виконується');
-        setShowNextOrder(true);
-        // Отримуємо номер наступного замовлення
-        fetchNextOrderNumber();
-      }, 1000);
 
     } catch (error) {
       console.error('❌ Помилка друку ТТН:', error);
@@ -248,7 +255,11 @@ export function useOrderNavigation({
     handlePrintTTN,
     handleNextOrder,
     fetchNextOrderNumber,
-    getNextOrder
+    getNextOrder,
+    showErrorModal,
+    setShowErrorModal,
+    errorModalText,
+    setErrorModalText
   };
 }
 

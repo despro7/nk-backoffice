@@ -10,6 +10,7 @@ import { expandProductSets, combineBoxesWithItems } from '@/lib/orderAssemblyUti
 import { useWeightManagement } from '@/hooks/useWeightManagement';
 import { useBarcodeScanning } from '@/hooks/useBarcodeScanning';
 import { useOrderNavigation } from '@/hooks/useOrderNavigation';
+import { InfoModal } from '../components/modals/InfoModal';
 import { useOrderSettings } from '@/hooks/useOrderSettings';
 import { OrderViewHeader } from '@/components/OrderViewHeader';
 import { OrderAssemblyRightPanel } from '@/components/OrderAssemblyRightPanel';
@@ -74,9 +75,13 @@ export default function OrderView() {
     showNoMoreOrders,
     handlePrintTTN,
     handleNextOrder,
-    fetchNextOrderNumber
+    fetchNextOrderNumber,
+    showErrorModal,
+    setShowErrorModal,
+    errorModalText
   } = useOrderNavigation({
     externalId,
+    id: order ? order.id : 0,
     apiCall,
     equipmentConfig: equipmentState.config
   });
@@ -347,6 +352,13 @@ export default function OrderView() {
 
   return (
     <div className="space-y-4">
+      {/* Модалка для помилок SalesDrive */}
+      <InfoModal
+        isOpen={showErrorModal}
+        title="Помилка оновлення статусу в SalesDrive"
+        message={errorModalText || 'Невідома помилка'}
+        onClose={() => setShowErrorModal(false)}
+      />
       <OrderViewHeader 
         order={order} 
         externalId={externalId || ''} 

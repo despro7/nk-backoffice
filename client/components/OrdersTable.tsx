@@ -269,6 +269,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
                 <div className="flex items-center gap-1.5 whitespace-nowrap">
                   {order.ttn && formatTrackingNumberWithIcon(order.ttn, {
                     provider: order.provider,
+                    autoDetectProvider: !order.provider, // Автовизначення якщо provider не вказаний
                     iconSize: 'absolute',
                     iconSizeValue: '1.2rem',
                     compactMode: true,

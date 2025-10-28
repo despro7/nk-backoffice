@@ -555,6 +555,25 @@ router.post('/fix-items-data', authenticateToken, async (req, res) => {
 });
 
 /**
+ * POST /api/orders/calculate-actual-quantity
+ * Тестовий ендпоінт для перевірки логіки calculateActualQuantity
+ * Тіло: { items: [...], initialQuantity?: number }
+ */
+router.post('/calculate-actual-quantity', authenticateToken, async (req, res) => {
+  try {
+    const { items, initialQuantity } = req.body;
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ success: false, error: 'items must be an array' });
+    }
+    const result = await orderDatabaseService.calculateActualQuantityPublic(items, initialQuantity);
+    res.json({ success: true, actualQuantity: result });
+  } catch (error) {
+    console.error('❌ Error in /api/orders/calculate-actual-quantity:', error);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+/**
  * GET /api/orders/:externalId
  * Получить детали конкретного заказа по externalId (номеру заказа из SalesDrive)
  */
@@ -617,12 +636,12 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
 });
 
 /**
- * PUT /api/orders/:externalId/status
+ * PUT /api/orders/:id/status
  * Обновить статус заказа в SalesDrive
  */
-router.put('/:externalId/status', authenticateToken, async (req, res) => {
+router.put('/:id/status', authenticateToken, async (req, res) => {
   try {
-    const { externalId } = req.params;
+    const { id } = req.params;
     const { status } = req.body;
 
     if (!status) {
@@ -633,23 +652,23 @@ router.put('/:externalId/status', authenticateToken, async (req, res) => {
     }
 
     // Обновляем статус в SalesDrive
-    const result = await salesDriveService.updateSalesDriveOrderStatus(externalId, status);
+    const result = await salesDriveService.updateSalesDriveOrderStatus(id, status);
 
     if (result) {
       res.json({
         success: true,
         message: 'Order status updated successfully in SalesDrive',
-        externalId: externalId,
+        id: id,
         newStatus: status,
         salesDriveUpdated: true,
         updatedAt: new Date().toISOString()
       });
     } else {
-      console.warn(`⚠️ Failed to update order ${externalId} status in SalesDrive`);
+      console.warn(`⚠️ Failed to update order ${id} status in SalesDrive`);
       res.status(500).json({
         success: false,
         error: 'Failed to update order status in SalesDrive',
-        externalId: externalId,
+        id: id,
         newStatus: status
       });
     }

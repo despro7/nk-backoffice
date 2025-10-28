@@ -67,6 +67,7 @@ export function OrderAssemblyRightPanel({
               <div className="flex items-center gap-2.5 text-2xl font-mono tracking-wider text-primary">
                 {formatTrackingNumberWithIcon(orderForAssembly.shipping.trackingId, {
                   provider: orderForAssembly.shipping.provider,
+                  autoDetectProvider: !orderForAssembly.shipping.provider, // Автовизначення якщо provider не вказаний
                   iconSize: 'absolute',
                   iconSizeValue: '1.5rem',
                 })}

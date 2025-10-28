@@ -197,6 +197,31 @@ const SettingsOrders: React.FC = () => {
   const [apiTestLogs, setApiTestLogs] = useState<string[]>([]);
   const [apiTestUrl, setApiTestUrl] = useState<string>('');
 
+  // State for quantity calculation testing
+  const [quantityTestItems, setQuantityTestItems] = useState('[{"sku":"07028","quantity":1}]');
+  const [quantityTestResult, setQuantityTestResult] = useState<string | null>(null);
+  const [quantityTestLoading, setQuantityTestLoading] = useState(false);
+
+  const testActualQuantity = async () => {
+    setQuantityTestLoading(true);
+    setQuantityTestResult(null);
+    try {
+      const res = await fetch('/api/orders/calculate-actual-quantity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          items: JSON.parse(quantityTestItems)
+        }),
+      });
+      const data = await res.json();
+      setQuantityTestResult(JSON.stringify(data, null, 2));
+    } catch (e: any) {
+      setQuantityTestResult('Помилка: ' + e.message);
+    }
+    setQuantityTestLoading(false);
+  };
+
   // State for sync progress
   const [syncProgress, setSyncProgress] = useState<{
     active: boolean;
@@ -2341,8 +2366,6 @@ const SettingsOrders: React.FC = () => {
               </div>
             </div>
 
-            
-
             {/* Response */}
             {apiTestResult && (
               <div className="space-y-4">
@@ -2368,6 +2391,27 @@ const SettingsOrders: React.FC = () => {
                 </div>
               </div>
             )}
+
+            <div className="space-y-4 mt-4">
+              <label className="block text-sm font-medium text-gray-700">Тестовий items (JSON для calculateActualQuantity)</label>
+              <textarea
+                className="w-full border rounded p-2 font-mono text-xs"
+                rows={4}
+                value={quantityTestItems}
+                onChange={e => setQuantityTestItems(e.target.value)}
+                placeholder='[{"sku":"07028","quantity":1}]'
+              />
+              <Button
+                color="primary"
+                onPress={testActualQuantity}
+                isLoading={quantityTestLoading}
+              >
+                {quantityTestLoading ? "Обчислення..." : "Перевірити actualQuantity"}
+              </Button>
+              {quantityTestResult && (
+                <pre className="bg-gray-100 border rounded p-2 mt-2 text-xs">{quantityTestResult}</pre>
+              )}
+            </div>
           </div>
         </CardBody>
       </Card>
