@@ -12,6 +12,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { DebugProvider } from "./contexts/DebugContext";
+import { ServerStatusProvider } from "./hooks/ServerStatusContext";
 import { useEquipmentFromAuth } from "./contexts/AuthContext";
 import NotFound from "./pages/NotFound";
 import { Auth } from "./pages/Auth";
@@ -162,6 +163,7 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+
 const App = () => (
   <HeroUIProvider>
     <ToastProvider toastProps={{ radius: "md", shadow: "md", classNames: { icon: "fill-none" } }} placement="bottom-right" toastOffset={30} />
@@ -169,12 +171,14 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <DebugProvider>
-            <AppInitializer>
-              <ScrollToTop />
-              <ErrorBoundary>
-                <AppRoutes />
-              </ErrorBoundary>
-            </AppInitializer>
+            <ServerStatusProvider>
+              <AppInitializer>
+                <ScrollToTop />
+                <ErrorBoundary>
+                  <AppRoutes />
+                </ErrorBoundary>
+              </AppInitializer>
+            </ServerStatusProvider>
           </DebugProvider>
         </AuthProvider>
       </BrowserRouter>

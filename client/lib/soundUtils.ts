@@ -94,6 +94,16 @@ export function playNotificationSound(type: 'success' | 'unstable' | 'error') {
 export function playSoundChoice(choice: string, event: SoundEvent) {
   if (!choice || choice === 'off') return;
   switch (choice) {
+    case 'win11_message_rev': // Windows 11 message style, reversed
+      playTone(523, 0.13, 'sine');
+      setTimeout(() => playTone(784, 0.10, 'sine'), 70);
+      setTimeout(() => playTone(1175, 0.08, 'sine'), 150);
+      return;
+    case 'win11_error_rev': // Windows 11 error style, reversed
+      playTone(261, 0.22, 'sine');
+      setTimeout(() => playTone(392, 0.18, 'sine'), 90);
+      setTimeout(() => playTone(523, 0.13, 'sine'), 200);
+      return;
     case 'win11_calendar': // Windows 11 calendar reminder style
       playTone(1318, 0.07, 'triangle');
       setTimeout(() => playTone(1568, 0.09, 'triangle'), 60);
@@ -219,10 +229,12 @@ export function playSoundChoice(choice: string, event: SoundEvent) {
 export const SOUND_CHOICES = [
   { value: 'win11_calendar', label: 'Windows 11: Календар' },
   { value: 'win11_message', label: 'Windows 11: Повідомлення' },
-  { value: 'macos_subtle', label: 'macOS: Тихе сповіщення' },
-  { value: 'macos_bell', label: 'macOS: Дзвінок' },
+  { value: 'win11_message_rev', label: 'Windows 11: Message' },
   { value: 'win11_notify', label: 'Windows 11: Сповіщення' },
   { value: 'win11_error', label: 'Windows 11: Помилка' },
+  { value: 'win11_error_rev', label: 'Windows 11: Notification' },
+  { value: 'macos_bell', label: 'macOS: Дзвінок' },
+  { value: 'macos_subtle', label: 'macOS: Тихе сповіщення' },
   { value: 'macos_pop', label: 'macOS: Поп' },
   { value: 'macos_glass', label: 'macOS: Скло' },
   { value: 'off', label: 'Без звуку' },

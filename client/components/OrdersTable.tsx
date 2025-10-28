@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { playSoundChoice } from "../lib/soundUtils";
+import { useServerStatus } from "../hooks/useServerStatus";
 import { Table, TableHeader, TableBody, TableColumn, TableRow, TableCell, Pagination, Popover, PopoverContent, PopoverTrigger, Button } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
@@ -57,6 +59,7 @@ const columns = [
 ];
 
 export function OrdersTable({ className, filter = "all", searchQuery = "", onTabChange }: OrdersTableProps) {
+  const { lastChecked } = useServerStatus();
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
@@ -174,6 +177,63 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
     }
     fetchOrders(1, pageSize, filter, sortDescriptor, searchQuery);
   }, [filter, searchQuery]);
+
+  // Автооновлення таблиці при кожному пінгу сервера (lastChecked)
+  useEffect(() => {
+    if (!lastChecked) return;
+    fetchOrders(page, pageSize, filter, sortDescriptor, searchQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastChecked]);
+
+  
+  // Для звуку нових замовлень
+  const prevConfirmedIdsRef = useRef<Set<string>>(new Set());
+  const [soundSettings, setSoundSettings] = useState<Record<string, string>>({});
+
+  // Завантажуємо налаштування звуку (разово)
+  useEffect(() => {
+    fetch('/api/settings/equipment', { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+        if (data?.data?.orderSoundSettings) {
+          setSoundSettings(data.data.orderSoundSettings);
+        }
+      })
+      .catch(() => {
+        setSoundSettings({ newOrder: 'macos_glass' });
+      });
+  }, []);
+
+  // Звук при появі нових замовлень у статусі confirmed (2)
+  const prevFilterRef = useRef<string | undefined>(filter);
+  useEffect(() => {
+    // Працюємо лише для confirmed/all/all_sum
+    if (!Array.isArray(orders) || !['confirmed', 'all', 'all_sum', undefined].includes(filter)) {
+      prevFilterRef.current = filter;
+      return;
+    }
+    // Якщо змінився таб, не граємо звук і не скидаємо prevConfirmedIdsRef
+    if (prevFilterRef.current !== filter) {
+      prevFilterRef.current = filter;
+      return;
+    }
+    // Якщо orders порожній — не оновлюємо prevConfirmedIdsRef
+    if (!orders.length) return;
+    // Витягуємо id замовлень зі статусом '2' (confirmed)
+    const confirmedOrders = orders.filter(o => String(o.status) === '2');
+    const confirmedIds = new Set(confirmedOrders.map(o => o.id));
+    const prevIds = prevConfirmedIdsRef.current;
+    // Нові id = ті, яких не було у prevIds
+    const newIds = [...confirmedIds].filter(id => !prevIds.has(id));
+    if (newIds.length > 0) {
+      console.log('[OrdersTable] New confirmed orders:', newIds, '| prev:', [...prevIds], '| curr:', [...confirmedIds]);
+      playSoundChoice('win11_error_rev', 'done');
+    }
+    // Оновлюємо prevConfirmedIdsRef тільки якщо orders змінилися
+    if (orders.length > 0) {
+      prevConfirmedIdsRef.current = confirmedIds;
+    }
+  }, [orders, filter, soundSettings]);
 
   // Загружаем заказы при изменении страницы, размера страницы или сортировки
   useEffect(() => {
