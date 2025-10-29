@@ -163,7 +163,7 @@ export const formatTrackingNumberWithIcon = (
           className="inline-block"
         />
       )}
-      <span>{formattedNumber}</span>
+      <span className="tabular-nums">{formattedNumber}</span>
     </>
   );
 };

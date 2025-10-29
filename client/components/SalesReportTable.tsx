@@ -43,6 +43,7 @@ interface SalesData {
   ordersWithDiscountReason: number;
   portionsWithDiscountReason: number;
   discountReasonText: string;
+  totalPrice: number | undefined;
   orders: Array<{
     orderNumber: string;
     portionsCount: number;
@@ -52,6 +53,10 @@ interface SalesData {
     orderTime: string;
     externalId: string;
     status: string;
+    // per-order fields from backend
+    totalPrice?: number | undefined;
+    hasDiscount?: boolean;
+    discountReasonCode?: string | null;
   }>;
 }
 
@@ -87,7 +92,16 @@ const productOptions = [
   { key: "main_courses", label: "Другі страви" },
 ];
 
+// Опції додаткового фільтра
+const extraFilterOptions = [
+  { key: "noDiscount", label: "Виключити 'Зі знижкою'" },
+  { key: "noMarketplaces", label: "Виключити маркетплейси" },
+  { key: "noOther", label: "Виключити 'Інше'" },
+];
+
 export default function SalesReportTable({ className }: SalesReportTableProps) {
+  // Додатковий фільтр
+  const [extraFilters, setExtraFilters] = useState<Set<string>>(new Set());
   const { isAdmin } = useRoleAccess();
   const { apiCall } = useApi();
   const { isLoading: isAuthLoading } = useAuth();
@@ -255,6 +269,8 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
     const preset = datePresets.find((p) => p.key === "last7Days");
     if (preset) setDateRange(preset.getRange());
     setSelectedProducts(new Set());
+    // Скидаємо також додаткові фільтри
+    setExtraFilters(new Set());
     setCache({}); // Очищаем весь кеш при сбросе фильтров
   }, []);
 
@@ -433,78 +449,144 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
     }
   }, [apiCall, isAuthLoading]);
 
-  // Сортировка данных
-  const sortedItems = useMemo(() => {
-    const items = [...salesData];
+  // Фільтрація salesData згідно додаткових фільтрів
+  // Фільтрація orders всередині кожного дня, агрегати перераховуються по відфільтрованих orders
+  const filteredSalesData = useMemo((): SalesData[] => {
+    if (extraFilters.size === 0) return salesData;
+    return salesData
+      .map((item) => {
+        // Debug: log item and filters to help trace mismatches between row and modal
+        try {
+          console.debug('[SalesReportTable] aggregating item ' + JSON.stringify({
+            date: item.date,
+            originalOrdersCount: item.orders?.length || 0,
+            extraFilters: Array.from(extraFilters),
+          }));
+        } catch (e) {
+          // ignore logging errors
+        }
+        let filteredOrders = item.orders;
+        if (extraFilters.has("noMarketplaces")) {
+          filteredOrders = filteredOrders.filter((order) => !["rozetka", "prom.ua"].includes(order.source));
+        }
+        if (extraFilters.has("noOther")) {
+          filteredOrders = filteredOrders.filter((order) => order.source !== "інше");
+        }
+        if (extraFilters.has("noDiscount")) {
+          // Support both new per-order flags and legacy markers
+          filteredOrders = filteredOrders.filter((order) => {
+            const o: any = order as any;
+            const hasDiscountFlag = o.hasDiscount === true || (o.discountReasonCode != null && String(o.discountReasonCode).trim() !== '');
+            const legacyPricina = o.pricinaZnizki && String(o.pricinaZnizki).trim() !== '';
+            const legacyStatus = o.status === 'discount';
+            return !(hasDiscountFlag || legacyPricina || legacyStatus);
+          });
+        }
+        if (filteredOrders.length === 0) return null;
+        
+        let ordersCount = filteredOrders.length;
+        let portionsCount = filteredOrders.reduce((sum, o) => sum + (o.portionsCount || 0), 0);
+        // totalPrice: використовуємо тільки реальні per-order totalPrice (якщо вони є).
+        // Якщо у жодного order немає totalPrice, то показуємо undefined (в UI відображається "—").
+        const anyOrderHasTotalPrice = filteredOrders.some((o) => (o as any).totalPrice !== undefined && (o as any).totalPrice !== null);
+        let totalPrice: number | undefined;
+        if (anyOrderHasTotalPrice) {
+          totalPrice = filteredOrders.reduce((sum, o) => sum + (Number((o as any).totalPrice) || 0), 0);
+        } else {
+          totalPrice = undefined; // no per-order totals available
+        }
+        const ordersBySource: Record<string, number> = {};
+        const portionsBySource: Record<string, number> = {};
+        filteredOrders.forEach((o) => {
+          ordersBySource[o.source] = (ordersBySource[o.source] || 0) + 1;
+          portionsBySource[o.source] = (portionsBySource[o.source] || 0) + (o.portionsCount || 0);
+        });
+        const ordersByStatus: Record<string, number> = {};
+        const portionsByStatus: Record<string, number> = {};
+        filteredOrders.forEach((o) => {
+          ordersByStatus[o.status] = (ordersByStatus[o.status] || 0) + 1;
+          portionsByStatus[o.status] = (portionsByStatus[o.status] || 0) + (o.portionsCount || 0);
+        });
+  // discountReason — використовуємо тільки реальні per-order мітки (status === 'discount').
+        // Consider new per-order flags and legacy markers for discount detection
+        const explicitDiscountOrders = filteredOrders.filter((o) => {
+          const or: any = o as any;
+          return or.hasDiscount === true || (or.discountReasonCode != null && String(or.discountReasonCode).trim() !== '') || (or.pricinaZnizki && String(or.pricinaZnizki).trim() !== '') || or.status === 'discount';
+        });
+  let ordersWithDiscountReason = explicitDiscountOrders.length;
+  let portionsWithDiscountReason = explicitDiscountOrders.reduce((sum, o) => sum + (o.portionsCount || 0), 0);
 
+  // Ми відмовилися від пропорційних фолбеків; якщо користувач просить виключити знижки,
+  // то вони вже були відфільтровані раніше через filteredOrders (status === 'discount').
+
+        // Debug: print computed totals for this item after filtering
+        try {
+          console.debug('[SalesReportTable] computed ' + JSON.stringify({
+            date: item.date,
+            ordersCount,
+            portionsCount,
+            anyOrderHasTotalPrice,
+            totalPrice,
+            explicitDiscountOrders: explicitDiscountOrders.length,
+            ordersWithDiscountReason,
+            portionsWithDiscountReason,
+            filteredOrdersPreview: filteredOrders.slice(0, 6).map((o) => ({ orderNumber: o.orderNumber, status: o.status, totalPrice: (o as any).totalPrice }))
+          }));
+        } catch (e) {}
+        return {
+          ...item,
+          orders: filteredOrders,
+          ordersCount,
+          portionsCount,
+          totalPrice,
+          ordersBySource,
+          portionsBySource,
+          ordersByStatus,
+          portionsByStatus,
+          ordersWithDiscountReason,
+          portionsWithDiscountReason,
+        };
+      })
+      .filter((d): d is SalesData => Boolean(d));
+  }, [salesData, extraFilters]);
+
+  // Сортировка даних
+  const sortedItems = useMemo(() => {
+    const items = [...filteredSalesData];
     items.sort((a, b) => {
       let cmp = 0;
-
       if (sortDescriptor.column === "date") {
         cmp = new Date(a.date).getTime() - new Date(b.date).getTime();
       } else if (sortDescriptor.column === "ordersCount") {
         cmp = a.ordersCount - b.ordersCount;
       } else if (sortDescriptor.column === "portionsCount") {
         cmp = a.portionsCount - b.portionsCount;
+      } else if (sortDescriptor.column === "totalPrice") {
+        cmp = a.totalPrice - b.totalPrice;
       }
-      // Новые колонки не сортируемые, поэтому оставляем без изменений
-
       return sortDescriptor.direction === "descending" ? -cmp : cmp;
     });
-
     return items;
-  }, [salesData, sortDescriptor]);
+  }, [filteredSalesData, sortDescriptor]);
 
-  // Расчет итоговых значений
+  // Підрахунок підсумків по відфільтрованих даних
   const totals = useMemo(
     () => ({
-      ordersCount: salesData.reduce((sum, item) => sum + item.ordersCount, 0),
-      portionsCount: salesData.reduce(
-        (sum, item) => sum + item.portionsCount,
-        0,
-      ),
-      sourceWebsite: salesData.reduce(
-        (sum, item) => sum + (item.ordersBySource["nk-food.shop"] || 0),
-        0,
-      ),
-      sourceWebsitePortions: salesData.reduce(
-        (sum, item) => sum + (item.portionsBySource["nk-food.shop"] || 0),
-        0,
-      ),
-      sourceRozetka: salesData.reduce(
-        (sum, item) => sum + (item.ordersBySource["rozetka"] || 0),
-        0,
-      ),
-      sourceRozetkaPortions: salesData.reduce(
-        (sum, item) => sum + (item.portionsBySource["rozetka"] || 0),
-        0,
-      ),
-      sourceProm: salesData.reduce(
-        (sum, item) => sum + (item.ordersBySource["prom.ua"] || 0),
-        0,
-      ),
-      sourcePromPortions: salesData.reduce(
-        (sum, item) => sum + (item.portionsBySource["prom.ua"] || 0),
-        0,
-      ),
-      sourceChat: salesData.reduce(
-        (sum, item) => sum + (item.ordersBySource["інше"] || 0),
-        0,
-      ),
-      sourceChatPortions: salesData.reduce(
-        (sum, item) => sum + (item.portionsBySource["інше"] || 0),
-        0,
-      ),
-      discountReason: salesData.reduce(
-        (sum, item) => sum + item.ordersWithDiscountReason,
-        0,
-      ),
-      discountReasonPortions: salesData.reduce(
-        (sum, item) => sum + item.portionsWithDiscountReason,
-        0,
-      ),
+      ordersCount: filteredSalesData.reduce((sum, item) => sum + item.ordersCount, 0),
+      portionsCount: filteredSalesData.reduce((sum, item) => sum + item.portionsCount, 0),
+      totalPrice: filteredSalesData.reduce((sum, item) => sum + (item.totalPrice || 0), 0),
+      sourceWebsite: filteredSalesData.reduce((sum, item) => sum + (item.ordersBySource["nk-food.shop"] || 0), 0),
+      sourceWebsitePortions: filteredSalesData.reduce((sum, item) => sum + (item.portionsBySource["nk-food.shop"] || 0), 0),
+      sourceRozetka: filteredSalesData.reduce((sum, item) => sum + (item.ordersBySource["rozetka"] || 0), 0),
+      sourceRozetkaPortions: filteredSalesData.reduce((sum, item) => sum + (item.portionsBySource["rozetka"] || 0), 0),
+      sourceProm: filteredSalesData.reduce((sum, item) => sum + (item.ordersBySource["prom.ua"] || 0), 0),
+      sourcePromPortions: filteredSalesData.reduce((sum, item) => sum + (item.portionsBySource["prom.ua"] || 0), 0),
+      sourceChat: filteredSalesData.reduce((sum, item) => sum + (item.ordersBySource["інше"] || 0), 0),
+      sourceChatPortions: filteredSalesData.reduce((sum, item) => sum + (item.portionsBySource["інше"] || 0), 0),
+      discountReason: filteredSalesData.reduce((sum, item) => sum + item.ordersWithDiscountReason, 0),
+      discountReasonPortions: filteredSalesData.reduce((sum, item) => sum + item.portionsWithDiscountReason, 0),
     }),
-    [salesData],
+    [filteredSalesData],
   );
 
   // Получение статуса по ключу
@@ -565,100 +647,115 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
 
   // Получение всех значений для каждого столбца
   const getAllOrdersCounts = useMemo(
-    () => salesData.map((item) => item.ordersCount),
-    [salesData],
+    () => filteredSalesData.map((item) => item.ordersCount),
+    [filteredSalesData],
   );
 
   const getAllPortionsCounts = useMemo(
-    () => salesData.map((item) => item.portionsCount),
-    [salesData],
+    () => filteredSalesData.map((item) => item.portionsCount),
+    [filteredSalesData],
+  );
+
+  const getAllTotalPrice = useMemo(
+    () => filteredSalesData.map((item) => item.totalPrice || 0),
+    [filteredSalesData],
   );
 
   const getAllSourceWebsiteCounts = useMemo(
-    () => salesData.map((item) => item.ordersBySource["nk-food.shop"] || 0),
-    [salesData],
+    () => filteredSalesData.map((item) => item.ordersBySource["nk-food.shop"] || 0),
+    [filteredSalesData],
   );
 
   const getAllSourceRozetkaCounts = useMemo(
-    () => salesData.map((item) => item.ordersBySource["rozetka"] || 0),
-    [salesData],
+    () => filteredSalesData.map((item) => item.ordersBySource["rozetka"] || 0),
+    [filteredSalesData],
   );
 
   const getAllSourcePromCounts = useMemo(
-    () => salesData.map((item) => item.ordersBySource["prom.ua"] || 0),
-    [salesData],
+    () => filteredSalesData.map((item) => item.ordersBySource["prom.ua"] || 0),
+    [filteredSalesData],
   );
 
   const getAllSourceChatCounts = useMemo(
-    () => salesData.map((item) => item.ordersBySource["інше"] || 0),
-    [salesData],
+    () => filteredSalesData.map((item) => item.ordersBySource["інше"] || 0),
+    [filteredSalesData],
   );
 
   const getAllDiscountReasonCounts = useMemo(
-    () => salesData.map((item) => item.ordersWithDiscountReason),
-    [salesData],
+    () => filteredSalesData.map((item) => item.ordersWithDiscountReason),
+    [filteredSalesData],
   );
 
   const columns = [
-    { key: "date", label: "Дата", sortable: true, className: "w-2/16" },
+    { key: "date", label: "Дата", sortable: true, className: "w-3/19" },
     {
       key: "ordersCount",
-      label: "Замовлення",
+      label: "Замовл.",
       sortable: true,
-      className: "w-2/16 text-center",
+      className: "w-2/19 text-center",
     },
     {
       key: "portionsCount",
       label: "Порції",
       sortable: true,
-      className: "w-2/16 text-center",
+      className: "w-2/19 text-center",
+    },
+    {
+      key: "totalPrice",
+      label: "Сума, ₴",
+      sortable: true,
+      className: "w-2/19 text-center",
     },
     {
       key: "sourceWebsite",
       label: "Сайт",
       sortable: false,
-      className: "w-2/16 text-center",
+      className: "w-2/19 text-center",
     },
     {
       key: "sourceRozetka",
       label: "Розетка",
       sortable: false,
-      className: "w-2/16 text-center",
+      className: "w-2/19 text-center",
     },
     {
       key: "sourceProm",
       label: "Пром",
       sortable: false,
-      className: "w-2/16 text-center",
+      className: "w-2/19 text-center",
     },
     {
       key: "sourceChat",
       label: "Інше",
       sortable: false,
-      className: "w-2/16 text-center",
+      className: "w-2/19 text-center",
     },
     {
       key: "discountReason",
       label: "Зі знижкою",
       sortable: false,
-      className: "w-2/16 text-center",
+      className: "w-2/19 text-center",
     },
   ];
 
   return (
     <div className={`space-y-4 ${className}`}>
-      {/* Фильтры */}
-      <div className="flex flex-wrap gap-4 items-end">
+  {/* Фільтри */}
+  <div className="flex flex-wrap gap-4 items-end">
         <div className="flex-1">
           <Select
             aria-label="Статус замовлення"
             placeholder="Всі статуси"
             selectedKeys={statusFilter === "all" ? [] : [statusFilter]}
             onSelectionChange={(keys) => {
-              const selected = Array.from(keys);
-              const newStatus =
-                selected.length > 0 ? (selected[0] as string) : "all";
-              setStatusFilter(newStatus);
+              const selected = Array.from(keys) as string[];
+              if (selected.length === 0) {
+                setStatusFilter("all");
+                return;
+              }
+              const sel = selected[0];
+              const found = ORDER_STATUSES.find((o) => o.key === sel || o.label === sel);
+              setStatusFilter(found ? found.key : sel);
             }}
             size="md"
             startContent={
@@ -681,10 +778,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
             placeholder="Оберіть період"
             selectedKeys={datePresetKey ? [datePresetKey] : []}
             onSelectionChange={(keys) => {
-              const selectedKey = Array.from(keys)[0] as string;
-              setDatePresetKey(selectedKey);
-              const preset = datePresets.find((p) => p.key === selectedKey);
+              const selected = Array.from(keys) as string[];
+              if (selected.length === 0) return;
+              const sel = selected[0];
+              const preset = datePresets.find((p) => p.key === sel || p.label === sel);
               if (preset) {
+                setDatePresetKey(preset.key);
                 setDateRange(preset.getRange());
               }
             }}
@@ -727,14 +826,21 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
           </I18nProvider>
         </div>
 
-        <div className="flex-1">
+        {/* <div className="flex-1">
           <Select
             aria-label="Фільтр товарів"
             placeholder="Всі товари"
             selectionMode="multiple"
             selectedKeys={selectedProducts}
             onSelectionChange={(keys) => {
-              setSelectedProducts(new Set(Array.from(keys) as string[]));
+              const incoming = Array.from(keys) as string[];
+              const normalized = incoming
+                .map((k) => {
+                  const found = productOptions.find((o) => o.key === k || o.label === k);
+                  return found ? found.key : null;
+                })
+                .filter((k): k is string => Boolean(k));
+              setSelectedProducts(new Set(normalized));
             }}
             size="md"
             startContent={
@@ -746,6 +852,37 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
             }}
           >
             {productOptions.map((option) => (
+              <SelectItem key={option.key}>{option.label}</SelectItem>
+            ))}
+          </Select>
+        </div> */}
+
+        {/* Додатковий multi-select фільтр */}
+        <div className="flex-1 min-w-[220px]">
+          <Select
+            aria-label="Додаткові фільтри"
+            placeholder="Додаткові фільтри"
+            selectionMode="multiple"
+            selectedKeys={extraFilters}
+            onSelectionChange={(keys) => {
+              const incoming = Array.from(keys) as string[];
+              // Normalize to known option keys (allow labels or keys)
+              const normalized = incoming
+                .map((k) => {
+                  const found = extraFilterOptions.find((o) => o.key === k || o.label === k);
+                  return found ? found.key : null;
+                })
+                .filter((k): k is string => Boolean(k));
+              setExtraFilters(new Set(normalized));
+            }}
+            size="md"
+            startContent={<DynamicIcon name="filter" className="text-gray-400" size={19} />}
+            classNames={{
+              trigger: "h-10",
+              innerWrapper: "gap-2",
+            }}
+          >
+            {extraFilterOptions.map((option) => (
               <SelectItem key={option.key}>{option.label}</SelectItem>
             ))}
           </Select>
@@ -851,7 +988,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                 className="hover:bg-neutral-100 cursor-pointer transition-colors duration-200"
                 onClick={() => handleOpenDetails(item)}
               >
-                <TableCell className="font-medium text-base">
+                <TableCell className="font-medium text-[15px]">
                   {(() => {
                     const dateObj = new Date(item.date);
                     const day = dateObj.getDay();
@@ -863,7 +1000,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                       weekday: "short",
                     });
                     return (
-                      <span className={isWeekend ? "text-gray-400" : ""}>
+                      <span className={`${isWeekend ? "text-gray-400" : ""} whitespace-nowrap`}>
                         {dateStr}
                       </span>
                     );
@@ -901,6 +1038,28 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                     }}
                   >
                     {item.portionsCount}
+                  </Chip>
+                </TableCell>
+                <TableCell className="text-center text-base">
+                  <Chip
+                    size="md"
+                    variant="flat"
+                    classNames={{
+                      base: getValueColor(
+                        item.totalPrice || 0,
+                        getAllTotalPrice,
+                      ).base,
+                      content: getValueColor(
+                        item.totalPrice || 0,
+                        getAllTotalPrice,
+                      ).content,
+                    }}
+                  >
+                    {item.totalPrice !== undefined
+                      ? item.totalPrice
+                          .toLocaleString("uk-UA", { style: "currency", currency: "UAH", maximumFractionDigits: 0 })
+                          .replace(/\s?грн\.?|UAH|₴/gi, "")
+                      : "—"}
                   </Chip>
                 </TableCell>
                 <TableCell className="text-center text-base">
@@ -1003,30 +1162,35 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
           </TableBody>
         </Table>
 
-        {/* Итоговая строка */}
-        {salesData.length > 0 && (
+  {/* Итоговая строка */}
+  {filteredSalesData.length > 0 && (
           <div className="border-t-1 border-gray-200 py-2">
-            <div className="flex items-center justify-between">
-              <div className="font-bold text-gray-800 w-2/16 pl-3"></div>
-              <div className="text-center font-bold text-gray-800 w-2/16">
+            <div className="flex items-center justify-between text-sm">
+              <div className="w-3/19"></div>
+              <div className="text-center font-bold text-gray-800 w-2/19">
                 {totals.ordersCount}
               </div>
-              <div className="text-center font-bold text-gray-800 w-2/16">
+              <div className="text-center font-bold text-gray-800 w-2/19">
                 {totals.portionsCount}
               </div>
-              <div className="text-center font-bold text-gray-800 w-2/16">
+              <div className="text-center font-bold text-gray-800 w-2/19">
+    {(totals.totalPrice || 0)
+      .toLocaleString("uk-UA", { style: "currency", currency: "UAH", maximumFractionDigits: 0 })
+      .replace(/\s?грн\.?|UAH|₴/gi, " ₴")}
+              </div>
+              <div className="text-center font-bold text-gray-800 w-2/19">
                 {totals.sourceWebsite} / {totals.sourceWebsitePortions}
               </div>
-              <div className="text-center font-bold text-gray-800 w-2/16">
+              <div className="text-center font-bold text-gray-800 w-2/19">
                 {totals.sourceRozetka} / {totals.sourceRozetkaPortions}
               </div>
-              <div className="text-center font-bold text-gray-800 w-2/16">
+              <div className="text-center font-bold text-gray-800 w-2/19">
                 {totals.sourceProm} / {totals.sourcePromPortions}
               </div>
-              <div className="text-center font-bold text-gray-800 w-2/16">
+              <div className="text-center font-bold text-gray-800 w-2/19">
                 {totals.sourceChat} / {totals.sourceChatPortions}
               </div>
-              <div className="text-center font-bold text-gray-800 w-2/16">
+              <div className="text-center font-bold text-gray-800 w-2/19">
                 {totals.discountReason} / {totals.discountReasonPortions}
               </div>
             </div>
@@ -1194,16 +1358,22 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                             >
                               <TableHeader>
                                 <TableColumn className="text-sm font-medium">
-                                  № замовлення
+                                  №
                                 </TableColumn>
                                 <TableColumn className="text-sm font-medium">
                                   Дата
                                 </TableColumn>
                                 <TableColumn className="text-sm font-medium">
-                                  Кіл-ть порцій
+                                  Порцій
                                 </TableColumn>
                                 <TableColumn className="text-sm font-medium">
                                   Джерело
+                                </TableColumn>
+                                <TableColumn className="text-sm font-medium">
+                                  Сума
+                                </TableColumn>
+                                <TableColumn className="text-sm font-medium">
+                                  Знижка
                                 </TableColumn>
                                 <TableColumn className="text-sm font-medium">
                                   Статус
@@ -1226,6 +1396,20 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                                     </TableCell>
                                     <TableCell className="text-sm text-neutral-600">
                                       {order.source || ""}
+                                    </TableCell>
+                                    <TableCell className="text-sm text-neutral-600">
+                                      {(order as any).totalPrice !== undefined && (order as any).totalPrice !== null
+                                        ? Number((order as any).totalPrice).toLocaleString('uk-UA', { style: 'currency', currency: 'UAH', maximumFractionDigits: 0 }).replace(/\s?грн\.?|UAH|₴/gi, '')
+                                        : '—'}
+                                    </TableCell>
+                                    <TableCell className="text-sm text-neutral-600">
+                                      {(order as any).hasDiscount || (order as any).discountReasonCode ? (
+                                        <Chip size="sm" variant="flat" className="text-xs" classNames={{ base: 'bg-lime-200', content: 'text-lime-800' }}>
+                                          Так
+                                        </Chip>
+                                      ) : (
+                                        <span className="text-sm text-neutral-200">—</span>
+                                      )}
                                     </TableCell>
                                     <TableCell className="text-sm">
                                       <Chip

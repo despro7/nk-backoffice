@@ -2099,6 +2099,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
     const salesData: { [dateKey: string]: {
       ordersCount: number;
       portionsCount: number;
+      totalPrice: number;
       ordersByStatus: { [status: string]: number };
       portionsByStatus: { [status: string]: number };
       ordersBySource: { [source: string]: number };
@@ -2113,6 +2114,10 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         externalId: string;
         status: string;
         source: string;
+        // Detailed per-order fields so client can rely on real values
+        totalPrice?: number | undefined;
+        hasDiscount?: boolean;
+        discountReasonCode?: string | null;
       }>;
     } } = {};
 
@@ -2126,6 +2131,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           salesData[dateKey] = {
             ordersCount: 0,
             portionsCount: 0,
+            totalPrice: 0,
             ordersByStatus: {},
             portionsByStatus: {},
             ordersBySource: {},
@@ -2180,6 +2186,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           // Добавляем заказ к статистике дня
           salesData[dateKey].ordersCount += 1;
           salesData[dateKey].portionsCount += orderPortions;
+          salesData[dateKey].totalPrice += Number(order.totalPrice) || 0;
 
           // Статистика по статусам
           const ordStatus = order.status;
@@ -2227,7 +2234,10 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
               : '',
             externalId: order.externalId,
             status: order.status,
-            source: getOrderSourceDetailed(order.sajt || '')
+            source: getOrderSourceDetailed(order.sajt || ''),
+            totalPrice: order.totalPrice != null ? Number(order.totalPrice) : undefined,
+            hasDiscount: !!(order.pricinaZnizki && String(order.pricinaZnizki).trim() !== ''),
+            discountReasonCode: order.pricinaZnizki ? String(order.pricinaZnizki) : null,
           });
         }
 
@@ -2242,6 +2252,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         date: dateKey,
         ordersCount: data.ordersCount,
         portionsCount: data.portionsCount,
+        totalPrice: data.totalPrice,
         ordersByStatus: data.ordersByStatus,
         portionsByStatus: data.portionsByStatus,
         ordersBySource: data.ordersBySource,

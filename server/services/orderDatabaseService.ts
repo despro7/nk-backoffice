@@ -1787,11 +1787,11 @@ export class OrderDatabaseService {
   private async calculateActualQuantity(items: any[], initialQuantity: number = 0): Promise<number> {
     try {
       // Якщо є явне значення кількості (kilTPorcij) — використовуємо його
-      if (initialQuantity && initialQuantity > 2) {
+      if (initialQuantity && initialQuantity > 0) {
         return initialQuantity;
       }
 
-      // Якщо initialQuantity порожнє, або від 0 до 2 — обраховуємо з товарів (як в preprocessOrderItemsForCache)
+      // Якщо initialQuantity порожнє, або 0 — обраховуємо з товарів (як в preprocessOrderItemsForCache)
       if (!Array.isArray(items) || items.length === 0) {
         return 0;
       }

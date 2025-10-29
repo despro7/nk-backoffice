@@ -30,7 +30,7 @@ const SOURCE_CATEGORY_MAP: Record<string, string> = Object.fromEntries([
  * @returns детальное название источника
  */
 export function getOrderSourceDetailed(sajt: string): string {
-  return sajt ? (SOURCE_MAP_DETAILED[sajt] || 'не визначено') : 'не визначено';
+  return sajt ? (SOURCE_MAP_DETAILED[sajt] || 'інше') : 'інше';
 }
 
 /**
