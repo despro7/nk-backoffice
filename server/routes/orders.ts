@@ -2104,6 +2104,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       portionsByStatus: { [status: string]: number };
       ordersBySource: { [source: string]: number };
       portionsBySource: { [source: string]: number };
+      priceBySource: { [source: string]: number };
       ordersWithDiscountReason: number;
       portionsWithDiscountReason: number;
       discountReasonText: string;
@@ -2136,6 +2137,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
             portionsByStatus: {},
             ordersBySource: {},
             portionsBySource: {},
+            priceBySource: {},
             ordersWithDiscountReason: 0,
             portionsWithDiscountReason: 0,
             discountReasonText: '',
@@ -2204,9 +2206,11 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           if (!salesData[dateKey].ordersBySource[sourceName]) {
             salesData[dateKey].ordersBySource[sourceName] = 0;
             salesData[dateKey].portionsBySource[sourceName] = 0;
+            salesData[dateKey].priceBySource[sourceName] = 0;
           }
           salesData[dateKey].ordersBySource[sourceName] += 1;
           salesData[dateKey].portionsBySource[sourceName] += orderPortions;
+          salesData[dateKey].priceBySource[sourceName] += Number(order.totalPrice) || 0;
 
           // Статистика по pricinaZnizki (причина знижки)
           if (order.pricinaZnizki && order.pricinaZnizki.trim() !== '') {
@@ -2257,6 +2261,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         portionsByStatus: data.portionsByStatus,
         ordersBySource: data.ordersBySource,
         portionsBySource: data.portionsBySource,
+        priceBySource: data.priceBySource,
         ordersWithDiscountReason: data.ordersWithDiscountReason,
         portionsWithDiscountReason: data.portionsWithDiscountReason,
         discountReasonText: data.discountReasonText,

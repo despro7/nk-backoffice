@@ -31,6 +31,7 @@ import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { addToast } from "@heroui/react";
 import { useAuth } from "../contexts/AuthContext";
+import { useExportFunctions } from "../hooks/useExportFunctions";
 
 interface SalesData {
   date: string;
@@ -40,6 +41,7 @@ interface SalesData {
   portionsByStatus: { [status: string]: number };
   ordersBySource: { [source: string]: number };
   portionsBySource: { [source: string]: number };
+  priceBySource: { [source: string]: number };
   ordersWithDiscountReason: number;
   portionsWithDiscountReason: number;
   discountReasonText: string;
@@ -404,6 +406,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
     }
   };
 
+
   // Загрузка данных при изменении фильтров
   useEffect(() => {
     if (isAuthLoading) return; // Чекаємо, поки авторизація ініціалізується
@@ -501,6 +504,10 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
           ordersBySource[o.source] = (ordersBySource[o.source] || 0) + 1;
           portionsBySource[o.source] = (portionsBySource[o.source] || 0) + (o.portionsCount || 0);
         });
+        const priceBySource: Record<string, number> = {};
+        filteredOrders.forEach((o) => {
+          priceBySource[o.source] = (priceBySource[o.source] || 0) + (Number((o as any).totalPrice) || 0);
+        });
         const ordersByStatus: Record<string, number> = {};
         const portionsByStatus: Record<string, number> = {};
         filteredOrders.forEach((o) => {
@@ -541,6 +548,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
           totalPrice,
           ordersBySource,
           portionsBySource,
+          priceBySource,
           ordersByStatus,
           portionsByStatus,
           ordersWithDiscountReason,
@@ -549,6 +557,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
       })
       .filter((d): d is SalesData => Boolean(d));
   }, [salesData, extraFilters]);
+
+  // Використовуємо хук для функцій експорту
+  const { exportToExcel, exportToTXT } = useExportFunctions({
+    filteredSalesData,
+    dateRange,
+  });
 
   // Сортировка даних
   const sortedItems = useMemo(() => {
@@ -577,12 +591,16 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
       totalPrice: filteredSalesData.reduce((sum, item) => sum + (item.totalPrice || 0), 0),
       sourceWebsite: filteredSalesData.reduce((sum, item) => sum + (item.ordersBySource["nk-food.shop"] || 0), 0),
       sourceWebsitePortions: filteredSalesData.reduce((sum, item) => sum + (item.portionsBySource["nk-food.shop"] || 0), 0),
+      sourceWebsitePrice: filteredSalesData.reduce((sum, item) => sum + (item.priceBySource?.["nk-food.shop"] || 0), 0),
       sourceRozetka: filteredSalesData.reduce((sum, item) => sum + (item.ordersBySource["rozetka"] || 0), 0),
       sourceRozetkaPortions: filteredSalesData.reduce((sum, item) => sum + (item.portionsBySource["rozetka"] || 0), 0),
+      sourceRozetkaPrice: filteredSalesData.reduce((sum, item) => sum + (item.priceBySource?.["rozetka"] || 0), 0),
       sourceProm: filteredSalesData.reduce((sum, item) => sum + (item.ordersBySource["prom.ua"] || 0), 0),
       sourcePromPortions: filteredSalesData.reduce((sum, item) => sum + (item.portionsBySource["prom.ua"] || 0), 0),
+      sourcePromPrice: filteredSalesData.reduce((sum, item) => sum + (item.priceBySource?.["prom.ua"] || 0), 0),
       sourceChat: filteredSalesData.reduce((sum, item) => sum + (item.ordersBySource["інше"] || 0), 0),
       sourceChatPortions: filteredSalesData.reduce((sum, item) => sum + (item.portionsBySource["інше"] || 0), 0),
+      sourceChatPrice: filteredSalesData.reduce((sum, item) => sum + (item.priceBySource?.["інше"] || 0), 0),
       discountReason: filteredSalesData.reduce((sum, item) => sum + item.ordersWithDiscountReason, 0),
       discountReasonPortions: filteredSalesData.reduce((sum, item) => sum + item.portionsWithDiscountReason, 0),
     }),
@@ -1512,6 +1530,35 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
               </DropdownMenu>
             </Dropdown>
           )}
+
+          <Dropdown>
+            <DropdownTrigger>
+              <Button
+                size="sm"
+                variant="flat"
+                className="h-8"
+              >
+                <DynamicIcon name="download" size={14} />
+                Експорт
+              </Button>
+            </DropdownTrigger>
+            <DropdownMenu aria-label="Опції експорту">
+              <DropdownItem
+                key="export-excel"
+                onPress={exportToExcel}
+                startContent={<DynamicIcon name="file-spreadsheet" size={14} />}
+              >
+                Експорт в Excel
+              </DropdownItem>
+              <DropdownItem
+                key="export-txt"
+                onPress={exportToTXT}
+                startContent={<DynamicIcon name="file" size={14} />}
+              >
+                Експорт в TXT
+              </DropdownItem>
+            </DropdownMenu>
+          </Dropdown>
 
           {/* Модальное окно выбора периода для обновления кеша */}
           <Modal
