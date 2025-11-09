@@ -15,6 +15,7 @@ interface SalesData {
 	priceBySource: { [source: string]: number };
 	ordersWithDiscountReason: number;
 	portionsWithDiscountReason: number;
+	priceWithDiscountReason: number;
 	discountReasonText: string;
 	totalPrice: number | undefined;
 	orders: Array<{
@@ -67,7 +68,10 @@ export const useExportFunctions = ({ filteredSalesData, dateRange }: ExportFunct
 			'Prom.ua (сума)',
 			'Інше (замовлень)',
 			'Інше (порцій)',
-			'Інше (сума)'
+			'Інше (сума)',
+			'Зі знижкою (замовлень)',
+			'Зі знижкою (порцій)',
+			'Зі знижкою (сума)'
 		];
 
 		const data = filteredSalesData.map(row => [
@@ -87,6 +91,9 @@ export const useExportFunctions = ({ filteredSalesData, dateRange }: ExportFunct
 			row.ordersBySource['інше'] || 0,
 			row.portionsBySource['інше'] || 0,
 			row.priceBySource?.['інше'] || 0,
+			row.ordersWithDiscountReason || 0,
+			row.portionsWithDiscountReason || 0,
+			row.priceWithDiscountReason || 0
 		]);
 
 		// Створюємо worksheet з даними
@@ -110,6 +117,9 @@ export const useExportFunctions = ({ filteredSalesData, dateRange }: ExportFunct
 			{ wch: 8 }, // Інше (замовлень)
 			{ wch: 10 }, // Інше (порцій)
 			{ wch: 12 }, // Інше (сума)
+			{ wch: 8 }, // Зі знижкою (замовлень)
+			{ wch: 10 }, // Зі знижкою (порцій)
+			{ wch: 12 }, // Зі знижкою (сума)
 		];
 
 		// Форматуємо числові дані як валюту (з двома десятковими знаками)

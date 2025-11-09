@@ -2107,6 +2107,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       priceBySource: { [source: string]: number };
       ordersWithDiscountReason: number;
       portionsWithDiscountReason: number;
+      priceWithDiscountReason: number;
       discountReasonText: string;
       orders: Array<{
         orderNumber: string;
@@ -2140,6 +2141,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
             priceBySource: {},
             ordersWithDiscountReason: 0,
             portionsWithDiscountReason: 0,
+            priceWithDiscountReason: 0,
             discountReasonText: '',
             orders: []
           };
@@ -2216,6 +2218,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           if (order.pricinaZnizki && order.pricinaZnizki.trim() !== '') {
             salesData[dateKey].ordersWithDiscountReason += 1;
             salesData[dateKey].portionsWithDiscountReason += orderPortions;
+            salesData[dateKey].priceWithDiscountReason += Number(order.totalPrice) || 0;
 
             // Определяем причину скидки
             if (order.pricinaZnizki === '33') {
@@ -2264,6 +2267,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         priceBySource: data.priceBySource,
         ordersWithDiscountReason: data.ordersWithDiscountReason,
         portionsWithDiscountReason: data.portionsWithDiscountReason,
+        priceWithDiscountReason: data.priceWithDiscountReason,
         discountReasonText: data.discountReasonText,
         orders: data.orders.sort((a, b) => new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime())
       }))

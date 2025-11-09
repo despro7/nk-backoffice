@@ -44,6 +44,7 @@ interface SalesData {
   priceBySource: { [source: string]: number };
   ordersWithDiscountReason: number;
   portionsWithDiscountReason: number;
+  priceWithDiscountReason: number;
   discountReasonText: string;
   totalPrice: number | undefined;
   orders: Array<{
