@@ -1,10 +1,9 @@
 import { Router } from 'express';
 import { salesDriveService } from '../services/salesDriveService.js';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
-import { syncHistoryService } from '../services/syncHistoryService.js';
 import { ordersCacheService } from '../services/ordersCacheService.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { prisma, getOrderSourceDetailed, getOrderSourceCategory, getOrderSourceByLevel, getReportingDayStartHour, getReportingDate, getReportingDateRange } from '../lib/utils.js';
+import { prisma, getOrderSourceDetailed, getReportingDayStartHour, getReportingDate, getReportingDateRange } from '../lib/utils.js';
 
 const router = Router();
 

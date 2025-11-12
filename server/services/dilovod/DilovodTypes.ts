@@ -1,4 +1,4 @@
-// Типы и интерфейсы для работы с Dilovod API
+// Типи та інтерфейси для роботи з Dilovod API
 
 export interface DilovodProduct {
   id: string;
@@ -10,7 +10,7 @@ export interface DilovodProduct {
     id: number;
     name: string;
   };
-  weight?: number; // Вес товара в граммах
+  weight?: number; // Вага товару в грамах
   set: Array<{
     id: string;
     quantity: number;
@@ -19,15 +19,15 @@ export interface DilovodProduct {
     priceType: string;
     priceValue: string;
   }>;
-  parent?: string; // ID родительской группы для определения комплектов
+  parent?: string; // ID батьківської групи для визначення комплектів
 }
 
 export interface DilovodStockBalance {
   sku: string;
   name: string;
-  mainStorage: number;    // Склад 1 (главный склад)
-  kyivStorage: number;    // Склад 2 (киевский склад)
-  total: number;          // Общая сумма по складам
+  mainStorage: number;    // Склад 1 (головний склад)
+  kyivStorage: number;    // Склад 2 (київський склад)
+  total: number;          // Загальна сума по складах
 }
 
 export interface DilovodApiResponse<T = any> {
@@ -108,12 +108,12 @@ export interface DatabaseProduct {
   currency: string;
   categoryId: number | null;
   categoryName: string;
-  weight?: number;        // Добавляем вес
+  weight?: number;        // Додаємо вагу
   set: Array<{ id: string; quantity: number }> | null;
   additionalPrices: Array<{ priceType: string; priceValue: string }> | null;
-  stockBalanceByStock: {  // Добавляем остатки по складам
-    "1": number;          // Склад 1 (главный)
-    "2": number;          // Склад 2 (киевский)
+  stockBalanceByStock: {  // Додаємо залишки по складах
+    "1": number;          // Склад 1 (головний)
+    "2": number;          // Склад 2 (київський)
   } | null;
   dilovodId: string;
   lastSyncAt: Date;
@@ -125,4 +125,44 @@ export interface DilovodConfig {
   setParentId: string;
   mainPriceType: string;
   categoriesMap: { [key: string]: number };
+}
+
+// Інтерфейси для роботи із замовленнями в Dilovod
+export interface DilovodOrder {
+  id: string;
+  number: string;
+  date: string;
+  customer: {
+    id: string;
+    name: string;
+  };
+  total: number;
+  currency: string;
+  status: string;
+  items: DilovodOrderItem[];
+  delivery?: {
+    address: string;
+    date?: string;
+    method?: string;
+  };
+  payment?: {
+    method?: string;
+    status?: string;
+  };
+}
+
+export interface DilovodOrderItem {
+  id: string;
+  sku: string;
+  name: string;
+  quantity: number;
+  price: number;
+  total: number;
+}
+
+export interface DilovodOrderResponse {
+  success: boolean;
+  data?: DilovodOrder[];
+  error?: string;
+  message?: string;
 }

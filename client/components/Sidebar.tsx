@@ -76,14 +76,14 @@ function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle
       {/* Submenu всегда рендерится, но скрывается/показывается с анимацией */}
       <div 
         className={cn(
-          "transition-all duration-300 ease-in-out rounded-lg absolute top-0 left-0 w-full",
+          "transition-all duration-300 ease-in-out rounded-lg w-full",
           isExpanded
             ? `max-h-dvh opacity-100 bg-neutral-100${isChildrenActive ? " bg-neutral-100" : ""}`
             : "max-h-0 opacity-0 overflow-hidden"
         )}
       >
         <div className={cn(
-          "pt-15 pb-2 px-2 space-y-1 transition-transform duration-300 ease-in-out",
+          "p-2 space-y-1 transition-transform duration-300 ease-in-out",
           isExpanded ? "translate-y-0" : "-translate-y-2"
         )}>
           {children}
@@ -149,7 +149,7 @@ export function Sidebar({ className }: SidebarProps) {
 
   return (
     <div className={cn("hidden lg:flex w-[250px] flex-col bg-white border-r border-neutral-200 h-auto self-stretch", className)}>
-      <div className="sticky top-0">
+      <div className="sticky top-0 h-screen overflow-y-auto bg-white scrollbar-hide pb-8">
         <img src={logo} alt="logo" className="p-5" />
         <nav className="flex flex-col items-start gap-1 px-3 py-4 h-auto flex-1">
           {/* Основные маршруты */}

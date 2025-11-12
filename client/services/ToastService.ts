@@ -16,7 +16,6 @@ export interface ToastOptions {
 	settingKey?: keyof ToastSettingsTypes;
 }
 
-
 export class ToastService {
 	private static get defaultOptions(): Partial<ToastOptions> {
 		return {
@@ -24,7 +23,7 @@ export class ToastService {
 			color: "default",
 			hideIcon: true,
 			icon: ToastService.createIcon("check-circle"),
-			timeout: 10000,
+			timeout: 5000,
 			shouldShowTimeoutProgress: true
 		};
 	}

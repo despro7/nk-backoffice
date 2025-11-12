@@ -1,12 +1,15 @@
-// Клиент для работы с Dilovod API
+// Клієнт для роботи з Dilovod API
 
 import { 
   DilovodApiRequest, 
   DilovodApiResponse,
   DilovodObjectResponse,
   DilovodGoodsResponse,
-  DilovodPricesResponse
+  DilovodPricesResponse,
+  DilovodOrder,
+  DilovodOrderResponse
 } from './DilovodTypes.js';
+import { DilovodStorage } from '../../../shared/types/dilovod.js';
 import {
   handleDilovodApiError,
   logWithTimestamp,
@@ -23,7 +26,7 @@ export class DilovodApiClient {
   private ready: Promise<void>;
 
   constructor() {
-    // Инициализируем и сохраняем промис готовности, чтобы ожидать перед запросами
+    // Ініціалізуємо і зберігаємо проміс готовності, щоб очікувати перед запитами
     this.ready = this.loadConfig();
   }
 
@@ -31,30 +34,39 @@ export class DilovodApiClient {
     if (this.ready) {
       await this.ready;
     }
-    if (!this.apiUrl || !this.apiKey) {
-      // Последняя попытка перезагрузить конфиг
-      await this.loadConfig();
-      if (!this.apiUrl || !this.apiKey) {
-        throw new Error('Dilovod API URL/API KEY is not configured');
-      }
-    }
+    // Не кидаємо помилку тут - перевірка буде в makeRequest
+  }
+
+  /**
+   * Примусово оновлює конфігурацію з БД
+   * Викликається при зміні налаштувань API
+   */
+  public async reloadConfig(): Promise<void> {
+    logWithTimestamp('DilovodApiClient: Примусове оновлення конфігурації...');
+    
+    // Імпортуємо функцію очищення кешу та очищаємо його
+    const { clearConfigCache } = await import('./DilovodUtils.js');
+    clearConfigCache();
+    
+    await this.loadConfig();
+    logWithTimestamp(`DilovodApiClient: Конфігурацію оновлено. API Key: ${this.apiKey?.substring(0, 10)}...`);
   }
 
   private normalizeToArray<T>(data: any): T[] {
     if (Array.isArray(data)) return data as T[];
     if (data == null) return [] as T[];
-    // Некоторые ответы могут приходить как { data: [...] } или { rows: [...] }
+    // Деякі відповіді можуть приходити як { data: [...] } або { rows: [...] }
     const possibleArrays = [data.data, data.rows, data.result, data.items];
     for (const candidate of possibleArrays) {
       if (Array.isArray(candidate)) return candidate as T[];
     }
-    // Если пришел одиночный объект – оборачиваем в массив
+    // Якщо прийшов одиночний об'єкт – обгортаємо в масив
     if (typeof data === 'object') return [data as T];
     return [] as T[];
   }
 
   /**
-   * Загрузить конфигурацию из БД
+   * Завантажити конфігурацію з БД
    */
   private async loadConfig(): Promise<void> {
     try {
@@ -62,39 +74,44 @@ export class DilovodApiClient {
       this.apiUrl = this.config.apiUrl;
       this.apiKey = this.config.apiKey;
 
-      logWithTimestamp('Dilovod конфигурация загружена из БД');
+      logWithTimestamp('Dilovod конфігурація завантажена з БД');
 
-      // Валидируем конфигурацию
+      // Валідируємо конфігурацію (тепер без викидання помилки при старті)
       const errors = validateDilovodConfig(this.config);
       if (errors.length > 0) {
-        logWithTimestamp('Ошибки конфигурации Dilovod:', errors);
-        throw new Error(`Ошибки конфигурации Dilovod: ${errors.join(', ')}`);
+        logWithTimestamp('⚠️ Попередження конфігурації Dilovod (сервер продовжує роботу):', errors);
       }
     } catch (error) {
-      logWithTimestamp('Ошибка загрузки конфигурации Dilovod из БД, используем значения по умолчанию:', error);
+      logWithTimestamp('Помилка завантаження конфігурації Dilovod з БД, використовуємо значення за замовчуванням:', error);
 
-      // В случае ошибки используем конфигурацию по умолчанию
+      // У разі помилки використовуємо конфігурацію за замовчуванням
       this.config = getDilovodConfig();
       this.apiUrl = this.config.apiUrl;
       this.apiKey = this.config.apiKey;
 
-      // Валидируем конфигурацию по умолчанию
+      // Валідируємо конфігурацію за замовчуванням (теж без викидання помилки)
       const errors = validateDilovodConfig(this.config);
       if (errors.length > 0) {
-        logWithTimestamp('Ошибки конфигурации Dilovod по умолчанию:', errors);
-        throw new Error(`Ошибки конфигурации Dilovod: ${errors.join(', ')}`);
+        logWithTimestamp('⚠️ Попередження конфігурації Dilovod за замовчуванням:', errors);
       }
     }
   }
 
-  // Основной метод для выполнения запросов к API
+  // Основний метод для виконання запитів до API
   async makeRequest<T = any>(request: DilovodApiRequest): Promise<T> {
     try {
-      // Гарантируем, что конфигурация загружена перед первым запросом
+      // Гарантуємо, що конфігурація завантажена перед першим запитом
       if (this.ready) {
         await this.ready;
       }
-      logWithTimestamp('Отправляем запрос к Dilovod API:', request);
+      
+      // Перевіряємо конфігурацію перед запитом
+      if (!this.apiUrl || !this.apiKey) {
+        const errors = validateDilovodConfig(this.config);
+        throw new Error(`Dilovod API не налаштовано: ${errors.join(', ')}`);
+      }
+      
+      logWithTimestamp('Відправляємо запит до Dilovod API:', request);
       
       const response = await fetch(this.apiUrl, {
         method: 'POST',
@@ -106,7 +123,7 @@ export class DilovodApiClient {
 
       if (!response.ok) {
         const errorData = await response.text();
-        logWithTimestamp('Ошибка ответа Dilovod API:', {
+        logWithTimestamp('Помилка відповіді Dilovod API:', {
           status: response.status,
           statusText: response.statusText,
           data: errorData
@@ -116,17 +133,17 @@ export class DilovodApiClient {
       }
 
       const data = await response.json() as T;
-      logWithTimestamp('Получен ответ от Dilovod API:', data);
+      logWithTimestamp('Отримано відповідь від Dilovod API:', data);
 
       return data;
     } catch (error) {
       const errorMessage = handleDilovodApiError(error, 'API Request');
-      logWithTimestamp('Ошибка запроса к Dilovod API:', errorMessage);
+      logWithTimestamp('Помилка запиту до Dilovod API:', errorMessage);
       throw new Error(errorMessage);
     }
   }
 
-  // Получение товаров с ценами
+  // Отримання товарів з цінами
   async getGoodsWithPrices(skuList: string[]): Promise<DilovodPricesResponse[]> {
     await this.ensureReady();
     const request: DilovodApiRequest = {
@@ -160,7 +177,7 @@ export class DilovodApiClient {
     return this.normalizeToArray<DilovodPricesResponse>(resp);
   }
 
-  // Получение товаров из каталога
+  // Отримання товарів з каталогу
   async getGoodsFromCatalog(skuList: string[]): Promise<DilovodGoodsResponse[]> {
     await this.ensureReady();
     const request: DilovodApiRequest = {
@@ -189,7 +206,7 @@ export class DilovodApiClient {
     return this.normalizeToArray<DilovodGoodsResponse>(resp);
   }
 
-  // Получение детальной информации об объекте (для комплектов)
+  // Отримання детальної інформації про об'єкт (для комплектів)
   async getObject(id: string): Promise<DilovodObjectResponse> {
     await this.ensureReady();
     const request: DilovodApiRequest = {
@@ -202,7 +219,7 @@ export class DilovodApiClient {
     return this.makeRequest<DilovodObjectResponse>(request);
   }
 
-  // Тест подключения к API
+  // Тест підключення до API
   async testConnection(): Promise<boolean> {
     try {
       await this.ensureReady();
@@ -226,7 +243,7 @@ export class DilovodApiClient {
     }
   }
 
-  // Получение остатков товаров
+  // Отримання залишків товарів
   async getStockBalance(skuList: string[]): Promise<any[]> {
     await this.ensureReady();
     const request: DilovodApiRequest = {
@@ -259,16 +276,330 @@ export class DilovodApiClient {
     return this.makeRequest<any[]>(request);
   }
 
-  // Обновление конфигурации
+  // Оновлення конфігурації
   updateConfig(newConfig: Partial<ReturnType<typeof getDilovodConfig>>): void {
     this.config = { ...this.config, ...newConfig };
     this.apiUrl = this.config.apiUrl;
     this.apiKey = this.config.apiKey;
     
-    logWithTimestamp('Конфигурация Dilovod обновлена:', this.config);
+    logWithTimestamp('Конфігурація Dilovod оновлена:', this.config);
   }
 
-  // Получение текущей конфигурации
+  // Пошук замовлення за номером з опційними деталями
+  async getOrderByNumber(orderNumbers: string[], withDetails = false): Promise<any[][]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: "documents.saleOrder",
+        fields: {
+          id: "id",
+          number: "number",
+          date: "date",
+          // "customer": "customer",
+          // "customer.name": "customerName", 
+          // total: "total",
+          // currency: "currency",
+          // status: "status"
+        },
+        filters: [
+          {
+            alias: "number",
+            operator: "IL",
+            value: orderNumbers
+          }
+        ]
+      }
+    };
+
+    const response = await this.makeRequest<any>(request);
+    const orders = this.normalizeToArray<any>(response);
+
+    if (!withDetails) {
+      return orders;
+    }
+
+    const ordersWithDetails = await Promise.all(orders.map(async (order) => {
+      if (!order?.id) {
+        return order;
+      }
+
+      try {
+        const details = await this.getOrderDetails(order.id);
+        return { ...order, details };
+      } catch (error) {
+        logWithTimestamp('DilovodApiClient: Помилка отримання деталей замовлення за ID:', {
+          orderId: order.id,
+          error: handleDilovodApiError(error, 'Order details fetch')
+        });
+        return order;
+      }
+    }));
+
+    return ordersWithDetails;
+  }
+
+  /**
+   * Універсальний метод пошуку документів за номером з опційними деталями
+   */
+  async searchDocumentByNumber(
+    documentNumber: string,
+    documentType: string,
+    fields: Record<string, unknown>,
+    withDetails = false
+  ): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: documentType,
+        fields,
+        filters: [
+          {
+            alias: "number",
+            operator: "=",
+            value: documentNumber
+          }
+        ],
+        limit: 10
+      }
+    };
+
+    const response = await this.makeRequest<any>(request);
+    const documents = this.normalizeToArray<any>(response);
+
+    if (!withDetails) {
+      return documents;
+    }
+
+    const documentsWithDetails = await Promise.all(documents.map(async (document) => {
+      if (!document?.id) {
+        return document;
+      }
+
+      try {
+        const details = await this.getOrderDetails(document.id);
+        return { ...document, details };
+      } catch (error) {
+        logWithTimestamp('DilovodApiClient: Помилка отримання деталей документу за ID:', {
+          documentId: document.id,
+          error: handleDilovodApiError(error, 'Document details fetch')
+        });
+        return document;
+      }
+    }));
+
+    return documentsWithDetails;
+  }
+
+  /**
+   * Універсальний метод пошуку документів за baseDoc з опційними деталями
+   */
+  async searchDocumentByBaseDoc(
+    baseDoc: string,
+    documentType: string,
+    fields: Record<string, unknown>,
+    withDetails = false
+  ): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: documentType,
+        fields,
+        filters: [
+          {
+            alias: "baseDoc",
+            operator: "=",
+            value: baseDoc
+          }
+        ],
+        limit: 10
+      }
+    };
+
+    const response = await this.makeRequest<any>(request);
+    const documents = this.normalizeToArray<any>(response);
+
+    if (!withDetails) {
+      return documents;
+    }
+
+    const documentsWithDetails = await Promise.all(documents.map(async (document) => {
+      if (!document?.id) {
+        return document;
+      }
+
+      try {
+        const details = await this.getOrderDetails(document.id);
+        return { ...document, details };
+      } catch (error) {
+        logWithTimestamp('DilovodApiClient: Помилка отримання деталей документу (baseDoc) за ID:', {
+          documentId: document.id,
+          error: handleDilovodApiError(error, 'Document details fetch (baseDoc)')
+        });
+        return document;
+      }
+    }));
+
+    return documentsWithDetails;
+  }
+
+  // Отримання детальної інформації про замовлення
+  async getOrderDetails(orderId: string): Promise<any> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "getObject",
+      params: { id: orderId }
+    };
+
+    return this.makeRequest<any>(request);
+  }
+
+  // ===== МЕТОДИ ДЛЯ ДОВІДНИКІВ =====
+
+  // Отримання мета-даних документів за baseDoc: id
+  async getDocuments(baseDocId: any[], documentType: 'sale' | 'cashIn'): Promise<DilovodOrderResponse[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: `documents.${documentType}`,
+        fields: { id: "id", date: "date", baseDoc: "baseDoc" },
+        filters: [
+          {
+            alias: "baseDoc",
+            operator: "IL",
+            value: baseDocId
+          }
+        ]
+      }
+    };
+
+    const response = await this.makeRequest<any>(request);
+    return this.normalizeToArray<DilovodOrderResponse>(response);
+  }
+
+  // Отримання складів
+  async getStorages(): Promise<DilovodStorage[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: 'catalogs.storages',
+        fields: {
+          id: 'id',
+          code: 'code',
+          name: 'name'
+        }
+      }
+    };
+
+    logWithTimestamp('DilovodApiClient: Запит складів до Dilovod API');
+    const result = await this.makeRequest<any>(request);
+    
+    logWithTimestamp(`DilovodApiClient: Сира відповідь API: ${JSON.stringify(result)}`);
+    
+    const normalizedResult = this.normalizeToArray<DilovodStorage>(result);
+    logWithTimestamp(`DilovodApiClient: Нормалізовано складів: ${normalizedResult.length}`);
+    
+    // Детальний лог перших записів для діагностики
+    if (normalizedResult.length > 0) {
+      logWithTimestamp(`DilovodApiClient: Перший склад: ${JSON.stringify(normalizedResult[0])}`);
+      if (normalizedResult.length > 1) {
+        logWithTimestamp(`DilovodApiClient: Другий склад: ${JSON.stringify(normalizedResult[1])}`);
+      }
+    }
+    
+    // Фільтруємо виробничий цех зі списку складів
+    const filteredResult = normalizedResult.filter(storage => {
+      // Виключаємо склад виробничого цеху (ID: 1100700000001018)
+      return storage.id !== '1100700000001018';
+    });
+    
+    if (filteredResult.length !== normalizedResult.length) {
+      logWithTimestamp(`DilovodApiClient: Виключено склад виробничого цеху. Залишилось складів: ${filteredResult.length}`);
+    }
+    
+    return filteredResult;
+  }
+
+  // Отримання рахунків
+  async getCashAccounts(): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: 'catalogs.cashAccounts',
+        fields: {
+          id: 'id',
+          code: 'code',
+          name: 'name',
+          owner: 'owner'
+        }
+      }
+    };
+
+    const result = await this.makeRequest<any>(request);
+    return this.normalizeToArray(result);
+  }
+
+  // Отримання фірм (власників рахунків)
+  async getFirms(): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: 'catalogs.firms',
+        fields: {
+          id: 'id',
+          name: 'name'
+        }
+      }
+    };
+
+    const result = await this.makeRequest<any>(request);
+    return this.normalizeToArray(result);
+  }
+
+  // Отримання форм оплати
+  async getPaymentForms(): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: 'catalogs.paymentForms',
+        fields: {
+          id: 'id',
+          code: 'code',
+          name: 'name'
+        }
+      }
+    };
+
+    const result = await this.makeRequest<any>(request);
+    return this.normalizeToArray(result);
+  }
+
+  // Отримання поточної конфігурації
   getConfig(): ReturnType<typeof getDilovodConfig> {
     return { ...this.config };
   }

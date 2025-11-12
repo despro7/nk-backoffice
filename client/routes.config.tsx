@@ -15,6 +15,8 @@ import SettingsOrderAssembly from "./pages/SettingsOrderAssembly";
 import SettingsEquipment from "./pages/SettingsEquipment";
 import SettingsOrders from "./pages/SettingsOrders";
 import SettingsAdmin from "./pages/SettingsAdmin";
+import SettingsDilovod from "./pages/SettingsDilovod";
+import SalesDriveOrders from "./pages/SalesDriveOrders";
 import TestSerialCom from "./pages/test-serial-com";
 
 // Определяем роли и их иерархию
@@ -125,6 +127,17 @@ export const appRoutes: AppRoute[] = [
     minRole: ROLES.ADS_MANAGER // ads-manager и выше
   },
   {
+    path: '/salesdrive-to-dilovod',
+    component: SalesDriveOrders,
+    title: 'Вивантаження замовлень з SalesDrive в Dilovod',
+    pageTitle: 'Вивантаження замовлень з SalesDrive в Dilovod | NK Backoffice',
+    navLabel: 'SalesDrive -> Dilovod',
+    icon: <DynamicIcon name="truck" size={20} />,
+    inNav: true,
+    order: 5,
+    minRole: ROLES.ADS_MANAGER // ads-manager и выше (admin, boss, ads-manager)
+  },
+  {
     path: '/profile',
     component: SettingsProfile,
     title: 'Мій профіль',
@@ -209,6 +222,18 @@ export const appRoutes: AppRoute[] = [
     roles: [ROLES.ADMIN] // Только admin
   },
   {
+    path: "/settings/dilovod",
+    component: SettingsDilovod,
+    title: 'Налаштування Dilovod',
+    pageTitle: 'Налаштування Dilovod | NK Backoffice',
+    navLabel: 'Dilovod',
+    icon: <DynamicIcon name="building-2" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 8,
+    roles: [ROLES.ADMIN] // Только admin
+  },
+  {
     path: "/settings/admin",
     component: SettingsAdmin,
     title: 'Адмінські налаштування',
@@ -217,7 +242,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="shield" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     parent: 'settings',
-    order: 8,
+    order: 9,
     roles: [ROLES.ADMIN] // Только admin
   },
   {
@@ -228,7 +253,7 @@ export const appRoutes: AppRoute[] = [
     navLabel: 'Тест COM порту',
     icon: <DynamicIcon name="test-tube" size={20} />,
     inNav: false, // Не показывать в навигации
-    order: 9
+    order: 10
     // Без указания roles или minRole - доступ без авторизации
   },
 ];

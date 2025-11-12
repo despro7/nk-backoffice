@@ -17,6 +17,7 @@ import { logServer } from './lib/utils.js';
 import shippingRoutes from './routes/shipping.js';
 import shippingProvidersRoutes from './routes/shipping-providers.js';
 import qzTrayRoutes from './routes/qz-tray.js';
+import { dilovodRouter } from './routes/dilovod.js';
 
 // Увеличиваем лимит listeners для process events
 process.setMaxListeners(20);
@@ -131,6 +132,9 @@ export function createServer() {
 
   // QZ Tray routes
   app.use("/api/qz-tray", qzTrayRoutes);
+
+  // Dilovod routes
+  app.use("/api/dilovod", dilovodRouter);
 
   // Example API routes
   app.get("/api/ping", (_req, res) => {

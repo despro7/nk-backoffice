@@ -3,11 +3,20 @@
 import { DilovodConfig } from './DilovodTypes.js';
 import { syncSettingsService } from '../syncSettingsService.js';
 
-// Конфигурация по умолчанию - теперь динамическая функция
+// Простий кеш для конфігурації з TTL 5 секунд
+let configCache: { config: DilovodConfig; timestamp: number } | null = null;
+const CONFIG_CACHE_TTL = 5000; // 5 секунд
+
+// Функція очищення кешу (викликається при оновленні налаштувань)
+export function clearConfigCache(): void {
+  configCache = null;
+}
+
+// Конфигурация по умолчанию - тепер без env змінних
 export function getDilovodConfig(): DilovodConfig {
   return {
-    apiUrl: process.env.DILOVOD_API_URL || '',
-    apiKey: process.env.DILOVOD_API_KEY || '',
+    apiUrl: '', // Тепер тільки з БД
+    apiKey: '', // Тепер тільки з БД
     setParentId: "1100300000001315", // ID группы-комплектов
     mainPriceType: "1101300000001001", // Роздріб (Інтернет-магазин)
     categoriesMap: {
@@ -18,23 +27,66 @@ export function getDilovodConfig(): DilovodConfig {
   };
 }
 
-// Получить конфигурацию Dilovod с настройками из БД
+// Получить конфигурацию Dilovod с настройками из БД (з кешуванням)
 export async function getDilovodConfigFromDB(): Promise<DilovodConfig> {
+  // Перевіряємо кеш
+  const now = Date.now();
+  if (configCache && (now - configCache.timestamp) < CONFIG_CACHE_TTL) {
+    return configCache.config;
+  }
+  
   try {
-    const settings = await syncSettingsService.getSyncSettings();
-    const dilovodSettings = settings.dilovod;
-
-    return {
-      apiUrl: process.env.DILOVOD_API_URL || '',
-      apiKey: process.env.DILOVOD_API_KEY || '',
-      setParentId: dilovodSettings.setParentId,
-      mainPriceType: dilovodSettings.mainPriceType,
-      categoriesMap: dilovodSettings.categoriesMap
+    // Завантажуємо налаштування Dilovod з settings_base таблиці
+    const dilovodSettings = await loadDilovodSettingsFromDB();
+    
+    const config = {
+      apiUrl: dilovodSettings.apiUrl || process.env.DILOVOD_API_URL || '',
+      apiKey: dilovodSettings.apiKey || process.env.DILOVOD_API_KEY || '',
+      setParentId: dilovodSettings.setParentId || "1100300000001315",
+      mainPriceType: dilovodSettings.mainPriceType || "1101300000001001",
+      categoriesMap: dilovodSettings.categoriesMap || {
+        "Перші страви": 1,
+        "Другі страви": 2,
+        "Набори продукції": 3
+      }
     };
+    
+    // Кешуємо конфігурацію
+    configCache = { config, timestamp: now };
+    
+    logWithTimestamp(`Dilovod конфігурація: API Key з ${dilovodSettings.apiKey ? 'БД' : 'ENV'}: ${config.apiKey?.substring(0, 10)}...`);
+    return config;
   } catch (error) {
     // В случае ошибки возвращаем конфигурацию по умолчанию
     console.warn('Ошибка загрузки Dilovod настроек из БД, используем значения по умолчанию:', error);
     return getDilovodConfig();
+  }
+}
+
+// Завантаження налаштувань Dilovod з settings_base таблиці
+async function loadDilovodSettingsFromDB() {
+  const { PrismaClient } = await import('@prisma/client');
+  const prisma = new PrismaClient();
+  
+  try {
+    const settings = await prisma.settingsBase.findMany({
+      where: { category: 'dilovod', isActive: true }
+    });
+
+    const settingsMap = settings.reduce((acc, setting) => {
+      acc[setting.key] = setting.value;
+      return acc;
+    }, {} as Record<string, string>);
+
+    return {
+      apiUrl: settingsMap['dilovod_api_url'] || '',
+      apiKey: settingsMap['dilovod_api_key'] || '',
+      setParentId: settingsMap['dilovod_set_parent_id'] || '',
+      mainPriceType: settingsMap['dilovod_main_price_type'] || '',
+      categoriesMap: settingsMap['dilovod_categories_map'] ? JSON.parse(settingsMap['dilovod_categories_map']) : {}
+    };
+  } finally {
+    await prisma.$disconnect();
   }
 }
 

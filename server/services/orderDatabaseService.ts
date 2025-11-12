@@ -26,6 +26,7 @@ export interface OrderCreateData {
 }
 
 export interface OrderUpdateData {
+  dilovodExportDate?: Date;
   status?: string;
   statusText?: string;
   items?: any[];
@@ -212,6 +213,7 @@ export class OrderDatabaseService {
    * Обновляет существующий заказ в БД
    */
   async updateOrder(externalId: string, data: OrderUpdateData) {
+  // dilovodExportDate assignment must be after updateData is defined
     try {
 
       const updateData: any = {
@@ -219,6 +221,8 @@ export class OrderDatabaseService {
         syncStatus: 'success',
         syncError: null
       };
+
+      if (data.dilovodExportDate !== undefined) updateData.dilovodExportDate = data.dilovodExportDate;
 
       // Добавляем только определенные поля
       if (data.orderDate !== undefined) updateData.orderDate = data.orderDate;

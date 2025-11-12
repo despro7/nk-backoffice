@@ -2326,7 +2326,7 @@ const SettingsOrders: React.FC = () => {
       <Card>
         <CardHeader className="border-b border-gray-200">
           <DynamicIcon name="shopping-cart" size={20} className="text-gray-600 mr-2" />
-          <h2 className="text-lg font-semibold text-gray-900">Тест получения заказа из SalesDrive</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Тест отримання замовлення з SalesDrive</h2>
         </CardHeader>
         <CardBody className="p-6">
           {/* API Parameters Section */}

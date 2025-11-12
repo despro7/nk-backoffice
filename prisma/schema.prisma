@@ -54,7 +54,11 @@ model Order {
   totalPrice      Float?
   syncError       String?
   syncStatus      String          @default("pending")
-  OrdersHistory   OrdersHistory[]
+  dilovodDocId       String?
+  dilovodSaleExportDate  DateTime?       // Дата відвантаження в Діловод (documents.sale)
+  dilovodExportDate      DateTime?       // Дата вивантаження в Dilovod
+  dilovodCashInDate      DateTime?       // Дата додавання документу (documents.cashIn)
+  OrdersHistory        OrdersHistory[]
 
   @@index([status])
   @@index([externalId])

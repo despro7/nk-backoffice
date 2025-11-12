@@ -71,15 +71,18 @@ export function Layout({ children }: LayoutProps) {
         <main className="flex flex-col gap-6 p-8 pb-12 flex-1">
           {!currentRoute?.hasOwnTitle && (
             <h1 className="text-primary font-inter text-3xl font-semibold leading-[100%] tracking-[-0.64px] h-10 flex items-center">
+              {currentRoute?.icon && React.isValidElement(currentRoute.icon) && React.cloneElement(currentRoute.icon, {
+                className: `${currentRoute.icon.props?.className || ''} w-6 h-6 mr-3`.trim()
+              })}
               {location.pathname.startsWith('/orders') && location.pathname.split('/').filter(Boolean).length > 1 && (
-                <Button
-                  color="secondary"
-                  variant="flat"
-                  className="text-neutral-500 min-w-fit mr-4"
-                  onPress={() => navigate("/orders")}
-                >
-                  <DynamicIcon name="arrow-left" size={20} />
-                </Button>
+              <Button
+                color="secondary"
+                variant="flat"
+                className="text-neutral-500 min-w-fit mr-4"
+                onPress={() => navigate("/orders")}
+              >
+                <DynamicIcon name="arrow-left" size={20} />
+              </Button>
               )}
               {h1Title}
             </h1>

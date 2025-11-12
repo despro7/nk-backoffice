@@ -39,6 +39,17 @@ export class DilovodDataProcessor {
     }
   }
 
+  /**
+   * Примусово оновлює конфігурацію з БД
+   */
+  async reloadConfig(): Promise<void> {
+    // Імпортуємо функцію очищення кешу та очищаємо його
+    const { clearConfigCache } = await import('./DilovodUtils.js');
+    clearConfigCache();
+    
+    await this.loadConfig();
+  }
+
   // Основной метод обработки товаров с комплектами
   async processGoodsWithSets(
     pricesResponse: DilovodPricesResponse[],

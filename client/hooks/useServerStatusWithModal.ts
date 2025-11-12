@@ -12,8 +12,8 @@ interface ServerStatusWithModal {
   onCloseModal: () => void;
 }
 
-export const useServerStatusWithModal = (fallbackIntervalMs: number = 30000) => {
-  const { isOnline, isLoading, lastChecked, serverStartTime: serverStartTimeFromApi, checkServerStatus } = useServerStatus(fallbackIntervalMs);
+export const useServerStatusWithModal = () => {
+  const { isOnline, isLoading, lastChecked, serverStartTime: serverStartTimeFromApi, checkServerStatus } = useServerStatus();
   const [showModal, setShowModal] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const [serverStartTime, setServerStartTime] = useState<Date | null>(null);
