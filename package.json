@@ -48,6 +48,7 @@
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
     "@heroui/button": "^2.2.24",
+    "@heroui/drawer": "^2.2.21",
     "@heroui/modal": "^2.2.21",
     "@heroui/react": "^2.8.2",
     "@heroui/select": "^2.4.25",

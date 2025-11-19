@@ -3,6 +3,8 @@ import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder';
 import { Card, CardBody, CardHeader, Input, Button, ButtonGroup, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import DilovodSettingsManager from '../components/DilovodSettingsManager';
+import { DilovodCacheManager } from '../components/DilovodCacheManager';
+import { SalesDriveCacheManager } from '../components/SalesDriveCacheManager';
 import { useDilovodSettings } from '../hooks/useDilovodSettings';
 
 const SettingsDilovod: React.FC = () => {
@@ -165,7 +167,13 @@ const SettingsDilovod: React.FC = () => {
 			{/* Dilovod Settings Manager */}
 			<DilovodSettingsManager />
 
-			<div className="grid grid-cols-1 gap-6">
+			<div className="grid grid-cols-1 gap-6">				
+				{/* Dilovod Cache Manager */}
+				<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+					<DilovodCacheManager />
+					<SalesDriveCacheManager />
+				</div>
+
 				{/* Order Search Test */}
 				<Card>
 					<CardHeader className="border-b border-gray-200">
@@ -299,8 +307,8 @@ const SettingsDilovod: React.FC = () => {
 						<DynamicIcon name="wifi" size={20} className="text-gray-600 mr-2" />
 						<h2 className="text-lg font-semibold text-gray-900">Тест підключення до Dilovod API</h2>
 					</CardHeader>
-					<CardBody className="p-6">
-						<p className="text-sm text-gray-600 mb-4">
+					<CardBody className="p-6 flex md:flex-row items-center gap-4">
+						<p className="flex-1 text-sm text-gray-600">
 							Перевірте підключення до API Dilovod перед використанням інших функцій
 						</p>
 						<Button
@@ -326,61 +334,6 @@ const SettingsDilovod: React.FC = () => {
 				</Card>
 			</div>
 
-			{/* Future Dilovod Features */}
-			<div className="flex flex-col">
-				<div className="flex items-center mb-4">
-					<DynamicIcon name="settings" size={20} className="text-gray-600 mr-2" />
-					<h2 className="text-xl font-semibold text-gray-900">Додаткові функції Dilovod</h2>
-				</div>
-
-				<Card>
-					<CardBody className="p-6">
-						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-							<div className="flex items-center gap-3 p-4 border border-dashed border-gray-300 rounded-lg">
-								<DynamicIcon name="upload" size={24} className="text-gray-400" />
-								<div>
-									<h3 className="font-medium text-gray-900">Відправка замовлень</h3>
-									<p className="text-sm text-gray-600">Передача замовлень до Dilovod</p>
-								</div>
-							</div>
-							
-							<div className="flex items-center gap-3 p-4 border border-dashed border-gray-300 rounded-lg">
-								<DynamicIcon name="refresh-cw" size={24} className="text-gray-400" />
-								<div>
-									<h3 className="font-medium text-gray-900">Синхронізація даних</h3>
-									<p className="text-sm text-gray-600">Двостороння синхронізація</p>
-								</div>
-							</div>
-							
-							<div className="flex items-center gap-3 p-4 border border-dashed border-gray-300 rounded-lg">
-								<DynamicIcon name="file-text" size={24} className="text-gray-400" />
-								<div>
-									<h3 className="font-medium text-gray-900">Документи</h3>
-									<p className="text-sm text-gray-600">Робота з документами Dilovod</p>
-								</div>
-							</div>
-							
-							<div className="flex items-center gap-3 p-4 border border-dashed border-gray-300 rounded-lg">
-								<DynamicIcon name="bar-chart-3" size={24} className="text-gray-400" />
-								<div>
-									<h3 className="font-medium text-gray-900">Аналітика</h3>
-									<p className="text-sm text-gray-600">Звіти та статистика</p>
-								</div>
-							</div>
-						</div>
-						
-						<div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-							<div className="flex items-start gap-2">
-								<DynamicIcon name="info" size={16} className="text-blue-600 mt-0.5" />
-								<div className="text-sm text-blue-800">
-									<strong>Інформація:</strong> Ці функції будуть доступні в майбутніх версіях. 
-									Зараз доступний тільки пошук замовлень для тестування підключення.
-								</div>
-							</div>
-						</div>
-					</CardBody>
-				</Card>
-			</div>
 		</div>
 	);
 };

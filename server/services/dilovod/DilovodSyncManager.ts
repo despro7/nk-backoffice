@@ -104,10 +104,10 @@ export class DilovodSyncManager {
             logWithTimestamp(`Данные для создания:`, JSON.stringify(productData, null, 2));
             
             await prisma.product.create({
-              data: {
+              data: ({
                 sku: product.sku,
                 ...productData
-              }
+              } as any)
             });
             logWithTimestamp(`✅ Товар ${product.sku} создан`);
             createdProducts++;
@@ -190,6 +190,7 @@ export class DilovodSyncManager {
       set: product.set.length > 0 ? JSON.stringify(product.set) : null,
       additionalPrices: product.additionalPrices.length > 0 ? JSON.stringify(product.additionalPrices) : null,
       dilovodId: product.id,
+      dilovodGood: product.id,
       dilovodDataHash: dilovodDataHash,
       lastSyncAt: new Date()
     };

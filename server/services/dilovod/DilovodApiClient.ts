@@ -20,6 +20,9 @@ import {
 } from './DilovodUtils.js';
 
 export class DilovodApiClient {
+  public getApiKey(): string {
+    return this.apiKey;
+  }
   private apiUrl: string;
   private apiKey: string;
   private config: ReturnType<typeof getDilovodConfig>;
@@ -217,6 +220,166 @@ export class DilovodApiClient {
     };
 
     return this.makeRequest<DilovodObjectResponse>(request);
+  }
+
+  /**
+   * Пошук товарів за списком SKU (productNum) - оптимізована версія
+   * Повертає ID та productNum для мапінгу SKU → ID
+   */
+  async findGoodsBySkuList(skuList: string[]): Promise<Array<{ id: string; productNum: string }>> {
+    await this.ensureReady();
+    
+    if (skuList.length === 0) {
+      return [];
+    }
+
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: "catalogs.goods",
+        fields: {
+          id: "id",
+          productNum: "productNum"
+        },
+        filters: [
+          {
+            alias: "productNum",
+            operator: "IL",
+            value: skuList
+          }
+        ]
+      }
+    };
+
+    const resp = await this.makeRequest<any>(request);
+    return this.normalizeToArray<{ id: string; productNum: string }>(resp);
+  }
+
+  /**
+   * Пошук контрагента за номером телефону
+   */
+  async findPersonByPhone(phone: string): Promise<Array<{ id: string; name: string; phone: string }>> {
+    await this.ensureReady();
+    
+    if (!phone) {
+      return [];
+    }
+
+    // Очищаємо номер телефону від зайвих символів
+    const cleanPhone = phone.replace(/\D+/g, '');
+
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: "catalogs.persons",
+        fields: {
+          id: "id",
+          name: "name",
+          phone: "phone"
+        },
+        filters: [
+          {
+            alias: "phone",
+            operator: "=",
+            value: cleanPhone
+          }
+        ]
+      }
+    };
+
+    const resp = await this.makeRequest<any>(request);
+    return this.normalizeToArray<{ id: string; name: string; phone: string }>(resp);
+  }
+
+  /**
+   * Створити нового контрагента
+   */
+  async createPerson(personData: {
+    name: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+  }): Promise<{ id: string; code: string }> {
+    await this.ensureReady();
+
+    const { name, phone, email, address } = personData;
+
+    // Підготовка multilang імені
+    const multilangName = {
+      ru: name,
+      uk: name,
+    };
+
+    // Підготовка деталей контакту
+    const details: any = {
+      names: [
+        {
+          pr: multilangName,
+          kind: 'fullName',
+        }
+      ]
+    };
+
+    // Додаємо телефон якщо є
+    if (phone) {
+      const cleanPhone = phone.replace(/\D+/g, '');
+      details.phones = [
+        {
+          pr: cleanPhone,
+          kind: 'phone'
+        }
+      ];
+    }
+
+    // Додаємо email якщо є
+    if (email) {
+      details.emails = [
+        {
+          pr: email,
+          kind: 'email'
+        }
+      ];
+    }
+
+    // Додаємо адресу якщо є
+    if (address) {
+      // Очищаємо адресу від спеціальних символів
+      const cleanAddress = address
+        .replace(/[''""&#039;]/g, "'")
+        .replace(/[:]/g, "")
+        .replace(/[&<>"'\\]/g, '');
+
+      if (cleanAddress.trim()) {
+        details.addresses = [
+          {
+            pr: { uk: cleanAddress },
+            kind: 'legalAddress',
+            detalize: '',
+          }
+        ];
+      }
+    }
+
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "saveObject",
+      params: {
+        header: {
+          id: 'catalogs.persons',
+          name: multilangName,
+          address: address || '',
+          details: JSON.stringify(details),
+        }
+      }
+    };
+
+    const resp = await this.makeRequest<{ id: string; code: string }>(request);
+    return resp;
   }
 
   // Тест підключення до API
@@ -591,6 +754,46 @@ export class DilovodApiClient {
           id: 'id',
           code: 'code',
           name: 'name'
+        }
+      }
+    };
+
+    const result = await this.makeRequest<any>(request);
+    return this.normalizeToArray(result);
+  }
+
+  // Отримання каналів продажів
+  async getTradeChanels(): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: 'catalogs.tradeChanels',
+        fields: {
+          id: 'id',
+          code: 'code'
+        }
+      }
+    };
+
+    const result = await this.makeRequest<any>(request);
+    return this.normalizeToArray(result);
+  }
+
+  // Отримання способів доставки
+  async getDeliveryMethods(): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: 'catalogs.deliveryMethods',
+        fields: {
+          id: 'id',
+          code: 'code'
         }
       }
     };

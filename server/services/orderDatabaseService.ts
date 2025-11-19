@@ -3,7 +3,7 @@ import { prisma } from '../lib/utils.js';
 import { ordersCacheService } from './ordersCacheService.js';
 
 export interface OrderCreateData {
-  id: number; // Обязательно - SalesDrive ID
+  id: number; // Обов'язково - SalesDrive ID
   externalId: string;
   orderNumber: string;
   ttn: string;
@@ -30,7 +30,7 @@ export interface OrderUpdateData {
   status?: string;
   statusText?: string;
   items?: any[];
-  rawData?: any;        // ← Добавляем rawData!
+  rawData?: any;
   customerName?: string;
   customerPhone?: string;
   deliveryAddress?: string;
@@ -48,7 +48,7 @@ export interface OrderUpdateData {
 
 export class OrderDatabaseService {
   /**
-   * Умная проверка изменений в заказе
+   * Smart-перевірка змін у замовленні
    */
   detectOrderChanges(existingOrder: any, newData: any): { fields: string[], details: any } {
     const changes: string[] = [];
@@ -61,7 +61,7 @@ export class OrderDatabaseService {
 
     // console.log(`🔍 [DEBUG] Detecting changes for order ${newData.orderNumber || existingOrder.externalId}`);
 
-    // Проверяем простые поля
+    // Перевіряємо прості поля
     for (const field of fieldsToCheck) {
       if (newData[field] !== undefined && existingOrder[field] !== newData[field]) {
         console.log(`🔄 [DEBUG] Field '${field}' changed: '${existingOrder[field]}' → '${newData[field]}'`);
@@ -73,9 +73,9 @@ export class OrderDatabaseService {
       }
     }
 
-    // Проверяем orderDate
+    // Перевіряємо orderDate
     if (newData.orderDate) {
-      // Используем локальную дату для правильного сравнения
+      // Використовуємо локальну дату для правильного порівняння
       const getLocalDateString = (date: string | Date) => {
         const d = new Date(date);
         const year = d.getFullYear();
@@ -96,7 +96,7 @@ export class OrderDatabaseService {
       }
     }
 
-    // Проверяем items (глубокое сравнение)
+    // Перевіряємо items (глибоке порівняння)
     if (newData.items && existingOrder.items) {
       try {
         const newItemsStr = JSON.stringify(newData.items);
@@ -115,7 +115,7 @@ export class OrderDatabaseService {
           };
         }
       } catch (error) {
-        // Если не удалось сравнить, считаем что изменилось
+        // Якщо не вдалося порівняти, вважаємо що змінилося
         console.log(`🔄 [DEBUG] items comparison failed, assuming changed:`, error);
         changes.push('items');
         changeDetails.items = {
@@ -126,7 +126,7 @@ export class OrderDatabaseService {
       }
     }
 
-    // Проверяем rawData (глубокое сравнение)
+    // Перевіряємо rawData (глибоке порівняння)
     if (newData.rawData && existingOrder.rawData) {
       try {
         const newRawDataStr = JSON.stringify(newData.rawData);
@@ -145,7 +145,7 @@ export class OrderDatabaseService {
           };
         }
       } catch (error) {
-        // Если не удалось сравнить, считаем что изменилось
+        // Якщо не вдалося порівняти, вважаємо що змінилося
         console.log(`🔄 [DEBUG] rawData comparison failed, assuming changed:`, error);
         changes.push('rawData');
         changeDetails.rawData = {
@@ -160,7 +160,7 @@ export class OrderDatabaseService {
     return { fields: changes, details: changeDetails };
   }
   /**
-   * Создает новый заказ в БД
+   * Створює нове замовлення в БД
    */
   async createOrder(data: OrderCreateData) {
     try {
@@ -190,15 +190,15 @@ export class OrderDatabaseService {
         }
       });
 
-      // Создаем запись в истории
+      // Створюємо запис в історії змін
       await this.createOrderHistory(order.id, data.status, data.statusText || '', 'salesdrive');
 
-      // Предварительно рассчитываем и кешируем статистику товаров
+      // Попередньо рахуємо та кешуємо статистику товарів
       try {
         await this.updateOrderCache(order.externalId);
       } catch (cacheError) {
         console.warn(`Failed to cache processed items for order ${order.externalId}:`, cacheError);
-        // Не прерываем создание заказа из-за ошибки кеширования
+        // Не перериваємо створення замовлення через помилку кешування
       }
 
       console.log(`✅ Order ${data.orderNumber} created in database`);
@@ -210,21 +210,20 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Обновляет существующий заказ в БД
+   * Оновлюємо існуюче замовлення в БД
    */
   async updateOrder(externalId: string, data: OrderUpdateData) {
-  // dilovodExportDate assignment must be after updateData is defined
     try {
-
       const updateData: any = {
         lastSynced: new Date(),
         syncStatus: 'success',
         syncError: null
       };
 
+      // dilovodExportDate має бути призначено після визначення updateData
       if (data.dilovodExportDate !== undefined) updateData.dilovodExportDate = data.dilovodExportDate;
 
-      // Добавляем только определенные поля
+      // Додаємо тільки певні поля
       if (data.orderDate !== undefined) updateData.orderDate = data.orderDate;
       if (data.status !== undefined) updateData.status = data.status;
       if (data.statusText !== undefined) updateData.statusText = data.statusText;
@@ -240,7 +239,7 @@ export class OrderDatabaseService {
       if (data.pricinaZnizki !== undefined && data.pricinaZnizki !== null) updateData.pricinaZnizki = data.pricinaZnizki;
       if (data.sajt !== undefined && data.sajt !== null) updateData.sajt = data.sajt;
 
-      // Обновляем items если они переданы
+      // Оновлюємо items якщо вони передані
       if (data.items) {
         console.log(`🔧 Serializing items:`, {
           type: typeof data.items,
@@ -251,7 +250,7 @@ export class OrderDatabaseService {
         console.log(`✅ Items serialized, length: ${updateData.items.length}`);
       }
 
-      // Обновляем rawData если передана
+      // Оновлюємо rawData якщо вона передана
       if (data.rawData) {
         console.log(`🔧 Serializing rawData:`, {
           type: typeof data.rawData,
@@ -270,18 +269,18 @@ export class OrderDatabaseService {
         data: updateData
       });
 
-      // Создаем запись в истории, если изменился статус
+      // Створюємо запис в історії, якщо змінився статус
       if (data.status && data.status !== order.status) {
         await this.createOrderHistory(order.id, data.status, data.statusText || '', 'salesdrive');
       }
 
-      // Пересчитываем кешированные данные если изменились items
+      // Перераховуємо кешовані дані, якщо змінилися items
       if (data.items) {
         try {
           await this.updateOrderCache(order.externalId);
         } catch (cacheError) {
           console.warn(`Failed to update cached processed items for order ${order.externalId}:`, cacheError);
-          // Не прерываем обновление заказа из-за ошибки кеширования
+          // Не перериваємо оновлення замовлення через помилку кешування
         }
       }
 
@@ -294,7 +293,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Создает запись в истории изменений заказа
+   * Створює запис в історії змін замовлення
    */
   async createOrderHistory(orderId: number, status: string, statusText: string, source: string, userId?: number, notes?: string) {
     try {
@@ -314,7 +313,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает заказ по externalId
+   * Отримуємо замовлення за externalId
    */
   async getOrderByExternalId(externalId: string) {
     try {
@@ -330,7 +329,7 @@ export class OrderDatabaseService {
 
       if (!order) return null;
 
-      // Парсим JSON поля
+      // Парсимо JSON поля
       return {
         ...order,
         items: order.items ? JSON.parse(order.items) : [],
@@ -342,14 +341,33 @@ export class OrderDatabaseService {
     }
   }
 
+
   /**
-   * Получает счетчики заказов по статусам для табов
+   * Отримуємо номер замовлення за id замовлення
+   */
+  async getOrderNumberFromId(orderId: number): Promise<string | null> {
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        select: { orderNumber: true }
+      });
+
+      return order ? order.orderNumber : null;
+    } catch (error) {
+      console.error(`❌ Error getting order number for orderId ${orderId}:`, error);
+      return null;
+    }
+  }
+
+
+  /**
+   * Отримуємо лічильники замовлень за статусами для вкладок
    */
   async getStatusCounts() {
     const startTime = Date.now();
 
     try {
-      // Получаем количество заказов по каждому статусу
+      // Отримуємо кількість замовлень за кожним статусом
       const statusStats = await prisma.order.groupBy({
         by: ['status'],
         _count: {

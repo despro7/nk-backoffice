@@ -27,6 +27,7 @@ export interface SalesDriveOrderForExport {
   quantity: number;
   items: any; // JSON string or parsed object
   rawData: any; // JSON string or parsed object
+  logsCount?: number;
 }
 
 export interface SalesDriveOrdersResponse {

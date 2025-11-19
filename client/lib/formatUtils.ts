@@ -189,12 +189,33 @@ export const formatDate = (dateString: string): string => {
  * @returns отформатированная строка
  * 
  * @example
- * formatDateTime('2024-01-15T10:30:00Z') // "15.01.2024, 10:30"
+ * formatDateTime('2024-01-15T10:30:00Z') // "15.01.2024, 10:30:46"
  * formatDateTime(null) // "-"
  */
 export const formatDateTime = (dateString: string | Date): string => {
   if (!dateString) return "-";
   return new Date(dateString).toLocaleString('uk-UA');
+};
+
+/**
+ * Форматирует дату и время в американском формате
+ * @param dateString - строка с датой
+ * @returns отформатированная строка
+ * 
+ * @example
+ * formatDateTimeUS('2024-01-15T10:30:00Z') // "2025-09-24 10:30:12"
+ * formatDateTimeUS(null) // ""
+ */
+export const formatDateTimeUS = (dateString: string | Date): string => {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 
 /**

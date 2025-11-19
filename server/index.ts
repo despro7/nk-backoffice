@@ -17,7 +17,10 @@ import { logServer } from './lib/utils.js';
 import shippingRoutes from './routes/shipping.js';
 import shippingProvidersRoutes from './routes/shipping-providers.js';
 import qzTrayRoutes from './routes/qz-tray.js';
+import goodsCacheRouter from './routes/goods-cache.js';
 import { dilovodRouter } from './routes/dilovod.js';
+import { salesdriveRouter } from './routes/salesdrive.js';
+import metaLogsRouter from './routes/meta-logs.js';
 
 // Увеличиваем лимит listeners для process events
 process.setMaxListeners(20);
@@ -117,6 +120,9 @@ export function createServer() {
   // Boxes routes
   app.use("/api/boxes", boxesRoutes);
 
+  // Meta logs route for Dilovod export logging
+  app.use("/api/meta-logs", metaLogsRouter);
+
   // Settings routes (все роуты в settings.ts, включая /logging и /toast)
   app.use("/api/settings", settingsRoutes);
 
@@ -133,8 +139,17 @@ export function createServer() {
   // QZ Tray routes
   app.use("/api/qz-tray", qzTrayRoutes);
 
+  // Goods cache routes
+  app.use('/api/goods-cache', goodsCacheRouter);
+
+  // Goods cache routes
+  app.use('/api/goods-cache', goodsCacheRouter);
+
   // Dilovod routes
   app.use("/api/dilovod", dilovodRouter);
+
+  // SalesDrive cache routes
+  app.use("/api/salesdrive", salesdriveRouter);
 
   // Example API routes
   app.get("/api/ping", (_req, res) => {

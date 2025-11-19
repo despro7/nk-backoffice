@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder';
+import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache } from '../services/dilovod/DilovodUtils.js';
@@ -64,6 +64,7 @@ async function getDilovodSettings(): Promise<DilovodSettings> {
     getPersonBy: (settingsMap.get('dilovod_get_person_by') as DilovodSettings['getPersonBy']) || 'end_user',
     defaultFirmId: settingsMap.get('dilovod_default_firm_id'),
     channelPaymentMapping: parseJsonSafe(settingsMap.get('dilovod_channel_payment_mapping'), {}),
+    deliveryMappings: parseJsonSafe(settingsMap.get('dilovod_delivery_mappings'), []),
     logSendOrder: parseBool(settingsMap.get('dilovod_log_send_order')),
     liqpayCommission: parseBool(settingsMap.get('dilovod_liqpay_commission'))
   };
@@ -91,6 +92,7 @@ async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<Di
     { key: 'dilovod_get_person_by', value: settings.getPersonBy || 'end_user', description: 'Пошук контрагентів' },
     { key: 'dilovod_default_firm_id', value: settings.defaultFirmId || '', description: 'Фірма за замовчуванням' },
     { key: 'dilovod_channel_payment_mapping', value: JSON.stringify(settings.channelPaymentMapping || {}), description: 'Мапінг каналів продажів' },
+    { key: 'dilovod_delivery_mappings', value: JSON.stringify(settings.deliveryMappings || []), description: 'Мапінг способів доставки' },
     { key: 'dilovod_log_send_order', value: String(settings.logSendOrder ?? false), description: 'Логування відправки замовлень' },
     { key: 'dilovod_liqpay_commission', value: String(settings.liqpayCommission ?? false), description: 'Комісія LiqPay' }
   ];
@@ -300,12 +302,9 @@ router.get('/settings', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    logWithTimestamp('=== API: Отримання налаштувань Dilovod ===');
-    
     // Отримуємо налаштування з settings_base
     const settings = await getDilovodSettings();
     
-    logWithTimestamp('API: Налаштування Dilovod отримано');
     res.json({
       success: true,
       data: settings
@@ -377,60 +376,85 @@ router.get('/directories', authenticateToken, async (req, res) => {
     
     const dilovodService = new DilovodService();
     
-    logWithTimestamp('API: Початок послідовного завантаження довідників (через обмеження Dilovod API)...');
-    
     // Dilovod API блокує паралельні запити ('multithreadApiSession multithread api request blocked')
     // Тому робимо запити послідовно з обробкою помилок
     let storagesResult: any[] = [];
     let accountsResult: any[] = [];
     let paymentFormsResult: any[] = [];
     let firmsResult: any[] = [];
+    let tradeChanelsResult: any[] = [];
+    let deliveryMethodsResult: any[] = [];
     
     try {
-      logWithTimestamp('Отримання списку складів з Dilovod');
       storagesResult = await dilovodService.getStorages();
-      logWithTimestamp(`API: ✅ Склади завантажено: ${storagesResult.length} записів`);
-      if (storagesResult.length > 0) {
-        logWithTimestamp(`API: Перший склад: ${JSON.stringify(storagesResult[0])}`);
-      }
     } catch (error) {
       logWithTimestamp('API: ❌ Помилка отримання складів:', error);
     }
     
     try {
-      logWithTimestamp('Отримання списку рахунків з Dilovod');
       accountsResult = await dilovodService.getCashAccounts();
-      logWithTimestamp(`API: ✅ Рахунки завантажено: ${accountsResult.length} записів`);
     } catch (error) {
       logWithTimestamp('API: ❌ Помилка отримання рахунків:', error);
     }
     
     try {
-      logWithTimestamp('Отримання списку форм оплати з Dilovod');  
       paymentFormsResult = await dilovodService.getPaymentForms();
-      logWithTimestamp(`API: ✅ Форми оплати завантажено: ${paymentFormsResult.length} записів`);
     } catch (error) {
       logWithTimestamp('API: ❌ Помилка отримання форм оплати:', error);
     }
     
     try {
-      logWithTimestamp('Отримання списку фірм з Dilovod');
       firmsResult = await dilovodService.getFirms();
-      logWithTimestamp(`API: ✅ Фірми завантажено: ${firmsResult.length} записів`);
     } catch (error) {
       logWithTimestamp('API: ❌ Помилка отримання фірм:', error);
     }
     
-    logWithTimestamp('API: Завантаження довідників завершено.');
+    try {
+      tradeChanelsResult = await dilovodService.getTradeChanels();
+    } catch (error) {
+      logWithTimestamp('API: ❌ Помилка отримання каналів продажів:', error);
+    }
+    
+    try {
+      deliveryMethodsResult = await dilovodService.getDeliveryMethods();
+    } catch (error) {
+      logWithTimestamp('API: ❌ Помилка отримання способів доставки:', error);
+    }
+    
+    // Отримуємо товари з products (будемо використовувати поле products.dilovodGood)
+    let goodsResult: any[] = [];
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      const products = await prisma.product.findMany({
+        where: ({ dilovodGood: { not: null } } as any),
+        orderBy: { sku: 'asc' }
+      });
+
+      // Map to expected shape for directories endpoint
+      goodsResult = products.map(p => ({
+        id: p.id,
+        good_id: (p as any).dilovodGood,
+        productNum: p.sku,
+        name: p.name || null,
+        parent: null
+      }));
+
+      await prisma.$disconnect();
+    } catch (error) {
+      logWithTimestamp('API: ❌ Помилка отримання товарів з кешу:', error);
+    }
     
     const directories: DilovodDirectories = {
       storages: storagesResult,
       cashAccounts: accountsResult,
       paymentForms: paymentFormsResult,
-      firms: firmsResult
+      firms: firmsResult,
+      tradeChanels: tradeChanelsResult,
+      deliveryMethods: deliveryMethodsResult,
+      goods: goodsResult
     };
     
-    logWithTimestamp('API: Довідники Dilovod отримано');
     res.json({
       success: true,
       data: directories
@@ -586,19 +610,71 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
       });
     }
 
-    logWithTimestamp(`=== API: Перевірка замовлень ${orderNumbers} в Dilovod ===`);
+    logWithTimestamp(`=== API: Перевірка замовлень ${orderNumbers} в Dilovod ===`, undefined, true);
+
+    const results = [];
+    const baseDocIds: string[] = [];
+    const orderMap = new Map<string, { normalizedNumber: string; dilovodId: string; dilovodExportDate: string | Date }>();
+
+    // Спочатку перевіряємо в локальній базі, які замовлення вже мають dilovodDocId
+    const checks = await Promise.all(
+      orderNumbers
+        .filter(num => num)
+        .map(async num => {
+          const normalized = String(num).replace(/[^\d]/g, "");
+          const existing = await orderDatabaseService.getOrderByExternalId(normalized);
+
+          return {
+            num,
+            baseDocId: existing?.dilovodDocId || null,
+            dilovodExportDate: existing?.dilovodExportDate || null
+          };
+        })
+    );
+
+    const validOrders = checks.filter(item => !item.baseDocId).map(item => item.num);
+    const passedOrders = checks.filter(item => item.baseDocId);
+
+    // Обробляємо замовлення, які вже мають dilovodDocId в локальній базі
+    for (const item of passedOrders) {
+      logWithTimestamp(`API [dilovod.ts]: Пропускаємо замовлення ${item.num} — вже має dilovodDocId в локальній базі`);
+
+      const normalizedNumber = String(item.num).replace(/[^\d]/g, "");
+
+      baseDocIds.push(item.baseDocId);
+      orderMap.set(item.baseDocId, {
+        normalizedNumber,
+        dilovodId: item.baseDocId,
+        dilovodExportDate: item.dilovodExportDate
+      });
+
+      results.push({
+        orderNumber: normalizedNumber,
+        dilovodId: item.baseDocId,
+        dilovodExportDate: item.dilovodExportDate,
+        updatedCount: 0,
+        success: true,
+        warnings: ['Замовлення вже має dilovodDocId в локальній базі — пропущено']
+      });
+    }
 
     // Використовуємо DilovodService для пошуку замовлень
     const dilovodService = new DilovodService();
-    const dilovodOrders = (await dilovodService.getOrderByNumber(orderNumbers)).flat(); // Повертає массив об’єктів замовлень (з flatt'ингом для обробки вкладених масивів)
-
-    const results = [];
+    const dilovodOrders = validOrders.length > 0 ? (await dilovodService.getOrderByNumber(validOrders)).flat() : []; // Повертає массив об’єктів замовлень (з flatt'ингом для обробки вкладених масивів)
 
     // Цикл 1: Оновлюємо базову інформацію та збираємо baseDoc для батч-запиту
-    const baseDocIds: string[] = [];
-    const orderMap = new Map<string, { normalizedNumber: string; dilovodId: string; dilovodExportDate: string }>();
-
     for (const dilovodOrder of dilovodOrders) {
+
+      // Перевіряємо наявність orderNumber
+      if (!dilovodOrder.number) {
+        results.push({
+          orderNumber: dilovodOrder.number || 'unknown',
+          error: 'Missing number or id in Dilovod order',
+          success: false
+        });
+        continue;
+      }
+
       // Нормалізуємо номер (прибираємо префікси/суфікси)
       const normalizedNumber = String(dilovodOrder.number).replace(/[^\d]/g, "");
       const baseDoc = dilovodOrder.id;
@@ -649,26 +725,53 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
       }
     }
 
-    // Цикл 2: Єдиний батч-запит для documents.sale і documents.cashIn (передаємо масив baseDocIds напряму)
+    // Оптимізована перевірка: спочатку шукаємо існуючі sale/cashIn документи в локальній базі
     if (baseDocIds.length > 0) {
       try {
-        logWithTimestamp(`Виконуємо один запит getDocuments() для ${baseDocIds.length} baseDoc (sale)...`);
-        const saleDocuments = await dilovodService.getDocuments(baseDocIds, 'sale');
+        // Отримуємо існуючі записи з локальної бази
+        const existingOrders = await prisma.order.findMany({
+          where: {
+            dilovodDocId: { in: baseDocIds }
+          },
+          select: {
+            orderNumber: true,
+            dilovodDocId: true,
+            dilovodSaleExportDate: true,
+            dilovodCashInDate: true
+          }
+        });
 
-        logWithTimestamp(`Виконуємо один запит getDocuments() для ${baseDocIds.length} baseDoc (cashIn)...`);
-        const cashInDocuments = await dilovodService.getDocuments(baseDocIds, 'cashIn');
+        // Визначаємо, для яких baseDocIds потрібен запит до Dilovod API
+        const needSaleRequest = baseDocIds.filter(id => {
+          const order = existingOrders.find(o => o.dilovodDocId === id);
+          return !order || !order.dilovodSaleExportDate;
+        });
+        const needCashInRequest = baseDocIds.filter(id => {
+          const order = existingOrders.find(o => o.dilovodDocId === id);
+          return !order || !order.dilovodCashInDate;
+        });
+
+        let saleDocuments: any[] = [];
+        let cashInDocuments: any[] = [];
+
+        if (needSaleRequest.length > 0) {
+          logWithTimestamp(`Виконуємо запит getDocuments() для ${needSaleRequest.length} baseDoc (sale)...`);
+          saleDocuments = await dilovodService.getDocuments(needSaleRequest, 'sale');
+        }
+        if (needCashInRequest.length > 0) {
+          logWithTimestamp(`Виконуємо запит getDocuments() для ${needCashInRequest.length} baseDoc (cashIn)...`);
+          cashInDocuments = await dilovodService.getDocuments(needCashInRequest, 'cashIn');
+        }
 
         // Групуємо за baseDoc (беремо перший документ якщо їх кілька)
         const groupByBaseDoc = (docs: any[]) => {
           const map = new Map<string, any>();
-            for (const d of docs) {
-              if (!d?.baseDoc) continue;
-              if (!map.has(d.baseDoc)) {
-                map.set(d.baseDoc, d);
-              } else {
-                // Якщо вже є — можна замінити якщо дата новіша (опціонально). Зараз залишаємо перший.
-              }
+          for (const d of docs) {
+            if (!d?.baseDoc) continue;
+            if (!map.has(d.baseDoc)) {
+              map.set(d.baseDoc, d);
             }
+          }
           return map;
         };
 
@@ -679,15 +782,16 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
           const orderInfo = orderMap.get(baseDoc);
           if (!orderInfo) continue;
 
-          const saleDoc = saleByBaseDoc.get(baseDoc);
-          const cashInDoc = cashInByBaseDoc.get(baseDoc);
-
+          // Перевіряємо, чи вже є дані в локальній базі
+          const localOrder = existingOrders.find(o => o.dilovodDocId === baseDoc);
           const updateData: any = {};
-          if (saleDoc?.date) {
-            updateData.dilovodSaleExportDate = new Date(saleDoc.date).toISOString();
+
+          // Якщо немає або неактуальні дані — оновлюємо
+          if (!localOrder?.dilovodSaleExportDate && saleByBaseDoc.get(baseDoc)?.date) {
+            updateData.dilovodSaleExportDate = new Date(saleByBaseDoc.get(baseDoc).date).toISOString();
           }
-          if (cashInDoc?.date) {
-            updateData.dilovodCashInDate = new Date(cashInDoc.date).toISOString();
+          if (!localOrder?.dilovodCashInDate && cashInByBaseDoc.get(baseDoc)?.date) {
+            updateData.dilovodCashInDate = new Date(cashInByBaseDoc.get(baseDoc).date).toISOString();
           }
 
           if (Object.keys(updateData).length > 0) {
@@ -700,23 +804,23 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
             if (resultIndex !== -1) {
               results[resultIndex] = {
                 ...results[resultIndex],
-                dilovodSaleExportDate: saleDoc?.date,
-                dilovodCashInDate: cashInDoc?.date
+                dilovodSaleExportDate: updateData.dilovodSaleExportDate || localOrder?.dilovodSaleExportDate,
+                dilovodCashInDate: updateData.dilovodCashInDate || localOrder?.dilovodCashInDate
               };
             }
           }
         }
-        logWithTimestamp('Єдиний батч-оновлення документів Sale/CashIn завершено');
+        logWithTimestamp('Оновлення документів Sale/CashIn завершено (запити лише для відсутніх)');
       } catch (err) {
-        logWithTimestamp('Помилка під час єдиного батч-запиту Sale/CashIn:', err);
+        logWithTimestamp('Помилка під час оновлення Sale/CashIn:', err);
       }
     }
 
-
-
+    // Підсумовуємо результати
     const successCount = results.filter(r => r.success).length;
     const errorCount = results.length - successCount;
     const hasError = errorCount > 0;
+    const updatedCount = results.reduce((acc, r) => acc + (r.updatedCount || 0), 0);
 
     const errorDetails = hasError
       ? results.filter(r => !r.success).map(r => ({
@@ -726,9 +830,14 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
         }))
       : undefined;
 
-    const message = hasError
-      ? `Перевірка завершена з помилками (оновлено ${successCount} замовлень, ${errorCount} з помилками)`
-      : `Перевірка завершена (оновлено ${results.length} замовлень)`;
+    let message = '';
+    if (hasError) {
+      message = `Перевірка завершена з помилками (оновлено ${successCount} замовлень, ${errorCount} з помилками)`;
+    } else if (updatedCount === 0) {
+      message = 'Перевірка завершена: жодних нових даних не було оновлено.';
+    } else {
+      message = `Перевірка завершена (оновлено ${updatedCount} замовлень)`;
+    }
 
     res.json({
       success: !hasError,
@@ -750,7 +859,7 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
 
 /**
  * POST /api/dilovod/salesdrive/orders/:orderId/export
- * Експортувати замовлення в Dilovod (поки заглушка)
+ * Експортувати замовлення в Dilovod
  */
 router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req, res) => {
   try {
@@ -763,43 +872,284 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
     }
 
     const { orderId } = req.params;
+    const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
-    logWithTimestamp(`=== API: Експорт замовлення ${orderId} в Dilovod (заглушка) ===`);
-
-    // Заглушка - імітуємо експорт в Dilovod
-    setTimeout(() => {
-      // Випадковий результат для демонстрації
-      const exported = Math.random() > 0.3; // 70% успіху
-      
-      if (exported) {
-        // Оновлюємо статус в базі даних (заглушка)
-        res.json({
-          success: true,
-          exported: true,
-          orderId,
-          message: `Замовлення ${orderId} успішно вивантажено в Діловод`,
-          mockData: {
-            dilovodId: `DLV-${Math.floor(Math.random() * 10000)}`,
-            exportedAt: new Date().toISOString()
-          }
-        });
-      } else {
-        res.json({
-          success: false,
-          exported: false,
-          orderId,
-          error: 'Помилка вивантаження в Діловод',
-          message: `Не вдалося вивантажити замовлення ${orderId}`,
-          mockData: {
-            errorCode: 'DILOVOD_API_ERROR',
-            errorDetails: 'Temporary API unavailable'
-          }
-        });
+    // Перевірка наявності локального запису (dilovodDocId)
+    const existingOrder = await prisma.order.findUnique({
+      where: { id: parseInt(orderId) },
+      select: {
+        dilovodDocId: true,
+        dilovodExportDate: true
       }
-    }, 2000); // Імітація затримки API
+    });
+
+    if (existingOrder?.dilovodDocId) {
+      // Якщо вже є dilovodDocId — не робимо запит до Dilovod API
+      logWithTimestamp(`ℹ️ Замовлення #${orderNum} (id: ${orderId}) вже експортовано в Dilovod (baseDocId: ${existingOrder.dilovodDocId})`);
+      return res.json({
+        success: true,
+        message: `Замовлення ${orderNum} вже експортовано в Dilovod. Нових даних не було оновлено.`,
+        exported: false,
+        dilovodId: existingOrder.dilovodDocId,
+        dilovodExportDate: existingOrder.dilovodExportDate,
+        data: {
+          orderId,
+          exportResult: null,
+          warnings: []
+        },
+        metadata: {
+          exportedAt: existingOrder.dilovodExportDate,
+          documentType: null,
+          orderNumber: orderNum,
+          totalItems: null,
+          warningsCount: 0,
+          saleToken: null
+        }
+      });
+    }
+
+    logWithTimestamp(`=== API: Експорт замовлення #${orderNum} (id: ${orderId}) в Dilovod ===`);
+
+    // ...existing code for payload, export, and response...
+    // Імпортуємо DilovodExportBuilder
+    const { dilovodExportBuilder } = await import('../services/dilovod/DilovodExportBuilder.js');
+
+    // Перевіряємо, чи є token для повторного використання payload з validation
+    const { token } = req.body || {};
+    let payload: any;
+    let warnings: string[] = [];
+
+    if (token) {
+      const { payloadCacheService } = await import('../services/dilovod/PayloadCacheService.js');
+      const cached = payloadCacheService.get(token, true); // single-use
+      if (cached && cached.payload) {
+        payload = cached.payload;
+        warnings = cached.warnings || [];
+        logWithTimestamp(`🧩 Використовуємо cached payload для токена ${token}`);
+        // Для кешованого payload ми більше не створюємо контрагентів у коді експортного маршруту.
+        // Тепер person буде створений під час валідації (validate) і записаний у кеш.
+        if (!payload?.header?.person?.id) {
+          logWithTimestamp(`⚠️ Cached payload для токена ${token} не містить person.id — перевірте, що запускалася validate з allowCreatePerson`);
+        }
+      } else {
+        logWithTimestamp(`⚠️ Token ${token} не знайдено або вже використаний — будуємо payload заново`);
+        const result = await dilovodExportBuilder.buildExportPayload(orderId);
+        payload = result.payload;
+        warnings = result.warnings;
+      }
+    } else {
+      // Формуємо payload через ExportBuilder
+      const result = await dilovodExportBuilder.buildExportPayload(orderId);
+      payload = result.payload;
+      warnings = result.warnings;
+    }
+
+    logWithTimestamp(`✅ Payload для замовлення #${orderNum} (id: ${orderId}) успішно сформовано`);
+
+    // Відправляємо payload в Dilovod через DilovodService
+    try {
+      // Використовуємо коректний singleton import
+      const { dilovodService } = await import('../services/dilovod/DilovodService.js');
+      const exportResult = await dilovodService.exportOrderToDilovod(payload);
+
+      // Визначаємо статус відповіді
+      const isExportError = !!(exportResult && (exportResult.error || exportResult.status === 'error'));
+      const orderNumber = orderNum || orderId;
+      
+      // Якщо експорт успішний і є baseDoc ID - зберігаємо в БД
+      if (!isExportError && exportResult?.id) {
+        try {
+          await prisma.order.updateMany({
+            where: { id: parseInt(orderId) },
+            data: {
+              dilovodDocId: exportResult.id,
+              dilovodExportDate: new Date().toISOString()
+            }
+          });
+          logWithTimestamp(`✅ baseDoc ID (${exportResult.id}) збережено для замовлення #${orderNum} (id: ${orderId})`);
+        } catch (dbError) {
+          logWithTimestamp(`❌ Помилка збереження baseDoc ID в БД:`, dbError);
+        }
+      }
+
+      // Після успішного експорту зберігаємо короткочасний токен для документа sale
+      // в payloadCacheService щоб unique sale flow міг використати baseDoc та personId без повторного побудування
+      let saleToken: string | undefined;
+      if (!isExportError && exportResult?.id) {
+        try {
+          const { payloadCacheService } = await import('../services/dilovod/PayloadCacheService.js');
+          const saleData = {
+            baseDocId: exportResult.id,
+            personId: payload?.header?.person?.id
+          };
+          saleToken = payloadCacheService.save(saleData, 600); // same default TTL
+          logWithTimestamp(`🔐 Згенеровано sale token ${saleToken} для замовлення #${orderNum} (orderId: ${orderId}, baseDoc: ${exportResult.id})`);
+          logWithTimestamp('🔒 sale token data:', saleData);
+        } catch (err) {
+          logWithTimestamp('❌ Помилка при створенні sale token:', err);
+        }
+      }
+
+      // Логування в MetaLog
+      await dilovodService.logMetaDilovodExport({
+        title: 'Dilovod export result',
+        status: isExportError ? 'error' : 'success',
+        message: exportResult?.message || (isExportError ? 'Export failed' : 'Export successful'),
+        data: {
+          orderId,
+          orderNumber,
+          payload,
+          exportResult,
+          warnings: warnings.length > 0 ? warnings : undefined
+        }
+      });
+
+      const mainMessage = isExportError
+        ? `Помилка експорту замовлення ${orderNumber} в Dilovod: ${exportResult?.error || exportResult?.message || 'невідома помилка'}`
+        : `Замовлення ${orderNumber} експортовано в Dilovod успішно`;
+        
+      res.json({
+        success: !isExportError,
+        message: mainMessage,
+        exported: !isExportError,
+        dilovodId: exportResult?.id,
+        dilovodExportDate: !isExportError ? new Date().toISOString() : undefined,
+        data: {
+          orderId,
+          exportResult,
+          warnings: warnings.length > 0 ? warnings : undefined
+        },
+        metadata: {
+          exportedAt: new Date().toISOString(),
+          documentType: payload.header.id,
+          orderNumber,
+          totalItems: payload.tableParts.tpGoods.length,
+          warningsCount: warnings.length,
+          saleToken
+        }
+      });
+    } catch (exportError) {
+      console.error('Помилка експорту замовлення в Dilovod:', exportError);
+      res.status(500).json({
+        success: false,
+        error: 'Dilovod export error',
+        message: exportError instanceof Error ? exportError.message : 'Unknown error',
+        data: {
+          orderId,
+          payload,
+          warnings: warnings.length > 0 ? warnings : undefined
+        }
+      });
+    }
 
   } catch (error) {
     console.error('Error exporting order to Dilovod:', error);
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Перевіряємо, чи це критична помилка валідації
+    if (errorMessage.includes('Експорт заблоковано через критичні помилки:')) {
+      // Критична помилка валідації - повертаємо статус 400 (Bad Request)
+      return res.status(400).json({
+        success: false,
+        error: 'validation_error',
+        message: 'Експорт заблоковано через критичні помилки конфігурації',
+        details: errorMessage,
+        type: 'critical_validation_error',
+        action_required: 'Виправте налаштування Dilovod перед повторною спробою експорту'
+      });
+    }
+    
+    // Інші помилки - внутрішня помилка сервера
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      details: errorMessage
+    });
+  }
+});
+
+/**
+ * POST /api/dilovod/salesdrive/orders/:orderId/validate
+ * Валідувати готовність замовлення до експорту в Dilovod
+ */
+router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (req, res) => {
+  try {
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'ads-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, ads-manager'
+      });
+    }
+
+    const { orderId } = req.params;
+    const orderNumber = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
+
+    logWithTimestamp(`=== API: Валідація замовлення #${orderNumber} (id: ${orderId}) для експорту в Dilovod ===`, undefined, true);
+
+    // Імпортуємо DilovodExportBuilder
+    const { dilovodExportBuilder } = await import('../services/dilovod/DilovodExportBuilder.js');
+
+    try {
+      // Спробуємо сформувати payload у dry-run режимі - якщо вдається, то все ОК
+      // Виконуємо dry-run, але дозволяємо створювати контрагентів під час валідації
+      // щоб кешований payload можна було безпосередньо використовувати при експорті
+      const { payload, warnings } = await dilovodExportBuilder.buildExportPayload(orderId, { dryRun: true, allowCreatePerson: true });
+
+      // Збережемо payload у тимчасовий кеш щоб уникнути дублювання створення контрагентів
+      const { payloadCacheService } = await import('../services/dilovod/PayloadCacheService.js');
+      const token = payloadCacheService.save({ payload, warnings }, 600); // default 10 min
+
+      logWithTimestamp(`✅ Валідація замовлення #${orderNumber} (id: ${orderId}) пройдена успішно`);
+
+      // Валідація успішна
+      res.json({
+        success: true,
+        message: 'Замовлення готове до експорту в Dilovod',
+        data: {
+          orderId,
+          isReadyForExport: true,
+          warnings: warnings.length > 0 ? warnings : undefined,
+          validatedAt: new Date().toISOString()
+        },
+        metadata: {
+          orderNumber: payload.header.number,
+          totalItems: payload.tableParts.tpGoods.length,
+          warningsCount: warnings.length,
+          token
+        }
+      });
+
+    } catch (validationError) {
+      const errorMessage = validationError instanceof Error ? validationError.message : 'Unknown error';
+      
+      // Якщо це критична помилка валідації
+      if (errorMessage.includes('Експорт заблоковано через критичні помилки:')) {
+        logWithTimestamp(`❌ Валідація замовлення #${orderNumber} (id: ${orderId}) не пройдена`);
+        
+        return res.status(200).json({
+          success: false,
+          message: 'Замовлення не готове до експорту',
+          data: {
+            orderId,
+            isReadyForExport: false,
+            validatedAt: new Date().toISOString()
+          },
+          error: 'validation_failed',
+          details: errorMessage,
+          type: 'critical_validation_error',
+          action_required: 'Виправте налаштування Dilovod перед експортом'
+        });
+      }
+      
+      // Інші помилки
+      throw validationError;
+    }
+
+  } catch (error) {
+    console.error('Error validating order for Dilovod export:', error);
+    
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -810,7 +1160,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
 
 /**
  * POST /api/dilovod/salesdrive/orders/:orderId/shipment
- * Створити документ відвантаження в Dilovod (поки заглушка)
+ * Створити документ відвантаження в Dilovod на основі baseDoc
  */
 router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (req, res) => {
   try {
@@ -823,48 +1173,266 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
     }
 
     const { orderId } = req.params;
+    const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
-    logWithTimestamp(`=== API: Створення документа відвантаження для замовлення ${orderId} в Dilovod (заглушка) ===`);
+    logWithTimestamp(`=== API: Створення документа відвантаження для замовлення #${orderNum} (id: ${orderId}) в Dilovod ===`, undefined, true);
 
-    // Заглушка - імітуємо створення документа відвантаження в Dilovod
-    setTimeout(() => {
-      // Випадковий результат для демонстрації
-      const created = Math.random() > 0.2; // 80% успіху
-      
-      if (created) {
-        res.json({
-          success: true,
-          created: true,
-          orderId,
-          message: `Документ відвантаження для замовлення ${orderId} створено в Діловоді`,
-          mockData: {
-            shipmentId: `SHP-${Math.floor(Math.random() * 10000)}`,
-            documentNumber: `DOC-${Math.floor(Math.random() * 10000)}`,
-            createdAt: new Date().toISOString()
-          }
-        });
-      } else {
-        res.json({
-          success: false,
-          created: false,
-          orderId,
-          error: 'Помилка створення документу відвантаження',
-          message: `Не вдалося створити документ відвантаження для замовлення ${orderId}`,
-          mockData: {
-            errorCode: 'SHIPMENT_CREATE_ERROR',
-            errorDetails: 'Order not found or already shipped'
-          }
-        });
+    // Отримуємо замовлення з БД
+    const order = await prisma.order.findUnique({
+      where: { id: parseInt(orderId) }
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found',
+        message: `Замовлення #${orderNum} (id: ${orderId}) не знайдено в базі даних`
+      });
+    }
+
+    // Дозволяємо передавати token щоб повторно використати baseDoc/person з export
+    const { token } = req.body || {};
+    let cached: any = null;
+    if (token) {
+      const { payloadCacheService } = await import('../services/dilovod/PayloadCacheService.js');
+      cached = payloadCacheService.get(token, true);
+      if (cached && cached.baseDocId) {
+        // Використовуємо baseDoc з кеша (single-use)
+        order.dilovodDocId = cached.baseDocId;
+        logWithTimestamp(`🔁 Використовуємо sale token ${token} -> baseDoc ${cached.baseDocId}`);
+        if (cached.personId) {
+          logWithTimestamp(`🔁 sale token містить personId: ${cached.personId} — буде передано у buildSalePayload`);
+        } else {
+          logWithTimestamp(`🔁 sale token ${token} не містить personId (буде побудовано на основі бази)`);
+        }
       }
-    }, 1500); // Імітація затримки API
+      // Якщо в кеші є personId — можна його додатково зберегти/використати в buildSalePayload, але наразі переходимо далі
+    }
+
+    // Перевіряємо наявність baseDoc ID
+    if (!order.dilovodDocId) {
+      return res.status(400).json({
+        success: false,
+        error: 'No baseDoc ID',
+        message: `Замовлення #${orderNum} (id: ${orderId}) ще не експортоване в Діловод (відсутній baseDoc ID)`,
+        action_required: 'Спочатку експортуйте замовлення в Діловод'
+      });
+    }
+
+    // Перевіряємо, чи вже створений документ відвантаження
+    if (order.dilovodSaleExportDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'Already shipped',
+        message: `Документ відвантаження для замовлення #${orderNum} (id: ${orderId}) вже створений (${new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA')})`,
+        data: {
+          dilovodSaleExportDate: order.dilovodSaleExportDate
+        }
+      });
+    }
+
+    // Імпортуємо DilovodExportBuilder для створення payload відвантаження
+    const { dilovodExportBuilder } = await import('../services/dilovod/DilovodExportBuilder.js');
+
+    // Формуємо payload для документа відвантаження (documents.sale)
+    const { payload: salePayload, warnings } = await dilovodExportBuilder.buildSalePayload(orderId, order.dilovodDocId, { personId: cached?.personId });
+
+    logWithTimestamp(`✅ Payload для документа відвантаження #${orderNum} (id: ${orderId}) успішно сформовано`);
+
+    // Відправляємо payload в Dilovod через DilovodService
+    try {
+      const { dilovodService } = await import('../services/dilovod/DilovodService.js');
+      const exportResult = await dilovodService.exportOrderToDilovod(salePayload);
+
+      const isExportError = !!(exportResult && (exportResult.error || exportResult.status === 'error'));
+      const orderNumber = orderNum || orderId;
+
+      // Якщо експорт успішний - оновлюємо дату відвантаження
+      if (!isExportError && exportResult?.id) {
+        try {
+          await prisma.order.updateMany({
+            where: { id: parseInt(orderId) },
+            data: {
+              dilovodSaleExportDate: new Date().toISOString()
+            }
+          });
+          logWithTimestamp(`✅ Дату відвантаження збережено для замовлення #${orderNumber} (id: ${orderId})`);
+        } catch (dbError) {
+          logWithTimestamp(`❌ Помилка збереження дати відвантаження в БД:`, dbError);
+        }
+      }
+
+      // Логування в MetaLog
+      await dilovodService.logMetaDilovodExport({
+        title: 'Dilovod shipment export result',
+        status: isExportError ? 'error' : 'success',
+        message: exportResult?.message || (isExportError ? 'Shipment creation failed' : 'Shipment created successfully'),
+        data: {
+          orderId,
+          orderNumber,
+          baseDoc: order.dilovodDocId,
+          payload: salePayload,
+          exportResult,
+          warnings: warnings.length > 0 ? warnings : undefined
+        }
+      });
+
+      const mainMessage = isExportError
+        ? `Помилка створення відвантаження для замовлення ${orderNumber}: ${exportResult?.error || exportResult?.message || 'невідома помилка'}`
+        : `Документ відвантаження для замовлення ${orderNumber} успішно створений`;
+
+      res.json({
+        success: !isExportError,
+        created: !isExportError,
+        message: mainMessage,
+        dilovodSaleExportDate: !isExportError ? new Date().toISOString() : undefined,
+        data: {
+          orderId,
+          baseDoc: order.dilovodDocId,
+          exportResult,
+          warnings: warnings.length > 0 ? warnings : undefined
+        },
+        metadata: {
+          exportedAt: new Date().toISOString(),
+          documentType: 'documents.sale',
+          orderNumber,
+          warningsCount: warnings.length
+        }
+      });
+
+    } catch (exportError) {
+      console.error('Помилка створення відвантаження в Dilovod:', exportError);
+      res.status(500).json({
+        success: false,
+        error: 'Dilovod export error',
+        message: exportError instanceof Error ? exportError.message : 'Unknown error',
+        data: {
+          orderId,
+          baseDoc: order.dilovodDocId,
+          payload: salePayload,
+          warnings: warnings.length > 0 ? warnings : undefined
+        }
+      });
+    }
 
   } catch (error) {
     console.error('Error creating shipment in Dilovod:', error);
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
     res.status(500).json({
       success: false,
       error: 'Internal server error',
+      details: errorMessage
+    });
+  }
+});
+
+/**
+ * GET /api/dilovod/salesdrive/payment-methods
+ * Отримати список методів оплати з SalesDrive API
+ * 
+ * Використовується в UI для налаштування мапінгу каналів оплати
+ */
+router.get('/salesdrive/payment-methods', authenticateToken, async (req, res) => {
+  try {
+    const { salesDriveService } = await import('../services/salesDriveService.js');
+    
+    const paymentMethods = await salesDriveService.fetchPaymentMethods();
+    
+    res.json({
+      success: true,
+      data: paymentMethods
+    });
+  } catch (error) {
+    console.error('❌ [API] Error fetching payment methods:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch payment methods',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
+  }
+});
+
+/**
+ * GET /api/dilovod/cache/status
+ * Отримати статус кешу довідників Dilovod
+ */
+router.get('/cache/status', authenticateToken, async (req, res) => {
+  try {
+    const { user } = req as any;
+    
+    // Перевіряємо права доступу (тільки ADMIN і BOSS)
+    if (!['admin', 'boss'].includes(user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { dilovodCacheService } = await import('../services/dilovod/DilovodCacheService.js');
+    
+    const status = await dilovodCacheService.getAllCacheStatus();
+    
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    console.error('❌ [API] Error getting cache status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get cache status',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/dilovod/cache/refresh
+ * Примусово оновити кеш довідників Dilovod
+ */
+router.post('/cache/refresh', authenticateToken, async (req, res) => {
+  try {
+    const { user } = req as any;
+    
+    // Перевіряємо права доступу (тільки ADMIN і BOSS)
+    if (!['admin', 'boss'].includes(user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    logWithTimestamp('=== API: Примусове оновлення кешу довідників Dilovod ===');
+    
+    const dilovodService = new DilovodService();
+    
+    // Оновлюємо весь кеш (НЕ паралельно, щоб уникнути multithreadApiSession blocked)
+    const result = await dilovodService.refreshAllDirectoriesCache();
+    
+    logWithTimestamp('API: Кеш оновлено успішно');
+    res.json({
+      success: true,
+      data: result,
+      message: 'Кеш довідників успішно оновлено'
+    });
+  } catch (error) {
+    logWithTimestamp('API: Помилка оновлення кешу довідників Dilovod:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Невідома помилка'
+    });
+  }
+});
+
+/**
+ * GET /api/dilovod/cache/fresh-skus
+ * Отримати свіжі SKU напряму з WordPress (без використання кешу)
+ */
+router.get('/cache/fresh-skus', authenticateToken, async (req, res) => {
+  try {
+    const { DilovodCacheManager } = await import('../services/dilovod/DilovodCacheManager.js');
+    const manager = new DilovodCacheManager();
+    const skus = await manager.fetchFreshSkusFromWordPress();
+    res.json({ success: true, data: skus });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 

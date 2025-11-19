@@ -3,6 +3,13 @@ import { orderDatabaseService } from './orderDatabaseService.js';
 import { syncSettingsService } from './syncSettingsService.js';
 import { syncHistoryService, CreateSyncHistoryData } from './syncHistoryService.js';
 import type { SyncSettings } from './syncSettingsService.js';
+import type { 
+  SalesDriveChannel, 
+  SalesDrivePaymentMethod, 
+  SalesDriveShippingMethod,
+  SalesDriveStatus,
+  SalesDriveDirectoryResponse 
+} from './salesdrive/SalesDriveTypes.js';
 
 // Node.js types for setInterval
 declare const setInterval: (callback: () => void, ms: number) => NodeJS.Timeout;
@@ -308,6 +315,301 @@ export class SalesDriveService {
 
 
   /**
+   * Отримує список методів оплати SalesDrive
+   * 
+   * СПОЧАТКУ: Спробує отримати з SalesDrive API (/api/payment-methods/)
+   * FALLBACK: Використовує статичний список при помилках API
+   * 
+   * @returns Масив методів оплати [{id: number, name: string}]
+   */
+  async fetchPaymentMethods(): Promise<SalesDrivePaymentMethod[]> {
+    const cacheKey = 'payment-methods';
+    const now = Date.now();
+    
+    // Перевіряємо кеш
+    const cached = this.cacheState.data.get(cacheKey);
+    if (cached && now < cached.expiresAt) {
+      console.log('📦 [SalesDrive] Using cached payment methods');
+      return cached.data;
+    }
+
+    // Статичний список методів оплати (fallback) - актуальні мапінги
+    const staticPaymentMethods: SalesDrivePaymentMethod[] = [
+      { id: 14, name: 'Plata by Mono' },
+      { id: 13, name: 'LiqPay' },
+      { id: 12, name: 'Післяплата' },
+      { id: 15, name: 'Готівка' },
+      { id: 21, name: 'Card' },
+      { id: 23, name: 'Apple Pay' },
+      { id: 25, name: 'Наложений платіж' },
+      { id: 27, name: 'Пром-оплата' },
+      { id: 29, name: 'Google Pay' },
+      { id: 30, name: 'Credit' }
+    ];
+
+    // Спробуємо отримати з API (якщо налаштований)
+    if (this.apiUrl && this.apiKey) {
+      try {
+        const fullUrl = `${this.apiUrl}/api/payment-methods/`;
+        console.log(`🔍 [SalesDrive] Trying to fetch payment methods from: ${fullUrl}`);
+
+        const response = await fetch(fullUrl, {
+          method: 'GET',
+          headers: {
+            'Form-Api-Key': this.apiKey,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json() as SalesDriveDirectoryResponse<SalesDrivePaymentMethod[]>;
+
+          if (data.success && data.data) {
+            console.log(`✅ [SalesDrive] Loaded ${data.data.length} payment methods from API`);
+
+            // Кешуємо API результат на 1 годину
+            const ttl = 3600000;
+            this.cacheState.data.set(cacheKey, {
+              data: data.data,
+              timestamp: now,
+              expiresAt: now + ttl
+            });
+
+            return data.data;
+          }
+        }
+
+        console.warn(`⚠️ [SalesDrive] API failed (${response.status}), using static list`);
+      } catch (error) {
+        console.warn(`⚠️ [SalesDrive] API error (${error instanceof Error ? error.message : 'unknown'}), using static list`);
+      }
+    } else {
+      console.log('📋 [SalesDrive] API not configured, using static payment methods list');
+    }
+
+    // Кешуємо статичний список на 24 години
+    const ttl = 24 * 60 * 60 * 1000; // 24 години
+    this.cacheState.data.set(cacheKey, {
+      data: staticPaymentMethods,
+      timestamp: now,
+      expiresAt: now + ttl
+    });
+
+    console.log(`✅ [SalesDrive] Loaded ${staticPaymentMethods.length} static payment methods`);
+    return staticPaymentMethods;
+  }
+
+  /**
+   * Отримує список каналів продажів SalesDrive
+   * 
+   * УВАГА: SalesDrive API не має ендпоінту для каналів,
+   * тому повертаємо статичний список з кешуванням
+   * 
+   * @returns Масив каналів [{id: string, name: string}]
+   */
+  async fetchChannels(): Promise<SalesDriveChannel[]> {
+    const cacheKey = 'channels';
+    const now = Date.now();
+    
+    // Перевіряємо кеш
+    const cached = this.cacheState.data.get(cacheKey);
+    if (cached && now < cached.expiresAt) {
+      console.log('📦 [SalesDrive] Using cached channels');
+      return cached.data;
+    }
+
+    console.log('� [SalesDrive] Loading static channels list (no API endpoint available)');
+    
+    // Статичний список каналів (SalesDrive API не має такого ендпоінту)
+    const channels: SalesDriveChannel[] = [
+      { id: '22', name: 'Rozetka (Сергій)' },
+      { id: '24', name: 'prom (old)' },
+      { id: '28', name: 'prom' },
+      { id: '31', name: 'інше (менеджер)' },
+      { id: '38', name: 'дрібні магазини' },
+      { id: '39', name: 'Rozetka (Марія)' }
+    ];
+
+    // Кешуємо статичний список на 24 години
+    const ttl = 24 * 60 * 60 * 1000; // 24 години
+    this.cacheState.data.set(cacheKey, {
+      data: channels,
+      timestamp: now,
+      expiresAt: now + ttl
+    });
+
+    console.log(`✅ [SalesDrive] Loaded ${channels.length} static channels`);
+    return channels;
+  }
+
+  /**
+   * Отримує список методів доставки SalesDrive
+   * GET /api/delivery-methods/
+   * 
+   * СПОЧАТКУ: Спробує отримати з SalesDrive API 
+   * FALLBACK: Використовує статичний список при помилках API
+   * 
+   * @returns Масив методів доставки [{id: number, name: string}]
+   */
+  async fetchShippingMethods(): Promise<SalesDriveShippingMethod[]> {
+    const cacheKey = 'shipping-methods';
+    const now = Date.now();
+    
+    // Перевіряємо кеш
+    const cached = this.cacheState.data.get(cacheKey);
+    if (cached && now < cached.expiresAt) {
+      console.log('📦 [SalesDrive] Using cached shipping methods');
+      return cached.data;
+    }
+
+    console.log('� [SalesDrive] Loading static shipping methods list (no API endpoint available)');
+    
+    // Статичний список методів доставки (fallback) - актуальні мапінги
+    const staticShippingMethods: SalesDriveShippingMethod[] = [
+      { id: 9, name: 'Нова Пошта' },
+      { id: 20, name: 'Нова Пошта (адресна)' },
+      { id: 16, name: 'Укрпошта' },
+      { id: 17, name: 'Meest' },
+      { id: 10, name: 'Самовивоз' }
+    ];
+
+    // Спробуємо отримати з API (якщо налаштований)
+    if (this.apiUrl && this.apiKey) {
+      try {
+        const fullUrl = `${this.apiUrl}/api/delivery-methods/`;
+        console.log(`🔍 [SalesDrive] Trying to fetch shipping methods from: ${fullUrl}`);
+
+        const response = await fetch(fullUrl, {
+          method: 'GET',
+          headers: {
+            'Form-Api-Key': this.apiKey,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json() as SalesDriveDirectoryResponse<SalesDriveShippingMethod[]>;
+
+          if (data.success && data.data) {
+            console.log(`✅ [SalesDrive] Loaded ${data.data.length} shipping methods from API`);
+
+            // Кешуємо API результат на 1 годину
+            const ttl = 3600000;
+            this.cacheState.data.set(cacheKey, {
+              data: data.data,
+              timestamp: now,
+              expiresAt: now + ttl
+            });
+
+            return data.data;
+          }
+        }
+
+        console.warn(`⚠️ [SalesDrive] Shipping methods API failed (${response.status}), using static list`);
+      } catch (error) {
+        console.warn(`⚠️ [SalesDrive] Shipping methods API error (${error instanceof Error ? error.message : 'unknown'}), using static list`);
+      }
+    } else {
+      console.log('📋 [SalesDrive] API not configured, using static shipping methods list');
+    }
+
+    // Кешуємо статичний список на 24 години
+    const ttl = 24 * 60 * 60 * 1000; // 24 години
+    this.cacheState.data.set(cacheKey, {
+      data: staticShippingMethods,
+      timestamp: now,
+      expiresAt: now + ttl
+    });
+
+    console.log(`✅ [SalesDrive] Loaded ${staticShippingMethods.length} static shipping methods`);
+    return staticShippingMethods;
+  }
+
+  /**
+   * Отримує список статусів заявок з SalesDrive API
+   * GET /api/statuses/
+   * 
+   * СПОЧАТКУ: Спробує отримати з SalesDrive API 
+   * FALLBACK: Використовує статичний список при помилках API
+   * 
+   * @returns Масив статусів [{id: number, name: string, type: number}]
+   */
+  async fetchStatuses(): Promise<SalesDriveStatus[]> {
+    const cacheKey = 'statuses';
+    const now = Date.now();
+    
+    // Перевіряємо кеш
+    const cached = this.cacheState.data.get(cacheKey);
+    if (cached && now < cached.expiresAt) {
+      console.log('📦 [SalesDrive] Using cached statuses');
+      return cached.data;
+    }
+
+    // Статичний список статусів (fallback) - актуальні мапінги
+    const staticStatuses: SalesDriveStatus[] = [
+      { id: 1, name: 'Новий', type: 1 },           // Початковий стан
+      { id: 2, name: 'Підтверджено', type: 2 },    // В процесі
+      { id: 3, name: 'На відправку', type: 2 },    // В процесі
+      { id: 4, name: 'Відправлено', type: 2 },     // В процесі
+      { id: 5, name: 'Продаж', type: 3 },          // Завершений успішно
+      { id: 6, name: 'Відмова', type: 4 },         // Скасований
+      { id: 7, name: 'Повернення', type: 4 },      // Скасований
+      { id: 8, name: 'Видалений', type: 4 }        // Скасований
+    ];
+
+    // Спробуємо отримати з API (якщо налаштований)
+    if (this.apiUrl && this.apiKey) {
+      try {
+        const fullUrl = `${this.apiUrl}/api/statuses/`;
+        console.log(`🔍 [SalesDrive] Trying to fetch statuses from: ${fullUrl}`);
+
+        const response = await fetch(fullUrl, {
+          method: 'GET',
+          headers: {
+            'Form-Api-Key': this.apiKey,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json() as SalesDriveDirectoryResponse<SalesDriveStatus[]>;
+
+          if (data.success && data.data) {
+            console.log(`✅ [SalesDrive] Loaded ${data.data.length} statuses from API`);
+
+            // Кешуємо API результат на 1 годину
+            const ttl = 3600000;
+            this.cacheState.data.set(cacheKey, {
+              data: data.data,
+              timestamp: now,
+              expiresAt: now + ttl
+            });
+
+            return data.data;
+          }
+        }
+
+        console.warn(`⚠️ [SalesDrive] Statuses API failed (${response.status}), using static list`);
+      } catch (error) {
+        console.warn(`⚠️ [SalesDrive] Statuses API error (${error instanceof Error ? error.message : 'unknown'}), using static list`);
+      }
+    } else {
+      console.log('📋 [SalesDrive] API not configured, using static statuses list');
+    }
+
+    // Кешуємо статичний список на 24 години
+    const ttl = 24 * 60 * 60 * 1000; // 24 години
+    this.cacheState.data.set(cacheKey, {
+      data: staticStatuses,
+      timestamp: now,
+      expiresAt: now + ttl
+    });
+
+    console.log(`✅ [SalesDrive] Loaded ${staticStatuses.length} static statuses`);
+    return staticStatuses;
+  }
+
+  /**
    * Получает заказы с момента последней синхронизации
    *
    * Оптимизация с фильтром updateAt:
@@ -511,7 +813,7 @@ export class SalesDriveService {
         if (maxAllowedPages <= 1) {
           return {
             success: true,
-            data: this.formatOrdersList(firstPageOrders),
+            data: await this.formatOrdersList(firstPageOrders),
           };
         }
 
@@ -588,7 +890,7 @@ export class SalesDriveService {
 
         return {
           success: true,
-          data: this.formatOrdersList(allOrders),
+          data: await this.formatOrdersList(allOrders),
         };
 
       } catch (error) {
@@ -701,7 +1003,7 @@ export class SalesDriveService {
         if (maxAllowedPages <= 1) {
           return {
             success: true,
-            data: this.formatOrdersList(firstPageOrders),
+            data: await this.formatOrdersList(firstPageOrders),
           };
         }
 
@@ -768,7 +1070,7 @@ export class SalesDriveService {
 
         return {
           success: true,
-          data: this.formatOrdersList(allOrders),
+          data: await this.formatOrdersList(allOrders),
         };
 
       } catch (error) {
@@ -917,7 +1219,7 @@ export class SalesDriveService {
         if (maxAllowedPages <= 1) {
           return {
             success: true,
-            data: this.formatOrdersList(firstPageOrders),
+            data: await this.formatOrdersList(firstPageOrders),
           };
         }
 
@@ -943,7 +1245,7 @@ export class SalesDriveService {
 
         return {
           success: true,
-          data: this.formatOrdersList(allOrders),
+          data: await this.formatOrdersList(allOrders),
         };
 
       } catch (error) {
@@ -1047,30 +1349,35 @@ export class SalesDriveService {
   /**
    * Форматирует список заказов
    */
-  private formatOrdersList(orders: any[]): SalesDriveOrder[] {
+  private async formatOrdersList(orders: any[]): Promise<SalesDriveOrder[]> {
     if (!Array.isArray(orders)) {
       console.error('❌ [ERROR] formatOrdersList received non-array:', orders);
       return [];
     }
 
-    return orders
-      .filter((order, index) => {
-        if (!order) {
-          console.warn(`⚠️ [WARNING] Skipping null/undefined order at index ${index}`);
-          return false;
-        }
-        return true;
-      })
-      .map((order: any, index) => {
-        try {
-          return this.formatOrder(order);
-        } catch (error) {
-          console.error(`❌ [ERROR] Failed to format order at index ${index}:`, error);
-          console.error('Order data:', order);
-          return null;
-        }
-      })
-      .filter(order => order !== null) as SalesDriveOrder[];
+    const validOrders = orders.filter((order, index) => {
+      if (!order) {
+        console.warn(`⚠️ [WARNING] Skipping null/undefined order at index ${index}`);
+        return false;
+      }
+      return true;
+    });
+
+    const formattedOrders: (SalesDriveOrder | null)[] = [];
+    
+    for (let index = 0; index < validOrders.length; index++) {
+      const order = validOrders[index];
+      try {
+        const formattedOrder = await this.formatOrder(order);
+        formattedOrders.push(formattedOrder);
+      } catch (error) {
+        console.error(`❌ [ERROR] Failed to format order at index ${index}:`, error);
+        console.error('Order data:', order);
+        formattedOrders.push(null);
+      }
+    }
+
+    return formattedOrders.filter(order => order !== null) as SalesDriveOrder[];
   }
 
 
@@ -1098,7 +1405,7 @@ export class SalesDriveService {
   /**
    * Форматирует заказ в структурированный вид (с нужным форматом rawData)
    */
-  private formatOrder(rawOrder: any): SalesDriveOrder {
+  private async formatOrder(rawOrder: any): Promise<SalesDriveOrder> {
     // Проверяем, что rawOrder существует
     if (!rawOrder) {
       console.error('❌ [ERROR] formatOrder received null/undefined rawOrder');
@@ -1106,40 +1413,28 @@ export class SalesDriveService {
     }
 
 
-    // Маппинг статусов
-    const statusMap: { [key: number]: string } = {
-      1: 'Новий',
-      2: 'Підтверджено',
-      3: 'На відправку',
-      4: 'Відправлено',
-      5: 'Продаж',
-      6: 'Відмова',
-      7: 'Повернення',
-      8: 'Видалений'
-    };
+    // Отримуємо актуальні мапінги з кешованих довідників
+    const [statuses, shippingMethods, paymentMethods] = await Promise.all([
+      this.fetchStatuses(),
+      this.fetchShippingMethods(),
+      this.fetchPaymentMethods()
+    ]);
 
-    // Маппинг способов доставки
-    const shippingMethodMap: { [key: number]: string } = {
-      9: 'Нова Пошта',
-      20: 'Нова Пошта (адресна)',
-      16: 'Укрпошта',
-      17: 'Meest',
-      10: 'Самовивоз'
-    };
+    // Створюємо мапінги з актуальних даних
+    const statusMap: { [key: number]: string } = {};
+    statuses.forEach(status => {
+      statusMap[status.id] = status.name;
+    });
 
-    // Маппинг способов оплаты
-    const paymentMethodMap: { [key: number]: string } = {
-      14: 'Plata by Mono',
-      13: 'LiqPay',
-      12: 'Післяплата',
-      15: 'Готівка',
-      21: 'Card',
-      23: 'Apple Pay',
-      25: 'Наложений платіж',
-      27: 'Пром-оплата',
-      29: 'Google Pay',
-      30: 'Credit'
-    };
+    const shippingMethodMap: { [key: number]: string } = {};
+    shippingMethods.forEach(method => {
+      shippingMethodMap[method.id] = method.name;
+    });
+
+    const paymentMethodMap: { [key: number]: string } = {};
+    paymentMethods.forEach(method => {
+      paymentMethodMap[method.id] = method.name;
+    });
 
     let customerName = '';
     let customerPhone = '';
@@ -1335,7 +1630,7 @@ export class SalesDriveService {
 
         const orders = data.data || [];
         if (orders.length > 0) {
-          return this.formatOrder(orders[0]);
+          return await this.formatOrder(orders[0]);
         } else {
           return null;
         }

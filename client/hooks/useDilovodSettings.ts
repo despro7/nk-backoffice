@@ -13,7 +13,7 @@ interface UseDilovodSettingsResult {
   refreshDirectories: () => Promise<void>;
 }
 
-export function useDilovodSettings(): UseDilovodSettingsResult {
+export function useDilovodSettings({ loadDirectories = true }: { loadDirectories?: boolean } = {}): UseDilovodSettingsResult {
   const [settings, setSettings] = useState<DilovodSettings | null>(null);
   const [directories, setDirectories] = useState<DilovodDirectories | null>(null);
   const [loading, setLoading] = useState(true);
@@ -141,11 +141,17 @@ export function useDilovodSettings(): UseDilovodSettingsResult {
 
   // Завантажуємо довідники коли є API ключ (тільки якщо він змінився)
   useEffect(() => {
+    if (!loadDirectories) {
+      // Вмикаємо лениве завантаження довідників — їх потрібно запитувати явно через refreshDirectories()
+      console.log('useDilovodSettings: loadDirectories disabled. Directories will not be fetched automatically.');
+      return;
+    }
+
     if (settings?.apiKey && settings.apiKey !== lastApiKey) {
       console.log('API key changed, loading directories...');
       fetchDirectories();
     }
-  }, [settings?.apiKey]);
+  }, [settings?.apiKey, loadDirectories]);
 
   return {
     settings,

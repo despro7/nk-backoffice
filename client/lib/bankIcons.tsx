@@ -51,24 +51,39 @@ export const getBankIcon = (name: string): JSX.Element => {
 export const getPaymentIcon = (name: string): JSX.Element => {
   const lowerName = name.toLowerCase();
   
-  if (lowerName.includes('готівкою') || lowerName.includes('попередня')) {
-    return <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-md flex items-center justify-center font-medium">₴</span>;
+  if (lowerName.includes('безготівк') || lowerName.includes('безналичн') || lowerName.includes('післяплата')) {
+    return <img src="/icons/payments/bank.svg" alt="Безготівковий" className="w-5 h-5" />;
   }
-  if (lowerName.includes('безготівк') || lowerName.includes('картк') || lowerName.includes('безналичн')) {
+  if (lowerName.includes('готівка') || lowerName.includes('готівкою')) {
+    return <span className="w-5 h-5 shrink-0 rounded-full bg-amber-500 text-white text-md flex items-center justify-center font-medium">₴</span>;
+  }
+  if (lowerName.includes('картк') || lowerName.includes('card')) {
     return <img src="/icons/payments/card.svg" alt="Безготівковий" className="w-5 h-5" />;
   }
   if (lowerName.includes('лікпей') || lowerName.includes('liqpay')) {
     return <img src="/icons/payments/liqpay.svg" alt="LiqPay" className="w-5 h-5" />;
   }
-	if (lowerName.includes('післяплата') || lowerName.includes('новапей') || lowerName.includes('novapay')) {
+	if (lowerName.includes('новапей') || lowerName.includes('novapay') || lowerName.includes('наложений') || lowerName.includes('накладений')) {
     return <img src="/icons/payments/novapay.svg" alt="NovaPay" className="w-5 h-5" />;
   }
 	if (lowerName.includes('моно') || lowerName.includes('mono')) {
     return <img src="/icons/payments/mono.svg" alt="Monobank" className="w-5 h-5" />;
   }
+	if (lowerName.includes('prom') || lowerName.includes('пром')) {
+    return <img src="/icons/payments/prom.svg" alt="Prom" className="w-5 h-5" />;
+  }
 	if (lowerName.includes('розетка') || lowerName.includes('rozetka')) {
     return <img src="/icons/payments/rozetka.svg" alt="Rozetka" className="w-5 h-5" />;
   }
-  
+  if (lowerName.includes('credit') || lowerName.includes('кретид')) {
+    return <img src="/icons/payments/credit.svg" alt="Credit" className="w-5 h-5" />;
+  }
+  if (lowerName.includes('apple pay')) {
+    return <img src="/icons/payments/apple_pay.svg" alt="Apple Pay" className="w-5 h-5" />;
+  }
+  if (lowerName.includes('google pay')) {
+    return <img src="/icons/payments/google_pay.svg" alt="Google Pay" className="w-5 h-5" />;
+  }
+
   return <span className="w-4 h-4 bg-gray-400 rounded text-white text-xs flex items-center justify-center font-bold">₴</span>;
 };

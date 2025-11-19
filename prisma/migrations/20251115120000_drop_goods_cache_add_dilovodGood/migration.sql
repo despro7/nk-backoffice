@@ -1,0 +1,4 @@
+-- AlterTable
+-- migration adjusted: no-op to avoid dropping goods_cache
+-- Original migration intended to drop goods_cache and add dilovodGood, but we keep goods_cache for now.
+-- The actual addition of dilovodGood is handled by another migration: 20251115133000_add_dilovodGood_to_products

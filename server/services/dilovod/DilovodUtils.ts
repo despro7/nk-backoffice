@@ -249,8 +249,11 @@ export function handleDilovodApiError(error: any, context: string): string {
   }
 }
 
-// Логирование с временными метками
-export function logWithTimestamp(message: string, data?: any): void {
+// Логирование с временными метками и опцией gap
+export function logWithTimestamp(message: string, data?: any, gap?: boolean): void {
+  if (gap) {
+    console.log('\n\n\n------------------------\n\n\n');
+  }
   const timestamp = new Date().toISOString();
   const logMessage = `[${timestamp}] ${message}`;
   
@@ -259,6 +262,9 @@ export function logWithTimestamp(message: string, data?: any): void {
   } else {
     console.log(logMessage);
   }
+  // if (gap) {
+  //   console.log('\n\n');
+  // }
 }
 
 // Задержка для избежания перегрузки API

@@ -102,6 +102,7 @@ model Product {
   additionalPrices    String?  @db.LongText
   stockBalanceByStock String?  @db.LongText
   dilovodId           String?
+  dilovodGood         String?  @db.VarChar(64)
   parent              String?
   lastSyncAt          DateTime @default(now())
   createdAt           DateTime @default(now())
@@ -310,3 +311,20 @@ model ShippingProvider {
   @@index([order])
   @@map("shipping_providers")
 }
+model meta_logs {
+  id        Int      @id @default(autoincrement())
+  datetime  DateTime @default(now())
+  category  String   @db.VarChar(32)
+  title     String?  @db.VarChar(255)
+  status    String   @db.VarChar(16)
+  message   String?
+  data      Json?
+  orderNumber String? @db.VarChar(128)
+
+  @@index([orderNumber])
+}
+
+// model goods_cache removed — data moved to products.dilovodGood via backfill migration
+
+// NOTE: `goods_cache` was removed in a safe migration after backfill.
+// If you need to restore it, check the migration history.

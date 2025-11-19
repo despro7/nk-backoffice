@@ -20,48 +20,48 @@ export class DilovodCacheManager {
     try {
       const settings = await syncSettingsService.getSyncSettings();
       this.cacheExpiryHours = settings.dilovod.cacheExpiryHours;
-      logWithTimestamp(`Dilovod кеш настройки загружены: ${this.cacheExpiryHours} часов`);
+      logWithTimestamp(`Dilovod кеш налаштування завантажені: ${this.cacheExpiryHours} години`);
     } catch (error) {
-      logWithTimestamp('Ошибка загрузки настроек кеша Dilovod, используем значения по умолчанию:', error);
+      logWithTimestamp('Помилка завантаження налаштувань кеша Dilovod, використовуємо значення за замовчуванням:', error);
     }
   }
 
   // Получение SKU товаров в наличии из WordPress
   async getInStockSkusFromWordPress(): Promise<string[]> {
     try {
-      logWithTimestamp('Получаем SKU товаров в наличии из WordPress...');
+      logWithTimestamp('Отримуємо SKU товарів в наявності з WordPress...');
       
-      // Проверяем кеш
+      // Перевіряємо кеш
       const cachedSkus = await this.getCachedSkus();
       if (cachedSkus && cachedSkus.length > 0) {
-        logWithTimestamp(`Используем кешированные SKU: ${cachedSkus.length} товаров`);
+        logWithTimestamp(`Використовуємо кешовані SKU: ${cachedSkus.length} товарів`);
         return cachedSkus;
       }
 
-      // Если кеш пуст или устарел, получаем новые данные
-      logWithTimestamp('Кеш пуст или устарел, получаем новые данные из WordPress...');
+      // Якщо кеш порожній або застарілий, отримуємо нові дані
+      logWithTimestamp('Кеш порожній або застарілий, отримуємо нові дані з WordPress...');
       const freshSkus = await this.fetchFreshSkusFromWordPress();
       
-      // Проверяем, что получили валидные данные
+      // Перевіряємо, що отримали валідні дані
       if (!freshSkus || freshSkus.length === 0) {
-        logWithTimestamp('Предупреждение: получен пустой массив SKU из WordPress');
+        logWithTimestamp('Попередження: отримано порожній масив SKU з WordPress');
         return [];
       }
       
-      // Сохраняем в кеш
-      logWithTimestamp(`Сохраняем ${freshSkus.length} SKU в кеш...`);
+      // Зберігаємо в кеш
+      logWithTimestamp(`Зберігаємо ${freshSkus.length} SKU в кеш...`);
       await this.saveSkusToCache(freshSkus);
       
-      logWithTimestamp(`Получено и сохранено в кеш ${freshSkus.length} SKU`);
+      logWithTimestamp(`Отримано і збережено в кеш ${freshSkus.length} SKU`);
       return freshSkus;
       
     } catch (error) {
-      logWithTimestamp('Ошибка получения SKU из WordPress:', error);
+      logWithTimestamp('Помилка отримання SKU з WordPress:', error);
       
-      // Пытаемся использовать кеш даже если он устарел
+      // Працюємо з кешем навіть якщо він застарів
       const cachedSkus = await this.getCachedSkus();
       if (cachedSkus && cachedSkus.length > 0) {
-        logWithTimestamp(`Используем устаревший кеш: ${cachedSkus.length} товаров`);
+        logWithTimestamp(`Використовуємо застарілий кеш: ${cachedSkus.length} товарів`);
         return cachedSkus;
       }
       
@@ -135,7 +135,7 @@ export class DilovodCacheManager {
   }
 
   // Получение свежих SKU из WordPress
-  private async fetchFreshSkusFromWordPress(): Promise<string[]> {
+  public async fetchFreshSkusFromWordPress(): Promise<string[]> {
     try {
       if (!process.env.WORDPRESS_DATABASE_URL) {
         throw new Error('WORDPRESS_DATABASE_URL не настроен в переменных окружения');

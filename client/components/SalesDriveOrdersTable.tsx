@@ -9,11 +9,6 @@ import {
   Button,
   Chip,
   Spinner,
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
   Input,
   Pagination,
   Tooltip,
@@ -23,15 +18,16 @@ import {
   DropdownMenu,
   DropdownItem,
   DropdownSection,
+  useDisclosure,
 } from "@heroui/react";
 import { useApi } from "../hooks/useApi";
 import { useDilovodSettings } from "../hooks/useDilovodSettings";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate, getStatusLabel, getStatusColor } from "../lib/formatUtils";
 import { ToastService } from "@/services/ToastService";
+import ResultDrawer from './ResultDrawer';
 import type { SalesDriveOrderForExport, SalesDriveOrdersResponse, } from "@shared/types/salesdrive";
 import type { SalesChannel } from "@shared/types/dilovod";
-import { o } from "node_modules/framer-motion/dist/types.d-Cjd591yU";
 
 // Канали продажів з SalesDrive (исключая nk-food.shop с ID "19")
 const SALES_CHANNELS: SalesChannel[] = [
@@ -72,41 +68,52 @@ interface SalesDriveOrdersTableProps {
 
 export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTableProps) {
   const { apiCall } = useApi();
-  const { settings: dilovodSettings } = useDilovodSettings();
-  
-  // State для данных
+  // Don't load full directories automatically on SalesDrive monitoring page because
+  // it's a read-only monitoring view and directories are heavy to load.
+  const { settings: dilovodSettings } = useDilovodSettings({ loadDirectories: false });
+
+  // State для даних
   const [orders, setOrders] = useState<SalesDriveOrderForExport[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Функция для получения названия канала
+  // State для вибраних замовлень (чекбокси)
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+
+  // State для універсального Drawer з результатами
+  const { isOpen: isDrawerOpen, onOpen: onDrawerOpen, onOpenChange: onDrawerOpenChange } = useDisclosure();
+  const [drawerResult, setDrawerResult] = useState<any>(null);
+  const [drawerTitle, setDrawerTitle] = useState<string>('Результат операції');
+  const [drawerType, setDrawerType] = useState<'result' | 'logs' | 'orderDetails'>('result');
+  
+  // State для пагінації
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  
+  // State для пошуку
+  const [search, setSearch] = useState("");
+
+  // Локальний кеш token'ів для sale (отримуємо його після експорту)
+  const [saleTokens, setSaleTokens] = useState<Record<string, string>>({});
+
+  // Функція для отримання назви каналу
   const getChannelName = (channelId: string): string => {
-    // Сначала ищем в известных каналах
+    // Спочатку шукаємо у відомих каналах
     const knownChannel = SALES_CHANNELS.find(ch => ch.id === channelId);
     if (knownChannel) {
       return knownChannel.name;
     }
 
-    // Если это канал nk-food.shop (исключен из экспорта)
+    // Якщо це канал nk-food.shop (виключений з експорту)
     if (channelId === '19') {
-      return 'nk-food.shop (исключен)';
+      return 'nk-food.shop (виключений)';
     }
     
-    // Если канал неизвестен
+    // Якщо канал невідомий
     return `Канал ${channelId}`;
   };
-  
-  // State для пагинации
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
-  
-  // State для поиска
-  const [search, setSearch] = useState("");
-  
-  // State для модального окна
-  const [selectedOrder, setSelectedOrder] = useState<SalesDriveOrderForExport | null>(null);
-  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
+  // Функція для завантаження замовлень
   const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
@@ -146,9 +153,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     } finally {
       setLoading(false);
     }
-  }, [page, search]); // Убрал apiCall из зависимостей
+  }, [page, search]);
 
-  // Загружаем данные при монтировании и изменении параметров
+  // Завантажуємо дані під час монтування та зміни параметрів
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
@@ -158,20 +165,20 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     setPage(1);
   }, [search]);
 
-  // Обработка поиска
+  // Обробка пошуку
   const handleSearchSubmit = () => {
     setPage(1);
     fetchOrders();
   };
 
-  // Обработка клавиши Enter в поиске
+  // Обробка клавіші Enter у пошуку
   const handleSearchKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleSearchSubmit();
     }
   };
 
-  // Получение статус-кода для getStatusColor (как в звітах)
+  // Отримання статус-коду для getStatusColor (як у звітах)
   const getOrderStatusCode = (statusText: string) => {
     const statusLower = statusText.toLowerCase();
     
@@ -188,24 +195,22 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
   // Масова перевірка/оновлення статусів документів
   const handleBulkCheckAndUpdate = async () => {
-    const limit = 0; // 0 - без обмежень
-    const filteredOrders = orders.slice(0, limit ? limit : orders.length);
+
+    // Масова перевірка тільки для вибраних замовлень
+    const filteredOrders = orders.filter(order => selectedOrderIds.includes(String(order.id)));
 
     if (filteredOrders.length === 0) {
       ToastService.show({
-        title: 'Немає замовлень для перевірки',
-        description: `Замовлень не знайдено або досягнуто ліміт (${limit})`,
+        title: 'Немає вибраних замовлень для перевірки',
+        description: 'Виберіть замовлення для масової перевірки',
         color: 'warning'
       });
       return;
     }
 
-    // console.log(`Виконання масової перевірки замовлень з обмеженням ${limit}`);
-    // console.log('Відфільтровані замовлення:', filteredOrders);
-
     ToastService.show({
       title: 'Масова перевірка...',
-      description: `Перевіряємо ${filteredOrders.length} замовлень у Dilovod`,
+      description: `Перевіряємо ${filteredOrders.length} вибраних замовлень у Dilovod`,
       color: 'primary'
     });
 
@@ -213,12 +218,10 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     const processedOrders = filteredOrders.map(order => {
       const channelSettings = dilovodSettings?.channelPaymentMapping?.[order.sajt];
       let orderNum = order.orderNumber;
-
       if (channelSettings) {
         if (channelSettings.prefixOrder) orderNum = channelSettings.prefixOrder + orderNum;
         if (channelSettings.sufixOrder) orderNum = orderNum + channelSettings.sufixOrder;
       }
-
       return orderNum;
     });
 
@@ -233,15 +236,30 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       const result = await response.json();
 
       if (result.success && Array.isArray(result.data)) {
+        // Зберігаємо результат в state для Drawer
+        setDrawerResult(result);
+        setDrawerTitle('Результат масової перевірки замовлень');
+        setDrawerType('result');
+        onDrawerOpen();
+
         ToastService.show({
-          title: 'Оновлено!',
-          description: `Статуси документів оновлено для ${result.data.length} замовлень`,
-          color: 'success'
+          title: `${result.updatedCount > 0 ? 'Оновлено!' : 'Без змін'}`,
+          description: `${result.updatedCount > 0 ? `${result.updatedCount} Статуси документів оновлено для ${result.data.length} замовлень` : 'Статуси документів не були змінені'}`,
+          color: `${result.updatedCount > 0 ? 'success' : 'default'}`,
+          hideIcon: false,
+          icon: <DynamicIcon name={result.updatedCount > 0 ? 'check-circle' : 'octagon-alert'} size={20} strokeWidth={1.5} className="shrink-0" />
         });
         // Перемальовуємо таблицю
-        fetchOrders();
+        if (result.updatedCount > 0) {
+          fetchOrders();
+        }
       } else {
         console.log('Деталі помилок масової перевірки:', result.errors);
+        setDrawerResult(result);
+        setDrawerTitle('Помилки масової перевірки замовлень');
+        setDrawerType('result');
+        onDrawerOpen();
+        
         ToastService.show({
           title: 'Помилка',
           description: result.error || 'Помилка масової перевірки',
@@ -283,67 +301,158 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       });
       const result = await response.json();
 
-      console.log('Результат перевірки замовлення в Діловоді:', result);
+      // console.log('Результат перевірки замовлення в Діловоді:', result);
 
-      if (result.success) {
-        ToastService.show({
-          title: result.data.length > 0 ? 'Знайдено!' : 'Не знайдено',
-          description: result.message,
-          color: result.data.length > 0 ? 'success' : 'warning',
-          hideIcon: false,
-          icon: result.data.length > 0 ? ToastService.createIcon("check-circle") : ToastService.createIcon("alert-triangle")
-        });
-        // Оновити таблицю, щоб відобразити оновлену дату експорту
-        result.data.length > 0 ? fetchOrders() : null;
+      if (result.success && Array.isArray(result.data)) {
+        setDrawerResult(result);
+        setDrawerTitle('Результат перевірки замовлення в Діловоді');
+        setDrawerType('result');
+        onDrawerOpen();
+
+        if (result.data.length === 0) {
+          ToastService.show({
+            title: 'Документи не знайдені',
+            description: 'Жодного документа не було знайдено або завантажено в Діловод',
+            color: 'danger'
+          });
+        } else {
+          // Визначаємо, чи був оновлений локальний статус (є новий dilovodId або dilovodExportDate)
+          const updated = result.data.some((item: any) => item.updatedCount > 0);
+          if (updated) {
+            ToastService.show({
+              title: 'Оновлено!',
+              description: `Статус документа оновлено для ${result.data.length} замовлення(нь)`,
+              color: 'success',
+              hideIcon: false,
+              icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />
+            });
+            fetchOrders();
+          }
+        }
       } else {
+        console.log('Деталі помилок перевірки:', result.errors);
+        setDrawerResult(result);
+        setDrawerTitle('Помилка перевірки замовлення в Діловоді');
+        setDrawerType('result');
+        onDrawerOpen();
+
         ToastService.show({
           title: 'Помилка',
           description: result.error || 'Помилка перевірки в Діловоді',
-          color: 'danger',
-          hideIcon: false,
-          icon: ToastService.createIcon("x-circle")
+          color: 'danger'
         });
       }
     } catch {
       ToastService.show({
         title: 'Помилка',
         description: 'Помилка з\'єднання з сервером',
-        color: 'danger',
-        hideIcon: false,
-        icon: ToastService.createIcon("x-circle")
+        color: 'danger'
       });
     }
   };
 
   // Показати деталі замовлення
   const handleShowDetails = (order: SalesDriveOrderForExport) => {
-    setSelectedOrder(order);
-    setIsDetailsModalOpen(true);
+    // Prepare order data for display (parse JSON fields)
+    const orderData = {
+      ...order,
+      items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items,
+      rawData: typeof order.rawData === 'string' ? JSON.parse(order.rawData) : order.rawData
+    };
+    
+    setDrawerResult(orderData);
+    setDrawerTitle(`Деталі замовлення #${order.orderNumber}`);
+    setDrawerType('orderDetails');
+    onDrawerOpen();
   };
 
-  // Вивантаження замовлення в Діловод (заглушка)
+  // Вивантаження замовлення в Діловод з попередньою валідацією
   const handleExportOrder = async (order: SalesDriveOrderForExport) => {
     try {
+      // Спочатку робимо валідацію
+      const validateResponse = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/validate`, {
+        method: 'POST'
+      });
+      const validateResult = await validateResponse.json();
+
+      // Якщо валідація не пройшла
+      if (!validateResponse.ok || !validateResult.success) {
+        if (validateResult.type === 'critical_validation_error') {
+          // Показуємо Drawer з критичними помилками валідації
+          setDrawerResult(validateResult);
+          setDrawerTitle('Помилка конфігурації Dilovod');
+          setDrawerType('result');
+          onDrawerOpen();
+          return;
+        } else {
+          throw new Error(validateResult.details || 'Помилка валідації');
+        }
+      }
+
+      // Валідація пройшла, якщо сервер повернув токен — збережемо для експорту
+      const token = validateResult?.metadata?.token;
+
+      // Валідація пройшла, продовжуємо з експортом
       ToastService.show({
-        title: 'Вивантаження...',
-        description: `Вивантажуємо замовлення ${order.orderNumber} в Діловод`,
-        color: 'primary'
+        title: 'Експорт...',
+        description: `Експортуємо замовлення ${order.orderNumber} в Díловод`,
+        color: 'primary',
+        hideIcon: false,
+        icon: <DynamicIcon name="upload-cloud" size={20} className="shrink-0" />,
+        timeout: 1500
       });
 
+      // Якщо маємо валідаторний токен — пересилаємо його, і сервер повторно не створить контрагента
+      const exportBody = token ? { token } : undefined;
       const response = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/export`, {
-        method: 'POST'
+        method: 'POST',
+        body: exportBody ? JSON.stringify(exportBody) : undefined
       });
       const result = await response.json();
 
-      if (result.success && result.exported) {
-        ToastService.show({
-          title: 'Успішно!',
-          description: result.message,
-          color: 'success'
-        });
-        // Обновляем данные после успешного экспорта
-        fetchOrders();
+      if (result.success) {
+        // setDrawerResult(result);
+        // setDrawerTitle('Результат експорту замовлення в Діловод');
+        // setDrawerType('result');
+        // onDrawerOpen();
+        // Якщо не експортовано жодного документа
+        if (!result.exported) {
+          ToastService.show({
+            title: 'Не вивантажено!',
+            description: result.error || result.message || 'Жодного документа не було експортовано в Діловод',
+            color: 'danger',
+            hideIcon: false,
+            icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
+          });
+        } else {
+          // Якщо був створений новий документ (є dilovodId або dilovodExportDate)
+          if (result.dilovodId || result.dilovodExportDate) {
+            ToastService.show({
+              title: 'Успішно!',
+              description: result.message || 'Замовлення успішно експортовано в Діловод',
+              color: 'success'
+            });
+            fetchOrders();
+            // Якщо сервер повернув saleToken — збережемо для створення shipment
+            const saleToken = result?.metadata?.saleToken;
+            if (saleToken) {
+              setSaleTokens(prev => ({ ...prev, [order.id]: saleToken }));
+            }
+          } else {
+            ToastService.show({
+              title: 'Без змін',
+              description: 'Замовлення вже було актуальним у Діловоді, змін не внесено',
+              color: 'default',
+              hideIcon: false,
+              icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
+            });
+          }
+        }
       } else {
+        setDrawerResult(result);
+        setDrawerTitle('Помилка експорту замовлення в Діловод');
+        setDrawerType('result');
+        onDrawerOpen();
         ToastService.show({
           title: 'Помилка',
           description: result.error || result.message || 'Помилка вивантаження',
@@ -359,7 +468,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     }
   };
 
-  // Створення документа відвантаження в Діловоді (заглушка)
+  // Створення документа відвантаження в Діловоді
   const handleCreateShipment = async (order: SalesDriveOrderForExport) => {
     try {
       ToastService.show({
@@ -368,8 +477,12 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         color: 'primary'
       });
 
+      const token = saleTokens?.[order.id];
+      const body = token ? JSON.stringify({ token }) : undefined;
+
       const response = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/shipment`, {
-        method: 'POST'
+        method: 'POST',
+        body
       });
       const result = await response.json();
 
@@ -379,8 +492,11 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           description: result.message,
           color: 'success'
         });
-        // Обновляем данные после создания документа
+        // Оновлюємо дані після створення документа
         fetchOrders();
+
+        // token — одноразовий, видалимо локально
+        if (token) setSaleTokens(prev => { const copy = { ...prev }; delete copy[order.id]; return copy; });
       } else {
         ToastService.show({
           title: 'Помилка',
@@ -397,14 +513,228 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     }
   };
 
-  // Колонки таблицы
+  // Масова функція експорту + відвантаження
+  const handleBulkExportAndShipment = async () => {
+    if (!selectedOrderIds.length) return;
+    ToastService.show({
+      title: 'Масовий експорт...',
+      description: `Виконується експорт та відвантаження для ${selectedOrderIds.length} замовлень`,
+      color: 'primary',
+      hideIcon: false,
+      icon: <DynamicIcon name="upload-cloud" size={20} className="shrink-0" />,
+      timeout: 2000
+    });
+
+    const results: Array<{
+      orderNumber: string,
+      exportSuccess: boolean,
+      shipmentSuccess: boolean,
+      errors: string[]
+    }> = [];
+
+    for (const orderId of selectedOrderIds) {
+      const order = orders.find(o => String(o.id) === String(orderId));
+      if (!order) continue;
+      let exportSuccess = false;
+      let shipmentSuccess = false;
+      const errors: string[] = [];
+
+      // Експорт
+      try {
+        const validateResponse = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/validate`, { method: 'POST' });
+        const validateResult = await validateResponse.json();
+        if (!validateResponse.ok || !validateResult.success) {
+          errors.push(validateResult.details || 'Помилка валідації');
+          ToastService.show({
+            title: `Помилка валідації (${order.orderNumber})`,
+            description: validateResult.details || 'Помилка',
+            color: 'danger'
+          });
+          results.push({
+            orderNumber: order.orderNumber,
+            exportSuccess,
+            shipmentSuccess,
+            errors
+          });
+          continue;
+        }
+        const token = validateResult?.metadata?.token;
+        const exportBody = token ? { token } : undefined;
+        const response = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/export`, {
+          method: 'POST',
+          body: exportBody ? JSON.stringify(exportBody) : undefined
+        });
+        const result = await response.json();
+        if (result.success && result.exported && (result.dilovodId || result.dilovodExportDate)) {
+          exportSuccess = true;
+          ToastService.show({
+            title: `Експортовано (${order.orderNumber})`,
+            description: result.message || 'Успішно',
+            color: 'success',
+            hideIcon: false,
+            icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />,
+            timeout: 1500
+          });
+        } else {
+          errors.push(result.error || result.message || 'Помилка експорту');
+          ToastService.show({
+            title: `Помилка експорту (${order.orderNumber})`,
+            description: result.error || result.message || 'Помилка',
+            color: 'danger',
+            hideIcon: false,
+            icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+            timeout: 1500
+          });
+          results.push({
+            orderNumber: order.orderNumber,
+            exportSuccess,
+            shipmentSuccess,
+            errors
+          });
+          continue;
+        }
+        // Відвантаження
+        const saleToken = result?.metadata?.saleToken;
+        if (saleToken) {
+          try {
+            const shipmentRes = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/shipment`, {
+              method: 'POST',
+              body: JSON.stringify({ token: saleToken })
+            });
+            const shipmentResult = await shipmentRes.json();
+            if (shipmentResult.success && shipmentResult.created) {
+              shipmentSuccess = true;
+              ToastService.show({
+                title: `Відвантажено (${order.orderNumber})`,
+                description: shipmentResult.message || 'Успішно',
+                color: 'success',
+                hideIcon: false,
+                icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />,
+                timeout: 1500
+              });
+            } else {
+              errors.push(shipmentResult.error || shipmentResult.message || 'Помилка відвантаження');
+              ToastService.show({
+                title: `Помилка відвантаження (${order.orderNumber})`,
+                description: shipmentResult.error || shipmentResult.message || 'Помилка',
+                color: 'danger',
+                hideIcon: false,
+                icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+                timeout: 1500
+              });
+            }
+          } catch {
+            errors.push('Помилка зʼєднання при відвантаженні');
+            ToastService.show({
+              title: `Помилка зʼєднання (${order.orderNumber})`,
+              description: 'Помилка зʼєднання при відвантаженні',
+              color: 'danger'
+            });
+          }
+        }
+      } catch {
+        errors.push('Помилка зʼєднання при експорті');
+        ToastService.show({
+          title: `Помилка зʼєднання (${order.orderNumber})`,
+          description: 'Помилка зʼєднання при експорті',
+          color: 'danger'
+        });
+      }
+      results.push({
+        orderNumber: order.orderNumber,
+        exportSuccess,
+        shipmentSuccess,
+        errors
+      });
+    }
+
+    // Drawer з фінальним звітом
+    setDrawerResult({ bulkExportResults: results });
+    setDrawerTitle('Результати масового експорту та відвантаження');
+    setDrawerType('result');
+    onDrawerOpen();
+    fetchOrders();
+    setSelectedOrderIds([]);
+  };
+
+  // Обробник для підрахунку логів для замовлення
+  const getOrderLogsCount = async (orderNumber: string): Promise<number> => {
+    try {
+      if (!orderNumber)
+        return 0;
+      
+      const res = await apiCall(`/api/meta-logs/count?orderNumber=${encodeURIComponent(orderNumber)}`);
+      if (!res.ok)
+        return 0;
+      
+      const data = await res.json();
+
+      return Number(data.count || 0);
+    } catch {
+      return 0;
+    }
+  };
+
+  // Обробник для отримання та показу логів
+  const handleViewOrderLogs = async (order: SalesDriveOrderForExport) => {
+    setLoading(true);
+    try {
+      // API call to fetch logs for this order
+      const res = await apiCall(`/api/meta-logs?orderNumber=${encodeURIComponent(order.orderNumber)}`);
+      const data = await res.json();
+      
+      if (Array.isArray(data) && data.length > 0) {
+        setDrawerResult(data);
+        setDrawerTitle(`Логи експорту замовлення ${order.orderNumber}`);
+        setDrawerType('logs');
+        onDrawerOpen();
+      } else {
+        ToastService.show({
+          title: 'Немає логів',
+          description: 'Для цього замовлення логи експорту не знайдено',
+          color: 'default'
+        });
+      }
+    } catch (e) {
+      ToastService.show({
+        title: 'Помилка',
+        description: 'Не вдалося отримати логи експорту',
+        color: 'danger'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Utility: Copy text to clipboard
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    ToastService.show({
+      title: 'Скопійовано',
+      description: `Скопійовано "${text}" у буфер обміну`,
+      color: 'success'
+    });
+  };
+
+  // Utility: get order number with prefix/suffix from channel settings
+  function getDisplayOrderNumber(order: SalesDriveOrderForExport): string {
+    const channelSettings = dilovodSettings?.channelPaymentMapping?.[order.sajt];
+    let orderNum = order.orderNumber;
+    if (channelSettings) {
+      if (channelSettings.prefixOrder) orderNum = channelSettings.prefixOrder + orderNum;
+      if (channelSettings.sufixOrder) orderNum = orderNum + channelSettings.sufixOrder;
+    }
+    return orderNum;
+  }
+
+  // Колонки таблиці
   const columns = [
-    { key: "orderNumber", label: "№ замовлення", sortable: true },
-    { key: "orderDate", label: "Дата оформлення", sortable: true },
+    { key: "orderNumber", label: "№ замовлення", sortable: false },
+    { key: "orderDate", label: "Дата оформлення", sortable: false },
     { key: "status", label: "Статус", sortable: false },
     { key: "paymentMethod", label: "Оплата", sortable: false },
     { key: "shippingMethod", label: "Доставка", sortable: false },
-    { key: "sajt", label: "Канал", sortable: true },
+    { key: "sajt", label: "Канал", sortable: false },
     { key: "dilovodExportDate", label: "Додано в Діловод", sortable: false },
     { key: "actions", label: "Дії", sortable: false }
   ];
@@ -412,24 +742,6 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   return (
     <div className={`space-y-4 ${className}`}>
 			<div className="flex gap-4 items-center justify-between">
-        {/* Легенда */}
-        <div className="flex gap-6 items-center mr-12 border-1 py-2 px-3 rounded-sm">
-          <div className="flex gap-1 items-center">
-            <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-purple-100 text-purple-600"><DynamicIcon name="search-check" size={14} strokeWidth="1.5" /></div>
-            <span className="text-sm text-default-500">Додано в Діловод</span>
-          </div>
-          
-          <div className="flex gap-1 items-center">
-            <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-green-100 text-green-600"><DynamicIcon name="truck" size={14} strokeWidth="1.5" /></div>
-            <span className="text-sm text-default-500">Відвантажено</span>
-          </div>
-          
-          <div className="flex gap-1 items-center">
-            <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-yellow-100 text-yellow-600"><DynamicIcon name="wallet" size={14} strokeWidth="1.5" /></div>
-            <span className="text-sm text-default-500">Оплачено</span>
-          </div>
-        </div>
-        
         {/* Панель пошуку */}
 				<Input
 					placeholder="Пошук по номеру, імені або телефону..."
@@ -441,12 +753,67 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 					className="max-w-sm"
 					startContent={<DynamicIcon name="search" size={16} />}
 				/>
+        
+        {/* Масові дії */}
+        <div className="flex items-center gap-2">
+          <Button
+            color="primary"
+            variant="solid"
+            className="font-medium px-4 py-2.5 rounded-md h-auto"
+            startContent={<DynamicIcon name="copy" size={16} />}
+            isDisabled={selectedOrderIds.length === 0}
+            onPress={() => {
+              const selectedOrders = orders.filter(order => selectedOrderIds.includes(String(order.id)));
+              const orderNumbers = selectedOrders.map(order => order.orderNumber).join('\n');
+              navigator.clipboard.writeText(orderNumbers);
+              ToastService.show({
+                title: 'Скопійовано',
+                description: `Скопійовано ${selectedOrders.length} номер(ів) замовлень у буфер обміну`,
+                color: 'success'
+              });
+            }}
+          >
+            Копіювати вибране ({selectedOrderIds.length})
+          </Button>
+
+          <Button
+            color="primary"
+            variant="solid"
+            className="font-medium px-4 py-2.5 rounded-md h-auto"
+            startContent={<DynamicIcon name="upload-cloud" size={16} />}
+            onPress={handleBulkExportAndShipment}
+            isDisabled={selectedOrderIds.length === 0}
+          >
+            Масовий експорт + відвантаження ({selectedOrderIds.length})
+          </Button>
+
+          <Button
+            color="primary"
+            variant="solid"
+            className="font-medium px-4 py-2.5 rounded-md h-auto"
+            startContent={<DynamicIcon name="refresh-cw" size={16} />}
+            onPress={handleBulkCheckAndUpdate}
+            isDisabled={selectedOrderIds.length === 0}
+          >
+            Оновити статуси документів ({selectedOrderIds.length})
+          </Button>
+        </div>
 			</div>
 
-      {/* Таблица */}
+      {/* Таблиця */}
       <div className="relative">
         <Table
           aria-label="Таблиця замовлень SalesDrive"
+          selectionMode="multiple"
+          selectedKeys={selectedOrderIds}
+          // onSelectionChange={keys => setSelectedOrderIds(Array.from(keys as Set<string>))}
+          onSelectionChange={keys => {
+            if (keys === 'all' || (keys instanceof Set && keys.has('all'))) {
+              setSelectedOrderIds(orders.map(o => String(o.id)));
+            } else {
+              setSelectedOrderIds(Array.from(keys as Set<string>));
+            }
+          }}
           classNames={{
             wrapper: "min-h-80 p-0 pb-1 shadow-none bg-transparent rounded-none",
             th: ["first:rounded-s-md", "last:rounded-e-md"],
@@ -482,16 +849,20 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             {(order) => (
               <TableRow key={order.id}>
                 <TableCell>
-                  <span className="font-medium">{order.orderNumber}</span>
+                  <Tooltip placement="right-end" color="secondary" content="Cкопіювати">
+                    <Button className="font-medium h-fit p-1 rounded-sm" variant="light" onPress={() => copyToClipboard(getDisplayOrderNumber(order))}>
+                      {getDisplayOrderNumber(order)}
+                    </Button>
+                  </Tooltip>
                 </TableCell>
                 <TableCell>
-									<Tooltip placement="top-start" content={order.orderDate ? new Date(order.orderDate).toLocaleString('uk-UA') : 'Дата не задана'}>
-										{order.orderDate ? formatRelativeDate(order.orderDate.toString(), { maxRelativeDays: 1 }) : 'Не задано'}
+									<Tooltip placement="top-start" color="secondary" content={order.orderDate ? new Date(order.orderDate).toLocaleString('uk-UA') : 'Дата не задана'}>
+										<span className="cursor-help">{order.orderDate ? formatRelativeDate(order.orderDate.toString(), { maxRelativeDays: 1 }) : 'Не задано'}</span>
 									</Tooltip>
                 </TableCell>
                 <TableCell>
-                  <Tooltip placement="top-start" content={`Оновлено: ${order.updatedAt ? new Date(order.updatedAt).toLocaleString('uk-UA') : 'Дата не задана'}`}>
-                  <Chip size="sm" variant="flat" classNames={{base: getStatusColor(getOrderStatusCode(order.statusText || order.status))}}>
+                  <Tooltip placement="top-start" color="secondary" content={`Оновлено: ${order.updatedAt ? new Date(order.updatedAt).toLocaleString('uk-UA') : 'Дата не задана'}`}>
+                  <Chip size="sm" variant="flat" classNames={{base: `${getStatusColor(getOrderStatusCode(order.statusText || order.status))} cursor-help`}}>
                     {order.statusText || getStatusLabel(order.status)}
                   </Chip>
                   </Tooltip>
@@ -513,45 +884,66 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Tooltip content={order.dilovodExportDate ? new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не вивантажено'}>
-                      <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none rounded-sm ${order.dilovodExportDate ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="search-check" size={16} /></div>
+                    <Tooltip color="secondary" content={order.dilovodExportDate ? 'Синхронізовано: ' + new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не вивантажено'}>
+                      <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodExportDate ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="search-check" size={16} /></div>
                     </Tooltip>
-                    <Tooltip content={order.dilovodSaleExportDate ? new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') : 'Ще не відвантажено'}>
-                      <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none rounded-sm ${order.dilovodSaleExportDate ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="truck" size={16} /></div>
+                    <Tooltip color="secondary" content={order.dilovodSaleExportDate ? 'Синхронізовано: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') : 'Ще не відвантажено'}>
+                      <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodSaleExportDate ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="truck" size={16} /></div>
                     </Tooltip>
-                    <Tooltip content={order.dilovodCashInDate ? new Date(order.dilovodCashInDate).toLocaleString('uk-UA') : 'Ще не оплачено'}>
-                      <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none rounded-sm ${order.dilovodCashInDate ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="wallet" size={16} /></div>
+                    <Tooltip color="secondary" content={order.dilovodCashInDate ? 'Синхронізовано: ' + new Date(order.dilovodCashInDate).toLocaleString('uk-UA') : 'Ще не оплачено'}>
+                      <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodCashInDate ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="wallet" size={16} /></div>
                     </Tooltip>
                   </div>
                 </TableCell>
                 <TableCell>
-                  
-
                   <ButtonGroup variant="flat">
                     <Button onPress={() => handleShowDetails(order)} isIconOnly variant="flat" className="font-medium p-2 mr-1.5 h-9 rounded-md" startContent={<DynamicIcon name="eye" size={14} />}></Button>
-                    <Dropdown placement="bottom-end">
+                    <Dropdown
+                      placement="bottom-end"
+                      onOpenChange={(open) => {
+                        if (!open) return;
+                        if (order.logsCount !== undefined) return; // already loaded
+
+                        getOrderLogsCount(order.orderNumber).then((count) => {
+                          setOrders(prev => prev.map(o =>
+                            o.orderNumber === order.orderNumber ? { ...o, logsCount: count } : o
+                          ));
+                        });
+                      }}
+                    >
                       <DropdownTrigger>
-                        <Button variant="flat" className="font-medium px-4 py-2 h-auto rounded-md" endContent={<DynamicIcon name="chevron-down" size={12} />}>Інші дії</Button>
+                        <Button
+                          variant="flat"
+                          className="font-medium px-4 py-2 h-auto rounded-md"
+                          endContent={<DynamicIcon name="chevron-down" size={12} />}
+                        >
+                          Інші дії
+                        </Button>
                       </DropdownTrigger>
                       <DropdownMenu
                         disallowEmptySelection
                         aria-label="Дії із замовленням"
                         variant="faded"
                         className="max-w-[300px]"
+                        disabledKeys={!order.dilovodDocId ? ['createShipment'] : []}
                         onAction={(key) => {
-                          // if (key === "showDetails") handleShowDetails(order);
                           if (key === "checkDilovod") handleCheckInDilovod(order);
                           if (key === "exportOrder") handleExportOrder(order);
                           if (key === "createShipment") handleCreateShipment(order);
+                          if (key === "viewLogs") handleViewOrderLogs(order);
                         }}
                       >
                         <DropdownSection showDivider>
-                          {/* <DropdownItem key="showDetails" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="eye" size={16} />}>Показати всі дані</DropdownItem> */}
-                          <DropdownItem key="checkDilovod" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="search-check" size={16} />}>Перевірити в Діловоді</DropdownItem>
-                          <DropdownItem key="exportOrder" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="upload" size={16} />}>Відправити замовлення</DropdownItem>
-                          <DropdownItem key="createShipment" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="truck" size={16} />}>Відправити відвантаження</DropdownItem>
+                          <DropdownItem textValue="Перевірити в Діловоді" key="checkDilovod" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="search-check" size={16} />}>Перевірити в Діловоді</DropdownItem>
+                          <DropdownItem textValue="Відправити замовлення" key="exportOrder" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="upload" size={16} />}>Відправити замовлення</DropdownItem>
+                          <DropdownItem textValue="Відправити відвантаження" key="createShipment" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="truck" size={16} />}>Відправити відвантаження</DropdownItem>
+                          {!!order.logsCount && (
+                            <DropdownItem textValue="Логи експорту" key="viewLogs" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="braces" size={16} />}>
+                              Логи експорту ({order.logsCount ?? '0'})
+                            </DropdownItem>
+                          )}
                         </DropdownSection>
-                        <DropdownItem key="footer" className="px-3 py-2 font-semibold text-default-700 cursor-default data-[hover=true]:bg-white border-none" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="key" size={14} />}>
+                        <DropdownItem textValue="baseDoc ID" key="footer" className="px-3 py-2 font-semibold text-default-700 cursor-default data-[hover=true]:bg-white border-none" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="key-round" size={14} />}>
                           <div className="flex items-center justify-between text-xs">
                             {order.dilovodDocId || 'Немає ID'}
                             {order.dilovodDocId && <Button variant="flat" size="sm" className="px-2 py-1 min-w-auto h-auto rounded" onPress={() => {navigator.clipboard.writeText(order.dilovodDocId || '')}}>Copy</Button>}
@@ -594,16 +986,23 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             className="cursor-pointer"
           />
 
-          {/* Масові дії */}
-          <Button
-            color="primary"
-            variant="solid"
-            className="font-medium px-4 py-2.5 rounded-md h-auto"
-            startContent={<DynamicIcon name="refresh-cw" size={16} />}
-            onPress={handleBulkCheckAndUpdate}
-          >
-            Оновити статуси документів
-          </Button>
+          {/* Легенда */}
+          <div className="flex gap-6 items-center mr-12 border-1 py-2 px-3 rounded-sm">
+            <div className="flex gap-1 items-center">
+              <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-purple-100 text-purple-600"><DynamicIcon name="search-check" size={14} strokeWidth="1.5" /></div>
+              <span className="text-sm text-default-500">Додано в Діловод</span>
+            </div>
+            
+            <div className="flex gap-1 items-center">
+              <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-green-100 text-green-600"><DynamicIcon name="truck" size={14} strokeWidth="1.5" /></div>
+              <span className="text-sm text-default-500">Відвантажено</span>
+            </div>
+            
+            <div className="flex gap-1 items-center">
+              <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-yellow-100 text-yellow-600"><DynamicIcon name="wallet" size={14} strokeWidth="1.5" /></div>
+              <span className="text-sm text-default-500">Оплачено</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -619,71 +1018,15 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         </div>
       </div>
 
-      {/* Модальне вікно з деталями замовлення */}
-      <Modal
-        isOpen={isDetailsModalOpen}
-        onOpenChange={setIsDetailsModalOpen}
-        size="4xl"
-        scrollBehavior="outside"
-      >
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                Деталі замовлення #{selectedOrder?.orderNumber}
-              </ModalHeader>
-              <ModalBody>
-                {selectedOrder && (
-                  <div className="space-y-4">
-                    {/* Основная информация */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="p-4 bg-blue-50 rounded-lg">
-                        <div className="text-sm text-blue-600 font-medium">Номер замовлення</div>
-                        <div className="text-lg font-bold text-blue-800">{selectedOrder.orderNumber}</div>
-                      </div>
-                      <div className="p-4 bg-green-50 rounded-lg">
-                        <div className="text-sm text-green-600 font-medium">Дата оформлення</div>
-                        <div className="text-lg font-bold text-green-800">
-                          {selectedOrder.orderDate ? new Date(selectedOrder.orderDate).toLocaleDateString('uk-UA') : 'Не задано'}
-                        </div>
-                      </div>
-                    </div>
+      {/* Універсальний Drawer для результатів операцій і логів */}
+      <ResultDrawer 
+        isOpen={isDrawerOpen}
+        onOpenChange={onDrawerOpenChange}
+        result={drawerResult}
+        title={drawerTitle}
+        type={drawerType}
+      />
 
-                    {/* JSON данные */}
-                    <div className="mt-6">
-                      <h4 className="text-lg font-semibold mb-3 text-neutral-700">
-                        Всі дані замовлення (JSON)
-                      </h4>
-                      <div className="bg-gray-50 p-4 rounded-lg max-h-96 overflow-auto">
-                        <pre className="text-sm">
-                          {JSON.stringify(
-                            {
-                              ...selectedOrder,
-                              items: typeof selectedOrder.items === 'string' 
-                                ? JSON.parse(selectedOrder.items) 
-                                : selectedOrder.items,
-                              rawData: typeof selectedOrder.rawData === 'string' 
-                                ? JSON.parse(selectedOrder.rawData) 
-                                : selectedOrder.rawData
-                            }, 
-                            null, 
-                            2
-                          )}
-                        </pre>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </ModalBody>
-              <ModalFooter>
-                <Button color="primary" variant="light" onPress={onClose}>
-                  Закрити
-                </Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
     </div>
   );
 }
