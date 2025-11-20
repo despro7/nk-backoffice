@@ -1,22 +1,22 @@
 import React, { useState } from 'react';
 import {
-  Drawer,
-  DrawerContent,
-  DrawerHeader,
-  DrawerBody,
-  DrawerFooter,
-  Button,
-  Chip
+	Drawer,
+	DrawerContent,
+	DrawerHeader,
+	DrawerBody,
+	DrawerFooter,
+	Button,
+	Chip
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate, formatRelativeDate } from "../lib/formatUtils";
 
 interface ResultDrawerProps {
-  isOpen: boolean;
-  onOpenChange: (isOpen: boolean) => void;
-  result: any;
-  title?: string;
-  type?: 'result' | 'logs' | 'orderDetails'; // Тип відображення
+	isOpen: boolean;
+	onOpenChange: (isOpen: boolean) => void;
+	result: any;
+	title?: string;
+	type?: 'result' | 'logs' | 'orderDetails'; // Тип відображення
 }
 
 /**
@@ -24,16 +24,16 @@ interface ResultDrawerProps {
  * Підтримує різні типи результатів: валідація, експорт, перевірка, логи
  */
 export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Результат операції', type = 'result' }: ResultDrawerProps) {
-  if (!result) return null;
+	if (!result) return null;
 
-  // Для логів - це масив
-  const isLogsMode = type === 'logs' && Array.isArray(result);
-  const [selectedLogIdx, setSelectedLogIdx] = useState(0);
-  
-  // Визначаємо тип результату
-  const isValidationError = result.type === 'critical_validation_error';
-  const hasData = result.data && Array.isArray(result.data) && result.data.length > 0;
-  const hasErrors = result.errors && Array.isArray(result.errors) && result.errors.length > 0;
+	// Для логів - це масив
+	const isLogsMode = type === 'logs' && Array.isArray(result);
+	const [selectedLogIdx, setSelectedLogIdx] = useState(0);
+
+	// Визначаємо тип результату
+	const isValidationError = result.type === 'critical_validation_error';
+	const hasData = result.data && Array.isArray(result.data) && result.data.length > 0;
+	const hasErrors = result.errors && Array.isArray(result.errors) && result.errors.length > 0;
 
 
 	// Визначення стилів для інформаційних блоків
@@ -41,60 +41,60 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 	const infoBoxLabel = "text-gray-400 text-xs";
 	const infoBoxText = "text-sm font-medium leading-tight";
 
-  return (
-    <Drawer 
-      isOpen={isOpen} 
-      onOpenChange={onOpenChange} 
-      size="3xl" 
-      placement="right"
-    >
-      <DrawerContent>
-        {(onClose) => (
-          <>
-            <DrawerHeader className="flex flex-col gap-1">
-              {title}
-            </DrawerHeader>
-            <DrawerBody className="overflow-y-auto">
-              <div className="space-y-4">
-                {/* Режим відображення логів */}
-                {isLogsMode ? (
-                  <>
-                    {/* Селектор логів (якщо більше одного) */}
-                    {result.length > 1 && (
-                      <div className="flex gap-2 overflow-x-auto pb-2">
-                        {result.map((log: any, idx: number) => (
-                          <Button
-                            key={log.id || idx}
-                            size="sm"
-                            variant={selectedLogIdx === idx ? "solid" : "flat"}
-                            color={selectedLogIdx === idx ? "primary" : "default"}
-                            className="rounded-sm px-2 py-1 min-w-fit"
-                            onPress={() => setSelectedLogIdx(idx)}
-                          >
-                            {log.datetime ? formatRelativeDate(log.datetime) : `Лог #${idx + 1}`}
-                          </Button>
-                        ))}
-                      </div>
-                    )}
+	return (
+		<Drawer
+			isOpen={isOpen}
+			onOpenChange={onOpenChange}
+			size="3xl"
+			placement="right"
+		>
+			<DrawerContent>
+				{(onClose) => (
+					<>
+						<DrawerHeader className="flex flex-col gap-1">
+							{title}
+						</DrawerHeader>
+						<DrawerBody className="overflow-y-auto">
+							<div className="space-y-4">
+								{/* Режим відображення логів */}
+								{isLogsMode ? (
+									<>
+										{/* Селектор логів (якщо більше одного) */}
+										{result.length > 1 && (
+											<div className="flex gap-2 overflow-x-auto pb-2">
+												{result.map((log: any, idx: number) => (
+													<Button
+														key={log.id || idx}
+														size="sm"
+														variant={selectedLogIdx === idx ? "solid" : "flat"}
+														color={selectedLogIdx === idx ? "primary" : "default"}
+														className="rounded-sm px-2 py-1 min-w-fit"
+														onPress={() => setSelectedLogIdx(idx)}
+													>
+														{log.datetime ? formatRelativeDate(log.datetime) : `Лог #${idx + 1}`}
+													</Button>
+												))}
+											</div>
+										)}
 
-                    {/* Заголовок лога зі статусом */}
+										{/* Заголовок лога зі статусом */}
 										<div className={`p-4 rounded-lg border-1 ${result[selectedLogIdx].status === 'success' ? 'bg-green-200 border-green-300' : 'bg-red-200 border-red-300'}`}>
-                      <div className="flex items-center gap-3">
-                        <DynamicIcon 
-                          name={result[selectedLogIdx].status === 'success' ? "check-circle" : "x-circle"} 
-                          size={24} className={`shrink-0 ${result[selectedLogIdx].status === 'success' ? 'text-green-600' : 'text-red-600'}`}
-                        />
-                        <div className={`flex-1 ${result[selectedLogIdx].status === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                          <h3 className="font-semibold text-lg">{result[selectedLogIdx].title || 'No title provided'}</h3>
+											<div className="flex items-center gap-3">
+												<DynamicIcon
+													name={result[selectedLogIdx].status === 'success' ? "check-circle" : "x-circle"}
+													size={24} className={`shrink-0 ${result[selectedLogIdx].status === 'success' ? 'text-green-600' : 'text-red-600'}`}
+												/>
+												<div className={`flex-1 ${result[selectedLogIdx].status === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+													<h3 className="font-semibold text-lg">{result[selectedLogIdx].title || 'No title provided'}</h3>
 													<div className="text-sm">{result[selectedLogIdx].message || 'No message provided'}</div>
-                          {result[selectedLogIdx].datetime && (
-                            <div className="text-xs mt-2 opacity-60">
-                              {new Date(result[selectedLogIdx].datetime).toLocaleString('uk-UA')}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+													{result[selectedLogIdx].datetime && (
+														<div className="text-xs mt-2 opacity-60">
+															{new Date(result[selectedLogIdx].datetime).toLocaleString('uk-UA')}
+														</div>
+													)}
+												</div>
+											</div>
+										</div>
 
 										{/* <pre>{JSON.stringify(result[selectedLogIdx], null, 2)}</pre> */}
 
@@ -115,18 +115,18 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 											</div>
 										)}
 
-                    {/* Деталі лога */}
-                    <div>
-                      <h4 className="font-semibold text-sm mb-3">Деталі:</h4>
-                      <div className="bg-gray-50 p-4 rounded-lg border h-full overflow-auto">
-                        <pre className="text-xs whitespace-pre-wrap break-words">
-                          {JSON.stringify(result[selectedLogIdx], null, 2)}
-                        </pre>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
+										{/* Деталі лога */}
+										<div>
+											<h4 className="font-semibold text-sm mb-3">Деталі:</h4>
+											<div className="bg-gray-50 p-4 rounded-lg border h-full overflow-auto">
+												<pre className="text-xs whitespace-pre-wrap break-words">
+													{JSON.stringify(result[selectedLogIdx], null, 2)}
+												</pre>
+											</div>
+										</div>
+									</>
+								) : (
+									<>
 										{type === 'orderDetails' ? (
 											<>
 												{/* Загальна інформація по замовленню */}
@@ -159,44 +159,44 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 												</div>
 											</>
 										) : (
-										<>
-										{/* Інформативний блок: якщо немає оновлень, показуємо в жовтих кольорах */}
-										{result.message && result.message.includes('жодних нових даних не було оновлено') ? (
-											<div className="p-4 rounded-lg border-1 bg-yellow-100 border-yellow-300">
-												<div className="flex items-center gap-3">
-													<DynamicIcon name="alert-circle" size={20} className="shrink-0 text-yellow-600" />
-													<div className="flex-1">
-														<div className="font-semibold text-yellow-700">
-															{result.message}
+											<>
+												{/* Інформативний блок: якщо немає оновлень, показуємо в жовтих кольорах */}
+												{result.message && result.message.includes('жодних нових даних не було оновлено') ? (
+													<div className="p-4 rounded-lg border-1 bg-yellow-100 border-yellow-300">
+														<div className="flex items-center gap-3">
+															<DynamicIcon name="alert-circle" size={20} className="shrink-0 text-yellow-600" />
+															<div className="flex-1">
+																<div className="font-semibold text-yellow-700">
+																	{result.message}
+																</div>
+															</div>
 														</div>
 													</div>
-												</div>
-											</div>
-										) : (
-											<>
-											{!result.bulkExportResults && (
-											<div className={`p-4 rounded-lg border-1 ${result.success ? 'bg-green-200 border-green-300' : 'bg-red-200 border-red-300'}`}>
-												<div className="flex items-center gap-3">
-													<DynamicIcon 
-														name={result.success ? "check-circle" : "x-circle"} size={20}
-														className={`shrink-0 ${result.success ? 'text-green-600' : 'text-red-600'}`}
-													/>
-													<div className="flex-1">
-														<div className={`font-semibold ${result.success ? 'text-green-600' : 'text-red-600'}`}>
-															{result.message || (result.success ? 'Успішно' : 'Помилка')}
-														</div>
-														{result.error && !result.success && (
-															<div className={`text-sm ${result.success ? 'text-green-600' : 'text-red-600'}`}>
-																{result.error}
+												) : (
+													<>
+														{!result.bulkExportResults && (
+															<div className={`p-4 rounded-lg border-1 ${result.success ? 'bg-green-200 border-green-300' : 'bg-red-200 border-red-300'}`}>
+																<div className="flex items-center gap-3">
+																	<DynamicIcon
+																		name={result.success ? "check-circle" : "x-circle"} size={20}
+																		className={`shrink-0 ${result.success ? 'text-green-600' : 'text-red-600'}`}
+																	/>
+																	<div className="flex-1">
+																		<div className={`font-semibold ${result.success ? 'text-green-600' : 'text-red-600'}`}>
+																			{result.message || (result.success ? 'Успішно' : 'Помилка')}
+																		</div>
+																		{result.error && !result.success && (
+																			<div className={`text-sm ${result.success ? 'text-green-600' : 'text-red-600'}`}>
+																				{result.error}
+																			</div>
+																		)}
+																	</div>
+																</div>
 															</div>
 														)}
-													</div>
-												</div>
-											</div>
-											)}
+													</>
+												)}
 											</>
-										)}
-										</>
 										)}
 
 										{/* Критичні помилки валідації */}
@@ -265,9 +265,9 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 																	{item.exportSuccess ? <Chip size="sm" color="success" variant="flat">OK</Chip> : <Chip size="sm" color="danger" variant="flat">Помилка</Chip>}
 																</td>
 																<td className="border px-2 py-1">
-																	{item.shipmentSuccess ? <Chip size="sm" color="success" variant="flat">OK</Chip> : 
-																	item.exportSuccess ? <Chip size="sm" color="danger" variant="flat">Помилка</Chip> : 
-																	<Chip size="sm" color="secondary" variant="flat" className="text-gray-400 px-4">—</Chip>}
+																	{item.shipmentSuccess ? <Chip size="sm" color="success" variant="flat">OK</Chip> :
+																		item.exportSuccess ? <Chip size="sm" color="danger" variant="flat">Помилка</Chip> :
+																			<Chip size="sm" color="secondary" variant="flat" className="text-gray-400 px-4">—</Chip>}
 																</td>
 																<td className="border px-2 py-1">
 																	{item.errors && item.errors.length > 0 ? (
@@ -295,26 +295,26 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 															<div className="flex items-start justify-between gap-2">
 																<div className="flex-1">
 																	<div className="font-medium text-sm">
-																		№ {item.orderNumber || item.normalizedNumber}
+																		№ {item.orderNumber}
 																	</div>
 																	{item.dilovodId && (
-																		<div className="text-xs text-gray-600 mt-1">
+																		<div className="text-xs text-gray-600 my-1">
 																			Dilovod ID: <span className="font-mono">{item.dilovodId}</span>
 																		</div>
 																	)}
 																	{item.dilovodExportDate && (
-																		<div className="text-xs text-gray-600">
-																			Додано: {new Date(item.dilovodExportDate).toLocaleString('uk-UA')}
+																		<div className={`text-xs ${item.updatedCount > 0 ? 'text-green-600' : 'text-gray-600'}`}>
+																			<b>✓ Додано:</b> {new Date(item.dilovodExportDate).toLocaleString('uk-UA')}
 																		</div>
 																	)}
 																	{item.dilovodSaleExportDate && (
-																		<div className="text-xs text-green-600">
-																			✓ Відвантажено: {new Date(item.dilovodSaleExportDate).toLocaleString('uk-UA')}
+																		<div className={`text-xs ${item.updatedCountSale > 0 ? 'text-green-600' : 'text-gray-600'}`}>
+																			<b>✓ Відвантажено:</b> {new Date(item.dilovodSaleExportDate).toLocaleString('uk-UA')}
 																		</div>
 																	)}
 																	{item.dilovodCashInDate && (
-																		<div className="text-xs text-blue-600">
-																			✓ Оплачено: {new Date(item.dilovodCashInDate).toLocaleString('uk-UA')}
+																		<div className={`text-xs ${item.updatedCountCashIn > 0 ? 'text-green-600' : 'text-gray-600'}`}>
+																			<b>✓ Оплачено:</b> {new Date(item.dilovodCashInDate).toLocaleString('uk-UA')}
 																		</div>
 																	)}
 																</div>
@@ -390,7 +390,7 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 										{/* Raw JSON (згорнутий за замовчуванням) */}
 										<details className="group">
 											<summary className="cursor-pointer font-semibold text-sm mb-3 list-none flex items-center gap-2">
-												<DynamicIcon name="chevron-right" size={16} className="group-open:rotate-90 transition-transform"/>
+												<DynamicIcon name="chevron-right" size={16} className="group-open:rotate-90 transition-transform" />
 												Raw JSON
 											</summary>
 											<div className="bg-gray-50 p-3 rounded-lg border-1 border-gray-200 overflow-auto">
@@ -399,19 +399,19 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 												</pre>
 											</div>
 										</details>
-                  </>
-                )}
-              </div>
-            </DrawerBody>
-            <DrawerFooter>
+									</>
+								)}
+							</div>
+						</DrawerBody>
+						<DrawerFooter>
 							<Button color="primary" variant="bordered" onPress={() => { navigator.clipboard.writeText(JSON.stringify(result, null, 2)); }}>
-							Скопіювати JSON
+								Скопіювати JSON
 							</Button>
-              <Button color="primary" onPress={onClose}>Закрити</Button>
-            </DrawerFooter>
-          </>
-        )}
-      </DrawerContent>
-    </Drawer>
-  );
+							<Button color="primary" onPress={onClose}>Закрити</Button>
+						</DrawerFooter>
+					</>
+				)}
+			</DrawerContent>
+		</Drawer>
+	);
 }

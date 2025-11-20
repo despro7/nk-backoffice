@@ -39,17 +39,17 @@ export const ROLE_HIERARCHY = {
 // Функция проверки доступа по роли
 export const hasAccess = (userRole: string, requiredRoles?: string[], minRole?: string): boolean => {
   if (!requiredRoles && !minRole) return true; // Доступ для всех
-  
+
   // Проверка по списку разрешенных ролей
   if (requiredRoles && requiredRoles.includes(userRole)) return true;
-  
+
   // Проверка по минимальной роли
   if (minRole) {
     const userLevel = ROLE_HIERARCHY[userRole as keyof typeof ROLE_HIERARCHY] || 0;
     const requiredLevel = ROLE_HIERARCHY[minRole as keyof typeof ROLE_HIERARCHY] || 0;
     return userLevel >= requiredLevel;
   }
-  
+
   return false;
 };
 
@@ -175,9 +175,9 @@ export const appRoutes: AppRoute[] = [
   {
     path: "/settings/product-sets",
     component: SettingsProductSets,
-    title: 'Товари з Dilovod',
-    pageTitle: 'Товари з Dilovod | NK Backoffice',
-    navLabel: 'Товари з Dilovod',
+    title: 'Товари і комплекти з Dilovod',
+    pageTitle: 'Товари і комплекти | NK Backoffice',
+    navLabel: 'Товари і комплекти',
     icon: <DynamicIcon name="shopping-bag" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     parent: 'settings',
@@ -224,9 +224,9 @@ export const appRoutes: AppRoute[] = [
   {
     path: "/settings/dilovod",
     component: SettingsDilovod,
-    title: 'Налаштування Dilovod',
-    pageTitle: 'Налаштування Dilovod | NK Backoffice',
-    navLabel: 'Dilovod',
+    title: 'Налаштування синхронізації SalesDrive ➝ Dilovod',
+    pageTitle: 'Налаштування синхронізації SalesDrive ➝ Dilovod | NK Backoffice',
+    navLabel: 'Синхронізація SalesDrive -> Dilovod',
     icon: <DynamicIcon name="building-2" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     parent: 'settings',
@@ -268,11 +268,11 @@ export const getNavGroups = (userRole?: string) => {
   const mainRoutes = appRoutes
     .filter(route => route.inNav && !route.parent && filterByRole(route))
     .sort((a, b) => (a.order || 0) - (b.order || 0));
-    
+
   const settingsRoutes = appRoutes
     .filter(route => route.inNav && route.parent === 'settings' && filterByRole(route))
     .sort((a, b) => (a.order || 0) - (b.order || 0));
-  
+
   return {
     mainRoutes,
     settingsRoutes,

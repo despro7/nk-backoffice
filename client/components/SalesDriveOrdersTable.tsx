@@ -76,20 +76,20 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   const [orders, setOrders] = useState<SalesDriveOrderForExport[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // State для вибраних замовлень (чекбокси)
-  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
-
   // State для універсального Drawer з результатами
   const { isOpen: isDrawerOpen, onOpen: onDrawerOpen, onOpenChange: onDrawerOpenChange } = useDisclosure();
   const [drawerResult, setDrawerResult] = useState<any>(null);
   const [drawerTitle, setDrawerTitle] = useState<string>('Результат операції');
   const [drawerType, setDrawerType] = useState<'result' | 'logs' | 'orderDetails'>('result');
-  
+
+  // State для вибраних замовлень (чекбокси)
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+
   // State для пагінації
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  
+
   // State для пошуку
   const [search, setSearch] = useState("");
 
@@ -108,7 +108,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     if (channelId === '19') {
       return 'nk-food.shop (виключений)';
     }
-    
+
     // Якщо канал невідомий
     return `Канал ${channelId}`;
   };
@@ -135,6 +135,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         setOrders(data.data);
         setTotalPages(data.pagination.totalPages);
         setTotalCount(data.pagination.totalCount);
+        setSelectedOrderIds([]);
       } else {
         console.error('Failed to fetch orders:', data);
         ToastService.show({
@@ -181,7 +182,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   // Отримання статус-коду для getStatusColor (як у звітах)
   const getOrderStatusCode = (statusText: string) => {
     const statusLower = statusText.toLowerCase();
-    
+
     if (statusLower.includes('новий') || statusLower === '1') return '1';
     if (statusLower.includes('підтверджено') || statusLower === '2') return '2';
     if (statusLower.includes('на відправку') || statusLower.includes('готов') || statusLower === '3') return '3';
@@ -189,7 +190,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     if (statusLower.includes('продаж') || statusLower.includes('доставлено') || statusLower === '5') return '5';
     if (statusLower.includes('скасовано') || statusLower.includes('відхилено') || statusLower.includes('повернення') || statusLower === '6' || statusLower === '7') return '6';
     if (statusLower.includes('видалено') || statusLower === '8') return '8';
-    
+
     return ''; // За замовчуванням
   };
 
@@ -211,7 +212,10 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     ToastService.show({
       title: 'Масова перевірка...',
       description: `Перевіряємо ${filteredOrders.length} вибраних замовлень у Dilovod`,
-      color: 'primary'
+      color: 'primary',
+      hideIcon: false,
+      icon: <DynamicIcon name="text-search" size={16} strokeWidth={1.5} className="shrink-0" />,
+      timeout: 2000
     });
 
     // Отримати налаштування префіксу/суфіксу для каналу
@@ -236,41 +240,44 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       const result = await response.json();
 
       if (result.success && Array.isArray(result.data)) {
-        // Зберігаємо результат в state для Drawer
         setDrawerResult(result);
         setDrawerTitle('Результат масової перевірки замовлень');
         setDrawerType('result');
         onDrawerOpen();
 
-        ToastService.show({
-          title: `${result.updatedCount > 0 ? 'Оновлено!' : 'Без змін'}`,
-          description: `${result.updatedCount > 0 ? `${result.updatedCount} Статуси документів оновлено для ${result.data.length} замовлень` : 'Статуси документів не були змінені'}`,
-          color: `${result.updatedCount > 0 ? 'success' : 'default'}`,
-          hideIcon: false,
-          icon: <DynamicIcon name={result.updatedCount > 0 ? 'check-circle' : 'octagon-alert'} size={20} strokeWidth={1.5} className="shrink-0" />
-        });
+        // ToastService.show({
+        //   title: `${result.updatedCount > 0 ? 'Оновлено!' : 'Без змін'}`,
+        //   description: `${result.updatedCount > 0 ? `${result.updatedCount} Статуси документів оновлено для ${result.data.length} замовлень` : 'Статуси документів не були змінені'}`,
+        //   color: `${result.updatedCount > 0 ? 'success' : 'default'}`,
+        //   hideIcon: false,
+        //   icon: <DynamicIcon name={result.updatedCount > 0 ? 'check-circle' : 'octagon-alert'} size={20} strokeWidth={1.5} className="shrink-0" />
+        // });
+
         // Перемальовуємо таблицю
         if (result.updatedCount > 0) {
           fetchOrders();
         }
       } else {
-        console.log('Деталі помилок масової перевірки:', result.errors);
         setDrawerResult(result);
         setDrawerTitle('Помилки масової перевірки замовлень');
         setDrawerType('result');
         onDrawerOpen();
-        
+
         ToastService.show({
           title: 'Помилка',
           description: result.error || 'Помилка масової перевірки',
-          color: 'danger'
+          color: 'danger',
+          hideIcon: false,
+          icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
         });
       }
     } catch {
       ToastService.show({
         title: 'Помилка',
         description: 'Помилка з\'єднання з сервером',
-        color: 'danger'
+        color: 'danger',
+        hideIcon: false,
+        icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
       });
     }
   };
@@ -359,7 +366,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items,
       rawData: typeof order.rawData === 'string' ? JSON.parse(order.rawData) : order.rawData
     };
-    
+
     setDrawerResult(orderData);
     setDrawerTitle(`Деталі замовлення #${order.orderNumber}`);
     setDrawerType('orderDetails');
@@ -662,11 +669,11 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     try {
       if (!orderNumber)
         return 0;
-      
+
       const res = await apiCall(`/api/meta-logs/count?orderNumber=${encodeURIComponent(orderNumber)}`);
       if (!res.ok)
         return 0;
-      
+
       const data = await res.json();
 
       return Number(data.count || 0);
@@ -682,7 +689,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       // API call to fetch logs for this order
       const res = await apiCall(`/api/meta-logs?orderNumber=${encodeURIComponent(order.orderNumber)}`);
       const data = await res.json();
-      
+
       if (Array.isArray(data) && data.length > 0) {
         setDrawerResult(data);
         setDrawerTitle(`Логи експорту замовлення ${order.orderNumber}`);
@@ -727,6 +734,18 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     return orderNum;
   }
 
+  // Utility: get order numbers with prefix/suffix from channel settings
+  const getDisplayOrderNumbers = (orderNumbers: string[]) => orderNumbers.map(orderNumber => {
+    const order = orders.find(order => order.orderNumber === orderNumber);
+    if (!order) return orderNumber;
+    const channelSettings = dilovodSettings?.channelPaymentMapping?.[order.sajt];
+    if (channelSettings) {
+      if (channelSettings.prefixOrder) orderNumber = channelSettings.prefixOrder + orderNumber;
+      if (channelSettings.sufixOrder) orderNumber = orderNumber + channelSettings.sufixOrder;
+    }
+    return orderNumber;
+  });
+
   // Колонки таблиці
   const columns = [
     { key: "orderNumber", label: "№ замовлення", sortable: false },
@@ -741,19 +760,19 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
   return (
     <div className={`space-y-4 ${className}`}>
-			<div className="flex gap-4 items-center justify-between">
+      <div className="flex gap-4 items-center justify-between">
         {/* Панель пошуку */}
-				<Input
-					placeholder="Пошук по номеру, імені або телефону..."
-					value={search}
-					onChange={(e) => setSearch(e.target.value)}
-					onKeyPress={handleSearchKeyPress}
-					onClear={() => setSearch("")}
-					isClearable
-					className="max-w-sm"
-					startContent={<DynamicIcon name="search" size={16} />}
-				/>
-        
+        <Input
+          placeholder="Пошук по номеру, імені або телефону..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyPress={handleSearchKeyPress}
+          onClear={() => setSearch("")}
+          isClearable
+          className="max-w-sm"
+          startContent={<DynamicIcon name="search" size={16} />}
+        />
+
         {/* Масові дії */}
         <div className="flex items-center gap-2">
           <Button
@@ -764,7 +783,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             isDisabled={selectedOrderIds.length === 0}
             onPress={() => {
               const selectedOrders = orders.filter(order => selectedOrderIds.includes(String(order.id)));
-              const orderNumbers = selectedOrders.map(order => order.orderNumber).join('\n');
+              const orderNumbers = getDisplayOrderNumbers(selectedOrders.map(order => order.orderNumber)).join('\n');
               navigator.clipboard.writeText(orderNumbers);
               ToastService.show({
                 title: 'Скопійовано',
@@ -798,7 +817,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             Оновити статуси документів ({selectedOrderIds.length})
           </Button>
         </div>
-			</div>
+      </div>
 
       {/* Таблиця */}
       <div className="relative">
@@ -856,15 +875,15 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                   </Tooltip>
                 </TableCell>
                 <TableCell>
-									<Tooltip placement="top-start" color="secondary" content={order.orderDate ? new Date(order.orderDate).toLocaleString('uk-UA') : 'Дата не задана'}>
-										<span className="cursor-help">{order.orderDate ? formatRelativeDate(order.orderDate.toString(), { maxRelativeDays: 1 }) : 'Не задано'}</span>
-									</Tooltip>
+                  <Tooltip placement="top-start" color="secondary" content={order.orderDate ? new Date(order.orderDate).toLocaleString('uk-UA') : 'Дата не задана'}>
+                    <span className="cursor-help">{order.orderDate ? formatRelativeDate(order.orderDate.toString(), { maxRelativeDays: 1 }) : 'Не задано'}</span>
+                  </Tooltip>
                 </TableCell>
                 <TableCell>
                   <Tooltip placement="top-start" color="secondary" content={`Оновлено: ${order.updatedAt ? new Date(order.updatedAt).toLocaleString('uk-UA') : 'Дата не задана'}`}>
-                  <Chip size="sm" variant="flat" classNames={{base: `${getStatusColor(getOrderStatusCode(order.statusText || order.status))} cursor-help`}}>
-                    {order.statusText || getStatusLabel(order.status)}
-                  </Chip>
+                    <Chip size="sm" variant="flat" classNames={{ base: `${getStatusColor(getOrderStatusCode(order.statusText || order.status))} cursor-help` }}>
+                      {order.statusText || getStatusLabel(order.status)}
+                    </Chip>
                   </Tooltip>
                 </TableCell>
                 <TableCell>
@@ -874,9 +893,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                   {order.shippingMethod || 'Не задано'}
                 </TableCell>
                 <TableCell>
-                  <Chip 
-                    size="sm" 
-                    variant="flat" 
+                  <Chip
+                    size="sm"
+                    variant="flat"
                     className={order.sajt ? getChannelClass(order.sajt) : 'bg-gray-100 text-gray-600 border-gray-200'}
                   >
                     {order.sajt ? getChannelName(order.sajt) : 'Не задано'}
@@ -946,7 +965,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                         <DropdownItem textValue="baseDoc ID" key="footer" className="px-3 py-2 font-semibold text-default-700 cursor-default data-[hover=true]:bg-white border-none" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="key-round" size={14} />}>
                           <div className="flex items-center justify-between text-xs">
                             {order.dilovodDocId || 'Немає ID'}
-                            {order.dilovodDocId && <Button variant="flat" size="sm" className="px-2 py-1 min-w-auto h-auto rounded" onPress={() => {navigator.clipboard.writeText(order.dilovodDocId || '')}}>Copy</Button>}
+                            {order.dilovodDocId && <Button variant="flat" size="sm" className="px-2 py-1 min-w-auto h-auto rounded" onPress={() => { navigator.clipboard.writeText(order.dilovodDocId || '') }}>Copy</Button>}
                           </div>
                         </DropdownItem>
                       </DropdownMenu>
@@ -960,9 +979,8 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
         {/* Overlay для завантаження */}
         <div
-          className={`absolute inset-0 bg-white/50 backdrop-blur-sm flex items-center justify-center z-10 transition-all duration-300 ease-in-out ${
-            loading ? "opacity-100 visible" : "opacity-0 invisible"
-          }`}
+          className={`absolute inset-0 bg-white/50 backdrop-blur-sm flex items-center justify-center z-10 transition-all duration-300 ease-in-out ${loading ? "opacity-100 visible" : "opacity-0 invisible"
+            }`}
         >
           <div className="flex flex-col items-center">
             <Spinner size="lg" color="primary" />
@@ -992,12 +1010,12 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-purple-100 text-purple-600"><DynamicIcon name="search-check" size={14} strokeWidth="1.5" /></div>
               <span className="text-sm text-default-500">Додано в Діловод</span>
             </div>
-            
+
             <div className="flex gap-1 items-center">
               <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-green-100 text-green-600"><DynamicIcon name="truck" size={14} strokeWidth="1.5" /></div>
               <span className="text-sm text-default-500">Відвантажено</span>
             </div>
-            
+
             <div className="flex gap-1 items-center">
               <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-yellow-100 text-yellow-600"><DynamicIcon name="wallet" size={14} strokeWidth="1.5" /></div>
               <span className="text-sm text-default-500">Оплачено</span>
@@ -1019,7 +1037,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       </div>
 
       {/* Універсальний Drawer для результатів операцій і логів */}
-      <ResultDrawer 
+      <ResultDrawer
         isOpen={isDrawerOpen}
         onOpenChange={onDrawerOpenChange}
         result={drawerResult}

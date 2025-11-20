@@ -5,9 +5,9 @@ import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
-import type { 
-  DilovodSettings, 
-  DilovodSettingsRequest, 
+import type {
+  DilovodSettings,
+  DilovodSettingsRequest,
   DilovodDirectories
 } from '../../shared/types/dilovod.js';
 
@@ -21,9 +21,9 @@ const prisma = new PrismaClient();
  */
 async function getDilovodSettings(): Promise<DilovodSettings> {
   const settings = await prisma.settingsBase.findMany({
-    where: { 
+    where: {
       category: 'dilovod',
-      isActive: true 
+      isActive: true
     }
   });
 
@@ -121,7 +121,7 @@ async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<Di
 
   // Очищаємо кеш конфігурації після збереження
   clearConfigCache();
-  
+
   // Повертаємо оновлені налаштування
   return await getDilovodSettings();
 }
@@ -133,22 +133,22 @@ async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<Di
 router.get('/test-connection', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
-    
+
     // Перевіряємо права доступу (тільки ADMIN і BOSS)
     if (!['admin', 'boss'].includes(user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     logWithTimestamp('=== API: test-connection викликано ===');
-    
+
     const dilovodService = new DilovodService();
     const result = await dilovodService.testConnection();
-    
+
     logWithTimestamp('API: Результат тестування підключення отримано:', result);
     res.json(result);
   } catch (error) {
     logWithTimestamp('Error testing connection:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Невідома помилка'
@@ -163,21 +163,21 @@ router.get('/test-connection', authenticateToken, async (req, res) => {
 router.post('/orders/test', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
-    
+
     // Перевіряємо права доступу (тільки ADMIN і BOSS)
     if (!['admin', 'boss'].includes(user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     logWithTimestamp('=== API: dilovod/orders/test викликано ===');
-    
+
     const {
       orderNumber,
       documentType = 'documents.saleOrder',
       baseDoc,
       includeDetails = false
     } = req.body;
-    
+
     if (!orderNumber || typeof orderNumber !== 'string') {
       return res.status(400).json({
         success: false,
@@ -187,17 +187,17 @@ router.post('/orders/test', authenticateToken, async (req, res) => {
     }
 
     logWithTimestamp(`API: Пошук документу типу ${documentType} з номером: ${orderNumber}`);
-    
-      // Формуємо payload через утиліту
-      const dilovodPayload = buildDilovodPayload({
-        orderNumber,
-        documentType,
-        baseDoc
-      });
-      const fields = dilovodPayload.params.fields;
-    
+
+    // Формуємо payload через утиліту
+    const dilovodPayload = buildDilovodPayload({
+      orderNumber,
+      documentType,
+      baseDoc
+    });
+    const fields = dilovodPayload.params.fields;
+
     const dilovodService = new DilovodService();
-    
+
     // Використовуємо універсальний метод пошуку або стандартний для saleOrder
     let orders: any[];
     if (documentType === 'documents.saleOrder') {
@@ -219,7 +219,7 @@ router.post('/orders/test', authenticateToken, async (req, res) => {
         includeDetails
       );
     }
-    
+
     logWithTimestamp(`API: Знайдено ${orders.length} документів типу ${documentType}`);
 
     const responsePayload: Record<string, unknown> = {
@@ -236,7 +236,7 @@ router.post('/orders/test', authenticateToken, async (req, res) => {
   } catch (error) {
     const errorMessage = handleDilovodApiError(error, 'Order search');
     logWithTimestamp('API: Помилка в dilovod/orders/test:', errorMessage);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Dilovod API error',
       message: errorMessage
@@ -251,14 +251,14 @@ router.post('/orders/test', authenticateToken, async (req, res) => {
 router.get('/orders/:orderId/details', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
-    
+
     // Перевіряємо права доступу (тільки ADMIN і BOSS)
     if (!['admin', 'boss'].includes(user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     const { orderId } = req.params;
-    
+
     if (!orderId) {
       return res.status(400).json({
         success: false,
@@ -268,10 +268,10 @@ router.get('/orders/:orderId/details', authenticateToken, async (req, res) => {
     }
 
     logWithTimestamp(`=== API: Отримання деталей замовлення ID: ${orderId} ===`);
-    
+
     const dilovodService = new DilovodService();
     const orderDetails = await dilovodService.getOrderDetails(orderId);
-    
+
     res.json({
       success: true,
       message: `Деталі замовлення ${orderId} отримані`,
@@ -281,7 +281,7 @@ router.get('/orders/:orderId/details', authenticateToken, async (req, res) => {
   } catch (error) {
     const errorMessage = handleDilovodApiError(error, 'Order details');
     logWithTimestamp('API: Помилка отримання деталей замовлення:', errorMessage);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Dilovod API error',
       message: errorMessage
@@ -296,7 +296,7 @@ router.get('/orders/:orderId/details', authenticateToken, async (req, res) => {
 router.get('/settings', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
-    
+
     // Перевіряємо права доступу (тільки ADMIN і BOSS)
     if (!['admin', 'boss'].includes(user.role)) {
       return res.status(403).json({ error: 'Access denied' });
@@ -304,14 +304,14 @@ router.get('/settings', authenticateToken, async (req, res) => {
 
     // Отримуємо налаштування з settings_base
     const settings = await getDilovodSettings();
-    
+
     res.json({
       success: true,
       data: settings
     });
   } catch (error) {
     logWithTimestamp('API: Помилка отримання налаштувань Dilovod:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Невідома помилка'
@@ -326,23 +326,23 @@ router.get('/settings', authenticateToken, async (req, res) => {
 router.post('/settings', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
-    
+
     // Перевіряємо права доступу (тільки ADMIN і BOSS)
     if (!['admin', 'boss'].includes(user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     logWithTimestamp('=== API: Збереження налаштувань Dilovod ===');
-    
+
     const settingsData: DilovodSettingsRequest = req.body;
-    
+
     // Зберігаємо налаштування через допоміжну функцію
     const savedSettings = await saveDilovodSettings(settingsData);
-    
+
     // Оновлюємо конфігурацію в DilovodService після збереження
     const dilovodService = new DilovodService();
     await dilovodService.reloadApiConfig();
-    
+
     logWithTimestamp('API: Налаштування Dilovod збережено і конфігурацію оновлено');
     res.json({
       success: true,
@@ -351,7 +351,7 @@ router.post('/settings', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     logWithTimestamp('API: Помилка збереження налаштувань Dilovod:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Невідома помилка'
@@ -366,16 +366,16 @@ router.post('/settings', authenticateToken, async (req, res) => {
 router.get('/directories', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
-    
+
     // Перевіряємо права доступу (тільки ADMIN і BOSS)
     if (!['admin', 'boss'].includes(user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     logWithTimestamp('=== API: Отримання довідників Dilovod ===');
-    
+
     const dilovodService = new DilovodService();
-    
+
     // Dilovod API блокує паралельні запити ('multithreadApiSession multithread api request blocked')
     // Тому робимо запити послідовно з обробкою помилок
     let storagesResult: any[] = [];
@@ -384,43 +384,43 @@ router.get('/directories', authenticateToken, async (req, res) => {
     let firmsResult: any[] = [];
     let tradeChanelsResult: any[] = [];
     let deliveryMethodsResult: any[] = [];
-    
+
     try {
       storagesResult = await dilovodService.getStorages();
     } catch (error) {
       logWithTimestamp('API: ❌ Помилка отримання складів:', error);
     }
-    
+
     try {
       accountsResult = await dilovodService.getCashAccounts();
     } catch (error) {
       logWithTimestamp('API: ❌ Помилка отримання рахунків:', error);
     }
-    
+
     try {
       paymentFormsResult = await dilovodService.getPaymentForms();
     } catch (error) {
       logWithTimestamp('API: ❌ Помилка отримання форм оплати:', error);
     }
-    
+
     try {
       firmsResult = await dilovodService.getFirms();
     } catch (error) {
       logWithTimestamp('API: ❌ Помилка отримання фірм:', error);
     }
-    
+
     try {
       tradeChanelsResult = await dilovodService.getTradeChanels();
     } catch (error) {
       logWithTimestamp('API: ❌ Помилка отримання каналів продажів:', error);
     }
-    
+
     try {
       deliveryMethodsResult = await dilovodService.getDeliveryMethods();
     } catch (error) {
       logWithTimestamp('API: ❌ Помилка отримання способів доставки:', error);
     }
-    
+
     // Отримуємо товари з products (будемо використовувати поле products.dilovodGood)
     let goodsResult: any[] = [];
     try {
@@ -444,7 +444,7 @@ router.get('/directories', authenticateToken, async (req, res) => {
     } catch (error) {
       logWithTimestamp('API: ❌ Помилка отримання товарів з кешу:', error);
     }
-    
+
     const directories: DilovodDirectories = {
       storages: storagesResult,
       cashAccounts: accountsResult,
@@ -454,14 +454,14 @@ router.get('/directories', authenticateToken, async (req, res) => {
       deliveryMethods: deliveryMethodsResult,
       goods: goodsResult
     };
-    
+
     res.json({
       success: true,
       data: directories
     });
   } catch (error) {
     logWithTimestamp('API: Помилка отримання довідників Dilovod:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Невідома помилка'
@@ -627,7 +627,9 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
           return {
             num,
             baseDocId: existing?.dilovodDocId || null,
-            dilovodExportDate: existing?.dilovodExportDate || null
+            dilovodExportDate: existing?.dilovodExportDate || null,
+            dilovodSaleExportDate: existing?.dilovodSaleExportDate || null,
+            dilovodCashInDate: existing?.dilovodCashInDate || null
           };
         })
     );
@@ -649,9 +651,11 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
       });
 
       results.push({
-        orderNumber: normalizedNumber,
+        orderNumber: item.num,
         dilovodId: item.baseDocId,
         dilovodExportDate: item.dilovodExportDate,
+        dilovodSaleExportDate: item.dilovodSaleExportDate,
+        dilovodCashInDate: item.dilovodCashInDate,
         updatedCount: 0,
         success: true,
         warnings: ['Замовлення вже має dilovodDocId в локальній базі — пропущено']
@@ -678,7 +682,7 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
       // Нормалізуємо номер (прибираємо префікси/суфікси)
       const normalizedNumber = String(dilovodOrder.number).replace(/[^\d]/g, "");
       const baseDoc = dilovodOrder.id;
-      
+
       try {
         // Оновлюємо запис у локальній базі з базовою інформацією
         const updateData: any = {
@@ -805,9 +809,17 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
               results[resultIndex] = {
                 ...results[resultIndex],
                 dilovodSaleExportDate: updateData.dilovodSaleExportDate || localOrder?.dilovodSaleExportDate,
-                dilovodCashInDate: updateData.dilovodCashInDate || localOrder?.dilovodCashInDate
+                updatedCountSale: updateData.dilovodSaleExportDate ? 1 : 0,
+                dilovodCashInDate: updateData.dilovodCashInDate || localOrder?.dilovodCashInDate,
+                updatedCountCashIn: updateData.dilovodCashInDate ? 1 : 0
               };
             }
+
+            results.push({
+              orderNumber: orderInfo.normalizedNumber,
+              updatedCount: updateData.dilovodSaleExportDate || updateData.dilovodCashInDate ? 1 : 0,
+              success: true
+            });
           }
         }
         logWithTimestamp('Оновлення документів Sale/CashIn завершено (запити лише для відсутніх)');
@@ -824,10 +836,10 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
 
     const errorDetails = hasError
       ? results.filter(r => !r.success).map(r => ({
-          orderNumber: r.orderNumber,
-          dilovodId: r.dilovodId,
-          error: r.error
-        }))
+        orderNumber: r.orderNumber,
+        dilovodId: r.dilovodId,
+        error: r.error
+      }))
       : undefined;
 
     let message = '';
@@ -836,14 +848,15 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
     } else if (updatedCount === 0) {
       message = 'Перевірка завершена: жодних нових даних не було оновлено.';
     } else {
-      message = `Перевірка завершена (оновлено ${updatedCount} замовлень)`;
+      message = `Перевірка завершена (оновлено ${updatedCount} ${updatedCount < 5 ? 'замовлення' : 'замовлень'}`;
     }
 
     res.json({
       success: !hasError,
-      data: results,
       message,
-      errors: errorDetails
+      updatedCount: updatedCount,
+      errors: errorDetails,
+      data: results,
     });
 
   } catch (error) {
@@ -955,7 +968,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
       // Визначаємо статус відповіді
       const isExportError = !!(exportResult && (exportResult.error || exportResult.status === 'error'));
       const orderNumber = orderNum || orderId;
-      
+
       // Якщо експорт успішний і є baseDoc ID - зберігаємо в БД
       if (!isExportError && exportResult?.id) {
         try {
@@ -1007,7 +1020,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
       const mainMessage = isExportError
         ? `Помилка експорту замовлення ${orderNumber} в Dilovod: ${exportResult?.error || exportResult?.message || 'невідома помилка'}`
         : `Замовлення ${orderNumber} експортовано в Dilovod успішно`;
-        
+
       res.json({
         success: !isExportError,
         message: mainMessage,
@@ -1044,9 +1057,9 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
 
   } catch (error) {
     console.error('Error exporting order to Dilovod:', error);
-    
+
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     // Перевіряємо, чи це критична помилка валідації
     if (errorMessage.includes('Експорт заблоковано через критичні помилки:')) {
       // Критична помилка валідації - повертаємо статус 400 (Bad Request)
@@ -1059,7 +1072,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
         action_required: 'Виправте налаштування Dilovod перед повторною спробою експорту'
       });
     }
-    
+
     // Інші помилки - внутрішня помилка сервера
     res.status(500).json({
       success: false,
@@ -1123,11 +1136,11 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (re
 
     } catch (validationError) {
       const errorMessage = validationError instanceof Error ? validationError.message : 'Unknown error';
-      
+
       // Якщо це критична помилка валідації
       if (errorMessage.includes('Експорт заблоковано через критичні помилки:')) {
         logWithTimestamp(`❌ Валідація замовлення #${orderNumber} (id: ${orderId}) не пройдена`);
-        
+
         return res.status(200).json({
           success: false,
           message: 'Замовлення не готове до експорту',
@@ -1142,14 +1155,14 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (re
           action_required: 'Виправте налаштування Dilovod перед експортом'
         });
       }
-      
+
       // Інші помилки
       throw validationError;
     }
 
   } catch (error) {
     console.error('Error validating order for Dilovod export:', error);
-    
+
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -1317,9 +1330,9 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
 
   } catch (error) {
     console.error('Error creating shipment in Dilovod:', error);
-    
+
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -1337,9 +1350,9 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
 router.get('/salesdrive/payment-methods', authenticateToken, async (req, res) => {
   try {
     const { salesDriveService } = await import('../services/salesDriveService.js');
-    
+
     const paymentMethods = await salesDriveService.fetchPaymentMethods();
-    
+
     res.json({
       success: true,
       data: paymentMethods
@@ -1361,16 +1374,16 @@ router.get('/salesdrive/payment-methods', authenticateToken, async (req, res) =>
 router.get('/cache/status', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
-    
+
     // Перевіряємо права доступу (тільки ADMIN і BOSS)
     if (!['admin', 'boss'].includes(user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     const { dilovodCacheService } = await import('../services/dilovod/DilovodCacheService.js');
-    
+
     const status = await dilovodCacheService.getAllCacheStatus();
-    
+
     res.json({
       success: true,
       data: status
@@ -1392,19 +1405,19 @@ router.get('/cache/status', authenticateToken, async (req, res) => {
 router.post('/cache/refresh', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
-    
+
     // Перевіряємо права доступу (тільки ADMIN і BOSS)
     if (!['admin', 'boss'].includes(user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     logWithTimestamp('=== API: Примусове оновлення кешу довідників Dilovod ===');
-    
+
     const dilovodService = new DilovodService();
-    
+
     // Оновлюємо весь кеш (НЕ паралельно, щоб уникнути multithreadApiSession blocked)
     const result = await dilovodService.refreshAllDirectoriesCache();
-    
+
     logWithTimestamp('API: Кеш оновлено успішно');
     res.json({
       success: true,
@@ -1413,7 +1426,7 @@ router.post('/cache/refresh', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     logWithTimestamp('API: Помилка оновлення кешу довідників Dilovod:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Невідома помилка'
