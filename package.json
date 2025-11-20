@@ -73,6 +73,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@csstools/postcss-oklab-function": "^4.0.12",
     "@hookform/resolvers": "^5.2.1",
     "@swc/core": "^1.13.3",
     "@tailwindcss/postcss": "^4.1.12",
