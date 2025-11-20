@@ -10,9 +10,12 @@ const router = Router();
  */
 router.get('/cache/status', authenticateToken, async (req, res) => {
   try {
-    // Доступ тільки ADMIN і BOSS
-    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
     const status = await salesDriveCacheService.getAllCacheStatus();
     res.json({ success: true, data: status });
@@ -28,16 +31,19 @@ router.get('/cache/status', authenticateToken, async (req, res) => {
  */
 router.post('/cache/refresh', authenticateToken, async (req, res) => {
   try {
-    // Доступ тільки ADMIN і BOSS
-    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     // Імпортуємо SalesDriveService
     const { salesDriveService } = await import('../services/salesDriveService.js');
 
     console.log('🔄 [SalesDrive Cache] Starting cache refresh...');
-    
+
     // Отримуємо свіжі дані з SalesDrive API
     const [channels, paymentMethods, shippingMethods, statuses] = await Promise.all([
       salesDriveService.fetchChannels(),
@@ -56,8 +62,8 @@ router.post('/cache/refresh', authenticateToken, async (req, res) => {
 
     console.log(`✅ [SalesDrive Cache] Cache refreshed: ${channels.length} channels, ${paymentMethods.length} payment methods, ${shippingMethods.length} shipping methods, ${statuses.length} statuses`);
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: 'Кеш SalesDrive успішно оновлено',
       data: {
         channels: channels.length,
@@ -68,10 +74,10 @@ router.post('/cache/refresh', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [API] Error refreshing SalesDrive cache:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to refresh cache', 
-      details: error instanceof Error ? error.message : 'Unknown error' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to refresh cache',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
@@ -82,23 +88,26 @@ router.post('/cache/refresh', authenticateToken, async (req, res) => {
  */
 router.post('/cache/clear', authenticateToken, async (req, res) => {
   try {
-    // Доступ тільки ADMIN і BOSS
-    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     await salesDriveCacheService.clearAllCache();
-    
-    res.json({ 
-      success: true, 
-      message: 'Кеш SalesDrive повністю очищено' 
+
+    res.json({
+      success: true,
+      message: 'Кеш SalesDrive повністю очищено'
     });
   } catch (error) {
     console.error('❌ [API] Error clearing SalesDrive cache:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to clear cache', 
-      details: error instanceof Error ? error.message : 'Unknown error' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to clear cache',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
@@ -109,24 +118,27 @@ router.post('/cache/clear', authenticateToken, async (req, res) => {
  */
 router.get('/channels', authenticateToken, async (req, res) => {
   try {
-    // Доступ тільки ADMIN і BOSS
-    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     const { salesDriveService } = await import('../services/salesDriveService.js');
     const channels = await salesDriveService.fetchChannels();
-    
-    res.json({ 
-      success: true, 
-      data: channels 
+
+    res.json({
+      success: true,
+      data: channels
     });
   } catch (error) {
     console.error('❌ [API] Error fetching channels:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch channels', 
-      details: error instanceof Error ? error.message : 'Unknown error' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch channels',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
@@ -137,24 +149,27 @@ router.get('/channels', authenticateToken, async (req, res) => {
  */
 router.get('/payment-methods', authenticateToken, async (req, res) => {
   try {
-    // Доступ тільки ADMIN і BOSS
-    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     const { salesDriveService } = await import('../services/salesDriveService.js');
     const paymentMethods = await salesDriveService.fetchPaymentMethods();
-    
-    res.json({ 
-      success: true, 
-      data: paymentMethods 
+
+    res.json({
+      success: true,
+      data: paymentMethods
     });
   } catch (error) {
     console.error('❌ [API] Error fetching payment methods:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch payment methods', 
-      details: error instanceof Error ? error.message : 'Unknown error' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch payment methods',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
@@ -165,24 +180,27 @@ router.get('/payment-methods', authenticateToken, async (req, res) => {
  */
 router.get('/shipping-methods', authenticateToken, async (req, res) => {
   try {
-    // Доступ тільки ADMIN і BOSS
-    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     const { salesDriveService } = await import('../services/salesDriveService.js');
     const shippingMethods = await salesDriveService.fetchShippingMethods();
-    
-    res.json({ 
-      success: true, 
-      data: shippingMethods 
+
+    res.json({
+      success: true,
+      data: shippingMethods
     });
   } catch (error) {
     console.error('❌ [API] Error fetching shipping methods:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch shipping methods', 
-      details: error instanceof Error ? error.message : 'Unknown error' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch shipping methods',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
@@ -193,24 +211,27 @@ router.get('/shipping-methods', authenticateToken, async (req, res) => {
  */
 router.get('/statuses', authenticateToken, async (req, res) => {
   try {
-    // Доступ тільки ADMIN і BOSS
-    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     const { salesDriveService } = await import('../services/salesDriveService.js');
     const statuses = await salesDriveService.fetchStatuses();
-    
-    res.json({ 
-      success: true, 
-      data: statuses 
+
+    res.json({
+      success: true,
+      data: statuses
     });
   } catch (error) {
     console.error('❌ [API] Error fetching statuses:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch statuses', 
-      details: error instanceof Error ? error.message : 'Unknown error' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch statuses',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });

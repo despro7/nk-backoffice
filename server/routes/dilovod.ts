@@ -134,9 +134,12 @@ router.get('/test-connection', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
 
-    // Перевіряємо права доступу (тільки ADMIN і BOSS)
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     logWithTimestamp('=== API: test-connection викликано ===');
@@ -164,9 +167,12 @@ router.post('/orders/test', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
 
-    // Перевіряємо права доступу (тільки ADMIN і BOSS)
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     logWithTimestamp('=== API: dilovod/orders/test викликано ===');
@@ -252,9 +258,12 @@ router.get('/orders/:orderId/details', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
 
-    // Перевіряємо права доступу (тільки ADMIN і BOSS)
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     const { orderId } = req.params;
@@ -297,9 +306,12 @@ router.get('/settings', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
 
-    // Перевіряємо права доступу (тільки ADMIN і BOSS)
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     // Отримуємо налаштування з settings_base
@@ -327,9 +339,12 @@ router.post('/settings', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
 
-    // Перевіряємо права доступу (тільки ADMIN і BOSS)
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     logWithTimestamp('=== API: Збереження налаштувань Dilovod ===');
@@ -367,9 +382,12 @@ router.get('/directories', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
 
-    // Перевіряємо права доступу (тільки ADMIN і BOSS)
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     logWithTimestamp('=== API: Отримання довідників Dilovod ===');
@@ -476,10 +494,10 @@ router.get('/directories', authenticateToken, async (req, res) => {
 router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
   try {
     // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'ads-manager'].includes(req.user.role)) {
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, ads-manager'
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
       });
     }
 
@@ -594,10 +612,10 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
 router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
   try {
     // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'ads-manager'].includes(req.user.role)) {
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, ads-manager'
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
       });
     }
 
@@ -877,10 +895,10 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
 router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req, res) => {
   try {
     // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'ads-manager'].includes(req.user.role)) {
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, ads-manager'
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
       });
     }
 
@@ -1089,10 +1107,10 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
 router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (req, res) => {
   try {
     // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'ads-manager'].includes(req.user.role)) {
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, ads-manager'
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
       });
     }
 
@@ -1178,10 +1196,10 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (re
 router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (req, res) => {
   try {
     // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'ads-manager'].includes(req.user.role)) {
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, ads-manager'
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
       });
     }
 
@@ -1349,8 +1367,15 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
  */
 router.get('/salesdrive/payment-methods', authenticateToken, async (req, res) => {
   try {
-    const { salesDriveService } = await import('../services/salesDriveService.js');
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
+    }
 
+    const { salesDriveService } = await import('../services/salesDriveService.js');
     const paymentMethods = await salesDriveService.fetchPaymentMethods();
 
     res.json({
@@ -1373,11 +1398,12 @@ router.get('/salesdrive/payment-methods', authenticateToken, async (req, res) =>
  */
 router.get('/cache/status', authenticateToken, async (req, res) => {
   try {
-    const { user } = req as any;
-
-    // Перевіряємо права доступу (тільки ADMIN і BOSS)
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     const { dilovodCacheService } = await import('../services/dilovod/DilovodCacheService.js');
@@ -1406,9 +1432,12 @@ router.post('/cache/refresh', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
 
-    // Перевіряємо права доступу (тільки ADMIN і BOSS)
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     logWithTimestamp('=== API: Примусове оновлення кешу довідників Dilovod ===');

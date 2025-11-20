@@ -21,11 +21,11 @@ import TestSerialCom from "./pages/test-serial-com";
 
 // Определяем роли и их иерархию
 export const ROLES = {
-  ADMIN: 'admin',
-  BOSS: 'boss',
-  SHOP_MANAGER: 'shop-manager',
   ADS_MANAGER: 'ads-manager',
-  STOREKEEPER: 'storekeeper'
+  STOREKEEPER: 'storekeeper',
+  SHOP_MANAGER: 'shop-manager',
+  BOSS: 'boss',
+  ADMIN: 'admin'
 } as const;
 
 export const ROLE_HIERARCHY = {
@@ -38,6 +38,7 @@ export const ROLE_HIERARCHY = {
 
 // Функция проверки доступа по роли
 export const hasAccess = (userRole: string, requiredRoles?: string[], minRole?: string): boolean => {
+
   if (!requiredRoles && !minRole) return true; // Доступ для всех
 
   // Проверка по списку разрешенных ролей
@@ -135,7 +136,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="truck" size={20} />,
     inNav: true,
     order: 5,
-    minRole: ROLES.ADS_MANAGER // ads-manager и выше (admin, boss, ads-manager)
+    minRole: ROLES.SHOP_MANAGER // shop-manager и выше (admin, boss, shop-manager)
   },
   {
     path: '/profile',
@@ -207,7 +208,8 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 4,
-    minRole: ROLES.STOREKEEPER // storekeeper и выше
+    // minRole: ROLES.STOREKEEPER // storekeeper и выше
+    roles: [ROLES.ADMIN, ROLES.BOSS, ROLES.STOREKEEPER] // Только admin и boss
   },
   {
     path: "/settings/orders",
@@ -231,7 +233,8 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 8,
-    roles: [ROLES.ADMIN] // Только admin
+    // roles: [ROLES.ADMIN] // Только admin
+    minRole: ROLES.SHOP_MANAGER // shop-manager и выше (admin, boss, shop-manager)
   },
   {
     path: "/settings/admin",

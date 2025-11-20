@@ -17,7 +17,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const skip = (page - 1) * limit;
 
     const where: any = {};
-    
+
     if (search) {
       where.OR = [
         { name: { contains: search } },
@@ -96,9 +96,13 @@ router.get('/', authenticateToken, async (req, res) => {
 // Получить один товар напрямую из Dilovod по SKU (без полной синхронизации)
 router.get('/dilovod/:sku', authenticateToken, async (req, res) => {
   try {
-    const { user } = req as any;
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
     }
 
     const { sku } = req.params;
@@ -176,11 +180,13 @@ router.get('/:sku', authenticateToken, async (req, res) => {
 // Обновить вес товара по ID
 router.put('/:id/weight', authenticateToken, async (req, res) => {
   try {
-    const { user } = req as any;
-    
-    // Проверяем права доступа (ADMIN, BOSS и STOREKEEPER)
-    if (!['admin', 'boss', 'storekeeper'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
+      });
     }
 
     const { id } = req.params;
@@ -220,9 +226,13 @@ router.put('/:id/weight', authenticateToken, async (req, res) => {
 // Обновить ручной порядок (manualOrder) товара по ID
 router.put('/:id/manual-order', authenticateToken, async (req, res) => {
   try {
-    const { user } = req as any;
-    if (!['admin', 'boss', 'storekeeper'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
+      });
     }
 
     const { id } = req.params;
@@ -252,11 +262,13 @@ router.put('/:id/manual-order', authenticateToken, async (req, res) => {
 // Синхронизировать товары с Dilovod
 router.post('/sync', authenticateToken, async (req, res) => {
   try {
-    const { user } = req as any;
 
-    // Проверяем права доступа (только ADMIN и BOSS)
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
+      });
     }
 
     // Проверяем, включена ли синхронизация Dilovod
@@ -283,11 +295,13 @@ router.post('/sync', authenticateToken, async (req, res) => {
 // Синхронизировать остатки товаров с Dilovod
 router.post('/sync-stock', authenticateToken, async (req, res) => {
   try {
-    const { user } = req as any;
 
-    // Проверяем права доступа (только ADMIN и BOSS)
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
+      });
     }
 
     // Проверяем, включена ли синхронизация остатков
@@ -343,15 +357,9 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
 // Тест подключения к Dilovod (listMetadata)
 router.post('/test-connection', authenticateToken, async (req, res) => {
   try {
-    const { user } = req as any;
-    
-    if (!['admin', 'boss'].includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
     const dilovodService = new DilovodService();
     const result = await dilovodService.testConnection();
-    
+
     res.json(result);
   } catch (error) {
     logWithTimestamp('Error testing connection:', error);
@@ -364,20 +372,21 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
 router.post('/test-balance-by-sku', authenticateToken, async (req, res) => {
   try {
     logWithTimestamp('=== API: test-balance-by-sku вызван ===');
-    
-    const { user } = req as any;
-    
-    if (!['admin', 'boss'].includes(user.role)) {
-      logWithTimestamp('API: Access denied для пользователя:', user.role);
-      return res.status(403).json({ error: 'Access denied' });
+
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
+      });
     }
 
     logWithTimestamp('API: Создаем DilovodService...');
     const dilovodService = new DilovodService();
-    
+
     logWithTimestamp('API: Вызываем getBalanceBySkuList...');
     const result = await dilovodService.getBalanceBySkuList();
-    
+
     logWithTimestamp('API: Результат остатков по списку SKU получен:', result);
     res.json(result);
   } catch (error: any) {
@@ -402,20 +411,21 @@ router.post('/test-balance-by-sku', authenticateToken, async (req, res) => {
 router.post('/test-sets-only', authenticateToken, async (req, res) => {
   try {
     logWithTimestamp('=== API: test-sets-only вызван ===');
-    
-    const { user } = req as any;
-    
-    if (!['admin', 'boss'].includes(user.role)) {
-      logWithTimestamp('API: Access denied для пользователя:', user.role);
-      return res.status(403).json({ error: 'Access denied' });
+
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
+      });
     }
 
     logWithTimestamp('API: Создаем DilovodService...');
     const dilovodService = new DilovodService();
-    
+
     logWithTimestamp('API: Вызываем testSetsOnly...');
     const result = await dilovodService.testSetsOnly();
-    
+
     logWithTimestamp('API: Результат только комплектов получен:', result);
     res.json(result);
   } catch (error) {
@@ -429,26 +439,28 @@ router.get('/stock/balance', authenticateToken, async (req, res) => {
   try {
     const { sync = 'false' } = req.query;
     const shouldSync = sync === 'true';
-    
+
     const dilovodService = new DilovodService();
-    
+
     if (shouldSync) {
-      // Проверяем права доступа для синхронизации (только ADMIN и BOSS)
-      const { user } = req as any;
-      if (!['admin', 'boss'].includes(user.role)) {
-        return res.status(403).json({ error: 'Access denied for sync operation' });
-      }
-      
-      // Синхронизируем товары с Dilovod
-      const syncResult = await dilovodService.syncProductsWithDilovod();
-      
-      if (!syncResult.success) {
-        return res.status(500).json({ 
-          error: 'Sync failed', 
-          details: syncResult 
+      // Перевіряємо ролі доступу
+      if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
+        return res.status(403).json({
+          success: false,
+          error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
         });
       }
-      
+
+      // Синхронизируем товары с Dilovod
+      const syncResult = await dilovodService.syncProductsWithDilovod();
+
+      if (!syncResult.success) {
+        return res.status(500).json({
+          error: 'Sync failed',
+          details: syncResult
+        });
+      }
+
       res.json({
         message: 'Sync completed successfully',
         syncResult,
@@ -461,7 +473,7 @@ router.get('/stock/balance', authenticateToken, async (req, res) => {
       const products = await prisma.product.findMany({
         orderBy: { lastSyncAt: 'desc' }
       });
-      
+
       res.json({ products });
     }
   } catch (error) {
