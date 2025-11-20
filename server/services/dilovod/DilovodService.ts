@@ -15,12 +15,13 @@ import {
 import { logWithTimestamp } from './DilovodUtils.js';
 import { syncSettingsService } from '../syncSettingsService.js';
 import { dilovodCacheService } from './DilovodCacheService.js';
+import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
 
 const prisma = new PrismaClient();
 
 export class DilovodService {
   // Goods cache manager
-  public goodsCacheManager = new (require('./DilovodGoodsCacheManager.js').DilovodGoodsCacheManager)();
+  public goodsCacheManager: DilovodGoodsCacheManager;
 
   async getGoodsCacheStatus() {
     return await this.goodsCacheManager.getStatus();
@@ -50,7 +51,8 @@ export class DilovodService {
     this.apiClient = new DilovodApiClient();
     this.cacheManager = new DilovodCacheManager();
     this.dataProcessor = new DilovodDataProcessor(this.apiClient);
-    this.syncManager = new DilovodSyncManager(); 
+    this.syncManager = new DilovodSyncManager();
+    this.goodsCacheManager = new DilovodGoodsCacheManager();
   }
 
   /**
@@ -123,7 +125,7 @@ export class DilovodService {
       // Крок 1: Отримання SKU товарів з WordPress (прямий запит без кешу)
       logWithTimestamp('📋 Крок 1: Отримання SKU товарів з WordPress...');
       const skus = await this.fetchSkusDirectlyFromWordPress();
-      
+
       if (skus.length === 0) {
         logWithTimestamp('❌ Не знайдено SKU товарів для синхронізації');
         return {
@@ -144,7 +146,7 @@ export class DilovodService {
       // Крок 2: Отримання інформації про товари та комплекти з Dilovod
       logWithTimestamp('\n📋 Крок 2: Отримання інформації про товари та комплекти з Dilovod...');
       const dilovodProducts = await this.getGoodsInfoWithSetsOptimized(skus);
-      
+
       if (!dilovodProducts || dilovodProducts.length === 0) {
         logWithTimestamp('❌ Не вдалося отримати дані з Dilovod');
         return {
@@ -157,16 +159,16 @@ export class DilovodService {
       }
 
       logWithTimestamp(`✅ Отримано ${dilovodProducts.length} товарів з Dilovod`);
-      
+
       // Аналізуємо отримані дані
       const productsWithSets = dilovodProducts.filter(p => p.set && p.set.length > 0);
       const regularProducts = dilovodProducts.filter(p => !p.set || p.set.length === 0);
-      
+
       logWithTimestamp(`📊 Аналіз отриманих даних:`);
       logWithTimestamp(`  - Всього товарів: ${dilovodProducts.length}`);
       logWithTimestamp(`  - Комплектів: ${productsWithSets.length}`);
       logWithTimestamp(`  - Звичайних товарів: ${regularProducts.length}`);
-      
+
       if (productsWithSets.length > 0) {
         logWithTimestamp(`🎯 Знайдені комплекти:`);
         productsWithSets.forEach((product, index) => {
@@ -177,15 +179,15 @@ export class DilovodService {
       // Крок 3: Синхронізація з базою даних
       logWithTimestamp('\n📋 Крок 3: Синхронізація з базою даних...');
       const syncResult = await this.syncManager.syncProductsToDatabase(dilovodProducts);
-      
+
       // Крок 4: Позначення застарілих товарів (які є в БД але немає в WordPress)
       logWithTimestamp('\n📋 Крок 4: Позначення застарілих товарів...');
       await this.syncManager.markOutdatedProducts(skus);
-      
+
       logWithTimestamp('\n✅ === СИНХРОНІЗАЦІЯ ЗАВЕРШЕНА ===');
       logWithTimestamp(`Результат: ${syncResult.message}`);
       logWithTimestamp(`Успішно: ${syncResult.success ? 'ТАК' : 'НІ'}`);
-      
+
       return syncResult;
 
     } catch (error) {
@@ -208,22 +210,22 @@ export class DilovodService {
     try {
       logWithTimestamp('Отримуємо інформацію про товари та комплекти з Dilovod...');
       logWithTimestamp('SKU для обробки:', skuList);
-      
+
       // Отримуємо товари з цінами
       const pricesResponse = await this.apiClient.getGoodsWithPrices(skuList);
       logWithTimestamp(`Отримано ${pricesResponse.length} товарів з цінами`);
       logWithTimestamp('RAW pricesResponse (first 2):', Array.isArray(pricesResponse) ? pricesResponse.slice(0, 2) : pricesResponse);
-      
+
       // Отримуємо товари з каталогу для додаткової інформації
       const goodsResponse = await this.apiClient.getGoodsFromCatalog(skuList);
       logWithTimestamp(`Отримано ${goodsResponse.length} товарів з каталогу`);
       logWithTimestamp('RAW goodsResponse (first 2):', Array.isArray(goodsResponse) ? goodsResponse.slice(0, 2) : goodsResponse);
-      
+
       // Обробляємо дані через процесор
       const result = await this.dataProcessor.processGoodsWithSets(pricesResponse, goodsResponse);
-      
+
       return result;
-      
+
     } catch (error) {
       logWithTimestamp('Помилка отримання інформації про товари з комплектами:', error);
       throw error;
@@ -234,7 +236,7 @@ export class DilovodService {
   async getBalanceBySkuList(): Promise<DilovodStockBalance[]> {
     try {
       logWithTimestamp('Отримуємо залишки товарів за списком SKU...');
-      
+
       const skus = await this.fetchSkusDirectlyFromWordPress();
       if (skus.length === 0) {
         return [];
@@ -242,9 +244,9 @@ export class DilovodService {
 
       const stockResponse = await this.apiClient.getStockBalance(skus);
       const processedStock = this.dataProcessor.processStockBalance(stockResponse);
-      
+
       logWithTimestamp(`Оброблено ${processedStock.length} товарів з залишками`);
-      
+
       return processedStock.map(item => ({
         sku: item.sku,
         name: item.name,
@@ -252,7 +254,7 @@ export class DilovodService {
         kyivStorage: item.kyivStorage,
         total: item.total
       }));
-      
+
     } catch (error) {
       logWithTimestamp('Помилка отримання залишків за SKU:', error);
       throw error;
@@ -268,10 +270,10 @@ export class DilovodService {
   }> {
     try {
       logWithTimestamp('\n🔄 === ОНОВЛЕННЯ ЗАЛИШКІВ ТОВАРІВ У БД ===');
-      
+
       // Отримуємо актуальні залишки з Dilovod
       const stockBalances = await this.getBalanceBySkuList();
-      
+
       if (stockBalances.length === 0) {
         return {
           success: false,
@@ -282,7 +284,7 @@ export class DilovodService {
       }
 
       logWithTimestamp(`Отримано ${stockBalances.length} товарів з залишками для оновлення`);
-      
+
       const errors: string[] = [];
       let updatedProducts = 0;
 
@@ -294,7 +296,7 @@ export class DilovodService {
             stockBalance.mainStorage,
             stockBalance.kyivStorage
           );
-          
+
           if (result.success) {
             updatedProducts++;
             logWithTimestamp(`✅ Залишки для ${stockBalance.sku} оновлено: Склад1=${stockBalance.mainStorage}, Склад2=${stockBalance.kyivStorage}`);
@@ -307,11 +309,11 @@ export class DilovodService {
           errors.push(errorMessage);
         }
       }
-      
+
       logWithTimestamp(`\n=== РЕЗУЛЬТАТ ОНОВЛЕННЯ ЗАЛИШКІВ ===`);
       logWithTimestamp(`Оновлено товарів: ${updatedProducts}`);
       logWithTimestamp(`Помилок: ${errors.length}`);
-      
+
       if (errors.length > 0) {
         logWithTimestamp(`Список помилок:`);
         errors.forEach((error, index) => {
@@ -343,9 +345,9 @@ export class DilovodService {
   async testConnection(): Promise<DilovodTestResult> {
     try {
       logWithTimestamp('Тестуємо підключення до Dilovod...');
-      
+
       const isConnected = await this.apiClient.testConnection();
-      
+
       if (isConnected) {
         return {
           success: true,
@@ -369,7 +371,7 @@ export class DilovodService {
   async testSetsOnly(): Promise<DilovodTestResult> {
     try {
       logWithTimestamp('\n🧪 === ТЕСТ ОТРИМАННЯ КОМПЛЕКТІВ ===');
-      
+
       const skus = await this.fetchSkusDirectlyFromWordPress();
       if (skus.length === 0) {
         return {
@@ -379,10 +381,10 @@ export class DilovodService {
       }
 
       logWithTimestamp(`Отримано ${skus.length} SKU для тестування`);
-      
+
       // Отримуємо товари з каталогу
       const response = await this.apiClient.getGoodsFromCatalog(skus);
-      
+
       if (!Array.isArray(response)) {
         return {
           success: false,
@@ -394,19 +396,19 @@ export class DilovodService {
       const setParentId = "1100300000001315";
       const potentialSets = response.filter((item: any) => item.parent === setParentId);
       const regularGoods = response.filter((item: any) => item.parent !== setParentId);
-      
+
       logWithTimestamp(`\n📊 Аналіз відповіді:`);
       logWithTimestamp(`  - Всього товарів: ${response.length}`);
       logWithTimestamp(`  - Потенційних комплектів (parent=${setParentId}): ${potentialSets.length}`);
       logWithTimestamp(`  - Звичайних товарів: ${regularGoods.length}`);
-      
+
       if (potentialSets.length > 0) {
         logWithTimestamp(`\n🎯 Потенційні комплекти:`);
         potentialSets.forEach((item: any, index: number) => {
           logWithTimestamp(`  ${index + 1}. ID: ${item.id}, SKU: ${item.sku}, Назва: ${item.id__pr || 'N/A'}`);
         });
       }
-      
+
       return {
         success: true,
         message: `Тест завершено. Знайдено ${potentialSets.length} потенційних комплектів`,
@@ -417,7 +419,7 @@ export class DilovodService {
           response: response
         }
       };
-      
+
     } catch (error) {
       logWithTimestamp('Помилка тестування комплектів:', error);
       return {
@@ -502,7 +504,7 @@ export class DilovodService {
 
       logWithTimestamp('Підключаємося до бази даних WordPress...');
       logWithTimestamp(`URL підключення: ${process.env.WORDPRESS_DATABASE_URL.replace(/\/\/.*@/, '//***@')}`);
-      
+
       // Створюємо окреме підключення до бази даних WordPress
       const wordpressDb = new PrismaClient({
         datasources: {
@@ -514,7 +516,7 @@ export class DilovodService {
 
       try {
         logWithTimestamp('Виконуємо SQL запит до бази WordPress...');
-        
+
         // Отримуємо SKU товарів
         const products = await wordpressDb.$queryRaw<WordPressProduct[]>`
           SELECT DISTINCT 
@@ -532,7 +534,7 @@ export class DilovodService {
         `;
 
         logWithTimestamp(`SQL запит виконано успішно. Отримано ${products.length} записів з WordPress`);
-        
+
         if (products.length === 0) {
           logWithTimestamp('Попередження: SQL запит повернув 0 записів.');
           return [];
@@ -544,7 +546,7 @@ export class DilovodService {
           .map(product => product.sku.trim());
 
         logWithTimestamp(`Після фільтрації залишилось ${validSkus.length} валідних SKU`);
-        
+
         if (validSkus.length > 0) {
           logWithTimestamp(`Приклади валідних SKU: ${validSkus.slice(0, 5).join(', ')}`);
         }
@@ -556,7 +558,7 @@ export class DilovodService {
         await wordpressDb.$disconnect();
         logWithTimestamp('З\'єднання з базою WordPress закрито');
       }
-      
+
     } catch (error) {
       logWithTimestamp('Помилка отримання SKU з WordPress:', error);
       throw error;
@@ -610,7 +612,7 @@ export class DilovodService {
   }
 
   // ===== МЕТОДИ ДЛЯ НАЛАШТУВАНЬ =====
-  
+
   // Отримання складів з Dilovod (з кешуванням)
   async getStorages(forceRefresh = false): Promise<any[]> {
     try {
@@ -626,10 +628,10 @@ export class DilovodService {
       logWithTimestamp('🔄 [Dilovod] Отримання списку складів з Dilovod API');
       const result = await this.apiClient.getStorages();
       logWithTimestamp(`📦 [Dilovod] Отримано ${result.length} складів з API`);
-      
+
       // Оновлюємо кеш
       await dilovodCacheService.updateCache('storages', result);
-      
+
       return result;
     } catch (error) {
       const errorMessage = `Помилка отримання складів: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
@@ -653,10 +655,10 @@ export class DilovodService {
       logWithTimestamp('🔄 [Dilovod] Отримання списку рахунків з Dilovod API');
       const result = await this.apiClient.getCashAccounts();
       logWithTimestamp(`💰 [Dilovod] Отримано ${result.length} рахунків з API`);
-      
+
       // Оновлюємо кеш
       await dilovodCacheService.updateCache('accounts', result);
-      
+
       return result;
     } catch (error) {
       const errorMessage = `Помилка отримання рахунків: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
@@ -680,10 +682,10 @@ export class DilovodService {
       logWithTimestamp('🔄 [Dilovod] Отримання списку форм оплати з Dilovod API');
       const result = await this.apiClient.getPaymentForms();
       logWithTimestamp(`💳 [Dilovod] Отримано ${result.length} форм оплати з API`);
-      
+
       // Оновлюємо кеш
       await dilovodCacheService.updateCache('paymentForms', result);
-      
+
       return result;
     } catch (error) {
       const errorMessage = `Помилка отримання форм оплати: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
@@ -707,10 +709,10 @@ export class DilovodService {
       logWithTimestamp('🔄 [Dilovod] Отримання списку каналів продажів з Dilovod API');
       const result = await this.apiClient.getTradeChanels();
       logWithTimestamp(`📺 [Dilovod] Отримано ${result.length} каналів продажів з API`);
-      
+
       // Оновлюємо кеш
       await dilovodCacheService.updateCache('tradeChanels', result);
-      
+
       return result;
     } catch (error) {
       const errorMessage = `Помилка отримання каналів продажів: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
@@ -734,10 +736,10 @@ export class DilovodService {
       logWithTimestamp('🔄 [Dilovod] Отримання списку способів доставки з Dilovod API');
       const result = await this.apiClient.getDeliveryMethods();
       logWithTimestamp(`🚚 [Dilovod] Отримано ${result.length} способів доставки з API`);
-      
+
       // Оновлюємо кеш
       await dilovodCacheService.updateCache('deliveryMethods', result);
-      
+
       return result;
     } catch (error) {
       const errorMessage = `Помилка отримання способів доставки: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
@@ -761,10 +763,10 @@ export class DilovodService {
       logWithTimestamp('🔄 [Dilovod] Отримання списку фірм з Dilovod API');
       const result = await this.apiClient.getFirms();
       logWithTimestamp(`🏢 [Dilovod] Отримано ${result.length} фірм з API`);
-      
+
       // Оновлюємо кеш
       await dilovodCacheService.updateCache('firms', result);
-      
+
       return result;
     } catch (error) {
       const errorMessage = `Помилка отримання фірм: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
@@ -786,7 +788,7 @@ export class DilovodService {
     deliveryMethods: number;
   }> {
     logWithTimestamp('🔄 Примусове оновлення всіх довідників Dilovod...');
-    
+
     // Робимо запити ПОСЛІДОВНО через обмеження Dilovod API
     const firms = await this.getFirms(true);
     const accounts = await this.getCashAccounts(true);
@@ -814,13 +816,13 @@ export class DilovodService {
   async findPersonByPhone(phone: string): Promise<{ id: string; name: string; phone: string } | null> {
     try {
       logWithTimestamp(`🔍 [Dilovod] Пошук контрагента за телефоном: ${phone}`);
-      
+
       if (!phone) {
         return null;
       }
 
       const results = await this.apiClient.findPersonByPhone(phone);
-      
+
       if (results.length > 0) {
         const person = results[0]; // Беремо перший знайдений
         logWithTimestamp(`✅ [Dilovod] Контрагент знайдений: ${person.name} (ID: ${person.id})`);
@@ -829,7 +831,7 @@ export class DilovodService {
         logWithTimestamp(`❌ [Dilovod] Контрагент з телефоном ${phone} не знайдений`);
         return null;
       }
-      
+
     } catch (error) {
       const errorMessage = `Помилка пошуку контрагента: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
       logWithTimestamp(errorMessage);
@@ -848,13 +850,13 @@ export class DilovodService {
   }): Promise<{ id: string; code: string }> {
     try {
       logWithTimestamp(`🆕 [Dilovod] Створення контрагента: ${personData.name}, ${personData.phone}`);
-      
+
       const result = await this.apiClient.createPerson(personData);
-      
+
       logWithTimestamp(`✅ [Dilovod] Контрагент створений: ID ${result.id}, код ${result.code}`);
-      
+
       return result;
-      
+
     } catch (error) {
       const errorMessage = `Помилка створення контрагента: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
       logWithTimestamp(errorMessage);
@@ -908,7 +910,7 @@ export class DilovodService {
 
     // Якщо не знайдено - створюємо нового
     logWithTimestamp(`👤 [Dilovod] Контрагент не знайдено, створюємо нового...`);
-    
+
     const newPerson = await this.createPerson({
       name: customerName || 'Невідомий клієнт',
       phone: customerPhone,
@@ -936,17 +938,17 @@ export class DilovodService {
   async findGoodsBySkuList(skuList: string[]): Promise<Map<string, string>> {
     try {
       logWithTimestamp(`🔍 [Dilovod] Пошук товарів за ${skuList.length} SKU...`);
-      
+
       if (skuList.length === 0) {
         return new Map();
       }
 
       // Запит до Dilovod API
       const results = await this.apiClient.findGoodsBySkuList(skuList);
-      
+
       // Створюємо Map для швидкого доступу
       const skuToIdMap = new Map<string, string>();
-      
+
       for (const item of results) {
         if (item.id && item.productNum) {
           skuToIdMap.set(item.productNum, item.id);
@@ -954,7 +956,7 @@ export class DilovodService {
       }
 
       logWithTimestamp(`✅ [Dilovod] Знайдено ${skuToIdMap.size} з ${skuList.length} товарів`);
-      
+
       // Логуємо які SKU не знайдено
       const notFoundSkus = skuList.filter(sku => !skuToIdMap.has(sku));
       if (notFoundSkus.length > 0) {
@@ -962,7 +964,7 @@ export class DilovodService {
       }
 
       return skuToIdMap;
-      
+
     } catch (error) {
       const errorMessage = `Помилка пошуку товарів за SKU: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
       logWithTimestamp(errorMessage);
@@ -973,12 +975,12 @@ export class DilovodService {
   // ===== ЗАКРИТТЯ ВСІХ З'ЄДНАНЬ =====
   async disconnect(): Promise<void> {
     logWithTimestamp('Закриваємо з\'єднання DilovodService...');
-    
+
     await Promise.all([
       this.cacheManager.disconnect(),
       this.syncManager.disconnect()
     ]);
-    
+
     logWithTimestamp('З\'єднання DilovodService закриті');
   }
 }
