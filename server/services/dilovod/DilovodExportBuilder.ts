@@ -21,6 +21,7 @@ import type {
 } from '../../../shared/types/dilovod.js';
 import { getDilovodConfigFromDB } from './DilovodUtils.js';
 import { logWithTimestamp, DilovodService } from './index.js';
+import { orderDatabaseService } from '../orderDatabaseService.js';
 
 
 const prisma = new PrismaClient();
@@ -51,9 +52,9 @@ export class DilovodExportBuilder {
   /**
    * Побудувати payload для документа експорту замовлення (documents.saleOrder)
    */
-  async buildExportPayload(orderId: string, options?: { dryRun?: boolean; allowCreatePerson?: boolean }): Promise<{ 
-    payload: DilovodExportPayload; 
-    warnings: string[] 
+  async buildExportPayload(orderId: string, options?: { dryRun?: boolean; allowCreatePerson?: boolean }): Promise<{
+    payload: DilovodExportPayload;
+    warnings: string[]
   }> {
     logWithTimestamp(`📦 Початок формування payload для замовлення ${orderId}`);
 
@@ -155,7 +156,7 @@ export class DilovodExportBuilder {
       const baseHeaderForSale = { ...baseHeader } as any;
       const FIELDS_TO_REMOVE_FOR_SALE = ['tradeChanel', 'paymentForm', 'cashAccount', 'remarkFromPerson', 'deliveryRemark_forDel', 'number'];
 
-      for (const field of FIELDS_TO_REMOVE_FOR_SALE) {  
+      for (const field of FIELDS_TO_REMOVE_FOR_SALE) {
         if (Object.prototype.hasOwnProperty.call(baseHeaderForSale, field)) {
           logWithTimestamp(`  ⚠️  Видаляємо поле ${field} з header для documents.sale (не підтримується)`);
           delete baseHeaderForSale[field];
@@ -223,58 +224,60 @@ export class DilovodExportBuilder {
     // Визначаємо спосіб доставки через мапінг
     const deliveryMethodId = this.getDeliveryMethodMapping(context);
 
-		// Визначаємо адресу доставки
-		let deliveryAddress = '';
-		if (order.rawData?.shipping_address) {
-			deliveryAddress = order.rawData.shipping_address;
-		} else if (order.rawData?.ord_delivery_data) {
-			// ord_delivery_data може бути масивом, беремо перший елемент
-			const deliveryDataArray = order.rawData.ord_delivery_data;
-			const deliveryData = Array.isArray(deliveryDataArray) ? deliveryDataArray[0] : deliveryDataArray;
-			
-			if (deliveryData) {
-				const cityName = deliveryData.cityName || '';
-				const address = deliveryData.address || '';
-				
-				// Для Nova Poshta використовуємо cityName + address (номер відділення)
-				if (cityName && address) {
-					deliveryAddress = `${cityName}, ${address}`;
-				} else if (cityName) {
-					deliveryAddress = cityName;
-				} else if (address) {
-					deliveryAddress = address;
-				}
-			}
-		}
-		
-		// Якщо адреса все ще пуста, спробуємо використати deliveryAddress з order
-		if (!deliveryAddress && order.deliveryAddress) {
-			deliveryAddress = order.deliveryAddress;
-		}
+    // Визначаємо адресу доставки
+    let deliveryAddress = '';
+    if (order.rawData?.shipping_address) {
+      deliveryAddress = order.rawData.shipping_address;
+    } else if (order.rawData?.ord_delivery_data) {
+      // ord_delivery_data може бути масивом, беремо перший елемент
+      const deliveryDataArray = order.rawData.ord_delivery_data;
+      const deliveryData = Array.isArray(deliveryDataArray) ? deliveryDataArray[0] : deliveryDataArray;
+
+      if (deliveryData) {
+        const cityName = deliveryData.cityName || '';
+        const address = deliveryData.address || '';
+
+        // Для Nova Poshta використовуємо cityName + address (номер відділення)
+        if (cityName && address) {
+          deliveryAddress = `${cityName}, ${address}`;
+        } else if (cityName) {
+          deliveryAddress = cityName;
+        } else if (address) {
+          deliveryAddress = address;
+        }
+      }
+    }
+
+    // Якщо адреса все ще пуста, спробуємо використати deliveryAddress з order
+    if (!deliveryAddress && order.deliveryAddress) {
+      deliveryAddress = order.deliveryAddress;
+    }
 
     // Формуємо дату документа
-    const documentDate = order.orderDate 
+    const documentDate = order.orderDate
       ? new Date(order.orderDate).toISOString().replace('T', ' ').substring(0, 19)
       : new Date().toISOString().replace('T', ' ').substring(0, 19);
 
+    const OrderNumber = await orderDatabaseService.getDisplayOrderNumber(Number(order.id));
+
     const header: DilovodExportHeader = {
-      id: 'documents.saleOrder',                        // Тип документа "Замовлення на продаж"
-      storage: settings.storageId!,                     // Склад
-      date: documentDate,                               // Дата документа
-      person,                                           // Контрагент
-      firm: firmId,                                     // Фірма
-      currency: DILOVOD_CONSTANTS.CURRENCY_UAH,         // Валюта UAH
-      posted: 1,                                        // Провести документ
-      state: { id: DILOVOD_CONSTANTS.STATE_POSTED },    // Статус "Виконано"
-      taxAccount: 1,                                    // Податковий облік
-      tradeChanel: tradeChanel,                         // Канал продажів
-      paymentForm: channelMapping?.paymentForm || '',   // Форма оплати
-      cashAccount: channelMapping?.cashAccount || '',   // Рахунок
-      number: order.orderNumber,                        // Номер замовлення
-      remarkFromPerson: order.rawData?.comment || '',   // Коментар від клієнта
-      business: DILOVOD_CONSTANTS.BUSINESS_PROCESS,     // Вид бізнесу
-      deliveryMethod_forDel: deliveryMethodId,          // Спосіб доставки
-      deliveryRemark_forDel: deliveryAddress            // Адреса доставки
+      id: 'documents.saleOrder',                            // Тип документа "Замовлення на продаж"
+      storage: settings.storageId!,                         // Склад
+      date: documentDate,                                   // Дата документа
+      person,                                               // Контрагент
+      firm: firmId,                                         // Фірма
+      currency: DILOVOD_CONSTANTS.CURRENCY_UAH,             // Валюта UAH
+      posted: 1,                                            // Провести документ
+      state: { id: DILOVOD_CONSTANTS.STATE_POSTED },        // Статус "Виконано"
+      taxAccount: 1,                                        // Податковий облік
+      tradeChanel: tradeChanel,                             // Канал продажів
+      paymentForm: channelMapping?.paymentForm || '',       // Форма оплати
+      cashAccount: channelMapping?.cashAccount || '',       // Рахунок
+      number: OrderNumber,                                  // Номер замовлення (з суфіксом/префіксом)
+      remarkFromPerson: order.rawData?.comment || '',       // Коментар від клієнта
+      business: DILOVOD_CONSTANTS.BUSINESS_PROCESS,         // Вид бізнесу
+      deliveryMethod_forDel: deliveryMethodId,              // Спосіб доставки
+      deliveryRemark_forDel: deliveryAddress                // Адреса доставки
     };
 
     logWithTimestamp(`  ✅ Заголовок сформовано для замовлення #${header.number}`);
@@ -314,8 +317,8 @@ export class DilovodExportBuilder {
 
       // Використовуємо DilovodService для пошуку/створення
       const dilovodService = new DilovodService();
-  const createIfNeeded = !!options?.allowCreatePerson || !options?.dryRun;
-  const person = await dilovodService.findOrCreatePersonFromOrder(customerData, { dryRun: !createIfNeeded });
+      const createIfNeeded = !!options?.allowCreatePerson || !options?.dryRun;
+      const person = await dilovodService.findOrCreatePersonFromOrder(customerData, { dryRun: !createIfNeeded });
 
       const dilovodPerson: DilovodPerson = {
         id: person.id,
@@ -367,7 +370,7 @@ export class DilovodExportBuilder {
         phone: order.customerPhone || '',
         personType: DILOVOD_CONSTANTS.PERSON_TYPE_INDIVIDUAL
       };
-			
+
       logWithTimestamp(`  ⚠️ Використовуємо fallback контрагента: ${fallbackPerson.name}`);
       warnings.push('Використано резервного контрагента (без id/code) через помилку API');
 
@@ -475,12 +478,12 @@ export class DilovodExportBuilder {
     logWithTimestamp(`  ⚙️  Завантаження налаштувань Dilovod...`);
 
     const config = await getDilovodConfigFromDB();
-    
+
     // Отримуємо налаштування з settings_base
     const settingsRecords = await prisma.settingsBase.findMany({
-      where: { 
+      where: {
         category: 'dilovod',
-        isActive: true 
+        isActive: true
       }
     });
 
@@ -526,7 +529,7 @@ export class DilovodExportBuilder {
 
     try {
       const dilovodService = new DilovodService();
-      
+
       // Dilovod API блокує паралельні запити ('multithreadApiSession multithread api request blocked')
       // Тому робимо запити послідовно, як в UI роуті
       const cashAccounts = await dilovodService.getCashAccounts();
@@ -590,7 +593,7 @@ export class DilovodExportBuilder {
     // Отримуємо зрозумілі назви
     const channelName = this.getChannelDisplayName(order.sajt);
     const paymentMethodName = await this.getPaymentMethodDisplayName(order.rawData?.payment_method);
-    
+
     // 1. Комплексна перевірка мапінгу методу оплати
     const paymentMethodId = order.rawData?.payment_method;
     if (paymentMethodId && !channelMapping) {
@@ -605,7 +608,7 @@ export class DilovodExportBuilder {
       if (!channelMapping.paymentForm) {
         missingFields.push('форму оплати');
       }
-      
+
       if (missingFields.length > 0) {
         criticalErrors.push(`Неповний мапінг для "${paymentMethodName}" в каналі "${channelName}". Не вказано: ${missingFields.join(', ')}.`);
       } else {
@@ -652,7 +655,7 @@ export class DilovodExportBuilder {
     // Не додаємо попередження, бо вони уже обробляються вище
 
     const isValid = criticalErrors.length === 0;
-    
+
     if (!isValid) {
       logWithTimestamp(`  ❌ Критичні помилки валідації (${criticalErrors.length}):`);
       criticalErrors.forEach((error, index) => {
@@ -711,6 +714,37 @@ export class DilovodExportBuilder {
     return '';
   }
 
+
+  /**
+   * Отримати номер замовлення з префіксом/суфіксом для каналу
+   * 
+   * @param order Об'єкт замовлення
+   * @param settings Налаштування Dilovod
+   * @returns Відформатований номер замовлення з префіксом/суфіксом (якщо налаштовано)
+   */
+  private getDisplayOrderNumber(order: any, settings: DilovodSettings): string {
+    const baseOrderNumber = order.orderNumber || '';
+
+    // Отримуємо ID каналу з замовлення
+    const channelId = order.sajt;
+    if (!channelId) {
+      return baseOrderNumber;
+    }
+
+    // Отримуємо налаштування каналу з channelPaymentMapping
+    const channelSettings = settings.channelPaymentMapping?.[channelId];
+    if (!channelSettings) {
+      return baseOrderNumber;
+    }
+
+    // Формуємо номер з префіксом та суфіксом
+    const prefix = channelSettings.prefixOrder || '';
+    const suffix = channelSettings.sufixOrder || '';
+
+    return `${prefix}${baseOrderNumber}${suffix}`;
+  }
+
+
   /**
    * Визначити фірму для документа
    * Пріоритет:
@@ -718,7 +752,7 @@ export class DilovodExportBuilder {
    * 2. Фірма за замовчуванням з налаштувань
    */
   private async determineFirmId(
-    context: ExportBuildContext, 
+    context: ExportBuildContext,
     channelMapping: DilovodChannelMapping | null
   ): Promise<string> {
     const { settings, directories, warnings } = context;
@@ -733,7 +767,7 @@ export class DilovodExportBuilder {
     if (channelMapping?.cashAccount && directories?.cashAccounts) {
       logWithTimestamp(`  📊 Шукаємо рахунок: ${channelMapping.cashAccount}`);
       const account = directories.cashAccounts.find(acc => acc.id === channelMapping.cashAccount);
-      
+
       if (!account) {
         const accountDisplayName = this.getAccountDisplayName(channelMapping.cashAccount, directories);
         warnings.push(`Рахунок "${accountDisplayName}" не знайдено в довідниках Dilovod. Використовується фірма за замовчуванням.`);
@@ -741,16 +775,16 @@ export class DilovodExportBuilder {
       } else {
         logWithTimestamp(`  ✅ Рахунок знайдено: ${account.name}, owner=${account.owner}`);
       }
-      
+
       if (account?.owner) {
         // Перевіряємо чи існує така фірма в довідниках
         logWithTimestamp(`  🔍 Шукаємо фірму-власника: ${account.owner}`);
         logWithTimestamp(`  📋 Всього фірм у довідниках: ${directories.firms?.length || 0}`);
-        
+
         if (directories.firms && directories.firms.length > 0) {
           logWithTimestamp(`  📋 Перші 3 фірми: ${directories.firms.slice(0, 3).map(f => `${f.name} (${f.id})`).join(', ')}`);
         }
-        
+
         const firm = directories.firms?.find(f => f.id === account.owner);
         if (firm) {
           logWithTimestamp(`  🏢 Фірма визначена за рахунком: ${firm.name} (${account.owner})`);
@@ -799,11 +833,11 @@ export class DilovodExportBuilder {
     if (order.rawData?.ord_delivery_data) {
       const deliveryDataArray = order.rawData.ord_delivery_data;
       const deliveryData = Array.isArray(deliveryDataArray) ? deliveryDataArray[0] : deliveryDataArray;
-      
+
       if (deliveryData) {
         const cityName = deliveryData.cityName || '';
         const address = deliveryData.address || '';
-        
+
         if (cityName && address) {
           return `${cityName}, ${address}`;
         } else if (cityName) {
@@ -836,7 +870,7 @@ export class DilovodExportBuilder {
 
     const channelId = order.sajt;
     const channelName = this.getChannelDisplayName(channelId);
-    
+
     if (!channelId) {
       warnings.push('Канал продажів не вказано в замовленні');
       return null;
@@ -850,22 +884,22 @@ export class DilovodExportBuilder {
 
     // Отримуємо ID методу оплати з rawData (числовий ID з SalesDrive API)
     let paymentMethodId: number | undefined;
-    
+
     try {
       const rawData = typeof order.rawData === 'string' ? JSON.parse(order.rawData) : order.rawData;
       paymentMethodId = rawData?.payment_method;
     } catch (error) {
       warnings.push(`Помилка парсингу rawData для отримання payment_method: ${error instanceof Error ? error.message : String(error)}`);
     }
-    
+
     const paymentMethodName = await this.getPaymentMethodDisplayName(paymentMethodId);
-    
+
     if (!paymentMethodId) {
       warnings.push(`Метод оплати не вказано в замовленні з каналу "${channelName}"`);
       return null;
     }
 
-    const mapping = channelSettings.mappings?.find(m => 
+    const mapping = channelSettings.mappings?.find(m =>
       m.salesDrivePaymentMethod === paymentMethodId
     );
 
@@ -877,11 +911,11 @@ export class DilovodExportBuilder {
     // Перевірка наявності обов'язкових полів
     const channelDisplayName = this.getChannelDisplayName(channelId);
     const paymentMethodDisplayName = await this.getPaymentMethodDisplayName(paymentMethodId);
-    
+
     if (!mapping.paymentForm) {
       warnings.push(`Форма оплати не вказана в мапінгу для каналу "${channelDisplayName}", метод "${paymentMethodDisplayName}"`);
     }
-    
+
     if (!mapping.cashAccount) {
       warnings.push(`Рахунок не вказаний в мапінгу для каналу "${channelDisplayName}", метод "${paymentMethodDisplayName}"`);
     }
@@ -921,8 +955,8 @@ export class DilovodExportBuilder {
     }
 
     // Знаходимо мапінг, який містить наш shippingMethod
-    const mapping = deliveryMappings.find(m => 
-      m.salesDriveShippingMethods && 
+    const mapping = deliveryMappings.find(m =>
+      m.salesDriveShippingMethods &&
       m.salesDriveShippingMethods.includes(shippingMethod)
     );
 
@@ -956,7 +990,7 @@ export class DilovodExportBuilder {
   private getChannelDisplayName(channelId: string): string {
     const channelNames: { [key: string]: string } = {
       '19': 'NK Food Shop (сайт)',
-			'22': 'Rozetka (Сергій)',
+      '22': 'Rozetka (Сергій)',
       '24': 'prom (old)',
       '28': 'prom',
       '31': 'інше (менеджер)',
@@ -983,7 +1017,7 @@ export class DilovodExportBuilder {
       const { salesDriveService } = await import('../salesDriveService.js');
       const paymentMethods = await salesDriveService.fetchPaymentMethods();
       const method = paymentMethods.find(m => m.id === paymentMethodId);
-      
+
       if (method) {
         return `${method.name} (ID: ${paymentMethodId})`;
       }

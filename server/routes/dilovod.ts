@@ -903,7 +903,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
     }
 
     const { orderId } = req.params;
-    const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
+    const orderNum = await orderDatabaseService.getDisplayOrderNumber(Number(orderId));
 
     // Перевірка наявності локального запису (dilovodDocId)
     const existingOrder = await prisma.order.findUnique({

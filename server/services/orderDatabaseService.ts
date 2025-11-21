@@ -166,27 +166,27 @@ export class OrderDatabaseService {
     try {
       const order = await prisma.order.create({
         data: {
-          id:               data.id,
-          externalId:       data.externalId,
-          ttn:              data.ttn,
-          quantity:         data.quantity,
-          status:           data.status,
-          items:            JSON.stringify(data.items),
-          rawData:          JSON.stringify(data.rawData),
-          cityName:         data.cityName,
-          customerName:     data.customerName,
-          customerPhone:    data.customerPhone,
-          deliveryAddress:  data.deliveryAddress,
-          orderDate:        data.orderDate,
-          orderNumber:      data.orderNumber,
-          paymentMethod:    data.paymentMethod,
-          provider:         data.provider,
-          shippingMethod:   data.shippingMethod,
-          statusText:       data.statusText,
-          totalPrice:       data.totalPrice,
-          pricinaZnizki:    data.pricinaZnizki,
-          sajt:             data.sajt,
-          updatedAt:        data.rawData?.updateAt ? new Date(data.rawData.updateAt) : new Date()
+          id: data.id,
+          externalId: data.externalId,
+          ttn: data.ttn,
+          quantity: data.quantity,
+          status: data.status,
+          items: JSON.stringify(data.items),
+          rawData: JSON.stringify(data.rawData),
+          cityName: data.cityName,
+          customerName: data.customerName,
+          customerPhone: data.customerPhone,
+          deliveryAddress: data.deliveryAddress,
+          orderDate: data.orderDate,
+          orderNumber: data.orderNumber,
+          paymentMethod: data.paymentMethod,
+          provider: data.provider,
+          shippingMethod: data.shippingMethod,
+          statusText: data.statusText,
+          totalPrice: data.totalPrice,
+          pricinaZnizki: data.pricinaZnizki,
+          sajt: data.sajt,
+          updatedAt: data.rawData?.updateAt ? new Date(data.rawData.updateAt) : new Date()
         }
       });
 
@@ -359,6 +359,73 @@ export class OrderDatabaseService {
     }
   }
 
+  /**
+   * Отримуємо номер замовлення з префіксом/суфіксом з налаштувань каналу
+   */
+  async getDisplayOrderNumber(orderId: number): Promise<string | null> {
+    try {
+      // 1. Отримуємо замовлення з БД
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        select: {
+          orderNumber: true,
+          sajt: true
+        }
+      });
+
+      if (!order) {
+        console.error(`❌ Order with ID ${orderId} not found`);
+        return null;
+      }
+
+      const baseOrderNumber = order.orderNumber || '';
+
+      // 2. Якщо немає каналу (sajt), повертаємо базовий номер
+      const channelId = order.sajt;
+      if (!channelId) {
+        return baseOrderNumber;
+      }
+
+      // 3. Завантажуємо налаштування Dilovod з БД
+      const settingsRecords = await prisma.settingsBase.findMany({
+        where: {
+          category: 'dilovod',
+          key: 'dilovod_channel_payment_mapping',
+          isActive: true
+        }
+      });
+
+      if (settingsRecords.length === 0) {
+        return baseOrderNumber;
+      }
+
+      // 4. Парсимо налаштування каналів
+      const settingsValue = settingsRecords[0].value;
+      let channelPaymentMapping: any = {};
+
+      try {
+        channelPaymentMapping = JSON.parse(settingsValue || '{}');
+      } catch (error) {
+        console.error('❌ Error parsing channel payment mapping:', error);
+        return baseOrderNumber;
+      }
+
+      // 5. Отримуємо налаштування для конкретного каналу
+      const channelSettings = channelPaymentMapping[channelId];
+      if (!channelSettings) {
+        return baseOrderNumber;
+      }
+
+      // 6. Формуємо номер з префіксом та суфіксом
+      const prefix = channelSettings.prefixOrder || '';
+      const suffix = channelSettings.sufixOrder || '';
+
+      return `${prefix}${baseOrderNumber}${suffix}`;
+    } catch (error) {
+      console.error(`❌ Error getting display order number for orderId ${orderId}:`, error);
+      return null;
+    }
+  }
 
   /**
    * Отримуємо лічильники замовлень за статусами для вкладок
@@ -665,7 +732,7 @@ export class OrderDatabaseService {
     try {
       return await prisma.order.findFirst({
         orderBy: { lastSynced: 'desc' },
-        select: { 
+        select: {
           lastSynced: true,
           syncStatus: true,
           syncError: true
@@ -756,7 +823,7 @@ export class OrderDatabaseService {
   }>) {
     try {
       console.log(`📝 Starting batch creation of ${ordersData.length} orders...`);
-      
+
       const createdOrders = [];
       const historyRecords = [];
 
@@ -768,29 +835,29 @@ export class OrderDatabaseService {
           // Создаем заказ
           const order = await prisma.order.create({
             data: {
-              id:                orderData.id,
-              externalId:        orderData.externalId,
-              orderNumber:       orderData.orderNumber,
-              ttn:               orderData.ttn,
-              quantity:          actualQuantity,
-              status:            orderData.status,
-              statusText:        orderData.statusText,
-              items:             JSON.stringify(orderData.items),
-              rawData:           JSON.stringify(orderData.rawData),
-              customerName:      orderData.customerName,
-              customerPhone:     orderData.customerPhone,
-              deliveryAddress:   orderData.deliveryAddress,
-              totalPrice:        orderData.totalPrice,
-              orderDate:         orderData.orderDate ? new Date(orderData.orderDate).toISOString() : null,
-              shippingMethod:    orderData.shippingMethod,
-              paymentMethod:     orderData.paymentMethod,
-              cityName:          orderData.cityName,
-              provider:          orderData.provider,
-              pricinaZnizki:     orderData.pricinaZnizki,
-              sajt:              orderData.sajt,
-              lastSynced:        new Date(),
-              syncStatus:        'success',
-              updatedAt:         orderData.rawData?.updateAt ? new Date(orderData.rawData.updateAt) : new Date()
+              id: orderData.id,
+              externalId: orderData.externalId,
+              orderNumber: orderData.orderNumber,
+              ttn: orderData.ttn,
+              quantity: actualQuantity,
+              status: orderData.status,
+              statusText: orderData.statusText,
+              items: JSON.stringify(orderData.items),
+              rawData: JSON.stringify(orderData.rawData),
+              customerName: orderData.customerName,
+              customerPhone: orderData.customerPhone,
+              deliveryAddress: orderData.deliveryAddress,
+              totalPrice: orderData.totalPrice,
+              orderDate: orderData.orderDate ? new Date(orderData.orderDate).toISOString() : null,
+              shippingMethod: orderData.shippingMethod,
+              paymentMethod: orderData.paymentMethod,
+              cityName: orderData.cityName,
+              provider: orderData.provider,
+              pricinaZnizki: orderData.pricinaZnizki,
+              sajt: orderData.sajt,
+              lastSynced: new Date(),
+              syncStatus: 'success',
+              updatedAt: orderData.rawData?.updateAt ? new Date(orderData.rawData.updateAt) : new Date()
             }
           });
 
@@ -895,7 +962,7 @@ export class OrderDatabaseService {
       // Обрабатываем батчи с контролем параллельности
       for (let i = 0; i < batches.length; i += concurrency) {
         const batchSlice = batches.slice(i, i + concurrency);
-        console.log(`🔄 Processing batch group ${Math.floor(i/concurrency) + 1}/${Math.ceil(batches.length/concurrency)} (${batchSlice.length} batches)`);
+        console.log(`🔄 Processing batch group ${Math.floor(i / concurrency) + 1}/${Math.ceil(batches.length / concurrency)} (${batchSlice.length} batches)`);
 
         const batchPromises = batchSlice.map(async (batch, batchIndex) => {
           try {
@@ -1111,7 +1178,7 @@ export class OrderDatabaseService {
   async getOrdersSinceLastSync(limit: number = 100) {
     try {
       const lastSyncedOrder = await this.getLastSyncedOrder();
-      
+
       if (!lastSyncedOrder?.lastSynced) {
         // Если нет последней синхронизации, возвращаем все заказы
         return this.getOrders({ limit });
@@ -1216,7 +1283,7 @@ export class OrderDatabaseService {
           if (field === 'orderDate') {
             const oldDate = oldValue ? new Date(oldValue).toISOString() : null;
             const newDate = newValue ? new Date(newValue).toISOString() : null;
-            
+
             if (oldDate !== newDate) {
               changes[field] = newValue;
               previousValues[field] = oldValue;
@@ -1291,7 +1358,7 @@ export class OrderDatabaseService {
         'lastSynced', 'syncStatus', 'syncError',
         'pricinaZnizki', 'sajt', 'updatedAt'  // ✅ ДОБАВИТЬ НОВЫЕ ПОЛЯ
       ];
-      
+
       Object.keys(updateData).forEach(key => {
         if (!allowedFields.includes(key)) {
           console.warn(`⚠️ Removing unknown field '${key}' from order update data`);
@@ -1317,7 +1384,7 @@ export class OrderDatabaseService {
       }
 
       console.log(`✅ Order ${externalId} updated: ${changedFields.join(', ')}`);
-      
+
       return {
         updated: true,
         changedFields,
@@ -1377,7 +1444,7 @@ export class OrderDatabaseService {
       // Обрабатываем батчи с контролем параллельности
       for (let i = 0; i < batches.length; i += concurrency) {
         const batchSlice = batches.slice(i, i + concurrency);
-        console.log(`🔄 Processing smart batch group ${Math.floor(i/concurrency) + 1}/${Math.ceil(batches.length/concurrency)} (${batchSlice.length} batches)`);
+        console.log(`🔄 Processing smart batch group ${Math.floor(i / concurrency) + 1}/${Math.ceil(batches.length / concurrency)} (${batchSlice.length} batches)`);
 
         // Детальное логирование для отладки
         console.log(`🔍 [DEBUG] Batch slice contains ${batchSlice.length} batches`);
@@ -1682,10 +1749,10 @@ export class OrderDatabaseService {
   async getOrdersStats() {
     try {
       console.log('📊 Getting orders statistics from local database...');
-      
+
       // Получаем общее количество заказов
       const totalOrders = await prisma.order.count();
-      
+
       // Получаем количество заказов по каждому статусу
       const stats = await prisma.order.groupBy({
         by: ['status'],
@@ -1693,13 +1760,13 @@ export class OrderDatabaseService {
           status: true
         }
       });
-      
+
       // Создаем объект статистики
       const statsMap = new Map();
       stats.forEach(stat => {
         statsMap.set(stat.status, stat._count.status);
       });
-      
+
       const result = {
         total: totalOrders,
         new: statsMap.get('1') || 0,
@@ -1711,10 +1778,10 @@ export class OrderDatabaseService {
         returned: statsMap.get('7') || 0,
         deleted: statsMap.get('8') || 0
       };
-      
+
       console.log(`✅ Statistics retrieved: ${totalOrders} total orders`);
       return result;
-      
+
     } catch (error) {
       console.error('❌ Error getting orders statistics:', error);
       throw error;
@@ -1837,7 +1904,7 @@ export class OrderDatabaseService {
                   if (component) {
                     const componentSku = component.sku;
                     const totalQuantity = item.quantity * setItem.quantity;
-                    
+
                     if (productStats[componentSku]) {
                       productStats[componentSku] += totalQuantity;
                     } else {
@@ -2067,7 +2134,7 @@ export class OrderDatabaseService {
       console.error(`❌ Error updating cache for order ${externalId}:`, error);
       return false;
     }
- }
+  }
   /**
    * Force обновление заказов (всегда обновляет, без проверки изменений)
    * Используется для ручной синхронизации, когда нужно пересинхронизировать все заказы
