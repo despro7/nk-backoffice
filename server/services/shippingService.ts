@@ -1,6 +1,6 @@
 export interface ShippingProvider {
   name: string;
-  apiKey: string;
+  apiKey?: string;
   baseUrl?: string;
   bearerToken?: string;
   counterpartyToken?: string;
@@ -10,6 +10,7 @@ export interface ShippingProvider {
 export interface PrintTTNRequest {
   ttn: string;
   provider: 'novaposhta' | 'ukrposhta';
+  senderId: number;
   format?: 'pdf' | 'html' | 'png' | 'zpl';
 }
 
@@ -52,62 +53,43 @@ export class ShippingService {
 
     this.providers.ukrposhta = {
       name: 'Укрпошта',
-      apiKey: process.env.UKR_POSHTA_API_KEY || '',
       bearerToken: process.env.UKR_POSHTA_BEARER_ECOM || '',
       counterpartyToken: process.env.UKR_POSHTA_COUNTERPARTY_TOKEN || '',
       statusBearerToken: process.env.UKR_POSHTA_BEARER_STATUS || ''
     };
   }
 
-  /**
-   * Завантажує активний провайдер з БД
-   */
-  private async loadActiveProvider(): Promise<ShippingProvider | null> {
-    try {
-      const { shippingProviderService } = await import('./shippingProviderService.js');
-      const activeProvider = await shippingProviderService.getActiveProvider();
-      
-      if (!activeProvider) {
-        return null;
-      }
-
-      // Конвертуємо з БД в формат для API
-      const provider: ShippingProvider = {
-        name: activeProvider.name,
-        apiKey: activeProvider.apiKey || '',
-        baseUrl: activeProvider.providerType === 'novaposhta' 
-          ? 'https://api.novaposhta.ua/v2.0/json/' 
-          : undefined,
-        bearerToken: activeProvider.bearerEcom || '',
-        counterpartyToken: activeProvider.counterpartyToken || '',
-        statusBearerToken: activeProvider.bearerStatus || ''
-      };
-
-      return provider;
-    } catch (error) {
-      console.error('Помилка завантаження активного провайдера з БД:', error);
-      return null;
-    }
-  }
-
   async printTTN(request: PrintTTNRequest): Promise<PrintTTNResponse> {
     try {
-      // Спочатку намагаємося використати активний провайдер з БД
-      const activeProvider = await this.loadActiveProvider();
-      
-      let provider: ShippingProvider;
-      let providerType = request.provider;
+      // Завантажуємо провайдер з БД за senderId
+      const { shippingProviderService } = await import('./shippingProviderService.js');
+      const dbProvider = await shippingProviderService.getProviderBySenderId(request.senderId, request.provider);
 
-      if (activeProvider) {
-        // Використовуємо активний провайдер з БД
-        provider = activeProvider;
-        providerType = activeProvider.name.includes('Нова Пошта') ? 'novaposhta' : 'ukrposhta';
+      let provider: ShippingProvider;
+      let providerType: 'novaposhta' | 'ukrposhta';
+
+      if (dbProvider) {
+        // Використовуємо провайдер з БД
+        provider = {
+          name: dbProvider.name,
+          apiKey: dbProvider.apiKey || '',
+          baseUrl: dbProvider.providerType === 'novaposhta'
+            ? 'https://api.novaposhta.ua/v2.0/json/'
+            : undefined,
+          bearerToken: dbProvider.bearerEcom || '',
+          counterpartyToken: dbProvider.counterpartyToken || '',
+          statusBearerToken: dbProvider.bearerStatus || ''
+        };
+        providerType = dbProvider.providerType;
+        console.log(`🔍 [ShippingService] Використовуємо провайдер з БД (senderId: ${request.senderId}): ${dbProvider.name}`);
       } else {
         // Fallback до env змінних
         provider = this.providers[request.provider];
+        providerType = request.provider;
         if (!provider) {
           throw new Error(`Провайдер ${request.provider} не настроен`);
         }
+        console.log(`🔍 [ShippingService] Fallback до env змінних для провайдера: ${request.provider}`);
       }
 
       if (providerType === 'novaposhta') {
@@ -223,7 +205,7 @@ export class ShippingService {
           try {
             const errorJson = JSON.parse(errorBody);
             errorText += ` - ${errorJson.message || JSON.stringify(errorJson)}`;
-          } catch(e) {
+          } catch (e) {
             errorText += ` - ${errorBody}`;
           }
         } catch (e) {
@@ -251,7 +233,7 @@ export class ShippingService {
   async getTTNStatus(ttn: string, provider: 'novaposhta' | 'ukrposhta'): Promise<any> {
     try {
       const providerConfig = this.providers[provider];
-      
+
       if (!providerConfig) {
         throw new Error(`Провайдер ${provider} не настроен`);
       }

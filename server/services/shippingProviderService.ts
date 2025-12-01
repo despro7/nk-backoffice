@@ -4,6 +4,7 @@ export interface CreateShippingProviderRequest {
   name: string;
   providerType: 'novaposhta' | 'ukrposhta';
   senderName: string;
+  senderId: number;
   isActive?: boolean;
   order?: number;
   apiKey?: string;
@@ -21,6 +22,7 @@ export interface ShippingProvider {
   name: string;
   providerType: 'novaposhta' | 'ukrposhta';
   senderName: string;
+  senderId?: number;
   isActive: boolean;
   order: number;
   apiKey?: string;
@@ -46,7 +48,7 @@ class ShippingProviderService {
         { senderName: 'asc' }
       ]
     });
-    
+
     return providers.map(provider => ({
       ...provider,
       providerType: provider.providerType as 'novaposhta' | 'ukrposhta'
@@ -57,9 +59,9 @@ class ShippingProviderService {
     const provider = await this.prisma.shippingProvider.findUnique({
       where: { id }
     });
-    
+
     if (!provider) return null;
-    
+
     return {
       ...provider,
       providerType: provider.providerType as 'novaposhta' | 'ukrposhta'
@@ -70,9 +72,22 @@ class ShippingProviderService {
     const provider = await this.prisma.shippingProvider.findFirst({
       where: { isActive: true }
     });
-    
+
     if (!provider) return null;
-    
+
+    return {
+      ...provider,
+      providerType: provider.providerType as 'novaposhta' | 'ukrposhta'
+    };
+  }
+
+  async getProviderBySenderId(senderId: number, providerType: 'novaposhta' | 'ukrposhta'): Promise<ShippingProvider | null> {
+    const provider = await this.prisma.shippingProvider.findFirst({
+      where: { senderId, providerType }
+    });
+
+    if (!provider) return null;
+
     return {
       ...provider,
       providerType: provider.providerType as 'novaposhta' | 'ukrposhta'
@@ -96,6 +111,7 @@ class ShippingProviderService {
         name: data.name,
         providerType: data.providerType,
         senderName: data.senderName,
+        senderId: data.senderId,
         isActive: data.isActive || false,
         order: data.order || nextOrder,
         apiKey: data.apiKey,
@@ -104,7 +120,7 @@ class ShippingProviderService {
         bearerStatus: data.bearerStatus
       }
     });
-    
+
     return {
       ...provider,
       providerType: provider.providerType as 'novaposhta' | 'ukrposhta'
@@ -128,7 +144,7 @@ class ShippingProviderService {
       where: { id },
       data: updateData
     });
-    
+
     return {
       ...provider,
       providerType: provider.providerType as 'novaposhta' | 'ukrposhta'
@@ -146,7 +162,7 @@ class ShippingProviderService {
     const provider = await this.prisma.shippingProvider.findUnique({
       where: { id }
     });
-    
+
     if (!provider) {
       throw new Error('Провайдер не знайдено');
     }
@@ -159,7 +175,7 @@ class ShippingProviderService {
       where: { id },
       data: { isActive: true }
     });
-    
+
     return {
       ...updatedProvider,
       providerType: updatedProvider.providerType as 'novaposhta' | 'ukrposhta'
@@ -173,10 +189,10 @@ class ShippingProviderService {
         throw new Error(`Невалідні дані провайдера: id=${provider.id}, order=${provider.order}`);
       }
     }
-    
+
     // Оновлюємо порядок для всіх провайдерів
     await Promise.all(
-      providers.map(provider => 
+      providers.map(provider =>
         this.prisma.shippingProvider.update({
           where: { id: provider.id },
           data: { order: provider.order }

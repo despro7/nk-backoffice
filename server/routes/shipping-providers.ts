@@ -50,12 +50,12 @@ router.get('/active', authenticateToken, async (req, res) => {
  */
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { name, providerType, senderName, isActive, apiKey, bearerEcom, counterpartyToken, bearerStatus } = req.body;
+    const { name, providerType, senderName, senderId, isActive, apiKey, bearerEcom, counterpartyToken, bearerStatus } = req.body;
 
-    if (!name || !providerType || !senderName) {
+    if (!name || !providerType || !senderName || !senderId) {
       return res.status(400).json({
         success: false,
-        error: 'Необхідно вказати name, providerType та senderName'
+        error: 'Необхідно вказати name, providerType, senderName та senderId'
       });
     }
 
@@ -70,6 +70,7 @@ router.post('/', authenticateToken, async (req, res) => {
       name,
       providerType,
       senderName,
+      senderId,
       isActive: isActive || false,
       apiKey,
       bearerEcom,
@@ -128,7 +129,7 @@ router.put('/order', authenticateToken, async (req, res) => {
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, providerType, senderName, isActive, apiKey, bearerEcom, counterpartyToken, bearerStatus } = req.body;
+    const { name, providerType, senderName, senderId, isActive, apiKey, bearerEcom, counterpartyToken, bearerStatus } = req.body;
 
     if (isNaN(id)) {
       return res.status(400).json({
@@ -149,6 +150,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       name,
       providerType,
       senderName,
+      senderId,
       isActive,
       apiKey,
       bearerEcom,

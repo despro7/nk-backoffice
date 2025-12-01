@@ -1115,9 +1115,9 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (re
     }
 
     const { orderId } = req.params;
-    const orderNumber = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
+    const orderNum = await orderDatabaseService.getDisplayOrderNumber(Number(orderId));
 
-    logWithTimestamp(`=== API: Валідація замовлення #${orderNumber} (id: ${orderId}) для експорту в Dilovod ===`, undefined, true);
+    logWithTimestamp(`=== API: Валідація замовлення #${orderNum} (id: ${orderId}) для експорту в Dilovod ===`, undefined, true);
 
     // Імпортуємо DilovodExportBuilder
     const { dilovodExportBuilder } = await import('../services/dilovod/DilovodExportBuilder.js');
@@ -1132,7 +1132,7 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (re
       const { payloadCacheService } = await import('../services/dilovod/PayloadCacheService.js');
       const token = payloadCacheService.save({ payload, warnings }, 600); // default 10 min
 
-      logWithTimestamp(`✅ Валідація замовлення #${orderNumber} (id: ${orderId}) пройдена успішно`);
+      logWithTimestamp(`✅ Валідація замовлення #${orderNum} (id: ${orderId}) пройдена успішно`);
 
       // Валідація успішна
       res.json({
@@ -1157,7 +1157,7 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (re
 
       // Якщо це критична помилка валідації
       if (errorMessage.includes('Експорт заблоковано через критичні помилки:')) {
-        logWithTimestamp(`❌ Валідація замовлення #${orderNumber} (id: ${orderId}) не пройдена`);
+        logWithTimestamp(`❌ Валідація замовлення #${orderNum} (id: ${orderId}) не пройдена`);
 
         return res.status(200).json({
           success: false,
@@ -1204,7 +1204,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
     }
 
     const { orderId } = req.params;
-    const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
+    const orderNum = await orderDatabaseService.getDisplayOrderNumber(Number(orderId));
 
     logWithTimestamp(`=== API: Створення документа відвантаження для замовлення #${orderNum} (id: ${orderId}) в Dilovod ===`, undefined, true);
 

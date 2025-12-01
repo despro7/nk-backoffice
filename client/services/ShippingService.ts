@@ -5,6 +5,7 @@ import { useEquipmentFromAuth } from '../contexts/AuthContext';
 export interface PrintTTNRequest {
   ttn: string;
   provider?: 'novaposhta' | 'ukrposhta'; // Тепер опціональний, якщо не вказано - використовується активний
+  senderId?: number;
   format?: 'pdf' | 'html' | 'png' | 'zpl';
   printerName?: string;
 }
@@ -25,7 +26,9 @@ export class ShippingClientService {
     try {
       const response = await fetch('/api/shipping-providers/active');
       const result = await response.json();
-      
+
+      // console.log(`🔍 [ShippingService] Запит на отримання активного провайдера: ${JSON.stringify(result)}`);
+
       if (result.success && result.data) {
         return { provider: result.data.providerType };
       }
@@ -45,14 +48,16 @@ export class ShippingClientService {
         if (activeProvider) {
           finalRequest.provider = activeProvider.provider;
         } else {
-          ToastService.show({ 
-            title: 'Помилка', 
-            description: 'Не знайдено активного провайдера доставки. Налаштуйте провайдера в налаштуваннях.', 
-            color: 'danger' 
+          ToastService.show({
+            title: 'Помилка',
+            description: 'Не знайдено активного провайдера доставки. Налаштуйте провайдера в налаштуваннях.',
+            color: 'danger'
           });
           return;
         }
       }
+
+      console.log(`🔍 [ShippingService] Запит на друк ТТН: ${JSON.stringify(finalRequest)}`);
 
       const response = await fetch('/api/shipping/print-ttn', {
         method: 'POST',
@@ -61,7 +66,7 @@ export class ShippingClientService {
         },
         body: JSON.stringify(finalRequest),
       });
-  
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Не вдалося отримати дані для друку');
@@ -81,12 +86,12 @@ export class ShippingClientService {
         // Спробуємо розшифрувати BASE64 якщо це можливо
         const decodedError = this.tryDecodeBase64Error(result.data);
         // console.error('Invalid PDF data received:', result.data);
-        
+
         let errorMessage = 'Отримані дані не є валідним PDF файлом. Можливо, сервер повернув помилку.';
-        
+
         if (decodedError) {
           console.error('Decoded error data:', decodedError);
-          
+
           // Формуємо більш детальне повідомлення про помилку
           if (decodedError.errors && Array.isArray(decodedError.errors)) {
             errorMessage = `Помилка сервера: ${decodedError.errors.join(', ')}${decodedError.errorCodes ? `, коди помилок: ${decodedError.errorCodes.join(', ')}` : decodedError.error}`;
@@ -96,11 +101,11 @@ export class ShippingClientService {
             errorMessage = `Помилка сервера: ${decodedError.message}`;
           }
         }
-        
-        ToastService.show({ 
-          title: 'Помилка даних', 
-          description: errorMessage, 
-          color: 'danger' 
+
+        ToastService.show({
+          title: 'Помилка даних',
+          description: errorMessage,
+          color: 'danger'
         });
         return;
       }
@@ -113,10 +118,10 @@ export class ShippingClientService {
       }
     } catch (error) {
       console.error('Помилка друку:', error);
-      ToastService.show({ 
-        title: 'Помилка друку', 
-        description: error.message || 'Сталася невідома помилка при друку ТТН.', 
-        color: 'danger' 
+      ToastService.show({
+        title: 'Помилка друку',
+        description: error.message || 'Сталася невідома помилка при друку ТТН.',
+        color: 'danger'
       });
     }
   }
@@ -129,9 +134,9 @@ export class ShippingClientService {
     }
     const pdfBlob = this.base64ToBlob(base64Data, 'application/pdf');
     const url = URL.createObjectURL(pdfBlob);
-    
+
     const printWindow = window.open(url, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
-    
+
     if (printWindow) {
       printWindow.onload = () => {
         setTimeout(() => {
@@ -167,7 +172,7 @@ export class ShippingClientService {
 
       // Декодуємо base64
       const decoded = atob(base64Data);
-      
+
       // PDF файли починаються з %PDF-
       return decoded.startsWith('%PDF-');
     } catch {
@@ -187,15 +192,15 @@ export class ShippingClientService {
 
       // Декодуємо base64
       const decoded = atob(base64Data);
-      
+
       // Спробуємо розпарсити як JSON
       const parsed = JSON.parse(decoded);
-      
+
       // Перевіряємо чи це схоже на помилку API
       if (typeof parsed === 'object' && (parsed.errors || parsed.error || parsed.success === false)) {
         return parsed;
       }
-      
+
       return null;
     } catch {
       return null;
@@ -205,11 +210,11 @@ export class ShippingClientService {
   private base64ToBlob(base64: string, mimeType: string): Blob {
     const byteCharacters = atob(base64);
     const byteNumbers = new Array(byteCharacters.length);
-    
+
     for (let i = 0; i < byteCharacters.length; i++) {
       byteNumbers[i] = byteCharacters.charCodeAt(i);
     }
-    
+
     const byteArray = new Uint8Array(byteNumbers);
     return new Blob([byteArray], { type: mimeType });
   }

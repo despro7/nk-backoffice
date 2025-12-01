@@ -14,6 +14,7 @@ interface ShippingProvider {
   name: string;
   providerType: 'novaposhta' | 'ukrposhta';
   senderName: string;
+  senderId: number;
   isActive: boolean;
   order: number;
   apiKey?: string;
@@ -28,6 +29,7 @@ interface CreateProviderData {
   name: string;
   providerType: 'novaposhta' | 'ukrposhta';
   senderName: string;
+  senderId: number;
   isActive: boolean;
   apiKey?: string;
   bearerEcom?: string;
@@ -43,6 +45,7 @@ export const ShippingProvidersManager: React.FC = () => {
     name: 'Нова Пошта', // Автоматично встановлюємо назву за замовчуванням
     providerType: 'novaposhta',
     senderName: '',
+    senderId: 0,
     isActive: false,
     apiKey: '',
     bearerEcom: '',
@@ -62,7 +65,7 @@ export const ShippingProvidersManager: React.FC = () => {
     try {
       const response = await fetch('/api/shipping-providers');
       const result = await response.json();
-      
+
       if (result.success) {
         setProviders(result.data);
       } else {
@@ -92,7 +95,7 @@ export const ShippingProvidersManager: React.FC = () => {
       });
 
       const result = await response.json();
-      
+
       if (result.success) {
         addToast({
           title: 'Успіх',
@@ -129,7 +132,7 @@ export const ShippingProvidersManager: React.FC = () => {
       });
 
       const result = await response.json();
-      
+
       if (result.success) {
         addToast({
           title: 'Успіх',
@@ -167,7 +170,7 @@ export const ShippingProvidersManager: React.FC = () => {
       });
 
       const result = await response.json();
-      
+
       if (result.success) {
         addToast({
           title: 'Успіх',
@@ -198,7 +201,7 @@ export const ShippingProvidersManager: React.FC = () => {
       });
 
       const result = await response.json();
-      
+
       if (result.success) {
         addToast({
           title: 'Успіх',
@@ -228,6 +231,7 @@ export const ShippingProvidersManager: React.FC = () => {
       name: provider.name,
       providerType: provider.providerType,
       senderName: provider.senderName,
+      senderId: provider.senderId,
       isActive: provider.isActive,
       apiKey: provider.apiKey || '',
       bearerEcom: provider.bearerEcom || '',
@@ -242,6 +246,7 @@ export const ShippingProvidersManager: React.FC = () => {
       name: 'Нова Пошта', // Автоматично встановлюємо назву за замовчуванням
       providerType: 'novaposhta',
       senderName: '',
+      senderId: 0,
       isActive: false,
       apiKey: '',
       bearerEcom: '',
@@ -282,7 +287,7 @@ export const ShippingProvidersManager: React.FC = () => {
       });
 
       const result = await response.json();
-      
+
       if (!result.success) {
         addToast({
           title: 'Помилка',
@@ -318,7 +323,7 @@ export const ShippingProvidersManager: React.FC = () => {
           Додати провайдера
         </Button>
       </CardHeader>
-      
+
       <CardBody className="p-5">
         {loading ? (
           <div className="text-center py-8">Завантаження...</div>
@@ -326,15 +331,15 @@ export const ShippingProvidersManager: React.FC = () => {
           <DragDropContext onDragEnd={handleDragEnd}>
             <Droppable droppableId="providers">
               {(provided) => (
-                <div 
-                  {...provided.droppableProps} 
+                <div
+                  {...provided.droppableProps}
                   ref={provided.innerRef}
                   className="space-y-4"
                 >
                   {providers.map((provider, index) => (
                     <Draggable key={provider.id} draggableId={provider.id.toString()} index={index}>
                       {(provided, snapshot) => (
-                        <Card 
+                        <Card
                           ref={provided.innerRef}
                           {...provided.draggableProps}
                           className={`border ${snapshot.isDragging ? 'shadow-lg' : ''}`}
@@ -343,7 +348,7 @@ export const ShippingProvidersManager: React.FC = () => {
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-3 flex-1">
                                 {/* Drag handle */}
-                                <div 
+                                <div
                                   {...provided.dragHandleProps}
                                   className="cursor-grab active:cursor-grabbing p-1 hover:bg-gray-100 rounded"
                                 >
@@ -351,8 +356,8 @@ export const ShippingProvidersManager: React.FC = () => {
                                 </div>
 
                                 {/* Provider icon */}
-                                <img 
-                                  src={getProviderIcon(provider.providerType)} 
+                                <img
+                                  src={getProviderIcon(provider.providerType)}
                                   alt={getProviderTypeLabel(provider.providerType)}
                                   className={`w-6 h-6 ${provider.isActive ? 'grayscale-0' : 'grayscale opacity-50'}`}
                                 />
@@ -370,7 +375,7 @@ export const ShippingProvidersManager: React.FC = () => {
                                   <p className={`text-sm ${provider.isActive ? 'text-gray-600' : 'text-gray-400'}`}>{provider.name}</p>
                                 </div>
                               </div>
-                              
+
                               <div className="flex items-center gap-2">
                                 {!provider.isActive && (
                                   <Button
@@ -382,7 +387,7 @@ export const ShippingProvidersManager: React.FC = () => {
                                     Активувати
                                   </Button>
                                 )}
-                                
+
                                 <Button
                                   size="sm"
                                   variant="flat"
@@ -391,7 +396,7 @@ export const ShippingProvidersManager: React.FC = () => {
                                 >
                                   Редагувати
                                 </Button>
-                                
+
                                 <Button
                                   size="sm"
                                   color="danger"
@@ -409,7 +414,7 @@ export const ShippingProvidersManager: React.FC = () => {
                     </Draggable>
                   ))}
                   {provided.placeholder}
-                  
+
                   {providers.length === 0 && (
                     <div className="text-center py-8 text-gray-500">
                       Немає налаштованих провайдерів
@@ -428,14 +433,24 @@ export const ShippingProvidersManager: React.FC = () => {
           <ModalHeader>Додати провайдера доставки</ModalHeader>
           <ModalBody>
             <div className="space-y-4">
-              <Input
-                label="Назва відправника"
-                placeholder="Наприклад: Магазин №1, Склад №2"
-                value={formData.senderName}
-                onChange={(e) => setFormData({ ...formData, senderName: e.target.value })}
-                aria-label="Введіть назву відправника"
-              />
-              
+              <div className="flex gap-3">
+                <Input
+                  label="Назва відправника"
+                  placeholder="Наприклад: ФОП Бубнов С.В."
+                  value={formData.senderName}
+                  onChange={(e) => setFormData({ ...formData, senderName: e.target.value })}
+                  aria-label="Введіть назву відправника"
+                />
+
+                <Input
+                  label="senderId (SalesDrive API)"
+                  placeholder="Наприклад: 1"
+                  value={String(formData.senderId)}
+                  onChange={(e) => setFormData({ ...formData, senderId: Number(e.target.value) })}
+                  aria-label="Введіть senderId"
+                />
+              </div>
+
               <Select
                 label="Тип провайдера"
                 selectedKeys={[formData.providerType]}
@@ -470,7 +485,7 @@ export const ShippingProvidersManager: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, bearerEcom: e.target.value })}
                     aria-label="Введіть Bearer токен для ecom API Укрпошти"
                   />
-                  
+
                   <Input
                     label="Counterparty токен"
                     placeholder="Counterparty токен"
@@ -478,7 +493,7 @@ export const ShippingProvidersManager: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, counterpartyToken: e.target.value })}
                     aria-label="Введіть Counterparty токен Укрпошти"
                   />
-                  
+
                   <Input
                     label="Bearer токен (Status)"
                     placeholder="Bearer токен для статусів"
@@ -488,7 +503,7 @@ export const ShippingProvidersManager: React.FC = () => {
                   />
                 </>
               )}
-              
+
               <Switch
                 isSelected={formData.isActive}
                 onValueChange={(checked) => setFormData({ ...formData, isActive: checked })}
@@ -515,14 +530,22 @@ export const ShippingProvidersManager: React.FC = () => {
           <ModalHeader>Редагувати провайдера доставки</ModalHeader>
           <ModalBody>
             <div className="space-y-4">
-              <Input
-                label="Назва відправника"
-                placeholder="Наприклад: Магазин №1, Склад №2"
-                value={formData.senderName}
-                onChange={(e) => setFormData({ ...formData, senderName: e.target.value })}
-                aria-label="Введіть назву відправника"
-              />
-              
+              <div className="flex gap-3">
+                <Input
+                  label="Назва відправника"
+                  placeholder="Наприклад: ФОП Бубнов С.В."
+                  value={formData.senderName}
+                  onChange={(e) => setFormData({ ...formData, senderName: e.target.value })}
+                />
+
+                <Input
+                  label="senderId (SalesDrive API)"
+                  placeholder="Наприклад: 1"
+                  value={String(formData.senderId)}
+                  onChange={(e) => setFormData({ ...formData, senderId: Number(e.target.value) })}
+                />
+              </div>
+
               <Select
                 label="Тип провайдера"
                 selectedKeys={[formData.providerType]}
@@ -531,7 +554,6 @@ export const ShippingProvidersManager: React.FC = () => {
                   const providerName = providerType === 'novaposhta' ? 'Нова Пошта' : 'Укрпошта';
                   setFormData({ ...formData, providerType, name: providerName });
                 }}
-                aria-label="Виберіть тип провайдера доставки"
                 disallowEmptySelection
               >
                 <SelectItem key="novaposhta">Нова Пошта</SelectItem>
@@ -544,7 +566,6 @@ export const ShippingProvidersManager: React.FC = () => {
                   placeholder="Введіть API ключ"
                   value={formData.apiKey}
                   onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                  aria-label="Введіть API ключ Нової Пошти"
                 />
               )}
 
@@ -555,27 +576,24 @@ export const ShippingProvidersManager: React.FC = () => {
                     placeholder="Bearer токен для ecom API"
                     value={formData.bearerEcom}
                     onChange={(e) => setFormData({ ...formData, bearerEcom: e.target.value })}
-                    aria-label="Введіть Bearer токен для ecom API Укрпошти"
                   />
-                  
+
                   <Input
                     label="Counterparty токен"
                     placeholder="Counterparty токен"
                     value={formData.counterpartyToken}
                     onChange={(e) => setFormData({ ...formData, counterpartyToken: e.target.value })}
-                    aria-label="Введіть Counterparty токен Укрпошти"
                   />
-                  
+
                   <Input
                     label="Bearer токен (Status)"
                     placeholder="Bearer токен для статусів"
                     value={formData.bearerStatus}
                     onChange={(e) => setFormData({ ...formData, bearerStatus: e.target.value })}
-                    aria-label="Введіть Bearer токен для статусів Укрпошти"
                   />
                 </>
               )}
-              
+
               <Switch
                 isSelected={formData.isActive}
                 onValueChange={(checked) => setFormData({ ...formData, isActive: checked })}

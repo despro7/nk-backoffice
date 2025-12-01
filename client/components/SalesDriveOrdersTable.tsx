@@ -285,25 +285,11 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   // Перевірка/оновлення статусу замовлення в Діловоді
   const handleCheckInDilovod = async (order: SalesDriveOrderForExport) => {
     try {
-      // Отримати налаштування префіксу/суфіксу для каналу
-      let preparedOrder = [order.orderNumber];
-      const channelSettings = dilovodSettings?.channelPaymentMapping?.[order.sajt];
-      if (channelSettings) {
-        if (channelSettings.prefixOrder) preparedOrder = [channelSettings.prefixOrder + preparedOrder[0]];
-        if (channelSettings.sufixOrder) preparedOrder = [preparedOrder[0] + channelSettings.sufixOrder];
-      }
-
-      // ToastService.show({
-      //   title: 'Перевірка...',
-      //   description: `Перевіряємо замовлення #${preparedOrder[0]} в Діловоді`,
-      //   color: 'primary'
-      // });
-
       // Надсилаємо запит до API Dilovod для перевірки замовлення - server\routes\dilovod.ts
       const response = await apiCall(`/api/dilovod/salesdrive/orders/check`, {
         method: 'POST',
         body: JSON.stringify({
-          orderNumbers: preparedOrder
+          orderNumbers: [getDisplayOrderNumber(order)]
         })
       });
       const result = await response.json();
@@ -368,7 +354,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     };
 
     setDrawerResult(orderData);
-    setDrawerTitle(`Деталі замовлення #${order.orderNumber}`);
+    setDrawerTitle(`Деталі замовлення ${getDisplayOrderNumber(order)}`);
     setDrawerType('orderDetails');
     onDrawerOpen();
   };
@@ -402,7 +388,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       // Валідація пройшла, продовжуємо з експортом
       ToastService.show({
         title: 'Експорт...',
-        description: `Експортуємо замовлення ${order.orderNumber} в Díловод`,
+        description: `Експортуємо замовлення ${getDisplayOrderNumber(order)} в Діловод`,
         color: 'primary',
         hideIcon: false,
         icon: <DynamicIcon name="upload-cloud" size={20} className="shrink-0" />,
@@ -480,8 +466,10 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     try {
       ToastService.show({
         title: 'Створення...',
-        description: `Створюємо документ відвантаження для ${order.orderNumber}`,
-        color: 'primary'
+        description: `Створюємо документ відвантаження для ${getDisplayOrderNumber(order)}`,
+        color: 'primary',
+        hideIcon: false,
+        icon: <DynamicIcon name="upload-cloud" size={20} className="shrink-0" />
       });
 
       const token = saleTokens?.[order.id];
@@ -553,12 +541,14 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         if (!validateResponse.ok || !validateResult.success) {
           errors.push(validateResult.details || 'Помилка валідації');
           ToastService.show({
-            title: `Помилка валідації (${order.orderNumber})`,
+            title: `Помилка валідації (${getDisplayOrderNumber(order)})`,
             description: validateResult.details || 'Помилка',
-            color: 'danger'
+            color: 'danger',
+            hideIcon: false,
+            icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
           });
           results.push({
-            orderNumber: order.orderNumber,
+            orderNumber: getDisplayOrderNumber(order),
             exportSuccess,
             shipmentSuccess,
             errors
@@ -575,7 +565,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         if (result.success && result.exported && (result.dilovodId || result.dilovodExportDate)) {
           exportSuccess = true;
           ToastService.show({
-            title: `Експортовано (${order.orderNumber})`,
+            title: `Експортовано (${getDisplayOrderNumber(order)})`,
             description: result.message || 'Успішно',
             color: 'success',
             hideIcon: false,
@@ -585,7 +575,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         } else {
           errors.push(result.error || result.message || 'Помилка експорту');
           ToastService.show({
-            title: `Помилка експорту (${order.orderNumber})`,
+            title: `Помилка експорту (${getDisplayOrderNumber(order)})`,
             description: result.error || result.message || 'Помилка',
             color: 'danger',
             hideIcon: false,
@@ -593,7 +583,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             timeout: 1500
           });
           results.push({
-            orderNumber: order.orderNumber,
+            orderNumber: getDisplayOrderNumber(order),
             exportSuccess,
             shipmentSuccess,
             errors
@@ -612,7 +602,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             if (shipmentResult.success && shipmentResult.created) {
               shipmentSuccess = true;
               ToastService.show({
-                title: `Відвантажено (${order.orderNumber})`,
+                title: `Відвантажено (${getDisplayOrderNumber(order)})`,
                 description: shipmentResult.message || 'Успішно',
                 color: 'success',
                 hideIcon: false,
@@ -622,7 +612,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             } else {
               errors.push(shipmentResult.error || shipmentResult.message || 'Помилка відвантаження');
               ToastService.show({
-                title: `Помилка відвантаження (${order.orderNumber})`,
+                title: `Помилка відвантаження (${getDisplayOrderNumber(order)})`,
                 description: shipmentResult.error || shipmentResult.message || 'Помилка',
                 color: 'danger',
                 hideIcon: false,
@@ -633,22 +623,26 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           } catch {
             errors.push('Помилка зʼєднання при відвантаженні');
             ToastService.show({
-              title: `Помилка зʼєднання (${order.orderNumber})`,
+              title: `Помилка зʼєднання (${getDisplayOrderNumber(order)})`,
               description: 'Помилка зʼєднання при відвантаженні',
-              color: 'danger'
+              color: 'danger',
+              hideIcon: false,
+              icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
             });
           }
         }
       } catch {
         errors.push('Помилка зʼєднання при експорті');
         ToastService.show({
-          title: `Помилка зʼєднання (${order.orderNumber})`,
+          title: `Помилка зʼєднання (${getDisplayOrderNumber(order)})`,
           description: 'Помилка зʼєднання при експорті',
-          color: 'danger'
+          color: 'danger',
+          hideIcon: false,
+          icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
         });
       }
       results.push({
-        orderNumber: order.orderNumber,
+        orderNumber: getDisplayOrderNumber(order),
         exportSuccess,
         shipmentSuccess,
         errors
@@ -687,12 +681,12 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     setLoading(true);
     try {
       // API call to fetch logs for this order
-      const res = await apiCall(`/api/meta-logs?orderNumber=${encodeURIComponent(order.orderNumber)}`);
+      const res = await apiCall(`/api/meta-logs?orderNumber=${encodeURIComponent(getDisplayOrderNumber(order))}`);
       const data = await res.json();
 
       if (Array.isArray(data) && data.length > 0) {
         setDrawerResult(data);
-        setDrawerTitle(`Логи експорту замовлення ${order.orderNumber}`);
+        setDrawerTitle(`Логи експорту замовлення ${getDisplayOrderNumber(order)}`);
         setDrawerType('logs');
         onDrawerOpen();
       } else {
@@ -923,7 +917,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                         if (!open) return;
                         if (order.logsCount !== undefined) return; // already loaded
 
-                        getOrderLogsCount(order.orderNumber).then((count) => {
+                        getOrderLogsCount(getDisplayOrderNumber(order)).then((count) => {
                           setOrders(prev => prev.map(o =>
                             o.orderNumber === order.orderNumber ? { ...o, logsCount: count } : o
                           ));

@@ -6,22 +6,23 @@ const router = express.Router();
 
 /**
  * POST /api/shipping/print-ttn
- * Печатает ТТН через API перевозчика
+ * Друкує ТТН через API перевізника
  */
 router.post('/print-ttn', authenticateToken, async (req, res) => {
   try {
-    const { ttn, provider, format = 'pdf' } = req.body;
+    const { ttn, provider, senderId, format = 'pdf' } = req.body;
 
     if (!ttn || !provider) {
       return res.status(400).json({
         success: false,
-        error: 'Необходимо указать ttn и provider'
+        error: 'Необхідно вказати ttn та provider'
       });
     }
 
     const result = await shippingService.printTTN({
       ttn,
       provider,
+      senderId,
       format
     });
 
@@ -29,19 +30,19 @@ router.post('/print-ttn', authenticateToken, async (req, res) => {
       res.json({
         success: true,
         data: result.data,
-        format: result.format, // Добавляем формат в ответ
-        message: `Наклейка ТТН ${ttn} успешно сгенерирована`
+        format: result.format,
+        message: `Наклейка ТТН ${ttn} успішно сгенерована`
       });
     } else {
       res.status(400).json({
         success: false,
-        error: result.error || 'Не удалось сгенерировать наклейку'
+        error: result.error || 'Не вдалося сгенерувати наклейку'
       });
     }
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: 'Внутренняя ошибка сервера'
+      error: 'Внутрішня помилка сервера'
     });
   }
 });
@@ -77,13 +78,13 @@ router.get('/ttn-status/:ttn/:provider', authenticateToken, async (req, res) => 
 
 router.post('/ttn-zpl', authenticateToken, async (req, res) => {
   try {
-    const { ttn, provider } = req.body;
+    const { ttn, provider, senderId } = req.body;
 
     if (!ttn || !provider) {
       return res.status(400).json({ success: false, error: 'Необходимо указать ttn и provider' });
     }
 
-    const result = await shippingService.printTTN({ ttn, provider, format: 'zpl' });
+    const result = await shippingService.printTTN({ ttn, provider, senderId, format: 'zpl' });
 
     if (result.success) {
       res.json({ success: true, data: result.data, format: result.format });

@@ -17,7 +17,7 @@ router.get('/status', async (req, res) => {
 // POST /api/goods-cache/refresh - refresh goods cache
 router.post('/refresh', async (req, res) => {
   try {
-    // Поддерживаем опціональний список SKU в тілі запиту
+    // Підтримуємо опціональний список SKU в тілі запиту
     // Якщо він не передано — отримуємо свіжі SKU напряму з WordPress
     let skuList: string[] | undefined = req.body?.skuList;
     if (!skuList || !Array.isArray(skuList)) {

@@ -3,12 +3,12 @@ import { orderDatabaseService } from './orderDatabaseService.js';
 import { syncSettingsService } from './syncSettingsService.js';
 import { syncHistoryService, CreateSyncHistoryData } from './syncHistoryService.js';
 import type { SyncSettings } from './syncSettingsService.js';
-import type { 
-  SalesDriveChannel, 
-  SalesDrivePaymentMethod, 
+import type {
+  SalesDriveChannel,
+  SalesDrivePaymentMethod,
   SalesDriveShippingMethod,
   SalesDriveStatus,
-  SalesDriveDirectoryResponse 
+  SalesDriveDirectoryResponse
 } from './salesdrive/SalesDriveTypes.js';
 
 // Node.js types for setInterval
@@ -173,12 +173,12 @@ export class SalesDriveService {
     if (totalPages > 10 && totalPages < 100) {
       return 8000; // 8 секунд
     }
-    
+
     // Для небольшого количества страниц используем меньшую задержку
     if (totalPages <= 10) {
       return 3000; // 3 секунды для быстрой обработки
     }
-    
+
     // Для очень больших объемов используем максимальную задержку
     return 10000; // 10 секунд для больших объемов
   }
@@ -325,7 +325,7 @@ export class SalesDriveService {
   async fetchPaymentMethods(): Promise<SalesDrivePaymentMethod[]> {
     const cacheKey = 'payment-methods';
     const now = Date.now();
-    
+
     // Перевіряємо кеш
     const cached = this.cacheState.data.get(cacheKey);
     if (cached && now < cached.expiresAt) {
@@ -410,7 +410,7 @@ export class SalesDriveService {
   async fetchChannels(): Promise<SalesDriveChannel[]> {
     const cacheKey = 'channels';
     const now = Date.now();
-    
+
     // Перевіряємо кеш
     const cached = this.cacheState.data.get(cacheKey);
     if (cached && now < cached.expiresAt) {
@@ -419,7 +419,7 @@ export class SalesDriveService {
     }
 
     console.log('� [SalesDrive] Loading static channels list (no API endpoint available)');
-    
+
     // Статичний список каналів (SalesDrive API не має такого ендпоінту)
     const channels: SalesDriveChannel[] = [
       { id: '22', name: 'Rozetka (Сергій)' },
@@ -454,7 +454,7 @@ export class SalesDriveService {
   async fetchShippingMethods(): Promise<SalesDriveShippingMethod[]> {
     const cacheKey = 'shipping-methods';
     const now = Date.now();
-    
+
     // Перевіряємо кеш
     const cached = this.cacheState.data.get(cacheKey);
     if (cached && now < cached.expiresAt) {
@@ -463,7 +463,7 @@ export class SalesDriveService {
     }
 
     console.log('� [SalesDrive] Loading static shipping methods list (no API endpoint available)');
-    
+
     // Статичний список методів доставки (fallback) - актуальні мапінги
     const staticShippingMethods: SalesDriveShippingMethod[] = [
       { id: 9, name: 'Нова Пошта' },
@@ -537,7 +537,7 @@ export class SalesDriveService {
   async fetchStatuses(): Promise<SalesDriveStatus[]> {
     const cacheKey = 'statuses';
     const now = Date.now();
-    
+
     // Перевіряємо кеш
     const cached = this.cacheState.data.get(cacheKey);
     if (cached && now < cached.expiresAt) {
@@ -1364,7 +1364,7 @@ export class SalesDriveService {
     });
 
     const formattedOrders: (SalesDriveOrder | null)[] = [];
-    
+
     for (let index = 0; index < validOrders.length; index++) {
       const order = validOrders[index];
       try {
@@ -1649,9 +1649,13 @@ export class SalesDriveService {
     return null;
   }
 
-
-
-
+  /**
+   * Получает статус заказа по ID
+   */
+  async getOrderStatusById(orderId: string): Promise<string | null> {
+    const order = await this.getOrderById(orderId);
+    return order?.status || null;
+  }
 
 
   /**
@@ -1693,13 +1697,13 @@ export class SalesDriveService {
 
       // Получаем только новые/измененные заказы
       const salesDriveResponse = await this.fetchOrdersSinceLastSync();
-      
+
       if (!salesDriveResponse.success || !salesDriveResponse.data) {
         throw new Error(salesDriveResponse.error || 'Failed to fetch orders from SalesDrive');
       }
 
       const salesDriveOrders = salesDriveResponse.data;
-      
+
       if (salesDriveOrders.length === 0) {
         console.log('✅ No new orders to sync');
         return {
@@ -1717,7 +1721,7 @@ export class SalesDriveService {
       // Группируем заказы для batch операций
       const orderIds = salesDriveOrders.filter(o => o && o.orderNumber).map(o => o.orderNumber);
       const existingOrders = await orderDatabaseService.getOrdersByExternalIds(orderIds);
-      
+
       // Разделяем на новые и обновляемые
       const existingIds = new Set(existingOrders.filter(o => o && o.externalId).map(o => o.externalId));
       const newOrders = salesDriveOrders.filter(o => o && o.orderNumber && !existingIds.has(o.orderNumber));
@@ -1825,7 +1829,7 @@ export class SalesDriveService {
             console.log(`   ✅ Updated: ${updateResult.totalUpdated} orders`);
             console.log(`   ⏭️ Skipped: ${updateResult.totalSkipped} orders (no changes)`);
             console.log(`   📈 Update efficiency: ${((updateResult.totalUpdated / updateOrders.length) * 100).toFixed(1)}%`);
-            
+
             // Показываем детали по каждому заказу
             updateResult.results.forEach(result => {
               if (!result) return;
@@ -1838,7 +1842,7 @@ export class SalesDriveService {
                   const newStatus = updateOrders.find(o => o && o.orderNumber === result.orderNumber)?.status;
                   console.log(`      Status: ${result.previousValues.status} → ${newStatus || 'no status'}`);
                 }
-                
+
                 if (result.previousValues?.statusText && result.changedFields?.includes('statusText')) {
                   const newStatusText = updateOrders.find(o => o && o.orderNumber === result.orderNumber)?.statusText;
                   console.log(`      StatusText: ${result.previousValues.statusText} → ${newStatusText || 'no statusText'}`);
@@ -1872,8 +1876,8 @@ export class SalesDriveService {
                   const newItemsCount = Array.isArray(newOrder?.items) ? newOrder.items.length : 0;
                   console.log(`      Items: ${oldItemsCount} → ${newItemsCount} items`);
                 }
-                
-              // } else if (result.action === 'skipped') {
+
+                // } else if (result.action === 'skipped') {
                 // console.log(`   ⏭️ Order ${result.orderNumber || 'unknown'}: ${result.reason}`);
               } else if (result.action === 'error') {
                 console.log(`   ❌ Order ${result.orderNumber || 'unknown'}: ${result.error || 'no error'}`);
@@ -1892,7 +1896,7 @@ export class SalesDriveService {
             const priceChanges = updateResult.results
               .filter(r => r && r.action === 'updated' && r.changedFields?.includes('totalPrice'))
               .length;
-            
+
             console.log(`📈 Change types summary:`);
             if (statusChanges > 0) console.log(`   ✅ Status changes: ${statusChanges}`);
             if (ttnChanges > 0) console.log(`   🔢 TTN changes: ${ttnChanges}`);
@@ -1910,7 +1914,7 @@ export class SalesDriveService {
             ...(r.action === 'updated' && { changedFields: r.changedFields }),
             ...(r.action === 'error' && { error: r.error })
           })));
-          
+
           console.log(`✅ Successfully processed ${updateResult.totalUpdated + updateResult.totalSkipped} orders`);
         } catch (error) {
           console.error('❌ Error updating orders batch:', error);
@@ -2086,172 +2090,250 @@ export class SalesDriveService {
 
       try {
 
-      console.log(`🔧 [MANUAL SYNC] Chunking settings: size=${chunkSize}, maxMemory=${maxMemoryMB}MB, progress=${enableProgress}`);
+        console.log(`🔧 [MANUAL SYNC] Chunking settings: size=${chunkSize}, maxMemory=${maxMemoryMB}MB, progress=${enableProgress}`);
 
-      // Валидация и форматирование даты начала
-      let formattedStartDate: string;
-      try {
-        const startDateObj = new Date(startDate);
-        if (isNaN(startDateObj.getTime())) {
-          throw new Error('Invalid start date format');
-        }
-        formattedStartDate = startDateObj.toISOString().split('T')[0];
-        // console.log('📅 [MANUAL SYNC] Formatted start date:', formattedStartDate);
-      } catch (dateError) {
-        console.error('❌ [MANUAL SYNC] Invalid start date:', startDate, dateError);
-
-        // Записываем неудачную попытку в историю
-        await syncHistoryService.createSyncRecord({
-          syncType: 'manual',
-          startDate: startDate,
-          totalOrders: 0,
-          newOrders: 0,
-          updatedOrders: 0,
-          skippedOrders: 0,
-          errors: 1,
-          duration: (Date.now() - operationStartTime) / 1000,
-          details: { error: 'Invalid start date format' },
-          status: 'failed',
-          errorMessage: 'Invalid start date format'
-        });
-
-        return {
-          success: false,
-          synced: 0,
-          errors: 1,
-          details: [{ action: 'error', error: 'Invalid start date format' }]
-        };
-      }
-
-      // Получаем ВСЕ заказы из диапазона дат (независимо от статуса)
-      let formattedEndDate: string;
-      if (endDate) {
+        // Валидация и форматирование даты начала
+        let formattedStartDate: string;
         try {
-          const endDateObj = new Date(endDate);
-          if (isNaN(endDateObj.getTime())) {
-            throw new Error('Invalid end date format');
+          const startDateObj = new Date(startDate);
+          if (isNaN(startDateObj.getTime())) {
+            throw new Error('Invalid start date format');
           }
-          formattedEndDate = endDateObj.toISOString().split('T')[0];
-          // console.log('📅 [MANUAL SYNC] Formatted end date:', formattedEndDate);
+          formattedStartDate = startDateObj.toISOString().split('T')[0];
+          // console.log('📅 [MANUAL SYNC] Formatted start date:', formattedStartDate);
         } catch (dateError) {
-          console.error('❌ [MANUAL SYNC] Invalid end date:', endDate, dateError);
+          console.error('❌ [MANUAL SYNC] Invalid start date:', startDate, dateError);
+
+          // Записываем неудачную попытку в историю
+          await syncHistoryService.createSyncRecord({
+            syncType: 'manual',
+            startDate: startDate,
+            totalOrders: 0,
+            newOrders: 0,
+            updatedOrders: 0,
+            skippedOrders: 0,
+            errors: 1,
+            duration: (Date.now() - operationStartTime) / 1000,
+            details: { error: 'Invalid start date format' },
+            status: 'failed',
+            errorMessage: 'Invalid start date format'
+          });
+
+          return {
+            success: false,
+            synced: 0,
+            errors: 1,
+            details: [{ action: 'error', error: 'Invalid start date format' }]
+          };
+        }
+
+        // Получаем ВСЕ заказы из диапазона дат (независимо от статуса)
+        let formattedEndDate: string;
+        if (endDate) {
+          try {
+            const endDateObj = new Date(endDate);
+            if (isNaN(endDateObj.getTime())) {
+              throw new Error('Invalid end date format');
+            }
+            formattedEndDate = endDateObj.toISOString().split('T')[0];
+            // console.log('📅 [MANUAL SYNC] Formatted end date:', formattedEndDate);
+          } catch (dateError) {
+            console.error('❌ [MANUAL SYNC] Invalid end date:', endDate, dateError);
+            formattedEndDate = new Date().toISOString().split('T')[0];
+            console.log('📅 [MANUAL SYNC] Using current date as end date due to invalid input');
+          }
+        } else {
           formattedEndDate = new Date().toISOString().split('T')[0];
-          console.log('📅 [MANUAL SYNC] Using current date as end date due to invalid input');
+          console.log('📅 [MANUAL SYNC] No end date provided, using current date');
         }
-      } else {
-        formattedEndDate = new Date().toISOString().split('T')[0];
-        console.log('📅 [MANUAL SYNC] No end date provided, using current date');
-      }
 
-      console.log(`📅 [MANUAL SYNC] Fetching ALL orders from ${formattedStartDate} to ${formattedEndDate} (no status filtering)`);
-      // console.log(`🔧 [MANUAL SYNC] API URL configured: ${!!this.apiUrl}`);
-      // console.log(`🔧 [MANUAL SYNC] API Key configured: ${!!this.apiKey}`);
+        console.log(`📅 [MANUAL SYNC] Fetching ALL orders from ${formattedStartDate} to ${formattedEndDate} (no status filtering)`);
+        // console.log(`🔧 [MANUAL SYNC] API URL configured: ${!!this.apiUrl}`);
+        // console.log(`🔧 [MANUAL SYNC] API Key configured: ${!!this.apiKey}`);
 
-      const salesDriveResponse = await this.fetchOrdersFromDateRangeParallel(formattedStartDate, formattedEndDate, {
-        onProgress: (stage, message, processed, total) => {
-          if (options.onProgress && enableProgress) {
-            options.onProgress('fetching', message, processed, total, 0, 1);
+        const salesDriveResponse = await this.fetchOrdersFromDateRangeParallel(formattedStartDate, formattedEndDate, {
+          onProgress: (stage, message, processed, total) => {
+            if (options.onProgress && enableProgress) {
+              options.onProgress('fetching', message, processed, total, 0, 1);
+            }
           }
-        }
-      });
-
-      console.log(`📊 [MANUAL SYNC] SalesDrive response received: success=${salesDriveResponse.success}, orders=${salesDriveResponse.data?.length || 0}`);
-
-      // Инициализируем переменную salesDriveOrders
-      let salesDriveOrders: any[] = [];
-
-      if (!salesDriveResponse.success || !salesDriveResponse.data) {
-        const errorMsg = salesDriveResponse.error || 'Failed to fetch orders from SalesDrive';
-        console.error(`❌ [MANUAL SYNC] SalesDrive API not available: ${errorMsg}`);
-
-        return {
-          success: false,
-          synced: 0,
-          errors: 1,
-          details: [{ action: 'error', error: 'SalesDrive API недоступен' }],
-          metadata: {
-            totalDuration: (Date.now() - operationStartTime) / 1000,
-            error: errorMsg
-          }
-        };
-      }
-
-      salesDriveOrders = salesDriveResponse.data || [];
-
-      console.log(`📦 [MANUAL SYNC] Retrieved ${salesDriveOrders.length} orders from SalesDrive`);
-      console.log(`📊 [MANUAL SYNC] Order statuses present: ${[...new Set(salesDriveOrders.filter(o => o && o.status).map(o => o.status))].join(', ')}`);
-
-      // Применяем чанкинг для больших объемов данных
-      const shouldUseChunking = salesDriveOrders.length > chunkSize;
-      const estimatedMemoryMB = (JSON.stringify(salesDriveOrders).length / 1024 / 1024);
-
-      // Создаем чанки если нужно
-      const chunks: SalesDriveOrder[][] = [];
-      if (shouldUseChunking) {
-        for (let i = 0; i < salesDriveOrders.length; i += chunkSize) {
-          chunks.push(salesDriveOrders.slice(i, i + chunkSize));
-        }
-      }
-
-      // Обновляем прогресс с общим количеством заказов
-      if (options.onProgress && enableProgress) {
-        options.onProgress('processing', `Знайдено ${salesDriveOrders.length} замовлень для синхронізації`, 0, salesDriveOrders.length, 0, shouldUseChunking ? chunks.length : 1);
-      }
-
-      console.log(`🔧 [MANUAL SYNC] Memory usage estimate: ${estimatedMemoryMB.toFixed(1)}MB`);
-      console.log(`🔧 [MANUAL SYNC] Using chunking: ${shouldUseChunking} (threshold: ${chunkSize} orders)`);
-
-      if (salesDriveOrders.length === 0) {
-        console.log('✅ [MANUAL SYNC] No orders found in the specified date range');
-
-        // Записываем успешную попытку с 0 заказами
-        await syncHistoryService.createSyncRecord({
-          syncType: 'manual',
-          startDate: formattedStartDate,
-          endDate: formattedEndDate,
-          totalOrders: 0,
-          newOrders: 0,
-          updatedOrders: 0,
-          skippedOrders: 0,
-          errors: 0,
-          duration: (Date.now() - operationStartTime) / 1000,
-          details: { message: 'No orders found in date range' },
-          status: 'success'
         });
 
-        return {
-          success: true,
-          synced: 0,
-          errors: 0,
-          details: []
-        };
-      }
+        console.log(`📊 [MANUAL SYNC] SalesDrive response received: success=${salesDriveResponse.success}, orders=${salesDriveResponse.data?.length || 0}`);
 
-      let totalSynced = 0;
-      let totalErrors = 0;
-      let totalSkipped = 0;
-      let updateResult: any;
-      let updateDuration = 0;
+        // Инициализируем переменную salesDriveOrders
+        let salesDriveOrders: any[] = [];
 
-      if (shouldUseChunking) {
-        // Обработка с чанкингом
-        console.log(`🔄 [MANUAL SYNC] Starting chunked sync of ${salesDriveOrders.length} orders...`);
-        console.log(`📦 [MANUAL SYNC] Split into ${chunks.length} chunks of ~${chunkSize} orders each`);
+        if (!salesDriveResponse.success || !salesDriveResponse.data) {
+          const errorMsg = salesDriveResponse.error || 'Failed to fetch orders from SalesDrive';
+          console.error(`❌ [MANUAL SYNC] SalesDrive API not available: ${errorMsg}`);
 
-        let totalCreated = 0;
-        let totalUpdated = 0;
-        const updateStartTime = Date.now();
+          return {
+            success: false,
+            synced: 0,
+            errors: 1,
+            details: [{ action: 'error', error: 'SalesDrive API недоступен' }],
+            metadata: {
+              totalDuration: (Date.now() - operationStartTime) / 1000,
+              error: errorMsg
+            }
+          };
+        }
 
-        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-          const chunk = chunks[chunkIndex];
-          console.log(`🔄 [MANUAL SYNC] Processing chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} orders)`);
+        salesDriveOrders = salesDriveResponse.data || [];
 
-          // Обновляем прогресс перед обработкой чанка
-          if (options.onProgress && enableProgress) {
-            options.onProgress('processing', `Обробка чанка ${chunkIndex + 1}/${chunks.length}`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length);
+        console.log(`📦 [MANUAL SYNC] Retrieved ${salesDriveOrders.length} orders from SalesDrive`);
+        console.log(`📊 [MANUAL SYNC] Order statuses present: ${[...new Set(salesDriveOrders.filter(o => o && o.status).map(o => o.status))].join(', ')}`);
+
+        // Применяем чанкинг для больших объемов данных
+        const shouldUseChunking = salesDriveOrders.length > chunkSize;
+        const estimatedMemoryMB = (JSON.stringify(salesDriveOrders).length / 1024 / 1024);
+
+        // Создаем чанки если нужно
+        const chunks: SalesDriveOrder[][] = [];
+        if (shouldUseChunking) {
+          for (let i = 0; i < salesDriveOrders.length; i += chunkSize) {
+            chunks.push(salesDriveOrders.slice(i, i + chunkSize));
+          }
+        }
+
+        // Обновляем прогресс с общим количеством заказов
+        if (options.onProgress && enableProgress) {
+          options.onProgress('processing', `Знайдено ${salesDriveOrders.length} замовлень для синхронізації`, 0, salesDriveOrders.length, 0, shouldUseChunking ? chunks.length : 1);
+        }
+
+        console.log(`🔧 [MANUAL SYNC] Memory usage estimate: ${estimatedMemoryMB.toFixed(1)}MB`);
+        console.log(`🔧 [MANUAL SYNC] Using chunking: ${shouldUseChunking} (threshold: ${chunkSize} orders)`);
+
+        if (salesDriveOrders.length === 0) {
+          console.log('✅ [MANUAL SYNC] No orders found in the specified date range');
+
+          // Записываем успешную попытку с 0 заказами
+          await syncHistoryService.createSyncRecord({
+            syncType: 'manual',
+            startDate: formattedStartDate,
+            endDate: formattedEndDate,
+            totalOrders: 0,
+            newOrders: 0,
+            updatedOrders: 0,
+            skippedOrders: 0,
+            errors: 0,
+            duration: (Date.now() - operationStartTime) / 1000,
+            details: { message: 'No orders found in date range' },
+            status: 'success'
+          });
+
+          return {
+            success: true,
+            synced: 0,
+            errors: 0,
+            details: []
+          };
+        }
+
+        let totalSynced = 0;
+        let totalErrors = 0;
+        let totalSkipped = 0;
+        let updateResult: any;
+        let updateDuration = 0;
+
+        if (shouldUseChunking) {
+          // Обработка с чанкингом
+          console.log(`🔄 [MANUAL SYNC] Starting chunked sync of ${salesDriveOrders.length} orders...`);
+          console.log(`📦 [MANUAL SYNC] Split into ${chunks.length} chunks of ~${chunkSize} orders each`);
+
+          let totalCreated = 0;
+          let totalUpdated = 0;
+          const updateStartTime = Date.now();
+
+          for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+            const chunk = chunks[chunkIndex];
+            console.log(`🔄 [MANUAL SYNC] Processing chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} orders)`);
+
+            // Обновляем прогресс перед обработкой чанка
+            if (options.onProgress && enableProgress) {
+              options.onProgress('processing', `Обробка чанка ${chunkIndex + 1}/${chunks.length}`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length);
+            }
+
+            const chunkUpdateData = chunk.filter(o => o && o.orderNumber).map(o => ({
+              id: o.id,
+              orderNumber: o.orderNumber,
+              status: o.status,
+              statusText: o.statusText,
+              items: o.items,
+              rawData: o.rawData,
+              ttn: o.ttn,
+              quantity: o.quantity,
+              customerName: o.customerName,
+              customerPhone: o.customerPhone,
+              deliveryAddress: o.deliveryAddress,
+              totalPrice: o.totalPrice,
+              orderDate: o.orderDate,
+              shippingMethod: o.shippingMethod,
+              paymentMethod: o.paymentMethod,
+              cityName: o.cityName,
+              provider: o.provider
+            }));
+
+            try {
+              let chunkResult;
+              if (syncMode === 'smart') {
+                console.log(`🔄 [MANUAL SYNC] Using SMART sync for chunk ${chunkIndex + 1}/${chunks.length}`);
+                chunkResult = await orderDatabaseService.updateOrdersBatchSmart(chunkUpdateData, {
+                  batchSize: options.batchSize || 50,
+                  concurrency: options.concurrency || 2
+                });
+              } else {
+                console.log(`🔄 [MANUAL SYNC] Using FORCE sync for chunk ${chunkIndex + 1}/${chunks.length}`);
+                chunkResult = await orderDatabaseService.forceUpdateOrdersBatch(chunkUpdateData);
+              }
+              totalCreated += chunkResult.totalCreated;
+              totalUpdated += chunkResult.totalUpdated;
+              totalSkipped += chunkResult.totalSkipped || 0;
+              totalSynced += chunkResult.totalCreated + chunkResult.totalUpdated;
+              totalErrors += chunkResult.totalErrors;
+
+              console.log(`✅ [MANUAL SYNC] Chunk ${chunkIndex + 1} completed: +${chunkResult.totalCreated} created, ${chunkResult.totalUpdated} updated, ${chunkResult.totalSkipped || 0} skipped, ${chunkResult.totalErrors} errors`);
+
+              // Обновляем прогресс после обработки чанка
+              if (options.onProgress && enableProgress) {
+                options.onProgress('processing', `Чанк ${chunkIndex + 1}/${chunks.length} оброблений: +${chunkResult.totalCreated} створено, ${chunkResult.totalUpdated} оновлено`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length, totalErrors > 0 ? [`${totalErrors} помилок`] : []);
+              }
+            } catch (chunkError) {
+              console.error(`❌ [MANUAL SYNC] Error processing chunk ${chunkIndex + 1}:`, chunkError);
+              totalErrors += chunk.length;
+
+              // Обновляем прогресс при ошибке
+              if (options.onProgress && enableProgress) {
+                options.onProgress('processing', `Помилка в чанку ${chunkIndex + 1}/${chunks.length}`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length, [`Помилка обробки чанку: ${chunkError instanceof Error ? chunkError.message : 'Unknown error'}`]);
+              }
+            }
+
+            // Очистка памяти между чанками
+            if (global.gc) {
+              global.gc();
+            }
           }
 
-          const chunkUpdateData = chunk.filter(o => o && o.orderNumber).map(o => ({
+          updateDuration = (Date.now() - updateStartTime) / 1000;
+          updateResult = {
+            totalCreated: totalCreated,
+            totalUpdated: totalUpdated,
+            totalErrors: totalErrors,
+            totalSkipped: 0
+          };
+
+          console.log(`✅ [MANUAL SYNC] Chunked sync completed in ${updateDuration.toFixed(1)}s`);
+        } else {
+          // Обработка без чанкинга
+          console.log(`🔄 [MANUAL SYNC] Starting direct batch sync of ${salesDriveOrders.length} orders...`);
+
+          // Обновляем прогресс перед обработкой
+          if (options.onProgress && enableProgress) {
+            options.onProgress('processing', `Обробка ${salesDriveOrders.length} замовлень...`, 0, salesDriveOrders.length, 1, 1);
+          }
+
+          const updateData = salesDriveOrders.filter(o => o && o.orderNumber).map(o => ({
             id: o.id,
             orderNumber: o.orderNumber,
             status: o.status,
@@ -2271,214 +2353,136 @@ export class SalesDriveService {
             provider: o.provider
           }));
 
-          try {
-            let chunkResult;
-            if (syncMode === 'smart') {
-              console.log(`🔄 [MANUAL SYNC] Using SMART sync for chunk ${chunkIndex + 1}/${chunks.length}`);
-              chunkResult = await orderDatabaseService.updateOrdersBatchSmart(chunkUpdateData, {
-                batchSize: options.batchSize || 50,
-                concurrency: options.concurrency || 2
-              });
-            } else {
-              console.log(`🔄 [MANUAL SYNC] Using FORCE sync for chunk ${chunkIndex + 1}/${chunks.length}`);
-              chunkResult = await orderDatabaseService.forceUpdateOrdersBatch(chunkUpdateData);
-            }
-            totalCreated += chunkResult.totalCreated;
-            totalUpdated += chunkResult.totalUpdated;
-            totalSkipped += chunkResult.totalSkipped || 0;
-            totalSynced += chunkResult.totalCreated + chunkResult.totalUpdated;
-            totalErrors += chunkResult.totalErrors;
-
-            console.log(`✅ [MANUAL SYNC] Chunk ${chunkIndex + 1} completed: +${chunkResult.totalCreated} created, ${chunkResult.totalUpdated} updated, ${chunkResult.totalSkipped || 0} skipped, ${chunkResult.totalErrors} errors`);
-
-            // Обновляем прогресс после обработки чанка
-            if (options.onProgress && enableProgress) {
-              options.onProgress('processing', `Чанк ${chunkIndex + 1}/${chunks.length} оброблений: +${chunkResult.totalCreated} створено, ${chunkResult.totalUpdated} оновлено`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length, totalErrors > 0 ? [`${totalErrors} помилок`] : []);
-            }
-          } catch (chunkError) {
-            console.error(`❌ [MANUAL SYNC] Error processing chunk ${chunkIndex + 1}:`, chunkError);
-            totalErrors += chunk.length;
-
-            // Обновляем прогресс при ошибке
-            if (options.onProgress && enableProgress) {
-              options.onProgress('processing', `Помилка в чанку ${chunkIndex + 1}/${chunks.length}`, totalSynced, salesDriveOrders.length, chunkIndex + 1, chunks.length, [`Помилка обробки чанку: ${chunkError instanceof Error ? chunkError.message : 'Unknown error'}`]);
-            }
+          const updateStartTime = Date.now();
+          if (syncMode === 'smart') {
+            console.log(`🔄 [MANUAL SYNC] Using SMART sync for ${updateData.length} orders`);
+            updateResult = await orderDatabaseService.updateOrdersBatchSmart(updateData, {
+              batchSize: options.batchSize || 50,
+              concurrency: options.concurrency || 2
+            });
+          } else {
+            console.log(`🔄 [MANUAL SYNC] Using FORCE sync for ${updateData.length} orders`);
+            updateResult = await orderDatabaseService.forceUpdateOrdersBatch(updateData);
           }
+          updateDuration = (Date.now() - updateStartTime) / 1000;
 
-          // Очистка памяти между чанками
-          if (global.gc) {
-            global.gc();
+          totalSynced = updateResult.totalCreated + updateResult.totalUpdated;
+          totalSkipped = updateResult.totalSkipped || 0;
+          totalErrors = updateResult.totalErrors;
+
+          // Обновляем прогресс после обработки
+          if (options.onProgress && enableProgress) {
+            const progressMessage = syncMode === 'smart'
+              ? `Обробка завершена: +${updateResult.totalCreated} створено, ${updateResult.totalUpdated} оновлено, ${totalSkipped} пропущено`
+              : `Обробка завершена: +${updateResult.totalCreated} створено, ${updateResult.totalUpdated} оновлено`;
+            options.onProgress('saving', progressMessage, totalSynced, salesDriveOrders.length, 1, 1, totalErrors > 0 ? [`${totalErrors} помилок`] : []);
           }
         }
 
-        updateDuration = (Date.now() - updateStartTime) / 1000;
-        updateResult = {
-          totalCreated: totalCreated,
-          totalUpdated: totalUpdated,
-          totalErrors: totalErrors,
-          totalSkipped: 0
+        console.log(`📊 [MANUAL SYNC] ${syncMode.toUpperCase()} batch update completed in ${updateDuration.toFixed(1)}s:`);
+        console.log(`   🆕 Created: ${updateResult.totalCreated} orders`);
+        console.log(`   🔄 Updated: ${updateResult.totalUpdated} orders`);
+        if (syncMode === 'smart') {
+          console.log(`   ⏭️ Skipped: ${totalSkipped} orders (no changes)`);
+        }
+        console.log(`   ❌ Errors: ${updateResult.totalErrors} orders`);
+        console.log(`   📊 Total processed: ${totalSynced + totalSkipped}/${salesDriveOrders.length} orders from SalesDrive`);
+        if (syncMode === 'smart') {
+          console.log(`   ✅ Smart sync: only changed orders were processed`);
+        } else {
+          console.log(`   ✅ Force sync: all orders were processed`);
+        }
+
+        // Очищаем старые записи истории заказов
+        console.log('🧹 [MANUAL SYNC] Cleaning up old order history records...');
+        await orderDatabaseService.cleanupOldHistory();
+
+        const totalDuration = (Date.now() - operationStartTime) / 1000; // в секундах
+        const totalProcessed = salesDriveOrders.length;
+        const successRate = ((updateResult.totalCreated + updateResult.totalUpdated) / totalProcessed * 100).toFixed(1);
+
+        console.log(`✅ [MANUAL SYNC] Synchronization completed in ${totalDuration.toFixed(1)}s:`);
+        console.log(`   📊 Total orders processed: ${totalProcessed}`);
+        console.log(`   🆕 Created: ${updateResult.totalCreated} orders`);
+        console.log(`   🔄 Updated: ${updateResult.totalUpdated} orders`);
+        console.log(`   ✅ Successfully synced: ${updateResult.totalCreated + updateResult.totalUpdated} orders (${successRate}%)`);
+        console.log(`   ❌ Errors: ${updateResult.totalErrors} orders`);
+        console.log(`   📅 Date range: ${formattedStartDate} → ${formattedEndDate}`);
+
+        const status = updateResult.totalErrors === 0 ? 'success' :
+          (updateResult.totalCreated + updateResult.totalUpdated > 0 ? 'partial' : 'failed');
+
+        // Сохраняем детальную информацию в историю синхронизаций
+        syncHistoryData = {
+          syncType: 'manual',
+          startDate: formattedStartDate,
+          endDate: formattedEndDate,
+          totalOrders: salesDriveOrders.length,
+          newOrders: updateResult.totalCreated,
+          updatedOrders: updateResult.totalUpdated,
+          skippedOrders: updateResult.totalSkipped || 0,
+          errors: updateResult.totalErrors,
+          duration: totalDuration,
+          details: {
+            processedOrders: totalProcessed,
+            totalFromSalesDrive: salesDriveOrders.length,
+            successRate: parseFloat(successRate),
+            dateRange: `${formattedStartDate} to ${formattedEndDate}`,
+            batchUpdateDuration: updateDuration,
+            syncMode,
+            changes: updateResult.changesSummary || {},
+            sampleOrders: salesDriveOrders.slice(0, 5).filter(o => o && o.orderNumber).map(o => ({
+              orderNumber: o.orderNumber,
+              status: o.status || 'no status',
+              customerName: o.customerName || 'no name'
+            }))
+          },
+          status: status,
+          errorMessage: updateResult.totalErrors > 0 ? `${updateResult.totalErrors} orders failed to sync` : undefined
         };
 
-        console.log(`✅ [MANUAL SYNC] Chunked sync completed in ${updateDuration.toFixed(1)}s`);
-      } else {
-        // Обработка без чанкинга
-        console.log(`🔄 [MANUAL SYNC] Starting direct batch sync of ${salesDriveOrders.length} orders...`);
+        await syncHistoryService.createSyncRecord(syncHistoryData);
 
-        // Обновляем прогресс перед обработкой
+        // Финальное обновление прогресса
         if (options.onProgress && enableProgress) {
-          options.onProgress('processing', `Обробка ${salesDriveOrders.length} замовлень...`, 0, salesDriveOrders.length, 1, 1);
+          const completedMessage = syncMode === 'smart'
+            ? `Синхронізація завершена: +${updateResult.totalCreated} створено, ${updateResult.totalUpdated} оновлено, ${updateResult.totalSkipped || 0} пропущено`
+            : `Синхронізація завершена: ${updateResult.totalCreated + updateResult.totalUpdated} оброблено, ${updateResult.totalErrors} помилок`;
+          const errors = updateResult.totalErrors > 0 ? [`${updateResult.totalErrors} замовлень не вдалося обробити`] : [];
+          options.onProgress('completed', completedMessage, totalProcessed, totalProcessed, shouldUseChunking ? chunks.length : 1, shouldUseChunking ? chunks.length : 1, errors);
         }
 
-        const updateData = salesDriveOrders.filter(o => o && o.orderNumber).map(o => ({
-          id: o.id,
-          orderNumber: o.orderNumber,
-          status: o.status,
-          statusText: o.statusText,
-          items: o.items,
-          rawData: o.rawData,
-          ttn: o.ttn,
-          quantity: o.quantity,
-          customerName: o.customerName,
-          customerPhone: o.customerPhone,
-          deliveryAddress: o.deliveryAddress,
-          totalPrice: o.totalPrice,
-          orderDate: o.orderDate,
-          shippingMethod: o.shippingMethod,
-          paymentMethod: o.paymentMethod,
-          cityName: o.cityName,
-          provider: o.provider
-        }));
-
-        const updateStartTime = Date.now();
-        if (syncMode === 'smart') {
-          console.log(`🔄 [MANUAL SYNC] Using SMART sync for ${updateData.length} orders`);
-          updateResult = await orderDatabaseService.updateOrdersBatchSmart(updateData, {
-            batchSize: options.batchSize || 50,
-            concurrency: options.concurrency || 2
-          });
-        } else {
-          console.log(`🔄 [MANUAL SYNC] Using FORCE sync for ${updateData.length} orders`);
-          updateResult = await orderDatabaseService.forceUpdateOrdersBatch(updateData);
-        }
-        updateDuration = (Date.now() - updateStartTime) / 1000;
-
-        totalSynced = updateResult.totalCreated + updateResult.totalUpdated;
-        totalSkipped = updateResult.totalSkipped || 0;
-        totalErrors = updateResult.totalErrors;
-
-        // Обновляем прогресс после обработки
-        if (options.onProgress && enableProgress) {
-          const progressMessage = syncMode === 'smart'
-            ? `Обробка завершена: +${updateResult.totalCreated} створено, ${updateResult.totalUpdated} оновлено, ${totalSkipped} пропущено`
-            : `Обробка завершена: +${updateResult.totalCreated} створено, ${updateResult.totalUpdated} оновлено`;
-          options.onProgress('saving', progressMessage, totalSynced, salesDriveOrders.length, 1, 1, totalErrors > 0 ? [`${totalErrors} помилок`] : []);
-        }
-      }
-
-      console.log(`📊 [MANUAL SYNC] ${syncMode.toUpperCase()} batch update completed in ${updateDuration.toFixed(1)}s:`);
-      console.log(`   🆕 Created: ${updateResult.totalCreated} orders`);
-      console.log(`   🔄 Updated: ${updateResult.totalUpdated} orders`);
-      if (syncMode === 'smart') {
-        console.log(`   ⏭️ Skipped: ${totalSkipped} orders (no changes)`);
-      }
-      console.log(`   ❌ Errors: ${updateResult.totalErrors} orders`);
-      console.log(`   📊 Total processed: ${totalSynced + totalSkipped}/${salesDriveOrders.length} orders from SalesDrive`);
-      if (syncMode === 'smart') {
-        console.log(`   ✅ Smart sync: only changed orders were processed`);
-      } else {
-        console.log(`   ✅ Force sync: all orders were processed`);
-      }
-
-      // Очищаем старые записи истории заказов
-      console.log('🧹 [MANUAL SYNC] Cleaning up old order history records...');
-      await orderDatabaseService.cleanupOldHistory();
-
-      const totalDuration = (Date.now() - operationStartTime) / 1000; // в секундах
-      const totalProcessed = salesDriveOrders.length;
-      const successRate = ((updateResult.totalCreated + updateResult.totalUpdated) / totalProcessed * 100).toFixed(1);
-
-      console.log(`✅ [MANUAL SYNC] Synchronization completed in ${totalDuration.toFixed(1)}s:`);
-      console.log(`   📊 Total orders processed: ${totalProcessed}`);
-      console.log(`   🆕 Created: ${updateResult.totalCreated} orders`);
-      console.log(`   🔄 Updated: ${updateResult.totalUpdated} orders`);
-      console.log(`   ✅ Successfully synced: ${updateResult.totalCreated + updateResult.totalUpdated} orders (${successRate}%)`);
-      console.log(`   ❌ Errors: ${updateResult.totalErrors} orders`);
-      console.log(`   📅 Date range: ${formattedStartDate} → ${formattedEndDate}`);
-
-      const status = updateResult.totalErrors === 0 ? 'success' :
-                    (updateResult.totalCreated + updateResult.totalUpdated > 0 ? 'partial' : 'failed');
-
-      // Сохраняем детальную информацию в историю синхронизаций
-      syncHistoryData = {
-        syncType: 'manual',
-        startDate: formattedStartDate,
-        endDate: formattedEndDate,
-        totalOrders: salesDriveOrders.length,
-        newOrders: updateResult.totalCreated,
-        updatedOrders: updateResult.totalUpdated,
-        skippedOrders: updateResult.totalSkipped || 0,
-        errors: updateResult.totalErrors,
-        duration: totalDuration,
-        details: {
-          processedOrders: totalProcessed,
-          totalFromSalesDrive: salesDriveOrders.length,
+        const metadata = {
+          startDate: formattedStartDate,
+          endDate: formattedEndDate,
+          totalDuration: totalDuration,
+          totalProcessed: totalProcessed,
+          newOrders: updateResult.totalCreated,
+          updatedOrders: updateResult.totalUpdated,
+          skippedOrders: updateResult.totalSkipped,
+          errors: updateResult.totalErrors,
           successRate: parseFloat(successRate),
-          dateRange: `${formattedStartDate} to ${formattedEndDate}`,
           batchUpdateDuration: updateDuration,
-          syncMode,
-          changes: updateResult.changesSummary || {},
-          sampleOrders: salesDriveOrders.slice(0, 5).filter(o => o && o.orderNumber).map(o => ({
-            orderNumber: o.orderNumber,
-            status: o.status || 'no status',
-            customerName: o.customerName || 'no name'
-          }))
-        },
-        status: status,
-        errorMessage: updateResult.totalErrors > 0 ? `${updateResult.totalErrors} orders failed to sync` : undefined
-      };
+          syncHistoryId: null // будет заполнено после создания записи
+        };
 
-      await syncHistoryService.createSyncRecord(syncHistoryData);
-
-      // Финальное обновление прогресса
-      if (options.onProgress && enableProgress) {
-        const completedMessage = syncMode === 'smart'
-          ? `Синхронізація завершена: +${updateResult.totalCreated} створено, ${updateResult.totalUpdated} оновлено, ${updateResult.totalSkipped || 0} пропущено`
-          : `Синхронізація завершена: ${updateResult.totalCreated + updateResult.totalUpdated} оброблено, ${updateResult.totalErrors} помилок`;
-        const errors = updateResult.totalErrors > 0 ? [`${updateResult.totalErrors} замовлень не вдалося обробити`] : [];
-        options.onProgress('completed', completedMessage, totalProcessed, totalProcessed, shouldUseChunking ? chunks.length : 1, shouldUseChunking ? chunks.length : 1, errors);
-      }
-
-      const metadata = {
-        startDate: formattedStartDate,
-        endDate: formattedEndDate,
-        totalDuration: totalDuration,
-        totalProcessed: totalProcessed,
-        newOrders: updateResult.totalCreated,
-        updatedOrders: updateResult.totalUpdated,
-        skippedOrders: updateResult.totalSkipped,
-        errors: updateResult.totalErrors,
-        successRate: parseFloat(successRate),
-        batchUpdateDuration: updateDuration,
-        syncHistoryId: null // будет заполнено после создания записи
-      };
-
-      return {
-        success: status === 'success',
-        synced: updateResult.totalCreated + updateResult.totalUpdated,
-        errors: updateResult.totalErrors,
-        totalCreated: updateResult.totalCreated,
-        totalUpdated: updateResult.totalUpdated,
-        totalSkipped: updateResult.totalSkipped || 0,
-        details: updateResult.results || [],
-        metadata: {
-          ...metadata,
-          syncMode,
+        return {
+          success: status === 'success',
+          synced: updateResult.totalCreated + updateResult.totalUpdated,
+          errors: updateResult.totalErrors,
           totalCreated: updateResult.totalCreated,
           totalUpdated: updateResult.totalUpdated,
           totalSkipped: updateResult.totalSkipped || 0,
-          totalErrors: updateResult.totalErrors
-        }
-      };
+          details: updateResult.results || [],
+          metadata: {
+            ...metadata,
+            syncMode,
+            totalCreated: updateResult.totalCreated,
+            totalUpdated: updateResult.totalUpdated,
+            totalSkipped: updateResult.totalSkipped || 0,
+            totalErrors: updateResult.totalErrors
+          }
+        };
 
       } catch (innerError) {
         console.error('❌ [MANUAL SYNC] Error during sync process:', innerError);

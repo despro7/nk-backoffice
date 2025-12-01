@@ -17,18 +17,18 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
  */
 router.get('/test', authenticateToken, async (req, res) => {
   try {
-    
+
     // Check if environment variables are set
     const hasUrl = !!process.env.SALESDRIVE_API_URL;
     const hasKey = !!process.env.SALESDRIVE_API_KEY;
-    
+
     const config = {
       hasUrl,
       hasKey,
       url: process.env.SALESDRIVE_API_URL || 'NOT_SET',
       keyPreview: hasKey ? 'SET (hidden)' : 'NOT_SET'
     };
-    
+
     if (!hasUrl || !hasKey) {
       return res.json({
         success: false,
@@ -41,7 +41,7 @@ router.get('/test', authenticateToken, async (req, res) => {
         ]
       });
     }
-    
+
     res.json({
       success: true,
       message: '✅ SalesDrive API configuration found!',
@@ -51,7 +51,7 @@ router.get('/test', authenticateToken, async (req, res) => {
         'Fetch sample orders'
       ]
     });
-    
+
   } catch (error) {
     console.error('❌ Test error:', error);
     res.status(500).json({
@@ -273,7 +273,7 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
     // Получаем статистику из локальной БД
     const stats = await orderDatabaseService.getOrdersStats();
     const lastSyncInfo = await orderDatabaseService.getLastSyncInfo();
-    
+
     res.json({
       success: true,
       data: stats,
@@ -304,9 +304,9 @@ router.get('/raw/all', authenticateToken, async (req, res) => {
     const startDate = new Date();
     startDate.setMonth(startDate.getMonth() - 1);
     const startDateStr = startDate.toISOString().split('T')[0];
-    
+
     const allOrders = await salesDriveService.fetchOrdersFromDateRangeParallel(startDateStr, endDate);
-    
+
     if (!allOrders.success) {
       return res.status(500).json({
         success: false,
@@ -352,7 +352,7 @@ router.get('/debug/raw', authenticateToken, async (req, res) => {
     }
 
     const rawData = await response.json();
-    
+
     res.json({
       success: true,
       rawData: rawData,
@@ -578,7 +578,7 @@ router.post('/calculate-actual-quantity', authenticateToken, async (req, res) =>
 router.get('/:externalId', authenticateToken, async (req, res) => {
   try {
     const { externalId } = req.params; // Изменили с id на externalId
-    
+
     if (!externalId) {
       return res.status(400).json({
         success: false,
@@ -586,10 +586,10 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
       });
     }
 
-    
+
     // Получаем детали заказа по externalId
     const orderDetails = await orderDatabaseService.getOrderByExternalId(externalId);
-    
+
     if (!orderDetails) {
       return res.status(404).json({
         success: false,
@@ -632,6 +632,30 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
     });
   }
 });
+
+
+/**
+ * GET /api/orders/:id/status
+ * Получить статус заказа из локальной базы данных
+ */
+router.get('/:id/status', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await orderDatabaseService.getOrderStatus(id);
+    res.json({
+      success: true,
+      status: result
+    });
+  } catch (error) {
+    console.error('❌ Error fetching order status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch order status',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 
 /**
  * PUT /api/orders/:id/status
@@ -1099,7 +1123,7 @@ router.post('/cache/validate', authenticateToken, async (req, res) => {
 
             if (actualDate > cachedDate) {
               // Дата обновления заказа новее даты кеша - проверяем, изменились ли товары
-              console.log(`📅 [CACHE VALIDATION] Order ${externalId} is stale by date (cached: ${cachedDate.toLocaleString( 'uk-UA' )}, actual: ${actualDate.toLocaleString( 'uk-UA' )})`);
+              console.log(`📅 [CACHE VALIDATION] Order ${externalId} is stale by date (cached: ${cachedDate.toLocaleString('uk-UA')}, actual: ${actualDate.toLocaleString('uk-UA')})`);
 
               // Получаем актуальные товары заказа
               const currentOrderItems = await getOrderItemsForComparison(actualOrder.id);
@@ -1146,7 +1170,7 @@ router.post('/cache/validate', authenticateToken, async (req, res) => {
     const batchesCount = Math.ceil(toUpdate.length / 50);
     console.log(`📊 [CACHE VALIDATION] Validation summary:`, {
       mode: validationMode,
-      period: dateRangeFilter ? `${dateRangeFilter.startDate.toLocaleString( 'uk-UA' )} - ${dateRangeFilter.endDate.toLocaleString( 'uk-UA' )}` : 'all time',
+      period: dateRangeFilter ? `${dateRangeFilter.startDate.toLocaleString('uk-UA')} - ${dateRangeFilter.endDate.toLocaleString('uk-UA')}` : 'all time',
       processed: stats.processed,
       cacheHits: stats.cacheHits,
       cacheMisses: stats.cacheMisses,
@@ -1225,10 +1249,10 @@ router.post('/cache/validate', authenticateToken, async (req, res) => {
           batchesProcessed: batchesCount,
           batchSize: 50,
           estimatedProcessingTime: Math.ceil(batchesCount * 0.5),
-          validationDate: new Date().toLocaleString( 'uk-UA' )
+          validationDate: new Date().toLocaleString('uk-UA')
         }
       },
-      timestamp: new Date().toLocaleString( 'uk-UA' )
+      timestamp: new Date().toLocaleString('uk-UA')
     };
 
     console.log('✅ [CACHE VALIDATION] Validation completed:', result.data.summary);
@@ -1294,12 +1318,12 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       startDateObj.setDate(startDateObj.getDate() - 1);
       const startDateString = startDateObj.toISOString().split('T')[0];
       const { start } = getReportingDateRange(startDateString, dayStartHour);
-      
+
       // endDate це остання звітна дата (YYYY-MM-DD)
       // Звітна дата 20.10 закінчується 20.10 15:59:59
       // (наступного дня 16:00 мінус 1 секунда)
       const { end } = getReportingDateRange(endDate as string, dayStartHour);
-      
+
       dateRangeFilter = { start, end };
     }
 
@@ -1465,12 +1489,12 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
       startDateObj.setDate(startDateObj.getDate() - 1);
       const startDateString = startDateObj.toISOString().split('T')[0];
       const { start } = getReportingDateRange(startDateString, dayStartHour);
-      
+
       // endDate це остання звітна дата (YYYY-MM-DD)
       // Звітна дата 20.10 закінчується 20.10 15:59:59
       // (наступного дня 16:00 мінус 1 секунда)
       const { end } = getReportingDateRange(endDate as string, dayStartHour);
-      
+
       dateRangeFilter = { start, end };
     }
 
@@ -1636,7 +1660,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
     // startDate та endDate вже правильно конвертовані на клієнті через convertCalendarRangeToReportingRange
     // Тому просто використовуємо їх безпосередньо
     const { start } = getReportingDateRange(startDate as string, dayStartHour);
-    
+
     // endDate це звітна дата - закінчується в кінці звітного дня
     const { end } = getReportingDateRange(endDate as string, dayStartHour);
 
@@ -1712,7 +1736,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
           if (Array.isArray(cachedStats)) {
             // Получаем звітну дату для цього замовлення
             const reportingDate = getReportingDate(order.orderDate, dayStartHour);
-            
+
             let dateKey: string;
 
             switch (groupBy) {
@@ -1924,11 +1948,11 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
     // Подсчитываем реальное количество линий в данных (товары + группы)
     const actualProductCount = totalDataArray.length > 0
       ? Object.keys(totalDataArray[0]).filter(key =>
-          (key.startsWith('product_') || key.startsWith('group_')) &&
-          !key.endsWith('_name') &&
-          key !== 'product_' &&
-          key !== 'totalSales'
-        ).length
+        (key.startsWith('product_') || key.startsWith('group_')) &&
+        !key.endsWith('_name') &&
+        key !== 'product_' &&
+        key !== 'totalSales'
+      ).length
       : 0;
 
     // console.log(`✅ CHART DATA GENERATED: ${totalDataArray.length} points, ${actualProductCount} products in data, ${Object.keys(productInfo).length} total products info`);
@@ -2017,7 +2041,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
 
     // Фильтруем по дате (с учетом dayStartHour)
     let start: Date, end: Date;
-    
+
     if (singleDay === 'true' && startDate === endDate) {
       // Для однієї дати: startDate це календарна дата, треба знайти правильний звітний день
       // Календарна дата 16.10 може належати до звітного дня 16.10 або 17.10 залежно від часу
@@ -2095,32 +2119,34 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
     const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
 
     // Собираем данные по дням (используя звітні дати)
-    const salesData: { [dateKey: string]: {
-      ordersCount: number;
-      portionsCount: number;
-      totalPrice: number;
-      ordersByStatus: { [status: string]: number };
-      portionsByStatus: { [status: string]: number };
-      ordersBySource: { [source: string]: number };
-      portionsBySource: { [source: string]: number };
-      priceBySource: { [source: string]: number };
-      ordersWithDiscountReason: number;
-      portionsWithDiscountReason: number;
-      priceWithDiscountReason: number;
-      discountReasonText: string;
-      orders: Array<{
-        orderNumber: string;
+    const salesData: {
+      [dateKey: string]: {
+        ordersCount: number;
         portionsCount: number;
-        orderDate: string;
-        externalId: string;
-        status: string;
-        source: string;
-        // Detailed per-order fields so client can rely on real values
-        totalPrice?: number | undefined;
-        hasDiscount?: boolean;
-        discountReasonCode?: string | null;
-      }>;
-    } } = {};
+        totalPrice: number;
+        ordersByStatus: { [status: string]: number };
+        portionsByStatus: { [status: string]: number };
+        ordersBySource: { [source: string]: number };
+        portionsBySource: { [source: string]: number };
+        priceBySource: { [source: string]: number };
+        ordersWithDiscountReason: number;
+        portionsWithDiscountReason: number;
+        priceWithDiscountReason: number;
+        discountReasonText: string;
+        orders: Array<{
+          orderNumber: string;
+          portionsCount: number;
+          orderDate: string;
+          externalId: string;
+          status: string;
+          source: string;
+          // Detailed per-order fields so client can rely on real values
+          totalPrice?: number | undefined;
+          hasDiscount?: boolean;
+          discountReasonCode?: string | null;
+        }>;
+      }
+    } = {};
 
     for (const order of filteredOrders) {
       try {
@@ -2230,13 +2256,13 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
             portionsCount: orderPortions,
             orderDate: order.orderDate
               ? new Date(order.orderDate).toLocaleString('uk-UA', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit'
-                })
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+              })
               : '',
             externalId: order.externalId,
             status: order.status,

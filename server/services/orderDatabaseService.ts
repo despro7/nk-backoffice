@@ -318,13 +318,7 @@ export class OrderDatabaseService {
   async getOrderByExternalId(externalId: string) {
     try {
       const order = await prisma.order.findUnique({
-        where: { externalId },
-        include: {
-          OrdersHistory: {
-            orderBy: { changedAt: 'desc' },
-            take: 10
-          }
-        }
+        where: { externalId }
       });
 
       if (!order) return null;
@@ -341,6 +335,28 @@ export class OrderDatabaseService {
     }
   }
 
+  /**
+   * Отримуємо замовлення за id
+   */
+  async getOrderById(id: string) {
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: Number(id) }
+      });
+
+      if (!order) return null;
+
+      // Парсимо JSON поля
+      return {
+        ...order,
+        items: order.items ? JSON.parse(order.items) : [],
+        rawData: order.rawData ? JSON.parse(order.rawData) : {}
+      };
+    } catch (error) {
+      console.error(`❌ Error getting order ${id}:`, error);
+      return null;
+    }
+  }
 
   /**
    * Отримуємо номер замовлення за id замовлення
@@ -481,6 +497,14 @@ export class OrderDatabaseService {
         all: 0
       };
     }
+  }
+
+  /**
+   * Получает статус заказа
+   */
+  async getOrderStatus(orderId: string): Promise<string | null> {
+    const order = await this.getOrderById(orderId);
+    return order?.status || null;
   }
 
   /**

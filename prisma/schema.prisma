@@ -291,7 +291,8 @@ model ShippingProvider {
   id                Int      @id @default(autoincrement())
   name              String   @db.VarChar(100)  // "Нова Пошта", "Укрпошта"
   providerType      String   @db.VarChar(20)   // "novaposhta", "ukrposhta"
-  senderName        String   @db.VarChar(200)  // "Магазин №1", "Склад №2"
+  senderName        String   @db.VarChar(200)  // "ФОП Бубнов С.В.", "ФОП Бубнова М.В."
+  senderId          Int?                       // Ідентифікатор відправника в SalesDrive
   isActive          Boolean  @default(false)   // Активний провайдер
   order             Int      @default(0)       // Порядок сортування
   
