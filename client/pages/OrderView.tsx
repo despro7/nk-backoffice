@@ -31,19 +31,19 @@ export default function OrderView() {
   const [expandedItems, setExpandedItems] = useState<OrderChecklistItem[]>([]);
   const [expandingSets, setExpandingSets] = useState(false);
   const [checklistItems, setChecklistItems] = useState<OrderChecklistItem[]>([]);
-  
+
   // Стан коробок
   const [selectedBoxes, setSelectedBoxes] = useState<any[]>([]);
   const [boxesTotalWeight, setBoxesTotalWeight] = useState<number>(0);
   const [activeBoxIndex, setActiveBoxIndex] = useState<number>(0);
-  
+
   // Стан замовлення
   const [isReadyToShip, setIsReadyToShip] = useState(false);
 
   // Автоматичний запуск/зупинка ваги
   const [isWeightWidgetActive, setIsWeightWidgetActive] = useState(false);
   const [isWeightWidgetPaused, setIsWeightWidgetPaused] = useState(false);
-  
+
   // Polling режими
   const [pollingMode, setPollingMode] = useState<'active' | 'reserve' | 'auto'>('auto');
   const activePollingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -51,7 +51,7 @@ export default function OrderView() {
 
   // Використовуємо створені хуки
   const { orderSoundSettings, toleranceSettings, playOrderStatusSound } = useOrderSettings();
-  
+
   const { getWeightData, handleWeightChange } = useWeightManagement({
     checklistItems,
     activeBoxIndex,
@@ -117,16 +117,16 @@ export default function OrderView() {
   // Функції для керування polling режимами
   const startActivePolling = useCallback(() => {
     const activePollingDuration = equipmentState.config?.scale?.activePollingDuration || 30000;
-    
+
     LoggingService.equipmentLog('🔄 [OrderView] Запуск активного polling');
     setPollingMode('active');
     setLastWeightActivityTime(Date.now());
-    
+
     if (activePollingTimeoutRef.current) {
       clearTimeout(activePollingTimeoutRef.current);
       activePollingTimeoutRef.current = null;
     }
-    
+
     activePollingTimeoutRef.current = setTimeout(() => {
       LoggingService.equipmentLog('⏰ [OrderView] Таймаут активного polling, переходимо до резервного');
       setPollingMode('reserve');
@@ -208,13 +208,13 @@ export default function OrderView() {
     try {
       setLoading(true);
       setChecklistItems([]);
-      
+
       const response = await apiCall(`/api/orders/${id}`);
       const data = await response.json();
-      
+
       if (data.success) {
         setOrder(data.data);
-        
+
         setExpandingSets(true);
         try {
           const expanded = await expandProductSets(data.data.items, apiCall);
@@ -238,7 +238,7 @@ export default function OrderView() {
             // console.log('📦 selectedBoxes.length > 0, викликаємо combineBoxesWithItems');
             const itemsWithoutBoxes = processedItems.filter(item => item.type !== 'box');
             const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, orderIsReadyToShip);
-            
+
             if (combinedItems && combinedItems.length > 0) {
               // console.log('📦 Встановлюємо combinedItems:', 
               //   combinedItems.map(item => ({ name: item.name, type: item.type, status: item.status }))
@@ -269,7 +269,7 @@ export default function OrderView() {
           if (selectedBoxes.length > 0) {
             const itemsWithoutBoxes = fallbackItems.filter(item => item.type !== 'box');
             const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, isReadyToShipFallback);
-            
+
             if (combinedItems && combinedItems.length > 0) {
               setChecklistItems(combinedItems);
             } else {
@@ -359,12 +359,12 @@ export default function OrderView() {
         message={errorModalText || 'Невідома помилка'}
         onClose={() => setShowErrorModal(false)}
       />
-      <OrderViewHeader 
-        order={order} 
-        externalId={externalId || ''} 
-        onBackClick={() => navigate("/orders")} 
+      <OrderViewHeader
+        order={order}
+        externalId={externalId || ''}
+        onBackClick={() => navigate("/orders")}
       />
-      
+
       {/* Блок комплектації */}
       <div className="flex flex-col xl:flex-row items-start gap-8 w-full">
         {/* Ліва колонка - Чек-лист комплектації */}
@@ -419,7 +419,7 @@ export default function OrderView() {
             </ErrorBoundary>
           )}
         </div>
-          
+
         {/* Права колонка - Панель керування */}
         <OrderAssemblyRightPanel
           orderForAssembly={orderForAssembly}
@@ -437,6 +437,10 @@ export default function OrderView() {
           onPrintTTN={() => handlePrintTTN(order)}
           order={order}
           externalId={externalId || ''}
+          onOrderRefresh={(updatedOrder) => {
+            console.log('🔄 [OrderView] Order refreshed, updating state:', updatedOrder);
+            setOrder(updatedOrder);
+          }}
         />
       </div>
 

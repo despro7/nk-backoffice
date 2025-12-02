@@ -292,7 +292,7 @@ export class SalesDriveService {
 
       // Используем правильный эндпоинт SalesDrive API
       const fullUrl = `${this.apiUrl}/api/order/list/?page=1&limit=1`;
-      console.log(`🔍 [SalesDrive GET] Full request URL: \x1b[36m${fullUrl}\x1b[0m`);
+      console.log(`🔍 [SalesDrive GET] Full request URL: ${fullUrl}`);
       console.log(`🔍 [SalesDrive REQUEST] Headers:`, {
         'Form-Api-Key': this.apiKey.substring(0, 10) + '...', // Mask API key for security
         'Content-Type': 'application/json',
@@ -1108,7 +1108,7 @@ export class SalesDriveService {
     });
 
     const fullUrl = `${this.apiUrl}/api/order/list/?${params}`;
-    console.log(`🔍 [SalesDrive REQUEST] Full request URL (page ${page}): \x1b[36m${fullUrl}\x1b[0m`);
+    console.log(`🔍 [SalesDrive REQUEST] Full request URL (page ${page}): ${fullUrl}`);
 
     const response = await fetch(fullUrl, {
       method: 'GET',
@@ -1309,7 +1309,7 @@ export class SalesDriveService {
     });
 
     const fullUrl = `${this.apiUrl}/api/order/list/?${params}`;
-    console.log(`🔍 [SalesDrive GET] Full request URL: \x1b[36m${fullUrl}\x1b[0m`);
+    console.log(`🔍 [SalesDrive GET] Full request URL: ${fullUrl}`);
 
     const response = await fetch(fullUrl, {
       method: 'GET',
@@ -1587,15 +1587,15 @@ export class SalesDriveService {
           throw new Error('SalesDrive API not configured');
         }
 
-        // Пробуем получить заказ по externalId через фильтр
+        // Пробуем получить заказ по id через фильтр
         const params = new URLSearchParams({
           page: '1',
           limit: '1',
-          'filter[externalId]': orderId
+          'filter[id][to]': orderId
         });
 
         const fullUrl = `${this.apiUrl}/api/order/list/?${params}`;
-        console.log(`🔍 [SalesDrive GET] Full request URL: \x1b[36m${fullUrl}\x1b[0m`);
+        console.log(`🔍 [SalesDrive GET] Full request URL: ${fullUrl}`);
 
         const response = await fetch(fullUrl, {
           method: 'GET',

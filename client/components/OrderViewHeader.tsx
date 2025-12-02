@@ -10,7 +10,7 @@ interface OrderViewHeaderProps {
 
 export function OrderViewHeader({ order, externalId, onBackClick }: OrderViewHeaderProps) {
   return (
-    <h1 className="text-primary font-inter text-3xl font-semibold leading-[100%] tracking-[-0.64px] h-10 flex items-center gap-4">
+    <div className="flex items-center gap-4 max-w-[calc(theme(maxWidth.5xl)+theme(spacing.80)+theme(spacing.8))]">
       <Button
         color="secondary"
         variant="flat"
@@ -19,7 +19,7 @@ export function OrderViewHeader({ order, externalId, onBackClick }: OrderViewHea
       >
         <DynamicIcon name="arrow-left" size={20} />
       </Button>
-      <div className="flex items-end gap-2">
+      <div className="flex items-end gap-2 text-primary font-inter text-3xl font-semibold leading-[100%] tracking-[-0.64px]">
         <span>Замовлення №{order.orderNumber || externalId}</span>
         {order.orderDate && (<span className="font-normal text-xl ml-2 text-gray-500">від {formatDate(order.orderDate)}</span>)}
       </div>
@@ -35,7 +35,7 @@ export function OrderViewHeader({ order, externalId, onBackClick }: OrderViewHea
           {getStatusLabel(order.status)}
         </Chip>
       )}
-    </h1>
+    </div>
   );
 }
 

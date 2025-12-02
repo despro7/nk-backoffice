@@ -74,7 +74,7 @@ const cleanupOldProgress = () => {
   // Очистка preview прогресса
   for (const [sessionId, progress] of activePreviewProgressMap.entries()) {
     if ((progress.stage === 'completed' || progress.stage === 'error') &&
-        (now - progress.lastAccessed) > maxAge) {
+      (now - progress.lastAccessed) > maxAge) {
       console.log(`🧹 [PREVIEW PROGRESS] Cleaning up old progress for session ${sessionId}`);
       activePreviewProgressMap.delete(sessionId);
     }
@@ -83,7 +83,7 @@ const cleanupOldProgress = () => {
   // Очистка sync прогресса
   for (const [sessionId, progress] of activeSyncProgressMap.entries()) {
     if ((progress.stage === 'completed' || progress.stage === 'error') &&
-        (now - progress.lastAccessed) > maxAge) {
+      (now - progress.lastAccessed) > maxAge) {
       console.log(`🧹 [SYNC PROGRESS] Cleaning up old progress for session ${sessionId}`);
       activeSyncProgressMap.delete(sessionId);
     }
@@ -229,83 +229,83 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
 
         // Анализируем каждый заказ
         for (let i = 0; i < salesDriveOrders.length; i++) {
-      const order = salesDriveOrders[i];
+          const order = salesDriveOrders[i];
 
-      try {
-        // Обновляем прогресс каждые 10 заказов или на каждом заказе для небольших объемов
-        if (i % Math.max(1, Math.floor(salesDriveOrders.length / 20)) === 0 || salesDriveOrders.length < 50) {
-          const loopProgress = activePreviewProgressMap.get(sessionId);
-          if (loopProgress) {
-            loopProgress.processedOrders = i;
-            loopProgress.message = `Анализируем заказы... ${i}/${salesDriveOrders.length}`;
-          }
-        }
+          try {
+            // Обновляем прогресс каждые 10 заказов или на каждом заказе для небольших объемов
+            if (i % Math.max(1, Math.floor(salesDriveOrders.length / 20)) === 0 || salesDriveOrders.length < 50) {
+              const loopProgress = activePreviewProgressMap.get(sessionId);
+              if (loopProgress) {
+                loopProgress.processedOrders = i;
+                loopProgress.message = `Анализируем заказы... ${i}/${salesDriveOrders.length}`;
+              }
+            }
 
-        const existingOrder = await orderDatabaseService.getOrderByExternalId(order.orderNumber);
+            const existingOrder = await orderDatabaseService.getOrderByExternalId(order.orderNumber);
 
-        if (!existingOrder) {
-          // Новый заказ
-          preview.newOrders.push({
-            orderNumber: order.orderNumber,
-            customerName: order.customerName || 'N/A',
-            totalPrice: order.totalPrice || 0,
-            status: order.status || 'unknown',
-            orderDate: order.orderDate,
-            action: 'create',
-            color: 'green'
-          });
-          preview.stats.new++;
-        } else {
-          // Проверяем изменения
-          const changeResult = orderDatabaseService.detectOrderChanges(existingOrder, order);
-          const changes = changeResult.fields;
+            if (!existingOrder) {
+              // Новый заказ
+              preview.newOrders.push({
+                orderNumber: order.orderNumber,
+                customerName: order.customerName || 'N/A',
+                totalPrice: order.totalPrice || 0,
+                status: order.status || 'unknown',
+                orderDate: order.orderDate,
+                action: 'create',
+                color: 'green'
+              });
+              preview.stats.new++;
+            } else {
+              // Проверяем изменения
+              const changeResult = orderDatabaseService.detectOrderChanges(existingOrder, order);
+              const changes = changeResult.fields;
 
-          if (changes.length === 0) {
-            // Без изменений
+              if (changes.length === 0) {
+                // Без изменений
+                preview.skippedOrders.push({
+                  orderNumber: order.orderNumber,
+                  customerName: order.customerName || 'N/A',
+                  totalPrice: order.totalPrice || 0,
+                  status: order.status || 'unknown',
+                  orderDate: order.orderDate,
+                  action: 'skip',
+                  color: 'blue',
+                  reason: 'No changes'
+                });
+                preview.stats.skip++;
+              } else {
+                // Есть изменения
+                preview.existingOrders.push({
+                  orderNumber: order.orderNumber,
+                  customerName: order.customerName || 'N/A',
+                  totalPrice: order.totalPrice || 0,
+                  status: order.status || 'unknown',
+                  orderDate: order.orderDate,
+                  action: 'update',
+                  color: 'yellow',
+                  changes: changes
+                });
+                preview.stats.update++;
+              }
+            }
+          } catch (error) {
+            console.error(`❌ [SYNC PREVIEW] Error analyzing order ${order.orderNumber}:`, error);
+            const errorProgress = activePreviewProgressMap.get(sessionId);
+            if (errorProgress) {
+              errorProgress.errors.push(`Ошибка анализа заказа ${order.orderNumber}`);
+            }
             preview.skippedOrders.push({
               orderNumber: order.orderNumber,
               customerName: order.customerName || 'N/A',
               totalPrice: order.totalPrice || 0,
               status: order.status || 'unknown',
               orderDate: order.orderDate,
-              action: 'skip',
-              color: 'blue',
-              reason: 'No changes'
+              action: 'error',
+              color: 'red',
+              reason: 'Analysis error'
             });
-            preview.stats.skip++;
-          } else {
-            // Есть изменения
-            preview.existingOrders.push({
-              orderNumber: order.orderNumber,
-              customerName: order.customerName || 'N/A',
-              totalPrice: order.totalPrice || 0,
-              status: order.status || 'unknown',
-              orderDate: order.orderDate,
-              action: 'update',
-              color: 'yellow',
-              changes: changes
-            });
-            preview.stats.update++;
           }
         }
-      } catch (error) {
-        console.error(`❌ [SYNC PREVIEW] Error analyzing order ${order.orderNumber}:`, error);
-        const errorProgress = activePreviewProgressMap.get(sessionId);
-        if (errorProgress) {
-          errorProgress.errors.push(`Ошибка анализа заказа ${order.orderNumber}`);
-        }
-        preview.skippedOrders.push({
-          orderNumber: order.orderNumber,
-          customerName: order.customerName || 'N/A',
-          totalPrice: order.totalPrice || 0,
-          status: order.status || 'unknown',
-          orderDate: order.orderDate,
-          action: 'error',
-          color: 'red',
-          reason: 'Analysis error'
-        });
-      }
-    }
 
         // Финализируем прогресс
         const finalProgress = activePreviewProgressMap.get(sessionId);
@@ -1259,6 +1259,130 @@ router.post('/sync/logs/cleanup', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/orders-sync/sync/single-order
+ * Оновити одне замовлення з SalesDrive
+ */
+router.post('/sync/single-order', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Order ID is required'
+      });
+    }
+
+    console.log(`🔄 [SINGLE ORDER SYNC] Starting sync for order ID: ${id}`);
+
+    // Знаходимо замовлення в БД
+    const existingOrder = await prisma.order.findUnique({
+      where: { id: parseInt(id) }
+    });
+
+    if (!existingOrder) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found'
+      });
+    }
+
+    // Отримуємо оновлені дані з SalesDrive
+    const { salesDriveService } = await import('../services/salesDriveService.js');
+    const { orderDatabaseService } = await import('../services/orderDatabaseService.js');
+
+    // Отримуємо замовлення з SalesDrive за id
+    const salesDriveOrder = await salesDriveService.getOrderById(existingOrder.id.toString());
+
+    if (!salesDriveOrder) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found in SalesDrive'
+      });
+    }
+
+    // Перевіряємо зміни
+    const changeResult = orderDatabaseService.detectOrderChanges(existingOrder, salesDriveOrder);
+    const changes = changeResult.fields;
+
+    if (changes.length === 0) {
+      // Оновлюємо тільки lastSynced
+      const updatedOrder = await prisma.order.update({
+        where: { id: parseInt(id) },
+        data: { lastSynced: new Date() }
+      });
+
+      console.log(`ℹ️ [SINGLE ORDER SYNC] No changes detected, updated lastSynced only`);
+
+      return res.json({
+        success: true,
+        hasChanges: false,
+        message: 'No changes detected',
+        lastSynced: updatedOrder.lastSynced.toISOString(),
+        order: {
+          ...updatedOrder,
+          items: updatedOrder.items ? JSON.parse(updatedOrder.items as string) : [],
+          rawData: updatedOrder.rawData ? JSON.parse(updatedOrder.rawData as string) : {}
+        }
+      });
+    }
+
+    // Оновлюємо замовлення
+    const updateData: any = {
+      status: salesDriveOrder.status,
+      statusText: salesDriveOrder.statusText,
+      items: JSON.stringify(salesDriveOrder.items),
+      rawData: JSON.stringify(salesDriveOrder.rawData),
+      ttn: salesDriveOrder.ttn,
+      quantity: salesDriveOrder.quantity,
+      customerName: salesDriveOrder.customerName,
+      customerPhone: salesDriveOrder.customerPhone,
+      deliveryAddress: salesDriveOrder.deliveryAddress,
+      totalPrice: salesDriveOrder.totalPrice,
+      shippingMethod: salesDriveOrder.shippingMethod,
+      paymentMethod: salesDriveOrder.paymentMethod,
+      cityName: salesDriveOrder.cityName,
+      provider: salesDriveOrder.provider,
+      pricinaZnizki: salesDriveOrder.pricinaZnizki,
+      sajt: salesDriveOrder.sajt,
+      lastSynced: new Date()
+    };
+
+    console.log('Update data:', updateData);
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: parseInt(id) },
+      data: updateData
+    });
+
+    console.log(`✅ [SINGLE ORDER SYNC] Order updated successfully with ${changes.length} changes`);
+
+    res.json({
+      success: true,
+      hasChanges: true,
+      changes: changes,
+      message: `Order updated with ${changes.length} changes`,
+      lastSynced: updatedOrder.lastSynced.toISOString(),
+      order: {
+        ...updatedOrder,
+        items: updatedOrder.items ? JSON.parse(updatedOrder.items as string) : [],
+        rawData: updatedOrder.rawData ? JSON.parse(updatedOrder.rawData as string) : {}
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [SINGLE ORDER SYNC] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to sync order'
+    });
+  }
+});
+
+
+
+
 
 
 
@@ -1349,8 +1473,8 @@ router.get('/sync/history', authenticateToken, async (req, res) => {
     let result;
     if (syncType && ['manual', 'automatic', 'background'].includes(syncType)) {
       result = await syncHistoryService.getSyncHistoryByType(
-        syncType as 'manual' | 'automatic' | 'background', 
-        limit, 
+        syncType as 'manual' | 'automatic' | 'background',
+        limit,
         offset,
         sortColumn,
         sortDirection
@@ -1492,7 +1616,7 @@ router.get('/test-salesdrive', authenticateToken, async (req, res) => {
             found: false,
             message: 'Order not found'
           }
-        }); 
+        });
       }
     }
 
@@ -1512,7 +1636,7 @@ router.get('/test-salesdrive', authenticateToken, async (req, res) => {
 router.delete('/sync/history/delete', authenticateToken, async (req, res) => {
   try {
     const { ids } = req.body;
-    
+
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({
         success: false,
@@ -1521,7 +1645,7 @@ router.delete('/sync/history/delete', authenticateToken, async (req, res) => {
     }
 
     const { syncHistoryService } = await import('../services/syncHistoryService.js');
-    
+
     // Удаляем записи по ID
     const deletedCount = await prisma.syncHistory.deleteMany({
       where: {

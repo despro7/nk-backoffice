@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Switch, cn } from '@heroui/react';
+import { Button, Switch, cn } from '@heroui/react';
 import { useEquipmentFromAuth } from '@/contexts/AuthContext';
 import { ToastService } from '@/services/ToastService';
 import { RightPanel } from './RightPanel';
 import { WeightDisplayWidget } from './WeightDisplayWidget';
 import { BoxSelector } from './BoxSelector';
 import { DeviationButton } from './DeviationButton';
+import { OrderRefreshButton } from './OrderRefreshButton';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { ConfirmModal } from './modals/ConfirmModal';
 import type { OrderForAssembly } from '../types/orderAssembly';
@@ -27,6 +28,7 @@ interface OrderAssemblyRightPanelProps {
   onPrintTTN: () => void;
   order: any;
   externalId: string;
+  onOrderRefresh?: (updatedOrder: any) => void;
 }
 
 export function OrderAssemblyRightPanel({
@@ -44,7 +46,8 @@ export function OrderAssemblyRightPanel({
   expandingSets,
   onPrintTTN,
   order,
-  externalId
+  externalId,
+  onOrderRefresh
 }: OrderAssemblyRightPanelProps) {
   const [showPrintConfirmModal, setShowPrintConfirmModal] = useState(false);
   const { expectedWeight, cumulativeTolerance } = getWeightData();
@@ -59,10 +62,18 @@ export function OrderAssemblyRightPanel({
         <RightPanel>
           {/* OrderTrackingNumber */}
           <div className="w-full">
-            <div 
+            <div
               className="bg-neutral-50 p-4 rounded-lg cursor-pointer hover:bg-neutral-100 transition-colors active:scale-[0.98] transform"
-              onClick={() => setShowPrintConfirmModal(true)}
               title="Натисніть для друку ТТН"
+              // onClick={() => setShowPrintConfirmModal(true)}
+              onClick={async () => {
+                const { shippingClientService } = await import('@/services/ShippingService');
+                await shippingClientService.viewTTN({
+                  ttn: order?.ttn || orderForAssembly.shipping.trackingId,
+                  provider: order?.provider || orderForAssembly.shipping.provider,
+                  senderId: order?.rawData?.ord_delivery_data?.[0]?.senderId || 1,
+                });
+              }}
             >
               <div className="flex items-center gap-2.5 text-2xl font-mono tracking-wider text-primary">
                 {formatTrackingNumberWithIcon(orderForAssembly.shipping.trackingId, {
@@ -177,6 +188,13 @@ export function OrderAssemblyRightPanel({
 
           {/* Кнопка для позначення відхилень */}
           <DeviationButton />
+
+          {/* Кнопка оновлення замовлення */}
+          <OrderRefreshButton
+            orderId={order?.id}
+            lastSynced={order?.lastSynced}
+            onRefreshComplete={onOrderRefresh}
+          />
         </RightPanel>
       </div>
 

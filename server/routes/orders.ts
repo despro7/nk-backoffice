@@ -602,7 +602,7 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
       success: true,
       data: {
         id: orderDetails.id,
-        externalId: orderDetails.externalId, // Добавили externalId в ответ
+        externalId: orderDetails.externalId,
         orderNumber: orderDetails.orderNumber,
         ttn: orderDetails.ttn,
         quantity: orderDetails.quantity,
@@ -619,6 +619,7 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
         paymentMethod: orderDetails.paymentMethod,
         cityName: orderDetails.cityName,
         provider: orderDetails.provider,
+        lastSynced: orderDetails.lastSynced,
         rawData: orderDetails.rawData
       }
     });
