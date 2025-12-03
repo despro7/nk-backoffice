@@ -120,9 +120,9 @@ export class ScaleService {
         // Ручной выбор порта
         this.port = await navigator.serial.requestPort({
           filters: [
-            { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340
-            { usbVendorId: 0x067b, usbProductId: 0x2303 }, // Prolific
-            { usbVendorId: 0x0403, usbProductId: 0x6001 }  // FTDI
+            // { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340
+            // { usbVendorId: 0x067b, usbProductId: 0x2303 }, // Prolific
+            // { usbVendorId: 0x0403, usbProductId: 0x6001 }  // FTDI
           ]
         });
       }
@@ -173,7 +173,7 @@ export class ScaleService {
     // bytes6: [m1,m2,m3,m4,m5,m6] где m1 — младший разряд [2]
     let str = '';
     let validDigits = 0;
-    
+
     for (let i = 5; i >= 0; i--) { // разворот разрядов: m6..m1
       const d = bytes6[i] & 0x0F;
       if (d > 9) {
@@ -184,10 +184,10 @@ export class ScaleService {
       str += d.toString();
       validDigits++;
     }
-    
+
     // Если нет валидных цифр, возвращаем 0
     if (validDigits === 0) return 0;
-    
+
     // Удалим лидирующие нули, но оставим хотя бы один
     str = str.replace(/^0+(?!$)/, '');
     return Number(str);
@@ -198,7 +198,7 @@ export class ScaleService {
     // bytes5: [m1,m2,m3,m4,m5] где m1 — младший разряд
     let str = '';
     let validDigits = 0;
-    
+
     for (let i = 4; i >= 0; i--) { // разворот разрядов: m5..m1
       const d = bytes5[i] & 0x0F;
       if (d > 9) {
@@ -209,10 +209,10 @@ export class ScaleService {
       str += d.toString();
       validDigits++;
     }
-    
+
     // Если нет валидных цифр, возвращаем 0
     if (validDigits === 0) return 0;
-    
+
     // Удалим лидирующие нули, но оставим хотя бы один
     str = str.replace(/^0+(?!$)/, '');
     return Number(str);
@@ -223,7 +223,7 @@ export class ScaleService {
     const raw = this.digits6ToNumber(bytes6); // например 1234
     const factor = Math.pow(10, decimals);
     const result = raw / factor; // кг
-    
+
     // Проверка на нестабильность: если вес больше 1000 кг, возможно точка сдвинута
     if (result > 1000) {
       // Попробуем сдвинуть точку на один разряд влево
@@ -232,7 +232,7 @@ export class ScaleService {
         return adjustedResult;
       }
     }
-    
+
     return result;
   }
 
@@ -240,12 +240,12 @@ export class ScaleService {
   private formatPriceFromDigits(bytes6: Uint8Array, decimals: number = 2): number {
     const raw = this.digits6ToNumber(bytes6);
     const result = raw / Math.pow(10, decimals);
-    
+
     // Дополнительная проверка: если цена больше 999.99, считаем это ошибкой парсинга
     if (result > 999.99) {
       return 0;
     }
-    
+
     return result;
   }
 
@@ -253,12 +253,12 @@ export class ScaleService {
   private formatTotalFromDigits(bytes5: Uint8Array, decimals: number = 2): number {
     const raw = this.digits5ToNumber(bytes5);
     const result = raw / Math.pow(10, decimals);
-    
+
     // Дополнительная проверка: если сумма больше 9999.99, считаем это ошибкой парсинга
     if (result > 9999.99) {
       return 0;
     }
-    
+
     return result;
   }
 
@@ -272,7 +272,7 @@ export class ScaleService {
     // Проверяем, не заблокирован ли поток
     if (this.port.readable.locked) {
       LoggingService.equipmentLog('⚠️ ScaleService: ReadableStream is locked, attempting to recover...');
-      
+
       // Если у нас есть активный reader, пытаемся его освободить
       if (this.reader) {
         try {
@@ -285,7 +285,7 @@ export class ScaleService {
           this.reader = undefined;
         }
       }
-      
+
       // Если поток все еще заблокирован, возвращаем null
       if (this.port.readable.locked) {
         LoggingService.equipmentLog('⚠️ ScaleService: ReadableStream still locked after recovery attempt');
@@ -300,18 +300,18 @@ export class ScaleService {
       LoggingService.equipmentLog('⚠️ ScaleService: Failed to get reader:', e);
       return null;
     }
-    
+
     // Флаг для отмены операции
     let cancelled = false;
-    
+
     // Функция для отмены операции
     const cancelOperation = () => {
       cancelled = true;
       if (this.reader) {
-        this.reader.cancel().catch(() => {}); // Игнорируем ошибки отмены
+        this.reader.cancel().catch(() => { }); // Игнорируем ошибки отмены
       }
     };
-    
+
     // Сохраняем функцию отмены для внешнего использования
     this.cancelCurrentOperation = cancelOperation;
 
@@ -354,9 +354,9 @@ export class ScaleService {
               resolve(null);
               return;
             }
-            
+
             const { value, done } = await this.reader.read();
-            
+
             // Проверяем, не отменена ли операция после await
             if (cancelled) {
               clearTimeout(timeoutId);
@@ -364,14 +364,14 @@ export class ScaleService {
               resolve(null);
               return;
             }
-            
+
             if (done) {
               clearTimeout(timeoutId);
               LoggingService.equipmentLog('ℹ️ ScaleService: Read operation completed (done=true)');
               resolve(null);
               return;
             }
-            
+
             if (value) {
               for (const b of value) buf.push(b);
               // Ищем минимум 18 байт подряд — в этом протоколе нет заголовка, просто 18 «цифробайтів»
@@ -385,16 +385,16 @@ export class ScaleService {
                 return;
               }
             }
-            
+
             // Продолжаем чтение с небольшой задержкой для предотвращения блокировки
             setTimeout(readChunk, 5);
           } catch (error) {
             clearTimeout(timeoutId);
             if (!cancelled) {
               // Логируем только критические ошибки
-              if (!error.message?.includes('Releasing Default reader') && 
-                  !error.message?.includes('reader') &&
-                  error.name !== 'TypeError') {
+              if (!error.message?.includes('Releasing Default reader') &&
+                !error.message?.includes('reader') &&
+                error.name !== 'TypeError') {
                 console.error('❌ ScaleService: Critical error reading frame:', error);
               }
             }
@@ -445,10 +445,10 @@ export class ScaleService {
       }
 
       LoggingService.equipmentLog('⚖️ ScaleService: Отправляем команду Tare (00 00 01)');
-      
+
       // Добавляем таймаут для операции записи
       const writePromise = writer.write(new Uint8Array([0x00, 0x00, 0x01]));
-      const timeoutPromise = new Promise<never>((_, reject) => 
+      const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => {
           try {
             writer.releaseLock();
@@ -458,16 +458,16 @@ export class ScaleService {
           reject(new Error('Таймаут при отправке команды Tare'));
         }, 2000)
       );
-      
+
       // Ждем завершения записи или таймаута
       await Promise.race([writePromise, timeoutPromise]);
-      
+
       // Освобождаем writer
       writer.releaseLock();
-      
+
       LoggingService.equipmentLog('✅ ScaleService: Команда Tare отправлена успешно');
       return true;
-      
+
     } catch (error) {
       console.error('❌ ScaleService: Ошибка при отправке команды Tare:', error);
       return false;
@@ -483,10 +483,10 @@ export class ScaleService {
     // Проверяем, не заблокирован ли поток записи
     if (this.port.writable?.locked) {
       LoggingService.equipmentLog('⚠️ ScaleService: WritableStream is locked, attempting to recover...');
-      
+
       // Простое решение - ждем немного и пытаемся снова
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       // Если поток все еще заблокирован, выбрасываем ошибку
       if (this.port.writable?.locked) {
         // Пробуем принудительно освободить
@@ -507,7 +507,7 @@ export class ScaleService {
 
       // Добавляем таймаут для операции записи
       const writePromise = writer.write(new Uint8Array([0x00, 0x00, 0x03]));
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => {
           try {
             writer.releaseLock();
@@ -517,10 +517,10 @@ export class ScaleService {
           reject(new Error('Timeout while writing to scale'));
         }, 2000)
       );
-      
+
       // Ждем завершения записи или таймаута
       await Promise.race([writePromise, timeoutPromise]);
-      
+
       // Освобождаем writer только если операция завершена успешно
       writer.releaseLock();
       if (this.shouldLog()) {
@@ -528,12 +528,12 @@ export class ScaleService {
       }
     } catch (error) {
       console.error('Error sending poll to scale:', error);
-      
+
       // Если ошибка связана с блокировкой, пытаемся освободить поток
       if (error.message.includes('locked')) {
         this.forceUnlockStreams();
       }
-      
+
       throw error;
     }
   }
@@ -577,7 +577,7 @@ export class ScaleService {
       });
 
       const frame = await Promise.race([readPromise, timeoutPromise]);
-      
+
       if (!frame) {
         // При таймауте возвращаем null для непрерывного режима
         return null;
@@ -614,7 +614,7 @@ export class ScaleService {
       const now = new Date();
       const timeStr = now.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       const uptimeSec = Math.floor((now.getTime() - performance.timeOrigin) / 1000);
-      
+
       // Детальная диагностика ошибки
       const errorInfo = {
         timestamp: now.toISOString(),
@@ -634,7 +634,7 @@ export class ScaleService {
         },
         config: this.config
       };
-      
+
       console.error(`❌ ScaleService: Детальная ошибка чтения [${timeStr}, +${uptimeSec}s]:`, errorInfo);
 
       // Для непрерывного режима не выбрасываем ошибки, а возвращаем null
@@ -674,14 +674,14 @@ export class ScaleService {
     this.stopReadLoop = () => {
       shouldStop = true;
       if (this.reader) {
-        this.reader.cancel().catch(() => {});
+        this.reader.cancel().catch(() => { });
       }
     };
 
     // Интервал для отправки запросов к весам
     const pollInterval = setInterval(async () => {
       if (shouldStop || !this.isConnected) return;
-      
+
       try {
         await this.sendPoll();
       } catch (error) {
@@ -733,7 +733,7 @@ export class ScaleService {
         }
       }
     }
-    
+
     clearInterval(pollInterval);
     LoggingService.equipmentLog('🌀 persistentStream: Цикл чтения остановлен.');
   }
@@ -816,7 +816,7 @@ export class ScaleService {
       } else {
         LoggingService.equipmentLog('ℹ️ ScaleService: ReadableStream is not available');
       }
-      
+
       if (this.port?.writable) {
         if (this.port.writable.locked) {
           LoggingService.equipmentLog('🔓 ScaleService: Принудительно освобождаем WritableStream');
@@ -842,7 +842,7 @@ export class ScaleService {
   // Відключення від ваг
   public async disconnect(): Promise<void> {
     try {
-      
+
       // Отменяем текущую операцию чтения, если она есть
       if (this.cancelCurrentOperation) {
         this.cancelCurrentOperation();
@@ -958,7 +958,7 @@ export class ScaleService {
       writableLocked: this.port?.writable?.locked || false
     };
   }
-  
+
   // Отмена текущей операции чтения
   public cancelCurrentReadOperation(): void {
     LoggingService.equipmentLog('🔄 ScaleService: Attempting to cancel current read operation');
@@ -1009,7 +1009,7 @@ export class ScaleService {
       return false;
     } catch (error) {
       console.error('Scale connection test failed:', error);
-      
+
       // Детальное логирование для диагностики
       const errorInfo = {
         message: error instanceof Error ? error.message : String(error),
@@ -1023,7 +1023,7 @@ export class ScaleService {
           writableLocked: this.port?.writable?.locked || false
         }
       };
-      
+
       console.error('🔧 Детальная информация об ошибке тестирования:', errorInfo);
       return false;
     }
@@ -1033,23 +1033,23 @@ export class ScaleService {
   public async forceReset(): Promise<boolean> {
     try {
       LoggingService.equipmentLog('🔄 ScaleService: Принудительный сброс соединения с весами');
-      
+
       // Отменяем текущую операцию чтения, если она есть
       if (this.cancelCurrentOperation) {
         LoggingService.equipmentLog('🔄 ScaleService: Отмена текущей операции перед сбросом');
         this.cancelCurrentOperation();
         this.cancelCurrentOperation = null;
       }
-      
+
       // Отключаемся
       await this.disconnect();
-      
+
       // Небольшая задержка
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       // Подключаемся заново
       const reconnected = await this.connect();
-      
+
       if (reconnected) {
         LoggingService.equipmentLog('✅ ScaleService: Соединение успешно восстановлено после сброса');
         return true;

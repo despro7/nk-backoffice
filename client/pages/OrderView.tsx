@@ -12,6 +12,7 @@ import { useBarcodeScanning } from '@/hooks/useBarcodeScanning';
 import { useOrderNavigation } from '@/hooks/useOrderNavigation';
 import { InfoModal } from '../components/modals/InfoModal';
 import { useOrderSettings } from '@/hooks/useOrderSettings';
+import { useBoxInitialStatus } from '@/hooks/useBoxInitialStatus';
 import { OrderViewHeader } from '@/components/OrderViewHeader';
 import { OrderAssemblyRightPanel } from '@/components/OrderAssemblyRightPanel';
 import { OrderDetailsAdmin } from '@/components/OrderDetailsAdmin';
@@ -51,6 +52,7 @@ export default function OrderView() {
 
   // Використовуємо створені хуки
   const { orderSoundSettings, toleranceSettings, playOrderStatusSound } = useOrderSettings();
+  const { boxInitialStatus } = useBoxInitialStatus();
 
   const { getWeightData, handleWeightChange } = useWeightManagement({
     checklistItems,
@@ -185,7 +187,7 @@ export default function OrderView() {
     // Використовуємо checklistItems якщо вони є (зі збереженням статусів), інакше expandedItems
     const currentItems = checklistItems.length > 0 ? checklistItems : expandedItems;
     const itemsWithoutBoxes = currentItems.filter(item => item.type !== 'box');
-    const combinedItems = combineBoxesWithItems(updatedBoxes, itemsWithoutBoxes, isReadyToShip);
+    const combinedItems = combineBoxesWithItems(updatedBoxes, itemsWithoutBoxes, isReadyToShip, boxInitialStatus);
 
     setChecklistItems(combinedItems);
   }, [expandedItems, checklistItems, isReadyToShip]);
@@ -237,7 +239,7 @@ export default function OrderView() {
           if (selectedBoxes.length > 0) {
             // console.log('📦 selectedBoxes.length > 0, викликаємо combineBoxesWithItems');
             const itemsWithoutBoxes = processedItems.filter(item => item.type !== 'box');
-            const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, orderIsReadyToShip);
+            const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, orderIsReadyToShip, boxInitialStatus);
 
             if (combinedItems && combinedItems.length > 0) {
               // console.log('📦 Встановлюємо combinedItems:', 
@@ -268,7 +270,7 @@ export default function OrderView() {
 
           if (selectedBoxes.length > 0) {
             const itemsWithoutBoxes = fallbackItems.filter(item => item.type !== 'box');
-            const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, isReadyToShipFallback);
+            const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, isReadyToShipFallback, boxInitialStatus);
 
             if (combinedItems && combinedItems.length > 0) {
               setChecklistItems(combinedItems);

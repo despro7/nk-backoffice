@@ -20,6 +20,8 @@ import {
 } from "@heroui/react";
 import { Plus, Edit, Trash2, Package } from "lucide-react";
 import { ConfirmModal } from "./modals/ConfirmModal";
+import { DynamicIcon } from "lucide-react/dynamic";
+import { ToastService } from "@/services/ToastService";
 
 interface BoxFormData {
   name: string;
@@ -32,6 +34,7 @@ interface BoxFormData {
   weight: number;
   self_weight: number;
   overflow: number;
+  barcode: string;
   description: string;
   isActive: boolean;
 }
@@ -47,6 +50,7 @@ const initialFormData: BoxFormData = {
   weight: 0,
   self_weight: 0,
   overflow: 0,
+  barcode: "",
   description: "",
   isActive: true,
 };
@@ -97,6 +101,7 @@ export const BoxSettingsManager: React.FC = () => {
         weight: Number(box.weight),
         self_weight: Number(box.self_weight),
         overflow: Number(box.overflow),
+        barcode: box.barcode || "",
         description: box.description || "",
         isActive: box.isActive,
       });
@@ -156,18 +161,22 @@ export const BoxSettingsManager: React.FC = () => {
       if (response.ok) {
         await fetchBoxes();
         closeModal();
-        addToast({
+        ToastService.show({
           title: "Успіх",
           description: "Коробка успішно збережена",
           color: "success",
+          hideIcon: false,
+          icon: <DynamicIcon name="check-circle" className="w-5 h-5" />
         });
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Ошибка при сохранении коробки");
-        addToast({
+        ToastService.show({
           title: "Помилка",
           description: "Помилка при збереженні коробки",
           color: "danger",
+          hideIcon: false,
+          icon: <DynamicIcon name="x-circle" className="w-5 h-5" />
         });
       }
     } catch (err) {
@@ -225,26 +234,32 @@ export const BoxSettingsManager: React.FC = () => {
             box.id === boxId ? { ...box, isActive: !currentStatus } : box,
           ),
         );
-        addToast({
+        ToastService.show({
           title: "Успіх",
           description: "Статус коробки успішно змінено",
           color: "success",
+          hideIcon: false,
+          icon: <DynamicIcon name="check-circle" className="w-5 h-5" />
         });
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Ошибка при изменении статуса коробки");
-        addToast({
+        ToastService.show({
           title: "Помилка",
           description: "Помилка при зміні статусу коробки",
           color: "danger",
+          hideIcon: false,
+          icon: <DynamicIcon name="x-circle" className="w-5 h-5" />
         });
       }
     } catch (err) {
       setError("Ошибка при изменении статуса коробки");
-      addToast({
+      ToastService.show({
         title: "Помилка",
         description: "Помилка при зміні статусу коробки",
         color: "danger",
+        hideIcon: false,
+        icon: <DynamicIcon name="x-circle" className="w-5 h-5" />
       });
     }
   };
@@ -373,6 +388,10 @@ export const BoxSettingsManager: React.FC = () => {
                       {Number(box.overflow).toFixed(0)}
                     </span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Штрих-код:</span>
+                    <span className={`font-medium font-mono ${!box.barcode ? "text-red-500" : ""}`}>{box.barcode ? box.barcode : 'Відсутній'}</span>
+                  </div>
                   {box.description && (
                     <div className="pt-2 border-t">
                       <span className="text-gray-600 text-xs">
@@ -428,7 +447,7 @@ export const BoxSettingsManager: React.FC = () => {
                 value={formData.name}
                 onValueChange={(value) => handleTextChange("name", value)}
                 placeholder="Наприклад: Коробка NK"
-                className="col-span-3"
+                className="col-span-2"
                 isRequired
               />
               <Input
@@ -436,8 +455,15 @@ export const BoxSettingsManager: React.FC = () => {
                 value={formData.marking}
                 onValueChange={(value) => handleTextChange("marking", value)}
                 placeholder="Наприклад: NK"
-                className="col-span-3"
+                className="col-span-2"
                 isRequired
+              />
+              <Input
+                label="Штрих-код коробки"
+                value={formData.barcode}
+                onValueChange={(value) => handleTextChange("barcode", value)}
+                placeholder="Наприклад: 12345678"
+                className="col-span-2"
               />
               <NumberInput
                 label="Мін. кількість порцій"

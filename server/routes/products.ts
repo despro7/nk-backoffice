@@ -259,6 +259,41 @@ router.put('/:id/manual-order', authenticateToken, async (req, res) => {
   }
 });
 
+// Оновити штрих-код товару по ID
+router.put('/:id/barcode', authenticateToken, async (req, res) => {
+  try {
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
+      });
+    }
+
+    const { id } = req.params;
+    const { barcode } = req.body;
+
+    if (typeof barcode !== 'string') {
+      return res.status(400).json({ error: 'barcode must be a string' });
+    }
+
+    const productId = parseInt(id);
+    const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
+    if (!existingProduct) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const updatedProduct = await prisma.product.update({
+      where: { id: productId },
+      data: ({ barcode } as any)
+    });
+
+    res.json({ success: true, product: updatedProduct });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Синхронизировать товары с Dilovod
 router.post('/sync', authenticateToken, async (req, res) => {
   try {

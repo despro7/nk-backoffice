@@ -98,10 +98,10 @@ export class EquipmentSettingsService {
             const [, event] = key.split('.');
             if (!parsedSettings.orderSoundSettings) {
               parsedSettings.orderSoundSettings = {
-                pending: 'default',
-                success: 'default',
-                done: 'default',
-                error: 'default',
+                pending: 'click',
+                success: 'uplift',
+                done: 'melody',
+                error: 'low',
               };
             }
             parsedSettings.orderSoundSettings[event] = value;
@@ -133,14 +133,30 @@ export class EquipmentSettingsService {
   async saveEquipmentSettings(settings: EquipmentSettings): Promise<void> {
     try {
       console.log('💾 Збереження налаштувань обладнання...');
+      
+      // CRITICAL FIX: Логування для відстеження змін
+      console.log('📋 Налаштування для збереження:', {
+        scale: settings.scale,
+        scanner: settings.scanner,
+        printer: settings.printer,
+        orderSoundSettings: settings.orderSoundSettings
+      });
 
       // Групуємо налаштування по категоріях для паралельного збереження
-      const savePromises = [
-        this.saveScaleSettings(settings.scale),
-        this.saveScannerSettings(settings.scanner),
-        this.savePrinterSettings(settings.printer),
-        this.saveOrderSoundSettings(settings.orderSoundSettings)
-      ];
+      const savePromises = [];
+      
+      if (settings.scale) {
+        savePromises.push(this.saveScaleSettings(settings.scale));
+      }
+      if (settings.scanner) {
+        savePromises.push(this.saveScannerSettings(settings.scanner));
+      }
+      if (settings.printer) {
+        savePromises.push(this.savePrinterSettings(settings.printer));
+      }
+      if (settings.orderSoundSettings) {
+        savePromises.push(this.saveOrderSoundSettings(settings.orderSoundSettings));
+      }
 
       // Виконуємо всі операції паралельно
       await Promise.all(savePromises);
@@ -154,12 +170,19 @@ export class EquipmentSettingsService {
   // Збереження налаштувань звуків для статусів замовлення
   private async saveOrderSoundSettings(orderSoundSettings: Record<string, string>): Promise<void> {
     if (!orderSoundSettings) return;
-    const soundSettingsList = Object.entries(orderSoundSettings).map(([event, value]) => ({
-      key: `equipment_orderSoundSettings.${event}`,
-      value: JSON.stringify(value),
-      description: `Звук для статусу замовлення ${event}`
-    }));
-    await this.batchUpsertSettings(soundSettingsList);
+    
+    // CRITICAL FIX: Зберігаємо тільки ті поля, які реально передані (не undefined)
+    const soundSettingsList = Object.entries(orderSoundSettings)
+      .filter(([_, value]) => value !== undefined)
+      .map(([event, value]) => ({
+        key: `equipment_orderSoundSettings.${event}`,
+        value: JSON.stringify(value),
+        description: `Звук для статусу замовлення ${event}`
+      }));
+    
+    if (soundSettingsList.length > 0) {
+      await this.batchUpsertSettings(soundSettingsList);
+    }
   }
 
 
@@ -170,130 +193,180 @@ export class EquipmentSettingsService {
     // Валідація налаштувань перед збереженням
     this.validateScaleSettings(scaleSettings);
 
-    const scaleSettingsList = [
-      {
+    // CRITICAL FIX: Зберігаємо тільки ті поля, які реально передані (не undefined)
+    const scaleSettingsList = [];
+    
+    if (scaleSettings.baudRate !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.baudRate',
         value: JSON.stringify(scaleSettings.baudRate ?? 4800),
         description: 'Швидкість передачі даних ваг'
-      },
-      {
+      });
+    }
+    if (scaleSettings.dataBits !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.dataBits',
         value: JSON.stringify(scaleSettings.dataBits ?? 8),
         description: 'Біти даних ваг'
-      },
-      {
+      });
+    }
+    if (scaleSettings.stopBits !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.stopBits',
         value: JSON.stringify(scaleSettings.stopBits ?? 1),
         description: 'Стоп-біти ваг'
-      },
-      {
+      });
+    }
+    if (scaleSettings.parity !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.parity',
         value: JSON.stringify(scaleSettings.parity ?? 'even'),
         description: 'Парність ваг'
-      },
-      {
+      });
+    }
+    if (scaleSettings.autoConnect !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.autoConnect',
-        value: JSON.stringify(scaleSettings.autoConnect ?? false),
+        value: JSON.stringify(scaleSettings.autoConnect ?? true),
         description: 'Автоматичне підключення ваг'
-      },
-      {
+      });
+    }
+    if (scaleSettings.activePollingInterval !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.activePollingInterval',
-        value: JSON.stringify(scaleSettings.activePollingInterval ?? 1000),
+        value: JSON.stringify(scaleSettings.activePollingInterval ?? 250),
         description: 'Активне опитування ваг (мс)'
-      },
-      {
+      });
+    }
+    if (scaleSettings.reservePollingInterval !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.reservePollingInterval',
-        value: JSON.stringify(scaleSettings.reservePollingInterval ?? 5000),
+        value: JSON.stringify(scaleSettings.reservePollingInterval ?? 1000),
         description: 'Резервне опитування ваг (мс)'
-      },
-      {
+      });
+    }
+    if (scaleSettings.activePollingDuration !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.activePollingDuration',
         value: JSON.stringify(scaleSettings.activePollingDuration ?? 30000),
         description: 'Тривалість активного опитування ваг (мс)'
-      },
-      {
+      });
+    }
+    if (scaleSettings.maxPollingErrors !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.maxPollingErrors',
         value: JSON.stringify(scaleSettings.maxPollingErrors ?? 5),
         description: 'Максимальна кількість помилок перед зупинкою опитування'
-      },
-      {
+      });
+    }
+    if (scaleSettings.weightCacheDuration !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.weightCacheDuration',
         value: JSON.stringify(scaleSettings.weightCacheDuration ?? 500),
         description: 'Час кешування даних ваг (мс)'
-      },
-      {
+      });
+    }
+    if (scaleSettings.amplitudeSpikeThresholdKg !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.amplitudeSpikeThresholdKg',
         value: JSON.stringify(scaleSettings.amplitudeSpikeThresholdKg ?? 5),
         description: 'Поріг сплеску ваги (кг)'
-      },
-      {
+      });
+    }
+    if (scaleSettings.stableSound !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.stableSound',
         value: JSON.stringify(scaleSettings.stableSound ?? 'default'),
         description: 'Звук стабільного кадру'
-      },
-      {
+      });
+    }
+    if (scaleSettings.unstableSound !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.unstableSound',
         value: JSON.stringify(scaleSettings.unstableSound ?? 'default'),
         description: 'Звук нестабільного кадру'
-      },
-      {
+      });
+    }
+    if (scaleSettings.errorSound !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.errorSound',
         value: JSON.stringify(scaleSettings.errorSound ?? 'default'),
         description: 'Звук помилки'
-      },
-      {
+      });
+    }
+    if (scaleSettings.weightThresholdForActive !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.weightThresholdForActive',
-        value: JSON.stringify(scaleSettings.weightThresholdForActive ?? 0.010),
+        value: JSON.stringify(scaleSettings.weightThresholdForActive ?? 0.01),
         description: 'Поріг ваги для переключення на активний polling (кг)'
-      },
-      {
+      });
+    }
+    if (scaleSettings.connectionStrategy !== undefined) {
+      scaleSettingsList.push({
         key: 'equipment_scale.connectionStrategy',
         value: JSON.stringify(scaleSettings.connectionStrategy ?? 'reconnectOnError'),
         description: 'Стратегія роботи з COM-портом ваг'
-      }
-    ];
+      });
+    }
 
-    await this.batchUpsertSettings(scaleSettingsList);
+    if (scaleSettingsList.length > 0) {
+      await this.batchUpsertSettings(scaleSettingsList);
+    }
   }
 
   // Збереження налаштувань сканера
   private async saveScannerSettings(scannerSettings: EquipmentSettings['scanner']): Promise<void> {
     if (!scannerSettings) return;
 
-    const scannerSettingsList = [
-      {
+    // CRITICAL FIX: Зберігаємо тільки ті поля, які реально передані (не undefined)
+    const scannerSettingsList = [];
+    
+    if (scannerSettings.autoConnect !== undefined) {
+      scannerSettingsList.push({
         key: 'equipment_scanner.autoConnect',
         value: JSON.stringify(scannerSettings.autoConnect ?? true),
         description: 'Автоматичне підключення сканера'
-      },
-      {
+      });
+    }
+    if (scannerSettings.timeout !== undefined) {
+      scannerSettingsList.push({
         key: 'equipment_scanner.timeout',
         value: JSON.stringify(scannerSettings.timeout ?? 5000),
         description: 'Таймаут сканера'
-      },
-      {
+      });
+    }
+    if (scannerSettings.scanTimeout !== undefined) {
+      scannerSettingsList.push({
         key: 'equipment_scanner.scanTimeout',
         value: JSON.stringify(scannerSettings.scanTimeout ?? 300),
         description: 'Таймаут сканування баркоду (мс)'
-      },
-      {
+      });
+    }
+    if (scannerSettings.minScanSpeed !== undefined) {
+      scannerSettingsList.push({
         key: 'equipment_scanner.minScanSpeed',
         value: JSON.stringify(scannerSettings.minScanSpeed ?? 50),
         description: 'Мінімальна швидкість сканування (мс)'
-      },
-      {
+      });
+    }
+    if (scannerSettings.maxScanSpeed !== undefined) {
+      scannerSettingsList.push({
         key: 'equipment_scanner.maxScanSpeed',
         value: JSON.stringify(scannerSettings.maxScanSpeed ?? 200),
         description: 'Максимальна швидкість сканування (мс)'
-      },
-      {
+      });
+    }
+    if (scannerSettings.minBarcodeLength !== undefined) {
+      scannerSettingsList.push({
         key: 'equipment_scanner.minBarcodeLength',
         value: JSON.stringify(scannerSettings.minBarcodeLength ?? 5),
         description: 'Мінімальна довжина баркоду'
-      }
-    ];
+      });
+    }
 
-    await this.batchUpsertSettings(scannerSettingsList);
+    if (scannerSettingsList.length > 0) {
+      await this.batchUpsertSettings(scannerSettingsList);
+    }
   }
 
 
@@ -301,30 +374,41 @@ export class EquipmentSettingsService {
   private async savePrinterSettings(printerSettings: EquipmentSettings['printer']): Promise<void> {
     if (!printerSettings) return;
 
-    const printerSettingsList = [
-      {
+    // CRITICAL FIX: Зберігаємо тільки ті поля, які реально передані (не undefined)
+    const printerSettingsList = [];
+    
+    if (printerSettings.enabled !== undefined) {
+      printerSettingsList.push({
         key: 'equipment_printer.enabled',
-        value: JSON.stringify(printerSettings.enabled ?? false),
+        value: JSON.stringify(printerSettings.enabled ?? true),
         description: 'Прямий друк через QZ Tray увімкнено'
-      },
-      {
+      });
+    }
+    if (printerSettings.name !== undefined) {
+      printerSettingsList.push({
         key: 'equipment_printer.name',
-        value: JSON.stringify(printerSettings.name ?? ''),
+        value: JSON.stringify(printerSettings.name ?? 'ZDesigner ZD220-203dpi ZPL'),
         description: "Ім'я принтера для прямого друку"
-      },
-      {
+      });
+    }
+    if (printerSettings.autoPrintOnComplete !== undefined) {
+      printerSettingsList.push({
         key: 'equipment_printer.autoPrintOnComplete',
-        value: JSON.stringify(printerSettings.autoPrintOnComplete ?? false),
+        value: JSON.stringify(printerSettings.autoPrintOnComplete ?? true),
         description: 'Автоматичний друк при завершенні замовлення'
-      },
-      {
+      });
+    }
+    if (printerSettings.autoPrintDelayMs !== undefined) {
+      printerSettingsList.push({
         key: 'equipment_printer.autoPrintDelayMs',
         value: JSON.stringify(printerSettings.autoPrintDelayMs ?? 3000),
         description: 'Затримка перед автоматичним друком (мс)'
-      }
-    ];
+      });
+    }
 
-    await this.batchUpsertSettings(printerSettingsList);
+    if (printerSettingsList.length > 0) {
+      await this.batchUpsertSettings(printerSettingsList);
+    }
   }
 
   // Batch операція для upsert налаштувань
@@ -392,7 +476,17 @@ export class EquipmentSettingsService {
   async updateScaleSettings(scaleSettings: Partial<EquipmentSettings['scale']>): Promise<void> {
     try {
       console.log('⚖️ Оновлення налаштувань ваг...');
-      await this.saveScaleSettings(scaleSettings as EquipmentSettings['scale']);
+      
+      // CRITICAL FIX: Читаємо поточні налаштування перед оновленням
+      const currentSettings = await this.getEquipmentSettings();
+      
+      // Мержимо з поточними налаштуваннями (оновлюємо тільки передані поля)
+      const mergedScaleSettings = {
+        ...currentSettings.scale,
+        ...scaleSettings
+      };
+      
+      await this.saveScaleSettings(mergedScaleSettings);
       console.log('✅ Налаштування ваг оновлено');
     } catch (error) {
       console.error('❌ Помилка оновлення налаштувань ваг:', error);
@@ -403,7 +497,17 @@ export class EquipmentSettingsService {
   async updateScannerSettings(scannerSettings: Partial<EquipmentSettings['scanner']>): Promise<void> {
     try {
       console.log('📷 Оновлення налаштувань сканера...');
-      await this.saveScannerSettings(scannerSettings as EquipmentSettings['scanner']);
+      
+      // CRITICAL FIX: Читаємо поточні налаштування перед оновленням
+      const currentSettings = await this.getEquipmentSettings();
+      
+      // Мержимо з поточними налаштуваннями (оновлюємо тільки передані поля)
+      const mergedScannerSettings = {
+        ...currentSettings.scanner,
+        ...scannerSettings
+      };
+      
+      await this.saveScannerSettings(mergedScannerSettings);
       console.log('✅ Налаштування сканера оновлено');
     } catch (error) {
       console.error('❌ Помилка оновлення налаштувань сканера:', error);
@@ -415,7 +519,17 @@ export class EquipmentSettingsService {
   async updatePrinterSettings(printerSettings: Partial<EquipmentSettings['printer']>): Promise<void> {
     try {
       console.log('🖨️ Оновлення налаштувань принтера...');
-      await this.savePrinterSettings(printerSettings as EquipmentSettings['printer']);
+      
+      // CRITICAL FIX: Читаємо поточні налаштування перед оновленням
+      const currentSettings = await this.getEquipmentSettings();
+      
+      // Мержимо з поточними налаштуваннями (оновлюємо тільки передані поля)
+      const mergedPrinterSettings = {
+        ...(currentSettings.printer || EQUIPMENT_DEFAULTS.printer),
+        ...printerSettings
+      };
+      
+      await this.savePrinterSettings(mergedPrinterSettings);
       console.log('✅ Налаштування принтера оновлено');
     } catch (error) {
       console.error('❌ Помилка оновлення налаштувань принтера:', error);

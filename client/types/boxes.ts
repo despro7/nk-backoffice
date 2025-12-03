@@ -11,6 +11,7 @@ export interface SettingsBoxes {
   overflow: number;
   weight: number; // Грузоподъемность в кг
   self_weight: number; // Собственный вес коробки в кг
+  barcode?: string | null;
   description?: string;
   isActive: boolean;
   createdAt: string;

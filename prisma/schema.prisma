@@ -109,6 +109,7 @@ model Product {
   updatedAt           DateTime @updatedAt
   weight              Int?
   manualOrder         Int?     @default(0)
+  barcode             String?
   dilovodDataHash     String?  @db.VarChar(64)
   isOutdated          Boolean  @default(false)
 
@@ -132,6 +133,7 @@ model SettingsBoxes {
   overflow    Int      @default(1)
   weight      Decimal  @db.Decimal(10, 2)
   self_weight Decimal  @db.Decimal(10, 3)
+  barcode     String?  @db.VarChar(255)
   description String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -141,6 +143,7 @@ model SettingsBoxes {
   @@index([marking])
   @@index([qntFrom])
   @@index([qntTo])
+  @@index([barcode])
   @@map("settings_boxes")
 }
 

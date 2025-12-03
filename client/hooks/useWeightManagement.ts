@@ -18,9 +18,15 @@ export function useWeightManagement({
   toleranceSettings,
   setChecklistItems
 }: UseWeightManagementProps) {
-  
+
   /**
    * Обчислює очікувану вагу і накопичену похибку одночасно для оптимізації
+   * 
+   * Логіка розрахунку:
+   * 1. Якщо коробка не зважена (статус !== 'done') → показуємо тільки вагу коробки
+   * 2. Якщо є товар у статусі 'pending' або 'error' → показуємо накопичену вагу (коробка + зважені товари + поточний товар)
+   * 3. Якщо всі товари зважені → показуємо тільки вагу зважених елементів (або null якщо немає зважених)
+   * 
    * @returns {expectedWeight: number | null, cumulativeTolerance: number}
    */
   const getWeightData = useCallback(() => {
@@ -39,7 +45,7 @@ export function useWeightManagement({
       // ['awaiting_confirmation', 'error', 'default', 'success'].includes(item.status) &&
       (item.boxIndex || 0) === activeBoxIndex
     );
-    
+
     if (awaitingBox) {
       // Для коробки tolerance розраховується окремо (10% або мінімум 10г)
       const boxTolerance = calcBoxTolerance(awaitingBox.expectedWeight);
@@ -64,7 +70,7 @@ export function useWeightManagement({
     const boxWeight = boxItem && ['done', 'success'].includes(boxItem.status)
       ? boxItem.expectedWeight
       : 0;
-    
+
     if (boxWeight > 0) {
       cumulativeWeight += boxWeight;
     }
@@ -73,37 +79,38 @@ export function useWeightManagement({
     const doneItems = currentBoxItems.filter(item =>
       item.type === 'product' && (item.status === 'done' || item.status === 'success')
     );
-    
+
     doneItems.forEach(item => {
       cumulativeWeight += item.expectedWeight;
       totalPortions += item.quantity || 1;
     });
 
-    // 5. Якщо є pending, додаємо його вагу і порції
+    // 5. Якщо є pending або error, додаємо його вагу і порції
+    // Якщо немає pending/error товарів, показуємо тільки вагу вже зважених елементів
     if (pendingItem) {
       cumulativeWeight += pendingItem.expectedWeight;
       totalPortions += pendingItem.quantity || 1;
-    } else {
-      // 6. Якщо є error, очікуємо саме його (НЕ переходимо до наступного default)
-      const errorItem = currentBoxItems.find(item =>
-        item.type === 'product' && item.status === 'error'
-      );
-      if (errorItem) {
-        cumulativeWeight += errorItem.expectedWeight;
-        totalPortions += errorItem.quantity || 1;
-      } else {
-        // 7. Якщо немає error/pending, шукаємо наступний default
-        const nextItem = currentBoxItems.find(item =>
-          item.type === 'product' && item.status === 'default'
-        );
-        if (nextItem) {
-          cumulativeWeight += nextItem.expectedWeight;
-          totalPortions += nextItem.quantity || 1;
-        }
-      }
-    }
+    } // else {
+      // // 6. Якщо є error, очікуємо саме його (НЕ переходимо до наступного default)
+    //   const errorItem = currentBoxItems.find(item =>
+    //     item.type === 'product' && item.status === 'error'
+    //   );
+    //   if (errorItem) {
+    //     cumulativeWeight += errorItem.expectedWeight;
+    //     totalPortions += errorItem.quantity || 1;
+    //   } else {
+    //     // 7. Якщо немає error/pending, шукаємо наступний default
+    //     const nextItem = currentBoxItems.find(item =>
+    //       item.type === 'product' && item.status === 'default'
+    //     );
+    //     if (nextItem) {
+    //       cumulativeWeight += nextItem.expectedWeight;
+    //       totalPortions += nextItem.quantity || 1;
+    //     }
+    //   }
+    // }
 
-    // 8. Розраховуємо накопичену tolerance
+    // Розраховуємо накопичену tolerance
     const cumulativeTolerance = calcCumulativeTolerance(
       boxWeight,
       totalPortions,
@@ -111,7 +118,7 @@ export function useWeightManagement({
     );
 
     return {
-      expectedWeight: cumulativeWeight,
+      expectedWeight: cumulativeWeight > 0 ? cumulativeWeight : null,
       cumulativeTolerance
     };
   }, [checklistItems, activeBoxIndex, toleranceSettings]);
@@ -128,7 +135,7 @@ export function useWeightManagement({
     setChecklistItems(prevItems => {
       // Функція для обчислення очікуваної накопичувальної ваги
       const calculateExpectedCumulativeWeight = (currentItem: any) => {
-        const currentBoxItems = prevItems.filter(item => 
+        const currentBoxItems = prevItems.filter(item =>
           (item.boxIndex || 0) === activeBoxIndex
         );
 
@@ -142,7 +149,7 @@ export function useWeightManagement({
         }
 
         // Додаємо вагу всіх товарів в статусі done
-        const doneItems = currentBoxItems.filter(item => 
+        const doneItems = currentBoxItems.filter(item =>
           item.type === 'product' && item.status === 'done'
         );
         doneItems.forEach(item => {
@@ -157,23 +164,42 @@ export function useWeightManagement({
         return cumulativeWeight;
       };
 
-      // Спочатку перевіряємо коробку зі статусом 'awaiting_confirmation'
-      const awaitingBox = prevItems.find(item => 
-        item.status === 'awaiting_confirmation' && 
-        item.type === 'box' && 
+      // Спочатку перевіряємо коробку зі статусом 'pending' (відсканована, але не зважена)
+      const scannedBox = prevItems.find(item =>
+        item.status === 'pending' &&
+        item.type === 'box' &&
         (item.boxIndex || 0) === activeBoxIndex
       );
 
       // Перевіряємо, чи є коробка у фінальних статусах - якщо так, то не зважуємо коробку
-      const completedBox = prevItems.find(item => 
-        (item.status === 'done' || item.status === 'success') && 
-        item.type === 'box' && 
+      const completedBox = prevItems.find(item =>
+        (item.status === 'done' || item.status === 'success') &&
+        item.type === 'box' &&
         (item.boxIndex || 0) === activeBoxIndex
       );
 
+      // Перевіряємо, чи коробка все ще чекає на сканування
+      const awaitingBox = prevItems.find(item =>
+        item.status === 'awaiting_confirmation' &&
+        item.type === 'box' &&
+        (item.boxIndex || 0) === activeBoxIndex
+      );
+
+      // Якщо коробка не відсканована, блокуємо зважування
       if (awaitingBox && !completedBox) {
+        console.log('🚫 [useWeightManagement] Зважування заблоковано - коробка не відсканована');
+        addToast({
+          title: "Спочатку відскануйте коробку",
+          description: "Не можна зважувати коробку, поки вона не буде відсканована",
+          color: "warning",
+          timeout: 3000
+        });
+        return prevItems;
+      }
+
+      if (scannedBox && !completedBox) {
         // Для коробки очікувана вага - це тільки вага коробки
-        const expectedWeight = awaitingBox.expectedWeight;
+        const expectedWeight = scannedBox.expectedWeight;
         const tolerance = calcBoxTolerance(expectedWeight); // 10% або мінімум 10г
         const minWeight = expectedWeight - tolerance / 1000; // переводимо грами в кг
         const maxWeight = expectedWeight + tolerance / 1000; // переводимо грами в кг
@@ -188,7 +214,7 @@ export function useWeightManagement({
         if (isWeightValid) {
           // Коробка зважена - переводимо в success, потім в done
           const updatedItems = prevItems.map(item => {
-            if (item.id === awaitingBox.id) {
+            if (item.id === scannedBox.id) {
               return { ...item, status: 'success' as const };
             }
             return item;
@@ -197,7 +223,7 @@ export function useWeightManagement({
           // Показуємо повідомлення про успіх
           addToast({
             title: "Коробка зважена",
-            description: `${awaitingBox.name}: ${weight.toFixed(3)} кг (очікувано: ${expectedWeight.toFixed(3)} кг)`,
+            description: `${scannedBox.name}: ${weight.toFixed(3)} кг (очікувано: ${expectedWeight.toFixed(3)} кг)`,
             color: "success",
             icon: ToastService.createIcon("check-circle", 20),
             timeout: 3000
@@ -207,7 +233,7 @@ export function useWeightManagement({
           setTimeout(() => {
             setChecklistItems(prevItems =>
               prevItems.map(item => {
-                if (item.id === awaitingBox.id) {
+                if (item.id === scannedBox.id) {
                   return { ...item, status: 'done' as const };
                 }
                 return item;
@@ -215,34 +241,34 @@ export function useWeightManagement({
             );
 
             // Автоматично вибираємо перший товар в коробці з урахуванням сортування
-            setChecklistItems(prevItems => {
-              const currentBoxItems = prevItems.filter(item => 
-                item.type === 'product' && 
-                (item.boxIndex || 0) === activeBoxIndex && 
-                item.status === 'default'
-              );
-              
-              // Сортуємо і беремо перший елемент
-              const sortedItems = sortChecklistItems(currentBoxItems);
-              const firstProduct = sortedItems[0];
+            // setChecklistItems(prevItems => {
+            //   const currentBoxItems = prevItems.filter(item =>
+            //     item.type === 'product' &&
+            //     (item.boxIndex || 0) === activeBoxIndex &&
+            //     item.status === 'default'
+            //   );
 
-              if (firstProduct) {
-                return prevItems.map(item => {
-                  if (item.id === firstProduct.id) {
-                    return { ...item, status: 'pending' as const };
-                  }
-                  return item;
-                });
-              }
-              return prevItems;
-            });
+            //   // Сортуємо і беремо перший елемент
+            //   const sortedItems = sortChecklistItems(currentBoxItems);
+            //   const firstProduct = sortedItems[0];
+
+            //   if (firstProduct) {
+            //     return prevItems.map(item => {
+            //       if (item.id === firstProduct.id) {
+            //         return { ...item, status: 'pending' as const };
+            //       }
+            //       return item;
+            //     });
+            //   }
+            //   return prevItems;
+            // });
           }, 1500);
 
           return updatedItems;
         } else {
-          // Вага коробки не відповідає - переводимо в error, потім в awaiting_confirmation
+          // Вага коробки не відповідає - переводимо в error, потім в pending для повторного зважування
           const updatedItems = prevItems.map(item => {
-            if (item.id === awaitingBox.id) {
+            if (item.id === scannedBox.id) {
               return { ...item, status: 'error' as const };
             }
             return item;
@@ -250,7 +276,7 @@ export function useWeightManagement({
 
           // Показуємо повідомлення про помилку
           ToastService.show({
-            title: `${awaitingBox.name}: Поточна вага не коректна!`,
+            title: `${scannedBox.name}: Поточна вага не коректна!`,
             description: `Очікувано: ${expectedWeight.toFixed(3)}кг ± ${tolerance.toFixed(0)}г. Фактична вага: ${weight.toFixed(3)}кг`,
             color: "danger",
             hideIcon: false,
@@ -258,12 +284,12 @@ export function useWeightManagement({
             timeout: 5000
           });
 
-          // Через 2 секунди повертаємо в awaiting_confirmation для повторного зважування
+          // Через 2 секунди повертаємо в pending для повторного зважування
           setTimeout(() => {
             setChecklistItems(prevItems =>
               prevItems.map(item => {
-                if (item.id === awaitingBox.id) {
-                  return { ...item, status: 'awaiting_confirmation' as const };
+                if (item.id === scannedBox.id) {
+                  return { ...item, status: 'pending' as const };
                 }
                 return item;
               })
@@ -275,9 +301,9 @@ export function useWeightManagement({
       }
 
       // Якщо коробка не очікує зважування, шукаємо товар зі статусом 'pending'
-      const pendingItem = prevItems.find(item => 
-        item.status === 'pending' && 
-        item.type === 'product' && 
+      const pendingItem = prevItems.find(item =>
+        item.status === 'pending' &&
+        item.type === 'product' &&
         (item.boxIndex || 0) === activeBoxIndex
       );
 
@@ -356,35 +382,35 @@ export function useWeightManagement({
           );
 
           // Автоматично вибираємо наступний товар в коробці з урахуванням сортування
-          setChecklistItems(prevItems => {
-            const currentBoxItems = prevItems.filter(item => 
-              item.type === 'product' && 
-              (item.boxIndex || 0) === activeBoxIndex && 
-              item.status === 'default'
-            );
-            
-            // Сортуємо і беремо перший елемент
-            const sortedItems = sortChecklistItems(currentBoxItems);
-            const nextItem = sortedItems[0];
+          // setChecklistItems(prevItems => {
+          //   const currentBoxItems = prevItems.filter(item => 
+          //     item.type === 'product' && 
+          //     (item.boxIndex || 0) === activeBoxIndex && 
+          //     item.status === 'default'
+          //   );
 
-            if (nextItem) {
-              console.log('🔄 [useWeightManagement] Автоматично вибираємо наступний товар:', nextItem.name);
-              return prevItems.map(item => {
-                if (item.id === nextItem.id) {
-                  return { ...item, status: 'pending' as const };
-                }
-                return item;
-              });
-            }
-            return prevItems;
-          });
+          //   // Сортуємо і беремо перший елемент
+          //   const sortedItems = sortChecklistItems(currentBoxItems);
+          //   const nextItem = sortedItems[0];
+
+          //   if (nextItem) {
+          //     console.log('🔄 [useWeightManagement] Автоматично вибираємо наступний товар:', nextItem.name);
+          //     return prevItems.map(item => {
+          //       if (item.id === nextItem.id) {
+          //         return { ...item, status: 'pending' as const };
+          //       }
+          //       return item;
+          //     });
+          //   }
+          //   return prevItems;
+          // });
         }, 1500);
 
         return updatedItems;
       } else {
         // Вага не відповідає - переводимо в error
         // console.log('❌ [useWeightManagement] Вага товару не відповідає очікуваній');
-        
+
         const updatedItems = prevItems.map(item => {
           if (item.id === pendingItem.id) {
             return { ...item, status: 'error' as const };

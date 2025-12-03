@@ -4,7 +4,7 @@ export const EQUIPMENT_DEFAULTS = {
     dataBits: 8,
     stopBits: 1,
     parity: 'even' as const,  // ВТА-60 стандарт
-    autoConnect: false,
+    autoConnect: true,
     activePollingInterval: 250,  // Активний опрос (мс)
     reservePollingInterval: 1000,  // Резервний опрос (мс)
     activePollingDuration: 30000,  // Тривалість активного polling (мс)
@@ -14,14 +14,14 @@ export const EQUIPMENT_DEFAULTS = {
     stableSound: 'default', // Звук стабільної ваги
     unstableSound: 'default', // Звук нестабільної ваги
     errorSound: 'default', // Звук помилки
-    weightThresholdForActive: 0.010, // Поріг ваги для переключення на активний polling (кг)
+    weightThresholdForActive: 0.01, // Поріг ваги для переключення на активний polling (кг)
     connectionStrategy: 'reconnectOnError' as const, // Режим роботи з портом: 'legacy', 'reconnectOnError', 'persistentStream'
   },
   orderSoundSettings: {
-    pending: 'default',
-    success: 'default',
-    done: 'default',
-    error: 'default',
+    pending: 'click',
+    success: 'uplift',
+    done: 'melody',
+    error: 'low',
   },
   scanner: {
     autoConnect: true,
@@ -32,9 +32,9 @@ export const EQUIPMENT_DEFAULTS = {
     minBarcodeLength: 5   // Мінімальна довжина баркоду
   },
   printer: {
-    enabled: false,
-    name: '',
-    autoPrintOnComplete: false,
+    enabled: true,
+    name: 'ZDesigner ZD220-203dpi ZPL',
+    autoPrintOnComplete: true,
     autoPrintDelayMs: 3000
   }
 } as const;

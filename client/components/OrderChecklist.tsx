@@ -46,9 +46,9 @@ interface OrderChecklistProps {
 const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders }: OrderChecklistProps) => {
   const navigate = useNavigate();
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
-  const [equipmentState] = useEquipmentFromAuth(); // <-- Используем глобальное состояние оборудования
+  const [equipmentState] = useEquipmentFromAuth(); // <-- Використовуємо глобальний стан обладнання
   const [soundSettings, setSoundSettings] = useState<Record<string, string>>({});
-  const { isDebugMode } = useDebug(); // <-- Используем контекст дебага
+  const { isDebugMode } = useDebug(); // <-- Використовуємо контекст дебагування
   const noMoreOrdersRef = useRef<HTMLDivElement>(null);
   const printTTNRef = useRef<HTMLDivElement>(null);
 
@@ -230,7 +230,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
   const [autoPrintCountdown, setAutoPrintCountdown] = useState(0);
   
   useEffect(() => {
-    const shouldAutoPrint = !!(isOrderComplete || showPrintTTN || isDebugMode);
+    const shouldAutoPrint = !!(isOrderComplete || showPrintTTN);
     const autoPrintEnabled = equipmentState.config?.printer?.autoPrintOnComplete;
     
     // Перевіряємо чи потрібно автоматично друкувати

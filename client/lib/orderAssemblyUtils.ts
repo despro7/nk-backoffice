@@ -8,6 +8,7 @@ export interface Product {
   weight?: number; // Вага в грамах
   categoryId?: number; // ID категорії для визначення ваги за замовчуванням
   manualOrder?: number; // Ручне сортування
+  barcode?: string; // Штрих-код товару
   set: Array<{ id: string; quantity: number }> | null;
 }
 
@@ -20,7 +21,7 @@ export const calculateExpectedWeight = (product: Product, quantity: number): num
     // Конвертуємо грами в кілограми
     return (product.weight * quantity) / 1000;
   }
-  
+
   // Fallback на вагу за замовчуванням на основі категорії
   // categoryId === 1 - перші страви (420г), решта - другі страви (330г)
   const defaultWeight = product.categoryId === 1 ? 420 : 330;
@@ -35,16 +36,16 @@ export const sortChecklistItems = (items: OrderChecklistItem[]): OrderChecklistI
     // Спочатку сортуємо по manualOrder, потім по типу, потім по імені
     const aManualOrder = a.manualOrder ?? 999;
     const bManualOrder = b.manualOrder ?? 999;
-    
+
     if (aManualOrder !== bManualOrder) {
       return aManualOrder - bManualOrder;
     }
-    
+
     // Якщо manualOrder однаковий, спочатку коробки, потім товари
     if (a.type !== b.type) {
       return a.type === 'box' ? -1 : 1;
     }
-    
+
     // Для однакового типу сортуємо по імені
     return a.name.localeCompare(b.name);
   });
@@ -55,22 +56,22 @@ export const sortChecklistItems = (items: OrderChecklistItem[]): OrderChecklistI
  */
 export const expandProductSets = async (orderItems: any[], apiCall: any): Promise<OrderChecklistItem[]> => {
   const expandedItems: { [key: string]: OrderChecklistItem } = {};
-  
+
   for (const item of orderItems) {
     try {
       // Отримуємо інформацію про товар по SKU
       const response = await apiCall(`/api/products/${item.sku}`);
       if (response.ok) {
         const product: Product = await response.json();
-        
+
         if (product.set && Array.isArray(product.set) && product.set.length > 0) {
           // Це набір - розгортаємо його
-          
+
           // Перевіряємо структуру set
-          const validSetItems = product.set.filter(setItem => 
+          const validSetItems = product.set.filter(setItem =>
             setItem && typeof setItem === 'object' && setItem.id && setItem.quantity
           );
-          
+
           if (validSetItems.length === 0) {
             console.warn(`⚠️ Набір ${product.name} не має валідних компонентів:`, product.set);
             // Додаємо як звичайний товар
@@ -88,7 +89,7 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
                 status: 'default' as const,
                 type: 'product',
                 sku: item.sku,
-                barcode: item.sku,
+                barcode: product.barcode || item.sku, // Використовуємо реальний barcode або fallback на SKU
                 manualOrder: product.manualOrder
               };
             }
@@ -101,7 +102,7 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
               console.warn(`⚠️ Компонент набору не має ID:`, setItem);
               continue;
             }
-          
+
             try {
               // Отримуємо назву компонента набору
               const componentResponse = await apiCall(`/api/products/${setItem.id}`);
@@ -109,7 +110,7 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
                 const component: Product = await componentResponse.json();
                 const componentName = component.name;
                 const totalQuantity = item.quantity * setItem.quantity;
-                
+
                 // Сумуємо з існуючими компонентами
                 if (expandedItems[componentName]) {
                   expandedItems[componentName].quantity += totalQuantity;
@@ -124,7 +125,7 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
                     status: 'default' as const,
                     type: 'product',
                     sku: setItem.id,
-                    barcode: setItem.id,
+                    barcode: component.barcode || setItem.id, // Використовуємо реальний barcode або fallback на SKU
                     manualOrder: component.manualOrder
                   };
                 }
@@ -133,7 +134,7 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
                 // Додаємо компонент з невідомою назвою
                 const componentName = `Невідома страва (${setItem.id})`;
                 const totalQuantity = item.quantity * setItem.quantity;
-                
+
                 if (expandedItems[componentName]) {
                   expandedItems[componentName].quantity += totalQuantity;
                   // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
@@ -155,7 +156,7 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
               // Додаємо компонент з невідомою назвою
               const componentName = `Невідома страва (${setItem.id})`;
               const totalQuantity = item.quantity * setItem.quantity;
-              
+
               if (expandedItems[componentName]) {
                 expandedItems[componentName].quantity += totalQuantity;
                 // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
@@ -191,7 +192,7 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
               status: 'default' as const,
               type: 'product',
               sku: item.sku,
-              barcode: item.sku,
+              barcode: product.barcode || item.sku, // Використовуємо реальний barcode або fallback на SKU
               manualOrder: product.manualOrder
             };
           }
@@ -241,7 +242,7 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
       }
     }
   }
-  
+
   // Перетворюємо об'єкт в масив і призначаємо унікальні ID
   return Object.values(expandedItems).map((item, index) => ({
     ...item,
@@ -251,8 +252,17 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
 
 /**
  * Об'єднує коробки з товарами в один чек-ліст
+ * @param boxes - Масив коробок
+ * @param items - Масив товарів
+ * @param isReadyToShip - Чи замовлення готове до відправлення
+ * @param boxInitialStatus - Початковий статус коробки (за замовчуванням 'default')
  */
-export const combineBoxesWithItems = (boxes: any[], items: OrderChecklistItem[], isReadyToShip: boolean = false): OrderChecklistItem[] => {
+export const combineBoxesWithItems = (
+  boxes: any[], 
+  items: OrderChecklistItem[], 
+  isReadyToShip: boolean = false,
+  boxInitialStatus: 'default' | 'pending' | 'awaiting_confirmation' = 'default'
+): OrderChecklistItem[] => {
   // Перевіряємо, що у нас є валідні коробки
   if (!boxes || boxes.length === 0) {
     return items;
@@ -264,7 +274,7 @@ export const combineBoxesWithItems = (boxes: any[], items: OrderChecklistItem[],
     name: box.name || `Коробка ${index + 1}`,
     quantity: 1,
     expectedWeight: Number(box.self_weight || box.weight || 0),
-    status: isReadyToShip ? 'done' : 'awaiting_confirmation' as const,
+    status: (isReadyToShip ? 'done' : boxInitialStatus) as OrderChecklistItem['status'],
     type: 'box' as const,
     boxSettings: box,
     boxCount: 1,
@@ -289,7 +299,7 @@ export const combineBoxesWithItems = (boxes: any[], items: OrderChecklistItem[],
 
       while (remaining > 0) {
         const freeSpace = portionsPerBox - currentBoxPortions;
-        
+
         // Якщо немає вільного місця в поточній коробці, переходимо до наступної
         if (freeSpace === 0) {
           if (currentBoxIndex < boxes.length - 1) {
@@ -301,7 +311,7 @@ export const combineBoxesWithItems = (boxes: any[], items: OrderChecklistItem[],
             break;
           }
         }
-        
+
         const toAdd = Math.min(remaining, freeSpace);
 
         // Додаємо частину товару (або весь товар, якщо він поміщається)

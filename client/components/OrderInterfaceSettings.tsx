@@ -4,15 +4,19 @@ import { Select, SelectItem } from '@heroui/react';
 import { useApi } from '../hooks/useApi';
 import { Card, CardHeader, CardBody } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { ToastService } from "@/services/ToastService";
+import { title } from 'process';
 
 interface OrderInterfaceSettingsType {
   defaultTab: "confirmed" | "readyToShip" | "shipped" | "all";
   pageSize: number;
+  boxInitialStatus: "default" | "pending" | "awaiting_confirmation";
 }
 
 const DEFAULT_SETTINGS: OrderInterfaceSettingsType = {
   defaultTab: "confirmed",
-  pageSize: 8
+  pageSize: 8,
+  boxInitialStatus: "default"
 };
 
 const TAB_OPTIONS = [
@@ -20,6 +24,11 @@ const TAB_OPTIONS = [
   { value: "readyToShip", label: "Готові до відправлення" },
   { value: "shipped", label: "Відправлені" },
   { value: "all", label: "Всі" }
+] as const;
+
+const BOX_STATUS_OPTIONS = [
+  { value: "default", label: "За замовчуванням (потребує сканування та зважування)" },
+  { value: "pending", label: "Очікує зважування (вже відсканована)" }
 ] as const;
 
 
@@ -42,10 +51,12 @@ export const OrderInterfaceSettings: React.FC = () => {
         // Ищем настройки интерфейса заказов
         const defaultTabSetting = allSettings.find((s: any) => s.key === 'orders_default_tab');
         const pageSizeSetting = allSettings.find((s: any) => s.key === 'orders_page_size');
+        const boxInitialStatusSetting = allSettings.find((s: any) => s.key === 'box_initial_status');
 
         setSettings({
           defaultTab: (defaultTabSetting?.value as OrderInterfaceSettingsType['defaultTab']) || DEFAULT_SETTINGS.defaultTab,
-          pageSize: parseInt(pageSizeSetting?.value) || DEFAULT_SETTINGS.pageSize
+          pageSize: parseInt(pageSizeSetting?.value) || DEFAULT_SETTINGS.pageSize,
+          boxInitialStatus: (boxInitialStatusSetting?.value as OrderInterfaceSettingsType['boxInitialStatus']) || DEFAULT_SETTINGS.boxInitialStatus
         });
       }
     } catch (error) {
@@ -100,20 +111,35 @@ export const OrderInterfaceSettings: React.FC = () => {
           'orders_page_size',
           settings.pageSize.toString(),
           'Количество заказов на странице'
+        ),
+        saveSetting(
+          'box_initial_status',
+          settings.boxInitialStatus,
+          'Початковий статус коробки при відкритті замовлення'
         )
       ];
 
       const results = await Promise.all(promises);
 
       if (results.every(result => result)) {
-        alert('Налаштування збережено успішно!');
+        ToastService.show({
+          title: 'Налаштування збережено успішно!',
+          hideIcon: false,
+          color: 'success'
+        });
         await loadSettings(); // Перезагружаем настройки
       } else {
-        alert('Помилка збереження деяких налаштувань');
+        ToastService.show({
+          title: 'Помилка збереження деяких налаштувань',
+          color: 'danger'
+        });
       }
     } catch (error) {
       console.error('Error saving settings:', error);
-      alert('Помилка збереження налаштувань');
+      ToastService.show({
+        title: 'Помилка збереження налаштувань',
+        color: 'danger'
+      });
     } finally {
       setIsSaving(false);
     }
@@ -191,6 +217,28 @@ export const OrderInterfaceSettings: React.FC = () => {
                   label="Кількість замовлень на сторінку"
                   className="w-full"
                 />
+              </div>
+
+              {/* Початковий статус коробки */}
+              <div className="space-y-2 md:col-span-2">
+                <Select
+                  selectedKeys={settings ? [settings.boxInitialStatus] : []}
+                  onSelectionChange={(keys) => {
+                    const selected = Array.from(keys)[0] as OrderInterfaceSettingsType['boxInitialStatus'];
+                    setSettings(prev => prev ? { ...prev, boxInitialStatus: selected } : null);
+                  }}
+                  placeholder="Виберіть статус"
+                  className="w-full"
+                  label="Початковий статус коробки при відкритті замовлення"
+                  labelPlacement="outside"
+                  description="Визначає, в якому стані буде коробка при першому відкритті замовлення"
+                >
+                  {BOX_STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </Select>
               </div>
             </div>
 

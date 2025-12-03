@@ -7,6 +7,7 @@ import { ScaleService } from '../services/ScaleService';
 import { LoggingService } from '@/services/LoggingService';
 import { useEquipmentFromAuth } from '../contexts/AuthContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { useDebug } from '@/contexts/DebugContext';
 
 
 interface WeightDisplayWidgetProps {
@@ -18,6 +19,7 @@ interface WeightDisplayWidgetProps {
   isPaused?: boolean; // Додаємо для фіксації ваги
   pollingMode?: 'active' | 'reserve' | 'auto'; // Режим polling
   onPollingModeChange?: (mode: 'active' | 'reserve') => void; // Callback при зміні режиму
+  isDebugMode?: boolean; // Режим дебагу для додаткової інформації
 }
 
 export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) => {
@@ -31,6 +33,8 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
     pollingMode = 'auto',
     onPollingModeChange
   } = props;
+
+  const { isDebugMode } = useDebug(); // <-- Використовуємо контекст дебагування
 
   const prevExpectedWeightRef = useRef<number | null | undefined>(expectedWeight);
   useEffect(() => {
@@ -541,6 +545,56 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
     }
   };
 
+  // Функція для імітації відправки очікуваної ваги (дебаг-режим)
+  const sendExpectedWeight = (mode: 'correct' | 'incorrect' | 'reset') => {
+    let weightToSend: number;
+
+    // Режим скидання ваги
+    if (mode === 'reset') {
+      weightToSend = 0;
+      LoggingService.equipmentLog('⚖️ [WeightDisplayWidget DEBUG]: Скидання ваги до 0кг');
+    } else {
+      // Для інших режимів потрібна expectedWeight
+      if (!expectedWeight || expectedWeight <= 0) {
+        LoggingService.equipmentLog('⚖️ [WeightDisplayWidget DEBUG]: Немає очікуваної ваги для імітації');
+        return;
+      }
+
+      if (mode === 'correct') {
+        // Коректна вага - відправляємо точну очікувану вагу
+        weightToSend = expectedWeight;
+        LoggingService.equipmentLog(`⚖️ [WeightDisplayWidget DEBUG]: Імітуємо коректну вагу: ${expectedWeight}кг`);
+      } else {
+        // Некоректна вага - додаємо випадкове відхилення поза межі tolerance
+        const toleranceKg = (cumulativeTolerance || 0) / 1000; // конвертуємо грами в кг
+        // Випадкове відхилення: від tolerance + 50г до tolerance + 200г
+        const randomDeviation = (toleranceKg + 0.05 + Math.random() * 0.15) * (Math.random() > 0.5 ? 1 : -1);
+        weightToSend = Math.max(0, expectedWeight + randomDeviation); // не менше 0
+        LoggingService.equipmentLog(
+          `⚖️ [WeightDisplayWidget DEBUG]: Імітуємо некоректну вагу: ${weightToSend.toFixed(3)}кг ` +
+          `(очікувано: ${expectedWeight.toFixed(3)}кг ± ${(toleranceKg * 1000).toFixed(0)}г, відхилення: ${(randomDeviation * 1000).toFixed(0)}г)`
+        );
+      }
+    }
+    
+    // Оновлюємо стан компонента
+    currentWeightRef.current = weightToSend;
+    lastStableWeightRef.current = weightToSend;
+    lastDisplayedWeightRef.current = weightToSend;
+    weightStabilityRef.current = { weight: weightToSend, count: 3, startTime: Date.now() };
+    
+    setCurrentWeight(weightToSend);
+    setIsStable(true);
+    setIsConnected(true);
+    setIsActive(true);
+    setLastUpdate(new Date());
+    
+    // Викликаємо callback для передачі ваги
+    queueMicrotask(() => onWeightChange?.(weightToSend));
+    
+    LoggingService.equipmentLog(`⚖️ [WeightDisplayWidget DEBUG]: Вага ${weightToSend.toFixed(3)}кг успішно передана`);
+  };
+
   // Функції для керування polling режимами
   const switchToActivePolling = useCallback(() => {
     setCurrentPollingMode(prevMode => {
@@ -782,32 +836,70 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
       </div>
       <div className="flex items-center justify-between w-full p-3">
 
-          {/* <h3 className={`text-xs font-medium ml-1 ${getStatusColor()}`}> */}
-          <h3 className={`flex items-center gap-1 text-xs font-medium ${getStatusColor()}`}>
-            {getStatusText()}
-          </h3>
-          <div className="flex items-center gap-2">
-            {isActive && (
-              <Button
-                color="default"
-                size="sm"
-                onPress={togglePause}
-                className="text-xs h-7 text-neutral-600"
-                isIconOnly
-              >
-                {isPaused ? <Play size={12} /> : <Pause size={12} />}
-              </Button>
-            )}
+          {isDebugMode ? (
+          <div className="flex items-center gap-2 ml-auto">
             <Button
-              color={isActive ? 'danger' : 'primary'}
+              color="danger"
               variant="flat"
               size="sm"
-              onPress={isActive ? stopWeighing : startWeighing}
-              className={`text-xs h-7 ${isConnected ? (isActive ? 'text-red-700' : 'text-neutral-600') : 'bg-red-400 text-white'}`}
+              onPress={() => sendExpectedWeight('incorrect')}
+              className="text-xs h-7 bg-red-500/90 text-white"
+              startContent={<DynamicIcon name="alert-triangle" size={12} />}
             >
-              {isConnected ? (isActive ? 'Stop' : 'Start') : 'Connect'}
+              Хибна
+            </Button>
+
+            <Button
+              color="success"
+              variant="flat"
+              size="sm"
+              onPress={() => sendExpectedWeight('correct')}
+              className="text-xs h-7 bg-green-600/90 text-white"
+              startContent={<DynamicIcon name="check-circle" size={12} />}
+            >
+              Коректна
+            </Button>
+            
+            <Button 
+              color="default"
+              variant="flat"
+              size="sm"
+              onPress={() => sendExpectedWeight('reset')}
+              className="text-xs h-7 bg-neutral-400 text-white"
+              startContent={<DynamicIcon name="rotate-ccw" size={12} />}
+            >
+              Скинути
             </Button>
           </div>
+          ) : (
+            <>
+            <h3 className={`flex items-center gap-1 text-xs font-medium ${getStatusColor()}`}>
+              {getStatusText()}
+            </h3>
+            <div className="flex items-center gap-2">
+              {isActive && (
+                <Button
+                  color="default"
+                  size="sm"
+                  onPress={togglePause}
+                  className="text-xs h-7 text-neutral-600"
+                  isIconOnly
+                >
+                  {isPaused ? <Play size={12} /> : <Pause size={12} />}
+                </Button>
+              )}
+              <Button
+                color={isActive ? 'danger' : 'primary'}
+                variant="flat"
+                size="sm"
+                onPress={isActive ? stopWeighing : startWeighing}
+                className={`text-xs h-7 ${isConnected ? (isActive ? 'text-red-700' : 'text-neutral-600') : 'bg-red-400 text-white'}`}
+              >
+                {isConnected ? (isActive ? 'Stop' : 'Start') : 'Connect'}
+              </Button>
+            </div>
+          </>
+          )}
         </div>
     </Card>
   );

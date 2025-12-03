@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import type { OrderChecklistItem } from '../types/orderAssembly';
 import { addToast } from '@heroui/toast';
+import { DynamicIcon } from "lucide-react/dynamic";
+import { ToastService } from '@/services/ToastService';
 
 interface UseBarcodeScanningProps {
   checklistItems: OrderChecklistItem[];
@@ -108,7 +110,7 @@ export function useBarcodeScanning({
                                currentTime - lastProcessedTimestampRef.current < SCAN_COUNTDOWN;
 
     if (isAlreadyProcessed && !debugMode) {
-      console.log('⏳ [useBarcodeScanning] Код уже обработан недавно:', scannedCode);
+      console.log('⏳ [useBarcodeScanning] Код вже оброблений нещодавно:', scannedCode);
       return;
     }
 
@@ -120,7 +122,7 @@ export function useBarcodeScanning({
     setLastScanTimestamp(currentTime);
     setLastScannedCode(scannedCode);
 
-    console.log('📱 [useBarcodeScanning] Новое сканирование:', scannedCode);
+    console.log('📱 [useBarcodeScanning] Нове сканування:', scannedCode);
 
     // Отримуємо актуальні дані з ref
     const currentChecklistItems = checklistItemsRef.current;
@@ -138,25 +140,69 @@ export function useBarcodeScanning({
       currentBoxName: currentBox?.name
     });
 
-    // Якщо коробка не зважена, ігноруємо сканування
-    const isBoxWeighed = currentBox?.status === 'done';
+    // Якщо коробка не відсканована (awaiting_confirmation), ігноруємо всі інші сканування
+    // const isBoxScanned = currentBox?.status === 'awaiting_confirmation' || currentBox?.status === 'pending';
+    // const isBoxWeighed = currentBox?.status === 'done';
 
-    if (!isBoxWeighed) {
-      console.log('🚫 [useBarcodeScanning] Сканирование заблокировано - коробка не взвешена');
-      showToastWithCountdown({
-        title: "Спочатку зважте коробку",
-        description: "Не можна сканувати товари, поки коробка не буде зважена",
-        color: "warning",
-        timeout: 3000
-      }, "box-not-weighed");
-      return;
+    // console.log('📦 [useBarcodeScanning] Статус коробки:', currentBox?.status)
+
+    // if (!isBoxScanned) {
+    //   console.log('🚫 [useBarcodeScanning] Сканування заблоковано - коробка не відсканована');
+    //   showToastWithCountdown({
+    //     title: "Спочатку відскануйте коробку",
+    //     description: "Не можна сканувати товари, поки коробка не буде відсканована",
+    //     color: "warning",
+    //     timeout: 3000
+    //   }, "box-not-scanned");
+    //   return;
+    // }
+
+    // Якщо коробка не зважена, ігноруємо сканування товарів
+    // if (!isBoxWeighed) {
+    //   console.log('🚫 [useBarcodeScanning] Сканування заблоковано - коробка не зважена');
+    //   showToastWithCountdown({
+    //     title: "Спочатку зважте коробку",
+    //     description: "Не можна сканувати товари, поки коробка не буде зважена",
+    //     color: "warning",
+    //     timeout: 3000
+    //   }, "box-not-weighed");
+    //   return;
+    // }
+
+    // 1️⃣ СПОЧАТКУ ШУКАЄМО КОРОБКУ (якщо коробка ще не відсканована/не зважена)
+    let foundItem: OrderChecklistItem | undefined;
+
+    if (currentBox?.status === 'default') {
+      // Шукаємо коробку по barcode
+      foundItem = currentChecklistItems.find(item => 
+        item.type === 'box' && 
+        item.boxSettings?.barcode === scannedCode &&
+        (item.boxIndex || 0) === currentActiveBoxIndex
+      );
+      
+      if (foundItem) {
+        console.log('📦 [useBarcodeScanning] Знайдена коробка по barcode:', foundItem.name, scannedCode);
+      } else {
+        console.log('🔍 [useBarcodeScanning] Коробка по barcode не знайдена, очікується сканування коробки');
+      }
     }
 
-    // Шукаємо товар по SKU
-    const foundItem = currentChecklistItems.find(item => item.sku === scannedCode);
+    // 2️⃣ ЯКЩО КОРОБКА НЕ ЗНАЙДЕНА І КОРОБКА ЗВАЖЕНА - ШУКАЄМО ТОВАР
+    if (!foundItem && currentBox?.status === 'done') {
+      // Спочатку шукаємо по barcode, потім fallback на SKU
+      foundItem = currentChecklistItems.find(item => 
+        item.type === 'product' && 
+        (item.barcode === scannedCode || item.sku === scannedCode) &&
+        (item.boxIndex || 0) === currentActiveBoxIndex
+      );
+      
+      if (foundItem) {
+        console.log('✅ [useBarcodeScanning] Знайдений товар:', foundItem.name, 
+          foundItem.barcode === scannedCode ? '(по barcode)' : '(по SKU)');
+      }
+    }
 
     if (foundItem) {
-      console.log('✅ [useBarcodeScanning] Найден товар:', foundItem.name);
 
       // Перевіряємо, чи не має товар вже статус 'done' - ЗАБОРОНЯЄМО сканування
       if (foundItem.status === 'done') {
@@ -170,15 +216,38 @@ export function useBarcodeScanning({
         return;
       }
 
-      // Перевіряємо, що товар не в статусі 'awaiting_confirmation' (коробки)
-      if (foundItem.type === 'box' && foundItem.status !== 'awaiting_confirmation') {
-        console.log('🚫 [useBarcodeScanning] Коробки не сканируются, кроме awaiting_confirmation:', foundItem.name);
+      // Перевіряємо, що коробку можна сканувати тільки в статусі 'default'
+      if (foundItem.type === 'box' && foundItem.status !== 'default') {
+        console.log('🚫 [useBarcodeScanning] Коробку можна сканувати тільки в статусі default:', foundItem.name);
         showToastWithCountdown({
           title: "Сканування заборонено",
-          description: "Коробки не можна сканувати",
+          description: "Коробку вже відсканована або завершена",
           color: "warning",
           timeout: 3000
         }, `box-scan-forbidden-${foundItem.id}`);
+        return;
+      }
+
+      // Якщо це коробка в статусі 'default' - переводимо її в 'pending'
+      if (foundItem.type === 'box' && foundItem.status === 'default') {
+        console.log('✅ [useBarcodeScanning] Коробка відсканована, переводимо в статус pending:', foundItem.name);
+        setChecklistItems(prevItems =>
+          prevItems.map(item => {
+            if (item.id === foundItem.id) {
+              return { ...item, status: 'pending' as const };
+            }
+            return item;
+          })
+        );
+
+        // Показуємо повідомлення про успішне сканування коробки
+        ToastService.show({
+          title: "Коробка відсканована",
+          description: `${foundItem.name} готова до зважування`,
+          color: "success",
+          hideIcon: false,
+          timeout: 2000
+        });
         return;
       }
 
@@ -218,15 +287,34 @@ export function useBarcodeScanning({
       });
 
     } else {
-      console.log('❌ [useBarcodeScanning] Товар не найден:', scannedCode);
+      console.log('❌ [useBarcodeScanning] Товар/коробка не знайдені:', scannedCode);
 
-      // Показываем уведомление об ошибке
-      showToastWithCountdown({
-        title: "Товар не знайдено",
-        description: `Штрих-код ${scannedCode} не відповідає жодному товару`,
-        color: "warning",
-        timeout: 3000
-      }, `item-not-found-${scannedCode}`);
+      // Показуємо повідомлення залежно від статусу коробки
+      const isAwaitingBox = currentBox?.status === 'default';
+      const isAwaitingProduct = currentBox?.status === 'done';
+
+      if (isAwaitingBox) {
+        showToastWithCountdown({
+          title: "Коробка не знайдена",
+          description: `Штрих-код ${scannedCode} не відповідає коробці №${currentActiveBoxIndex + 1}`,
+          color: "warning",
+          timeout: 3000
+        }, `box-not-found-${scannedCode}`);
+      } else if (isAwaitingProduct) {
+        showToastWithCountdown({
+          title: "Товар не знайдено",
+          description: `Штрих-код ${scannedCode} не відповідає жодному товару в цій коробці`,
+          color: "warning",
+          timeout: 3000
+        }, `item-not-found-${scannedCode}`);
+      } else {
+        showToastWithCountdown({
+          title: "Товар не знайдено",
+          description: `Штрих-код ${scannedCode} не розпізнано`,
+          color: "warning",
+          timeout: 3000
+        }, `unknown-not-found-${scannedCode}`);
+      }
     }
   }, [debugMode, showToastWithCountdown, setChecklistItems]);
 
