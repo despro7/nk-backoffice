@@ -1,6 +1,8 @@
 import { Check, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { useDebug } from '@/contexts/DebugContext';
+import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface OrderItem {
   id: string;
@@ -13,6 +15,8 @@ interface OrderItem {
   boxCount?: number;
   boxIndex?: number;
   manualOrder?: number;
+  sku?: string;
+  barcode?: string;
 }
 
 interface OrderChecklistItemProps {
@@ -29,7 +33,11 @@ interface OrderChecklistItemProps {
 }
 
 const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick }: OrderChecklistItemProps) => {
-  const { name, quantity, status, expectedWeight, type, boxSettings } = item;
+  const { name, quantity, status, expectedWeight, type, boxSettings, sku, barcode } = item;
+
+  console.log('🔄 [OrderChecklistItem] Рендеринг елемента:', item);
+
+  const { isDebugMode } = useDebug();
 
   // Перевіряємо, що у нас є валідні дані для відображення
   if (!name || !status || expectedWeight === undefined) {
@@ -99,6 +107,19 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, currentBoxTotalPor
               </span>
             )}
             </>
+          )}
+          {isDebugMode && (
+            <span 
+              className="flex items-center gap-1 ml-4 text-[12px] text-neutral-400 tabular-nums cursor-pointer hover:text-neutral-600 transition-colors" 
+              onClick={(e) => {
+                e.stopPropagation();
+                const code = sku || (type === 'box' ? boxSettings.barcode : barcode);
+                navigator.clipboard.writeText(code || '');
+              }}
+              title="Click to copy"
+            >
+              <DynamicIcon name="scan-barcode" size={14} /> {sku || (type === 'box' ? boxSettings.barcode : barcode)}
+            </span>
           )}
         </div>
       </div>

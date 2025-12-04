@@ -128,6 +128,22 @@ export function useBarcodeScanning({
     const currentChecklistItems = checklistItemsRef.current;
     const currentActiveBoxIndex = activeBoxIndexRef.current;
 
+    // Перевіряємо, чи є активний pending статус в поточній коробці
+    const hasPendingItem = currentChecklistItems.some(item => 
+      item.status === 'pending' && (item.boxIndex || 0) === currentActiveBoxIndex
+    );
+
+    if (hasPendingItem) {
+      console.log('🚫 [useBarcodeScanning] Заборонено сканувати - є активний pending статус');
+      showToastWithCountdown({
+        title: "Сканування заборонено",
+        description: "Завершіть поточну операцію перед новим скануванням",
+        color: "warning",
+        timeout: 3000
+      }, `pending-active`);
+      return;
+    }
+
     // Перевіряємо, чи зважена поточна коробка
     const currentBox = currentChecklistItems.find(item =>
       item.type === 'box' && (item.boxIndex || 0) === currentActiveBoxIndex
@@ -139,35 +155,6 @@ export function useBarcodeScanning({
       currentBoxStatus: currentBox?.status,
       currentBoxName: currentBox?.name
     });
-
-    // Якщо коробка не відсканована (awaiting_confirmation), ігноруємо всі інші сканування
-    // const isBoxScanned = currentBox?.status === 'awaiting_confirmation' || currentBox?.status === 'pending';
-    // const isBoxWeighed = currentBox?.status === 'done';
-
-    // console.log('📦 [useBarcodeScanning] Статус коробки:', currentBox?.status)
-
-    // if (!isBoxScanned) {
-    //   console.log('🚫 [useBarcodeScanning] Сканування заблоковано - коробка не відсканована');
-    //   showToastWithCountdown({
-    //     title: "Спочатку відскануйте коробку",
-    //     description: "Не можна сканувати товари, поки коробка не буде відсканована",
-    //     color: "warning",
-    //     timeout: 3000
-    //   }, "box-not-scanned");
-    //   return;
-    // }
-
-    // Якщо коробка не зважена, ігноруємо сканування товарів
-    // if (!isBoxWeighed) {
-    //   console.log('🚫 [useBarcodeScanning] Сканування заблоковано - коробка не зважена');
-    //   showToastWithCountdown({
-    //     title: "Спочатку зважте коробку",
-    //     description: "Не можна сканувати товари, поки коробка не буде зважена",
-    //     color: "warning",
-    //     timeout: 3000
-    //   }, "box-not-weighed");
-    //   return;
-    // }
 
     // 1️⃣ СПОЧАТКУ ШУКАЄМО КОРОБКУ (якщо коробка ще не відсканована/не зважена)
     let foundItem: OrderChecklistItem | undefined;
@@ -279,10 +266,11 @@ export function useBarcodeScanning({
       );
 
       // Показываем уведомление
-      addToast({
+      ToastService.show({
         title: "Штрих-код відскановано",
         description: `${foundItem.name} вибрано для комплектації`,
         color: "success",
+        hideIcon: false,
         timeout: 2000
       });
 
