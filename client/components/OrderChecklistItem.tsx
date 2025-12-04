@@ -35,8 +35,6 @@ interface OrderChecklistItemProps {
 const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick }: OrderChecklistItemProps) => {
   const { name, quantity, status, expectedWeight, type, boxSettings, sku, barcode } = item;
 
-  console.log('🔄 [OrderChecklistItem] Рендеринг елемента:', item);
-
   const { isDebugMode } = useDebug();
 
   // Перевіряємо, що у нас є валідні дані для відображення
