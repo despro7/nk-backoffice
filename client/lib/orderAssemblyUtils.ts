@@ -285,13 +285,16 @@ export const combineBoxesWithItems = (
 
   // Якщо є коробки, розділяємо товари по коробках
   if (boxes.length > 1 && boxes[0].portionsPerBox && boxes[0].portionsPerBox > 0) {
-    // Розділяємо товари по коробках згідно portionsPerBox
+    // Розділяємо товари по коробках згідно portionsPerBox з урахуванням ваги (макс 15 кг)
     const portionsPerBox = boxes[0].portionsPerBox;
+    const MAX_BOX_WEIGHT = 15; // Максимальна вага коробки в кг
 
     const productItems: OrderChecklistItem[] = [];
 
     let currentBoxIndex = 0;
     let currentBoxPortions = 0;
+    // Відстежуємо поточну вагу кожної коробки (вага коробки + вага товарів)
+    const boxWeights = boxes.map(box => Number(box.self_weight || box.weight || 0));
 
     for (const item of items) {
       let remaining = item.quantity;
@@ -299,6 +302,8 @@ export const combineBoxesWithItems = (
 
       while (remaining > 0) {
         const freeSpace = portionsPerBox - currentBoxPortions;
+        const currentBoxWeight = boxWeights[currentBoxIndex];
+        const itemWeightPerUnit = item.expectedWeight / item.quantity;
 
         // Якщо немає вільного місця в поточній коробці, переходимо до наступної
         if (freeSpace === 0) {
@@ -312,7 +317,28 @@ export const combineBoxesWithItems = (
           }
         }
 
-        const toAdd = Math.min(remaining, freeSpace);
+        // Розраховуємо скільки можна додати з урахуванням ваги
+        let toAdd = Math.min(remaining, freeSpace);
+        const weightIfAdded = currentBoxWeight + (itemWeightPerUnit * toAdd);
+
+        // Якщо додавання призведе до перевищення 15 кг, зменшуємо кількість
+        if (weightIfAdded > MAX_BOX_WEIGHT) {
+          const maxByWeight = Math.floor((MAX_BOX_WEIGHT - currentBoxWeight) / itemWeightPerUnit);
+          if (maxByWeight > 0) {
+            toAdd = Math.min(toAdd, maxByWeight);
+          } else {
+            // Не поміщається зовсім - переходимо до наступної коробки
+            if (currentBoxIndex < boxes.length - 1) {
+              currentBoxIndex++;
+              currentBoxPortions = 0;
+              continue;
+            } else {
+              // Остання коробка, додаємо що можна
+              toAdd = Math.min(toAdd, Math.floor((MAX_BOX_WEIGHT - currentBoxWeight) / itemWeightPerUnit));
+              if (toAdd <= 0) break;
+            }
+          }
+        }
 
         // Додаємо частину товару (або весь товар, якщо він поміщається)
         productItems.push({
@@ -320,16 +346,21 @@ export const combineBoxesWithItems = (
           id: `product_${currentBoxIndex}_${item.id}${partIndex > 0 ? `_part${partIndex}` : ''}`,
           type: 'product' as const,
           quantity: toAdd,
-          expectedWeight: (item.expectedWeight / item.quantity) * toAdd, // Пропорційно розподіляємо вагу
+          expectedWeight: itemWeightPerUnit * toAdd, // Пропорційно розподіляємо вагу
           boxIndex: currentBoxIndex
         });
 
+        // Оновлюємо вагу коробки
+        boxWeights[currentBoxIndex] += itemWeightPerUnit * toAdd;
         currentBoxPortions += toAdd;
         remaining -= toAdd;
         partIndex++;
 
-        // Якщо коробка заповнилась — переходимо до наступної
-        if (currentBoxPortions >= portionsPerBox && currentBoxIndex < boxes.length - 1 && remaining > 0) {
+        // Якщо коробка заповнилась або досягла вагового ліміту — переходимо до наступної
+        const isBoxFull = currentBoxPortions >= portionsPerBox;
+        const isWeightLimitReached = boxWeights[currentBoxIndex] >= MAX_BOX_WEIGHT;
+
+        if ((isBoxFull || isWeightLimitReached) && currentBoxIndex < boxes.length - 1 && remaining > 0) {
           currentBoxIndex++;
           currentBoxPortions = 0;
         }
