@@ -72,8 +72,15 @@ export interface DilovodSetComponent {
 
 export interface DilovodObjectResponse {
   id?: string;
+  header?: {
+    id?: { id: string; pr: string };
+    productNum?: string;
+    name?: { ru: string; uk: string };
+    parent?: { id: string; pr: string };
+    [key: string]: any;
+  };
   tableParts?: {
-    tpGoods?: DilovodSetComponent[];
+    tpGoods?: DilovodSetComponent[] | { [key: string]: DilovodSetComponent };
   };
   [key: string]: any;
 }

@@ -59,14 +59,17 @@ export class DilovodDataProcessor {
       // Убираем дубликаты из pricesResponse (каждый товар должен обрабатываться только один раз)
       const uniquePricesResponse = this.removeDuplicatePrices(pricesResponse);
       
+      logWithTimestamp(`📊 Унікальних товарів для обробки: ${uniquePricesResponse.length} (з ${pricesResponse.length} записів цін)`);
+      
       // Создаем маппинги
       const idToSku = this.createIdToSkuMapping(uniquePricesResponse);
       const pricesByGoodId = this.createPricesMapping(pricesResponse); // Оставляем оригинальный для цен
       const goodsById = this.createGoodsMapping(goodsResponse);
 
       // Обрабатываем товары и получаем комплекты
+      // ВАЖЛИВО: передаємо uniquePricesResponse, а не pricesResponse, щоб уникнути зайвих запитів до API
       const processedGoods = await this.processGoodsWithSetsAsync(
-        pricesResponse, 
+        uniquePricesResponse, 
         idToSku, 
         pricesByGoodId,
         goodsById
@@ -215,11 +218,62 @@ export class DilovodDataProcessor {
         return [];
       }
       
+      // Збираємо ID компонентів, для яких немає SKU в мапі
+      const missingIds: string[] = [];
+      componentsArray.forEach((row: DilovodSetComponent) => {
+        const componentId = String(row.good);
+        if (!idToSku[componentId] && !goodsById[componentId]) {
+          missingIds.push(componentId);
+        }
+      });
+
+      // Якщо є відсутні SKU - отримуємо їх через API
+      let additionalSkuMap: { [key: string]: string } = {};
+      if (missingIds.length > 0) {
+        try {
+          logWithTimestamp(`🔍 Отримуємо SKU для ${missingIds.length} компонентів комплекту...`);
+          
+          // Використовуємо прямий запит getObject для кожного ID
+          for (const componentId of missingIds) {
+            try {
+              const componentInfo = await this.apiClient.getObject(componentId);
+              
+              // SKU знаходиться в header.productNum
+              const sku = componentInfo?.header?.productNum;
+              if (sku) {
+                additionalSkuMap[componentId] = sku;
+                logWithTimestamp(`  ✅ ${componentId} → ${sku}`);
+              } else {
+                logWithTimestamp(`  ⚠️ SKU не знайдено для ${componentId}`);
+              }
+              await delay(100); // Невелика затримка між запитами
+            } catch (err) {
+              logWithTimestamp(`  ⚠️ Не вдалося отримати SKU для ${componentId}:`, err);
+            }
+          }
+        } catch (error) {
+          logWithTimestamp(`⚠️ Помилка отримання SKU компонентів:`, error);
+        }
+      }
+      
       const set: Array<{ id: string; quantity: number }> = [];
       
       componentsArray.forEach((row: DilovodSetComponent) => {
-        const id = String(row.good);
-        const sku = idToSku[id] || id;
+        const componentId = String(row.good);
+        // Спочатку шукаємо в idToSku, потім в goodsById, потім в additionalSkuMap
+        let sku = idToSku[componentId];
+        if (!sku && goodsById[componentId]) {
+          sku = goodsById[componentId].sku;
+        }
+        if (!sku) {
+          sku = additionalSkuMap[componentId];
+        }
+        // Якщо все ще немає SKU - використовуємо ID
+        if (!sku) {
+          sku = componentId;
+          logWithTimestamp(`⚠️ SKU не знайдено для компонента ${componentId}, використовуємо ID`);
+        }
+        
         const quantity = parseFloat(row.qty) || 0;
         
         set.push({
@@ -294,6 +348,12 @@ export class DilovodDataProcessor {
           mappedCategoryId = 2;
         } else if (normalizedName.includes('набор') || normalizedName.includes('набори') || normalizedName.includes('комплект')) {
           mappedCategoryId = 3;
+        } else if (normalizedName.includes('салат')) {
+          mappedCategoryId = 4;
+        } else if (normalizedName.includes('напій') || normalizedName.includes('напої')) {
+          mappedCategoryId = 5;
+        } else if (normalizedName.includes('овоч')) {
+          mappedCategoryId = 6;
         }
       }
 

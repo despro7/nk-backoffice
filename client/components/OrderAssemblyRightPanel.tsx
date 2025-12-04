@@ -110,7 +110,7 @@ export function OrderAssemblyRightPanel({
           )}
 
           {/* Автоматичний друк */}
-          <div className="flex w-full gap-3 -mt-4">
+          {/* <div className="flex w-full gap-3 mt-4">
             <Switch
               isSelected={!!autoPrint}
               onValueChange={async (checked) => {
@@ -184,7 +184,7 @@ export function OrderAssemblyRightPanel({
                 <span className={`${autoPrint ? 'bg-danger text-white' : 'bg-grey-200'} rounded px-1 py-0.5 text-[10px] font-normal leading-normal self-start`}>{autoPrint ? 'ON' : 'OFF'}</span>
               </div>
             </Switch>
-          </div>
+          </div> */}
 
           {/* Кнопка для позначення відхилень */}
           <DeviationButton />

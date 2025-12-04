@@ -12,7 +12,7 @@ export function clearConfigCache(): void {
   configCache = null;
 }
 
-// Конфигурация по умолчанию - тепер без env змінних
+// Конфігурація за замовчуванням - тепер без env змінних
 export function getDilovodConfig(): DilovodConfig {
   return {
     apiUrl: '', // Тепер тільки з БД
@@ -22,7 +22,10 @@ export function getDilovodConfig(): DilovodConfig {
     categoriesMap: {
       "Перші страви": 1,
       "Другі страви": 2,
-      "Набори продукції": 3
+      "Набори продукції": 3,
+      "Салати": 4,
+      "Напої": 5,
+      "Овочі": 6
     }
   };
 }

@@ -103,10 +103,28 @@ export class DilovodService {
 
   // ===== ОСНОВНІ ФУНКЦІЇ СИНХРОНІЗАЦІЇ =====
 
-  // Повна синхронізація товарів з Dilovod
-  async syncProductsWithDilovod(): Promise<DilovodSyncResult> {
+  // Синхронізація товарів з Dilovod
+  async syncProductsWithDilovod(mode: 'full' | 'manual' = 'full', manualSkus?: string[]): Promise<DilovodSyncResult> {
     try {
-      logWithTimestamp('\n🚀 === ПОЧАТОК СИНХРОНІЗАЦІЇ ТОВАРІВ З DILOVOD ===');
+      logWithTimestamp(`\n🚀 === ПОЧАТОК ${mode === 'full' ? 'ПОВНОЇ' : 'РУЧНОЇ'} СИНХРОНІЗАЦІЇ ТОВАРІВ З DILOVOD ===`);
+      // if (manualSkus && manualSkus.length > 0) {
+      //   logWithTimestamp(`📋 Отримано ${manualSkus.length} SKU для синхронізації`);
+      //   logWithTimestamp('📋 SKU:', manualSkus.slice(0, 10));
+      //   if (manualSkus.length > 10) {
+      //     logWithTimestamp(`... і ще ${manualSkus.length - 10}`);
+      //   }
+      // }
+      
+      // if (manualSkus.length === 0) {
+      //   logWithTimestamp('❌ Список SKU порожній');
+      //   return {
+      //     success: false,
+      //     message: 'Список SKU порожній',
+      //     syncedProducts: 0,
+      //     syncedSets: 0,
+      //     errors: ['Список SKU порожній']
+      //   };
+      // }
 
       // Перевіряємо, чи увімкнено синхронізацію Dilovod
       const isEnabled = await syncSettingsService.isSyncEnabled('dilovod');
@@ -121,10 +139,15 @@ export class DilovodService {
         };
       }
 
-      logWithTimestamp('✅ Синхронізація Dilovod увімкнена, продовжуємо...');
-      // Крок 1: Отримання SKU товарів з WordPress (прямий запит без кешу)
-      logWithTimestamp('📋 Крок 1: Отримання SKU товарів з WordPress...');
-      const skus = await this.fetchSkusDirectlyFromWordPress();
+      let skus = [];
+
+      if (mode === 'full') {
+        // Отримання SKU товарів з WordPress
+        logWithTimestamp('📋 Крок 1: Отримання SKU товарів з WordPress...');
+        skus = await this.fetchSkusDirectlyFromWordPress();
+      } else {
+        skus = manualSkus;
+      }
 
       if (skus.length === 0) {
         logWithTimestamp('❌ Не знайдено SKU товарів для синхронізації');
@@ -180,9 +203,11 @@ export class DilovodService {
       logWithTimestamp('\n📋 Крок 3: Синхронізація з базою даних...');
       const syncResult = await this.syncManager.syncProductsToDatabase(dilovodProducts);
 
-      // Крок 4: Позначення застарілих товарів (які є в БД але немає в WordPress)
-      logWithTimestamp('\n📋 Крок 4: Позначення застарілих товарів...');
-      await this.syncManager.markOutdatedProducts(skus);
+      if (mode === 'full') {
+        // Крок 4: Позначення застарілих товарів (які є в БД але немає в WordPress)
+        logWithTimestamp('\n📋 Крок 4: Позначення застарілих товарів...');
+        await this.syncManager.markOutdatedProducts(skus);
+      }
 
       logWithTimestamp('\n✅ === СИНХРОНІЗАЦІЯ ЗАВЕРШЕНА ===');
       logWithTimestamp(`Результат: ${syncResult.message}`);
@@ -214,12 +239,10 @@ export class DilovodService {
       // Отримуємо товари з цінами
       const pricesResponse = await this.apiClient.getGoodsWithPrices(skuList);
       logWithTimestamp(`Отримано ${pricesResponse.length} товарів з цінами`);
-      logWithTimestamp('RAW pricesResponse (first 2):', Array.isArray(pricesResponse) ? pricesResponse.slice(0, 2) : pricesResponse);
 
       // Отримуємо товари з каталогу для додаткової інформації
       const goodsResponse = await this.apiClient.getGoodsFromCatalog(skuList);
       logWithTimestamp(`Отримано ${goodsResponse.length} товарів з каталогу`);
-      logWithTimestamp('RAW goodsResponse (first 2):', Array.isArray(goodsResponse) ? goodsResponse.slice(0, 2) : goodsResponse);
 
       // Обробляємо дані через процесор
       const result = await this.dataProcessor.processGoodsWithSets(pricesResponse, goodsResponse);

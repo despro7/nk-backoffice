@@ -449,7 +449,7 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
       })}
 
       {/* Перемикач режиму економічного пакування */}
-      <div className="flex flex-col gap-3 mt-8">
+      {/* <div className="flex flex-col gap-3 mt-8">
         <Switch
           isSelected={recommendationMode === 'economical'}
           onValueChange={(checked) => handleModeChange(checked ? 'economical' : 'spacious')}
@@ -478,10 +478,9 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
           <div className="flex items-center gap-2">
             <p className="text-medium font-semibold leading-[1.1]">Економія коробок</p>
             <span className={`${recommendationMode === 'economical' ? 'bg-danger text-white' : 'bg-grey-200'} rounded px-1 py-0.5 text-[10px] font-normal leading-normal self-start`}>{recommendationMode === 'economical' ? 'ON' : 'OFF'}</span>
-            {/* <p className="text-[13px] leading-snug text-default-400">Мінімальна кількість коробок, можливе переповнення.</p> */}
           </div>
         </Switch>
-      </div>
+      </div> */}
 
     </div>
   );

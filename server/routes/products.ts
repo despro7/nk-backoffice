@@ -6,7 +6,7 @@ import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 
 const router = express.Router();
 
-// Получить все товары с пагинацией
+// Отримати всі товари з пагінацією
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
@@ -93,7 +93,7 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// Получить один товар напрямую из Dilovod по SKU (без полной синхронизации)
+// Отримати один товар безпосередньо з Dilovod за SKU (без повної синхронізації)
 router.get('/dilovod/:sku', authenticateToken, async (req, res) => {
   try {
 
@@ -129,7 +129,7 @@ router.get('/dilovod/:sku', authenticateToken, async (req, res) => {
   }
 });
 
-// Получить товар по SKU
+// Отримати товар за SKU
 router.get('/:sku', authenticateToken, async (req, res) => {
   try {
     const { sku } = req.params;
@@ -177,7 +177,7 @@ router.get('/:sku', authenticateToken, async (req, res) => {
   }
 });
 
-// Обновить вес товара по ID
+// Оновити вагу товару за ID
 router.put('/:id/weight', authenticateToken, async (req, res) => {
   try {
 
@@ -223,7 +223,7 @@ router.put('/:id/weight', authenticateToken, async (req, res) => {
   }
 });
 
-// Обновить ручной порядок (manualOrder) товара по ID
+// Оновити ручний порядок (manualOrder) товару за ID
 router.put('/:id/manual-order', authenticateToken, async (req, res) => {
   try {
 
@@ -259,7 +259,7 @@ router.put('/:id/manual-order', authenticateToken, async (req, res) => {
   }
 });
 
-// Оновити штрих-код товару по ID
+// Оновити штрих-код товару за ID
 router.put('/:id/barcode', authenticateToken, async (req, res) => {
   try {
     // Перевіряємо ролі доступу
@@ -294,7 +294,7 @@ router.put('/:id/barcode', authenticateToken, async (req, res) => {
   }
 });
 
-// Синхронизировать товары с Dilovod
+// Синхронізувати товари з Dilovod
 router.post('/sync', authenticateToken, async (req, res) => {
   try {
 
@@ -302,18 +302,18 @@ router.post('/sync', authenticateToken, async (req, res) => {
     if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
+        error: 'Недостатньо прав доступу. Потрібні ролі: admin, boss, storekeeper'
       });
     }
 
-    // Проверяем, включена ли синхронизация Dilovod
+    // Перевіряємо, чи увімкнено синхронізацію Dilovod
     const { syncSettingsService } = await import('../services/syncSettingsService.js');
     const isEnabled = await syncSettingsService.isSyncEnabled('dilovod');
 
     if (!isEnabled) {
       return res.status(400).json({
         success: false,
-        error: 'Синхронизация Dilovod отключена в настройках'
+        error: 'Синхронізація Dilovod вимкнена в налаштуваннях'
       });
     }
 
@@ -327,7 +327,52 @@ router.post('/sync', authenticateToken, async (req, res) => {
   }
 });
 
-// Синхронизировать остатки товаров с Dilovod
+// Ручна синхронізація товарів за списком SKU
+router.post('/sync-manual', authenticateToken, async (req, res) => {
+  try {
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Недостатньо прав доступу. Потрібні ролі: admin, boss, storekeeper'
+      });
+    }
+
+    const { skus } = req.body;
+
+    // Валідація вхідних даних
+    if (!skus || !Array.isArray(skus) || skus.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Потрібно вказати масив SKU для синхронізації'
+      });
+    }
+
+    // Очищаємо та валідуємо SKU
+    const cleanedSkus = skus
+      .map((sku: any) => String(sku).trim())
+      .filter((sku: string) => sku.length > 0);
+
+    if (cleanedSkus.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Жоден валідний SKU не знайдено у списку'
+      });
+    }
+
+    logWithTimestamp(`API: Ручна синхронізація для ${cleanedSkus.length} SKU`);
+
+    const dilovodService = new DilovodService();
+    const result = await dilovodService.syncProductsWithDilovod('manual', cleanedSkus);
+
+    res.json(result);
+  } catch (error) {
+    logWithTimestamp('Error in manual sync:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Синхронізувати залишки товарів з Dilovod
 router.post('/sync-stock', authenticateToken, async (req, res) => {
   try {
 
@@ -360,11 +405,18 @@ router.post('/sync-stock', authenticateToken, async (req, res) => {
   }
 });
 
-// Получить статистику по товарам
+// Отримати статистику по товарах
 router.get('/stats/summary', authenticateToken, async (req, res) => {
   try {
-    const [totalProducts, categoriesCount, lastSync] = await Promise.all([
+    const [totalProducts, totalSets, categoriesCount, lastSync] = await Promise.all([
       prisma.product.count(),
+      prisma.product.count({
+        where: {
+          set: {
+            not: null
+          }
+        }
+      }),
       prisma.product.groupBy({
         by: ['categoryName'],
         _count: { categoryName: true }
@@ -377,6 +429,7 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
 
     res.json({
       totalProducts,
+      totalSets,
       categoriesCount: categoriesCount.map(c => ({
         name: c.categoryName || 'Без категории',
         count: c._count.categoryName
@@ -389,7 +442,7 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
   }
 });
 
-// Тест подключения к Dilovod (listMetadata)
+// Тест підключення до Dilovod (listMetadata)
 router.post('/test-connection', authenticateToken, async (req, res) => {
   try {
     const dilovodService = new DilovodService();
@@ -403,7 +456,7 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
 });
 
 
-// Тест получения остатков по списку SKU
+// Тест отримання залишків за списком SKU
 router.post('/test-balance-by-sku', authenticateToken, async (req, res) => {
   try {
     logWithTimestamp('=== API: test-balance-by-sku вызван ===');
@@ -442,7 +495,7 @@ router.post('/test-balance-by-sku', authenticateToken, async (req, res) => {
   }
 });
 
-// Тест получения только комплектов
+// Тест отримання тільки комплектів
 router.post('/test-sets-only', authenticateToken, async (req, res) => {
   try {
     logWithTimestamp('=== API: test-sets-only вызван ===');
@@ -469,7 +522,7 @@ router.post('/test-sets-only', authenticateToken, async (req, res) => {
   }
 });
 
-// Получить остатки товаров с возможностью синхронизации
+// Отримати залишки товарів з можливістю синхронізації
 router.get('/stock/balance', authenticateToken, async (req, res) => {
   try {
     const { sync = 'false' } = req.query;

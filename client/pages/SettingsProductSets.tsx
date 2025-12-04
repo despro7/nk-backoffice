@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useAuth } from '../contexts/AuthContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { formatDateTime, formatPrice } from '../lib/formatUtils';
-import { addToast } from '@heroui/toast';
+import { formatDateTime, formatPrice, formatRelativeDate } from '../lib/formatUtils';
+import { Input, addToast, Textarea, Switch } from '@heroui/react';
+
 import {
   Table,
   TableHeader,
@@ -19,6 +20,12 @@ import {
   DropdownItem,
   SortDescriptor,
   Button,
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  Selection,
 } from '@heroui/react';
 import { LoggingService } from '@/services/LoggingService';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
@@ -53,6 +60,7 @@ interface ProductsResponse {
 
 interface StatsResponse {
   totalProducts: number;
+  totalSets: number;
   categoriesCount: Array<{
     name: string;
     count: number;
@@ -66,6 +74,7 @@ const ProductSets: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]); // Все товары для поиска названий в комплектах
   const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [showOutdated, setShowOutdated] = useState(false);
 
   // Безопасная функция для получения остатков по складам
   const parseStockBalance = (stockBalanceByStock: any): Record<string, number> => {
@@ -132,6 +141,14 @@ const ProductSets: React.FC = () => {
   // Стан для підтвердження видалення ваги
   const [deleteConfirmProductId, setDeleteConfirmProductId] = useState<string | null>(null);
 
+  // Стан для ручної синхронізації
+  const [isManualSyncModalOpen, setIsManualSyncModalOpen] = useState(false);
+  const [manualSkuList, setManualSkuList] = useState('');
+  const [manualSyncing, setManualSyncing] = useState(false);
+
+  // Стан для вибору товарів у таблиці
+  const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set([]));
+
   // Индекс для быстрого и стабильного поиска товаров по SKU
   const productsBySku = useMemo(() => {
     const map = new Map<string, Product>();
@@ -154,21 +171,21 @@ const ProductSets: React.FC = () => {
       label: 'Товар',
       allowsSorting: true,
     },
-    {
-      key: 'barcode',
-      label: 'Штрих‑код',
-      allowsSorting: true,
-    },
+    // {
+    //   key: 'barcode',
+    //   label: 'Штрих‑код',
+    //   allowsSorting: true,
+    // },
     {
       key: 'category',
       label: 'Категорія',
       allowsSorting: true,
     },
-    {
-      key: 'costPerItem',
-      label: 'Ціна',
-      allowsSorting: true,
-    },
+    // {
+    //   key: 'costPerItem',
+    //   label: 'Ціна',
+    //   allowsSorting: true,
+    // },
     {
       key: 'weight',
       label: 'Вага (гр)',
@@ -176,12 +193,7 @@ const ProductSets: React.FC = () => {
     },
     {
       key: 'stock1',
-      label: 'Склад 1',
-      allowsSorting: true,
-    },
-    {
-      key: 'stock2',
-      label: 'Склад 2',
+      label: 'Залишки',
       allowsSorting: true,
     },
     {
@@ -196,11 +208,11 @@ const ProductSets: React.FC = () => {
     },
   ];
 
-  // Фильтруем и сортируем данные для отображения
+  // Фільтруємо та сортуємо дані для відображення
   const displayProducts = useMemo(() => {
     let filtered = [...products];
 
-    // Фильтр по поиску
+    // Фільтр по пошуку
     if (searchTerm) {
       filtered = filtered.filter(product =>
         product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -208,14 +220,19 @@ const ProductSets: React.FC = () => {
       );
     }
 
-    // Фильтр по категории
+    // Фільтр по категорії
     if (selectedCategory) {
       filtered = filtered.filter(product =>
         product.categoryName === selectedCategory
       );
     }
 
-    // Сортировка
+    // Фільтр по застарілим товарам
+    if (!showOutdated) {
+      filtered = filtered.filter(product => !product.isOutdated);
+    }
+
+    // Сортування
     if (sortDescriptor?.column) {
       filtered.sort((a, b) => {
         let first: any = a[sortDescriptor.column as keyof Product];
@@ -258,9 +275,9 @@ const ProductSets: React.FC = () => {
     }
 
     return filtered;
-  }, [products, searchTerm, selectedCategory, sortDescriptor]);
+  }, [products, searchTerm, selectedCategory, sortDescriptor, showOutdated]);
 
-  // Функция для рендеринга ячеек
+  // Функція для рендеринга комірок таблиці
   const renderCell = (product: Product, columnKey: React.Key) => {
     switch (columnKey) {
       case 'manualOrder': {
@@ -356,7 +373,7 @@ const ProductSets: React.FC = () => {
           </div>
         );
       }
-      case 'barcode': {
+      case 'name': {
         const productIdStr = product.id.toString();
         const isEditing = editingWeight[`barcode-${productIdStr}`] !== undefined;
         const isSaving = savingWeight === `barcode-${productIdStr}`;
@@ -399,79 +416,82 @@ const ProductSets: React.FC = () => {
             cancelEditingBarcode();
           }
         };
+      
         return (
-          <div className="flex items-center gap-1">
-            {isEditing ? (
-              <>
-                <input
-                  ref={el => { (inputRefs.current as any)[`barcode-${productIdStr}`] = el; }}
-                  key={`barcode-input-${productIdStr}-${forceUpdate}`}
-                  type="text"
-                  defaultValue={editingWeight[`barcode-${productIdStr}`] ?? ''}
-                  onChange={e => setEditingWeight(prev => ({ ...prev, [`barcode-${productIdStr}`]: e.target.value }))}
-                  className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={isSaving}
-                  onKeyDown={e => { if (e.key === 'Enter') finishEditingBarcode(); else if (e.key === 'Escape') cancelEditingBarcode(); }}
-                  onWheel={e => e.currentTarget.blur()}
-                  autoFocus
-                  placeholder="---"
-                  onFocus={e => e.currentTarget.select()}
-                />
-                <Button size="sm" color="success" variant="flat" onPress={finishEditingBarcode} disabled={isSaving} className="min-w-0 p-1">
-                  {isSaving ? <DynamicIcon name="loader-2" className="animate-spin" size={12} /> : <DynamicIcon name="check" size={12} />}
-                </Button>
-                <Button size="sm" color="danger" variant="flat" onPress={cancelEditingBarcode} disabled={isSaving} className="min-w-0 p-1">
-                  <DynamicIcon name="x" size={12} />
-                </Button>
-              </>
-            ) : (
-              <div
-                className={`text-sm text-gray-900 ${canEditProducts() ? 'cursor-pointer hover:bg-gray-100' : 'cursor-not-allowed opacity-60'} px-2 py-1 rounded min-w-[80px] text-center`}
-                onClick={() => canEditProducts() && startEditingBarcode()}
-                title={canEditProducts() ? "Натисніть для редагування" : "Немає прав для редагування"}
-              >
-                {currentBarcode || '—'}
-              </div>
-            )}
-          </div>
-        );
-      }
-      case 'name':
-        return (
-          <div>
-            <div className="text-sm font-bold text-gray-900">
+          <div className="flex flex-col gap-1">
+            {/* Product Name */}
+            <div className="flex flex-col text-sm font-bold text-gray-900">
               {product.name}
-              {product.isOutdated && (<span className="text-xs py-0.5 px-1.5 ml-2 rounded bg-red-500 text-white font-medium">Застарілий</span>)}
+              {product.isOutdated && (<span className="w-fit text-xs py-0.5 px-1.5 rounded bg-red-500 text-white font-medium">Застарілий</span>)}
             </div>
+            {/* Product Meta */}
             <div className="text-sm font-normal text-gray-500">
-              {product.weight && (
+              <div className="flex gap-3 items-center">
+                {product.weight && (
                 <span className="flex gap-1 items-center">
                   <DynamicIcon name="weight" size={14} /> {product.weight} гр.
                 </span>
+                )}
+                <span className="flex gap-1 items-center">
+                  <DynamicIcon name="tag" size={14} /> {formatPrice(product.costPerItem)}
+                </span>
+                <span className="flex items-center">
+                  <DynamicIcon name="hash" size={14} /> {product.sku}
+                </span>
+              </div>
+            </div>
+            {/* Product Barcode */}
+            {/* <div className="text-sm font-normal text-gray-500">
+              <DynamicIcon name="scan-barcode" size={14} /> {formatPrice(product.costPerItem)} <span className="font-medium">{product.barcode || '—'}</span>
+            </div> */}
+            <div className="flex items-center gap-1">
+              {isEditing ? (
+                <>
+                  <input
+                    ref={el => { (inputRefs.current as any)[`barcode-${productIdStr}`] = el; }}
+                    key={`barcode-input-${productIdStr}-${forceUpdate}`}
+                    type="text"
+                    defaultValue={editingWeight[`barcode-${productIdStr}`] ?? ''}
+                    onChange={e => setEditingWeight(prev => ({ ...prev, [`barcode-${productIdStr}`]: e.target.value }))}
+                    className="w-36 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={isSaving}
+                    onKeyDown={e => { if (e.key === 'Enter') finishEditingBarcode(); else if (e.key === 'Escape') cancelEditingBarcode(); }}
+                    onWheel={e => e.currentTarget.blur()}
+                    autoFocus
+                    placeholder="---"
+                    onFocus={e => e.currentTarget.select()}
+                  />
+                  <Button size="sm" color="success" variant="flat" onPress={finishEditingBarcode} disabled={isSaving} className="min-w-0 px-2 py-1">
+                    {isSaving ? <DynamicIcon name="loader-2" className="animate-spin" size={12} /> : <DynamicIcon name="check" size={12} />}
+                  </Button>
+                  <Button size="sm" color="danger" variant="flat" onPress={cancelEditingBarcode} disabled={isSaving} className="min-w-0 px-2 py-1">
+                    <DynamicIcon name="x" size={12} />
+                  </Button>
+                </>
+              ) : (
+                <div
+                  className={`flex items-center gap-1 text-sm text-gray-700 bg-gray-100 ${canEditProducts() ? 'cursor-pointer hover:bg-gray-200' : 'cursor-not-allowed opacity-60'} px-2 py-1 rounded min-w-[80px] text-center`}
+                  onClick={() => canEditProducts() && startEditingBarcode()}
+                  title={canEditProducts() ? "Натисніть для редагування" : "Немає прав для редагування"}
+                >
+                  <DynamicIcon name="scan-barcode" size={14} /> {currentBarcode || <span className="text-neutral-500">додати штрих-код</span>}
+                </div>
               )}
-              <span className="flex gap-1 items-center">
-                <DynamicIcon name="barcode" size={14} /> {product.sku}
-              </span>
             </div>
           </div>
         );
+      }
 
       case 'category':
         const categoryColor: ChipProps["color"] =
           product.categoryId === 1 ? "warning" :
-            product.categoryId === 2 ? "success" : "secondary";
-
+          product.categoryId === 2 ? "success" :
+          product.categoryId === 3 ? "secondary" :
+          "default";
         return (
           <Chip color={categoryColor} variant="flat" size="sm" className={`${categoryColor === "secondary" && "bg-purple-200"}`}>
-            {product.categoryName || 'Без категорії'}
+            {product.categoryName + " (id" + product.categoryId + ")" || 'Без категорії'}
           </Chip>
-        );
-
-      case 'costPerItem':
-        return (
-          <span className="text-sm text-gray-900">
-            {formatPrice(product.costPerItem)}
-          </span>
         );
 
       case 'weight':
@@ -548,7 +568,7 @@ const ProductSets: React.FC = () => {
             ) : (
               <div className="flex items-center gap-1">
                 <div
-                  className={`text-sm text-gray-900 ${canEditProducts() ? 'cursor-pointer hover:bg-gray-100' : 'cursor-not-allowed opacity-60'} px-1.5 py-1 rounded min-w-[50px] whitespace-nowrap tabular-nums underline underline-offset-3 decoration-dotted`}
+                  className={`text-sm text-center text-gray-900 ${canEditProducts() ? 'cursor-pointer hover:bg-gray-100' : 'cursor-not-allowed opacity-60'} px-1.5 py-1 rounded min-w-[50px] whitespace-nowrap tabular-nums underline underline-offset-3 decoration-dotted`}
                   onClick={() => canEditProducts() && startEditingWeight(productIdStr, currentWeight)}
                   title={canEditProducts() ? "Натисніть для редагування" : "Немає прав для редагування"}
                 >
@@ -600,14 +620,14 @@ const ProductSets: React.FC = () => {
           </span>
         );
 
-      case 'stock2':
-        const stock2Data = parseStockBalance(product.stockBalanceByStock);
-        const stock2Value = stock2Data["2"] || 0;
-        return (
-          <span className={`text-sm ${stock2Value > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-            {stock2Value}
-          </span>
-        );
+      // case 'stock2':
+      //   const stock2Data = parseStockBalance(product.stockBalanceByStock);
+      //   const stock2Value = stock2Data["2"] || 0;
+      //   return (
+      //     <span className={`text-sm ${stock2Value > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+      //       {stock2Value}
+      //     </span>
+      //   );
 
       case 'set':
         if (product.set) {
@@ -617,23 +637,26 @@ const ProductSets: React.FC = () => {
             if (setData && Array.isArray(setData) && setData.length > 0) {
               return (
                 <div className="text-sm text-gray-900">
-                  <div className="font-medium">Комплект ({setData.length} позицій)</div>
-                  <div className="text-xs text-gray-500">
-                    {setData.map((item, index) => {
-                      const targetSku = String(item.id).trim().toLowerCase();
-                      const componentProduct = productsBySku.get(targetSku) ||
-                        allProducts.find(p => p.id?.toString() === String(item.id));
-                      const componentName = componentProduct?.name || item.id;
+                  <div className="font-medium">Комплект ({setData.length}&nbsp;{setData.length === 1 ? 'позиція' : setData.length > 1 && setData.length < 5 ? 'позиції' : 'позицій'})</div>
+                    <details className="text-sm text-gray-500 cursor-pointer group">
+                      <summary className="flex items-center gap-1 hover:text-gray-700 select-none">
+                        <span className="underline decoration-dotted underline-offset-3">Показати склад</span>
+                        <DynamicIcon name="chevron-right" size={12} className="transition-transform group-open:rotate-90" />
+                      </summary>
+                      <ol className="mt-1 space-y-0.5 list-decimal list-inside">
+                        {setData.map((item, index) => {
+                          const targetSku = String(item.id).trim().toLowerCase();
+                          const componentProduct = productsBySku.get(targetSku) || allProducts.find(p => p.id?.toString() === String(item.id));
+                          const componentName = componentProduct?.name || item.id;
 
-                      return (
-                        <div key={index}>
-                          <span title={`SKU: ${item.id}`}>
-                            {componentName} ({item.id})×{item.quantity}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          return (
+                            <li key={index} title={`SKU: ${item.id}`}>
+                              {componentName} ({item.id})×{item.quantity}
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    </details>
                 </div>
               );
             }
@@ -645,8 +668,8 @@ const ProductSets: React.FC = () => {
 
       case 'lastSyncAt':
         return (
-          <span className="text-sm text-gray-500">
-            {formatDateTime(product.lastSyncAt)}
+          <span className="block text-sm text-gray-500 max-w-[80px]">
+            {formatRelativeDate(product.lastSyncAt)}
           </span>
         );
 
@@ -655,22 +678,25 @@ const ProductSets: React.FC = () => {
     }
   };
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (pageParam?: number, searchParam?: string, categoryParam?: string) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        page: currentPage.toString(),
+        page: (pageParam ?? currentPage).toString(),
         limit: '100', // Збільшуємо ліміт для завантаження всіх товарів
         sortBy: (sortDescriptor?.column as string) || 'manualOrder',
         sortOrder: sortDescriptor?.direction === 'ascending' ? 'asc' : 'desc'
       });
 
-      if (searchTerm) {
-        params.append('search', searchTerm);
+      const searchToUse = typeof searchParam === 'string' ? searchParam : searchTerm;
+      const categoryToUse = typeof categoryParam === 'string' ? categoryParam : selectedCategory;
+
+      if (searchToUse) {
+        params.append('search', searchToUse);
       }
 
-      if (selectedCategory) {
-        params.append('category', selectedCategory);
+      if (categoryToUse) {
+        params.append('category', categoryToUse);
       }
 
       const response = await fetch(`/api/products?${params}`, {
@@ -753,7 +779,7 @@ const ProductSets: React.FC = () => {
     }
   };
 
-  // Синхронизация товаров с Dilovod
+  // Синхронізація товарів з Dilovod
   const syncProductsWithDilovod = async () => {
     if (!isAdmin()) {
       setSyncStatus({
@@ -790,37 +816,37 @@ const ProductSets: React.FC = () => {
           errors: result.errors || []
         });
 
-        // Обновляем список товаров после синхронизации
+        // Оновлюємо список товарів після синхронізації
         fetchProducts();
-        fetchAllProducts(); // Обновляем все товары для комплектов
+        fetchAllProducts(); // Оновлюємо всі товари для комплектів
       } else {
         const error = await response.json();
         setSyncStatus({
           isRunning: false,
-          message: `Ошибка: ${error.error || 'Неизвестная ошибка'}`,
+          message: `Помилка: ${error.error || 'Невідома помилка'}`,
           syncedProducts: 0,
           syncedSets: 0,
-          errors: [error.error || 'Неизвестная ошибка']
+          errors: [error.error || 'Невідома помилка']
         });
       }
     } catch (error) {
       setSyncStatus({
         isRunning: false,
-        message: `Ошибка сети: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+        message: `Помилка мережі: ${error instanceof Error ? error.message : 'Невідома помилка'}`,
         syncedProducts: 0,
         syncedSets: 0,
-        errors: [error instanceof Error ? error.message : 'Неизвестная ошибка']
+        errors: [error instanceof Error ? error.message : 'Невідома помилка']
       });
     }
   };
 
-  // Синхронизировать остатки товаров с Dilovod
+  // Синхронізувати залишки товарів з Dilovod
   const syncStockBalances = async () => {
     try {
       setStockSyncing(true);
       setStockSyncStatus({
         isRunning: true,
-        message: 'Синхронизация остатков...',
+        message: 'Синхронізація залишків...',
         updatedProducts: 0,
         errors: []
       });
@@ -839,17 +865,17 @@ const ProductSets: React.FC = () => {
         if (result.success) {
           setStockSyncStatus({
             isRunning: false,
-            message: `Остатки успешно синхронизированы! Обновлено ${result.updatedProducts} товаров`,
+            message: `Залишки успішно синхронізовані! Оновлено ${result.updatedProducts} товарів`,
             updatedProducts: result.updatedProducts,
             errors: result.errors || []
           });
 
-          // Обновляем список товаров после синхронизации остатков
+          // Оновлюємо список товарів після синхронізації залишків
           await fetchProducts();
         } else {
           setStockSyncStatus({
             isRunning: false,
-            message: `Ошибка синхронизации остатков: ${result.message}`,
+            message: `Помилка синхронізації залишків: ${result.message}`,
             updatedProducts: 0,
             errors: result.errors || []
           });
@@ -858,33 +884,33 @@ const ProductSets: React.FC = () => {
         const errorData = await response.json();
         setStockSyncStatus({
           isRunning: false,
-          message: `Ошибка API: ${errorData.error || 'Неизвестная ошибка'}`,
+          message: `Помилка API: ${errorData.error || 'Невідома помилка'}`,
           updatedProducts: 0,
-          errors: [errorData.error || 'Неизвестная ошибка']
+          errors: [errorData.error || 'Невідома помилка']
         });
       }
     } catch (error) {
-      console.error('Ошибка синхронизации остатков:', error);
+      console.error('Помилка синхронізації залишків:', error);
       setStockSyncStatus({
         isRunning: false,
-        message: `Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+        message: `Помилка: ${error instanceof Error ? error.message : 'Невідома помилка'}`,
         updatedProducts: 0,
-        errors: [error instanceof Error ? error.message : 'Неизвестная ошибка']
+        errors: [error instanceof Error ? error.message : 'Невідома помилка']
       });
     } finally {
       setStockSyncing(false);
     }
   };
 
-  // Тестирование получения комплектов
+  // Тестування отримання комплектів
   const testSetsOnly = async () => {
     if (!isAdmin()) {
-      alert('У вас нет прав для выполнения тестирования');
+      alert('У вас немає прав для виконання тестування');
       return;
     }
 
     try {
-      console.log('Начинаем тестирование комплектов...');
+      console.log('Починаємо тестування комплектів...');
       const response = await fetch('/api/products/test-sets-only', {
         method: 'POST',
         credentials: 'include'
@@ -892,23 +918,23 @@ const ProductSets: React.FC = () => {
 
       if (response.ok) {
         const result = await response.json();
-        console.log('Результат тестирования:', result);
+        console.log('Результат тестування:', result);
 
         if (result.success) {
-          alert(`Тест завершен успешно!\n\n${result.message}\n\nПроверьте консоль сервера для детальной информации.`);
+          alert(`Тест завершено успішно!\n\n${result.message}\n\nПеревірте консоль сервера для детальної інформації.`);
         } else {
-          alert(`Тест завершен с ошибкой:\n\n${result.message}`);
+          alert(`Тест завершено з помилкою:\n\n${result.message}`);
         }
       } else {
         const error = await response.json();
-        alert(`Ошибка тестирования: ${error.error || 'Неизвестная ошибка'}`);
+        alert(`Помилка тестування: ${error.error || 'Невідома помилка'}`);
       }
     } catch (error) {
-      alert(`Ошибка сети: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
+      alert(`Помилка мережі: ${error instanceof Error ? error.message : 'Невідома помилка'}`);
     }
   };
 
-  // Тест получения одного товара по SKU напрямую из Dilovod
+  // Тест отримання одного товару за SKU безпосередньо з Dilovod
   const testSingleDilovodProduct = async () => {
     if (!isAdmin()) {
       addToast({
@@ -955,9 +981,128 @@ const ProductSets: React.FC = () => {
     }
   };
 
-  // Очистка статуса синхронизации
+  // Очищення статусу синхронізації
   const clearSyncStatus = () => {
     setSyncStatus(null);
+  };
+
+  // Відкриття модалки ручної синхронізації
+  const openManualSyncModal = () => {
+    // Збираємо SKU з обраних товарів
+    let skuListText = '';
+    if (selectedKeys !== 'all' && selectedKeys.size > 0) {
+      const selectedSkus = displayProducts
+        .filter(p => selectedKeys.has(p.id.toString()) || selectedKeys.has(p.id))
+        .map(p => p.sku);
+      skuListText = selectedSkus.join(', ');
+    }
+    setManualSkuList(skuListText);
+    setIsManualSyncModalOpen(true);
+  };
+
+  // Ручна синхронізація за списком SKU
+  const [manualSyncEnabled, setManualSyncEnabled] = useState(false);
+  const syncProductsManual = async () => {
+    if (!isAdmin()) {
+      addToast({
+        title: 'Помилка',
+        description: 'У вас немає прав для виконання синхронізації',
+        color: 'danger'
+      });
+      return;
+    }
+
+    // Парсимо список SKU (розділювачі: кома, пробіл, новий рядок)
+    const skus = manualSkuList
+      .split(/[\s,]+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    if (skus.length === 0) {
+      addToast({
+        title: 'Помилка',
+        description: 'Введіть хоча б один SKU для синхронізації',
+        color: 'warning'
+      });
+      return;
+    }
+
+    setManualSyncing(true);
+    setSyncStatus({
+      isRunning: true,
+      message: `Синхронізуємо ${skus.length} товарів...`,
+      syncedProducts: 0,
+      syncedSets: 0,
+      errors: []
+    });
+
+    try {
+      const response = await fetch('/api/products/sync-manual', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ skus }),
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setSyncStatus({
+          isRunning: false,
+          message: result.message,
+          syncedProducts: result.syncedProducts,
+          syncedSets: result.syncedSets,
+          errors: result.errors || [],
+          ...(result.createdProducts !== undefined && { createdProducts: result.createdProducts }),
+          ...(result.updatedProducts !== undefined && { updatedProducts: result.updatedProducts }),
+          ...(result.skippedProducts !== undefined && { skippedProducts: result.skippedProducts }),
+        } as any);
+
+        addToast({
+          title: 'Синхронізацію завершено',
+          description: result.message,
+          color: result.errors?.length > 0 ? 'warning' : 'success'
+        });
+
+        // Оновлюємо список товарів після синхронізації
+        fetchProducts();
+        fetchAllProducts();
+        setIsManualSyncModalOpen(false);
+      } else {
+        const error = await response.json();
+        setSyncStatus({
+          isRunning: false,
+          message: `Помилка: ${error.error || 'Невідома помилка'}`,
+          syncedProducts: 0,
+          syncedSets: 0,
+          errors: [error.error || 'Невідома помилка']
+        });
+
+        addToast({
+          title: 'Помилка синхронізації',
+          description: error.error || 'Невідома помилка',
+          color: 'danger'
+        });
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Невідома помилка';
+      setSyncStatus({
+        isRunning: false,
+        message: `Помилка мережі: ${errorMessage}`,
+        syncedProducts: 0,
+        syncedSets: 0,
+        errors: [errorMessage]
+      });
+
+      addToast({
+        title: 'Помилка мережі',
+        description: errorMessage,
+        color: 'danger'
+      });
+    } finally {
+      setManualSyncing(false);
+    }
   };
 
   const clearTestResults = () => {
@@ -1020,7 +1165,7 @@ const ProductSets: React.FC = () => {
     }
   };
 
-  // Функция для обновления веса товара
+  // Функція для оновлення ваги товару
   const updateProductWeight = async (productId: string, newWeight: number) => {
     try {
       setSavingWeight(productId);
@@ -1037,14 +1182,14 @@ const ProductSets: React.FC = () => {
       if (response.ok) {
         const result = await response.json();
 
-        // Обновляем локальное состояние
+        // Оновлюємо локальний стан
         setProducts(prevProducts =>
           prevProducts.map(product =>
             product.id.toString() === productId ? { ...product, weight: newWeight } : product
           )
         );
 
-        // Очищаем состояние редактирования
+        // Очищаємо стан редагування
         setEditingWeight(prev => {
           const newState = { ...prev };
           delete newState[productId];
@@ -1086,7 +1231,7 @@ const ProductSets: React.FC = () => {
     }
   };
 
-  // Функция для начала редактирования веса
+  // Функція для початку редагування ваги
   const startEditingWeight = (productId: string, currentWeight: number) => {
     setEditingWeight(prev => {
       const newState = {
@@ -1097,9 +1242,9 @@ const ProductSets: React.FC = () => {
     });
   };
 
-  // Функция для завершения редактирования веса
+  // Функція для завершення редагування ваги
   const finishEditingWeight = (productId: string) => {
-    // Всегда получаем значение из ref (DOM элемента), так как оно актуальное
+    // Завжди отримуємо значення з ref (DOM елемента), оскільки воно актуальне
     const weightValue = inputRefs.current[productId]?.value;
 
     if (weightValue !== undefined && weightValue !== '') {
@@ -1132,7 +1277,7 @@ const ProductSets: React.FC = () => {
     }
   };
 
-  // Функция для отмены редактирования веса
+  // Функція для скасування редагування ваги
   const cancelEditingWeight = (productId: string) => {
     setEditingWeight(prev => {
       const newState = { ...prev };
@@ -1141,47 +1286,32 @@ const ProductSets: React.FC = () => {
     });
   };
 
-  // Автоматическое обновление при изменении фильтров
+  // Автоматичне оновлення при зміні фільтрів
   useEffect(() => {
     fetchProducts();
     fetchStats();
     fetchAllProducts();
-  }, []); // Загружаем только при монтировании
+  }, []); // Завантажуємо тільки при монтуванні
 
-  // Обновление данных при изменении категории
+  // Оновлення даних при зміні категорії
   useEffect(() => {
-    if (products.length > 0) {
-      // Обновляем данные при изменении категории
-      fetchProducts();
-    }
+    setCurrentPage(1);
   }, [selectedCategory]);
 
-  // Задержка для поиска, чтобы не делать запрос при каждом символе
+  // Затримка для пошуку, щоб не робити запит при кожному символі
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (products.length > 0) {
-        fetchProducts();
-      }
+      setCurrentPage(1);
     }, 500);
 
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
+  // При зміні сторінки потрібно перезапитувати товари
+  useEffect(() => {
+    fetchProducts(currentPage, searchTerm, selectedCategory);
+  }, [currentPage]);
 
-
-
-
-  // if (!user || !['admin', 'boss'].includes(user.role)) {
-  //   return (
-  //     <div className="flex items-center justify-center min-h-full">
-  //       <div className="text-center">
-  //         <DynamicIcon name="lock" size={48} className="mx-auto mb-4 text-gray-400" />
-  //         <h2 className="text-xl font-semibold text-gray-600">Доступ заборонено</h2>
-  //         <p className="text-gray-500">У вас немає прав для перегляду цієї сторінки</p>
-  //       </div>
-  //     </div>
-  //   );
-  // }
 
   return (
     <div className="max-w-full">
@@ -1190,20 +1320,18 @@ const ProductSets: React.FC = () => {
       </div>
 
       {/* Статистика */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h3 className="text-lg font-semibold text-gray-800">Всього товарів</h3>
-          <p className="text-2xl font-bold text-blue-600">{stats?.totalProducts || 0}</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 font-semibold text-gray-800">
+        <div className="flex justify-between bg-white p-4 rounded-lg shadow border-l-3 border-blue-600">
+          <h3 className="text-lg">Всього товарів</h3>
+          <p className="text-2xl">{stats?.totalProducts || 0}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h3 className="text-lg font-semibold text-gray-800">Категорій</h3>
-          <p className="text-2xl font-bold text-green-600">{stats?.categoriesCount?.length || 0}</p>
+        <div className="flex justify-between bg-white p-4 rounded-lg shadow border-l-3 border-purple-600">
+          <h3 className="text-lg">Комплектів</h3>
+          <p className="text-2xl">{stats?.totalSets || 0}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h3 className="text-lg font-semibold text-gray-800">Остання синхронізація</h3>
-          <p className="text-sm text-gray-600">
-            {stats?.lastSync ? new Date(stats.lastSync).toLocaleString('uk-UA') : 'Не синхронізовано'}
-          </p>
+        <div className="flex justify-between bg-white p-4 rounded-lg shadow border-l-3 border-green-600">
+          <h3 className="text-lg">Категорій</h3>
+          <p className="text-2xl">{stats?.categoriesCount?.length || 0}</p>
         </div>
       </div>
 
@@ -1338,112 +1466,146 @@ const ProductSets: React.FC = () => {
           aria-label="Таблиця товарів та комплектів"
           sortDescriptor={sortDescriptor}
           onSortChange={setSortDescriptor}
+          selectionMode={isAdmin() && manualSyncEnabled ? "multiple" : undefined}
+          selectedKeys={selectedKeys}
+          onSelectionChange={setSelectedKeys}
           classNames={{
             wrapper: "min-h-[400px]",
           }}
           topContent={
             <div className="flex flex-col gap-4 p-2">
-              {/* Статистика и информация */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                <div className="flex flex-col sm:flex-row gap-4 text-small text-default-400 pl-1">
-                  <span>Всього товарів: {products.length}</span>
-                  {(searchTerm || selectedCategory) && (
-                    <span>Знайдено: {displayProducts.length}</span>
+              {/* Кнопки дій */}
+              <div className={`flex flex-wrap gap-4 pb-6 ${!isAdmin() ? 'hidden' : ''}`} >
+                <Switch isSelected={manualSyncEnabled} onValueChange={setManualSyncEnabled}></Switch>
+                <Button
+                  onPress={openManualSyncModal}
+                  disabled={manualSyncing || !isAdmin()}
+                  color="primary"
+                  variant="flat"
+                  className="bg-blue-400 text-white"
+                >
+                  <DynamicIcon name="list-filter" size={14} />
+                  Ручна синхронізація
+                  {selectedKeys !== 'all' && (selectedKeys as Set<string>).size > 0 && (
+                      " (" + (selectedKeys as Set<string>).size + ")"
                   )}
-                  {loading && (
-                    <span className="flex items-center gap-1">
+                </Button>
+
+                <Button
+                  onPress={syncProductsWithDilovod}
+                  disabled={syncStatus?.isRunning || !isAdmin()}
+                  color="primary"
+                >
+                  {syncStatus?.isRunning ? (
+                    <>
                       <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                      Оновлення...
-                    </span>
+                      Синхронізація...
+                    </>
+                  ) : (
+                    <>
+                      <DynamicIcon name="refresh-cw" size={14} />
+                      Синхронізувати всі товари
+                    </>
                   )}
-                </div>
+                </Button>
 
-                {/* Кнопки действий */}
-                <div className={`flex flex-wrap gap-4 pb-6 ${!isAdmin() ? 'hidden' : ''}`} >
-                  <Button
-                    onPress={syncProductsWithDilovod}
-                    disabled={syncStatus?.isRunning || !isAdmin()}
-                    color="primary"
-                  >
-                    {syncStatus?.isRunning ? (
-                      <>
-                        <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                        Синхронізація...
-                      </>
-                    ) : (
-                      <>
-                        <DynamicIcon name="refresh-cw" size={14} />
-                        Синхронізувати товари з Dilovod
-                      </>
-                    )}
-                  </Button>
+                <Button
+                  onPress={syncStockBalances}
+                  disabled={stockSyncing || !isAdmin()}
+                  color="success"
+                  className="text-white"
+                >
+                  {stockSyncing ? (
+                    <>
+                      <DynamicIcon name="loader-2" className="animate-spin" size={14} />
+                      Синхронізація залишків...
+                    </>
+                  ) : (
+                    <>
+                      <DynamicIcon name="refresh-cw" size={14} />
+                      Оновити залишки з Dilovod
+                    </>
+                  )}
+                </Button>
 
-                  <Button
-                    onPress={syncStockBalances}
-                    disabled={stockSyncing || !isAdmin()}
-                    color="success"
-                    className="text-white"
-                  >
-                    {stockSyncing ? (
-                      <>
-                        <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                        Синхронізація залишків...
-                      </>
-                    ) : (
-                      <>
-                        <DynamicIcon name="refresh-cw" size={14} />
-                        Оновити залишки з Dilovod
-                      </>
-                    )}
-                  </Button>
-
-                  <Button
-                    onPress={testSetsOnly}
-                    disabled={!isAdmin()}
-                    variant="flat"
-                  >
-                    <DynamicIcon name="package-x" size={14} />
-                    Тест комплектацій
-                  </Button>
-                  <Button
-                    onPress={testSingleDilovodProduct}
-                    disabled={!isAdmin()}
-                    variant="flat"
-                  >
-                    <DynamicIcon name="search" size={14} />
-                    Тест SKU (Dilovod)
-                  </Button>
-                </div>
+                {/* <Button
+                  onPress={testSetsOnly}
+                  disabled={!isAdmin()}
+                  variant="flat"
+                >
+                  <DynamicIcon name="package-x" size={14} />
+                  Тест комплектацій
+                </Button> */}
+                <Button
+                  onPress={testSingleDilovodProduct}
+                  disabled={!isAdmin()}
+                  variant="flat"
+                >
+                  <DynamicIcon name="search" size={14} />
+                  Тест SKU (Dilovod)
+                </Button>
               </div>
 
-              {/* Поиск и фильтры */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
-                  <DynamicIcon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
+              {/* Пошук і фільтри */}
+              <div className="flex flex-wrap gap-4 justify-between w-full">
+                <div className="flex flex-col sm:flex-row gap-4 items-center">
+                  <Input
                     placeholder="Пошук по назві або SKU..."
                     value={searchTerm}
+                    isClearable
+                    onClear={() => setSearchTerm('')}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full sm:w-auto pl-9 pr-8 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    startContent={<DynamicIcon name="search" size={16} className="" />}
                   />
-                  {searchTerm && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onPress={() => setSearchTerm('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      <DynamicIcon name="x" size={14} />
-                    </Button>
-                  )}
+                  
+                  <div className="flex items-center text-small text-default-400 whitespace-nowrap">
+                    {(searchTerm || selectedCategory) && (
+                      <span>Знайдено: {displayProducts.length}</span>
+                    )}
+                    {loading && (
+                      <span className="flex items-center gap-1">
+                        <DynamicIcon name="loader-2" className="animate-spin" size={14} />
+                        Пошук...
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                <div className="w-full sm:w-48">
+                <div className="flex flex-wrap gap-2 items-center">
+                  {/* Switch "Відображати застарілі товари" */}
+                  <div className="flex items-center gap-2 mr-4">
+                    <Switch
+                      isSelected={showOutdated}
+                      onValueChange={setShowOutdated}
+                    />
+                    <span className="text-sm text-gray-700 leading-4">Показати<br/>застарілі</span>
+                  </div>
+                  
+                  {/* Кнопка очищення фільтрів */}
+                  {(searchTerm || selectedCategory) && (
+                    <Button
+                      variant="light"
+                      color="danger"
+                      // size="sm"
+                      onPress={() => {
+                        setSearchTerm('');
+                        setSelectedCategory('');
+                        setCurrentPage(1);
+                        fetchProducts(1, '', '');
+                      }}
+                      className="text-red-700 flex items-center"
+                    >
+                      <DynamicIcon name="x-circle" size={14} />
+                      Очистити
+                    </Button>
+                  )}
+
+                  {/* Фільтр по категорії */}
                   <Dropdown>
                     <DropdownTrigger>
                       <Button
                         variant="flat"
-                        className="w-full justify-between"
+                        className="justify-between"
                       >
                         {selectedCategory || 'Всі категорії'}
                         <DynamicIcon name="chevron-down" size={16} className="text-gray-400" />
@@ -1469,22 +1631,6 @@ const ProductSets: React.FC = () => {
                     </DropdownMenu>
                   </Dropdown>
                 </div>
-
-                {/* Кнопка очистки фильтров */}
-                {(searchTerm || selectedCategory) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onPress={() => {
-                      setSearchTerm('');
-                      setSelectedCategory('');
-                    }}
-                    className="text-gray-500 hover:text-gray-700"
-                  >
-                    <DynamicIcon name="x-circle" className="mr-2" size={14} />
-                    Очистити
-                  </Button>
-                )}
               </div>
             </div>
           }
@@ -1603,6 +1749,72 @@ const ProductSets: React.FC = () => {
           setDeleteConfirmProductId(null);
         }}
       />
+
+      {/* Модал ручної синхронізації */}
+      <Modal 
+        isOpen={isManualSyncModalOpen} 
+        onClose={() => setIsManualSyncModalOpen(false)}
+        size="lg"
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <DynamicIcon name="list-filter" size={20} />
+              Ручна синхронізація товарів
+            </div>
+            <p className="text-sm font-normal text-gray-500">
+              Синхронізуйте тільки вибрані товари за списком SKU
+            </p>
+          </ModalHeader>
+          <ModalBody>
+            <div className="space-y-4">
+              <Textarea
+                label="Список SKU"
+                placeholder="Введіть SKU через кому, пробіл або кожен з нового рядка..."
+                value={manualSkuList}
+                onValueChange={setManualSkuList}
+                minRows={8}
+                maxRows={15}
+                description={`Введено SKU: ${manualSkuList.split(/[\s,]+/).filter(s => s.trim().length > 0).length}`}
+              />
+              <div className="text-sm text-gray-500">
+                <p className="font-medium mb-1">Формати введення:</p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  <li>Через кому: <code className="bg-gray-100 px-1 rounded">SKU1, SKU2, SKU3</code></li>
+                  <li>Через пробіл: <code className="bg-gray-100 px-1 rounded">SKU1 SKU2 SKU3</code></li>
+                  <li>Кожен з нового рядка</li>
+                </ul>
+              </div>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button 
+              variant="flat" 
+              onPress={() => setIsManualSyncModalOpen(false)}
+              disabled={manualSyncing}
+            >
+              Скасувати
+            </Button>
+            <Button 
+              color="primary" 
+              onPress={syncProductsManual}
+              disabled={manualSyncing || manualSkuList.trim().length === 0}
+            >
+              {manualSyncing ? (
+                <>
+                  <DynamicIcon name="loader-2" className="animate-spin" size={14} />
+                  Синхронізація...
+                </>
+              ) : (
+                <>
+                  <DynamicIcon name="refresh-cw" size={14} />
+                  Синхронізувати
+                </>
+              )}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   );
 };
