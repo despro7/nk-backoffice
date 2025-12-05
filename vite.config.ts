@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     outDir: "dist/client",
+    chunkSizeWarningLimit: 1000,
   },
   plugins: [react(), tailwindcss()],
   resolve: {

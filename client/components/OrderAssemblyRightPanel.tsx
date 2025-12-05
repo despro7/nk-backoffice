@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Button, Switch, cn } from '@heroui/react';
+import { useState } from 'react';
 import { useEquipmentFromAuth } from '@/contexts/AuthContext';
-import { ToastService } from '@/services/ToastService';
 import { RightPanel } from './RightPanel';
 import { WeightDisplayWidget } from './WeightDisplayWidget';
 import { BoxSelector } from './BoxSelector';
@@ -9,8 +7,8 @@ import { DeviationButton } from './DeviationButton';
 import { OrderRefreshButton } from './OrderRefreshButton';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { ConfirmModal } from './modals/ConfirmModal';
+import { shippingClientService } from '../services/ShippingService';
 import type { OrderForAssembly } from '../types/orderAssembly';
-import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface OrderAssemblyRightPanelProps {
   orderForAssembly: OrderForAssembly;
@@ -67,7 +65,6 @@ export function OrderAssemblyRightPanel({
               title="Натисніть для друку ТТН"
               // onClick={() => setShowPrintConfirmModal(true)}
               onClick={async () => {
-                const { shippingClientService } = await import('@/services/ShippingService');
                 await shippingClientService.viewTTN({
                   ttn: order?.ttn || orderForAssembly.shipping.trackingId,
                   provider: order?.provider || orderForAssembly.shipping.provider,

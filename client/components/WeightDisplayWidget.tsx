@@ -480,6 +480,11 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
     } catch (error) {
       console.error('WeightDisplayWidget: Error starting weighing:', error);
       setIsConnected(false);
+    } finally {
+      // Знімаємо фокус для запобігання повторного спрацьовування від сканера
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
     }
   };
 
@@ -518,11 +523,21 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
       clearTimeout(activePollingTimeout);
       setActivePollingTimeout(null);
     }
+
+    // Знімаємо фокус для запобігання повторного спрацьовування від сканера
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
   };
 
   // Функція паузи/відновлення зважування
   const togglePause = () => {
     setIsPaused(!isPaused);
+
+    // Знімаємо фокус для запобігання повторного спрацьовування від сканера
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
   };
 
   // Функція для надсилання команди Tare
@@ -593,6 +608,11 @@ export const WeightDisplayWidget: React.FC<WeightDisplayWidgetProps> = (props) =
     queueMicrotask(() => onWeightChange?.(weightToSend));
     
     LoggingService.equipmentLog(`⚖️ [WeightDisplayWidget DEBUG]: Вага ${weightToSend.toFixed(3)}кг успішно передана`);
+
+    // Знімаємо фокус для запобігання повторного спрацьовування від сканера
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
   };
 
   // Функції для керування polling режимами
