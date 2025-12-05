@@ -1,4 +1,5 @@
 import { logServer, prisma } from '../../lib/utils.js';
+import { DilovodApiClient } from './DilovodApiClient.js';
 
 export class DilovodGoodsCacheManager {
   // Використовуємо поле products.dilovodGood замість окремої таблиці goods_cache
@@ -66,7 +67,6 @@ export class DilovodGoodsCacheManager {
     if (!skuList.length) return [];
 
     // 2. Викликаємо DilovodApiClient для отримання товарів
-    const { DilovodApiClient } = require('./DilovodApiClient.js');
     const apiClient = new DilovodApiClient();
     const goods = await apiClient.getGoodsFromCatalog(skuList);
 

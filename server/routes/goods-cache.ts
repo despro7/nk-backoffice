@@ -1,6 +1,8 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { dilovodService } from '../services/dilovod/DilovodService.js';
+import { prisma } from '../lib/utils.js';
+import { DilovodCacheManager } from '../services/dilovod/DilovodCacheManager.js';
 
 const router = express.Router();
 
@@ -21,9 +23,21 @@ router.post('/refresh', async (req, res) => {
     // Якщо він не передано — отримуємо свіжі SKU напряму з WordPress
     let skuList: string[] | undefined = req.body?.skuList;
     if (!skuList || !Array.isArray(skuList)) {
-      const { DilovodCacheManager } = await import('../services/dilovod/DilovodCacheManager.js');
       const cacheManager = new DilovodCacheManager();
       skuList = await cacheManager.fetchFreshSkusFromWordPress();
+    }
+
+    // Підмішуємо всі SKU з таблиці settings_wp_sku.skus
+    const skuWhiteList = await prisma.settingsWpSku.findFirst({ orderBy: { lastUpdated: 'desc' } });
+    if (skuWhiteList && skuWhiteList.skus) {
+      let dbSkus: string[] = [];
+      try {
+        dbSkus = JSON.parse(skuWhiteList.skus);
+      } catch {
+        dbSkus = skuWhiteList.skus.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      // Об'єднуємо списки, уникаючи дублікатів
+      skuList = [...new Set([...(skuList || []), ...dbSkus])];
     }
 
     const result = await dilovodService.refreshGoodsCache(skuList);
