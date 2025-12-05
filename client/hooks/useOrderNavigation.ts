@@ -38,7 +38,7 @@ export function useOrderNavigation({
 
     try {
       // Отримуємо список замовлень в статусі 2 (Підтверджено), відсортований за датою (нові спочатку)
-      const response = await apiCall('/api/orders?limit=100&sortBy=orderDate&sortOrder=desc&status=2&fields=id,externalId,orderDate,status');
+      const response = await apiCall('/api/orders?limit=100&sortBy=orderDate&sortOrder=asc&status=2&fields=id,externalId,orderDate,status');
 
       if (!response.ok) {
         console.warn('⚠️ [useOrderNavigation] Не вдалося отримати список замовлень');
@@ -48,42 +48,49 @@ export function useOrderNavigation({
       const ordersData = await response.json();
       const orders = ordersData.data;
 
-      console.log('🔍 [useOrderNavigation] Отримані замовлення:', orders);
-
       if (orders.length === 0) {
         console.warn('⚠️ [useOrderNavigation] Немає замовлень для переходу');
         return null;
+      } else {
+        console.log('🔍 [useOrderNavigation] \nДоступні замовлення в статусі "Підтверджено":', orders);
+      }
+
+      // Статус поточного замовлення
+      const currentOrderResponse = await apiCall(`/api/orders/${externalId}`);
+      if (!currentOrderResponse.ok) {
+        console.warn('⚠️ [useOrderNavigation] Не вдалося отримати поточне замовлення');
+        return null;
+      } else {
+        const currentOrderData = await currentOrderResponse.json();
+        console.log(`🔍 [useOrderNavigation] \nПоточне замовлення #${externalId}, статус:`, currentOrderData.data.status, `(${currentOrderData.data.statusText})`);
       }
 
       // Знаходимо поточне замовлення у відфільтрованому списку
       const currentOrderIndex = orders.findIndex((order: any) => order.externalId === externalId);
 
-      console.log(`🔍 [useOrderNavigation] Поточне замовлення: ${externalId}, index: ${currentOrderIndex}, status: ${orders[currentOrderIndex]?.status}`);
-
-      if (currentOrderIndex === -1) {
-        console.warn('⚠️ [useOrderNavigation] Поточне замовлення не знайдено в відфільтрованому списку');
-        return null;
-      }
-
-      // Розумна логіка пошуку наступного замовлення:
-      // 1. Спочатку шукаємо наступне за датою (новіше)
-      // 2. Якщо немає, шукаємо попереднє за датою (старіше)
       let nextOrder = null;
 
-      // 1. Шукаємо наступне за датою (новіше замовлення)
-      if (currentOrderIndex > 0) {
-        nextOrder = orders[currentOrderIndex - 1]; // Новіше замовлення (індекс менший)
+      // Якщо поточне замовлення не знайдено, вибираємо перше доступне замовлення (старіше)
+      if (currentOrderIndex === -1) {
+        nextOrder = orders[0];
+        console.warn('🔍 [useOrderNavigation] \nПоточне замовлення не знайдено в списку підтверджених замовлень');
+        return 'out-of-list';
       } else {
-        // 2. Якщо немає новіших, шукаємо попереднє за датою (старіше)
+        // Спочатку шукаємо новіше замовлення
         if (currentOrderIndex < orders.length - 1) {
-          nextOrder = orders[currentOrderIndex + 1]; // Старіше замовлення (індекс більший)
+          nextOrder = orders[currentOrderIndex + 1];
         } else {
-          return null;
+          // Якщо немає новіших, шукаємо старіше
+          if (currentOrderIndex > 0) {
+            nextOrder = orders[currentOrderIndex - 1];
+          } else {
+            // Якщо це єдине замовлення — немає наступного
+            return null;
+          }
         }
       }
 
-      console.log('🔍 [useOrderNavigation] Наступне замовлення:', nextOrder);
-
+      console.log('🔍 [useOrderNavigation] \nНаступне замовлення:', nextOrder);
       return {
         ...nextOrder,
         formattedDate: nextOrder.orderDate ? formatDate(nextOrder.orderDate) : null
@@ -100,20 +107,25 @@ export function useOrderNavigation({
   const updateCurrentOrderStatusToReady = useCallback(async () => {
     if (!id) return;
 
+    const statusUrl = `/api/orders/${id}/status`;
     const statusPayload = { status: '3' };
-    try {
-      const currentOrderStatus = await apiCall(`/api/orders/${id}/status`);
-      if (currentOrderStatus.ok) {
-        const currentOrderData = await currentOrderStatus.json();
-        const currentStatus = currentOrderData.status;
 
-        if (currentStatus !== '2') {
-          console.log(`⚠️ [useOrderNavigation] Замовлення має статус "${currentStatus}", пропускаємо оновлення`);
-          return;
-        }
+    try {
+      const response = await apiCall(statusUrl);
+      if (!response.ok) {
+        console.warn('⚠️ [useOrderNavigation] Не вдалося отримати поточний статус замовлення');
+        return;
       }
 
-      const statusResponse = await apiCall(`/api/orders/${id}/status`, {
+      const { status } = await response.json();
+      if (status !== '2') {
+        console.warn(
+          `⚠️ [useOrderNavigation] Замовлення має статус "${status}", пропускаємо оновлення`
+        );
+        return;
+      }
+
+      const statusResponse = await apiCall(statusUrl, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -140,9 +152,11 @@ export function useOrderNavigation({
         console.warn('⚠️ [useOrderNavigation] Помилка при оновленні статусу:', statusData.error);
       }
     } catch (error) {
+      setErrorModalText('Помилка зʼєднання з сервером');
+      setShowErrorModal(true);
       console.error('❌ [useOrderNavigation] Помилка оновлення статусу поточного замовлення:', error);
     }
-  }, [externalId, id, apiCall]);
+  }, [id, apiCall]);
 
   /**
    * Функція для отримання номера наступного замовлення
@@ -235,11 +249,14 @@ export function useOrderNavigation({
       // 1. Отримуємо наступне замовлення
       const nextOrder = await getNextOrder();
 
+      if (nextOrder === 'out-of-list') {
+        throw new Error('Поточне замовлення не знайдено в списку підтверджених замовлень');
+      }
+
       if (!nextOrder) {
         // Якщо наступного немає — завершуємо поточне як готове і показуємо банер
         setShowNoMoreOrders(true);
         throw new Error('Не знайдено наступного замовлення зі статусом 2 (Підтверджено)');
-        return;
       }
 
       // 2. Змінюємо статус поточного замовлення на "3" (Готове до відправки)

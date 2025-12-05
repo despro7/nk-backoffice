@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDateTime, formatPrice, formatRelativeDate } from '../lib/formatUtils';
 import { Input, addToast, Textarea, Switch } from '@heroui/react';
+import { ToastService } from '@/services/ToastService';
 
 import {
   Table,
@@ -145,6 +146,35 @@ const ProductSets: React.FC = () => {
   const [isManualSyncModalOpen, setIsManualSyncModalOpen] = useState(false);
   const [manualSkuList, setManualSkuList] = useState('');
   const [manualSyncing, setManualSyncing] = useState(false);
+
+  // Стан для модалки SKU whitelist
+  const [isSkuWhitelistModalOpen, setIsSkuWhitelistModalOpen] = useState(false);
+  const [skuWhitelistText, setSkuWhitelistText] = useState('');
+  const [skuWhitelistSaving, setSkuWhitelistSaving] = useState(false);
+
+  // Завантажити whitelist з сервера
+  const fetchSkuWhitelist = async () => {
+    try {
+      const response = await fetch('/api/products/sku-whitelist', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data.skus)) {
+          data.skus = data.skus.join(', ');
+        }
+        setSkuWhitelistText(data.skus || '');
+      } else {
+        console.warn('Не вдалося завантажити SKU whitelist');
+      }
+    } catch (error) {
+      console.warn('Помилка мережі при завантаженні SKU whitelist:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (isSkuWhitelistModalOpen) {
+      fetchSkuWhitelist();
+    }
+  }, [isSkuWhitelistModalOpen]);
 
   // Стан для вибору товарів у таблиці
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set([]));
@@ -306,7 +336,7 @@ const ProductSets: React.FC = () => {
           }
           const newOrder = parseInt(String(value));
           if (isNaN(newOrder) || newOrder < 0) {
-            addToast({ title: 'Некоректне значення', description: 'Вкажіть ціле число ≥ 0', color: 'warning' });
+            ToastService.show({ title: 'Некоректне значення', description: 'Вкажіть ціле число ≥ 0', color: 'warning' });
             cancelEditingManual();
             return;
           }
@@ -320,10 +350,10 @@ const ProductSets: React.FC = () => {
             });
             if (!response.ok) {
               const err = await response.json().catch(() => ({}));
-              addToast({ title: 'Помилка', description: `Не вдалося оновити: ${err.error || response.statusText}`, color: 'danger' });
+              ToastService.show({ title: 'Помилка', description: `Не вдалося оновити: ${err.error || response.statusText}`, color: 'danger' });
             } else {
               setProducts(prev => prev.map(p => p.id === product.id ? ({ ...p, ...(p as any), manualOrder: newOrder } as any) : p));
-              addToast({ title: 'Оновлено', description: `Номер встановлено: ${newOrder}`, color: 'success' });
+              ToastService.show({ title: 'Оновлено', description: `Номер встановлено: ${newOrder}`, color: 'success' });
             }
           } finally {
             setSavingWeight(null);
@@ -406,10 +436,10 @@ const ProductSets: React.FC = () => {
             });
             if (!response.ok) {
               const err = await response.json().catch(() => ({}));
-              addToast({ title: 'Помилка', description: `Не вдалося оновити: ${err.error || response.statusText}`, color: 'danger' });
+              ToastService.show({ title: 'Помилка', description: `Не вдалося оновити: ${err.error || response.statusText}`, color: 'danger' });
             } else {
               setProducts(prev => prev.map(p => p.id === product.id ? ({ ...p, ...(p as any), barcode: newBarcode } as any) : p));
-              addToast({ title: 'Оновлено', description: `Штрих‑код встановлено: ${newBarcode}`, color: 'success' });
+              ToastService.show({ title: 'Оновлено', description: `Штрих‑код встановлено: ${newBarcode}`, color: 'success' });
             }
           } finally {
             setSavingWeight(null);
@@ -937,7 +967,7 @@ const ProductSets: React.FC = () => {
   // Тест отримання одного товару за SKU безпосередньо з Dilovod
   const testSingleDilovodProduct = async () => {
     if (!isAdmin()) {
-      addToast({
+      ToastService.show({
         title: "Недостатньо прав",
         description: 'Лише адміністратори можуть виконувати цей тест',
         color: "warning"
@@ -955,7 +985,7 @@ const ProductSets: React.FC = () => {
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        addToast({
+        ToastService.show({
           title: "Помилка",
           description: `Не вдалося отримати товар: ${err.error || response.statusText}`,
           color: "danger"
@@ -967,13 +997,14 @@ const ProductSets: React.FC = () => {
       const data = await response.json();
       const product = data.product;
       LoggingService.productSetsLog('🧪 [SingleDilovodTest] Результат товару:', product);
-      addToast({
+      ToastService.show({
         title: "Товар отримано",
         description: `SKU: ${product.sku}, Категорія: ${product.category?.name || '—'} (id: ${product.category?.id ?? '—'})`,
-        color: "success"
+        color: "success",
+        hideIcon: false
       });
     } catch (error) {
-      addToast({
+      ToastService.show({
         title: "Помилка мережі",
         description: `Помилка: ${error instanceof Error ? error.message : 'Невідома помилка'}`,
         color: "danger"
@@ -1518,32 +1549,26 @@ const ProductSets: React.FC = () => {
                   {stockSyncing ? (
                     <>
                       <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                      Синхронізація залишків...
+                      Синхронізація...
                     </>
                   ) : (
                     <>
                       <DynamicIcon name="refresh-cw" size={14} />
-                      Оновити залишки з Dilovod
+                      Оновити залишки
                     </>
                   )}
                 </Button>
 
-                {/* <Button
-                  onPress={testSetsOnly}
-                  disabled={!isAdmin()}
-                  variant="flat"
-                >
-                  <DynamicIcon name="package-x" size={14} />
-                  Тест комплектацій
-                </Button> */}
+                {/* Whitelist номерів SKU, які не підлягають застаріванню */}
                 <Button
-                  onPress={testSingleDilovodProduct}
-                  disabled={!isAdmin()}
+                  onPress={() => setIsSkuWhitelistModalOpen(true)}
                   variant="flat"
+                  className="ml-auto"
                 >
-                  <DynamicIcon name="search" size={14} />
-                  Тест SKU (Dilovod)
+                  <DynamicIcon name="shield-check" size={14} />
+                  SKU Whitelist
                 </Button>
+
               </div>
 
               {/* Пошук і фільтри */}
@@ -1716,6 +1741,23 @@ const ProductSets: React.FC = () => {
               Залишки по SKU
             </Button>
 
+            {/* <Button
+              onPress={testSetsOnly}
+              disabled={!isAdmin()}
+              variant="flat"
+            >
+              <DynamicIcon name="package-x" size={14} />
+              Тест комплектацій
+            </Button> */}
+            <Button
+              onPress={testSingleDilovodProduct}
+              disabled={!isAdmin()}
+              variant="flat"
+            >
+              <DynamicIcon name="search" size={14} />
+              Тест SKU (Dilovod)
+            </Button>
+
             <Button onPress={clearTestResults} className='ml-auto bg-transparent border-1.5 border-danger text-danger hover:bg-danger-50'>
               Очистити логи
             </Button>
@@ -1810,6 +1852,80 @@ const ProductSets: React.FC = () => {
                   <DynamicIcon name="refresh-cw" size={14} />
                   Синхронізувати
                 </>
+              )}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Модалка для редагування SKU whitelist (складається в таблицю settings_wp_sku) */}
+      <Modal
+        isOpen={isSkuWhitelistModalOpen}
+        onClose={() => setIsSkuWhitelistModalOpen(false)}
+        size="lg"
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <DynamicIcon name="shield-check" size={20} />
+              SKU Whitelist
+            </div>
+            <p className="text-sm font-normal text-gray-500">Сюди можна внести список SKU, які ніколи не повинні позначатися як застарілі.</p>
+          </ModalHeader>
+          <ModalBody>
+            <div className="space-y-4">
+              <Textarea
+                label="Whitelist SKU"
+                placeholder="Введіть SKU через кому, пробіл або кожен з нового рядка..."
+                value={skuWhitelistText}
+                onValueChange={setSkuWhitelistText}
+                minRows={8}
+                maxRows={20}
+                description={`Введено SKU: ${skuWhitelistText.split(/[,\s]+/).filter(s => s.trim().length > 0).length}`}
+              />
+              <div className="text-sm text-gray-500">
+                <p className="font-medium mb-1">Порада:</p>
+                <p>Запишіть SKU через кому, пробіл або з нового рядка. Збережений список буде використовуватися сервером у функції позначення застарілих товарів.</p>
+              </div>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={() => setIsSkuWhitelistModalOpen(false)} disabled={skuWhitelistSaving}>
+              Скасувати
+            </Button>
+            <Button
+              color="primary"
+              onPress={async () => {
+                try {
+                  setSkuWhitelistSaving(true);
+                  const response = await fetch('/api/products/sku-whitelist', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ skus: skuWhitelistText })
+                  });
+
+                  if (response.ok) {
+                    addToast({ title: 'Збережено', description: 'Whitelist збережено на сервері', color: 'success' });
+                    setIsSkuWhitelistModalOpen(false);
+                  } else {
+                    const err = await response.json().catch(() => ({}));
+                    addToast({ title: 'Помилка', description: err.error || 'Не вдалося зберегти whitelist', color: 'danger' });
+                  }
+                } catch (error) {
+                  addToast({ title: 'Помилка мережі', description: error instanceof Error ? error.message : 'Невідома помилка', color: 'danger' });
+                } finally {
+                  setSkuWhitelistSaving(false);
+                }
+              }}
+              disabled={skuWhitelistSaving}
+            >
+              {skuWhitelistSaving ? (
+                <>
+                  <DynamicIcon name="loader-2" className="animate-spin" size={14} /> Збереження...
+                </>
+              ) : (
+                'Зберегти'
               )}
             </Button>
           </ModalFooter>

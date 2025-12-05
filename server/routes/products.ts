@@ -7,6 +7,7 @@ import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 const router = express.Router();
 
 // Отримати всі товари з пагінацією
+// GET /api/products
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
@@ -94,6 +95,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Отримати один товар безпосередньо з Dilovod за SKU (без повної синхронізації)
+// GET /api/products/dilovod/:sku
 router.get('/dilovod/:sku', authenticateToken, async (req, res) => {
   try {
 
@@ -129,7 +131,65 @@ router.get('/dilovod/:sku', authenticateToken, async (req, res) => {
   }
 });
 
+// Отримати SKU whitelist (settings_wp_sku)
+// GET /api/products/sku-whitelist
+router.get('/sku-whitelist', authenticateToken, async (req, res) => {
+  try {
+    // Тільки для адміністраторів
+    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const record = await prisma.settingsWpSku.findFirst();
+    if (!record) {
+      return res.json({ skus: '', totalCount: 0, lastUpdated: null });
+    }
+
+    res.json({ skus: record.skus || '', totalCount: record.totalCount || 0, lastUpdated: record.lastUpdated });
+  } catch (error) {
+    logWithTimestamp('Error fetching SKU whitelist:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Оновити SKU whitelist
+// PUT /api/products/sku-whitelist
+router.put('/sku-whitelist', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const { skus } = req.body;
+    if (typeof skus !== 'string') {
+      return res.status(400).json({ error: 'skus must be a string' });
+    }
+
+    // Очищаємо список і підраховуємо
+    const parsed = skus.split(/[\s,]+/).map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+    const totalCount = parsed.length;
+
+    const existing = await prisma.settingsWpSku.findFirst();
+    if (existing) {
+      await prisma.settingsWpSku.update({
+        where: { id: existing.id },
+        data: { skus: parsed.join(', '), totalCount, lastUpdated: new Date() }
+      });
+    } else {
+      await prisma.settingsWpSku.create({
+        data: { skus: parsed.join(', '), totalCount, lastUpdated: new Date() }
+      });
+    }
+
+    res.json({ success: true, totalCount });
+  } catch (error) {
+    logWithTimestamp('Error updating SKU whitelist:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Отримати товар за SKU
+// GET /api/products/:sku
 router.get('/:sku', authenticateToken, async (req, res) => {
   try {
     const { sku } = req.params;
@@ -178,6 +238,7 @@ router.get('/:sku', authenticateToken, async (req, res) => {
 });
 
 // Оновити вагу товару за ID
+// PUT /api/products/:id/weight
 router.put('/:id/weight', authenticateToken, async (req, res) => {
   try {
 
@@ -224,6 +285,7 @@ router.put('/:id/weight', authenticateToken, async (req, res) => {
 });
 
 // Оновити ручний порядок (manualOrder) товару за ID
+// PUT /api/products/:id/manual-order
 router.put('/:id/manual-order', authenticateToken, async (req, res) => {
   try {
 
@@ -260,6 +322,7 @@ router.put('/:id/manual-order', authenticateToken, async (req, res) => {
 });
 
 // Оновити штрих-код товару за ID
+// PUT /api/products/:id/barcode
 router.put('/:id/barcode', authenticateToken, async (req, res) => {
   try {
     // Перевіряємо ролі доступу
@@ -295,6 +358,7 @@ router.put('/:id/barcode', authenticateToken, async (req, res) => {
 });
 
 // Синхронізувати товари з Dilovod
+// POST /api/products/sync
 router.post('/sync', authenticateToken, async (req, res) => {
   try {
 
@@ -328,6 +392,7 @@ router.post('/sync', authenticateToken, async (req, res) => {
 });
 
 // Ручна синхронізація товарів за списком SKU
+// POST /api/products/sync-manual
 router.post('/sync-manual', authenticateToken, async (req, res) => {
   try {
     // Перевіряємо ролі доступу
@@ -373,6 +438,7 @@ router.post('/sync-manual', authenticateToken, async (req, res) => {
 });
 
 // Синхронізувати залишки товарів з Dilovod
+// POST /api/products/sync-stock
 router.post('/sync-stock', authenticateToken, async (req, res) => {
   try {
 
@@ -406,6 +472,7 @@ router.post('/sync-stock', authenticateToken, async (req, res) => {
 });
 
 // Отримати статистику по товарах
+// GET /api/products/stats/summary
 router.get('/stats/summary', authenticateToken, async (req, res) => {
   try {
     const [totalProducts, totalSets, categoriesCount, lastSync] = await Promise.all([
@@ -443,6 +510,7 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
 });
 
 // Тест підключення до Dilovod (listMetadata)
+// POST /api/products/test-connection
 router.post('/test-connection', authenticateToken, async (req, res) => {
   try {
     const dilovodService = new DilovodService();
@@ -455,8 +523,8 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
   }
 });
 
-
 // Тест отримання залишків за списком SKU
+// POST /api/products/test-balance-by-sku
 router.post('/test-balance-by-sku', authenticateToken, async (req, res) => {
   try {
     logWithTimestamp('=== API: test-balance-by-sku вызван ===');
@@ -496,6 +564,7 @@ router.post('/test-balance-by-sku', authenticateToken, async (req, res) => {
 });
 
 // Тест отримання тільки комплектів
+// POST /api/products/test-sets-only
 router.post('/test-sets-only', authenticateToken, async (req, res) => {
   try {
     logWithTimestamp('=== API: test-sets-only вызван ===');
@@ -523,6 +592,7 @@ router.post('/test-sets-only', authenticateToken, async (req, res) => {
 });
 
 // Отримати залишки товарів з можливістю синхронізації
+// GET /api/products/stock/balance
 router.get('/stock/balance', authenticateToken, async (req, res) => {
   try {
     const { sync = 'false' } = req.query;

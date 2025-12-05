@@ -120,9 +120,9 @@ export class ScaleService {
         // Ручной выбор порта
         this.port = await navigator.serial.requestPort({
           filters: [
-            // { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340
-            // { usbVendorId: 0x067b, usbProductId: 0x2303 }, // Prolific
-            // { usbVendorId: 0x0403, usbProductId: 0x6001 }  // FTDI
+            { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340
+            { usbVendorId: 0x067b, usbProductId: 0x2303 }, // Prolific
+            { usbVendorId: 0x0403, usbProductId: 0x6001 }  // FTDI
           ]
         });
       }

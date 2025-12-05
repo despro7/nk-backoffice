@@ -488,6 +488,19 @@ export class DilovodSyncManager {
       
       // Створюємо Set для швидкого пошуку
       const currentSkusSet = new Set(currentSkus.map(sku => sku.toLowerCase().trim()));
+
+      // Завантажуємо whitelist зі служби налаштувань (таблиця settings_wp_sku)
+      let whitelistSet = new Set<string>();
+      try {
+        const wpSkuRecord = await prisma.settingsWpSku.findFirst();
+        if (wpSkuRecord && wpSkuRecord.skus) {
+          const parsed = wpSkuRecord.skus.split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(s => s.length > 0);
+          whitelistSet = new Set(parsed);
+          logWithTimestamp(`Знайдено ${whitelistSet.size} SKU у whitelist`);
+        }
+      } catch (e) {
+        logWithTimestamp('Не вдалося завантажити SKU whitelist:', e);
+      }
       
       // Отримуємо всі товари з БД
       const allProducts = await prisma.product.findMany({
@@ -506,7 +519,9 @@ export class DilovodSyncManager {
       
       for (const product of allProducts) {
         const productSku = product.sku.toLowerCase().trim();
-        const isInWordPress = currentSkusSet.has(productSku);
+        // Не позначаємо як застарілий товари, які є у whitelist
+        const isInWhitelist = whitelistSet.has(productSku);
+        const isInWordPress = isInWhitelist || currentSkusSet.has(productSku);
         
         // Якщо товар НЕ в WordPress але НЕ позначений як застарілий - позначаємо
         if (!isInWordPress && !product.isOutdated) {

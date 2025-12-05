@@ -107,24 +107,6 @@ export class DilovodService {
   async syncProductsWithDilovod(mode: 'full' | 'manual' = 'full', manualSkus?: string[]): Promise<DilovodSyncResult> {
     try {
       logWithTimestamp(`\n🚀 === ПОЧАТОК ${mode === 'full' ? 'ПОВНОЇ' : 'РУЧНОЇ'} СИНХРОНІЗАЦІЇ ТОВАРІВ З DILOVOD ===`);
-      // if (manualSkus && manualSkus.length > 0) {
-      //   logWithTimestamp(`📋 Отримано ${manualSkus.length} SKU для синхронізації`);
-      //   logWithTimestamp('📋 SKU:', manualSkus.slice(0, 10));
-      //   if (manualSkus.length > 10) {
-      //     logWithTimestamp(`... і ще ${manualSkus.length - 10}`);
-      //   }
-      // }
-      
-      // if (manualSkus.length === 0) {
-      //   logWithTimestamp('❌ Список SKU порожній');
-      //   return {
-      //     success: false,
-      //     message: 'Список SKU порожній',
-      //     syncedProducts: 0,
-      //     syncedSets: 0,
-      //     errors: ['Список SKU порожній']
-      //   };
-      // }
 
       // Перевіряємо, чи увімкнено синхронізацію Dilovod
       const isEnabled = await syncSettingsService.isSyncEnabled('dilovod');

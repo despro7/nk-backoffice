@@ -31,12 +31,12 @@ router.post('/print-ttn', authenticateToken, async (req, res) => {
         success: true,
         data: result.data,
         format: result.format,
-        message: `Наклейка ТТН ${ttn} успішно сгенерована`
+        message: `Стікер ТТН ${ttn} успішно сгенеровано`
       });
     } else {
       res.status(400).json({
         success: false,
-        error: result.error || 'Не вдалося сгенерувати наклейку'
+        error: result.error || 'Не вдалося сгенерувати стікер'
       });
     }
   } catch (error) {
@@ -49,7 +49,7 @@ router.post('/print-ttn', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/shipping/ttn-status/:ttn/:provider
- * Получить статус ТТН
+ * Отримати статус ТТН
  */
 router.get('/ttn-status/:ttn/:provider', authenticateToken, async (req, res) => {
   try {
@@ -58,7 +58,7 @@ router.get('/ttn-status/:ttn/:provider', authenticateToken, async (req, res) => 
     if (!ttn || !provider) {
       return res.status(400).json({
         success: false,
-        error: 'Необходимо указать ttn и provider'
+        error: 'Необхідно вказати ttn та provider'
       });
     }
 
@@ -71,17 +71,21 @@ router.get('/ttn-status/:ttn/:provider', authenticateToken, async (req, res) => 
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: 'Не удалось получить статус ТТН'
+      error: 'Не вдалося отримати статус ТТН'
     });
   }
 });
 
+/**
+ * POST /api/shipping/ttn-zpl
+ * Відправляє запит на отримання ZPL-коду для ТТН
+ */
 router.post('/ttn-zpl', authenticateToken, async (req, res) => {
   try {
     const { ttn, provider, senderId } = req.body;
 
     if (!ttn || !provider) {
-      return res.status(400).json({ success: false, error: 'Необходимо указать ttn и provider' });
+      return res.status(400).json({ success: false, error: 'Необхідно вказати ttn та provider' });
     }
 
     const result = await shippingService.printTTN({ ttn, provider, senderId, format: 'zpl' });

@@ -102,10 +102,36 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
 
         // Сначала проверим, есть ли заказ в нашей БД
         const existingOrder = await orderDatabaseService.getOrderByExternalId(orderIdentifier);
-        let orderDetails = null;
         
         const webhookData = req.body.data;
         const webhookMeta = req.body.meta.fields;
+        
+        // Проверка специального случая для статуса "Видалений" (8)
+        const incomingStatus = statusMapping[webhookData.statusId] || '1';
+        const isDeletedStatus = incomingStatus === '8';
+        
+        if (isDeletedStatus && existingOrder) {
+          // Для удаленных заказов только обновляем статус, без других изменений
+          console.log(`🗑️ Order ${existingOrder.externalId} marked as deleted (status 8), updating status only`);
+          
+          const updateData = {
+            status: '8',
+            statusText: getStatusText('8'),
+            rawData: webhookData
+          };
+          
+          await orderDatabaseService.updateOrder(existingOrder.externalId, updateData);
+          
+          console.log(`✅ Order ${existingOrder.externalId} status updated to deleted (8)`);
+          
+          return res.json({
+            success: true,
+            message: `Order ${orderIdentifier} marked as deleted`,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        let orderDetails = null;
         console.log('================= \n webhookMeta:', webhookMeta);
 
         // Сериализуем items из webhookData.products в нужный формат

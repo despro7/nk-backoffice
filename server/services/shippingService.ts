@@ -75,7 +75,7 @@ export class ShippingService {
           apiKey: dbProvider.apiKey || '',
           baseUrl: dbProvider.providerType === 'novaposhta'
             ? 'https://api.novaposhta.ua/v2.0/json/'
-            : undefined,
+            : 'https://www.ukrposhta.ua/forms/ecom/0.0.1',
           bearerToken: dbProvider.bearerEcom || '',
           counterpartyToken: dbProvider.counterpartyToken || '',
           statusBearerToken: dbProvider.bearerStatus || ''
@@ -87,25 +87,25 @@ export class ShippingService {
         provider = this.providers[request.provider];
         providerType = request.provider;
         if (!provider) {
-          throw new Error(`Провайдер ${request.provider} не настроен`);
+          throw new Error(`Провайдер ${request.provider} не налаштовано`);
         }
         console.log(`🔍 [ShippingService] Fallback до env змінних для провайдера: ${request.provider}`);
       }
 
       if (providerType === 'novaposhta') {
         if (!provider.apiKey) {
-          throw new Error('API ключ Нова Пошта не настроен');
+          throw new Error('API ключ Нова Пошта не налаштовано');
         }
         return await this.printNovaPoshtaTTN(request, provider);
       } else if (providerType === 'ukrposhta') {
         return await this.printUkrPoshtaTTN(request, provider);
       } else {
-        throw new Error(`Неподдерживаемый провайдер: ${providerType}`);
+        throw new Error(`Непідтримуваний провайдер: ${providerType}`);
       }
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Неизвестная ошибка'
+        error: error instanceof Error ? error.message : 'Невідома помилка'
       };
     }
   }
@@ -188,7 +188,7 @@ export class ShippingService {
 
     try {
       const ttn = request.ttn;
-      const url = `https://www.ukrposhta.ua/forms/ecom/0.0.1/shipments/${ttn}/sticker?token=${provider.counterpartyToken}`;
+      const url = `${provider.baseUrl}/shipments/${ttn}/sticker?token=${provider.counterpartyToken}`;
 
       const response = await fetch(url, {
         method: 'GET',
@@ -202,14 +202,60 @@ export class ShippingService {
         let errorText = `Помилка API Укрпошти: ${response.status} ${response.statusText}`;
         try {
           const errorBody = await response.text();
+          let shortMsg: string | null = null;
+
+          // Try parse JSON body first (some endpoints may return JSON)
           try {
             const errorJson = JSON.parse(errorBody);
-            errorText += ` - ${errorJson.message || JSON.stringify(errorJson)}`;
+            if (errorJson) {
+              if (typeof errorJson.message === 'string' && errorJson.message.trim()) {
+                shortMsg = errorJson.message.trim();
+              } else if (typeof errorJson.error === 'string' && errorJson.error.trim()) {
+                shortMsg = errorJson.error.trim();
+              } else {
+                // Fallback to a compact JSON representation
+                shortMsg = JSON.stringify(errorJson);
+              }
+            }
           } catch (e) {
-            errorText += ` - ${errorBody}`;
+            // Not JSON — try to extract Message block from HTML first, then strip all tags
+            try {
+              // First, try to extract Message block from HTML
+              const messageBlockMatch = errorBody.match(/<p><b>Message<\/b>\s*(.*?)<\/p>/i);
+              if (messageBlockMatch && messageBlockMatch[1]) {
+                // Strip HTML from the message content and normalize whitespace
+                shortMsg = messageBlockMatch[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+              } else {
+                // Fallback: Remove script/style blocks first, then strip all tags and normalize whitespace
+                const withoutScripts = errorBody.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, ' ');
+                const stripped = withoutScripts.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+                // Look for a block that starts with "Message" and capture until the next known section label
+                const messageMatch = stripped.match(/Message\s*(?:[:\-–])?\s*([\s\S]*?)(?=\s*(Description|Exception|Root Cause|Note|$))/i);
+                if (messageMatch && messageMatch[1]) {
+                  shortMsg = messageMatch[1].replace(/\s+/g, ' ').trim();
+                } else {
+                  // Fallback: first sentence-like fragment from the stripped text
+                  const firstSentenceMatch = stripped.match(/([^\.\!\?]+[\.\!\?])/);
+                  if (firstSentenceMatch && firstSentenceMatch[1]) {
+                    shortMsg = firstSentenceMatch[1].trim();
+                  } else if (stripped.length > 0) {
+                    shortMsg = stripped.substring(0, 200).trim();
+                  }
+                }
+              }
+            } catch (e2) {
+              // ignore parsing errors
+            }
+          }
+
+          if (shortMsg) {
+            // Use the full message content, but limit to 200 chars
+            const limited = shortMsg.length > 200 ? shortMsg.substring(0, 197).trim() + '...' : shortMsg;
+            errorText += ` - ${limited}`;
           }
         } catch (e) {
-          // Ignore if body can't be read
+          // Ignore if body can't be read or parsing failed
         }
         throw new Error(errorText);
       }
