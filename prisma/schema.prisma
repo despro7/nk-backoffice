@@ -102,7 +102,6 @@ model Product {
   additionalPrices    String?  @db.LongText
   stockBalanceByStock String?  @db.LongText
   dilovodId           String?
-  dilovodGood         String?  @db.VarChar(64)
   parent              String?
   lastSyncAt          DateTime @default(now())
   createdAt           DateTime @default(now())

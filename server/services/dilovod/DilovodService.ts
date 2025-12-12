@@ -242,10 +242,23 @@ export class DilovodService {
     try {
       logWithTimestamp('Отримуємо залишки товарів за списком SKU...');
 
-      const skus = await this.fetchSkusDirectlyFromWordPress();
+      // Отримуємо SKU актуальних товарів з бази даних (за вийнятком застарілих)
+      const products = await prisma.product.findMany({
+        where: {
+          isOutdated: false
+        },
+        select: {
+          sku: true
+        }
+      });
+
+      const skus = products.map(p => p.sku);
       if (skus.length === 0) {
+        logWithTimestamp('Не знайдено актуальних товарів у базі даних');
         return [];
       }
+
+      logWithTimestamp(`Отримано ${skus.length} SKU актуальних товарів з БД`);
 
       const stockResponse = await this.apiClient.getStockBalance(skus);
       const processedStock = this.dataProcessor.processStockBalance(stockResponse);

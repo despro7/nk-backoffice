@@ -2,16 +2,16 @@ import { logServer, prisma } from '../../lib/utils.js';
 import { DilovodApiClient } from './DilovodApiClient.js';
 
 export class DilovodGoodsCacheManager {
-  // Використовуємо поле products.dilovodGood замість окремої таблиці goods_cache
+  // Використовуємо поле products.dilovodId замість окремої таблиці goods_cache
   async getStatus() {
     // Cast to any until Prisma client is regenerated after migrations
     const count = await prisma.product.count({
-      where: ({ dilovodGood: { not: null } } as any)
+      where: ({ dilovodId: { not: null } } as any)
     });
 
-    // Отримуємо час останнього оновлення з таблиці products, де є dilovodGood
+    // Отримуємо час останнього оновлення з таблиці products, де є dilovodId
     const lastUpdated = await prisma.product.findFirst({
-      where: ({ dilovodGood: { not: null } } as any),
+      where: ({ dilovodId: { not: null } } as any),
       orderBy: { updatedAt: 'desc' },
       select: { updatedAt: true }
     });
@@ -71,7 +71,7 @@ export class DilovodGoodsCacheManager {
     const goods = await apiClient.getGoodsFromCatalog(skuList);
 
     // 3. Коректний мапінг під структуру кешу — залишаємо ту ж структуру але
-    // тепер результати ми будемо застосовувати в таблиці products (поле dilovodGood)
+    // тепер результати ми будемо застосовувати в таблиці products (поле dilovodId)
     // ВАЖЛИВО: Незважаючи на аліаси в DilovodApiClient.getGoodsFromCatalog(),
     // Dilovod API повертає оригінальні назви полів: id, sku, id__pr, parent
     // (аліаси productNum: "sku" та id__pr: "name" НЕ перейменовують поля у відповіді)
@@ -85,8 +85,8 @@ export class DilovodGoodsCacheManager {
   }
 
   async updateGoodsCache(goods: Array<{ good_id: string; productNum: string; name?: string; parent?: string | null }>) {
-    // Ми не видаляємо всі продукти; оновлюємо продуктам поле dilovodGood
-    
+    // Ми не видаляємо всі продукти; оновлюємо продуктам поле dilovodId
+
     // Фільтруємо товари без обов'язкових полів
     const validGoods = goods.filter(good => {
       if (!good.good_id || !good.productNum) {
@@ -104,7 +104,7 @@ export class DilovodGoodsCacheManager {
         if (existing) {
           await prisma.product.update({
             where: { sku: good.productNum },
-            data: ({ dilovodGood: good.good_id, name: good.name || existing.name } as any)
+            data: ({ dilovodId: good.good_id, name: good.name || existing.name } as any)
           });
           updatedCount++;
         } else {
@@ -114,7 +114,7 @@ export class DilovodGoodsCacheManager {
             data: ({
               sku: good.productNum,
               name: good.name || '',
-              dilovodGood: good.good_id
+              dilovodId: good.good_id
             } as any)
           });
           updatedCount++;

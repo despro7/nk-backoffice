@@ -1,5 +1,4 @@
 import express from 'express';
-import { authenticateToken } from '../middleware/auth.js';
 import { dilovodService } from '../services/dilovod/DilovodService.js';
 import { prisma } from '../lib/utils.js';
 import { DilovodCacheManager } from '../services/dilovod/DilovodCacheManager.js';

@@ -363,7 +363,7 @@ export class DilovodDataProcessor {
       }
 
       result.push({
-        id: good.sku,
+        id: good.id,  // ← ВИПРАВЛЕНО: використовуємо good.id (good_id з Dilovod) замість good.sku
         name: productName,
         sku: good.sku,
         costPerItem: costPerItem,

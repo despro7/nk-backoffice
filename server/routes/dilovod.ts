@@ -439,20 +439,20 @@ router.get('/directories', authenticateToken, async (req, res) => {
       logWithTimestamp('API: ❌ Помилка отримання способів доставки:', error);
     }
 
-    // Отримуємо товари з products (будемо використовувати поле products.dilovodGood)
+    // Отримуємо товари з products (будемо використовувати поле products.dilovodId)
     let goodsResult: any[] = [];
     try {
       const { PrismaClient } = await import('@prisma/client');
       const prisma = new PrismaClient();
       const products = await prisma.product.findMany({
-        where: ({ dilovodGood: { not: null } } as any),
+        where: ({ dilovodId: { not: null } } as any),
         orderBy: { sku: 'asc' }
       });
 
       // Map to expected shape for directories endpoint
       goodsResult = products.map(p => ({
         id: p.id,
-        good_id: (p as any).dilovodGood,
+        good_id: (p as any).dilovodId,
         productNum: p.sku,
         name: p.name || null,
         parent: null

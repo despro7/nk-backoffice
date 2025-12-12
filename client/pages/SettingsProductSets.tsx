@@ -47,6 +47,7 @@ interface Product {
   stockBalanceByStock: any; // Уже распарсенный объект или null
   lastSyncAt: string;
   isOutdated?: boolean; // Чи застарілий товар (немає в WordPress)
+  dilovodId?: string; // ID товару в Діловоді
 }
 
 interface ProductsResponse {
@@ -508,6 +509,14 @@ const ProductSets: React.FC = () => {
                 </div>
               )}
             </div>
+            {isAdmin && (
+              <>
+                {/* Dilovod good ID */}
+                <div className="text-sm text-blue-800">
+                  <span className="font-medium">good_id:</span> {product.dilovodId || <span className="text-neutral-500">N/A good ID</span>}
+                </div>
+              </>
+            )}
           </div>
         );
       }

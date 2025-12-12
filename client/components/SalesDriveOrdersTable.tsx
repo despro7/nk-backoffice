@@ -900,10 +900,10 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                     <Tooltip color="secondary" content={order.dilovodExportDate ? 'Синхронізовано: ' + new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не вивантажено'}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodExportDate ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="search-check" size={16} /></div>
                     </Tooltip>
-                    <Tooltip color="secondary" content={order.dilovodSaleExportDate ? 'Синхронізовано: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') : 'Ще не відвантажено'}>
+                    <Tooltip color="secondary" content={order.dilovodSaleExportDate ? 'Відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') : 'Ще не відвантажено'}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodSaleExportDate ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="truck" size={16} /></div>
                     </Tooltip>
-                    <Tooltip color="secondary" content={order.dilovodCashInDate ? 'Синхронізовано: ' + new Date(order.dilovodCashInDate).toLocaleString('uk-UA') : 'Ще не оплачено'}>
+                    <Tooltip color="secondary" content={order.dilovodCashInDate ? 'Оплачено: ' + new Date(order.dilovodCashInDate).toLocaleString('uk-UA') : 'Ще не оплачено'}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodCashInDate ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="wallet" size={16} /></div>
                     </Tooltip>
                   </div>

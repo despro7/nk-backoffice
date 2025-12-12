@@ -22,6 +22,7 @@ import type {
 import { getDilovodConfigFromDB } from './DilovodUtils.js';
 import { logWithTimestamp, DilovodService } from './index.js';
 import { orderDatabaseService } from '../orderDatabaseService.js';
+import { dilovodService } from './DilovodService.js';
 
 
 const prisma = new PrismaClient();
@@ -94,9 +95,23 @@ export class DilovodExportBuilder {
 
       // 8. Побудувати табличні частини (товари)
       const tableParts = await this.buildTableParts(context);
+      const orderNumber = await orderDatabaseService.getDisplayOrderNumber(Number(orderId));
 
       // 9. Додаткова перевірка товарів
       if (tableParts.tpGoods.length === 0) {
+        await dilovodService.logMetaDilovodExport({
+          title: 'Експорт замовлення заблоковано - немає товарів для відправки',
+          message: 'Експорт заблоковано: немає товарів для відправки в Dilovod. Перевірте SKU товарів у замовленні.',
+          status: 'error',
+          data: {
+            orderId,
+            orderNumber,
+            payload: tableParts,
+            exportResult: null,
+            warnings: context.warnings.length > 0 ? context.warnings : undefined
+          }
+        });
+
         throw new Error('Експорт заблоковано: немає товарів для відправки в Dilovod. Перевірте SKU товарів у замовленні.');
       }
 
@@ -164,9 +179,11 @@ export class DilovodExportBuilder {
       }
 
       // Модифікуємо заголовок для documents.sale
+      const dateNow = new Date().toISOString().replace('T', ' ').substring(0, 19);
       const header: DilovodExportHeader = {
         ...baseHeaderForSale,
         id: 'documents.sale',                           // Тип документа - відвантаження
+        date: dateNow,                                  // Поточна дата
         docMode: DILOVOD_CONSTANTS.DOC_MODE_WHOLESALE,  // Режим документа
         baseDoc: baseDocId,                             // Посилання на documents.saleOrder
         contract: baseDocId,                            // Договір (такий самий як baseDoc)
@@ -258,7 +275,7 @@ export class DilovodExportBuilder {
       ? new Date(order.orderDate).toISOString().replace('T', ' ').substring(0, 19)
       : new Date().toISOString().replace('T', ' ').substring(0, 19);
 
-    const OrderNumber = await orderDatabaseService.getDisplayOrderNumber(Number(order.id));
+    const orderNumber = await orderDatabaseService.getDisplayOrderNumber(Number(order.id));
 
     const header: DilovodExportHeader = {
       id: 'documents.saleOrder',                            // Тип документа "Замовлення на продаж"
@@ -273,7 +290,7 @@ export class DilovodExportBuilder {
       tradeChanel: tradeChanel,                             // Канал продажів
       paymentForm: channelMapping?.paymentForm || '',       // Форма оплати
       cashAccount: channelMapping?.cashAccount || '',       // Рахунок
-      number: OrderNumber,                                  // Номер замовлення (з суфіксом/префіксом)
+      number: orderNumber,                                  // Номер замовлення (з суфіксом/префіксом)
       remarkFromPerson: order.rawData?.comment || '',       // Коментар від клієнта
       business: DILOVOD_CONSTANTS.BUSINESS_PROCESS,         // Вид бізнесу
       deliveryMethod_forDel: deliveryMethodId,              // Спосіб доставки
@@ -379,7 +396,7 @@ export class DilovodExportBuilder {
   }
 
   /**
-  * Побудувати табличні частини (товари) - використовуємо прив'язку до Dilovod (products.dilovodGood)
+  * Побудувати табличні частини (товари) - використовуємо прив'язку до Dilovod (products.dilovodId)
    */
   private async buildTableParts(context: ExportBuildContext): Promise<DilovodExportTableParts> {
     logWithTimestamp(`  📦 Формування табличних частин (товари)...`);
@@ -406,8 +423,8 @@ export class DilovodExportBuilder {
           where: { sku: sku }
         });
 
-        if (!product || !(product as any).dilovodGood) {
-          warnings.push(`Товар "${item.productName || sku}" (SKU: ${sku}) не знайдено у відповідності Dilovod (products.dilovodGood не встановлено). Синхронізуйте товари з Dilovod.`);
+        if (!product || !(product as any).dilovodId) {
+          warnings.push(`Товар "${item.productName || sku}" (SKU: ${sku}) не знайдено у відповідності Dilovod (products.dilovodId не встановлено). Синхронізуйте товари з Dilovod.`);
           continue;
         }
 
@@ -415,10 +432,10 @@ export class DilovodExportBuilder {
         const price = item.price || 0;
         const amount = qty * price;
 
-        // Використовуємо good для передачі ID товару з products.dilovodGood
+        // Використовуємо good для передачі ID товару з products.dilovodId
         tpGoods.push({
           rowNum,
-          good: (product as any).dilovodGood, // ID товару в Dilovod для SKU
+          good: (product as any).dilovodId, // ID товару в Dilovod для SKU
           unit: DILOVOD_CONSTANTS.UNIT_PIECE,
           qty,
           baseQty: qty,
@@ -427,7 +444,7 @@ export class DilovodExportBuilder {
           amountCur: amount
         });
 
-        logWithTimestamp(`    ✅ Товар #${rowNum}: SKU "${sku}" → good_id "${(product as any).dilovodGood}", к-ть: ${qty}, ціна: ${price}`);
+        logWithTimestamp(`    ✅ Товар #${rowNum}: SKU "${sku}" → good_id "${(product as any).dilovodId}", к-ть: ${qty}, ціна: ${price}`);
         rowNum++;
       } catch (error) {
         warnings.push(`Помилка обробки товару "${item.productName}": ${error instanceof Error ? error.message : String(error)}`);

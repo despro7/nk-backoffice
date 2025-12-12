@@ -1,4 +1,4 @@
-// Менеджер синхронизации товаров с базой данных
+// Менеджер синхронізації товарів з базою даних 
 
 import crypto from 'crypto';
 import { prisma } from '../../lib/utils.js';
@@ -8,13 +8,13 @@ import { syncSettingsService } from '../syncSettingsService.js';
 
 export class DilovodSyncManager {
   constructor() {
-    // Используем централизованный prisma из utils.js
+    // Використовуємо централізований prisma з utils.js 
   }
 
-  // Вычисление хеша данных товара из Dilovod (для определения изменений)
+  // Обчислення хешу даних товару з Dilovod (для визначення змін) 
   private calculateDataHash(product: DilovodProduct): string {
-    // Хешируем только данные которые приходят из Dilovod
-    // НЕ включаем weight и manualOrder - это локальные данные
+    // Хешуємо тільки дані, які надходять з Dilovod 
+    // НЕ включаємо weight і manualOrder - це локальні дані 
     const dataToHash = {
       name: product.name,
       costPerItem: product.costPerItem,
@@ -30,7 +30,7 @@ export class DilovodSyncManager {
     return crypto.createHash('sha256').update(dataString).digest('hex');
   }
 
-  // Основная функция синхронизации товаров с базой данных
+  // Основна функція синхронізації товарів з базою даних  
   async syncProductsToDatabase(dilovodProducts: DilovodProduct[]): Promise<DilovodSyncResult> {
     try {
       logWithTimestamp('Начинаем синхронизацию товаров с базой данных...');
@@ -49,7 +49,7 @@ export class DilovodSyncManager {
           logWithTimestamp(`Категория: ${product.category.name} (ID: ${product.category.id})`);
           logWithTimestamp(`Цена: ${product.costPerItem} ${product.currency}`);
           
-          // Определяем и показываем вес
+          // Визначаємо і показуємо вагу  
           const weight = this.determineWeightByCategory(product.category.id);
           if (weight) {
             logWithTimestamp(`⚖️ Вес: ${weight} гр (категория ID: ${product.category.id})`);
@@ -68,22 +68,22 @@ export class DilovodSyncManager {
           
           logWithTimestamp(`Дополнительные цены: ${product.additionalPrices.length}`);
           
-          // Проверяем, существует ли товар в базе
+          // Перевіряємо, чи існує товар у базі
           const existingProduct = await prisma.product.findUnique({
             where: { sku: product.sku }
           });
 
-          // Вычисляем хеш данных из Dilovod
+          // Обчислюємо хеш даних з Dilovod
           const newDataHash = this.calculateDataHash(product);
 
           if (existingProduct) {
-            // Проверяем, изменились ли данные
+            // Перевіряємо, чи змінилися дані
             const dataChanged = existingProduct.dilovodDataHash !== newDataHash;
             
             if (dataChanged) {
               logWithTimestamp(`🔄 Данные товара ${product.sku} изменились, обновляем...`);
               
-              const productData = this.prepareProductData(product, false); // false = существующий товар
+              const productData = this.prepareProductData(product, false); // false = існуючий товар
               logWithTimestamp(`Данные для обновления:`, JSON.stringify(productData, null, 2));
               
               await prisma.product.update({
@@ -97,10 +97,10 @@ export class DilovodSyncManager {
               skippedProducts++;
             }
           } else {
-            // Создаем новый товар
+            // Створюємо новий товар
             logWithTimestamp(`➕ Создаем новый товар ${product.sku}...`);
             
-            const productData = this.prepareProductData(product, true); // true = новый товар
+            const productData = this.prepareProductData(product, true); // true = новий товар
             logWithTimestamp(`Данные для создания:`, JSON.stringify(productData, null, 2));
             
             await prisma.product.create({
@@ -113,7 +113,7 @@ export class DilovodSyncManager {
             createdProducts++;
           }
           
-          // Подсчитываем комплекты
+          // Підраховуємо комплекти
           if (product.set && product.set.length > 0) {
             syncedSets++;
             logWithTimestamp(`🎯 Комплект ${product.sku} успешно синхронизирован (${product.set.length} компонентов)`);
@@ -176,9 +176,9 @@ export class DilovodSyncManager {
     }
   }
 
-  // Подготовка данных товара для сохранения
+  // Підготовка даних товару для збереження
   private prepareProductData(product: DilovodProduct, isNew: boolean): any {
-    // Вычисляем хеш данных из Dilovod
+    // Обчислюємо хеш даних з Dilovod
     const dilovodDataHash = this.calculateDataHash(product);
     
     const data: any = {
@@ -190,41 +190,40 @@ export class DilovodSyncManager {
       set: product.set.length > 0 ? JSON.stringify(product.set) : null,
       additionalPrices: product.additionalPrices.length > 0 ? JSON.stringify(product.additionalPrices) : null,
       dilovodId: product.id,
-      dilovodGood: product.id,
       dilovodDataHash: dilovodDataHash,
       lastSyncAt: new Date()
     };
     
-    // Вес і manualOrder встановлюємо ТІЛЬКИ для нових товарів
+    // Вага і manualOrder встановлюємо ТІЛЬКИ для нових товарів
     // Для існуючих товарів НЕ перезаписуємо (захист локальних змін)
     if (isNew) {
       const weight = this.determineWeightByCategory(product.category.id);
       data.weight = weight;
-      logWithTimestamp(`⚖️  Устанавливаем вес для нового товара: ${weight ?? 'не определен'} г`);
+      logWithTimestamp(`⚖️  Встановлюємо вагу для нового товару: ${weight ?? 'не визначено'} г`);
       
       const manualOrder = this.determineManualOrderByCategory(product.category.id);
       data.manualOrder = manualOrder;
-      logWithTimestamp(`📋 Устанавливаем порядок сортировки: ${manualOrder}`);
+      logWithTimestamp(`📋 Встановлюємо порядок сортування: ${manualOrder}`);
     } else {
-      logWithTimestamp(`🔒 Вес і порядок сортування не оновлюються (защита локальних змін)`);
+      logWithTimestamp(`🔒 Вага і порядок сортування не оновлюються (захист локальних змін)`);
     }
     
     return data;
   }
 
-  // Определение веса товара по категории
+  // Визначення ваги товару за категорією
   private determineWeightByCategory(categoryId: number): number | null {
-    // Первые блюда - 400 гр
+    // Перші страви - 400 г
     if (categoryId === 1) {
       return 400;
     }
     
-    // Вторые блюда - 300 гр
+    // Другі страви - 300 г
     if (categoryId === 2) {
       return 300;
     }
     
-    // По умолчанию не устанавливаем вес
+    // За замовчуванням не встановлюємо вагу
     return null;
   }
 
@@ -249,7 +248,7 @@ export class DilovodSyncManager {
     return 0;
   }
 
-  // Получение статистики синхронизации
+  // Отримання статистики синхронізації
   async getSyncStats(): Promise<{
     totalProducts: number;
     productsWithSets: number;
@@ -257,10 +256,10 @@ export class DilovodSyncManager {
     categoriesCount: Array<{ name: string; count: number }>;
   }> {
     try {
-      // Общее количество товаров
+      // Загальна кількість товарів
       const totalProducts = await prisma.product.count();
       
-      // Товары с комплектами
+      // Товари з комплектами
       const productsWithSets = await prisma.product.count({
         where: {
           set: {
@@ -269,7 +268,7 @@ export class DilovodSyncManager {
         }
       });
       
-      // Последняя синхронизация
+      // Остання синхронізація
       const lastSyncProduct = await prisma.product.findFirst({
         orderBy: {
           lastSyncAt: 'desc'
@@ -279,7 +278,7 @@ export class DilovodSyncManager {
         }
       });
       
-      // Статистика по категориям
+      // Статистика за категоріями
       const categoriesStats = await prisma.product.groupBy({
         by: ['categoryName'],
         _count: {
@@ -310,25 +309,25 @@ export class DilovodSyncManager {
     }
   }
 
-  // Очистка старых товаров (не синхронизированных более N дней)
+  // Очищення старих товарів (не синхронізованих більше N днів)
   async cleanupOldProducts(daysOld?: number): Promise<{
     success: boolean;
     message: string;
     deletedCount: number;
   }> {
     try {
-      // Если daysOld не указан, получаем значение из настроек
+      // Якщо daysOld не вказано, отримуємо значення з налаштувань
       if (daysOld === undefined) {
         try {
           const settings = await syncSettingsService.getSyncSettings();
           daysOld = settings.dilovod.cleanupDaysOld;
         } catch (error) {
-          logWithTimestamp('Ошибка получения настроек Dilovod, используем значение по умолчанию:', error);
+          logWithTimestamp('Помилка отримання налаштувань Dilovod, використовуємо значення за замовчуванням:', error);
           daysOld = 30;
         }
       }
 
-      logWithTimestamp(`Очистка товаров, не синхронизированных более ${daysOld} дней...`);
+      logWithTimestamp(`Очищення товарів, не синхронізованих більше ${daysOld} днів...`);
       
       const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
       
@@ -358,7 +357,7 @@ export class DilovodSyncManager {
     }
   }
 
-  // Получение товаров по фильтрам
+  // Отримання товарів за фільтрами
   async getProducts(filters: {
     page?: number;
     limit?: number;
@@ -378,7 +377,7 @@ export class DilovodSyncManager {
       const { page = 1, limit = 20, search, category, hasSets } = filters;
       const skip = (page - 1) * limit;
       
-      // Строим условия поиска
+      // Створюємо умови пошуку
       const where: any = {};
       
       if (search) {
@@ -400,7 +399,7 @@ export class DilovodSyncManager {
         }
       }
       
-      // Получаем товары
+      // Отримуємо товари
       const [products, total] = await Promise.all([
         prisma.product.findMany({
           where,
@@ -426,24 +425,24 @@ export class DilovodSyncManager {
       };
       
     } catch (error) {
-      logWithTimestamp('Ошибка получения товаров:', error);
+      logWithTimestamp('Помилка отримання товарів:', error);
       throw error;
     }
   }
 
-  // Закрытие соединения с базой данных
+  // Закриття з'єднання з базою даних
   async disconnect(): Promise<void> {
     await prisma.$disconnect();
   }
 
-  // Обновление остатков товара в базе данных
+  // Оновлення залишків товару в базі даних
   async updateProductStockBalance(
     sku: string, 
     mainStorage: number, 
     kyivStorage: number
   ): Promise<{ success: boolean; message: string }> {
     try {
-      // Проверяем, существует ли товар
+      // Перевіряємо, чи існує товар
       const existingProduct = await prisma.product.findUnique({
         where: { sku }
       });
@@ -455,13 +454,13 @@ export class DilovodSyncManager {
         };
       }
 
-      // Обновляем остатки
+      // Оновлюємо залишки
       await prisma.product.update({
         where: { sku },
         data: {
           stockBalanceByStock: JSON.stringify({
-            "1": mainStorage,    // Склад 1 (главный)
-            "2": kyivStorage     // Склад 2 (киевский)
+            "1": mainStorage,    // Склад 1 (головний)
+            "2": kyivStorage     // Склад 2 (київський)
           })
         }
       });
