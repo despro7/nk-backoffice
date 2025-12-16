@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { shippingClientService } from '../services/ShippingService';
 import { formatDate } from '../lib/formatUtils';
@@ -8,13 +8,21 @@ interface UseOrderNavigationProps {
   id: number;
   apiCall: (url: string, options?: RequestInit) => Promise<Response>;
   equipmentConfig: any;
+  previousOrderExternalId?: string | null;
+  nextOrderExternalId?: string | null;
+  checklistItems?: any[];
+  orderStatus?: string;
 }
 
 export function useOrderNavigation({
   externalId,
   id,
   apiCall,
-  equipmentConfig
+  equipmentConfig,
+  previousOrderExternalId,
+  nextOrderExternalId,
+  checklistItems = [],
+  orderStatus
 }: UseOrderNavigationProps) {
   const navigate = useNavigate();
 
@@ -29,6 +37,20 @@ export function useOrderNavigation({
   // Стан для модалки помилки
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorModalText, setErrorModalText] = useState<string | null>(null);
+  // Стан для модалки підтвердження навігації під час комплектації
+  const [showNavigationConfirmModal, setShowNavigationConfirmModal] = useState(false);
+  const [pendingNavigationAction, setPendingNavigationAction] = useState<'previous' | 'next' | null>(null);
+
+  // Скидаємо всі стани при зміні замовлення (externalId)
+  useEffect(() => {
+    setShowPrintTTN(false);
+    setShowNextOrder(false);
+    setNextOrderNumber(undefined);
+    setNextOrderDate(undefined);
+    setShowNoMoreOrders(false);
+    setShowNavigationConfirmModal(false);
+    setPendingNavigationAction(null);
+  }, [externalId]);
 
   /**
    * Універсальна функція для отримання наступного замовлення з розумною логікою пошуку
@@ -280,6 +302,82 @@ export function useOrderNavigation({
     }
   }, [externalId, isLoadingNextOrder, navigate, getNextOrder, updateCurrentOrderStatusToReady]);
 
+  /**
+   * Перевірка чи є зібрані товари в чеклисті
+   * Перевірка виконується тільки для замовлень зі статусом "2" (Підтверджено)
+   */
+  const hasCollectedItems = useCallback(() => {
+    // Якщо статус не "2" (Підтверджено), не перевіряємо зібрані товари
+    if (orderStatus !== '2') {
+      return false;
+    }
+    
+    return checklistItems.some(item => 
+      item.status === 'done' || item.status === 'success'
+    );
+  }, [checklistItems, orderStatus]);
+
+  /**
+   * Проста навігація до попереднього замовлення (без зміни статусу)
+   */
+  const handleNavigateToPrevious = useCallback(() => {
+    if (!previousOrderExternalId) return;
+
+    // Якщо є зібрані товари, показуємо модалку підтвердження
+    if (hasCollectedItems()) {
+      setPendingNavigationAction('previous');
+      setShowNavigationConfirmModal(true);
+      return;
+    }
+
+    // Інакше просто переходимо
+    navigate(`/orders/${previousOrderExternalId}`);
+  }, [previousOrderExternalId, navigate, hasCollectedItems]);
+
+  /**
+   * Проста навігація до наступного замовлення (без зміни статусу)
+   */
+  const handleNavigateToNext = useCallback(() => {
+    if (!nextOrderExternalId) return;
+
+    // Якщо є зібрані товари, показуємо модалку підтвердження
+    if (hasCollectedItems()) {
+      setPendingNavigationAction('next');
+      setShowNavigationConfirmModal(true);
+      return;
+    }
+
+    // Інакше просто переходимо
+    navigate(`/orders/${nextOrderExternalId}`);
+  }, [nextOrderExternalId, navigate, hasCollectedItems]);
+
+  /**
+   * Підтвердження навігації (після показу модалки)
+   */
+  const confirmNavigation = useCallback(() => {
+    setShowNavigationConfirmModal(false);
+    
+    if (pendingNavigationAction === 'previous' && previousOrderExternalId) {
+      navigate(`/orders/${previousOrderExternalId}`);
+    } else if (pendingNavigationAction === 'next' && nextOrderExternalId) {
+      navigate(`/orders/${nextOrderExternalId}`);
+    }
+    
+    setPendingNavigationAction(null);
+  }, [pendingNavigationAction, previousOrderExternalId, nextOrderExternalId, navigate]);
+
+  /**
+   * Скасування навігації
+   */
+  const cancelNavigation = useCallback(() => {
+    setShowNavigationConfirmModal(false);
+    setPendingNavigationAction(null);
+  }, []);
+
+  // Реактивне обчислення наявності попереднього/наступного замовлення
+  const hasPreviousOrder = useMemo(() => !!previousOrderExternalId, [previousOrderExternalId]);
+  const hasNextOrder = useMemo(() => !!nextOrderExternalId, [nextOrderExternalId]);
+
   return {
     isPrintingTTN,
     showPrintTTN,
@@ -296,7 +394,16 @@ export function useOrderNavigation({
     showErrorModal,
     setShowErrorModal,
     errorModalText,
-    setErrorModalText
+    setErrorModalText,
+    // Прості функції навігації
+    handleNavigateToPrevious,
+    handleNavigateToNext,
+    hasPreviousOrder,
+    hasNextOrder,
+    // Модалка підтвердження навігації
+    showNavigationConfirmModal,
+    confirmNavigation,
+    cancelNavigation
   };
 }
 

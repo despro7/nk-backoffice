@@ -323,11 +323,55 @@ export class OrderDatabaseService {
 
       if (!order) return null;
 
+      // Знаходимо попереднє замовлення (з більш ранньою датою)
+      // Статуси: 2 (Підтверджено), 3 (Готове до відправки), 4 (Відправлено)
+      const previousOrder = await prisma.order.findFirst({
+        where: {
+          orderDate: {
+            lt: order.orderDate
+          },
+          status: {
+            in: ['2', '3', '4']
+          }
+        },
+        orderBy: {
+          orderDate: 'desc' // Беремо найближче попереднє
+        },
+        select: {
+          externalId: true,
+          orderNumber: true
+        }
+      });
+
+      // Знаходимо наступне замовлення (з більш пізньою датою)
+      // Статуси: 2 (Підтверджено), 3 (Готове до відправки), 4 (Відправлено)
+      const nextOrder = await prisma.order.findFirst({
+        where: {
+          orderDate: {
+            gt: order.orderDate
+          },
+          status: {
+            in: ['2', '3', '4']
+          }
+        },
+        orderBy: {
+          orderDate: 'asc' // Беремо найближче наступне
+        },
+        select: {
+          externalId: true,
+          orderNumber: true
+        }
+      });
+
       // Парсимо JSON поля
       return {
         ...order,
         items: order.items ? JSON.parse(order.items) : [],
-        rawData: order.rawData ? JSON.parse(order.rawData) : {}
+        rawData: order.rawData ? JSON.parse(order.rawData) : {},
+        previousOrderExternalId: previousOrder?.externalId || null,
+        previousOrderNumber: previousOrder?.orderNumber || null,
+        nextOrderExternalId: nextOrder?.externalId || null,
+        nextOrderNumber: nextOrder?.orderNumber || null
       };
     } catch (error) {
       console.error(`❌ Error getting order ${externalId}:`, error);

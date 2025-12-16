@@ -620,7 +620,11 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
         cityName: orderDetails.cityName,
         provider: orderDetails.provider,
         lastSynced: orderDetails.lastSynced,
-        rawData: orderDetails.rawData
+        rawData: orderDetails.rawData,
+        previousOrderExternalId: orderDetails.previousOrderExternalId,
+        previousOrderNumber: orderDetails.previousOrderNumber,
+        nextOrderExternalId: orderDetails.nextOrderExternalId,
+        nextOrderNumber: orderDetails.nextOrderNumber
       }
     });
 

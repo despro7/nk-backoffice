@@ -11,12 +11,15 @@ import { useWeightManagement } from '@/hooks/useWeightManagement';
 import { useBarcodeScanning } from '@/hooks/useBarcodeScanning';
 import { useOrderNavigation } from '@/hooks/useOrderNavigation';
 import { InfoModal } from '../components/modals/InfoModal';
+import { BaseModal } from '../components/modals/BaseModal';
+import { Button } from '@heroui/react';
 import { useOrderSettings } from '@/hooks/useOrderSettings';
 import { useBoxInitialStatus } from '@/hooks/useBoxInitialStatus';
 import { OrderViewHeader } from '@/components/OrderViewHeader';
 import { OrderAssemblyRightPanel } from '@/components/OrderAssemblyRightPanel';
 import { OrderDetailsAdmin } from '@/components/OrderDetailsAdmin';
 import OrderChecklist from '@/components/OrderChecklist';
+import { DynamicIcon } from 'lucide-react/dynamic';
 
 export default function OrderView() {
   const { externalId } = useParams<{ externalId: string }>();
@@ -80,12 +83,23 @@ export default function OrderView() {
     fetchNextOrderNumber,
     showErrorModal,
     setShowErrorModal,
-    errorModalText
+    errorModalText,
+    handleNavigateToPrevious,
+    handleNavigateToNext,
+    hasPreviousOrder,
+    hasNextOrder,
+    showNavigationConfirmModal,
+    confirmNavigation,
+    cancelNavigation
   } = useOrderNavigation({
     externalId,
     id: order ? order.id : 0,
     apiCall,
-    equipmentConfig: equipmentState.config
+    equipmentConfig: equipmentState.config,
+    previousOrderExternalId: order?.previousOrderExternalId,
+    nextOrderExternalId: order?.nextOrderExternalId,
+    checklistItems,
+    orderStatus: order?.status
   });
 
   // Прапорець для відстеження, чи замовлення було відкрите вже зібраним
@@ -301,8 +315,14 @@ export default function OrderView() {
   // Завантажуємо деталі замовлення при зміні externalId
   useEffect(() => {
     if (externalId) {
-      // Скидаємо прапорець при зміні замовлення
+      // Скидаємо всі критичні стани перед завантаженням нового замовлення
       setWasOpenedAsReady(false);
+      setShowPrintTTN(false);
+      setChecklistItems([]);
+      setExpandedItems([]);
+      setSelectedBoxes([]);
+      setIsReadyToShip(false);
+      
       fetchOrderDetails(externalId);
     }
   }, [externalId]);
@@ -354,6 +374,18 @@ export default function OrderView() {
 
   return (
     <div className="space-y-4">
+      {/* Модалка підтвердження навігації під час комплектації */}
+      <BaseModal
+        isOpen={showNavigationConfirmModal}
+        title="⚠️ Незавершена комплектація"
+        message="У замовленні є зібрані товари. Ви впевнені, що хочете перейти до іншого замовлення? Незбережені зміни будуть втрачені."
+        confirmText="Так, перейти"
+        confirmColor="warning"
+        cancelText="Ні, залишитись"
+        onConfirm={confirmNavigation}
+        onCancel={cancelNavigation}
+      />
+      
       {/* Модалка для помилок SalesDrive */}
       <InfoModal
         isOpen={showErrorModal}
@@ -446,8 +478,35 @@ export default function OrderView() {
         />
       </div>
 
+      {/* Наступне / Попереднє замовлення */}
+      <div className="flex justify-between border-t border-gray-300 pt-16 mt-20 mb-4">
+        <Button
+          color="secondary"
+          variant="flat"
+          className="text-neutral-500 min-w-fit"
+          onPress={handleNavigateToPrevious}
+          isDisabled={!hasPreviousOrder}
+        >
+          <DynamicIcon name="arrow-left" size={20} /> 
+          {order?.previousOrderNumber ? `Замовлення №${order.previousOrderNumber}` : 'Попереднє замовлення'}
+        </Button>
+        
+        {hasNextOrder && (
+        <Button
+          color="secondary"
+          variant="flat"
+          className="text-neutral-500 min-w-fit"
+          onPress={handleNavigateToNext}
+          isDisabled={!hasNextOrder}
+        >
+          {order?.nextOrderNumber ? `Замовлення №${order.nextOrderNumber}` : 'Наступне замовлення'} 
+          <DynamicIcon name="arrow-right" size={20} /> 
+        </Button>
+        )}
+      </div>
+
       {/* Блок деталей замовлення */}
-      {(user && ['admin'].includes(user.role)) && (
+      {(user && ['admin'].includes(user.role) && isDebugMode) && (
         <OrderDetailsAdmin order={order} externalId={externalId || ''} />
       )}
     </div>
