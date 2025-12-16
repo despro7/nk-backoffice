@@ -2536,6 +2536,59 @@ export class SalesDriveService {
       };
     }
   }
+
+  /**
+   * Експорт товарів до SalesDrive API
+   */
+  async exportProductsToSalesDrive(products: any[]): Promise<{ success: boolean; errors?: string[] }> {
+    try {
+      if (!this.apiUrl || !this.apiKey) {
+        throw new Error('SalesDrive API credentials not configured');
+      }
+
+      const fullUrl = `${this.apiUrl}/product-handler/`;
+      console.log(`📤 [SalesDrive POST] Exporting ${products.length} products to: ${fullUrl}`);
+
+      // Формуємо тіло запиту з action параметром
+      const requestBody = {
+        action: 'update',
+        product: products
+      };
+
+      console.log(`📤 Request body preview:`, {
+        action: requestBody.action,
+        productsCount: products.length
+      });
+
+      const response = await fetch(fullUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': this.formKey,
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      console.log(`📡 Response status: ${response.status} ${response.statusText}`);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ SalesDrive API error (${response.status}):`, errorText);
+        throw new Error(`SalesDrive API error ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log(`✅ [SalesDrive] Products exported successfully:`, result);
+
+      return { success: true };
+    } catch (error) {
+      console.error('❌ [SalesDrive] Export failed:', error);
+      return {
+        success: false,
+        errors: [error instanceof Error ? error.message : 'Unknown error']
+      };
+    }
+  }
 }
 
 export const salesDriveService = new SalesDriveService();

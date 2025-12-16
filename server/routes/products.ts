@@ -3,6 +3,7 @@ import { prisma } from '../lib/utils.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
 import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
+import { salesDriveService } from '../services/salesDriveService.js';
 
 const router = express.Router();
 
@@ -187,6 +188,98 @@ router.put('/sku-whitelist', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Експорт товарів до SalesDrive
+// GET /api/products/export-to-salesdrive - отримати payload для підтвердження
+// POST /api/products/export-to-salesdrive - відправити на SalesDrive
+router.route('/export-to-salesdrive')
+  .get(authenticateToken, async (req, res) => {
+    try {
+      // Отримуємо всі товари з БД
+      const products = await prisma.product.findMany({
+        orderBy: { name: 'asc' },
+        where: {
+          isOutdated: { not: true }
+        }
+      });
+
+      // Формуємо payload для SalesDrive
+      const payload = products.map(product => {
+        // Парсимо JSON поля
+        let set = [];
+        try {
+          set = product.set ? JSON.parse(product.set) : [];
+        } catch (e) {
+          console.warn(`Failed to parse set for product ${product.sku}:`, e);
+        }
+
+        let additionalPrices = [];
+        try {
+          additionalPrices = product.additionalPrices ? JSON.parse(product.additionalPrices) : [];
+        } catch (e) {
+          console.warn(`Failed to parse additionalPrices for product ${product.sku}:`, e);
+        }
+
+        let stockBalanceByStock = {};
+        try {
+          stockBalanceByStock = product.stockBalanceByStock ? JSON.parse(product.stockBalanceByStock) : {};
+        } catch (e) {
+          console.warn(`Failed to parse stockBalanceByStock for product ${product.sku}:`, e);
+        }
+
+        return {
+          id: product.sku,
+          name: product.name,
+          sku: product.sku,
+          costPerItem: (product.costPerItem || 0).toFixed(5),
+          currency: product.currency || 'UAH',
+          category: {
+            id: product.categoryId || 0,
+            name: product.categoryName || ''
+          },
+          set,
+          additionalPrices,
+          stockBalanceByStock
+        };
+      });
+
+      res.json({
+        success: true,
+        payload,
+        count: payload.length
+      });
+    } catch (error) {
+      console.error('Error preparing export payload:', error);
+      res.status(500).json({ error: 'Failed to prepare export payload' });
+    }
+  })
+  .post(authenticateToken, async (req, res) => {
+    try {
+      const { payload } = req.body;
+
+      if (!payload || !Array.isArray(payload)) {
+        return res.status(400).json({ error: 'Invalid payload format' });
+      }
+
+      // Відправляємо на SalesDrive
+      const result = await salesDriveService.exportProductsToSalesDrive(payload);
+
+      if (result.success) {
+        res.json({
+          success: true,
+          message: `Successfully exported ${payload.length} products to SalesDrive`
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          errors: result.errors
+        });
+      }
+    } catch (error) {
+      console.error('Error exporting to SalesDrive:', error);
+      res.status(500).json({ error: 'Failed to export to SalesDrive' });
+    }
+  });
 
 // Отримати товар за SKU
 // GET /api/products/:sku

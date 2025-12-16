@@ -7,22 +7,21 @@ import {
   DilovodSetComponent
 } from './DilovodTypes.js';
 import { DilovodApiClient } from './DilovodApiClient.js';
-import { getDilovodConfig as getDefaultDilovodConfig, logWithTimestamp as logTS } from './DilovodUtils.js';
+import { DEFAULT_DILOVOD_CONFIG, logWithTimestamp as logTS } from './DilovodUtils.js';
 import {
   getPriceTypeNameById,
   logWithTimestamp,
   delay,
-  getDilovodConfig,
   getDilovodConfigFromDB
 } from './DilovodUtils.js';
 
 export class DilovodDataProcessor {
-  private config: ReturnType<typeof getDilovodConfig>;
+  private config: typeof DEFAULT_DILOVOD_CONFIG;
   private apiClient: DilovodApiClient;
 
   constructor(apiClient: DilovodApiClient) {
     // Инициализируем с настройками по умолчанию, затем перезагрузим из БД
-    this.config = getDilovodConfig();
+    this.config = DEFAULT_DILOVOD_CONFIG;
     this.apiClient = apiClient;
     this.loadConfig();
   }
@@ -300,7 +299,7 @@ export class DilovodDataProcessor {
     // Подготавливаем нормализованную карту категорий (мерджим дефолт и БД)
     const normalizedCategoriesMap: { [key: string]: number } = {};
     const mergedCategoriesMap = {
-      ...(getDefaultDilovodConfig().categoriesMap || {}),
+      ...(DEFAULT_DILOVOD_CONFIG.categoriesMap || {}),
       ...(this.config.categoriesMap || {})
     } as Record<string, number>;
     Object.entries(mergedCategoriesMap).forEach(([key, value]) => {
@@ -343,17 +342,17 @@ export class DilovodDataProcessor {
       // Heuristic fallback: категоризация по подстроке, если маппинг не сработал
       if (!mappedCategoryId) {
         if (normalizedName.includes('перш')) {
-          mappedCategoryId = 1;
+          mappedCategoryId = 16;
         } else if (normalizedName.includes('друг')) {
-          mappedCategoryId = 2;
-        } else if (normalizedName.includes('набор') || normalizedName.includes('набори') || normalizedName.includes('комплект')) {
-          mappedCategoryId = 3;
+          mappedCategoryId = 21;
+        } else if (normalizedName.includes('набор') || normalizedName.includes('комплект')) {
+          mappedCategoryId = 19;
         } else if (normalizedName.includes('салат')) {
-          mappedCategoryId = 4;
+          mappedCategoryId = 20;
         } else if (normalizedName.includes('напій') || normalizedName.includes('напої')) {
-          mappedCategoryId = 5;
-        } else if (normalizedName.includes('овоч')) {
-          mappedCategoryId = 6;
+          mappedCategoryId = 33;
+        } else if (normalizedName.includes('інгрідієнт') || normalizedName.includes('інгредієнт')) {
+          mappedCategoryId = 14;
         }
       }
 
@@ -487,7 +486,7 @@ export class DilovodDataProcessor {
   }
 
   // Обновление конфигурации
-  updateConfig(newConfig: Partial<ReturnType<typeof getDilovodConfig>>): void {
+  updateConfig(newConfig: Partial<typeof DEFAULT_DILOVOD_CONFIG>): void {
     this.config = { ...this.config, ...newConfig };
   }
 }

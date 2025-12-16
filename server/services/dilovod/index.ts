@@ -15,4 +15,4 @@ export { DilovodService } from './DilovodService.js';
 export { DilovodExportBuilder, dilovodExportBuilder } from './DilovodExportBuilder.js';
 
 // Экспортируем конфигурацию по умолчанию
-export { getDilovodConfig } from './DilovodUtils.js';
+export { DEFAULT_DILOVOD_CONFIG } from './DilovodUtils.js';

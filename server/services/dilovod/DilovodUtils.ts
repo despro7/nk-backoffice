@@ -1,36 +1,34 @@
 // Утилиты и хелперы для работы с Dilovod
 
 import { DilovodConfig } from './DilovodTypes.js';
-import { syncSettingsService } from '../syncSettingsService.js';
 
-// Простий кеш для конфігурації з TTL 5 секунд
+// Простий кеш для конфігурації з TTL 10 хвилин
 let configCache: { config: DilovodConfig; timestamp: number } | null = null;
-const CONFIG_CACHE_TTL = 5000; // 5 секунд
+const CONFIG_CACHE_TTL = 600000; // 10 хвилин
 
 // Функція очищення кешу (викликається при оновленні налаштувань)
 export function clearConfigCache(): void {
   configCache = null;
 }
 
-// Конфігурація за замовчуванням - тепер без env змінних
-export function getDilovodConfig(): DilovodConfig {
-  return {
-    apiUrl: '', // Тепер тільки з БД
-    apiKey: '', // Тепер тільки з БД
-    setParentId: "1100300000001315", // ID группы-комплектов
-    mainPriceType: "1101300000001001", // Роздріб (Інтернет-магазин)
-    categoriesMap: {
-      "Перші страви": 1,
-      "Другі страви": 2,
-      "Набори продукції": 3,
-      "Салати": 4,
-      "Напої": 5,
-      "Овочі": 6
-    }
-  };
-}
+// Конфігурація за замовчуванням
+export const DEFAULT_DILOVOD_CONFIG: DilovodConfig = {
+  apiUrl: '',
+  apiKey: '',
+  setParentId: "1100300000001315",
+  mainPriceType: "1101300000001001",
+  categoriesMap: {
+    "Перші страви": 16,
+    "Другі страви": 21,
+    "Готові набори": 19,
+    "Салати": 20,
+    "Напої": 33,
+    "Інгрідієнти для салатів": 14
+  }
+};
 
-// Получить конфигурацию Dilovod с настройками из БД (з кешуванням)
+
+// Отримати конфігурацію Dilovod з налаштуваннями з БД (з кешуванням)
 export async function getDilovodConfigFromDB(): Promise<DilovodConfig> {
   // Перевіряємо кеш
   const now = Date.now();
@@ -43,15 +41,11 @@ export async function getDilovodConfigFromDB(): Promise<DilovodConfig> {
     const dilovodSettings = await loadDilovodSettingsFromDB();
     
     const config = {
-      apiUrl: dilovodSettings.apiUrl || process.env.DILOVOD_API_URL || '',
-      apiKey: dilovodSettings.apiKey || process.env.DILOVOD_API_KEY || '',
-      setParentId: dilovodSettings.setParentId || "1100300000001315",
-      mainPriceType: dilovodSettings.mainPriceType || "1101300000001001",
-      categoriesMap: dilovodSettings.categoriesMap || {
-        "Перші страви": 1,
-        "Другі страви": 2,
-        "Набори продукції": 3
-      }
+      apiUrl: dilovodSettings.apiUrl || process.env.DILOVOD_API_URL || DEFAULT_DILOVOD_CONFIG.apiUrl,
+      apiKey: dilovodSettings.apiKey || process.env.DILOVOD_API_KEY || DEFAULT_DILOVOD_CONFIG.apiKey,
+      setParentId: dilovodSettings.setParentId || DEFAULT_DILOVOD_CONFIG.setParentId,
+      mainPriceType: dilovodSettings.mainPriceType || DEFAULT_DILOVOD_CONFIG.mainPriceType,
+      categoriesMap: dilovodSettings.categoriesMap || DEFAULT_DILOVOD_CONFIG.categoriesMap
     };
     
     // Кешуємо конфігурацію
@@ -60,9 +54,9 @@ export async function getDilovodConfigFromDB(): Promise<DilovodConfig> {
     logWithTimestamp(`Dilovod конфігурація: API Key з ${dilovodSettings.apiKey ? 'БД' : 'ENV'}: ${config.apiKey?.substring(0, 10)}...`);
     return config;
   } catch (error) {
-    // В случае ошибки возвращаем конфигурацию по умолчанию
-    console.warn('Ошибка загрузки Dilovod настроек из БД, используем значения по умолчанию:', error);
-    return getDilovodConfig();
+    // У разі помилки повертаємо конфігурацію за замовчуванням
+    console.warn('Помилка завантаження налаштувань Dilovod з БД, використовуємо значення за замовчуванням:', error);
+    return DEFAULT_DILOVOD_CONFIG;
   }
 }
 

@@ -14,7 +14,7 @@ import {
   handleDilovodApiError,
   logWithTimestamp,
   validateDilovodConfig,
-  getDilovodConfig,
+  DEFAULT_DILOVOD_CONFIG,
   getDilovodConfigFromDB,
   formatDateForDilovod
 } from './DilovodUtils.js';
@@ -25,7 +25,7 @@ export class DilovodApiClient {
   }
   private apiUrl: string;
   private apiKey: string;
-  private config: ReturnType<typeof getDilovodConfig>;
+  private config: typeof DEFAULT_DILOVOD_CONFIG;
   private ready: Promise<void>;
 
   constructor() {
@@ -88,7 +88,7 @@ export class DilovodApiClient {
       logWithTimestamp('Помилка завантаження конфігурації Dilovod з БД, використовуємо значення за замовчуванням:', error);
 
       // У разі помилки використовуємо конфігурацію за замовчуванням
-      this.config = getDilovodConfig();
+      this.config = DEFAULT_DILOVOD_CONFIG;
       this.apiUrl = this.config.apiUrl;
       this.apiKey = this.config.apiKey;
 
@@ -440,7 +440,7 @@ export class DilovodApiClient {
   }
 
   // Оновлення конфігурації
-  updateConfig(newConfig: Partial<ReturnType<typeof getDilovodConfig>>): void {
+  updateConfig(newConfig: Partial<typeof DEFAULT_DILOVOD_CONFIG>): void {
     this.config = { ...this.config, ...newConfig };
     this.apiUrl = this.config.apiUrl;
     this.apiKey = this.config.apiKey;
@@ -803,7 +803,7 @@ export class DilovodApiClient {
   }
 
   // Отримання поточної конфігурації
-  getConfig(): ReturnType<typeof getDilovodConfig> {
+  getConfig(): typeof DEFAULT_DILOVOD_CONFIG {
     return { ...this.config };
   }
 }

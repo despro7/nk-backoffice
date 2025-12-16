@@ -31,6 +31,46 @@ import {
 import { LoggingService } from '@/services/LoggingService';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 
+// Функція для генерації кольорів категорій на основі categoryId
+const getCategoryColors = (categoryId: number) => {
+  // Спеціальні кольори для певних категорій
+  const specialColors: Record<number, { bg: string; text: string }> = {
+    16: { bg: 'bg-warning-100', text: 'text-warning-700' }, // Перші страви
+    21: { bg: 'bg-success-100', text: 'text-success-700' },   // Другі страви
+    19: { bg: 'bg-purple-100', text: 'text-purple-700' }, // Готові набори
+    14: { bg: 'bg-sky-100', text: 'text-sky-700' },   // Інгрідієнти для салатів
+    20: { bg: 'bg-teal-100', text: 'text-teal-700' }, // Салати
+    33: { bg: 'bg-rose-100', text: 'text-rose-700' }, // Напої
+  };
+
+  if (specialColors[categoryId]) {
+    return specialColors[categoryId];
+  }
+
+  // Генерація кольору на основі categoryId для інших категорій
+  const colors = [
+    { bg: 'bg-blue-100', text: 'text-blue-700' },
+    { bg: 'bg-red-100', text: 'text-red-700' },
+    { bg: 'bg-indigo-100', text: 'text-indigo-700' },
+    { bg: 'bg-pink-100', text: 'text-pink-700' },
+    { bg: 'bg-cyan-100', text: 'text-cyan-700' },
+    { bg: 'bg-teal-100', text: 'text-teal-700' },
+    { bg: 'bg-orange-100', text: 'text-orange-700' },
+    { bg: 'bg-lime-100', text: 'text-lime-700' },
+    { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+    { bg: 'bg-violet-100', text: 'text-violet-700' },
+    { bg: 'bg-fuchsia-100', text: 'text-fuchsia-700' },
+    { bg: 'bg-rose-100', text: 'text-rose-700' },
+    { bg: 'bg-sky-100', text: 'text-sky-700' },
+    { bg: 'bg-amber-100', text: 'text-amber-700' },
+    { bg: 'bg-stone-100', text: 'text-stone-700' },
+  ];
+
+  // Використовуємо categoryId для вибору кольору (детерміновано)
+  const colorIndex = Math.abs(categoryId) % colors.length;
+  return colors[colorIndex];
+};
+
 interface Product {
   id: string;
   sku: string;
@@ -152,6 +192,11 @@ const ProductSets: React.FC = () => {
   const [isSkuWhitelistModalOpen, setIsSkuWhitelistModalOpen] = useState(false);
   const [skuWhitelistText, setSkuWhitelistText] = useState('');
   const [skuWhitelistSaving, setSkuWhitelistSaving] = useState(false);
+
+  // Стан для експорту в SalesDrive
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportPayload, setExportPayload] = useState<any[]>([]);
+  const [exporting, setExporting] = useState(false);
 
   // Завантажити whitelist з сервера
   const fetchSkuWhitelist = async () => {
@@ -509,7 +554,7 @@ const ProductSets: React.FC = () => {
                 </div>
               )}
             </div>
-            {isAdmin && (
+            {isAdmin() && (
               <>
                 {/* Dilovod good ID */}
                 <div className="text-sm text-blue-800">
@@ -522,13 +567,14 @@ const ProductSets: React.FC = () => {
       }
 
       case 'category':
-        const categoryColor: ChipProps["color"] =
-          product.categoryId === 1 ? "warning" :
-          product.categoryId === 2 ? "success" :
-          product.categoryId === 3 ? "secondary" :
-          "default";
+        const categoryColors = getCategoryColors(product.categoryId);
         return (
-          <Chip color={categoryColor} variant="flat" size="sm" className={`${categoryColor === "secondary" && "bg-purple-200"}`}>
+          <Chip
+            color="default"
+            variant="flat"
+            size="sm"
+            className={`${categoryColors.bg} ${categoryColors.text} border-0`}
+          >
             {product.categoryName + " (id" + product.categoryId + ")" || 'Без категорії'}
           </Chip>
         );
@@ -1205,6 +1251,57 @@ const ProductSets: React.FC = () => {
     }
   };
 
+  // Функції для експорту в SalesDrive
+  const prepareExportToSalesDrive = async () => {
+    try {
+      const response = await fetch('/api/products/export-to-salesdrive', {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setExportPayload(result.payload);
+        setIsExportModalOpen(true);
+      } else {
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        addToast({ title: 'Помилка', description: error.error || 'Не вдалося отримати дані для експорту', color: 'danger' });
+      }
+    } catch (error) {
+      console.error('Error preparing export:', error);
+      addToast({ title: 'Помилка мережі', description: error instanceof Error ? error.message : 'Невідома помилка', color: 'danger' });
+    }
+  };
+
+  const executeExportToSalesDrive = async () => {
+    try {
+      setExporting(true);
+
+      const response = await fetch('/api/products/export-to-salesdrive', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ payload: exportPayload }),
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        ToastService.show({ title: 'Успіх', description: result.message, color: 'success', hideIcon: false });
+        setIsExportModalOpen(false);
+        setExportPayload([]);
+      } else {
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        ToastService.show({ title: 'Помилка експорту', description: error.error || 'Не вдалося експортувати товари', color: 'danger', hideIcon: false, icon: <DynamicIcon name="alert-triangle" size={16} /> } );
+      }
+    } catch (error) {
+      console.error('Error exporting to SalesDrive:', error);
+      ToastService.show({ title: 'Помилка мережі', description: error instanceof Error ? error.message : 'Невідома помилка', color: 'danger', hideIcon: false, icon: <DynamicIcon name="alert-triangle" size={16} /> });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Функція для оновлення ваги товару
   const updateProductWeight = async (productId: string, newWeight: number) => {
     try {
@@ -1566,6 +1663,16 @@ const ProductSets: React.FC = () => {
                       Оновити залишки
                     </>
                   )}
+                </Button>
+
+                <Button
+                  onPress={prepareExportToSalesDrive}
+                  disabled={!isAdmin()}
+                  color="secondary"
+                  className="text-white"
+                >
+                  <DynamicIcon name="upload" size={14} />
+                  Експорт в SalesDrive
                 </Button>
 
                 {/* Whitelist номерів SKU, які не підлягають застаріванню */}
@@ -1935,6 +2042,65 @@ const ProductSets: React.FC = () => {
                 </>
               ) : (
                 'Зберегти'
+              )}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Модал експорту в SalesDrive */}
+      <Modal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        size="4xl"
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <DynamicIcon name="upload" size={20} />
+              Експорт товарів в SalesDrive
+            </div>
+            <p className="text-sm font-normal text-gray-500">
+              Перевірте сформований payload і підтвердіть експорт {exportPayload.length} товарів
+            </p>
+          </ModalHeader>
+          <ModalBody>
+            <div className="space-y-4">
+              <div className="bg-gray-50 p-4 rounded-lg max-h-96 overflow-auto">
+                <h4 className="text-sm font-medium mb-2">Payload для експорту:</h4>
+                <pre className="text-xs bg-white p-3 rounded border overflow-auto max-h-80">
+                  {JSON.stringify(exportPayload, null, 2)}
+                </pre>
+              </div>
+              <div className="text-sm text-gray-600">
+                <p><strong>Кількість товарів:</strong> {exportPayload.length}</p>
+                <p className="mt-1">Після підтвердження дані будуть відправлені на SalesDrive API для оновлення товарів.</p>
+              </div>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant="flat"
+              onPress={() => setIsExportModalOpen(false)}
+              disabled={exporting}
+            >
+              Скасувати
+            </Button>
+            <Button
+              color="primary"
+              onPress={executeExportToSalesDrive}
+              disabled={exporting || exportPayload.length === 0}
+            >
+              {exporting ? (
+                <>
+                  <DynamicIcon name="loader-2" className="animate-spin" size={14} />
+                  Експорт...
+                </>
+              ) : (
+                <>
+                  <DynamicIcon name="upload" size={14} />
+                  Підтвердити експорт
+                </>
               )}
             </Button>
           </ModalFooter>

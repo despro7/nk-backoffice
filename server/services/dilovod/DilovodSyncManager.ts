@@ -214,12 +214,12 @@ export class DilovodSyncManager {
   // Визначення ваги товару за категорією
   private determineWeightByCategory(categoryId: number): number | null {
     // Перші страви - 400 г
-    if (categoryId === 1) {
+    if (categoryId === 16) {
       return 400;
     }
     
     // Другі страви - 300 г
-    if (categoryId === 2) {
+    if (categoryId === 21) {
       return 300;
     }
     
@@ -230,18 +230,28 @@ export class DilovodSyncManager {
   // Визначення порядку сортування за категорією
   private determineManualOrderByCategory(categoryId: number): number {
     // Перші страви - 1000
-    if (categoryId === 1) {
+    if (categoryId === 16) {
       return 1000;
     }
     
     // Другі страви - 2000
-    if (categoryId === 2) {
+    if (categoryId === 21) {
       return 2000;
     }
     
     // Комплекти - 3000
-    if (categoryId === 3) {
+    if (categoryId === 19) {
       return 3000;
+    }
+
+    // Салати - 4000
+    if (categoryId === 20) {
+      return 4000;
+    }
+
+    // Напої - 5000
+    if (categoryId === 33) {
+      return 5000;
     }
     
     // За замовчуванням - 0 (в кінці списку)

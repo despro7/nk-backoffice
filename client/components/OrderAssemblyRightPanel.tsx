@@ -5,6 +5,7 @@ import { WeightDisplayWidget } from './WeightDisplayWidget';
 import { BoxSelector } from './BoxSelector';
 import { DeviationButton } from './DeviationButton';
 import { OrderRefreshButton } from './OrderRefreshButton';
+import { ActiveProductSets } from './ActiveProductSets';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { ConfirmModal } from './modals/ConfirmModal';
 import { shippingClientService } from '../services/ShippingService';
@@ -182,6 +183,11 @@ export function OrderAssemblyRightPanel({
               </div>
             </Switch>
           </div> */}
+
+          {/* Активні комплекти */}
+          {order?.items && (
+            <ActiveProductSets orderItems={order.items} />
+          )}
 
           {/* Кнопка для позначення відхилень */}
           <DeviationButton />
