@@ -507,6 +507,7 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
     const sortBy = req.query.sortBy as string || 'orderDate';
     const sortOrder = req.query.sortOrder as string || 'desc';
     const search = req.query.search as string;
+    const channelsParam = req.query.channels as string;
 
     const offset = (page - 1) * limit;
 
@@ -514,10 +515,18 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
     let whereCondition: any = {
       // Виключаємо канал продажів "nk-food.shop" (sajt: "19") І статуси 6, 7, 8
       NOT: [
-        { sajt: '19' },
+        // { sajt: '19' },
         { status: { in: ['6', '7', '8'] } }
       ]
     };
+
+    // Додаємо фільтр каналів, якщо вказано
+    if (channelsParam) {
+      const channels = channelsParam.split(',').filter(ch => ch.trim());
+      if (channels.length > 0) {
+        whereCondition.sajt = { in: channels };
+      }
+    }
 
     // Додаємо пошук, якщо вказано
     if (search) {
@@ -824,6 +833,7 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
 
             const resultIndex = results.findIndex(r => r.orderNumber === orderInfo.normalizedNumber);
             if (resultIndex !== -1) {
+              // Оновлюємо існуючий запис
               results[resultIndex] = {
                 ...results[resultIndex],
                 dilovodSaleExportDate: updateData.dilovodSaleExportDate || localOrder?.dilovodSaleExportDate,
@@ -831,13 +841,14 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
                 dilovodCashInDate: updateData.dilovodCashInDate || localOrder?.dilovodCashInDate,
                 updatedCountCashIn: updateData.dilovodCashInDate ? 1 : 0
               };
-            }
-
+            } else {
+            // Додаємо новий запис лише якщо його ще немає
             results.push({
               orderNumber: orderInfo.normalizedNumber,
               updatedCount: updateData.dilovodSaleExportDate || updateData.dilovodCashInDate ? 1 : 0,
               success: true
             });
+            }
           }
         }
         logWithTimestamp('Оновлення документів Sale/CashIn завершено (запити лише для відсутніх)');
@@ -866,7 +877,7 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
     } else if (updatedCount === 0) {
       message = 'Перевірка завершена: жодних нових даних не було оновлено.';
     } else {
-      message = `Перевірка завершена (оновлено ${updatedCount} ${updatedCount < 5 ? 'замовлення' : 'замовлень'}`;
+      message = `Перевірка завершена (оновлено ${updatedCount} ${updatedCount < 5 ? 'замовлення' : 'замовлень'})`;
     }
 
     res.json({

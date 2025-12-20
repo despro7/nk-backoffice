@@ -30,18 +30,17 @@ import { formatRelativeDate } from "../lib/formatUtils";
 import { addToast } from "@heroui/react";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
+import { ORDER_STATUSES, convertCalendarRangeToReportingRange, createStandardDatePresets } from "../lib";
 
 interface ProductStats {
   name: string;
   sku: string;
   orderedQuantity: number;
-  stockBalances: { [warehouse: string]: number };
 }
 
 interface ProductDateStats {
   date: string;
   orderedQuantity: number;
-  stockBalances: { [warehouse: string]: number };
 }
 
 interface ProductStatsResponse {
@@ -51,7 +50,9 @@ interface ProductStatsResponse {
     source: string;
     filters: {
       status: string;
+      shippedOnly: boolean;
       dateRange: { startDate: string; endDate: string } | null;
+      dayStartHour: number;
     };
     totalProducts: number;
     totalOrders: number;
@@ -79,7 +80,7 @@ interface ProductDateStatsResponse {
   };
 }
 
-interface ProductStatsTableProps {
+interface ProductShippedStatsTableProps {
   className?: string;
 }
 
@@ -100,7 +101,26 @@ const statusOptions = [
   { key: "8", label: "Видалені" }
 ];
 
-export default function ProductStatsTable({ className }: ProductStatsTableProps) {
+const getStatusLabel = (status: string) => {
+  const option = statusOptions.find(o => o.key === status);
+  return option ? option.label : status;
+};
+
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case "1": return "bg-blue-100 text-blue-700";
+    case "2": return "bg-cyan-100 text-cyan-700";
+    case "3": return "bg-orange-100 text-orange-700";
+    case "4": return "bg-purple-100 text-purple-700";
+    case "5": return "bg-green-100 text-green-700";
+    case "6": return "bg-red-100 text-red-700";
+    case "7": return "bg-gray-100 text-gray-700";
+    case "8": return "bg-neutral-100 text-neutral-700";
+    default: return "bg-neutral-100 text-neutral-700";
+  }
+};
+
+export default function ProductShippedStatsTable({ className }: ProductShippedStatsTableProps) {
   const { isAdmin } = useRoleAccess();
   const { apiCall } = useApi();
   const [productStats, setProductStats] = useState<ProductStats[]>([]);
@@ -112,12 +132,22 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
 
   // Фільтри
   const [statusFilter, setStatusFilter] = useState("all");
-  const [dateRange, setDateRange] = useState<DateRange | null>(null);
-  const [datePresetKey, setDatePresetKey] = useState<string | null>(null);
+  const [datePresetKey, setDatePresetKey] = useState<string>("today");
+  const [dateRange, setDateRange] = useState<DateRange | null>(() => {
+    const presets = createStandardDatePresets();
+    const preset = presets.find((p) => p.key === "today");
+    return preset ? preset.getRange() : null;
+  });
 
   // Фільтр по товарам
   const [selectedProduct, setSelectedProduct] = useState<string>("");
   const [viewMode, setViewMode] = useState<"products" | "dates">("products");
+
+  // Модальне вікно замовлень для конкретного товару
+  const [isOrdersModalOpen, setIsOrdersModalOpen] = useState(false);
+  const [modalOrders, setModalOrders] = useState<any[]>([]);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [selectedProductForModal, setSelectedProductForModal] = useState<{ name: string; sku: string } | null>(null);
 
   // Дані для режиму по датам
   const [dateStats, setDateStats] = useState<ProductDateStats[]>([]);
@@ -136,21 +166,15 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
   const columns = useMemo(() => {
     if (viewMode === "dates") {
       return [
-        { key: "date", label: "Дата", sortable: true, className: "w-3/16" },
-        { key: "name", label: "Назва товару", sortable: false, className: "w-5/16" },
-        { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-2/16 text-center" },
-        { key: "totalStock", label: "Залишки", sortable: true, className: "w-2/16 text-center" },
-        { key: "mainStock", label: "Склад ГП", sortable: true, className: "w-2/16 text-center" },
-        { key: "smallStock", label: "Склад М", sortable: true, className: "w-2/16 text-center" }
+        { key: "date", label: "Дата відвантаження", sortable: true, className: "w-4/16" },
+        { key: "name", label: "Назва товару", sortable: false, className: "w-8/16" },
+        { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-4/16 text-center" }
       ];
     } else {
       return [
-        { key: "name", label: "Назва товару", sortable: true, className: "w-6/16" },
-        { key: "sku", label: "SKU", sortable: true, className: "w-2/16 text-left" },
-        { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-2/16 text-center" },
-        { key: "totalStock", label: "Залишки", sortable: true, className: "w-2/16 text-center" },
-        { key: "mainStock", label: "Склад ГП", sortable: true, className: "w-2/16 text-center" },
-        { key: "smallStock", label: "Склад М", sortable: true, className: "w-2/16 text-center" }
+        { key: "name", label: "Назва товару", sortable: true, className: "w-10/16" },
+        { key: "sku", label: "SKU", sortable: true, className: "w-3/16 text-left" },
+        { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-3/16 text-center" }
       ];
     }
   }, [viewMode]);
@@ -168,7 +192,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       firstProductStatsLoadRef.current = false;
     }
     // Створюємо ключ кешу на основі фільтрів
-    const cacheKey = `${statusFilter}_${dateRange ? `${dateRange.start?.toString()}_${dateRange.end?.toString()}` : 'no_date'}`;
+    const cacheKey = `shipped_${statusFilter}_${dateRange ? `${dateRange.start?.toString()}_${dateRange.end?.toString()}` : 'no_date'}`;
 
     const now = Date.now();
 
@@ -186,6 +210,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
 
     try {
       const params = new URLSearchParams();
+      params.append("shippedOnly", "true");
 
       if (statusFilter !== "all") {
         params.append("status", statusFilter);
@@ -200,7 +225,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       }
 
       const queryString = params.toString();
-      const url = queryString ? `/api/orders/products/stats?${queryString}` : `/api/orders/products/stats`;
+      const url = `/api/orders/products/stats?${queryString}`;
 
       // Використовуємо основний endpoint з кешем
       const response = await apiCall(url);
@@ -248,6 +273,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
     try {
       const params = new URLSearchParams();
       params.append("sku", selectedProduct);
+      params.append("shippedOnly", "true");
 
       if (statusFilter !== "all") {
         params.append("status", statusFilter);
@@ -261,7 +287,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       }
 
       const queryString = params.toString();
-      const url = queryString ? `/api/orders/products/stats/dates?${queryString}` : `/api/orders/products/stats/dates`;
+      const url = `/api/orders/products/stats/dates?${queryString}`;
 
       const response = await apiCall(url);
       const data: ProductDateStatsResponse = await response.json();
@@ -285,10 +311,56 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
     }
   }, [selectedProduct, statusFilter, dateRange?.start, dateRange?.end, apiCall]);
 
+  // Функція для завантаження замовлень конкретного товару
+  const fetchOrdersForProduct = useCallback(async (sku: string, name: string, date?: string) => {
+    setSelectedProductForModal({ name, sku });
+    setIsOrdersModalOpen(true);
+    setModalLoading(true);
+    setModalOrders([]);
+
+    try {
+      const params = new URLSearchParams();
+      params.append("sku", sku);
+      params.append("shippedOnly", "true");
+
+      if (statusFilter !== "all") {
+        params.append("status", statusFilter);
+      }
+
+      if (date) {
+        // Якщо передана конкретна дата (з режиму "dates")
+        params.append("startDate", date);
+        params.append("endDate", date);
+      } else if (dateRange?.start && dateRange?.end) {
+        // Інакше використовуємо загальний діапазон
+        const startDate = `${dateRange.start.year}-${String(dateRange.start.month).padStart(2, '0')}-${String(dateRange.start.day).padStart(2, '0')}`;
+        const endDate = `${dateRange.end.year}-${String(dateRange.end.month).padStart(2, '0')}-${String(dateRange.end.day).padStart(2, '0')}`;
+        params.append("startDate", startDate);
+        params.append("endDate", endDate);
+      }
+
+      const response = await apiCall(`/api/orders/products/orders?${params.toString()}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setModalOrders(data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching product orders:', error);
+      addToast({
+        title: "Помилка",
+        description: "Не вдалося завантажити список замовлень.",
+        color: "danger",
+      });
+    } finally {
+      setModalLoading(false);
+    }
+  }, [statusFilter, dateRange, apiCall]);
+
   // Обгортка для кнопки оновлення даних
   const handleRefreshData = useCallback(() => {
     // Очищаємо кеш для поточних фільтрів
-    const cacheKey = `${statusFilter}_${dateRange ? `${dateRange.start?.toString()}_${dateRange.end?.toString()}` : 'no_date'}`;
+    const cacheKey = `shipped_${statusFilter}_${dateRange ? `${dateRange.start?.toString()}_${dateRange.end?.toString()}` : 'no_date'}`;
     setCache(prev => {
       const newCache = { ...prev };
       delete newCache[cacheKey];
@@ -302,58 +374,8 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
     }
   }, [fetchProductStats, fetchProductDateStats, statusFilter, dateRange, viewMode, selectedProduct]);
 
-  // Передвстановлені діапазони дат
-  const getCurrentDate = () => today(getLocalTimeZone());
-
-  const datePresets = [
-    { key: "today", label: "Сьогодні", getRange: () => {
-      const todayDate = getCurrentDate();
-      return { start: todayDate, end: todayDate };
-    }},
-    { key: "yesterday", label: "Вчора", getRange: () => {
-      const yesterday = getCurrentDate().subtract({ days: 1 });
-      return { start: yesterday, end: yesterday };
-    }},
-    { key: "thisWeek", label: "Цього тижня", getRange: () => {
-      const todayDate = getCurrentDate();
-      const startOfWeek = todayDate.subtract({ days: todayDate.day - 1 }); // Понедельник
-      return { start: startOfWeek, end: todayDate };
-    }},
-    { key: "last7Days", label: "Останні 7 днів", getRange: () => {
-      const todayDate = getCurrentDate();
-      const weekAgo = todayDate.subtract({ days: 6 });
-      return { start: weekAgo, end: todayDate };
-    }},
-    { key: "last14Days", label: "Останні 14 днів", getRange: () => {
-      const todayDate = getCurrentDate();
-      const twoWeeksAgo = todayDate.subtract({ days: 13 });
-      return { start: twoWeeksAgo, end: todayDate };
-    }},
-    { key: "thisMonth", label: "Цього місяця", getRange: () => {
-      const todayDate = getCurrentDate();
-      const startOfMonth = todayDate.subtract({ days: todayDate.day - 1 });
-      return { start: startOfMonth, end: todayDate };
-    }},
-    { key: "lastMonth", label: "Минулого місяця", getRange: () => {
-      const todayDate = getCurrentDate();
-      const lastMonth = todayDate.subtract({ months: 1 });
-      const startOfLastMonth = lastMonth.subtract({ days: lastMonth.day - 1 });
-      // Для останнього дня місяця використовуємо приблизне значення
-      const endOfLastMonth = startOfLastMonth.add({ days: 30 }); // Приблизно 30 днів
-      return { start: startOfLastMonth, end: endOfLastMonth };
-    }},
-    { key: "thisYear", label: "Цього року", getRange: () => {
-      const todayDate = getCurrentDate();
-      const startOfYear = new CalendarDate(todayDate.year, 1, 1);
-      return { start: startOfYear, end: todayDate };
-    }},
-    { key: "lastYear", label: "Минулого року", getRange: () => {
-      const todayDate = getCurrentDate();
-      const startOfLastYear = new CalendarDate(todayDate.year - 1, 1, 1);
-      const endOfLastYear = new CalendarDate(todayDate.year - 1, 12, 31);
-      return { start: startOfLastYear, end: endOfLastYear };
-    }}
-  ];
+	// Попередньо встановлені діапазони дат
+  const datePresets = useMemo(() => createStandardDatePresets(), []);
 
   // Обробник зміни вибраного товару
   const handleProductChange = useCallback((sku: string) => {
@@ -376,8 +398,10 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
   // Функція скидання фільтрів
   const resetFilters = useCallback(() => {
     setStatusFilter("all");
-    setDateRange(null);
-    setDatePresetKey(null);
+    const presets = createStandardDatePresets();
+    const preset = presets.find((p) => p.key === "today");
+    setDateRange(preset ? preset.getRange() : null);
+    setDatePresetKey("today");
     setSelectedProduct("");
     setViewMode("products");
     setDateStats([]);
@@ -544,11 +568,6 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
 
         if (sortDescriptor.column === "date") {
           cmp = a.date.localeCompare(b.date);
-        } else if (sortDescriptor.column === "totalStock") {
-          // Для загальної кількості на складах
-          const firstTotal = Object.values(a.stockBalances).reduce((sum, balance) => sum + balance, 0);
-          const secondTotal = Object.values(b.stockBalances).reduce((sum, balance) => sum + balance, 0);
-          cmp = firstTotal - secondTotal;
         } else if (typeof first === "number" && typeof second === "number") {
           cmp = first - second;
         }
@@ -566,12 +585,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
 
         let cmp = 0;
 
-        if (sortDescriptor.column === "totalStock") {
-          // Для загальної кількості на складах
-          const firstTotal = Object.values(a.stockBalances).reduce((sum, balance) => sum + balance, 0);
-          const secondTotal = Object.values(b.stockBalances).reduce((sum, balance) => sum + balance, 0);
-          cmp = firstTotal - secondTotal;
-        } else if (typeof first === "string" && typeof second === "string") {
+        if (typeof first === "string" && typeof second === "string") {
           cmp = first.localeCompare(second);
         } else if (typeof first === "number" && typeof second === "number") {
           cmp = first - second;
@@ -583,24 +597,6 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       return items;
     }
   }, [productStats, dateStats, sortDescriptor, viewMode]);
-
-  // Форматування загального залишку на складах
-  const getTotalStock = (stockBalances: { [warehouse: string]: number }) => {
-    return Object.values(stockBalances).reduce((sum, balance) => sum + balance, 0);
-  };
-
-  // Розділення складів на головний і малий
-  const getMainStock = (stockBalances: { [warehouse: string]: number }) => {
-    // Припускаємо, що склад "1" - це головний склад ГП
-    return stockBalances["1"] || 0;
-  };
-
-  const getSmallStock = (stockBalances: { [warehouse: string]: number }) => {
-    // Сума всіх складів крім "1" (головного)
-    return Object.entries(stockBalances)
-      .filter(([warehouseId]) => warehouseId !== "1")
-      .reduce((sum, [, balance]) => sum + balance, 0);
-  };
 
   // Кольорова градація для значень (м'які кольори в стилі flat HeroUI)
   // Повертаємо об'єкт з base і content, 5 градацій, нулі — сірий текст, без фону
@@ -658,59 +654,18 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       : productStats.map(item => item.orderedQuantity),
     [productStats, dateStats, viewMode]);
 
-  const getAllTotalStocks = useMemo(() =>
-    viewMode === "dates"
-      ? dateStats.map(item => getTotalStock(item.stockBalances))
-      : productStats.map(item => getTotalStock(item.stockBalances)),
-    [productStats, dateStats, viewMode]);
-
-  const getAllMainStocks = useMemo(() =>
-    viewMode === "dates"
-      ? dateStats.map(item => getMainStock(item.stockBalances))
-      : productStats.map(item => getMainStock(item.stockBalances)),
-    [productStats, dateStats, viewMode]);
-
-  const getAllSmallStocks = useMemo(() =>
-    viewMode === "dates"
-      ? dateStats.map(item => getSmallStock(item.stockBalances))
-      : productStats.map(item => getSmallStock(item.stockBalances)),
-    [productStats, dateStats, viewMode]);
-
   // Розрахунок підсумкових значень
   const totals = useMemo(() => {
     if (viewMode === "dates") {
       return {
         orderedQuantity: dateStats.reduce((sum, item) => sum + item.orderedQuantity, 0),
-        totalStock: dateStats.reduce((sum, item) => sum + getTotalStock(item.stockBalances), 0),
-        mainStock: dateStats.reduce((sum, item) => sum + getMainStock(item.stockBalances), 0),
-        smallStock: dateStats.reduce((sum, item) => sum + getSmallStock(item.stockBalances), 0),
       };
     } else {
       return {
         orderedQuantity: productStats.reduce((sum, item) => sum + item.orderedQuantity, 0),
-        totalStock: productStats.reduce((sum, item) => sum + getTotalStock(item.stockBalances), 0),
-        mainStock: productStats.reduce((sum, item) => sum + getMainStock(item.stockBalances), 0),
-        smallStock: productStats.reduce((sum, item) => sum + getSmallStock(item.stockBalances), 0),
       };
     }
   }, [productStats, dateStats, viewMode]);
-
-  // Форматування розбивки по складах
-  const formatStockBreakdown = (stockBalances: { [warehouse: string]: number }) => {
-    const entries = Object.entries(stockBalances);
-    if (entries.length === 0) return "Немає даних";
-
-    return entries.map(([warehouseId, balance]) => (
-      <Chip
-        key={warehouseId}
-        size="sm"
-        variant="flat"
-        className="mr-1 mb-1"
-      >
-        Склад {warehouseId}: {balance}
-      </Chip>
-    ));
-  };
 
   // Генерація опцій для вибору товару
   const productOptions = useMemo(() => {
@@ -875,7 +830,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       {/* Таблиця */}
       <div className="relative">
         <Table
-          aria-label="Статистика товарів"
+          aria-label="Статистика відвантажених товарів"
           sortDescriptor={sortDescriptor}
           onSortChange={(descriptor) =>
             setSortDescriptor(descriptor as SortDescriptor)
@@ -927,7 +882,11 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
               if (viewMode === "dates") {
                 const dateItem = item as ProductDateStats;
                 return (
-                  <TableRow key={`${selectedProductInfo?.sku || ''}-${dateItem.date}`} className="hover:bg-neutral-50 transition-colors duration-200">
+                  <TableRow 
+                    key={`${selectedProductInfo?.sku || ''}-${dateItem.date}`} 
+                    className="hover:bg-neutral-50 cursor-pointer transition-colors duration-200"
+                    onClick={() => fetchOrdersForProduct(selectedProductInfo?.sku || '', selectedProductInfo?.name || '', dateItem.date)}
+                  >
                     <TableCell className="font-medium text-base">
                       {new Date(dateItem.date).toLocaleDateString('uk-UA', {
                         day: '2-digit',
@@ -948,50 +907,35 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
                         {dateItem.orderedQuantity}
                       </Chip>
                     </TableCell>
-                    <TableCell className="text-center text-base">
-                      <Chip
-                        size="md"
-                        variant="flat"
-                        classNames={{
-                          base: getValueColor(getTotalStock(dateItem.stockBalances), getAllTotalStocks).base,
-                          content: getValueColor(getTotalStock(dateItem.stockBalances), getAllTotalStocks).content,
-                        }}
-                      >
-                        {getTotalStock(dateItem.stockBalances)}
-                      </Chip>
-                    </TableCell>
-                    <TableCell className="text-center text-base">
-                      <Chip
-                        size="md"
-                        variant="flat"
-                        classNames={{
-                          base: getValueColor(getMainStock(dateItem.stockBalances), getAllMainStocks).base,
-                          content: getValueColor(getMainStock(dateItem.stockBalances), getAllMainStocks).content,
-                        }}
-                      >
-                        {getMainStock(dateItem.stockBalances)}
-                      </Chip>
-                    </TableCell>
-                    <TableCell className="text-center text-base">
-                      <Chip
-                        size="md"
-                        variant="flat"
-                        classNames={{
-                          base: getValueColor(getSmallStock(dateItem.stockBalances), getAllSmallStocks).base,
-                          content: getValueColor(getSmallStock(dateItem.stockBalances), getAllSmallStocks).content,
-                        }}
-                      >
-                        {getSmallStock(dateItem.stockBalances)}
-                      </Chip>
-                    </TableCell>
                   </TableRow>
                 );
               } else {
                 const productItem = item as any;
                 return (
-                  <TableRow key={productItem.sku} className="hover:bg-neutral-50 transition-colors duration-200">
-                    <TableCell className="font-medium text-base">{productItem.name}</TableCell>
-                    <TableCell className="font-mono text-base">{productItem.sku}</TableCell>
+                  <TableRow 
+                    key={productItem.sku} 
+                    className="hover:bg-neutral-50 cursor-pointer transition-colors duration-200"
+                    onClick={() => fetchOrdersForProduct(productItem.sku, productItem.name)}
+                  >
+                    <TableCell className="font-medium text-base">
+                      <div className="flex items-center gap-2">
+                        {productItem.name}
+                        <DynamicIcon name="external-link" size={14} className="text-neutral-300" />
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-mono text-base">
+                      <Button 
+                        size="sm" 
+                        variant="light" 
+                        className="font-mono text-base h-auto p-1 min-w-0 text-blue-600 hover:bg-blue-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleProductChange(productItem.sku);
+                        }}
+                      >
+                        {productItem.sku}
+                      </Button>
+                    </TableCell>
                     <TableCell className="text-center text-base">
                       <Chip
                         size="md"
@@ -1002,42 +946,6 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
                         }}
                       >
                         {productItem.orderedQuantity}
-                      </Chip>
-                    </TableCell>
-                    <TableCell className="text-center text-base">
-                      <Chip
-                        size="md"
-                        variant="flat"
-                        classNames={{
-                          base: getValueColor(getTotalStock(productItem.stockBalances), getAllTotalStocks).base,
-                          content: getValueColor(getTotalStock(productItem.stockBalances), getAllTotalStocks).content,
-                        }}
-                      >
-                        {getTotalStock(productItem.stockBalances)}
-                      </Chip>
-                    </TableCell>
-                    <TableCell className="text-center text-base">
-                      <Chip
-                        size="md"
-                        variant="flat"
-                        classNames={{
-                          base: getValueColor(getMainStock(productItem.stockBalances), getAllMainStocks).base,
-                          content: getValueColor(getMainStock(productItem.stockBalances), getAllMainStocks).content,
-                        }}
-                      >
-                        {getMainStock(productItem.stockBalances)}
-                      </Chip>
-                    </TableCell>
-                    <TableCell className="text-center text-base">
-                      <Chip
-                        size="md"
-                        variant="flat"
-                        classNames={{
-                          base: getValueColor(getSmallStock(productItem.stockBalances), getAllSmallStocks).base,
-                          content: getValueColor(getSmallStock(productItem.stockBalances), getAllSmallStocks).content,
-                        }}
-                      >
-                        {getSmallStock(productItem.stockBalances)}
                       </Chip>
                     </TableCell>
                   </TableRow>
@@ -1051,23 +959,14 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
         {((viewMode === "products" && productStats.length > 0) || (viewMode === "dates" && dateStats.length > 0)) && (
           <div className="border-t-1 border-gray-200 py-2">
             <div className="flex items-center justify-between">
-              <div className="font-bold text-gray-800 w-8/16 pl-3">
+              <div className={`font-bold text-gray-800 ${viewMode === "dates" ? "w-12/16" : "w-13/16"} pl-3`}>
                 {viewMode === "dates"
                   ? `Знайдено ${dateStats.length} днів для товару ${selectedProductInfo?.name || selectedProduct}`
                   : `Знайдено ${productStats.length} товарів`
                 }
               </div>
-              <div className="text-center font-bold text-gray-800 min-w-[100px] w-2/16">
+              <div className={`text-center font-bold text-gray-800 min-w-[100px] ${viewMode === "dates" ? "w-4/16" : "w-3/16"}`}>
                 {totals.orderedQuantity}
-              </div>
-              <div className="text-center font-bold text-gray-800 min-w-[100px] w-2/16">
-                {totals.totalStock}
-              </div>
-              <div className="text-center font-bold text-gray-800 min-w-[100px] w-2/16">
-                {totals.mainStock}
-              </div>
-              <div className="text-center font-bold text-gray-800 min-w-[100px] w-2/16">
-                {totals.smallStock}
               </div>
             </div>
           </div>
@@ -1081,7 +980,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
         >
           <div className="flex flex-col items-center">
             <Spinner size="lg" color="primary" />
-            <span className="mt-3 text-gray-700 font-medium">Завантаження даних...</span>
+            <span className="mt-3 text-gray-700 font-medium">Завантаження відвантажень...</span>
           </div>
         </div>
       </div>
@@ -1198,6 +1097,129 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
           </Modal>
         </div>
       </div>
+
+      {/* Модальне вікно з замовленнями для товару */}
+      <Modal
+        isOpen={isOrdersModalOpen}
+        onOpenChange={setIsOrdersModalOpen}
+        size="4xl"
+        scrollBehavior="outside"
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h2>Замовлення для "{selectedProductForModal?.name}" <span className="bg-neutral-200/70 rounded-sm text-sm px-2 py-1">{modalOrders.length}</span></h2>
+                <span className="text-sm font-normal text-neutral-500">
+                  SKU: {selectedProductForModal?.sku}
+                </span>
+              </ModalHeader>
+              <ModalBody>
+                {modalLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Spinner size="lg" color="primary" />
+                    <span className="ml-3 text-gray-600">Завантаження замовлень...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {modalOrders.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                        <DynamicIcon name="inbox" size={48} className="text-gray-300 mb-2" />
+                        <span>Немає замовлень для відображення</span>
+                      </div>
+                    ) : (
+                      <div className="border border-neutral-200 rounded-lg overflow-hidden">
+                        <Table
+                          isHeaderSticky
+                          aria-label="Список замовлень"
+                          classNames={{
+                            wrapper: "min-h-0 max-h-128 overflow-auto p-0",
+                            table: "min-w-full",
+                            th: ["first:rounded-s-none", "last:rounded-e-none", "bg-neutral-50", "text-neutral-600"],
+                          }}
+                        >
+                          <TableHeader>
+                            <TableColumn className="text-sm font-medium">№</TableColumn>
+                            <TableColumn className="text-sm font-medium">Оформлено</TableColumn>
+                            <TableColumn className="text-sm font-medium">Відвантажено</TableColumn>
+                            <TableColumn className="text-sm font-medium">Статус</TableColumn>
+                            <TableColumn className="text-sm font-medium text-center">Порцій</TableColumn>
+                            <TableColumn className="text-sm font-medium text-right">Сума</TableColumn>
+                            <TableColumn className="text-sm font-medium text-center">Дії</TableColumn>
+                          </TableHeader>
+                          <TableBody items={modalOrders}>
+                            {(order) => (
+                              <TableRow key={order.externalId} className="hover:bg-neutral-50 transition-colors duration-200">
+                                <TableCell className="font-medium text-sm">
+                                  {order.orderNumber}
+                                </TableCell>
+                                <TableCell className="text-sm text-neutral-600">
+                                  {new Date(order.orderDate).toLocaleDateString('uk-UA', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+																		hour: '2-digit',
+																		minute: '2-digit',
+                                  })}
+                                </TableCell>
+																<TableCell className="text-sm text-neutral-600">
+                                  {new Date(order.dilovodSaleExportDate).toLocaleDateString('uk-UA', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+																		hour: '2-digit',
+																		minute: '2-digit',
+                                  })}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  <Chip
+                                    size="sm"
+                                    variant="flat"
+                                    className="text-xs"
+                                    classNames={{
+                                      base: getStatusColor(order.status),
+                                    }}
+                                  >
+                                    {order.statusText}
+                                  </Chip>
+                                </TableCell>
+                                <TableCell className="text-center text-sm font-semibold">
+                                  {order.productQuantity}
+                                </TableCell>
+                                <TableCell className="text-right text-sm text-neutral-600">
+                                  {order.totalPrice !== undefined && order.totalPrice !== null
+                                    ? Number(order.totalPrice).toLocaleString('uk-UA', { style: 'currency', currency: 'UAH', maximumFractionDigits: 0 }).replace(/\s?грн\.?|UAH|₴/gi, '')
+                                    : '—'}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <Button
+                                    size="sm"
+                                    variant="light"
+                                    color="primary"
+                                    className="h-8 min-w-0 px-2"
+                                    onPress={() => window.open(`/orders/${order.externalId}`, '_blank')}
+                                  >
+                                    <DynamicIcon name="eye" size={16} />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </ModalBody>
+              <ModalFooter>
+                <Button color="primary" variant="light" onPress={onClose}>
+                  Закрити
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
     </div>
   );
 }

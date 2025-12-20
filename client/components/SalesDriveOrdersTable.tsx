@@ -37,7 +37,7 @@ const SALES_CHANNELS: SalesChannel[] = [
   { id: '31', name: 'інше (менеджер)' },
   { id: '38', name: 'дрібні магазини' },
   { id: '39', name: 'Rozetka (Марія)' },
-  // Канал "19" (nk-food.shop) исключен из SalesDrive экспорта
+  { id: '19', name: 'nk-food.shop' },
 ];
 
 // Функція для отримання класів каналу
@@ -55,7 +55,7 @@ const getChannelClass = (channelId: string): string => {
       return 'bg-red-100 text-red-800 border-red-200';
     case '38': // дрібні магазини
       return 'bg-orange-100 text-orange-800 border-orange-200';
-    case '19': // nk-food.shop (виключений)
+    case '19': // nk-food.shop
       return 'bg-gray-100 text-gray-600 border-gray-200';
     default:
       return 'bg-gray-100 text-gray-600 border-gray-200';
@@ -93,6 +93,11 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   // State для пошуку
   const [search, setSearch] = useState("");
 
+  // State для фільтру каналів (за замовчуванням всі окрім nk-food.shop)
+  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(
+    new Set(SALES_CHANNELS.filter(ch => ch.id !== '19').map(ch => ch.id))
+  );
+
   // Локальний кеш token'ів для sale (отримуємо його після експорту)
   const [saleTokens, setSaleTokens] = useState<Record<string, string>>({});
 
@@ -106,7 +111,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
     // Якщо це канал nk-food.shop (виключений з експорту)
     if (channelId === '19') {
-      return 'nk-food.shop (виключений)';
+      return 'nk-food.shop';
     }
 
     // Якщо канал невідомий
@@ -115,6 +120,16 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
   // Функція для завантаження замовлень
   const fetchOrders = useCallback(async () => {
+    // Якщо не вибрано жодного каналу - не завантажуємо замовлення
+    if (selectedChannels.size === 0) {
+      setOrders([]);
+      setTotalPages(0);
+      setTotalCount(0);
+      setSelectedOrderIds([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const params = new URLSearchParams({
@@ -127,6 +142,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       if (search) {
         params.append('search', search);
       }
+
+      // Додаємо фільтр каналів (завжди передаємо, бо перевірили вище)
+      params.append('channels', Array.from(selectedChannels).join(','));
 
       const response = await apiCall(`/api/dilovod/salesdrive/orders?${params}`);
       const data: SalesDriveOrdersResponse = await response.json();
@@ -154,17 +172,17 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     } finally {
       setLoading(false);
     }
-  }, [page, search]);
+  }, [page, search, selectedChannels]);
 
   // Завантажуємо дані під час монтування та зміни параметрів
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
 
-  // Скидаємо сторінку на 1 при зміні пошуку
+  // Скидаємо сторінку на 1 при зміні пошуку або фільтру каналів
   useEffect(() => {
     setPage(1);
-  }, [search]);
+  }, [search, selectedChannels]);
 
   // Обробка пошуку
   const handleSearchSubmit = () => {
@@ -746,7 +764,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     { key: "orderDate", label: "Дата оформлення", sortable: false },
     { key: "status", label: "Статус", sortable: false },
     { key: "paymentMethod", label: "Оплата", sortable: false },
-    { key: "shippingMethod", label: "Доставка", sortable: false },
+    // { key: "shippingMethod", label: "Доставка", sortable: false },
     { key: "sajt", label: "Канал", sortable: false },
     { key: "dilovodExportDate", label: "Додано в Діловод", sortable: false },
     { key: "actions", label: "Дії", sortable: false }
@@ -760,57 +778,124 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           placeholder="Пошук по номеру, імені або телефону..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          onKeyPress={handleSearchKeyPress}
+          onKeyDown={handleSearchKeyPress}
           onClear={() => setSearch("")}
           isClearable
-          className="max-w-sm"
+          className="max-w-[330px]"
           startContent={<DynamicIcon name="search" size={16} />}
         />
 
-        {/* Масові дії */}
-        <div className="flex items-center gap-2">
-          <Button
-            color="primary"
-            variant="solid"
-            className="font-medium px-4 py-2.5 rounded-md h-auto"
-            startContent={<DynamicIcon name="copy" size={16} />}
-            isDisabled={selectedOrderIds.length === 0}
-            onPress={() => {
-              const selectedOrders = orders.filter(order => selectedOrderIds.includes(String(order.id)));
-              const orderNumbers = getDisplayOrderNumbers(selectedOrders.map(order => order.orderNumber)).join('\n');
-              navigator.clipboard.writeText(orderNumbers);
-              ToastService.show({
-                title: 'Скопійовано',
-                description: `Скопійовано ${selectedOrders.length} номер(ів) замовлень у буфер обміну`,
-                color: 'success'
-              });
+        {/* Фільтр каналів */}
+        <Dropdown placement="bottom-start">
+          <DropdownTrigger>
+            <Button
+              variant="flat"
+              className="font-medium px-4 py-2.5 h-auto rounded-md mr-auto"
+              startContent={<DynamicIcon name="filter" size={16} />}
+            >
+              Канали ({selectedChannels.size})
+            </Button>
+          </DropdownTrigger>
+          <DropdownMenu
+            aria-label="Фільтр каналів"
+            closeOnSelect={false}
+            variant="flat"
+            selectionMode="multiple"
+            selectedKeys={selectedChannels}
+            onSelectionChange={(keys) => {
+              if (keys === 'all') {
+                setSelectedChannels(new Set(SALES_CHANNELS.map(ch => ch.id)));
+              } else {
+                setSelectedChannels(keys as Set<string>);
+              }
             }}
           >
-            Копіювати вибране ({selectedOrderIds.length})
-          </Button>
+            <DropdownSection showDivider dividerProps={{ className: "mt-3 bg-neutral-100" }}>
+              {SALES_CHANNELS.map((channel) => (
+                <DropdownItem
+                  key={channel.id}
+                  textValue={channel.name}
+                  startContent={
+                    <div className={`w-3 h-3 rounded ${getChannelClass(channel.id)}`} />
+                  }
+                >
+                  {channel.name}
+                </DropdownItem>
+              ))}
+            </DropdownSection>
+            <DropdownSection>
+              <DropdownItem
+                key="actions"
+                textValue="Дії з фільтром"
+                className="px-3 pt-2 pb-1 cursor-default !bg-transparent"
+                closeOnSelect={false}
+                isReadOnly
+              >
+                <div className="flex gap-2 justify-between items-center">
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    className="flex-1 h-7"
+                    onPress={() => setSelectedChannels(new Set(SALES_CHANNELS.map(ch => ch.id)))}
+                  >
+                    Вибрати всі
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    color="danger"
+                    className="flex-1 h-7"
+                    onPress={() => setSelectedChannels(new Set())}
+                  >
+                    Скинути всі
+                  </Button>
+                </div>
+              </DropdownItem>
+            </DropdownSection>
+          </DropdownMenu>
+        </Dropdown>
 
-          <Button
-            color="primary"
-            variant="solid"
-            className="font-medium px-4 py-2.5 rounded-md h-auto"
-            startContent={<DynamicIcon name="upload-cloud" size={16} />}
-            onPress={handleBulkExportAndShipment}
-            isDisabled={selectedOrderIds.length === 0}
-          >
-            Масовий експорт + відвантаження ({selectedOrderIds.length})
-          </Button>
-
-          <Button
-            color="primary"
-            variant="solid"
-            className="font-medium px-4 py-2.5 rounded-md h-auto"
-            startContent={<DynamicIcon name="refresh-cw" size={16} />}
-            onPress={handleBulkCheckAndUpdate}
-            isDisabled={selectedOrderIds.length === 0}
-          >
-            Оновити статуси документів ({selectedOrderIds.length})
-          </Button>
-        </div>
+        {/* Масові дії */}
+        <ButtonGroup variant="solid">
+          <Dropdown placement="bottom-end">
+            <DropdownTrigger>
+              <Button
+                color="primary"
+                className="font-medium px-4 py-2.5 h-auto rounded-md"
+                isDisabled={selectedOrderIds.length === 0}
+              >
+                Масові дії <DynamicIcon name="chevron-down" size={16} />
+              </Button>
+            </DropdownTrigger>
+            <DropdownMenu
+              aria-label="Масові операції"
+              onAction={(key) => {
+                if (key === "export") handleBulkExportAndShipment();
+                if (key === "update") handleBulkCheckAndUpdate();
+                if (key === "copy") { copyToClipboard(getDisplayOrderNumbers(selectedOrderIds).join(', ')); }
+              }}
+            >
+              <DropdownItem
+                key="copy"
+                startContent={<DynamicIcon name="copy" size={16} className="shrink-0" />}
+              >
+                Копіювати номери замовлень ({selectedOrderIds.length})
+              </DropdownItem>
+              <DropdownItem
+                key="export"
+                startContent={<DynamicIcon name="upload-cloud" size={16} className="shrink-0" />}
+              >
+                Масовий експорт + відвантаження ({selectedOrderIds.length})
+              </DropdownItem>
+              <DropdownItem
+                key="update"
+                startContent={<DynamicIcon name="refresh-cw" size={16} className="shrink-0" />}
+              >
+                Оновити статуси документів ({selectedOrderIds.length})
+              </DropdownItem>
+            </DropdownMenu>
+          </Dropdown>
+        </ButtonGroup>
       </div>
 
       {/* Таблиця */}
@@ -883,9 +968,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 <TableCell>
                   {order.paymentMethod || 'Не задано'}
                 </TableCell>
-                <TableCell>
+                {/* <TableCell>
                   {order.shippingMethod || 'Не задано'}
-                </TableCell>
+                </TableCell> */}
                 <TableCell>
                   <Chip
                     size="sm"

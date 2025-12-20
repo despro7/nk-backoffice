@@ -614,9 +614,14 @@ export class OrderDatabaseService {
     syncStatus?: string;
     limit?: number;
     offset?: number;
-    sortBy?: 'orderDate' | 'createdAt' | 'lastSynced' | 'orderNumber';
+    sortBy?: 'orderDate' | 'createdAt' | 'lastSynced' | 'orderNumber' | 'dilovodSaleExportDate';
     sortOrder?: 'asc' | 'desc';
     dateRange?: {
+      start: Date;
+      end: Date;
+    };
+    shippedOnly?: boolean;
+    shippedDateRange?: {
       start: Date;
       end: Date;
     };
@@ -653,6 +658,18 @@ export class OrderDatabaseService {
         where.orderDate = {
           gte: filters.dateRange.start,
           lte: filters.dateRange.end
+        };
+      }
+
+      // Добавляем фильтр по дате отгрузки
+      if (filters?.shippedOnly) {
+        where.dilovodSaleExportDate = { not: null };
+      }
+
+      if (filters?.shippedDateRange) {
+        where.dilovodSaleExportDate = {
+          gte: filters.shippedDateRange.start,
+          lte: filters.shippedDateRange.end
         };
       }
 
@@ -700,7 +717,8 @@ export class OrderDatabaseService {
         shippingMethod: true,
         totalPrice: true,
         pricinaZnizki: true,
-        sajt: true
+        sajt: true,
+        dilovodSaleExportDate: true
       };
 
       let select: any;

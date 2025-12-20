@@ -1281,9 +1281,9 @@ router.post('/cache/validate', authenticateToken, async (req, res) => {
  */
 router.get('/products/stats', authenticateToken, async (req, res) => {
   try {
-    const { status, startDate, endDate, sync } = req.query;
+    const { status, startDate, endDate, sync, shippedOnly } = req.query;
 
-    const cacheKey = `stats-products-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}`;
+    const cacheKey = `stats-products-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${shippedOnly || 'false'}`;
     if (sync !== 'true') {
       const cached = statsCache.get(cacheKey);
       if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
@@ -1295,6 +1295,9 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
 
     // Получаем час начала звітного дня
     const dayStartHour = await getReportingDayStartHour();
+    // Для відвантажень використовуємо 00:00 (24-годинний цикл без зміщення), 
+    // щоб 19.12 00:00 - 23:59 потрапляло в 19.12
+    const effectiveDayStartHour = shippedOnly === 'true' ? 24 : dayStartHour;
 
     // Парсим статусы: если строка содержит запятую, разбиваем на массив
     let parsedStatus: string | string[] | undefined = status as string;
@@ -1315,30 +1318,28 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
 
     // Фильтруем по дате если указаны даты (с учетом dayStartHour)
     let dateRangeFilter = undefined;
+    let shippedDateRangeFilter = undefined;
+
     if (startDate && endDate) {
-      // startDate це звітна дата (YYYY-MM-DD)
-      // Звітна дата 18.10 починається з 17.10 16:00:00
-      // Тому віднімаємо один день перед отриманням діапазону
-      const startDateObj = new Date(startDate as string);
-      startDateObj.setDate(startDateObj.getDate() - 1);
-      const startDateString = startDateObj.toISOString().split('T')[0];
-      const { start } = getReportingDateRange(startDateString, dayStartHour);
+      const { start } = getReportingDateRange(startDate as string, effectiveDayStartHour);
+      const { end } = getReportingDateRange(endDate as string, effectiveDayStartHour);
 
-      // endDate це остання звітна дата (YYYY-MM-DD)
-      // Звітна дата 20.10 закінчується 20.10 15:59:59
-      // (наступного дня 16:00 мінус 1 секунда)
-      const { end } = getReportingDateRange(endDate as string, dayStartHour);
-
-      dateRangeFilter = { start, end };
+      if (shippedOnly === 'true') {
+        shippedDateRangeFilter = { start, end };
+      } else {
+        dateRangeFilter = { start, end };
+      }
     }
 
     // Получаем заказы с фильтрами включая дату
     const orders = await orderDatabaseService.getOrders({
       status: parsedStatus,
       limit: 10000, // Увеличиваем лимит для получения большего количества данных
-      sortBy: 'orderDate',
+      sortBy: shippedOnly === 'true' ? 'dilovodSaleExportDate' : 'orderDate',
       sortOrder: 'desc',
-      dateRange: dateRangeFilter
+      dateRange: dateRangeFilter,
+      shippedOnly: shippedOnly === 'true',
+      shippedDateRange: shippedDateRangeFilter
     });
 
     const filteredOrders = orders; // Уже отфильтрованы в БД
@@ -1417,7 +1418,7 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       filters: {
         status: status || 'all',
         dateRange: startDate && endDate ? { startDate, endDate } : null,
-        dayStartHour
+        dayStartHour: effectiveDayStartHour
       }
     });
 
@@ -1428,8 +1429,9 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
         source: 'local_database',
         filters: {
           status: status || 'all',
+          shippedOnly: shippedOnly === 'true',
           dateRange: startDate && endDate ? { startDate, endDate } : null,
-          dayStartHour
+          dayStartHour: effectiveDayStartHour
         },
         totalProducts: productStatsArray.length,
         totalOrders: filteredOrders.length,
@@ -1451,15 +1453,94 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
 });
 
 /**
+ * GET /api/orders/products/orders
+ * Отримати список замовлень, що містять конкретний товар
+ */
+router.get('/products/orders', authenticateToken, async (req, res) => {
+  try {
+    const { sku, status, startDate, endDate, shippedOnly } = req.query;
+
+    if (!sku) {
+      return res.status(400).json({ success: false, error: 'SKU is required' });
+    }
+
+    const dayStartHour = await getReportingDayStartHour();
+    const effectiveDayStartHour = shippedOnly === 'true' ? 24 : dayStartHour;
+
+    let parsedStatus: string | string[] | undefined = status as string;
+    if (typeof status === 'string' && status.includes(',')) {
+      parsedStatus = status.split(',').map(s => s.trim());
+    }
+
+    let dateRangeFilter = undefined;
+    let shippedDateRangeFilter = undefined;
+
+    if (startDate && endDate) {
+      const { start } = getReportingDateRange(startDate as string, effectiveDayStartHour);
+      const { end } = getReportingDateRange(endDate as string, effectiveDayStartHour);
+
+      if (shippedOnly === 'true') {
+        shippedDateRangeFilter = { start, end };
+      } else {
+        dateRangeFilter = { start, end };
+      }
+    }
+
+    const orders = await orderDatabaseService.getOrders({
+      status: parsedStatus,
+      limit: 1000,
+      sortBy: shippedOnly === 'true' ? 'dilovodSaleExportDate' : 'orderDate',
+      sortOrder: 'asc',
+      dateRange: dateRangeFilter,
+      shippedOnly: shippedOnly === 'true',
+      shippedDateRange: shippedDateRangeFilter,
+      includeItems: true
+    });
+
+    // Фільтруємо замовлення, що містять SKU, та витягуємо кількість для цього SKU
+    const filteredOrders = orders.filter(order => {
+      let items = [];
+      if (typeof order.items === 'string') {
+        try { items = JSON.parse(order.items); } catch (e) { return false; }
+      } else if (Array.isArray(order.items)) {
+        items = order.items;
+      }
+      
+      const item = items.find((i: any) => i.sku === sku);
+      if (item) {
+        (order as any).productQuantity = item.orderedQuantity || item.quantity || 0;
+        return true;
+      }
+      return false;
+    });
+
+    res.json({
+      success: true,
+      data: filteredOrders,
+      metadata: {
+        totalOrders: filteredOrders.length,
+        sku
+      }
+    });
+  } catch (error) {
+    console.error('Error getting product orders:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+/**
  * GET /api/orders/products/stats/dates
  * Получить статистику по конкретному товару с разбивкой по датам
  */
 router.get('/products/stats/dates', authenticateToken, async (req, res) => {
   try {
-    const { sku, status, startDate, endDate, sync } = req.query;
+    const { sku, status, startDate, endDate, sync, shippedOnly } = req.query;
 
     // Получаем час начала звітного дня
     const dayStartHour = await getReportingDayStartHour();
+    // Для відвантажень використовуємо 00:00 (24-годинний цикл без зміщення), 
+    // щоб 19.12 00:00 - 23:59 потрапляло в 19.12
+    const effectiveDayStartHour = shippedOnly === 'true' ? 24 : dayStartHour;
 
     // Парсим статусы: если строка содержит запятую, разбиваем на массив
     let parsedStatus: string | string[] | undefined = status as string;
@@ -1486,30 +1567,28 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
 
     // Фильтруем по дате если указаны даты (с учетом dayStartHour)
     let dateRangeFilter = undefined;
+    let shippedDateRangeFilter = undefined;
+
     if (startDate && endDate) {
-      // startDate це звітна дата (YYYY-MM-DD)
-      // Звітна дата 18.10 починається з 17.10 16:00:00
-      // Тому віднімаємо один день перед отриманням діапазону
-      const startDateObj = new Date(startDate as string);
-      startDateObj.setDate(startDateObj.getDate() - 1);
-      const startDateString = startDateObj.toISOString().split('T')[0];
-      const { start } = getReportingDateRange(startDateString, dayStartHour);
+      const { start } = getReportingDateRange(startDate as string, effectiveDayStartHour);
+      const { end } = getReportingDateRange(endDate as string, effectiveDayStartHour);
 
-      // endDate це остання звітна дата (YYYY-MM-DD)
-      // Звітна дата 20.10 закінчується 20.10 15:59:59
-      // (наступного дня 16:00 мінус 1 секунда)
-      const { end } = getReportingDateRange(endDate as string, dayStartHour);
-
-      dateRangeFilter = { start, end };
+      if (shippedOnly === 'true') {
+        shippedDateRangeFilter = { start, end };
+      } else {
+        dateRangeFilter = { start, end };
+      }
     }
 
     // Получаем заказы с фильтрами включая дату
     const orders = await orderDatabaseService.getOrders({
       status: parsedStatus,
       limit: 10000, // Увеличиваем лимит для получения большего количества данных
-      sortBy: 'orderDate',
+      sortBy: shippedOnly === 'true' ? 'dilovodSaleExportDate' : 'orderDate',
       sortOrder: 'asc', // Для корректной последовательности дат
-      dateRange: dateRangeFilter
+      dateRange: dateRangeFilter,
+      shippedOnly: shippedOnly === 'true',
+      shippedDateRange: shippedDateRangeFilter
     });
 
     const filteredOrders = orders; // Уже отфильтрованы в БД
@@ -1533,7 +1612,12 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
             const productItem = cachedStats.find(item => item && item.sku === sku);
             if (productItem) {
               // Используем звітну дату вместо простой даты
-              const reportingDate = getReportingDate(order.orderDate, dayStartHour);
+              // Если shippedOnly=true, используем dilovodSaleExportDate для определения отчетной даты
+              const dateToUse = (shippedOnly === 'true' && order.dilovodSaleExportDate)
+                ? new Date(order.dilovodSaleExportDate)
+                : order.orderDate;
+
+              const reportingDate = getReportingDate(dateToUse, effectiveDayStartHour);
 
               if (dateStats[reportingDate]) {
                 dateStats[reportingDate].orderedQuantity += productItem.orderedQuantity || 0;
@@ -1585,7 +1669,7 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
         sku,
         status: status || 'all',
         dateRange: startDate && endDate ? { startDate, endDate } : null,
-        dayStartHour
+        dayStartHour: effectiveDayStartHour
       }
     });
 
@@ -1598,8 +1682,9 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
         filters: {
           sku,
           status: status || 'all',
+          shippedOnly: shippedOnly === 'true',
           dateRange: startDate && endDate ? { startDate, endDate } : null,
-          dayStartHour
+          dayStartHour: effectiveDayStartHour
         },
         totalDates: dateStatsArray.length,
         totalOrders: filteredOrders.length,
@@ -2047,7 +2132,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
     // Фильтруем по дате (с учетом dayStartHour)
     let start: Date, end: Date;
 
-    if (singleDay === 'true' && startDate === endDate) {
+    if (startDate === endDate) {
       // Для однієї дати: startDate це календарна дата, треба знайти правильний звітний день
       // Календарна дата 16.10 може належати до звітного дня 16.10 або 17.10 залежно від часу
       // Оскільки користувач вибрав 16.10, він хоче бачити дані за 16.10 як звітний день
