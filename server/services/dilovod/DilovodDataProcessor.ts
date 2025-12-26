@@ -351,8 +351,10 @@ export class DilovodDataProcessor {
           mappedCategoryId = 20;
         } else if (normalizedName.includes('напій') || normalizedName.includes('напої')) {
           mappedCategoryId = 33;
-        } else if (normalizedName.includes('інгрідієнт') || normalizedName.includes('інгредієнт')) {
-          mappedCategoryId = 14;
+        } else if (normalizedName.includes('основи') || normalizedName.includes('інгредієнт')) {
+          mappedCategoryId = 35;
+        } else if (normalizedName.includes('м\'ясн')) {
+          mappedCategoryId = 34;
         }
       }
 
