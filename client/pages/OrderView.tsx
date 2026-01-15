@@ -190,7 +190,10 @@ export default function OrderView() {
         ...box,
         boxIndex: index,
         portionsRange: boxesInfo.boxPortionsRanges[index],
-        portionsPerBox: boxesInfo.portionsPerBox
+        // Використовуємо індивідуальний розподіл, якщо він є
+        portionsPerBox: boxesInfo.portionsDistribution 
+          ? boxesInfo.portionsDistribution[index]  // Індивідуальна кількість для кожної коробки
+          : boxesInfo.portionsPerBox                // Fallback на загальний
       }));
     }
 

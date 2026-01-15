@@ -285,8 +285,7 @@ export const combineBoxesWithItems = (
 
   // Якщо є коробки, розділяємо товари по коробках
   if (boxes.length > 1 && boxes[0].portionsPerBox && boxes[0].portionsPerBox > 0) {
-    // Розділяємо товари по коробках згідно portionsPerBox з урахуванням ваги (макс 15 кг)
-    const portionsPerBox = boxes[0].portionsPerBox;
+    // Розділяємо товари по коробках з урахуванням індивідуальних лімітів та ваги (макс 15 кг)
     const MAX_BOX_WEIGHT = 15; // Максимальна вага коробки в кг
 
     const productItems: OrderChecklistItem[] = [];
@@ -301,7 +300,9 @@ export const combineBoxesWithItems = (
       let partIndex = 0; // Для унікальності id при розділенні товару
 
       while (remaining > 0) {
-        const freeSpace = portionsPerBox - currentBoxPortions;
+        // Використовуємо індивідуальний ліміт для поточної коробки
+        const currentBoxLimit = boxes[currentBoxIndex].portionsPerBox || 0;
+        const freeSpace = currentBoxLimit - currentBoxPortions;
         const currentBoxWeight = boxWeights[currentBoxIndex];
         const itemWeightPerUnit = item.expectedWeight / item.quantity;
 
@@ -357,7 +358,8 @@ export const combineBoxesWithItems = (
         partIndex++;
 
         // Якщо коробка заповнилась або досягла вагового ліміту — переходимо до наступної
-        const isBoxFull = currentBoxPortions >= portionsPerBox;
+        const boxLimit = boxes[currentBoxIndex].portionsPerBox || 0;
+        const isBoxFull = currentBoxPortions >= boxLimit;
         const isWeightLimitReached = boxWeights[currentBoxIndex] >= MAX_BOX_WEIGHT;
 
         if ((isBoxFull || isWeightLimitReached) && currentBoxIndex < boxes.length - 1 && remaining > 0) {
