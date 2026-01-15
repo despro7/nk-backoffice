@@ -40,6 +40,10 @@ export default function OrderView() {
   const [selectedBoxes, setSelectedBoxes] = useState<any[]>([]);
   const [boxesTotalWeight, setBoxesTotalWeight] = useState<number>(0);
   const [activeBoxIndex, setActiveBoxIndex] = useState<number>(0);
+  
+  // Стан нерозподілених порцій
+  const [unallocatedPortions, setUnallocatedPortions] = useState<number>(0);
+  const [unallocatedItems, setUnallocatedItems] = useState<Array<{ name: string; quantity: number }>>([]);
 
   // Стан замовлення
   const [isReadyToShip, setIsReadyToShip] = useState(false);
@@ -204,9 +208,11 @@ export default function OrderView() {
     // Використовуємо checklistItems якщо вони є (зі збереженням статусів), інакше expandedItems
     const currentItems = checklistItems.length > 0 ? checklistItems : expandedItems;
     const itemsWithoutBoxes = currentItems.filter(item => item.type !== 'box');
-    const combinedItems = combineBoxesWithItems(updatedBoxes, itemsWithoutBoxes, isReadyToShip, boxInitialStatus);
+    const combined = combineBoxesWithItems(updatedBoxes, itemsWithoutBoxes, isReadyToShip, boxInitialStatus);
 
-    setChecklistItems(combinedItems);
+    setChecklistItems(combined.checklistItems);
+    setUnallocatedPortions(combined.unallocatedPortions);
+    setUnallocatedItems(combined.unallocatedItems);
   }, [expandedItems, checklistItems, isReadyToShip]);
 
   // Функція для встановлення статусу awaiting_confirmation для коробки
@@ -256,16 +262,20 @@ export default function OrderView() {
           if (selectedBoxes.length > 0) {
             // console.log('📦 selectedBoxes.length > 0, викликаємо combineBoxesWithItems');
             const itemsWithoutBoxes = processedItems.filter(item => item.type !== 'box');
-            const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, orderIsReadyToShip, boxInitialStatus);
+            const combined = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, orderIsReadyToShip, boxInitialStatus);
 
-            if (combinedItems && combinedItems.length > 0) {
+            if (combined && combined.checklistItems.length > 0) {
               // console.log('📦 Встановлюємо combinedItems:', 
-              //   combinedItems.map(item => ({ name: item.name, type: item.type, status: item.status }))
+              //   combined.checklistItems.map(item => ({ name: item.name, type: item.type, status: item.status }))
               // );
-              setChecklistItems(combinedItems);
+              setChecklistItems(combined.checklistItems);
+              setUnallocatedPortions(combined.unallocatedPortions);
+              setUnallocatedItems(combined.unallocatedItems);
             } else {
               // console.log('📦 combinedItems порожній, встановлюємо processedItems');
               setChecklistItems(processedItems);
+              setUnallocatedPortions(0);
+              setUnallocatedItems([]);
             }
           } else {
             // console.log('📦 selectedBoxes порожній, встановлюємо processedItems напряму');
@@ -287,15 +297,21 @@ export default function OrderView() {
 
           if (selectedBoxes.length > 0) {
             const itemsWithoutBoxes = fallbackItems.filter(item => item.type !== 'box');
-            const combinedItems = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, isReadyToShipFallback, boxInitialStatus);
+            const combined = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, isReadyToShipFallback, boxInitialStatus);
 
-            if (combinedItems && combinedItems.length > 0) {
-              setChecklistItems(combinedItems);
+            if (combined && combined.checklistItems.length > 0) {
+              setChecklistItems(combined.checklistItems);
+              setUnallocatedPortions(combined.unallocatedPortions);
+              setUnallocatedItems(combined.unallocatedItems);
             } else {
               setChecklistItems(fallbackItems);
+              setUnallocatedPortions(0);
+              setUnallocatedItems([]);
             }
           } else {
             setChecklistItems(fallbackItems);
+            setUnallocatedPortions(0);
+            setUnallocatedItems([]);
           }
 
           if (isReadyToShipFallback) {
@@ -345,6 +361,13 @@ export default function OrderView() {
     expandedItems.reduce((sum, item) => sum + item.quantity, 0),
     [expandedItems]
   );
+  
+  // Обчислюємо середню вагу порції для більш точного розподілу по коробках
+  const averagePortionWeight = useMemo(() => {
+    if (expandedItems.length === 0 || totalPortions === 0) return 0.33;
+    const totalWeight = expandedItems.reduce((sum, item) => sum + item.expectedWeight, 0);
+    return totalWeight / totalPortions;
+  }, [expandedItems, totalPortions]);
 
   const orderForAssembly = {
     id: externalId,
@@ -423,7 +446,38 @@ export default function OrderView() {
               <p className="text-sm text-gray-500 mt-2">Це може зайняти кілька секунд</p>
             </div>
           ) : (
-            <ErrorBoundary>
+            <>
+              {/* Попередження про нерозподілені порції */}
+              {unallocatedPortions > 0 && (
+                <div className="bg-red-50 border-2 border-red-500 rounded-lg p-4 mb-4 shadow-lg">
+                  <div className="flex items-start gap-3">
+                    <DynamicIcon name="alert-triangle" size={24} className="text-red-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <h3 className="text-lg font-bold text-red-900 mb-2">
+                        ⚠️ Критична помилка розподілу товарів
+                      </h3>
+                      <p className="text-red-800 font-semibold mb-2">
+                        Не всі товари поміщаються в обрані коробки! Відсутні <strong>{unallocatedPortions} порцій</strong>.
+                      </p>
+                      <div className="bg-white border border-red-300 rounded p-3 mt-2">
+                        <p className="text-sm font-semibold text-red-900 mb-1">Товари, що не поміститься:</p>
+                        <ul className="list-disc list-inside text-sm text-red-800 space-y-1">
+                          {unallocatedItems.map((item, index) => (
+                            <li key={index}>
+                              <strong>{item.name}</strong> — {item.quantity} порцій
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <p className="text-sm text-red-700 mt-3">
+                        <strong>Рішення:</strong> Додайте більше коробок або оберіть коробки більшої місткості.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <ErrorBoundary>
               <OrderChecklist
                 key={`checklist-${equipmentState.config?.scale?.connectionStrategy}`}
                 items={checklistItems}
@@ -454,12 +508,14 @@ export default function OrderView() {
                 showNoMoreOrders={showNoMoreOrders}
               />
             </ErrorBoundary>
+            </>
           )}
         </div>
 
         {/* Права колонка - Панель керування */}
         <OrderAssemblyRightPanel
           orderForAssembly={orderForAssembly}
+          averagePortionWeight={averagePortionWeight}
           getWeightData={getWeightData}
           handleWeightChange={handleWeightChange}
           isWeightWidgetActive={isWeightWidgetActive}

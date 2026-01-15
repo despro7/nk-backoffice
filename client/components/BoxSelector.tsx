@@ -8,6 +8,7 @@ import { LoggingService } from '../services/LoggingService';
 
 interface BoxSelectorProps {
   totalPortions: number;
+  averagePortionWeight?: number; // Середня вага порції в кг
   onBoxesChange: (boxes: SettingsBoxes[], totalWeight: number, boxesInfo?: any) => void;
   onActiveBoxChange?: (activeBoxIndex: number) => void;
   activeBoxIndex: number; // Додаємо activeBoxIndex як prop
@@ -16,6 +17,7 @@ interface BoxSelectorProps {
 
 export const BoxSelector: React.FC<BoxSelectorProps> = ({
   totalPortions,
+  averagePortionWeight = 0.33, // За замовчуванням 330г
   onBoxesChange,
   onActiveBoxChange,
   activeBoxIndex,
@@ -39,30 +41,68 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
   // Мемоізуємо функцію onBoxesChange щоб уникнути нескінченного циклу
   const memoizedOnBoxesChange = useCallback(onBoxesChange, []);
 
-  // Розумний розподіл порцій по коробках з урахуванням лімітів qntFrom/qntTo
+  // Розумний розподіл порцій по коробках з урахуванням лімітів qntFrom/qntTo та ваги
   const distributePortionsAcrossBoxes = useCallback((
     portions: number,
-    boxesList: SettingsBoxes[]
+    boxesList: SettingsBoxes[],
+    avgPortionWeight: number
   ): number[] => {
     if (boxesList.length === 0) return [];
     if (boxesList.length === 1) return [portions];
+    
+    const MAX_BOX_WEIGHT = 15; // Максимальна вага коробки в кг
     
     // Перевіряємо, чи всі коробки однакові
     const uniqueBoxes = new Set(boxesList.map(b => b.id));
     const areAllSameType = uniqueBoxes.size === 1;
     
     if (!areAllSameType) {
-      // Різні типи коробок - рівномірний розподіл
-      const evenSplit = Math.ceil(portions / boxesList.length);
-      return boxesList.map((_, index) => 
-        index === boxesList.length - 1 
-          ? portions - (evenSplit * (boxesList.length - 1))
-          : evenSplit
-      );
+      // Різні типи коробок - рівномірний розподіл з урахуванням ваги
+      const distribution: number[] = [];
+      let remaining = portions;
+      
+      for (let i = 0; i < boxesList.length; i++) {
+        const box = boxesList[i];
+        const boxSelfWeight = Number(box.self_weight || box.weight || 0);
+        const availableWeight = MAX_BOX_WEIGHT - boxSelfWeight;
+        const maxByWeight = Math.floor(availableWeight / avgPortionWeight);
+        const maxByCapacity = box.qntTo;
+        
+        // Беремо менше з двох лімітів
+        const maxForThisBox = Math.min(maxByWeight, maxByCapacity);
+        const toAdd = Math.min(remaining, maxForThisBox);
+        
+        distribution.push(toAdd);
+        remaining -= toAdd;
+      }
+      
+      // Якщо залишилися порції - розподіляємо по останніх коробках
+      if (remaining > 0) {
+        for (let i = boxesList.length - 1; i >= 0 && remaining > 0; i--) {
+          const box = boxesList[i];
+          const boxSelfWeight = Number(box.self_weight || box.weight || 0);
+          const currentWeight = boxSelfWeight + (distribution[i] * avgPortionWeight);
+          const availableWeight = MAX_BOX_WEIGHT - currentWeight;
+          const canAddByWeight = Math.floor(availableWeight / avgPortionWeight);
+          const canAddByCapacity = box.qntTo - distribution[i];
+          const canAdd = Math.min(canAddByWeight, canAddByCapacity);
+          
+          const toAdd = Math.min(canAdd, remaining);
+          distribution[i] += toAdd;
+          remaining -= toAdd;
+        }
+      }
+      
+      return distribution;
     }
     
     // Всі коробки однакові - беремо ліміти першої
     const { qntFrom, qntTo } = boxesList[0];
+    const boxSelfWeight = Number(boxesList[0].self_weight || boxesList[0].weight || 0);
+    
+    // Розраховуємо оптимальний розподіл з урахуванням ваги
+    const maxByWeight = Math.floor((MAX_BOX_WEIGHT - boxSelfWeight) / avgPortionWeight);
+    const effectiveMax = Math.min(maxByWeight, qntTo);
     
     // Базовий розподіл
     const basePerBox = Math.floor(portions / boxesList.length);
@@ -81,33 +121,40 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
       }
       
       // Для першої коробки віднімаємо запас (2 порції) для вагових коректувань
+      // але тільки якщо це не призведе до того, що порції не поміщаються
       if (i === 0 && boxesList.length > 1 && boxPortions > qntFrom + 2) {
-        boxPortions -= 2;
+        const potentialReduction = boxPortions - 2;
+        // Перевіряємо, чи поміститься все у решту коробок
+        const remainingPortions = portions - potentialReduction;
+        const remainingBoxes = boxesList.length - 1;
+        const maxInRemainingBoxes = remainingBoxes * effectiveMax;
+        
+        if (remainingPortions <= maxInRemainingBoxes) {
+          boxPortions -= 2;
+        }
       }
       
-      // Обмежуємо лімітами коробки
-      boxPortions = Math.max(qntFrom, Math.min(boxPortions, qntTo));
+      // Обмежуємо лімітами коробки (з урахуванням ваги)
+      boxPortions = Math.max(qntFrom, Math.min(boxPortions, effectiveMax));
       
       distribution.push(boxPortions);
       distributed += boxPortions;
     }
     
-    // Якщо не вистачає - додаємо до останньої коробки (вона має найбільше місця)
+    // Якщо не вистачає - додаємо до останніх коробок з перевіркою ваги
     const shortfall = portions - distributed;
     if (shortfall > 0) {
-      const lastIndex = boxesList.length - 1;
-      
-      if (distribution[lastIndex] + shortfall <= qntTo) {
-        distribution[lastIndex] += shortfall;
-      } else {
-        // Розподіляємо різницю по всіх коробках (крім першої з запасом)
-        let remaining = shortfall;
-        for (let i = boxesList.length - 1; i >= 0 && remaining > 0; i--) {
-          const canAdd = qntTo - distribution[i];
-          const toAdd = Math.min(canAdd, remaining);
-          distribution[i] += toAdd;
-          remaining -= toAdd;
-        }
+      for (let i = boxesList.length - 1; i >= 0 && distributed < portions; i--) {
+        const currentInBox = distribution[i];
+        const currentWeight = boxSelfWeight + (currentInBox * avgPortionWeight);
+        const availableWeight = MAX_BOX_WEIGHT - currentWeight;
+        const canAddByWeight = Math.floor(availableWeight / avgPortionWeight);
+        const canAddByCapacity = effectiveMax - currentInBox;
+        const canAdd = Math.min(canAddByWeight, canAddByCapacity);
+        
+        const toAdd = Math.min(canAdd, portions - distributed);
+        distribution[i] += toAdd;
+        distributed += toAdd;
       }
     }
     
@@ -147,8 +194,8 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
   const notifyBoxesChange = useCallback((newSelectedBoxes: SettingsBoxes[]) => {
     const totalWeight = newSelectedBoxes.reduce((sum, b) => sum + Number(b.weight), 0);
     
-    // Розумний розподіл порцій по коробках
-    const portionsDistribution = distributePortionsAcrossBoxes(totalPortions, newSelectedBoxes);
+    // Розумний розподіл порцій по коробках з урахуванням ваги
+    const portionsDistribution = distributePortionsAcrossBoxes(totalPortions, newSelectedBoxes, averagePortionWeight);
     
     // Розраховуємо діапазони для кожної коробки
     const boxPortionsRanges = [];
@@ -173,7 +220,7 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
     };
     
     memoizedOnBoxesChange(newSelectedBoxes, totalWeight, boxesInfo);
-  }, [memoizedOnBoxesChange, totalPortions, activeBoxIndex, distributePortionsAcrossBoxes]);
+  }, [memoizedOnBoxesChange, totalPortions, activeBoxIndex, distributePortionsAcrossBoxes, averagePortionWeight]);
 
   // Завантажуємо рекомендації
   const fetchRecommendations = useCallback(async (portions: number) => {
@@ -194,8 +241,8 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
         // Передаємо recommendedBoxes напряму, а не через стан
         const totalWeight = recommendedBoxes.reduce((sum, b) => sum + Number(b.weight), 0);
         
-        // Розумний розподіл порцій по коробках
-        const portionsDistribution = distributePortionsAcrossBoxes(portions, recommendedBoxes);
+        // Розумний розподіл порцій по коробках з урахуванням ваги
+        const portionsDistribution = distributePortionsAcrossBoxes(portions, recommendedBoxes, averagePortionWeight);
         
         // Розраховуємо діапазони для кожної коробки
         const boxPortionsRanges = [];

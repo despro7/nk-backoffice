@@ -256,16 +256,21 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
  * @param items - Масив товарів
  * @param isReadyToShip - Чи замовлення готове до відправлення
  * @param boxInitialStatus - Початковий статус коробки (за замовчуванням 'default')
+ * @returns Масив елементів чек-листа та інформацію про нерозподілені порції
  */
 export const combineBoxesWithItems = (
   boxes: any[], 
   items: OrderChecklistItem[], 
   isReadyToShip: boolean = false,
   boxInitialStatus: 'default' | 'pending' | 'awaiting_confirmation' = 'default'
-): OrderChecklistItem[] => {
+): { checklistItems: OrderChecklistItem[]; unallocatedPortions: number; unallocatedItems: Array<{ name: string; quantity: number }> } => {
   // Перевіряємо, що у нас є валідні коробки
   if (!boxes || boxes.length === 0) {
-    return items;
+    return {
+      checklistItems: items,
+      unallocatedPortions: 0,
+      unallocatedItems: []
+    };
   }
 
   // Створюємо унікальні коробки, уникаючи дублювання
@@ -285,92 +290,151 @@ export const combineBoxesWithItems = (
 
   // Якщо є коробки, розділяємо товари по коробках
   if (boxes.length > 1 && boxes[0].portionsPerBox && boxes[0].portionsPerBox > 0) {
-    // Розділяємо товари по коробках з урахуванням індивідуальних лімітів та ваги (макс 15 кг)
+    // НОВИЙ АЛГОРИТМ: збалансований розподіл з урахуванням ваги
     const MAX_BOX_WEIGHT = 15; // Максимальна вага коробки в кг
-
+    
     const productItems: OrderChecklistItem[] = [];
-
-    let currentBoxIndex = 0;
-    let currentBoxPortions = 0;
-    // Відстежуємо поточну вагу кожної коробки (вага коробки + вага товарів)
-    const boxWeights = boxes.map(box => Number(box.self_weight || box.weight || 0));
-
-    for (const item of items) {
+    
+    // Трекінг нерозподілених порцій
+    const unallocatedItems: Array<{ name: string; quantity: number }> = [];
+    let totalUnallocated = 0;
+    
+    // Ініціалізуємо стан кожної коробки
+    const boxStates = boxes.map((box, index) => ({
+      index,
+      portionsCount: 0,
+      currentWeight: Number(box.self_weight || box.weight || 0),
+      limit: box.portionsPerBox || 0
+    }));
+    
+    // Сортуємо товари за вагою (важкі спочатку) для кращого балансування
+    const sortedItems = [...items].sort((a, b) => {
+      const weightA = a.expectedWeight / a.quantity;
+      const weightB = b.expectedWeight / b.quantity;
+      return weightB - weightA;
+    });
+    
+    // Розподіляємо кожен товар по коробках збалансовано
+    for (const item of sortedItems) {
+      const itemWeightPerUnit = item.expectedWeight / item.quantity;
       let remaining = item.quantity;
-      let partIndex = 0; // Для унікальності id при розділенні товару
-
+      let partIndex = 0;
+      let itemUnallocated = 0;
+      
+      // Для важких товарів (>0.4 кг) намагаємось розділити по різних коробках
+      const isHeavyItem = itemWeightPerUnit > 0.4;
+      const shouldDistribute = isHeavyItem && remaining >= boxes.length && boxes.length > 1;
+      
+      if (shouldDistribute) {
+        // Розділяємо важкий товар порівну по всіх коробках
+        const portionsPerBox = Math.floor(remaining / boxes.length);
+        const remainder = remaining % boxes.length;
+        
+        for (let boxIdx = 0; boxIdx < boxes.length && remaining > 0; boxIdx++) {
+          const boxState = boxStates[boxIdx];
+          let toAddToThisBox = portionsPerBox + (boxIdx < remainder ? 1 : 0);
+          
+          // Перевіряємо ліміти коробки
+          const freeSpace = boxState.limit - boxState.portionsCount;
+          const availableWeight = MAX_BOX_WEIGHT - boxState.currentWeight;
+          const maxByWeight = Math.floor(availableWeight / itemWeightPerUnit);
+          
+          toAddToThisBox = Math.min(toAddToThisBox, freeSpace, maxByWeight);
+          
+          if (toAddToThisBox > 0) {
+            productItems.push({
+              ...item,
+              id: `product_${boxIdx}_${item.id}${partIndex > 0 ? `_part${partIndex}` : ''}`,
+              type: 'product' as const,
+              quantity: toAddToThisBox,
+              expectedWeight: itemWeightPerUnit * toAddToThisBox,
+              boxIndex: boxIdx
+            });
+            
+            boxState.portionsCount += toAddToThisBox;
+            boxState.currentWeight += itemWeightPerUnit * toAddToThisBox;
+            remaining -= toAddToThisBox;
+            partIndex++;
+          }
+        }
+        
+        // Якщо після розподілу по всіх коробках щось залишилось - продовжуємо в while
+        // Якщо все розподілено - пропускаємо while блок
+      }
+      
+      // Решту (або весь товар, якщо він легкий) розподіляємо послідовно, шукаючи найлегшу коробку
       while (remaining > 0) {
-        // Використовуємо індивідуальний ліміт для поточної коробки
-        const currentBoxLimit = boxes[currentBoxIndex].portionsPerBox || 0;
-        const freeSpace = currentBoxLimit - currentBoxPortions;
-        const currentBoxWeight = boxWeights[currentBoxIndex];
-        const itemWeightPerUnit = item.expectedWeight / item.quantity;
-
-        // Якщо немає вільного місця в поточній коробці, переходимо до наступної
-        if (freeSpace === 0) {
-          if (currentBoxIndex < boxes.length - 1) {
-            currentBoxIndex++;
-            currentBoxPortions = 0;
-            continue;
-          } else {
-            // Остання коробка заповнена, додаємо решту в неї
-            break;
-          }
+        // Знаходимо коробку з найменшою вагою і вільним місцем
+        const availableBoxes = boxStates.filter(box => 
+          box.portionsCount < box.limit && 
+          (MAX_BOX_WEIGHT - box.currentWeight) >= itemWeightPerUnit
+        );
+        
+        if (availableBoxes.length === 0) {
+          // Немає доступних коробок - фіксуємо нерозподілені порції
+          console.warn(`⚠️ Не вдалося розподілити ${remaining} порцій товару "${item.name}"`);
+          itemUnallocated = remaining;
+          totalUnallocated += remaining;
+          break;
         }
-
-        // Розраховуємо скільки можна додати з урахуванням ваги
-        let toAdd = Math.min(remaining, freeSpace);
-        const weightIfAdded = currentBoxWeight + (itemWeightPerUnit * toAdd);
-
-        // Якщо додавання призведе до перевищення 15 кг, зменшуємо кількість
-        if (weightIfAdded > MAX_BOX_WEIGHT) {
-          const maxByWeight = Math.floor((MAX_BOX_WEIGHT - currentBoxWeight) / itemWeightPerUnit);
-          if (maxByWeight > 0) {
-            toAdd = Math.min(toAdd, maxByWeight);
-          } else {
-            // Не поміщається зовсім - переходимо до наступної коробки
-            if (currentBoxIndex < boxes.length - 1) {
-              currentBoxIndex++;
-              currentBoxPortions = 0;
-              continue;
-            } else {
-              // Остання коробка, додаємо що можна
-              toAdd = Math.min(toAdd, Math.floor((MAX_BOX_WEIGHT - currentBoxWeight) / itemWeightPerUnit));
-              if (toAdd <= 0) break;
-            }
-          }
+        
+        // Сортуємо за вагою (найлегша спочатку)
+        availableBoxes.sort((a, b) => a.currentWeight - b.currentWeight);
+        const targetBox = availableBoxes[0];
+        
+        // Розраховуємо скільки можна додати
+        const freeSpace = targetBox.limit - targetBox.portionsCount;
+        const availableWeight = MAX_BOX_WEIGHT - targetBox.currentWeight;
+        const maxByWeight = Math.floor(availableWeight / itemWeightPerUnit);
+        const toAdd = Math.min(remaining, freeSpace, maxByWeight);
+        
+        if (toAdd <= 0) {
+          // Не можемо додати - фіксуємо нерозподілені порції
+          console.warn(`⚠️ Не вдалося розподілити ${remaining} порцій товару "${item.name}" - ліміти вичерпані`);
+          itemUnallocated = remaining;
+          totalUnallocated += remaining;
+          break;
         }
-
-        // Додаємо частину товару (або весь товар, якщо він поміщається)
+        
         productItems.push({
           ...item,
-          id: `product_${currentBoxIndex}_${item.id}${partIndex > 0 ? `_part${partIndex}` : ''}`,
+          id: `product_${targetBox.index}_${item.id}${partIndex > 0 ? `_part${partIndex}` : ''}`,
           type: 'product' as const,
           quantity: toAdd,
-          expectedWeight: itemWeightPerUnit * toAdd, // Пропорційно розподіляємо вагу
-          boxIndex: currentBoxIndex
+          expectedWeight: itemWeightPerUnit * toAdd,
+          boxIndex: targetBox.index
         });
-
-        // Оновлюємо вагу коробки
-        boxWeights[currentBoxIndex] += itemWeightPerUnit * toAdd;
-        currentBoxPortions += toAdd;
+        
+        targetBox.portionsCount += toAdd;
+        targetBox.currentWeight += itemWeightPerUnit * toAdd;
         remaining -= toAdd;
         partIndex++;
-
-        // Якщо коробка заповнилась або досягла вагового ліміту — переходимо до наступної
-        const boxLimit = boxes[currentBoxIndex].portionsPerBox || 0;
-        const isBoxFull = currentBoxPortions >= boxLimit;
-        const isWeightLimitReached = boxWeights[currentBoxIndex] >= MAX_BOX_WEIGHT;
-
-        if ((isBoxFull || isWeightLimitReached) && currentBoxIndex < boxes.length - 1 && remaining > 0) {
-          currentBoxIndex++;
-          currentBoxPortions = 0;
-        }
+      }
+      
+      // Зберігаємо інформацію про нерозподілені порції
+      if (itemUnallocated > 0) {
+        unallocatedItems.push({
+          name: item.name,
+          quantity: itemUnallocated
+        });
       }
     }
-
+    
     const result = [...boxItems, ...productItems];
-    return result;
+    
+    // Якщо є нерозподілені порції, виводимо детальне попередження
+    if (totalUnallocated > 0) {
+      console.error('❌ КРИТИЧНА ПОМИЛКА: Не всі товари поміщаються в коробки!');
+      console.error(`Всього нерозподілених порцій: ${totalUnallocated}`);
+      console.error('Деталі:', unallocatedItems);
+      console.error('Стан коробок:', boxStates);
+    }
+    
+    return {
+      checklistItems: result,
+      unallocatedPortions: totalUnallocated,
+      unallocatedItems
+    };
   }
 
   // Якщо коробка одна або немає коробок, або замовлення готове до відправки, додаємо товари як зазвичай
@@ -382,6 +446,10 @@ export const combineBoxesWithItems = (
   }));
 
   const result = [...boxItems, ...productItems];
-  return result;
+  return {
+    checklistItems: result,
+    unallocatedPortions: 0,
+    unallocatedItems: []
+  };
 };
 

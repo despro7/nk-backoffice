@@ -13,6 +13,7 @@ import type { OrderForAssembly } from '../types/orderAssembly';
 
 interface OrderAssemblyRightPanelProps {
   orderForAssembly: OrderForAssembly;
+  averagePortionWeight?: number; // Середня вага порції для розподілу по коробках
   getWeightData: () => { expectedWeight: number | null; cumulativeTolerance: number };
   handleWeightChange: (weight: number | null) => void;
   isWeightWidgetActive: boolean;
@@ -32,6 +33,7 @@ interface OrderAssemblyRightPanelProps {
 
 export function OrderAssemblyRightPanel({
   orderForAssembly,
+  averagePortionWeight = 0.33,
   getWeightData,
   handleWeightChange,
   isWeightWidgetActive,
@@ -100,6 +102,7 @@ export function OrderAssemblyRightPanel({
           {hasItems && !expandingSets && (
             <BoxSelector
               totalPortions={orderForAssembly.totalPortions}
+              averagePortionWeight={averagePortionWeight}
               onBoxesChange={handleBoxesChange}
               onActiveBoxChange={setActiveBoxIndex}
               activeBoxIndex={activeBoxIndex}
