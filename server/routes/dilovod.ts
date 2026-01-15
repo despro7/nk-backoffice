@@ -508,24 +508,81 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
     const sortOrder = req.query.sortOrder as string || 'desc';
     const search = req.query.search as string;
     const channelsParam = req.query.channels as string;
+    const includeUnknown = req.query.includeUnknown === 'true';
+    const shipmentStatus = req.query.shipmentStatus as string; // 'shipped' | 'not_shipped'
+    const shipmentDateFrom = req.query.shipmentDateFrom as string; // ISO date string
+    const shipmentDateTo = req.query.shipmentDateTo as string; // ISO date string
 
     const offset = (page - 1) * limit;
 
     // Побудова умов запиту
     let whereCondition: any = {
-      // Виключаємо канал продажів "nk-food.shop" (sajt: "19") І статуси 6, 7, 8
+      // Виключаємо статуси 6, 7, 8
       NOT: [
-        // { sajt: '19' },
         { status: { in: ['6', '7', '8'] } }
       ]
     };
 
     // Додаємо фільтр каналів, якщо вказано
-    if (channelsParam) {
-      const channels = channelsParam.split(',').filter(ch => ch.trim());
-      if (channels.length > 0) {
+    if (channelsParam || includeUnknown) {
+      const channels = channelsParam ? channelsParam.split(',').filter(ch => ch.trim()) : [];
+      
+      if (channels.length > 0 && includeUnknown) {
+        // Якщо вибрані конкретні канали + невідомі
+        whereCondition.OR = [
+          { sajt: { in: channels } },
+          { sajt: null },
+          { sajt: '' }
+        ];
+      } else if (channels.length > 0) {
+        // Тільки конкретні канали
         whereCondition.sajt = { in: channels };
+      } else if (includeUnknown) {
+        // Тільки невідомі канали
+        whereCondition.OR = [
+          { sajt: null },
+          { sajt: '' }
+        ];
       }
+    }
+
+    // Додаємо фільтр по відвантаженню та датам (об'єднані)
+    if (shipmentDateFrom || shipmentDateTo) {
+      // Якщо вказані дати
+      const dateFilter: any = {};
+      if (shipmentDateFrom) {
+        dateFilter.gte = new Date(shipmentDateFrom);
+      }
+      if (shipmentDateTo) {
+        // Додаємо 1 день до кінцевої дати, щоб включити весь день
+        const endDate = new Date(shipmentDateTo);
+        endDate.setHours(23, 59, 59, 999);
+        dateFilter.lte = endDate;
+      }
+      
+      // Комбінуємо з статусом відвантаження
+      if (shipmentStatus === 'shipped') {
+        // Відвантажені в цьому діапазоні: дата відвантаження в діапазоні І не null
+        whereCondition.AND = [
+          { dilovodSaleExportDate: dateFilter },
+          { dilovodSaleExportDate: { not: null } }
+        ];
+      } else if (shipmentStatus === 'not_shipped') {
+        // Не відвантажені в цьому діапазоні: дата замовлення в діапазоні І дата відвантаження null
+        whereCondition.AND = [
+          { orderDate: dateFilter },
+          { dilovodSaleExportDate: null }
+        ];
+      } else {
+        // Просто діапазон дат без статусу - фільтруємо по даті відвантаження (всі замовлення)
+        whereCondition.dilovodSaleExportDate = dateFilter;
+      }
+    } else if (shipmentStatus === 'shipped') {
+      // Якщо дати не вказані, але вказано "відвантажені" - показуємо всі відвантажені
+      whereCondition.dilovodSaleExportDate = { not: null };
+    } else if (shipmentStatus === 'not_shipped') {
+      // Якщо дати не вказані, але вказано "не відвантажені" - показуємо всі не відвантажені
+      whereCondition.dilovodSaleExportDate = null;
     }
 
     // Додаємо пошук, якщо вказано

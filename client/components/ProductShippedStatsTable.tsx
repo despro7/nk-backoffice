@@ -120,6 +120,20 @@ const getStatusColor = (status: string) => {
   }
 };
 
+// Функція для правильного відмінювання українських слів
+const pluralize = (count: number, one: string, few: string, many: string): string => {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  
+  if (mod10 === 1 && mod100 !== 11) {
+    return one;
+  } else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
+    return few;
+  } else {
+    return many;
+  }
+};
+
 export default function ProductShippedStatsTable({ className }: ProductShippedStatsTableProps) {
   const { isAdmin } = useRoleAccess();
   const { apiCall } = useApi();
@@ -884,7 +898,7 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
                 return (
                   <TableRow 
                     key={`${selectedProductInfo?.sku || ''}-${dateItem.date}`} 
-                    className="hover:bg-neutral-50 cursor-pointer transition-colors duration-200"
+                    className="hover:bg-grey-50 cursor-pointer transition-colors duration-200"
                     onClick={() => fetchOrdersForProduct(selectedProductInfo?.sku || '', selectedProductInfo?.name || '', dateItem.date)}
                   >
                     <TableCell className="font-medium text-base">
@@ -914,7 +928,7 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
                 return (
                   <TableRow 
                     key={productItem.sku} 
-                    className="hover:bg-neutral-50 cursor-pointer transition-colors duration-200"
+                    className="hover:bg-grey-50 cursor-pointer transition-colors duration-200"
                     onClick={() => fetchOrdersForProduct(productItem.sku, productItem.name)}
                   >
                     <TableCell className="font-medium text-base">
@@ -1109,7 +1123,12 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2>Замовлення для "{selectedProductForModal?.name}" <span className="bg-neutral-200/70 rounded-sm text-sm px-2 py-1">{modalOrders.length}</span></h2>
+                <h2>
+                  {modalOrders.length} {pluralize(modalOrders.length, 'замовлення', 'замовлення', 'замовлень')} для "{selectedProductForModal?.name}" 
+                  <span className="bg-neutral-200/70 rounded-sm text-sm px-2 py-1 ml-2">
+                    {modalOrders.reduce((sum, order) => sum + (order.productQuantity || 0), 0)} {pluralize(modalOrders.reduce((sum, order) => sum + (order.productQuantity || 0), 0), 'порція', 'порції', 'порцій')}
+                  </span>
+                </h2>
                 <span className="text-sm font-normal text-neutral-500">
                   SKU: {selectedProductForModal?.sku}
                 </span>
@@ -1149,7 +1168,7 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
                           </TableHeader>
                           <TableBody items={modalOrders}>
                             {(order) => (
-                              <TableRow key={order.externalId} className="hover:bg-neutral-50 transition-colors duration-200">
+                              <TableRow key={order.externalId} className="hover:bg-grey-50 transition-colors duration-200">
                                 <TableCell className="font-medium text-sm">
                                   {order.orderNumber}
                                 </TableCell>

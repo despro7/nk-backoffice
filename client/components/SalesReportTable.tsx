@@ -1004,7 +1004,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
             {(item) => (
               <TableRow
                 key={item.date}
-                className="hover:bg-neutral-100 cursor-pointer transition-colors duration-200"
+                className="hover:bg-grey-50 cursor-pointer transition-colors duration-200"
                 onClick={() => handleOpenDetails(item)}
               >
                 <TableCell className="font-medium text-[15px]">

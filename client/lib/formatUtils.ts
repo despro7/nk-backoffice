@@ -362,6 +362,8 @@ export const getStatusColor = (status: string): string => {
       return "text-red-600 bg-red-100";
     case "8": // Видалено
       return "text-gray-600 bg-gray-100";
+    case "9": // На утриманні
+      return "text-gray-800 bg-[#e8d189]";
     default:
       return "text-gray-600 bg-gray-100";
   }
@@ -377,6 +379,7 @@ export const ORDER_STATUSES = [
   { key: "6", label: "Повернення" },
   { key: "7", label: "Скасовано" },
   { key: "8", label: "Видалено" },
+  { key: "9", label: "На утриманні" },
   // Для совместимости со старыми статусами
   { key: "id3", label: "Готове до відправки" },
 ];

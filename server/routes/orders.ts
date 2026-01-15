@@ -1497,8 +1497,32 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
       includeItems: true
     });
 
-    // Фільтруємо замовлення, що містять SKU, та витягуємо кількість для цього SKU
+    // Отримуємо всі externalId для bulk-запиту до кешу
+    const orderExternalIds = orders.map(order => order.externalId);
+    
+    // Отримуємо всі кеші одним запитом (з розгорнутими комплектами)
+    const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
+
+    // Фільтруємо замовлення, що містять SKU (використовуємо розгорнуті дані з кешу)
     const filteredOrders = orders.filter(order => {
+      // Спочатку намагаємося використати кеш з розгорнутими комплектами
+      const cacheData = orderCaches.get(order.externalId);
+      if (cacheData && cacheData.processedItems) {
+        try {
+          const cachedStats = JSON.parse(cacheData.processedItems);
+          if (Array.isArray(cachedStats)) {
+            const item = cachedStats.find((i: any) => i.sku === sku);
+            if (item) {
+              (order as any).productQuantity = item.orderedQuantity || 0;
+              return true;
+            }
+          }
+        } catch (e) {
+          console.warn(`Error parsing cached data for order ${order.externalId}:`, e);
+        }
+      }
+      
+      // Якщо кешу немає, використовуємо стандартні items (без розгортання комплектів)
       let items = [];
       if (typeof order.items === 'string') {
         try { items = JSON.parse(order.items); } catch (e) { return false; }
