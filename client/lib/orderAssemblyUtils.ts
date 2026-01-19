@@ -244,10 +244,12 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
   }
 
   // Перетворюємо об'єкт в масив і призначаємо унікальні ID
-  return Object.values(expandedItems).map((item, index) => ({
+  const result = Object.values(expandedItems).map((item, index) => ({
     ...item,
     id: (index + 1).toString()
   }));
+  
+  return result;
 };
 
 /**
@@ -289,6 +291,7 @@ export const combineBoxesWithItems = (
   }));
 
   // Якщо є коробки, розділяємо товари по коробках
+  // Тільки якщо більше однієї коробки І встановлено portionsPerBox
   if (boxes.length > 1 && boxes[0].portionsPerBox && boxes[0].portionsPerBox > 0) {
     // НОВИЙ АЛГОРИТМ: збалансований розподіл з урахуванням ваги
     const MAX_BOX_WEIGHT = 15; // Максимальна вага коробки в кг
@@ -445,7 +448,19 @@ export const combineBoxesWithItems = (
     boxIndex: 0
   }));
 
-  const result = [...boxItems, ...productItems];
+  // Зливаємо елементи з однаковими назвами для однієї коробки
+  const mergedProductItems = productItems.reduce((acc, item) => {
+    const existingItem = acc.find(i => i.name === item.name);
+    if (existingItem) {
+      existingItem.quantity += item.quantity;
+    } else {
+      acc.push({ ...item });
+    }
+    return acc;
+  }, [] as typeof productItems);
+
+  const result = [...boxItems, ...mergedProductItems];
+  
   return {
     checklistItems: result,
     unallocatedPortions: 0,

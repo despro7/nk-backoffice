@@ -4,6 +4,7 @@ import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { ordersCacheService } from '../services/ordersCacheService.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { prisma, getOrderSourceDetailed, getReportingDayStartHour, getReportingDate, getReportingDateRange } from '../lib/utils.js';
+import { dilovodService } from '../services/dilovod/index.js';
 
 const router = Router();
 
@@ -624,7 +625,9 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
         previousOrderExternalId: orderDetails.previousOrderExternalId,
         previousOrderNumber: orderDetails.previousOrderNumber,
         nextOrderExternalId: orderDetails.nextOrderExternalId,
-        nextOrderNumber: orderDetails.nextOrderNumber
+        nextOrderNumber: orderDetails.nextOrderNumber,
+        dilovodDocId: orderDetails.dilovodDocId,
+        sajt: orderDetails.sajt,
       }
     });
 
@@ -656,6 +659,77 @@ router.get('/:id/status', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch order status',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/orders/:id/fiscal-receipt
+ * Отримати фіскальний чек з Dilovod за ID замовлення
+ */
+router.get('/:id/fiscal-receipt', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Отримуємо замовлення з БД для отримання dilovodDocId
+    const order = await prisma.order.findFirst({
+      where: {
+        OR: [
+          { id: parseInt(id) },
+          { externalId: id }
+        ]
+      },
+      select: {
+        id: true,
+        externalId: true,
+        orderNumber: true,
+        dilovodDocId: true
+      }
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found'
+      });
+    }
+
+    if (!order.dilovodDocId) {
+      return res.status(404).json({
+        success: false,
+        error: 'Fiscal receipt not generated yet',
+        message: 'Чек ще не сформовано. Замовлення має бути експортоване в Dilovod.'
+      });
+    }
+
+    // Отримуємо фіскальний чек з Dilovod
+    const receipt = await dilovodService.getFiscalReceipt(order.dilovodDocId);
+
+    if (!receipt) {
+      return res.status(404).json({
+        success: false,
+        error: 'Fiscal receipt not found',
+        message: 'Чек не знайдено в системі Dilovod'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        orderId: order.id,
+        externalId: order.externalId,
+        orderNumber: order.orderNumber,
+        dilovodDocId: order.dilovodDocId,
+        receipt
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching fiscal receipt:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch fiscal receipt',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }

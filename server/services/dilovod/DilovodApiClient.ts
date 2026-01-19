@@ -451,40 +451,53 @@ export class DilovodApiClient {
   // Пошук замовлення за номером з опційними деталями
   async getOrderByNumber(orderNumbers: string[], withDetails = false): Promise<any[][]> {
     await this.ensureReady();
-    const request: DilovodApiRequest = {
-      version: "0.25",
-      key: this.apiKey,
-      action: "request",
-      params: {
-        from: "documents.saleOrder",
-        fields: {
-          id: "id",
-          number: "number",
-          date: "date",
-          // "customer": "customer",
-          // "customer.name": "customerName", 
-          // total: "total",
-          // currency: "currency",
-          // status: "status"
-        },
-        filters: [
-          {
-            alias: "number",
-            operator: "IL",
-            value: orderNumbers
-          }
-        ]
+    
+    // Розбиваємо на частини по 25 номерів, щоб не перевантажувати API
+    const chunks = this.chunkArray(orderNumbers, 25);
+    const allResults: any[] = [];
+    
+    for (const chunk of chunks) {
+      const request: DilovodApiRequest = {
+        version: "0.25",
+        key: this.apiKey,
+        action: "request",
+        params: {
+          from: "documents.saleOrder",
+          fields: {
+            id: "id",
+            number: "number",
+            date: "date",
+          },
+          filters: [
+            {
+              alias: "number",
+              operator: "IL",
+              value: chunk
+            }
+          ]
+        }
+      };
+
+      try {
+        const response = await this.makeRequest<any>(request);
+        const orders = this.normalizeToArray<any>(response);
+        allResults.push(...orders);
+        
+        // Маленька затримка між чанками, якщо їх більше одного
+        if (chunks.length > 1) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      } catch (error) {
+        logWithTimestamp('DilovodApiClient: Помилка отримання чанку замовлень:', error);
+        // Продовжуємо з іншими чанками
       }
-    };
-
-    const response = await this.makeRequest<any>(request);
-    const orders = this.normalizeToArray<any>(response);
-
-    if (!withDetails) {
-      return orders;
     }
 
-    const ordersWithDetails = await Promise.all(orders.map(async (order) => {
+    if (!withDetails) {
+      return allResults as any;
+    }
+
+    const ordersWithDetails = await Promise.all(allResults.map(async (order) => {
       if (!order?.id) {
         return order;
       }
@@ -632,25 +645,43 @@ export class DilovodApiClient {
   // Отримання мета-даних документів за baseDoc: id
   async getDocuments(baseDocId: any[], documentType: 'sale' | 'cashIn'): Promise<DilovodOrderResponse[]> {
     await this.ensureReady();
-    const request: DilovodApiRequest = {
-      version: "0.25",
-      key: this.apiKey,
-      action: "request",
-      params: {
-        from: `documents.${documentType}`,
-        fields: { id: "id", date: "date", baseDoc: "baseDoc" },
-        filters: [
-          {
-            alias: "baseDoc",
-            operator: "IL",
-            value: baseDocId
-          }
-        ]
-      }
-    };
+    
+    // Розбиваємо на чанки по 25 ID
+    const chunks = this.chunkArray(baseDocId, 25);
+    const allResults: DilovodOrderResponse[] = [];
+    
+    for (const chunk of chunks) {
+      const request: DilovodApiRequest = {
+        version: "0.25",
+        key: this.apiKey,
+        action: "request",
+        params: {
+          from: `documents.${documentType}`,
+          fields: { id: "id", date: "date", baseDoc: "baseDoc" },
+          filters: [
+            {
+              alias: "baseDoc",
+              operator: "IL",
+              value: chunk
+            }
+          ]
+        }
+      };
 
-    const response = await this.makeRequest<any>(request);
-    return this.normalizeToArray<DilovodOrderResponse>(response);
+      try {
+        const response = await this.makeRequest<any>(request);
+        const docs = this.normalizeToArray<DilovodOrderResponse>(response);
+        allResults.push(...docs);
+        
+        if (chunks.length > 1) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      } catch (error) {
+        logWithTimestamp(`DilovodApiClient: Помилка отримання чанку документів ${documentType}:`, error);
+      }
+    }
+    
+    return allResults;
   }
 
   // Отримання складів
@@ -805,5 +836,13 @@ export class DilovodApiClient {
   // Отримання поточної конфігурації
   getConfig(): typeof DEFAULT_DILOVOD_CONFIG {
     return { ...this.config };
+  }
+
+  private chunkArray<T>(array: T[], size: number): T[][] {
+    const chunked: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunked.push(array.slice(i, i + size));
+    }
+    return chunked;
   }
 }

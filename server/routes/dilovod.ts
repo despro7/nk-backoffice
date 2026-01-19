@@ -71,6 +71,19 @@ async function getDilovodSettings(): Promise<DilovodSettings> {
 }
 
 /**
+ * Формування номера замовлення для Dilovod з урахуванням префіксів/суфіксів каналу
+ */
+function formatOrderNumberForDilovod(orderNumber: string, sajt: string | null, channelMapping: any): string {
+  const settings = channelMapping?.[sajt || ''];
+  let result = orderNumber;
+  if (settings) {
+    if (settings.prefixOrder) result = settings.prefixOrder + result;
+    if (settings.sufixOrder) result = result + settings.sufixOrder;
+  }
+  return result;
+}
+
+/**
  * Збереження налаштувань Dilovod в settings_base
  */
 async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<DilovodSettings> {
@@ -685,16 +698,46 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
       });
     }
 
-    const { orderNumbers } = req.body;
-    if (!Array.isArray(orderNumbers)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bad request',
-        message: 'orderNumbers must be an array'
-      });
-    }
+    let { orderNumbers, auto, limit } = req.body;
+    const settings = await getDilovodSettings();
 
-    logWithTimestamp(`=== API: Перевірка замовлень ${orderNumbers} в Dilovod ===`, undefined, true);
+    // Автоматичний пошук замовлень без dilovodDocId
+    if (auto === true) {
+      const pendingOrders = await prisma.order.findMany({
+        where: {
+          dilovodDocId: null
+        },
+        orderBy: {
+          orderDate: 'desc'
+        },
+        take: limit || 100
+      });
+
+      if (pendingOrders.length === 0) {
+        return res.json({
+          success: true,
+          message: 'No orders pending status check',
+          data: [],
+          updatedCount: 0
+        });
+      }
+
+      // Формуємо номери з урахуванням префіксів для Dilovod
+      orderNumbers = pendingOrders.map(o => 
+        formatOrderNumberForDilovod(o.orderNumber, o.sajt, settings.channelPaymentMapping)
+      );
+
+      logWithTimestamp(`=== API [AUTO]: Перевірка ${orderNumbers.length} замовлень без ID в Dilovod ===`, undefined, true);
+    } else {
+      if (!Array.isArray(orderNumbers)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Bad request',
+          message: 'orderNumbers must be an array or auto: true must be provided'
+        });
+      }
+      logWithTimestamp(`=== API: Перевірка замовлень ${orderNumbers} в Dilovod ===`, undefined, true);
+    }
 
     const results = [];
     const baseDocIds: string[] = [];

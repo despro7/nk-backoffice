@@ -52,6 +52,27 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
   const noMoreOrdersRef = useRef<HTMLDivElement>(null);
   const printTTNRef = useRef<HTMLDivElement>(null);
 
+  // Фільтруємо елементи за поточною коробкою
+  const currentBoxItems = items.filter((item) => {
+    const boxIndex = item.boxIndex || 0;
+    return boxIndex === activeBoxIndex;
+  });
+
+  // Підраховуємо товари по назвах для відображення
+  const itemsByName = currentBoxItems.reduce((acc, item) => {
+    if (item.type === 'product') {
+      const key = item.name;
+      if (!acc[key]) {
+        acc[key] = { ...item, totalQuantity: 0, parts: [] };
+      }
+      acc[key].totalQuantity += item.quantity;
+      acc[key].parts.push(item);
+    }
+    return acc;
+  }, {} as Record<string, any>);
+
+  // Відображаємо згруповані товари
+
   // Завантажуємо налаштування звуку
   useEffect(() => {
     fetch('/api/settings/equipment', { credentials: 'include' })

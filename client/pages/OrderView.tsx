@@ -184,7 +184,6 @@ export default function OrderView() {
   // Обробник зміни коробок
   const handleBoxesChange = useCallback((boxes: any[], totalWeight: number, boxesInfo?: any) => {
     if (!boxes || boxes.length === 0 || expandedItems.length === 0) {
-      console.log('📦 OrderView: Пропускаємо оновлення коробок - немає коробок або товарів');
       return;
     }
 
@@ -227,6 +226,16 @@ export default function OrderView() {
     );
     startActivePolling();
   }, [startActivePolling]);
+
+  // Callback для друку ТТН
+  const handlePrintTTNCallback = useCallback(() => {
+    handlePrintTTN(order);
+  }, [handlePrintTTN, order]);
+
+  // Callback для оновлення замовлення
+  const handleOrderRefresh = useCallback((updatedOrder: any) => {
+    setOrder(updatedOrder);
+  }, []);
 
   // Завантажуємо деталі замовлення
   const fetchOrderDetails = async (id: string) => {
@@ -498,7 +507,7 @@ export default function OrderView() {
                   );
                   startActivePolling();
                 }}
-                onPrintTTN={() => handlePrintTTN(order)}
+                onPrintTTN={handlePrintTTNCallback}
                 showPrintTTN={showPrintTTN}
                 wasOpenedAsReady={wasOpenedAsReady}
                 onNextOrder={handleNextOrder}
@@ -527,13 +536,10 @@ export default function OrderView() {
           setActiveBoxIndex={setActiveBoxIndex}
           hasItems={hasItems}
           expandingSets={expandingSets}
-          onPrintTTN={() => handlePrintTTN(order)}
+          onPrintTTN={handlePrintTTNCallback}
           order={order}
           externalId={externalId || ''}
-          onOrderRefresh={(updatedOrder) => {
-            console.log('🔄 [OrderView] Order refreshed, updating state:', updatedOrder);
-            setOrder(updatedOrder);
-          }}
+          onOrderRefresh={handleOrderRefresh}
         />
       </div>
 

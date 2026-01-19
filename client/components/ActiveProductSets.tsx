@@ -74,7 +74,7 @@ export function ActiveProductSets({ orderItems, className = '' }: ActiveProductS
     };
 
     fetchProductSets();
-  }, [orderItems, apiCall]);
+  }, [orderItems]); // Removed apiCall from dependencies
 
   // Не показуємо компонент, якщо немає комплектів
   if (loading || productSets.length === 0) {

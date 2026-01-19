@@ -990,7 +990,108 @@ export class DilovodService {
     }
   }
 
-  // ===== ЗАКРИТТЯ ВСІХ З'ЄДНАНЬ =====
+  /**
+   * Отримати фіскальний чек за dilovodDocId
+   * @param dilovodDocId ID документа в Dilovod
+   * @returns Розпарсені дані чека або null, якщо чек не знайдено
+   */
+  async getFiscalReceipt(dilovodDocId: string): Promise<{
+    header: any;
+    goods: any[];
+    totals: any;
+  } | null> {
+    try {
+      logWithTimestamp(`🧾 [Dilovod] Запит фіскального чека для документа: ${dilovodDocId}`);
+
+      const response = await this.apiClient.makeRequest({
+        version: '0.25',
+        key: this.apiClient.getApiKey(),
+        action: 'request',
+        params: {
+          from: 'informationRegisters.fiscalRefs',
+          fields: {
+            contract: 'contract',
+            additionalData: 'additionalData'
+          },
+          filters: [
+            {
+              alias: 'contract',
+              operator: '=',
+              value: dilovodDocId
+            }
+          ]
+        }
+      });
+
+      // Перевіряємо, чи є дані у відповіді
+      if (!response || !Array.isArray(response) || response.length === 0) {
+        logWithTimestamp(`⚠️ [Dilovod] Фіскальний чек не знайдено для документа ${dilovodDocId}`);
+        return null;
+      }
+
+      const fiscalData = response[0];
+      const additionalData = fiscalData?.additionalData;
+
+      if (!additionalData) {
+        logWithTimestamp(`⚠️ [Dilovod] additionalData порожнє для документа ${dilovodDocId}`);
+        return null;
+      }
+
+      // Розпарсюємо JSON з additionalData
+      let receiptJson: any;
+      try {
+        receiptJson = JSON.parse(additionalData);
+      } catch (parseError) {
+        logWithTimestamp(`❌ [Dilovod] Помилка парсингу additionalData:`, parseError);
+        throw new Error('Невалідний JSON у полі additionalData');
+      }
+
+      // Dilovod може повертати дані в різних форматах, перевіряємо всі варіанти
+      let totalsData = receiptJson.totals || receiptJson.Totals || receiptJson.total || {};
+      
+      // Якщо totals - це масив, беремо перший елемент
+      if (Array.isArray(totalsData) && totalsData.length > 0) {
+        totalsData = totalsData[0];
+      }
+
+      const receipt = {
+        header: receiptJson.json.header,
+        goods: receiptJson.json.goods || [],
+        totals: receiptJson.json.totals[0] || [],
+        payments: receiptJson.json.payments[0] || [],
+        taxes: receiptJson.json.taxes[0] || []
+      };
+
+      // Якщо totals все ще порожній, спробуємо знайти суму в кореневому об'єкті
+      if (!receipt.totals.SUM && !receipt.totals.sum) {
+        const possibleSumFields = ['SUM', 'sum', 'TOTAL', 'total', 'amount', 'AMOUNT'];
+        for (const field of possibleSumFields) {
+          if (receiptJson[field] !== undefined) {
+            receipt.totals = { SUM: receiptJson[field] };
+            break;
+          }
+        }
+      }
+
+      // Якщо досі немає суми, підраховуємо з товарів
+      if (!receipt.totals.SUM && receipt.goods.length > 0) {
+        const calculatedSum = receipt.goods.reduce((sum: number, item: any) => {
+          const cost = item.COST || item.cost || (item.AMOUNT || item.amount || 0) * (item.PRICE || item.price || 0);
+          return sum + (parseFloat(cost) || 0);
+        }, 0);
+        receipt.totals = { ...receipt.totals, SUM: calculatedSum };
+      }
+
+      logWithTimestamp(`✅ [Dilovod] Чек отримано. SUM: ${receipt.totals.SUM || 0}`);
+      return receipt;
+
+    } catch (error) {
+      logWithTimestamp(`❌ [Dilovod] Помилка отримання фіскального чека:`, error);
+      throw error;
+    }
+  }
+
+
   async disconnect(): Promise<void> {
     logWithTimestamp('Закриваємо з\'єднання DilovodService...');
 

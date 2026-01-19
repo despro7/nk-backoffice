@@ -21,6 +21,23 @@ let refreshInProgress = false;
 let refreshPromise: Promise<any> | null = null;
 
 export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
+  // Дозволяємо системні запити від локального хоста (для Cron задач)
+  const isLocalhostRequest = 
+    (req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1') &&
+    (req.headers['x-system-request'] === 'true');
+
+  if (isLocalhostRequest) {
+    req.user = { 
+      userId: 0, 
+      email: 'system@cron', 
+      role: 'admin', 
+      name: 'System Cron',
+      roleName: 'System',
+      tokenType: 'access'
+    };
+    return next();
+  }
+
   try {
     tokenCheckCount++;
     // console.log(`🔍 [Middleware] #${tokenCheckCount} Проверка токена для пути: ${req.path}`);

@@ -20,12 +20,14 @@ import {
   DropdownSection,
   useDisclosure,
   DateRangePicker,
+  Card,
+  CardBody,
 } from "@heroui/react";
 import { I18nProvider } from '@react-aria/i18n';
-import { CalendarDate, getLocalTimeZone, parseDate } from '@internationalized/date';
 import type { DateRange } from "@react-types/datepicker";
 import { useApi } from "../hooks/useApi";
 import { useDilovodSettings } from "../hooks/useDilovodSettings";
+import { useAuth } from "../contexts/AuthContext";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate, getStatusLabel, getStatusColor } from "../lib/formatUtils";
 import { ToastService } from "@/services/ToastService";
@@ -80,7 +82,8 @@ interface SalesDriveOrdersTableProps {
 
 export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTableProps) {
   const { apiCall } = useApi();
-  // Don't load full directories automatically on SalesDrive monitoring page because
+  const { user } = useAuth();
+  // Don't load full directories automatically on SalesDrive monitoring page
   // it's a read-only monitoring view and directories are heavy to load.
   const { settings: dilovodSettings } = useDilovodSettings({ loadDirectories: false });
 
@@ -96,6 +99,10 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
   // State для вибраних замовлень (чекбокси)
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  
+  // State для авто-перевірки (ліміт)
+  const [autoCheckLimit, setAutoCheckLimit] = useState(100);
+  const [isAutoChecking, setIsAutoChecking] = useState(false);
 
   // State для пагінації
   const [page, setPage] = useState(1);
@@ -797,6 +804,54 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     }
   };
 
+  // Автономна перевірка статусів (Step-by-Step Stage 2)
+  const handleAutoBulkCheck = async () => {
+    try {
+      setIsAutoChecking(true);
+      ToastService.show({
+        title: 'Запуск авто-перевірки',
+        description: `Запит на перевірку до ${autoCheckLimit} замовлень без ID`,
+        color: 'secondary',
+        hideIcon: false,
+        icon: <DynamicIcon name="search-check" size={16} strokeWidth={1.5} className="shrink-0" />,
+      });
+
+      const response = await apiCall('/api/dilovod/salesdrive/orders/check', {
+        method: 'POST',
+        body: JSON.stringify({
+          auto: true,
+          limit: autoCheckLimit
+        })
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        setDrawerResult(result);
+        setDrawerTitle('Результат автоматичної перевірки');
+        setDrawerType('result');
+        onDrawerOpen();
+
+        if (result.updatedCount > 0) {
+          fetchOrders();
+        }
+      } else {
+        ToastService.show({
+          title: 'Помилка авто-перевірки',
+          description: result.message || 'Не вдалося виконати операцію',
+          color: 'danger'
+        });
+      }
+    } catch {
+      ToastService.show({
+        title: 'Помилка',
+        description: 'Помилка з\'єднання з сервером',
+        color: 'danger'
+      });
+    } finally {
+      setIsAutoChecking(false);
+    }
+  };
+
   // Utility: Copy text to clipboard
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -1048,6 +1103,49 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           </Dropdown>
         </ButtonGroup>
       </div>
+
+      {/* Другий ряд: Адмін-панель для автоматичних дій */}
+      {user?.role === 'admin' && (
+        <Card shadow="none" border-1 className="bg-secondary-50/30 border-secondary-100 rounded-md">
+          <CardBody className="py-2 px-3 flex flex-row items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-secondary-700 whitespace-nowrap">
+                Ліміт перевірки:
+              </span>
+              <Input
+                type="number"
+                size="sm"
+                variant="bordered"
+                value={autoCheckLimit.toString()}
+                onChange={(e) => setAutoCheckLimit(Number(e.target.value))}
+                className="w-24"
+                min={1}
+                max={500}
+                classNames={{
+                  input: "text-center font-semibold",
+                  inputWrapper: "h-8 min-h-8 px-2"
+                }}
+              />
+            </div>
+            
+            <Button
+              color="secondary"
+              size="sm"
+              variant="flat"
+              onPress={handleAutoBulkCheck}
+              isLoading={isAutoChecking}
+              startContent={!isAutoChecking && <DynamicIcon name="search-check" size={16} />}
+              className="font-semibold h-8"
+            >
+              Авто-перевірка
+            </Button>
+
+            <div className="ml-auto text-xs text-secondary-500 italic">
+              * Перевіряє замовлення без Dilovod ID (починаючи з найновіших)
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {/* Таблиця */}
       <div className="relative">

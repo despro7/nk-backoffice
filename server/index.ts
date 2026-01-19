@@ -21,6 +21,7 @@ import goodsCacheRouter from './routes/goods-cache.js';
 import { dilovodRouter } from './routes/dilovod.js';
 import { salesdriveRouter } from './routes/salesdrive.js';
 import metaLogsRouter from './routes/meta-logs.js';
+import wordpressReceiptRoutes from './routes/wordpress-receipt.js';
 
 // Увеличиваем лимит listeners для process events
 process.setMaxListeners(20);
@@ -150,6 +151,9 @@ export function createServer() {
 
   // SalesDrive cache routes
   app.use("/api/salesdrive", salesdriveRouter);
+
+  // WordPress receipt routes
+  app.use("/api/wordpress-receipt", wordpressReceiptRoutes);
 
   // Example API routes
   app.get("/api/ping", (_req, res) => {

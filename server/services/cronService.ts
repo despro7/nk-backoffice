@@ -56,8 +56,10 @@ let isCronJobActive = false;
 export class CronService {
   private syncJob: cron.ScheduledTask | null = null;
   private productsSyncJob: cron.ScheduledTask | null = null;
+  private statusCheckJob: cron.ScheduledTask | null = null;
   private isTaskRunning = false;
   private isProductsSyncRunning = false;
+  private isStatusCheckRunning = false;
   private static instance: CronService | null = null;
   private dilovodService: DilovodService;
 
@@ -197,23 +199,94 @@ export class CronService {
     }
   }
 
-  getStatus(): { isRunning: boolean; hasSyncJob: boolean; isProductsSyncRunning: boolean; hasProductsSyncJob: boolean } {
+  /**
+   * Запускає періодичну перевірку статусів замовлень у Dilovod
+   * (для замовлень без ID, до 100 за раз)
+   */
+  startOrderStatusCheck(): void {
+    if (this.statusCheckJob) {
+      console.log('⚠️ Status check cron job already running.');
+      return;
+    }
+
+    // Запуск кожну годину о 20 хвилині (щоб не перетинатися з основним синхроном)
+    this.statusCheckJob = cron.schedule('20 * * * *', async () => {
+      if (this.isStatusCheckRunning) {
+        console.log('⏳ Previous status check is still running, skipping.');
+        return;
+      }
+
+      console.log('🕐 Running scheduled order status check in Dilovod (limit: 100)...');
+      this.isStatusCheckRunning = true;
+
+      try {
+        const startTime = Date.now();
+        // Викликаємо метод через внутрішній API або напряму через сервіс
+        // Оскільки роут з `/api/dilovod/salesdrive/orders/check` використовує `req.user`, 
+        // краще винести бізнес-логіку в окремий метод сервісу або зробити mock-запит.
+        // Але для простоти ми можемо звернутися до DilovodService або напряму через fetch до власного API
+        // проте найбільш архітектурно правильно буде викликати метод, який ми скоро додамо в DilovodService.
+        
+        // Поки що використаємо fetch до локального API (якщо є впевненість що сервер запущений)
+        // Або краще: додати метод у `DilovodService`
+        const response = await fetch('http://localhost:8080/api/dilovod/salesdrive/orders/check', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-system-request': 'true'
+          },
+          body: JSON.stringify({ auto: true, limit: 100 })
+        });
+
+        const duration = Date.now() - startTime;
+        console.log(`✅ Scheduled status check completed in ${duration}ms`);
+      } catch (error) {
+        console.error('❌ Scheduled status check failed:', error);
+      } finally {
+        this.isStatusCheckRunning = false;
+      }
+    }, {
+      timezone: "Europe/Kiev"
+    });
+
+    this.statusCheckJob.start();
+    cronJobsRegistry.add(this.statusCheckJob);
+    console.log('✅ Order status check cron job started (hourly).');
+  }
+
+  stopOrderStatusCheck(): void {
+    if (this.statusCheckJob) {
+      this.statusCheckJob.stop();
+      if (typeof (this.statusCheckJob as any).destroy === 'function') {
+        (this.statusCheckJob as any).destroy();
+      }
+      cronJobsRegistry.delete(this.statusCheckJob);
+      this.statusCheckJob = null;
+      console.log('🛑 Order status check cron job stopped.');
+    }
+  }
+
+  getStatus(): { isRunning: boolean; hasSyncJob: boolean; isProductsSyncRunning: boolean; hasProductsSyncJob: boolean; isStatusCheckRunning: boolean; hasStatusCheckJob: boolean } {
     return {
       isRunning: this.isTaskRunning,
       hasSyncJob: isCronJobActive,
       isProductsSyncRunning: this.isProductsSyncRunning,
       hasProductsSyncJob: this.productsSyncJob !== null,
+      isStatusCheckRunning: this.isStatusCheckRunning,
+      hasStatusCheckJob: this.statusCheckJob !== null,
     };
   }
 
   startAll(): void {
     this.startOrderSync();
     this.startProductsSync();
+    this.startOrderStatusCheck();
   }
 
   stopAll(): void {
     this.stopOrderSync();
     this.stopProductsSync();
+    this.stopOrderStatusCheck();
   }
 }
 
