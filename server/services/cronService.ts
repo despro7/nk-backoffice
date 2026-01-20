@@ -209,8 +209,8 @@ export class CronService {
       return;
     }
 
-    // Запуск кожну годину о 20 хвилині (щоб не перетинатися з основним синхроном)
-    this.statusCheckJob = cron.schedule('20 * * * *', async () => {
+    // Запуск кожну годину о 30 хвилині (щоб не перетинатися з основним синхроном)
+    this.statusCheckJob = cron.schedule('30 * * * *', async () => {
       if (this.isStatusCheckRunning) {
         console.log('⏳ Previous status check is still running, skipping.');
         return;
@@ -221,25 +221,15 @@ export class CronService {
 
       try {
         const startTime = Date.now();
-        // Викликаємо метод через внутрішній API або напряму через сервіс
-        // Оскільки роут з `/api/dilovod/salesdrive/orders/check` використовує `req.user`, 
-        // краще винести бізнес-логіку в окремий метод сервісу або зробити mock-запит.
-        // Але для простоти ми можемо звернутися до DilovodService або напряму через fetch до власного API
-        // проте найбільш архітектурно правильно буде викликати метод, який ми скоро додамо в DilovodService.
-        
-        // Поки що використаємо fetch до локального API (якщо є впевненість що сервер запущений)
-        // Або краще: додати метод у `DilovodService`
-        const response = await fetch('http://localhost:8080/api/dilovod/salesdrive/orders/check', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-system-request': 'true'
-          },
-          body: JSON.stringify({ auto: true, limit: 100 })
-        });
-
+        // Викликаємо метод безпосередньо через DilovodService
+        const result = await this.dilovodService.checkOrderStatuses(100);
         const duration = Date.now() - startTime;
-        console.log(`✅ Scheduled status check completed in ${duration}ms`);
+        
+        if (result.success) {
+          console.log(`✅ Scheduled status check completed in ${duration}ms: ${result.updatedCount} orders updated`);
+        } else {
+          console.log(`⚠️  Scheduled status check completed with errors in ${duration}ms: ${result.message}`);
+        }
       } catch (error) {
         console.error('❌ Scheduled status check failed:', error);
       } finally {
