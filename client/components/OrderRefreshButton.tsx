@@ -39,18 +39,100 @@ export function OrderRefreshButton({ orderId, lastSynced, onRefreshComplete }: O
 			if (data.success) {
 				console.log(`✅ [ORDER REFRESH] Order refreshed successfully`, data);
 
+				// Після успішного оновлення замовлення запускаємо перевірку Dilovod
+				let dilovodDocIdChanged = false;
+				try {
+					console.log(`🔄 [ORDER REFRESH] Запуск перевірки Dilovod для 10 замовлень`);
+					const dilovodCheckResponse = await apiCall('/api/dilovod/salesdrive/orders/check', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({ 
+							auto: true, 
+							limit: 10 
+						})
+					});
+
+					if (dilovodCheckResponse.ok) {
+						const dilovodData = await dilovodCheckResponse.json();
+						console.log(`✅ [ORDER REFRESH] Dilovod check completed`, dilovodData);
+						
+						// Перевіряємо, чи було оновлено dilovodDocId для поточного замовлення
+						if (dilovodData.data && Array.isArray(dilovodData.data)) {
+							const currentOrderUpdate = dilovodData.data.find((item: any) => item.updatedCount > 0);
+							if (currentOrderUpdate) {
+								dilovodDocIdChanged = true;
+								console.log(`✅ [ORDER REFRESH] dilovodDocId було оновлено для замовлення`);
+								
+								// Повторно запитуємо замовлення, щоб отримати оновлений dilovodDocId
+								const refreshedOrderResponse = await apiCall(`/api/orders/${orderId}`);
+								const refreshedOrderData = await refreshedOrderResponse.json();
+								if (refreshedOrderData.success && refreshedOrderData.data) {
+									data.order = refreshedOrderData.data;
+								}
+							}
+						}
+					} else {
+						console.warn(`⚠️ [ORDER REFRESH] Dilovod check failed with status ${dilovodCheckResponse.status}`);
+					}
+				} catch (dilovodError) {
+					console.warn(`⚠️ [ORDER REFRESH] Dilovod check error:`, dilovodError);
+					// Не показуємо помилку користувачу, оскільки основне оновлення пройшло успішно
+				}
+
+				// Фільтруємо зміни без rawData (не показово для користувача)
+				const meaningfulChanges = data.changes ? data.changes.filter((change: string) => change !== 'rawData') : [];
+				const hasRealChanges = meaningfulChanges.length > 0;
+
 				// Показуємо повідомлення про результат
-				if (data.hasChanges) {
-					console.log(`✅ [ORDER REFRESH] Order has changes`, data.changes);
+				if (hasRealChanges || dilovodDocIdChanged) {
+					console.log(`✅ [ORDER REFRESH] Order has meaningful changes`, meaningfulChanges);
+					
+					// Форматуємо назви полів для відображення
+					const fieldLabels: Record<string, string> = {
+						status: 'Статус',
+						statusText: 'Текст статусу',
+						ttn: 'ТТН',
+						quantity: 'Кількість порцій',
+						customerName: 'Ім\'я клієнта',
+						customerPhone: 'Телефон',
+						deliveryAddress: 'Адреса доставки',
+						totalPrice: 'Сума',
+						shippingMethod: 'Спосіб доставки',
+						paymentMethod: 'Спосіб оплати',
+						cityName: 'Місто',
+						provider: 'Перевізник',
+						pricinaZnizki: 'Причина знижки',
+						sajt: 'Канал продажу',
+						orderDate: 'Дата замовлення',
+						items: 'Склад замовлення'
+					};
+
+					const changedFieldsText = meaningfulChanges
+						.map((field: string) => fieldLabels[field] || field)
+						.join(', ');
+
+					// Якщо dilovodDocId змінився, додаємо це до опису
+					let description = '';
+					if (hasRealChanges && dilovodDocIdChanged) {
+						description = `Змінено ${meaningfulChanges.length} ${meaningfulChanges.length === 1 ? 'поле' : meaningfulChanges.length < 5 ? 'поля' : 'полів'}: ${changedFieldsText}. Також оновлено ID в Dilovod - кнопка фіскального чека тепер доступна!`;
+					} else if (hasRealChanges) {
+						description = `Змінено ${meaningfulChanges.length} ${meaningfulChanges.length === 1 ? 'поле' : meaningfulChanges.length < 5 ? 'поля' : 'полів'}: ${changedFieldsText}`;
+					} else if (dilovodDocIdChanged) {
+						description = 'Оновлено ID в Dilovod - кнопка фіскального чека тепер доступна!';
+					}
+
 					ToastService.show({
 						title: 'Замовлення оновлено',
-						description: `Знайдено ${data.changes.length} змін`,
+						description,
 						color: 'success',
-						timeout: 3000,
+						timeout: 5000,
 						hideIcon: false,
 						icon: <DynamicIcon name="check-circle" strokeWidth={2} />
 					});
 				} else {
+					console.log(`ℹ️ [ORDER REFRESH] No meaningful changes (only rawData updated)`);
 					ToastService.show({
 						title: 'Замовлення актуальне',
 						description: 'Змін не знайдено',

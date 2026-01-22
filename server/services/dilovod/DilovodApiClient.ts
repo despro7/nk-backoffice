@@ -452,8 +452,8 @@ export class DilovodApiClient {
   async getOrderByNumber(orderNumbers: string[], withDetails = false): Promise<any[][]> {
     await this.ensureReady();
     
-    // Розбиваємо на частини по 25 номерів, щоб не перевантажувати API
-    const chunks = this.chunkArray(orderNumbers, 25);
+    // Розбиваємо на частини по 50 номерів, щоб не перевантажувати API
+    const chunks = this.chunkArray(orderNumbers, 50);
     const allResults: any[] = [];
     
     for (const chunk of chunks) {
@@ -651,16 +651,19 @@ export class DilovodApiClient {
     const allResults: DilovodOrderResponse[] = [];
     
     for (const chunk of chunks) {
+      // Для documents.sale фільтруємо за contract, для documents.cashIn за baseDoc
+      const filterAlias = documentType === 'sale' ? 'contract' : 'baseDoc';
+      
       const request: DilovodApiRequest = {
         version: "0.25",
         key: this.apiKey,
         action: "request",
         params: {
           from: `documents.${documentType}`,
-          fields: { id: "id", date: "date", baseDoc: "baseDoc" },
+          fields: { id: "id", date: "date", baseDoc: "baseDoc", contract: "contract" },
           filters: [
             {
-              alias: "baseDoc",
+              alias: filterAlias,
               operator: "IL",
               value: chunk
             }

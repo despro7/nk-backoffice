@@ -232,11 +232,6 @@ export default function OrderView() {
     handlePrintTTN(order);
   }, [handlePrintTTN, order]);
 
-  // Callback для оновлення замовлення
-  const handleOrderRefresh = useCallback((updatedOrder: any) => {
-    setOrder(updatedOrder);
-  }, []);
-
   // Завантажуємо деталі замовлення
   const fetchOrderDetails = async (id: string) => {
     try {
@@ -269,25 +264,19 @@ export default function OrderView() {
           }
 
           if (selectedBoxes.length > 0) {
-            // console.log('📦 selectedBoxes.length > 0, викликаємо combineBoxesWithItems');
             const itemsWithoutBoxes = processedItems.filter(item => item.type !== 'box');
             const combined = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, orderIsReadyToShip, boxInitialStatus);
 
             if (combined && combined.checklistItems.length > 0) {
-              // console.log('📦 Встановлюємо combinedItems:', 
-              //   combined.checklistItems.map(item => ({ name: item.name, type: item.type, status: item.status }))
-              // );
               setChecklistItems(combined.checklistItems);
               setUnallocatedPortions(combined.unallocatedPortions);
               setUnallocatedItems(combined.unallocatedItems);
             } else {
-              // console.log('📦 combinedItems порожній, встановлюємо processedItems');
               setChecklistItems(processedItems);
               setUnallocatedPortions(0);
               setUnallocatedItems([]);
             }
           } else {
-            // console.log('📦 selectedBoxes порожній, встановлюємо processedItems напряму');
             setChecklistItems(processedItems);
           }
         } catch (error) {
@@ -340,6 +329,17 @@ export default function OrderView() {
     }
   };
 
+  // Callback для оновлення замовлення
+  const handleOrderRefresh = useCallback(async (updatedOrder: any) => {
+    // Замість простого setOrder викликаємо повне оновлення замовлення
+    // Це забезпечить перемалювання checklist, кнопки фіскального чека та всіх інших компонентів
+    if (!externalId) return;
+    
+    console.log('🔄 [OrderView] Повне оновлення замовлення після refresh');
+    await fetchOrderDetails(externalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalId]);
+
   // Завантажуємо деталі замовлення при зміні externalId
   useEffect(() => {
     if (externalId) {
@@ -353,7 +353,8 @@ export default function OrderView() {
       
       fetchOrderDetails(externalId);
     }
-  }, [externalId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalId]); // Тільки externalId в залежностях, щоб уникнути циклів
 
   // Оновлюємо title сторінки при зміні замовлення
   useEffect(() => {

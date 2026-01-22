@@ -1095,8 +1095,8 @@ export class DilovodService {
 
 
   /**
-   * Перевірка статусу замовлень в Dilovod (для cron job)
-   * Шукає замовлення без dilovodDocId та оновлює їх статус з Dilovod API
+   * AUTO MODE: Автоматична перевірка замовлень з неповними даними
+   * Використання: Cron job + API endpoint з auto: true
    */
   async checkOrderStatuses(limit: number = 100): Promise<{
     success: boolean;
@@ -1105,12 +1105,90 @@ export class DilovodService {
     errors?: any[];
     data: any[];
   }> {
-    try {
-      const { PrismaClient } = await import('@prisma/client');
-      const { orderDatabaseService } = await import('../orderDatabaseService.js');
-      const prisma = new PrismaClient();
+    const orderNumbers = await this.fetchIncompleteOrderNumbers(limit);
+    return this.processOrderCheck(orderNumbers);
+  }
 
-      // Отримуємо налаштування Dilovod
+  /**
+   * MANUAL MODE: Перевірка конкретних номерів замовлень
+   * Використання: UI з масивом orderNumbers
+   */
+  async checkOrdersByNumbers(orderNumbers: string[]): Promise<{
+    success: boolean;
+    message: string;
+    updatedCount: number;
+    errors?: any[];
+    data: any[];
+  }> {
+    return this.processOrderCheck(orderNumbers);
+  }
+
+  /**
+   * ПРИВАТНИЙ: Вибірка замовлень з неповними даними в Dilovod
+   */
+  private async fetchIncompleteOrderNumbers(limit: number): Promise<string[]> {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+
+    try {
+      // Знаходимо замовлення з неповними даними
+      const orders = await prisma.order.findMany({
+        where: {
+          AND: [
+            {
+              OR: [
+                // Базові поля для всіх статусів >= '2'
+                { dilovodDocId: null },
+                { dilovodExportDate: null },
+                { dilovodCashInDate: null },
+                // Для status >= '3' додатково перевіряємо dilovodSaleExportDate
+                {
+                  AND: [
+                    { status: { gte: '3' } },
+                    { dilovodSaleExportDate: null }
+                  ]
+                }
+              ]
+            },
+            // Тільки підтверджені та вище (виключаємо "Нові")
+            { status: { gte: '2' } }
+          ]
+        },
+        orderBy: { orderDate: 'desc' },
+        take: limit,
+        select: {
+          orderNumber: true,
+          sajt: true,
+          status: true
+        }
+      });
+
+      await prisma.$disconnect();
+
+      if (orders.length === 0) {
+        logWithTimestamp('Немає замовлень з неповними даними для перевірки');
+        return [];
+      }
+
+      logWithTimestamp(`Знайдено ${orders.length} замовлень з неповними даними`);
+
+      // Форматуємо номери з префіксами/суфіксами
+      return this.formatOrderNumbers(orders);
+    } catch (error) {
+      await prisma.$disconnect();
+      throw error;
+    }
+  }
+
+  /**
+   * ПРИВАТНИЙ: Форматування номерів замовлень з префіксами/суфіксами
+   */
+  private async formatOrderNumbers(orders: Array<{ orderNumber: string; sajt: string | null }>): Promise<string[]> {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+
+    try {
+      // Отримуємо налаштування каналів
       const settingsRecords = await prisma.settingsBase.findMany({
         where: {
           category: 'dilovod',
@@ -1118,52 +1196,64 @@ export class DilovodService {
         }
       });
 
+      await prisma.$disconnect();
+
       const settingsMap = new Map(settingsRecords.map(s => [s.key, s.value]));
       const channelPaymentMapping = JSON.parse(settingsMap.get('dilovod_channel_payment_mapping') || '{}');
 
-      // Допоміжна функція для форматування номера замовлення
-      const formatOrderNumberForDilovod = (orderNumber: string, sajt: string | null): string => {
-        const channelSettings = channelPaymentMapping?.[sajt || ''];
-        let result = orderNumber;
+      // Форматуємо номери
+      return orders.map(order => {
+        const channelSettings = channelPaymentMapping?.[order.sajt || ''];
+        let orderNum = order.orderNumber;
+
         if (channelSettings) {
-          if (channelSettings.prefixOrder) result = channelSettings.prefixOrder + result;
-          if (channelSettings.sufixOrder) result = result + channelSettings.sufixOrder;
+          if (channelSettings.prefixOrder) {
+            orderNum = channelSettings.prefixOrder + orderNum;
+          }
+          if (channelSettings.sufixOrder) {
+            orderNum = orderNum + channelSettings.sufixOrder;
+          }
         }
-        return result;
-      };
 
-      // Знаходимо замовлення без dilovodDocId
-      const pendingOrders = await prisma.order.findMany({
-        where: {
-          dilovodDocId: null
-        },
-        orderBy: {
-          orderDate: 'desc'
-        },
-        take: limit
+        return orderNum;
       });
+    } catch (error) {
+      await prisma.$disconnect();
+      throw error;
+    }
+  }
 
-      if (pendingOrders.length === 0) {
+  /**
+   * ПРИВАТНИЙ: Спільна логіка перевірки замовлень в Dilovod
+   */
+  private async processOrderCheck(orderNumbers: string[]): Promise<{
+    success: boolean;
+    message: string;
+    updatedCount: number;
+    errors?: any[];
+    data: any[];
+  }> {
+    const { PrismaClient } = await import('@prisma/client');
+    const { orderDatabaseService } = await import('../orderDatabaseService.js');
+    const prisma = new PrismaClient();
+
+    try {
+      if (orderNumbers.length === 0) {
         return {
           success: true,
-          message: 'No orders pending status check',
+          message: 'No orders to check',
           data: [],
           updatedCount: 0
         };
       }
 
-      // Формуємо номери з урахуванням префіксів для Dilovod
-      const orderNumbers = pendingOrders.map(o =>
-        formatOrderNumberForDilovod(o.orderNumber, o.sajt)
-      );
-
-      logWithTimestamp(`=== CRON: Перевірка ${orderNumbers.length} замовлень без ID в Dilovod ===`);
+      logWithTimestamp(`=== Перевірка ${orderNumbers.length} замовлень в Dilovod ===`);
 
       const results = [];
-      const baseDocIds: string[] = [];
-      const orderMap = new Map<string, { normalizedNumber: string; dilovodId: string; dilovodExportDate: string | Date }>();
+      const contractIds: string[] = [];
+      const orderMap = new Map<string, { normalizedNumber: string; dilovodId: string; dilovodExportDate: string | Date; status?: string }>();
 
-      // Спочатку перевіряємо в локальній базі, які замовлення вже мають dilovodDocId
+      // Перевіряємо в локальній базі, які дані вже є
       const checks = await Promise.all(
         orderNumbers
           .filter(num => num)
@@ -1173,46 +1263,48 @@ export class DilovodService {
 
             return {
               num,
-              baseDocId: existing?.dilovodDocId || null,
+              contractId: existing?.dilovodDocId || null,
               dilovodExportDate: existing?.dilovodExportDate || null,
               dilovodSaleExportDate: existing?.dilovodSaleExportDate || null,
-              dilovodCashInDate: existing?.dilovodCashInDate || null
+              dilovodCashInDate: existing?.dilovodCashInDate || null,
+              status: existing?.status || '0'
             };
           })
       );
 
-      const validOrders = checks.filter(item => !item.baseDocId).map(item => item.num);
-      const passedOrders = checks.filter(item => item.baseDocId);
+      const validOrders = checks.filter(item => !item.contractId).map(item => item.num);
+      const passedOrders = checks.filter(item => item.contractId);
 
-      // Обробляємо замовлення, які вже мають dilovodDocId в локальній базі
+      // Обробляємо замовлення, які вже мають contractId
       for (const item of passedOrders) {
-        logWithTimestamp(`CRON [DilovodService]: Пропускаємо замовлення ${item.num} — вже має dilovodDocId в локальній базі`);
+        logWithTimestamp(`Замовлення ${item.num} вже має dilovodDocId — буде оновлено додаткові поля`);
 
         const normalizedNumber = String(item.num).replace(/[^\d]/g, "");
 
-        baseDocIds.push(item.baseDocId);
-        orderMap.set(item.baseDocId, {
+        contractIds.push(item.contractId);
+        orderMap.set(item.contractId, {
           normalizedNumber,
-          dilovodId: item.baseDocId,
-          dilovodExportDate: item.dilovodExportDate
+          dilovodId: item.contractId,
+          dilovodExportDate: item.dilovodExportDate,
+          status: item.status
         });
 
         results.push({
           orderNumber: item.num,
-          dilovodId: item.baseDocId,
+          dilovodId: item.contractId,
           dilovodExportDate: item.dilovodExportDate,
           dilovodSaleExportDate: item.dilovodSaleExportDate,
           dilovodCashInDate: item.dilovodCashInDate,
           updatedCount: 0,
           success: true,
-          warnings: ['Замовлення вже має dilovodDocId в локальній базі — пропущено']
+          warnings: ['Замовлення вже має dilovodDocId — буде оновлено додаткові поля']
         });
       }
 
-      // Шукаємо замовлення в Dilovod API
+      // Шукаємо нові замовлення в Dilovod API
       const dilovodOrders = validOrders.length > 0 ? (await this.getOrderByNumber(validOrders)).flat() : [];
 
-      // Цикл 1: Оновлюємо базову інформацію та збираємо baseDoc для батч-запиту
+      // Оновлюємо базову інформацію (dilovodDocId, dilovodExportDate)
       for (const dilovodOrder of dilovodOrders) {
         if (!dilovodOrder.number) {
           results.push({
@@ -1224,12 +1316,12 @@ export class DilovodService {
         }
 
         const normalizedNumber = String(dilovodOrder.number).replace(/[^\d]/g, "");
-        const baseDoc = dilovodOrder.id;
+        const contractId = dilovodOrder.id;
 
         try {
           const updateData: any = {
             dilovodExportDate: new Date(dilovodOrder.date).toISOString(),
-            dilovodDocId: baseDoc
+            dilovodDocId: contractId
           };
 
           const updatedOrder = await prisma.order.updateMany({
@@ -1238,8 +1330,8 @@ export class DilovodService {
           });
 
           if (updatedOrder.count > 0) {
-            baseDocIds.push(baseDoc);
-            orderMap.set(baseDoc, {
+            contractIds.push(contractId);
+            orderMap.set(contractId, {
               normalizedNumber,
               dilovodId: dilovodOrder.id,
               dilovodExportDate: dilovodOrder.date
@@ -1270,26 +1362,37 @@ export class DilovodService {
         }
       }
 
-      // Оптимізована перевірка: спочатку шукаємо існуючі sale/cashIn документи в локальній базі
-      if (baseDocIds.length > 0) {
+      // Батч-запит для sale/cashIn документів (через contract!)
+      if (contractIds.length > 0) {
         try {
+          // Отримуємо тільки ті замовлення, що відповідають нашим orderNumbers
+          const orderNumbersFromMap = Array.from(orderMap.values()).map(o => o.normalizedNumber);
+          
           const existingOrders = await prisma.order.findMany({
             where: {
-              dilovodDocId: { in: baseDocIds }
+              AND: [
+                { dilovodDocId: { in: contractIds } },
+                { orderNumber: { in: orderNumbersFromMap } }
+              ]
             },
             select: {
               orderNumber: true,
               dilovodDocId: true,
               dilovodSaleExportDate: true,
-              dilovodCashInDate: true
+              dilovodCashInDate: true,
+              status: true
             }
           });
 
-          const needSaleRequest = baseDocIds.filter(id => {
+          // Sale потрібен тільки для status >= '3'
+          const needSaleRequest = contractIds.filter(id => {
             const order = existingOrders.find(o => o.dilovodDocId === id);
-            return !order || !order.dilovodSaleExportDate;
+            const orderStatus = parseInt(order?.status || '0');
+            return order && orderStatus >= 3 && !order.dilovodSaleExportDate;
           });
-          const needCashInRequest = baseDocIds.filter(id => {
+          
+          // CashIn потрібен для всіх
+          const needCashInRequest = contractIds.filter(id => {
             const order = existingOrders.find(o => o.dilovodDocId === id);
             return !order || !order.dilovodCashInDate;
           });
@@ -1298,40 +1401,48 @@ export class DilovodService {
           let cashInDocuments: any[] = [];
 
           if (needSaleRequest.length > 0) {
-            logWithTimestamp(`Виконуємо запит getDocuments() для ${needSaleRequest.length} baseDoc (sale)...`);
+            logWithTimestamp(`Виконуємо запит getDocuments() для ${needSaleRequest.length} contract (sale)...`);
             saleDocuments = await this.getDocuments(needSaleRequest, 'sale');
           }
           if (needCashInRequest.length > 0) {
-            logWithTimestamp(`Виконуємо запит getDocuments() для ${needCashInRequest.length} baseDoc (cashIn)...`);
+            logWithTimestamp(`Виконуємо запит getDocuments() для ${needCashInRequest.length} contract (cashIn)...`);
             cashInDocuments = await this.getDocuments(needCashInRequest, 'cashIn');
           }
 
-          const groupByBaseDoc = (docs: any[]) => {
+          // Групуємо за contract (або baseDoc - вони ідентичні)
+          const groupByContract = (docs: any[]) => {
             const map = new Map<string, any>();
             for (const d of docs) {
-              if (!d?.baseDoc) continue;
-              if (!map.has(d.baseDoc)) {
-                map.set(d.baseDoc, d);
+              // Використовуємо contract або baseDoc як ключ
+              const contractKey = d?.contract || d?.baseDoc;
+              if (!contractKey) continue;
+              if (!map.has(contractKey)) {
+                map.set(contractKey, d);
               }
             }
             return map;
           };
 
-          const saleByBaseDoc = groupByBaseDoc(saleDocuments);
-          const cashInByBaseDoc = groupByBaseDoc(cashInDocuments);
+          const saleByContract = groupByContract(saleDocuments);
+          const cashInByContract = groupByContract(cashInDocuments);
 
-          for (const baseDoc of baseDocIds) {
-            const orderInfo = orderMap.get(baseDoc);
+          // Оновлюємо дати документів
+          for (const contractId of contractIds) {
+            const orderInfo = orderMap.get(contractId);
             if (!orderInfo) continue;
 
-            const localOrder = existingOrders.find(o => o.dilovodDocId === baseDoc);
+            const localOrder = existingOrders.find(o => o.dilovodDocId === contractId);
             const updateData: any = {};
 
-            if (!localOrder?.dilovodSaleExportDate && saleByBaseDoc.get(baseDoc)?.date) {
-              updateData.dilovodSaleExportDate = new Date(saleByBaseDoc.get(baseDoc).date).toISOString();
+            // Sale тільки для status >= '3'
+            const orderStatus = parseInt(localOrder?.status || '0');
+            if (orderStatus >= 3 && !localOrder?.dilovodSaleExportDate && saleByContract.get(contractId)?.date) {
+              updateData.dilovodSaleExportDate = new Date(saleByContract.get(contractId).date).toISOString();
             }
-            if (!localOrder?.dilovodCashInDate && cashInByBaseDoc.get(baseDoc)?.date) {
-              updateData.dilovodCashInDate = new Date(cashInByBaseDoc.get(baseDoc).date).toISOString();
+            
+            // CashIn для всіх
+            if (!localOrder?.dilovodCashInDate && cashInByContract.get(contractId)?.date) {
+              updateData.dilovodCashInDate = new Date(cashInByContract.get(contractId).date).toISOString();
             }
 
             if (Object.keys(updateData).length > 0) {
