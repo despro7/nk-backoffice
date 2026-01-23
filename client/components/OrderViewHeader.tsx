@@ -23,7 +23,7 @@ export function OrderViewHeader({ order, externalId, onBackClick }: OrderViewHea
       setReceiptNotAvailable(false);
 
       // Спочатку пробуємо отримати чек з Dilovod
-      const response = await apiCall(`/api/orders/${order.id || externalId}/fiscal-receipt`);
+      const response = await apiCall(`/api/orders/${order.id}/fiscal-receipt`);
       const data = await response.json();
 
       if (data.success && data.data?.receipt) {

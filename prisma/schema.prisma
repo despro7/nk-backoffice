@@ -56,6 +56,7 @@ model Order {
   dilovodSaleExportDate  DateTime?       // Дата відвантаження в Діловод (documents.sale)
   dilovodExportDate      DateTime?       // Дата вивантаження в Dilovod
   dilovodCashInDate      DateTime?       // Дата додавання документу (documents.cashIn)
+  dilovodCashInLastChecked DateTime?     // Дата останньої перевірки cashIn (для уникнення частих запитів)
   OrdersHistory        OrdersHistory[]
 
   @@index([status])

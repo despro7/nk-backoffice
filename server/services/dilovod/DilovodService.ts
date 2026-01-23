@@ -1131,6 +1131,10 @@ export class DilovodService {
     const prisma = new PrismaClient();
 
     try {
+      // Дата межі для повторної перевірки cashIn (24 години тому)
+      const cashInCheckThreshold = new Date();
+      cashInCheckThreshold.setHours(cashInCheckThreshold.getHours() - 24);
+
       // Знаходимо замовлення з неповними даними
       const orders = await prisma.order.findMany({
         where: {
@@ -1140,9 +1144,19 @@ export class DilovodService {
                 // Базові поля для всіх статусів >= '2'
                 { dilovodDocId: null },
                 { dilovodExportDate: null },
-                { dilovodCashInDate: null },
-                // Для status >= '3' додатково перевіряємо dilovodSaleExportDate
+                // CashIn: перевіряємо тільки якщо немає дати АБО остання перевірка була >24 год тому
                 {
+                  AND: [
+                    { dilovodCashInDate: null },
+                    {
+                      OR: [
+                        { dilovodCashInLastChecked: null },
+                        { dilovodCashInLastChecked: { lt: cashInCheckThreshold } }
+                      ]
+                    }
+                  ]
+                },
+                { // Для status >= '3' додатково перевіряємо dilovodSaleExportDate
                   AND: [
                     { status: { gte: '3' } },
                     { dilovodSaleExportDate: null }
@@ -1151,7 +1165,9 @@ export class DilovodService {
               ]
             },
             // Тільки підтверджені та вище (виключаємо "Нові")
-            { status: { gte: '2' } }
+            { status: { gte: '2' } },
+            // Виключаємо неактуальні статуси
+            { status: { notIn: ['1', '6', '7', '8'] } }
           ]
         },
         orderBy: { orderDate: 'desc' },
@@ -1440,9 +1456,14 @@ export class DilovodService {
               updateData.dilovodSaleExportDate = new Date(saleByContract.get(contractId).date).toISOString();
             }
             
-            // CashIn для всіх
-            if (!localOrder?.dilovodCashInDate && cashInByContract.get(contractId)?.date) {
-              updateData.dilovodCashInDate = new Date(cashInByContract.get(contractId).date).toISOString();
+            // CashIn для всіх + оновлюємо дату останньої перевірки
+            if (!localOrder?.dilovodCashInDate) {
+              if (cashInByContract.get(contractId)?.date) {
+                // Знайдено документ cashIn - зберігаємо дату
+                updateData.dilovodCashInDate = new Date(cashInByContract.get(contractId).date).toISOString();
+              }
+              // Завжди оновлюємо дату останньої перевірки (навіть якщо документ не знайдено)
+              updateData.dilovodCashInLastChecked = new Date().toISOString();
             }
 
             if (Object.keys(updateData).length > 0) {
@@ -1479,7 +1500,14 @@ export class DilovodService {
       const successCount = results.filter(r => r.success).length;
       const errorCount = results.length - successCount;
       const hasError = errorCount > 0;
-      const updatedCount = results.reduce((acc, r) => acc + (r.updatedCount || 0), 0);
+      
+      // Підраховуємо загальну кількість оновлень (включаючи Sale і CashIn)
+      const updatedCount = results.reduce((acc, r) => {
+        const baseUpdates = r.updatedCount || 0;
+        const saleUpdates = r.updatedCountSale || 0;
+        const cashInUpdates = r.updatedCountCashIn || 0;
+        return acc + baseUpdates + saleUpdates + cashInUpdates;
+      }, 0);
 
       const errorDetails = hasError
         ? results.filter(r => !r.success).map(r => ({

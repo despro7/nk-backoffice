@@ -294,9 +294,9 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 											return (
 											<div>
 												<h4 className="font-semibold text-sm mb-3">Оброблені замовлення:</h4>
-												<div className="flex flex-col md:flex-row flex-wrap gap-3 max-h-[calc(100vh-500px)] overflow-y-auto">
+												<div className="grid md:grid-cols-2 flex-wrap gap-3 max-h-[calc(100vh-500px)] overflow-y-auto">
 													{uniqueOrders.map((item: any, idx: number) => (
-														<div key={idx} className="flex-1 min-w-[45%] p-3 bg-gray-50 rounded-lg border-1 border-gray-200">
+														<div key={idx} className="p-3 bg-gray-50 rounded-lg border-1 border-gray-200">
 															<div className="flex items-start justify-between gap-2">
 																<div className="flex-1">
 																	<div className="font-medium text-sm">
@@ -330,11 +330,7 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 																)}
 																{item.success !== false && item.updatedCount > 0 ? (
 																	<Chip size="sm" color="success" variant="flat">
-																		OK
-																	</Chip>
-																) : item.success !== false && item.updatedCount === 0 ? (
-																	<Chip size="sm" color="secondary" variant="flat" className="text-neutral-400">
-																		Skip
+																		NEW
 																	</Chip>
 																) : null}
 															</div>

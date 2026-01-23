@@ -924,6 +924,18 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
+    // Якщо канал не налаштований для експорту
+    if (errorMessage.includes('не налаштований для експорту через Dilovod')) {
+      return res.status(400).json({
+        success: false,
+        error: 'channel_not_configured',
+        message: 'Замовлення не підлягає експорту через цей інструмент',
+        details: errorMessage,
+        type: 'channel_configuration_error',
+        action_required: 'Це замовлення вивантажується автоматично або іншим способом'
+      });
+    }
+
     // Перевіряємо, чи це критична помилка валідації
     if (errorMessage.includes('Експорт заблоковано через критичні помилки:')) {
       // Критична помилка валідації - повертаємо статус 400 (Bad Request)
@@ -1000,6 +1012,25 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (re
 
     } catch (validationError) {
       const errorMessage = validationError instanceof Error ? validationError.message : 'Unknown error';
+
+      // Якщо канал не налаштований для експорту
+      if (errorMessage.includes('не налаштований для експорту через Dilovod')) {
+        logWithTimestamp(`❌ Замовлення #${orderNum} (id: ${orderId}) не підлягає експорту через цей інструмент`);
+
+        return res.status(200).json({
+          success: false,
+          message: 'Замовлення не підлягає експорту через цей інструмент',
+          data: {
+            orderId,
+            isReadyForExport: false,
+            validatedAt: new Date().toISOString()
+          },
+          error: 'channel_not_configured',
+          details: errorMessage,
+          type: 'channel_configuration_error',
+          action_required: 'Це замовлення вивантажується автоматично або іншим способом'
+        });
+      }
 
       // Якщо це критична помилка валідації
       if (errorMessage.includes('Експорт заблоковано через критичні помилки:')) {

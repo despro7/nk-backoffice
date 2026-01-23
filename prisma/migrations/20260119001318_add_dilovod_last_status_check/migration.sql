@@ -1,0 +1,1 @@
+-- empty migration, nothing to apply

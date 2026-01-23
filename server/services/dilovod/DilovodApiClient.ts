@@ -646,8 +646,8 @@ export class DilovodApiClient {
   async getDocuments(baseDocId: any[], documentType: 'sale' | 'cashIn'): Promise<DilovodOrderResponse[]> {
     await this.ensureReady();
     
-    // Розбиваємо на чанки по 25 ID
-    const chunks = this.chunkArray(baseDocId, 25);
+    // Розбиваємо на чанки по 50 ID
+    const chunks = this.chunkArray(baseDocId, 50);
     const allResults: DilovodOrderResponse[] = [];
     
     for (const chunk of chunks) {

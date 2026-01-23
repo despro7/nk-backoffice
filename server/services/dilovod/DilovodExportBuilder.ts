@@ -76,6 +76,17 @@ export class DilovodExportBuilder {
       // 2. Завантажити налаштування Dilovod
       context.settings = await this.loadSettings();
 
+      // 2.1. ПЕРЕВІРКА: Чи налаштований канал для експорту?
+      const channelId = context.order.sajt;
+      const isChannelConfigured = context.settings.channelPaymentMapping && context.settings.channelPaymentMapping[channelId];
+      
+      if (!isChannelConfigured) {
+        const channelName = this.getChannelDisplayName(channelId);
+        const errorMessage = `Експорт заблоковано: канал "${channelName}" (ID: ${channelId}) не налаштований для експорту через Dilovod. Цей канал не потребує ручного експорту або вивантажується автоматично іншим способом.`;
+        logWithTimestamp(`❌ ${errorMessage}`);
+        throw new Error(errorMessage);
+      }
+
       // 3. Завантажити довідники (рахунки та фірми)
       context.directories = await this.loadDirectories();
 
@@ -462,15 +473,27 @@ export class DilovodExportBuilder {
   private async loadOrder(orderId: string): Promise<any> {
     logWithTimestamp(`  📥 Завантаження замовлення ${orderId}...`);
 
-    const order = await prisma.order.findFirst({
-      where: {
-        OR: [
-          { id: parseInt(orderId) },
-          { externalId: orderId },
-          { orderNumber: orderId }
-        ]
-      }
-    });
+    // Спочатку пробуємо знайти за точним ID (якщо orderId - число)
+    let order = null;
+    const numericId = parseInt(orderId);
+    
+    if (!isNaN(numericId)) {
+      order = await prisma.order.findUnique({
+        where: { id: numericId }
+      });
+    }
+    
+    // Якщо не знайдено за ID - шукаємо за externalId або orderNumber
+    if (!order) {
+      order = await prisma.order.findFirst({
+        where: {
+          OR: [
+            { externalId: orderId },
+            { orderNumber: orderId }
+          ]
+        }
+      });
+    }
 
     if (!order) {
       throw new Error(`Замовлення ${orderId} не знайдено в базі даних`);
@@ -483,7 +506,7 @@ export class DilovodExportBuilder {
       rawData: order.rawData ? JSON.parse(order.rawData) : {}
     };
 
-    logWithTimestamp(`  ✅ Замовлення завантажено: #${parsedOrder.orderNumber}, товарів: ${parsedOrder.items.length}`);
+    logWithTimestamp(`  ✅ Замовлення завантажено: #${parsedOrder.orderNumber}, товарів: ${parsedOrder.items.length}, канал: ${parsedOrder.sajt}`);
 
     return parsedOrder;
   }

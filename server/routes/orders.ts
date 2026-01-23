@@ -672,13 +672,12 @@ router.get('/:id/fiscal-receipt', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
 
+    console.log(`📄 [FISCAL RECEIPT] Запит фіскального чеку для замовлення ID: ${id}`);
+
     // Отримуємо замовлення з БД для отримання dilovodDocId
     const order = await prisma.order.findFirst({
       where: {
-        OR: [
-          { id: parseInt(id) },
-          { externalId: id }
-        ]
+        id: parseInt(id)
       },
       select: {
         id: true,
