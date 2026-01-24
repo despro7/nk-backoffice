@@ -165,11 +165,7 @@ export function useOrderNavigation({
 
       const statusData = await statusResponse.json();
       if (statusData.success) {
-        if (statusData.salesDriveUpdated) {
-          console.log('✅ [useOrderNavigation] Статус замовлення оновлено в SalesDrive на "3" (Готове до відправлення)');
-        } else {
-          console.warn('⚠️ [useOrderNavigation] Статус оновлено локально, але не вдалося оновити в SalesDrive');
-        }
+        console.log('✅ [useOrderNavigation] Статус замовлення оновлено в SalesDrive на "3" (Готове до відправлення)');
       } else {
         console.warn('⚠️ [useOrderNavigation] Помилка при оновленні статусу:', statusData.error);
       }

@@ -1,4 +1,3 @@
-import { prisma } from '../lib/utils.js';
 import { orderDatabaseService } from './orderDatabaseService.js';
 import { syncSettingsService } from './syncSettingsService.js';
 import { syncHistoryService, CreateSyncHistoryData } from './syncHistoryService.js';
@@ -10,6 +9,8 @@ import type {
   SalesDriveStatus,
   SalesDriveDirectoryResponse
 } from './salesdrive/SalesDriveTypes.js';
+import { mapSalesDriveStatus, getStatusText } from './salesdrive/statusMapper.js';
+import { generateExternalId } from './salesdrive/externalIdHelper.js';
 
 // Node.js types for setInterval
 declare const setInterval: (callback: () => void, ms: number) => NodeJS.Timeout;
@@ -329,7 +330,7 @@ export class SalesDriveService {
     // Перевіряємо кеш
     const cached = this.cacheState.data.get(cacheKey);
     if (cached && now < cached.expiresAt) {
-      console.log('📦 [SalesDrive] Using cached payment methods');
+      // Тихо повертаємо з кешу (лог буде в formatOrdersList)
       return cached.data;
     }
 
@@ -414,11 +415,11 @@ export class SalesDriveService {
     // Перевіряємо кеш
     const cached = this.cacheState.data.get(cacheKey);
     if (cached && now < cached.expiresAt) {
-      console.log('📦 [SalesDrive] Using cached channels');
+      // Тихо повертаємо з кешу
       return cached.data;
     }
 
-    console.log('� [SalesDrive] Loading static channels list (no API endpoint available)');
+    console.log('📋 [SalesDrive] Loading static channels list (no API endpoint available)');
 
     // Статичний список каналів (SalesDrive API не має такого ендпоінту)
     const channels: SalesDriveChannel[] = [
@@ -458,7 +459,7 @@ export class SalesDriveService {
     // Перевіряємо кеш
     const cached = this.cacheState.data.get(cacheKey);
     if (cached && now < cached.expiresAt) {
-      console.log('📦 [SalesDrive] Using cached shipping methods');
+      // Тихо повертаємо з кешу (лог буде в formatOrdersList)
       return cached.data;
     }
 
@@ -541,7 +542,7 @@ export class SalesDriveService {
     // Перевіряємо кеш
     const cached = this.cacheState.data.get(cacheKey);
     if (cached && now < cached.expiresAt) {
-      console.log('📦 [SalesDrive] Using cached statuses');
+      // Тихо повертаємо з кешу (лог буде в formatOrdersList)
       return cached.data;
     }
 
@@ -1364,12 +1365,38 @@ export class SalesDriveService {
       return true;
     });
 
+    // Завантажуємо довідники один раз для всіх замовлень (з кешуванням)
+    console.log('📦 [SalesDrive] Loading reference data for order formatting...');
+    const [statuses, shippingMethods, paymentMethods] = await Promise.all([
+      this.fetchStatuses(),
+      this.fetchShippingMethods(),
+      this.fetchPaymentMethods()
+    ]);
+
+    // Створюємо мапінги один раз
+    const statusMap: { [key: number]: string } = {};
+    statuses.forEach(status => {
+      statusMap[status.id] = status.name;
+    });
+
+    const shippingMethodMap: { [key: number]: string } = {};
+    shippingMethods.forEach(method => {
+      shippingMethodMap[method.id] = method.name;
+    });
+
+    const paymentMethodMap: { [key: number]: string } = {};
+    paymentMethods.forEach(method => {
+      paymentMethodMap[method.id] = method.name;
+    });
+
+    console.log(`✅ [SalesDrive] Reference data loaded, formatting ${validOrders.length} orders...`);
+
     const formattedOrders: (SalesDriveOrder | null)[] = [];
 
     for (let index = 0; index < validOrders.length; index++) {
       const order = validOrders[index];
       try {
-        const formattedOrder = await this.formatOrder(order);
+        const formattedOrder = await this.formatOrder(order, statusMap, shippingMethodMap, paymentMethodMap);
         formattedOrders.push(formattedOrder);
       } catch (error) {
         console.error(`❌ [ERROR] Failed to format order at index ${index}:`, error);
@@ -1404,38 +1431,54 @@ export class SalesDriveService {
   }
 
   /**
-   * Форматирует заказ в структурированный вид (с нужным форматом rawData)
+   * Форматує замовлення в структурований вигляд (з потрібним форматом rawData)
+   * @param rawOrder - Сирі дані замовлення з SalesDrive
+   * @param statusMap - Мапінг статусів (опціонально, якщо не передано - завантажується)
+   * @param shippingMethodMap - Мапінг методів доставки (опціонально)
+   * @param paymentMethodMap - Мапінг методів оплати (опціонально)
    */
-  private async formatOrder(rawOrder: any): Promise<SalesDriveOrder> {
+  private async formatOrder(
+    rawOrder: any,
+    statusMap?: { [key: number]: string },
+    shippingMethodMap?: { [key: number]: string },
+    paymentMethodMap?: { [key: number]: string }
+  ): Promise<SalesDriveOrder> {
     // Проверяем, что rawOrder существует
     if (!rawOrder) {
       console.error('❌ [ERROR] formatOrder received null/undefined rawOrder');
       throw new Error('Invalid order data: rawOrder is null or undefined');
     }
 
+    // Якщо мапінги не передані - завантажуємо (для окремих викликів)
+    if (!statusMap || !shippingMethodMap || !paymentMethodMap) {
+      const [statuses, shippingMethods, paymentMethods] = await Promise.all([
+        this.fetchStatuses(),
+        this.fetchShippingMethods(),
+        this.fetchPaymentMethods()
+      ]);
 
-    // Отримуємо актуальні мапінги з кешованих довідників
-    const [statuses, shippingMethods, paymentMethods] = await Promise.all([
-      this.fetchStatuses(),
-      this.fetchShippingMethods(),
-      this.fetchPaymentMethods()
-    ]);
+      // Створюємо мапінги
+      if (!statusMap) {
+        statusMap = {};
+        statuses.forEach(status => {
+          statusMap![status.id] = status.name;
+        });
+      }
 
-    // Створюємо мапінги з актуальних даних
-    const statusMap: { [key: number]: string } = {};
-    statuses.forEach(status => {
-      statusMap[status.id] = status.name;
-    });
+      if (!shippingMethodMap) {
+        shippingMethodMap = {};
+        shippingMethods.forEach(method => {
+          shippingMethodMap![method.id] = method.name;
+        });
+      }
 
-    const shippingMethodMap: { [key: number]: string } = {};
-    shippingMethods.forEach(method => {
-      shippingMethodMap[method.id] = method.name;
-    });
-
-    const paymentMethodMap: { [key: number]: string } = {};
-    paymentMethods.forEach(method => {
-      paymentMethodMap[method.id] = method.name;
-    });
+      if (!paymentMethodMap) {
+        paymentMethodMap = {};
+        paymentMethods.forEach(method => {
+          paymentMethodMap![method.id] = method.name;
+        });
+      }
+    }
 
     let customerName = '';
     let customerPhone = '';
@@ -1457,11 +1500,11 @@ export class SalesDriveService {
     const formattedOrder: SalesDriveOrder = {
       rawData: rawOrder,  // Сохраняем полные сырые данные
       id: rawOrder.id || 0,
-      orderNumber: rawOrder.externalId || rawOrder.id?.toString() || '',
+      orderNumber: generateExternalId(rawOrder),
       ttn: rawOrder.ord_delivery_data?.[0]?.trackingNumber || '',
       quantity: quantity,
-      status: rawOrder.statusId?.toString() || '',
-      statusText: statusMap[rawOrder.statusId] || 'Невідомий',
+      status: mapSalesDriveStatus(rawOrder.statusId, '1'), // Використовуємо централізований маппер
+      statusText: getStatusText(mapSalesDriveStatus(rawOrder.statusId, '1')), // Отримуємо текст з маппера
       items: rawOrder.products
         ? rawOrder.products.map((p: any) => ({
           productName: p.text,
@@ -1472,7 +1515,7 @@ export class SalesDriveService {
         : rawOrder.items || [],
       createdAt: new Date().toISOString(),
       orderDate: rawOrder.orderTime || '',
-      externalId: rawOrder.externalId || '',
+      externalId: generateExternalId(rawOrder),
       shippingMethod: rawOrder.shippingMethod || shippingMethodMap[rawOrder.shipping_method] || 'Невідомий',
       paymentMethod: rawOrder.paymentMethod || paymentMethodMap[rawOrder.payment_method] || 'Невідомий',
       cityName: rawOrder.ord_delivery_data?.[0]?.cityName || '',
@@ -1720,13 +1763,13 @@ export class SalesDriveService {
       console.log(`📊 [SYNC] Order statuses: ${[...new Set(salesDriveOrders.filter(o => o && o.status).map(o => o.status))].join(', ')}`);
 
       // Группируем заказы для batch операций
-      const orderIds = salesDriveOrders.filter(o => o && o.orderNumber).map(o => o.orderNumber);
-      const existingOrders = await orderDatabaseService.getOrdersByExternalIds(orderIds);
+      const orderIds = salesDriveOrders.filter(o => o && o.id).map(o => o.id);
+      const existingOrders = await orderDatabaseService.getOrdersByIds(orderIds);
 
       // Разделяем на новые и обновляемые
-      const existingIds = new Set(existingOrders.filter(o => o && o.externalId).map(o => o.externalId));
-      const newOrders = salesDriveOrders.filter(o => o && o.orderNumber && !existingIds.has(o.orderNumber));
-      const updateOrders = salesDriveOrders.filter(o => o && o.orderNumber && existingIds.has(o.orderNumber));
+      const existingIds = new Set(existingOrders.filter(o => o && o.id).map(o => o.id));
+      const newOrders = salesDriveOrders.filter(o => o && o.id && !existingIds.has(o.id));
+      const updateOrders = salesDriveOrders.filter(o => o && o.id && existingIds.has(o.id));
 
       console.log(`📊 [SYNC] Order classification:`);
       console.log(`   🆕 New orders: ${newOrders.length}`);
@@ -1742,11 +1785,11 @@ export class SalesDriveService {
       // Batch создание новых заказов
       if (newOrders.length > 0) {
         console.log(`📝 [SYNC] Creating ${newOrders.length} new orders...`);
-        console.log(`📝 [SYNC] Sample new orders: ${newOrders.slice(0, 3).filter(o => o && o.orderNumber).map(o => `${o.orderNumber} (${o.status || 'no status'})`).join(', ')}`);
+        console.log(`📝 [SYNC] Sample new orders IDs: ${newOrders.slice(0, 3).filter(o => o && o.id).map(o => `${o.id} (${o.status || 'no status'})`).join(', ')}`);
 
         try {
           const startTime = Date.now();
-          await orderDatabaseService.createOrdersBatch(newOrders.filter(o => o && o.orderNumber).map(o => ({
+          await orderDatabaseService.createOrdersBatch(newOrders.filter(o => o && o.id).map(o => ({
             id: o.id,
             externalId: o.orderNumber,
             orderNumber: o.orderNumber,
@@ -1796,11 +1839,11 @@ export class SalesDriveService {
       // Batch обновление существующих заказов с умным обновлением
       if (updateOrders.length > 0) {
         console.log(`🔄 [SYNC] Updating ${updateOrders.length} existing orders...`);
-        console.log(`🔄 [SYNC] Sample update orders: ${updateOrders.slice(0, 3).filter(o => o && o.orderNumber).map(o => `${o.orderNumber} (${o.status || 'no status'})`).join(', ')}`);
+        console.log(`🔄 [SYNC] Sample update orders IDs: ${updateOrders.slice(0, 3).filter(o => o && o.id).map(o => `${o.id} (${o.status || 'no status'})`).join(', ')}`);
 
         try {
           const updateStartTime = Date.now();
-          const updateResult = await orderDatabaseService.updateOrdersBatchSmart(updateOrders.filter(o => o && o.orderNumber).map(o => ({
+          const updateResult = await orderDatabaseService.updateOrdersBatchSmart(updateOrders.filter(o => o && o.id).map(o => ({
             id: o.id,
             orderNumber: o.orderNumber,
             status: o.status,

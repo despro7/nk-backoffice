@@ -1188,51 +1188,8 @@ export class DilovodService {
 
       logWithTimestamp(`Знайдено ${orders.length} замовлень з неповними даними`);
 
-      // Форматуємо номери з префіксами/суфіксами
-      return this.formatOrderNumbers(orders);
-    } catch (error) {
-      await prisma.$disconnect();
-      throw error;
-    }
-  }
-
-  /**
-   * ПРИВАТНИЙ: Форматування номерів замовлень з префіксами/суфіксами
-   */
-  private async formatOrderNumbers(orders: Array<{ orderNumber: string; sajt: string | null }>): Promise<string[]> {
-    const { PrismaClient } = await import('@prisma/client');
-    const prisma = new PrismaClient();
-
-    try {
-      // Отримуємо налаштування каналів
-      const settingsRecords = await prisma.settingsBase.findMany({
-        where: {
-          category: 'dilovod',
-          isActive: true
-        }
-      });
-
-      await prisma.$disconnect();
-
-      const settingsMap = new Map(settingsRecords.map(s => [s.key, s.value]));
-      const channelPaymentMapping = JSON.parse(settingsMap.get('dilovod_channel_payment_mapping') || '{}');
-
-      // Форматуємо номери
-      return orders.map(order => {
-        const channelSettings = channelPaymentMapping?.[order.sajt || ''];
-        let orderNum = order.orderNumber;
-
-        if (channelSettings) {
-          if (channelSettings.prefixOrder) {
-            orderNum = channelSettings.prefixOrder + orderNum;
-          }
-          if (channelSettings.sufixOrder) {
-            orderNum = orderNum + channelSettings.sufixOrder;
-          }
-        }
-
-        return orderNum;
-      });
+      // Повертаємо номери як є (вони вже у правильному форматі в БД)
+      return orders.map(o => o.orderNumber);
     } catch (error) {
       await prisma.$disconnect();
       throw error;
@@ -1267,15 +1224,14 @@ export class DilovodService {
 
       const results = [];
       const contractIds: string[] = [];
-      const orderMap = new Map<string, { normalizedNumber: string; dilovodId: string; dilovodExportDate: string | Date; status?: string }>();
+      const orderMap = new Map<string, { orderNumber: string; dilovodId: string; dilovodExportDate: string | Date; status?: string }>();
 
-      // Перевіряємо в локальній базі, які дані вже є
+      // Перевіряємо в локальній базі, які дані вже є (шукаємо за повним номером як є)
       const checks = await Promise.all(
         orderNumbers
           .filter(num => num)
           .map(async num => {
-            const normalized = String(num).replace(/[^\d]/g, "");
-            const existing = await orderDatabaseService.getOrderByExternalId(normalized);
+            const existing = await orderDatabaseService.getOrderByExternalId(num);
 
             return {
               num,
@@ -1295,11 +1251,9 @@ export class DilovodService {
       for (const item of passedOrders) {
         logWithTimestamp(`Замовлення ${item.num} вже має dilovodDocId — буде оновлено додаткові поля`);
 
-        const normalizedNumber = String(item.num).replace(/[^\d]/g, "");
-
         contractIds.push(item.contractId);
         orderMap.set(item.contractId, {
-          normalizedNumber,
+          orderNumber: item.num,
           dilovodId: item.contractId,
           dilovodExportDate: item.dilovodExportDate,
           status: item.status
@@ -1331,7 +1285,7 @@ export class DilovodService {
           continue;
         }
 
-        const normalizedNumber = String(dilovodOrder.number).replace(/[^\d]/g, "");
+        const orderNumber = String(dilovodOrder.number);
         const contractId = dilovodOrder.id;
 
         try {
@@ -1341,20 +1295,20 @@ export class DilovodService {
           };
 
           const updatedOrder = await prisma.order.updateMany({
-            where: { orderNumber: normalizedNumber },
+            where: { orderNumber: orderNumber },
             data: updateData
           });
 
           if (updatedOrder.count > 0) {
             contractIds.push(contractId);
             orderMap.set(contractId, {
-              normalizedNumber,
+              orderNumber,
               dilovodId: dilovodOrder.id,
               dilovodExportDate: dilovodOrder.date
             });
 
             results.push({
-              orderNumber: normalizedNumber,
+              orderNumber: orderNumber,
               dilovodId: dilovodOrder.id,
               dilovodExportDate: dilovodOrder.date,
               updatedCount: updatedOrder.count,
@@ -1362,7 +1316,7 @@ export class DilovodService {
             });
           } else {
             results.push({
-              orderNumber: normalizedNumber,
+              orderNumber: orderNumber,
               dilovodId: dilovodOrder.id,
               error: 'Order not found in local database',
               success: false
@@ -1370,7 +1324,7 @@ export class DilovodService {
           }
         } catch (err) {
           results.push({
-            orderNumber: normalizedNumber,
+            orderNumber: orderNumber,
             dilovodId: dilovodOrder.id,
             error: err instanceof Error ? err.message : String(err),
             success: false
@@ -1382,7 +1336,7 @@ export class DilovodService {
       if (contractIds.length > 0) {
         try {
           // Отримуємо тільки ті замовлення, що відповідають нашим orderNumbers
-          const orderNumbersFromMap = Array.from(orderMap.values()).map(o => o.normalizedNumber);
+          const orderNumbersFromMap = Array.from(orderMap.values()).map(o => o.orderNumber);
           
           const existingOrders = await prisma.order.findMany({
             where: {
@@ -1468,11 +1422,11 @@ export class DilovodService {
 
             if (Object.keys(updateData).length > 0) {
               await prisma.order.updateMany({
-                where: { orderNumber: orderInfo.normalizedNumber },
+                where: { orderNumber: orderInfo.orderNumber },
                 data: updateData
               });
 
-              const resultIndex = results.findIndex(r => r.orderNumber === orderInfo.normalizedNumber);
+              const resultIndex = results.findIndex(r => r.orderNumber === orderInfo.orderNumber);
               if (resultIndex !== -1) {
                 results[resultIndex] = {
                   ...results[resultIndex],
@@ -1483,7 +1437,7 @@ export class DilovodService {
                 };
               } else {
                 results.push({
-                  orderNumber: orderInfo.normalizedNumber,
+                  orderNumber: orderInfo.orderNumber,
                   updatedCount: updateData.dilovodSaleExportDate || updateData.dilovodCashInDate ? 1 : 0,
                   success: true
                 });

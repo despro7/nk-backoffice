@@ -106,7 +106,7 @@ export class DilovodExportBuilder {
 
       // 8. Побудувати табличні частини (товари)
       const tableParts = await this.buildTableParts(context);
-      const orderNumber = await orderDatabaseService.getDisplayOrderNumber(Number(orderId));
+      const orderNumber = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
       // 9. Додаткова перевірка товарів
       if (tableParts.tpGoods.length === 0) {
@@ -188,13 +188,29 @@ export class DilovodExportBuilder {
           delete baseHeaderForSale[field];
         }
       }
-
+      
       // Модифікуємо заголовок для documents.sale
-      const dateNow = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      // Використовуємо readyToShipAt як дату відвантаження, якщо вона є
+      let saleDate: string;
+      if (context.order.readyToShipAt) {
+        // Конвертуємо readyToShipAt в формат Dilovod (YYYY-MM-DD HH:MM:SS) з UTC в локальний час (Київ UTC+2/+3)
+        const utcReadyDate = new Date(context.order.readyToShipAt);
+        const readyDate = new Date(utcReadyDate.getTime() - utcReadyDate.getTimezoneOffset() * 60000);
+        saleDate = readyDate.toISOString().replace('T', ' ').substring(0, 19);
+        logWithTimestamp(`  📅 Використовуємо дату готовності до відправки: ${saleDate}`);
+      } else {
+        // Fallback на поточну дату, якщо readyToShipAt не встановлено
+        const utcNow = new Date();
+        const localNow = new Date(utcNow.getTime() - utcNow.getTimezoneOffset() * 60000);
+        saleDate = localNow.toISOString().replace('T', ' ').substring(0, 19);
+        context.warnings.push('Дата готовності до відправки (readyToShipAt) не встановлена, використовується поточна дата');
+        logWithTimestamp(`  ⚠️  readyToShipAt не встановлено, використовуємо поточну дату: ${saleDate}`);
+      }
+
       const header: DilovodExportHeader = {
         ...baseHeaderForSale,
         id: 'documents.sale',                           // Тип документа - відвантаження
-        date: dateNow,                                  // Поточна дата
+        date: saleDate,                                 // Дата готовності до відправки або поточна
         docMode: DILOVOD_CONSTANTS.DOC_MODE_WHOLESALE,  // Режим документа
         baseDoc: baseDocId,                             // Посилання на documents.saleOrder
         contract: baseDocId,                            // Договір (такий самий як baseDoc)
@@ -281,12 +297,20 @@ export class DilovodExportBuilder {
       deliveryAddress = order.deliveryAddress;
     }
 
-    // Формуємо дату документа
-    const documentDate = order.orderDate
-      ? new Date(order.orderDate).toISOString().replace('T', ' ').substring(0, 19)
-      : new Date().toISOString().replace('T', ' ').substring(0, 19);
+    // Формуємо дату документа - конвертуємо з UTC в локальний час (Київ UTC+2/+3)
+    let documentDate: string;
+    if (order.orderDate) {
+      const utcDate = new Date(order.orderDate);
+      // Конвертуємо UTC в локальний час (Київ UTC+2/+3)
+      const localDate = new Date(utcDate.getTime() - utcDate.getTimezoneOffset() * 60000);
+      documentDate = localDate.toISOString().replace('T', ' ').substring(0, 19);
+    } else {
+      const utcNow = new Date();
+      const localNow = new Date(utcNow.getTime() - utcNow.getTimezoneOffset() * 60000);
+      documentDate = localNow.toISOString().replace('T', ' ').substring(0, 19);
+    }
 
-    const orderNumber = await orderDatabaseService.getDisplayOrderNumber(Number(order.id));
+    const orderNumber = await orderDatabaseService.getOrderNumberFromId(Number(order.id));
 
     const header: DilovodExportHeader = {
       id: 'documents.saleOrder',                            // Тип документа "Замовлення на продаж"
@@ -308,7 +332,7 @@ export class DilovodExportBuilder {
       deliveryRemark_forDel: deliveryAddress                // Адреса доставки
     };
 
-    logWithTimestamp(`  ✅ Заголовок сформовано для замовлення #${header.number}`);
+    logWithTimestamp(`  ✅ Заголовок сформовано для замовлення ${header.number}`);
 
     return { header, channelMapping };
   }
@@ -506,7 +530,7 @@ export class DilovodExportBuilder {
       rawData: order.rawData ? JSON.parse(order.rawData) : {}
     };
 
-    logWithTimestamp(`  ✅ Замовлення завантажено: #${parsedOrder.orderNumber}, товарів: ${parsedOrder.items.length}, канал: ${parsedOrder.sajt}`);
+    logWithTimestamp(`  ✅ Замовлення завантажено: ${parsedOrder.orderNumber}, товарів: ${parsedOrder.items.length}, канал: ${parsedOrder.sajt}`);
 
     return parsedOrder;
   }
@@ -752,36 +776,6 @@ export class DilovodExportBuilder {
     warnings.push(`Канал продажів для "${channelDisplayName}" не визначено. Налаштуйте ручний мапінг у розділі "Налаштування номера замовлення для каналу".`);
     logWithTimestamp(`  ❌ Ручний мапінг каналу не налаштовано для sajt "${channelCode}"`);
     return '';
-  }
-
-
-  /**
-   * Отримати номер замовлення з префіксом/суфіксом для каналу
-   * 
-   * @param order Об'єкт замовлення
-   * @param settings Налаштування Dilovod
-   * @returns Відформатований номер замовлення з префіксом/суфіксом (якщо налаштовано)
-   */
-  private getDisplayOrderNumber(order: any, settings: DilovodSettings): string {
-    const baseOrderNumber = order.orderNumber || '';
-
-    // Отримуємо ID каналу з замовлення
-    const channelId = order.sajt;
-    if (!channelId) {
-      return baseOrderNumber;
-    }
-
-    // Отримуємо налаштування каналу з channelPaymentMapping
-    const channelSettings = settings.channelPaymentMapping?.[channelId];
-    if (!channelSettings) {
-      return baseOrderNumber;
-    }
-
-    // Формуємо номер з префіксом та суфіксом
-    const prefix = channelSettings.prefixOrder || '';
-    const suffix = channelSettings.sufixOrder || '';
-
-    return `${prefix}${baseOrderNumber}${suffix}`;
   }
 
 

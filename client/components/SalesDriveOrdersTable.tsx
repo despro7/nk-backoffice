@@ -35,7 +35,7 @@ import ResultDrawer from './ResultDrawer';
 import type { SalesDriveOrderForExport, SalesDriveOrdersResponse, } from "@shared/types/salesdrive";
 import type { SalesChannel } from "@shared/types/dilovod";
 
-// Канали продажів з SalesDrive (исключая nk-food.shop с ID "19")
+// Канали продажів з SalesDrive
 const SALES_CHANNELS: SalesChannel[] = [
   { id: '22', name: 'Rozetka (Сергій)' },
   { id: '24', name: 'prom (old)' },
@@ -315,23 +315,15 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       timeout: 2000
     });
 
-    // Отримати налаштування префіксу/суфіксу для каналу
-    const processedOrders = filteredOrders.map(order => {
-      const channelSettings = dilovodSettings?.channelPaymentMapping?.[order.sajt];
-      let orderNum = order.orderNumber;
-      if (channelSettings) {
-        if (channelSettings.prefixOrder) orderNum = channelSettings.prefixOrder + orderNum;
-        if (channelSettings.sufixOrder) orderNum = orderNum + channelSettings.sufixOrder;
-      }
-      return orderNum;
-    });
+    // Використовуємо orderNumber безпосередньо (вони вже в правильному форматі в БД)
+    const orderNumbers = filteredOrders.map(order => order.orderNumber);
 
     try {
       // Звертаємося до API Dilovod для масової перевірки замовлень - server\routes\dilovod.ts
       const response = await apiCall('/api/dilovod/salesdrive/orders/check', {
         method: 'POST',
         body: JSON.stringify({
-          orderNumbers: processedOrders
+          orderNumbers: orderNumbers
         })
       });
       const result = await response.json();
@@ -350,8 +342,12 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         //   icon: <DynamicIcon name={result.updatedCount > 0 ? 'check-circle' : 'octagon-alert'} size={20} strokeWidth={1.5} className="shrink-0" />
         // });
 
-        // Перемальовуємо таблицю
-        if (result.updatedCount > 0) {
+        // Перемальовуємо таблицю якщо були будь-які оновлення
+        const hasUpdates = result.updatedCount > 0 || 
+                          result.updatedCountSale > 0 || 
+                          result.updatedCountCashIn > 0;
+        
+        if (hasUpdates) {
           fetchOrders();
         }
       } else {
@@ -386,7 +382,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       const response = await apiCall(`/api/dilovod/salesdrive/orders/check`, {
         method: 'POST',
         body: JSON.stringify({
-          orderNumbers: [getDisplayOrderNumber(order)]
+          orderNumbers: [order.orderNumber]
         })
       });
       const result = await response.json();
@@ -406,8 +402,13 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             color: 'danger'
           });
         } else {
-          // Визначаємо, чи був оновлений локальний статус (є новий dilovodId або dilovodExportDate)
-          const updated = result.data.some((item: any) => item.updatedCount > 0);
+          // Визначаємо, чи був оновлений локальний статус (перевіряємо всі типи оновлень)
+          const updated = result.data.some((item: any) => 
+            item.updatedCount > 0 || 
+            item.updatedCountSale > 0 || 
+            item.updatedCountCashIn > 0
+          );
+          
           if (updated) {
             ToastService.show({
               title: 'Оновлено!',
@@ -451,7 +452,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     };
 
     setDrawerResult(orderData);
-    setDrawerTitle(`Деталі замовлення ${getDisplayOrderNumber(order)}`);
+    setDrawerTitle(`Деталі замовлення ${order.orderNumber}`);
     setDrawerType('orderDetails');
     onDrawerOpen();
   };
@@ -485,7 +486,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       // Валідація пройшла, продовжуємо з експортом
       ToastService.show({
         title: 'Експорт...',
-        description: `Експортуємо замовлення ${getDisplayOrderNumber(order)} в Діловод`,
+        description: `Експортуємо замовлення ${order.orderNumber} в Діловод`,
         color: 'primary',
         hideIcon: false,
         icon: <DynamicIcon name="upload-cloud" size={20} className="shrink-0" />,
@@ -563,7 +564,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     try {
       ToastService.show({
         title: 'Створення...',
-        description: `Створюємо документ відвантаження для ${getDisplayOrderNumber(order)}`,
+        description: `Створюємо документ відвантаження для ${order.orderNumber}`,
         color: 'primary',
         hideIcon: false,
         icon: <DynamicIcon name="upload-cloud" size={20} className="shrink-0" />
@@ -638,14 +639,14 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         if (!validateResponse.ok || !validateResult.success) {
           errors.push(validateResult.details || 'Помилка валідації');
           ToastService.show({
-            title: `Помилка валідації (${getDisplayOrderNumber(order)})`,
+            title: `Помилка валідації (${order.orderNumber})`,
             description: validateResult.details || 'Помилка',
             color: 'danger',
             hideIcon: false,
             icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
           });
           results.push({
-            orderNumber: getDisplayOrderNumber(order),
+            orderNumber: order.orderNumber,
             exportSuccess,
             shipmentSuccess,
             errors
@@ -662,7 +663,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         if (result.success && result.exported && (result.dilovodId || result.dilovodExportDate)) {
           exportSuccess = true;
           ToastService.show({
-            title: `Експортовано (${getDisplayOrderNumber(order)})`,
+            title: `Експортовано (${order.orderNumber})`,
             description: result.message || 'Успішно',
             color: 'success',
             hideIcon: false,
@@ -672,7 +673,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         } else {
           errors.push(result.error || result.message || 'Помилка експорту');
           ToastService.show({
-            title: `Помилка експорту (${getDisplayOrderNumber(order)})`,
+            title: `Помилка експорту (${order.orderNumber})`,
             description: result.error || result.message || 'Помилка',
             color: 'danger',
             hideIcon: false,
@@ -680,7 +681,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             timeout: 1500
           });
           results.push({
-            orderNumber: getDisplayOrderNumber(order),
+            orderNumber: order.orderNumber,
             exportSuccess,
             shipmentSuccess,
             errors
@@ -699,7 +700,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             if (shipmentResult.success && shipmentResult.created) {
               shipmentSuccess = true;
               ToastService.show({
-                title: `Відвантажено (${getDisplayOrderNumber(order)})`,
+                title: `Відвантажено (${order.orderNumber})`,
                 description: shipmentResult.message || 'Успішно',
                 color: 'success',
                 hideIcon: false,
@@ -709,7 +710,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             } else {
               errors.push(shipmentResult.error || shipmentResult.message || 'Помилка відвантаження');
               ToastService.show({
-                title: `Помилка відвантаження (${getDisplayOrderNumber(order)})`,
+                title: `Помилка відвантаження (${order.orderNumber})`,
                 description: shipmentResult.error || shipmentResult.message || 'Помилка',
                 color: 'danger',
                 hideIcon: false,
@@ -720,7 +721,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           } catch {
             errors.push('Помилка зʼєднання при відвантаженні');
             ToastService.show({
-              title: `Помилка зʼєднання (${getDisplayOrderNumber(order)})`,
+              title: `Помилка зʼєднання (${order.orderNumber})`,
               description: 'Помилка зʼєднання при відвантаженні',
               color: 'danger',
               hideIcon: false,
@@ -731,7 +732,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       } catch {
         errors.push('Помилка зʼєднання при експорті');
         ToastService.show({
-          title: `Помилка зʼєднання (${getDisplayOrderNumber(order)})`,
+          title: `Помилка зʼєднання (${order.orderNumber})`,
           description: 'Помилка зʼєднання при експорті',
           color: 'danger',
           hideIcon: false,
@@ -739,7 +740,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         });
       }
       results.push({
-        orderNumber: getDisplayOrderNumber(order),
+        orderNumber: order.orderNumber,
         exportSuccess,
         shipmentSuccess,
         errors
@@ -778,12 +779,12 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     setLoading(true);
     try {
       // API call to fetch logs for this order
-      const res = await apiCall(`/api/meta-logs?orderNumber=${encodeURIComponent(getDisplayOrderNumber(order))}`);
+      const res = await apiCall(`/api/meta-logs?orderNumber=${encodeURIComponent(order.orderNumber)}`);
       const data = await res.json();
 
       if (Array.isArray(data) && data.length > 0) {
         setDrawerResult(data);
-        setDrawerTitle(`Логи експорту замовлення ${getDisplayOrderNumber(order)}`);
+        setDrawerTitle(`Логи експорту замовлення ${order.orderNumber}`);
         setDrawerType('logs');
         onDrawerOpen();
       } else {
@@ -831,7 +832,12 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         setDrawerType('result');
         onDrawerOpen();
 
-        if (result.updatedCount > 0) {
+        // Перевіряємо всі типи оновлень
+        const hasUpdates = result.updatedCount > 0 || 
+                          result.updatedCountSale > 0 || 
+                          result.updatedCountCashIn > 0;
+        
+        if (hasUpdates) {
           fetchOrders();
         }
       } else {
@@ -861,29 +867,6 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       color: 'success'
     });
   };
-
-  // Utility: get order number with prefix/suffix from channel settings
-  function getDisplayOrderNumber(order: SalesDriveOrderForExport): string {
-    const channelSettings = dilovodSettings?.channelPaymentMapping?.[order.sajt];
-    let orderNum = order.orderNumber;
-    if (channelSettings) {
-      if (channelSettings.prefixOrder) orderNum = channelSettings.prefixOrder + orderNum;
-      if (channelSettings.sufixOrder) orderNum = orderNum + channelSettings.sufixOrder;
-    }
-    return orderNum;
-  }
-
-  // Utility: get order numbers with prefix/suffix from channel settings
-  const getDisplayOrderNumbers = (orderNumbers: string[]) => orderNumbers.map(orderNumber => {
-    const order = orders.find(order => order.orderNumber === orderNumber);
-    if (!order) return orderNumber;
-    const channelSettings = dilovodSettings?.channelPaymentMapping?.[order.sajt];
-    if (channelSettings) {
-      if (channelSettings.prefixOrder) orderNumber = channelSettings.prefixOrder + orderNumber;
-      if (channelSettings.sufixOrder) orderNumber = orderNumber + channelSettings.sufixOrder;
-    }
-    return orderNumber;
-  });
 
   // Колонки таблиці
   const columns = [
@@ -1078,7 +1061,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               onAction={(key) => {
                 if (key === "export") handleBulkExportAndShipment();
                 if (key === "update") handleBulkCheckAndUpdate();
-                if (key === "copy") { copyToClipboard(getDisplayOrderNumbers(selectedOrderIds).join(', ')); }
+                if (key === "copy") { copyToClipboard(selectedOrderIds.join(', ')); }
               }}
             >
               <DropdownItem
@@ -1140,9 +1123,17 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               Авто-перевірка
             </Button>
 
-            <div className="ml-auto text-xs text-secondary-500 italic">
-              * Перевіряє замовлення без Dilovod ID (починаючи з найновіших)
-            </div>
+            <Button
+              color="primary"
+              size="sm"
+              variant="flat"
+              onPress={fetchOrders}
+              isLoading={isAutoChecking}
+              startContent={!isAutoChecking && <DynamicIcon name="refresh-cw" size={16} />}
+              className="font-semibold h-8 ml-auto bg-blue-200"
+            >
+              Оновити таблицю
+            </Button>
           </CardBody>
         </Card>
       )}
@@ -1197,8 +1188,8 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               <TableRow key={order.id}>
                 <TableCell>
                   <Tooltip placement="right-end" color="secondary" content="Cкопіювати">
-                    <Button className="font-medium h-fit p-1 rounded-sm" variant="light" onPress={() => copyToClipboard(getDisplayOrderNumber(order))}>
-                      {getDisplayOrderNumber(order)}
+                    <Button className="font-medium h-fit p-1 rounded-sm" variant="light" onPress={() => copyToClipboard(order.orderNumber)}>
+                      {order.orderNumber}
                     </Button>
                   </Tooltip>
                 </TableCell>
@@ -1237,7 +1228,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Tooltip color="secondary" content={order.dilovodExportDate ? 'Синхронізовано: ' + new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не вивантажено'}>
+                    <Tooltip color="secondary" content={order.dilovodExportDate ? 'Оновлено: ' + new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не вивантажено'}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodExportDate ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="search-check" size={16} /></div>
                     </Tooltip>
                     <Tooltip color="secondary" content={order.dilovodSaleExportDate ? 'Відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') : 'Ще не відвантажено'}>
@@ -1257,7 +1248,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                         if (!open) return;
                         if (order.logsCount !== undefined) return; // already loaded
 
-                        getOrderLogsCount(getDisplayOrderNumber(order)).then((count) => {
+                        getOrderLogsCount(order.orderNumber).then((count) => {
                           setOrders(prev => prev.map(o =>
                             o.orderNumber === order.orderNumber ? { ...o, logsCount: count } : o
                           ));

@@ -420,74 +420,6 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Отримуємо номер замовлення з префіксом/суфіксом з налаштувань каналу
-   */
-  async getDisplayOrderNumber(orderId: number): Promise<string | null> {
-    try {
-      // 1. Отримуємо замовлення з БД
-      const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        select: {
-          orderNumber: true,
-          sajt: true
-        }
-      });
-
-      if (!order) {
-        console.error(`❌ Order with ID ${orderId} not found`);
-        return null;
-      }
-
-      const baseOrderNumber = order.orderNumber || '';
-
-      // 2. Якщо немає каналу (sajt), повертаємо базовий номер
-      const channelId = order.sajt;
-      if (!channelId) {
-        return baseOrderNumber;
-      }
-
-      // 3. Завантажуємо налаштування Dilovod з БД
-      const settingsRecords = await prisma.settingsBase.findMany({
-        where: {
-          category: 'dilovod',
-          key: 'dilovod_channel_payment_mapping',
-          isActive: true
-        }
-      });
-
-      if (settingsRecords.length === 0) {
-        return baseOrderNumber;
-      }
-
-      // 4. Парсимо налаштування каналів
-      const settingsValue = settingsRecords[0].value;
-      let channelPaymentMapping: any = {};
-
-      try {
-        channelPaymentMapping = JSON.parse(settingsValue || '{}');
-      } catch (error) {
-        console.error('❌ Error parsing channel payment mapping:', error);
-        return baseOrderNumber;
-      }
-
-      // 5. Отримуємо налаштування для конкретного каналу
-      const channelSettings = channelPaymentMapping[channelId];
-      if (!channelSettings) {
-        return baseOrderNumber;
-      }
-
-      // 6. Формуємо номер з префіксом та суфіксом
-      const prefix = channelSettings.prefixOrder || '';
-      const suffix = channelSettings.sufixOrder || '';
-
-      return `${prefix}${baseOrderNumber}${suffix}`;
-    } catch (error) {
-      console.error(`❌ Error getting display order number for orderId ${orderId}:`, error);
-      return null;
-    }
-  }
-
-  /**
    * Отримуємо лічильники замовлень за статусами для вкладок
    */
   async getStatusCounts() {
@@ -544,7 +476,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает статус заказа
+   * Отримує статус замовлення
    */
   async getOrderStatus(orderId: string): Promise<string | null> {
     const order = await this.getOrderById(orderId);
@@ -552,7 +484,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает количество заказов с фильтрами (для пагинации)
+   * Отримує кількість замовлень з фільтрами (для пагінації)
    */
   async getOrdersCount(filters?: {
     status?: string | string[];
@@ -607,7 +539,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает все заказы с фильтрацией и сортировкой
+   * Отримує всі замовлення з фільтрацією та сортуванням
    */
   async getOrders(filters?: {
     status?: string | string[];
@@ -782,7 +714,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает статистику по заказам
+   * Отримує статистику по замовленням
    */
   async getOrderStats() {
     try {
@@ -812,7 +744,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает информацию о последней синхронизации
+   * Отримує інформацію про останню синхронізацію
    */
   async getLastSyncedOrder() {
     try {
@@ -831,7 +763,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Очищает старые записи истории (старше 30 дней)
+   * Очищає старі записи історії (старше 30 днів)
    */
   async cleanupOldHistory() {
     try {
@@ -855,16 +787,16 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает заказы по списку externalId для batch операций
+   * Отримує замовлення за списком id для batch операцій
    */
-  async getOrdersByExternalIds(externalIds: string[]) {
+  async getOrdersByIds(ids: number[]) {
     try {
-      if (externalIds.length === 0) return [];
+      if (ids.length === 0) return [];
 
       const orders = await prisma.order.findMany({
         where: {
-          externalId: {
-            in: externalIds
+          id: {
+            in: ids
           }
         },
         select: {
@@ -883,7 +815,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Batch создание заказов
+   * Batch створення замовлень
    */
   async createOrdersBatch(ordersData: Array<{
     id: number;
@@ -1004,7 +936,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Batch обновление заказов с оптимизацией (исправленная версия)
+   * Batch оновлення замовлень з оптимізацією (виправлена версія)
    */
   async updateOrdersBatch(ordersData: Array<{
     id: number;
@@ -1259,7 +1191,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает заказы с момента последней синхронизации
+   * Отримує замовлення з моменту останньої синхронізації
    */
   async getOrdersSinceLastSync(limit: number = 100) {
     try {
@@ -1294,7 +1226,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает статистику синхронизации
+   * Отримує статистику синхронізації
    */
   async getSyncStats() {
     try {
@@ -1333,7 +1265,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Умное парциальное обновление заказа
+   * Розумне парціальне оновлення замовлення
    */
   async updateOrderSmart(externalId: string, newData: OrderUpdateData): Promise<{
     updated: boolean;
@@ -1484,7 +1416,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Batch обновление с парциальными обновлениями
+   * Batch оновлення з парціальними оновленнями (розумне оновлення)
    */
   async updateOrdersBatchSmart(ordersData: Array<{
     id: number;
@@ -1554,19 +1486,21 @@ export class OrderDatabaseService {
           for (const orderData of batch) {
             try {
               // Проверяем, что orderData существует и имеет необходимые поля
-              if (!orderData || !orderData.orderNumber) {
+              if (!orderData || !orderData.id) {
                 console.error(`❌ [ERROR] Invalid order data:`, orderData);
                 totalErrors++;
                 continue;
               }
 
-              // console.log(`🔍 [DEBUG] Processing order: ${orderData.orderNumber}, status: ${orderData.status || 'N/A'}`);
+              // console.log(`🔍 [DEBUG] Processing order: ${orderData.id}, status: ${orderData.status || 'N/A'}`);
 
               // Получаем существующий заказ для проверки изменений
               const existingOrder = await prisma.order.findUnique({
-                where: { externalId: orderData.orderNumber },
+                where: { id: orderData.id },
                 select: {
                   id: true,
+                  externalId: true,
+                  orderNumber: true,
                   status: true,
                   statusText: true,
                   ttn: true,
@@ -1676,7 +1610,8 @@ export class OrderDatabaseService {
               }
 
               // Применяем только изменившиеся поля
-              if (changes.includes('id')) updateData.id = orderData.id;
+              if (changes.includes('externalId')) updateData.externalId = orderData.externalId;
+              if (changes.includes('orderNumber')) updateData.orderNumber = orderData.orderNumber;
               if (changes.includes('status')) updateData.status = orderData.status;
               if (changes.includes('statusText')) updateData.statusText = orderData.statusText;
               if (changes.includes('ttn')) updateData.ttn = orderData.ttn;
@@ -1708,7 +1643,7 @@ export class OrderDatabaseService {
               }
 
               const updateResult = await prisma.order.update({
-                where: { externalId: orderData.orderNumber },
+                where: { id: orderData.id },
                 data: updateData
               });
 
@@ -1830,7 +1765,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает статистику по заказам из локальной БД
+   * Отримує статистику по замовленням з локальної БД
    */
   async getOrdersStats() {
     try {
@@ -1875,7 +1810,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает время последней синхронизации
+   * Отримує час останньої синхронізації
    */
   async getLastSyncInfo() {
     try {
@@ -1896,7 +1831,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Получает товар по SKU с парсингом JSON полей
+   * Отримує товар по SKU з парсингом JSON полів
    */
   async getProductBySku(sku: string) {
     try {
@@ -2030,7 +1965,7 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Предварительно рассчитывает статистику товарів для замовлення (для кеша)
+   * Попередньо розраховує статистику товарів для замовлення (для кешу)
    */
   async preprocessOrderItemsForCache(orderId: number): Promise<string | null> {
     try {
@@ -2149,11 +2084,11 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Обновляет кеш для заказа
+   * Оновлює кеш для замовлення
    */
   async updateOrderCache(externalId: string): Promise<boolean> {
     try {
-      // Получаем заказ по externalId
+      // Отримуємо замовлення за externalId
       const order = await prisma.order.findUnique({ where: { externalId } });
 
       if (!order) {
@@ -2222,8 +2157,8 @@ export class OrderDatabaseService {
     }
   }
   /**
-   * Force обновление заказов (всегда обновляет, без проверки изменений)
-   * Используется для ручной синхронизации, когда нужно пересинхронизировать все заказы
+   * Примусове оновлення замовлень (завжди оновлює, без перевірки змін)
+   * Використовується для ручної синхронізації, коли потрібно пересинхронізувати всі замовлення
    */
   async forceUpdateOrdersBatch(ordersData: Array<{
     orderNumber: string;

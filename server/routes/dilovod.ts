@@ -71,19 +71,6 @@ async function getDilovodSettings(): Promise<DilovodSettings> {
 }
 
 /**
- * Формування номера замовлення для Dilovod з урахуванням префіксів/суфіксів каналу
- */
-function formatOrderNumberForDilovod(orderNumber: string, sajt: string | null, channelMapping: any): string {
-  const settings = channelMapping?.[sajt || ''];
-  let result = orderNumber;
-  if (settings) {
-    if (settings.prefixOrder) result = settings.prefixOrder + result;
-    if (settings.sufixOrder) result = result + settings.sufixOrder;
-  }
-  return result;
-}
-
-/**
  * Збереження налаштувань Dilovod в settings_base
  */
 async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<DilovodSettings> {
@@ -272,10 +259,10 @@ router.get('/orders/:orderId/details', authenticateToken, async (req, res) => {
     const { user } = req as any;
 
     // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager, storekeeper'
       });
     }
 
@@ -320,10 +307,10 @@ router.get('/settings', authenticateToken, async (req, res) => {
     const { user } = req as any;
 
     // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager, storekeeper'
       });
     }
 
@@ -502,7 +489,7 @@ router.get('/directories', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/dilovod/salesdrive/orders
- * Отримання замовлень SalesDrive (крім каналу nk-food.shop) для моніторингу вивантаження в Dilovod
+ * Отримання замовлень SalesDrive для моніторингу вивантаження в Dilovod
  */
 router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
   try {
@@ -691,7 +678,7 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
 router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
   try {
     // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
         error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
@@ -735,21 +722,129 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
 });
 
 /**
+ * POST /api/dilovod/salesdrive/orders/:orderId/validate
+ * Валідувати готовність замовлення до експорту в Dilovod
+ */
+router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (req, res) => {
+  try {
+    // Перевіряємо ролі доступу
+    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager, storekeeper'
+      });
+    }
+
+    const { orderId } = req.params;
+    const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
+
+    logWithTimestamp(`=== API: Валідація замовлення ${orderNum} (id: ${orderId}) для експорту в Dilovod ===`, undefined, true);
+
+    // Імпортуємо DilovodExportBuilder
+    const { dilovodExportBuilder } = await import('../services/dilovod/DilovodExportBuilder.js');
+
+    try {
+      // Спробуємо сформувати payload у dry-run режимі - якщо вдається, то все ОК
+      // Виконуємо dry-run, але дозволяємо створювати контрагентів під час валідації
+      // щоб кешований payload можна було безпосередньо використовувати при експорті
+      const { payload, warnings } = await dilovodExportBuilder.buildExportPayload(orderId, { dryRun: true, allowCreatePerson: true });
+
+      // Збережемо payload у тимчасовий кеш щоб уникнути дублювання створення контрагентів
+      const { payloadCacheService } = await import('../services/dilovod/PayloadCacheService.js');
+      const token = payloadCacheService.save({ payload, warnings }, 600); // default 10 min
+
+      logWithTimestamp(`✅ Валідація замовлення ${orderNum} (id: ${orderId}) пройдена успішно`);
+
+      // Валідація успішна
+      res.json({
+        success: true,
+        message: 'Замовлення готове до експорту в Dilovod',
+        data: {
+          orderId,
+          isReadyForExport: true,
+          warnings: warnings.length > 0 ? warnings : undefined,
+          validatedAt: new Date().toISOString()
+        },
+        metadata: {
+          orderNumber: payload.header.number,
+          totalItems: payload.tableParts.tpGoods.length,
+          warningsCount: warnings.length,
+          token
+        }
+      });
+
+    } catch (validationError) {
+      const errorMessage = validationError instanceof Error ? validationError.message : 'Unknown error';
+
+      // Якщо канал не налаштований для експорту
+      if (errorMessage.includes('не налаштований для експорту через Dilovod')) {
+        logWithTimestamp(`❌ Замовлення ${orderNum} (id: ${orderId}) не підлягає експорту через цей інструмент`);
+
+        return res.status(200).json({
+          success: false,
+          message: 'Замовлення не підлягає експорту через цей інструмент',
+          data: {
+            orderId,
+            isReadyForExport: false,
+            validatedAt: new Date().toISOString()
+          },
+          error: 'channel_not_configured',
+          details: errorMessage,
+          type: 'channel_configuration_error',
+          action_required: 'Це замовлення вивантажується автоматично або іншим способом'
+        });
+      }
+
+      // Якщо це критична помилка валідації
+      if (errorMessage.includes('Експорт заблоковано через критичні помилки:')) {
+        logWithTimestamp(`❌ Валідація замовлення ${orderNum} (id: ${orderId}) не пройдена`);
+
+        return res.status(200).json({
+          success: false,
+          message: 'Замовлення не готове до експорту',
+          data: {
+            orderId,
+            isReadyForExport: false,
+            validatedAt: new Date().toISOString()
+          },
+          error: 'validation_failed',
+          details: errorMessage,
+          type: 'critical_validation_error',
+          action_required: 'Виправте налаштування Dilovod перед експортом'
+        });
+      }
+
+      // Інші помилки
+      throw validationError;
+    }
+
+  } catch (error) {
+    console.error('Error validating order for Dilovod export:', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
  * POST /api/dilovod/salesdrive/orders/:orderId/export
  * Експортувати замовлення в Dilovod
  */
 router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req, res) => {
   try {
     // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager, storekeeper'
       });
     }
 
     const { orderId } = req.params;
-    const orderNum = await orderDatabaseService.getDisplayOrderNumber(Number(orderId));
+    const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
     // Перевірка наявності локального запису (dilovodDocId)
     const existingOrder = await prisma.order.findUnique({
@@ -762,7 +857,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
 
     if (existingOrder?.dilovodDocId) {
       // Якщо вже є dilovodDocId — не робимо запит до Dilovod API
-      logWithTimestamp(`ℹ️ Замовлення #${orderNum} (id: ${orderId}) вже експортовано в Dilovod (baseDocId: ${existingOrder.dilovodDocId})`);
+      logWithTimestamp(`ℹ️ Замовлення ${orderNum} (id: ${orderId}) вже експортовано в Dilovod (baseDocId: ${existingOrder.dilovodDocId})`);
       return res.json({
         success: true,
         message: `Замовлення ${orderNum} вже експортовано в Dilovod. Нових даних не було оновлено.`,
@@ -785,9 +880,8 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
       });
     }
 
-    logWithTimestamp(`=== API: Експорт замовлення #${orderNum} (id: ${orderId}) в Dilovod ===`);
+    logWithTimestamp(`=== API: Експорт замовлення ${orderNum} (id: ${orderId}) в Dilovod ===`);
 
-    // ...existing code for payload, export, and response...
     // Імпортуємо DilovodExportBuilder
     const { dilovodExportBuilder } = await import('../services/dilovod/DilovodExportBuilder.js');
 
@@ -821,7 +915,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
       warnings = result.warnings;
     }
 
-    logWithTimestamp(`✅ Payload для замовлення #${orderNum} (id: ${orderId}) успішно сформовано`);
+    logWithTimestamp(`✅ Payload для замовлення ${orderNum} (id: ${orderId}) успішно сформовано`);
 
     // Відправляємо payload в Dilovod через DilovodService
     try {
@@ -831,7 +925,6 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
 
       // Визначаємо статус відповіді
       const isExportError = !!(exportResult && (exportResult.error || exportResult.status === 'error'));
-      const orderNumber = orderNum || orderId;
 
       // Якщо експорт успішний і є baseDoc ID - зберігаємо в БД
       if (!isExportError && exportResult?.id) {
@@ -843,7 +936,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
               dilovodExportDate: new Date().toISOString()
             }
           });
-          logWithTimestamp(`✅ baseDoc ID (${exportResult.id}) збережено для замовлення #${orderNum} (id: ${orderId})`);
+          logWithTimestamp(`✅ baseDoc ID (${exportResult.id}) збережено для замовлення ${orderNum} (id: ${orderId})`);
         } catch (dbError) {
           logWithTimestamp(`❌ Помилка збереження baseDoc ID в БД:`, dbError);
         }
@@ -860,7 +953,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
             personId: payload?.header?.person?.id
           };
           saleToken = payloadCacheService.save(saleData, 600); // same default TTL
-          logWithTimestamp(`🔐 Згенеровано sale token ${saleToken} для замовлення #${orderNum} (orderId: ${orderId}, baseDoc: ${exportResult.id})`);
+          logWithTimestamp(`🔐 Згенеровано sale token ${saleToken} для замовлення ${orderNum} (orderId: ${orderId}, baseDoc: ${exportResult.id})`);
           logWithTimestamp('🔒 sale token data:', saleData);
         } catch (err) {
           logWithTimestamp('❌ Помилка при створенні sale token:', err);
@@ -874,7 +967,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
         message: exportResult?.message || (isExportError ? 'Export failed' : 'Export successful'),
         data: {
           orderId,
-          orderNumber,
+          orderNum,
           payload,
           exportResult,
           warnings: warnings.length > 0 ? warnings : undefined
@@ -882,8 +975,8 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
       });
 
       const mainMessage = isExportError
-        ? `Помилка експорту замовлення ${orderNumber} в Dilovod: ${exportResult?.error || exportResult?.message || 'невідома помилка'}`
-        : `Замовлення ${orderNumber} експортовано в Dilovod успішно`;
+        ? `Помилка експорту замовлення ${orderNum} в Dilovod: ${exportResult?.error || exportResult?.message || 'невідома помилка'}`
+        : `Замовлення ${orderNum} експортовано в Dilovod успішно`;
 
       res.json({
         success: !isExportError,
@@ -899,7 +992,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
         metadata: {
           exportedAt: new Date().toISOString(),
           documentType: payload.header.id,
-          orderNumber,
+          orderNum,
           totalItems: payload.tableParts.tpGoods.length,
           warningsCount: warnings.length,
           saleToken
@@ -959,131 +1052,23 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
 });
 
 /**
- * POST /api/dilovod/salesdrive/orders/:orderId/validate
- * Валідувати готовність замовлення до експорту в Dilovod
- */
-router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (req, res) => {
-  try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
-    const { orderId } = req.params;
-    const orderNum = await orderDatabaseService.getDisplayOrderNumber(Number(orderId));
-
-    logWithTimestamp(`=== API: Валідація замовлення #${orderNum} (id: ${orderId}) для експорту в Dilovod ===`, undefined, true);
-
-    // Імпортуємо DilovodExportBuilder
-    const { dilovodExportBuilder } = await import('../services/dilovod/DilovodExportBuilder.js');
-
-    try {
-      // Спробуємо сформувати payload у dry-run режимі - якщо вдається, то все ОК
-      // Виконуємо dry-run, але дозволяємо створювати контрагентів під час валідації
-      // щоб кешований payload можна було безпосередньо використовувати при експорті
-      const { payload, warnings } = await dilovodExportBuilder.buildExportPayload(orderId, { dryRun: true, allowCreatePerson: true });
-
-      // Збережемо payload у тимчасовий кеш щоб уникнути дублювання створення контрагентів
-      const { payloadCacheService } = await import('../services/dilovod/PayloadCacheService.js');
-      const token = payloadCacheService.save({ payload, warnings }, 600); // default 10 min
-
-      logWithTimestamp(`✅ Валідація замовлення #${orderNum} (id: ${orderId}) пройдена успішно`);
-
-      // Валідація успішна
-      res.json({
-        success: true,
-        message: 'Замовлення готове до експорту в Dilovod',
-        data: {
-          orderId,
-          isReadyForExport: true,
-          warnings: warnings.length > 0 ? warnings : undefined,
-          validatedAt: new Date().toISOString()
-        },
-        metadata: {
-          orderNumber: payload.header.number,
-          totalItems: payload.tableParts.tpGoods.length,
-          warningsCount: warnings.length,
-          token
-        }
-      });
-
-    } catch (validationError) {
-      const errorMessage = validationError instanceof Error ? validationError.message : 'Unknown error';
-
-      // Якщо канал не налаштований для експорту
-      if (errorMessage.includes('не налаштований для експорту через Dilovod')) {
-        logWithTimestamp(`❌ Замовлення #${orderNum} (id: ${orderId}) не підлягає експорту через цей інструмент`);
-
-        return res.status(200).json({
-          success: false,
-          message: 'Замовлення не підлягає експорту через цей інструмент',
-          data: {
-            orderId,
-            isReadyForExport: false,
-            validatedAt: new Date().toISOString()
-          },
-          error: 'channel_not_configured',
-          details: errorMessage,
-          type: 'channel_configuration_error',
-          action_required: 'Це замовлення вивантажується автоматично або іншим способом'
-        });
-      }
-
-      // Якщо це критична помилка валідації
-      if (errorMessage.includes('Експорт заблоковано через критичні помилки:')) {
-        logWithTimestamp(`❌ Валідація замовлення #${orderNum} (id: ${orderId}) не пройдена`);
-
-        return res.status(200).json({
-          success: false,
-          message: 'Замовлення не готове до експорту',
-          data: {
-            orderId,
-            isReadyForExport: false,
-            validatedAt: new Date().toISOString()
-          },
-          error: 'validation_failed',
-          details: errorMessage,
-          type: 'critical_validation_error',
-          action_required: 'Виправте налаштування Dilovod перед експортом'
-        });
-      }
-
-      // Інші помилки
-      throw validationError;
-    }
-
-  } catch (error) {
-    console.error('Error validating order for Dilovod export:', error);
-
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-/**
  * POST /api/dilovod/salesdrive/orders/:orderId/shipment
  * Створити документ відвантаження в Dilovod на основі baseDoc
  */
 router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (req, res) => {
   try {
     // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager, storekeeper'
       });
     }
 
     const { orderId } = req.params;
-    const orderNum = await orderDatabaseService.getDisplayOrderNumber(Number(orderId));
+    const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
-    logWithTimestamp(`=== API: Створення документа відвантаження для замовлення #${orderNum} (id: ${orderId}) в Dilovod ===`, undefined, true);
+    logWithTimestamp(`=== API: Створення документа відвантаження для замовлення ${orderNum} (id: ${orderId}) в Dilovod ===`, undefined, true);
 
     // Отримуємо замовлення з БД
     const order = await prisma.order.findUnique({
@@ -1094,7 +1079,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
       return res.status(404).json({
         success: false,
         error: 'Order not found',
-        message: `Замовлення #${orderNum} (id: ${orderId}) не знайдено в базі даних`
+        message: `Замовлення ${orderNum} (id: ${orderId}) не знайдено в базі даних`
       });
     }
 
@@ -1122,7 +1107,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
       return res.status(400).json({
         success: false,
         error: 'No baseDoc ID',
-        message: `Замовлення #${orderNum} (id: ${orderId}) ще не експортоване в Діловод (відсутній baseDoc ID)`,
+        message: `Замовлення ${orderNum} (id: ${orderId}) ще не експортоване в Діловод (відсутній baseDoc ID)`,
         action_required: 'Спочатку експортуйте замовлення в Діловод'
       });
     }
@@ -1132,7 +1117,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
       return res.status(400).json({
         success: false,
         error: 'Already shipped',
-        message: `Документ відвантаження для замовлення #${orderNum} (id: ${orderId}) вже створений (${new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA')})`,
+        message: `Документ відвантаження для замовлення ${orderNum} (id: ${orderId}) вже створений (${new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA')})`,
         data: {
           dilovodSaleExportDate: order.dilovodSaleExportDate
         }
@@ -1145,7 +1130,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
     // Формуємо payload для документа відвантаження (documents.sale)
     const { payload: salePayload, warnings } = await dilovodExportBuilder.buildSalePayload(orderId, order.dilovodDocId, { personId: cached?.personId });
 
-    logWithTimestamp(`✅ Payload для документа відвантаження #${orderNum} (id: ${orderId}) успішно сформовано`);
+    logWithTimestamp(`✅ Payload для документа відвантаження ${orderNum} (id: ${orderId}) успішно сформовано`);
 
     // Відправляємо payload в Dilovod через DilovodService
     try {

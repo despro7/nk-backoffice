@@ -3,8 +3,9 @@ import { salesDriveService } from '../services/salesDriveService.js';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { ordersCacheService } from '../services/ordersCacheService.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { prisma, getOrderSourceDetailed, getReportingDayStartHour, getReportingDate, getReportingDateRange } from '../lib/utils.js';
+import { prisma, getOrderSourceDetailed, getReportingDayStartHour, getReportingDate, getReportingDateRange, logServer } from '../lib/utils.js';
 import { dilovodService } from '../services/dilovod/index.js';
+import { getStatusText } from '../services/salesdrive/statusMapper.js';
 
 const router = Router();
 
@@ -755,6 +756,20 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
     const result = await salesDriveService.updateSalesDriveOrderStatus(id, status);
 
     if (result) {
+      // Якщо статус змінився на "3" (Готове до відправки), записуємо дату
+      if (status === '3') {
+        try {
+          await prisma.order.update({
+            where: { id: parseInt(id) },
+            data: { readyToShipAt: new Date() }
+          });
+          logServer(`✅ [Orders API] Order ${id} readyToShipAt set to current time`);
+        } catch (dbError) {
+          console.error(`⚠️ [Orders API] Failed to update readyToShipAt for order ${id}:`, dbError);
+          // Не блокуємо відповідь, якщо не вдалося оновити дату
+        }
+      }
+
       res.json({
         success: true,
         message: 'Order status updated successfully in SalesDrive',
@@ -2672,20 +2687,5 @@ router.get('/products/chart/status-details', authenticateToken, async (req, res)
     });
   }
 });
-
-// Вспомогательная функция для получения текстового представления статуса
-function getStatusText(status: string): string {
-  const statusMap: { [key: string]: string } = {
-    '1': 'Нове',
-    '2': 'Підтверджене',
-    '3': 'Готове до відправки',
-    '4': 'Відправлено',
-    '5': 'Продано',
-    '6': 'Відмовлено',
-    '7': 'Повернено',
-    '8': 'Видалено'
-  };
-  return statusMap[status] || status;
-}
 
 export default router;

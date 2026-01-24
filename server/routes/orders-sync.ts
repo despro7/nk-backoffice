@@ -3,6 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { prisma } from '../lib/utils.js';
 import { syncSettingsService } from '../services/syncSettingsService.js';
 import { salesDriveService } from '../services/salesDriveService.js';
+import { generateExternalId } from '../services/salesdrive/externalIdHelper.js';
 
 const router = express.Router();
 
@@ -232,7 +233,7 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
           const order = salesDriveOrders[i];
 
           try {
-            // Обновляем прогресс каждые 10 заказов или на каждом заказе для небольших объемов
+            // Обновляем прогресс каждые 20 заказов или на каждом заказе для небольших объемов
             if (i % Math.max(1, Math.floor(salesDriveOrders.length / 20)) === 0 || salesDriveOrders.length < 50) {
               const loopProgress = activePreviewProgressMap.get(sessionId);
               if (loopProgress) {
@@ -241,12 +242,12 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
               }
             }
 
-            const existingOrder = await orderDatabaseService.getOrderByExternalId(order.orderNumber);
+            const existingOrder = await orderDatabaseService.getOrderById(order.id.toString());
 
             if (!existingOrder) {
               // Новый заказ
               preview.newOrders.push({
-                orderNumber: order.orderNumber,
+                orderNumber: generateExternalId(order),
                 customerName: order.customerName || 'N/A',
                 totalPrice: order.totalPrice || 0,
                 status: order.status || 'unknown',
@@ -263,7 +264,7 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
               if (changes.length === 0) {
                 // Без изменений
                 preview.skippedOrders.push({
-                  orderNumber: order.orderNumber,
+                  orderNumber: generateExternalId(order),
                   customerName: order.customerName || 'N/A',
                   totalPrice: order.totalPrice || 0,
                   status: order.status || 'unknown',
@@ -276,7 +277,7 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
               } else {
                 // Есть изменения
                 preview.existingOrders.push({
-                  orderNumber: order.orderNumber,
+                  orderNumber: generateExternalId(order),
                   customerName: order.customerName || 'N/A',
                   totalPrice: order.totalPrice || 0,
                   status: order.status || 'unknown',
@@ -295,7 +296,7 @@ router.post('/sync/preview', authenticateToken, async (req, res) => {
               errorProgress.errors.push(`Ошибка анализа заказа ${order.orderNumber}`);
             }
             preview.skippedOrders.push({
-              orderNumber: order.orderNumber,
+              orderNumber: generateExternalId(order),
               customerName: order.customerName || 'N/A',
               totalPrice: order.totalPrice || 0,
               status: order.status || 'unknown',
@@ -455,7 +456,7 @@ router.post('/sync/selective', authenticateToken, async (req, res) => {
 
         // Фильтруем только выбранные заказы
         const selectedSalesDriveOrders = salesDriveOrders.filter(order =>
-          selectedOrders.includes(order.orderNumber)
+          selectedOrders.includes(generateExternalId(order))
         );
 
         console.log(`📊 [ASYNC SELECTIVE SYNC] Found ${selectedSalesDriveOrders.length} selected orders in SalesDrive for sessionId: ${sessionId}`);
