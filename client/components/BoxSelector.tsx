@@ -334,10 +334,8 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
     
     const savedMode = getCookie(BOX_MODE_COOKIE);
     if (savedMode === 'spacious' || savedMode === 'economical') {
-      // LoggingService.orderAssemblyLog('📦 Встановлено режим з cookie:', savedMode);
+      LoggingService.orderAssemblyLog('📦 Встановлено режим з cookie:', savedMode);
       setRecommendationMode(savedMode);
-    } else {
-      LoggingService.orderAssemblyLog('📦 Встановлено режим пакування: economical');
     }
   }, [BOX_MODE_COOKIE]);
 
@@ -451,76 +449,6 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
 
   return (
     <div className="w-full flex flex-col gap-2">
-      {/* Заголовок */}
-      {/* <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">
-          Коробки
-        </h3>
-        <Button
-          variant="solid"
-          size="sm"
-          color="secondary"
-          className="gap-2"
-          onPress={addBox}
-        >
-          <Plus className="w-4 h-4" /> Додати
-        </Button>
-      </div> */}
-
-      {/* Інформація про рекомендації */}
-      {/* {recommendations && (
-        <div className={`border rounded-lg p-3 duration-300 ease-in-out ${
-          recommendations.overflowWarning 
-            ? 'bg-orange-50 border-orange-200' 
-            : 'bg-blue-50 border-blue-200'
-        } ${
-          transitionMode ? 'opacity-50 transform scale-95' : 'opacity-100 transform scale-100'
-        }`}>
-          <div className={`text-sm ${
-            console.log("recommendation object", recommendations),
-            recommendations.overflowWarning ? 'text-orange-800' : 'text-blue-800'
-          }`}>
-            <p><strong>Рекомендується:</strong> {recommendations.totalBoxes} коробок</p>
-            <p><strong>Общий вес коробок:</strong> {Number(recommendations.totalWeight).toFixed(1)} кг</p>
-            {recommendations.remainingQuantity && recommendations.remainingQuantity > 0 && (
-              <p className="text-orange-600">
-                <strong>Увага:</strong> {recommendations.remainingQuantity} порцій не поміститься в вибрані коробки
-              </p>
-            )}
-            {recommendations.overflowWarning && (
-              <p className="text-orange-600 font-medium">
-                ⚠️ В економічному режимі можливе переповнення коробок
-              </p>
-            )}
-          </div>
-        </div>
-      )} */}
-
-      {/* Попередження про непідходящі коробки */}
-      {/* {hasInappropriateBoxes && (
-        <div className={`bg-red-50 border border-red-200 rounded-lg p-3 duration-300 ease-in-out ${
-          transitionMode ? 'opacity-50 transform scale-95' : 'opacity-100 transform scale-100'
-        }`}>
-          <div className="text-sm text-red-800">
-            <p><strong>⚠️ Увага:</strong> Вибрано коробки, які не вміщують свою частину замовлення</p>.
-            <p>Кожна коробка повинна вміщати мінімум {getPortionsPerBox} порцій</p>
-          </div>
-        </div>
-      )} */}
-
-      {/* Інформація про розділення на коробки */}
-      {/* {selectedBoxes.length > 1 && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-          <div className="text-sm text-gray-700">
-            <p><strong>Замовлення розділене на {selectedBoxes.length} коробок:</strong></p>
-            <p>По {getPortionsPerBox} порцій на коробку</p>
-            <p className="text-blue-600 mt-2">
-              💡 Використовуйте вкладки в чек-листі для переключення між коробками
-            </p>
-          </div>
-        </div>
-      )} */}
-
       {/* Список обраних коробок */}
       {selectedBoxes.map((box, index) => {
         const portionsPerBox = Math.ceil(totalPortions / selectedBoxes.length);

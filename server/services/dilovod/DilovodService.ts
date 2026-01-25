@@ -16,6 +16,7 @@ import { logWithTimestamp } from './DilovodUtils.js';
 import { syncSettingsService } from '../syncSettingsService.js';
 import { dilovodCacheService } from './DilovodCacheService.js';
 import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
+import { pluralize } from '../../lib/utils.js';
 
 const prisma = new PrismaClient();
 
@@ -1477,7 +1478,7 @@ export class DilovodService {
       } else if (updatedCount === 0) {
         message = 'Перевірка завершена: жодних нових даних не було оновлено.';
       } else {
-        message = `Перевірка завершена (оновлено ${updatedCount} ${updatedCount < 5 ? 'замовлення' : 'замовлень'})`;
+        message = `Перевірка завершена (оновлено ${successCount} ${pluralize(successCount, 'замовлення', 'замовлення', 'замовлень')}, всього ${updatedCount} ${pluralize(updatedCount, 'зміна', 'зміни', 'змін')}).`;
       }
 
       return {

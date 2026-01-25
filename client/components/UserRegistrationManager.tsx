@@ -357,6 +357,7 @@ export const UserRegistrationManager: React.FC = () => {
                       </TableCell>
                       <TableCell>
                         <span className="text-sm">{user.roleLabel}</span>
+                        <div className="text-xs text-gray-500">{user.role}</div>
                       </TableCell>
                       <TableCell className="justify-items-center">
                         {user.isActive ? (

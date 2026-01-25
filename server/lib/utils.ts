@@ -156,3 +156,20 @@ export function getReportingDateRange(reportingDate: string, dayStartHour: numbe
   return { start: startDate, end: endDate };
 }
 
+
+/**
+ * Функція для правильного відмінювання слів у залежності від числа (українська мова)
+ * @param n - число
+ * @param one - форма для 1 (наприклад, "поле")
+ * @param few - форма для 2-4 (наприклад, "поля")
+ * @param many - форма для 5 і більше (наприклад, "полів")
+ */
+export function pluralize(n, one, few, many) {
+  const mod100 = n % 100;
+  const mod10 = n % 10;
+
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+}

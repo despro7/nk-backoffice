@@ -37,20 +37,19 @@ export function OrderRefreshButton({ orderId, lastSynced, onRefreshComplete }: O
 			const data = await response.json();
 
 			if (data.success) {
-				console.log(`✅ [ORDER REFRESH] Order refreshed successfully`, data);
+				// console.log(`✅ [ORDER REFRESH] Order refreshed successfully`, data);
 
 				// Після успішного оновлення замовлення запускаємо перевірку Dilovod
 				let dilovodDocIdChanged = false;
 				try {
-					console.log(`🔄 [ORDER REFRESH] Запуск перевірки Dilovod для 10 замовлень`);
+					console.log(`🔄 [ORDER REFRESH] Запуск перевірки Dilovod DocId для замовлення ${data.order.externalId}`);
 					const dilovodCheckResponse = await apiCall('/api/dilovod/salesdrive/orders/check', {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
 						},
 						body: JSON.stringify({ 
-							auto: true, 
-							limit: 10 
+							orderNumbers: [data.order.externalId]
 						})
 					});
 
@@ -63,13 +62,25 @@ export function OrderRefreshButton({ orderId, lastSynced, onRefreshComplete }: O
 							const currentOrderUpdate = dilovodData.data.find((item: any) => item.updatedCount > 0);
 							if (currentOrderUpdate) {
 								dilovodDocIdChanged = true;
-								console.log(`✅ [ORDER REFRESH] dilovodDocId було оновлено для замовлення`);
+								console.log(`✅ [ORDER REFRESH] dilovodDocId було оновлено для замовлення ${data.order.externalId}`);
 								
 								// Повторно запитуємо замовлення, щоб отримати оновлений dilovodDocId
-								const refreshedOrderResponse = await apiCall(`/api/orders/${orderId}`);
-								const refreshedOrderData = await refreshedOrderResponse.json();
-								if (refreshedOrderData.success && refreshedOrderData.data) {
-									data.order = refreshedOrderData.data;
+								try {
+									const refreshedOrderResponse = await apiCall(`/api/orders/${orderId}`);
+									
+									if (!refreshedOrderResponse.ok) {
+										console.warn(`⚠️ [ORDER REFRESH] Failed to fetch updated order: ${refreshedOrderResponse.status}`);
+										// Якщо маршрут не існує, використовуємо data з першого запиту
+									} else {
+										const refreshedOrderData = await refreshedOrderResponse.json();
+										if (refreshedOrderData.success && refreshedOrderData.data) {
+											data.order = refreshedOrderData.data;
+											console.log(`✅ [ORDER REFRESH] Successfully fetched updated order with dilovodDocId`);
+										}
+									}
+								} catch (fetchError) {
+									console.warn(`⚠️ [ORDER REFRESH] Error fetching updated order:`, fetchError);
+									// Використовуємо data.order з першого запиту
 								}
 							}
 						}
@@ -87,7 +98,8 @@ export function OrderRefreshButton({ orderId, lastSynced, onRefreshComplete }: O
 
 				// Показуємо повідомлення про результат
 				if (hasRealChanges || dilovodDocIdChanged) {
-					console.log(`✅ [ORDER REFRESH] Order has meaningful changes`, meaningfulChanges);
+					
+					hasRealChanges && console.log(`✅ [ORDER REFRESH] В замовленні ${data.order.externalId} змінено поля:`, meaningfulChanges);
 					
 					// Форматуємо назви полів для відображення
 					const fieldLabels: Record<string, string> = {
