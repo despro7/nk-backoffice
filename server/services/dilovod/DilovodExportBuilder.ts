@@ -45,6 +45,7 @@ export interface ExportBuildContext {
     cashAccounts?: Array<{ id: string; owner?: string; name: string }>;
     firms?: Array<{ id: string; name: string }>;
     tradeChanels?: Array<{ id: string; id__pr: string; code: string }>;
+    paymentForms?: Array<{ id: string; name: string }>;
   };
   warnings: string[];                            // Попередження під час побудови
 }
@@ -599,6 +600,7 @@ export class DilovodExportBuilder {
       const cashAccounts = await dilovodService.getCashAccounts();
       const firms = await dilovodService.getFirms();
       const tradeChanels = await dilovodService.getTradeChanels();
+      const paymentForms = await dilovodService.getPaymentForms();
 
       return {
         cashAccounts: cashAccounts.map((acc: any) => ({
@@ -614,6 +616,10 @@ export class DilovodExportBuilder {
           id: channel.id,
           id__pr: channel.id__pr,
           code: channel.code
+        })),
+        paymentForms: paymentForms.map((form: any) => ({
+          id: form.id,
+          name: form.name
         }))
       };
     } catch (error) {
@@ -664,24 +670,44 @@ export class DilovodExportBuilder {
       // Якщо немає мапінгу взагалі
       criticalErrors.push(`Не налаштовано мапінг оплати "${paymentMethodName}" в каналі "${channelName} (${order.sajt})". Перейдіть в налаштування Dilovod → Мапінг каналів оплати.`);
     } else if (channelMapping) {
+      // Перевіряємо, чи це готівкова операція (за формою оплати)
+      let isCashPayment = false;
+      if (channelMapping.paymentForm && directories?.paymentForms) {
+        const paymentForm = directories.paymentForms.find(f => f.id === channelMapping.paymentForm);
+        if (paymentForm) {
+          const formName = paymentForm.name.toLowerCase();
+          isCashPayment = formName.includes('готівк') || 
+                         formName.includes('cash') || 
+                         formName.includes('наличн');
+        }
+      }
+
       // Якщо мапінг є, але не всі поля заповнені
       const missingFields = [];
-      if (!channelMapping.cashAccount) {
+      
+      // Для готівкових операцій рахунок не потрібен
+      if (!channelMapping.cashAccount && !isCashPayment) {
         missingFields.push('рахунок');
       }
+      
       if (!channelMapping.paymentForm) {
         missingFields.push('форму оплати');
       }
 
       if (missingFields.length > 0) {
         criticalErrors.push(`Неповний мапінг для "${paymentMethodName}" в каналі "${channelName}". Не вказано: ${missingFields.join(', ')}.`);
-      } else {
-        // Перевіряємо чи існує рахунок у довідниках
+      } else if (channelMapping.cashAccount && !isCashPayment) {
+        // Перевіряємо чи існує рахунок у довідниках (тільки якщо це не готівка і рахунок вказано)
         const accountName = this.getAccountDisplayName(channelMapping.cashAccount, directories);
         const account = directories?.cashAccounts?.find(acc => acc.id === channelMapping.cashAccount);
         if (!account) {
           criticalErrors.push(`Рахунок "${accountName}" не існує в системі Dilovod`);
         }
+      }
+      
+      // Логування для готівкових операцій
+      if (isCashPayment) {
+        logWithTimestamp(`  💵 Готівкова операція - рахунок не потрібен`);
       }
     }
 
