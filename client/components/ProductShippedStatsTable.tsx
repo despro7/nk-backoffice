@@ -247,7 +247,7 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
 
       if (data.success) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('📊 ПОЛУЧЕНЫ ДАННЫЕ:', data.data.length, 'товаров,', data.metadata.totalOrders, 'заказов');
+          console.log('📊 ОТРИМАНО ДАНІ:', data.data.length, 'товарів,', data.metadata.totalOrders, 'замовлень');
         }
 
         // Валідація даних
@@ -308,7 +308,7 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
 
       if (data.success) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('📊 ПОЛУЧЕНЫ ДАННЫЕ ПО ДАТАМ:', data.data.length, 'дней для товара', data.product.name);
+          console.log('📊 ОТРИМАНІ ДАНІ ПО ДАТАМ:', data.data.length, 'днів для товару', data.product.name);
         }
 
         // Валідація даних

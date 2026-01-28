@@ -66,7 +66,7 @@ router.get('/test', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders
- * Получить заказы из локальной БД с возможностью синхронизации и сортировки
+ * Отримувати замовлення з локальної БД з можливістю синхронізації та сортування
  */
 router.get('/', authenticateToken, async (req, res) => {
   const startTime = Date.now();
@@ -74,7 +74,7 @@ router.get('/', authenticateToken, async (req, res) => {
   const include = (req.query.include as string | undefined)?.split(',').map(s => s.trim()).filter(Boolean) || [];
   const fields = (req.query.fields as string | undefined)?.split(',').map(s => s.trim()).filter(Boolean) || [];
 
-  // Парсим статусы: если строка содержит запятую, разбиваем на массив
+  // Парсимо статуси: якщо рядок містить кому, розбиваємо на масив
   let parsedStatus: string | string[] | undefined = status as string;
   if (typeof status === 'string' && status.includes(',')) {
     parsedStatus = status.split(',').map(s => s.trim());
@@ -82,7 +82,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
 
   try {
-    // Если запрошена синхронизация, сначала синхронизируем
+    // Якщо запрошена синхронізація, спочатку синхронізуємо
     if (sync === 'true') {
       const syncStartTime = Date.now();
       const syncResult = await salesDriveService.syncOrdersWithDatabase();
@@ -92,7 +92,7 @@ router.get('/', authenticateToken, async (req, res) => {
       }
     }
 
-    // Получаем заказы из локальной БД с сортировкой
+    // Отримуємо замовлення з локальної БД з сортуванням та фільтрацією
     const dbStartTime = Date.now();
 
     const orders = await orderDatabaseService.getOrders({
@@ -110,19 +110,16 @@ router.get('/', authenticateToken, async (req, res) => {
       fields
     });
 
-    // Получаем общее количество заказов для пагинации
+    // Отримуємо загальну кількість замовлень для пагінації
     const totalCount = await orderDatabaseService.getOrdersCount({
       status: parsedStatus,
       search: search as string
     });
 
-    // Получаем счетчики по статусам для табов
+    // Отримуємо лічильники по статусах для табів
     const statusCounts = await orderDatabaseService.getStatusCounts();
-
     const dbDuration = Date.now() - dbStartTime;
-
     const totalDuration = Date.now() - startTime;
-
     const response = {
       success: true,
       data: orders,
@@ -156,21 +153,21 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 
-// Кеш для статистики веса (5 минут)
+// Кеш для статистики ваги (5 хвилин)
 const weightStatsCache = new Map();
-const WEIGHT_STATS_CACHE_TTL = 5 * 60 * 1000; // 5 минут
+const WEIGHT_STATS_CACHE_TTL = 5 * 60 * 1000; // 5 хвилин
 
 /**
  * GET /api/orders/weight-stats
- * Получить статистику веса заказов по статусам для комірника
+ * Отримати статистику ваги замовлень за статусами для комірника
  */
 router.get('/weight-stats', authenticateToken, async (req, res) => {
   try {
-    console.log('📊 [WEIGHT STATS] Запрос статистики веса заказов (через CACHE)');
+    console.log('📊 [WEIGHT STATS] Запит статистики ваги замовлень (через CACHE)');
     const cacheKey = 'weight-stats';
     const cached = weightStatsCache.get(cacheKey);
     if (cached && (Date.now() - cached.timestamp) < WEIGHT_STATS_CACHE_TTL) {
-      console.log('📊 [WEIGHT STATS] Возвращаем данные из кеша');
+      console.log('📊 [WEIGHT STATS] Повертаємо дані з кешу');
       return res.json(cached.data);
     }
 
@@ -178,7 +175,7 @@ router.get('/weight-stats', authenticateToken, async (req, res) => {
     aWeekAgo.setDate(aWeekAgo.getDate() - 7);
     aWeekAgo.setHours(0, 0, 0, 0);
 
-    // 1. Витягуємо тільки externalId + status за останній тиждень
+    // Витягуємо тільки externalId + status за останній тиждень
     const orders = await prisma.order.findMany({
       where: {
         status: { in: ['2', '3', '4'] },
@@ -197,10 +194,10 @@ router.get('/weight-stats', authenticateToken, async (req, res) => {
     // Об'єднання всіх externalId для bulk кеш-запиту
     const allExternalIds = orders.map(o => o.externalId);
 
-    // 2. Bulk отримаємо кеші
+    // Bulk отримаємо кеші
     const ordersCacheMap = await ordersCacheService.getMultipleOrderCaches(allExternalIds);
 
-    // 3. Агрегація по статусу
+    // Агрегація по статусу
     let confirmedWeightKg = 0;
     let readyToShipWeightKg = 0;
     let shippedWeightKg = 0;
@@ -219,7 +216,7 @@ router.get('/weight-stats', authenticateToken, async (req, res) => {
         }
       }
     }
-    // Новий total: тільки підтверджені + готові до відправки (без shipped)
+    
     const activeTotalWeightKg = confirmedWeightKg + readyToShipWeightKg;
     const activeTotalCount = confirmedCount + readyToShipCount;
     const response = {
@@ -235,11 +232,6 @@ router.get('/weight-stats', authenticateToken, async (req, res) => {
           weight: readyToShipWeightKg,
           weightText: `${readyToShipWeightKg.toFixed(2)} кг`
         },
-        // shipped: {
-        //   count: shippedCount,
-        //   weight: shippedWeightKg,
-        //   weightText: `${shippedWeightKg.toFixed(2)} кг`
-        // },
         total: {
           count: activeTotalCount,
           weight: activeTotalWeightKg,
@@ -257,7 +249,7 @@ router.get('/weight-stats', authenticateToken, async (req, res) => {
     });
     res.json(response);
   } catch (error) {
-    console.error('❌ [WEIGHT STATS] Ошибка получения статистики веса (через кеш):', error);
+    console.error('❌ [WEIGHT STATS] Помилка отримання статистики ваги (через кеш):', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -268,11 +260,11 @@ router.get('/weight-stats', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders/stats/summary
- * Получить статистику по заказам из локальной БД
+ * Отримати статистику по замовленням із локальної БД
  */
 router.get('/stats/summary', authenticateToken, async (req, res) => {
   try {
-    // Получаем статистику из локальной БД
+    // Отримуємо статистику із локальної БД
     const stats = await orderDatabaseService.getOrdersStats();
     const lastSyncInfo = await orderDatabaseService.getLastSyncInfo();
 
@@ -297,11 +289,11 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders/raw/all
- * Получить все заказы в сыром виде для отладки
+ * Отримати всі замовлення у сирому вигляді для налагодження
  */
 router.get('/raw/all', authenticateToken, async (req, res) => {
   try {
-    // Используем параллельную загрузку за последний месяц
+    // Використовуємо паралельне завантаження за останній місяць
     const endDate = new Date().toISOString().split('T')[0];
     const startDate = new Date();
     startDate.setMonth(startDate.getMonth() - 1);
@@ -336,11 +328,11 @@ router.get('/raw/all', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders/debug/raw
- * Получить сырые данные от SalesDrive API без обработки
+ * Отримати сирі дані від SalesDrive API без обробки
  */
 router.get('/debug/raw', authenticateToken, async (req, res) => {
   try {
-    // Получаем сырые данные напрямую от SalesDrive API
+    // Отримуємо сирі дані безпосередньо від SalesDrive API
     const response = await fetch(`${process.env.SALESDRIVE_API_URL}?page=1&limit=5`, {
       method: 'GET',
       headers: {
@@ -376,7 +368,7 @@ router.get('/debug/raw', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders/period
- * Получить заказы за определенный период с синхронизацией
+ * Отримати замовлення за певний період з синхронізацією
  */
 router.get('/period', authenticateToken, async (req, res) => {
   try {
@@ -389,7 +381,7 @@ router.get('/period', authenticateToken, async (req, res) => {
       });
     }
 
-    // Если запрошена синхронизация, сначала синхронизируем
+    // Якщо запрошена синхронізація, спочатку синхронізуємо
     if (sync === 'true') {
       const syncResult = await salesDriveService.syncOrdersWithDatabase();
 
@@ -398,14 +390,14 @@ router.get('/period', authenticateToken, async (req, res) => {
       }
     }
 
-    // Получаем заказы за период
+    // Отримуємо замовлення за період
     const orders = await orderDatabaseService.getOrders({
-      limit: 10000, // Большой лимит для периода
+      limit: 10000, // Великий ліміт для періоду
       sortBy: 'orderDate',
       sortOrder: 'desc'
     });
 
-    // Фильтруем по дате
+    // Фільтруємо по даті
     const filteredOrders = orders.filter(order => {
       if (!order.orderDate) return false;
       const orderDate = new Date(order.orderDate);
@@ -434,66 +426,14 @@ router.get('/period', authenticateToken, async (req, res) => {
 });
 
 /**
- * GET /api/orders/products/stats/test
- * Тестовый endpoint для проверки статистики с тестовыми данными
- */
-router.get('/products/stats/test', authenticateToken, async (req, res) => {
-  try {
-    // Создаем тестовые данные для проверки
-    const testData = [
-      {
-        name: "Борщ український",
-        sku: "BORSCH-001",
-        orderedQuantity: 25,
-        stockBalances: { "1": 50, "3": 30, "4": 20 }
-      },
-      {
-        name: "Вареники з картоплею",
-        sku: "VARENYKY-001",
-        orderedQuantity: 15,
-        stockBalances: { "1": 40, "3": 25 }
-      },
-      {
-        name: "Курча по-київськи",
-        sku: "KYIV-CHICKEN-001",
-        orderedQuantity: 8,
-        stockBalances: { "1": 15, "3": 12, "4": 10 }
-      }
-    ];
-
-    res.json({
-      success: true,
-      data: testData,
-      metadata: {
-        source: 'test_data',
-        filters: {
-          status: 'all',
-          dateRange: null
-        },
-        totalProducts: testData.length,
-        totalOrders: 1,
-        fetchedAt: new Date().toISOString(),
-        note: 'Test data for debugging purposes'
-      }
-    });
-  } catch (error) {
-    console.error('Error in test endpoint:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
-});
-
-/**
  * POST /api/orders/fix-items-data
- * Исправить поврежденные данные items в заказах
+ * Виправити пошкоджені дані items у замовленнях
  */
 router.post('/fix-items-data', authenticateToken, async (req, res) => {
   try {
     const { user } = req as any;
 
-    // Проверяем права доступа (только ADMIN)
+    // Перевіряємо права доступу (тільки ADMIN)
     if (!user || user.role !== 'admin') {
       return res.status(403).json({ error: 'Access denied. Admin role required.' });
     }
@@ -504,12 +444,12 @@ router.post('/fix-items-data', authenticateToken, async (req, res) => {
 
     for (const order of orders) {
       if (order.items === '[object Object]') {
-        // Пытаемся восстановить данные из rawData
+        // Намагаємось відновити дані з rawData
         try {
           if (order.rawData && typeof order.rawData === 'string') {
             const rawData = JSON.parse(order.rawData);
 
-            // Ищем items в rawData (структура может быть разной)
+            // Шукаємо items у rawData (структура може бути різною)
             let items = null;
             if (rawData.items) {
               items = rawData.items;
@@ -518,7 +458,7 @@ router.post('/fix-items-data', authenticateToken, async (req, res) => {
             }
 
             if (items && Array.isArray(items)) {
-              // Обновляем items в базе данных
+              // Оновлюємо items у базі даних
               await orderDatabaseService.updateOrder(order.externalId, {
                 items: items
               });
@@ -575,12 +515,11 @@ router.post('/calculate-actual-quantity', authenticateToken, async (req, res) =>
 
 /**
  * GET /api/orders/:externalId
- * Получить детали конкретного заказа по externalId (номеру заказа из SalesDrive)
+ * Отримати деталі конкретного замовлення за externalId (номером замовлення з SalesDrive)
  */
 router.get('/:externalId', authenticateToken, async (req, res) => {
   try {
-    const { externalId } = req.params; // Изменили с id на externalId
-
+    const { externalId } = req.params; // Змінили з id на externalId
     if (!externalId) {
       return res.status(400).json({
         success: false,
@@ -589,7 +528,7 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
     }
 
 
-    // Получаем детали заказа по externalId
+    // Отримуємо деталі замовлення за externalId
     const orderDetails = await orderDatabaseService.getOrderByExternalId(externalId);
 
     if (!orderDetails) {
@@ -599,7 +538,7 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
       });
     }
 
-    // Возвращаем полные данные заказа
+    // Повертаємо повні дані замовлення
     res.json({
       success: true,
       data: {
@@ -645,7 +584,7 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders/:id/status
- * Получить статус заказа из локальной базы данных
+ * Отримати статус замовлення з локальної бази даних
  */
 router.get('/:id/status', authenticateToken, async (req, res) => {
   try {
@@ -735,10 +674,9 @@ router.get('/:id/fiscal-receipt', authenticateToken, async (req, res) => {
   }
 });
 
-
 /**
  * PUT /api/orders/:id/status
- * Обновить статус заказа в SalesDrive
+ * Оновити статус замовлення в SalesDrive
  */
 router.put('/:id/status', authenticateToken, async (req, res) => {
   try {
@@ -752,7 +690,7 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       });
     }
 
-    // Обновляем статус в SalesDrive
+    // Оновлюємо статус в SalesDrive
     const result = await salesDriveService.updateSalesDriveOrderStatus(id, status);
 
     if (result) {
@@ -798,7 +736,7 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
 
 /**
  * POST /api/orders/:externalId/cache
- * Заполнить кеш для конкретного заказа
+ * Заповнити кеш для конкретного замовлення
  */
 router.post('/:externalId/cache', authenticateToken, async (req, res) => {
   try {
@@ -827,24 +765,24 @@ router.post('/:externalId/cache', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders/cache/stats
- * Получить статистику кеша
+ * Отримати статистику кешу
  */
 router.get('/cache/stats', authenticateToken, async (req, res) => {
   try {
     const totalOrders = await prisma.order.count();
 
-    // Получаем статистику кеша из orders_cache
+    // Отримуємо статистику кешу з orders_cache
     const cacheStats = await ordersCacheService.getCacheStatistics();
     const cachedOrders = cacheStats.totalEntries;
     const averageCacheTime = cacheStats.averageAge * 60 * 60 * 1000; // в миллисекунды
 
-    // Получить hit rate (процент заказов с кешем)
+    // Отримати hit rate (відсоток замовлень з кешем)
     const cacheHitRate = totalOrders > 0 ? (cachedOrders / totalOrders) * 100 : 0;
 
-    // Общий размер кеша - количество заказов с кешем
+    // Загальний розмір кешу - кількість замовлень з кешем
     const totalCacheSize = cachedOrders;
 
-    // Получить время последнего обновления кеша
+    // Отримати час останнього оновлення кешу
     const lastCacheUpdate = await prisma.ordersCache.findFirst({
       orderBy: { cacheUpdatedAt: 'desc' },
       select: { cacheUpdatedAt: true }
@@ -872,7 +810,7 @@ router.get('/cache/stats', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders/cache/info
- * Получить информацию о состоянии кеша
+ * Отримати інформацію про стан кешу
  */
 router.get('/cache/info', authenticateToken, async (req, res) => {
   try {
@@ -900,7 +838,7 @@ router.get('/cache/info', authenticateToken, async (req, res) => {
 
 /**
  * POST /api/orders/cache/clear
- * Очистить весь кеш
+ * Очистити весь кеш
  */
 router.post('/cache/clear', authenticateToken, async (req, res) => {
   try {
@@ -923,7 +861,7 @@ router.post('/cache/clear', authenticateToken, async (req, res) => {
 
 /**
  * DELETE /api/orders/cache/:key
- * Очистить конкретную запись из кеша
+ * Очистити конкретний запис з кешу
  */
 router.delete('/cache/:key', authenticateToken, async (req, res) => {
   try {
@@ -945,7 +883,7 @@ router.delete('/cache/:key', authenticateToken, async (req, res) => {
   }
 });
 
-// Вспомогательные функции для сравнения товаров в заказах
+// Допоміжні функції для порівняння товарів у замовленнях
 async function getOrderItemsForComparison(orderId: number): Promise<any[] | null> {
   try {
     const order = await prisma.order.findUnique({
@@ -959,7 +897,7 @@ async function getOrderItemsForComparison(orderId: number): Promise<any[] | null
 
     let orderItems: any[] = [];
 
-    // Парсим товары заказа
+    // Парсимо товари замовлення
     if (typeof order.items === 'string') {
       if (order.items === '[object Object]') {
         console.warn(`Order has invalid items data`);
@@ -983,6 +921,7 @@ async function getOrderItemsForComparison(orderId: number): Promise<any[] | null
   }
 }
 
+// Розпарсити кешовані товари замовлення
 function parseCachedOrderItems(processedItems: string | null): any[] | null {
   if (!processedItems) return null;
 
@@ -998,14 +937,15 @@ function parseCachedOrderItems(processedItems: string | null): any[] | null {
   }
 }
 
+// Порівняти товари в замовленнях
 function compareOrderItems(currentItems: any[], cachedItems: any[]): boolean {
-  if (!currentItems || !cachedItems) return true; // Если не можем сравнить - считаем, что изменились
+  if (!currentItems || !cachedItems) return true; // Якщо не можемо порівняти - вважаємо, що змінилися
 
-  // Создаем мапы по SKU для быстрого сравнения
+  // Створюємо мапи за SKU для швидкого порівняння
   const currentMap = new Map();
   const cachedMap = new Map();
 
-  // Нормализуем текущие товары
+  // Нормалізуємо поточні товари
   currentItems.forEach(item => {
     if (item && item.sku) {
       currentMap.set(item.sku.toString().toLowerCase(), {
@@ -1016,7 +956,7 @@ function compareOrderItems(currentItems: any[], cachedItems: any[]): boolean {
     }
   });
 
-  // Нормализуем кешированные товары
+  // Нормалізуємо кешовані товари
   cachedItems.forEach(item => {
     if (item && item.sku) {
       cachedMap.set(item.sku.toString().toLowerCase(), {
@@ -1027,36 +967,36 @@ function compareOrderItems(currentItems: any[], cachedItems: any[]): boolean {
     }
   });
 
-  // Сравниваем размеры
+  // Порівнюємо розміри
   if (currentMap.size !== cachedMap.size) {
     console.log(`📊 Items count changed: current=${currentMap.size}, cached=${cachedMap.size}`);
-    return true; // Количество товаров изменилось
+    return true; // Кількість товарів змінилася
   }
 
-  // Сравниваем каждый товар
+  // Порівнюємо кожен товар
   for (const [sku, currentItem] of currentMap) {
     const cachedItem = cachedMap.get(sku);
 
     if (!cachedItem) {
       console.log(`➕ New item found: ${sku}`);
-      return true; // Новый товар
+      return true; // Новий товар
     }
 
     if (currentItem.quantity !== cachedItem.quantity) {
       console.log(`📈 Quantity changed for ${sku}: current=${currentItem.quantity}, cached=${cachedItem.quantity}`);
-      return true; // Количество изменилось
+      return true; // Кількість змінилася
     }
   }
 
-  // Проверяем обратное - нет ли удаленных товаров
+  // Перевіряємо зворотне - чи немає видалених товарів
   for (const [sku, cachedItem] of cachedMap) {
     if (!currentMap.has(sku)) {
       console.log(`➖ Item removed: ${sku}`);
-      return true; // Товар удален
+      return true; // Товар видалений
     }
   }
 
-  return false; // Товары не изменились
+  return false; // Товари не змінилися
 }
 
 /**
@@ -1362,7 +1302,6 @@ router.post('/cache/validate', authenticateToken, async (req, res) => {
   }
 });
 
-
 /**
  * GET /api/orders/products/stats
  * Получить статистику по товарам из заказов с фильтрами
@@ -1381,20 +1320,20 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       }
     }
 
-    // Получаем час начала звітного дня
+    // Отримуємо час початку звітного дня
     const dayStartHour = await getReportingDayStartHour();
     // Для відвантажень використовуємо 00:00 (24-годинний цикл без зміщення), 
     // щоб 19.12 00:00 - 23:59 потрапляло в 19.12
     const effectiveDayStartHour = shippedOnly === 'true' ? 24 : dayStartHour;
 
-    // Парсим статусы: если строка содержит запятую, разбиваем на массив
+    // Парсим статуси: якщо рядок містить кому, розбиваємо на масив
     let parsedStatus: string | string[] | undefined = status as string;
     if (typeof status === 'string' && status.includes(',')) {
       parsedStatus = status.split(',').map(s => s.trim());
     }
     // console.log('🔍 SERVER RECEIVED:', { status, startDate, endDate, sync });
 
-    // Если запрошена синхронизация, сначала синхронизируем
+    // Якщо запрошена синхронізація, спочатку синхронізуємо
     if (sync === 'true') {
       console.log('🔄 Sync requested for products stats, starting synchronization...');
       const syncResult = await salesDriveService.syncOrdersWithDatabase();
@@ -1404,7 +1343,7 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       }
     }
 
-    // Фильтруем по дате если указаны даты (с учетом dayStartHour)
+    // Фільтруємо за датою, якщо вказані дати (з урахуванням dayStartHour)
     let dateRangeFilter = undefined;
     let shippedDateRangeFilter = undefined;
 
@@ -1419,10 +1358,10 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       }
     }
 
-    // Получаем заказы с фильтрами включая дату
+    // Отримуємо замовлення з фільтрами включно з датою
     const orders = await orderDatabaseService.getOrders({
       status: parsedStatus,
-      limit: 10000, // Увеличиваем лимит для получения большего количества данных
+      limit: 10000, // Збільшуємо ліміт для отримання більшої кількості даних
       sortBy: shippedOnly === 'true' ? 'dilovodSaleExportDate' : 'orderDate',
       sortOrder: 'desc',
       dateRange: dateRangeFilter,
@@ -1430,23 +1369,23 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       shippedDateRange: shippedDateRangeFilter
     });
 
-    const filteredOrders = orders; // Уже отфильтрованы в БД
+    const filteredOrders = orders; // Вже відфільтровані в БД
 
-    // Собираем статистику по товарам из кешированных данных
+    // Збираємо статистику по товарам з кешованих даних
     const productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } } = {};
 
 
-    // Получаем все externalId для bulk-запроса к кешу
+    // Отримуємо всі externalId для bulk-запиту до кешу
     const orderExternalIds = filteredOrders.map(order => order.externalId);
 
-    // Получаем все кеши одним запросом
+    // Отримуємо всі кеші одним запитом
     const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
 
     let processedOrders = 0;
     let cacheHits = 0;
     let cacheMisses = 0;
 
-    // Проходим по всем заказам и собираем статистику из кеша
+    // Проходимо по всіх замовленнях і збираємо статистику з кешу
     for (const order of filteredOrders) {
       if (processedOrders % 50 === 0) {
         console.log(`Processed ${processedOrders}/${filteredOrders.length} orders (${cacheHits} cache hits, ${cacheMisses} misses)`);
@@ -1454,19 +1393,19 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       processedOrders++;
 
       try {
-        // Проверяем, есть ли кешированные данные
+        // Перевіряємо, чи є кешовані дані
         const cacheData = orderCaches.get(order.externalId);
         if (cacheData && cacheData.processedItems) {
           const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {
             cacheHits++;
 
-            // Добавляем кешированные данные к общей статистике
+            // Додаємо кешовані дані до загальної статистики
             for (const item of cachedStats) {
               if (item && item.sku) {
                 if (productStats[item.sku]) {
                   productStats[item.sku].orderedQuantity += item.orderedQuantity || 0;
-                  // Обновляем остатки на складах (берем последние данные)
+                  // Оновлюємо залишки на складах (беремо останні дані)
                   productStats[item.sku].stockBalances = item.stockBalances || {};
                 } else {
                   productStats[item.sku] = {
@@ -1479,17 +1418,17 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
               }
             }
           } else {
-            // Кеш поврежден - пропускаем этот заказ
+            // Кеш пошкоджено - пропускаємо це замовлення
             console.warn(`Invalid cached data format for order ${order.externalId}, skipping...`);
             cacheMisses++;
           }
         } else {
-          // Кеша нет - пропускаем этот заказ
+          // Кеша немає - пропускаємо це замовлення
           console.log(`No cached data for order ${order.externalId}, skipping...`);
           cacheMisses++;
         }
       } catch (error) {
-        // Ошибка при обработке кеша - пропускаем этот заказ
+        // Помилка при обробці кешу - пропускаємо це замовлення
         console.warn(`Error processing cached data for order ${order.externalId}, skipping:`, error);
         cacheMisses++;
       }
@@ -1497,7 +1436,7 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
 
     console.log(`✅ Cache processing completed: ${cacheHits} hits, ${cacheMisses} misses`);
 
-    // Конвертируем в массив для ответа
+    // Конвертуємо в масив для відповіді
     const productStatsArray = Object.values(productStats);
 
     console.log('✅ FINAL RESULT:', {
@@ -1642,19 +1581,19 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders/products/stats/dates
- * Получить статистику по конкретному товару с разбивкой по датам
+ * Отримати статистику по конкретному товару з розбивкою по датах
  */
 router.get('/products/stats/dates', authenticateToken, async (req, res) => {
   try {
     const { sku, status, startDate, endDate, sync, shippedOnly } = req.query;
 
-    // Получаем час начала звітного дня
+    // Отримуємо час початку звітного дня
     const dayStartHour = await getReportingDayStartHour();
     // Для відвантажень використовуємо 00:00 (24-годинний цикл без зміщення), 
     // щоб 19.12 00:00 - 23:59 потрапляло в 19.12
     const effectiveDayStartHour = shippedOnly === 'true' ? 24 : dayStartHour;
 
-    // Парсим статусы: если строка содержит запятую, разбиваем на массив
+    // Парсим статуси: якщо рядок містить кому, розбиваємо на масив
     let parsedStatus: string | string[] | undefined = status as string;
     if (typeof status === 'string' && status.includes(',')) {
       parsedStatus = status.split(',').map(s => s.trim());
@@ -1663,21 +1602,21 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
     if (!sku) {
       return res.status(400).json({
         success: false,
-        error: 'SKU товара обязателен'
+        error: 'SKU товару обов\'язковий для отримання статистики по датах'
       });
     }
 
-    // Если запрошена синхронизация, сначала синхронизируем
+    // Якщо запрошено синхронізацію, спочатку синхронізуємо
     if (sync === 'true') {
-      console.log('🔄 Sync requested for product date stats, starting synchronization...');
+      console.log('🔄 Запитано синхронізацію для статистики по датах товару, починаємо синхронізацію...');
       const syncResult = await salesDriveService.syncOrdersWithDatabase();
 
       if (!syncResult.success) {
-        console.warn('⚠️ Sync completed with errors:', syncResult.errors);
+        console.warn('⚠️ Синхронізація завершена з помилками:', syncResult.errors);
       }
     }
 
-    // Фильтруем по дате если указаны даты (с учетом dayStartHour)
+    // Фільтруємо по даті, якщо вказані дати (з урахуванням dayStartHour)
     let dateRangeFilter = undefined;
     let shippedDateRangeFilter = undefined;
 
@@ -1692,26 +1631,26 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
       }
     }
 
-    // Получаем заказы с фильтрами включая дату
+    // Отримуємо замовлення з фільтрами включно з датою
     const orders = await orderDatabaseService.getOrders({
       status: parsedStatus,
-      limit: 10000, // Увеличиваем лимит для получения большего количества данных
+      limit: 10000, // Збільшуємо ліміт для отримання більшої кількості даних
       sortBy: shippedOnly === 'true' ? 'dilovodSaleExportDate' : 'orderDate',
-      sortOrder: 'asc', // Для корректной последовательности дат
+      sortOrder: 'asc', // Для коректної послідовності дат
       dateRange: dateRangeFilter,
       shippedOnly: shippedOnly === 'true',
       shippedDateRange: shippedDateRangeFilter
     });
 
-    const filteredOrders = orders; // Уже отфильтрованы в БД
+    const filteredOrders = orders; // Вже відфільтровані в БД
 
-    // Получаем все externalId для bulk-запроса к кешу
+    // Отримуємо всі externalId для bulk-запиту до кешу
     const orderExternalIds = filteredOrders.map(order => order.externalId);
 
-    // Получаем все кеши одним запросом
+    // Отримуємо всі кеші одним запитом
     const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
 
-    // Собираем статистику по датам для конкретного товара (используя звітні дати)
+    // Збираємо статистику по датах для конкретного товару (використовуючи звітні дати)
     const dateStats: { [date: string]: { date: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } } = {};
 
     for (const order of filteredOrders) {
@@ -1720,11 +1659,11 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
         if (cacheData && cacheData.processedItems) {
           const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {
-            // Ищем товар с указанным SKU
+            // Шукаємо товар з вказаним SKU
             const productItem = cachedStats.find(item => item && item.sku === sku);
             if (productItem) {
-              // Используем звітну дату вместо простой даты
-              // Если shippedOnly=true, используем dilovodSaleExportDate для определения отчетной даты
+              // Використовуємо звітну дату замість простої дати
+              // Якщо shippedOnly=true, використовуємо dilovodSaleExportDate для визначення звітної дати
               const dateToUse = (shippedOnly === 'true' && order.dilovodSaleExportDate)
                 ? new Date(order.dilovodSaleExportDate)
                 : order.orderDate;
@@ -1733,7 +1672,7 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
 
               if (dateStats[reportingDate]) {
                 dateStats[reportingDate].orderedQuantity += productItem.orderedQuantity || 0;
-                // Обновляем остатки на складах (берем последние данные)
+                // Оновлюємо залишки на складах (беремо останні дані)
                 dateStats[reportingDate].stockBalances = productItem.stockBalances || {};
               } else {
                 dateStats[reportingDate] = {
@@ -1746,14 +1685,14 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
           }
         }
       } catch (error) {
-        console.warn(`Error processing cached data for order ${order.externalId}:`, error);
+        console.warn(`Помилка обробки кешованих даних для замовлення ${order.externalId}:`, error);
       }
     }
 
-    // Конвертируем в массив и сортируем по дате
+    // Конвертуємо в масив і сортуємо за датою
     const dateStatsArray = Object.values(dateStats).sort((a, b) => a.date.localeCompare(b.date));
 
-    // Получаем информацию о товаре из последнего заказа
+    // Отримуємо інформацію про товар з останнього замовлення
     let productInfo = { name: sku, sku: sku };
     for (const order of filteredOrders.slice().reverse()) {
       try {
@@ -1769,7 +1708,7 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
           }
         }
       } catch (error) {
-        // Продолжаем поиск
+        // Продовжуємо пошук
       }
     }
 
@@ -1814,13 +1753,13 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders/products/chart
- * Получить данные для графика продаж по товарам с разбивкой по датам
+ * Отримати дані для графіка продажів за товарами з розбивкою за датами
  */
 router.get('/products/chart', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync, groupBy = 'day', products } = req.query;
 
-    // Получаем час начала звітного дня
+    // Отримуємо час початку звітного дня
     const dayStartHour = await getReportingDayStartHour();
 
     const productsKey = Array.isArray(products) ? [...products].sort().join(',') : products || 'all';
@@ -1835,7 +1774,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
       }
     }
 
-    // Парсим статусы: если строка содержит запятую, разбиваем на массив
+    // Парсимо статуси: якщо рядок містить кому, розбиваємо на масив
     let parsedStatus: string | string[] | undefined = status as string;
     if (typeof status === 'string' && status.includes(',')) {
       parsedStatus = status.split(',').map(s => s.trim());
@@ -1848,7 +1787,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
       });
     }
 
-    // Если запрошена синхронизация, сначала синхронизируем
+    // Якщо запрошена синхронізація, спочатку синхронізуємо
     if (sync === 'true') {
       console.log('🔄 Sync requested for products chart, starting synchronization...');
       const syncResult = await salesDriveService.syncOrdersWithDatabase();
@@ -1868,10 +1807,10 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
 
     // console.log(`📅 Filtering chart data by date range: ${start.toISOString()} to ${end.toISOString()}`);
 
-    // Получаем заказы с фильтрами включая дату
+    // Отримуємо замовлення з фільтрами, включаючи дату
     const orders = await orderDatabaseService.getOrders({
       status: parsedStatus,
-      limit: 10000, // Увеличиваем лимит для получения большего количества данных
+      limit: 10000, // Збільшуємо ліміт для отримання більшої кількості даних
       sortBy: 'orderDate',
       sortOrder: 'asc',
       dateRange: {
@@ -1880,26 +1819,26 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
       }
     });
 
-    const filteredOrders = orders; // Уже отфильтрованы в БД
+    const filteredOrders = orders; // Вже відфільтровані в БД
 
 
-    // Определения групп товаров для API
+    // Визначення груп товарів для API
     const productGroupOptions = [
       { key: "first_courses", label: "Перші страви" },
       { key: "main_courses", label: "Другі страви" },
     ];
 
-    // Функция определения группы товара
+    // Функція визначення групи товару
     const getProductGroup = (productName: string): string => {
       const name = productName.toLowerCase();
       if (name.includes('борщ') || name.includes('суп') || name.includes('бульйон') || name.includes('перший') || name.includes('перша')) {
         return 'first_courses';
       }
-      // По умолчанию все остальные товары считаем вторыми блюдами
+      // За замовчуванням всі інші товари вважаємо другими стравами
       return 'main_courses';
     };
 
-    // Обрабатываем фильтр по товарам
+    // Обробляємо фільтр за товарами
     let filterProducts: string[] = [];
     let filterGroups: string[] = [];
 
@@ -1910,7 +1849,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
         filterProducts = [products as string];
       }
 
-      // Разделяем на группы и индивидуальные товары
+      // Розділяємо на групи та індивідуальні товари
       const individualProducts = filterProducts.filter(p => !p.startsWith('group_'));
       const groupFilters = filterProducts.filter(p => p.startsWith('group_'));
 
@@ -1920,13 +1859,13 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
 
     }
 
-    // Получаем все externalId для bulk-запроса к кешу
+    // Отримуємо всі externalId для bulk-запиту до кешу
     const orderExternalIds = filteredOrders.map(order => order.externalId);
 
-    // Получаем все кеши одним запросом
+    // Отримуємо всі кеші одним запитом
     const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
 
-    // Собираем данные по товарам с разбивкой по датам (используя звітні дати)
+    // Збираємо дані по товарам з розбивкою по датах (використовуючи звітні дати)
     const chartData: { [dateKey: string]: { [sku: string]: { name: string; quantity: number } } } = {};
     const productInfo: { [sku: string]: string } = {};
 
@@ -1936,7 +1875,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
         if (cacheData && cacheData.processedItems) {
           const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {
-            // Получаем звітну дату для цього замовлення
+            // Отримуємо звітну дату для цього замовлення
             const reportingDate = getReportingDate(order.orderDate, dayStartHour);
 
             let dateKey: string;
@@ -1973,22 +1912,22 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
               chartData[dateKey] = {};
             }
 
-            // Обрабатываем товары в заказе
+            // Обробляємо товари в замовленні
             for (const item of cachedStats) {
               if (item && item.sku && item.orderedQuantity > 0) {
-                // Проверяем фильтр по товарам и группам
+                // Перевіряємо фільтр за товарами та групами
                 let shouldInclude = false;
 
                 if (filterProducts.length === 0 && filterGroups.length === 0) {
-                  // Нет фильтров - включаем все товары
+                  // Немає фільтрів - включаємо всі товари
                   shouldInclude = true;
                 } else {
-                  // Проверяем индивидуальные товары
+                  // Перевіряємо індивідуальні товари
                   if (filterProducts.includes(item.sku)) {
                     shouldInclude = true;
                   }
 
-                  // Проверяем группы товаров
+                  // Перевіряємо групи товарів
                   if (filterGroups.length > 0) {
                     const productGroup = getProductGroup(item.name || item.sku);
                     if (filterGroups.includes(productGroup)) {
@@ -2020,15 +1959,15 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
       }
     }
 
-    // Конвертируем в массив для ответа
+    // Конвертуємо в масив для відповіді
     const chartDataArray = Object.entries(chartData)
       .map(([dateKey, products]) => {
-        // Форматируем дату для отображения в зависимости от groupBy
+        // Форматуємо дату для відображення в залежності від groupBy
         let formattedDate = dateKey;
         let displayDate = dateKey;
 
         if (groupBy === 'hour') {
-          // Для часов: "29.08 21:00"
+          // Для годин: "29.08 21:00"
           const date = new Date(dateKey + ':00:00');
           formattedDate = date.toLocaleDateString('uk-UA', {
             day: '2-digit',
@@ -2038,7 +1977,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
           });
           displayDate = formattedDate;
         } else if (groupBy === 'day') {
-          // Для дней: "29.08"
+          // Для днів: "29.08"
           const date = new Date(dateKey);
           formattedDate = date.toLocaleDateString('uk-UA', {
             day: '2-digit',
@@ -2046,7 +1985,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
           });
           displayDate = formattedDate;
         } else if (groupBy === 'week') {
-          // Для недель: "26.08 - 01.09"
+          // Для тижнів: "26.08 - 01.09"
           const weekStart = new Date(dateKey);
           const weekEnd = new Date(weekStart);
           weekEnd.setDate(weekStart.getDate() + 6);
@@ -2063,7 +2002,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
           formattedDate = `${startStr} - ${endStr}`;
           displayDate = formattedDate;
         } else if (groupBy === 'month') {
-          // Для месяцев: "серпень 2025"
+          // Для місяців: "серпень 2025"
           const date = new Date(dateKey + '-01');
           formattedDate = date.toLocaleDateString('uk-UA', {
             month: 'long',
@@ -2074,7 +2013,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
 
         return {
           date: displayDate,
-          rawDate: dateKey, // Сохраняем сырую дату для сортировки
+          rawDate: dateKey, // Зберігаємо сирі дату для сортування
           ...Object.fromEntries(
             Object.entries(products).map(([sku, data]) => [
               `product_${sku}`,
@@ -2091,14 +2030,14 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
       })
       .sort((a, b) => a.rawDate.localeCompare(b.rawDate));
 
-    // Создаем агрегированные линии для групп или общую линию
+    // Створюємо агреговані лінії для груп або загальну лінію
     const totalDataArray = chartDataArray.map(point => {
       const result = { ...point };
 
-      // Если выбраны группы товаров - создаем отдельные линии для каждой группы
+      // Якщо вибрані групи товарів - створюємо окремі лінії для кожної групи
       if (filterGroups.length > 0) {
         filterGroups.forEach((groupKey, index) => {
-          // Находим товары этой группы
+          // Знаходимо товари цієї групи
           const groupProducts = Object.keys(point).filter(key => {
             if (!key.startsWith('product_') || key.endsWith('_name')) return false;
 
@@ -2107,7 +2046,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
             return productGroup === groupKey;
           });
 
-          // Суммируем продажи товаров этой группы
+          // Підсумовуємо продажі товарів цієї групи
           const groupTotal = groupProducts.reduce((sum, key) => sum + (point[key] || 0), 0);
 
           if (groupTotal > 0) {
@@ -2118,9 +2057,9 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
         });
       }
 
-      // Если выбраны индивидуальные товары - оставляем только их
+      // Якщо вибрані індивідуальні товари - залишаємо тільки їх
       if (filterProducts.length > 0) {
-        // Удаляем все товары, кроме выбранных индивидуальных
+        // Видаляємо всі товари, крім вибраних індивідуальних
         Object.keys(result).forEach(key => {
           if (key.startsWith('product_') && !key.endsWith('_name') && key !== 'product_') {
             const sku = key.replace('product_', '');
@@ -2132,7 +2071,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
         });
       }
 
-      // Если ничего не выбрано - создаем общую линию всех товаров
+      // Якщо нічого не вибрано - створюємо загальну лінію всіх товарів
       if (filterGroups.length === 0 && filterProducts.length === 0) {
         const products = Object.keys(point).filter(key =>
           key.startsWith('product_') && !key.endsWith('_name') && key !== 'product_'
@@ -2147,7 +2086,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
       return result;
     });
 
-    // Подсчитываем реальное количество линий в данных (товары + группы)
+    // Підраховуємо реальну кількість ліній у даних (товари + групи)
     const actualProductCount = totalDataArray.length > 0
       ? Object.keys(totalDataArray[0]).filter(key =>
         (key.startsWith('product_') || key.startsWith('group_')) &&
@@ -2174,8 +2113,8 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
           dayStartHour
         },
         totalPoints: totalDataArray.length,
-        totalProducts: actualProductCount, // Реальное количество товаров в данных
-        totalProductsInfo: Object.keys(productInfo).length, // Общее количество товаров в словаре
+        totalProducts: actualProductCount, // Реальна кількість товарів у даних
+        totalProductsInfo: Object.keys(productInfo).length, // Загальна кількість товарів у словнику
         totalOrders: filteredOrders.length,
         fetchedAt: new Date().toISOString()
       }
