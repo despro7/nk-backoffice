@@ -423,6 +423,7 @@ export class SalesDriveService {
 
     // Статичний список каналів (SalesDrive API не має такого ендпоінту)
     const channels: SalesDriveChannel[] = [
+      { id: '19', name: 'nk-food.shop' },
       { id: '22', name: 'Rozetka (Сергій)' },
       { id: '24', name: 'prom (old)' },
       { id: '28', name: 'prom' },
