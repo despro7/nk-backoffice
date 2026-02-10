@@ -118,7 +118,8 @@ const DilovodSettingsManager: React.FC = () => {
 				const channelData = await channelsRes.json();
 				if (channelData.success && channelData.data) {
 					// Виключаємо канал nk-food.shop з ID "19"
-					const filteredChannels = channelData.data.filter((channel: SalesDriveChannel) => channel.id !== '19');
+					// const filteredChannels = channelData.data.filter((channel: SalesDriveChannel) => channel.id !== '19');
+					const filteredChannels = channelData.data;
 					setSalesChannels(filteredChannels);
 				}
 			}
