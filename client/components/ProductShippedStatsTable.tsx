@@ -432,6 +432,58 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
     setIsPeriodModalOpen(true);
   };
 
+  const handleClearStatsCache = async () => {
+    try {
+      addToast({
+        title: "Очищення кешу",
+        description: "🗑️ Початок очищення серверного кешу статистики...",
+        color: "primary",
+        timeout: 3000,
+      });
+
+      const response = await apiCall('/api/orders/cache/stats/clear', {
+        method: 'POST'
+      });
+
+      if (response.status === 403) {
+        throw new Error('Недостатньо прав доступу. Необхідні права адміністратора.');
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to clear statistics cache');
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ Statistics cache cleared:', result.data);
+        }
+
+        addToast({
+          title: "Успішно очищено",
+          description: `✅ Серверний кеш статистики очищено (${result.data.entriesCleared} записів)`,
+          color: "success",
+          timeout: 5000,
+        });
+
+        // Очищаємо клієнтський кеш і оновлюємо дані
+        setCache({});
+        await fetchProductStats(true); // force = true для примусового запиту
+      } else {
+        throw new Error(result.error || 'Failed to clear statistics cache');
+      }
+    } catch (error) {
+      console.error('❌ Error clearing statistics cache:', error);
+      addToast({
+        title: "Помилка",
+        description: "❌ Помилка при очищенні серверного кешу: " + error,
+        color: "danger",
+        timeout: 7000,
+      });
+    }
+  };
+
   const handleConfirmPeriodRefresh = async () => {
     if (cachePeriodRange?.start && cachePeriodRange?.end) {
       await refreshCache('period', cachePeriodRange);
@@ -1055,6 +1107,15 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
                   startContent={<DynamicIcon name="calendar" size={14} />}
                 >
                   За період
+                </DropdownItem>
+                <DropdownItem
+                  key="clear-stats-cache"
+                  onPress={handleClearStatsCache}
+                  startContent={<DynamicIcon name="trash-2" size={14} />}
+                  className="text-danger"
+                  color="danger"
+                >
+                  Очистити серверний кеш
                 </DropdownItem>
               </DropdownMenu>
             </Dropdown>

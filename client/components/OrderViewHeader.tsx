@@ -1,7 +1,7 @@
-import { Button, Chip } from '@heroui/react';
+import { Button, Chip, ButtonGroup, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate, getStatusColor, getStatusLabel } from '../lib/formatUtils';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
 import { ToastService } from '../services/ToastService';
 
@@ -11,19 +11,69 @@ interface OrderViewHeaderProps {
   onBackClick: () => void;
 }
 
+// Іконка шеврону для dropdown
+const ChevronDownIcon = () => (
+  <svg fill="none" height="14" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M17.9188 8.17969H11.6888H6.07877C5.11877 8.17969 4.63877 9.33969 5.31877 10.0197L10.4988 15.1997C11.3288 16.0297 12.6788 16.0297 13.5088 15.1997L15.4788 13.2297L18.6888 10.0197C19.3588 9.33969 18.8788 8.17969 17.9188 8.17969Z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
 export function OrderViewHeader({ order, externalId, onBackClick }: OrderViewHeaderProps) {
   const { apiCall } = useApi();
   const [loadingReceipt, setLoadingReceipt] = useState(false);
   const [receiptNotAvailable, setReceiptNotAvailable] = useState(false);
+  const [receiptsList, setReceiptsList] = useState<any[]>([]);
+  const [selectedReceiptIndex, setSelectedReceiptIndex] = useState(new Set(["0"]));
+  const [loadingReceiptsList, setLoadingReceiptsList] = useState(false);
 
-  const handleFetchReceipt = async () => {
+  // Завантажуємо список чеків при появі dilovodDocId
+  useEffect(() => {
+    if (order.dilovodDocId) {
+      loadReceiptsList();
+    }
+  }, [order.dilovodDocId]);
+
+  const loadReceiptsList = async () => {
+    try {
+      setLoadingReceiptsList(true);
+      const response = await apiCall(`/api/orders/${order.id}/fiscal-receipts/list`);
+      const data = await response.json();
+
+      if (data.success && data.data?.receipts) {
+        setReceiptsList(data.data.receipts);
+        
+        // Якщо знайдено кілька чеків, показуємо повідомлення
+        if (data.data.receipts.length > 1) {
+          ToastService.show({
+            title: 'Знайдено кілька чеків',
+            description: `Доступно ${data.data.receipts.length} чеків для цього замовлення`,
+            color: 'primary'
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Помилка завантаження списку чеків:', error);
+      // Не показуємо toast, якщо просто немає чеків
+    } finally {
+      setLoadingReceiptsList(false);
+    }
+  };
+
+  const handleFetchReceipt = async (index?: number) => {
     
     try {
       setLoadingReceipt(true);
       setReceiptNotAvailable(false);
 
+      // Визначаємо індекс чека (якщо не передано, беремо з вибраного)
+      const receiptIndex = index !== undefined ? index : parseInt(Array.from(selectedReceiptIndex)[0]);
+
       // Спочатку пробуємо отримати чек з Dilovod
-      const response = await apiCall(`/api/orders/${order.id}/fiscal-receipt`);
+      const url = `/api/orders/${order.id}/fiscal-receipt${receiptIndex > 0 ? `?index=${receiptIndex}` : ''}`;
+      const response = await apiCall(url);
       const data = await response.json();
 
       if (data.success && data.data?.receipt) {
@@ -383,17 +433,63 @@ export function OrderViewHeader({ order, externalId, onBackClick }: OrderViewHea
         {/* Кнопка отримання фіскального чека */}
         {order.dilovodDocId && (
           <div className="ml-auto">
-            <Button
-              color={receiptNotAvailable ? "default" : "primary"}
-              variant="flat"
-              onPress={handleFetchReceipt}
-              isLoading={loadingReceipt}
-              isDisabled={!order.dilovodDocId}
-              startContent={!loadingReceipt && <DynamicIcon name="receipt" size={18} />}
-              className={`min-w-fit ${receiptNotAvailable ? 'bg-danger-50 text-danger-500' : 'bg-primary text-white hover:bg-primary/90'}`}
-            >
-              {receiptNotAvailable ? 'Чек не сформовано' : 'Переглянути чек'}
-            </Button>
+            {receiptsList.length > 1 ? (
+              // Якщо є кілька чеків - показуємо ButtonGroup з dropdown
+              <ButtonGroup variant="flat">
+                <Button
+                  color={receiptNotAvailable ? "default" : "primary"}
+                  onPress={() => handleFetchReceipt()}
+                  isLoading={loadingReceipt}
+                  isDisabled={!order.dilovodDocId || loadingReceiptsList}
+                  startContent={!loadingReceipt && <DynamicIcon name="receipt" size={18} />}
+                  className={`min-w-fit ${receiptNotAvailable ? 'bg-danger-50 text-danger-500' : 'bg-primary text-white hover:bg-primary/90'}`}
+                >
+                  {receiptNotAvailable 
+                    ? 'Чек не сформовано' 
+                    : receiptsList.find(r => r.index === parseInt(Array.from(selectedReceiptIndex)[0]))?.summary || 'Переглянути чек'
+                  }
+                </Button>
+                <Dropdown placement="bottom-end">
+                  <DropdownTrigger>
+                    <Button
+                      isIconOnly
+                      color={receiptNotAvailable ? "default" : "primary"}
+                      isDisabled={!order.dilovodDocId || loadingReceiptsList}
+                      className={receiptNotAvailable ? 'bg-danger-50 text-danger-500' : 'bg-primary text-white hover:bg-primary/90'}
+                    >
+                      <ChevronDownIcon />
+                    </Button>
+                  </DropdownTrigger>
+                  <DropdownMenu
+                    disallowEmptySelection
+                    aria-label="Вибір фіскального чека"
+                    className="max-w-[400px]"
+                    selectedKeys={selectedReceiptIndex}
+                    selectionMode="single"
+                    onSelectionChange={(keys) => setSelectedReceiptIndex(keys as Set<string>)}
+                  >
+                    {receiptsList.map((receipt) => (
+                      <DropdownItem key={receipt.index.toString()}>
+                        {receipt.summary}
+                      </DropdownItem>
+                    ))}
+                  </DropdownMenu>
+                </Dropdown>
+              </ButtonGroup>
+            ) : (
+              // Якщо один чек або ще завантажується - звичайна кнопка
+              <Button
+                color={receiptNotAvailable ? "default" : "primary"}
+                variant="flat"
+                onPress={() => handleFetchReceipt()}
+                isLoading={loadingReceipt || loadingReceiptsList}
+                isDisabled={!order.dilovodDocId}
+                startContent={!loadingReceipt && !loadingReceiptsList && <DynamicIcon name="receipt" size={18} />}
+                className={`min-w-fit ${receiptNotAvailable ? 'bg-danger-50 text-danger-500' : 'bg-primary text-white hover:bg-primary/90'}`}
+              >
+                {receiptNotAvailable ? 'Чек не сформовано' : 'Переглянути чек'}
+              </Button>
+            )}
           </div>
         )}
 

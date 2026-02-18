@@ -994,9 +994,10 @@ export class DilovodService {
   /**
    * Отримати фіскальний чек за dilovodDocId
    * @param dilovodDocId ID документа в Dilovod
+   * @param index Індекс чека в масиві (за замовчуванням 0 - перший чек)
    * @returns Розпарсені дані чека або null, якщо чек не знайдено
    */
-  async getFiscalReceipt(dilovodDocId: string): Promise<{
+  async getFiscalReceipt(dilovodDocId: string, index: number = 0): Promise<{
     header: any;
     goods: any[];
     totals: any;
@@ -1004,7 +1005,7 @@ export class DilovodService {
     taxes: any[];
   } | null> {
     try {
-      logWithTimestamp(`🧾 [Dilovod] Запит фіскального чека для документа: ${dilovodDocId}`);
+      logWithTimestamp(`🧾 [Dilovod] Запит фіскального чека для документа: ${dilovodDocId} (індекс: ${index})`);
 
       const response = await this.apiClient.makeRequest({
         version: '0.25',
@@ -1032,11 +1033,17 @@ export class DilovodService {
         return null;
       }
 
-      const fiscalData = response[0];
+      // Перевіряємо, чи існує запитаний індекс
+      if (index < 0 || index >= response.length) {
+        logWithTimestamp(`⚠️ [Dilovod] Індекс ${index} виходить за межі масиву (знайдено ${response.length} чеків)`);
+        return null;
+      }
+
+      const fiscalData = response[index];
       const additionalData = fiscalData?.additionalData;
 
       if (!additionalData) {
-        logWithTimestamp(`⚠️ [Dilovod] additionalData порожнє для документа ${dilovodDocId}`);
+        logWithTimestamp(`⚠️ [Dilovod] additionalData порожнє для документа ${dilovodDocId} (індекс ${index})`);
         return null;
       }
 
@@ -1085,11 +1092,122 @@ export class DilovodService {
         receipt.totals = { ...receipt.totals, SUM: calculatedSum };
       }
 
-      logWithTimestamp(`✅ [Dilovod] Чек отримано. SUM: ${receipt.totals.SUM || 0}`);
+      logWithTimestamp(`✅ [Dilovod] Чек отримано (${index + 1} з ${response.length}). SUM: ${receipt.totals.SUM || 0}`);
       return receipt;
 
     } catch (error) {
       logWithTimestamp(`❌ [Dilovod] Помилка отримання фіскального чека:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Отримати список всіх фіскальних чеків для документа
+   * @param dilovodDocId ID документа в Dilovod
+   * @returns Масив метаданих чеків (без повного контенту для економії пам'яті)
+   */
+  async getFiscalReceiptsList(dilovodDocId: string): Promise<{
+    total: number;
+    receipts: Array<{
+      index: number;
+      fiscalNumber?: string;
+      date?: string;
+      sum?: number;
+      type?: 'sale' | 'return' | 'unknown';
+      summary: string;
+    }>;
+  }> {
+    try {
+      logWithTimestamp(`📋 [Dilovod] Запит списку чеків для документа: ${dilovodDocId}`);
+
+      const response = await this.apiClient.makeRequest({
+        version: '0.25',
+        key: this.apiClient.getApiKey(),
+        action: 'request',
+        params: {
+          from: 'informationRegisters.fiscalRefs',
+          fields: {
+            contract: 'contract',
+            additionalData: 'additionalData'
+          },
+          filters: [
+            {
+              alias: 'contract',
+              operator: '=',
+              value: dilovodDocId
+            }
+          ]
+        }
+      });
+
+      if (!response || !Array.isArray(response) || response.length === 0) {
+        logWithTimestamp(`⚠️ [Dilovod] Чеки не знайдено для документа ${dilovodDocId}`);
+        return { total: 0, receipts: [] };
+      }
+
+      logWithTimestamp(`✅ [Dilovod] Знайдено ${response.length} чек(ів) для документа ${dilovodDocId}`);
+
+      // Обробляємо кожен чек для отримання метаданих
+      const receipts = response
+        .map((fiscalData: any, index: number) => {
+          try {
+            const additionalData = fiscalData?.additionalData;
+            
+            if (!additionalData) {
+              return null; // Пропускаємо чеки без даних
+            }
+
+            const receiptJson = JSON.parse(additionalData);
+            const header = receiptJson?.json?.header || {};
+            const totals = receiptJson?.json?.totals?.[0] || {};
+            
+            // Визначаємо тип чека (продаж, повернення)
+            let type: 'sale' | 'return' | 'unknown' = 'unknown';
+            if (header.ORDERRETNUM || header.orderretnum) {
+              type = 'return';
+              return null; // Пропускаємо чеки повернення
+            } else if (header.ORDERNUM || header.ordernum) {
+              type = 'sale';
+            }
+
+            const sum = totals.SUM || totals.sum || 0;
+            const fiscalNumber = header.ORDERNUM || header.ordernum;
+            const date = header.DATE || header.date;
+
+            // Формуємо людино-читабельний опис
+            let summary = `Чек №${index + 1}`;
+            if (sum) {
+              summary += ` (${sum.toFixed(2)} грн)`;
+            }
+            if (date) {
+              summary += ` від ${new Date(date).toLocaleDateString('uk-UA')}`;
+            }
+
+            return {
+              index,
+              fiscalNumber,
+              date,
+              sum,
+              type,
+              summary
+            };
+
+          } catch (parseError) {
+            logWithTimestamp(`⚠️ [Dilovod] Помилка парсингу чека ${index}:`, parseError);
+            return null; // Пропускаємо чеки з помилками парсингу
+          }
+        })
+        .filter((receipt): receipt is NonNullable<typeof receipt> => receipt !== null); // Видаляємо null значення
+
+      logWithTimestamp(`📊 [Dilovod] Після фільтрації залишилось ${receipts.length} чек(ів) продажу`);
+
+      return {
+        total: response.length,
+        receipts
+      };
+
+    } catch (error) {
+      logWithTimestamp(`❌ [Dilovod] Помилка отримання списку чеків:`, error);
       throw error;
     }
   }

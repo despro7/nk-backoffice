@@ -1143,13 +1143,20 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
       // Якщо експорт успішний - оновлюємо дату відвантаження
       if (!isExportError && exportResult?.id) {
         try {
+          // Використовуємо readyToShipAt, якщо воно встановлено, інакше поточну дату
+          const shipmentDate = order.readyToShipAt 
+            ? new Date(order.readyToShipAt).toISOString()
+            : new Date().toISOString();
+          
           await prisma.order.updateMany({
             where: { id: parseInt(orderId) },
             data: {
-              dilovodSaleExportDate: new Date().toISOString()
+              dilovodSaleExportDate: shipmentDate
             }
           });
-          logWithTimestamp(`✅ Дату відвантаження збережено для замовлення #${orderNumber} (id: ${orderId})`);
+          
+          const dateSource = order.readyToShipAt ? 'з readyToShipAt' : 'поточна дата';
+          logWithTimestamp(`✅ Дату відвантаження (${dateSource}) збережено для замовлення #${orderNumber} (id: ${orderId})`);
         } catch (dbError) {
           logWithTimestamp(`❌ Помилка збереження дати відвантаження в БД:`, dbError);
         }

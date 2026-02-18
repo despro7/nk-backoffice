@@ -136,7 +136,7 @@ export class DilovodApiClient {
       }
 
       const data = await response.json() as T;
-      logWithTimestamp('Отримано відповідь від Dilovod API:', data);
+      // logWithTimestamp('Отримано відповідь від Dilovod API:', data);
 
       return data;
     } catch (error) {

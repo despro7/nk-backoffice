@@ -605,14 +605,17 @@ router.get('/:id/status', authenticateToken, async (req, res) => {
 });
 
 /**
- * GET /api/orders/:id/fiscal-receipt
+ * GET /api/orders/:id/fiscal-receipt?index=0
  * Отримати фіскальний чек з Dilovod за ID замовлення
+ * Query params:
+ *   - index: номер чека (0-based), за замовчуванням 0
  */
 router.get('/:id/fiscal-receipt', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const index = parseInt(req.query.index as string) || 0;
 
-    console.log(`📄 [FISCAL RECEIPT] Запит фіскального чеку для замовлення ID: ${id}`);
+    console.log(`📄 [FISCAL RECEIPT] Запит фіскального чеку для замовлення ID: ${id}, індекс: ${index}`);
 
     // Отримуємо замовлення з БД для отримання dilovodDocId
     const order = await prisma.order.findFirst({
@@ -643,13 +646,13 @@ router.get('/:id/fiscal-receipt', authenticateToken, async (req, res) => {
     }
 
     // Отримуємо фіскальний чек з Dilovod
-    const receipt = await dilovodService.getFiscalReceipt(order.dilovodDocId);
+    const receipt = await dilovodService.getFiscalReceipt(order.dilovodDocId, index);
 
     if (!receipt) {
       return res.status(404).json({
         success: false,
         error: 'Fiscal receipt not found',
-        message: 'Чек не знайдено в системі Dilovod'
+        message: `Чек з індексом ${index} не знайдено в системі Dilovod`
       });
     }
 
@@ -660,6 +663,7 @@ router.get('/:id/fiscal-receipt', authenticateToken, async (req, res) => {
         externalId: order.externalId,
         orderNumber: order.orderNumber,
         dilovodDocId: order.dilovodDocId,
+        receiptIndex: index,
         receipt
       }
     });
@@ -669,6 +673,68 @@ router.get('/:id/fiscal-receipt', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch fiscal receipt',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/orders/:id/fiscal-receipts/list
+ * Отримати список всіх доступних фіскальних чеків для замовлення
+ */
+router.get('/:id/fiscal-receipts/list', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log(`📋 [FISCAL RECEIPTS LIST] Запит списку чеків для замовлення ID: ${id}`);
+
+    // Отримуємо замовлення з БД
+    const order = await prisma.order.findFirst({
+      where: {
+        id: parseInt(id)
+      },
+      select: {
+        id: true,
+        externalId: true,
+        orderNumber: true,
+        dilovodDocId: true
+      }
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found'
+      });
+    }
+
+    if (!order.dilovodDocId) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not exported to Dilovod',
+        message: 'Замовлення ще не експортоване в Dilovod'
+      });
+    }
+
+    // Отримуємо список чеків
+    const receiptsList = await dilovodService.getFiscalReceiptsList(order.dilovodDocId);
+
+    res.json({
+      success: true,
+      data: {
+        orderId: order.id,
+        externalId: order.externalId,
+        orderNumber: order.orderNumber,
+        dilovodDocId: order.dilovodDocId,
+        ...receiptsList
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching fiscal receipts list:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch fiscal receipts list',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
@@ -879,6 +945,35 @@ router.delete('/cache/:key', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Internal server error',
+    });
+  }
+});
+
+/**
+ * POST /api/orders/cache/stats/clear
+ * Очистити серверний кеш статистики
+ */
+router.post('/cache/stats/clear', authenticateToken, async (req, res) => {
+  try {
+    const sizeBefore = statsCache.size;
+    statsCache.clear();
+    
+    logServer(`✅ [STATS CACHE] Cleared ${sizeBefore} cached statistics entries`);
+
+    res.json({
+      success: true,
+      message: `Statistics cache cleared successfully`,
+      data: {
+        entriesCleared: sizeBefore,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Error clearing statistics cache:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to clear statistics cache',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
