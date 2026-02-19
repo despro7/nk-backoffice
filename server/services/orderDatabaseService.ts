@@ -1965,6 +1965,109 @@ export class OrderDatabaseService {
   }
 
   /**
+   * Рекурсивно розгортає один товар/комплект у фінальні компоненти
+   * @param sku - SKU товару для розгортання
+   * @param quantity - Кількість цього товару
+   * @param productStats - Об'єкт для накопичення результатів
+   * @param visitedSets - Set для відстеження відвіданих SKU (запобігання циклічним посиланням)
+   * @param depth - Поточна глибина рекурсії (для безпеки)
+   */
+  private async expandProductRecursively(
+    sku: string,
+    quantity: number,
+    productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } },
+    visitedSets: Set<string> = new Set(),
+    depth: number = 0
+  ): Promise<void> {
+    // Захист від нескінченної рекурсії
+    const MAX_DEPTH = 10;
+    if (depth > MAX_DEPTH) {
+      console.error(`🛑 Досягнуто максимальну глибину рекурсії (${MAX_DEPTH}) для SKU: ${sku}`);
+      return;
+    }
+
+    // Захист від циклічних посилань
+    if (visitedSets.has(sku)) {
+      console.warn(`🔄 Виявлено циклічне посилання на SKU: ${sku}. Пропускаємо.`);
+      return;
+    }
+
+    try {
+      const product = await this.getProductBySku(sku);
+      if (!product) {
+        console.warn(`⚠️ Товар не знайдено: ${sku}`);
+        return;
+      }
+
+      // Перевіряємо, чи це комплект
+      if (product.set && Array.isArray(product.set) && product.set.length > 0) {
+        // Це комплект - додаємо його до відвіданих і розгортаємо компоненти
+        const validSetItems = product.set.filter((setItem: any) =>
+          setItem && typeof setItem === 'object' && setItem.id && setItem.quantity
+        );
+
+        if (validSetItems.length === 0) {
+          console.warn(`⚠️ Набір ${product.name} (${sku}) не має валідних компонентів`);
+          // Додаємо як звичайний товар
+          this.addOrUpdateProductStats(productStats, product, quantity);
+          return;
+        }
+
+        // Додаємо до відвіданих перед рекурсією
+        visitedSets.add(sku);
+
+        // Рекурсивно розгортаємо кожен компонент
+        for (const setItem of validSetItems) {
+          if (!setItem.id) continue;
+
+          const componentQuantity = quantity * setItem.quantity;
+
+          // 🔄 РЕКУРСИВНИЙ ВИКЛИК
+          await this.expandProductRecursively(
+            setItem.id,
+            componentQuantity,
+            productStats,
+            new Set(visitedSets), // Копія Set для кожної гілки
+            depth + 1
+          );
+        }
+
+        // Видаляємо з відвіданих після обробки
+        visitedSets.delete(sku);
+
+      } else {
+        // Це звичайний товар (не комплект) - додаємо до результату
+        this.addOrUpdateProductStats(productStats, product, quantity);
+      }
+
+    } catch (error) {
+      console.error(`❌ Помилка розгортання товару ${sku}:`, error);
+    }
+  }
+
+  /**
+   * Допоміжна функція для додавання/оновлення товару в productStats
+   */
+  private addOrUpdateProductStats(
+    productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } },
+    product: any,
+    quantity: number
+  ): void {
+    const componentSku = product.sku;
+
+    if (productStats[componentSku]) {
+      productStats[componentSku].orderedQuantity += quantity;
+    } else {
+      productStats[componentSku] = {
+        name: product.name,
+        sku: product.sku,
+        orderedQuantity: quantity,
+        stockBalances: {}
+      };
+    }
+  }
+
+  /**
    * Попередньо розраховує статистику товарів для замовлення (для кешу)
    */
   async preprocessOrderItemsForCache(orderId: number): Promise<string | null> {
@@ -2011,45 +2114,14 @@ export class OrderDatabaseService {
         }
 
         try {
-          const product = await this.getProductBySku(item.sku);
-          if (product) {
-            // Проверяем, является ли товар комплектом
-            if (product.set && Array.isArray(product.set) && product.set.length > 0) {
-              // Разлагаем комплект на отдельные товары
-              for (const setItem of product.set) {
-                if (setItem && typeof setItem === 'object' && setItem.id && setItem.quantity) {
-                  const component = await this.getProductBySku(setItem.id);
-                  if (component) {
-                    const totalQuantity = item.quantity * setItem.quantity;
-                    const componentSku = component.sku;
-
-                    if (productStats[componentSku]) {
-                      productStats[componentSku].orderedQuantity += totalQuantity;
-                    } else {
-                      productStats[componentSku] = {
-                        name: component.name,
-                        sku: component.sku,
-                        orderedQuantity: totalQuantity,
-                        stockBalances: {}
-                      };
-                    }
-                  }
-                }
-              }
-            } else {
-              // Обычный товар
-              if (productStats[item.sku]) {
-                productStats[item.sku].orderedQuantity += item.quantity;
-              } else {
-                productStats[item.sku] = {
-                  name: product.name,
-                  sku: product.sku,
-                  orderedQuantity: item.quantity,
-                  stockBalances: {}
-                };
-              }
-            }
-          }
+          // Рекурсивно розгортаємо товар (він може бути комплектом з вкладеними комплектами)
+          await this.expandProductRecursively(
+            item.sku,
+            item.quantity,
+            productStats,
+            new Set(), // Новий Set для кожного товару замовлення
+            0 // Починаємо з глибини 0
+          );
         } catch (productError) {
           console.warn(`Error processing product ${item.sku} in order ${order.externalId}:`, productError);
         }

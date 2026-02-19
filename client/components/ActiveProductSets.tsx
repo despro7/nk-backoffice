@@ -28,12 +28,81 @@ interface ActiveProductSetsProps {
 }
 
 /**
- * 📦 Компонент для відображення активних комплектів в замовленні
+ * 📦 Компонент для відображення активних комплектів в замовленні (включаючи вкладені)
  */
 export function ActiveProductSets({ orderItems, className = '' }: ActiveProductSetsProps) {
   const { apiCall } = useApi();
   const [productSets, setProductSets] = useState<ProductSetInfo[]>([]);
   const [loading, setLoading] = useState(true);
+
+  /**
+   * Рекурсивно збирає всі комплекти (включаючи вкладені) з товару
+   * @param sku - SKU товару для обробки
+   * @param quantity - Кількість товару
+   * @param sets - Масив для накопичення знайдених комплектів
+   * @param visitedSets - Set для відстеження відвіданих SKU
+   * @param depth - Поточна глибина рекурсії
+   * @param parentName - Назва батьківського комплекту (для вкладених)
+   */
+  const collectSetsRecursively = async (
+    sku: string,
+    quantity: number,
+    sets: ProductSetInfo[],
+    visitedSets: Set<string> = new Set(),
+    depth: number = 0,
+    parentName: string = ''
+  ): Promise<void> => {
+    // Захист від нескінченної рекурсії
+    const MAX_DEPTH = 10;
+    if (depth > MAX_DEPTH || visitedSets.has(sku)) {
+      return;
+    }
+
+    try {
+      const response = await apiCall(`/api/products/${sku}`);
+      if (!response.ok) return;
+
+      const product: Product = await response.json();
+
+      // Якщо товар має set і він не порожній - це комплект
+      if (product.set && Array.isArray(product.set) && product.set.length > 0) {
+        // Додаємо цей комплект до списку
+        const displayName = parentName 
+          ? `↘ ${product.name}` 
+          : product.name;
+        
+        sets.push({
+          name: displayName,
+          quantity: quantity,
+          sku: sku,
+        });
+
+        // Додаємо до відвіданих
+        visitedSets.add(sku);
+
+        // Рекурсивно обробляємо компоненти комплекту
+        for (const setItem of product.set) {
+          if (!setItem.id) continue;
+
+          const componentQuantity = quantity * setItem.quantity;
+
+          // 🔄 РЕКУРСИВНИЙ ВИКЛИК - шукаємо вкладені комплекти
+          await collectSetsRecursively(
+            setItem.id,
+            componentQuantity,
+            sets,
+            new Set(visitedSets), // Копія Set для кожної гілки
+            depth + 1,
+            product.name // Передаємо назву батьківського комплекту
+          );
+        }
+
+        visitedSets.delete(sku);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Помилка при обробці товару ${sku}:`, error);
+    }
+  };
 
   useEffect(() => {
     const fetchProductSets = async () => {
@@ -47,21 +116,17 @@ export function ActiveProductSets({ orderItems, className = '' }: ActiveProductS
 
         for (const item of orderItems) {
           try {
-            const response = await apiCall(`/api/products/${item.sku}`);
-            if (response.ok) {
-              const product: Product = await response.json();
-
-              // Перевіряємо, чи це комплект
-              if (product.set && Array.isArray(product.set) && product.set.length > 0) {
-                sets.push({
-                  name: item.productName,
-                  quantity: item.quantity,
-                  sku: item.sku,
-                });
-              }
-            }
+            // Рекурсивно збираємо всі комплекти (включаючи вкладені)
+            await collectSetsRecursively(
+              item.sku, 
+              item.quantity, 
+              sets, 
+              new Set(), 
+              0,
+              '' // Початково немає батьківського комплекту
+            );
           } catch (error) {
-            console.warn(`⚠️ Помилка при отриманні товару ${item.sku}:`, error);
+            console.warn(`⚠️ Помилка при обробці товару ${item.sku}:`, error);
           }
         }
 

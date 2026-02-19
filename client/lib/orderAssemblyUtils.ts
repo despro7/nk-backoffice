@@ -1,3 +1,4 @@
+import { LoggingService } from '@/services/LoggingService';
 import type { OrderChecklistItem } from '../types/orderAssembly';
 
 // Інтерфейс для товару з бази даних
@@ -52,180 +53,158 @@ export const sortChecklistItems = (items: OrderChecklistItem[]): OrderChecklistI
 };
 
 /**
- * Розгортає набори товарів в окремі компоненти
+ * Рекурсивно розгортає один товар/комплект у фінальні компоненти
+ * @param sku - SKU товару для розгортання
+ * @param quantity - Кількість цього товару
+ * @param apiCall - Функція для API викликів
+ * @param expandedItems - Об'єкт для накопичення результатів
+ * @param visitedSets - Set для відстеження відвіданих SKU (запобігання циклічним посиланням)
+ * @param depth - Поточна глибина рекурсії (для безпеки)
+ */
+const expandProductRecursively = async (
+  sku: string,
+  quantity: number,
+  apiCall: any,
+  expandedItems: { [key: string]: OrderChecklistItem },
+  visitedSets: Set<string> = new Set(),
+  depth: number = 0
+): Promise<void> => {
+  // Захист від нескінченної рекурсії
+  const MAX_DEPTH = 10;
+  if (depth > MAX_DEPTH) {
+    console.error(`🛑 Досягнуто максимальну глибину рекурсії (${MAX_DEPTH}) для SKU: ${sku}`);
+    return;
+  }
+
+  // Захист від циклічних посилань (комплект A містить комплект B, який містить комплект A)
+  if (visitedSets.has(sku)) {
+    console.warn(`🔄 Виявлено циклічне посилання на SKU: ${sku}. Пропускаємо.`);
+    return;
+  }
+
+  try {
+    const response = await apiCall(`/api/products/${sku}`);
+    if (!response.ok) {
+      console.warn(`⚠️ Не вдалося отримати інформацію про товар: ${sku} (статус: ${response.status})`);
+      return;
+    }
+
+    const product: Product = await response.json();
+
+    // Перевіряємо, чи це комплект
+    if (product.set && Array.isArray(product.set) && product.set.length > 0) {
+      // Це комплект - додаємо його до відвіданих і розгортаємо компоненти
+      const validSetItems = product.set.filter(setItem =>
+        setItem && typeof setItem === 'object' && setItem.id && setItem.quantity
+      );
+
+      if (validSetItems.length === 0) {
+        console.warn(`⚠️ Набір ${product.name} (${sku}) не має валідних компонентів:`, product.set);
+        // Додаємо як звичайний товар
+        addOrUpdateExpandedItem(expandedItems, product, quantity, sku);
+        return;
+      }
+
+      LoggingService.orderAssemblyLog(`Розгортаємо комплект "${product.name}" (глибина: ${depth}, кількість: ${quantity})`, { sku, depth, quantity });
+      
+      // Додаємо до відвіданих перед рекурсією
+      visitedSets.add(sku);
+
+      // Рекурсивно розгортаємо кожен компонент
+      for (const setItem of validSetItems) {
+        if (!setItem.id) {
+          console.warn(`⚠️ Компонент набору не має ID:`, setItem);
+          continue;
+        }
+
+        const componentQuantity = quantity * setItem.quantity;
+        
+        // 🔄 РЕКУРСИВНИЙ ВИКЛИК - розгортаємо компонент (він може бути теж комплектом!)
+        await expandProductRecursively(
+          setItem.id,
+          componentQuantity,
+          apiCall,
+          expandedItems,
+          new Set(visitedSets), // Створюємо копію Set для кожної гілки рекурсії
+          depth + 1
+        );
+      }
+
+      // Видаляємо з відвіданих після обробки (для незалежних гілок)
+      visitedSets.delete(sku);
+
+    } else {
+      // Це звичайний товар (не комплект) - додаємо до результату
+      addOrUpdateExpandedItem(expandedItems, product, quantity, sku);
+    }
+
+  } catch (error) {
+    console.error(`❌ Помилка розгортання товару ${sku}:`, error);
+  }
+};
+
+/**
+ * Допоміжна функція для додавання/оновлення товару в expandedItems
+ */
+const addOrUpdateExpandedItem = (
+  expandedItems: { [key: string]: OrderChecklistItem },
+  product: Product,
+  quantity: number,
+  sku: string
+): void => {
+  const itemName = product.name;
+
+  if (expandedItems[itemName]) {
+    // Товар вже є - збільшуємо кількість
+    expandedItems[itemName].quantity += quantity;
+    expandedItems[itemName].expectedWeight = calculateExpectedWeight(product, expandedItems[itemName].quantity);
+  } else {
+    // Додаємо новий товар
+    expandedItems[itemName] = {
+      id: sku,
+      name: itemName,
+      quantity: quantity,
+      expectedWeight: calculateExpectedWeight(product, quantity),
+      status: 'default' as const,
+      type: 'product',
+      sku: sku,
+      barcode: product.barcode || sku,
+      manualOrder: product.manualOrder
+    };
+  }
+
+  LoggingService.orderAssemblyLog(`  ✅ Додано: ${itemName} × ${quantity} (SKU: ${sku})`);
+};
+
+/**
+ * Розгортає набори товарів в окремі компоненти (з підтримкою вкладених комплектів)
  */
 export const expandProductSets = async (orderItems: any[], apiCall: any): Promise<OrderChecklistItem[]> => {
   const expandedItems: { [key: string]: OrderChecklistItem } = {};
 
+  LoggingService.orderAssemblyLog(`🚀 Початок розгортання ${orderItems.length} товарів замовлення...`);
+
   for (const item of orderItems) {
     try {
-      // Отримуємо інформацію про товар по SKU
-      const response = await apiCall(`/api/products/${item.sku}`);
-      if (response.ok) {
-        const product: Product = await response.json();
+      LoggingService.orderAssemblyLog(`\n📦 Обробка: ${item.productName} (SKU: ${item.sku}) × ${item.quantity}`);
+      
+      // Рекурсивно розгортаємо кожен товар замовлення
+      await expandProductRecursively(
+        item.sku,
+        item.quantity,
+        apiCall,
+        expandedItems,
+        new Set(), // Новий Set для кожного товару замовлення
+        0 // Починаємо з глибини 0
+      );
 
-        if (product.set && Array.isArray(product.set) && product.set.length > 0) {
-          // Це набір - розгортаємо його
-
-          // Перевіряємо структуру set
-          const validSetItems = product.set.filter(setItem =>
-            setItem && typeof setItem === 'object' && setItem.id && setItem.quantity
-          );
-
-          if (validSetItems.length === 0) {
-            console.warn(`⚠️ Набір ${product.name} не має валідних компонентів:`, product.set);
-            // Додаємо як звичайний товар
-            const itemName = item.productName;
-            if (expandedItems[itemName]) {
-              expandedItems[itemName].quantity += item.quantity;
-              // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
-              expandedItems[itemName].expectedWeight = calculateExpectedWeight(product, expandedItems[itemName].quantity);
-            } else {
-              expandedItems[itemName] = {
-                id: item.sku,
-                name: itemName,
-                quantity: item.quantity,
-                expectedWeight: calculateExpectedWeight(product, item.quantity),
-                status: 'default' as const,
-                type: 'product',
-                sku: item.sku,
-                barcode: product.barcode || item.sku, // Використовуємо реальний barcode або fallback на SKU
-                manualOrder: product.manualOrder
-              };
-            }
-            continue;
-          }
-
-          for (const setItem of validSetItems) {
-            // Перевіряємо, що у setItem є id
-            if (!setItem.id) {
-              console.warn(`⚠️ Компонент набору не має ID:`, setItem);
-              continue;
-            }
-
-            try {
-              // Отримуємо назву компонента набору
-              const componentResponse = await apiCall(`/api/products/${setItem.id}`);
-              if (componentResponse.ok) {
-                const component: Product = await componentResponse.json();
-                const componentName = component.name;
-                const totalQuantity = item.quantity * setItem.quantity;
-
-                // Сумуємо з існуючими компонентами
-                if (expandedItems[componentName]) {
-                  expandedItems[componentName].quantity += totalQuantity;
-                  // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
-                  expandedItems[componentName].expectedWeight = calculateExpectedWeight(component, expandedItems[componentName].quantity);
-                } else {
-                  expandedItems[componentName] = {
-                    id: `${item.sku}_${setItem.id}`,
-                    name: componentName,
-                    quantity: totalQuantity,
-                    expectedWeight: calculateExpectedWeight(component, totalQuantity),
-                    status: 'default' as const,
-                    type: 'product',
-                    sku: setItem.id,
-                    barcode: component.barcode || setItem.id, // Використовуємо реальний barcode або fallback на SKU
-                    manualOrder: component.manualOrder
-                  };
-                }
-              } else {
-                console.warn(`⚠️ Не вдалося отримати інформацію про компонент набору: ${setItem.id} (статус: ${componentResponse.status})`);
-                // Додаємо компонент з невідомою назвою
-                const componentName = `Невідома страва (${setItem.id})`;
-                const totalQuantity = item.quantity * setItem.quantity;
-
-                if (expandedItems[componentName]) {
-                  expandedItems[componentName].quantity += totalQuantity;
-                  // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
-                  expandedItems[componentName].expectedWeight = expandedItems[componentName].quantity * 0.33;
-                } else {
-                  expandedItems[componentName] = {
-                    id: `${item.sku}_${setItem.id}`,
-                    name: componentName,
-                    quantity: totalQuantity,
-                    expectedWeight: totalQuantity * 0.33,
-                    status: 'default' as const,
-                    type: 'product',
-                    manualOrder: 999
-                  };
-                }
-              }
-            } catch (componentError) {
-              console.error(`❌ Помилка отримання компонента набору ${setItem.id}:`, componentError);
-              // Додаємо компонент з невідомою назвою
-              const componentName = `Невідома страва (${setItem.id})`;
-              const totalQuantity = item.quantity * setItem.quantity;
-
-              if (expandedItems[componentName]) {
-                expandedItems[componentName].quantity += totalQuantity;
-                // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
-                expandedItems[componentName].expectedWeight = expandedItems[componentName].quantity * 0.33;
-              } else {
-                expandedItems[componentName] = {
-                  id: `${item.sku}_${setItem.id}`,
-                  name: componentName,
-                  quantity: totalQuantity,
-                  expectedWeight: totalQuantity * 0.33,
-                  status: 'default' as const,
-                  type: 'product',
-                  sku: setItem.id,
-                  barcode: setItem.id,
-                  manualOrder: 999
-                };
-              }
-            }
-          }
-        } else {
-          // Це звичайний товар - додаємо як є
-          const itemName = item.productName;
-          if (expandedItems[itemName]) {
-            expandedItems[itemName].quantity += item.quantity;
-            // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
-            expandedItems[itemName].expectedWeight = calculateExpectedWeight(product, expandedItems[itemName].quantity);
-          } else {
-            expandedItems[itemName] = {
-              id: item.sku,
-              name: itemName,
-              quantity: item.quantity,
-              expectedWeight: calculateExpectedWeight(product, item.quantity),
-              status: 'default' as const,
-              type: 'product',
-              sku: item.sku,
-              barcode: product.barcode || item.sku, // Використовуємо реальний barcode або fallback на SKU
-              manualOrder: product.manualOrder
-            };
-          }
-        }
-      } else {
-        // Якщо не вдалося отримати інформацію про товар, додаємо як є
-        console.warn(`⚠️ Не вдалося отримати інформацію про товар: ${item.sku} (статус: ${response.status})`);
-        const itemName = item.productName;
-        if (expandedItems[itemName]) {
-          expandedItems[itemName].quantity += item.quantity;
-          // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
-          expandedItems[itemName].expectedWeight = expandedItems[itemName].quantity * 0.33;
-        } else {
-          expandedItems[itemName] = {
-            id: item.sku,
-            name: itemName,
-            quantity: item.quantity,
-            expectedWeight: item.quantity * 0.33,
-            status: 'default' as const,
-            type: 'product',
-            sku: item.sku,
-            barcode: item.sku,
-            manualOrder: 999
-          };
-        }
-      }
     } catch (error) {
       console.error(`❌ Помилка розгортання набору для ${item.sku}:`, error);
-      // У випадку помилки додаємо товар як є
+      
+      // У випадку помилки додаємо товар як є (fallback)
       const itemName = item.productName;
       if (expandedItems[itemName]) {
         expandedItems[itemName].quantity += item.quantity;
-        // ВАЖЛИВО: оновлюємо вагу при додаванні кількості
         expandedItems[itemName].expectedWeight = expandedItems[itemName].quantity * 0.33;
       } else {
         expandedItems[itemName] = {
@@ -248,6 +227,8 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
     ...item,
     id: (index + 1).toString()
   }));
+
+  LoggingService.orderAssemblyLog(`\n✅ Розгортання завершено. Отримано ${result.length} унікальних товарів.`);
   
   return result;
 };
