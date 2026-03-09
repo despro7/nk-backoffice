@@ -189,12 +189,99 @@ router.put('/sku-whitelist', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * Рекурсивно розгортає комплект на кінцеві товари
+ * @param product - Продукт для розгортання
+ * @param expandedComponents - Об'єкт для накопичення розгорнутих компонентів
+ * @param visitedSets - Set для відстеження відвіданих SKU
+ * @param depth - Поточна глибина рекурсії
+ */
+async function expandProductSetRecursively(
+  product: any,
+  expandedComponents: { [sku: string]: { component: any; quantity: number } } = {},
+  visitedSets: Set<string> = new Set(),
+  depth: number = 0
+): Promise<void> {
+  const MAX_DEPTH = 10;
+  
+  if (depth > MAX_DEPTH) {
+    console.warn(`🛑 Максимальна глибина рекурсії для SKU: ${product.sku}`);
+    return;
+  }
+
+  if (visitedSets.has(product.sku)) {
+    console.warn(`🔄 Циклічне посилання на SKU: ${product.sku}`);
+    return;
+  }
+
+  // Парсимо set якщо це JSON string
+  let set = [];
+  try {
+    set = typeof product.set === 'string' ? JSON.parse(product.set) : product.set || [];
+  } catch (e) {
+    console.warn(`Failed to parse set for product ${product.sku}:`, e);
+  }
+
+  // Якщо це комплект - розгортаємо компоненти
+  if (Array.isArray(set) && set.length > 0) {
+    visitedSets.add(product.sku);
+
+    for (const setItem of set) {
+      if (!setItem.id || !setItem.quantity) continue;
+
+      // Знаходимо компонент в БД
+      const component = await prisma.product.findUnique({
+        where: { sku: setItem.id }
+      });
+
+      if (!component) {
+        console.warn(`⚠️ Компонент не знайдено: ${setItem.id}`);
+        continue;
+      }
+
+      // Перевіряємо, чи компонент є комплектом
+      let componentSet = [];
+      try {
+        componentSet = typeof component.set === 'string' ? JSON.parse(component.set) : component.set || [];
+      } catch (e) {
+        console.warn(`Failed to parse set for component ${component.sku}:`, e);
+      }
+
+      const isComponentASet = Array.isArray(componentSet) && componentSet.length > 0;
+
+      if (isComponentASet) {
+        // Це комплект - рекурсивно розгортаємо його
+        await expandProductSetRecursively(
+          component,
+          expandedComponents,
+          new Set(visitedSets),
+          depth + 1
+        );
+      } else {
+        // Це кінцевий товар - додаємо його до результату
+        if (expandedComponents[setItem.id]) {
+          expandedComponents[setItem.id].quantity += setItem.quantity;
+        } else {
+          expandedComponents[setItem.id] = {
+            component,
+            quantity: setItem.quantity
+          };
+        }
+      }
+    }
+
+    visitedSets.delete(product.sku);
+  }
+}
+
 // Експорт товарів до SalesDrive
 // GET /api/products/export-to-salesdrive - отримати payload для підтвердження
 // POST /api/products/export-to-salesdrive - відправити на SalesDrive
 router.route('/export-to-salesdrive')
   .get(authenticateToken, async (req, res) => {
     try {
+      const expandSets = req.query.expandSets === 'true';
+      
       // Отримуємо всі товари з БД
       const products = await prisma.product.findMany({
         orderBy: { name: 'asc' },
@@ -204,7 +291,7 @@ router.route('/export-to-salesdrive')
       });
 
       // Формуємо payload для SalesDrive
-      const payload = products.map(product => {
+      const payload = await Promise.all(products.map(async (product) => {
         // Парсимо JSON поля
         let set = [];
         try {
@@ -227,6 +314,22 @@ router.route('/export-to-salesdrive')
           console.warn(`Failed to parse stockBalanceByStock for product ${product.sku}:`, e);
         }
 
+        // Якщо потрібно розгорнути комплекти - робимо це
+        let finalSet = set;
+        if (expandSets && Array.isArray(set) && set.length > 0) {
+          const expandedComponents: { [sku: string]: { component: any; quantity: number } } = {};
+          await expandProductSetRecursively(product, expandedComponents, new Set(), 0);
+          
+          // Формуємо новий масив set з розгорнутих компонентів
+          if (Object.keys(expandedComponents).length > 0) {
+            finalSet = Object.entries(expandedComponents).map(([sku, data]) => ({
+              id: sku,
+              quantity: data.quantity,
+              name: data.component.name
+            }));
+          }
+        }
+
         return {
           id: product.sku,
           name: product.name,
@@ -237,16 +340,17 @@ router.route('/export-to-salesdrive')
             id: product.categoryId || 0,
             name: product.categoryName || ''
           },
-          set,
+          set: finalSet,
           additionalPrices,
           stockBalanceByStock
         };
-      });
+      }));
 
       res.json({
         success: true,
         payload,
-        count: payload.length
+        count: payload.length,
+        expandedSets: expandSets
       });
     } catch (error) {
       console.error('Error preparing export payload:', error);

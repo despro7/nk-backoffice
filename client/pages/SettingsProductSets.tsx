@@ -3,7 +3,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useAuth } from '../contexts/AuthContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDateTime, formatPrice, formatRelativeDate } from '../lib/formatUtils';
-import { Input, addToast, Textarea, Switch } from '@heroui/react';
+import { Input, addToast, Textarea, Switch, Checkbox, Tooltip } from '@heroui/react';
 import { ToastService } from '@/services/ToastService';
 
 import {
@@ -197,6 +197,7 @@ const ProductSets: React.FC = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportPayload, setExportPayload] = useState<any[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [expandSets, setExpandSets] = useState(false); // Новий стан для вибору режиму
 
   // Завантажити whitelist з сервера
   const fetchSkuWhitelist = async () => {
@@ -1254,7 +1255,8 @@ const ProductSets: React.FC = () => {
   // Функції для експорту в SalesDrive
   const prepareExportToSalesDrive = async () => {
     try {
-      const response = await fetch('/api/products/export-to-salesdrive', {
+      const url = `/api/products/export-to-salesdrive${expandSets ? '?expandSets=true' : ''}`;
+      const response = await fetch(url, {
         credentials: 'include'
       });
 
@@ -1262,6 +1264,16 @@ const ProductSets: React.FC = () => {
         const result = await response.json();
         setExportPayload(result.payload);
         setIsExportModalOpen(true);
+        
+        // Показуємо повідомлення про режим експорту
+        const modeMsg = result.expandedSets 
+          ? 'Комплекти розгорнуто на кінцеві товари' 
+          : 'Комплекти експортуються "як є"';
+        addToast({ 
+          title: 'Payload готовий', 
+          description: `${result.count} товарів. ${modeMsg}`, 
+          color: 'success' 
+        });
       } else {
         const error = await response.json().catch(() => ({ error: 'Unknown error' }));
         addToast({ title: 'Помилка', description: error.error || 'Не вдалося отримати дані для експорту', color: 'danger' });
@@ -1674,6 +1686,19 @@ const ProductSets: React.FC = () => {
                   <DynamicIcon name="upload" size={14} />
                   Експорт в SalesDrive
                 </Button>
+                
+                {/* Перемикач режиму експорту */}
+                <div className="flex items-center gap-2">
+                  <Switch isSelected={expandSets} onValueChange={setExpandSets}></Switch>
+                  <span className="text-sm text-gray-700 leading-4">Розгорнути <br/>комплекти</span>
+                  <Tooltip color="primary" content="Якщо увімкнено, товари, які є комплектами, будуть розгорнуті на свої складові при експорті в SalesDrive">
+                    <DynamicIcon 
+                      name="help-circle" 
+                      size={16} 
+                      className="text-gray-400 cursor-help"
+                    />
+                  </Tooltip>
+                </div>
 
                 {/* Whitelist номерів SKU, які не підлягають застаріванню */}
                 <Button
@@ -2066,6 +2091,25 @@ const ProductSets: React.FC = () => {
           </ModalHeader>
           <ModalBody>
             <div className="space-y-4">
+              {/* Інформація про режим експорту */}
+              <div className={`p-3 rounded-lg border ${expandSets ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <DynamicIcon 
+                    name={expandSets ? 'layers' : 'package'} 
+                    size={16} 
+                    className={expandSets ? 'text-blue-600' : 'text-gray-600'}
+                  />
+                  <span className="text-sm font-medium">
+                    {expandSets ? 'Режим: Розгорнуті комплекти' : 'Режим: Стандартний експорт'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600">
+                  {expandSets 
+                    ? 'Вкладені комплекти розгорнуто на кінцеві товари. SalesDrive отримає фінальний склад без вкладеності.'
+                    : 'Комплекти експортуються "як є" з їх оригінальною структурою (може містити вкладені комплекти).'}
+                </p>
+              </div>
+
               <div className="bg-gray-50 p-4 rounded-lg max-h-96 overflow-auto">
                 <h4 className="text-sm font-medium mb-2">Payload для експорту:</h4>
                 <pre className="text-xs bg-white p-3 rounded border overflow-auto max-h-80">
