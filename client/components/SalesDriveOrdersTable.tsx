@@ -442,6 +442,46 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     }
   };
 
+  // Примусове скидання Dilovod-полів + повторна перевірка
+  const handleForceRecheck = async (order: SalesDriveOrderForExport) => {
+    try {
+      ToastService.show({
+        title: 'Примусова перевірка...',
+        description: `Скидання даних та перевірка замовлення ${order.orderNumber} в Діловоді`,
+        color: 'warning',
+        hideIcon: false,
+        icon: <DynamicIcon name="refresh-cw" size={16} strokeWidth={1.5} className="shrink-0" />,
+        timeout: 3000
+      });
+
+      const response = await apiCall('/api/dilovod/salesdrive/orders/reset-and-check', {
+        method: 'POST',
+        body: JSON.stringify({ orderNumbers: [order.orderNumber] })
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        setDrawerResult(result);
+        setDrawerTitle(`Примусова перевірка: ${order.orderNumber}`);
+        setDrawerType('result');
+        onDrawerOpen();
+        fetchOrders();
+      } else {
+        ToastService.show({
+          title: 'Помилка примусової перевірки',
+          description: result.message || 'Не вдалося виконати операцію',
+          color: 'danger'
+        });
+      }
+    } catch {
+      ToastService.show({
+        title: 'Помилка',
+        description: 'Помилка з\'єднання з сервером',
+        color: 'danger'
+      });
+    }
+  };
+
   // Показати деталі замовлення
   const handleShowDetails = (order: SalesDriveOrderForExport) => {
     // Prepare order data for display (parse JSON fields)
@@ -1272,6 +1312,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                         disabledKeys={!order.dilovodDocId ? ['createShipment'] : []}
                         onAction={(key) => {
                           if (key === "checkDilovod") handleCheckInDilovod(order);
+                          if (key === "forceRecheck") handleForceRecheck(order);
                           if (key === "exportOrder") handleExportOrder(order);
                           if (key === "createShipment") handleCreateShipment(order);
                           if (key === "viewLogs") handleViewOrderLogs(order);
@@ -1279,6 +1320,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                       >
                         <DropdownSection showDivider>
                           <DropdownItem textValue="Перевірити в Діловоді" key="checkDilovod" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="search-check" size={16} />}>Перевірити в Діловоді</DropdownItem>
+                          <DropdownItem textValue="Примусова перевірка (скинути і перечитати)" key="forceRecheck" className="px-3 py-2 text-danger-500!" startContent={<DynamicIcon className="text-xl text-danger-500 pointer-events-none shrink-0" name="rotate-ccw" size={16} />}>Примусова перевірка</DropdownItem>
                           <DropdownItem textValue="Відправити замовлення" key="exportOrder" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="upload" size={16} />}>Відправити замовлення</DropdownItem>
                           <DropdownItem textValue="Відправити відвантаження" key="createShipment" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="truck" size={16} />}>Відправити відвантаження</DropdownItem>
                           {!!order.logsCount && (

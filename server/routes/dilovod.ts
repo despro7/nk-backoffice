@@ -722,6 +722,67 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
 });
 
 /**
+ * POST /api/dilovod/salesdrive/orders/reset-and-check
+ * Примусове скидання всіх Dilovod-полів + повторна перевірка в Dilovod API
+ * Очищує: dilovodDocId, dilovodExportDate, dilovodCashInDate, dilovodSaleExportDate, dilovodCashInLastChecked
+ */
+router.post('/salesdrive/orders/reset-and-check', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
+    }
+
+    const { orderNumbers } = req.body;
+
+    if (!Array.isArray(orderNumbers) || orderNumbers.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad request',
+        message: 'orderNumbers must be a non-empty array'
+      });
+    }
+
+    logWithTimestamp(`=== API: Примусове скидання та перевірка замовлень ${orderNumbers} в Dilovod ===`, undefined, true);
+
+    // Скидаємо всі Dilovod-поля для вказаних замовлень
+    const resetResult = await prisma.order.updateMany({
+      where: { orderNumber: { in: orderNumbers } },
+      data: {
+        dilovodDocId: null,
+        dilovodExportDate: null,
+        dilovodCashInDate: null,
+        dilovodSaleExportDate: null,
+        dilovodCashInLastChecked: null
+      }
+    });
+
+    logWithTimestamp(`Скинуто Dilovod-поля для ${resetResult.count} замовлень`);
+
+    // Запускаємо перевірку в Dilovod API (тепер поля чисті — буде повний пошук)
+    const dilovodService = new DilovodService();
+    const checkResult = await dilovodService.checkOrdersByNumbers(orderNumbers);
+
+    return res.json({
+      ...checkResult,
+      resetCount: resetResult.count,
+      message: `Скинуто поля для ${resetResult.count} замовлень. ${checkResult.message}`
+    });
+
+  } catch (error) {
+    const errorMessage = handleDilovodApiError(error, 'Reset and check');
+    logWithTimestamp('API: Помилка примусової перевірки замовлення в Dilovod:', errorMessage);
+    res.status(500).json({
+      success: false,
+      error: 'Dilovod API error',
+      message: errorMessage
+    });
+  }
+});
+
+/**
  * POST /api/dilovod/salesdrive/orders/:orderId/validate
  * Валідувати готовність замовлення до експорту в Dilovod
  */
