@@ -15,7 +15,8 @@ export function clearConfigCache(): void {
 export const DEFAULT_DILOVOD_CONFIG: DilovodConfig = {
   apiUrl: '',
   apiKey: '',
-  setParentId: "1100300000001315",
+  /** Масив ID батьківських груп комплектів (задається в UI налаштувань) */
+  setParentIds: ["1100300000001315"],
   mainPriceType: "1101300000001001",
   categoriesMap: {
     "Перші страви": 16,
@@ -44,7 +45,11 @@ export async function getDilovodConfigFromDB(): Promise<DilovodConfig> {
     const config = {
       apiUrl: dilovodSettings.apiUrl || process.env.DILOVOD_API_URL || DEFAULT_DILOVOD_CONFIG.apiUrl,
       apiKey: dilovodSettings.apiKey || process.env.DILOVOD_API_KEY || DEFAULT_DILOVOD_CONFIG.apiKey,
-      setParentId: dilovodSettings.setParentId || DEFAULT_DILOVOD_CONFIG.setParentId,
+      // Зчитуємо масив ID груп комплектів: новий ключ dilovod_set_parent_ids (JSON-масив),
+      // з fallback на старий ключ dilovod_set_parent_id (один рядок)
+      setParentIds: dilovodSettings.setParentIds.length > 0
+        ? dilovodSettings.setParentIds
+        : DEFAULT_DILOVOD_CONFIG.setParentIds,
       mainPriceType: dilovodSettings.mainPriceType || DEFAULT_DILOVOD_CONFIG.mainPriceType,
       categoriesMap: dilovodSettings.categoriesMap || DEFAULT_DILOVOD_CONFIG.categoriesMap
     };
@@ -79,7 +84,16 @@ async function loadDilovodSettingsFromDB() {
     return {
       apiUrl: settingsMap['dilovod_api_url'] || '',
       apiKey: settingsMap['dilovod_api_key'] || '',
-      setParentId: settingsMap['dilovod_set_parent_id'] || '',
+      // Спочатку читаємо новий ключ (масив JSON), якщо немає — старий ключ (один ID)
+      setParentIds: (() => {
+        if (settingsMap['dilovod_set_parent_ids']) {
+          try { return JSON.parse(settingsMap['dilovod_set_parent_ids']) as string[]; } catch { /* ignore */ }
+        }
+        if (settingsMap['dilovod_set_parent_id']) {
+          return [settingsMap['dilovod_set_parent_id']];
+        }
+        return [];
+      })(),
       mainPriceType: settingsMap['dilovod_main_price_type'] || '',
       categoriesMap: settingsMap['dilovod_categories_map'] ? JSON.parse(settingsMap['dilovod_categories_map']) : {}
     };
@@ -149,8 +163,8 @@ export function validateDilovodConfig(config: DilovodConfig): string[] {
     errors.push('DILOVOD_API_KEY не настроен');
   }
   
-  if (!config.setParentId) {
-    errors.push('ID группы комплектов не настроен');
+  if (!config.setParentIds || config.setParentIds.length === 0) {
+    errors.push('ID групи комплектів не налаштовано');
   }
   
   if (!config.mainPriceType) {

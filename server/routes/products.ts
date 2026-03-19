@@ -189,9 +189,85 @@ router.put('/sku-whitelist', authenticateToken, async (req, res) => {
   }
 });
 
+// Отримати масив ID груп комплектів (dilovod_set_parent_ids)
+// GET /api/products/set-parent-ids
+router.get('/set-parent-ids', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    // Спочатку читаємо новий ключ (масив), потім — старий (один рядок) для backward-compatibility
+    const newRecord = await prisma.settingsBase.findFirst({
+      where: { key: 'dilovod_set_parent_ids', isActive: true }
+    });
+
+    if (newRecord) {
+      try {
+        const ids = JSON.parse(newRecord.value) as string[];
+        return res.json({ ids });
+      } catch {
+        // Ignore parse error and fall through
+      }
+    }
+
+    const oldRecord = await prisma.settingsBase.findFirst({
+      where: { key: 'dilovod_set_parent_id', isActive: true }
+    });
+
+    if (oldRecord?.value) {
+      return res.json({ ids: [oldRecord.value] });
+    }
+
+    // Значення за замовчуванням
+    res.json({ ids: ['1100300000001315'] });
+  } catch (error) {
+    logWithTimestamp('Error fetching set-parent-ids:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Оновити масив ID груп комплектів (dilovod_set_parent_ids)
+// PUT /api/products/set-parent-ids
+router.put('/set-parent-ids', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user || !['admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.some((id: any) => typeof id !== 'string')) {
+      return res.status(400).json({ error: 'ids must be an array of strings' });
+    }
+
+    const cleaned = ids.map((id: string) => id.trim()).filter((id: string) => id.length > 0);
+
+    await prisma.settingsBase.upsert({
+      where: { key: 'dilovod_set_parent_ids' },
+      update: { value: JSON.stringify(cleaned), isActive: true },
+      create: {
+        key: 'dilovod_set_parent_ids',
+        value: JSON.stringify(cleaned),
+        description: 'Масив ID батьківських груп комплектів у Dilovod',
+        category: 'dilovod',
+        isActive: true
+      }
+    });
+
+    // Очищаємо кеш конфігурації Dilovod, щоб зміни підхопились одразу
+    const { clearConfigCache } = await import('../services/dilovod/DilovodUtils.js');
+    clearConfigCache();
+
+    logWithTimestamp(`✅ dilovod_set_parent_ids оновлено: ${JSON.stringify(cleaned)}`);
+    res.json({ success: true, ids: cleaned });
+  } catch (error) {
+    logWithTimestamp('Error updating set-parent-ids:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 /**
  * Рекурсивно розгортає комплект на кінцеві товари
- * @param product - Продукт для розгортання
  * @param expandedComponents - Об'єкт для накопичення розгорнутих компонентів
  * @param visitedSets - Set для відстеження відвіданих SKU
  * @param depth - Поточна глибина рекурсії

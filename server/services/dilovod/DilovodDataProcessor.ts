@@ -153,7 +153,7 @@ export class DilovodDataProcessor {
       for (let index = 0; index < pricesResponse.length; index++) {
         const good = pricesResponse[index];
         
-        if (good.parent === this.config.setParentId) {
+        if (this.config.setParentIds.includes(good.parent)) {
           // Получаем детальную информацию о комплекте
           const set = await this.getSetComponents(good.id, idToSku, goodsById);
           good.set = set;
@@ -341,7 +341,9 @@ export class DilovodDataProcessor {
 
       // Heuristic fallback: категоризация по подстроке, если маппинг не сработал
       if (!mappedCategoryId) {
-        if (normalizedName.includes('перш')) {
+        if (normalizedName.includes('архів')) {
+          mappedCategoryId = 0;
+        } else if (normalizedName.includes('перш')) {
           mappedCategoryId = 16;
         } else if (normalizedName.includes('друг')) {
           mappedCategoryId = 21;
@@ -426,7 +428,7 @@ export class DilovodDataProcessor {
   // Логирование финального результата
   private logFinalResult(products: DilovodProduct[]): void {
     // Группируем товары по типам
-    const sets = products.filter(p => p.parent === this.config.setParentId && p.set && p.set.length > 0);
+    const sets = products.filter(p => this.config.setParentIds.includes(p.parent) && p.set && p.set.length > 0);
     
     // Логируем количество найденных комплектов
     if (sets.length > 0) {

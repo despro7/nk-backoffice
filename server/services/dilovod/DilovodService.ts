@@ -186,10 +186,25 @@ export class DilovodService {
       logWithTimestamp('\n📋 Крок 3: Синхронізація з базою даних...');
       const syncResult = await this.syncManager.syncProductsToDatabase(dilovodProducts);
 
+      // Крок 4: Позначення застарілих товарів
+      logWithTimestamp('\n📋 Крок 4: Позначення застарілих товарів...');
       if (mode === 'full') {
-        // Крок 4: Позначення застарілих товарів (які є в БД але немає в WordPress)
-        logWithTimestamp('\n📋 Крок 4: Позначення застарілих товарів...');
-        await this.syncManager.markOutdatedProducts(skus);
+        // При full — skus вже є актуальним списком з WordPress, перевіряємо всі товари в БД
+        await this.syncManager.markOutdatedProducts(skus, 'all');
+      } else {
+        // При manual — отримуємо актуальний список з WordPress для валідації,
+        // але перевіряємо тільки передані manualSkus
+        logWithTimestamp('Отримуємо актуальний список SKU з WordPress для валідації...');
+        let wpSkus: string[] = [];
+        try {
+          wpSkus = await this.fetchSkusDirectlyFromWordPress();
+          logWithTimestamp(`Отримано ${wpSkus.length} SKU з WordPress для валідації`);
+        } catch (e) {
+          logWithTimestamp('⚠️ Не вдалося отримати SKU з WordPress, перевірка застарілості пропускається:', e);
+        }
+        if (wpSkus.length > 0) {
+          await this.syncManager.markOutdatedProducts(wpSkus, 'scoped', manualSkus);
+        }
       }
 
       logWithTimestamp('\n✅ === СИНХРОНІЗАЦІЯ ЗАВЕРШЕНА ===');
@@ -243,11 +258,11 @@ export class DilovodService {
     try {
       logWithTimestamp('Отримуємо залишки товарів за списком SKU...');
 
-      // Отримуємо SKU актуальних товарів з бази даних (за вийнятком застарілих)
+      // Отримуємо SKU всіх товарів з бази даних (включаючи застарілі)
       const products = await prisma.product.findMany({
-        where: {
-          isOutdated: false
-        },
+        // where: {
+        //   isOutdated: false  // Закоментовано: тепер залишки оновлюються і для застарілих товарів
+        // },
         select: {
           sku: true
         }
@@ -255,11 +270,11 @@ export class DilovodService {
 
       const skus = products.map(p => p.sku);
       if (skus.length === 0) {
-        logWithTimestamp('Не знайдено актуальних товарів у базі даних');
+        logWithTimestamp('Не знайдено товарів у базі даних');
         return [];
       }
 
-      logWithTimestamp(`Отримано ${skus.length} SKU актуальних товарів з БД`);
+      logWithTimestamp(`Отримано ${skus.length} SKU товарів з БД (включаючи застарілі)`);
 
       const stockResponse = await this.apiClient.getStockBalance(skus);
       const processedStock = this.dataProcessor.processStockBalance(stockResponse);
@@ -411,14 +426,14 @@ export class DilovodService {
         };
       }
 
-      // Аналізуємо відповідь
-      const setParentId = "1100300000001315";
-      const potentialSets = response.filter((item: any) => item.parent === setParentId);
-      const regularGoods = response.filter((item: any) => item.parent !== setParentId);
+      // Аналізуємо відповідь — перевіряємо за всіма ID груп комплектів
+      const setParentIds = ["1100300000001315"];
+      const potentialSets = response.filter((item: any) => setParentIds.includes(item.parent));
+      const regularGoods = response.filter((item: any) => !setParentIds.includes(item.parent));
 
       logWithTimestamp(`\n📊 Аналіз відповіді:`);
       logWithTimestamp(`  - Всього товарів: ${response.length}`);
-      logWithTimestamp(`  - Потенційних комплектів (parent=${setParentId}): ${potentialSets.length}`);
+      logWithTimestamp(`  - Потенційних комплектів (parent in [${setParentIds.join(', ')}]): ${potentialSets.length}`);
       logWithTimestamp(`  - Звичайних товарів: ${regularGoods.length}`);
 
       if (potentialSets.length > 0) {

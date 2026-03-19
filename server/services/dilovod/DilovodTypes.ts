@@ -129,7 +129,8 @@ export interface DatabaseProduct {
 export interface DilovodConfig {
   apiUrl: string;
   apiKey: string;
-  setParentId: string;
+  /** Масив ID батьківських груп, що вважаються "комплектами" в Dilovod */
+  setParentIds: string[];
   mainPriceType: string;
   categoriesMap: { [key: string]: number };
 }

@@ -30,7 +30,8 @@ export interface SyncSettings {
   dilovod: {
     enabled: boolean;
     cacheExpiryHours: number;
-    setParentId: string;
+    /** Масив ID батьківських груп комплектів у Dilovod */
+    setParentIds: string[];
     mainPriceType: string;
     categoriesMap: { [key: string]: number };
     cleanupDaysOld: number;
@@ -104,7 +105,7 @@ export class SyncSettingsService {
         dilovod: {
           enabled: true,
           cacheExpiryHours: 24,
-          setParentId: "1100300000001315",
+          setParentIds: ["1100300000001315"],
           mainPriceType: "1101300000001001",
           categoriesMap: {
             "Перші страви": 1,
@@ -193,8 +194,19 @@ export class SyncSettingsService {
           case 'dilovod_cache_expiry_hours':
             defaultSettings.dilovod.cacheExpiryHours = parseInt(setting.value);
             break;
+          // Читаємо масив ID груп комплектів: новий ключ (JSON) або старий (один рядок)
+          case 'dilovod_set_parent_ids':
+            try {
+              defaultSettings.dilovod.setParentIds = JSON.parse(setting.value);
+            } catch (e) {
+              console.warn('Failed to parse dilovod_set_parent_ids:', e);
+            }
+            break;
           case 'dilovod_set_parent_id':
-            defaultSettings.dilovod.setParentId = setting.value;
+            // Backward-compatibility: якщо є старий ключ, додаємо до масиву
+            if (defaultSettings.dilovod.setParentIds.length === 0 && setting.value) {
+              defaultSettings.dilovod.setParentIds = [setting.value];
+            }
             break;
           case 'dilovod_main_price_type':
             defaultSettings.dilovod.mainPriceType = setting.value;
@@ -374,7 +386,8 @@ export class SyncSettingsService {
       const dilovodSettings = [
         { key: 'dilovod_enabled', value: settings.dilovod.enabled, desc: 'Синхронизация Dilovod включена' },
         { key: 'dilovod_cache_expiry_hours', value: settings.dilovod.cacheExpiryHours, desc: 'Время жизни кеша Dilovod (часы)' },
-        { key: 'dilovod_set_parent_id', value: settings.dilovod.setParentId, desc: 'ID группы комплектов в Dilovod' },
+        // Зберігаємо масив ID груп комплектів як JSON-рядок
+        { key: 'dilovod_set_parent_ids', value: JSON.stringify(settings.dilovod.setParentIds), desc: 'Масив ID груп комплектів у Dilovod' },
         { key: 'dilovod_main_price_type', value: settings.dilovod.mainPriceType, desc: 'Основной тип цены в Dilovod' },
         { key: 'dilovod_categories_map', value: JSON.stringify(settings.dilovod.categoriesMap), desc: 'Маппинг категорий Dilovod' },
         { key: 'dilovod_cleanup_days_old', value: settings.dilovod.cleanupDaysOld, desc: 'Количество дней для очистки старых товаров' },

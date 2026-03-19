@@ -199,6 +199,13 @@ const ProductSets: React.FC = () => {
   const [exporting, setExporting] = useState(false);
   const [expandSets, setExpandSets] = useState(false); // Новий стан для вибору режиму
 
+  // Стан для модалки управління ID груп комплектів (Set Parent IDs)
+  const [isSetParentIdsModalOpen, setIsSetParentIdsModalOpen] = useState(false);
+  const [setParentIds, setSetParentIds] = useState<string[]>([]);
+  const [setParentIdsLoading, setSetParentIdsLoading] = useState(false);
+  const [setParentIdsSaving, setSetParentIdsSaving] = useState(false);
+  const [newSetParentIdInput, setNewSetParentIdInput] = useState('');
+
   // Завантажити whitelist з сервера
   const fetchSkuWhitelist = async () => {
     try {
@@ -222,6 +229,54 @@ const ProductSets: React.FC = () => {
       fetchSkuWhitelist();
     }
   }, [isSkuWhitelistModalOpen]);
+
+  // Завантажити масив ID груп комплектів з сервера
+  const fetchSetParentIds = async () => {
+    setSetParentIdsLoading(true);
+    try {
+      const response = await fetch('/api/products/set-parent-ids', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setSetParentIds(Array.isArray(data.ids) ? data.ids : []);
+      } else {
+        console.warn('Не вдалося завантажити Set Parent IDs');
+      }
+    } catch (error) {
+      console.warn('Помилка мережі при завантаженні Set Parent IDs:', error);
+    } finally {
+      setSetParentIdsLoading(false);
+    }
+  };
+
+  // Зберегти масив ID груп комплектів на сервері
+  const saveSetParentIds = async () => {
+    setSetParentIdsSaving(true);
+    try {
+      const response = await fetch('/api/products/set-parent-ids', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: setParentIds }),
+        credentials: 'include',
+      });
+      if (response.ok) {
+        ToastService.show({ title: 'Збережено', description: 'ID груп комплектів оновлено', color: 'success' });
+        setIsSetParentIdsModalOpen(false);
+      } else {
+        const err = await response.json().catch(() => ({}));
+        ToastService.show({ title: 'Помилка', description: err.error || 'Не вдалося зберегти', color: 'danger' });
+      }
+    } catch (error) {
+      ToastService.show({ title: 'Помилка мережі', description: String(error), color: 'danger' });
+    } finally {
+      setSetParentIdsSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isSetParentIdsModalOpen) {
+      fetchSetParentIds();
+    }
+  }, [isSetParentIdsModalOpen]);
 
   // Стан для вибору товарів у таблиці
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set([]));
@@ -1686,7 +1741,7 @@ const ProductSets: React.FC = () => {
                   <DynamicIcon name="upload" size={14} />
                   Експорт в SalesDrive
                 </Button>
-                
+
                 {/* Перемикач режиму експорту */}
                 <div className="flex items-center gap-2">
                   <Switch isSelected={expandSets} onValueChange={setExpandSets}></Switch>
@@ -1700,15 +1755,27 @@ const ProductSets: React.FC = () => {
                   </Tooltip>
                 </div>
 
-                {/* Whitelist номерів SKU, які не підлягають застаріванню */}
-                <Button
-                  onPress={() => setIsSkuWhitelistModalOpen(true)}
-                  variant="flat"
-                  className="ml-auto"
-                >
-                  <DynamicIcon name="shield-check" size={14} />
-                  SKU Whitelist
-                </Button>
+                <div className="flex items-center gap-3 ml-auto">          
+                  {/* Кнопка управління ID груп комплектів */}
+                  <Button
+                    onPress={() => setIsSetParentIdsModalOpen(true)}
+                    disabled={!isAdmin()}
+                    color="warning"
+                    variant="flat"
+                  >
+                    <DynamicIcon name="layers" size={14} />
+                    Set Parent IDs
+                  </Button>
+
+                  {/* Whitelist номерів SKU, які не підлягають застаріванню */}
+                  <Button
+                    onPress={() => setIsSkuWhitelistModalOpen(true)}
+                    variant="flat"
+                  >
+                    <DynamicIcon name="shield-check" size={14} />
+                    SKU Whitelist
+                  </Button>
+                </div>
 
               </div>
 
@@ -2144,6 +2211,128 @@ const ProductSets: React.FC = () => {
                 <>
                   <DynamicIcon name="upload" size={14} />
                   Підтвердити експорт
+                </>
+              )}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Модалка управління ID батьківських груп комплектів (Set Parent IDs) */}
+      <Modal
+        isOpen={isSetParentIdsModalOpen}
+        onClose={() => setIsSetParentIdsModalOpen(false)}
+        size="lg"
+      >
+        <ModalContent>
+          <ModalHeader>
+            <div className="flex items-center gap-2">
+              <DynamicIcon name="layers" size={18} />
+              Set Parent IDs — ID груп комплектів
+            </div>
+          </ModalHeader>
+          <ModalBody>
+            <p className="text-sm text-gray-600 mb-3">
+              Товари, у яких поле <code className="bg-gray-100 px-1 rounded">parent</code> збігається з одним із зазначених ID,
+              вважатимуться <strong>комплектами</strong> під час синхронізації з Dilovod.
+            </p>
+
+            {setParentIdsLoading ? (
+              <div className="flex items-center gap-2 py-4 text-gray-500">
+                <DynamicIcon name="loader-2" className="animate-spin" size={16} />
+                Завантаження...
+              </div>
+            ) : (
+              <>
+                {/* Список поточних ID */}
+                <div className="space-y-2 mb-4">
+                  {setParentIds.length === 0 && (
+                    <p className="text-sm text-gray-400 italic">Список порожній</p>
+                  )}
+                  {setParentIds.map((id, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <Input
+                        size="sm"
+                        value={id}
+                        onChange={(e) =>
+                          setSetParentIds(prev =>
+                            prev.map((v, i) => (i === index ? e.target.value : v))
+                          )
+                        }
+                        placeholder="ID групи в Dilovod"
+                        className="flex-1 font-mono"
+                      />
+                      <Button
+                        size="sm"
+                        color="danger"
+                        variant="flat"
+                        isIconOnly
+                        onPress={() =>
+                          setSetParentIds(prev => prev.filter((_, i) => i !== index))
+                        }
+                        title="Видалити"
+                      >
+                        <DynamicIcon name="trash-2" size={14} />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Додавання нового ID */}
+                <div className="flex items-center gap-2">
+                  <Input
+                    size="sm"
+                    value={newSetParentIdInput}
+                    onChange={(e) => setNewSetParentIdInput(e.target.value)}
+                    placeholder="Новий ID групи комплектів..."
+                    className="flex-1 font-mono"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newSetParentIdInput.trim()) {
+                        setSetParentIds(prev => [...prev, newSetParentIdInput.trim()]);
+                        setNewSetParentIdInput('');
+                      }
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    color="primary"
+                    variant="flat"
+                    onPress={() => {
+                      if (newSetParentIdInput.trim()) {
+                        setSetParentIds(prev => [...prev, newSetParentIdInput.trim()]);
+                        setNewSetParentIdInput('');
+                      }
+                    }}
+                  >
+                    <DynamicIcon name="plus" size={14} />
+                    Додати
+                  </Button>
+                </div>
+              </>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant="flat"
+              onPress={() => setIsSetParentIdsModalOpen(false)}
+              disabled={setParentIdsSaving}
+            >
+              Скасувати
+            </Button>
+            <Button
+              color="primary"
+              onPress={saveSetParentIds}
+              disabled={setParentIdsSaving || setParentIdsLoading}
+            >
+              {setParentIdsSaving ? (
+                <>
+                  <DynamicIcon name="loader-2" className="animate-spin" size={14} />
+                  Збереження...
+                </>
+              ) : (
+                <>
+                  <DynamicIcon name="save" size={14} />
+                  Зберегти
                 </>
               )}
             </Button>

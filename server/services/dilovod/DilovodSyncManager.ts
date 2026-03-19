@@ -253,8 +253,12 @@ export class DilovodSyncManager {
     if (categoryId === 33) {
       return 5000;
     }
+
+    if (categoryId === 0) {
+      return 99999; // Відправляемо в кінець списку
+    }
     
-    // За замовчуванням - 0 (в кінці списку)
+    // За замовчуванням - 0 (на початку списку)
     return 0;
   }
 
@@ -490,12 +494,17 @@ export class DilovodSyncManager {
   }
 
   // Позначення застарілих товарів (які є в БД але немає в WordPress)
-  async markOutdatedProducts(currentSkus: string[]): Promise<void> {
+  // scope = 'all'    — перевіряє всі товари в БД (full sync)
+  //                    currentSkus = повний список SKU з WordPress
+  // scope = 'scoped' — перевіряє тільки товари з переданого списку manualSkus (manual sync)
+  //                    currentSkus = актуальний список SKU з WordPress (для валідації)
+  //                    manualSkus  = список SKU, які були синхронізовані вручну
+  async markOutdatedProducts(currentSkus: string[], scope: 'all' | 'scoped' = 'all', manualSkus?: string[]): Promise<void> {
     try {
-      logWithTimestamp(`Позначаємо застарілі товари...`);
+      logWithTimestamp(`Позначаємо застарілі товари... (режим: ${scope})`);
       logWithTimestamp(`Отримано ${currentSkus.length} актуальних SKU з WordPress`);
       
-      // Створюємо Set для швидкого пошуку
+      // Створюємо Set для швидкого пошуку по актуальному списку WordPress
       const currentSkusSet = new Set(currentSkus.map(sku => sku.toLowerCase().trim()));
 
       // Завантажуємо whitelist зі служби налаштувань (таблиця settings_wp_sku)
@@ -511,8 +520,13 @@ export class DilovodSyncManager {
         logWithTimestamp('Не вдалося завантажити SKU whitelist:', e);
       }
       
-      // Отримуємо всі товари з БД
+      // При scoped — беремо тільки товари з переданого списку manualSkus
+      // При all — беремо всі товари з БД
+      const scopedSkus = scope === 'scoped' ? (manualSkus ?? currentSkus) : undefined;
       const allProducts = await prisma.product.findMany({
+        where: scopedSkus !== undefined
+          ? { sku: { in: scopedSkus } }
+          : undefined,
         select: {
           id: true,
           sku: true,
@@ -521,7 +535,7 @@ export class DilovodSyncManager {
         }
       });
       
-      logWithTimestamp(`Всього товарів в БД: ${allProducts.length}`);
+      logWithTimestamp(`Товарів для перевірки: ${allProducts.length}`);
       
       let markedAsOutdated = 0;
       let unmarkedAsOutdated = 0;
@@ -530,6 +544,7 @@ export class DilovodSyncManager {
         const productSku = product.sku.toLowerCase().trim();
         // Не позначаємо як застарілий товари, які є у whitelist
         const isInWhitelist = whitelistSet.has(productSku);
+        // Перевіряємо наявність у актуальному списку WordPress (або whitelist)
         const isInWordPress = isInWhitelist || currentSkusSet.has(productSku);
         
         // Якщо товар НЕ в WordPress але НЕ позначений як застарілий - позначаємо
