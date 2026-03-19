@@ -10,6 +10,7 @@ import {
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate, formatRelativeDate } from "../lib/formatUtils";
+import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 
 interface ResultDrawerProps {
 	isOpen: boolean;
@@ -17,13 +18,14 @@ interface ResultDrawerProps {
 	result: any;
 	title?: string;
 	type?: 'result' | 'logs' | 'orderDetails'; // Тип відображення
+	getChannelName?: (channelId: string | null | undefined) => string;
 }
 
 /**
  * Універсальний Drawer для відображення результатів операцій з Dilovod
  * Підтримує різні типи результатів: валідація, експорт, перевірка, логи
  */
-export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Результат операції', type = 'result' }: ResultDrawerProps) {
+export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Результат операції', type = 'result', getChannelName }: ResultDrawerProps) {
 	if (!result) return null;
 
 	// Для логів - це масив
@@ -130,31 +132,66 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 										{type === 'orderDetails' ? (
 											<>
 												{/* Загальна інформація по замовленню */}
-												<div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+												<div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
 													{result.orderDate && (
 														<div className={infoBox}>
-															<span className={infoBoxLabel}>Дата замовлення:</span> <span className={infoBoxText}>{formatDate(result.orderDate)}</span>
+															<span className={infoBoxLabel}>Дата замовлення:</span>
+															<span className={infoBoxText}>{formatDate(result.orderDate)}</span>
+														</div>
+													)}
+													{result.readyToShipAt && (
+														<div className={infoBox}>
+															<span className={infoBoxLabel}>Дата комплектації:</span>
+															<span className={infoBoxText}>{formatDate(result.readyToShipAt)}</span>
 														</div>
 													)}
 													{result.customerName && (
 														<div className={infoBox}>
-															<span className={infoBoxLabel}>Клієнт:</span> <span className={infoBoxText}>{result.customerName}</span>
+															<span className={infoBoxLabel}>Клієнт:</span>
+															<span className={infoBoxText}>{result.customerName}</span>
 														</div>
 													)}
 													{result.paymentMethod && (
 														<div className={infoBox}>
-															<span className={infoBoxLabel}>Спосіб оплати:</span> <span className={infoBoxText}>{result.paymentMethod}</span>
+															<span className={infoBoxLabel}>Сума і спосіб оплати:</span>
+															<div className="flex gap-1">
+																<span className={infoBoxText}>{result.totalPrice} грн.</span>
+																<span className={`${infoBoxText} font-thin`}> – {result.paymentMethod}</span>
+															</div>
 														</div>
 													)}
-													{result.shippingMethod && (
+													{result.rawData.ord_delivery_data?.[0]?.trackingNumber && (
 														<div className={infoBox}>
-															<span className={infoBoxLabel}>Спосіб доставки:</span> <span className={infoBoxText}>{result.shippingMethod}</span>
+															<span className={infoBoxLabel}>Номер ТТН:</span>
+															<div className="flex items-center gap-1">{formatTrackingNumberWithIcon(result.rawData.ord_delivery_data[0].trackingNumber)}</div>
 														</div>
 													)}
 													{result.sajt && (
 														<div className={infoBox}>
-															<span className={infoBoxLabel}>Канал продажів:</span> <span className={infoBoxText}>{result.sajt}</span>
+															<span className={infoBoxLabel}>Канал продажів:</span>
+															<span className={infoBoxText}>{getChannelName ? getChannelName(result.sajt) : result.sajt}</span>
 														</div>
+													)}
+													{result.totalPrice && (
+														<div className={infoBox}>
+															<span className={infoBoxLabel}>Всього товарів:</span> 
+															<span className={infoBoxText}>{result.quantity} порцій</span>
+														</div>
+													)}
+												</div>
+												<div className="bg-gray-50 p-4 rounded-lg border overflow-auto mb-10">
+													<span className={infoBoxLabel}>Замовлені товари:</span>
+													{/* Тут можна додати таблицю або список товарів з result.items */}
+													{result.items && result.items.length > 0 ? (
+														<ul className="mt-2">
+															{result.items.map((item, idx) => (
+																<li key={idx} className="text-sm mb-1">
+																	<span className="text-tiny bg-grey-100 px-1 py-0.5 rounded tabular-nums">{item.sku}</span> {item.productName} - {item.quantity} шт.
+																</li>
+															))}
+														</ul>
+													) : (
+														<div className="text-sm text-gray-500">Немає замовлених товарів</div>
 													)}
 												</div>
 											</>

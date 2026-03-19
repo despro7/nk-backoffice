@@ -47,6 +47,15 @@ const SALES_CHANNELS: SalesChannel[] = [
   { id: 'unknown', name: '⚠️ Невідомо' },
 ];
 
+// Функція для отримання назви каналу
+const getChannelName = (channelId: string | null | undefined): string => {
+  if (!channelId) return '⚠️ Невідомо';
+  const knownChannel = SALES_CHANNELS.find(ch => ch.id === channelId);
+  if (knownChannel) return knownChannel.name;
+  if (channelId === '19') return 'nk-food.shop';
+  return `Канал ${channelId}`;
+};
+
 // Функція для отримання класів каналу
 const getChannelClass = (channelId: string | null | undefined): string => {
   // Якщо канал не вказано - підсвічуємо червоним як помилку
@@ -126,28 +135,6 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
   // Локальний кеш token'ів для sale (отримуємо його після експорту)
   const [saleTokens, setSaleTokens] = useState<Record<string, string>>({});
-
-  // Функція для отримання назви каналу
-  const getChannelName = (channelId: string | null | undefined): string => {
-    // Якщо канал не вказано
-    if (!channelId) {
-      return '⚠️ Невідомо';
-    }
-    
-    // Спочатку шукаємо у відомих каналах
-    const knownChannel = SALES_CHANNELS.find(ch => ch.id === channelId);
-    if (knownChannel) {
-      return knownChannel.name;
-    }
-
-    // Якщо це канал nk-food.shop (виключений з експорту)
-    if (channelId === '19') {
-      return 'nk-food.shop';
-    }
-
-    // Якщо канал невідомий
-    return `Канал ${channelId}`;
-  };
 
   // Функція для завантаження замовлень
   const fetchOrders = useCallback(async () => {
@@ -450,7 +437,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         description: `Скидання даних та перевірка замовлення ${order.orderNumber} в Діловоді`,
         color: 'warning',
         hideIcon: false,
-        icon: <DynamicIcon name="refresh-cw" size={16} strokeWidth={1.5} className="shrink-0" />,
+        icon: <DynamicIcon name="refresh-ccw-dot" size={16} strokeWidth={1.5} className="shrink-0" />,
         timeout: 3000
       });
 
@@ -646,6 +633,171 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     }
   };
 
+  // Масова функція тільки експорту
+  const handleBulkExport = async () => {
+    if (!selectedOrderIds.length) return;
+    ToastService.show({
+      title: 'Масовий експорт...',
+      description: `Виконується експорт для ${selectedOrderIds.length} замовлень`,
+      color: 'primary',
+      hideIcon: false,
+      icon: <DynamicIcon name="upload-cloud" size={20} className="shrink-0" />,
+      timeout: 2000
+    });
+
+    const results: Array<{
+      orderNumber: string,
+      exportSuccess: boolean,
+      shipmentSuccess: boolean,
+      errors: string[]
+    }> = [];
+
+    for (const orderId of selectedOrderIds) {
+      const order = orders.find(o => String(o.id) === String(orderId));
+      if (!order) continue;
+      let exportSuccess = false;
+      const errors: string[] = [];
+
+      try {
+        const validateResponse = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/validate`, { method: 'POST' });
+        const validateResult = await validateResponse.json();
+        if (!validateResponse.ok || !validateResult.success) {
+          errors.push(validateResult.details || 'Помилка валідації');
+          ToastService.show({
+            title: `Помилка валідації (${order.orderNumber})`,
+            description: validateResult.details || 'Помилка',
+            color: 'danger',
+            hideIcon: false,
+            icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
+          });
+          results.push({ orderNumber: order.orderNumber, exportSuccess, shipmentSuccess: false, errors });
+          continue;
+        }
+        const token = validateResult?.metadata?.token;
+        const exportBody = token ? { token } : undefined;
+        const response = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/export`, {
+          method: 'POST',
+          body: exportBody ? JSON.stringify(exportBody) : undefined
+        });
+        const result = await response.json();
+        if (result.success && result.exported && (result.dilovodId || result.dilovodExportDate)) {
+          exportSuccess = true;
+          ToastService.show({
+            title: `Експортовано (${order.orderNumber})`,
+            description: result.message || 'Успішно',
+            color: 'success',
+            hideIcon: false,
+            icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />,
+            timeout: 1500
+          });
+        } else {
+          errors.push(result.error || result.message || 'Помилка експорту');
+          ToastService.show({
+            title: `Помилка експорту (${order.orderNumber})`,
+            description: result.error || result.message || 'Помилка',
+            color: 'danger',
+            hideIcon: false,
+            icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+            timeout: 1500
+          });
+        }
+      } catch {
+        errors.push('Помилка зʼєднання при експорті');
+        ToastService.show({
+          title: `Помилка зʼєднання (${order.orderNumber})`,
+          description: 'Помилка зʼєднання при експорті',
+          color: 'danger',
+          hideIcon: false,
+          icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+        });
+      }
+      results.push({ orderNumber: order.orderNumber, exportSuccess, shipmentSuccess: false, errors });
+    }
+
+    setDrawerResult({ bulkExportResults: results });
+    setDrawerTitle('Результати масового експорту');
+    setDrawerType('result');
+    onDrawerOpen();
+    fetchOrders();
+    setSelectedOrderIds([]);
+  };
+
+  // Масова функція тільки відвантаження
+  const handleBulkShipment = async () => {
+    if (!selectedOrderIds.length) return;
+    ToastService.show({
+      title: 'Масове відвантаження...',
+      description: `Виконується відвантаження для ${selectedOrderIds.length} замовлень`,
+      color: 'primary',
+      hideIcon: false,
+      icon: <DynamicIcon name="truck" size={20} className="shrink-0" />,
+      timeout: 2000
+    });
+
+    const results: Array<{
+      orderNumber: string,
+      exportSuccess: boolean,
+      shipmentSuccess: boolean,
+      errors: string[]
+    }> = [];
+
+    for (const orderId of selectedOrderIds) {
+      const order = orders.find(o => String(o.id) === String(orderId));
+      if (!order) continue;
+      let shipmentSuccess = false;
+      const errors: string[] = [];
+
+      try {
+        const token = saleTokens?.[order.id];
+        const body = token ? JSON.stringify({ token }) : undefined;
+        const shipmentRes = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/shipment`, {
+          method: 'POST',
+          body
+        });
+        const shipmentResult = await shipmentRes.json();
+        if (shipmentResult.success && shipmentResult.created) {
+          shipmentSuccess = true;
+          ToastService.show({
+            title: `Відвантажено (${order.orderNumber})`,
+            description: shipmentResult.message || 'Успішно',
+            color: 'success',
+            hideIcon: false,
+            icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />,
+            timeout: 1500
+          });
+          if (token) setSaleTokens(prev => { const copy = { ...prev }; delete copy[order.id]; return copy; });
+        } else {
+          errors.push(shipmentResult.error || shipmentResult.message || 'Помилка відвантаження');
+          ToastService.show({
+            title: `Помилка відвантаження (${order.orderNumber})`,
+            description: shipmentResult.error || shipmentResult.message || 'Помилка',
+            color: 'danger',
+            hideIcon: false,
+            icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+            timeout: 1500
+          });
+        }
+      } catch {
+        errors.push('Помилка зʼєднання при відвантаженні');
+        ToastService.show({
+          title: `Помилка зʼєднання (${order.orderNumber})`,
+          description: 'Помилка зʼєднання при відвантаженні',
+          color: 'danger',
+          hideIcon: false,
+          icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+        });
+      }
+      results.push({ orderNumber: order.orderNumber, exportSuccess: false, shipmentSuccess, errors });
+    }
+
+    setDrawerResult({ bulkExportResults: results });
+    setDrawerTitle('Результати масового відвантаження');
+    setDrawerType('result');
+    onDrawerOpen();
+    fetchOrders();
+    setSelectedOrderIds([]);
+  };
+
   // Масова функція експорту + відвантаження
   const handleBulkExportAndShipment = async () => {
     if (!selectedOrderIds.length) return;
@@ -794,6 +946,51 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     onDrawerOpen();
     fetchOrders();
     setSelectedOrderIds([]);
+  };
+
+  // Масова примусова перевірка (скидання полів + перевірка в Діловоді)
+  const handleBulkForceRecheck = async () => {
+    if (!selectedOrderIds.length) return;
+    const filteredOrders = orders.filter(order => selectedOrderIds.includes(String(order.id)));
+    const orderNumbers = filteredOrders.map(order => order.orderNumber);
+
+    ToastService.show({
+      title: 'Масова примусова перевірка...',
+      description: `Скидання та перевірка ${filteredOrders.length} замовлень у Діловоді`,
+      color: 'warning',
+      hideIcon: false,
+      icon: <DynamicIcon name="rotate-ccw" size={16} strokeWidth={1.5} className="shrink-0" />,
+      timeout: 2000
+    });
+
+    try {
+      const response = await apiCall('/api/dilovod/salesdrive/orders/reset-and-check', {
+        method: 'POST',
+        body: JSON.stringify({ orderNumbers })
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        setDrawerResult(result);
+        setDrawerTitle(`Масова примусова перевірка (${filteredOrders.length} замовлень)`);
+        setDrawerType('result');
+        onDrawerOpen();
+        fetchOrders();
+        setSelectedOrderIds([]);
+      } else {
+        ToastService.show({
+          title: 'Помилка примусової перевірки',
+          description: result.message || 'Не вдалося виконати операцію',
+          color: 'danger'
+        });
+      }
+    } catch {
+      ToastService.show({
+        title: 'Помилка',
+        description: 'Помилка зʼєднання з сервером',
+        color: 'danger'
+      });
+    }
   };
 
   // Обробник для підрахунку логів для замовлення
@@ -1099,29 +1296,58 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             <DropdownMenu
               aria-label="Масові операції"
               onAction={(key) => {
-                if (key === "export") handleBulkExportAndShipment();
+                if (key === "exportOnly") handleBulkExport();
+                if (key === "shipmentOnly") handleBulkShipment();
+                if (key === "exportAndShipment") handleBulkExportAndShipment();
+                if (key === "forceRecheck") handleBulkForceRecheck();
                 if (key === "update") handleBulkCheckAndUpdate();
                 if (key === "copy") { copyToClipboard(selectedOrderIds.join(', ')); }
               }}
             >
-              <DropdownItem
-                key="copy"
-                startContent={<DynamicIcon name="copy" size={16} className="shrink-0" />}
-              >
-                Копіювати номери замовлень ({selectedOrderIds.length})
-              </DropdownItem>
-              <DropdownItem
-                key="export"
-                startContent={<DynamicIcon name="upload-cloud" size={16} className="shrink-0" />}
-              >
-                Масовий експорт + відвантаження ({selectedOrderIds.length})
-              </DropdownItem>
-              <DropdownItem
-                key="update"
-                startContent={<DynamicIcon name="refresh-cw" size={16} className="shrink-0" />}
-              >
-                Оновити статуси документів ({selectedOrderIds.length})
-              </DropdownItem>
+              <DropdownSection showDivider dividerProps={{ className: "mt-1 bg-neutral-100" }}>
+                <DropdownItem
+                  key="copy"
+                  startContent={<DynamicIcon name="copy" size={16} className="shrink-0" />}
+                >
+                  Копіювати номери ({selectedOrderIds.length})
+                </DropdownItem>
+              </DropdownSection>
+              <DropdownSection title="Експорт у Діловод" showDivider dividerProps={{ className: "mt-1 bg-neutral-100" }}>
+                <DropdownItem
+                  key="exportOnly"
+                  startContent={<DynamicIcon name="upload-cloud" size={16} className="shrink-0" />}
+                >
+                  Тільки експорт ({selectedOrderIds.length})
+                </DropdownItem>
+                <DropdownItem
+                  key="shipmentOnly"
+                  startContent={<DynamicIcon name="truck" size={16} className="shrink-0" />}
+                >
+                  Тільки відвантаження ({selectedOrderIds.length})
+                </DropdownItem>
+                <DropdownItem
+                  key="exportAndShipment"
+                  startContent={<DynamicIcon name="package-check" size={16} className="shrink-0" />}
+                >
+                  Експорт + відвантаження ({selectedOrderIds.length})
+                </DropdownItem>
+              </DropdownSection>
+              <DropdownSection title="Перевірка статусів">
+                <DropdownItem
+                  key="update"
+                  startContent={<DynamicIcon name="refresh-ccw" size={16} className="shrink-0" />}
+                >
+                  Оновити статуси ({selectedOrderIds.length})
+                </DropdownItem>
+                <DropdownItem
+                  key="forceRecheck"
+                  startContent={<DynamicIcon name="refresh-ccw-dot" size={16} className="shrink-0" />}
+                  className="text-danger"
+                  color="danger"
+                >
+                  Примусова перевірка ({selectedOrderIds.length})
+                </DropdownItem>
+              </DropdownSection>
             </DropdownMenu>
           </Dropdown>
         </ButtonGroup>
@@ -1268,7 +1494,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Tooltip color="secondary" content={order.dilovodExportDate ? 'Оновлено: ' + new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не вивантажено'}>
+                    <Tooltip color="secondary" content={order.dilovodExportDate ? 'Оновлено: ' + new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не оновлено'}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodExportDate ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="search-check" size={16} /></div>
                     </Tooltip>
                     <Tooltip color="secondary" content={order.dilovodSaleExportDate ? 'Відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') : 'Ще не відвантажено'}>
@@ -1319,8 +1545,8 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                         }}
                       >
                         <DropdownSection showDivider>
-                          <DropdownItem textValue="Перевірити в Діловоді" key="checkDilovod" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="search-check" size={16} />}>Перевірити в Діловоді</DropdownItem>
-                          <DropdownItem textValue="Примусова перевірка (скинути і перечитати)" key="forceRecheck" className="px-3 py-2 text-danger-500!" startContent={<DynamicIcon className="text-xl text-danger-500 pointer-events-none shrink-0" name="rotate-ccw" size={16} />}>Примусова перевірка</DropdownItem>
+                          <DropdownItem textValue="Перевірити в Діловоді" key="checkDilovod" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="refresh-ccw" size={16} />}>Перевірити в Діловоді</DropdownItem>
+                          <DropdownItem textValue="Примусова перевірка (скинути і перечитати)" key="forceRecheck" className="px-3 py-2 text-danger-500!" startContent={<DynamicIcon className="text-xl text-danger-500 pointer-events-none shrink-0" name="refresh-ccw-dot" size={16} />}>Примусова перевірка</DropdownItem>
                           <DropdownItem textValue="Відправити замовлення" key="exportOrder" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="upload" size={16} />}>Відправити замовлення</DropdownItem>
                           <DropdownItem textValue="Відправити відвантаження" key="createShipment" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="truck" size={16} />}>Відправити відвантаження</DropdownItem>
                           {!!order.logsCount && (
@@ -1410,6 +1636,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         result={drawerResult}
         title={drawerTitle}
         type={drawerType}
+        getChannelName={getChannelName}
       />
 
     </div>

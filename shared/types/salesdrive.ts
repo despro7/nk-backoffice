@@ -11,6 +11,7 @@ export interface SalesDriveOrderForExport {
   orderNumber: string;
   orderDate: Date | null;
   updatedAt: Date | null;
+  readyToShipAt: Date | null;
   status: string;
   statusText: string;
   paymentMethod: string | null;

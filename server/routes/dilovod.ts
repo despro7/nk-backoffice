@@ -611,6 +611,7 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
         orderNumber: true,
         orderDate: true,
         updatedAt: true,
+        readyToShipAt: true,
         status: true,
         statusText: true,
         paymentMethod: true,
