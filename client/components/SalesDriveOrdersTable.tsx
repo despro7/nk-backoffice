@@ -109,8 +109,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   // State для вибраних замовлень (чекбокси)
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   
-  // State для авто-перевірки (ліміт)
+  // State для авто-перевірки (ліміт та offset)
   const [autoCheckLimit, setAutoCheckLimit] = useState(100);
+  const [autoCheckOffset, setAutoCheckOffset] = useState(0);
   const [isAutoChecking, setIsAutoChecking] = useState(false);
 
   // State для пагінації
@@ -127,7 +128,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   );
 
   // State для фільтру по даті відвантаження
-  type ShipmentFilterType = 'all' | 'shipped' | 'not_shipped';
+  type ShipmentFilterType = 'all' | 'shipped' | 'not_shipped' | 'duplicates';
   const [shipmentFilter, setShipmentFilter] = useState<ShipmentFilterType>('all');
 
   // State для фільтру по конкретним датам відвантаження (DateRangePicker)
@@ -179,6 +180,8 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         params.append('shipmentStatus', 'shipped');
       } else if (shipmentFilter === 'not_shipped') {
         params.append('shipmentStatus', 'not_shipped');
+      } else if (shipmentFilter === 'duplicates') {
+        params.append('shipmentStatus', 'duplicates');
       }
 
       // Додаємо фільтр по датам відвантаження (DateRange)
@@ -329,14 +332,8 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         //   icon: <DynamicIcon name={result.updatedCount > 0 ? 'check-circle' : 'octagon-alert'} size={20} strokeWidth={1.5} className="shrink-0" />
         // });
 
-        // Перемальовуємо таблицю якщо були будь-які оновлення
-        const hasUpdates = result.updatedCount > 0 || 
-                          result.updatedCountSale > 0 || 
-                          result.updatedCountCashIn > 0;
-        
-        if (hasUpdates) {
-          fetchOrders();
-        }
+        // Перемальовуємо таблицю завжди після перевірки
+        fetchOrders();
       } else {
         setDrawerResult(result);
         setDrawerTitle('Помилки масової перевірки замовлень');
@@ -389,23 +386,14 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             color: 'danger'
           });
         } else {
-          // Визначаємо, чи був оновлений локальний статус (перевіряємо всі типи оновлень)
-          const updated = result.data.some((item: any) => 
-            item.updatedCount > 0 || 
-            item.updatedCountSale > 0 || 
-            item.updatedCountCashIn > 0
-          );
-          
-          if (updated) {
-            ToastService.show({
-              title: 'Оновлено!',
-              description: `Статус документа оновлено для ${result.data.length} замовлення(нь)`,
-              color: 'success',
-              hideIcon: false,
-              icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />
-            });
-            fetchOrders();
-          }
+          ToastService.show({
+            title: 'Перевірено',
+            description: `Перевірку завершено для замовлення ${order.orderNumber}`,
+            color: 'success',
+            hideIcon: false,
+            icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />
+          });
+          fetchOrders();
         }
       } else {
         console.log('Деталі помилок перевірки:', result.errors);
@@ -566,6 +554,17 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             });
           }
         }
+      } else if (result.error === 'already_exists_in_dilovod') {
+        // Замовлення вже існує в Dilovod — виявлено при live-перевірці API перед експортом
+        ToastService.show({
+          title: 'Вже існує в Діловоді',
+          description: result.message || 'Замовлення вже є в Dilovod. Локальну БД синхронізовано.',
+          color: 'warning',
+          hideIcon: false,
+          icon: <DynamicIcon name="triangle-alert" size={20} className="shrink-0" />
+        });
+        // Оновлюємо таблицю — БД вже синхронізована сервером
+        fetchOrders();
       } else {
         setDrawerResult(result);
         setDrawerTitle('Помилка експорту замовлення в Діловод');
@@ -617,6 +616,17 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
         // token — одноразовий, видалимо локально
         if (token) setSaleTokens(prev => { const copy = { ...prev }; delete copy[order.id]; return copy; });
+      } else if (result.error === 'already_shipped_in_dilovod' || result.error === 'Already shipped') {
+        // Документ вже є в Dilovod (виявлено при перевірці API або з локальної БД)
+        ToastService.show({
+          title: 'Вже відвантажено',
+          description: result.message || 'Документ відвантаження вже існує в Dilovod',
+          color: 'warning',
+          hideIcon: false,
+          icon: <DynamicIcon name="triangle-alert" size={20} className="shrink-0" />
+        });
+        // Оновлюємо таблицю — БД вже синхронізована сервером
+        fetchOrders();
       } else {
         ToastService.show({
           title: 'Помилка',
@@ -1048,7 +1058,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       setIsAutoChecking(true);
       ToastService.show({
         title: 'Запуск авто-перевірки',
-        description: `Запит на перевірку до ${autoCheckLimit} замовлень без ID`,
+        description: `Запит на перевірку до ${autoCheckLimit} замовлень${autoCheckOffset > 0 ? `, пропускаємо перші ${autoCheckOffset}` : ''}`,
         color: 'secondary',
         hideIcon: false,
         icon: <DynamicIcon name="search-check" size={16} strokeWidth={1.5} className="shrink-0" />,
@@ -1058,7 +1068,8 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         method: 'POST',
         body: JSON.stringify({
           auto: true,
-          limit: autoCheckLimit
+          limit: autoCheckLimit,
+          offset: autoCheckOffset
         })
       });
       const result = await response.json();
@@ -1069,14 +1080,8 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         setDrawerType('result');
         onDrawerOpen();
 
-        // Перевіряємо всі типи оновлень
-        const hasUpdates = result.updatedCount > 0 || 
-                          result.updatedCountSale > 0 || 
-                          result.updatedCountCashIn > 0;
-        
-        if (hasUpdates) {
-          fetchOrders();
-        }
+        // Перемальовуємо таблицю завжди після авто-перевірки
+        fetchOrders();
       } else {
         ToastService.show({
           title: 'Помилка авто-перевірки',
@@ -1214,6 +1219,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 {shipmentFilter === 'all' && 'Всі замовлення'}
                 {shipmentFilter === 'shipped' && 'Відвантажені'}
                 {shipmentFilter === 'not_shipped' && 'Не відвантажені'}
+                {shipmentFilter === 'duplicates' && 'Дублікати'}
               </Button>
             </DropdownTrigger>
             <DropdownMenu
@@ -1246,6 +1252,13 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 startContent={<DynamicIcon name="clock" size={16} className="text-orange-600" />}
               >
                 Не відвантажені
+              </DropdownItem>
+              <DropdownItem 
+                key="duplicates"
+                textValue="Дублікати"
+                startContent={<DynamicIcon name="copy-x" size={16} className="text-red-600" />}
+              >
+                Дублікати
               </DropdownItem>
             </DropdownMenu>
           </Dropdown>
@@ -1376,6 +1389,26 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 }}
               />
             </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-secondary-700 whitespace-nowrap">
+                Offset:
+              </span>
+              <Input
+                type="number"
+                size="sm"
+                variant="bordered"
+                value={autoCheckOffset.toString()}
+                onChange={(e) => setAutoCheckOffset(Number(e.target.value))}
+                className="w-24"
+                min={0}
+                max={10000}
+                classNames={{
+                  input: "text-center font-semibold",
+                  inputWrapper: "h-8 min-h-8 px-2"
+                }}
+              />
+            </div>
             
             <Button
               color="secondary"
@@ -1497,8 +1530,20 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                     <Tooltip color="secondary" content={order.dilovodExportDate ? 'Оновлено: ' + new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не оновлено'}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodExportDate ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="search-check" size={16} /></div>
                     </Tooltip>
-                    <Tooltip color="secondary" content={order.dilovodSaleExportDate ? 'Відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') : 'Ще не відвантажено'}>
-                      <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodSaleExportDate ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="truck" size={16} /></div>
+                    <Tooltip color={order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1 ? "danger" : "secondary"} content={
+                      order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1
+                        ? `⚠️ Дублювання відвантаження: знайдено ${order.dilovodSaleDocsCount} документи.`
+                        : order.dilovodSaleExportDate
+                          ? 'Відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA')
+                          : 'Ще не відвантажено'
+                    }>
+                      <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${
+                        order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1
+                          ? 'bg-red-100 text-red-600 ring-1 ring-red-300'
+                          : order.dilovodSaleExportDate
+                            ? 'bg-green-100 text-green-600'
+                            : 'bg-gray-100 text-gray-300'
+                      }`}><DynamicIcon name="truck" size={16} /></div>
                     </Tooltip>
                     <Tooltip color="secondary" content={order.dilovodCashInDate ? 'Оплачено: ' + new Date(order.dilovodCashInDate).toLocaleString('uk-UA') : 'Ще не оплачено'}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodCashInDate ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="wallet" size={16} /></div>

@@ -19,6 +19,7 @@ export interface SalesDriveOrderForExport {
   sajt: string | null; // канал продаж
   dilovodDocId: string | null;
   dilovodSaleExportDate: Date | null;
+  dilovodSaleDocsCount: number | null; // Кількість документів відвантаження (> 1 = дублікат/помилка)
   dilovodExportDate: Date | null;
   dilovodCashInDate: Date | null;
   customerName: string | null;

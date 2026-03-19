@@ -55,6 +55,7 @@ model Order {
   syncStatus      String          @default("pending")
   dilovodDocId       String?
   dilovodSaleExportDate  DateTime?       // Дата відвантаження в Діловод (documents.sale)
+  dilovodSaleDocsCount   Int?            // Кількість документів відвантаження в Діловоді (> 1 = помилка дублікату)
   dilovodExportDate      DateTime?       // Дата вивантаження в Dilovod
   dilovodCashInDate      DateTime?       // Дата додавання документу (documents.cashIn)
   dilovodCashInLastChecked DateTime?     // Дата останньої перевірки cashIn (для уникнення частих запитів)

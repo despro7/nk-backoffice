@@ -1232,14 +1232,14 @@ export class DilovodService {
    * AUTO MODE: Автоматична перевірка замовлень з неповними даними
    * Використання: Cron job + API endpoint з auto: true
    */
-  async checkOrderStatuses(limit: number = 100): Promise<{
+  async checkOrderStatuses(limit: number = 100, offset: number = 0): Promise<{
     success: boolean;
     message: string;
     updatedCount: number;
     errors?: any[];
     data: any[];
   }> {
-    const orderNumbers = await this.fetchIncompleteOrderNumbers(limit);
+    const orderNumbers = await this.fetchIncompleteOrderNumbers(limit, offset);
     return this.processOrderCheck(orderNumbers);
   }
 
@@ -1260,7 +1260,7 @@ export class DilovodService {
   /**
    * ПРИВАТНИЙ: Вибірка замовлень з неповними даними в Dilovod
    */
-  private async fetchIncompleteOrderNumbers(limit: number): Promise<string[]> {
+  private async fetchIncompleteOrderNumbers(limit: number, offset: number = 0): Promise<string[]> {
     const { PrismaClient } = await import('@prisma/client');
     const prisma = new PrismaClient();
 
@@ -1295,6 +1295,18 @@ export class DilovodService {
                     { status: { gte: '3' } },
                     { dilovodSaleExportDate: null }
                   ]
+                },
+                { // Для status >= '3': перевіряємо кількість документів відвантаження
+                  // null = ще жодного разу не перевіряли; > 1 = виявлено дублікат, треба повторно
+                  AND: [
+                    { status: { gte: '3' } },
+                    {
+                      OR: [
+                        { dilovodSaleDocsCount: null },
+                        { dilovodSaleDocsCount: { gt: 1 } }
+                      ]
+                    }
+                  ]
                 }
               ]
             },
@@ -1306,6 +1318,7 @@ export class DilovodService {
         },
         orderBy: { orderDate: 'desc' },
         take: limit,
+        skip: offset,
         select: {
           orderNumber: true,
           sajt: true,
@@ -1483,16 +1496,18 @@ export class DilovodService {
               orderNumber: true,
               dilovodDocId: true,
               dilovodSaleExportDate: true,
+              dilovodSaleDocsCount: true,
               dilovodCashInDate: true,
               status: true
             }
           });
 
-          // Sale потрібен тільки для status >= '3'
+          // Sale потрібен для status >= '3' завжди (для підрахунку дублікатів навіть якщо дата вже є)
           const needSaleRequest = contractIds.filter(id => {
             const order = existingOrders.find(o => o.dilovodDocId === id);
             const orderStatus = parseInt(order?.status || '0');
-            return order && orderStatus >= 3 && !order.dilovodSaleExportDate;
+            // Запитуємо для всіх зі статусом >= 3 — щоб виявляти дублікати при кожній перевірці
+            return order && orderStatus >= 3;
           });
           
           // CashIn потрібен для всіх
@@ -1513,7 +1528,7 @@ export class DilovodService {
             cashInDocuments = await this.getDocuments(needCashInRequest, 'cashIn');
           }
 
-          // Групуємо за contract (або baseDoc - вони ідентичні)
+          // Групуємо за contract (або baseDoc - вони ідентичні), беремо перший документ
           const groupByContract = (docs: any[]) => {
             const map = new Map<string, any>();
             for (const d of docs) {
@@ -1527,7 +1542,19 @@ export class DilovodService {
             return map;
           };
 
+          // Підраховуємо кількість документів на один contractId
+          const countByContract = (docs: any[]) => {
+            const map = new Map<string, number>();
+            for (const d of docs) {
+              const contractKey = d?.contract || d?.baseDoc;
+              if (!contractKey) continue;
+              map.set(contractKey, (map.get(contractKey) ?? 0) + 1);
+            }
+            return map;
+          };
+
           const saleByContract = groupByContract(saleDocuments);
+          const saleCountByContract = countByContract(saleDocuments);
           const cashInByContract = groupByContract(cashInDocuments);
 
           // Оновлюємо дати документів
@@ -1540,8 +1567,24 @@ export class DilovodService {
 
             // Sale тільки для status >= '3'
             const orderStatus = parseInt(localOrder?.status || '0');
-            if (orderStatus >= 3 && !localOrder?.dilovodSaleExportDate && saleByContract.get(contractId)?.date) {
-              updateData.dilovodSaleExportDate = new Date(saleByContract.get(contractId).date).toISOString();
+            if (orderStatus >= 3 && saleByContract.has(contractId)) {
+              // Записуємо дату відвантаження, якщо ще немає
+              if (!localOrder?.dilovodSaleExportDate) {
+                updateData.dilovodSaleExportDate = new Date(saleByContract.get(contractId).date).toISOString();
+              }
+              // Завжди оновлюємо кількість документів відвантаження (щоб виявити дублікати)
+              const saleCount = saleCountByContract.get(contractId) ?? 1;
+              if (localOrder?.dilovodSaleDocsCount !== saleCount) {
+                updateData.dilovodSaleDocsCount = saleCount;
+                if (saleCount > 1) {
+                  logWithTimestamp(`⚠️ Замовлення ${orderInfo.orderNumber}: знайдено ${saleCount} документів відвантаження (має бути 1)!`);
+                }
+              }
+            } else if (orderStatus >= 3 && !saleByContract.has(contractId) && needSaleRequest.includes(contractId)) {
+              // Запит виконували, але документів не знайдено — скидаємо лічильник
+              if (localOrder?.dilovodSaleDocsCount !== 0) {
+                updateData.dilovodSaleDocsCount = 0;
+              }
             }
             
             // CashIn для всіх + оновлюємо дату останньої перевірки
@@ -1565,6 +1608,7 @@ export class DilovodService {
                 results[resultIndex] = {
                   ...results[resultIndex],
                   dilovodSaleExportDate: updateData.dilovodSaleExportDate || localOrder?.dilovodSaleExportDate,
+                  dilovodSaleDocsCount: updateData.dilovodSaleDocsCount ?? localOrder?.dilovodSaleDocsCount,
                   updatedCountSale: updateData.dilovodSaleExportDate ? 1 : 0,
                   dilovodCashInDate: updateData.dilovodCashInDate || localOrder?.dilovodCashInDate,
                   updatedCountCashIn: updateData.dilovodCashInDate ? 1 : 0

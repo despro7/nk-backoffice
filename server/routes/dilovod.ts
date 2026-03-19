@@ -583,6 +583,9 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
     } else if (shipmentStatus === 'not_shipped') {
       // Якщо дати не вказані, але вказано "не відвантажені" - показуємо всі не відвантажені
       whereCondition.dilovodSaleExportDate = null;
+    } else if (shipmentStatus === 'duplicates') {
+      // Дублікати: замовлення з більше ніж одним документом відвантаження
+      whereCondition.dilovodSaleDocsCount = { gt: 1 };
     }
 
     // Додаємо пошук, якщо вказано
@@ -619,6 +622,7 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
         sajt: true, // канал продажів
         dilovodDocId: true,
         dilovodSaleExportDate: true,
+        dilovodSaleDocsCount: true,
         dilovodExportDate: true,
         dilovodCashInDate: true,
         customerName: true,
@@ -686,14 +690,14 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
       });
     }
 
-    const { orderNumbers, auto, limit } = req.body;
+    const { orderNumbers, auto, limit, offset } = req.body;
     const dilovodService = new DilovodService();
 
     // AUTO MODE - автоматична перевірка замовлень з неповними даними
     if (auto === true) {
-      logWithTimestamp(`=== API [AUTO]: Перевірка замовлень без повних даних в Dilovod (limit: ${limit || 100}) ===`, undefined, true);
+      logWithTimestamp(`=== API [AUTO]: Перевірка замовлень без повних даних в Dilovod (limit: ${limit || 100}, offset: ${offset || 0}) ===`, undefined, true);
       
-      const result = await dilovodService.checkOrderStatuses(limit || 100);
+      const result = await dilovodService.checkOrderStatuses(limit || 100, offset || 0);
       return res.json(result);
     }
 
@@ -756,6 +760,7 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, async (req,
         dilovodExportDate: null,
         dilovodCashInDate: null,
         dilovodSaleExportDate: null,
+        dilovodSaleDocsCount: null,
         dilovodCashInLastChecked: null
       }
     });
@@ -940,6 +945,34 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
           saleToken: null
         }
       });
+    }
+
+    // Перевірка в Dilovod API: чи вже існує замовлення (захист від race condition та пропущеного локального стану)
+    logWithTimestamp(`🔍 Перевіряємо в Dilovod API наявність замовлення ${orderNum} перед експортом...`);
+    try {
+      const { dilovodService: dilovodServiceCheck } = await import('../services/dilovod/DilovodService.js');
+      const existingInDilovod = (await dilovodServiceCheck.getOrderByNumber([orderNum])).flat();
+      if (existingInDilovod.length > 0) {
+        const dilovodDoc = existingInDilovod[0];
+        logWithTimestamp(`⚠️ Замовлення ${orderNum} вже існує в Dilovod (id: ${dilovodDoc.id}) — синхронізуємо локальну БД та блокуємо повторний експорт`);
+        // Синхронізуємо локальну БД, щоб наступного разу блокування спрацювало на рівні БД
+        await prisma.order.update({
+          where: { id: parseInt(orderId) },
+          data: {
+            dilovodDocId: dilovodDoc.id,
+            dilovodExportDate: new Date(dilovodDoc.date || new Date()).toISOString()
+          }
+        });
+        return res.status(409).json({
+          success: false,
+          error: 'already_exists_in_dilovod',
+          message: `Замовлення ${orderNum} вже існує в Dilovod (baseDoc: ${dilovodDoc.id}). Локальну БД синхронізовано. Повторний експорт заблоковано.`,
+          data: { dilovodId: dilovodDoc.id, dilovodExportDate: dilovodDoc.date }
+        });
+      }
+    } catch (checkError) {
+      // Якщо перевірка не вдалася — логуємо, але не блокуємо (щоб не зупиняти роботу при недоступності API)
+      logWithTimestamp(`⚠️ Не вдалося перевірити наявність замовлення ${orderNum} в Dilovod API: ${checkError instanceof Error ? checkError.message : checkError}. Продовжуємо експорт.`);
     }
 
     logWithTimestamp(`=== API: Експорт замовлення ${orderNum} (id: ${orderId}) в Dilovod ===`);
@@ -1174,9 +1207,9 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
       });
     }
 
-    // Перевіряємо, чи вже створений документ відвантаження
+    // Перевіряємо, чи вже створений документ відвантаження (локальна БД)
     if (order.dilovodSaleExportDate) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         error: 'Already shipped',
         message: `Документ відвантаження для замовлення ${orderNum} (id: ${orderId}) вже створений (${new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA')})`,
@@ -1184,6 +1217,39 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
           dilovodSaleExportDate: order.dilovodSaleExportDate
         }
       });
+    }
+
+    // Перевірка в Dilovod API: чи вже існує documents.sale (захист від дублів при порожній локальній даті)
+    logWithTimestamp(`🔍 Перевіряємо в Dilovod API наявність документа відвантаження для замовлення ${orderNum} (baseDoc: ${order.dilovodDocId}) перед відправкою...`);
+    try {
+      const { dilovodService: dilovodServiceCheck } = await import('../services/dilovod/DilovodService.js');
+      const existingSaleDocs = await dilovodServiceCheck.getDocuments([order.dilovodDocId!], 'sale');
+      if (existingSaleDocs.length > 0) {
+        const saleDoc = existingSaleDocs[0];
+        const saleCount = existingSaleDocs.length;
+        logWithTimestamp(`⚠️ В Dilovod вже існує ${saleCount} документ(ів) відвантаження для замовлення ${orderNum} (sale id: ${saleDoc.id}) — синхронізуємо та блокуємо`);
+        // Синхронізуємо локальну БД
+        await prisma.order.update({
+          where: { id: parseInt(orderId) },
+          data: {
+            dilovodSaleExportDate: new Date(saleDoc.date || new Date()).toISOString(),
+            dilovodSaleDocsCount: saleCount
+          }
+        });
+        return res.status(409).json({
+          success: false,
+          error: 'already_shipped_in_dilovod',
+          message: `В Dilovod вже існує ${saleCount} документ(ів) відвантаження для замовлення ${orderNum}${saleCount > 1 ? ' (ДУБЛІКАТИ!)' : ''}. Локальну БД синхронізовано. Повторне відвантаження заблоковано.`,
+          data: {
+            saleDocId: saleDoc.id,
+            saleDocDate: saleDoc.date,
+            saleDocsCount: saleCount
+          }
+        });
+      }
+    } catch (checkError) {
+      // Якщо перевірка не вдалася — логуємо, але не блокуємо
+      logWithTimestamp(`⚠️ Не вдалося перевірити наявність documents.sale для замовлення ${orderNum} в Dilovod API: ${checkError instanceof Error ? checkError.message : checkError}. Продовжуємо відвантаження.`);
     }
 
     // Імпортуємо DilovodExportBuilder для створення payload відвантаження
