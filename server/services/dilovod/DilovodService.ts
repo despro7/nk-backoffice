@@ -1231,15 +1231,18 @@ export class DilovodService {
   /**
    * AUTO MODE: Автоматична перевірка замовлень з неповними даними
    * Використання: Cron job + API endpoint з auto: true
+   * @param forceAll - якщо true, перевіряє всі активні замовлення (навіть з повними даними)
    */
-  async checkOrderStatuses(limit: number = 100, offset: number = 0): Promise<{
+  async checkOrderStatuses(limit: number = 100, offset: number = 0, forceAll: boolean = false): Promise<{
     success: boolean;
     message: string;
     updatedCount: number;
     errors?: any[];
     data: any[];
   }> {
-    const orderNumbers = await this.fetchIncompleteOrderNumbers(limit, offset);
+    const orderNumbers = forceAll
+      ? await this.fetchAllOrderNumbers(limit, offset)
+      : await this.fetchIncompleteOrderNumbers(limit, offset);
     return this.processOrderCheck(orderNumbers);
   }
 
@@ -1336,6 +1339,48 @@ export class DilovodService {
       logWithTimestamp(`Знайдено ${orders.length} замовлень з неповними даними`);
 
       // Повертаємо номери як є (вони вже у правильному форматі в БД)
+      return orders.map(o => o.orderNumber);
+    } catch (error) {
+      await prisma.$disconnect();
+      throw error;
+    }
+  }
+
+  /**
+   * ПРИВАТНИЙ: Вибірка ВСІХ активних замовлень (незалежно від повноти даних)
+   * Використовується при forceAll: true
+   */
+  private async fetchAllOrderNumbers(limit: number, offset: number = 0): Promise<string[]> {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+
+    try {
+      const orders = await prisma.order.findMany({
+        where: {
+          AND: [
+            // Тільки підтверджені та вище (виключаємо "Нові")
+            { status: { gte: '2' } },
+            // Виключаємо неактуальні статуси
+            { status: { notIn: ['1', '6', '7', '8'] } }
+          ]
+        },
+        orderBy: { orderDate: 'desc' },
+        take: limit,
+        skip: offset,
+        select: {
+          orderNumber: true,
+          status: true
+        }
+      });
+
+      await prisma.$disconnect();
+
+      if (orders.length === 0) {
+        logWithTimestamp('Немає активних замовлень для примусової перевірки');
+        return [];
+      }
+
+      logWithTimestamp(`[forceAll] Знайдено ${orders.length} активних замовлень для перевірки`);
       return orders.map(o => o.orderNumber);
     } catch (error) {
       await prisma.$disconnect();
@@ -1629,8 +1674,7 @@ export class DilovodService {
       }
 
       // Підсумовуємо результати
-      const successCount = results.filter(r => r.success).length;
-      const errorCount = results.length - successCount;
+      const errorCount = results.filter(r => !r.success).length;
       const hasError = errorCount > 0;
       
       // Підраховуємо загальну кількість оновлень (включаючи Sale і CashIn)
@@ -1640,6 +1684,14 @@ export class DilovodService {
         const cashInUpdates = r.updatedCountCashIn || 0;
         return acc + baseUpdates + saleUpdates + cashInUpdates;
       }, 0);
+
+      // Кількість замовлень, в яких реально щось змінилось (хоча б одне поле оновлено)
+      const updatedOrdersCount = results.filter(r => {
+        const baseUpdates = r.updatedCount || 0;
+        const saleUpdates = r.updatedCountSale || 0;
+        const cashInUpdates = r.updatedCountCashIn || 0;
+        return baseUpdates + saleUpdates + cashInUpdates > 0;
+      }).length;
 
       const errorDetails = hasError
         ? results.filter(r => !r.success).map(r => ({
@@ -1651,11 +1703,11 @@ export class DilovodService {
 
       let message = '';
       if (hasError) {
-        message = `Перевірка завершена з помилками (оновлено ${successCount} замовлень, ${errorCount} з помилками)`;
+        message = `Перевірка завершена з помилками (оновлено ${updatedOrdersCount} замовлень, ${errorCount} з помилками)`;
       } else if (updatedCount === 0) {
         message = 'Перевірка завершена: жодних нових даних не було оновлено.';
       } else {
-        message = `Перевірка завершена (оновлено ${successCount} ${pluralize(successCount, 'замовлення', 'замовлення', 'замовлень')}, всього ${updatedCount} ${pluralize(updatedCount, 'зміна', 'зміни', 'змін')}).`;
+        message = `Перевірка завершена (оновлено ${updatedOrdersCount} ${pluralize(updatedOrdersCount, 'замовлення', 'замовлення', 'замовлень')}, всього ${updatedCount} ${pluralize(updatedCount, 'зміна', 'зміни', 'змін')}).`;
       }
 
       return {

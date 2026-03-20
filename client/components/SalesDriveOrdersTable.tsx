@@ -22,6 +22,7 @@ import {
   DateRangePicker,
   Card,
   CardBody,
+  Switch,
 } from "@heroui/react";
 import { I18nProvider } from '@react-aria/i18n';
 import type { DateRange } from "@react-types/datepicker";
@@ -113,6 +114,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   const [autoCheckLimit, setAutoCheckLimit] = useState(100);
   const [autoCheckOffset, setAutoCheckOffset] = useState(0);
   const [isAutoChecking, setIsAutoChecking] = useState(false);
+  const [autoCheckForceAll, setAutoCheckForceAll] = useState(false);
 
   // State для пагінації
   const [page, setPage] = useState(1);
@@ -1058,7 +1060,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       setIsAutoChecking(true);
       ToastService.show({
         title: 'Запуск авто-перевірки',
-        description: `Запит на перевірку до ${autoCheckLimit} замовлень${autoCheckOffset > 0 ? `, пропускаємо перші ${autoCheckOffset}` : ''}`,
+        description: `Запит на перевірку до ${autoCheckLimit} замовлень${autoCheckOffset > 0 ? `, пропускаємо перші ${autoCheckOffset}` : ''}${autoCheckForceAll ? ' (всі, включно з повними)' : ''}`,
         color: 'secondary',
         hideIcon: false,
         icon: <DynamicIcon name="search-check" size={16} strokeWidth={1.5} className="shrink-0" />,
@@ -1069,7 +1071,8 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         body: JSON.stringify({
           auto: true,
           limit: autoCheckLimit,
-          offset: autoCheckOffset
+          offset: autoCheckOffset,
+          forceAll: autoCheckForceAll
         })
       });
       const result = await response.json();
@@ -1410,6 +1413,16 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               />
             </div>
             
+            <Switch
+              size="sm"
+              isSelected={autoCheckForceAll}
+              onValueChange={setAutoCheckForceAll}
+              classNames={{ label: `text-sm font-medium ${autoCheckForceAll ? 'text-warning-700' : 'text-neutral-500'}` }}
+              color="warning"
+            >
+              Force mode
+            </Switch>
+
             <Button
               color="secondary"
               size="sm"

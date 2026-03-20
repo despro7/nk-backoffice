@@ -690,14 +690,15 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
       });
     }
 
-    const { orderNumbers, auto, limit, offset } = req.body;
+    const { orderNumbers, auto, limit, offset, forceAll } = req.body;
     const dilovodService = new DilovodService();
 
     // AUTO MODE - автоматична перевірка замовлень з неповними даними
     if (auto === true) {
-      logWithTimestamp(`=== API [AUTO]: Перевірка замовлень без повних даних в Dilovod (limit: ${limit || 100}, offset: ${offset || 0}) ===`, undefined, true);
+      const isForceAll = forceAll === true;
+      logWithTimestamp(`=== API [AUTO${isForceAll ? '/FORCE_ALL' : ''}]: Перевірка замовлень в Dilovod (limit: ${limit || 100}, offset: ${offset || 0}) ===`, undefined, true);
       
-      const result = await dilovodService.checkOrderStatuses(limit || 100, offset || 0);
+      const result = await dilovodService.checkOrderStatuses(limit || 100, offset || 0, isForceAll);
       return res.json(result);
     }
 

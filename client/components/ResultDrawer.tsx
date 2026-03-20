@@ -333,7 +333,7 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 												<h4 className="font-semibold text-sm mb-3">Оброблені замовлення:</h4>
 												<div className="grid md:grid-cols-2 flex-wrap gap-3 max-h-[calc(100vh-500px)] overflow-y-auto">
 													{uniqueOrders.map((item: any, idx: number) => (
-														<div key={idx} className="p-3 bg-gray-50 rounded-lg border-1 border-gray-200">
+														<div key={idx} className={`p-3 rounded-lg border-1 ${(item.updatedCount > 0 || item.updatedCountSale > 0 || item.updatedCountCashIn > 0) ? 'bg-green-50 border-green-600/30' : 'bg-gray-50 border-gray-200'}`}>
 															<div className="flex items-start justify-between gap-2">
 																<div className="flex-1">
 																	<div className="font-medium text-sm">
