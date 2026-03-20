@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { useApi } from "@/hooks/useApi";
 import { formatRelativeDate } from "@/lib/formatUtils";
 import WeightStatsTable from "@/components/WeightStatsTable";
 import OrdersStatsSummary from "@/components/OrdersStatsSummary";
 import { Button } from "@heroui/button";
+import ProductsStatsSummary, { type ProductsStats } from '@/components/ProductsStatsSummary';
+import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface OrdersStats {
   total: number;
@@ -32,12 +35,15 @@ interface StatsResponse {
 export default function Dashboard() {
   const { isAdmin, isBoss, isShopManager, isAdsManager, isStorekeeper } = useRoleAccess();
   const { apiCall } = useApi();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<OrdersStats | null>(null);
+  const [productsStats, setProductsStats] = useState<ProductsStats | null>(null);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchStats();
+    fetchProductsStats();
   }, []);
 
   const fetchStats = async () => {
@@ -53,6 +59,16 @@ export default function Dashboard() {
       console.error('Error fetching stats:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchProductsStats = async () => {
+    try {
+      const response = await apiCall('/api/products/stats/summary');
+      const data: ProductsStats = await response.json();
+      setProductsStats(data);
+    } catch (error) {
+      console.error('Error fetching products stats:', error);
     }
   };
 
@@ -82,8 +98,8 @@ export default function Dashboard() {
     <div className="container">
       
       {/* Статистика по заказам - для всех пользователей */}
-      <div className="bg-white rounded-lg p-6 mb-6">
-        <div className="flex justify-between items-center mb-6">
+      <div className="mt-6 mb-12">
+        <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Статистика всіх замовлень</h2>
           <div className="flex items-center gap-3">
             {lastSynced && (
@@ -123,42 +139,53 @@ export default function Dashboard() {
 
       {/* Блок для storekeeper и выше */}
       {isStorekeeper() && (
-        <div className="mb-6">
+        <div className="mb-12">          
           <WeightStatsTable />
         </div>
       )}
 
       {/* Блок для ads-manager и выше */}
-      {isAdsManager() && (
+      {/* {isAdsManager() && (
         <div className="bg-white rounded-lg p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">Аналітика продажів</h2>
           <p>Цей блок доступний менеджерам по рекламі та вище</p>
         </div>
-      )}
+      )} */}
 
       {/* Блок для shop-manager и выше */}
       {isShopManager() && (
-        <div className="bg-white rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">Управління магазином</h2>
-          <p>Цей блок доступний менеджерам магазину та вище</p>
+        <div className="mb-16">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Статистика товарів</h2>
+            {/* TODO Додати кнопку для переходу в деталі статистики товарів /settings/product-sets */}
+            <Button
+              color="default"
+              onPress={() => navigate('/settings/product-sets')}
+              className="bg-neutral-600 text-white h-8 px-3 rounded-sm"
+              endContent={<DynamicIcon name="arrow-right" size={16} />}
+            >
+              Деталі
+            </Button>
+          </div>
+          <ProductsStatsSummary stats={productsStats} className="mb-8" />
         </div>
       )}
 
       {/* Блок для boss и выше */}
-      {isBoss() && (
+      {/* {isBoss() && (
         <div className="bg-white rounded-lg p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">Фінансова звітність</h2>
           <p>Цей блок доступний босам та вище</p>
         </div>
-      )}
+      )} */}
 
       {/* Блок только для admin */}
-      {isAdmin() && (
+      {/* {isAdmin() && (
         <div className="bg-white rounded-lg p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">Адміністративні налаштування</h2>
           <p>Цей блок доступний тільки адміністраторам</p>
         </div>
-      )}
+      )} */}
     </div>
   );
 }

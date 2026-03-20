@@ -71,7 +71,7 @@ export default function WeightStatsTable() {
 
 	if (loading) {
 		return (
-			<div className="bg-white rounded-lg p-6">
+			<>
 				{Header}
 				<div className="animate-pulse">
 					<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -83,13 +83,13 @@ export default function WeightStatsTable() {
 						))}
 					</div>
 				</div>
-			</div>
+			</>
 		);
 	}
 
 	if (error) {
 		return (
-			<div className="bg-white rounded-lg p-6">
+			<>
 				{Header}
 				<div className="text-center text-red-600">
 					<p>{error}</p>
@@ -100,30 +100,25 @@ export default function WeightStatsTable() {
 						Спробувати знову
 					</button>
 				</div>
-			</div>
+			</>
 		);
 	}
 
 	if (!stats) {
 		return (
-			<div className="bg-white rounded-lg p-6">
+			<>
 				{Header}
 				<div className="text-center text-gray-500">
 					Немає даних для відображення
 				</div>
-			</div>
+			</>
 		);
 	}
 
 	return (
-		<div className="bg-white rounded-lg p-6">
-			<div className="flex justify-between items-center mb-6">
+		<>
+			<div className="flex justify-between items-center mb-4">
 				{Header}
-
-				{/* Додаткова інформація */}
-				{/* <div className="text-sm text-gray-500 ml-auto mr-4">
-					Останнє оновлення: {new Date().toLocaleString('uk-UA')}
-				</div> */}
 
 				<Button
 					color="default"
@@ -137,7 +132,7 @@ export default function WeightStatsTable() {
 
 			<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 				{/* Підтверджені замовлення */}
-				<div className="flex flex-col justify-center p-6 bg-white rounded-md border border-neutral-200">
+				<div className="flex flex-col justify-center p-6 bg-white rounded-xl shadow-sm">
 					<div className="text-3xl font-extrabold mb-1 tracking-tight text-neutral-700">
 						{stats.confirmed.weightText}
 					</div>
@@ -150,7 +145,7 @@ export default function WeightStatsTable() {
 				</div>
 
 				{/* Готові до відправки */}
-				<div className="flex flex-col justify-center p-6 bg-white rounded-md border border-neutral-200">
+				<div className="flex flex-col justify-center p-6 bg-white rounded-xl shadow-sm">
 					<div className="text-3xl font-extrabold mb-1 tracking-tight text-neutral-700">
 						{stats.readyToShip.weightText}
 					</div>
@@ -163,7 +158,7 @@ export default function WeightStatsTable() {
 				</div>
 
 				{/* Загальна сума */}
-				<div className="flex flex-col justify-center p-6 bg-white rounded-md border border-neutral-200">
+				<div className="flex flex-col justify-center p-6 bg-white rounded-xl shadow-sm">
 					<div className="text-3xl font-extrabold mb-1 tracking-tight text-neutral-700">
 						{stats.total.weightText}
 					</div>
@@ -176,7 +171,7 @@ export default function WeightStatsTable() {
 				</div>
 
 				{/* Відправлені */}
-				{/* <div className="flex flex-col justify-center p-6 bg-white rounded-md border border-neutral-200">
+				{/* <div className="flex flex-col justify-center p-6 bg-white rounded-xl shadow-sm">
 					<div className="text-3xl font-extrabold mb-1 tracking-tight">
 						{stats.shipped.weightText}
 					</div>
@@ -189,6 +184,6 @@ export default function WeightStatsTable() {
 				</div> */}
 			</div>
 
-		</div>
+		</>
 	);
 }

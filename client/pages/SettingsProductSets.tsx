@@ -5,6 +5,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDateTime, formatPrice, formatRelativeDate } from '../lib/formatUtils';
 import { Input, addToast, Textarea, Switch, Checkbox, Tooltip } from '@heroui/react';
 import { ToastService } from '@/services/ToastService';
+import ProductsStatsSummary, { type ProductsStats } from '@/components/ProductsStatsSummary';
 
 import {
   Table,
@@ -100,15 +101,7 @@ interface ProductsResponse {
   };
 }
 
-interface StatsResponse {
-  totalProducts: number;
-  totalSets: number;
-  categoriesCount: Array<{
-    name: string;
-    count: number;
-  }>;
-  lastSync: string;
-}
+type StatsResponse = ProductsStats;
 
 const ProductSets: React.FC = () => {
   const { user } = useAuth();
@@ -1524,20 +1517,7 @@ const ProductSets: React.FC = () => {
       </div>
 
       {/* Статистика */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 font-semibold text-gray-800">
-        <div className="flex justify-between bg-white p-4 rounded-lg shadow border-l-3 border-blue-600">
-          <h3 className="text-lg">Всього товарів</h3>
-          <p className="text-2xl">{stats?.totalProducts || 0}</p>
-        </div>
-        <div className="flex justify-between bg-white p-4 rounded-lg shadow border-l-3 border-purple-600">
-          <h3 className="text-lg">Комплектів</h3>
-          <p className="text-2xl">{stats?.totalSets || 0}</p>
-        </div>
-        <div className="flex justify-between bg-white p-4 rounded-lg shadow border-l-3 border-green-600">
-          <h3 className="text-lg">Категорій</h3>
-          <p className="text-2xl">{stats?.categoriesCount?.length || 0}</p>
-        </div>
-      </div>
+      <ProductsStatsSummary stats={stats} className="mb-8" />
 
       {/* Статус синхронизации */}
       {syncStatus && (
@@ -1780,30 +1760,7 @@ const ProductSets: React.FC = () => {
               </div>
 
               {/* Пошук і фільтри */}
-              <div className="flex flex-wrap gap-4 justify-between w-full">
-                <div className="flex flex-col sm:flex-row gap-4 items-center">
-                  <Input
-                    placeholder="Пошук по назві або SKU..."
-                    value={searchTerm}
-                    isClearable
-                    onClear={() => setSearchTerm('')}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    startContent={<DynamicIcon name="search" size={16} className="" />}
-                  />
-                  
-                  <div className="flex items-center text-small text-default-400 whitespace-nowrap">
-                    {(searchTerm || selectedCategory) && (
-                      <span>Знайдено: {displayProducts.length}</span>
-                    )}
-                    {loading && (
-                      <span className="flex items-center gap-1">
-                        <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                        Пошук...
-                      </span>
-                    )}
-                  </div>
-                </div>
-
+              <div className="flex flex-wrap gap-4 w-full">
                 <div className="flex flex-wrap gap-2 items-center">
                   {/* Switch "Відображати застарілі товари" */}
                   <div className="flex items-center gap-2 mr-4">
@@ -1813,25 +1770,6 @@ const ProductSets: React.FC = () => {
                     />
                     <span className="text-sm text-gray-700 leading-4">Показати<br/>застарілі</span>
                   </div>
-                  
-                  {/* Кнопка очищення фільтрів */}
-                  {(searchTerm || selectedCategory) && (
-                    <Button
-                      variant="light"
-                      color="danger"
-                      // size="sm"
-                      onPress={() => {
-                        setSearchTerm('');
-                        setSelectedCategory('');
-                        setCurrentPage(1);
-                        fetchProducts(1, '', '');
-                      }}
-                      className="text-red-700 flex items-center"
-                    >
-                      <DynamicIcon name="x-circle" size={14} />
-                      Очистити
-                    </Button>
-                  )}
 
                   {/* Фільтр по категорії */}
                   <Dropdown>
@@ -1858,12 +1796,54 @@ const ProductSets: React.FC = () => {
                     >
                       {(item) => (
                         <DropdownItem key={item.key}>
-                          {item.label}
+                          {item.label} ({item.key === "" ? allProducts.length : allProducts.filter(p => p.categoryName === item.key).length})
                         </DropdownItem>
                       )}
                     </DropdownMenu>
                   </Dropdown>
                 </div>
+
+                <div className="flex flex-col sm:flex-row gap-4 items-center">
+                  <Input
+                    placeholder="Пошук по назві або SKU..."
+                    value={searchTerm}
+                    isClearable
+                    onClear={() => setSearchTerm('')}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    startContent={<DynamicIcon name="search" size={16} className="" />}
+                  />
+                  
+                  <div className="flex items-center text-small text-default-400 whitespace-nowrap">
+                    {(searchTerm || selectedCategory) && (
+                      <span>Знайдено: {displayProducts.length}</span>
+                    )}
+                    {loading && (
+                      <span className="flex items-center gap-1">
+                        <DynamicIcon name="loader-2" className="animate-spin" size={14} />
+                        Пошук...
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Кнопка очищення фільтрів */}
+                  {(searchTerm || selectedCategory) && (
+                    <Button
+                      variant="light"
+                      color="danger"
+                      // size="sm"
+                      onPress={() => {
+                        setSearchTerm('');
+                        setSelectedCategory('');
+                        setCurrentPage(1);
+                        fetchProducts(1, '', '');
+                      }}
+                      className="text-red-700 flex items-center ml-auto"
+                    >
+                      <DynamicIcon name="x-circle" size={14} />
+                      Очистити
+                    </Button>
+                  )}
               </div>
             </div>
           }
@@ -1881,7 +1861,14 @@ const ProductSets: React.FC = () => {
           </TableHeader>
           <TableBody
             items={displayProducts}
-            emptyContent="Товари не знайдено"
+            emptyContent={showOutdated ? "Товари не знайдено" : (
+              <div className="flex flex-col items-center gap-3 py-4">
+                <span>Товари не знайдено, спробуйте увімкнути фільтр</span>
+                <div className="flex items-center gap-2">
+                  <Switch isSelected={showOutdated} onValueChange={setShowOutdated} className="text-gray-700">Показати застарілі товари</Switch>
+                </div>
+              </div>
+            )}
             isLoading={loading}
             loadingContent={
               <div className="flex items-center justify-center p-8">

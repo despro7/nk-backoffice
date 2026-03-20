@@ -748,17 +748,38 @@ router.post('/sync-stock', authenticateToken, async (req, res) => {
 // GET /api/products/stats/summary
 router.get('/stats/summary', authenticateToken, async (req, res) => {
   try {
-    const [totalProducts, totalSets, categoriesCount, lastSync] = await Promise.all([
+    const [
+      totalProducts,
+      outdatedProducts,
+      totalSets,
+      outdatedSets,
+      totalDishes,
+      outdatedDishes,
+      categoriesCount,
+      activeCategoriesCount,
+      lastSync
+    ] = await Promise.all([
+      // Всього товарів
       prisma.product.count(),
-      prisma.product.count({
-        where: {
-          set: {
-            not: null
-          }
-        }
-      }),
+      // Застарілих товарів
+      prisma.product.count({ where: { isOutdated: true } }),
+      // Всього комплектів (set != null)
+      prisma.product.count({ where: { set: { not: null } } }),
+      // Застарілих комплектів
+      prisma.product.count({ where: { set: { not: null }, isOutdated: true } }),
+      // Всього страв (окремих, не-комплектних товарів: set == null)
+      prisma.product.count({ where: { set: null } }),
+      // Застарілих страв
+      prisma.product.count({ where: { set: null, isOutdated: true } }),
+      // Всі товари по категоріях
       prisma.product.groupBy({
         by: ['categoryName'],
+        _count: { categoryName: true }
+      }),
+      // Активні товари по категоріях
+      prisma.product.groupBy({
+        by: ['categoryName'],
+        where: { isOutdated: false },
         _count: { categoryName: true }
       }),
       prisma.product.findFirst({
@@ -767,13 +788,31 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
       })
     ]);
 
+    // Будуємо map активних товарів по категорії
+    const activeCountMap = new Map(
+      activeCategoriesCount.map(c => [c.categoryName, c._count.categoryName])
+    );
+
+    const categoriesWithActive = categoriesCount.map(c => ({
+      name: c.categoryName || 'Без категорії',
+      count: c._count.categoryName,
+      activeCount: activeCountMap.get(c.categoryName) ?? 0
+    }));
+
+    const activeCategoriesTotal = categoriesWithActive.filter(c => c.activeCount > 0).length;
+
     res.json({
       totalProducts,
+      activeProducts: totalProducts - outdatedProducts,
+      outdatedProducts,
       totalSets,
-      categoriesCount: categoriesCount.map(c => ({
-        name: c.categoryName || 'Без категории',
-        count: c._count.categoryName
-      })),
+      activeSets: totalSets - outdatedSets,
+      outdatedSets,
+      totalDishes,
+      activeDishes: totalDishes - outdatedDishes,
+      outdatedDishes,
+      categoriesCount: categoriesWithActive,
+      activeCategoriesCount: activeCategoriesTotal,
       lastSync: lastSync?.lastSyncAt
     });
   } catch (error) {
