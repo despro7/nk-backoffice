@@ -24,12 +24,18 @@ function formatResponse(mode: 'spacious' | 'economical', totalPortions: number, 
   const { box, boxCount, portionsPerBox } = solution;
   const details = [];
   const hasOverflow = portionsPerBox > box.qntTo;
+  // Розподіляємо порції цілими числами: перші коробки отримують portionsPerBox,
+  // остання — залишок (менше або рівно portionsPerBox)
+  const lastBoxPortions = totalPortions - portionsPerBox * (boxCount - 1);
   for (let i = 0; i < boxCount; i++) {
-    let detail = `Коробка ${box.marking}: ${portionsPerBox.toFixed(2)} из ${box.qntTo} порций`;
+    const portions = i < boxCount - 1 ? portionsPerBox : lastBoxPortions;
+    let detail = `Коробка ${box.marking}: ${portions} из ${box.qntTo} порций`;
     if (hasOverflow) {
-      const overflow = portionsPerBox - box.qntTo;
-      const maxAllowedOverflow = box.overflow || 1; // Используем индивидуальное значение или значение по умолчанию
-      detail += ` (превышение на ${overflow.toFixed(2)}, допустимо до ${maxAllowedOverflow})`;
+      const overflow = portions - box.qntTo;
+      if (overflow > 0) {
+        const maxAllowedOverflow = box.overflow || 1;
+        detail += ` (превышение на ${overflow}, допустимо до ${maxAllowedOverflow})`;
+      }
     }
     details.push(detail);
   }
@@ -56,7 +62,8 @@ function findEconomicalSolution(portionsCount: number, availableBoxes: Box[]) {
     // Используем индивидуальное значение overflow для каждой коробки вместо фиксированного значения [2]
     const numBoxes = Math.ceil(portionsCount / (box.qntTo + box.overflow));
     if (numBoxes <= 0) continue;
-    const portionsPerBox = portionsCount / numBoxes;
+    // Округляємо вгору: кожна коробка (крім останньої) отримує стільки порцій
+    const portionsPerBox = Math.ceil(portionsCount / numBoxes);
     const overflowPerBox = portionsPerBox - box.qntTo;
     // Проверяем, что переполнение не превышает индивидуально заданное значение
     if (overflowPerBox <= box.overflow) {
@@ -81,8 +88,14 @@ function findBestUniformSolution(portionsCount: number, availableBoxes: Box[]) {
   for (const box of availableBoxes) {
     const numBoxes = Math.ceil(portionsCount / box.qntTo);
     if (numBoxes <= 1) continue;
-    const portionsPerBox = portionsCount / numBoxes;
-    if (portionsPerBox >= box.qntFrom && portionsPerBox <= box.qntTo) {
+    // Округляємо вгору: перші (numBoxes-1) коробок отримують portionsPerBox,
+    // остання — залишок (може бути менше qntFrom, але не менше 1)
+    const portionsPerBox = Math.ceil(portionsCount / numBoxes);
+    const lastBoxPortions = portionsCount - portionsPerBox * (numBoxes - 1);
+    // Перші коробки мають бути в межах [qntFrom, qntTo].
+    // Остання може мати менше qntFrom (залишок), але не може перевищити qntTo і має бути >= 1.
+    if (portionsPerBox >= box.qntFrom && portionsPerBox <= box.qntTo &&
+        lastBoxPortions >= 1 && lastBoxPortions <= box.qntTo) {
       if (numBoxes < bestSolution.boxCount) {
         bestSolution = { box, boxCount: numBoxes, portionsPerBox };
       }

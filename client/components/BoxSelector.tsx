@@ -120,20 +120,6 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
         boxPortions += 1;
       }
       
-      // Для першої коробки віднімаємо запас (2 порції) для вагових коректувань
-      // але тільки якщо це не призведе до того, що порції не поміщаються
-      if (i === 0 && boxesList.length > 1 && boxPortions > qntFrom + 2) {
-        const potentialReduction = boxPortions - 2;
-        // Перевіряємо, чи поміститься все у решту коробок
-        const remainingPortions = portions - potentialReduction;
-        const remainingBoxes = boxesList.length - 1;
-        const maxInRemainingBoxes = remainingBoxes * effectiveMax;
-        
-        if (remainingPortions <= maxInRemainingBoxes) {
-          boxPortions -= 2;
-        }
-      }
-      
       // Обмежуємо лімітами коробки (з урахуванням ваги)
       boxPortions = Math.max(qntFrom, Math.min(boxPortions, effectiveMax));
       

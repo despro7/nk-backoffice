@@ -249,7 +249,7 @@ export default function OrderView() {
           const expanded = await expandProductSets(data.data.items, apiCall);
           setExpandedItems(expanded);
 
-          const orderIsReadyToShip = data.data.status === '3' || data.data.status === '4';
+          const orderIsReadyToShip = data.data.status >= '3';
           setIsReadyToShip(orderIsReadyToShip);
           let processedItems = expanded;
 
@@ -470,7 +470,7 @@ export default function OrderView() {
                         Не всі товари поміщаються в обрані коробки! Відсутні <strong>{unallocatedPortions} порцій</strong>.
                       </p>
                       <div className="bg-white border border-red-300 rounded p-3 mt-2">
-                        <p className="text-sm font-semibold text-red-900 mb-1">Товари, що не поміститься:</p>
+                        <p className="text-sm font-semibold text-red-900 mb-1">Товари, що не помістяться:</p>
                         <ul className="list-disc list-inside text-sm text-red-800 space-y-1">
                           {unallocatedItems.map((item, index) => (
                             <li key={index}>

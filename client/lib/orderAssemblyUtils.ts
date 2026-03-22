@@ -284,115 +284,125 @@ export const combineBoxesWithItems = (
     let totalUnallocated = 0;
     
     // Ініціалізуємо стан кожної коробки
+    // softLimit — рекомендована кількість порцій (з distributePortionsAcrossBoxes)
+    // hardLimit — фізичний максимум коробки (qntTo з БД)
+    // Спочатку алгоритм намагається не перевищувати softLimit.
+    // Якщо товар не вміщується ні в одну коробку по softLimit — дозволяємо використати hardLimit.
     const boxStates = boxes.map((box, index) => ({
       index,
       portionsCount: 0,
       currentWeight: Number(box.self_weight || box.weight || 0),
-      limit: box.portionsPerBox || 0
+      softLimit: box.portionsPerBox || 0,
+      hardLimit: box.qntTo || box.portionsPerBox || 0
     }));
     
-    // Сортуємо товари за вагою (важкі спочатку) для кращого балансування
+    // Сортуємо товари: спочатку ті, що важче розмістити (менша кількість і велика вага),
+    // потім великі групи. Це дає пріоритет "важким" позиціям при виборі коробки.
     const sortedItems = [...items].sort((a, b) => {
-      const weightA = a.expectedWeight / a.quantity;
-      const weightB = b.expectedWeight / b.quantity;
+      const weightA = a.expectedWeight; // загальна вага групи
+      const weightB = b.expectedWeight;
+      // Спочатку найважчі групи (більший загальний внесок у баланс ваги)
       return weightB - weightA;
     });
     
-    // Розподіляємо кожен товар по коробках збалансовано
+    // Розподіляємо кожен товар по коробках з двома пріоритетами:
+    // 1. Весь товар — в одну коробку (не дробити)
+    // 2. Обираємо коробку з найменшою поточною вагою (балансування по вазі)
     for (const item of sortedItems) {
       const itemWeightPerUnit = item.expectedWeight / item.quantity;
       let remaining = item.quantity;
       let partIndex = 0;
       let itemUnallocated = 0;
       
-      // Для важких товарів (>0.4 кг) намагаємось розділити по різних коробках
-      const isHeavyItem = itemWeightPerUnit > 0.4;
-      const shouldDistribute = isHeavyItem && remaining >= boxes.length && boxes.length > 1;
-      
-      if (shouldDistribute) {
-        // Розділяємо важкий товар порівну по всіх коробках
-        const portionsPerBox = Math.floor(remaining / boxes.length);
-        const remainder = remaining % boxes.length;
-        
-        for (let boxIdx = 0; boxIdx < boxes.length && remaining > 0; boxIdx++) {
-          const boxState = boxStates[boxIdx];
-          let toAddToThisBox = portionsPerBox + (boxIdx < remainder ? 1 : 0);
-          
-          // Перевіряємо ліміти коробки
-          const freeSpace = boxState.limit - boxState.portionsCount;
-          const availableWeight = MAX_BOX_WEIGHT - boxState.currentWeight;
-          const maxByWeight = Math.floor(availableWeight / itemWeightPerUnit);
-          
-          toAddToThisBox = Math.min(toAddToThisBox, freeSpace, maxByWeight);
-          
-          if (toAddToThisBox > 0) {
-            productItems.push({
-              ...item,
-              id: `product_${boxIdx}_${item.id}${partIndex > 0 ? `_part${partIndex}` : ''}`,
-              type: 'product' as const,
-              quantity: toAddToThisBox,
-              expectedWeight: itemWeightPerUnit * toAddToThisBox,
-              boxIndex: boxIdx
-            });
-            
-            boxState.portionsCount += toAddToThisBox;
-            boxState.currentWeight += itemWeightPerUnit * toAddToThisBox;
-            remaining -= toAddToThisBox;
-            partIndex++;
-          }
-        }
-        
-        // Якщо після розподілу по всіх коробках щось залишилось - продовжуємо в while
-        // Якщо все розподілено - пропускаємо while блок
-      }
-      
-      // Решту (або весь товар, якщо він легкий) розподіляємо послідовно, шукаючи найлегшу коробку
       while (remaining > 0) {
-        // Знаходимо коробку з найменшою вагою і вільним місцем
-        const availableBoxes = boxStates.filter(box => 
-          box.portionsCount < box.limit && 
-          (MAX_BOX_WEIGHT - box.currentWeight) >= itemWeightPerUnit
+        // Шукаємо коробку, куди поміститься весь залишок товару цілком
+        // Спочатку намагаємось в межах softLimit (рекомендований розподіл)
+        const boxesWithEnoughRoom = boxStates.filter(box =>
+          (box.softLimit - box.portionsCount) >= remaining &&
+          (MAX_BOX_WEIGHT - box.currentWeight) >= itemWeightPerUnit * remaining
         );
         
-        if (availableBoxes.length === 0) {
-          // Немає доступних коробок - фіксуємо нерозподілені порції
-          console.warn(`⚠️ Не вдалося розподілити ${remaining} порцій товару "${item.name}"`);
-          itemUnallocated = remaining;
-          totalUnallocated += remaining;
-          break;
+        // Якщо по softLimit не знайшли — пробуємо hardLimit (фізичний максимум qntTo)
+        const boxesWithEnoughRoomHard = boxesWithEnoughRoom.length === 0
+          ? boxStates.filter(box =>
+              (box.hardLimit - box.portionsCount) >= remaining &&
+              (MAX_BOX_WEIGHT - box.currentWeight) >= itemWeightPerUnit * remaining
+            )
+          : [];
+        
+        const candidatesForWhole = boxesWithEnoughRoom.length > 0 ? boxesWithEnoughRoom : boxesWithEnoughRoomHard;
+        
+        if (candidatesForWhole.length > 0) {
+          // Є коробка де весь залишок поміщається — обираємо найлегшу (балансування по вазі)
+          candidatesForWhole.sort((a, b) => a.currentWeight - b.currentWeight);
+          const targetBox = candidatesForWhole[0];
+          
+          productItems.push({
+            ...item,
+            id: `product_${targetBox.index}_${item.id}${partIndex > 0 ? `_part${partIndex}` : ''}`,
+            type: 'product' as const,
+            quantity: remaining,
+            expectedWeight: itemWeightPerUnit * remaining,
+            boxIndex: targetBox.index
+          });
+          
+          targetBox.portionsCount += remaining;
+          targetBox.currentWeight += itemWeightPerUnit * remaining;
+          remaining = 0;
+        } else {
+          // Весь залишок не вміщується цілком — кладемо максимум у найлегшу коробку.
+          // Спочатку пробуємо в межах softLimit, потім — hardLimit.
+          let availableBoxes = boxStates.filter(box =>
+            box.portionsCount < box.softLimit &&
+            (MAX_BOX_WEIGHT - box.currentWeight) >= itemWeightPerUnit
+          );
+          
+          // Fallback до hardLimit якщо по softLimit нема місця
+          if (availableBoxes.length === 0) {
+            availableBoxes = boxStates.filter(box =>
+              box.portionsCount < box.hardLimit &&
+              (MAX_BOX_WEIGHT - box.currentWeight) >= itemWeightPerUnit
+            );
+          }
+          
+          if (availableBoxes.length === 0) {
+            console.warn(`⚠️ Не вдалося розподілити ${remaining} порцій товару "${item.name}"`);
+            itemUnallocated = remaining;
+            totalUnallocated += remaining;
+            break;
+          }
+          
+          // Обираємо найлегшу коробку (балансування по вазі)
+          availableBoxes.sort((a, b) => a.currentWeight - b.currentWeight);
+          const targetBox = availableBoxes[0];
+          
+          // Вільне місце по активному ліміту (hard, бо softLimit міг бути вичерпаний)
+          const freeSpace = targetBox.hardLimit - targetBox.portionsCount;
+          const availableWeight = MAX_BOX_WEIGHT - targetBox.currentWeight;
+          const maxByWeight = Math.floor(availableWeight / itemWeightPerUnit);
+          const toAdd = Math.min(remaining, freeSpace, maxByWeight);
+          
+          if (toAdd <= 0) {
+            console.warn(`⚠️ Не вдалося розподілити ${remaining} порцій товару "${item.name}" - ліміти вичерпані`);
+            itemUnallocated = remaining;
+            totalUnallocated += remaining;
+            break;
+          }
+          
+          productItems.push({
+            ...item,
+            id: `product_${targetBox.index}_${item.id}${partIndex > 0 ? `_part${partIndex}` : ''}`,
+            type: 'product' as const,
+            quantity: toAdd,
+            expectedWeight: itemWeightPerUnit * toAdd,
+            boxIndex: targetBox.index
+          });
+          
+          targetBox.portionsCount += toAdd;
+          targetBox.currentWeight += itemWeightPerUnit * toAdd;
+          remaining -= toAdd;
+          partIndex++;
         }
-        
-        // Сортуємо за вагою (найлегша спочатку)
-        availableBoxes.sort((a, b) => a.currentWeight - b.currentWeight);
-        const targetBox = availableBoxes[0];
-        
-        // Розраховуємо скільки можна додати
-        const freeSpace = targetBox.limit - targetBox.portionsCount;
-        const availableWeight = MAX_BOX_WEIGHT - targetBox.currentWeight;
-        const maxByWeight = Math.floor(availableWeight / itemWeightPerUnit);
-        const toAdd = Math.min(remaining, freeSpace, maxByWeight);
-        
-        if (toAdd <= 0) {
-          // Не можемо додати - фіксуємо нерозподілені порції
-          console.warn(`⚠️ Не вдалося розподілити ${remaining} порцій товару "${item.name}" - ліміти вичерпані`);
-          itemUnallocated = remaining;
-          totalUnallocated += remaining;
-          break;
-        }
-        
-        productItems.push({
-          ...item,
-          id: `product_${targetBox.index}_${item.id}${partIndex > 0 ? `_part${partIndex}` : ''}`,
-          type: 'product' as const,
-          quantity: toAdd,
-          expectedWeight: itemWeightPerUnit * toAdd,
-          boxIndex: targetBox.index
-        });
-        
-        targetBox.portionsCount += toAdd;
-        targetBox.currentWeight += itemWeightPerUnit * toAdd;
-        remaining -= toAdd;
-        partIndex++;
       }
       
       // Зберігаємо інформацію про нерозподілені порції
