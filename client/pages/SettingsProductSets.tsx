@@ -190,7 +190,8 @@ const ProductSets: React.FC = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportPayload, setExportPayload] = useState<any[]>([]);
   const [exporting, setExporting] = useState(false);
-  const [expandSets, setExpandSets] = useState(false); // Новий стан для вибору режиму
+  const [expandSets, setExpandSets] = useState(false);
+  const [expandSetsSaving, setExpandSetsSaving] = useState(false);
 
   // Стан для модалки управління ID груп комплектів (Set Parent IDs)
   const [isSetParentIdsModalOpen, setIsSetParentIdsModalOpen] = useState(false);
@@ -274,7 +275,77 @@ const ProductSets: React.FC = () => {
   // Стан для вибору товарів у таблиці
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set([]));
 
-  // Индекс для быстрого и стабильного поиска товаров по SKU
+  // Стан для статистики порцій (тільки для адміна) — кількість в активних замовленнях
+  const [portionsBySku, setPortionsBySku] = useState<Map<string, { newQty: number; confirmedQty: number }>>(new Map());
+  const [portionsLoading, setPortionsLoading] = useState(false);
+
+  const fetchPortions = async () => {
+    if (!isAdmin()) return;
+    setPortionsLoading(true);
+    try {
+      const [resNew, resConf] = await Promise.all([
+        fetch('/api/orders/products/stats?status=1', { credentials: 'include' }),
+        fetch('/api/orders/products/stats?status=2', { credentials: 'include' }),
+      ]);
+      const [datNew, datConf] = await Promise.all([resNew.json(), resConf.json()]);
+
+      const map = new Map<string, { newQty: number; confirmedQty: number }>();
+      if (datNew.success && Array.isArray(datNew.data)) {
+        for (const item of datNew.data) {
+          if (item.sku && item.orderedQuantity > 0) {
+            const existing = map.get(item.sku) ?? { newQty: 0, confirmedQty: 0 };
+            map.set(item.sku, { ...existing, newQty: item.orderedQuantity });
+          }
+        }
+      }
+      if (datConf.success && Array.isArray(datConf.data)) {
+        for (const item of datConf.data) {
+          if (item.sku && item.orderedQuantity > 0) {
+            const existing = map.get(item.sku) ?? { newQty: 0, confirmedQty: 0 };
+            map.set(item.sku, { ...existing, confirmedQty: item.orderedQuantity });
+          }
+        }
+      }
+      setPortionsBySku(map);
+    } catch (err) {
+      console.error('Помилка завантаження статистики порцій:', err);
+    } finally {
+      setPortionsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPortions();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Завантажуємо збережене налаштування "Розгорнути комплекти" з сервера
+  useEffect(() => {
+    fetch('/api/settings/salesdrive-export', { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => { if (data.success) setExpandSets(data.expandSets); })
+      .catch(() => {/* використовуємо default false */});
+  }, []);
+
+  // Зберігаємо зміну "Розгорнути комплекти" на сервері
+  const handleExpandSetsChange = async (value: boolean) => {
+    setExpandSets(value);
+    setExpandSetsSaving(true);
+    try {
+      await fetch('/api/settings/salesdrive-export', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ expandSets: value }),
+      });
+    } catch {
+      // тихо — якщо не вдалося зберегти, UI показує актуальне значення
+    } finally {
+      setExpandSetsSaving(false);
+    }
+  };
+
+  // Індекс для быстрого и стабильного поиска товаров по SKU
   const productsBySku = useMemo(() => {
     const map = new Map<string, Product>();
     for (const product of allProducts) {
@@ -285,7 +356,7 @@ const ProductSets: React.FC = () => {
   }, [allProducts]);
 
   // Определяем колонки таблицы
-  const columns = [
+  const allColumns = [
     {
       key: 'manualOrder',
       label: '№',
@@ -322,6 +393,11 @@ const ProductSets: React.FC = () => {
       allowsSorting: true,
     },
     {
+      key: 'portions',
+      label: 'В замовленнях',
+      allowsSorting: true,
+    },
+    {
       key: 'set',
       label: 'Комплект',
       allowsSorting: false,
@@ -332,6 +408,13 @@ const ProductSets: React.FC = () => {
       allowsSorting: true,
     },
   ];
+
+  // Фільтруємо колонки: portions — тільки для адміна
+  const columns = useMemo(
+    () => isAdmin() ? allColumns : allColumns.filter(c => c.key !== 'portions'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user]
+  );
 
   // Фільтруємо та сортуємо дані для відображення
   const displayProducts = useMemo(() => {
@@ -386,6 +469,11 @@ const ProductSets: React.FC = () => {
         } else if (sortDescriptor.column === 'barcode') {
           first = a.barcode || '';
           second = b.barcode || '';
+        } else if (sortDescriptor.column === 'portions') {
+          const pA = portionsBySku.get(a.sku);
+          const pB = portionsBySku.get(b.sku);
+          first = (pA?.newQty ?? 0) + (pA?.confirmedQty ?? 0);
+          second = (pB?.newQty ?? 0) + (pB?.confirmedQty ?? 0);
         }
 
         if (first === null || first === undefined) first = '';
@@ -400,7 +488,7 @@ const ProductSets: React.FC = () => {
     }
 
     return filtered;
-  }, [products, searchTerm, selectedCategory, sortDescriptor, showOutdated]);
+  }, [products, searchTerm, selectedCategory, sortDescriptor, showOutdated, portionsBySku]);
 
   // Функція для рендеринга комірок таблиці
   const renderCell = (product: Product, columnKey: React.Key) => {
@@ -745,14 +833,62 @@ const ProductSets: React.FC = () => {
           </div>
         );
 
-      case 'stock1':
+      case 'stock1': {
         const stock1Data = parseStockBalance(product.stockBalanceByStock);
         const stock1Value = stock1Data["1"] || 0;
+
+        if (isAdmin()) {
+          const p = portionsBySku.get(product.sku);
+          const inOrders = (p?.newQty ?? 0) + (p?.confirmedQty ?? 0);
+          const available = stock1Value - inOrders;
+          return (
+            <div className="flex flex-col gap-0.5 leading-tight">
+              <span className={`text-sm font-medium ${available > 0 ? 'text-gray-900' : available === 0 ? 'text-gray-400' : 'text-red-600 font-bold'}`}>
+                {available}
+              </span>
+              {inOrders > 0 && (
+                <span className="text-[11px] text-gray-400">
+                  з {stock1Value}
+                </span>
+              )}
+            </div>
+          );
+        }
+
         return (
           <span className={`text-sm ${stock1Value > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
             {stock1Value}
           </span>
         );
+      }
+
+      case 'portions': {
+        if (!isAdmin()) return null;
+        if (portionsLoading) return <span className="text-gray-300 text-xs">…</span>;
+        const p = portionsBySku.get(product.sku);
+        const qNew = p?.newQty ?? 0;
+        const qConf = p?.confirmedQty ?? 0;
+        const total = qNew + qConf;
+        if (total === 0) return <span className="text-gray-300 text-sm">—</span>;
+        return (
+          <div className="flex gap-1 text-sm leading-tight">
+            <span className="font-bold text-neutral-800">{total}</span>
+            <div className="flex gap-0.5">
+              ({qNew > 0 && (
+                <span className="text-yellow-700 font-medium" title="Нові">
+                  {qNew}
+                </span>
+              )}
+              /
+              {qConf > 0 && (
+                <span className="text-green-700 font-medium" title="Підтверджені">
+                  {qConf}
+                </span>
+              )})
+            </div>
+          </div>
+        );
+      }
 
       // case 'stock2':
       //   const stock2Data = parseStockBalance(product.stockBalanceByStock);
@@ -1310,6 +1446,7 @@ const ProductSets: React.FC = () => {
 
       if (response.ok) {
         const result = await response.json();
+
         setExportPayload(result.payload);
         setIsExportModalOpen(true);
         
@@ -1317,9 +1454,12 @@ const ProductSets: React.FC = () => {
         const modeMsg = result.expandedSets 
           ? 'Комплекти розгорнуто на кінцеві товари' 
           : 'Комплекти експортуються "як є"';
+        const adjustMsg = result.adjustedStock && result.adjustedCount > 0
+          ? `. Залишки скориговано для ${result.adjustedCount} SKU`
+          : '';
         addToast({ 
           title: 'Payload готовий', 
-          description: `${result.count} товарів. ${modeMsg}`, 
+          description: `${result.count} товарів. ${modeMsg}${adjustMsg}`, 
           color: 'success' 
         });
       } else {
@@ -1724,7 +1864,7 @@ const ProductSets: React.FC = () => {
 
                 {/* Перемикач режиму експорту */}
                 <div className="flex items-center gap-2">
-                  <Switch isSelected={expandSets} onValueChange={setExpandSets}></Switch>
+                  <Switch isSelected={expandSets} onValueChange={handleExpandSetsChange} isDisabled={expandSetsSaving}></Switch>
                   <span className="text-sm text-gray-700 leading-4">Розгорнути <br/>комплекти</span>
                   <Tooltip color="primary" content="Якщо увімкнено, товари, які є комплектами, будуть розгорнуті на свої складові при експорті в SalesDrive">
                     <DynamicIcon 

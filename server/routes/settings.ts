@@ -1,6 +1,8 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import EquipmentSettingsService from '../services/settingsService.js';
+import { prisma } from '../lib/utils.js';
+
 const router = express.Router();
 const equipmentSettingsService = EquipmentSettingsService.getInstance();
 
@@ -521,6 +523,51 @@ router.put('/weight-tolerance/values', authenticateToken, async (req, res) => {
       success: false,
       error: 'Failed to update weight tolerance settings'
     });
+  }
+});
+
+// ─── Налаштування автоматичного експорту товарів у SalesDrive ────────────────
+const SD_EXPORT_KEY = 'salesdrive_export_expand_sets';
+const SD_EXPORT_CATEGORY = 'salesdrive_export';
+
+// GET /api/settings/salesdrive-export
+router.get('/salesdrive-export', authenticateToken, async (req, res) => {
+  try {
+    const record = await prisma.settingsBase.findUnique({ where: { key: SD_EXPORT_KEY } });
+    res.json({
+      success: true,
+      expandSets: record ? record.value === 'true' : false,
+    });
+  } catch (error) {
+    console.error('Error getting salesdrive-export settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to get salesdrive-export settings' });
+  }
+});
+
+// PUT /api/settings/salesdrive-export
+router.put('/salesdrive-export', authenticateToken, async (req, res) => {
+  try {
+    const { expandSets } = req.body;
+    if (typeof expandSets !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'expandSets must be a boolean' });
+    }
+
+    await prisma.settingsBase.upsert({
+      where: { key: SD_EXPORT_KEY },
+      update: { value: String(expandSets) },
+      create: {
+        key: SD_EXPORT_KEY,
+        value: String(expandSets),
+        description: 'Розгортати комплекти при автоматичному експорті товарів у SalesDrive',
+        category: SD_EXPORT_CATEGORY,
+        isActive: true,
+      },
+    });
+
+    res.json({ success: true, expandSets });
+  } catch (error) {
+    console.error('Error updating salesdrive-export settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to update salesdrive-export settings' });
   }
 });
 

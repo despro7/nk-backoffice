@@ -65,7 +65,7 @@ router.get('/count', async (req, res) => {
     const { orderNumber } = req.query;
     if (!orderNumber) return res.status(400).json({ success: false, error: 'orderNumber is required' });
 
-    // @ts-ignore - `orderNumber` field will exist after running `npx prisma generate`
+    // @ts-ignore
     const count = await prisma.meta_logs.count({ where: { orderNumber: String(orderNumber) as any } });
     res.json({ count });
   } catch (err) {
@@ -73,6 +73,35 @@ router.get('/count', async (req, res) => {
   }
 });
 
+// GET /api/meta-logs/:id - fetch single log by id (with resolved initiatedBy)
+router.get('/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ success: false, error: 'Invalid id' });
+
+    const log = await prisma.meta_logs.findUnique({ where: { id } });
+    if (!log) return res.status(404).json({ success: false, error: 'Not found' });
+
+    // Resolve initiatedBy user name
+    const raw: string | null = (log as any).initiatedBy ?? null;
+    const isUserId = raw && /^\d+$/.test(raw);
+    let userRecord: { name: string | null; email: string } | undefined;
+    if (isUserId) {
+      const u = await prisma.user.findUnique({
+        where: { id: parseInt(raw!, 10) },
+        select: { name: true, email: true }
+      });
+      if (u) userRecord = u;
+    }
+
+    res.json({
+      ...(log as any),
+      initiatedBy: { raw, name: userRecord?.name ?? null, email: userRecord?.email ?? null }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
 
 // Універсальний лог-ендпоінт
 router.post('/', async (req, res) => {

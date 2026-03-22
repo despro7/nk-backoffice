@@ -282,6 +282,19 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             if (updateData.status) {
               console.log(`   Status changed: ${existingOrder.status} -> ${updateData.status}`);
               console.log(`🎉 Status successfully updated to: ${updateData.status}`);
+
+              // Тригер автоматичного export/відвантаження в Dilovod (фонова операція — не блокує відповідь)
+              import('../services/dilovod/DilovodAutoExportService.js')
+                .then(({ dilovodAutoExportService }) =>
+                  dilovodAutoExportService.processOrderStatusChange(
+                    existingOrder.id,
+                    updateData.status,
+                    'webhook:status_change'
+                  )
+                )
+                .catch(err =>
+                  console.warn('⚠️ [AutoExport] Webhook trigger failed:', err instanceof Error ? err.message : err)
+                );
             }
 
             // Оновлюємо кеш тільки якщо в webhook прийшли нові товари
@@ -387,6 +400,19 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             try {
               const createdOrder = await orderDatabaseService.createOrder(createData);
               console.log(`✅ Order ${createData.externalId} created via webhook`);
+
+              // Тригер автоматичного export/відвантаження для нового замовлення (фонова операція)
+              import('../services/dilovod/DilovodAutoExportService.js')
+                .then(({ dilovodAutoExportService }) =>
+                  dilovodAutoExportService.processOrderStatusChange(
+                    createdOrder.id,
+                    createData.status,
+                    'webhook:new_order'
+                  )
+                )
+                .catch(err =>
+                  console.warn('⚠️ [AutoExport] New order webhook trigger failed:', err instanceof Error ? err.message : err)
+                );
 
               // Перевіряємо, що кеш був створений автоматично
               try {

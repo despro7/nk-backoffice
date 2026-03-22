@@ -16,14 +16,15 @@ export interface DilovodSettings {
   synchronizationSalePrice: boolean;
   synchronizationStockQuantity: boolean;
   
-  // Автоматичний експорт замовлень
+  // Автоматичний експорт замовлень (documents.saleOrder)
   autoSendOrder: boolean;
-  cronSendOrder: boolean;
-  autoSendListSettings?: string[]; // Масив статусів для автовідправки
-  
-  // Налаштування експорту
-  unloadOrderNumberAs: 'dilovod' | 'web';
-  unloadOrderAs: 'sale' | 'saleOrder';
+  autoSendListSettings?: string[]; // Масив статусів для автовідправки saleOrder
+  autoSendChannelSettings?: string[]; // Масив ID каналів (sajt) для автовідправки saleOrder
+
+  // Автоматичне відвантаження (documents.sale)
+  autoSendSale: boolean;
+  autoSendSaleListSettings?: string[]; // Масив статусів для автовідправки sale
+  autoSendSaleChannelSettings?: string[]; // Масив ID каналів (sajt) для автовідправки sale
   
   // Пошук контрагентів
   getPersonBy: DilovodPersonSearchType;
@@ -58,10 +59,11 @@ export const DILOVOD_SETTINGS_KEYS = {
   SYNCHRONIZATION_SALE_PRICE: 'dilovod_synchronization_sale_price',
   SYNCHRONIZATION_STOCK_QUANTITY: 'dilovod_synchronization_stock_quantity',
   AUTO_SEND_ORDER: 'dilovod_auto_send_order',
-  CRON_SEND_ORDER: 'dilovod_cron_send_order',
   AUTO_SEND_LIST_SETTINGS: 'dilovod_auto_send_list_settings',
-  UNLOAD_ORDER_NUMBER_AS: 'dilovod_unload_order_number_as',
-  UNLOAD_ORDER_AS: 'dilovod_unload_order_as',
+  AUTO_SEND_CHANNEL_SETTINGS: 'dilovod_auto_send_channel_settings',
+  AUTO_SEND_SALE: 'dilovod_auto_send_sale',
+  AUTO_SEND_SALE_LIST_SETTINGS: 'dilovod_auto_send_sale_list_settings',
+  AUTO_SEND_SALE_CHANNEL_SETTINGS: 'dilovod_auto_send_sale_channel_settings',
   GET_PERSON_BY: 'dilovod_get_person_by',
   DEFAULT_FIRM_ID: 'dilovod_default_firm_id',
   PAYMENT_GATEWAY_MAPPING: 'dilovod_payment_gateway_mapping',

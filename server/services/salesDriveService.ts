@@ -2,6 +2,8 @@ import { orderDatabaseService } from './orderDatabaseService.js';
 import { syncSettingsService } from './syncSettingsService.js';
 import { syncHistoryService, CreateSyncHistoryData } from './syncHistoryService.js';
 import type { SyncSettings } from './syncSettingsService.js';
+import { buildExportPayload } from './productExportHelper.js';
+import { prisma } from '../lib/utils.js';
 import type {
   SalesDriveChannel,
   SalesDrivePaymentMethod,
@@ -1961,6 +1963,20 @@ export class SalesDriveService {
           })));
 
           console.log(`✅ Successfully processed ${updateResult.totalUpdated + updateResult.totalSkipped} orders`);
+
+          // Тригер автоматичного export/відвантаження для замовлень зі зміненим статусом
+          const statusChangedOrders = updateResult.results.filter(
+            (r: any) => r && r.action === 'updated' && r.changedFields?.includes('status')
+          );
+          if (statusChangedOrders.length > 0) {
+            import('./dilovod/DilovodAutoExportService.js')
+              .then(({ dilovodAutoExportService }) =>
+                dilovodAutoExportService.processStatusChangedOrders(statusChangedOrders, 'cron:order_sync')
+              )
+              .catch((err: Error) =>
+                console.warn('⚠️ [AutoExport] Cron batch trigger failed:', err instanceof Error ? err.message : err)
+              );
+          }
         } catch (error) {
           console.error('❌ Error updating orders batch:', error);
           errors += updateOrders.filter(o => o && o.orderNumber).length;
@@ -2631,6 +2647,51 @@ export class SalesDriveService {
       return {
         success: false,
         errors: [error instanceof Error ? error.message : 'Unknown error']
+      };
+    }
+  }
+
+  /**
+   * Збирає payload (з коригуванням залишків на зарезервовані замовленнями порції)
+   * та відправляє товари до SalesDrive.
+   * Призначений для автоматичного виклику по крону.
+   * Значення expandSets читається з БД (SettingsBase key='salesdrive_export_expand_sets'),
+   * тому крон завжди використовує актуальне налаштування, встановлене через UI.
+   */
+  async buildAndExportProducts(): Promise<{
+    success: boolean;
+    exported?: number;
+    adjustedCount?: number;
+    errors?: string[];
+  }> {
+    try {
+      // Читаємо налаштування expandSets з БД
+      const record = await prisma.settingsBase.findUnique({
+        where: { key: 'salesdrive_export_expand_sets' },
+      });
+      const expandSets = record ? record.value === 'true' : false;
+
+      const { payload, adjustedCount } = await buildExportPayload({
+        expandSets,
+        adjustStock: true,
+      });
+
+      console.log(
+        `📦 [buildAndExportProducts] Payload: ${payload.length} товарів, expandSets=${expandSets}, скориговано залишки для ${adjustedCount} SKU`
+      );
+
+      const result = await this.exportProductsToSalesDrive(payload);
+
+      return {
+        ...result,
+        exported: payload.length,
+        adjustedCount,
+      };
+    } catch (error) {
+      console.error('❌ [buildAndExportProducts] Failed:', error);
+      return {
+        success: false,
+        errors: [error instanceof Error ? error.message : 'Unknown error'],
       };
     }
   }

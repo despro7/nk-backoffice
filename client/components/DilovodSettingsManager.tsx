@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardBody, CardHeader, Input, Button, Select, SelectItem, Checkbox, Textarea } from '@heroui/react';
+import { Card, CardBody, CardHeader, Input, Button, Select, SelectItem, Checkbox, Switch, Textarea } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useDilovodSettings } from '../hooks/useDilovodSettings';
 import { getBankIcon, getPaymentIcon } from '../lib/bankIcons';
@@ -20,6 +20,7 @@ const DilovodSettingsManager: React.FC = () => {
 
 	const [formData, setFormData] = useState<Partial<DilovodSettings>>({});
 	const [hasChanges, setHasChanges] = useState(false);
+	const [justSaved, setJustSaved] = useState(false);
 	const [testingConnection, setTestingConnection] = useState(false);
 	const [testResult, setTestResult] = useState<{ type: 'success' | 'error', message: string, details?: any } | null>(null);
 	const [paymentMethods, setPaymentMethods] = useState<Array<{ id: number; name: string }>>([]);
@@ -170,6 +171,8 @@ const DilovodSettingsManager: React.FC = () => {
 		const success = await saveSettings(formData);
 		if (success) {
 			setHasChanges(false);
+			setJustSaved(true);
+			setTimeout(() => setJustSaved(false), 3000);
 			// Оновлюємо довідники якщо змінився API ключ
 			if (formData.apiKey !== settings?.apiKey) {
 				refreshDirectories();
@@ -494,38 +497,10 @@ const DilovodSettingsManager: React.FC = () => {
 				<Card key="export-settings">
 					<CardHeader className="border-b border-gray-200">
 						<DynamicIcon name="upload" size={20} className="text-gray-600 mr-2" />
-						<h2 className="text-lg font-semibold text-gray-900">Налаштування експорту замовлень</h2>
+						<h2 className="text-lg font-semibold text-gray-900">Експорт/відвантаження замовлень в Dilovod</h2>
 					</CardHeader>
 					<CardBody className="p-6">
-						<div className="space-y-4">
-							<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-								<Select
-									label="Формування номера"
-									placeholder="Оберіть спосіб"
-									selectedKeys={formData.unloadOrderNumberAs ? [formData.unloadOrderNumberAs] : []}
-									onSelectionChange={(keys) => {
-										const value = Array.from(keys)[0] as string;
-										handleFieldChange('unloadOrderNumberAs', value as any);
-									}}
-								>
-									<SelectItem key="dilovod">В Діловоді</SelectItem>
-									<SelectItem key="web">З SalesDrive</SelectItem>
-								</Select>
-
-								<Select
-									label="Експортувати як"
-									placeholder="Оберіть тип документа"
-									selectedKeys={formData.unloadOrderAs ? [formData.unloadOrderAs] : []}
-									onSelectionChange={(keys) => {
-										const value = Array.from(keys)[0] as string;
-										handleFieldChange('unloadOrderAs', value as any);
-									}}
-								>
-									<SelectItem key="sale">Відвантаження</SelectItem>
-									<SelectItem key="saleOrder">Замовлення</SelectItem>
-								</Select>
-							</div>
-
+						<div className="space-y-8">
 							{/* Фірма за замовчуванням */}
 							{directories?.firms && (
 								<Select
@@ -554,47 +529,214 @@ const DilovodSettingsManager: React.FC = () => {
 								</Select>
 							)}
 
-							<div className="grid grid-cols-1 gap-4 pl-2">
-								<Checkbox
-									isSelected={formData.autoSendOrder || false}
-									onValueChange={(checked) => handleFieldChange('autoSendOrder', checked)}
-									classNames={{ label: 'text-sm leading-tight' }}
-								>
-									Автоматичний експорт замовлення
-								</Checkbox>
+							<div className="rounded-lg p-4 border border-gray-200 shadow-md shadow-gray-100">
+								<div className="grid grid-cols-1 gap-4 pl-1">
+									<Switch
+										isSelected={formData.autoSendOrder || false}
+										onValueChange={(checked) => handleFieldChange('autoSendOrder', checked)}
+										classNames={{ label: 'text-sm leading-tight' }}
+									>
+										Автоматичний експорт (saleOrder)
+									</Switch>
+								</div>
+
+								{formData.autoSendOrder && (
+								<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+									{/* Статуси замовлення для автоматичного експорту saleOrder */}
+									<div className="flex flex-col gap-1">
+										<label className="text-sm font-medium text-gray-600 mb-1 block">
+											Статуси замовлень
+										</label>
+										<Select
+											aria-label="Статуси замовлень для saleOrder"
+											placeholder="Оберіть статуси"
+											selectionMode="multiple"
+											selectedKeys={new Set(formData.autoSendListSettings || [])}
+											onSelectionChange={(keys) => {
+												const values = Array.from(keys).map((k) => String(k));
+												handleFieldChange('autoSendListSettings', values);
+											}}
+											classNames={{ trigger: 'min-h-[48px]' }}
+											renderValue={(items) => {
+												if (items.length === 0) return "Оберіть статуси";
+												return (
+													<div className="flex gap-1 max-h-10 overflow-y-auto scrollbar-hide [mask-image:linear-gradient(to_right,black_0,black_90%,transparent_100%)]">
+														{Array.from(items).map((item) => (
+															<span key={item.key} className="bg-grey-500/15 text-primary px-2 py-1 rounded text-xs">
+																{item.textValue}
+															</span>
+														))}
+													</div>
+												);
+											}}
+										>
+											{orderStatuses.map((status) => (
+												<SelectItem key={status.id} textValue={status.name}>
+													{status.name}
+												</SelectItem>
+											))}
+										</Select>
+									</div>
+
+									{/* Канали продажів для автоматичного експорту saleOrder */}
+									<div className="flex flex-col gap-1">
+										<label className="text-sm font-medium text-gray-600 mb-1 block">
+											Канали продажів
+										</label>
+										<Select
+											aria-label="Канали продажів для saleOrder"
+											placeholder="Всі канали"
+											selectionMode="multiple"
+											selectedKeys={new Set(formData.autoSendChannelSettings || [])}
+											onSelectionChange={(keys) => {
+												const values = Array.from(keys).map((k) => String(k));
+												handleFieldChange('autoSendChannelSettings', values);
+											}}
+											isDisabled={loadingSalesDriveData || salesChannels.length === 0}
+											classNames={{ trigger: 'min-h-[48px]' }}
+											renderValue={(items) => {
+												if (items.length === 0) return "Всі канали";
+												return (
+													<div className="flex gap-1 max-h-10 overflow-y-auto scrollbar-hide [mask-image:linear-gradient(to_right,black_0,black_90%,transparent_100%)]">
+														{Array.from(items).map((item) => (
+															<span key={item.key} className="bg-grey-500/15 text-primary px-2 py-1 rounded text-xs">
+																{item.textValue}
+															</span>
+														))}
+													</div>
+												);
+											}}
+										>
+											{salesChannels.map((channel) => (
+												<SelectItem key={channel.id} textValue={channel.name}>
+													<div className="flex justify-between items-center">
+														<span>{channel.name}</span>
+														<span className="text-tiny text-default-400">ID: {channel.id}</span>
+													</div>
+												</SelectItem>
+											))}
+										</Select>
+									</div>
+								</div>
+								)}
 							</div>
 
-							{/* Статуси замовлення для автоматичної вигрузки */}
-							{formData.autoSendOrder && (
-								<Select
-									aria-label="Статуси замовлень"
-									placeholder="Оберіть статуси"
-									selectionMode="multiple"
-									selectedKeys={new Set(formData.autoSendListSettings || [])}
-									onSelectionChange={(keys) => {
-										const values = Array.from(keys).map((k) => String(k));
-										handleFieldChange('autoSendListSettings', values);
-									}}
-									classNames={{ trigger: 'min-h-[48px]' }}
-									renderValue={(items) => {
-										if (items.length === 0) return "Оберіть статуси";
-										return (
-											<div className="flex gap-1 max-h-10 overflow-y-auto scrollbar-hide [mask-image:linear-gradient(to_right,black_0,black_90%,transparent_100%)]">
-												{Array.from(items).map((item) => (
-													<span key={item.key} className="bg-grey-500/15 text-primary px-2 py-1 rounded text-xs">
-														{item.textValue}
-													</span>
-												))}
-											</div>
-										);
-									}}
-								>
-									{orderStatuses.map((status) => (
-										<SelectItem key={status.id} textValue={status.name}>
-											{status.name}
-										</SelectItem>
-									))}
-								</Select>
+							<div className="rounded-lg p-4 border border-gray-200 shadow-md shadow-gray-100">
+								<div className="grid grid-cols-1 gap-4 pl-1">
+									<Switch
+										isSelected={formData.autoSendSale || false}
+										onValueChange={(checked) => handleFieldChange('autoSendSale', checked)}
+										classNames={{ label: 'text-sm leading-tight' }}
+									>
+										Автоматичне відвантаження (sale)
+									</Switch>
+								</div>
+
+								{formData.autoSendSale && (
+								<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+									{/* Статуси замовлення для автоматичного відвантаження sale */}
+									<div className="flex flex-col gap-1">
+										<label className="text-sm font-medium text-gray-600 mb-1 block">
+											Статуси замовлень для відвантаження
+										</label>
+										<Select
+											aria-label="Статуси замовлень для sale"
+											placeholder="Оберіть статуси"
+											selectionMode="multiple"
+											selectedKeys={new Set(formData.autoSendSaleListSettings || [])}
+											onSelectionChange={(keys) => {
+												const values = Array.from(keys).map((k) => String(k));
+												handleFieldChange('autoSendSaleListSettings', values);
+											}}
+											classNames={{ trigger: 'min-h-[48px]' }}
+											renderValue={(items) => {
+												if (items.length === 0) return "Оберіть статуси";
+												return (
+													<div className="flex gap-1 max-h-10 overflow-y-auto scrollbar-hide [mask-image:linear-gradient(to_right,black_0,black_90%,transparent_100%)]">
+														{Array.from(items).map((item) => (
+															<span key={item.key} className="bg-grey-500/15 text-primary px-2 py-1 rounded text-xs">
+																{item.textValue}
+															</span>
+														))}
+													</div>
+												);
+											}}
+										>
+											{orderStatuses.map((status) => (
+												<SelectItem key={status.id} textValue={status.name}>
+													{status.name}
+												</SelectItem>
+											))}
+										</Select>
+									</div>
+
+									{/* Канали продажів для автоматичного відвантаження sale */}
+									<div className="flex flex-col gap-1">
+										<label className="text-sm font-medium text-gray-600 mb-1 block">
+											Канали продажів для відвантаження
+										</label>
+										<Select
+											aria-label="Канали продажів для sale"
+											placeholder="Всі канали"
+											selectionMode="multiple"
+											selectedKeys={new Set(formData.autoSendSaleChannelSettings || [])}
+											onSelectionChange={(keys) => {
+												const values = Array.from(keys).map((k) => String(k));
+												handleFieldChange('autoSendSaleChannelSettings', values);
+											}}
+											isDisabled={loadingSalesDriveData || salesChannels.length === 0}
+											classNames={{ trigger: 'min-h-[48px]' }}
+											renderValue={(items) => {
+												if (items.length === 0) return "Всі канали";
+												return (
+													<div className="flex gap-1 max-h-10 overflow-y-auto scrollbar-hide [mask-image:linear-gradient(to_right,black_0,black_90%,transparent_100%)]">
+														{Array.from(items).map((item) => (
+															<span key={item.key} className="bg-grey-500/15 text-primary px-2 py-1 rounded text-xs">
+																{item.textValue}
+															</span>
+														))}
+													</div>
+												);
+											}}
+										>
+											{salesChannels.map((channel) => (
+												<SelectItem key={channel.id} textValue={channel.name}>
+													<div className="flex justify-between items-center">
+														<span>{channel.name}</span>
+														<span className="text-tiny text-default-400">ID: {channel.id}</span>
+													</div>
+												</SelectItem>
+											))}
+										</Select>
+									</div>
+								</div>
+								)}
+							</div>
+						</div>
+
+						{/* Кнопка швидкого збереження */}
+						<div className="flex items-center gap-3 pt-4 mt-auto border-t border-gray-200">
+							<Button
+								size="sm"
+								color="primary"
+								onPress={handleSave}
+								isLoading={saving}
+								isDisabled={!hasChanges}
+								startContent={!saving && <DynamicIcon name="save" size={14} />}
+							>
+								{saving ? 'Збереження...' : 'Зберегти'}
+							</Button>
+							{justSaved && !hasChanges && (
+								<span className="flex items-center gap-1.5 text-sm text-green-600 animate-in fade-in duration-300">
+									<DynamicIcon name="check-circle" size={15} />
+									Збережено
+								</span>
+							)}
+							{hasChanges && (
+								<span className="flex items-center gap-1.5 text-sm text-orange-500">
+									<DynamicIcon name="circle-dot" size={15} />
+									Є незбережені зміни
+								</span>
 							)}
 						</div>
 					</CardBody>

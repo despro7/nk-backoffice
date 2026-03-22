@@ -57,10 +57,11 @@ async function getDilovodSettings(): Promise<DilovodSettings> {
     synchronizationSalePrice: parseBool(settingsMap.get('dilovod_synchronization_sale_price')),
     synchronizationStockQuantity: parseBool(settingsMap.get('dilovod_synchronization_stock_quantity')),
     autoSendOrder: parseBool(settingsMap.get('dilovod_auto_send_order')),
-    cronSendOrder: parseBool(settingsMap.get('dilovod_cron_send_order')),
     autoSendListSettings: parseJsonSafe(settingsMap.get('dilovod_auto_send_list_settings'), []),
-    unloadOrderNumberAs: (settingsMap.get('dilovod_unload_order_number_as') as DilovodSettings['unloadOrderNumberAs']) || 'dilovod',
-    unloadOrderAs: (settingsMap.get('dilovod_unload_order_as') as DilovodSettings['unloadOrderAs']) || 'sale',
+    autoSendChannelSettings: parseJsonSafe(settingsMap.get('dilovod_auto_send_channel_settings'), []),
+    autoSendSale: parseBool(settingsMap.get('dilovod_auto_send_sale')),
+    autoSendSaleListSettings: parseJsonSafe(settingsMap.get('dilovod_auto_send_sale_list_settings'), []),
+    autoSendSaleChannelSettings: parseJsonSafe(settingsMap.get('dilovod_auto_send_sale_channel_settings'), []),
     getPersonBy: (settingsMap.get('dilovod_get_person_by') as DilovodSettings['getPersonBy']) || 'end_user',
     defaultFirmId: settingsMap.get('dilovod_default_firm_id'),
     channelPaymentMapping: parseJsonSafe(settingsMap.get('dilovod_channel_payment_mapping'), {}),
@@ -84,11 +85,12 @@ async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<Di
     { key: 'dilovod_synchronization_regular_price', value: String(settings.synchronizationRegularPrice ?? false), description: 'Синхронізація звичайних цін' },
     { key: 'dilovod_synchronization_sale_price', value: String(settings.synchronizationSalePrice ?? false), description: 'Синхронізація акційних цін' },
     { key: 'dilovod_synchronization_stock_quantity', value: String(settings.synchronizationStockQuantity ?? false), description: 'Синхронізація залишків' },
-    { key: 'dilovod_auto_send_order', value: String(settings.autoSendOrder ?? false), description: 'Автоматичне відправлення замовлень' },
-    { key: 'dilovod_cron_send_order', value: String(settings.cronSendOrder ?? false), description: 'Cron відправлення замовлень' },
-    { key: 'dilovod_auto_send_list_settings', value: JSON.stringify(settings.autoSendListSettings || []), description: 'Статуси для автовідправки' },
-    { key: 'dilovod_unload_order_number_as', value: settings.unloadOrderNumberAs || 'dilovod', description: 'Формат номера замовлення' },
-    { key: 'dilovod_unload_order_as', value: settings.unloadOrderAs || 'sale', description: 'Тип документа замовлення' },
+    { key: 'dilovod_auto_send_order', value: String(settings.autoSendOrder ?? false), description: 'Автоматичне відправлення замовлень (saleOrder)' },
+    { key: 'dilovod_auto_send_list_settings', value: JSON.stringify(settings.autoSendListSettings || []), description: 'Статуси для автовідправки saleOrder' },
+    { key: 'dilovod_auto_send_channel_settings', value: JSON.stringify(settings.autoSendChannelSettings || []), description: 'Канали для автовідправки saleOrder' },
+    { key: 'dilovod_auto_send_sale', value: String(settings.autoSendSale ?? false), description: 'Автоматичне відвантаження (sale)' },
+    { key: 'dilovod_auto_send_sale_list_settings', value: JSON.stringify(settings.autoSendSaleListSettings || []), description: 'Статуси для автовідправки sale' },
+    { key: 'dilovod_auto_send_sale_channel_settings', value: JSON.stringify(settings.autoSendSaleChannelSettings || []), description: 'Канали для автовідправки sale' },
     { key: 'dilovod_get_person_by', value: settings.getPersonBy || 'end_user', description: 'Пошук контрагентів' },
     { key: 'dilovod_default_firm_id', value: settings.defaultFirmId || '', description: 'Фірма за замовчуванням' },
     { key: 'dilovod_channel_payment_mapping', value: JSON.stringify(settings.channelPaymentMapping || {}), description: 'Мапінг каналів продажів' },
@@ -1183,7 +1185,9 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
       await dilovodService.logMetaDilovodExport({
         title: 'Dilovod export result',
         status: isExportError ? 'error' : 'success',
-        message: exportResult?.message || (isExportError ? 'Export failed' : 'Export successful'),
+        message: isExportError
+          ? (exportResult?.error || exportResult?.message || 'Export failed')
+          : (exportResult?.message || 'Export successful'),
         initiatedBy: req.user ? String(req.user.userId) : 'unknown',
         data: {
           orderId,
@@ -1419,7 +1423,9 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
       await dilovodService.logMetaDilovodExport({
         title: 'Dilovod shipment export result',
         status: isExportError ? 'error' : 'success',
-        message: exportResult?.message || (isExportError ? 'Shipment creation failed' : 'Shipment created successfully'),
+        message: isExportError
+          ? (exportResult?.error || exportResult?.message || 'Shipment creation failed')
+          : (exportResult?.message || 'Shipment created successfully'),
         initiatedBy: req.user ? String(req.user.userId) : 'unknown',
         data: {
           orderId,

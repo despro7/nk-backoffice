@@ -153,7 +153,7 @@ export default function Dashboard() {
       )} */}
 
       {/* Блок для shop-manager и выше */}
-      {isShopManager() && (
+      {isStorekeeper() && (
         <div className="mb-16">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">Статистика товарів</h2>

@@ -4,6 +4,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
 import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 import { salesDriveService } from '../services/salesDriveService.js';
+import { buildExportPayload } from '../services/productExportHelper.js';
 
 const router = express.Router();
 
@@ -357,76 +358,22 @@ router.route('/export-to-salesdrive')
   .get(authenticateToken, async (req, res) => {
     try {
       const expandSets = req.query.expandSets === 'true';
-      
-      // Отримуємо всі товари з БД
-      const products = await prisma.product.findMany({
-        orderBy: { name: 'asc' },
-        where: {
-          isOutdated: { not: true }
-        }
-      });
+      // adjustStock=true за замовчуванням; можна вимкнути через ?adjustStock=false
+      const adjustStock = req.query.adjustStock !== 'false';
 
-      // Формуємо payload для SalesDrive
-      const payload = await Promise.all(products.map(async (product) => {
-        // Парсимо JSON поля
-        let set = [];
-        try {
-          set = product.set ? JSON.parse(product.set) : [];
-        } catch (e) {
-          console.warn(`Failed to parse set for product ${product.sku}:`, e);
-        }
+      const { payload, adjustedCount } = await buildExportPayload({ expandSets, adjustStock });
 
-        let additionalPrices = [];
-        try {
-          additionalPrices = product.additionalPrices ? JSON.parse(product.additionalPrices) : [];
-        } catch (e) {
-          console.warn(`Failed to parse additionalPrices for product ${product.sku}:`, e);
-        }
-
-        let stockBalanceByStock = {};
-        try {
-          stockBalanceByStock = product.stockBalanceByStock ? JSON.parse(product.stockBalanceByStock) : {};
-        } catch (e) {
-          console.warn(`Failed to parse stockBalanceByStock for product ${product.sku}:`, e);
-        }
-
-        // Якщо потрібно розгорнути комплекти - робимо це
-        let finalSet = set;
-        if (expandSets && Array.isArray(set) && set.length > 0) {
-          const expandedComponents: { [sku: string]: { component: any; quantity: number } } = {};
-          await expandProductSetRecursively(product, expandedComponents, new Set(), 0);
-          
-          // Формуємо новий масив set з розгорнутих компонентів
-          if (Object.keys(expandedComponents).length > 0) {
-            finalSet = Object.entries(expandedComponents).map(([sku, data]) => ({
-              id: sku,
-              quantity: data.quantity,
-              name: data.component.name
-            }));
-          }
-        }
-
-        return {
-          id: product.sku,
-          name: product.name,
-          sku: product.sku,
-          costPerItem: (product.costPerItem || 0).toFixed(5),
-          currency: product.currency || 'UAH',
-          category: {
-            id: product.categoryId || 0,
-            name: product.categoryName || ''
-          },
-          set: finalSet,
-          additionalPrices,
-          stockBalanceByStock
-        };
-      }));
+      const modeMsg = expandSets ? 'Комплекти розгорнуто' : 'Комплекти "як є"';
+      const adjustMsg = adjustStock ? `, скориговано залишки для ${adjustedCount} SKU` : '';
+      console.log(`📦 [Export preview] ${payload.length} товарів. ${modeMsg}${adjustMsg}`);
 
       res.json({
         success: true,
         payload,
         count: payload.length,
-        expandedSets: expandSets
+        expandedSets: expandSets,
+        adjustedStock: adjustStock,
+        adjustedCount,
       });
     } catch (error) {
       console.error('Error preparing export payload:', error);
@@ -742,6 +689,83 @@ router.post('/sync-stock', authenticateToken, async (req, res) => {
     logWithTimestamp('Error starting stock sync:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// Ручний тригер повного ланцюжку: синк товарів → залишки → експорт SD → WP sync
+// POST /api/products/sync-and-export
+router.post('/sync-and-export', authenticateToken, async (req, res) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Admin only' });
+  }
+
+  const jobId = Date.now();
+  console.log(`🚀 [sync-and-export #${jobId}] Manual chain triggered by ${req.user.email}`);
+
+  // Відповідаємо одразу — ланцюжок виконується у фоні
+  res.json({ success: true, message: 'Chain started', jobId });
+
+  (async () => {
+    const startTime = Date.now();
+
+    // [1/4] Синк товарів
+    console.log(`🕐 [sync-and-export #${jobId}] [1/4] Syncing products from Dilovod...`);
+    try {
+      const dilovodService = new DilovodService();
+      const result = await dilovodService.syncProductsWithDilovod();
+      if (result.success) {
+        console.log(`✅ [sync-and-export #${jobId}] [1/4] Products synced in ${Date.now() - startTime}ms: ${result.syncedProducts} products, ${result.syncedSets} sets`);
+      } else {
+        console.warn(`⚠️ [sync-and-export #${jobId}] [1/4] Sync completed with errors: ${result.message}`);
+      }
+    } catch (err) {
+      console.error(`❌ [sync-and-export #${jobId}] [1/4] Products sync failed:`, err);
+      return;
+    }
+
+    // [2/4] Оновлення залишків
+    console.log(`🕐 [sync-and-export #${jobId}] [2/4] Updating stock balances...`);
+    try {
+      const dilovodService = new DilovodService();
+      const result = await dilovodService.updateStockBalancesInDatabase();
+      console.log(`${result.success ? '✅' : '⚠️'} [sync-and-export #${jobId}] [2/4] Stock update in ${Date.now() - startTime}ms: ${result.updatedProducts} updated, ${result.errors.length} errors`);
+    } catch (err) {
+      console.error(`❌ [sync-and-export #${jobId}] [2/4] Stock update failed:`, err);
+      // Продовжуємо
+    }
+
+    // [3/4] Експорт у SalesDrive
+    console.log(`🕐 [sync-and-export #${jobId}] [3/4] Exporting to SalesDrive...`);
+    let exportedOk = false;
+    try {
+      const result = await salesDriveService.buildAndExportProducts();
+      if (result.success) {
+        exportedOk = true;
+        console.log(`✅ [sync-and-export #${jobId}] [3/4] Exported in ${Date.now() - startTime}ms: ${result.exported} products, ${result.adjustedCount} adjustments`);
+      } else {
+        console.warn(`⚠️ [sync-and-export #${jobId}] [3/4] Export failed:`, result.errors);
+      }
+    } catch (err) {
+      console.error(`❌ [sync-and-export #${jobId}] [3/4] Export failed:`, err);
+    }
+
+    // [4/4] Тригер SD → WP
+    if (exportedOk) {
+      console.log(`🕐 [sync-and-export #${jobId}] [4/4] Triggering SD → WP stock sync...`);
+      try {
+        const wpResponse = await fetch(
+          'https://nk-food.shop/wp-content/plugins/mrkv-salesdrive/inc/syncStock.php',
+          { signal: AbortSignal.timeout(30_000) }
+        );
+        console.log(`${wpResponse.ok ? '✅' : '⚠️'} [sync-and-export #${jobId}] [4/4] WP sync HTTP ${wpResponse.status} in ${Date.now() - startTime}ms`);
+      } catch (err) {
+        console.error(`❌ [sync-and-export #${jobId}] [4/4] WP sync failed:`, err);
+      }
+    } else {
+      console.log(`⏭️ [sync-and-export #${jobId}] [4/4] Skipping WP sync — SD export was not successful.`);
+    }
+
+    console.log(`🏁 [sync-and-export #${jobId}] Chain finished in ${Date.now() - startTime}ms`);
+  })();
 });
 
 // Отримати статистику по товарах

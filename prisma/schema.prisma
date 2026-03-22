@@ -323,8 +323,10 @@ model meta_logs {
   status      String   @db.VarChar(16)
   message     String?
   data        Json?
+  readBy      Json?    // { [userId]: "ISO", "_all": "ISO" } — хто і коли прочитав
+  hiddenBy    Json?    // { [userId]: "ISO", "_all": "ISO" } — хто і коли приховав
   orderNumber String?  @db.VarChar(128)
-  initiatedBy String?  @db.VarChar(128) // Ініціатор дії: userId (число) для користувачів або "cron:назва", "webhook:назва", "system:назва" для автоматичних викликів
+  initiatedBy String?  @db.VarChar(128) // Ініціатор дії: userId (число) або "cron:назва", "webhook:назва", "system:назва"
 
   @@index([orderNumber])
   @@index([initiatedBy])

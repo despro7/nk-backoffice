@@ -11,6 +11,7 @@ import { useEquipmentFromAuth } from "../contexts/AuthContext";
 import { addToast } from "@heroui/toast";
 import { DebugModeSwitch } from "./DebugModeSwitch";
 import { useDebug } from "../contexts/DebugContext";
+import { NotificationBell } from "./NotificationBell";
 
 interface HeaderProps {
   className?: string;
@@ -122,9 +123,12 @@ export function Header({ className, onDebugModeChange }: HeaderProps) {
         /> {isFullscreen ? "Minimize" : "Full screen"}
       </button>
 
+      {/* Notification Bell */}
+      <NotificationBell onNavigate={(href) => navigate(href)} />
+
       {/* User Profile Section */}
       {user && (
-        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-center sm:justify-end">
+        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-center sm:justify-end ml-8">
           <Dropdown placement="bottom-end">
             <DropdownTrigger>
               <User

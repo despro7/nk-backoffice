@@ -575,9 +575,7 @@ export class DilovodExportBuilder {
       synchronizationSalePrice: false,
       synchronizationStockQuantity: false,
       autoSendOrder: false,
-      cronSendOrder: false,
-      unloadOrderNumberAs: 'dilovod',
-      unloadOrderAs: 'sale',
+      autoSendSale: false,
       logSendOrder: true,
       liqpayCommission: false
     };

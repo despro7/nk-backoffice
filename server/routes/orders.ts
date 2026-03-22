@@ -774,6 +774,19 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
         }
       }
 
+      // Тригер автоматичного export/відвантаження в Dilovod (фонова операція — не блокує відповідь)
+      import('../services/dilovod/DilovodAutoExportService.js')
+        .then(({ dilovodAutoExportService }) =>
+          dilovodAutoExportService.processOrderStatusChange(
+            parseInt(id),
+            status,
+            'manual:status_change'
+          )
+        )
+        .catch(err =>
+          console.warn('⚠️ [AutoExport] Manual status change trigger failed:', err instanceof Error ? err.message : err)
+        );
+
       res.json({
         success: true,
         message: 'Order status updated successfully in SalesDrive',

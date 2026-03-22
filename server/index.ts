@@ -22,6 +22,7 @@ import { dilovodRouter } from './routes/dilovod.js';
 import { salesdriveRouter } from './routes/salesdrive.js';
 import metaLogsRouter from './routes/meta-logs.js';
 import wordpressReceiptRoutes from './routes/wordpress-receipt.js';
+import notificationsRouter from './routes/notifications.js';
 
 // Увеличиваем лимит listeners для process events
 process.setMaxListeners(20);
@@ -123,6 +124,7 @@ export function createServer() {
 
   // Meta logs route for Dilovod export logging
   app.use("/api/meta-logs", metaLogsRouter);
+  app.use("/api/notifications", notificationsRouter);
 
   // Settings routes (все роуты в settings.ts, включая /logging и /toast)
   app.use("/api/settings", settingsRoutes);
