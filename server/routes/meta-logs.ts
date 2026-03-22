@@ -19,7 +19,41 @@ router.get('/', async (req, res) => {
       where: { orderNumber: String(orderNumber) as any },
       orderBy: { datetime: 'desc' }
     });
-    res.json(logs);
+
+    // Resolve user names for numeric initiatedBy values
+    const userIds = [...new Set(
+      logs
+        .map((l: any) => l.initiatedBy)
+        .filter((v: any) => v && /^\d+$/.test(v))
+        .map((v: any) => parseInt(v, 10))
+    )] as number[];
+
+    const usersMap: Record<number, { name: string | null; email: string }> = {};
+    if (userIds.length > 0) {
+      const users = await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, name: true, email: true }
+      });
+      for (const u of users) {
+        usersMap[u.id] = { name: u.name, email: u.email };
+      }
+    }
+
+    const logsWithNames = logs.map((log: any) => {
+      const raw: string | null = log.initiatedBy ?? null;
+      const isUserId = raw && /^\d+$/.test(raw);
+      const userRecord = isUserId ? usersMap[parseInt(raw!, 10)] : undefined;
+      return {
+        ...log,
+        initiatedBy: {
+          raw,
+          name: userRecord?.name ?? null,
+          email: userRecord?.email ?? null
+        }
+      };
+    });
+
+    res.json(logsWithNames);
   } catch (err) {
     res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
   }

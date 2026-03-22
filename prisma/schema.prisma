@@ -316,16 +316,18 @@ model ShippingProvider {
   @@map("shipping_providers")
 }
 model meta_logs {
-  id        Int      @id @default(autoincrement())
-  datetime  DateTime @default(now())
-  category  String   @db.VarChar(32)
-  title     String?  @db.VarChar(255)
-  status    String   @db.VarChar(16)
-  message   String?
-  data      Json?
-  orderNumber String? @db.VarChar(128)
+  id          Int      @id @default(autoincrement())
+  datetime    DateTime @default(now())
+  category    String   @db.VarChar(32)
+  title       String?  @db.VarChar(255)
+  status      String   @db.VarChar(16)
+  message     String?
+  data        Json?
+  orderNumber String?  @db.VarChar(128)
+  initiatedBy String?  @db.VarChar(128) // Ініціатор дії: userId (число) для користувачів або "cron:назва", "webhook:назва", "system:назва" для автоматичних викликів
 
   @@index([orderNumber])
+  @@index([initiatedBy])
 }
 
 // model goods_cache removed — data moved to products.dilovodGood via backfill migration

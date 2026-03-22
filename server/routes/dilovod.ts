@@ -507,6 +507,7 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
     const sortBy = req.query.sortBy as string || 'orderDate';
     const sortOrder = req.query.sortOrder as string || 'desc';
     const search = req.query.search as string;
+    const searchCategory = (req.query.searchCategory as string) || 'orderNumber'; // 'orderNumber' | 'ttn' | 'phone' | 'name' | 'all'
     const channelsParam = req.query.channels as string;
     const includeUnknown = req.query.includeUnknown === 'true';
     const shipmentStatus = req.query.shipmentStatus as string; // 'shipped' | 'not_shipped'
@@ -590,14 +591,38 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
 
     // Додаємо пошук, якщо вказано
     if (search) {
-      whereCondition = {
-        ...whereCondition,
-        OR: [
-          { orderNumber: { contains: search } },
-          { customerName: { contains: search } },
-          { customerPhone: { contains: search } }
-        ]
-      };
+      let searchCondition: any;
+      switch (searchCategory) {
+        case 'ttn': {
+          // Якщо введено 4 символи або менше — шукаємо по останніх 4 цифрах ТТН
+          const ttnCondition = search.length <= 4
+            ? { ttn: { endsWith: search } }
+            : { ttn: { contains: search } };
+          searchCondition = ttnCondition;
+          break;
+        }
+        case 'phone':
+          searchCondition = { customerPhone: { contains: search } };
+          break;
+        case 'name':
+          searchCondition = { customerName: { contains: search } };
+          break;
+        case 'all':
+          searchCondition = {
+            OR: [
+              { orderNumber: { contains: search } },
+              { ttn: { contains: search } },
+              { customerName: { contains: search } },
+              { customerPhone: { contains: search } }
+            ]
+          };
+          break;
+        case 'orderNumber':
+        default:
+          searchCondition = { orderNumber: { contains: search } };
+          break;
+      }
+      whereCondition = { ...whereCondition, ...searchCondition };
     }
 
     // Отримуємо замовлення з пагінацією
@@ -786,6 +811,47 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, async (req,
       error: 'Dilovod API error',
       message: errorMessage
     });
+  }
+});
+
+/**
+ * POST /api/dilovod/salesdrive/orders/:orderId/reset-duplicate-count
+ * Скидання лічильника дублікатів відвантаження до 1 (помилка "кілька документів знайдено")
+ */
+router.post('/salesdrive/orders/:orderId/reset-duplicate-count', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
+      });
+    }
+
+    const orderId = parseInt(req.params.orderId);
+    if (isNaN(orderId)) {
+      return res.status(400).json({ success: false, error: 'Invalid orderId' });
+    }
+
+    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true, dilovodSaleDocsCount: true } });
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { dilovodSaleDocsCount: 1 }
+    });
+
+    logWithTimestamp(`API: Скинуто лічильник дублікатів для замовлення ${order.orderNumber} (було: ${order.dilovodSaleDocsCount} → стало: 1)`);
+
+    return res.json({
+      success: true,
+      message: `Лічильник дублікатів для замовлення ${order.orderNumber} скинуто до 1`
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logWithTimestamp('API: Помилка скидання лічильника дублікатів:', errorMessage);
+    res.status(500).json({ success: false, error: errorMessage });
   }
 });
 
@@ -1061,9 +1127,10 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
         title: 'Dilovod export result',
         status: isExportError ? 'error' : 'success',
         message: exportResult?.message || (isExportError ? 'Export failed' : 'Export successful'),
+        initiatedBy: req.user ? String(req.user.userId) : 'unknown',
         data: {
           orderId,
-          orderNum,
+          orderNumber: orderNum,
           payload,
           exportResult,
           warnings: warnings.length > 0 ? warnings : undefined
@@ -1296,6 +1363,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
         title: 'Dilovod shipment export result',
         status: isExportError ? 'error' : 'success',
         message: exportResult?.message || (isExportError ? 'Shipment creation failed' : 'Shipment created successfully'),
+        initiatedBy: req.user ? String(req.user.userId) : 'unknown',
         data: {
           orderId,
           orderNumber,

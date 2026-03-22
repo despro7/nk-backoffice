@@ -115,6 +115,7 @@ export class DilovodExportBuilder {
           title: 'Експорт замовлення заблоковано - немає товарів для відправки',
           message: 'Експорт заблоковано: немає товарів для відправки в Dilovod. Перевірте SKU товарів у замовленні.',
           status: 'error',
+          initiatedBy: 'system:exportBuilder',
           data: {
             orderId,
             orderNumber,

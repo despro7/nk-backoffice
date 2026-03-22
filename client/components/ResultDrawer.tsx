@@ -89,18 +89,38 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 												<div className={`flex-1 ${result[selectedLogIdx].status === 'success' ? 'text-green-600' : 'text-red-600'}`}>
 													<h3 className="font-semibold text-lg">{result[selectedLogIdx].title || 'No title provided'}</h3>
 													<div className="text-sm">{result[selectedLogIdx].message || 'No message provided'}</div>
-													{result[selectedLogIdx].datetime && (
-														<div className="text-xs mt-2 opacity-60">
-															{new Date(result[selectedLogIdx].datetime).toLocaleString('uk-UA')}
-														</div>
-													)}
 												</div>
+											</div>
+										</div>
+
+										<div className="flex items-center gap-6 text-gray-400 pl-3.5 -mt-2">
+											<div className="flex items-center gap-1">
+												{result[selectedLogIdx].datetime && (
+													<>
+													<DynamicIcon name="clock-9" size={13} className={`shrink-0`} />
+													<div className="text-[13px]">
+														{new Date(result[selectedLogIdx].datetime).toLocaleString('uk-UA')}
+													</div>
+													</>
+												)}
+											</div>
+											<div className="flex items-center gap-1">
+												{(result[selectedLogIdx].initiatedBy?.raw || result[selectedLogIdx].initiatedBy?.name) && (
+													<>
+													<DynamicIcon name="user-round" size={13} className={`shrink-0`} />
+													<div className="text-[13px]">
+														{result[selectedLogIdx].initiatedBy.name
+															? `${result[selectedLogIdx].initiatedBy.name} (${result[selectedLogIdx].initiatedBy.email})`
+															: result[selectedLogIdx].initiatedBy.raw}
+													</div>
+													</>
+												)}
 											</div>
 										</div>
 
 										{/* <pre>{JSON.stringify(result[selectedLogIdx], null, 2)}</pre> */}
 
-										{/* Блок приміток (notes, але світло-сірий) */}
+										{/* Блок приміток */}
 										{result[selectedLogIdx].data?.warnings && result[selectedLogIdx].data.warnings.length > 0 && (
 											<div>
 												<h4 className="font-semibold text-sm mb-3">Примітки:</h4>
@@ -346,7 +366,7 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 																	)}
 																	{item.dilovodExportDate && (
 																		<div className={`text-xs ${item.updatedCount > 0 ? 'text-green-600' : 'text-gray-600'}`}>
-																			<b>✓ Додано:</b> {new Date(item.dilovodExportDate).toLocaleString('uk-UA')}
+																			<b>✓ Експортовано:</b> {new Date(item.dilovodExportDate).toLocaleString('uk-UA')}
 																		</div>
 																	)}
 																	{item.dilovodSaleExportDate && (
@@ -366,8 +386,8 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 																	</Chip>
 																)}
 																{item.success !== false && item.updatedCount > 0 ? (
-																	<Chip size="sm" color="success" variant="flat">
-																		NEW
+																	<Chip size="sm" color="success" variant="flat" classNames={{ content: 'text-green-800' }}>
+																		new
 																	</Chip>
 																) : null}
 															</div>

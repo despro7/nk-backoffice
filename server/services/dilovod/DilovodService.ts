@@ -64,17 +64,17 @@ export class DilovodService {
    * @param data { payload, warnings }
    * @param metadata додаткові метадані
    */
-  async logMetaDilovodExport({ title, status, message, data }: {
+  async logMetaDilovodExport({ title, status, message, data, initiatedBy }: {
     title: string,
     status: 'success' | 'error',
     message: string,
-    data?: any
+    data?: any,
+    /** Ініціатор дії: userId як рядок для користувачів (напр. "42"),
+     *  або системна константа: "cron:назва", "webhook:назва", "system:назва" */
+    initiatedBy?: string
   }) {
     try {
-      // Add `as any` cast because Prisma types may not be regenerated yet in this environment.
-      // After running `npx prisma generate`, remove the `as any` cast if type checks succeed.
       await prisma.meta_logs.create({
-        // @ts-ignore - allow legacy code when prisma schema hasn't been re-generated locally yet
         data: {
           category: 'dilovod',
           title,
@@ -83,8 +83,12 @@ export class DilovodService {
           data,
           // If the caller provides orderNumber in the payload - save it into a separate column
           // This allows DB-side filtering/counting without complex JSON queries
-          orderNumber: data && typeof data === 'object' && 'orderNumber' in data ? (data as any).orderNumber : undefined
-        } as any
+          // Accepts both "orderNumber" and legacy "orderNum" keys
+          orderNumber: data && typeof data === 'object'
+            ? ((data as any).orderNumber ?? (data as any).orderNum ?? undefined)
+            : undefined,
+          initiatedBy: initiatedBy ?? null
+        }
       });
     } catch (err) {
       logWithTimestamp('Помилка запису логу meta_logs:', err);
@@ -1278,7 +1282,7 @@ export class DilovodService {
           AND: [
             {
               OR: [
-                // Базові поля для всіх статусів >= '2'
+                // Базові поля для всіх статусів >= '1'
                 { dilovodDocId: null },
                 { dilovodExportDate: null },
                 // CashIn: перевіряємо тільки якщо немає дати АБО остання перевірка була >24 год тому
@@ -1293,18 +1297,13 @@ export class DilovodService {
                     }
                   ]
                 },
-                { // Для status >= '3' додатково перевіряємо dilovodSaleExportDate
-                  AND: [
-                    { status: { gte: '3' } },
-                    { dilovodSaleExportDate: null }
-                  ]
-                },
                 { // Для status >= '3': перевіряємо кількість документів відвантаження
-                  // null = ще жодного разу не перевіряли; > 1 = виявлено дублікат, треба повторно
+                  // null = ще жодного разу не перевіряли; > 1 = виявлено дублікат, треба повторно перевірити, чи не зникли документи;
                   AND: [
                     { status: { gte: '3' } },
                     {
                       OR: [
+                        { dilovodSaleExportDate: null },
                         { dilovodSaleDocsCount: null },
                         { dilovodSaleDocsCount: { gt: 1 } }
                       ]
@@ -1313,10 +1312,8 @@ export class DilovodService {
                 }
               ]
             },
-            // Тільки підтверджені та вище (виключаємо "Нові")
-            { status: { gte: '2' } },
             // Виключаємо неактуальні статуси
-            { status: { notIn: ['1', '6', '7', '8'] } }
+            { status: { notIn: ['6', '7', '8'] } }
           ]
         },
         orderBy: { orderDate: 'desc' },
@@ -1358,10 +1355,8 @@ export class DilovodService {
       const orders = await prisma.order.findMany({
         where: {
           AND: [
-            // Тільки підтверджені та вище (виключаємо "Нові")
-            { status: { gte: '2' } },
             // Виключаємо неактуальні статуси
-            { status: { notIn: ['1', '6', '7', '8'] } }
+            { status: { notIn: ['6', '7', '8'] } }
           ]
         },
         orderBy: { orderDate: 'desc' },

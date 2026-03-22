@@ -123,6 +123,8 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
   // State для пошуку
   const [search, setSearch] = useState("");
+  type SearchCategory = 'orderNumber' | 'ttn' | 'phone' | 'name' | 'all';
+  const [searchCategory, setSearchCategory] = useState<SearchCategory>('orderNumber');
 
   // State для фільтру каналів (за замовчуванням всі окрім nk-food.shop, але включаючи unknown)
   const [selectedChannels, setSelectedChannels] = useState<Set<string>>(
@@ -162,6 +164,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
       if (search) {
         params.append('search', search);
+        params.append('searchCategory', searchCategory);
       }
 
       // Додаємо фільтр каналів (завжди передаємо, бо перевірили вище)
@@ -220,7 +223,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     } finally {
       setLoading(false);
     }
-  }, [page, search, selectedChannels, shipmentFilter, dateRange]);
+  }, [page, search, searchCategory, selectedChannels, shipmentFilter, dateRange]);
 
   // Завантажуємо дані під час монтування та зміни параметрів
   useEffect(() => {
@@ -230,7 +233,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   // Скидаємо сторінку на 1 при зміні пошуку або фільтру каналів
   useEffect(() => {
     setPage(1);
-  }, [search, selectedChannels, shipmentFilter, dateRange]);
+  }, [search, searchCategory, selectedChannels, shipmentFilter, dateRange]);
 
   // Обробка пошуку
   const handleSearchSubmit = () => {
@@ -248,6 +251,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   // Функція скидання всіх фільтрів
   const resetFilters = useCallback(() => {
     setSearch("");
+    setSearchCategory('orderNumber');
     setSelectedChannels(new Set(SALES_CHANNELS.filter(ch => ch.id !== '19').map(ch => ch.id)));
     setShipmentFilter('all');
     setDateRange(null);
@@ -447,6 +451,39 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         ToastService.show({
           title: 'Помилка примусової перевірки',
           description: result.message || 'Не вдалося виконати операцію',
+          color: 'danger'
+        });
+      }
+    } catch {
+      ToastService.show({
+        title: 'Помилка',
+        description: 'Помилка з\'єднання з сервером',
+        color: 'danger'
+      });
+    }
+  };
+
+  const handleResetDuplicateError = async (order: SalesDriveOrderForExport) => {
+    try {
+      const response = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/reset-duplicate-count`, {
+        method: 'POST'
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        ToastService.show({
+          title: 'Скинуто',
+          description: `Лічильник дублів для ${order.orderNumber} скинуто до 1`,
+          color: 'success',
+          hideIcon: false,
+          icon: <DynamicIcon name="shield-check" size={16} strokeWidth={1.5} className="shrink-0" />,
+          timeout: 4000
+        });
+        fetchOrders();
+      } else {
+        ToastService.show({
+          title: 'Помилка',
+          description: result.message || result.error || 'Не вдалося скинути лічильник',
           color: 'danger'
         });
       }
@@ -1129,16 +1166,65 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     <div className={`space-y-4 ${className}`}>
       <div className="flex gap-3 items-center justify-between">
         {/* Панель пошуку */}
-        <Input
-          placeholder="Пошук по номеру, імені або телефону..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={handleSearchKeyPress}
-          onClear={() => setSearch("")}
-          isClearable
-          className="max-w-[330px]"
-          startContent={<DynamicIcon name="search" size={16} />}
-        />
+        <div className="flex items-center max-w-[320px] w-full">
+          <Dropdown placement="bottom-start">
+            <DropdownTrigger>
+              <Button
+                isIconOnly
+                variant="flat"
+                className="h-10 w-11 shrink-0 rounded-r-none border-r border-default-200"
+              >
+                <DynamicIcon
+                  name={
+                    searchCategory === 'orderNumber' ? 'hash' :
+                    searchCategory === 'ttn' ? 'truck' :
+                    searchCategory === 'phone' ? 'phone' :
+                    searchCategory === 'name' ? 'user' :
+                    'layers'
+                  }
+                  size={16}
+                />
+              </Button>
+            </DropdownTrigger>
+            <DropdownMenu
+              disallowEmptySelection
+              aria-label="Категорія пошуку"
+              selectionMode="single"
+              selectedKeys={new Set([searchCategory])}
+              variant="flat"
+              onSelectionChange={(keys) => {
+                const val = Array.from(keys)[0] as typeof searchCategory;
+                if (val) { setSearchCategory(val); setSearch(""); }
+              }}
+            >
+              <DropdownItem key="orderNumber" startContent={<DynamicIcon name="hash" size={15} />}>№ замовлення</DropdownItem>
+              <DropdownItem key="ttn" startContent={<DynamicIcon name="truck" size={15} />}>№ ТТН (останні 4)</DropdownItem>
+              <DropdownItem key="phone" startContent={<DynamicIcon name="phone" size={15} />}>Телефон</DropdownItem>
+              <DropdownItem key="name" startContent={<DynamicIcon name="user" size={15} />}>ПІБ</DropdownItem>
+              <DropdownItem key="all" startContent={<DynamicIcon name="layers" size={15} />}>Всі поля</DropdownItem>
+            </DropdownMenu>
+          </Dropdown>
+          <Input
+            placeholder={
+              searchCategory === 'orderNumber' ? '12345...' :
+              searchCategory === 'ttn' ? 'Останні 4 цифри ТТН...' :
+              searchCategory === 'phone' ? 'Номер телефону...' :
+              searchCategory === 'name' ? 'Прізвище або ім\'я...' :
+              'Пошук по всіх полях...'
+            }
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={handleSearchKeyPress}
+            onClear={() => setSearch("")}
+            isClearable
+            variant="bordered"
+            className="flex-1"
+            classNames={{
+              inputWrapper: "border-1 border-l-0 rounded-l-none group-data-[focus=true]:border-neutral-300 focus-within:border-neutral-300",
+            }}
+            startContent={<DynamicIcon name="search" size={16} />}
+          />
+        </div>
 
         <div className="flex gap-3 mr-auto">
           {/* Фільтр каналів */}
@@ -1277,7 +1363,8 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               selectorIcon={<DynamicIcon name="calendar" size={18} />}
               classNames={{
                 base: "w-auto",
-                inputWrapper: "h-10"
+                inputWrapper: "h-10",
+                segment: "rounded-[5px]",
               }}
             />
           </I18nProvider>
@@ -1289,7 +1376,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               disabled={loading}
               size="md"
               variant="flat"
-              className="h-10 px-4 gap-2"
+              className="h-10 px-4 bg-danger-50 text-danger-700 hover:bg-danger-100"
               startContent={<DynamicIcon name="rotate-ccw" size={16} />}
             >
               Скинути
@@ -1371,10 +1458,10 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
       {/* Другий ряд: Адмін-панель для автоматичних дій */}
       {user?.role === 'admin' && (
-        <Card shadow="none" border-1 className="bg-secondary-50/30 border-secondary-100 rounded-md">
+        <Card shadow="none" border-1 className="bg-neutral-50 border-1 border-neutral-200 rounded-md">
           <CardBody className="py-2 px-3 flex flex-row items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-secondary-700 whitespace-nowrap">
+              <span className="text-sm font-medium text-neutral-500 whitespace-nowrap">
                 Ліміт перевірки:
               </span>
               <Input
@@ -1388,13 +1475,13 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 max={500}
                 classNames={{
                   input: "text-center font-semibold",
-                  inputWrapper: "h-8 min-h-8 px-2"
+                  inputWrapper: "h-8 min-h-8 px-2 border-1 border-neutral-300 focus-within:border-neutral-500"
                 }}
               />
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-secondary-700 whitespace-nowrap">
+              <span className="text-sm font-medium text-neutral-500 whitespace-nowrap">
                 Offset:
               </span>
               <Input
@@ -1408,7 +1495,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 max={10000}
                 classNames={{
                   input: "text-center font-semibold",
-                  inputWrapper: "h-8 min-h-8 px-2"
+                  inputWrapper: "h-8 min-h-8 px-2 border-1 border-neutral-300 focus-within:border-neutral-500"
                 }}
               />
             </div>
@@ -1424,7 +1511,6 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             </Switch>
 
             <Button
-              color="secondary"
               size="sm"
               variant="flat"
               onPress={handleAutoBulkCheck}
@@ -1593,32 +1679,38 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                         aria-label="Дії із замовленням"
                         variant="faded"
                         className="max-w-[300px]"
-                        disabledKeys={!order.dilovodDocId ? ['createShipment'] : []}
+                        disabledKeys={order.dilovodSaleExportDate ? ['exportOrder', 'createShipment'] : (order.dilovodDocId || order.dilovodExportDate) ? order.status < '3' ? ['exportOrder', 'createShipment'] : ['exportOrder'] : []}
                         onAction={(key) => {
                           if (key === "checkDilovod") handleCheckInDilovod(order);
                           if (key === "forceRecheck") handleForceRecheck(order);
                           if (key === "exportOrder") handleExportOrder(order);
                           if (key === "createShipment") handleCreateShipment(order);
                           if (key === "viewLogs") handleViewOrderLogs(order);
+                          if (key === "resetDuplicateError") handleResetDuplicateError(order);
                         }}
                       >
-                        <DropdownSection showDivider>
+                        <DropdownSection>
                           <DropdownItem textValue="Перевірити в Діловоді" key="checkDilovod" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="refresh-ccw" size={16} />}>Перевірити в Діловоді</DropdownItem>
                           <DropdownItem textValue="Примусова перевірка (скинути і перечитати)" key="forceRecheck" className="px-3 py-2 text-danger-500!" startContent={<DynamicIcon className="text-xl text-danger-500 pointer-events-none shrink-0" name="refresh-ccw-dot" size={16} />}>Примусова перевірка</DropdownItem>
-                          <DropdownItem textValue="Відправити замовлення" key="exportOrder" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="upload" size={16} />}>Відправити замовлення</DropdownItem>
-                          <DropdownItem textValue="Відправити відвантаження" key="createShipment" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="truck" size={16} />}>Відправити відвантаження</DropdownItem>
+                          <DropdownItem textValue="Експортувати замовлення" key="exportOrder" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="upload" size={16} />}>Експортувати замовлення</DropdownItem>
+                          <DropdownItem textValue="Відвантажити замовлення" key="createShipment" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="truck" size={16} />}>Відвантажити замовлення</DropdownItem>
                           {!!order.logsCount && (
                             <DropdownItem textValue="Логи експорту" key="viewLogs" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="braces" size={16} />}>
                               Логи експорту ({order.logsCount ?? '0'})
                             </DropdownItem>
                           )}
                         </DropdownSection>
-                        <DropdownItem textValue="baseDoc ID" key="footer" className="px-3 py-2 font-semibold text-default-700 cursor-default data-[hover=true]:bg-white border-none" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="key-round" size={14} />}>
-                          <div className="flex items-center justify-between text-xs">
-                            {order.dilovodDocId || 'Немає ID'}
-                            {order.dilovodDocId && <Button variant="flat" size="sm" className="px-2 py-1 min-w-auto h-auto rounded" onPress={() => { navigator.clipboard.writeText(order.dilovodDocId || '') }}>Copy</Button>}
-                          </div>
-                        </DropdownItem>
+                        <DropdownSection className="border-t-1 border-gray-200 pt-2">
+                          {order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1 && (
+                            <DropdownItem textValue="Скинути помилку дублювання" key="resetDuplicateError" className="px-3 py-2 text-danger-500!" startContent={<DynamicIcon className="text-xl text-danger-500 pointer-events-none shrink-0" name="shield-alert" size={16} />}>Скинути помилку дублювання</DropdownItem>
+                          )}
+                          <DropdownItem textValue="baseDoc ID" key="footer" className="px-3 py-2 font-semibold text-default-700 cursor-default data-[hover=true]:bg-white border-none" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="key-round" size={14} />}>
+                            <div className="flex items-center justify-between text-xs">
+                              {order.dilovodDocId || 'Немає ID'}
+                              {order.dilovodDocId && <Button variant="flat" size="sm" className="px-2 py-1 min-w-auto h-auto rounded" onPress={() => { navigator.clipboard.writeText(order.dilovodDocId || '') }}>Copy</Button>}
+                            </div>
+                          </DropdownItem>
+                        </DropdownSection>
                       </DropdownMenu>
                     </Dropdown>
                   </ButtonGroup>
