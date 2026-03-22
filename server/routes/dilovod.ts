@@ -872,6 +872,30 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (re
     const { orderId } = req.params;
     const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
+    // Early-exit: перевіряємо локальну БД — якщо вже є dilovodDocId, не витрачаємо час на формування payload
+    const localOrder = await prisma.order.findUnique({
+      where: { id: parseInt(orderId) },
+      select: { dilovodDocId: true, dilovodExportDate: true }
+    });
+    if (localOrder?.dilovodDocId) {
+      logWithTimestamp(`ℹ️ Validate: замовлення ${orderNum} (id: ${orderId}) вже експортовано (baseDocId: ${localOrder.dilovodDocId}) — валідація пропускається`);
+      return res.json({
+        success: true,
+        alreadyExported: true,
+        message: `Замовлення ${orderNum} вже експортовано в Dilovod`,
+        data: {
+          orderId,
+          isReadyForExport: false,
+          validatedAt: new Date().toISOString()
+        },
+        metadata: {
+          orderNumber: orderNum,
+          dilovodDocId: localOrder.dilovodDocId,
+          dilovodExportDate: localOrder.dilovodExportDate
+        }
+      });
+    }
+
     logWithTimestamp(`=== API: Валідація замовлення ${orderNum} (id: ${orderId}) для експорту в Dilovod ===`, undefined, true);
 
     // Імпортуємо DilovodExportBuilder
@@ -985,26 +1009,59 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
       where: { id: parseInt(orderId) },
       select: {
         dilovodDocId: true,
-        dilovodExportDate: true
+        dilovodExportDate: true,
+        dilovodSaleExportDate: true,
+        dilovodSaleDocsCount: true,
+        dilovodCashInDate: true
       }
     });
 
     if (existingOrder?.dilovodDocId) {
-      // Якщо вже є dilovodDocId — не робимо запит до Dilovod API
+      // Якщо вже є dilovodDocId — не робимо повторний експорт
       logWithTimestamp(`ℹ️ Замовлення ${orderNum} (id: ${orderId}) вже експортовано в Dilovod (baseDocId: ${existingOrder.dilovodDocId})`);
+
+      // Якщо відсутній dilovodExportDate — синхронізуємо його з Dilovod API синхронно (замовлення вже відоме по DocId)
+      let exportDate = existingOrder.dilovodExportDate;
+      if (!exportDate) {
+        try {
+          logWithTimestamp(`🔄 Відновлення dilovodExportDate для замовлення ${orderNum} (DocId: ${existingOrder.dilovodDocId})...`);
+          const { dilovodService: dilovodServiceSync } = await import('../services/dilovod/DilovodService.js');
+          const found = (await dilovodServiceSync.getOrderByNumber([orderNum])).flat();
+          if (found.length > 0 && found[0].date) {
+            exportDate = new Date(found[0].date);
+            await prisma.order.update({
+              where: { id: parseInt(orderId) },
+              data: { dilovodExportDate: exportDate }
+            });
+            logWithTimestamp(`✅ dilovodExportDate відновлено: ${exportDate}`);
+          }
+        } catch (syncErr) {
+          logWithTimestamp(`⚠️ Не вдалося відновити dilovodExportDate: ${syncErr instanceof Error ? syncErr.message : syncErr}`);
+        }
+      }
+
+      // Запускаємо фонову синхронізацію додаткових полів (sale, cashIn) — не блокуємо відповідь
+      const missingAdditional = !existingOrder.dilovodSaleExportDate || !existingOrder.dilovodSaleDocsCount || !existingOrder.dilovodCashInDate;
+      if (missingAdditional) {
+        logWithTimestamp(`🔄 Запускаємо фонову синхронізацію додаткових Dilovod-полів для замовлення ${orderNum}`);
+        import('../services/dilovod/DilovodService.js')
+          .then(({ dilovodService }) => dilovodService.checkOrdersByNumbers([orderNum]))
+          .catch(err => logWithTimestamp(`⚠️ Фонова синхронізація Dilovod-полів не вдалась: ${err instanceof Error ? err.message : err}`));
+      }
+
       return res.json({
         success: true,
         message: `Замовлення ${orderNum} вже експортовано в Dilovod. Нових даних не було оновлено.`,
         exported: false,
         dilovodId: existingOrder.dilovodDocId,
-        dilovodExportDate: existingOrder.dilovodExportDate,
+        dilovodExportDate: exportDate,
         data: {
           orderId,
           exportResult: null,
           warnings: []
         },
         metadata: {
-          exportedAt: existingOrder.dilovodExportDate,
+          exportedAt: exportDate,
           documentType: null,
           orderNumber: orderNum,
           totalItems: null,

@@ -114,7 +114,10 @@ export class DilovodApiClient {
         throw new Error(`Dilovod API не налаштовано: ${errors.join(', ')}`);
       }
       
-      logWithTimestamp('Відправляємо запит до Dilovod API:', request);
+      logWithTimestamp('Відправляємо запит до Dilovod API:', {
+        ...request,
+        key: request.key ? `${String(request.key).substring(0, 6)}***` : undefined
+      });
       
       const response = await fetch(this.apiUrl, {
         method: 'POST',

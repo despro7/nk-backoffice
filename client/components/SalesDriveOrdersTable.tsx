@@ -562,13 +562,26 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         // onDrawerOpen();
         // Якщо не експортовано жодного документа
         if (!result.exported) {
-          ToastService.show({
-            title: 'Не вивантажено!',
-            description: result.error || result.message || 'Жодного документа не було експортовано в Діловод',
-            color: 'danger',
-            hideIcon: false,
-            icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
-          });
+          // Early-exit: замовлення вже було в Dilovod (є dilovodId) — оновлюємо таблицю
+          if (result.dilovodId) {
+            ToastService.show({
+              title: 'Вже в Діловоді',
+              description: result.message || `Замовлення ${order.orderNumber} вже експортовано раніше`,
+              color: 'warning',
+              hideIcon: false,
+              icon: <DynamicIcon name="triangle-alert" size={20} className="shrink-0" />,
+              timeout: 4000
+            });
+            fetchOrders();
+          } else {
+            ToastService.show({
+              title: 'Не вивантажено!',
+              description: result.error || result.message || 'Жодного документа не було експортовано в Діловод',
+              color: 'danger',
+              hideIcon: false,
+              icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
+            });
+          }
         } else {
           // Якщо був створений новий документ (є dilovodId або dilovodExportDate)
           if (result.dilovodId || result.dilovodExportDate) {
@@ -1679,7 +1692,15 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                         aria-label="Дії із замовленням"
                         variant="faded"
                         className="max-w-[300px]"
-                        disabledKeys={order.dilovodSaleExportDate ? ['exportOrder', 'createShipment'] : (order.dilovodDocId || order.dilovodExportDate) ? order.status < '3' ? ['exportOrder', 'createShipment'] : ['exportOrder'] : []}
+                        disabledKeys={
+                          order.dilovodSaleExportDate
+                            ? ['exportOrder', 'createShipment']
+                            : (order.dilovodExportDate)
+                              ? (Number(order.status) < 3
+                                  ? ['exportOrder', 'createShipment']
+                                  : ['exportOrder'])
+                              : ['createShipment']
+                        }
                         onAction={(key) => {
                           if (key === "checkDilovod") handleCheckInDilovod(order);
                           if (key === "forceRecheck") handleForceRecheck(order);
