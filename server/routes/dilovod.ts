@@ -5,6 +5,7 @@ import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
+import { cronService } from '../services/cronService.js';
 import type {
   DilovodSettings,
   DilovodSettingsRequest,
@@ -50,12 +51,23 @@ async function getDilovodSettings(): Promise<DilovodSettings> {
   return {
     apiUrl: settingsMap.get('dilovod_api_url'),
     apiKey: settingsMap.get('dilovod_api_key'),
-    storageIdsList: parseJsonSafe(settingsMap.get('dilovod_storage_ids_list'), []),
+    mainStorageId: settingsMap.get('dilovod_main_storage_id'),
+    smallStorageId: settingsMap.get('dilovod_small_storage_id'),
     storageId: settingsMap.get('dilovod_storage_id'),
+    productsInterval: (settingsMap.get('dilovod_products_interval') as DilovodSettings['productsInterval']) || 'none sync',
+    productsHour: settingsMap.get('dilovod_products_hour') !== undefined ? Number(settingsMap.get('dilovod_products_hour')) : 6,
+    productsMinute: settingsMap.get('dilovod_products_minute') !== undefined ? Number(settingsMap.get('dilovod_products_minute')) : 0,
     synchronizationInterval: (settingsMap.get('dilovod_synchronization_interval') as DilovodSettings['synchronizationInterval']) || 'daily',
+    synchronizationHour: settingsMap.get('dilovod_synchronization_hour') !== undefined ? Number(settingsMap.get('dilovod_synchronization_hour')) : 6,
+    synchronizationMinute: settingsMap.get('dilovod_synchronization_minute') !== undefined ? Number(settingsMap.get('dilovod_synchronization_minute')) : 0,
     synchronizationRegularPrice: parseBool(settingsMap.get('dilovod_synchronization_regular_price')),
     synchronizationSalePrice: parseBool(settingsMap.get('dilovod_synchronization_sale_price')),
     synchronizationStockQuantity: parseBool(settingsMap.get('dilovod_synchronization_stock_quantity')),
+    ordersInterval: (settingsMap.get('dilovod_orders_interval') as DilovodSettings['ordersInterval']) || 'hourly',
+    ordersHour: settingsMap.get('dilovod_orders_hour') !== undefined ? Number(settingsMap.get('dilovod_orders_hour')) : 5,
+    ordersMinute: settingsMap.get('dilovod_orders_minute') !== undefined ? Number(settingsMap.get('dilovod_orders_minute')) : 5,
+    ordersBatchSize: settingsMap.get('dilovod_orders_batch_size') !== undefined ? Number(settingsMap.get('dilovod_orders_batch_size')) : 50,
+    ordersRetryAttempts: settingsMap.get('dilovod_orders_retry_attempts') !== undefined ? Number(settingsMap.get('dilovod_orders_retry_attempts')) : 3,
     autoSendOrder: parseBool(settingsMap.get('dilovod_auto_send_order')),
     autoSendListSettings: parseJsonSafe(settingsMap.get('dilovod_auto_send_list_settings'), []),
     autoSendChannelSettings: parseJsonSafe(settingsMap.get('dilovod_auto_send_channel_settings'), []),
@@ -79,12 +91,23 @@ async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<Di
   const settingsToSave = [
     { key: 'dilovod_api_url', value: settings.apiUrl || '', description: 'API URL для Dilovod' },
     { key: 'dilovod_api_key', value: settings.apiKey || '', description: 'API ключ для Dilovod' },
-    { key: 'dilovod_storage_ids_list', value: JSON.stringify(settings.storageIdsList || []), description: 'Список ID складів' },
+    { key: 'dilovod_main_storage_id', value: settings.mainStorageId || '', description: 'ID головного складу' },
+    { key: 'dilovod_small_storage_id', value: settings.smallStorageId || '', description: 'ID малого складу' },
     { key: 'dilovod_storage_id', value: settings.storageId || '', description: 'Основний склад для списання' },
-    { key: 'dilovod_synchronization_interval', value: settings.synchronizationInterval || 'daily', description: 'Інтервал синхронізації' },
+    { key: 'dilovod_products_interval', value: settings.productsInterval || 'none sync', description: 'Інтервал синхронізації товарів' },
+    { key: 'dilovod_products_hour', value: String(settings.productsHour ?? 6), description: 'Година запуску синхронізації товарів' },
+    { key: 'dilovod_products_minute', value: String(settings.productsMinute ?? 0), description: 'Хвилина запуску синхронізації товарів' },
+    { key: 'dilovod_synchronization_interval', value: settings.synchronizationInterval || 'daily', description: 'Інтервал синхронізації залишків' },
+    { key: 'dilovod_synchronization_hour', value: String(settings.synchronizationHour ?? 6), description: 'Година запуску синхронізації залишків' },
+    { key: 'dilovod_synchronization_minute', value: String(settings.synchronizationMinute ?? 0), description: 'Хвилина запуску синхронізації залишків' },
     { key: 'dilovod_synchronization_regular_price', value: String(settings.synchronizationRegularPrice ?? false), description: 'Синхронізація звичайних цін' },
     { key: 'dilovod_synchronization_sale_price', value: String(settings.synchronizationSalePrice ?? false), description: 'Синхронізація акційних цін' },
     { key: 'dilovod_synchronization_stock_quantity', value: String(settings.synchronizationStockQuantity ?? false), description: 'Синхронізація залишків' },
+    { key: 'dilovod_orders_interval', value: settings.ordersInterval || 'hourly', description: 'Інтервал синхронізації замовлень' },
+    { key: 'dilovod_orders_hour', value: String(settings.ordersHour ?? 5), description: 'Година запуску синхронізації замовлень' },
+    { key: 'dilovod_orders_minute', value: String(settings.ordersMinute ?? 5), description: 'Хвилина запуску синхронізації замовлень' },
+    { key: 'dilovod_orders_batch_size', value: String(settings.ordersBatchSize ?? 50), description: 'Розмір пакета синхронізації замовлень' },
+    { key: 'dilovod_orders_retry_attempts', value: String(settings.ordersRetryAttempts ?? 3), description: 'Кількість повторних спроб синхронізації замовлень' },
     { key: 'dilovod_auto_send_order', value: String(settings.autoSendOrder ?? false), description: 'Автоматичне відправлення замовлень (saleOrder)' },
     { key: 'dilovod_auto_send_list_settings', value: JSON.stringify(settings.autoSendListSettings || []), description: 'Статуси для автовідправки saleOrder' },
     { key: 'dilovod_auto_send_channel_settings', value: JSON.stringify(settings.autoSendChannelSettings || []), description: 'Канали для автовідправки saleOrder' },
@@ -359,6 +382,11 @@ router.post('/settings', authenticateToken, async (req, res) => {
     // Оновлюємо конфігурацію в DilovodService після збереження
     const dilovodService = new DilovodService();
     await dilovodService.reloadApiConfig();
+
+    // Перезапускаємо обидва cron job з новими налаштуваннями
+    void cronService.restartProductsSync();
+    void cronService.restartStockSync();
+    void cronService.restartOrderSync();
 
     logWithTimestamp('API: Налаштування Dilovod збережено і конфігурацію оновлено');
     res.json({

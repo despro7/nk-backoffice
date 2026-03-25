@@ -448,7 +448,8 @@ export class DilovodDataProcessor {
         const sku = row.sku;
         const name = row.id__pr;
         const storage = row.storage;
-        const quantity = parseFloat(row.qty) || 0;
+        // qty може бути null коли Dilovod не повертає залишки — трактуємо як 0
+        const quantity = row.qty == null ? 0 : (parseFloat(row.qty) || 0);
         
         if (!stockBySku[sku]) {
           stockBySku[sku] = {};
@@ -463,20 +464,20 @@ export class DilovodDataProcessor {
       // Формируем результат
       Object.keys(stockBySku).forEach(sku => {
         const stockData = stockBySku[sku];
-        
-        // Определяем склады по их ID (исключаем хоз. склад)
-        const mainStorage = stockData["1100700000001005"] || 0; // Склад готової продукції (Склад 1)
-        const kyivStorage = stockData["1100700000001017"] || 0; // Склад готової продукції Київ (Склад 2)
-        // Исключаем хоз. склад "1100700000000001"
-        
-        // Суммируем только товарные склады
-        const total = mainStorage + kyivStorage;
+
+        // Беремо склади з конфігурації (mainStorageId / smallStorageId)
+        const mainStorageId = this.config.mainStorageId || (this.config.storageIdsList?.[0] ?? "1100700000001005");
+        const smallStorageId = this.config.smallStorageId || (this.config.storageIdsList?.[1] ?? "1100700000001017");
+
+        const mainStorage = stockData[mainStorageId] || 0;
+        const smallStorage = stockData[smallStorageId] || 0;
+        const total = mainStorage + smallStorage;
         
         result.push({
           sku,
           name: stockData._name,
-          mainStorage,    // Склад 1
-          kyivStorage,    // Склад 2
+          mainStorage,    // Склад готової продукції
+          smallStorage,   // Малий склад для відвантажень
           total
         });
       });

@@ -26,7 +26,7 @@ export interface DilovodStockBalance {
   sku: string;
   name: string;
   mainStorage: number;    // Склад 1 (головний склад)
-  kyivStorage: number;    // Склад 2 (київський склад)
+  smallStorage: number;   // Склад 2 (малий склад для відвантажень)
   total: number;          // Загальна сума по складах
 }
 
@@ -133,6 +133,12 @@ export interface DilovodConfig {
   setParentIds: string[];
   mainPriceType: string;
   categoriesMap: { [key: string]: number };
+  /** ID головного складу (склад готової продукції) */
+  mainStorageId: string;
+  /** ID малого складу (для відвантажень) */
+  smallStorageId: string;
+  /** @deprecated Залишено для зворотної сумісності */
+  storageIdsList: string[];
 }
 
 // Інтерфейси для роботи із замовленнями в Dilovod

@@ -453,7 +453,7 @@ export class DilovodSyncManager {
   async updateProductStockBalance(
     sku: string, 
     mainStorage: number, 
-    kyivStorage: number
+    smallStorage: number
   ): Promise<{ success: boolean; message: string }> {
     try {
       // Перевіряємо, чи існує товар
@@ -474,7 +474,7 @@ export class DilovodSyncManager {
         data: {
           stockBalanceByStock: JSON.stringify({
             "1": mainStorage,    // Склад 1 (головний)
-            "2": kyivStorage     // Склад 2 (київський)
+            "2": smallStorage    // Склад 2 (малий склад для відвантажень)
           })
         }
       });

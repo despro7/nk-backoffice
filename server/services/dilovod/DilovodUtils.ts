@@ -26,7 +26,13 @@ export const DEFAULT_DILOVOD_CONFIG: DilovodConfig = {
     "Напої": 33,
     "М'ясні страви": 34,
     "Основи для салатів": 35
-  }
+  },
+  /** ID головного складу (склад готової продукції) */
+  mainStorageId: "1100700000001005",
+  /** ID малого складу (для відвантажень) */
+  smallStorageId: "1100700000001017",
+  /** @deprecated Залишено для зворотної сумісності — використовуйте mainStorageId/smallStorageId */
+  storageIdsList: ["1100700000001005", "1100700000001017"]
 };
 
 
@@ -51,7 +57,15 @@ export async function getDilovodConfigFromDB(): Promise<DilovodConfig> {
         ? dilovodSettings.setParentIds
         : DEFAULT_DILOVOD_CONFIG.setParentIds,
       mainPriceType: dilovodSettings.mainPriceType || DEFAULT_DILOVOD_CONFIG.mainPriceType,
-      categoriesMap: dilovodSettings.categoriesMap || DEFAULT_DILOVOD_CONFIG.categoriesMap
+      categoriesMap: dilovodSettings.categoriesMap || DEFAULT_DILOVOD_CONFIG.categoriesMap,
+      // Нові окремі поля складів; fallback на DEFAULT
+      mainStorageId: dilovodSettings.mainStorageId || DEFAULT_DILOVOD_CONFIG.mainStorageId,
+      smallStorageId: dilovodSettings.smallStorageId || DEFAULT_DILOVOD_CONFIG.smallStorageId,
+      // storageIdsList — для зворотної сумісності з DilovodDataProcessor
+      storageIdsList: [
+        dilovodSettings.mainStorageId || DEFAULT_DILOVOD_CONFIG.mainStorageId,
+        dilovodSettings.smallStorageId || DEFAULT_DILOVOD_CONFIG.smallStorageId,
+      ].filter(Boolean)
     };
     
     // Кешуємо конфігурацію
@@ -67,7 +81,7 @@ export async function getDilovodConfigFromDB(): Promise<DilovodConfig> {
 }
 
 // Завантаження налаштувань Dilovod з settings_base таблиці
-async function loadDilovodSettingsFromDB() {
+export async function loadDilovodSettingsFromDB() {
   const { PrismaClient } = await import('@prisma/client');
   const prisma = new PrismaClient();
   
@@ -95,7 +109,24 @@ async function loadDilovodSettingsFromDB() {
         return [];
       })(),
       mainPriceType: settingsMap['dilovod_main_price_type'] || '',
-      categoriesMap: settingsMap['dilovod_categories_map'] ? JSON.parse(settingsMap['dilovod_categories_map']) : {}
+      categoriesMap: settingsMap['dilovod_categories_map'] ? JSON.parse(settingsMap['dilovod_categories_map']) : {},
+      mainStorageId: settingsMap['dilovod_main_storage_id'] || '',
+      smallStorageId: settingsMap['dilovod_small_storage_id'] || '',
+      storageIdsList: settingsMap['dilovod_storage_ids_list']
+        ? (() => { try { return JSON.parse(settingsMap['dilovod_storage_ids_list']) as string[]; } catch { return []; } })()
+        : [],
+      productsInterval: (settingsMap['dilovod_products_interval'] || 'none sync') as import('../../../shared/types/dilovod.js').DilovodSyncInterval,
+      productsHour: settingsMap['dilovod_products_hour'] !== undefined ? Number(settingsMap['dilovod_products_hour']) : 6,
+      productsMinute: settingsMap['dilovod_products_minute'] !== undefined ? Number(settingsMap['dilovod_products_minute']) : 0,
+      synchronizationInterval: (settingsMap['dilovod_synchronization_interval'] || 'twicedaily') as import('../../../shared/types/dilovod.js').DilovodSyncInterval,
+      synchronizationHour: settingsMap['dilovod_synchronization_hour'] !== undefined ? Number(settingsMap['dilovod_synchronization_hour']) : 6,
+      synchronizationMinute: settingsMap['dilovod_synchronization_minute'] !== undefined ? Number(settingsMap['dilovod_synchronization_minute']) : 0,
+      synchronizationStockQuantity: settingsMap['dilovod_synchronization_stock_quantity'] === 'true',
+      ordersInterval: (settingsMap['dilovod_orders_interval'] || 'hourly') as import('../../../shared/types/dilovod.js').DilovodSyncInterval,
+      ordersHour: settingsMap['dilovod_orders_hour'] !== undefined ? Number(settingsMap['dilovod_orders_hour']) : 5,
+      ordersMinute: settingsMap['dilovod_orders_minute'] !== undefined ? Number(settingsMap['dilovod_orders_minute']) : 5,
+      ordersBatchSize: settingsMap['dilovod_orders_batch_size'] !== undefined ? Number(settingsMap['dilovod_orders_batch_size']) : 50,
+      ordersRetryAttempts: settingsMap['dilovod_orders_retry_attempts'] !== undefined ? Number(settingsMap['dilovod_orders_retry_attempts']) : 3,
     };
   } finally {
     await prisma.$disconnect();
@@ -129,7 +160,7 @@ export function getPriceTypeNameById(priceTypeId: string): string {
  *   - 'UTC_lastDay': сегодня по UTC, но время "00:00:00"
  */
 export function formatDateForDilovod(
-  mode: 'UTC_now' | 'Kyiv' | 'UTC_lastDay' = 'Kyiv'
+  mode: 'UTC_now' | 'UTC_lastDay' | 'Kyiv'
 ): string {
   const now = new Date();
 
@@ -145,7 +176,9 @@ export function formatDateForDilovod(
     return `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())} 00:00:00`;
   }
 
+  // mode === 'Kyiv' по умолчанию
   return now.toLocaleString('sv-SE', {
+    // Формат: YYYY-MM-DD HH:mm:ss по часовому поясу Europe/Kyiv
     timeZone: 'Europe/Kyiv',
     hour12: false
   }).replace('T', ' ');
@@ -190,7 +223,7 @@ export function createGoodsRequest(skuList: string[]) {
     from: {
       type: "sliceLast",
       register: "goodsPrices",
-      date: formatDateForDilovod(),
+      date: formatDateForDilovod('Kyiv'),
     },
     fields: {
       good: "id",

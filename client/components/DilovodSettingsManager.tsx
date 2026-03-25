@@ -260,6 +260,52 @@ const DilovodSettingsManager: React.FC = () => {
 				</div>
 			)}
 
+			{/* Кнопки управління */}
+			<Card key="control-buttons" className={`shadow-2xs sticky top-4 z-50 ${hasChanges ? 'ring-2 ring-orange-300 bg-white' : 'bg-neutral-100'}`}>
+				<CardBody className="p-4">
+					<div className="flex justify-between items-center">
+						<div className="text-sm text-gray-600">
+							{hasChanges ? (
+								<span className="flex items-center gap-2">
+									<DynamicIcon name="circle-alert" size={16} className="text-orange-400" />
+									Є незбережені зміни
+								</span>
+							) : (
+								<span className="flex items-center gap-2 text-neutral-500">
+									<DynamicIcon name="check-circle" size={16} className="text-green-500" />
+									Всі зміни збережені
+								</span>
+							)}
+						</div>
+
+						<div className="flex gap-4">
+							{hasChanges && (
+							<Button
+								color="default"
+								variant="bordered"
+								onPress={handleReset}
+								isDisabled={!hasChanges || saving}
+								startContent={<DynamicIcon name="rotate-ccw" size={16} />}
+								className="bg-white border-1"
+							>
+								Скасувати зміни
+							</Button>
+							)}
+
+							<Button
+								color="primary"
+								onPress={handleSave}
+								isLoading={saving}
+								isDisabled={!hasChanges}
+								startContent={!saving && <DynamicIcon name="save" size={16} />}
+							>
+								{saving ? 'Збереження...' : 'Зберегти налаштування'}
+							</Button>
+						</div>
+					</div>
+				</CardBody>
+			</Card>
+
 			<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
 				{/* Налаштування синхронізації */}
@@ -333,28 +379,8 @@ const DilovodSettingsManager: React.FC = () => {
 							</div>
 						</div>
 
-						<div className="space-y-4">
-							<Select
-								label="Пошук контрагента за"
-								placeholder="Оберіть поле"
-								selectedKeys={formData.getPersonBy ? [formData.getPersonBy] : []}
-								onSelectionChange={(keys) => {
-									const value = Array.from(keys)[0] as string;
-									handleFieldChange('getPersonBy', value as any);
-								}}
-							>
-								<SelectItem key="end_user">Кінцевий споживач</SelectItem>
-								<SelectItem key="billing_fullname">Billing Full Name</SelectItem>
-								<SelectItem key="shipping_fullname">Shipping Full Name</SelectItem>
-								<SelectItem key="billing_company">Billing Company</SelectItem>
-								<SelectItem key="billing_phone">Billing Phone</SelectItem>
-								<SelectItem key="billing_email">Billing Email</SelectItem>
-								<SelectItem key="shipping_company">Shipping Company</SelectItem>
-								<SelectItem key="shipping_phone">Shipping Phone</SelectItem>
-								<SelectItem key="shipping_email">Shipping Email</SelectItem>
-							</Select>
-
-							<div className="grid grid-cols-1 gap-4 pl-2">
+						{/*<div className="space-y-4">
+							 <div className="grid grid-cols-1 gap-4 pl-2">
 								<Checkbox
 									isSelected={formData.logSendOrder || false}
 									onValueChange={(checked) => handleFieldChange('logSendOrder', checked)}
@@ -370,7 +396,87 @@ const DilovodSettingsManager: React.FC = () => {
 								>
 									Створювати надходження грошей
 								</Checkbox>
+							</div> 
+						</div>*/}
+
+						<div className="space-y-4">
+							<div className="grid grid-cols-2 gap-4">
+								<Select
+									color={formData.productsInterval === 'none sync' ? 'danger' : 'default'}
+									label="Інтервал синхронізації товарів"
+									placeholder="Оберіть інтервал"
+									selectedKeys={formData.productsInterval ? [formData.productsInterval] : []}
+									onSelectionChange={(keys) => {
+										const value = Array.from(keys)[0] as string;
+										handleFieldChange('productsInterval', value);
+									}}
+								>
+									<SelectItem key="none sync">Не синхронізувати</SelectItem>
+									<SelectItem key="hourly">Щогодини</SelectItem>
+									<SelectItem key="every two hours">Кожні 2 години</SelectItem>
+									<SelectItem key="twicedaily">Двічі на день</SelectItem>
+									<SelectItem key="daily">Щодня</SelectItem>
+									<SelectItem key="every two days">Кожні 2 дні</SelectItem>
+								</Select>
+								{formData.productsInterval && ['twicedaily', 'daily', 'every two days'].includes(formData.productsInterval) && (
+									<Select
+										label={formData.productsInterval === 'twicedaily'
+											? `Час запуску (перший)`
+											: 'Час запуску'}
+										description={formData.productsInterval === 'twicedaily'
+											? `Другий запуск о ${String((( formData.productsHour ?? 6) + 12) % 24).padStart(2, '0')}:${String(formData.productsMinute ?? 0).padStart(2, '0')}`
+											: undefined}
+										selectedKeys={[(formData.productsHour ?? 6).toString()]}
+										onSelectionChange={(keys) => {
+											const value = Array.from(keys)[0] as string;
+											handleFieldChange('productsHour', Number(value));
+										}}
+									>
+										{Array.from({ length: 24 }, (_, i) => (
+											<SelectItem key={i.toString()} textValue={`${String(i).padStart(2, '0')}:00`}>
+												{String(i).padStart(2, '0')}:00
+											</SelectItem>
+										))}
+									</Select>
+								)}
+
+								{formData.productsInterval && ['hourly', 'every two hours'].includes(formData.productsInterval) && (
+									<Select
+										label="Хвилина запуску"
+										description={formData.productsInterval === 'every two hours' ? 'Щогодини з парних годин' : undefined}
+										selectedKeys={[(formData.productsMinute ?? 0).toString()]}
+										onSelectionChange={(keys) => {
+											const value = Array.from(keys)[0] as string;
+											handleFieldChange('productsMinute', Number(value));
+										}}
+									>
+										{Array.from({ length: 12 }, (_, i) => (
+											<SelectItem key={(i * 5).toString()} textValue={`:${String(i * 5).padStart(2, '0')}`}>
+												:{String(i * 5).padStart(2, '0')}
+											</SelectItem>
+										))}
+									</Select>
+								)}
 							</div>
+
+							{formData.productsInterval && formData.productsInterval !== 'none sync' && (
+								<div className="grid grid-cols-1 gap-4 pl-2">
+									<Checkbox
+										isSelected={formData.synchronizationRegularPrice || false}
+										onValueChange={(checked) => handleFieldChange('synchronizationRegularPrice', checked)}
+										classNames={{ label: 'text-sm leading-tight' }}
+									>
+										Синхронізувати звичайну ціну
+									</Checkbox>
+									<Checkbox
+										isSelected={formData.synchronizationSalePrice || false}
+										onValueChange={(checked) => handleFieldChange('synchronizationSalePrice', checked)}
+										classNames={{ label: 'text-sm leading-tight' }}
+									>
+										Синхронізувати ціну зі знижкою
+									</Checkbox>
+								</div>
+							)}
 						</div>
 					</CardBody>
 				</Card>
@@ -400,43 +506,55 @@ const DilovodSettingsManager: React.FC = () => {
 										}}
 									>
 										{directories.storages.map((storage) => (
-											<SelectItem key={storage.id} textValue={`${storage.name} (${storage.code})`}>
-												{storage.name} ({storage.code})
+											<SelectItem key={storage.id} textValue={`${storage.name}`}>
+												{storage.name}<br /><small>id: {storage.id}</small>
 											</SelectItem>
 										))}
 									</Select>
 
-									<div className="flex justify-between items-center mt-4 mb-2">
-										<label className="text-sm font-medium text-gray-700">
-											Склади для синхронізації
-										</label>
-										<Button
-											size="sm"
-											variant="light"
-											onPress={() => refreshDirectories()}
-											isLoading={loadingDirectories}
-											startContent={!loadingDirectories && <DynamicIcon name="refresh-cw" size={14} />}
+									<div className="grid grid-cols-2 gap-4 mt-4">
+										<h3 className="col-span-2 text-sm font-bold text-gray-700">Залишки по складах</h3>
+										<Select
+											label="Головний склад (залишки)"
+											// description="Склад готової продукції — відображається як основний залишок"
+											placeholder="Оберіть склад"
+											selectedKeys={(() => {
+												if (!formData.mainStorageId) return [];
+												const exists = directories?.storages?.some(s => s.id === formData.mainStorageId);
+												return exists ? [formData.mainStorageId] : [];
+											})()}
+											onSelectionChange={(keys) => {
+												const value = Array.from(keys)[0] as string;
+												handleFieldChange('mainStorageId', value);
+											}}
 										>
-											Оновити
-										</Button>
-									</div>
-									<div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3">
-										{directories.storages.map((storage) => (
-											<Checkbox
-												key={`sync-storage-${storage.id}`}
-												isSelected={formData.storageIdsList?.includes(storage.id) || false}
-												classNames={{ label: 'text-sm leading-tight' }}
-												onValueChange={(checked) => {
-													const currentList = formData.storageIdsList || [];
-													const newList = checked
-														? [...currentList, storage.id]
-														: currentList.filter(id => id !== storage.id);
-													handleFieldChange('storageIdsList', newList);
-												}}
-											>
-												{storage.name} ({storage.code})
-											</Checkbox>
-										))}
+											{directories.storages.map((storage) => (
+												<SelectItem key={storage.id} textValue={`${storage.name}`}>
+													{storage.name}<br /><small>id: {storage.id}</small>
+												</SelectItem>
+											))}
+										</Select>
+
+										<Select
+											label="Малий склад (залишки)"
+											// description="Склад для відвантажень — відображається як додатковий залишок"
+											placeholder="Оберіть склад"
+											selectedKeys={(() => {
+												if (!formData.smallStorageId) return [];
+												const exists = directories?.storages?.some(s => s.id === formData.smallStorageId);
+												return exists ? [formData.smallStorageId] : [];
+											})()}
+											onSelectionChange={(keys) => {
+												const value = Array.from(keys)[0] as string;
+												handleFieldChange('smallStorageId', value);
+											}}
+										>
+											{directories.storages.map((storage) => (
+												<SelectItem key={storage.id} textValue={`${storage.name}`}>
+													{storage.name}<br /><small>id: {storage.id}</small>
+												</SelectItem>
+											))}
+										</Select>
 									</div>
 								</div>
 							)}
@@ -456,30 +574,64 @@ const DilovodSettingsManager: React.FC = () => {
 							)}
 
 							<div className="space-y-4 mt-8">
-								<Select
-									label="Інтервал синхронізації"
-									placeholder="Оберіть інтервал"
-									selectedKeys={formData.synchronizationInterval ? [formData.synchronizationInterval] : []}
-									onSelectionChange={(keys) => {
-										const value = Array.from(keys)[0] as string;
-										handleFieldChange('synchronizationInterval', value);
-									}}
-								>
-									<SelectItem key="none sync">Не синхронізувати</SelectItem>
-									<SelectItem key="hourly">Щогодини</SelectItem>
-									<SelectItem key="every two hours">Кожні 2 години</SelectItem>
-									<SelectItem key="twicedaily">Двічі на день</SelectItem>
-									<SelectItem key="daily">Щодня</SelectItem>
-									<SelectItem key="every two days">Кожні 2 дні</SelectItem>
-								</Select>
-								<div className="grid grid-cols-1 gap-4 pl-2">
-									<Checkbox
-										isSelected={formData.synchronizationStockQuantity || false}
-										onValueChange={(checked) => handleFieldChange('synchronizationStockQuantity', checked)}
-										classNames={{ label: 'text-sm leading-tight' }}
+								<h3 className="col-span-2 text-sm font-bold text-gray-700">Cинхронізація залишків</h3>
+								<div className="grid grid-cols-2 gap-4">
+									<Select
+										color={formData.synchronizationInterval === 'none sync' ? 'danger' : 'default'}
+										label="Інтервал синхронізації залишків"
+										placeholder="Оберіть інтервал"
+										selectedKeys={formData.synchronizationInterval ? [formData.synchronizationInterval] : []}
+										onSelectionChange={(keys) => {
+											const value = Array.from(keys)[0] as string;
+											handleFieldChange('synchronizationInterval', value);
+										}}
 									>
-										Синхронізувати залишки
-									</Checkbox>
+										<SelectItem key="none sync">Не синхронізувати</SelectItem>
+										<SelectItem key="hourly">Щогодини</SelectItem>
+										<SelectItem key="every two hours">Кожні 2 години</SelectItem>
+										<SelectItem key="twicedaily">Двічі на день</SelectItem>
+										<SelectItem key="daily">Щодня</SelectItem>
+										<SelectItem key="every two days">Кожні 2 дні</SelectItem>
+									</Select>
+									{formData.synchronizationInterval && ['twicedaily', 'daily', 'every two days'].includes(formData.synchronizationInterval) && (
+										<Select
+											label={formData.synchronizationInterval === 'twicedaily'
+												? 'Час запуску (перший)'
+												: 'Час запуску'}
+											description={formData.synchronizationInterval === 'twicedaily'
+												? `Другий запуск о ${String(((formData.synchronizationHour ?? 6) + 12) % 24).padStart(2, '0')}:${String(formData.synchronizationMinute ?? 0).padStart(2, '0')}`
+												: undefined}
+											selectedKeys={[(formData.synchronizationHour ?? 6).toString()]}
+											onSelectionChange={(keys) => {
+												const value = Array.from(keys)[0] as string;
+												handleFieldChange('synchronizationHour', Number(value));
+											}}
+										>
+											{Array.from({ length: 24 }, (_, i) => (
+												<SelectItem key={i.toString()} textValue={`${String(i).padStart(2, '0')}:00`}>
+													{String(i).padStart(2, '0')}:00
+												</SelectItem>
+											))}
+										</Select>
+									)}
+
+									{formData.synchronizationInterval && ['hourly', 'every two hours'].includes(formData.synchronizationInterval) && (
+										<Select
+											label="Хвилина запуску"
+											description={formData.synchronizationInterval === 'every two hours' ? 'Щогодини з парних годин' : undefined}
+											selectedKeys={[(formData.synchronizationMinute ?? 0).toString()]}
+											onSelectionChange={(keys) => {
+												const value = Array.from(keys)[0] as string;
+												handleFieldChange('synchronizationMinute', Number(value));
+											}}
+										>
+											{Array.from({ length: 12 }, (_, i) => (
+												<SelectItem key={(i * 5).toString()} textValue={`:${String(i * 5).padStart(2, '0')}`}>
+													:{String(i * 5).padStart(2, '0')}
+												</SelectItem>
+											))}
+										</Select>
+									)}
 								</div>
 							</div>
 
@@ -500,7 +652,28 @@ const DilovodSettingsManager: React.FC = () => {
 						<h2 className="text-lg font-semibold text-gray-900">Експорт/відвантаження замовлень в Dilovod</h2>
 					</CardHeader>
 					<CardBody className="p-6">
+						{/* Пошук контрагента */}
 						<div className="space-y-8">
+							<Select
+								label="Пошук контрагента за"
+								placeholder="Оберіть поле"
+								selectedKeys={formData.getPersonBy ? [formData.getPersonBy] : []}
+								onSelectionChange={(keys) => {
+									const value = Array.from(keys)[0] as string;
+									handleFieldChange('getPersonBy', value as any);
+								}}
+							>
+								<SelectItem key="end_user">Кінцевий споживач</SelectItem>
+								<SelectItem key="billing_fullname">Billing Full Name</SelectItem>
+								<SelectItem key="shipping_fullname">Shipping Full Name</SelectItem>
+								<SelectItem key="billing_company">Billing Company</SelectItem>
+								<SelectItem key="billing_phone">Billing Phone</SelectItem>
+								<SelectItem key="billing_email">Billing Email</SelectItem>
+								<SelectItem key="shipping_company">Shipping Company</SelectItem>
+								<SelectItem key="shipping_phone">Shipping Phone</SelectItem>
+								<SelectItem key="shipping_email">Shipping Email</SelectItem>
+							</Select>
+
 							{/* Фірма за замовчуванням */}
 							{directories?.firms && (
 								<Select
@@ -712,32 +885,6 @@ const DilovodSettingsManager: React.FC = () => {
 								</div>
 								)}
 							</div>
-						</div>
-
-						{/* Кнопка швидкого збереження */}
-						<div className="flex items-center gap-3 pt-4 mt-auto border-t border-gray-200">
-							<Button
-								size="sm"
-								color="primary"
-								onPress={handleSave}
-								isLoading={saving}
-								isDisabled={!hasChanges}
-								startContent={!saving && <DynamicIcon name="save" size={14} />}
-							>
-								{saving ? 'Збереження...' : 'Зберегти'}
-							</Button>
-							{justSaved && !hasChanges && (
-								<span className="flex items-center gap-1.5 text-sm text-green-600 animate-in fade-in duration-300">
-									<DynamicIcon name="check-circle" size={15} />
-									Збережено
-								</span>
-							)}
-							{hasChanges && (
-								<span className="flex items-center gap-1.5 text-sm text-orange-500">
-									<DynamicIcon name="circle-dot" size={15} />
-									Є незбережені зміни
-								</span>
-							)}
 						</div>
 					</CardBody>
 				</Card>
@@ -1472,49 +1619,6 @@ const DilovodSettingsManager: React.FC = () => {
 						<p className="text-sm text-gray-500">
 							Налаштуйте відповідність між каналами продажів з SalesDrive та формами оплати/рахунками в Dilovod
 						</p>
-					</div>
-				</CardBody>
-			</Card>
-
-			{/* Кнопки управління */}
-			<Card key="control-buttons" className="shadow-2xs bg-neutral-100">
-				<CardBody className="p-6">
-					<div className="flex justify-between items-center">
-						<div className="text-sm text-gray-600">
-							{hasChanges ? (
-								<span className="flex items-center gap-2">
-									<DynamicIcon name="circle-dot" size={16} className="text-orange-500" />
-									Є незбережені зміни
-								</span>
-							) : (
-								<span className="flex items-center gap-2 text-neutral-500">
-									<DynamicIcon name="check-circle" size={16} className="text-green-500" />
-									Всі зміни збережені
-								</span>
-							)}
-						</div>
-
-						<div className="flex gap-4">
-							<Button
-								color="default"
-								variant="bordered"
-								onPress={handleReset}
-								isDisabled={!hasChanges || saving}
-								startContent={<DynamicIcon name="rotate-ccw" size={16} />}
-							>
-								Скасувати зміни
-							</Button>
-
-							<Button
-								color="primary"
-								onPress={handleSave}
-								isLoading={saving}
-								isDisabled={!hasChanges}
-								startContent={!saving && <DynamicIcon name="save" size={16} />}
-							>
-								{saving ? 'Збереження...' : 'Зберегти налаштування'}
-							</Button>
-						</div>
 					</div>
 				</CardBody>
 			</Card>

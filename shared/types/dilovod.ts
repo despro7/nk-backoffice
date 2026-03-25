@@ -7,14 +7,29 @@ export interface DilovodSettings {
   consumerSecret?: string;
   
   // Налаштування складів
-  storageIdsList?: string[]; // Масив ID складів
-  storageId?: string;       // Основний склад для списання
+  mainStorageId?: string;   // ID головного складу (для підрахунку mainStorage)
+  smallStorageId?: string;  // ID малого складу (для підрахунку smallStorage)
+  storageId?: string;       // Основний склад для списання (при експорті замовлень)
   
-  // Налаштування синхронізації
-  synchronizationInterval: DilovodSyncInterval;
+  // Налаштування синхронізації товарів (назви, ціни, комплекти)
+  productsInterval: DilovodSyncInterval;
+  productsHour?: number;              // Година запуску (0-23), для twicedaily/daily/every two days
+  productsMinute?: number;            // Хвилина запуску (0-55, крок 5), для hourly/every two hours
   synchronizationRegularPrice: boolean;
   synchronizationSalePrice: boolean;
+
+  // Налаштування синхронізації залишків (склади)
+  synchronizationInterval: DilovodSyncInterval;
+  synchronizationHour?: number;       // Година запуску (0-23), для twicedaily/daily/every two days
+  synchronizationMinute?: number;     // Хвилина запуску (0-55, крок 5), для hourly/every two hours
   synchronizationStockQuantity: boolean;
+
+  // Налаштування синхронізації замовлень (SalesDrive → DB)
+  ordersInterval: DilovodSyncInterval;
+  ordersHour?: number;                // Година запуску (0-23), для twicedaily/daily/every two days
+  ordersMinute?: number;              // Хвилина запуску (0-55, крок 5), для hourly/every two hours
+  ordersBatchSize?: number;           // Розмір пакета для запитів до SalesDrive API
+  ordersRetryAttempts?: number;       // Кількість повторних спроб при помилці
   
   // Автоматичний експорт замовлень (documents.saleOrder)
   autoSendOrder: boolean;
@@ -52,12 +67,24 @@ export const DILOVOD_SETTINGS_CATEGORY = 'dilovod';
 export const DILOVOD_SETTINGS_KEYS = {
   API_URL: 'dilovod_api_url',
   API_KEY: 'dilovod_api_key',
-  STORAGE_IDS_LIST: 'dilovod_storage_ids_list',
+  STORAGE_IDS_LIST: 'dilovod_storage_ids_list', // залишаємо для зворотної сумісності
+  MAIN_STORAGE_ID: 'dilovod_main_storage_id',
+  SMALL_STORAGE_ID: 'dilovod_small_storage_id',
   STORAGE_ID: 'dilovod_storage_id',
+  PRODUCTS_INTERVAL: 'dilovod_products_interval',
+  PRODUCTS_HOUR: 'dilovod_products_hour',
+  PRODUCTS_MINUTE: 'dilovod_products_minute',
   SYNCHRONIZATION_INTERVAL: 'dilovod_synchronization_interval',
+  SYNCHRONIZATION_HOUR: 'dilovod_synchronization_hour',
+  SYNCHRONIZATION_MINUTE: 'dilovod_synchronization_minute',
   SYNCHRONIZATION_REGULAR_PRICE: 'dilovod_synchronization_regular_price',
   SYNCHRONIZATION_SALE_PRICE: 'dilovod_synchronization_sale_price',
   SYNCHRONIZATION_STOCK_QUANTITY: 'dilovod_synchronization_stock_quantity',
+  ORDERS_INTERVAL: 'dilovod_orders_interval',
+  ORDERS_HOUR: 'dilovod_orders_hour',
+  ORDERS_MINUTE: 'dilovod_orders_minute',
+  ORDERS_BATCH_SIZE: 'dilovod_orders_batch_size',
+  ORDERS_RETRY_ATTEMPTS: 'dilovod_orders_retry_attempts',
   AUTO_SEND_ORDER: 'dilovod_auto_send_order',
   AUTO_SEND_LIST_SETTINGS: 'dilovod_auto_send_list_settings',
   AUTO_SEND_CHANNEL_SETTINGS: 'dilovod_auto_send_channel_settings',

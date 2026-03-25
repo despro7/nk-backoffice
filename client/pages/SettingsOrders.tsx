@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { SyncHistory } from '../components/SyncHistory';
 import { formatDateTime, formatRelativeDate, formatDuration } from '../lib/formatUtils';
+import { useDilovodSettings } from '../hooks/useDilovodSettings';
 import {
   Table,
   TableHeader,
@@ -169,6 +170,40 @@ const SettingsOrders: React.FC = () => {
     }
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
+
+  // Dilovod orders auto-sync settings
+  const { settings: dilovodSettings, saving: dilovodSaving, saveSettings: saveDilovodSettings } = useDilovodSettings({ loadDirectories: false });
+  const [ordersInterval, setOrdersInterval] = useState<string>('hourly');
+  const [ordersHour, setOrdersHour] = useState<number>(5);
+  const [ordersMinute, setOrdersMinute] = useState<number>(5);
+  const [ordersBatchSize, setOrdersBatchSize] = useState<number>(50);
+  const [ordersRetryAttempts, setOrdersRetryAttempts] = useState<number>(3);
+
+  // Sync local state when dilovod settings are loaded
+  useEffect(() => {
+    if (dilovodSettings) {
+      setOrdersInterval(dilovodSettings.ordersInterval ?? 'hourly');
+      setOrdersHour(dilovodSettings.ordersHour ?? 5);
+      setOrdersMinute(dilovodSettings.ordersMinute ?? 5);
+      setOrdersBatchSize(dilovodSettings.ordersBatchSize ?? 50);
+      setOrdersRetryAttempts(dilovodSettings.ordersRetryAttempts ?? 3);
+    }
+  }, [dilovodSettings]);
+
+  const saveOrdersAutoSyncSettings = async () => {
+    const ok = await saveDilovodSettings({
+      ordersInterval: ordersInterval as any,
+      ordersHour,
+      ordersMinute,
+      ordersBatchSize,
+      ordersRetryAttempts,
+    });
+    if (ok) {
+      addToast({ title: 'Успіх', description: 'Налаштування автосинхронізації замовлень збережено', color: 'success' });
+    } else {
+      addToast({ title: 'Помилка', description: 'Не вдалося зберегти налаштування', color: 'danger' });
+    }
+  };
 
   // State for manual sync
   const [manualSyncStartDate, setManualSyncStartDate] = useState<CalendarDate | null>(null);
@@ -1798,6 +1833,104 @@ const SettingsOrders: React.FC = () => {
         </CardBody>
       </Card>
 
+      {/* Auto Orders Sync Settings */}
+      <Card>
+        <CardHeader className="border-b border-gray-200">
+          <DynamicIcon name="timer" size={20} className="text-gray-600 mr-2" />
+          <h2 className="text-lg font-semibold text-gray-900">Автоматична синхронізація замовлень</h2>
+        </CardHeader>
+        <CardBody className="p-6 space-y-4">
+          <div className="grid md:grid-cols-4 grid-cols-2 gap-4">
+            <Select
+              color={ordersInterval === 'none sync' ? 'danger' : 'default'}
+              label="Інтервал синхронізації"
+              placeholder="Оберіть інтервал"
+              selectedKeys={[ordersInterval]}
+              onSelectionChange={(keys) => setOrdersInterval(Array.from(keys)[0] as string)}
+            >
+              <SelectItem key="none sync">Не синхронізувати</SelectItem>
+              <SelectItem key="hourly">Щогодини</SelectItem>
+              <SelectItem key="every two hours">Кожні 2 години</SelectItem>
+              <SelectItem key="twicedaily">Двічі на день</SelectItem>
+              <SelectItem key="daily">Щодня</SelectItem>
+              <SelectItem key="every two days">Кожні 2 дні</SelectItem>
+            </Select>
+
+            {['twicedaily', 'daily', 'every two days'].includes(ordersInterval) && (
+              <Select
+                label={ordersInterval === 'twicedaily' ? 'Час запуску (перший)' : 'Час запуску'}
+                description={ordersInterval === 'twicedaily'
+                  ? `Другий запуск о ${String(((ordersHour) + 12) % 24).padStart(2, '0')}:${String(ordersMinute).padStart(2, '0')}`
+                  : undefined}
+                selectedKeys={[ordersHour.toString()]}
+                onSelectionChange={(keys) => setOrdersHour(Number(Array.from(keys)[0]))}
+              >
+                {Array.from({ length: 24 }, (_, i) => (
+                  <SelectItem key={i.toString()} textValue={`${String(i).padStart(2, '0')}:00`}>
+                    {String(i).padStart(2, '0')}:00
+                  </SelectItem>
+                ))}
+              </Select>
+            )}
+
+            {['hourly', 'every two hours'].includes(ordersInterval) && (
+              <Select
+                label="Хвилина запуску"
+                description={ordersInterval === 'every two hours' ? 'Щогодини з парних годин' : undefined}
+                selectedKeys={[ordersMinute.toString()]}
+                onSelectionChange={(keys) => setOrdersMinute(Number(Array.from(keys)[0]))}
+              >
+                {Array.from({ length: 12 }, (_, i) => (
+                  <SelectItem key={(i * 5).toString()} textValue={`:${String(i * 5).padStart(2, '0')}`}>
+                    :{String(i * 5).padStart(2, '0')}
+                  </SelectItem>
+                ))}
+              </Select>
+            )}
+
+            {ordersInterval !== 'none sync' && (
+              <>
+              <Input
+                type="number"
+                label="Розмір пакета (batchSize)"
+                description="Кількість замовлень в одному запиті до SalesDrive API (макс. 100)"
+                value={String(ordersBatchSize)}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  setOrdersBatchSize(isNaN(v) ? 50 : Math.max(10, Math.min(100, v)));
+                }}
+                min={10}
+                max={100}
+              />
+              <Input
+                type="number"
+                label="Повторних спроб (retryAttempts)"
+                description="Кількість повторів при помилці синхронізації"
+                value={String(ordersRetryAttempts)}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  setOrdersRetryAttempts(isNaN(v) ? 3 : Math.max(0, Math.min(10, v)));
+                }}
+                min={0}
+                max={10}
+              />
+              </>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button
+              color="primary"
+              onPress={saveOrdersAutoSyncSettings}
+              isLoading={dilovodSaving}
+              startContent={!dilovodSaving && <DynamicIcon name="save" size={16} />}
+            >
+              {dilovodSaving ? 'Збереження...' : 'Зберегти'}
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
+
       {/* Manual Sync */}
       <Card>
         <CardHeader className="border-b border-gray-200">
@@ -2418,178 +2551,6 @@ const SettingsOrders: React.FC = () => {
 
       {/* Sync History Table */}
       <SyncHistory />
-
-      {/* Sync Settings by Type */}
-      <Card>
-        <CardHeader className="border-b border-gray-200">
-          <DynamicIcon name="sliders" size={20} className="text-gray-600 mr-2" />
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Налаштування за типами синхронізації</h2>
-          </div>
-        </CardHeader>
-        <CardBody className="p-4">
-          <div className="space-y-4">
-            {/* Orders */}
-            <div className="border rounded-md p-3 flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <DynamicIcon name="shopping-cart" size={18} className="text-gray-600" />
-                <div className="flex-1">
-                  <span className="font-medium">Замовлення</span>
-                  <span className="block text-xs text-gray-500">Імпорт/оновлення з SalesDrive</span>
-                </div>
-                <Switch
-                  isSelected={syncSettings.orders.enabled}
-                  onValueChange={isSelected => setSyncSettings(prev => ({
-                    ...prev, orders: { ...prev.orders, enabled: isSelected }
-                  }))}
-                  size="sm"
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <Input
-                  type="number"
-                  label="Інтервал (хв)"
-                  value={syncSettings.orders.syncInterval.toString()}
-                  onChange={e => setSyncSettings(prev => ({
-                    ...prev, orders: { ...prev.orders, syncInterval: parseInt(e.target.value) || 30 }
-                  }))}
-                  min="5" max="480"
-                />
-                <Input
-                  type="number"
-                  label="Пакет (шт)"
-                  value={syncSettings.orders.batchSize.toString()}
-                  onChange={e => setSyncSettings(prev => ({
-                    ...prev, orders: { ...prev.orders, batchSize: parseInt(e.target.value) || 50 }
-                  }))}
-                  min="10" max="200"
-                />
-                <Input
-                  type="number"
-                  label="Повтори"
-                  value={syncSettings.orders.retryAttempts.toString()}
-                  onChange={e => setSyncSettings(prev => ({
-                    ...prev, orders: { ...prev.orders, retryAttempts: parseInt(e.target.value) || 3 }
-                  }))}
-                  min="0" max="10"
-                />
-              </div>
-            </div>
-            {/* Products */}
-            <div className="border rounded-md p-3 flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <DynamicIcon name="package" size={18} className="text-gray-600" />
-                <div className="flex-1">
-                  <span className="font-medium">Товари</span>
-                  <span className="block text-xs text-gray-500">Оновлення каталогу, цін, комплектацій</span>
-                </div>
-                <Switch
-                  isSelected={syncSettings.products.enabled}
-                  onValueChange={isSelected => setSyncSettings(prev => ({
-                    ...prev, products: { ...prev.products, enabled: isSelected }
-                  }))}
-                  size="sm"
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <Input
-                  type="number"
-                  label="Інтервал (год)"
-                  value={syncSettings.products.syncInterval.toString()}
-                  onChange={e => setSyncSettings(prev => ({
-                    ...prev, products: { ...prev.products, syncInterval: parseInt(e.target.value) || 6 }
-                  }))}
-                  min="1" max="24"
-                />
-                <Input
-                  type="number"
-                  label="Пакет (шт)"
-                  value={syncSettings.products.batchSize.toString()}
-                  onChange={e => setSyncSettings(prev => ({
-                    ...prev, products: { ...prev.products, batchSize: parseInt(e.target.value) || 100 }
-                  }))}
-                  min="10" max="500"
-                />
-                <Input
-                  type="number"
-                  label="Повтори"
-                  value={syncSettings.products.retryAttempts.toString()}
-                  onChange={e => setSyncSettings(prev => ({
-                    ...prev, products: { ...prev.products, retryAttempts: parseInt(e.target.value) || 2 }
-                  }))}
-                  min="0" max="5"
-                />
-              </div>
-            </div>
-            {/* Stocks */}
-            <div className="border rounded-md p-3 flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <DynamicIcon name="warehouse" size={18} className="text-gray-600" />
-                <div className="flex-1">
-                  <span className="font-medium">Залишки</span>
-                  <span className="block text-xs text-gray-500">Оновлення кількості на складах</span>
-                </div>
-                <Switch
-                  isSelected={syncSettings.stocks.enabled}
-                  onValueChange={isSelected => setSyncSettings(prev => ({
-                    ...prev, stocks: { ...prev.stocks, enabled: isSelected }
-                  }))}
-                  className="rounded"
-                  size="sm"
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <Input
-                  type="number"
-                  label="Інтервал (хв)"
-                  value={syncSettings.stocks.syncInterval.toString()}
-                  onChange={e => setSyncSettings(prev => ({
-                    ...prev, stocks: { ...prev.stocks, syncInterval: parseInt(e.target.value) || 15 }
-                  }))}
-                  min="5" max="120"
-                />
-                <Input
-                  type="number"
-                  label="Пакет (шт)"
-                  value={syncSettings.stocks.batchSize.toString()}
-                  onChange={e => setSyncSettings(prev => ({
-                    ...prev, stocks: { ...prev.stocks, batchSize: parseInt(e.target.value) || 200 }
-                  }))}
-                  min="20" max="1000"
-                />
-                <Input
-                  type="number"
-                  label="Повтори"
-                  value={syncSettings.stocks.retryAttempts.toString()}
-                  onChange={e => setSyncSettings(prev => ({
-                    ...prev, stocks: { ...prev.stocks, retryAttempts: parseInt(e.target.value) || 1 }
-                  }))}
-                  min="0" max="3"
-                />
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 flex justify-end">
-            <Button
-              onPress={saveSyncSettings}
-              color="primary"
-              disabled={settingsLoading}
-            >
-              {settingsLoading ? (
-                <>
-                  <DynamicIcon name="loader-2" className="mr-2 animate-spin" size={14} />
-                  Збереження...
-                </>
-              ) : (
-                <>
-                  <DynamicIcon name="save" size={16} />
-                  Зберегти
-                </>
-              )}
-            </Button>
-          </div>
-        </CardBody>
-      </Card>
 
       {/* Error Details Modal */}
       <Modal scrollBehavior="inside" isOpen={errorDetailsModal.isOpen} onOpenChange={errorDetailsModal.onOpenChange}>

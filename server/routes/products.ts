@@ -670,7 +670,7 @@ router.post('/sync-stock', authenticateToken, async (req, res) => {
       });
     }
 
-    // Проверяем, включена ли синхронизация остатков
+    // Перевіряємо, чи увімкнено синхронізацію залишків
     const { syncSettingsService } = await import('../services/syncSettingsService.js');
     const isEnabled = await syncSettingsService.isSyncEnabled('stocks');
 

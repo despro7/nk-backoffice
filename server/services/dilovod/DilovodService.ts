@@ -285,13 +285,33 @@ export class DilovodService {
 
       logWithTimestamp(`Оброблено ${processedStock.length} товарів з залишками`);
 
-      return processedStock.map(item => ({
-        sku: item.sku,
-        name: item.name,
-        mainStorage: item.mainStorage,
-        kyivStorage: item.kyivStorage,
-        total: item.total
+      // Визначаємо SKU, для яких Dilovod API не повернув жодного рядка
+      // (може статися коли qty = null або товар відсутній в реєстрі залишків)
+      const returnedSkus = new Set(processedStock.map(item => item.sku));
+      const missingSkus = skus.filter(sku => !returnedSkus.has(sku));
+
+      if (missingSkus.length > 0) {
+        logWithTimestamp(`⚠️ Dilovod не повернув залишки для ${missingSkus.length} SKU — встановлюємо 0: ${missingSkus.slice(0, 10).join(', ')}${missingSkus.length > 10 ? ` ... і ще ${missingSkus.length - 10}` : ''}`);
+      }
+
+      const zeroBalances: DilovodStockBalance[] = missingSkus.map(sku => ({
+        sku,
+        name: sku,
+        mainStorage: 0,
+        smallStorage: 0,
+        total: 0
       }));
+
+      return [
+        ...processedStock.map(item => ({
+          sku: item.sku,
+          name: item.name,
+          mainStorage: item.mainStorage,
+          smallStorage: item.smallStorage,
+          total: item.total
+        })),
+        ...zeroBalances
+      ];
 
     } catch (error) {
       logWithTimestamp('Помилка отримання залишків за SKU:', error);
@@ -332,12 +352,12 @@ export class DilovodService {
           const result = await this.syncManager.updateProductStockBalance(
             stockBalance.sku,
             stockBalance.mainStorage,
-            stockBalance.kyivStorage
+            stockBalance.smallStorage
           );
 
           if (result.success) {
             updatedProducts++;
-            logWithTimestamp(`✅ Залишки для ${stockBalance.sku} оновлено: Склад1=${stockBalance.mainStorage}, Склад2=${stockBalance.kyivStorage}`);
+            logWithTimestamp(`✅ Залишки для ${stockBalance.sku} оновлено: Склад1=${stockBalance.mainStorage}, Склад2=${stockBalance.smallStorage}`);
           } else {
             errors.push(`Помилка оновлення ${stockBalance.sku}: ${result.message}`);
           }
