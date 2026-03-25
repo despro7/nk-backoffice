@@ -40,9 +40,9 @@ function formatRelativeTime(iso: string): string {
 
 const TITLE_LABELS: Record<string, string> = {
   // Manual export (dilovod.ts)
-	'Export failed':                                           				'Помилка експорту замовлення в Діловод',
-  'Dilovod export result':                                          'Експорт замовлення в Діловод',
-  'Dilovod shipment export result':                                 'Відвантаження замовлення в Діловод',
+	'Export failed':                                           				'Помилка експорту замовлення в Діловод',
+  'Dilovod export result':                                          'Експорт замовлення в Діловод',
+  'Dilovod shipment export result':                                 'Відвантаження замовлення в Діловод',
   // DilovodExportBuilder
   'Експорт замовлення заблоковано - немає товарів для відправки':   'Експорт заблоковано — немає товарів',
   // DilovodAutoExportService
@@ -105,7 +105,7 @@ function NotificationRow({ notification, onMarkRead, onOpenLog }: NotificationRo
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2 mb-1">
             <p className="text-sm font-semibold text-gray-900 leading-tight">
-              {translateTitle(notification)} ({notification.title})
+              {translateTitle(notification)}
             </p>
             <span className="text-[11px] text-gray-400 flex-shrink-0">
               {formatRelativeTime(notification.createdAt)}

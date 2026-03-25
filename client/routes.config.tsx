@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import Orders from './pages/Orders';
 import WarehouseMovement from './pages/WarehouseMovement';
 import Reports from './pages/Reports';
+import ReportsSales from './pages/ReportsSales';
+import ReportsShipment from './pages/ReportsShipment';
 import DesignSystem from './pages/DesignSystem';
 import OrderView from './pages/OrderView';
 import SettingsTestAuth from "./pages/SettingsTestAuth";
@@ -54,7 +56,15 @@ export const hasAccess = (userRole: string, requiredRoles?: string[], minRole?: 
   return false;
 };
 
-// Расширенный интерфейс для поддержки ролей
+// Метадані для груп-контейнерів без власного маршруту (наприклад, "Налаштування")
+export interface NavGroupMeta {
+  label: string;
+  icon: React.ReactNode;
+  /** Порядок групи в навігації серед mainRoutes та груп-контейнерів */
+  order?: number;
+}
+
+// Розширений інтерфейс для підтримки ролей
 export interface AppRoute {
   path: string;
   component: React.ComponentType;
@@ -68,6 +78,10 @@ export interface AppRoute {
   roles?: string[]; // Разрешенные роли для доступа
   minRole?: string; // Минимальная роль для доступа
   hasOwnTitle?: boolean; // Флаг для страниц с собственным заголовком
+  /** Метадані групи-контейнера. Вказується на будь-якому маршруті з parent === ключ цієї групи.
+   *  Потрібне лише для груп БЕЗ власного маршруту (наприклад parent: 'settings').
+   *  Достатньо вказати один раз на будь-якому дочірньому елементі. */
+  groupMeta?: NavGroupMeta;
 }
 
 // Define all routes with role-based access control
@@ -117,15 +131,45 @@ export const appRoutes: AppRoute[] = [
     minRole: ROLES.STOREKEEPER // storekeeper и выше
   },
   {
-    path: '/reports',
+    path: '/reports/sales',
+    component: ReportsSales,
+    title: 'Звіти по продажам',
+    pageTitle: 'Звіти по продажам | NK Backoffice',
+    navLabel: 'Статистика продажів',
+    icon: <DynamicIcon name="chart-column" size={16} />,
+    inNav: true,
+    parent: 'reports',
+    order: 0,
+    groupMeta: {
+      label: 'Звіти',
+      icon: <DynamicIcon name="chart-spline" size={20} />,
+      order: 4,
+    },
+    minRole: ROLES.ADS_MANAGER // ads-manager и выше
+  },
+  {
+    path: '/reports/shipment',
+    component: ReportsShipment,
+    title: 'Звіти по відвантаженням',
+    pageTitle: 'Звіти по відвантаженням | NK Backoffice',
+    navLabel: 'Відвантаження',
+    icon: <DynamicIcon name="truck" size={16} />,
+    inNav: true,
+    parent: 'reports',
+    order: 1,
+    minRole: ROLES.SHOP_MANAGER // shop-manager и выше
+  },
+  {
+    path: '/reports/general',
     component: Reports,
     title: 'Звіти',
     pageTitle: 'Звіти | NK Backoffice',
-    navLabel: 'Звіти',
-    icon: <DynamicIcon name="chart-spline" size={20} />,
+    navLabel: 'Загальна статистика',
+    icon: <DynamicIcon name="calculator" size={16} />,
     inNav: true,
-    order: 4,
-    minRole: ROLES.ADS_MANAGER // ads-manager и выше
+    parent: 'reports',
+    order: 2,
+    minRole: ROLES.SHOP_MANAGER // shop-manager и выше
   },
   {
     path: '/salesdrive-to-dilovod',
@@ -147,7 +191,12 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="user" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     parent: 'settings',
-    order: 1
+    order: 1,
+    groupMeta: {
+      label: 'Налаштування',
+      icon: <DynamicIcon name="settings-2" size={20} />,
+      order: 10,
+    },
   },
   {
     path: '/settings/design',
@@ -162,7 +211,7 @@ export const appRoutes: AppRoute[] = [
     roles: [ROLES.ADMIN] // Только admin
   },
   {
-    path: "/settings/test-auth",
+    path: '/settings/test-auth',
     component: SettingsTestAuth,
     title: 'Тест системи авторизації (JWT)',
     pageTitle: 'Тестова сторінка | NK Backoffice',
@@ -174,7 +223,7 @@ export const appRoutes: AppRoute[] = [
     roles: [ROLES.ADMIN] // Только admin
   },
   {
-    path: "/settings/product-sets",
+    path: '/settings/product-sets',
     component: SettingsProductSets,
     title: 'Товари і комплекти з Dilovod',
     pageTitle: 'Товари і комплекти | NK Backoffice',
@@ -187,7 +236,7 @@ export const appRoutes: AppRoute[] = [
     // roles: [ROLES.ADMIN, ROLES.BOSS] // Только admin и boss
   },
   {
-    path: "/settings/order-assembly",
+    path: '/settings/order-assembly',
     component: SettingsOrderAssembly,
     title: 'Налаштування комплектування замовлень',
     pageTitle: 'Налаштування комплектування замовлень | NK Backoffice',
@@ -199,7 +248,7 @@ export const appRoutes: AppRoute[] = [
     minRole: ROLES.STOREKEEPER // storekeeper и выше
   },
   {
-    path: "/settings/equipment",
+    path: '/settings/equipment',
     component: SettingsEquipment,
     title: 'Налаштування обладнання',
     pageTitle: 'Налаштування обладнання | NK Backoffice',
@@ -212,7 +261,7 @@ export const appRoutes: AppRoute[] = [
     roles: [ROLES.ADMIN, ROLES.BOSS, ROLES.STOREKEEPER] // Только admin и boss
   },
   {
-    path: "/settings/orders",
+    path: '/settings/orders',
     component: SettingsOrders,
     title: 'Налаштування синхронізации замовлень',
     pageTitle: 'Налаштування синхронізації замовлень | NK Backoffice',
@@ -224,7 +273,7 @@ export const appRoutes: AppRoute[] = [
     roles: [ROLES.ADMIN] // Только admin
   },
   {
-    path: "/settings/dilovod",
+    path: '/settings/dilovod',
     component: SettingsDilovod,
     title: 'Налаштування синхронізації SalesDrive ➝ Dilovod',
     pageTitle: 'Налаштування синхронізації SalesDrive ➝ Dilovod | NK Backoffice',
@@ -237,7 +286,7 @@ export const appRoutes: AppRoute[] = [
     minRole: ROLES.SHOP_MANAGER // shop-manager и выше (admin, boss, shop-manager)
   },
   {
-    path: "/settings/admin",
+    path: '/settings/admin',
     component: SettingsAdmin,
     title: 'Адмінські налаштування',
     pageTitle: 'Адмінські налаштування | NK Backoffice',
@@ -249,7 +298,7 @@ export const appRoutes: AppRoute[] = [
     roles: [ROLES.ADMIN] // Только admin
   },
   {
-    path: "/test-serial-com",
+    path: '/test-serial-com',
     component: TestSerialCom,
     title: 'Тестування COM порту та обладнання',
     pageTitle: 'Тестування COM порту та обладнання | NK Backoffice',
@@ -261,24 +310,48 @@ export const appRoutes: AppRoute[] = [
   },
 ];
 
-// Обновленная группировка с учетом ролей
+export interface NavGroup {
+  key: string;               // Ключ групи (збігається з parent або шляхом маршруту)
+  parentRoute: AppRoute | null; // Маршрут-батько (якщо існує в appRoutes), або null
+  groupMeta: NavGroupMeta | null; // Метадані для груп без власного маршруту
+  /** Порядок групи в навігації: береться з parentRoute.order або groupMeta.order */
+  order: number;
+  children: AppRoute[];      // Дочірні маршрути
+}
+
+// Повністю динамічна групировка навігації з урахуванням ролей
 export const getNavGroups = (userRole?: string) => {
   const filterByRole = (route: AppRoute) => {
     if (!userRole) return false;
     return hasAccess(userRole, route.roles, route.minRole);
   };
 
+  // Маршрути верхнього рівня (без parent), доступні за роллю
   const mainRoutes = appRoutes
     .filter(route => route.inNav && !route.parent && filterByRole(route))
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 
-  const settingsRoutes = appRoutes
-    .filter(route => route.inNav && route.parent === 'settings' && filterByRole(route))
-    .sort((a, b) => (a.order || 0) - (b.order || 0));
+  // Знаходимо всі унікальні parent-ключі серед доступних дочірніх маршрутів
+  const allParentKeys = Array.from(
+    new Set(
+      appRoutes
+        .filter(route => route.inNav && route.parent && filterByRole(route))
+        .map(route => route.parent as string)
+    )
+  );
 
-  return {
-    mainRoutes,
-    settingsRoutes,
-    hasSettingsAccess: settingsRoutes.length > 0
-  };
+  // Будуємо map груп: key → { parentRoute, groupMeta, children }
+  const subGroups: Record<string, NavGroup> = {};
+  for (const key of allParentKeys) {
+    const parentRoute = appRoutes.find(r => r.path === `/${key}` || r.path === key) ?? null;
+    const children = appRoutes
+      .filter(route => route.inNav && route.parent === key && filterByRole(route))
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+    // Підхоплюємо groupMeta з будь-якого дочірнього маршруту (достатньо одного)
+    const groupMeta = appRoutes.find(r => r.parent === key && r.groupMeta)?.groupMeta ?? null;
+    const order = parentRoute?.order ?? groupMeta?.order ?? 999;
+    subGroups[key] = { key, parentRoute, groupMeta, order, children };
+  }
+
+  return { mainRoutes, subGroups };
 };

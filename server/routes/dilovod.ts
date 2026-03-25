@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
-import { handleDilovodApiError, clearConfigCache } from '../services/dilovod/DilovodUtils.js';
+import { handleDilovodApiError, clearConfigCache, isDilovodExportError, getDilovodExportErrorMessage } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { cronService } from '../services/cronService.js';
@@ -1173,7 +1173,8 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
       const exportResult = await dilovodService.exportOrderToDilovod(payload);
 
       // Визначаємо статус відповіді
-      const isExportError = !!(exportResult && (exportResult.error || exportResult.status === 'error'));
+      const isExportError = isDilovodExportError(exportResult);
+      const exportErrorMessage = isExportError ? getDilovodExportErrorMessage(exportResult) : '';
 
       // Якщо експорт успішний і є baseDoc ID - зберігаємо в БД
       if (!isExportError && exportResult?.id) {
@@ -1227,7 +1228,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
       });
 
       const mainMessage = isExportError
-        ? `Помилка експорту замовлення ${orderNum} в Dilovod: ${exportResult?.error || exportResult?.message || 'невідома помилка'}`
+        ? `Помилка експорту замовлення ${orderNum} в Dilovod: ${exportErrorMessage}`
         : `Замовлення ${orderNum} експортовано в Dilovod успішно`;
 
       res.json({
@@ -1422,10 +1423,11 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
       const { dilovodService } = await import('../services/dilovod/DilovodService.js');
       const exportResult = await dilovodService.exportOrderToDilovod(salePayload);
 
-      const isExportError = !!(exportResult && (exportResult.error || exportResult.status === 'error'));
+      const isExportError = isDilovodExportError(exportResult);
+      const exportErrorMessage = isExportError ? getDilovodExportErrorMessage(exportResult) : '';
       const orderNumber = orderNum || orderId;
 
-      // Якщо експорт успішний - оновлюємо дату відвантаження
+      // Якщо експорт успішний - оновлюємо дату відвантаження — ТІЛЬКИ якщо немає жодної помилки
       if (!isExportError && exportResult?.id) {
         try {
           // Використовуємо readyToShipAt, якщо воно встановлено, інакше поточну дату
@@ -1445,6 +1447,8 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
         } catch (dbError) {
           logWithTimestamp(`❌ Помилка збереження дати відвантаження в БД:`, dbError);
         }
+      } else if (isExportError) {
+        logWithTimestamp(`❌ Відвантаження для замовлення #${orderNumber} НЕ збережено в БД: ${exportErrorMessage}`);
       }
 
       // Логування в MetaLog
@@ -1452,7 +1456,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
         title: 'Dilovod shipment export result',
         status: isExportError ? 'error' : 'success',
         message: isExportError
-          ? (exportResult?.error || exportResult?.message || 'Shipment creation failed')
+          ? exportErrorMessage
           : (exportResult?.message || 'Shipment created successfully'),
         initiatedBy: req.user ? String(req.user.userId) : 'unknown',
         data: {
@@ -1466,7 +1470,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
       });
 
       const mainMessage = isExportError
-        ? `Помилка створення відвантаження для замовлення ${orderNumber}: ${exportResult?.error || exportResult?.message || 'невідома помилка'}`
+        ? `Помилка створення відвантаження для замовлення ${orderNumber}: ${exportErrorMessage}`
         : `Документ відвантаження для замовлення ${orderNumber} успішно створений`;
 
       res.json({

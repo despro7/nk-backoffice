@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import type { ShipmentSummary } from "./ShipmentSummaryCards";
 import {
   Table,
   TableHeader,
@@ -82,6 +83,7 @@ interface ProductDateStatsResponse {
 
 interface ProductShippedStatsTableProps {
   className?: string;
+  onSummaryChange?: (summary: ShipmentSummary) => void;
 }
 
 type SortDescriptor = {
@@ -134,7 +136,7 @@ const pluralize = (count: number, one: string, few: string, many: string): strin
   }
 };
 
-export default function ProductShippedStatsTable({ className }: ProductShippedStatsTableProps) {
+export default function ProductShippedStatsTable({ className, onSummaryChange }: ProductShippedStatsTableProps) {
   const { isAdmin } = useRoleAccess();
   const { apiCall } = useApi();
   const [productStats, setProductStats] = useState<ProductStats[]>([]);
@@ -194,7 +196,7 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
   }, [viewMode]);
 
   // Клієнтський кеш за фільтрами
-  const [cache, setCache] = useState<Record<string, { data: ProductStats[], timestamp: number }>>({});
+  const [cache, setCache] = useState<Record<string, { data: ProductStats[], totalOrders: number, timestamp: number }>>({});
   const CACHE_DURATION = 30000; // 30 секунд кешування на клієнті
 
   // Завантаження статистики товарів
@@ -215,7 +217,15 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
       if (process.env.NODE_ENV === 'development') {
         console.log('📋 Using client cache for filters:', cacheKey);
       }
-      setProductStats(cache[cacheKey].data);
+      const cachedData = cache[cacheKey].data;
+      setProductStats(cachedData);
+      if (onSummaryChange) {
+        onSummaryChange({
+          totalOrders: cache[cacheKey].totalOrders ?? 0,
+          totalPortions: cachedData.reduce((sum, item) => sum + item.orderedQuantity, 0),
+          uniqueProducts: cachedData.length,
+        });
+      }
       return;
     }
 
@@ -255,10 +265,19 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
 
         setProductStats(validatedData);
 
+        // Сповіщаємо батьківський компонент про підсумкові дані
+        if (onSummaryChange) {
+          onSummaryChange({
+            totalOrders: data.metadata.totalOrders,
+            totalPortions: validatedData.reduce((sum, item) => sum + item.orderedQuantity, 0),
+            uniqueProducts: validatedData.length,
+          });
+        }
+
         // Зберігаємо в клієнтський кеш
         setCache(prev => ({
           ...prev,
-          [cacheKey]: { data: validatedData, timestamp: now }
+          [cacheKey]: { data: validatedData, totalOrders: data.metadata.totalOrders, timestamp: now }
         }));
 
         // Оновлюємо час останнього оновлення кешу
@@ -747,7 +766,7 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
   }, [productStats]);
 
   return (
-    <div className={`space-y-4 ${className}`}>
+    <div className={`${className}`}>
       {/* Фільтри */}
       <div className="flex flex-wrap gap-4 items-end">
         <div className="flex-1">
@@ -766,10 +785,10 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
               const product = productStats.find(p => p.sku === selectedItem.key);
               return product ? `${product.name} (${product.sku})` : "Всі товари";
             }}
-            size="lg"
+            size="md"
             startContent={<DynamicIcon name="package" className="text-gray-400" size={19} />}
             classNames={{
-              trigger: "h-12 max-w-60",
+              trigger: "h-10 max-w-80",
               innerWrapper: "gap-2"
             }}
           >
@@ -788,10 +807,10 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
                 selected.length > 0 ? (selected[0] as string) : "all";
               setStatusFilter(newStatus);
             }}
-            size="lg"
+            size="md"
 			startContent={<DynamicIcon name="filter" className="text-gray-400" size={19} />}
 			classNames={{
-				trigger: "h-12",
+				trigger: "h-10",
 				innerWrapper: "gap-2"
 			}}
           >
@@ -812,10 +831,10 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
 				const preset = datePresets.find(p => p.key === selectedKey);
 				if (preset) setDateRange(preset.getRange());
 			}}
-            size="lg"
+            size="md"
 			startContent={<DynamicIcon name="calendar" className="text-gray-400" size={19} />}
 			classNames={{
-				trigger: "h-12",
+				trigger: "h-10",
 				innerWrapper: "gap-2"
 			}}
           >
@@ -834,11 +853,11 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
                 setDateRange(value);
                 setDatePresetKey(null);
               }}
-              size="lg"
+              size="md"
               selectorButtonPlacement="start"
               selectorIcon={<DynamicIcon name="calendar" size={18} />}
               classNames={{
-              inputWrapper: "h-12",
+              inputWrapper: "h-10",
               segment: "rounded"
               }}
             />
@@ -849,12 +868,12 @@ export default function ProductShippedStatsTable({ className }: ProductShippedSt
         <Button
           onPress={resetFilters}
           disabled={loading}
-          size="lg"
+          size="md"
           variant="flat"
-          className="h-12 px-3 gap-2 bg-transparent border-1.5 border-neutral-200 hover:bg-red-100 hover:border-red-200 hover:text-red-500"
+          className="h-10 px-3 gap-2 bg-transparent border-1.5 border-neutral-200 hover:bg-red-100 hover:border-red-200 hover:text-red-500"
         >
           <DynamicIcon name="rotate-ccw" size={16} />
-		  Скинути
+		      Скинути
         </Button>
       </div>
 

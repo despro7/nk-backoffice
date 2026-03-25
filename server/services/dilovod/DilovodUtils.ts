@@ -2,6 +2,91 @@
 
 import { DilovodConfig } from './DilovodTypes.js';
 
+// ============================================================
+// Діагностика результату saveObject від Dilovod API
+// ============================================================
+
+/**
+ * Відомі типи "м'яких" помилок Dilovod API — вони приходять у полі `error`
+ * або `clientMessages` відповіді з HTTP 200, але документ НЕ збережено.
+ *
+ * Використовується для запобігання хибному запису дати відвантаження в БД.
+ */
+const DILOVOD_SOFT_ERROR_PATTERNS = [
+  'applicationLayerError',       // Документ не збережено (напр. недостатня кількість)
+  'multithreadApiSession',        // Паралельний запит заблоковано
+] as const;
+
+/**
+ * Перевіряє, чи відповідь Dilovod API містить помилку збереження документа.
+ *
+ * Повертає `true` якщо:
+ *  - відсутній `id` у відповіді (документ не створено), АБО
+ *  - поле `error` містить будь-який з відомих шаблонів помилок, АБО
+ *  - `status === 'error'`, АБО
+ *  - `clientMessages` містить повідомлення типу 'error' або 'warn'
+ *    разом з відсутнім `id`.
+ *
+ * @param result - сира відповідь від `exportOrderToDilovod` / `makeRequest`
+ */
+export function isDilovodExportError(result: any): boolean {
+  if (!result) return true;
+
+  // Явна помилка в полі error (applicationLayerError, multithreadApiSession тощо)
+  if (result.error) {
+    // Будь-яке непорожнє значення error = документ не збережено
+    return true;
+  }
+
+  // Явний статус помилки
+  if (result.status === 'error') return true;
+
+  // clientMessages можуть містити помилки навіть без поля error
+  if (Array.isArray(result.clientMessages)) {
+    const hasError = result.clientMessages.some(
+      (m: any) => m && (m.type === 'error' || m.type === 'warn')
+    );
+    if (hasError && !result.id) return true;
+  }
+
+  // Немає id — документ не створено (будь-яка причина)
+  if (!result.id) return true;
+
+  return false;
+}
+
+/**
+ * Повертає рядок опису помилки з відповіді Dilovod для логування.
+ */
+export function getDilovodExportErrorMessage(result: any): string {
+  if (!result) return 'Порожня відповідь від Dilovod API';
+
+  if (result.error) {
+    const errStr = String(result.error);
+    for (const pattern of DILOVOD_SOFT_ERROR_PATTERNS) {
+      if (errStr.includes(pattern)) {
+        if (pattern === 'applicationLayerError') {
+          return `Dilovod: документ не збережено (applicationLayerError) — ${errStr}`;
+        }
+        if (pattern === 'multithreadApiSession') {
+          return `Dilovod: заблоковано паралельний запит (multithreadApiSession) — повторіть спробу пізніше`;
+        }
+      }
+    }
+    return `Dilovod: помилка збереження документа — ${errStr}`;
+  }
+
+  if (result.status === 'error') {
+    return result.message || 'Dilovod: статус відповіді "error"';
+  }
+
+  if (!result.id) {
+    return 'Dilovod: відповідь не містить id — документ не збережено';
+  }
+
+  return 'Невідома помилка';
+}
+
 // Простий кеш для конфігурації з TTL 10 хвилин
 let configCache: { config: DilovodConfig; timestamp: number } | null = null;
 const CONFIG_CACHE_TTL = 600000; // 10 хвилин

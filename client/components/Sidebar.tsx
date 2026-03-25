@@ -1,7 +1,7 @@
 import logo from "/logo.svg";
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "react-router-dom";
-import { getNavGroups, AppRoute } from "@/routes.config";
+import { getNavGroups, AppRoute, NavGroup } from "@/routes.config";
 import React, { useState } from "react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,7 +22,7 @@ interface SubmenuProps {
   icon: React.ReactNode;
   children: React.ReactNode;
   isExpanded: boolean;
-  isChildrenActive: boolean; // Новое состояние
+  isChildrenActive: boolean;
   onToggle: () => void;
 }
 
@@ -73,12 +73,11 @@ function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle
         />
       </button>
       
-      {/* Submenu всегда рендерится, но скрывается/показывается с анимацией */}
       <div 
         className={cn(
           "transition-all duration-300 ease-in-out rounded-lg w-full",
           isExpanded
-            ? `max-h-dvh opacity-100 bg-neutral-100${isChildrenActive ? " bg-neutral-100" : ""}`
+            ? `max-h-dvh opacity-100 bg-neutral-100`
             : "max-h-0 opacity-0 overflow-hidden"
         )}
       >
@@ -119,68 +118,98 @@ export function Sidebar({ className }: SidebarProps) {
   const { user } = useAuth();
   const [expandedSubmenus, setExpandedSubmenus] = useState<Set<string>>(new Set());
   
-  // Получаем маршруты с учетом роли пользователя
-  const { mainRoutes, settingsRoutes } = getNavGroups(user?.role);
+  const { mainRoutes, subGroups } = getNavGroups(user?.role);
 
-  const toggleSubmenu = (submenuKey: string) => {
-    const newExpanded = new Set(expandedSubmenus);
-    if (newExpanded.has(submenuKey)) {
-      newExpanded.delete(submenuKey);
-    } else {
-      newExpanded.add(submenuKey);
-    }
-    setExpandedSubmenus(newExpanded);
+  const toggleSubmenu = (key: string) => {
+    setExpandedSubmenus(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
   };
 
-  // Универсальная функция для проверки активных дочерних элементов любого родительского раздела
-  const getActiveChildrenForParent = (parentKey: string, routes: AppRoute[]) => {
-    return routes.some(route => route.parent === parentKey && location.pathname === route.path);
+  const isGroupExpanded = (group: NavGroup) => {
+    const hasActiveChild = group.children.some(r => location.pathname === r.path);
+    return expandedSubmenus.has(group.key) || hasActiveChild;
   };
 
-  // Универсальная функция для определения состояния expanded любого submenu
-  const isSubmenuExpanded = (parentKey: string, routes: AppRoute[]) => {
-    const hasActiveChildren = getActiveChildrenForParent(parentKey, routes);
-    return expandedSubmenus.has(parentKey) || hasActiveChildren;
+  const isGroupChildActive = (group: NavGroup) => {
+    return group.children.some(r => location.pathname === r.path);
   };
 
-  // Проверяем активные дочерние элементы для настроек
-  const isSettingsChildrenActive = getActiveChildrenForParent('settings', settingsRoutes);
-  const isSettingsExpanded = isSubmenuExpanded('settings', settingsRoutes);
+  // Рендер підменю для групи
+  const renderSubGroup = (group: NavGroup) => {
+    const expanded = isGroupExpanded(group);
+    const childActive = isGroupChildActive(group);
+
+    // Якщо є маршрут-батько — перший пункт підменю веде на нього
+    const label = group.parentRoute?.navLabel ?? group.groupMeta?.label ?? group.key;
+    const icon = group.parentRoute?.icon ?? group.groupMeta?.icon ?? null;
+
+    return (
+      <Submenu
+        key={group.key}
+        label={label}
+        icon={icon}
+        isExpanded={expanded}
+        isChildrenActive={childActive}
+        onToggle={() => toggleSubmenu(group.key)}
+      >
+        {/* Якщо є власний маршрут-батько — додаємо його першим пунктом */}
+        {group.parentRoute && (
+          <SubmenuItem
+            to={group.parentRoute.path}
+            icon={group.parentRoute.icon}
+            label={group.parentRoute.navLabel}
+            isActive={location.pathname === group.parentRoute.path}
+          />
+        )}
+        {group.children.map((child) => (
+          <SubmenuItem
+            key={child.path}
+            to={child.path}
+            icon={child.icon}
+            label={child.navLabel}
+            isActive={location.pathname === child.path}
+          />
+        ))}
+      </Submenu>
+    );
+  };
 
   return (
     <div className={cn("hidden lg:flex w-[250px] flex-col bg-white border-r border-neutral-200 h-auto self-stretch", className)}>
-      <div className="sticky top-0 h-screen overflow-y-auto bg-white scrollbar-hide pb-8">
+      <div className="sticky top-0 h-screen overflow-y-auto bg-white scrollbar-hide pb-4">
         <img src={logo} alt="logo" className="p-5" />
         <nav className="flex flex-col items-start gap-1 px-3 py-4 h-auto flex-1">
-          {/* Основные маршруты */}
-          {mainRoutes.map((route) => (
-            <NavItem
-              key={route.path}
-              to={route.path}
-              icon={route.icon}
-              label={route.navLabel}
-              isActive={location.pathname === route.path}
-            />
-          ))}
-
-          {/* Налаштування - показываем всем, но дочерние элементы по ролям */}
-          <Submenu
-            label="Налаштування"
-            icon={<DynamicIcon name="settings-2" size={20} />}
-            isExpanded={isSettingsExpanded}
-            isChildrenActive={isSettingsChildrenActive}
-            onToggle={() => toggleSubmenu('settings')}
-          >
-            {settingsRoutes.map((route) => (
-              <SubmenuItem
-                key={route.path}
-                to={route.path}
-                icon={route.icon}
-                label={route.navLabel}
-                isActive={location.pathname === route.path}
-              />
-            ))}
-          </Submenu>
+          {/* Об'єднуємо mainRoutes та групи-контейнери в єдиний відсортований список */}
+          {[
+            ...mainRoutes.map(route => ({ type: 'route' as const, order: route.order ?? 0, route })),
+            ...Object.values(subGroups)
+              .filter(group => !group.parentRoute)
+              .map(group => ({ type: 'group' as const, order: group.order, group })),
+          ]
+            .sort((a, b) => a.order - b.order)
+            .map(item => {
+              if (item.type === 'group') {
+                return renderSubGroup(item.group);
+              }
+              // Якщо для маршруту є дочірня група — рендеримо як підменю
+              const group = subGroups[item.route.path.replace(/^\//, '')];
+              if (group) {
+                return renderSubGroup(group);
+              }
+              return (
+                <NavItem
+                  key={item.route.path}
+                  to={item.route.path}
+                  icon={item.route.icon}
+                  label={item.route.navLabel}
+                  isActive={location.pathname === item.route.path}
+                />
+              );
+            })
+          }
         </nav>
       </div>
     </div>

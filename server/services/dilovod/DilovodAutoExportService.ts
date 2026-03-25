@@ -10,7 +10,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { logWithTimestamp } from './DilovodUtils.js';
+import { logWithTimestamp, isDilovodExportError, getDilovodExportErrorMessage } from './DilovodUtils.js';
 import type { DilovodSettings } from '../../../shared/types/dilovod.js';
 
 const prisma = new PrismaClient();
@@ -232,7 +232,8 @@ export class DilovodAutoExportService {
       const { dilovodService } = await import('./DilovodService.js');
       const exportResult = await dilovodService.exportOrderToDilovod(payload);
 
-      const isError = !!(exportResult && (exportResult.error || exportResult.status === 'error'));
+      const isError = isDilovodExportError(exportResult);
+      const errorMessage = isError ? getDilovodExportErrorMessage(exportResult) : '';
 
       // Крок 4: Зберігаємо в БД при успіху
       if (!isError && exportResult?.id) {
@@ -248,7 +249,7 @@ export class DilovodAutoExportService {
         );
       } else {
         logWithTimestamp(
-          `❌ [AutoExport/saleOrder] Помилка export замовлення ${orderNum}: ${exportResult?.error || exportResult?.message || 'невідома помилка'}`
+          `❌ [AutoExport/saleOrder] Помилка export замовлення ${orderNum}: ${errorMessage}`
         );
       }
 
@@ -257,7 +258,7 @@ export class DilovodAutoExportService {
         title: 'Auto export result (saleOrder)',
         status: isError ? 'error' : 'success',
         message: isError
-          ? `[Авто] Помилка export замовлення ${orderNum}: ${exportResult?.error || exportResult?.message || 'невідома помилка'}`
+          ? `[Авто] Помилка export замовлення ${orderNum}: ${errorMessage}`
           : `[Авто] Замовлення ${orderNum} успішно експортовано в Dilovod`,
         initiatedBy,
         data: {
@@ -389,9 +390,10 @@ export class DilovodAutoExportService {
       const { dilovodService } = await import('./DilovodService.js');
       const exportResult = await dilovodService.exportOrderToDilovod(salePayload);
 
-      const isError = !!(exportResult && (exportResult.error || exportResult.status === 'error'));
+      const isError = isDilovodExportError(exportResult);
+      const errorMessage = isError ? getDilovodExportErrorMessage(exportResult) : '';
 
-      // Крок 4: Зберігаємо в БД при успіху
+      // Крок 4: Зберігаємо в БД при успіху — ТІЛЬКИ якщо немає жодної помилки
       if (!isError && exportResult?.id) {
         const shipmentDate = order.readyToShipAt
           ? new Date(order.readyToShipAt).toISOString()
@@ -408,7 +410,7 @@ export class DilovodAutoExportService {
         );
       } else {
         logWithTimestamp(
-          `❌ [AutoExport/sale] Помилка відвантаження замовлення ${orderNum}: ${exportResult?.error || exportResult?.message || 'невідома помилка'}`
+          `❌ [AutoExport/sale] Помилка відвантаження замовлення ${orderNum}: ${errorMessage}`
         );
       }
 
@@ -417,7 +419,7 @@ export class DilovodAutoExportService {
         title: 'Auto shipment export result (sale)',
         status: isError ? 'error' : 'success',
         message: isError
-          ? `[Авто] Помилка відвантаження замовлення ${orderNum}: ${exportResult?.error || exportResult?.message || 'невідома помилка'}`
+          ? `[Авто] Помилка відвантаження замовлення ${orderNum}: ${errorMessage}`
           : `[Авто] Документ відвантаження для замовлення ${orderNum} успішно створено`,
         initiatedBy,
         data: {
