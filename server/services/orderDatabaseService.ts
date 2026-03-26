@@ -1,4 +1,3 @@
-import { id } from 'zod/v4/locales';
 import { prisma } from '../lib/utils.js';
 import { ordersCacheService } from './ordersCacheService.js';
 
@@ -1975,7 +1974,7 @@ export class OrderDatabaseService {
   private async expandProductRecursively(
     sku: string,
     quantity: number,
-    productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } },
+    productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number } },
     visitedSets: Set<string> = new Set(),
     depth: number = 0
   ): Promise<void> {
@@ -2049,7 +2048,7 @@ export class OrderDatabaseService {
    * Допоміжна функція для додавання/оновлення товару в productStats
    */
   private addOrUpdateProductStats(
-    productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } },
+    productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number } },
     product: any,
     quantity: number
   ): void {
@@ -2061,8 +2060,7 @@ export class OrderDatabaseService {
       productStats[componentSku] = {
         name: product.name,
         sku: product.sku,
-        orderedQuantity: quantity,
-        stockBalances: {}
+        orderedQuantity: quantity
       };
     }
   }
@@ -2106,7 +2104,7 @@ export class OrderDatabaseService {
       }
 
       // Собираем статистику по товарам
-      const productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } } = {};
+      const productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number } } = {};
 
       for (const item of orderItems) {
         if (!item || typeof item !== 'object' || !item.sku || !item.quantity) {
@@ -2124,24 +2122,6 @@ export class OrderDatabaseService {
           );
         } catch (productError) {
           console.warn(`Error processing product ${item.sku} in order ${order.externalId}:`, productError);
-        }
-      }
-
-      // Получаем остатки на складах для каждого товара (исключая Киев id2)
-      for (const [sku, stats] of Object.entries(productStats)) {
-        try {
-          const product = await this.getProductBySku(sku);
-          if (product && product.stockBalanceByStock) {
-            const filteredBalances: { [warehouse: string]: number } = {};
-            for (const [warehouseId, balance] of Object.entries(product.stockBalanceByStock)) {
-              if (warehouseId !== '2') { // Исключаем Киев id2
-                filteredBalances[warehouseId] = balance as number;
-              }
-            }
-            stats.stockBalances = filteredBalances;
-          }
-        } catch (stockError) {
-          console.warn(`Failed to get stock balance for product ${sku}:`, stockError);
         }
       }
 

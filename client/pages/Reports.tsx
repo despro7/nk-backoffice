@@ -1,5 +1,4 @@
 import ProductStatsTable from "@/components/ProductStatsTable";
-import ProductShippedStatsTable from "@/components/ProductShippedStatsTable";
 
 export default function Reports() {
   return (

@@ -1113,7 +1113,11 @@ function compareOrderItems(currentItems: any[], cachedItems: any[]): boolean {
  */
 router.post('/cache/validate', authenticateToken, async (req, res) => {
   try {
-    const { startDate, endDate, force, mode } = req.query;
+    // Params can come from body (JSON POST) or query string — support both
+    const startDate = (req.body?.startDate ?? req.query.startDate) as string | undefined;
+    const endDate = (req.body?.endDate ?? req.query.endDate) as string | undefined;
+    const force = req.body?.force ?? req.query.force;
+    const mode = (req.body?.mode ?? req.query.mode) as string | undefined;
 
     console.log('🔍 [CACHE VALIDATION] Starting cache validation...', {
       startDate,
@@ -1513,14 +1517,12 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
               if (item && item.sku) {
                 if (productStats[item.sku]) {
                   productStats[item.sku].orderedQuantity += item.orderedQuantity || 0;
-                  // Оновлюємо залишки на складах (беремо останні дані)
-                  productStats[item.sku].stockBalances = item.stockBalances || {};
                 } else {
                   productStats[item.sku] = {
                     name: item.name || item.sku,
                     sku: item.sku,
                     orderedQuantity: item.orderedQuantity || 0,
-                    stockBalances: item.stockBalances || {}
+                    stockBalances: {} // Ініціалізуємо порожнім, наповнимо пізніше актуальними даними
                   };
                 }
               }
@@ -1543,6 +1545,26 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
     }
 
     console.log(`✅ Cache processing completed: ${cacheHits} hits, ${cacheMisses} misses`);
+
+    // --- Оновлюємо залишки АКТУАЛЬНИМИ даними з бази даних ---
+    const allSkus = Object.keys(productStats);
+    console.log(`🔄 Fetching actual stock balances for ${allSkus.length} products...`);
+    
+    for (const sku of allSkus) {
+      try {
+        const product = await orderDatabaseService.getProductBySku(sku);
+        if (product && product.stockBalanceByStock) {
+          const balances: { [warehouse: string]: number } = {};
+          for (const [warehouseId, balance] of Object.entries(product.stockBalanceByStock)) {
+            balances[warehouseId] = balance as number;
+          }
+          productStats[sku].stockBalances = balances;
+        }
+      } catch (error) {
+        console.warn(`Failed to get actual stock balance for product ${sku}:`, error);
+      }
+    }
+    console.log(`✅ Actual stock balances updated from database`);
 
     // Конвертуємо в масив для відповіді
     const productStatsArray = Object.values(productStats);
@@ -1780,13 +1802,11 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
 
               if (dateStats[reportingDate]) {
                 dateStats[reportingDate].orderedQuantity += productItem.orderedQuantity || 0;
-                // Оновлюємо залишки на складах (беремо останні дані)
-                dateStats[reportingDate].stockBalances = productItem.stockBalances || {};
               } else {
                 dateStats[reportingDate] = {
                   date: reportingDate,
                   orderedQuantity: productItem.orderedQuantity || 0,
-                  stockBalances: productItem.stockBalances || {}
+                  stockBalances: {} // Буде наповнено актуальними даними нижче
                 };
               }
             }
@@ -1795,6 +1815,24 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
       } catch (error) {
         console.warn(`Помилка обробки кешованих даних для замовлення ${order.externalId}:`, error);
       }
+    }
+
+    // --- Оновлюємо залишки АКТУАЛЬНИМИ даними з бази даних ---
+    try {
+      const actualProduct = await orderDatabaseService.getProductBySku(sku as string);
+      if (actualProduct && actualProduct.stockBalanceByStock) {
+        const balances: { [warehouse: string]: number } = {};
+        for (const [warehouseId, balance] of Object.entries(actualProduct.stockBalanceByStock)) {
+          balances[warehouseId] = balance as number;
+        }
+
+        // Оновлюємо кожну дату актуальними залишками
+        for (const dateKey of Object.keys(dateStats)) {
+          dateStats[dateKey].stockBalances = balances;
+        }
+      }
+    } catch (error) {
+      console.warn(`Failed to get actual stock balance for product ${sku}:`, error);
     }
 
     // Конвертуємо в масив і сортуємо за датою

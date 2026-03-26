@@ -410,7 +410,7 @@ export class DilovodApiClient {
   }
 
   // Отримання залишків товарів
-  async getStockBalance(skuList: string[]): Promise<any[]> {
+  async getStockBalance(skuList: string[], firmId?: string): Promise<any[]> {
     await this.ensureReady();
     const request: DilovodApiRequest = {
       version: "0.25",
@@ -421,20 +421,22 @@ export class DilovodApiClient {
           "type": "balance",
           "register": "goods",
           "date": formatDateForDilovod('Kyiv'),
-          "dimensions": ["good", "storage"]
+          "dimensions": ["good", "storage", "firm"]
         },
         fields: {
           "good": "id",
           "good.productNum": "sku",
           "storage": "storage",
-          "qty": "qty"
+          "qty": "qty",
+          "firm": "firm"
         },
         filters: [
           {
             "alias": "sku",
             "operator": "IL",
             "value": skuList
-          }
+          },
+          ...(firmId ? [{ "alias": "firm", "operator": "=", "value": firmId }] : [])
         ]
       }
     };

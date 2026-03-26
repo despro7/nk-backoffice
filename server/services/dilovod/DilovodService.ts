@@ -280,7 +280,7 @@ export class DilovodService {
 
       logWithTimestamp(`Отримано ${skus.length} SKU товарів з БД (включаючи застарілі)`);
 
-      const stockResponse = await this.apiClient.getStockBalance(skus);
+      const stockResponse = await this.apiClient.getStockBalance(skus, this.apiClient.getConfig().defaultFirmId);
       const processedStock = this.dataProcessor.processStockBalance(stockResponse);
 
       logWithTimestamp(`Оброблено ${processedStock.length} товарів з залишками`);

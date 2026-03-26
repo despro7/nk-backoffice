@@ -24,14 +24,18 @@ import {
   ModalFooter,
 } from "@heroui/react";
 import { useApi } from "../hooks/useApi";
-import { CalendarDate, getLocalTimeZone, today } from "@internationalized/date";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate } from "../lib/formatUtils";
 import { addToast } from "@heroui/react";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
-import { ORDER_STATUSES, convertCalendarRangeToReportingRange, createStandardDatePresets } from "../lib";
+import { createStandardDatePresets } from "../lib";
+import {
+  CacheRefreshConfirmModal,
+  CachePeriodSelectModal,
+  useCacheRefreshModals,
+} from "./modals/CacheRefreshConfirmModal";
 
 interface ProductStats {
   name: string;
@@ -174,9 +178,12 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
   const [cacheProgress, setCacheProgress] = useState<{ processed: number; total: number; errors: number } | null>(null);
   const [lastCacheUpdate, setLastCacheUpdate] = useState<Date | null>(null);
 
-  // Модальне вікно вибору періоду для оновлення кешу
-  const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
-  const [cachePeriodRange, setCachePeriodRange] = useState<DateRange | null>(null);
+  // Модальне вікно вибору періоду для оновлення кешу + підтвердження оновлення всіх записів
+  const cacheModals = useCacheRefreshModals({
+    apiCall,
+    onRefreshAll: () => refreshCache('full'),
+    onRefreshPeriod: (range) => refreshCache('period', range),
+  });
 
   // Визначення колонок в залежності від режиму
   const columns = useMemo(() => {
@@ -443,13 +450,8 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
   }, []);
 
   // Обробники для dropdown меню оновлення кеша
-  const handleRefreshAllCache = () => {
-    refreshCache('full');
-  };
-
-  const handleRefreshPeriodCache = () => {
-    setIsPeriodModalOpen(true);
-  };
+  const handleRefreshAllCache = () => cacheModals.openRefreshAll();
+  const handleRefreshPeriodCache = () => cacheModals.openRefreshPeriod();
 
   const handleClearStatsCache = async () => {
     try {
@@ -499,21 +501,6 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
         description: "❌ Помилка при очищенні серверного кешу: " + error,
         color: "danger",
         timeout: 7000,
-      });
-    }
-  };
-
-  const handleConfirmPeriodRefresh = async () => {
-    if (cachePeriodRange?.start && cachePeriodRange?.end) {
-      await refreshCache('period', cachePeriodRange);
-      setIsPeriodModalOpen(false);
-      setCachePeriodRange(null);
-    } else {
-      addToast({
-        title: "Помилка",
-        description: "Будь ласка, оберіть період для оновлення кеша.",
-        color: "warning",
-        timeout: 5000,
       });
     }
   };
@@ -1140,55 +1127,11 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
             </Dropdown>
           )}
 
-          {/* Модальне вікно вибору періоду для оновлення кеша */}
-          <Modal
-            isOpen={isPeriodModalOpen}
-            onClose={() => setIsPeriodModalOpen(false)}
-            size="md"
-          >
-            <ModalContent>
-              <ModalHeader>
-                <h3 className="text-lg font-semibold">Обрати період для оновлення кеша</h3>
-              </ModalHeader>
-              <ModalBody>
-                <div className="space-y-4">
-                  <p className="text-sm text-gray-600">
-                    Оберіть період, за який потрібно оновити кеш статистики товарів
-                  </p>
-                  <I18nProvider locale="uk-UA">
-                    <DateRangePicker
-                      label="Період"
-                      value={cachePeriodRange}
-                      onChange={setCachePeriodRange}
-                      variant="bordered"
-                      size="sm"
-                      className="w-full"
-                    />
-                  </I18nProvider>
-                </div>
-              </ModalBody>
-              <ModalFooter>
-                <Button
-                  variant="flat"
-                  size="sm"
-                  onPress={() => {
-                    setIsPeriodModalOpen(false);
-                    setCachePeriodRange(null);
-                  }}
-                >
-                  Скасувати
-                </Button>
-                <Button
-                  color="primary"
-                  size="sm"
-                  onPress={handleConfirmPeriodRefresh}
-                  disabled={cacheLoading}
-                >
-                  {cacheLoading ? "Оновлення..." : "Оновити кеш"}
-                </Button>
-              </ModalFooter>
-            </ModalContent>
-          </Modal>
+          <CacheRefreshConfirmModal {...cacheModals.confirmModalProps} />
+          <CachePeriodSelectModal
+            {...cacheModals.periodModalProps}
+            cacheLoading={cacheLoading}
+          />
         </div>
       </div>
 

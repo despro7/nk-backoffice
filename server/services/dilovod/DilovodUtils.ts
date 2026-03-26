@@ -150,7 +150,9 @@ export async function getDilovodConfigFromDB(): Promise<DilovodConfig> {
       storageIdsList: [
         dilovodSettings.mainStorageId || DEFAULT_DILOVOD_CONFIG.mainStorageId,
         dilovodSettings.smallStorageId || DEFAULT_DILOVOD_CONFIG.smallStorageId,
-      ].filter(Boolean)
+      ].filter(Boolean),
+      // ID фірми за замовчуванням (для фільтрації залишків)
+      defaultFirmId: dilovodSettings.defaultFirmId || undefined,
     };
     
     // Кешуємо конфігурацію
@@ -212,6 +214,7 @@ export async function loadDilovodSettingsFromDB() {
       ordersMinute: settingsMap['dilovod_orders_minute'] !== undefined ? Number(settingsMap['dilovod_orders_minute']) : 5,
       ordersBatchSize: settingsMap['dilovod_orders_batch_size'] !== undefined ? Number(settingsMap['dilovod_orders_batch_size']) : 50,
       ordersRetryAttempts: settingsMap['dilovod_orders_retry_attempts'] !== undefined ? Number(settingsMap['dilovod_orders_retry_attempts']) : 3,
+      defaultFirmId: settingsMap['dilovod_default_firm_id'] || undefined,
     };
   } finally {
     await prisma.$disconnect();

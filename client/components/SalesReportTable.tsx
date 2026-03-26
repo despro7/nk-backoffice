@@ -23,8 +23,8 @@ import {
   DropdownItem,
 } from "@heroui/react";
 import { useApi } from "../hooks/useApi";
-import { CalendarDate, getLocalTimeZone, today } from "@internationalized/date";
 import type { DateRange } from "@react-types/datepicker";
+import { CacheRefreshConfirmModal, CachePeriodSelectModal, useCacheRefreshModals } from "./modals/CacheRefreshConfirmModal";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate, getStatusColor, getStatusLabel, ORDER_STATUSES, convertCalendarRangeToReportingRange, createStandardDatePresets } from "../lib";
 import { I18nProvider } from "@react-aria/i18n";
@@ -136,10 +136,11 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
   const CACHE_DURATION = 30000; // 30 секунд кеширования на клиенте
 
   // Модальное окно выбора периода для обновления кеша
-  const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
-  const [cachePeriodRange, setCachePeriodRange] = useState<DateRange | null>(
-    null,
-  );
+  const cacheModals = useCacheRefreshModals({
+    apiCall,
+    onRefreshAll: () => refreshCache('full'),
+    onRefreshPeriod: (range) => refreshCache('period', range),
+  });
 
   // Предустановленные диапазоны дат
   const datePresets = useMemo(() => createStandardDatePresets(), []);
@@ -278,28 +279,8 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
   }, []);
 
   // Обработчики для dropdown меню обновления кеша
-  const handleRefreshAllCache = () => {
-    refreshCache("full");
-  };
-
-  const handleRefreshPeriodCache = () => {
-    setIsPeriodModalOpen(true);
-  };
-
-  const handleConfirmPeriodRefresh = async () => {
-    if (cachePeriodRange?.start && cachePeriodRange?.end) {
-      await refreshCache("period", cachePeriodRange);
-      setIsPeriodModalOpen(false);
-      setCachePeriodRange(null);
-    } else {
-      addToast({
-        title: "Помилка",
-        description: "Будь ласка, оберіть період для оновлення кеша.",
-        color: "warning",
-        timeout: 5000,
-      });
-    }
-  };
+  const handleRefreshAllCache = () => cacheModals.openRefreshAll();
+  const handleRefreshPeriodCache = () => cacheModals.openRefreshPeriod();
 
   // Обновление кеша с поддержкой разных режимов
   const refreshCache = async (
@@ -1561,62 +1542,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
             </DropdownMenu>
           </Dropdown>
 
-          {/* Модальное окно выбора периода для обновления кеша */}
-          <Modal
-            isOpen={isPeriodModalOpen}
-            onClose={() => setIsPeriodModalOpen(false)}
-            size="md"
-          >
-            <ModalContent>
-              <ModalHeader>
-                <h3 className="text-lg font-semibold">
-                  Обрати період для оновлення кеша
-                </h3>
-              </ModalHeader>
-              <ModalBody>
-                <div className="space-y-4">
-                  <p className="text-sm text-gray-600">
-                    Оберіть період, за який потрібно оновити кеш статистики
-                    товарів
-                  </p>
-                  <I18nProvider locale="uk-UA">
-                    <DateRangePicker
-                      aria-label="Період"
-                      value={cachePeriodRange}
-                      maxValue={today(getLocalTimeZone())}
-                      onChange={setCachePeriodRange}
-                      variant="bordered"
-                      size="lg"
-                      classNames={{
-                        input: "w-full",
-                        segment: "rounded",
-                      }}
-                    />
-                  </I18nProvider>
-                </div>
-              </ModalBody>
-              <ModalFooter>
-                <Button
-                  variant="flat"
-                  size="sm"
-                  onPress={() => {
-                    setIsPeriodModalOpen(false);
-                    setCachePeriodRange(null);
-                  }}
-                >
-                  Скасувати
-                </Button>
-                <Button
-                  color="primary"
-                  size="sm"
-                  onPress={handleConfirmPeriodRefresh}
-                  disabled={cacheLoading}
-                >
-                  {cacheLoading ? "Оновлення..." : "Оновити кеш"}
-                </Button>
-              </ModalFooter>
-            </ModalContent>
-          </Modal>
+          {/* Модальне вікно підтвердження та вибору періоду для оновлення кеша */}
+          <CacheRefreshConfirmModal {...cacheModals.confirmModalProps} />
+          <CachePeriodSelectModal
+            {...cacheModals.periodModalProps}
+            cacheLoading={cacheLoading}
+          />
         </div>
       </div>
     </div>

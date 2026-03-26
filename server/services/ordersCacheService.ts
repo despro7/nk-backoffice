@@ -6,7 +6,6 @@ export interface OrderCacheItem {
   sku: string;
   name: string;
   orderedQuantity: number;
-  stockBalances: { [warehouse: string]: number };
 }
 
 export interface OrderCacheData {

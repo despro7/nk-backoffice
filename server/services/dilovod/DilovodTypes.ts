@@ -120,7 +120,7 @@ export interface DatabaseProduct {
   additionalPrices: Array<{ priceType: string; priceValue: string }> | null;
   stockBalanceByStock: {  // Додаємо залишки по складах
     "1": number;          // Склад 1 (головний)
-    "2": number;          // Склад 2 (київський)
+    "2": number;          // Склад 2 (малий для відвантажень)
   } | null;
   dilovodId: string;
   lastSyncAt: Date;
@@ -139,6 +139,8 @@ export interface DilovodConfig {
   smallStorageId: string;
   /** @deprecated Залишено для зворотної сумісності */
   storageIdsList: string[];
+  /** ID фірми за замовчуванням (для фільтрації залишків по фірмі) */
+  defaultFirmId?: string;
 }
 
 // Інтерфейси для роботи із замовленнями в Dilovod
