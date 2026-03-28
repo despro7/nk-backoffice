@@ -184,8 +184,3 @@ export class LoggingService {
     return this.isInitialized;
   }
 }
-
-// Ініціалізуємо сервіс під час завантаження модуля
-if (typeof window !== 'undefined') {
-  LoggingService.initialize();
-}

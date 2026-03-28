@@ -57,8 +57,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const PROFILE_CACHE_DURATION = 5 * 60 * 1000; // 5 хвилин
   
 
-  // Глобальний стан обладнання
-  const [equipmentState, equipmentActions] = useEquipment();
+  // Глобальний стан обладнання — передаємо !!user щоб уникнути запитів до авторизації
+  const [equipmentState, equipmentActions] = useEquipment(!!user);
   
   // Перевіряємо, що стан обладнання ініціалізовано
   const isEquipmentReady = equipmentState && equipmentActions;
@@ -134,11 +134,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       LoggingService.authLog('⚠️ [AuthContext] Автоматичне оновлення токенів вимкнено в налаштуваннях');
     }
   };
-
-  // Завантажуємо налаштування авторизації під час ініціалізації
-  useEffect(() => {
-    loadAuthSettings();
-  }, []);
 
   // Перезавантажуємо налаштування авторизації тільки при зміні користувача (не при першій загрузці)
   const prevUserIdRef = useRef<number | undefined>(undefined);
@@ -291,6 +286,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Ініціалізуємо сервіси після успішного отримання профілю
         await LoggingService.initialize();
         await ToastService.initialize();
+        await loadAuthSettings();
 
         // Токен валідний, useEffect автоматично перепланує оновлення під час setUser
         setUser(userWithExpiry);

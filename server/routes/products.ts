@@ -1,6 +1,6 @@
 import express from 'express';
 import { prisma } from '../lib/utils.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireRole, requireMinRole, ROLE_SETS, ROLES } from '../middleware/auth.js';
 import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
 import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 import { salesDriveService } from '../services/salesDriveService.js';
@@ -98,17 +98,8 @@ router.get('/', authenticateToken, async (req, res) => {
 
 // Отримати один товар безпосередньо з Dilovod за SKU (без повної синхронізації)
 // GET /api/products/dilovod/:sku
-router.get('/dilovod/:sku', authenticateToken, async (req, res) => {
+router.get('/dilovod/:sku', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {
   try {
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     const { sku } = req.params;
     const dilovodService = new DilovodService();
     logWithTimestamp(`API: Получаем товар из Dilovod по SKU=${sku}`);
@@ -135,13 +126,8 @@ router.get('/dilovod/:sku', authenticateToken, async (req, res) => {
 
 // Отримати SKU whitelist (settings_wp_sku)
 // GET /api/products/sku-whitelist
-router.get('/sku-whitelist', authenticateToken, async (req, res) => {
+router.get('/sku-whitelist', authenticateToken, requireMinRole(ROLES.BOSS), async (req, res) => {
   try {
-    // Тільки для адміністраторів
-    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
-    }
-
     const record = await prisma.settingsWpSku.findFirst();
     if (!record) {
       return res.json({ skus: '', totalCount: 0, lastUpdated: null });
@@ -156,12 +142,8 @@ router.get('/sku-whitelist', authenticateToken, async (req, res) => {
 
 // Оновити SKU whitelist
 // PUT /api/products/sku-whitelist
-router.put('/sku-whitelist', authenticateToken, async (req, res) => {
+router.put('/sku-whitelist', authenticateToken, requireMinRole(ROLES.BOSS), async (req, res) => {
   try {
-    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
-    }
-
     const { skus } = req.body;
     if (typeof skus !== 'string') {
       return res.status(400).json({ error: 'skus must be a string' });
@@ -192,12 +174,8 @@ router.put('/sku-whitelist', authenticateToken, async (req, res) => {
 
 // Отримати масив ID груп комплектів (dilovod_set_parent_ids)
 // GET /api/products/set-parent-ids
-router.get('/set-parent-ids', authenticateToken, async (req, res) => {
+router.get('/set-parent-ids', authenticateToken, requireMinRole(ROLES.BOSS), async (req, res) => {
   try {
-    if (!req.user || !['admin', 'boss'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
-    }
-
     // Спочатку читаємо новий ключ (масив), потім — старий (один рядок) для backward-compatibility
     const newRecord = await prisma.settingsBase.findFirst({
       where: { key: 'dilovod_set_parent_ids', isActive: true }
@@ -230,12 +208,8 @@ router.get('/set-parent-ids', authenticateToken, async (req, res) => {
 
 // Оновити масив ID груп комплектів (dilovod_set_parent_ids)
 // PUT /api/products/set-parent-ids
-router.put('/set-parent-ids', authenticateToken, async (req, res) => {
+router.put('/set-parent-ids', authenticateToken, requireRole(ROLE_SETS.ADMIN_ONLY), async (req, res) => {
   try {
-    if (!req.user || !['admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
-    }
-
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.some((id: any) => typeof id !== 'string')) {
       return res.status(400).json({ error: 'ids must be an array of strings' });
@@ -459,17 +433,8 @@ router.get('/:sku', authenticateToken, async (req, res) => {
 
 // Оновити вагу товару за ID
 // PUT /api/products/:id/weight
-router.put('/:id/weight', authenticateToken, async (req, res) => {
+router.put('/:id/weight', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
-      });
-    }
-
     const { id } = req.params;
     const { weight } = req.body;
 
@@ -506,17 +471,8 @@ router.put('/:id/weight', authenticateToken, async (req, res) => {
 
 // Оновити ручний порядок (manualOrder) товару за ID
 // PUT /api/products/:id/manual-order
-router.put('/:id/manual-order', authenticateToken, async (req, res) => {
+router.put('/:id/manual-order', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
-      });
-    }
-
     const { id } = req.params;
     const { manualOrder } = req.body;
 
@@ -543,16 +499,8 @@ router.put('/:id/manual-order', authenticateToken, async (req, res) => {
 
 // Оновити штрих-код товару за ID
 // PUT /api/products/:id/barcode
-router.put('/:id/barcode', authenticateToken, async (req, res) => {
+router.put('/:id/barcode', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
-      });
-    }
-
     const { id } = req.params;
     const { barcode } = req.body;
 
@@ -579,16 +527,8 @@ router.put('/:id/barcode', authenticateToken, async (req, res) => {
 
 // Синхронізувати товари з Dilovod
 // POST /api/products/sync
-router.post('/sync', authenticateToken, async (req, res) => {
+router.post('/sync', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Недостатньо прав доступу. Потрібні ролі: admin, boss, storekeeper'
-      });
-    }
 
     // Перевіряємо, чи увімкнено синхронізацію Dilovod
     const { syncSettingsService } = await import('../services/syncSettingsService.js');
@@ -613,16 +553,8 @@ router.post('/sync', authenticateToken, async (req, res) => {
 
 // Ручна синхронізація товарів за списком SKU
 // POST /api/products/sync-manual
-router.post('/sync-manual', authenticateToken, async (req, res) => {
+router.post('/sync-manual', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Недостатньо прав доступу. Потрібні ролі: admin, boss, storekeeper'
-      });
-    }
-
     const { skus } = req.body;
 
     // Валідація вхідних даних
@@ -659,16 +591,8 @@ router.post('/sync-manual', authenticateToken, async (req, res) => {
 
 // Синхронізувати залишки товарів з Dilovod
 // POST /api/products/sync-stock
-router.post('/sync-stock', authenticateToken, async (req, res) => {
+router.post('/sync-stock', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
-      });
-    }
 
     // Перевіряємо, чи увімкнено синхронізацію залишків
     const { syncSettingsService } = await import('../services/syncSettingsService.js');
@@ -693,11 +617,7 @@ router.post('/sync-stock', authenticateToken, async (req, res) => {
 
 // Ручний тригер повного ланцюжку: синк товарів → залишки → експорт SD → WP sync
 // POST /api/products/sync-and-export
-router.post('/sync-and-export', authenticateToken, async (req, res) => {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ success: false, error: 'Admin only' });
-  }
-
+router.post('/sync-and-export', authenticateToken, requireRole(ROLE_SETS.ADMIN_ONLY), async (req, res) => {
   const jobId = Date.now();
   console.log(`🚀 [sync-and-export #${jobId}] Manual chain triggered by ${req.user.email}`);
 
@@ -861,17 +781,9 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
 
 // Тест отримання залишків за списком SKU
 // POST /api/products/test-balance-by-sku
-router.post('/test-balance-by-sku', authenticateToken, async (req, res) => {
+router.post('/test-balance-by-sku', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
     logWithTimestamp('=== API: test-balance-by-sku вызван ===');
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
-      });
-    }
 
     logWithTimestamp('API: Создаем DilovodService...');
     const dilovodService = new DilovodService();
@@ -901,17 +813,9 @@ router.post('/test-balance-by-sku', authenticateToken, async (req, res) => {
 
 // Тест отримання тільки комплектів
 // POST /api/products/test-sets-only
-router.post('/test-sets-only', authenticateToken, async (req, res) => {
+router.post('/test-sets-only', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
     logWithTimestamp('=== API: test-sets-only вызван ===');
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
-      });
-    }
 
     logWithTimestamp('API: Создаем DilovodService...');
     const dilovodService = new DilovodService();
@@ -929,7 +833,7 @@ router.post('/test-sets-only', authenticateToken, async (req, res) => {
 
 // Отримати залишки товарів з можливістю синхронізації
 // GET /api/products/stock/balance
-router.get('/stock/balance', authenticateToken, async (req, res) => {
+router.get('/stock/balance', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
     const { sync = 'false' } = req.query;
     const shouldSync = sync === 'true';
@@ -937,14 +841,6 @@ router.get('/stock/balance', authenticateToken, async (req, res) => {
     const dilovodService = new DilovodService();
 
     if (shouldSync) {
-      // Перевіряємо ролі доступу
-      if (!req.user || !['admin', 'boss', 'storekeeper'].includes(req.user.role)) {
-        return res.status(403).json({
-          success: false,
-          error: 'Insufficient permissions. Required roles: admin, boss, storekeeper'
-        });
-      }
-
       // Синхронизируем товары с Dilovod
       const syncResult = await dilovodService.syncProductsWithDilovod();
 

@@ -34,7 +34,7 @@ export interface EquipmentActions {
   refreshConfig: () => Promise<void>;
 }
 
-export const useEquipment = (): [EquipmentState, EquipmentActions] => {
+export const useEquipment = (isAuthenticated: boolean = false): [EquipmentState, EquipmentActions] => {
 
   const [status, setStatus] = useState<EquipmentStatus>({
     isConnected: false,
@@ -221,10 +221,15 @@ export const useEquipment = (): [EquipmentState, EquipmentActions] => {
     }
   }, []);
 
-  // Завантажуємо конфігурацію під час ініціалізації
+  // Завантажуємо конфігурацію тільки після авторизації
   useEffect(() => {
-    loadConfig();
-  }, [loadConfig]);
+    if (isAuthenticated) {
+      loadConfig();
+    } else {
+      // Поки не авторизовано — застосовуємо дефолти без мережевого запиту
+      setConfig({ ...EQUIPMENT_DEFAULTS });
+    }
+  }, [isAuthenticated, loadConfig]);
 
   // Оновлення статусу
   const updateStatus = useCallback((updates: Partial<EquipmentStatus>) => {

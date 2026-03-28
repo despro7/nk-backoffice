@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireRole, requireMinRole, ROLES } from '../middleware/auth.js';
 import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache, isDilovodExportError, getDilovodExportErrorMessage } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient } from '@prisma/client';
@@ -155,17 +155,9 @@ async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<Di
  * GET /api/dilovod/test-connection
  * Тест підключення до Dilovod API
  */
-router.get('/test-connection', authenticateToken, async (req, res) => {
+router.get('/test-connection', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {
   try {
     const { user } = req as any;
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
 
     logWithTimestamp('=== API: test-connection викликано ===');
 
@@ -188,17 +180,9 @@ router.get('/test-connection', authenticateToken, async (req, res) => {
  * POST /api/dilovod/orders/test
  * Тест отримання замовлення з Dilovod за номером
  */
-router.post('/orders/test', authenticateToken, async (req, res) => {
+router.post('/orders/test', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {
   try {
     const { user } = req as any;
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
 
     logWithTimestamp('=== API: dilovod/orders/test викликано ===');
 
@@ -279,17 +263,9 @@ router.post('/orders/test', authenticateToken, async (req, res) => {
  * GET /api/dilovod/orders/:orderId/details
  * Отримання детальної інформації про замовлення за ID
  */
-router.get('/orders/:orderId/details', authenticateToken, async (req, res) => {
+router.get('/orders/:orderId/details', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
     const { user } = req as any;
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager, storekeeper'
-      });
-    }
 
     const { orderId } = req.params;
 
@@ -327,17 +303,9 @@ router.get('/orders/:orderId/details', authenticateToken, async (req, res) => {
  * GET /api/dilovod/settings
  * Отримання налаштувань Dilovod
  */
-router.get('/settings', authenticateToken, async (req, res) => {
+router.get('/settings', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
     const { user } = req as any;
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager, storekeeper'
-      });
-    }
 
     // Отримуємо налаштування з settings_base
     const settings = await getDilovodSettings();
@@ -360,17 +328,9 @@ router.get('/settings', authenticateToken, async (req, res) => {
  * POST /api/dilovod/settings
  * Збереження налаштувань Dilovod
  */
-router.post('/settings', authenticateToken, async (req, res) => {
+router.post('/settings', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
   try {
     const { user } = req as any;
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
 
     logWithTimestamp('=== API: Збереження налаштувань Dilovod ===');
 
@@ -408,17 +368,9 @@ router.post('/settings', authenticateToken, async (req, res) => {
  * GET /api/dilovod/directories
  * Отримання довідників з Dilovod (склади, рахунки, форми оплати, фірми)
  */
-router.get('/directories', authenticateToken, async (req, res) => {
+router.get('/directories', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
   try {
     const { user } = req as any;
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
 
     logWithTimestamp('=== API: Отримання довідників Dilovod ===');
 
@@ -521,16 +473,8 @@ router.get('/directories', authenticateToken, async (req, res) => {
  * GET /api/dilovod/salesdrive/orders
  * Отримання замовлень SalesDrive для моніторингу вивантаження в Dilovod
  */
-router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
+router.get('/salesdrive/orders', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     // Параметри пагінації
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -759,16 +703,8 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
  * POST /api/dilovod/salesdrive/orders/check
  * Перевірка наявності замовлень в Dilovod та оновлення локальної бази
  */
-router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
+router.post('/salesdrive/orders/check', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     const { orderNumbers, auto, limit, offset, forceAll } = req.body;
     const dilovodService = new DilovodService();
 
@@ -811,15 +747,8 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
  * Примусове скидання всіх Dilovod-полів + повторна перевірка в Dilovod API
  * Очищує: dilovodDocId, dilovodExportDate, dilovodCashInDate, dilovodSaleExportDate, dilovodCashInLastChecked, dilovodReturnDate, dilovodReturnDocsCount
  */
-router.post('/salesdrive/orders/reset-and-check', authenticateToken, async (req, res) => {
+router.post('/salesdrive/orders/reset-and-check', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
   try {
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     const { orderNumbers } = req.body;
 
     if (!Array.isArray(orderNumbers) || orderNumbers.length === 0) {
@@ -874,15 +803,8 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, async (req,
  * POST /api/dilovod/salesdrive/orders/:orderId/reset-duplicate-count
  * Скидання лічильника дублікатів відвантаження до 1 (помилка "кілька документів знайдено")
  */
-router.post('/salesdrive/orders/:orderId/reset-duplicate-count', authenticateToken, async (req, res) => {
+router.post('/salesdrive/orders/:orderId/reset-duplicate-count', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
   try {
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     const orderId = parseInt(req.params.orderId);
     if (isNaN(orderId)) {
       return res.status(400).json({ success: false, error: 'Invalid orderId' });
@@ -915,16 +837,8 @@ router.post('/salesdrive/orders/:orderId/reset-duplicate-count', authenticateTok
  * POST /api/dilovod/salesdrive/orders/:orderId/validate
  * Валідувати готовність замовлення до експорту в Dilovod
  */
-router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (req, res) => {
+router.post('/salesdrive/orders/:orderId/validate', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager, storekeeper'
-      });
-    }
-
     const { orderId } = req.params;
     const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
@@ -1047,16 +961,8 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, async (re
  * POST /api/dilovod/salesdrive/orders/:orderId/export
  * Експортувати замовлення в Dilovod
  */
-router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req, res) => {
+router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager, storekeeper'
-      });
-    }
-
     const { orderId } = req.params;
     const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
@@ -1349,16 +1255,8 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
  * POST /api/dilovod/salesdrive/orders/:orderId/shipment
  * Створити документ відвантаження в Dilovod на основі baseDoc
  */
-router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (req, res) => {
+router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager', 'storekeeper'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager, storekeeper'
-      });
-    }
-
     const { orderId } = req.params;
     const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
@@ -1567,16 +1465,8 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, async (re
  * 
  * Використовується в UI для налаштування мапінгу каналів оплати
  */
-router.get('/salesdrive/payment-methods', authenticateToken, async (req, res) => {
+router.get('/salesdrive/payment-methods', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     const { salesDriveService } = await import('../services/salesDriveService.js');
     const paymentMethods = await salesDriveService.fetchPaymentMethods();
 
@@ -1598,16 +1488,8 @@ router.get('/salesdrive/payment-methods', authenticateToken, async (req, res) =>
  * GET /api/dilovod/cache/status
  * Отримати статус кешу довідників Dilovod
  */
-router.get('/cache/status', authenticateToken, async (req, res) => {
+router.get('/cache/status', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     const { dilovodCacheService } = await import('../services/dilovod/DilovodCacheService.js');
 
     const status = await dilovodCacheService.getAllCacheStatus();
@@ -1630,17 +1512,9 @@ router.get('/cache/status', authenticateToken, async (req, res) => {
  * POST /api/dilovod/cache/refresh
  * Примусово оновити кеш довідників Dilovod
  */
-router.post('/cache/refresh', authenticateToken, async (req, res) => {
+router.post('/cache/refresh', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {
   try {
     const { user } = req as any;
-
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
 
     logWithTimestamp('=== API: Примусове оновлення кешу довідників Dilovod ===');
 

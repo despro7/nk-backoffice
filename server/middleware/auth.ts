@@ -3,6 +3,10 @@ import jwt from 'jsonwebtoken';
 import { JwtPayload } from '../types/auth.js';
 import { AuthService } from '../services/authService.js';
 import { AuthSettingsService } from '../services/authSettingsService.js';
+import { ROLES, ROLE_SETS, hasAccess, ROLE_HIERARCHY } from '../../shared/constants/roles.js';
+import type { RoleValue } from '../../shared/constants/roles.js';
+
+export { ROLES, ROLE_SETS };
 
 // Расширяем интерфейс Request для добавления пользователя
 declare global {
@@ -220,11 +224,40 @@ export const requireRole = (roles: string[]) => {
       });
     }
 
-    if (!roles.includes(req.user.role)) {
+    if (!hasAccess(req.user.role, roles)) {
       return res.status(403).json({
-        message: 'Insufficient permissions',
-        code: 'INSUFFICIENT_PERMISSIONS',
-        details: 'You do not have the required role to access this resource'
+        success: false,
+        error: 'Insufficient permissions',
+        message: `Required roles: ${roles.join(', ')}`
+      });
+    }
+
+    next();
+  };
+};
+
+/**
+ * Middleware для перевірки мінімального рівня ролі в ієрархії.
+ * Автоматично враховує всі ролі вище вказаної — не потрібно оновлювати при додаванні нових ролей.
+ * @example router.get('/sync', authenticateToken, requireMinRole(ROLES.STOREKEEPER), handler)
+ */
+export const requireMinRole = (minRole: RoleValue) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({
+        message: 'Authentication required',
+        code: 'NO_AUTH',
+        details: 'You need to be authenticated to access this resource'
+      });
+    }
+
+    if (!hasAccess(req.user.role, undefined, minRole)) {
+      const userLevel = ROLE_HIERARCHY[req.user.role as RoleValue] ?? 0;
+      const requiredLevel = ROLE_HIERARCHY[minRole];
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions',
+        message: `Required minimum role: ${minRole} (level ${requiredLevel}), your role: ${req.user.role} (level ${userLevel})`
       });
     }
 

@@ -22,39 +22,8 @@ import SalesDriveOrders from "./pages/SalesDriveOrders";
 import TestSerialCom from "./pages/test-serial-com";
 
 // Определяем роли и их иерархию
-export const ROLES = {
-  ADS_MANAGER: 'ads-manager',
-  STOREKEEPER: 'storekeeper',
-  SHOP_MANAGER: 'shop-manager',
-  BOSS: 'boss',
-  ADMIN: 'admin'
-} as const;
-
-export const ROLE_HIERARCHY = {
-  [ROLES.ADS_MANAGER]: 1,
-  [ROLES.STOREKEEPER]: 2,
-  [ROLES.SHOP_MANAGER]: 3,
-  [ROLES.BOSS]: 4,
-  [ROLES.ADMIN]: 5
-};
-
-// Функция проверки доступа по роли
-export const hasAccess = (userRole: string, requiredRoles?: string[], minRole?: string): boolean => {
-
-  if (!requiredRoles && !minRole) return true; // Доступ для всех
-
-  // Проверка по списку разрешенных ролей
-  if (requiredRoles && requiredRoles.includes(userRole)) return true;
-
-  // Проверка по минимальной роли
-  if (minRole) {
-    const userLevel = ROLE_HIERARCHY[userRole as keyof typeof ROLE_HIERARCHY] || 0;
-    const requiredLevel = ROLE_HIERARCHY[minRole as keyof typeof ROLE_HIERARCHY] || 0;
-    return userLevel >= requiredLevel;
-  }
-
-  return false;
-};
+import { ROLES, ROLE_HIERARCHY, hasAccess } from '@shared/constants/roles';
+export { ROLES, ROLE_HIERARCHY, hasAccess };
 
 // Метадані для груп-контейнерів без власного маршруту (наприклад, "Налаштування")
 export interface NavGroupMeta {
@@ -73,11 +42,11 @@ export interface AppRoute {
   navLabel: string;
   icon: React.ReactNode;
   inNav: boolean;
-  parent?: string; // Для группировки в подменю
-  order?: number; // Для сортировки элементов
-  roles?: string[]; // Разрешенные роли для доступа
-  minRole?: string; // Минимальная роль для доступа
-  hasOwnTitle?: boolean; // Флаг для страниц с собственным заголовком
+  parent?: string; // Для розміщення в підменю
+  order?: number; // Для сортування елементів
+  roles?: string[]; // Дозволені ролі для доступу
+  minRole?: string; // Мінімальна роль для доступу
+  hasOwnTitle?: boolean; // Флаг для сторінок з власним заголовком
   /** Метадані групи-контейнера. Вказується на будь-якому маршруті з parent === ключ цієї групи.
    *  Потрібне лише для груп БЕЗ власного маршруту (наприклад parent: 'settings').
    *  Достатньо вказати один раз на будь-якому дочірньому елементі. */
@@ -95,7 +64,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="home" size={20} />,
     inNav: true,
     order: 1,
-    // Доступ для всех ролей
+    // Доступ для всіх ролей, тому не вказуємо roles або minRole
   },
   {
     path: '/orders',
@@ -106,7 +75,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="layout-list" size={20} />,
     inNav: true,
     order: 2,
-    minRole: ROLES.STOREKEEPER // storekeeper и выше
+    minRole: ROLES.STOREKEEPER // storekeeper і вище
   },
   {
     path: '/orders/:externalId',
@@ -128,7 +97,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="combine" size={20} />,
     inNav: true,
     order: 3,
-    minRole: ROLES.STOREKEEPER // storekeeper и выше
+    minRole: ROLES.STOREKEEPER // storekeeper і вище
   },
   {
     path: '/reports/sales',
@@ -145,7 +114,7 @@ export const appRoutes: AppRoute[] = [
       icon: <DynamicIcon name="chart-spline" size={20} />,
       order: 4,
     },
-    minRole: ROLES.ADS_MANAGER // ads-manager и выше
+    minRole: ROLES.ADS_MANAGER // ads-manager і вище
   },
   {
     path: '/reports/shipment',
@@ -157,7 +126,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 1,
-    minRole: ROLES.SHOP_MANAGER // shop-manager и выше
+    minRole: ROLES.SHOP_MANAGER // shop-manager і вище
   },
   {
     path: '/reports/general',
@@ -169,7 +138,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 2,
-    minRole: ROLES.SHOP_MANAGER // shop-manager и выше
+    minRole: ROLES.SHOP_MANAGER // shop-manager і вище
   },
   {
     path: '/salesdrive-to-dilovod',
@@ -180,7 +149,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="truck" size={20} />,
     inNav: true,
     order: 5,
-    minRole: ROLES.SHOP_MANAGER // shop-manager и выше (admin, boss, shop-manager)
+    minRole: ROLES.SHOP_MANAGER // shop-manager і вище (admin, boss, shop-manager)
   },
   {
     path: '/profile',
@@ -208,7 +177,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 5,
-    roles: [ROLES.ADMIN] // Только admin
+    roles: [ROLES.ADMIN] // Тільки admin
   },
   {
     path: '/settings/test-auth',
@@ -220,7 +189,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 6,
-    roles: [ROLES.ADMIN] // Только admin
+    roles: [ROLES.ADMIN] // Тільки admin
   },
   {
     path: '/settings/product-sets',
@@ -232,8 +201,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 2,
-    minRole: ROLES.STOREKEEPER  // storekeeper и выше
-    // roles: [ROLES.ADMIN, ROLES.BOSS] // Только admin и boss
+    minRole: ROLES.STOREKEEPER  // storekeeper і вище
   },
   {
     path: '/settings/order-assembly',
@@ -245,7 +213,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 3,
-    minRole: ROLES.STOREKEEPER // storekeeper и выше
+    minRole: ROLES.STOREKEEPER // storekeeper і вище
   },
   {
     path: '/settings/equipment',
@@ -257,8 +225,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 4,
-    // minRole: ROLES.STOREKEEPER // storekeeper и выше
-    roles: [ROLES.ADMIN, ROLES.BOSS, ROLES.STOREKEEPER] // Только admin и boss
+    roles: [ROLES.ADMIN, ROLES.BOSS, ROLES.STOREKEEPER] // Тільки admin и boss
   },
   {
     path: '/settings/orders',
@@ -270,7 +237,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 7,
-    roles: [ROLES.ADMIN] // Только admin
+    roles: [ROLES.ADMIN] // Тільки admin
   },
   {
     path: '/settings/dilovod',
@@ -282,8 +249,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 8,
-    // roles: [ROLES.ADMIN] // Только admin
-    minRole: ROLES.SHOP_MANAGER // shop-manager и выше (admin, boss, shop-manager)
+    minRole: ROLES.SHOP_MANAGER // shop-manager і вище (admin, boss, shop-manager)
   },
   {
     path: '/settings/admin',
@@ -295,7 +261,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 9,
-    roles: [ROLES.ADMIN] // Только admin
+    roles: [ROLES.ADMIN] // Тільки admin
   },
   {
     path: '/test-serial-com',
@@ -304,9 +270,9 @@ export const appRoutes: AppRoute[] = [
     pageTitle: 'Тестування COM порту та обладнання | NK Backoffice',
     navLabel: 'Тест COM порту',
     icon: <DynamicIcon name="test-tube" size={20} />,
-    inNav: false, // Не показывать в навигации
-    order: 10
-    // Без указания roles или minRole - доступ без авторизации
+    inNav: false, // Не показувати в навігації
+    order: 10,
+    minRole: ROLES.STOREKEEPER // storekeeper і вище
   },
 ];
 

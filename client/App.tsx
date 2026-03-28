@@ -125,16 +125,11 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   React.useEffect(() => {
     (async () => {
-      // Always initialize logging first
-      await LoggingService.initialize();
-
       // Wait until AuthContext finished initial check
       if (authLoading) return;
 
-      if (user) {
-        // ToastService will be initialized by AuthContext when user is set.
-      } else {
-        // Apply local defaults to avoid 401 network requests
+      if (!user) {
+        // Not authenticated — apply local defaults to avoid 401 network requests
         ToastService.updateSettings({
           authSuccess: true,
           authErrors: true,

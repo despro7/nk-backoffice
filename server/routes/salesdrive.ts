@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireRole, requireMinRole, ROLE_SETS, ROLES } from '../middleware/auth.js';
 import { salesDriveCacheService } from '../services/salesdrive/SalesDriveCacheService.js';
 
 const router = Router();
@@ -8,15 +8,8 @@ const router = Router();
  * GET /api/salesdrive/cache/status
  * Отримати статус кешу довідників SalesDrive
  */
-router.get('/cache/status', authenticateToken, async (req, res) => {
+router.get('/cache/status', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
     const status = await salesDriveCacheService.getAllCacheStatus();
     res.json({ success: true, data: status });
   } catch (error) {
@@ -29,16 +22,8 @@ router.get('/cache/status', authenticateToken, async (req, res) => {
  * POST /api/salesdrive/cache/refresh
  * Примусово оновити кеш довідників SalesDrive
  */
-router.post('/cache/refresh', authenticateToken, async (req, res) => {
+router.post('/cache/refresh', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     // Імпортуємо SalesDriveService
     const { salesDriveService } = await import('../services/salesDriveService.js');
 
@@ -86,16 +71,8 @@ router.post('/cache/refresh', authenticateToken, async (req, res) => {
  * POST /api/salesdrive/cache/clear
  * Очистити весь кеш довідників SalesDrive
  */
-router.post('/cache/clear', authenticateToken, async (req, res) => {
+router.post('/cache/clear', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     await salesDriveCacheService.clearAllCache();
 
     res.json({
