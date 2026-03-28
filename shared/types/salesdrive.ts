@@ -22,6 +22,8 @@ export interface SalesDriveOrderForExport {
   dilovodSaleDocsCount: number | null; // Кількість документів відвантаження (> 1 = дублікат/помилка)
   dilovodExportDate: Date | null;
   dilovodCashInDate: Date | null;
+  dilovodReturnDate: Date | null;         // Дата документа повернення (saleReturn), тільки для статусів 6/7
+  dilovodReturnDocsCount: number | null;  // Кількість документів повернення (> 1 = дублікат/помилка)
   customerName: string | null;
   customerPhone: string | null;
   deliveryAddress: string | null;
@@ -43,6 +45,7 @@ export interface SalesDriveOrdersResponse {
     hasNext: boolean;
     hasPrev: boolean;
   };
+  statusCounts: Record<string, number>;
   metadata: {
     fetchedAt: string;
     filters: {

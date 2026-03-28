@@ -29,62 +29,16 @@ import type { DateRange } from "@react-types/datepicker";
 import { useApi } from "../hooks/useApi";
 import { useDilovodSettings } from "../hooks/useDilovodSettings";
 import { useAuth } from "../contexts/AuthContext";
+import { useDebug } from "../contexts/DebugContext";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { formatRelativeDate, getStatusLabel, getStatusColor } from "../lib/formatUtils";
+import { formatRelativeDate, getStatusLabel, getStatusColor, getChannelClass, ORDER_STATUSES } from "../lib/formatUtils";
 import { ToastService } from "@/services/ToastService";
 import ResultDrawer from './ResultDrawer';
 import type { SalesDriveOrderForExport, SalesDriveOrdersResponse, } from "@shared/types/salesdrive";
 import type { SalesChannel } from "@shared/types/dilovod";
 
-// Канали продажів з SalesDrive
-const SALES_CHANNELS: SalesChannel[] = [
-  { id: '22', name: 'Rozetka (Сергій)' },
-  { id: '24', name: 'prom (old)' },
-  { id: '28', name: 'prom' },
-  { id: '31', name: 'інше (менеджер)' },
-  { id: '38', name: 'дрібні магазини' },
-  { id: '39', name: 'Rozetka (Марія)' },
-  { id: '19', name: 'nk-food.shop' },
-  { id: 'unknown', name: '⚠️ Невідомо' },
-];
-
-// Функція для отримання назви каналу
-const getChannelName = (channelId: string | null | undefined): string => {
-  if (!channelId) return '⚠️ Невідомо';
-  const knownChannel = SALES_CHANNELS.find(ch => ch.id === channelId);
-  if (knownChannel) return knownChannel.name;
-  if (channelId === '19') return 'nk-food.shop';
-  return `Канал ${channelId}`;
-};
-
-// Функція для отримання класів каналу
-const getChannelClass = (channelId: string | null | undefined): string => {
-  // Якщо канал не вказано - підсвічуємо червоним як помилку
-  if (!channelId) {
-    return 'bg-red-500 text-white border-red-500 font-semibold';
-  }
-  
-  switch (channelId) {
-    case '22': // Rozetka (Сергій)
-      return 'bg-green-100 text-green-800 border-green-200';
-    case '39': // Rozetka (Марія)
-      return 'bg-emerald-100 text-emerald-800 border-emerald-200';
-    case '28': // prom (актуальний)
-      return 'bg-purple-100 text-purple-800 border-purple-200';
-    case '24': // prom (old)
-      return 'bg-purple-100 text-purple-800 border-purple-200';
-    case '31': // інше (менеджер)
-      return 'bg-red-100 text-red-800 border-red-200';
-    case '38': // дрібні магазини
-      return 'bg-orange-100 text-orange-800 border-orange-200';
-    case '19': // nk-food.shop
-      return 'bg-gray-700 text-gray-100 border-gray-200';
-    case 'unknown': // Невідомий канал
-      return 'bg-red-500 text-white border-red-500 font-semibold';
-    default:
-      return 'bg-gray-100 text-gray-600 border-gray-200';
-  }
-};
+// Функція для отримання класів каналу (статична — кольори визначаються по id)
+// Перенесено до client/lib/formatUtils.ts → getChannelClass
 
 interface SalesDriveOrdersTableProps {
   className?: string;
@@ -93,9 +47,19 @@ interface SalesDriveOrdersTableProps {
 export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTableProps) {
   const { apiCall } = useApi();
   const { user } = useAuth();
-  // Don't load full directories automatically on SalesDrive monitoring page
-  // it's a read-only monitoring view and directories are heavy to load.
+  const { isDebugMode } = useDebug();
   const { settings: dilovodSettings } = useDilovodSettings({ loadDirectories: false });
+
+  // State для каналів продажів (завантажуються з API)
+  const [salesChannels, setSalesChannels] = useState<SalesChannel[]>([]);
+
+  // Функція для отримання назви каналу (залежить від динамічного списку)
+  const getChannelName = useCallback((channelId: string | null | undefined): string => {
+    if (!channelId) return '⚠️ Невідомо';
+    const found = salesChannels.find(ch => ch.id === channelId);
+    if (found) return found.name;
+    return `Канал ${channelId}`;
+  }, [salesChannels]);
 
   // State для даних
   const [orders, setOrders] = useState<SalesDriveOrderForExport[]>([]);
@@ -118,6 +82,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
   // State для пагінації
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
@@ -126,10 +91,30 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   type SearchCategory = 'orderNumber' | 'ttn' | 'phone' | 'name' | 'all';
   const [searchCategory, setSearchCategory] = useState<SearchCategory>('orderNumber');
 
-  // State для фільтру каналів (за замовчуванням всі окрім nk-food.shop, але включаючи unknown)
-  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(
-    new Set(SALES_CHANNELS.filter(ch => ch.id !== '19').map(ch => ch.id))
-  );
+  // State для фільтру каналів (ініціалізується порожнім, оновлюється після завантаження каналів)
+  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(new Set());
+
+  // Опції статусів для фільтру (без "all", "id3" та "Видалено")
+  const statusOptions = ORDER_STATUSES
+    .filter(s => s.key !== 'all' && s.key !== 'id3' && s.key !== '8')
+    .map(s => ({
+      value: s.key,
+      label: s.label,
+      icon: {
+        '1': 'circle-dashed',
+        '2': 'circle-check',
+        '3': 'package-check',
+        '4': 'truck',
+        '5': 'badge-check',
+        '6': 'rotate-ccw',
+        '7': 'ban',
+        '9': 'pause-circle',
+      }[s.key] ?? 'circle',
+    }));
+
+  // State для фільтру статусів ('all' = всі статуси)
+  type StatusFilterType = 'all' | string;
+  const [selectedStatus, setSelectedStatus] = useState<StatusFilterType>('all');
 
   // State для фільтру по даті відвантаження
   type ShipmentFilterType = 'all' | 'shipped' | 'not_shipped' | 'duplicates';
@@ -140,6 +125,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
   // Локальний кеш token'ів для sale (отримуємо його після експорту)
   const [saleTokens, setSaleTokens] = useState<Record<string, string>>({});
+
+  // Кількість замовлень по кожному статусу (оновлюється разом з fetchOrders)
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
   // Функція для завантаження замовлень
   const fetchOrders = useCallback(async () => {
@@ -157,7 +145,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       setLoading(true);
       const params = new URLSearchParams({
         page: page.toString(),
-        limit: '20',
+        limit: pageSize.toString(),
         sortBy: 'orderDate',
         sortOrder: 'desc'
       });
@@ -197,6 +185,11 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         params.append('shipmentDateTo', endDate);
       }
 
+      // Додаємо фільтр по статусу (якщо не "всі")
+      if (selectedStatus !== 'all') {
+        params.append('statuses', selectedStatus);
+      }
+
       const response = await apiCall(`/api/dilovod/salesdrive/orders?${params}`);
       const data: SalesDriveOrdersResponse = await response.json();
 
@@ -204,6 +197,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         setOrders(data.data);
         setTotalPages(data.pagination.totalPages);
         setTotalCount(data.pagination.totalCount);
+        setStatusCounts(data.statusCounts ?? {});
         setSelectedOrderIds([]);
       } else {
         console.error('Failed to fetch orders:', data);
@@ -223,17 +217,34 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     } finally {
       setLoading(false);
     }
-  }, [page, search, searchCategory, selectedChannels, shipmentFilter, dateRange]);
+  }, [page, pageSize, search, searchCategory, selectedChannels, shipmentFilter, dateRange, selectedStatus]);
 
   // Завантажуємо дані під час монтування та зміни параметрів
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
 
-  // Скидаємо сторінку на 1 при зміні пошуку або фільтру каналів
+  // Завантажуємо канали продажів з API при монтуванні
+  useEffect(() => {
+    apiCall('/api/salesdrive/channels')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.data)) {
+          const channels: SalesChannel[] = [
+            ...data.data,
+            { id: 'unknown', name: '⚠️ Невідомо' },
+          ];
+          setSalesChannels(channels);
+          setSelectedChannels(new Set(channels.map((ch: SalesChannel) => ch.id)));
+        }
+      })
+      .catch(err => console.error('Failed to fetch sales channels:', err));
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Скидаємо сторінку на 1 при зміні пошуку або фільтрів
   useEffect(() => {
     setPage(1);
-  }, [search, searchCategory, selectedChannels, shipmentFilter, dateRange]);
+  }, [search, searchCategory, selectedChannels, shipmentFilter, dateRange, selectedStatus, pageSize]);
 
   // Обробка пошуку
   const handleSearchSubmit = () => {
@@ -252,40 +263,26 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   const resetFilters = useCallback(() => {
     setSearch("");
     setSearchCategory('orderNumber');
-    setSelectedChannels(new Set(SALES_CHANNELS.filter(ch => ch.id !== '19').map(ch => ch.id)));
+    setSelectedChannels(new Set(salesChannels.map(ch => ch.id)));
     setShipmentFilter('all');
     setDateRange(null);
+    setSelectedStatus('all');
     setSelectedOrderIds([]);
     setPage(1);
-  }, []);
+  }, [salesChannels]);
 
   // Перевірка чи активні якісь фільтри
   const hasActiveFilters = useCallback(() => {
-    const defaultChannels = new Set(SALES_CHANNELS.filter(ch => ch.id !== '19').map(ch => ch.id));
+    const defaultChannels = new Set(salesChannels.map(ch => ch.id));
     const channelsChanged = selectedChannels.size !== defaultChannels.size || 
       ![...selectedChannels].every(ch => defaultChannels.has(ch));
-    
+
     return search !== "" || 
            channelsChanged || 
            shipmentFilter !== 'all' || 
-           dateRange !== null;
-  }, [search, selectedChannels, shipmentFilter, dateRange]);
-
-  // Отримання статус-коду для getStatusColor (як у звітах)
-  const getOrderStatusCode = (statusText: string) => {
-    const statusLower = statusText.toLowerCase();
-
-    if (statusLower.includes('новий') || statusLower === '1') return '1';
-    if (statusLower.includes('підтверджено') || statusLower === '2') return '2';
-    if (statusLower.includes('на відправку') || statusLower.includes('готов') || statusLower === '3') return '3';
-    if (statusLower.includes('відправлено') || statusLower === '4') return '4';
-    if (statusLower.includes('продаж') || statusLower.includes('доставлено') || statusLower === '5') return '5';
-    if (statusLower.includes('скасовано') || statusLower.includes('відхилено') || statusLower.includes('повернення') || statusLower === '6' || statusLower === '7') return '6';
-    if (statusLower.includes('видалено') || statusLower === '8') return '8';
-    if (statusLower.includes('на утриманні') || statusLower === '9') return '9';
-
-    return ''; // За замовчуванням
-  };
+           dateRange !== null ||
+           selectedStatus !== 'all';
+  }, [search, selectedChannels, shipmentFilter, dateRange, selectedStatus, salesChannels]);
 
   // Масова перевірка/оновлення статусів документів
   const handleBulkCheckAndUpdate = async () => {
@@ -329,14 +326,6 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         setDrawerTitle('Результат масової перевірки замовлень');
         setDrawerType('result');
         onDrawerOpen();
-
-        // ToastService.show({
-        //   title: `${result.updatedCount > 0 ? 'Оновлено!' : 'Без змін'}`,
-        //   description: `${result.updatedCount > 0 ? `${result.updatedCount} Статуси документів оновлено для ${result.data.length} замовлень` : 'Статуси документів не були змінені'}`,
-        //   color: `${result.updatedCount > 0 ? 'success' : 'default'}`,
-        //   hideIcon: false,
-        //   icon: <DynamicIcon name={result.updatedCount > 0 ? 'check-circle' : 'octagon-alert'} size={20} strokeWidth={1.5} className="shrink-0" />
-        // });
 
         // Перемальовуємо таблицю завжди після перевірки
         fetchOrders();
@@ -1240,131 +1229,6 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         </div>
 
         <div className="flex gap-3 mr-auto">
-          {/* Фільтр каналів */}
-          <Dropdown placement="bottom-start">
-            <DropdownTrigger>
-              <Button
-                variant="flat"
-                className="font-medium px-4 py-2.5 h-auto rounded-md"
-                startContent={<DynamicIcon name="filter" size={16} />}
-              >
-                Канали ({selectedChannels.size})
-              </Button>
-            </DropdownTrigger>
-            <DropdownMenu
-              aria-label="Фільтр каналів"
-              closeOnSelect={false}
-              variant="flat"
-              selectionMode="multiple"
-              selectedKeys={selectedChannels}
-              onSelectionChange={(keys) => {
-                if (keys === 'all') {
-                  setSelectedChannels(new Set(SALES_CHANNELS.map(ch => ch.id)));
-                } else {
-                  setSelectedChannels(keys as Set<string>);
-                }
-              }}
-            >
-              <DropdownSection showDivider dividerProps={{ className: "mt-3 bg-neutral-100" }}>
-                {SALES_CHANNELS.map((channel) => (
-                  <DropdownItem
-                    key={channel.id}
-                    textValue={channel.name}
-                    startContent={
-                      <div className={`w-3 h-3 rounded ${getChannelClass(channel.id)}`} />
-                    }
-                  >
-                    {channel.name}
-                  </DropdownItem>
-                ))}
-              </DropdownSection>
-              <DropdownSection>
-                <DropdownItem
-                  key="actions"
-                  textValue="Дії з фільтром"
-                  className="px-3 pt-2 pb-1 cursor-default !bg-transparent"
-                  closeOnSelect={false}
-                  isReadOnly
-                >
-                  <div className="flex gap-2 justify-between items-center">
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      className="flex-1 h-7"
-                      onPress={() => setSelectedChannels(new Set(SALES_CHANNELS.map(ch => ch.id)))}
-                    >
-                      Вибрати всі
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      color="danger"
-                      className="flex-1 h-7"
-                      onPress={() => setSelectedChannels(new Set())}
-                    >
-                      Скинути всі
-                    </Button>
-                  </div>
-                </DropdownItem>
-              </DropdownSection>
-            </DropdownMenu>
-          </Dropdown>
-
-          {/* Фільтр по відвантаженню */}
-          <Dropdown placement="bottom-start">
-            <DropdownTrigger>
-              <Button
-                variant="flat"
-                className="font-medium px-4 py-2.5 h-auto rounded-md"
-                startContent={<DynamicIcon name="truck" size={16} />}
-              >
-                {shipmentFilter === 'all' && 'Всі замовлення'}
-                {shipmentFilter === 'shipped' && 'Відвантажені'}
-                {shipmentFilter === 'not_shipped' && 'Не відвантажені'}
-                {shipmentFilter === 'duplicates' && 'Дублікати'}
-              </Button>
-            </DropdownTrigger>
-            <DropdownMenu
-              aria-label="Фільтр по відвантаженню"
-              variant="flat"
-              selectionMode="single"
-              selectedKeys={new Set([shipmentFilter])}
-              onSelectionChange={(keys) => {
-                const selected = Array.from(keys)[0] as ShipmentFilterType;
-                setShipmentFilter(selected);
-              }}
-            >
-              <DropdownItem 
-                key="all"
-                textValue="Всі замовлення"
-                startContent={<DynamicIcon name="list" size={16} />}
-              >
-                Всі замовлення
-              </DropdownItem>
-              <DropdownItem 
-                key="shipped"
-                textValue="Відвантажені"
-                startContent={<DynamicIcon name="check-circle" size={16} className="text-green-600" />}
-              >
-                Відвантажені
-              </DropdownItem>
-              <DropdownItem 
-                key="not_shipped"
-                textValue="Не відвантажені"
-                startContent={<DynamicIcon name="clock" size={16} className="text-orange-600" />}
-              >
-                Не відвантажені
-              </DropdownItem>
-              <DropdownItem 
-                key="duplicates"
-                textValue="Дублікати"
-                startContent={<DynamicIcon name="copy-x" size={16} className="text-red-600" />}
-              >
-                Дублікати
-              </DropdownItem>
-            </DropdownMenu>
-          </Dropdown>
-
           {/* Фільтр по датам відвантаження */}
           <I18nProvider locale="uk-UA">
             <DateRangePicker
@@ -1381,20 +1245,6 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               }}
             />
           </I18nProvider>
-
-          {/* Кнопка скидання всіх фільтрів - показується тільки коли фільтри активні */}
-          {hasActiveFilters() && (
-            <Button
-              onPress={resetFilters}
-              disabled={loading}
-              size="md"
-              variant="flat"
-              className="h-10 px-4 bg-danger-50 text-danger-700 hover:bg-danger-100"
-              startContent={<DynamicIcon name="rotate-ccw" size={16} />}
-            >
-              Скинути
-            </Button>
-          )}
         </div>
 
         {/* Масові дії */}
@@ -1469,8 +1319,247 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         </ButtonGroup>
       </div>
 
-      {/* Другий ряд: Адмін-панель для автоматичних дій */}
-      {user?.role === 'admin' && (
+      <div className="flex items-center justify-between w-full">
+        <div className="flex gap-3">
+          {/* Фільтр каналів */}
+          <Dropdown placement="bottom-start">
+            <DropdownTrigger>
+              <Button
+                variant="flat"
+                size="sm"
+                className="font-medium h-8"
+                startContent={<DynamicIcon name="filter" size={16} />}
+              >
+                Канали ({selectedChannels.size})
+              </Button>
+            </DropdownTrigger>
+            <DropdownMenu
+              aria-label="Фільтр каналів"
+              closeOnSelect={false}
+              variant="flat"
+              selectionMode="multiple"
+              selectedKeys={selectedChannels}
+              onSelectionChange={(keys) => {
+                if (keys === 'all') {
+                  setSelectedChannels(new Set(salesChannels.map(ch => ch.id)));
+                } else {
+                  setSelectedChannels(keys as Set<string>);
+                }
+              }}
+            >
+              <DropdownSection showDivider dividerProps={{ className: "mt-3 bg-neutral-100" }}>
+                {salesChannels.map((channel) => (
+                  <DropdownItem
+                    key={channel.id}
+                    textValue={channel.name}
+                    startContent={
+                      <div className={`w-3 h-3 rounded ${getChannelClass(channel.id)}`} />
+                    }
+                  >
+                    {channel.name}
+                  </DropdownItem>
+                ))}
+              </DropdownSection>
+              <DropdownSection>
+                <DropdownItem
+                  key="actions"
+                  textValue="Дії з фільтром"
+                  className="px-2 pt-1 pb-0 cursor-default !bg-transparent"
+                  closeOnSelect={false}
+                  isReadOnly
+                >
+                  <div className="flex gap-2 justify-between items-center">
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      className="flex-1 h-7"
+                      onPress={() => setSelectedChannels(new Set(salesChannels.map(ch => ch.id)))}
+                    >
+                      Вибрати всі
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      color="danger"
+                      className="flex-1 h-7"
+                      onPress={() => setSelectedChannels(new Set())}
+                    >
+                      Скинути всі
+                    </Button>
+                  </div>
+                </DropdownItem>
+              </DropdownSection>
+            </DropdownMenu>
+          </Dropdown>
+
+          {/* Фільтр по відвантаженню */}
+          <Dropdown placement="bottom-start">
+            <DropdownTrigger>
+              <Button
+                variant="flat"
+                size="sm"
+                className="font-medium h-8"
+                startContent={<DynamicIcon name="truck" size={16} />}
+              >
+                {shipmentFilter === 'all' && 'Всі замовлення'}
+                {shipmentFilter === 'shipped' && 'Відвантажені'}
+                {shipmentFilter === 'not_shipped' && 'Не відвантажені'}
+                {shipmentFilter === 'duplicates' && 'Дублікати відвантажень'}
+              </Button>
+            </DropdownTrigger>
+            <DropdownMenu
+              aria-label="Фільтр по відвантаженню"
+              variant="flat"
+              selectionMode="single"
+              selectedKeys={new Set([shipmentFilter])}
+              onSelectionChange={(keys) => {
+                const selected = Array.from(keys)[0] as ShipmentFilterType;
+                setShipmentFilter(selected);
+              }}
+            >
+              <DropdownItem 
+                key="all"
+                textValue="Всі замовлення"
+                startContent={<DynamicIcon name="list" size={16} />}
+              >
+                Всі замовлення
+              </DropdownItem>
+              <DropdownItem 
+                key="shipped"
+                textValue="Відвантажені"
+                startContent={<DynamicIcon name="check-circle" size={16} className="text-green-600" />}
+              >
+                Відвантажені
+              </DropdownItem>
+              <DropdownItem 
+                key="not_shipped"
+                textValue="Не відвантажені"
+                startContent={<DynamicIcon name="clock" size={16} className="text-orange-600" />}
+              >
+                Не відвантажені
+              </DropdownItem>
+              <DropdownItem 
+                key="duplicates"
+                textValue="Дублікати відвантажень"
+                startContent={<DynamicIcon name="copy-x" size={16} className="text-red-600" />}
+              >
+                Дублікати відвантажень
+              </DropdownItem>
+            </DropdownMenu>
+          </Dropdown>
+
+          {/* Фільтр по статусу */}
+          <Dropdown placement="bottom-start">
+            <DropdownTrigger>
+              <Button
+                variant="flat"
+                size="sm"
+                className="font-medium h-8"
+                startContent={<DynamicIcon name="sliders" size={16} />}
+              >
+                {selectedStatus === 'all'
+                  ? 'Всі статуси'
+                  : statusOptions.find(s => s.value === selectedStatus)?.label ?? 'Статус'}
+              </Button>
+            </DropdownTrigger>
+            <DropdownMenu
+              aria-label="Фільтр по статусу"
+              variant="flat"
+              selectionMode="single"
+              selectedKeys={new Set([selectedStatus])}
+              onSelectionChange={(keys) => {
+                const selected = Array.from(keys)[0] as StatusFilterType;
+                setSelectedStatus(selected);
+              }}
+            >
+              <DropdownSection showDivider dividerProps={{ className: "mt-1 bg-neutral-100" }}>
+                <DropdownItem
+                  key="all"
+                  textValue="Всі статуси"
+                  startContent={<DynamicIcon name="list" size={16} />}
+                >
+                  Всі статуси
+                </DropdownItem>
+              </DropdownSection>
+              <DropdownSection>
+                {statusOptions.map((status) => (
+                  <DropdownItem
+                    key={status.value}
+                    textValue={status.label}
+                    startContent={<DynamicIcon name={status.icon as Parameters<typeof DynamicIcon>[0]['name']} size={16} className={`${getStatusColor(status.value)} rounded-full overflow-visible`} />}
+                  >
+                    {status.label} <span className="border-1 border-gray-300 text-gray-400 px-1.5 py-0.5 rounded text-xs font-medium ml-1">{statusCounts[status.value] || 0}</span>
+                  </DropdownItem>
+                ))}
+              </DropdownSection>
+            </DropdownMenu>
+          </Dropdown>
+
+          {/* Кнопка скидання всіх фільтрів - показується тільки коли фільтри активні */}
+          {hasActiveFilters() && (
+            <Button
+              onPress={resetFilters}
+              disabled={loading}
+              size="sm"
+              variant="flat"
+              className="font-medium h-8 bg-danger-50 text-danger-700 hover:bg-danger-100"
+              startContent={<DynamicIcon name="rotate-ccw" size={16} />}
+            >
+              Скинути
+            </Button>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-3">
+          {/* Кількість рядків на сторінці */}
+          <Dropdown placement="bottom-end">
+            <DropdownTrigger>
+              <Button
+                variant="flat"
+                size="sm"
+                className="font-medium h-8"
+                startContent={<DynamicIcon name="rows-3" size={16} />}
+              >
+                {pageSize} / стор.
+              </Button>
+            </DropdownTrigger>
+            <DropdownMenu
+              aria-label="Кількість на сторінці"
+              variant="flat"
+              selectionMode="single"
+              disallowEmptySelection
+              selectedKeys={new Set([String(pageSize)])}
+              onSelectionChange={(keys) => {
+                const val = Number(Array.from(keys)[0]);
+                if (val) setPageSize(val);
+              }}
+            >
+              {[10, 20, 50, 100].map((n) => (
+                <DropdownItem key={String(n)} textValue={String(n)}>
+                  {n} на сторінці
+                </DropdownItem>
+              ))}
+            </DropdownMenu>
+          </Dropdown>
+
+          {/* Кнопка оновлення таблиці */}
+          <Button
+            color="primary"
+            size="sm"
+            variant="flat"
+            onPress={fetchOrders}
+            isLoading={isAutoChecking}
+            startContent={!isAutoChecking && <DynamicIcon name="refresh-cw" size={16} />}
+            className="font-medium h-8 bg-primary-100 text-primary-700 hover:bg-primary-100"
+          >
+            Оновити таблицю
+          </Button>
+        </div>
+
+      </div>
+
+      {/* Третій ряд: Адмін-панель для автоматичних дій */}
+      {user?.role === 'admin' && isDebugMode && (
         <Card shadow="none" border-1 className="bg-neutral-50 border-1 border-neutral-200 rounded-md">
           <CardBody className="py-2 px-3 flex flex-row items-center gap-4">
             <div className="flex items-center gap-2">
@@ -1532,18 +1621,6 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               className="font-semibold h-8"
             >
               Авто-перевірка
-            </Button>
-
-            <Button
-              color="primary"
-              size="sm"
-              variant="flat"
-              onPress={fetchOrders}
-              isLoading={isAutoChecking}
-              startContent={!isAutoChecking && <DynamicIcon name="refresh-cw" size={16} />}
-              className="font-semibold h-8 ml-auto bg-blue-200"
-            >
-              Оновити таблицю
             </Button>
           </CardBody>
         </Card>
@@ -1611,7 +1688,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 </TableCell>
                 <TableCell>
                   <Tooltip placement="top-start" color="secondary" content={`Оновлено: ${order.updatedAt ? new Date(order.updatedAt).toLocaleString('uk-UA') : 'Дата не задана'}`}>
-                    <Chip size="sm" variant="flat" classNames={{ base: `${getStatusColor(getOrderStatusCode(order.statusText || order.status))} cursor-help` }}>
+                    <Chip size="sm" variant="flat" classNames={{ base: `${getStatusColor(order.status)} cursor-help` }}>
                       {order.statusText || getStatusLabel(order.status)}
                     </Chip>
                   </Tooltip>
@@ -1625,8 +1702,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 <TableCell>
                   <Tooltip 
                     placement="top-start" 
+                    isDisabled={!!order.sajt}
                     color={!order.sajt ? "danger" : "secondary"}
-                    content={!order.sajt ? "⚠️ УВАГА: Канал продажів не вказано! Потрібно виправити в SalesDrive" : `Канал: ${getChannelName(order.sajt)}`}
+                    content={!order.sajt ? "⚠️ УВАГА: Канал продажів не вказано! Потрібно виправити в SalesDrive" : ``}
                   >
                     <Chip
                       size="sm"
@@ -1642,27 +1720,39 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                     <Tooltip color="secondary" content={order.dilovodExportDate ? 'Оновлено: ' + new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не оновлено'}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodExportDate ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="search-check" size={16} /></div>
                     </Tooltip>
-                    <Tooltip color={order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1 ? "danger" : "secondary"} content={
+                    <Tooltip color={
+                      (order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1) ||
+                      (order.dilovodReturnDocsCount != null && order.dilovodReturnDocsCount > 1)
+                        ? "danger"
+                        : "secondary"
+                    } content={
                       order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1
                         ? `⚠️ Дублювання відвантаження: знайдено ${order.dilovodSaleDocsCount} документи.`
-                        : order.dilovodSaleExportDate
-                          ? 'Відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA')
-                          : 'Ще не відвантажено'
+                        : order.dilovodReturnDocsCount != null && order.dilovodReturnDocsCount > 1
+                          ? `⚠️ Дублювання повернення: знайдено ${order.dilovodReturnDocsCount} документи.`
+                          : order.dilovodReturnDate
+                            ? 'Відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') + ' | Повернуто: ' + new Date(order.dilovodReturnDate).toLocaleString('uk-UA')
+                            : order.dilovodSaleExportDate
+                              ? 'Відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA')
+                              : 'Ще не відвантажено'
                     }>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${
-                        order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1
+                        (order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1) ||
+                        (order.dilovodReturnDocsCount != null && order.dilovodReturnDocsCount > 1)
                           ? 'bg-red-100 text-red-600 ring-1 ring-red-300'
-                          : order.dilovodSaleExportDate
-                            ? 'bg-green-100 text-green-600'
-                            : 'bg-gray-100 text-gray-300'
-                      }`}><DynamicIcon name="truck" size={16} /></div>
+                          : order.dilovodReturnDate
+                            ? 'bg-orange-100 text-orange-600'
+                            : order.dilovodSaleExportDate
+                              ? 'bg-green-100 text-green-600'
+                              : 'bg-gray-100 text-gray-300'
+                      }`}><DynamicIcon name="truck" size={16} className={order.dilovodReturnDate ? 'scale-x-[-1]' : ''} /></div>
                     </Tooltip>
                     <Tooltip color="secondary" content={order.dilovodCashInDate ? 'Оплачено: ' + new Date(order.dilovodCashInDate).toLocaleString('uk-UA') : 'Ще не оплачено'}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodCashInDate ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="wallet" size={16} /></div>
                     </Tooltip>
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-42">
                   <ButtonGroup variant="flat">
                     <Button onPress={() => handleShowDetails(order)} isIconOnly variant="flat" className="font-medium p-2 mr-1.5 h-9 rounded-md" startContent={<DynamicIcon name="eye" size={14} />}></Button>
                     <Dropdown
@@ -1769,7 +1859,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           />
 
           {/* Легенда */}
-          <div className="flex gap-6 items-center mr-12 border-1 py-2 px-3 rounded-sm">
+          <div className="flex gap-6 items-center border-1 py-2 px-3 rounded-sm">
             <div className="flex gap-1 items-center">
               <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-purple-100 text-purple-600"><DynamicIcon name="search-check" size={14} strokeWidth="1.5" /></div>
               <span className="text-sm text-default-500">Додано в Діловод</span>

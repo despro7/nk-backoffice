@@ -11,6 +11,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import type { AppNotification, NotificationSeverity } from '../../shared/types/notifications';
 import { useNotifications } from '../hooks/useNotifications';
 import { useDebug } from '../contexts/DebugContext';
+import { useAuth } from '../contexts/AuthContext';
 import ResultDrawer from './ResultDrawer';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -81,9 +82,11 @@ interface NotificationRowProps {
   notification: AppNotification;
   onMarkRead: (id: number) => void;
   onOpenLog: (n: AppNotification) => void;
+  isAdmin?: boolean;
+  onResolve?: (id: number) => void;
 }
 
-function NotificationRow({ notification, onMarkRead, onOpenLog }: NotificationRowProps) {
+function NotificationRow({ notification, onMarkRead, onOpenLog, isAdmin, onResolve }: NotificationRowProps) {
   const cfg = SEVERITY_CONFIG[notification.severity];
 
   return (
@@ -156,6 +159,16 @@ function NotificationRow({ notification, onMarkRead, onOpenLog }: NotificationRo
           >
             <DynamicIcon name="check" size={11} />
             Прочитано
+          </button>
+        )}
+        {isAdmin && onResolve && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onResolve(notification.id); }}
+            title="Вирішено — сховати для всіх"
+            className="flex items-center gap-1 text-[11px] text-success-600 bg-success-50 hover:bg-success-100 px-2 py-0.5 rounded-full transition-colors border border-success-200"
+          >
+            <DynamicIcon name="check-check" size={11} />
+            Вирішено
           </button>
         )}
       </div>
@@ -239,12 +252,15 @@ export function NotificationBell({ onNavigate: _onNavigate }: NotificationBellPr
   const [isOpen, setIsOpen] = useState(false);
   const [drawerNotification, setDrawerNotification] = useState<AppNotification | null>(null);
   const [drawerLog, setDrawerLog] = useState<any[] | null>(null);
-  const { notifications, unreadCount, markRead, markAllRead, markAllReadGlobal, hideAll, hideAllGlobal, clearAll } = useNotifications();
+  const { notifications, unreadCount, markRead, markAllRead, markAllReadGlobal, hideAll, hideAllGlobal, hideOneGlobal, clearAll, refresh } = useNotifications();
   const { isDebugMode } = useDebug();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   const handleOpenChange = useCallback((open: boolean) => {
     setIsOpen(open);
-  }, []);
+    if (open) refresh();
+  }, [refresh]);
 
   const handleMarkRead = useCallback((id: number) => {
     markRead(id);
@@ -257,6 +273,10 @@ export function NotificationBell({ onNavigate: _onNavigate }: NotificationBellPr
   const handleClearAll = useCallback(() => {
     hideAll();
   }, [hideAll]);
+
+  const handleResolve = useCallback((id: number) => {
+    hideOneGlobal(id);
+  }, [hideOneGlobal]);
 
   const handleOpenLog = useCallback(async (n: AppNotification) => {
     setIsOpen(false);
@@ -348,6 +368,8 @@ export function NotificationBell({ onNavigate: _onNavigate }: NotificationBellPr
                   notification={n}
                   onMarkRead={handleMarkRead}
                   onOpenLog={handleOpenLog}
+                  isAdmin={isAdmin}
+                  onResolve={handleResolve}
                 />
               ))}
             </div>

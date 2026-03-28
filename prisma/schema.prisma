@@ -59,6 +59,8 @@ model Order {
   dilovodExportDate      DateTime?       // Дата вивантаження в Dilovod
   dilovodCashInDate      DateTime?       // Дата додавання документу (documents.cashIn)
   dilovodCashInLastChecked DateTime?     // Дата останньої перевірки cashIn (для уникнення частих запитів)
+  dilovodReturnDate      DateTime?       // Дата документа повернення (documents.saleReturn), тільки для статусів 6/7
+  dilovodReturnDocsCount Int?            // Кількість документів повернення (> 1 = помилка дублікату)
   OrdersHistory        OrdersHistory[]
 
   @@index([status])

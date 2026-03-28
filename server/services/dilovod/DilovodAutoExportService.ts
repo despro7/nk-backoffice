@@ -168,6 +168,14 @@ export class DilovodAutoExportService {
   ): Promise<AutoExportResult> {
     const orderId = String(internalOrderId);
 
+    // Отримуємо orderNumber заздалегідь — щоб він був доступний і в catch-блоці
+    const orderNumberPrefetch = await prisma.order.findUnique({
+      where: { id: internalOrderId },
+      select: { orderNumber: true }
+    }).then(r => r?.orderNumber || null).catch(() => null);
+
+    const orderNumForLog = orderNumberPrefetch || `id=${internalOrderId}`;
+
     try {
       // Крок 1: Отримуємо замовлення з БД
       const order = await prisma.order.findUnique({
@@ -278,11 +286,11 @@ export class DilovodAutoExportService {
 
       // channel_not_configured — не є помилкою, лише пропускаємо без meta_log
       if (errorMessage.includes('не налаштований для експорту через Dilovod')) {
-        logWithTimestamp(`ℹ️ [AutoExport/saleOrder] Замовлення id=${internalOrderId}: канал не налаштовано, пропускаємо`);
+        logWithTimestamp(`ℹ️ [AutoExport/saleOrder] Замовлення ${orderNumForLog}: канал не налаштовано, пропускаємо`);
         return { triggered: false, success: true };
       }
 
-      logWithTimestamp(`❌ [AutoExport/saleOrder] Помилка для замовлення id=${internalOrderId}: ${errorMessage}`);
+      logWithTimestamp(`❌ [AutoExport/saleOrder] Помилка для замовлення ${orderNumForLog}: ${errorMessage}`);
 
       // Для критичних помилок (валідація, тощо) — пишемо в meta_logs
       try {
@@ -290,9 +298,9 @@ export class DilovodAutoExportService {
         await dilovodService.logMetaDilovodExport({
           title: 'Auto export error (saleOrder)',
           status: 'error',
-          message: `[Авто] Помилка export замовлення id=${internalOrderId}: ${errorMessage}`,
+          message: `[Авто] Помилка export замовлення ${orderNumForLog}: ${errorMessage}`,
           initiatedBy,
-          data: { orderId, triggerStatus: newStatus, errorMessage }
+          data: { orderId, orderNumber: orderNumberPrefetch, triggerStatus: newStatus, errorMessage }
         });
       } catch { /* ігноруємо помилку логування */ }
 
@@ -311,6 +319,14 @@ export class DilovodAutoExportService {
     initiatedBy: string
   ): Promise<AutoExportResult> {
     const orderId = String(internalOrderId);
+
+    // Отримуємо orderNumber заздалегідь — щоб він був доступний і в catch-блоці
+    const orderNumberPrefetch = await prisma.order.findUnique({
+      where: { id: internalOrderId },
+      select: { orderNumber: true }
+    }).then(r => r?.orderNumber || null).catch(() => null);
+
+    const orderNumForLog = orderNumberPrefetch || `id=${internalOrderId}`;
 
     try {
       // Крок 1: Отримуємо замовлення з БД
@@ -438,16 +454,16 @@ export class DilovodAutoExportService {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
-      logWithTimestamp(`❌ [AutoExport/sale] Помилка для замовлення id=${internalOrderId}: ${errorMessage}`);
+      logWithTimestamp(`❌ [AutoExport/sale] Помилка для замовлення ${orderNumForLog}: ${errorMessage}`);
 
       try {
         const { dilovodService } = await import('./DilovodService.js');
         await dilovodService.logMetaDilovodExport({
           title: 'Auto shipment error (sale)',
           status: 'error',
-          message: `[Авто] Помилка відвантаження замовлення id=${internalOrderId}: ${errorMessage}`,
+          message: `[Авто] Помилка відвантаження замовлення ${orderNumForLog}: ${errorMessage}`,
           initiatedBy,
-          data: { orderId, triggerStatus: newStatus, errorMessage }
+          data: { orderId, orderNumber: orderNumberPrefetch, triggerStatus: newStatus, errorMessage }
         });
       } catch { /* ігноруємо помилку логування */ }
 

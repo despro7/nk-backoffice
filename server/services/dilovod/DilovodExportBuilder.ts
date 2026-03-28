@@ -265,7 +265,7 @@ export class DilovodExportBuilder {
     const firmId = await this.determineFirmId(context, channelMapping);
 
     // Визначаємо канал продажів
-    const tradeChanel = this.determineTradeChanel(context);
+    const tradeChanel = await this.determineTradeChanel(context);
 
     // Визначаємо спосіб доставки через мапінг
     const deliveryMethodId = this.getDeliveryMethodMapping(context);
@@ -624,7 +624,12 @@ export class DilovodExportBuilder {
         }))
       };
     } catch (error) {
-      logWithTimestamp(`  ⚠️  Помилка завантаження довідників: ${error instanceof Error ? error.message : String(error)}`);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      logWithTimestamp(
+        `  ❌ Критична помилка завантаження довідників Dilovod: ${errMsg}. ` +
+        `Експорт може бути заблокований або виконаний з неповними даними. ` +
+        `Оновіть кеш довідників через "Керування кешем Dilovod" → "Оновити всі довідники".`
+      );
       return {};
     }
   }
@@ -738,9 +743,9 @@ export class DilovodExportBuilder {
       }
     }
 
-    // 6. Перевірка каналу продажів
+    // 6. Перевірка каналу продажів (критична — без tradeChanel документ буде некоректним)
     if (!header.tradeChanel) {
-      criticalErrors.push(`Не вказано канал продажів для "${channelName}"`);
+      criticalErrors.push(`Не вказано канал продажів в Dilovod для каналу "${channelName}". Налаштуйте ручний мапінг у розділі "Налаштування номера замовлення для каналу" → поле "Канал продажів в Dilovod".`);
     }
 
     // Не додаємо попередження, бо вони уже обробляються вище
@@ -772,7 +777,7 @@ export class DilovodExportBuilder {
    * @param context Контекст побудови експорту
    * @returns ID каналу продажів для Dilovod або пустий рядок
    */
-  private determineTradeChanel(context: ExportBuildContext): string {
+  private async determineTradeChanel(context: ExportBuildContext): Promise<string> {
     const { order, settings, directories, warnings } = context;
 
     const channelCode = order.sajt;
@@ -783,26 +788,90 @@ export class DilovodExportBuilder {
 
     // Перевіряємо ручний мапінг в налаштуваннях каналів (єдиний надійний спосіб)
     const channelSettings = settings.channelPaymentMapping?.[channelCode];
+    const channelDisplayName = this.getChannelDisplayName(channelCode);
+
     if (channelSettings?.dilovodTradeChannelId) {
+      const configuredId = channelSettings.dilovodTradeChannelId;
+
       // Перевіряємо, що цей ID існує в довідниках
-      if (directories?.tradeChanels) {
-        const mappedChannel = directories.tradeChanels.find(ch => ch.id === channelSettings.dilovodTradeChannelId);
+      if (directories?.tradeChanels && directories.tradeChanels.length > 0) {
+        const mappedChannel = directories.tradeChanels.find(ch => ch.id === configuredId);
         if (mappedChannel) {
-          logWithTimestamp(`  📺 Канал продажів через ручний мапінг: sajt "${channelCode}" → "${mappedChannel.id__pr}" (ID: ${mappedChannel.id})`);
+          logWithTimestamp(`  📺 Канал продажів через ручний мапінг: sajt "${channelCode}" → "${mappedChannel.id__pr || mappedChannel.code}" (ID: ${mappedChannel.id})`);
           return mappedChannel.id;
         } else {
-          const channelDisplayName = this.getChannelDisplayName(channelCode);
-          warnings.push(`Вказаний в мапінгу канал "${channelSettings.dilovodTradeChannelId}" не знайдено в довідниках Dilovod для каналу "${channelDisplayName}"`);
-          logWithTimestamp(`  ⚠️  Мапінг каналу невірний: ${channelSettings.dilovodTradeChannelId} не існує`);
+          // ID налаштовано, але не знайдено в поточних довідниках — застарілий кеш
+          logWithTimestamp(`  ⚠️  Канал ID=${configuredId} не знайдено серед ${directories.tradeChanels.length} каналів у кеші. Примусове оновлення довідників...`);
+          return this._retryWithFreshTradeChanels(configuredId, channelDisplayName, channelCode, context);
         }
+      } else {
+        // Довідники взагалі не завантажились
+        warnings.push(
+          `Не вдалося перевірити канал продажів в Dilovod ID="${configuredId}" для каналу "${channelDisplayName}": довідник tradeChanels порожній або не завантажений. ` +
+          `Оновіть кеш довідників через "Керування кешем Dilovod".`
+        );
+        logWithTimestamp(`  ⚠️  Довідник tradeChanels порожній — неможливо підтвердити ID=${configuredId}`);
+        // Повертаємо збережений ID як є — нехай Dilovod сам відхилить якщо невірний
+        return configuredId;
       }
     }
 
-    // Якщо ручний мапінг не налаштовано - повертаємо пустий рядок
-    const channelDisplayName = this.getChannelDisplayName(channelCode);
-    warnings.push(`Канал продажів для "${channelDisplayName}" не визначено. Налаштуйте ручний мапінг у розділі "Налаштування номера замовлення для каналу".`);
-    logWithTimestamp(`  ❌ Ручний мапінг каналу не налаштовано для sajt "${channelCode}"`);
+    // Якщо ручний мапінг не налаштовано взагалі
+    warnings.push(
+      `Для каналу "${channelDisplayName}" (sajt: ${channelCode}) не налаштовано канал продажів Dilovod. ` +
+      `Перейдіть в Налаштування Dilovod → "Канали продажів" → "${channelDisplayName}" → поле "Канал продажів в Dilovod" та оберіть відповідний канал.`
+    );
+    logWithTimestamp(`  ❌ Ручний мапінг tradeChanel не налаштовано для sajt "${channelCode}" (${channelDisplayName})`);
     return '';
+  }
+
+  /**
+   * Синхронно оновлює кеш tradeChanels і повторює пошук у поточному запиті.
+   * Викликається лише коли ID налаштовано, але не знайдено в кешованих довідниках.
+   */
+  private async _retryWithFreshTradeChanels(
+    configuredId: string,
+    channelDisplayName: string,
+    channelCode: string,
+    context: ExportBuildContext
+  ): Promise<string> {
+    const { warnings } = context;
+    try {
+      const { dilovodService } = await import('./DilovodService.js');
+      const freshChanels = await dilovodService.getTradeChanels(true);
+      logWithTimestamp(`  🔄 Кеш tradeChanels оновлено: ${freshChanels.length} каналів`);
+
+      const found = freshChanels.find((ch: any) => ch.id === configuredId);
+      if (found) {
+        logWithTimestamp(`  ✅ Канал ID=${configuredId} знайдено після оновлення кешу: "${found.id__pr || found.code}"`);
+        // Також оновлюємо довідники в контексті для подальших кроків валідації
+        if (context.directories) {
+          context.directories.tradeChanels = freshChanels.map((ch: any) => ({
+            id: ch.id,
+            id__pr: ch.id__pr,
+            code: ch.code
+          }));
+        }
+        return found.id;
+      } else {
+        // Навіть після оновлення ID не знайдено — налаштування справді некоректне
+        warnings.push(
+          `Канал продажів ID="${configuredId}" вказаний в налаштуваннях для каналу "${channelDisplayName}" ` +
+          `не існує в Dilovod (перевірено після примусового оновлення довідників, ${freshChanels.length} каналів). ` +
+          `Перейдіть в Налаштування Dilovod → "Канали продажів" → "${channelDisplayName}" та оберіть коректний канал.`
+        );
+        logWithTimestamp(`  ❌ Канал ID=${configuredId} відсутній в Dilovod навіть після оновлення кешу — налаштування некоректне`);
+        return '';
+      }
+    } catch (err) {
+      warnings.push(
+        `Не вдалося оновити довідник tradeChanels для перевірки каналу "${channelDisplayName}": ${err instanceof Error ? err.message : String(err)}. ` +
+        `Оновіть кеш вручну через "Керування кешем Dilovod".`
+      );
+      logWithTimestamp(`  ⚠️  Помилка оновлення кешу tradeChanels: ${err instanceof Error ? err.message : err}`);
+      // Повертаємо збережений ID — нехай Dilovod відхилить якщо невірний
+      return configuredId;
+    }
   }
 
 

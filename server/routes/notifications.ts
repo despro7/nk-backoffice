@@ -222,6 +222,34 @@ router.put('/read-all-global', authenticateToken, async (req: Request, res: Resp
   }
 });
 
+// ─── PUT /api/notifications/:id/hide-global ──────────────────────────────────
+// [admin] Ховає одне повідомлення для ВСІХ юзерів через hiddenBy["_all"].
+// Аналог "Вирішено" — позначає питання вирішеним.
+
+router.put('/:id/hide-global', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Admin role required' });
+    }
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ success: false, error: 'Invalid id' });
+
+    const log = await prisma.meta_logs.findUnique({ where: { id }, select: { id: true, hiddenBy: true } });
+    if (!log) return res.status(404).json({ success: false, error: 'Not found' });
+
+    const hiddenBy = parseReadBy(log.hiddenBy);
+    if (!('_all' in hiddenBy)) {
+      hiddenBy['_all'] = new Date().toISOString();
+      await prisma.meta_logs.update({ where: { id }, data: { hiddenBy } });
+    }
+
+    res.json({ success: true, id });
+  } catch (err) {
+    console.error('❌ [Notifications] PUT /:id/hide-global error:', err);
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
 // ─── PUT /api/notifications/:id/read ─────────────────────────────────────────
 
 router.put('/:id/read', authenticateToken, async (req: Request, res: Response) => {

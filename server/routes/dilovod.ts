@@ -543,6 +543,7 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
     const shipmentStatus = req.query.shipmentStatus as string; // 'shipped' | 'not_shipped'
     const shipmentDateFrom = req.query.shipmentDateFrom as string; // ISO date string
     const shipmentDateTo = req.query.shipmentDateTo as string; // ISO date string
+    const statusesParam = req.query.statuses as string; // comma-separated status keys, e.g. '1,2,3'
 
     const offset = (page - 1) * limit;
 
@@ -550,7 +551,7 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
     let whereCondition: any = {
       // Виключаємо статуси 6, 7, 8
       NOT: [
-        { status: { in: ['6', '7', '8'] } }
+        { status: { in: ['8'] } }
       ]
     };
 
@@ -574,6 +575,14 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
           { sajt: null },
           { sajt: '' }
         ];
+      }
+    }
+
+    // Додаємо фільтр по статусам
+    if (statusesParam) {
+      const statuses = statusesParam.split(',').map(s => s.trim()).filter(Boolean);
+      if (statuses.length > 0) {
+        whereCondition.status = { in: statuses };
       }
     }
 
@@ -655,45 +664,59 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
       whereCondition = { ...whereCondition, ...searchCondition };
     }
 
-    // Отримуємо замовлення з пагінацією
-    const orders = await prisma.order.findMany({
-      where: whereCondition,
-      orderBy: {
-        [sortBy]: sortOrder
-      },
-      skip: offset,
-      take: limit,
-      select: {
-        id: true,
-        externalId: true,
-        orderNumber: true,
-        orderDate: true,
-        updatedAt: true,
-        readyToShipAt: true,
-        status: true,
-        statusText: true,
-        paymentMethod: true,
-        shippingMethod: true,
-        sajt: true, // канал продажів
-        dilovodDocId: true,
-        dilovodSaleExportDate: true,
-        dilovodSaleDocsCount: true,
-        dilovodExportDate: true,
-        dilovodCashInDate: true,
-        customerName: true,
-        customerPhone: true,
-        deliveryAddress: true,
-        totalPrice: true,
-        quantity: true,
-        items: true,
-        rawData: true
-      }
-    });
+    // Отримуємо замовлення з пагінацією, загальну кількість та групування по статусах паралельно
+    // Для groupBy статусів використовуємо умову БЕЗ фільтру статусу,
+    // щоб лічильники показували реальну кількість для всіх статусів незалежно від вибраного фільтру
+    const { status: _excludedStatus, ...whereConditionForCounts } = whereCondition;
+    const [orders, totalCount, statusGroups] = await Promise.all([
+      prisma.order.findMany({
+        where: whereCondition,
+        orderBy: { [sortBy]: sortOrder },
+        skip: offset,
+        take: limit,
+        select: {
+          id: true,
+          externalId: true,
+          orderNumber: true,
+          orderDate: true,
+          updatedAt: true,
+          readyToShipAt: true,
+          status: true,
+          statusText: true,
+          paymentMethod: true,
+          shippingMethod: true,
+          sajt: true,
+          dilovodDocId: true,
+          dilovodSaleExportDate: true,
+          dilovodSaleDocsCount: true,
+          dilovodExportDate: true,
+          dilovodCashInDate: true,
+          dilovodReturnDate: true,
+          dilovodReturnDocsCount: true,
+          customerName: true,
+          customerPhone: true,
+          deliveryAddress: true,
+          totalPrice: true,
+          quantity: true,
+          items: true,
+          rawData: true
+        }
+      }),
+      prisma.order.count({ where: whereCondition }),
+      prisma.order.groupBy({
+        by: ['status'],
+        where: whereConditionForCounts,
+        _count: { status: true }
+      })
+    ]);
 
-    // Підраховуємо загальну кількість для пагінації
-    const totalCount = await prisma.order.count({
-      where: whereCondition
-    });
+    // Перетворюємо groupBy результат у зручний об'єкт { '1': 42, '2': 17, ... }
+    const statusCounts: Record<string, number> = {};
+    for (const group of statusGroups) {
+      if (group.status !== null) {
+        statusCounts[group.status] = group._count.status;
+      }
+    }
 
     const totalPages = Math.ceil(totalCount / limit);
 
@@ -708,6 +731,7 @@ router.get('/salesdrive/orders', authenticateToken, async (req, res) => {
         hasNext: page < totalPages,
         hasPrev: page > 1
       },
+      statusCounts,
       metadata: {
         fetchedAt: new Date().toISOString(),
         filters: {
@@ -785,7 +809,7 @@ router.post('/salesdrive/orders/check', authenticateToken, async (req, res) => {
 /**
  * POST /api/dilovod/salesdrive/orders/reset-and-check
  * Примусове скидання всіх Dilovod-полів + повторна перевірка в Dilovod API
- * Очищує: dilovodDocId, dilovodExportDate, dilovodCashInDate, dilovodSaleExportDate, dilovodCashInLastChecked
+ * Очищує: dilovodDocId, dilovodExportDate, dilovodCashInDate, dilovodSaleExportDate, dilovodCashInLastChecked, dilovodReturnDate, dilovodReturnDocsCount
  */
 router.post('/salesdrive/orders/reset-and-check', authenticateToken, async (req, res) => {
   try {
@@ -817,7 +841,9 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, async (req,
         dilovodCashInDate: null,
         dilovodSaleExportDate: null,
         dilovodSaleDocsCount: null,
-        dilovodCashInLastChecked: null
+        dilovodCashInLastChecked: null,
+        dilovodReturnDate: null,
+        dilovodReturnDocsCount: null
       }
     });
 
@@ -1284,6 +1310,21 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, async (req,
 
     // Перевіряємо, чи це критична помилка валідації
     if (errorMessage.includes('Експорт заблоковано через критичні помилки:')) {
+      // Логуємо в meta_logs
+      const exportOrderId = req.params.orderId;
+      try {
+        const { dilovodService: dilovodServiceLog } = await import('../services/dilovod/DilovodService.js');
+        const { orderDatabaseService: ods } = await import('../services/orderDatabaseService.js');
+        const exportOrderNum = await ods.getOrderNumberFromId(Number(exportOrderId)).catch(() => null);
+        await dilovodServiceLog.logMetaDilovodExport({
+          title: 'Manual export error (saleOrder)',
+          status: 'error',
+          message: `[Ручний] Помилка export замовлення ${exportOrderNum || exportOrderId}: ${errorMessage}`,
+          initiatedBy: `manual:user:${req.user?.email || req.user?.role || 'unknown'}`,
+          data: { orderId: exportOrderId, orderNumber: exportOrderNum, errorMessage }
+        });
+      } catch { /* ігноруємо помилку логування */ }
+
       // Критична помилка валідації - повертаємо статус 400 (Bad Request)
       return res.status(400).json({
         success: false,

@@ -6,6 +6,9 @@ import React from 'react';
  * @returns JSX елемент з іконкою банку
  */
 export const getBankIcon = (name: string): JSX.Element => {
+  if (!name) {
+    return <img src="/icons/payments/blank.svg" alt="Банк" className="w-5 h-5" />;
+  }
   const lowerName = name.toLowerCase();
   
   if (lowerName.includes('приват')) {
@@ -49,6 +52,9 @@ export const getBankIcon = (name: string): JSX.Element => {
  * @returns JSX елемент з іконкою способу оплати
  */
 export const getPaymentIcon = (name: string): JSX.Element => {
+  if (!name) {
+    return <img src="/icons/payments/blank.svg" alt="Оплата" className="w-5 h-5" />;
+  }
   const lowerName = name.toLowerCase();
   
   if (lowerName.includes('безготівк') || lowerName.includes('безналичн') || lowerName.includes('післяплата')) {

@@ -14,6 +14,7 @@ export interface SalesDriveChannel {
 export interface SalesDrivePaymentMethod {
   id: number;
   name: string;
+  parameter?: string;
 }
 
 /**

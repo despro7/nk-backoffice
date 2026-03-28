@@ -350,7 +350,7 @@ export const getStatusColor = (status: string): string => {
       return "text-neutral-600 bg-neutral-100";
     case "2": // Підтверджено
       return "text-yellow-950 bg-yellow-200";
-    case "3": // Готовий до відправлення
+    case "3": // На відправку
       return "text-orange-500 bg-orange-100";
     case "4": // Відправлено
       return "text-neutral-600 bg-blue-100";
@@ -360,7 +360,7 @@ export const getStatusColor = (status: string): string => {
       return "text-red-600 bg-red-100";
     case "7": // Повернення
       return "text-red-600 bg-red-100";
-    case "8": // Видалено
+    case "8": // Видалений
       return "text-gray-600 bg-gray-100";
     case "9": // На утриманні
       return "text-gray-800 bg-[#e8d189]";
@@ -373,21 +373,19 @@ export const ORDER_STATUSES = [
   { key: "all", label: "Усі статуси" },
   { key: "1", label: "Нове замовлення" },
   { key: "2", label: "Підтверджено" },
-  { key: "3", label: "Готове до відправки" },
+  { key: "3", label: "На відправку" },
   { key: "4", label: "Відправлено" },
-  { key: "5", label: "Доставлено" },
-  { key: "6", label: "Повернення" },
-  { key: "7", label: "Скасовано" },
-  { key: "8", label: "Видалено" },
+  { key: "5", label: "Продаж" },
+  { key: "6", label: "Відмова" },
+  { key: "7", label: "Повернення" },
+  { key: "8", label: "Видалений" },
   { key: "9", label: "На утриманні" },
-  // Для совместимости со старыми статусами
-  { key: "id3", label: "Готове до відправки" },
 ];
 
 /**
- * Возвращает текстовое название статуса заказа
- * @param statusKey - ключ статуса
- * @returns строка с названием статуса
+ * Повертає текстове найменування статусу замовлення
+ * @param statusKey - ключ статусу
+ * @returns рядок з назвою статусу
  */
 export const getStatusLabel = (statusKey: string | null | undefined): string => {
   if (!statusKey) return "Невідомо";
@@ -397,10 +395,10 @@ export const getStatusLabel = (statusKey: string | null | undefined): string => 
 
 
 /**
- * Форматирует продолжительность в читаемый формат
- * @param duration - продолжительность (в миллисекундах или секундах, зависит от options.unit)
- * @param options - { unit: "s" | "ms" } (по умолчанию "ms")
- * @returns отформатированная строка, например "1год 2хв 3с"
+ * Форматує тривалість у читабельний формат
+ * @param duration - тривалість (в мілісекундах або секундах, залежно від options.unit)
+ * @param options - { unit: "s" | "ms" } (за замовчуванням "ms")
+ * @returns відформатований рядок, наприклад "1год 2хв 3с"
  * 
  * @example
  * formatDuration(77653, { unit: "ms" }) // "1хв 17с"
@@ -430,10 +428,10 @@ export const formatDuration = (
 };
 
 /**
- * Форматирует номер отслеживания (ТТН) в читаемый формат
- * @param trackingId - номер отслеживания
- * @param provider - провайдер доставки ('novaposhta' или 'ukrposhta')
- * @returns отформатированная строка
+ * Форматує номер відстеження (ТТН) у зручний для читання формат
+ * @param trackingId - номер відстеження
+ * @param provider - провайдер доставки ('novaposhta' або 'ukrposhta')
+ * @returns відформатований рядок
  * 
  * @example
  * formatTrackingNumber('20451232665506', 'novaposhta') // "20 4512 3266 5506"
@@ -444,7 +442,7 @@ export const formatTrackingNumber = (trackingId: string, provider: string): stri
     return 'ТТН не вказано';
   }
 
-  // Убираем все пробелы и приводим к строке
+  // Видаляємо всі пробіли та приводимо до рядка
   const cleanId = trackingId.toString().replace(/\s/g, '');
   
   if (provider === 'novaposhta') {
@@ -468,6 +466,38 @@ export const formatTrackingNumber = (trackingId: string, provider: string): stri
     }
   }
   
-  // Если формат не распознан, возвращаем как есть
+  // Якщо формат не розпізнаний, повертаємо як є
   return trackingId;
+};
+
+/**
+ * Повертає CSS-класи для кольорового відображення каналу продажів SalesDrive.
+ * Використовується для чіпів і кружечків у фільтрах/таблицях.
+ * @param channelId - ID каналу з SalesDrive (рядок) або null/undefined
+ * @returns рядок з Tailwind CSS класами
+ */
+export const getChannelClass = (channelId: string | null | undefined): string => {
+  if (!channelId) {
+    return 'bg-red-500 text-white border-red-500 font-semibold';
+  }
+
+  switch (channelId) {
+    case '22': // Rozetka (Сергій)
+      return 'bg-green-100 text-green-800 border-green-200';
+    case '39': // Rozetka (Марія)
+      return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+    case '28': // prom (актуальний)
+    case '24': // prom (old)
+      return 'bg-purple-100 text-purple-800 border-purple-200';
+    case '31': // інше (менеджер)
+      return 'bg-red-100 text-red-800 border-red-200';
+    case '38': // дрібні магазини
+      return 'bg-orange-100 text-orange-800 border-orange-200';
+    case '19': // nk-food.shop
+      return 'bg-gray-700 text-gray-100 border-gray-200';
+    case 'unknown': // Невідомий канал
+      return 'bg-red-500 text-white border-red-500 font-semibold';
+    default:
+      return 'bg-gray-100 text-gray-600 border-gray-200';
+  }
 };

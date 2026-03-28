@@ -118,14 +118,6 @@ router.post('/cache/clear', authenticateToken, async (req, res) => {
  */
 router.get('/channels', authenticateToken, async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     const { salesDriveService } = await import('../services/salesDriveService.js');
     const channels = await salesDriveService.fetchChannels();
 
@@ -149,14 +141,6 @@ router.get('/channels', authenticateToken, async (req, res) => {
  */
 router.get('/payment-methods', authenticateToken, async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     const { salesDriveService } = await import('../services/salesDriveService.js');
     const paymentMethods = await salesDriveService.fetchPaymentMethods();
 
@@ -180,14 +164,6 @@ router.get('/payment-methods', authenticateToken, async (req, res) => {
  */
 router.get('/shipping-methods', authenticateToken, async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     const { salesDriveService } = await import('../services/salesDriveService.js');
     const shippingMethods = await salesDriveService.fetchShippingMethods();
 
@@ -211,14 +187,6 @@ router.get('/shipping-methods', authenticateToken, async (req, res) => {
  */
 router.get('/statuses', authenticateToken, async (req, res) => {
   try {
-    // Перевіряємо ролі доступу
-    if (!req.user || !['admin', 'boss', 'shop-manager'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions. Required roles: admin, boss, shop-manager'
-      });
-    }
-
     const { salesDriveService } = await import('../services/salesDriveService.js');
     const statuses = await salesDriveService.fetchStatuses();
 

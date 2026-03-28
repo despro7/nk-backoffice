@@ -17,6 +17,8 @@ export interface UseNotificationsReturn {
   hideAll: () => Promise<void>;
   /** [debug] Сховати для ВСІХ юзерів через hiddenBy["_all"]. offset — пропустити N найновіших. */
   hideAllGlobal: (offset?: number) => Promise<{ hiddenCount: number; skipped: number } | null>;
+  /** [admin] Сховати одне конкретне сповіщення для ВСІХ юзерів ("Вирішено"). */
+  hideOneGlobal: (id: number) => Promise<void>;
   clearAll: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -118,6 +120,18 @@ export function useNotifications(): UseNotificationsReturn {
     } catch { return null; }
   }, [fetchNotifications]);
 
+  const hideOneGlobal = useCallback(async (id: number) => {
+    try {
+      const response = await apiCallRef.current(`/api/notifications/${id}/hide-global`, { method: 'PUT' });
+      if (!response.ok) return;
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      setUnreadCount((prev) => {
+        const wasUnread = notifications.find((n) => n.id === id && !n.read);
+        return wasUnread ? Math.max(0, prev - 1) : prev;
+      });
+    } catch { /* ignore */ }
+  }, [notifications]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return {
     notifications,
     unreadCount,
@@ -127,6 +141,7 @@ export function useNotifications(): UseNotificationsReturn {
     markAllReadGlobal,
     hideAll,
     hideAllGlobal,
+    hideOneGlobal,
     clearAll,
     refresh: fetchNotifications,
   };

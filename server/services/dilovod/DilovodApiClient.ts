@@ -647,8 +647,8 @@ export class DilovodApiClient {
 
   // ===== МЕТОДИ ДЛЯ ДОВІДНИКІВ =====
 
-  // Отримання мета-даних документів за baseDoc: id
-  async getDocuments(baseDocId: any[], documentType: 'sale' | 'cashIn'): Promise<DilovodOrderResponse[]> {
+  // Отримання мета-даних документів за списком baseDocId (для documents.sale, documents.cashIn, documents.saleReturn)
+  async getDocuments(baseDocId: any[], documentType: 'sale' | 'cashIn' | 'saleReturn'): Promise<DilovodOrderResponse[]> {
     await this.ensureReady();
     
     // Розбиваємо на чанки по 50 ID
@@ -656,8 +656,8 @@ export class DilovodApiClient {
     const allResults: DilovodOrderResponse[] = [];
     
     for (const chunk of chunks) {
-      // Для documents.sale фільтруємо за contract, для documents.cashIn за baseDoc
-      const filterAlias = documentType === 'sale' ? 'contract' : 'baseDoc';
+      // Для documents.sale та documents.saleReturn фільтруємо за contract, для documents.cashIn за baseDoc
+      const filterAlias = documentType === 'sale' || documentType === 'saleReturn' ? 'contract' : 'baseDoc';
       
       const request: DilovodApiRequest = {
         version: "0.25",
@@ -812,7 +812,8 @@ export class DilovodApiClient {
         from: 'catalogs.tradeChanels',
         fields: {
           id: 'id',
-          code: 'code'
+          code: 'code',
+          id__pr: 'id__pr'
         }
       }
     };

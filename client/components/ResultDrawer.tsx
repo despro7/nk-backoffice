@@ -374,6 +374,11 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 																			<b>✓ Відвантажено:</b> {new Date(item.dilovodSaleExportDate).toLocaleString('uk-UA')}
 																		</div>
 																	)}
+																	{item.dilovodReturnDate && (
+																		<div className={`text-xs ${item.updatedCountReturn > 0 ? 'text-orange-600' : 'text-gray-600'}`}>
+																			<b>✓ Повернення:</b> {new Date(item.dilovodReturnDate).toLocaleString('uk-UA')}
+																		</div>
+																	)}
 																	{item.dilovodCashInDate && (
 																		<div className={`text-xs ${item.updatedCountCashIn > 0 ? 'text-green-600' : 'text-gray-600'}`}>
 																			<b>✓ Оплачено:</b> {new Date(item.dilovodCashInDate).toLocaleString('uk-UA')}

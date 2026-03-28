@@ -640,11 +640,11 @@ export class DilovodService {
     }
   }
 
-  // Пошук documents.sale / documents.cashIn
-  async getDocuments(baseDoc: any[], documentType: 'sale' | 'cashIn'): Promise<any[]> {
+  // Пошук documents.sale / documents.cashIn / documents.saleReturn
+  async getDocuments(baseDoc: any[], documentType: 'sale' | 'cashIn' | 'saleReturn'): Promise<any[]> {
     try {
       logWithTimestamp(`Пошук documents.${documentType} за базовим документом:`, baseDoc);
-      const result = await this.apiClient.getDocuments(baseDoc, documentType === 'sale' ? 'sale' : 'cashIn');
+      const result = await this.apiClient.getDocuments(baseDoc, documentType);
       logWithTimestamp(`Знайдено ${result.length} documents.${documentType}`);
       return result;
     } catch (error) {
@@ -1329,11 +1329,19 @@ export class DilovodService {
                       ]
                     }
                   ]
+                },
+                { // Для статусів 6/7 (відмова/повернення): перевіряємо наявність документу повернення (saleReturn)
+                  // Тільки якщо є dilovodDocId (продаж був зафіксований) і ще не отримано документ повернення
+                  AND: [
+                    { status: { in: ['6', '7'] } },
+                    { dilovodDocId: { not: null } },
+                    { dilovodReturnDate: null }
+                  ]
                 }
               ]
             },
-            // Виключаємо неактуальні статуси
-            { status: { notIn: ['6', '7', '8'] } }
+            // Виключаємо статус 8 (видалено) — у них ніколи не буває повернень
+            { status: { not: '8' } }
           ]
         },
         orderBy: { orderDate: 'desc' },
@@ -1375,8 +1383,8 @@ export class DilovodService {
       const orders = await prisma.order.findMany({
         where: {
           AND: [
-            // Виключаємо неактуальні статуси
-            { status: { notIn: ['6', '7', '8'] } }
+            // Виключаємо статус 8 (видалено) — всі інші статуси, включно з 6/7
+            { status: { not: '8' } }
           ]
         },
         orderBy: { orderDate: 'desc' },
@@ -1558,6 +1566,8 @@ export class DilovodService {
               dilovodSaleExportDate: true,
               dilovodSaleDocsCount: true,
               dilovodCashInDate: true,
+              dilovodReturnDate: true,
+              dilovodReturnDocsCount: true,
               status: true
             }
           });
@@ -1576,8 +1586,21 @@ export class DilovodService {
             return !order || !order.dilovodCashInDate;
           });
 
+          // SaleReturn потрібен для статусів 6/7 (відмова/повернення)
+          // Тільки якщо ще немає дати повернення (або кількість дублікатів > 1 — перевіряємо повторно)
+          const needReturnRequest = contractIds.filter(id => {
+            const order = existingOrders.find(o => o.dilovodDocId === id);
+            if (!order) return false;
+            const orderStatus = parseInt(order.status || '0');
+            const isReturnStatus = orderStatus === 6 || orderStatus === 7;
+            if (!isReturnStatus) return false;
+            // Перевіряємо якщо ще не отримали дату або якщо є дублікати
+            return !order.dilovodReturnDate || (order.dilovodReturnDocsCount != null && order.dilovodReturnDocsCount > 1);
+          });
+
           let saleDocuments: any[] = [];
           let cashInDocuments: any[] = [];
+          let returnDocuments: any[] = [];
 
           if (needSaleRequest.length > 0) {
             logWithTimestamp(`Виконуємо запит getDocuments() для ${needSaleRequest.length} contract (sale)...`);
@@ -1586,6 +1609,10 @@ export class DilovodService {
           if (needCashInRequest.length > 0) {
             logWithTimestamp(`Виконуємо запит getDocuments() для ${needCashInRequest.length} contract (cashIn)...`);
             cashInDocuments = await this.getDocuments(needCashInRequest, 'cashIn');
+          }
+          if (needReturnRequest.length > 0) {
+            logWithTimestamp(`Виконуємо запит getDocuments() для ${needReturnRequest.length} contract (saleReturn)...`);
+            returnDocuments = await this.getDocuments(needReturnRequest, 'saleReturn');
           }
 
           // Групуємо за contract (або baseDoc - вони ідентичні), беремо перший документ
@@ -1616,6 +1643,8 @@ export class DilovodService {
           const saleByContract = groupByContract(saleDocuments);
           const saleCountByContract = countByContract(saleDocuments);
           const cashInByContract = groupByContract(cashInDocuments);
+          const returnByContract = groupByContract(returnDocuments);
+          const returnCountByContract = countByContract(returnDocuments);
 
           // Оновлюємо дати документів
           for (const contractId of contractIds) {
@@ -1657,6 +1686,29 @@ export class DilovodService {
               updateData.dilovodCashInLastChecked = new Date().toISOString();
             }
 
+            // SaleReturn для статусів 6/7
+            if (needReturnRequest.includes(contractId)) {
+              if (returnByContract.has(contractId)) {
+                // Зберігаємо дату повернення, якщо ще не збережена
+                if (!localOrder?.dilovodReturnDate) {
+                  updateData.dilovodReturnDate = new Date(returnByContract.get(contractId).date).toISOString();
+                }
+                // Завжди оновлюємо кількість документів повернення (для виявлення дублікатів)
+                const returnCount = returnCountByContract.get(contractId) ?? 1;
+                if (localOrder?.dilovodReturnDocsCount !== returnCount) {
+                  updateData.dilovodReturnDocsCount = returnCount;
+                  if (returnCount > 1) {
+                    logWithTimestamp(`⚠️ Замовлення ${orderInfo.orderNumber}: знайдено ${returnCount} документів повернення (має бути 1)!`);
+                  }
+                }
+              } else {
+                // Запит виконували, але документів повернення не знайдено — скидаємо лічильник
+                if (localOrder?.dilovodReturnDocsCount !== 0) {
+                  updateData.dilovodReturnDocsCount = 0;
+                }
+              }
+            }
+
             if (Object.keys(updateData).length > 0) {
               await prisma.order.updateMany({
                 where: { orderNumber: orderInfo.orderNumber },
@@ -1671,7 +1723,10 @@ export class DilovodService {
                   dilovodSaleDocsCount: updateData.dilovodSaleDocsCount ?? localOrder?.dilovodSaleDocsCount,
                   updatedCountSale: updateData.dilovodSaleExportDate ? 1 : 0,
                   dilovodCashInDate: updateData.dilovodCashInDate || localOrder?.dilovodCashInDate,
-                  updatedCountCashIn: updateData.dilovodCashInDate ? 1 : 0
+                  updatedCountCashIn: updateData.dilovodCashInDate ? 1 : 0,
+                  dilovodReturnDate: updateData.dilovodReturnDate || localOrder?.dilovodReturnDate,
+                  dilovodReturnDocsCount: updateData.dilovodReturnDocsCount ?? localOrder?.dilovodReturnDocsCount,
+                  updatedCountReturn: updateData.dilovodReturnDate ? 1 : 0
                 };
               } else {
                 results.push({
@@ -1682,7 +1737,7 @@ export class DilovodService {
               }
             }
           }
-          logWithTimestamp('Оновлення документів Sale/CashIn завершено (запити лише для відсутніх)');
+          logWithTimestamp('Оновлення документів Sale/CashIn/SaleReturn завершено (запити лише для відсутніх)');
         } catch (err) {
           logWithTimestamp('Помилка під час оновлення Sale/CashIn:', err);
         }
@@ -1697,7 +1752,8 @@ export class DilovodService {
         const baseUpdates = r.updatedCount || 0;
         const saleUpdates = r.updatedCountSale || 0;
         const cashInUpdates = r.updatedCountCashIn || 0;
-        return acc + baseUpdates + saleUpdates + cashInUpdates;
+        const returnUpdates = r.updatedCountReturn || 0;
+        return acc + baseUpdates + saleUpdates + cashInUpdates + returnUpdates;
       }, 0);
 
       // Кількість замовлень, в яких реально щось змінилось (хоча б одне поле оновлено)
@@ -1705,7 +1761,8 @@ export class DilovodService {
         const baseUpdates = r.updatedCount || 0;
         const saleUpdates = r.updatedCountSale || 0;
         const cashInUpdates = r.updatedCountCashIn || 0;
-        return baseUpdates + saleUpdates + cashInUpdates > 0;
+        const returnUpdates = r.updatedCountReturn || 0;
+        return baseUpdates + saleUpdates + cashInUpdates + returnUpdates > 0;
       }).length;
 
       const errorDetails = hasError
