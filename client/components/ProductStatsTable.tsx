@@ -21,7 +21,7 @@ import { useApi } from "../hooks/useApi";
 import { CalendarDate, getLocalTimeZone, today } from "@internationalized/date";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { formatRelativeDate } from "../lib/formatUtils";
+import { formatRelativeDate, ORDER_STATUSES } from "../lib/formatUtils";
 import { addToast } from "@heroui/react";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
@@ -88,17 +88,6 @@ type SortDescriptor = {
   direction: "ascending" | "descending";
 };
 
-const statusOptions = [
-  { key: "all", label: "Всі статуси" },
-  { key: "1", label: "Нові" },
-  { key: "2", label: "Підтверджені" },
-  { key: "3", label: "Готові до відправки" },
-  { key: "4", label: "Відправлені" },
-  { key: "5", label: "Продані" },
-  { key: "6", label: "Відхилені" },
-  { key: "7", label: "Повернені" },
-  { key: "8", label: "Видалені" }
-];
 
 export default function ProductStatsTable({ className }: ProductStatsTableProps) {
   const { isAdmin } = useRoleAccess();
@@ -112,8 +101,11 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
 
   // Фільтри
   const [statusFilter, setStatusFilter] = useState("all");
-  const [dateRange, setDateRange] = useState<DateRange | null>(null);
-  const [datePresetKey, setDatePresetKey] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<DateRange | null>(() => {
+    const todayDate = today(getLocalTimeZone());
+    return { start: todayDate.subtract({ days: 29 }), end: todayDate };
+  });
+  const [datePresetKey, setDatePresetKey] = useState<string | null>("last30Days");
 
   // Фільтр по товарам
   const [selectedProduct, setSelectedProduct] = useState<string>("");
@@ -128,10 +120,6 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
   const [cacheProgress, setCacheProgress] = useState<{ processed: number; total: number; errors: number } | null>(null);
   const [lastCacheUpdate, setLastCacheUpdate] = useState<Date | null>(null);
 
-  // Модальне вікно вибору періоду для оновлення кешу
-  const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
-  const [cachePeriodRange, setCachePeriodRange] = useState<DateRange | null>(null);
-
   // Хук для модалок оновлення кешу
   const cacheModals = useCacheRefreshModals({
     apiCall,
@@ -141,25 +129,33 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
 
   // Визначення колонок в залежності від режиму
   const columns = useMemo(() => {
-    if (viewMode === "dates") {
-      return [
-        { key: "date", label: "Дата", sortable: true, className: "w-3/16" },
-        { key: "name", label: "Назва товару", sortable: false, className: "w-5/16" },
-        { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-2/16 text-center" },
-        { key: "totalStock", label: "Залишки", sortable: true, className: "w-2/16 text-center" },
-        { key: "mainStock", label: "Склад ГП", sortable: true, className: "w-2/16 text-center" },
-        { key: "smallStock", label: "Склад М", sortable: true, className: "w-2/16 text-center" }
-      ];
-    } else {
-      return [
-        { key: "name", label: "Назва товару", sortable: true, className: "w-6/16" },
-        { key: "sku", label: "SKU", sortable: true, className: "w-2/16 text-left" },
-        { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-2/16 text-center" },
-        { key: "totalStock", label: "Залишки", sortable: true, className: "w-2/16 text-center" },
-        { key: "mainStock", label: "Склад ГП", sortable: true, className: "w-2/16 text-center" },
-        { key: "smallStock", label: "Склад М", sortable: true, className: "w-2/16 text-center" }
-      ];
-    }
+    return [
+      { key: viewMode === "dates" ? "date" : "name", label: viewMode === "dates" ? "Дата" : "Назва товару", sortable: true, className: viewMode === "dates" ? "w-3/16" : "w-6/16" },
+      { key: viewMode === "dates" ? "name" : "sku", label: viewMode === "dates" ? "Назва товару" : "SKU", sortable: false, className: viewMode === "dates" ? "w-5/16" : "w-2/16" },
+      { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-2/16 text-center" },
+      { key: "totalStock", label: "Залишки", sortable: true, className: "w-2/16 text-center" },
+      { key: "mainStock", label: "Склад ГП", sortable: true, className: "w-2/16 text-center" },
+      { key: "smallStock", label: "Склад М", sortable: true, className: "w-2/16 text-center" }
+    ];
+    // if (viewMode === "dates") {
+    //   return [
+    //     { key: "date", label: "Дата", sortable: true, className: "w-3/16" },
+    //     { key: "name", label: "Назва товару", sortable: false, className: "w-5/16" },
+    //     { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-2/16 text-center" },
+    //     { key: "totalStock", label: "Залишки", sortable: true, className: "w-2/16 text-center" },
+    //     { key: "mainStock", label: "Склад ГП", sortable: true, className: "w-2/16 text-center" },
+    //     { key: "smallStock", label: "Склад М", sortable: true, className: "w-2/16 text-center" }
+    //   ];
+    // } else {
+    //   return [
+    //     { key: "name", label: "Назва товару", sortable: true, className: "w-6/16" },
+    //     { key: "sku", label: "SKU", sortable: true, className: "w-2/16 text-left" },
+    //     { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-2/16 text-center" },
+    //     { key: "totalStock", label: "Залишки", sortable: true, className: "w-2/16 text-center" },
+    //     { key: "mainStock", label: "Склад ГП", sortable: true, className: "w-2/16 text-center" },
+    //     { key: "smallStock", label: "Склад М", sortable: true, className: "w-2/16 text-center" }
+    //   ];
+    // }
   }, [viewMode]);
 
   // Клієнтський кеш за фільтрами
@@ -336,6 +332,11 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       const twoWeeksAgo = todayDate.subtract({ days: 13 });
       return { start: twoWeeksAgo, end: todayDate };
     }},
+    { key: "last30Days", label: "Останні 30 днів", getRange: () => {
+      const todayDate = getCurrentDate();
+      const thirtyDaysAgo = todayDate.subtract({ days: 29 });
+      return { start: thirtyDaysAgo, end: todayDate };
+    }},
     { key: "thisMonth", label: "Цього місяця", getRange: () => {
       const todayDate = getCurrentDate();
       const startOfMonth = todayDate.subtract({ days: todayDate.day - 1 });
@@ -383,8 +384,9 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
   // Функція скидання фільтрів
   const resetFilters = useCallback(() => {
     setStatusFilter("all");
-    setDateRange(null);
-    setDatePresetKey(null);
+    const todayDate = today(getLocalTimeZone());
+    setDateRange({ start: todayDate.subtract({ days: 29 }), end: todayDate });
+    setDatePresetKey("last30Days");
     setSelectedProduct("");
     setViewMode("products");
     setDateStats([]);
@@ -761,7 +763,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
 				innerWrapper: "gap-2"
 			}}
           >
-            {statusOptions.map((option) => (
+            {ORDER_STATUSES.map((option) => (
               <SelectItem key={option.key}>{option.label}</SelectItem>
             ))}
           </Select>

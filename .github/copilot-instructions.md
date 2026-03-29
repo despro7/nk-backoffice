@@ -9,6 +9,47 @@
 - **Styling**: TailwindCSS 4, HeroUI component library, design tokens in `client/global.css`
 - **Database**: MySQL via Prisma (`prisma/schema.prisma`), migrations in `prisma/migrations/`
 
+## Copilot Behavior Rules
+
+### Language
+- **Always respond in Ukrainian**, regardless of the language used in the question.
+- **Code comments** must be written in **Ukrainian or English** only — no other languages.
+
+### Before Starting Any Task
+1. **Check `/Docs`** for relevant documentation on the affected area before making changes.
+2. If the area is undocumented and the task is non-trivial — briefly explore the architecture (grep, read key files) before proceeding.
+3. If the scope of changes is unclear — ask a clarifying question before writing code.
+
+### Documentation & Changelog
+After completing any non-trivial task, **always ask the user**:
+> *"Чи потрібно задокументувати ці зміни?"*
+
+If yes — follow this process:
+1. Show a **short preview in chat** (what changed, which files were touched, suggested doc location).
+2. Wait for **user approval**.
+3. Only after approval — write the doc file to the correct subfolder in `/Docs` (see structure below) and update the changelog.
+
+**`/Docs` folder structure:**
+```
+Docs/
+  CHANGELOG.md              # Main changelog (one file, append-only)
+  AGENTS.md                 # Project structure overview
+  architecture/             # Architecture decisions, module overviews
+  features/                 # Feature-specific documentation
+  integrations/             # External service integrations (Dilovod, SalesDrive, etc.)
+  hardware/                 # Hardware integrations (QZ Tray, scales, scanners)
+  api/                      # API endpoint documentation
+  guides/                   # How-to guides, setup instructions
+```
+
+**`CHANGELOG.md` format** (one entry per task, prepend new entries at the top):
+```markdown
+## YYYY-MM-DD — Short description of changes
+**Files:** `path/to/file1.ts`, `path/to/file2.tsx`
+Brief bullet list of what changed.
+---
+```
+
 ## Critical Architecture Patterns
 
 ### Service-Oriented Backend
@@ -18,7 +59,7 @@ All backend business logic is organized as **singleton service classes** in `ser
 export class MyService { ... }
 export const myService = new MyService();
 ```
-Key services: `salesDriveService` (CRM sync), `orderDatabaseService`, `ordersCacheService`, `DilovodService` (ERP), `cronService` (scheduled jobs), `settingsService` (equipment config).
+Key services: `salesDriveService` (CRM sync), `orderDatabaseService`, `ordersCacheService`, `DilovodService` (ERP), `cronService` (scheduled jobs), `settingsService` (equipment config), `DilovodAutoExportService` (automatic order export/shipment on status change).
 
 **Service module structure** (e.g., `server/services/dilovod/`):
 - `DilovodService.ts` - Main coordinator class
@@ -26,24 +67,28 @@ Key services: `salesDriveService` (CRM sync), `orderDatabaseService`, `ordersCac
 - `DilovodDataProcessor.ts` - Data transformation logic
 - `DilovodSyncManager.ts` - DB synchronization
 - `DilovodCacheManager.ts` - Cache management
+- `DilovodAutoExportService.ts` - Automatic order export/shipment on status change
+- `DilovodExportBuilder.ts` - Payload preparation for SalesDrive export
 - `DilovodTypes.ts` - TypeScript interfaces
-- `DilovodUtils.ts` - Helper functions
+- `DilovodUtils.ts` - Helper functions (incl. error handling for export)
 - `README.md` - Module-specific documentation
 
 When integrating external services, **always follow this modular pattern** with clear separation of concerns.
 
 ### Frontend Patterns
-- **Route config**: Centralized in `client/routes.config.tsx` with role-based access control (ROLES hierarchy: ADS_MANAGER < STOREKEEPER < SHOP_MANAGER < BOSS < ADMIN)
+- **Route config**: Centralized in `client/routes.config.tsx` with role-based access control — imports `ROLES`, `ROLE_HIERARCHY`, `hasAccess` from `shared/constants/roles.ts` and re-exports them
 - **Contexts**: `AuthContext` (user/auth state), `DebugContext` (debug mode), `ServerStatusContext` (server health)
 - **Services**: Client-side services in `client/services/` (ToastService, LoggingService, ScaleService, BarcodeScannerService, EquipmentService) - use singleton pattern with static methods
 - **State management**: React Query (`@tanstack/react-query`) for server state, Context for global UI state
 - **Protected routes**: Wrap with `<ProtectedRoute>` + `<Layout>` in `client/App.tsx`
 
 ### Authentication & Session Management
-- **JWT tokens**: Access token (short-lived, 15min) + refresh token (long-lived, 7 days) stored in HTTP-only cookies
+- **JWT tokens**: Access token (short-lived, 48 hours) + refresh token (long-lived, 30 days) stored in HTTP-only cookies
 - **Middleware**: `server/middleware/auth.ts` handles automatic token refresh when access token expires within threshold
 - **VS Code tasks**: API testing workflows require login first (`api:login` task stores session in `.vscode/.api-session.xml`)
 - **Settings sync**: User settings (toast, equipment) loaded from server and cached in AuthContext
+  - `LoggingService.initialize()`, `ToastService.initialize()`, `loadAuthSettings()` — all called **only after** successful `/api/auth/profile`, never on module import or component mount
+  - `useEquipment(isAuthenticated)` — defers `loadConfig()` until user is authenticated
 
 ### Cron Jobs & Background Tasks
 **Critical**: Cron jobs managed via `cronService` with process-level registry to prevent "zombie" jobs during Vite HMR:
@@ -105,11 +150,15 @@ See `Docs/QZ_TRAY_INSTRUCTIONS.md` for setup. Routes in `server/routes/qz-tray.t
 - All client/server/shared code is TypeScript (`.ts`/`.tsx`)
 - Path aliases: `@/` (client), `@shared/` (shared)
 - Server uses `.js` extensions in imports (ESM compatibility): `import { x } from './module.js'`
+- **Strong typing is mandatory**: always type function parameters, return types, and state variables explicitly — avoid `any` unless absolutely necessary and always add a comment explaining why.
+- **Error handling**: always use `try-catch` with meaningful error messages. On the server use `logServer()`, on the client use `ToastService` or `console.error`. Never swallow errors silently.
+- **Performance**: in data-intensive operations (caching, DB queries, sync jobs) prefer efficient algorithms, avoid unnecessary re-renders (use `useMemo`/`useCallback`), and batch DB queries where possible.
 
 ### Component Structure
 ```
 client/components/          # Shared React components
 client/components/ui/       # HeroUI wrapper components (Button, Modal, etc.)
+client/components/modals/   # Reusable modal components (e.g., CacheRefreshConfirmModal)
 client/pages/               # Route components (Index.tsx = /, OrderView.tsx = /orders/:externalId)
 client/hooks/               # Custom React hooks
 client/contexts/            # React Context providers
@@ -117,6 +166,12 @@ client/services/            # Client-side business logic (static classes)
 ```
 
 **React patterns**: Functional components, hooks > HOCs, colocate related code, use `ErrorBoundary` for error handling.
+
+### UI & Styling
+- **Primary UI library**: HeroUI — use its components as the default choice for all interface elements.
+- **Styling**: TailwindCSS v4 — use utility classes directly; design tokens defined in `client/global.css`.
+- **Other libraries**: allowed when HeroUI doesn't cover the use case (e.g., specialized charts, pickers). Prefer libraries that are compatible with TailwindCSS.
+- **UX principles**: interfaces must be intuitive and responsive. Follow modern UX conventions — clear feedback on actions (toasts, spinners, disabled states), accessible labels (`aria-label`), consistent spacing and hierarchy.
 
 ### API Design
 - **Endpoints**: Prefixed with `/api/`, grouped by domain in `server/routes/`
@@ -175,14 +230,21 @@ Access via `settingsService` (server) or API endpoints (`/api/settings/*`). Alwa
 - **Stock balances**: Synced from Dilovod, used for warehouse management
 
 ### Roles & Permissions
-**Role hierarchy** (see `client/routes.config.tsx`):
+**Role hierarchy** — defined in `shared/constants/roles.ts` (single source of truth for client + server):
 - `ADS_MANAGER` (1): View reports only
 - `STOREKEEPER` (2): Assembly operations
-- `SHOP_MANAGER` (3): Order management
-- `BOSS` (4): Full access except admin settings
-- `ADMIN` (5): Full system access
+- `WAREHOUSE_MANAGER` (3): Warehouse/stock operations
+- `SHOP_MANAGER` (4): Order management
+- `BOSS` (5): Full access except admin settings
+- `ADMIN` (6): Full system access
 
-**Route protection**: Use `minRole` or `roles` array in route config, enforced by `ProtectedRoute` component.
+**Server middleware** (`server/middleware/auth.ts`):
+- `requireMinRole(ROLES.STOREKEEPER)` — allows the given role and all above (hierarchy-based)
+- `requireRole(ROLE_SETS.ADMIN_ONLY)` — allows only exact roles in the array
+
+**Route protection** (client): Use `minRole` or `roles` array in `client/routes.config.tsx`, enforced by `ProtectedRoute` component.
+
+**Never** hardcode role strings inline — always import from `shared/constants/roles.ts`.
 
 ## Common Patterns
 
@@ -201,17 +263,21 @@ Access via `settingsService` (server) or API endpoints (`/api/settings/*`). Alwa
 4. Protect with `ProtectedRoute` wrapper (already applied in App.tsx loop)
 
 ### Adding Settings
-1. Define schema in `server/routes/settings.ts` (use Zod)
+1. Define schema and validation in `server/routes/settings.ts`
 2. Add API endpoints: GET/PUT `/api/settings/my-setting`
 3. Add UI: Create settings component in `client/components/`, add to `SettingsAdmin.tsx` or `SettingsEquipment.tsx`
 4. Use `settingsService` (server) or fetch API (client)
 
 ## References
-- `Docs/AGENTS.md` - Project structure overview
+- `Docs/CHANGELOG.md` - Main changelog
+- `Docs/architecture/logging-service.md` - LoggingService documentation
+- `Docs/architecture/toast-service.md` - ToastService documentation
+- `Docs/features/reporting-day/reporting-day-start-hour.md` - Reporting day start hour implementation
+- `Docs/integrations/payment-method-mapping.md` - Payment method mapping (SalesDrive → Dilovod)
+- `Docs/hardware/qz-tray-setup.md` - Label printer setup
+- `Docs/api/meta-logs-api.md` - Meta logs API documentation
+- `Docs/guides/equipment-settings-reset-fix.md` - Equipment settings reset fix
 - `server/services/dilovod/README.md` - Dilovod integration details
-- `Docs/QUICK_START.md` - Reporting day start hour implementation
-- `Docs/TESTING_GUIDE.md` - API testing workflows
-- `Docs/QZ_TRAY_INSTRUCTIONS.md` - Label printer setup
 - `.vscode/tasks.json` - Available VS Code tasks
 
 **When patterns are unclear**: Check referenced docs, search for existing implementations (e.g., `grep_search` for similar services), or ask for clarification before major changes.

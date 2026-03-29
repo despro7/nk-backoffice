@@ -428,7 +428,7 @@ export class CronService {
         this.isStatusCheckRunning = false;
       }
     }, {
-      timezone: "Europe/Kiev"
+      timezone: "Europe/Kyiv"
     });
 
     this.statusCheckJob.start();

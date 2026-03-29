@@ -1,4 +1,3 @@
-import React from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 export interface ProductsStats {
