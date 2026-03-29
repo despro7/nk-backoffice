@@ -31,9 +31,10 @@ function NavItem({ to, icon, label, isActive }: NavItemProps) {
     <Link
       to={to}
       className={cn(
-        "flex items-center gap-2 px-3.5 py-4 w-full rounded-md cursor-pointer transition-all duration-300 ease-in-out",
+        "flex items-center gap-2 px-2.5 py-3 w-full rounded-md cursor-pointer transition-all duration-300 ease-in-out",
+        "hover:bg-neutral-100 text-neutral-600 hover:text-neutral-700",
         isActive 
-          ? "bg-neutral-200 text-neutral-700" 
+          ? "bg-neutral-200/70 text-neutral-600" 
           : "hover:bg-neutral-100 text-neutral-600 hover:text-neutral-700"
       )}
     >
@@ -53,8 +54,9 @@ function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle
       <button
         onClick={onToggle}
         className={cn(
-          "flex items-center gap-2 px-3.5 py-4 w-full rounded-md cursor-pointer transition-colors duration-300 ease-in-out relative z-10 text-neutral-600 hover:text-neutral-700",
-          isExpanded && isChildrenActive ? "bg-neutral-200" : isChildrenActive ? "bg-neutral-100" : "hover:bg-neutral-100" 
+          "flex items-center gap-2 px-2.5 py-3 w-full rounded-md cursor-pointer transition-colors duration-300 ease-in-out relative z-10",
+          "text-neutral-600 hover:text-neutral-700 hover:bg-neutral-100",
+          isChildrenActive ? "bg-neutral-100" : "border-transparent" //isChildrenActive ? "bg-neutral-100" : "hover:bg-neutral-100" 
         )}
       >
         <div className="w-5 h-5">
@@ -75,14 +77,14 @@ function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle
       
       <div 
         className={cn(
-          "transition-all duration-300 ease-in-out rounded-lg w-full",
+          "transition-all duration-300 ease-in-out w-full px-5",
           isExpanded
-            ? `max-h-dvh opacity-100 bg-neutral-100`
+            ? `max-h-dvh opacity-100`
             : "max-h-0 opacity-0 overflow-hidden"
         )}
       >
         <div className={cn(
-          "p-2 space-y-1 transition-transform duration-300 ease-in-out",
+          "p-2 pb-0 space-y-1 transition-transform duration-300 ease-in-out border-l-1",
           isExpanded ? "translate-y-0" : "-translate-y-2"
         )}>
           {children}
@@ -97,13 +99,13 @@ function SubmenuItem({ to, icon, label, isActive }: NavItemProps) {
     <Link
       to={to}
       className={cn(
-        "flex items-center gap-2 px-3 py-2.5 w-full rounded-md cursor-pointer transition-colors duration-300 ease-in-out",
+        "flex items-center gap-2 px-2.5 py-2 w-full rounded-sm cursor-pointer transition-colors duration-300 ease-in-out",
         isActive 
-          ? "bg-neutral-200 text-neutral-700 shadow-inner-sm" 
+          ? "bg-neutral-100 text-neutral-600" 
           : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-600"
       )}
     >
-      <div className="w-4 h-4 transition-colors duration-300">
+      <div className="w-4 h-4 transition-colors duration-300 hidden">
         {icon}
       </div>
       <span className="flex-1 font-inter text-sm font-medium leading-[125%]">
@@ -116,9 +118,20 @@ function SubmenuItem({ to, icon, label, isActive }: NavItemProps) {
 export function Sidebar({ className }: SidebarProps) {
   const location = useLocation();
   const { user } = useAuth();
-  const [expandedSubmenus, setExpandedSubmenus] = useState<Set<string>>(new Set());
   
   const { mainRoutes, subGroups } = getNavGroups(user?.role);
+
+  // Ініціалізуємо сет із ключами груп, де є активний дочірній маршрут
+  const [expandedSubmenus, setExpandedSubmenus] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    for (const group of Object.values(subGroups)) {
+      const hasActiveChild =
+        group.children.some(r => location.pathname === r.path) ||
+        (group.parentRoute && location.pathname === group.parentRoute.path);
+      if (hasActiveChild) initial.add(group.key);
+    }
+    return initial;
+  });
 
   const toggleSubmenu = (key: string) => {
     setExpandedSubmenus(prev => {
@@ -128,9 +141,9 @@ export function Sidebar({ className }: SidebarProps) {
     });
   };
 
+  // Розгорнуто лише якщо ключ є в сеті (toggle завжди працює)
   const isGroupExpanded = (group: NavGroup) => {
-    const hasActiveChild = group.children.some(r => location.pathname === r.path);
-    return expandedSubmenus.has(group.key) || hasActiveChild;
+    return expandedSubmenus.has(group.key);
   };
 
   const isGroupChildActive = (group: NavGroup) => {

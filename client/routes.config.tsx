@@ -5,6 +5,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/Orders';
 import WarehouseMovement from './pages/WarehouseMovement';
+import WarehouseInventory from './pages/WarehouseInventory';
 import Reports from './pages/Reports';
 import ReportsSales from './pages/ReportsSales';
 import ReportsShipment from './pages/ReportsShipment';
@@ -89,15 +90,33 @@ export const appRoutes: AppRoute[] = [
     hasOwnTitle: true,
   },
   {
-    path: '/warehouse',
+    path: '/warehouse/movement',
     component: WarehouseMovement,
-    title: 'Переміщення складу',
-    pageTitle: 'Переміщення складу | NK Backoffice',
-    navLabel: 'Переміщення складу',
-    icon: <DynamicIcon name="combine" size={20} />,
+    title: 'Переміщення порцій',
+    pageTitle: 'Переміщення порцій | NK Backoffice',
+    navLabel: 'Переміщення порцій',
+    icon: <DynamicIcon name="combine" size={16} />,
     inNav: true,
     order: 3,
-    minRole: ROLES.STOREKEEPER // storekeeper і вище
+    parent: 'warehouse',
+    groupMeta: {
+      label: 'Склад',
+      icon: <DynamicIcon name="warehouse" size={20} />,
+      order: 3,
+    },
+    minRole: ROLES.STOREKEEPER, // storekeeper і вище
+  },
+  {
+    path: '/warehouse/inventory',
+    component: WarehouseInventory,
+    title: 'Інвентаризація малого складу',
+    pageTitle: 'Інвентаризація залишків | NK Backoffice',
+    navLabel: 'Інвентаризація залишків',
+    icon: <DynamicIcon name="clipboard-list" size={16} />,
+    inNav: true,
+    order: 3,
+    parent: 'warehouse',
+    minRole: ROLES.STOREKEEPER, // storekeeper і вище
   },
   {
     path: '/reports/sales',

@@ -137,25 +137,6 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       { key: "mainStock", label: "Склад ГП", sortable: true, className: "w-2/16 text-center" },
       { key: "smallStock", label: "Склад М", sortable: true, className: "w-2/16 text-center" }
     ];
-    // if (viewMode === "dates") {
-    //   return [
-    //     { key: "date", label: "Дата", sortable: true, className: "w-3/16" },
-    //     { key: "name", label: "Назва товару", sortable: false, className: "w-5/16" },
-    //     { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-2/16 text-center" },
-    //     { key: "totalStock", label: "Залишки", sortable: true, className: "w-2/16 text-center" },
-    //     { key: "mainStock", label: "Склад ГП", sortable: true, className: "w-2/16 text-center" },
-    //     { key: "smallStock", label: "Склад М", sortable: true, className: "w-2/16 text-center" }
-    //   ];
-    // } else {
-    //   return [
-    //     { key: "name", label: "Назва товару", sortable: true, className: "w-6/16" },
-    //     { key: "sku", label: "SKU", sortable: true, className: "w-2/16 text-left" },
-    //     { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-2/16 text-center" },
-    //     { key: "totalStock", label: "Залишки", sortable: true, className: "w-2/16 text-center" },
-    //     { key: "mainStock", label: "Склад ГП", sortable: true, className: "w-2/16 text-center" },
-    //     { key: "smallStock", label: "Склад М", sortable: true, className: "w-2/16 text-center" }
-    //   ];
-    // }
   }, [viewMode]);
 
   // Клієнтський кеш за фільтрами

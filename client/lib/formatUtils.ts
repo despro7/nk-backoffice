@@ -501,3 +501,52 @@ export const getChannelClass = (channelId: string | null | undefined): string =>
       return 'bg-gray-100 text-gray-600 border-gray-200';
   }
 };
+
+/**
+ * Повертає Tailwind CSS класи для кольору фону та тексту на основі categoryId товару.
+ * Для деяких категорій задані спеціальні кольори, для решти — детерміновано за модулем.
+ * @param categoryId - числовий ID категорії
+ * @returns об'єкт { bg, text } з Tailwind класами
+ *
+ * @example
+ * getCategoryColors(16) // { bg: 'bg-warning-100', text: 'text-warning-700' }
+ * getCategoryColors(99) // { bg: 'bg-blue-100', text: 'text-blue-700' }
+ */
+export const getCategoryColors = (categoryId: number): { bg: string; text: string } => {
+  // Спеціальні кольори для певних категорій
+  const specialColors: Record<number, { bg: string; text: string }> = {
+    16: { bg: 'bg-warning-100', text: 'text-warning-700' }, // Перші страви
+    21: { bg: 'bg-success-100', text: 'text-success-700' }, // Другі страви
+    19: { bg: 'bg-purple-100', text: 'text-purple-700' },   // Готові набори
+    14: { bg: 'bg-sky-100', text: 'text-sky-700' },         // Інгрідієнти для салатів
+    20: { bg: 'bg-teal-100', text: 'text-teal-700' },       // Салати
+    33: { bg: 'bg-rose-100', text: 'text-rose-700' },       // Напої
+  };
+
+  if (specialColors[categoryId]) {
+    return specialColors[categoryId];
+  }
+
+  // Генерація кольору на основі categoryId для інших категорій
+  const colors = [
+    { bg: 'bg-blue-100', text: 'text-blue-700' },
+    { bg: 'bg-red-100', text: 'text-red-700' },
+    { bg: 'bg-indigo-100', text: 'text-indigo-700' },
+    { bg: 'bg-pink-100', text: 'text-pink-700' },
+    { bg: 'bg-cyan-100', text: 'text-cyan-700' },
+    { bg: 'bg-teal-100', text: 'text-teal-700' },
+    { bg: 'bg-orange-100', text: 'text-orange-700' },
+    { bg: 'bg-lime-100', text: 'text-lime-700' },
+    { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+    { bg: 'bg-violet-100', text: 'text-violet-700' },
+    { bg: 'bg-fuchsia-100', text: 'text-fuchsia-700' },
+    { bg: 'bg-rose-100', text: 'text-rose-700' },
+    { bg: 'bg-sky-100', text: 'text-sky-700' },
+    { bg: 'bg-amber-100', text: 'text-amber-700' },
+    { bg: 'bg-stone-100', text: 'text-stone-700' },
+  ];
+
+  // Використовуємо categoryId для вибору кольору (детерміновано)
+  const colorIndex = Math.abs(categoryId) % colors.length;
+  return colors[colorIndex];
+};

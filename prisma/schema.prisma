@@ -114,6 +114,7 @@ model Product {
   barcode             String?
   dilovodDataHash     String?  @db.VarChar(64)
   isOutdated          Boolean  @default(false)
+  portionsPerBox      Int      @default(24)
 
   @@index([sku])
   @@index([categoryId])
@@ -221,6 +222,24 @@ model StockMovementHistory {
   @@index([referenceId])
   @@index([referenceType])
   @@map("stock_movement_history")
+}
+
+model InventorySession {
+  id          Int       @id @default(autoincrement())
+  warehouse   String    @default("small")   // Склад: "small" = Малий склад
+  status      String    @default("draft")   // draft | in_progress | completed
+  comment     String?   @db.Text
+  items       String    @db.LongText        // JSON: InventoryProduct[]
+  createdBy   Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  @@index([status])
+  @@index([createdBy])
+  @@index([createdAt])
+  @@index([warehouse])
+  @@map("inventory_sessions")
 }
 
 model SyncLogs {

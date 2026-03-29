@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `products` ADD COLUMN `portionsPerBox` INTEGER NOT NULL DEFAULT 24;

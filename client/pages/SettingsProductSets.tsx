@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useAuth } from '../contexts/AuthContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { formatDateTime, formatPrice, formatRelativeDate } from '../lib/formatUtils';
-import { Input, addToast, Textarea, Switch, Checkbox, Tooltip } from '@heroui/react';
+import { formatPrice, formatRelativeDate, getCategoryColors } from '../lib/formatUtils';
+import { Input, addToast, Textarea, Switch, Tooltip } from '@heroui/react';
 import { ToastService } from '@/services/ToastService';
 import ProductsStatsSummary, { type ProductsStats } from '@/components/ProductsStatsSummary';
 
@@ -15,7 +15,6 @@ import {
   TableRow,
   TableCell,
   Chip,
-  ChipProps,
   Dropdown,
   DropdownTrigger,
   DropdownMenu,
@@ -28,49 +27,14 @@ import {
   ModalBody,
   ModalFooter,
   Selection,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
 } from '@heroui/react';
 import { LoggingService } from '@/services/LoggingService';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { useDebug } from '@/contexts/DebugContext';
 
-// Функція для генерації кольорів категорій на основі categoryId
-const getCategoryColors = (categoryId: number) => {
-  // Спеціальні кольори для певних категорій
-  const specialColors: Record<number, { bg: string; text: string }> = {
-    16: { bg: 'bg-warning-100', text: 'text-warning-700' }, // Перші страви
-    21: { bg: 'bg-success-100', text: 'text-success-700' },   // Другі страви
-    19: { bg: 'bg-purple-100', text: 'text-purple-700' }, // Готові набори
-    14: { bg: 'bg-sky-100', text: 'text-sky-700' },   // Інгрідієнти для салатів
-    20: { bg: 'bg-teal-100', text: 'text-teal-700' }, // Салати
-    33: { bg: 'bg-rose-100', text: 'text-rose-700' }, // Напої
-  };
-
-  if (specialColors[categoryId]) {
-    return specialColors[categoryId];
-  }
-
-  // Генерація кольору на основі categoryId для інших категорій
-  const colors = [
-    { bg: 'bg-blue-100', text: 'text-blue-700' },
-    { bg: 'bg-red-100', text: 'text-red-700' },
-    { bg: 'bg-indigo-100', text: 'text-indigo-700' },
-    { bg: 'bg-pink-100', text: 'text-pink-700' },
-    { bg: 'bg-cyan-100', text: 'text-cyan-700' },
-    { bg: 'bg-teal-100', text: 'text-teal-700' },
-    { bg: 'bg-orange-100', text: 'text-orange-700' },
-    { bg: 'bg-lime-100', text: 'text-lime-700' },
-    { bg: 'bg-emerald-100', text: 'text-emerald-700' },
-    { bg: 'bg-violet-100', text: 'text-violet-700' },
-    { bg: 'bg-fuchsia-100', text: 'text-fuchsia-700' },
-    { bg: 'bg-rose-100', text: 'text-rose-700' },
-    { bg: 'bg-sky-100', text: 'text-sky-700' },
-    { bg: 'bg-amber-100', text: 'text-amber-700' },
-    { bg: 'bg-stone-100', text: 'text-stone-700' },
-  ];
-
-  // Використовуємо categoryId для вибору кольору (детерміновано)
-  const colorIndex = Math.abs(categoryId) % colors.length;
-  return colors[colorIndex];
-};
 
 interface Product {
   id: string;
@@ -83,6 +47,7 @@ interface Product {
   weight?: number; // Вес в граммах
   manualOrder?: number; // Ручне сортування
   barcode?: string; // Штрих‑код
+  portionsPerBox?: number; // Порцій у коробці (для порційних товарів, default 24)
   set: any; // Уже распарсенный объект или null
   additionalPrices: any; // Уже распарсенный объект или null
   stockBalanceByStock: any; // Уже распарсенный объект или null
@@ -105,6 +70,7 @@ type StatsResponse = ProductsStats;
 
 const ProductSets: React.FC = () => {
   const { user } = useAuth();
+  const { isDebugMode } = useDebug();
   const { isAdmin, canEditProducts } = useRoleAccess();
   const [products, setProducts] = useState<Product[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]); // Все товары для поиска названий в комплектах
@@ -275,12 +241,15 @@ const ProductSets: React.FC = () => {
   // Стан для вибору товарів у таблиці
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set([]));
 
-  // Стан для статистики порцій (тільки для адміна) — кількість в активних замовленнях
+  // Стан для статистики порцій (тільки в debug-режимі) — кількість в активних замовленнях
   const [portionsBySku, setPortionsBySku] = useState<Map<string, { newQty: number; confirmedQty: number }>>(new Map());
   const [portionsLoading, setPortionsLoading] = useState(false);
+  // Ref для читання актуального isDebugMode всередині async-функції без stale closure
+  const isDebugModeRef = useRef(isDebugMode);
+  useEffect(() => { isDebugModeRef.current = isDebugMode; });
 
-  const fetchPortions = async () => {
-    if (!isAdmin()) return;
+  const fetchPortions = useCallback(async () => {
+    if (!isDebugModeRef.current) return;
     setPortionsLoading(true);
     try {
       const [resNew, resConf] = await Promise.all([
@@ -312,12 +281,12 @@ const ProductSets: React.FC = () => {
     } finally {
       setPortionsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchPortions();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (isDebugMode) fetchPortions();
+  }, [isDebugMode, fetchPortions]);
 
   // Завантажуємо збережене налаштування "Розгорнути комплекти" з сервера
   useEffect(() => {
@@ -367,21 +336,11 @@ const ProductSets: React.FC = () => {
       label: 'Товар',
       allowsSorting: true,
     },
-    // {
-    //   key: 'barcode',
-    //   label: 'Штрих‑код',
-    //   allowsSorting: true,
-    // },
     {
       key: 'category',
       label: 'Категорія',
       allowsSorting: true,
     },
-    // {
-    //   key: 'costPerItem',
-    //   label: 'Ціна',
-    //   allowsSorting: true,
-    // },
     {
       key: 'weight',
       label: 'Вага (гр)',
@@ -389,7 +348,17 @@ const ProductSets: React.FC = () => {
     },
     {
       key: 'stock1',
-      label: 'Залишки',
+      label: 'Залишки ГП',
+      allowsSorting: true,
+    },
+    {
+      key: 'stock2',
+      label: 'Залишки М',
+      allowsSorting: true,
+    },
+    {
+      key: 'portionsPerBox',
+      label: 'Порцій/кор.',
       allowsSorting: true,
     },
     {
@@ -409,11 +378,11 @@ const ProductSets: React.FC = () => {
     },
   ];
 
-  // Фільтруємо колонки: portions — тільки для адміна
+  // Фільтруємо колонки: portions — тільки в debug-режимі
   const columns = useMemo(
-    () => isAdmin() ? allColumns : allColumns.filter(c => c.key !== 'portions'),
+    () => isDebugMode ? allColumns : allColumns.filter(c => c.key !== 'portions'),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user]
+    [isDebugMode]
   );
 
   // Фільтруємо та сортуємо дані для відображення
@@ -640,11 +609,11 @@ const ProductSets: React.FC = () => {
             {/* Product Meta */}
             <div className="text-sm font-normal text-gray-500">
               <div className="flex gap-3 items-center">
-                {product.weight && (
+                {/* {product.weight && (
                 <span className="flex gap-1 items-center">
                   <DynamicIcon name="weight" size={14} /> {product.weight} гр.
                 </span>
-                )}
+                )} */}
                 <span className="flex gap-1 items-center">
                   <DynamicIcon name="tag" size={14} /> {formatPrice(product.costPerItem)}
                 </span>
@@ -654,9 +623,6 @@ const ProductSets: React.FC = () => {
               </div>
             </div>
             {/* Product Barcode */}
-            {/* <div className="text-sm font-normal text-gray-500">
-              <DynamicIcon name="scan-barcode" size={14} /> {formatPrice(product.costPerItem)} <span className="font-medium">{product.barcode || '—'}</span>
-            </div> */}
             <div className="flex items-center gap-1">
               {isEditing ? (
                 <>
@@ -691,7 +657,7 @@ const ProductSets: React.FC = () => {
                 </div>
               )}
             </div>
-            {isAdmin() && (
+            {isAdmin() && isDebugMode && (
               <>
                 {/* Dilovod good ID */}
                 <div className="text-sm text-blue-800">
@@ -712,7 +678,7 @@ const ProductSets: React.FC = () => {
             size="sm"
             className={`${categoryColors.bg} ${categoryColors.text} border-0`}
           >
-            {product.categoryName + " (id" + product.categoryId + ")" || 'Без категорії'}
+            {product.categoryName + (isDebugMode ? ` (id${product.categoryId})` : '') || 'Без категорії'}
           </Chip>
         );
 
@@ -837,7 +803,7 @@ const ProductSets: React.FC = () => {
         const stock1Data = parseStockBalance(product.stockBalanceByStock);
         const stock1Value = stock1Data["1"] || 0;
 
-        if (isAdmin()) {
+        if (isDebugMode) {
           const p = portionsBySku.get(product.sku);
           const inOrders = (p?.newQty ?? 0) + (p?.confirmedQty ?? 0);
           const available = stock1Value - inOrders;
@@ -863,7 +829,7 @@ const ProductSets: React.FC = () => {
       }
 
       case 'portions': {
-        if (!isAdmin()) return null;
+        if (!isDebugMode) return null;
         if (portionsLoading) return <span className="text-gray-300 text-xs">…</span>;
         const p = portionsBySku.get(product.sku);
         const qNew = p?.newQty ?? 0;
@@ -890,14 +856,106 @@ const ProductSets: React.FC = () => {
         );
       }
 
-      // case 'stock2':
-      //   const stock2Data = parseStockBalance(product.stockBalanceByStock);
-      //   const stock2Value = stock2Data["2"] || 0;
-      //   return (
-      //     <span className={`text-sm ${stock2Value > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-      //       {stock2Value}
-      //     </span>
-      //   );
+      case 'stock2':
+        const stock2Data = parseStockBalance(product.stockBalanceByStock);
+        const stock2Value = stock2Data["2"] || 0;
+        return (
+          <span className={`text-sm ${stock2Value > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+            {stock2Value}
+          </span>
+        );
+
+      case 'portionsPerBox': {
+        const productIdStr2 = product.id.toString();
+        const ppbKey = `ppb-${productIdStr2}`;
+        const isEditingPpb = editingWeight[ppbKey] !== undefined;
+        const isSavingPpb = savingWeight === ppbKey;
+        const currentPpb = (product as any).portionsPerBox ?? 24;
+
+        // Комплектні товари — portionsPerBox не редагуємо
+        const isSetProduct = product.set && Array.isArray(product.set) && (product.set as unknown[]).length > 0;
+        if (isSetProduct) {
+          return <span className="text-sm text-gray-400" title="Комплектний товар">—</span>;
+        }
+
+        const startEditingPpb = () => {
+          setEditingWeight(prev => ({ ...prev, [ppbKey]: String(currentPpb) }));
+          setForceUpdate(v => v + 1);
+        };
+        const cancelEditingPpb = () => {
+          setEditingWeight(prev => {
+            const next = { ...prev };
+            delete next[ppbKey];
+            return next;
+          });
+        };
+        const finishEditingPpb = async () => {
+          const value = (inputRefs.current as any)[ppbKey]?.value ?? editingWeight[ppbKey];
+          if (value === undefined || value === '') { cancelEditingPpb(); return; }
+          const newPpb = parseInt(String(value));
+          if (isNaN(newPpb) || newPpb < 1) {
+            ToastService.show({ title: 'Некоректне значення', description: 'Має бути ціле число ≥ 1', color: 'warning' });
+            cancelEditingPpb();
+            return;
+          }
+          try {
+            setSavingWeight(ppbKey);
+            const response = await fetch(`/api/products/${productIdStr2}/portions-per-box`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ portionsPerBox: newPpb }),
+              credentials: 'include',
+            });
+            if (!response.ok) {
+              const err = await response.json().catch(() => ({}));
+              ToastService.show({ title: 'Помилка', description: `Не вдалося оновити: ${err.error || response.statusText}`, color: 'danger' });
+            } else {
+              setProducts(prev => prev.map(p => p.id === product.id ? ({ ...p, portionsPerBox: newPpb } as any) : p));
+              ToastService.show({ title: 'Оновлено', description: `Порцій у коробці: ${newPpb}`, color: 'success' });
+            }
+          } finally {
+            setSavingWeight(null);
+            cancelEditingPpb();
+          }
+        };
+
+        return (
+          <div className="flex items-center gap-1">
+            {isEditingPpb ? (
+              <>
+                <input
+                  ref={el => { (inputRefs.current as any)[ppbKey] = el; }}
+                  key={`ppb-input-${productIdStr2}-${forceUpdate}`}
+                  type="number"
+                  defaultValue={editingWeight[ppbKey] ?? ''}
+                  onChange={e => setEditingWeight(prev => ({ ...prev, [ppbKey]: e.target.value }))}
+                  className="w-12 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  min="1" step="1"
+                  disabled={isSavingPpb}
+                  onKeyDown={e => { if (e.key === 'Enter') finishEditingPpb(); else if (e.key === 'Escape') cancelEditingPpb(); }}
+                  onWheel={e => e.currentTarget.blur()}
+                  autoFocus
+                  onFocus={e => e.currentTarget.select()}
+                />
+                <Button size="sm" color="success" variant="flat" onPress={finishEditingPpb} disabled={isSavingPpb} className="min-w-0 p-1">
+                  {isSavingPpb ? <DynamicIcon name="loader-2" className="animate-spin" size={12} /> : <DynamicIcon name="check" size={12} />}
+                </Button>
+                <Button size="sm" color="default" variant="flat" onPress={cancelEditingPpb} disabled={isSavingPpb} className="min-w-0 p-1 text-neutral-600">
+                  <DynamicIcon name="x" size={12} />
+                </Button>
+              </>
+            ) : (
+              <div
+                className={`text-sm text-center text-gray-900 ${canEditProducts() ? 'cursor-pointer hover:bg-gray-100' : 'cursor-not-allowed opacity-60'} px-1.5 py-1 rounded min-w-[36px] tabular-nums underline underline-offset-3 decoration-dotted`}
+                onClick={() => canEditProducts() && startEditingPpb()}
+                title={canEditProducts() ? 'Натисніть для редагування' : 'Немає прав для редагування'}
+              >
+                {currentPpb}
+              </div>
+            )}
+          </div>
+        );
+      }
 
       case 'set':
         if (product.set) {
@@ -908,25 +966,46 @@ const ProductSets: React.FC = () => {
               return (
                 <div className="text-sm text-gray-900">
                   <div className="font-medium">Комплект ({setData.length}&nbsp;{setData.length === 1 ? 'позиція' : setData.length > 1 && setData.length < 5 ? 'позиції' : 'позицій'})</div>
-                    <details className="text-sm text-gray-500 cursor-pointer group">
-                      <summary className="flex items-center gap-1 hover:text-gray-700 select-none">
-                        <span className="underline decoration-dotted underline-offset-3">Показати склад</span>
-                        <DynamicIcon name="chevron-right" size={12} className="transition-transform group-open:rotate-90" />
-                      </summary>
-                      <ol className="mt-1 space-y-0.5 list-decimal list-inside">
-                        {setData.map((item, index) => {
-                          const targetSku = String(item.id).trim().toLowerCase();
-                          const componentProduct = productsBySku.get(targetSku) || allProducts.find(p => p.id?.toString() === String(item.id));
-                          const componentName = componentProduct?.name || item.id;
-
+                    <Popover showArrow placement="left">
+                      <PopoverTrigger>
+                        <span className="flex items-center gap-1 text-sm text-gray-500 cursor-pointer hover:text-gray-700 select-none w-fit">
+                          <DynamicIcon name="list-check" size={12} />
+                          <span className="underline decoration-dotted underline-offset-3">Показати склад</span>
+                        </span>
+                      </PopoverTrigger>
+                      <PopoverContent className="p-3 bg-neutral-100">
+                        {(() => {
+                          const COL_SIZE = 15;
+                          // Розбиваємо на стовпці по COL_SIZE елементів
+                          const cols: typeof setData[] = [];
+                          for (let i = 0; i < setData.length; i += COL_SIZE) {
+                            cols.push(setData.slice(i, i + COL_SIZE));
+                          }
                           return (
-                            <li key={index} title={`SKU: ${item.id}`}>
-                              {componentName} ({item.id})×{item.quantity}
-                            </li>
+                            <div className="flex gap-6 text-[12px]">
+                              {cols.map((col, colIdx) => (
+                                <ol
+                                  key={colIdx}
+                                  className="space-y-0.5 list-decimal list-inside"
+                                  start={colIdx * COL_SIZE + 1}
+                                >
+                                  {col.map((item, i) => {
+                                    const targetSku = String(item.id).trim().toLowerCase();
+                                    const componentProduct = productsBySku.get(targetSku) || allProducts.find(p => p.id?.toString() === String(item.id));
+                                    const componentName = componentProduct?.name || item.id;
+                                    return (
+                                      <li key={colIdx * COL_SIZE + i} title={`SKU: ${item.id}`} className="whitespace-nowrap">
+                                        {componentName} ({item.id})×{item.quantity}
+                                      </li>
+                                    );
+                                  })}
+                                </ol>
+                              ))}
+                            </div>
                           );
-                        })}
-                      </ol>
-                    </details>
+                        })()}
+                      </PopoverContent>
+                    </Popover>
                 </div>
               );
             }
@@ -1783,10 +1862,10 @@ const ProductSets: React.FC = () => {
         </div>
       )}
 
-      {/* Таблица товаров */}
+      {/* Таблиця товарів */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <Table
-          key={`products-table-${Object.keys(editingWeight).length}-${allProducts.length}`}
+          key={`products-table-${Object.keys(editingWeight).length}-${allProducts.length}-${isDebugMode}`}
           aria-label="Таблиця товарів та комплектів"
           sortDescriptor={sortDescriptor}
           onSortChange={setSortDescriptor}

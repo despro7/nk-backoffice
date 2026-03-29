@@ -179,7 +179,7 @@ export class CronService {
       }
       this.isTaskRunning = false;
     }, {
-      timezone: "Europe/Kiev"
+      timezone: "Europe/Kyiv"
     });
 
     this.syncJob.start();
@@ -254,7 +254,7 @@ export class CronService {
       } finally {
         this.isProductsSyncRunning = false;
       }
-    }, { timezone: "Europe/Kiev" });
+    }, { timezone: "Europe/Kyiv" });
 
     this.productsSyncJob.start();
     cronJobsRegistry.add(this.productsSyncJob);
@@ -366,7 +366,7 @@ export class CronService {
       }
 
       this.isStockSyncRunning = false;
-    }, { timezone: "Europe/Kiev" });
+    }, { timezone: "Europe/Kyiv" });
 
     this.stockSyncJob.start();
     cronJobsRegistry.add(this.stockSyncJob);

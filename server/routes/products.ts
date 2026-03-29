@@ -525,6 +525,37 @@ router.put('/:id/barcode', authenticateToken, requireMinRole(ROLES.STOREKEEPER),
   }
 });
 
+// PUT /api/products/:id/portions-per-box
+// Оновлює кількість порцій у коробці для порційних товарів
+router.put('/:id/portions-per-box', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { portionsPerBox } = req.body;
+
+    const value = parseInt(portionsPerBox);
+    if (isNaN(value) || value < 1) {
+      return res.status(400).json({ error: 'portionsPerBox must be a positive integer' });
+    }
+
+    const productId = parseInt(id);
+    const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
+    if (!existingProduct) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const updatedProduct = await prisma.product.update({
+      where: { id: productId },
+      data: { portionsPerBox: value }
+    });
+
+    logWithTimestamp(`✅ [Products] portionsPerBox updated for product ${existingProduct.sku}: ${existingProduct.portionsPerBox} → ${value}`);
+    res.json({ success: true, product: updatedProduct });
+  } catch (error) {
+    logWithTimestamp('Error updating portionsPerBox:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Синхронізувати товари з Dilovod
 // POST /api/products/sync
 router.post('/sync', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {

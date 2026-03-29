@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { RightPanel } from "@/components/RightPanel";
 import { NumberPad } from "@/components/NumberPad";
 import { Button } from "@heroui/react";

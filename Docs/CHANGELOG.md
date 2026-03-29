@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-03-30 — Інвентаризація малого складу: реальні дані + збереження чернеток
+**Files:** `server/routes/warehouse.ts`, `client/pages/WarehouseInventory.tsx`, `client/pages/SettingsProductSets.tsx`, `prisma/schema.prisma`, `prisma/migrations/20260329234602_add_inventory_sessions/`, `prisma/migrations/20260329232854_add_portions_per_box_to_products/`
+
+- Додано таблицю `inventory_sessions` (Prisma schema + міграція) — зберігає `status`, `comment`, `items` (JSON), `createdBy`, `completedAt`
+- Додано поле `portionsPerBox Int @default(24)` до моделі `Product` (міграція)
+- Реалізовано 6 нових BE endpoints: `GET/POST /inventory/draft`, `PUT/DELETE /inventory/draft/:id`, `POST /inventory/draft/:id/complete`, `GET /inventory/history`
+- Додано `GET /inventory/products` — список товарів з ненульовим залишком на малому складі; маршрут зареєстрований до `GET /:id` (виправлення routing conflict)
+- `WarehouseInventory.tsx`: при mount автоматично відновлює незавершену чернетку (`loadDraft`); "Зберегти чернетку" → реальний PUT/POST API; "Завершити" → `complete` endpoint; "Скасувати" → DELETE; таб "Історія" → реальні дані з пагінацією (lazy load)
+- `SettingsProductSets.tsx`: додано колонку "Порцій/кор." з inline-редагуванням (`PUT /api/products/:id/portions-per-box`); для комплектних товарів показується `—` (без можливості редагування)
+
+---
+
 ## 2026-03-29 — Реорганізація /Docs та оновлення copilot-instructions
 **Files:** `.github/copilot-instructions.md`, `Docs/` (всі файли)
 - Додано секцію `Copilot Behavior Rules` в `copilot-instructions.md`: мова відповідей, процес роботи перед задачею, документування змін

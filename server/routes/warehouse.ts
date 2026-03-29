@@ -304,6 +304,67 @@ router.get('/products-for-movement', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/warehouse/inventory/products
+// Повертає список товарів з ненульовим залишком на малому складі ("3")
+// Використовується сторінкою інвентаризації малого складу
+router.get('/inventory/products', authenticateToken, async (req, res) => {
+  try {
+    console.log('📦 [Warehouse] GET /inventory/products — завантаження товарів малого складу...');
+
+    const products = await prisma.product.findMany({
+      where: {
+        stockBalanceByStock: { not: null },
+        isOutdated: false,
+      },
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        portionsPerBox: true,
+        stockBalanceByStock: true,
+      },
+      orderBy: [
+        { manualOrder: 'asc' },
+        { name: 'asc' },
+      ],
+    });
+
+    // Фільтруємо: тільки ті, у кого є залишок на малому складі ("3")
+    const result = products
+      .map(product => {
+        try {
+          const stock: Record<string, number> = product.stockBalanceByStock
+            ? JSON.parse(product.stockBalanceByStock)
+            : {};
+          const smallStockBalance = stock['2'] ?? 0;
+          if (smallStockBalance <= 0) return null;
+
+          // Якщо portionsPerBox > 1 — порційний товар; 1 — штучний
+          const isPortioned = product.portionsPerBox > 1;
+
+          return {
+            id: String(product.id),
+            sku: product.sku,
+            name: product.name,
+            systemBalance: smallStockBalance,
+            unit: isPortioned ? 'portions' : 'pcs',
+            portionsPerBox: product.portionsPerBox,
+          };
+        } catch {
+          console.warn(`⚠️ [Warehouse/Inventory] Не вдалось розпарсити stockBalanceByStock для ${product.sku}`);
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    console.log(`✅ [Warehouse] Знайдено ${result.length} товарів на малому складі`);
+    res.json({ products: result, total: result.length });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Error fetching inventory products:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Получить документ по ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
@@ -859,6 +920,221 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     res.json({ message: 'Draft deleted successfully' });
   } catch (error) {
     console.error('🚨 [Warehouse] Error deleting draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============================================================================
+// INVENTORY SESSIONS
+// ============================================================================
+
+// GET /api/warehouse/inventory/draft
+// Повертає поточну чернетку інвентаризації для авторизованого юзера (якщо є)
+router.get('/inventory/draft', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const draft = await prisma.inventorySession.findFirst({
+      where: {
+        createdBy: userId,
+        status: { in: ['draft', 'in_progress'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    res.json({ draft: draft ?? null });
+  } catch (error) {
+    console.error('🚨 [Warehouse/Inventory] Error fetching draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/warehouse/inventory/draft
+// Створює нову чернетку інвентаризації або повертає існуючу незавершену
+router.post('/inventory/draft', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const { comment, items } = req.body as { comment?: string; items?: unknown[] };
+
+    // Шукаємо незавершену чернетку
+    const existing = await prisma.inventorySession.findFirst({
+      where: {
+        createdBy: userId,
+        status: { in: ['draft', 'in_progress'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (existing) {
+      // Оновлюємо існуючу
+      const updated = await prisma.inventorySession.update({
+        where: { id: existing.id },
+        data: {
+          comment: comment ?? existing.comment,
+          items: items !== undefined ? JSON.stringify(items) : existing.items,
+          status: 'in_progress',
+        },
+      });
+      console.log(`✅ [Inventory] Оновлено існуючу чернетку #${updated.id} для userId=${userId}`);
+      return res.json({ session: updated });
+    }
+
+    // Створюємо нову
+    const session = await prisma.inventorySession.create({
+      data: {
+        createdBy: userId,
+        warehouse: 'small',
+        status: 'in_progress',
+        comment: comment ?? null,
+        items: items !== undefined ? JSON.stringify(items) : '[]',
+      },
+    });
+    console.log(`✅ [Inventory] Створено нову чернетку #${session.id} для userId=${userId}`);
+    res.status(201).json({ session });
+  } catch (error) {
+    console.error('🚨 [Warehouse/Inventory] Error creating draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/warehouse/inventory/draft/:id
+// Зберігає поточний стан чернетки (items + comment)
+router.put('/inventory/draft/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const { comment, items, status } = req.body as {
+      comment?: string;
+      items?: unknown[];
+      status?: string;
+    };
+
+    const existing = await prisma.inventorySession.findFirst({
+      where: { id: sessionId, createdBy: userId },
+    });
+    if (!existing) return res.status(404).json({ error: 'Session not found' });
+    if (existing.status === 'completed') {
+      return res.status(400).json({ error: 'Cannot edit completed session' });
+    }
+
+    const updated = await prisma.inventorySession.update({
+      where: { id: sessionId },
+      data: {
+        comment: comment !== undefined ? comment : existing.comment,
+        items: items !== undefined ? JSON.stringify(items) : existing.items,
+        status: status !== undefined ? status : existing.status,
+      },
+    });
+
+    console.log(`✅ [Inventory] Збережено чернетку #${sessionId} для userId=${userId}`);
+    res.json({ session: updated });
+  } catch (error) {
+    console.error('🚨 [Warehouse/Inventory] Error updating draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/warehouse/inventory/draft/:id/complete
+// Завершує інвентаризацію
+router.post('/inventory/draft/:id/complete', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const { comment, items } = req.body as { comment?: string; items?: unknown[] };
+
+    const existing = await prisma.inventorySession.findFirst({
+      where: { id: sessionId, createdBy: userId },
+    });
+    if (!existing) return res.status(404).json({ error: 'Session not found' });
+    if (existing.status === 'completed') {
+      return res.status(400).json({ error: 'Session already completed' });
+    }
+
+    const completed = await prisma.inventorySession.update({
+      where: { id: sessionId },
+      data: {
+        status: 'completed',
+        completedAt: new Date(),
+        comment: comment !== undefined ? comment : existing.comment,
+        items: items !== undefined ? JSON.stringify(items) : existing.items,
+      },
+    });
+
+    console.log(`✅ [Inventory] Завершено інвентаризацію #${sessionId} для userId=${userId}`);
+    res.json({ session: completed });
+  } catch (error) {
+    console.error('🚨 [Warehouse/Inventory] Error completing session:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/warehouse/inventory/draft/:id
+// Видаляє (скасовує) незавершену чернетку
+router.delete('/inventory/draft/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const existing = await prisma.inventorySession.findFirst({
+      where: { id: sessionId, createdBy: userId },
+    });
+    if (!existing) return res.status(404).json({ error: 'Session not found' });
+    if (existing.status === 'completed') {
+      return res.status(400).json({ error: 'Cannot delete completed session' });
+    }
+
+    await prisma.inventorySession.delete({ where: { id: sessionId } });
+
+    console.log(`✅ [Inventory] Видалено чернетку #${sessionId} для userId=${userId}`);
+    res.json({ message: 'Draft deleted' });
+  } catch (error) {
+    console.error('🚨 [Warehouse/Inventory] Error deleting draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/warehouse/inventory/history
+// Повертає завершені інвентаризації (пагінація: page, limit)
+router.get('/inventory/history', authenticateToken, async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [sessions, total] = await Promise.all([
+      prisma.inventorySession.findMany({
+        where: { status: 'completed' },
+        orderBy: { completedAt: 'desc' },
+        skip,
+        take: Number(limit),
+      }),
+      prisma.inventorySession.count({ where: { status: 'completed' } }),
+    ]);
+
+    res.json({
+      sessions,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        pages: Math.ceil(total / Number(limit)),
+      },
+    });
+  } catch (error) {
+    console.error('🚨 [Warehouse/Inventory] Error fetching history:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

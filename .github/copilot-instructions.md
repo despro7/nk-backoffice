@@ -33,7 +33,6 @@ If yes — follow this process:
 ```
 Docs/
   CHANGELOG.md              # Main changelog (one file, append-only)
-  AGENTS.md                 # Project structure overview
   architecture/             # Architecture decisions, module overviews
   features/                 # Feature-specific documentation
   integrations/             # External service integrations (Dilovod, SalesDrive, etc.)
@@ -68,7 +67,7 @@ Key services: `salesDriveService` (CRM sync), `orderDatabaseService`, `ordersCac
 - `DilovodSyncManager.ts` - DB synchronization
 - `DilovodCacheManager.ts` - Cache management
 - `DilovodAutoExportService.ts` - Automatic order export/shipment on status change
-- `DilovodExportBuilder.ts` - Payload preparation for SalesDrive export
+- `DilovodExportBuilder.ts` - Payload preparation for Dilovod export
 - `DilovodTypes.ts` - TypeScript interfaces
 - `DilovodUtils.ts` - Helper functions (incl. error handling for export)
 - `README.md` - Module-specific documentation
@@ -142,7 +141,7 @@ PM2 config in `ecosystem.config.cjs` (single instance, auto-restart, 1G memory l
 npm run qz:test     # Test QZ Tray connection
 npm run qz:cert     # Generate self-signed certificate
 ```
-See `Docs/QZ_TRAY_INSTRUCTIONS.md` for setup. Routes in `server/routes/qz-tray.ts`, client service in `client/services/EquipmentService.ts`.
+See `Docs/hardware/qz-tray-setup.md` for setup. Routes in `server/routes/qz-tray.ts`, client service in `client/services/EquipmentService.ts`.
 
 ## Key Conventions
 
@@ -168,7 +167,7 @@ client/services/            # Client-side business logic (static classes)
 **React patterns**: Functional components, hooks > HOCs, colocate related code, use `ErrorBoundary` for error handling.
 
 ### UI & Styling
-- **Primary UI library**: HeroUI — use its components as the default choice for all interface elements.
+- **Primary UI library**: HeroUI v2.8.x — use its components as the default choice for all interface elements.
 - **Styling**: TailwindCSS v4 — use utility classes directly; design tokens defined in `client/global.css`.
 - **Other libraries**: allowed when HeroUI doesn't cover the use case (e.g., specialized charts, pickers). Prefer libraries that are compatible with TailwindCSS.
 - **UX principles**: interfaces must be intuitive and responsive. Follow modern UX conventions — clear feedback on actions (toasts, spinners, disabled states), accessible labels (`aria-label`), consistent spacing and hierarchy.
@@ -191,14 +190,17 @@ client/services/            # Client-side business logic (static classes)
 1. **Base settings** (`settings_base` table): Global app config (reporting day start hour, sync intervals)
 2. **User settings** (`users` table JSON fields): Per-user preferences (toast settings, equipment config)
 
-Access via `settingsService` (server) or API endpoints (`/api/settings/*`). Always validate with Zod schemas.
+Access via `settingsService` (server) or API endpoints (`/api/settings/*`).
 
 ## Integration Points
 
 ### External Services
 - **Dilovod**: ERP system for products/inventory (see `server/services/dilovod/README.md`)
   - Sync products with prices, stock balances, product sets
-  - Cron job: Every 30 min (configurable)
+  **3 independent cron jobs** (all configured via Dilovod settings):
+    - Product sync: default 3 times a day (6:00 AM, 2:00 PM, 10:00 PM)
+    - Stock sync: default 2× per day (6:00 AM, 6:00 PM) → stock update → export to SalesDrive → WP sync trigger
+    - Orders sync: default every hour at :05
   - Cache: SKU mapping cached in memory
 - **SalesDrive**: CRM for orders (webhook + polling sync)
   - Webhook: `/api/webhooks/salesdrive` (CORS allows no-origin)
