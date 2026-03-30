@@ -34,6 +34,11 @@ interface StatusChangedOrder {
 export class DilovodAutoExportService {
   private settingsCache: { data: DilovodSettings; loadedAt: number } | null = null;
 
+  // Захист від feedback loop: Backoffice → SalesDrive → webhook назад
+  private inProgressLocks = new Set<number>();
+  private recentTriggers = new Map<number, { initiatedBy: string; at: number }>();
+  private readonly DEDUP_COOLDOWN_MS = 5_000; // 5 секунд
+
   // ======================================================
   // ПУБЛІЧНІ МЕТОДИ (тригери)
   // ======================================================
@@ -49,6 +54,33 @@ export class DilovodAutoExportService {
     newStatus: string,
     initiatedBy: string = 'webhook:status_change'
   ): Promise<void> {
+    // --- Dedup Guard 1: mutex — пропускаємо якщо вже обробляється ---
+    if (this.inProgressLocks.has(internalOrderId)) {
+      logWithTimestamp(
+        `⏭️ [AutoExport] Пропускаємо ${initiatedBy} для orderId=${internalOrderId} — вже виконується інша обробка`
+      );
+      return;
+    }
+
+    // --- Dedup Guard 2: cooldown — пропускаємо webhook-відлуння від SalesDrive ---
+    const now = Date.now();
+    const recentTrigger = this.recentTriggers.get(internalOrderId);
+    if (
+      recentTrigger &&
+      now - recentTrigger.at < this.DEDUP_COOLDOWN_MS &&
+      initiatedBy === 'webhook:status_change' &&
+      recentTrigger.initiatedBy === 'manual:status_change'
+    ) {
+      logWithTimestamp(
+        `⏭️ [AutoExport] Пропускаємо webhook:status_change для orderId=${internalOrderId} — дублікат після manual:status_change (${Math.round((now - recentTrigger.at))}ms тому)`
+      );
+      return;
+    }
+
+    // Фіксуємо цей тригер і встановлюємо lock
+    this.recentTriggers.set(internalOrderId, { initiatedBy, at: now });
+    this.inProgressLocks.add(internalOrderId);
+
     try {
       const settings = await this.loadSettings();
 
@@ -84,6 +116,9 @@ export class DilovodAutoExportService {
       logWithTimestamp(
         `⚠️ [AutoExport] processOrderStatusChange failed for orderId=${internalOrderId}: ${err instanceof Error ? err.message : err}`
       );
+    } finally {
+      // Знімаємо lock після завершення (успішного або з помилкою)
+      this.inProgressLocks.delete(internalOrderId);
     }
   }
 

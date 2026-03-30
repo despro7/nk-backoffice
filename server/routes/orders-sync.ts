@@ -1592,10 +1592,36 @@ router.get('/test-salesdrive', authenticateToken, async (req, res) => {
   try {
     console.log('🔍 [SALESDRIVE TEST] Testing with params:', req.query);
 
-    // Если передан orderId, используем готовый метод getOrderDetails
+    // Якщо передан orderId, спробуємо спочатку знайти його в нашій БД по orderNumber або externalId
     if (req.query.orderId) {
-      console.log('📋 [SALESDRIVE TEST] Using getOrderById for orderId:', req.query.orderId);
-      const result = await salesDriveService.getOrderById(req.query.orderId as string);
+      let orderId = req.query.orderId as string;
+      console.log('📋 [SALESDRIVE TEST] Looking up order in local DB:', orderId);
+
+      const searchIdAsInt = parseInt(orderId);
+      const localOrder = await prisma.order.findFirst({
+        where: {
+          OR: [
+            ...(!isNaN(searchIdAsInt) ? [{ id: searchIdAsInt }] : []),
+            { orderNumber: orderId },
+            { externalId: orderId }
+          ]
+        },
+        select: { id: true, orderNumber: true, externalId: true }
+      });
+
+      let resolvedInfo = null;
+      if (localOrder) {
+        console.log(`✅ [SALESDRIVE TEST] Resolved local order: ${localOrder.orderNumber} -> Internal ID: ${localOrder.id}`);
+        orderId = localOrder.id.toString();
+        resolvedInfo = {
+          localId: localOrder.id,
+          orderNumber: localOrder.orderNumber,
+          externalId: localOrder.externalId
+        };
+      }
+
+      console.log('📋 [SALESDRIVE TEST] Using getOrderById for orderId:', orderId);
+      const result = await salesDriveService.getOrderById(orderId);
 
       if (result) {
         return res.json({
@@ -1604,6 +1630,9 @@ router.get('/test-salesdrive', authenticateToken, async (req, res) => {
           data: result,
           meta: {
             orderId: req.query.orderId,
+            resolvedId: orderId,
+            resolvedFromLocal: !!localOrder,
+            resolvedInfo,
             found: true
           }
         });
@@ -1614,8 +1643,9 @@ router.get('/test-salesdrive', authenticateToken, async (req, res) => {
           data: null,
           meta: {
             orderId: req.query.orderId,
+            resolvedId: orderId,
             found: false,
-            message: 'Order not found'
+            message: 'Order not found in SalesDrive'
           }
         });
       }

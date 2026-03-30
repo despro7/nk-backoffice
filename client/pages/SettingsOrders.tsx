@@ -676,14 +676,14 @@ const SettingsOrders: React.FC = () => {
     setApiTestLogs([]);
 
     try {
-      // Если orderId не указан, попробуем получить последний заказ из БД
+      // Якщо orderId не вказано, спробуємо отримати останнє замовлення з БД
       let orderIdToTest = apiTestParams.orderId;
 
       if (!orderIdToTest) {
-        setApiTestLogs(prev => [...prev, `🔄 [INFO] OrderId не указан, получаем последний заказ из БД...`]);
+        setApiTestLogs(prev => [...prev, `🔄 [INFO] OrderId не вказано, отримуємо останнє замовлення з БД...`]);
 
         try {
-          // Получаем последний заказ из БД
+          // Отримуємо останнє замовлення з БД
           const lastOrderResponse = await fetch('/api/orders?limit=1&sort=orderDate:desc', {
             method: 'GET',
             headers: {
@@ -696,17 +696,17 @@ const SettingsOrders: React.FC = () => {
             const lastOrderData = await lastOrderResponse.json();
             if (lastOrderData.data && lastOrderData.data.length > 0) {
               orderIdToTest = lastOrderData.data[0].externalId || lastOrderData.data[0].id?.toString();
-              setApiTestLogs(prev => [...prev, `✅ [INFO] Используем последний заказ: ${orderIdToTest}`]);
+              setApiTestLogs(prev => [...prev, `✅ [INFO] Використовуємо останнє замовлення: ${orderIdToTest}`]);
             }
           }
         } catch (error) {
-          setApiTestLogs(prev => [...prev, `⚠️ [WARNING] Не удалось получить последний заказ: ${error instanceof Error ? error.message : 'Unknown error'}`]);
+          setApiTestLogs(prev => [...prev, `⚠️ [WARNING] Не вдалося отримати останнє замовлення: ${error instanceof Error ? error.message : 'Unknown error'}`]);
         }
       }
 
       if (!orderIdToTest) {
-        setApiTestLogs(prev => [...prev, `❌ [ERROR] Не указан orderId и не удалось получить последний заказ`]);
-        setApiTestResult('Error: Не указан orderId');
+        setApiTestLogs(prev => [...prev, `❌ [ERROR] Не вказано orderId і не вдалося отримати останнє замовлення`]);
+        setApiTestResult('Error: Не вказано orderId');
         return;
       }
 
@@ -739,9 +739,17 @@ const SettingsOrders: React.FC = () => {
       }
 
       const data = await response.json();
-
+      
       setApiTestLogs(prev => [...prev, `✅ [SUCCESS] Response received`]);
       setApiTestLogs(prev => [...prev, `📊 [DATA] Method: ${data.method}`]);
+      
+      // Повідомлення про ре резолвінг ID (якщо був)
+      if (data.meta && data.meta.resolvedFromLocal) {
+        setApiTestLogs(prev => [...prev, `✅ [RESOLVED] Знайдено в локальній БД: ${data.meta.resolvedInfo.orderNumber} (ID: ${data.meta.resolvedId})`]);
+      } else if (data.meta && data.meta.resolvedId && data.meta.resolvedId !== orderIdToTest) {
+        setApiTestLogs(prev => [...prev, `ℹ️ [INFO] Використано ID: ${data.meta.resolvedId}`]);
+      }
+
       setApiTestLogs(prev => [...prev, `📊 [DATA] Found: ${data.meta?.found ? 'Yes' : 'No'}`]);
 
       if (data.success && data.data) {
@@ -1192,7 +1200,7 @@ const SettingsOrders: React.FC = () => {
               console.log(`📊 [CLIENT SYNC PROGRESS] Clearing progress`);
               setSyncProgress(null);
               setManualSyncRunning(false);
-      setCurrentSessionId(null);
+              setCurrentSessionId(null);
               setCurrentSessionId(null);
             }, 3000);
 
@@ -1212,14 +1220,14 @@ const SettingsOrders: React.FC = () => {
                 console.log(`📊 [CLIENT SYNC PROGRESS] Clearing progress`);
                 setSyncProgress(null);
                 setManualSyncRunning(false);
-      setCurrentSessionId(null);
+                setCurrentSessionId(null);
               }, 2000);
             } else {
               // Нет активной синхронизации
               console.log(`📊 [CLIENT SYNC PROGRESS] No active sync found`);
               setSyncProgress(null);
               setManualSyncRunning(false);
-      setCurrentSessionId(null);
+              setCurrentSessionId(null);
               setCurrentSessionId(null);
             }
           }
@@ -1231,7 +1239,7 @@ const SettingsOrders: React.FC = () => {
           } else {
             setSyncProgress(null);
             setManualSyncRunning(false);
-      setCurrentSessionId(null);
+            setCurrentSessionId(null);
           }
         }
       } catch (error) {
@@ -1242,7 +1250,7 @@ const SettingsOrders: React.FC = () => {
         } else {
           setSyncProgress(null);
           setManualSyncRunning(false);
-      setCurrentSessionId(null);
+          setCurrentSessionId(null);
         }
       }
     };
@@ -1360,10 +1368,10 @@ const SettingsOrders: React.FC = () => {
         // Stop local monitoring
         if (operationType === 'sync') {
           setManualSyncRunning(false);
-      setCurrentSessionId(null);
+          setCurrentSessionId(null);
         } else if (operationType === 'preview') {
           setSyncPreviewLoading(false);
-      setCurrentSessionId(null);
+          setCurrentSessionId(null);
         }
 
         // Clear session ID
@@ -1619,7 +1627,7 @@ const SettingsOrders: React.FC = () => {
               size="sm"
               showValueLabel={item.status !== 'failed'}
             />
-             {item.status === 'failed' && <span className="text-xs text-danger-500">Помилка виконання</span>}
+            {item.status === 'failed' && <span className="text-xs text-danger-500">Помилка виконання</span>}
           </div>
         );
       case 'stats':
@@ -1637,13 +1645,13 @@ const SettingsOrders: React.FC = () => {
                 <span>{item.updatedOrders}</span>
               </div>
             </Tooltip>
-             <Tooltip content="Пропущені">
+            <Tooltip content="Пропущені">
               <div className="flex items-center gap-1 text-gray-500">
                 <DynamicIcon name="skip-forward" size={12} />
                 <span>{item.skippedOrders}</span>
               </div>
             </Tooltip>
-             <Tooltip content="Помилки">
+            <Tooltip content="Помилки">
               <div className="flex items-center gap-1 text-red-600">
                 <DynamicIcon name="x-octagon" size={12} />
                 <span>{item.errors}</span>
@@ -1691,11 +1699,11 @@ const SettingsOrders: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Успішних синх.</p>
-                              <p className="text-2xl font-bold text-gray-900">
-                {syncLogs.filter(log => log.status === 'success').length}
-              </p>
-            </div>
-            <DynamicIcon name="check-circle" size={24} className="text-gray-600" />
+                <p className="text-2xl font-bold text-gray-900">
+                  {syncLogs.filter(log => log.status === 'success').length}
+                </p>
+              </div>
+              <DynamicIcon name="check-circle" size={24} className="text-gray-600" />
             </div>
           </CardBody>
         </Card>
@@ -1705,11 +1713,11 @@ const SettingsOrders: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Помилок</p>
-                              <p className="text-2xl font-bold text-gray-900">
-                {syncLogs.filter(log => log.status === 'error').length}
-              </p>
-            </div>
-            <DynamicIcon name="alert-circle" size={24} className="text-gray-600" />
+                <p className="text-2xl font-bold text-gray-900">
+                  {syncLogs.filter(log => log.status === 'error').length}
+                </p>
+              </div>
+              <DynamicIcon name="alert-circle" size={24} className="text-gray-600" />
             </div>
           </CardBody>
         </Card>
@@ -1719,11 +1727,11 @@ const SettingsOrders: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Кеш хітрейт</p>
-                              <p className="text-2xl font-bold text-gray-900">
-                {cacheStats ? `${Math.round(cacheStats.cacheHitRate)}%` : '-'}
-              </p>
-            </div>
-            <DynamicIcon name="database" size={24} className="text-gray-600" />
+                <p className="text-2xl font-bold text-gray-900">
+                  {cacheStats ? `${Math.round(cacheStats.cacheHitRate)}%` : '-'}
+                </p>
+              </div>
+              <DynamicIcon name="database" size={24} className="text-gray-600" />
             </div>
           </CardBody>
         </Card>
@@ -1890,30 +1898,30 @@ const SettingsOrders: React.FC = () => {
 
             {ordersInterval !== 'none sync' && (
               <>
-              <Input
-                type="number"
-                label="Розмір пакета (batchSize)"
-                description="Кількість замовлень в одному запиті до SalesDrive API (макс. 100)"
-                value={String(ordersBatchSize)}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value);
-                  setOrdersBatchSize(isNaN(v) ? 50 : Math.max(10, Math.min(100, v)));
-                }}
-                min={10}
-                max={100}
-              />
-              <Input
-                type="number"
-                label="Повторних спроб (retryAttempts)"
-                description="Кількість повторів при помилці синхронізації"
-                value={String(ordersRetryAttempts)}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value);
-                  setOrdersRetryAttempts(isNaN(v) ? 3 : Math.max(0, Math.min(10, v)));
-                }}
-                min={0}
-                max={10}
-              />
+                <Input
+                  type="number"
+                  label="Розмір пакета (batchSize)"
+                  description="Кількість замовлень в одному запиті до SalesDrive API (макс. 100)"
+                  value={String(ordersBatchSize)}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value);
+                    setOrdersBatchSize(isNaN(v) ? 50 : Math.max(10, Math.min(100, v)));
+                  }}
+                  min={10}
+                  max={100}
+                />
+                <Input
+                  type="number"
+                  label="Повторних спроб (retryAttempts)"
+                  description="Кількість повторів при помилці синхронізації"
+                  value={String(ordersRetryAttempts)}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value);
+                    setOrdersRetryAttempts(isNaN(v) ? 3 : Math.max(0, Math.min(10, v)));
+                  }}
+                  min={0}
+                  max={10}
+                />
               </>
             )}
           </div>
@@ -1939,7 +1947,7 @@ const SettingsOrders: React.FC = () => {
         </CardHeader>
         <CardBody className="p-6">
           <div className="flex flex-col gap-4 items-end">
-            
+
             {/* Настройки синхронизации */}
             <div className="col-span-full mb-4">
               <h4 className="text-sm font-medium text-gray-700 mb-3">Налаштування синхронізації</h4>
@@ -2019,7 +2027,7 @@ const SettingsOrders: React.FC = () => {
                   }}
                 />
               </I18nProvider>
-              
+
               <I18nProvider locale="uk-UA">
                 <DatePicker
                   size="lg"
@@ -2454,7 +2462,7 @@ const SettingsOrders: React.FC = () => {
           </div>
         </CardBody>
       </Card>
-      
+
       {/* SalesDrive Order List Test */}
       <Card>
         <CardHeader className="border-b border-gray-200">
@@ -2566,19 +2574,18 @@ const SettingsOrders: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700">Тип синхронізації</label>
                     <p className="text-sm text-gray-900">
                       {selectedLogForDetails.type === 'orders' ? 'Замовлення' :
-                       selectedLogForDetails.type === 'products' ? 'Товари' :
-                       selectedLogForDetails.type === 'stocks' ? 'Залишки' : selectedLogForDetails.type}
+                        selectedLogForDetails.type === 'products' ? 'Товари' :
+                          selectedLogForDetails.type === 'stocks' ? 'Залишки' : selectedLogForDetails.type}
                     </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Статус</label>
-                    <p className={`text-sm ${
-                      selectedLogForDetails.status === 'success' ? 'text-green-600' :
-                      selectedLogForDetails.status === 'error' ? 'text-red-600' : 'text-blue-600'
-                    }`}>
+                    <p className={`text-sm ${selectedLogForDetails.status === 'success' ? 'text-green-600' :
+                        selectedLogForDetails.status === 'error' ? 'text-red-600' : 'text-blue-600'
+                      }`}>
                       {selectedLogForDetails.status === 'success' ? 'Успішно' :
-                       selectedLogForDetails.status === 'error' ? 'Помилка' :
-                       selectedLogForDetails.status === 'running' ? 'Виконується' : selectedLogForDetails.status}
+                        selectedLogForDetails.status === 'error' ? 'Помилка' :
+                          selectedLogForDetails.status === 'running' ? 'Виконується' : selectedLogForDetails.status}
                     </p>
                   </div>
                   <div>
@@ -2660,13 +2667,13 @@ const SettingsOrders: React.FC = () => {
               </div>
               {(syncPreviewCache.has(`${manualSyncStartDate?.toString()}_${(manualSyncEndDate || today(getLocalTimeZone())).toString()}`) ||
                 (syncPreview && syncPreview.cached)) && (
-                <div className="flex items-center text-blue-600">
-                  <DynamicIcon name="database" size={16} />
-                  <span className="text-sm ml-1">
-                    {syncPreview && syncPreview.cached ? 'З серверного кеша' : 'З клієнтського кеша'}
-                  </span>
-                </div>
-              )}
+                  <div className="flex items-center text-blue-600">
+                    <DynamicIcon name="database" size={16} />
+                    <span className="text-sm ml-1">
+                      {syncPreview && syncPreview.cached ? 'З серверного кеша' : 'З клієнтського кеша'}
+                    </span>
+                  </div>
+                )}
             </div>
           </ModalHeader>
           <ModalBody>
@@ -2776,14 +2783,14 @@ const SettingsOrders: React.FC = () => {
                               size="sm"
                               color={
                                 order.color === 'green' ? 'success' :
-                                order.color === 'yellow' ? 'warning' :
-                                order.color === 'blue' ? 'primary' : 'danger'
+                                  order.color === 'yellow' ? 'warning' :
+                                    order.color === 'blue' ? 'primary' : 'danger'
                               }
                               variant="flat"
                             >
                               {order.action === 'create' ? '🟢 Створити' :
-                               order.action === 'update' ? '🟡 Оновити' :
-                               order.action === 'skip' ? '🔵 Пропустити' : '🔴 Помилка'}
+                                order.action === 'update' ? '🟡 Оновити' :
+                                  order.action === 'skip' ? '🔵 Пропустити' : '🔴 Помилка'}
                             </Chip>
                           </TableCell>
                           <TableCell>
