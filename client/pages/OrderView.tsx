@@ -387,10 +387,15 @@ export default function OrderView() {
   }, [order, externalId]);
 
   // Підготовлюємо дані для комплектації
-  const totalPortions = useMemo(() =>
-    expandedItems.reduce((sum, item) => sum + item.quantity, 0),
-    [expandedItems]
-  );
+  const totalPortions = useMemo(() => {
+    const result = expandedItems.reduce((sum, item) => {
+      // Для монолітних комплектів множимо quantity на portionsPerItem
+      const portions = item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity;
+      return sum + portions;
+    }, 0);
+    
+    return result;
+  }, [expandedItems]);
   
   // Обчислюємо середню вагу порції для більш точного розподілу по коробках
   const averagePortionWeight = useMemo(() => {

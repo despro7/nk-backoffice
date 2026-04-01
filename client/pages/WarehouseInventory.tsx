@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Button, Input, Chip, Progress, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Textarea } from '@heroui/react';
 import { Tabs, Tab } from '@heroui/tabs';
 import { DynamicIcon } from 'lucide-react/dynamic';
@@ -51,6 +51,9 @@ interface StepperInputProps {
   onChange: (value: number) => void;
   onIncrement: () => void;
   onDecrement: () => void;
+  forwardRef?: React.RefObject<HTMLInputElement>;
+  onEnter?: () => void;
+  disabled?: boolean;
 }
 
 /**
@@ -59,64 +62,88 @@ interface StepperInputProps {
  * що викликає системну екранну клавіатуру Windows (OSK).
  * Кнопки ± дозволяють коригувати значення без клавіатури.
  */
-const StepperInput = ({ label, value, onChange, onIncrement, onDecrement }: StepperInputProps) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [isFocused, setIsFocused] = useState(false);
+const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
+  ({ label, value, onChange, onIncrement, onDecrement, onEnter, disabled }, ref) => {
+    const inputRef = useRef<HTMLInputElement>(null);
+    const [isFocused, setIsFocused] = useState(false);
 
-  const focusInput = () => inputRef.current?.focus();
+    const focusInput = () => {
+      if (!disabled) inputRef.current?.focus();
+    };
 
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <span className="text-sm text-gray-500">{label}</span>
-      <div className="relative w-full">
-        {/* Видима область — клік відкриває OSK */}
-        <div
-          className={`w-full h-18 flex items-center justify-center text-2xl font-medium text-gray-800 bg-white border-2 rounded-xl transition-colors cursor-text select-none ${
-            isFocused ? 'border-blue-500' : 'border-gray-200'
-          }`}
-          onClick={focusInput}
-        >
-          {value}
+    // Перенаправляємо ref якщо був переданий
+    useImperativeHandle(ref, () => inputRef.current!);
+
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <span className="text-sm text-gray-500">{label}</span>
+        <div className="relative w-full">
+          {/* Видима область — клік відкриває OSK */}
+          <div
+            className={`w-full h-18 flex items-center justify-center text-2xl font-medium rounded-xl transition-colors select-none ${
+              disabled
+                ? 'bg-gray-100 border-2 border-gray-200 text-gray-400 cursor-not-allowed'
+                : `bg-white border-2 text-gray-800 cursor-text ${
+                    isFocused ? 'border-blue-500' : 'border-gray-200'
+                  }`
+            }`}
+            onClick={focusInput}
+          >
+            {value}
+          </div>
+
+          {/* Прихований нативний input — отримує фокус → Windows OSK */}
+          <input
+            ref={inputRef}
+            type="number"
+            inputMode="numeric"
+            value={value}
+            min={0}
+            disabled={disabled}
+            onChange={(e) => {
+              if (disabled) return;
+              const v = parseInt(e.target.value, 10);
+              onChange(isNaN(v) ? 0 : Math.max(0, v));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && onEnter && !disabled) {
+                e.preventDefault();
+                onEnter();
+              }
+            }}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            className="absolute inset-0 opacity-0 w-full h-full cursor-text"
+            aria-label={label}
+          />
+
+          {/* Кнопки ± поверх прихованого input */}
+          <Button
+            isIconOnly
+            variant="light"
+            isDisabled={disabled}
+            className="absolute left-2 top-1/2 -translate-y-1/2 h-14 w-10 min-w-6 z-10"
+            onPress={onDecrement}
+            aria-label="Зменшити"
+          >
+            <DynamicIcon name="minus" className="w-6 h-6" />
+          </Button>
+          <Button
+            isIconOnly
+            variant="light"
+            isDisabled={disabled}
+            className="absolute right-2 top-1/2 -translate-y-1/2 h-14 w-10 min-w-6 z-10"
+            onPress={onIncrement}
+            aria-label="Збільшити"
+          >
+            <DynamicIcon name="plus" className="w-6 h-6" />
+          </Button>
         </div>
-
-        {/* Прихований нативний input — отримує фокус → Windows OSK */}
-        <input
-          ref={inputRef}
-          type="number"
-          inputMode="numeric"
-          value={value}
-          min={0}
-          onChange={(e) => {
-            const v = parseInt(e.target.value, 10);
-            onChange(isNaN(v) ? 0 : Math.max(0, v));
-          }}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          className="absolute inset-0 opacity-0 w-full h-full cursor-text"
-          aria-label={label}
-        />
-
-        {/* Кнопки ± поверх прихованого input */}
-        <Button
-          isIconOnly variant="light"
-          className="absolute left-2 top-1/2 -translate-y-1/2 h-14 w-10 min-w-6 z-10"
-          onPress={onDecrement}
-          aria-label="Зменшити"
-        >
-          <DynamicIcon name="minus" className="w-6 h-6" />
-        </Button>
-        <Button
-          isIconOnly variant="light"
-          className="absolute right-2 top-1/2 -translate-y-1/2 h-14 w-10 min-w-6 z-10"
-          onPress={onIncrement}
-          aria-label="Збільшити"
-        >
-          <DynamicIcon name="plus" className="w-6 h-6" />
-        </Button>
       </div>
-    </div>
-  );
-};
+    );
+  }
+);
+StepperInput.displayName = 'StepperInput';
 
 interface InfoDisplayProps {
   label: string;
@@ -203,9 +230,10 @@ interface ProductRowProps {
   onToggle: (id: string) => void;
   onChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
   onCheck: (id: string) => void;
+  onEnterPress?: (productId: string) => void;
 }
 
-const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck }: ProductRowProps) => {
+const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck, onEnterPress }: ProductRowProps) => {
   const total = totalPortions(product);
   const deviation = total !== null ? total - product.systemBalance : null;
   const hasDeviation = deviation !== null && deviation !== 0;
@@ -221,6 +249,29 @@ const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck }: Pro
     deviation === null ? '—'
     : deviation > 0 ? `+${deviation}`
     : `${deviation}`;
+
+  // Рефи для першого StepperInput
+  const firstInputRef = useRef<HTMLInputElement>(null);
+
+  // Автофокус на першому полі при відкритті аккордіона
+  useEffect(() => {
+    if (isOpen) {
+      // Зберегти в пам'яти для гарантованого фокусу після рендеру
+      const timer = setTimeout(() => {
+        firstInputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, product.id]);
+
+  // Обробник для Enter - тригеруємо кнопку "Підтвердити" та відкриваємо наступний
+  const handleConfirmClick = () => {
+    onCheck(product.id);
+    // Передаємо сигнал батьківському компоненту про натиснення Enter
+    if (onEnterPress) {
+      onEnterPress(product.id);
+    }
+  };
 
   return (
     <div className={`border-b border-gray-200 transition-colors ${product.checked ? 'bg-neutral-50' : ''}`}>
@@ -301,20 +352,26 @@ const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck }: Pro
               <div className="grid grid-cols-5 gap-6 items-end">
                 {product.unit === 'portions' && (
                   <StepperInput
+                    ref={firstInputRef}
                     label={`Коробок × ${product.portionsPerBox}`}
                     value={product.boxCount ?? 0}
                     onChange={(v) => onChange(product.id, 'boxCount', v)}
                     onIncrement={() => onChange(product.id, 'boxCount', (product.boxCount ?? 0) + 1)}
                     onDecrement={() => onChange(product.id, 'boxCount', Math.max(0, (product.boxCount ?? 0) - 1))}
+                    onEnter={handleConfirmClick}
+                    disabled={product.checked}
                   />
                 )}
 
                 <StepperInput
+                  ref={product.unit === 'pcs' ? firstInputRef : undefined}
                   label={product.unit === 'portions' ? 'Залишок порцій' : 'Фактична кількість'}
                   value={product.actualCount ?? 0}
                   onChange={(v) => onChange(product.id, 'actualCount', v)}
                   onIncrement={() => onChange(product.id, 'actualCount', (product.actualCount ?? 0) + 1)}
                   onDecrement={() => onChange(product.id, 'actualCount', Math.max(0, (product.actualCount ?? 0) - 1))}
+                  onEnter={handleConfirmClick}
+                  disabled={product.checked}
                 />
 
                 {product.unit === 'portions' && (
@@ -415,7 +472,11 @@ export default function WarehouseInventory() {
   const [products, setProducts] = useState<InventoryProduct[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState<string | null>(null);
+  const [materials, setMaterials] = useState<InventoryProduct[]>([]);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [materialsError, setMaterialsError] = useState<string | null>(null);
   const [openProductId, setOpenProductId] = useState<string | null>(null);
+  const [openMaterialId, setOpenMaterialId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [comment, setComment] = useState('');
   const [showConfirmFinish, setShowConfirmFinish] = useState(false);
@@ -455,6 +516,35 @@ export default function WarehouseInventory() {
     }
   }, []);
 
+  // --- Завантаження матеріалів з API ---
+  const loadMaterials = useCallback(async (): Promise<InventoryProduct[]> => {
+    setMaterialsLoading(true);
+    setMaterialsError(null);
+    try {
+      const res = await fetch('/api/warehouse/inventory/materials', { credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const loaded: InventoryProduct[] = (data.materials ?? []).map((m: any) => ({
+        id: m.id,
+        sku: m.sku,
+        name: m.name,
+        systemBalance: m.systemBalance,
+        unit: m.unit as 'portions' | 'pcs',
+        portionsPerBox: m.portionsPerBox,
+        actualCount: null,
+        boxCount: null,
+        checked: false,
+      }));
+      setMaterials(loaded);
+      return loaded;
+    } catch (err: any) {
+      setMaterialsError(err.message ?? 'Помилка завантаження матеріалів');
+      return [];
+    } finally {
+      setMaterialsLoading(false);
+    }
+  }, []);
+
   // --- Завантаження незавершеної чернетки при mount ---
   const loadDraft = useCallback(async () => {
     try {
@@ -466,12 +556,13 @@ export default function WarehouseInventory() {
       const draft = data.draft;
       // Завантажуємо актуальні залишки з API
       const freshProducts = await loadProducts();
+      const freshMaterials = await loadMaterials();
 
       // Відновлюємо введені дані з чернетки
       const savedItems: InventoryProduct[] = JSON.parse(draft.items ?? '[]');
       const savedMap = new Map(savedItems.map((p: InventoryProduct) => [p.id, p]));
 
-      const merged = freshProducts.map((p) => {
+      const mergedProducts = freshProducts.map((p) => {
         const saved = savedMap.get(p.id);
         if (!saved) return p;
         return {
@@ -482,14 +573,26 @@ export default function WarehouseInventory() {
         };
       });
 
-      setProducts(merged);
+      const mergedMaterials = freshMaterials.map((m) => {
+        const saved = savedMap.get(m.id);
+        if (!saved) return m;
+        return {
+          ...m,
+          actualCount: saved.actualCount,
+          boxCount: saved.boxCount,
+          checked: saved.checked,
+        };
+      });
+
+      setProducts(mergedProducts);
+      setMaterials(mergedMaterials);
       setSessionId(draft.id);
       setSessionStatus('in_progress');
       setComment(draft.comment ?? '');
     } catch {
       // Тихо ігноруємо — просто не відновлюємо чернетку
     }
-  }, [loadProducts]);
+  }, [loadProducts, loadMaterials]);
 
   useEffect(() => {
     loadDraft();
@@ -523,6 +626,14 @@ export default function WarehouseInventory() {
   const totalCount = products.length;
   const progressPercent = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 0;
 
+  const checkedMaterialsCount = useMemo(() => materials.filter((m) => m.checked).length, [materials]);
+  const totalMaterialsCount = materials.length;
+  const materialsProgressPercent = totalMaterialsCount > 0 ? Math.round((checkedMaterialsCount / totalMaterialsCount) * 100) : 0;
+
+  const totalCheckedAll = checkedCount + checkedMaterialsCount;
+  const totalAll = totalCount + totalMaterialsCount;
+  const totalProgressPercent = totalAll > 0 ? Math.round((totalCheckedAll / totalAll) * 100) : 0;
+
   const deviationCount = useMemo(
     () =>
       products.filter((p) => {
@@ -530,6 +641,15 @@ export default function WarehouseInventory() {
         return total !== null && total !== p.systemBalance;
       }).length,
     [products]
+  );
+
+  const deviationMaterialsCount = useMemo(
+    () =>
+      materials.filter((m) => {
+        const total = totalPortions(m);
+        return total !== null && total !== m.systemBalance;
+      }).length,
+    [materials]
   );
 
   const filteredProducts = useMemo(
@@ -542,10 +662,20 @@ export default function WarehouseInventory() {
     [products, searchQuery]
   );
 
+  const filteredMaterials = useMemo(
+    () =>
+      materials.filter(
+        (m) =>
+          m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          m.sku.toLowerCase().includes(searchQuery.toLowerCase())
+      ),
+    [materials, searchQuery]
+  );
+
   // --- Helpers ---
   /** Серіалізує поточний стан items (тільки ті, що мають дані) */
-  const serializeItems = (prods: InventoryProduct[]) =>
-    prods.map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked }) => ({
+  const serializeItems = (prods: InventoryProduct[], mats: InventoryProduct[]) =>
+    [...prods, ...mats].map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked }) => ({
       id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked,
     }));
 
@@ -558,7 +688,7 @@ export default function WarehouseInventory() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ comment, items: serializeItems(products) }),
+        body: JSON.stringify({ comment, items: serializeItems(products, materials) }),
       });
       if (!res.ok) return;
       const data = await res.json();
@@ -570,6 +700,32 @@ export default function WarehouseInventory() {
 
   const handleToggleProduct = (id: string) => {
     setOpenProductId((prev) => (prev === id ? null : id));
+  };
+
+  const handleToggleMaterial = (id: string) => {
+    setOpenMaterialId((prev) => (prev === id ? null : id));
+  };
+
+  // Обробник для відкриття наступного продукту при натисканні Enter
+  const handleEnterPressProduct = (currentProductId: string) => {
+    const currentIndex = filteredProducts.findIndex((p) => p.id === currentProductId);
+    
+    if (currentIndex !== -1 && currentIndex < filteredProducts.length - 1) {
+      // Відкриваємо наступний продукт
+      const nextProduct = filteredProducts[currentIndex + 1];
+      setOpenProductId(nextProduct.id);
+    }
+  };
+
+  // Обробник для відкриття наступного матеріалу при натисканні Enter
+  const handleEnterPressMaterial = (currentMaterialId: string) => {
+    const currentIndex = filteredMaterials.findIndex((m) => m.id === currentMaterialId);
+    
+    if (currentIndex !== -1 && currentIndex < filteredMaterials.length - 1) {
+      // Відкриваємо наступний матеріал
+      const nextMaterial = filteredMaterials[currentIndex + 1];
+      setOpenMaterialId(nextMaterial.id);
+    }
   };
 
   const handleProductChange = (id: string, field: 'boxCount' | 'actualCount', value: number) => {
@@ -584,6 +740,18 @@ export default function WarehouseInventory() {
     );
   };
 
+  const handleMaterialChange = (id: string, field: 'boxCount' | 'actualCount', value: number) => {
+    setMaterials((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, [field]: value } : m))
+    );
+  };
+
+  const handleCheckMaterial = (id: string) => {
+    setMaterials((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, checked: !m.checked } : m))
+    );
+  };
+
   const handleFinish = async () => {
     setShowConfirmFinish(false);
     try {
@@ -592,7 +760,7 @@ export default function WarehouseInventory() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ comment, items: serializeItems(products) }),
+          body: JSON.stringify({ comment, items: serializeItems(products, materials) }),
         });
       }
     } catch {
@@ -616,15 +784,17 @@ export default function WarehouseInventory() {
     setSessionStatus(null);
     setComment('');
     setOpenProductId(null);
+    setOpenMaterialId(null);
     setSearchQuery('');
-    // Перезавантажуємо товари
+    // Перезавантажуємо товари та матеріали
     loadProducts();
+    loadMaterials();
   };
 
   const handleSaveDraft = async () => {
     setIsSavingDraft(true);
     try {
-      const items = serializeItems(products);
+      const items = serializeItems(products, materials);
       if (sessionId) {
         // Оновлюємо існуючу
         const res = await fetch(`/api/warehouse/inventory/draft/${sessionId}`, {
@@ -790,21 +960,21 @@ export default function WarehouseInventory() {
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
                   <div className="flex items-center justify-between mb-2 h-6">
                     <span className="text-sm font-medium text-gray-700">
-                      Перевірено: <strong>{checkedCount}</strong> / {totalCount} позицій
+                      Перевірено: <strong>{totalCheckedAll}</strong> / {totalAll} позицій
                     </span>
                     <div className="flex items-center gap-3">
-                      {deviationCount > 0 && (
-                        <Chip size="sm" color="warning" variant="flat" startContent={<DynamicIcon name="alert-triangle" className="w-3 h-3 ml-1" />}>
-                          {deviationCount} відхилень
+                      {(deviationCount + deviationMaterialsCount) > 0 && (
+                        <Chip size="sm" color="danger" variant="flat" startContent={<DynamicIcon name="alert-triangle" className="w-3 h-3 ml-1" />}>
+                          {deviationCount + deviationMaterialsCount} відхилень
                         </Chip>
                       )}
-                      <span className="text-sm font-semibold text-gray-700">{progressPercent}%</span>
+                      <span className="text-sm font-semibold text-gray-700">{totalProgressPercent}%</span>
                     </div>
                   </div>
                   <Progress
                     aria-label="Прогрес інвентаризації"
-                    value={progressPercent}
-                    color={progressPercent === 100 ? 'success' : 'primary'}
+                    value={totalProgressPercent}
+                    color={totalProgressPercent === 100 ? 'success' : 'primary'}
                     size="sm"
                     className="mb-3"
                   />
@@ -814,7 +984,7 @@ export default function WarehouseInventory() {
                       placeholder="Пошук позиції..."
                       value={searchQuery}
                       onValueChange={setSearchQuery}
-                      size="sm"
+                      size="lg"
                       className="flex-1 min-w-[200px]"
                       startContent={<DynamicIcon name="search" className="w-4 h-4 text-gray-400" />}
                       isClearable
@@ -825,6 +995,12 @@ export default function WarehouseInventory() {
 
                 {/* Products list */}
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 bg-blue-50">
+                    <h3 className="text-sm font-semibold text-blue-900 flex items-center gap-2">
+                      <DynamicIcon name="utensils" className="w-4 h-4" />
+                      Страви ({checkedCount}/{totalCount})
+                    </h3>
+                  </div>
                   {productsLoading ? (
                     <div className="text-center py-8 text-gray-400">
                       <DynamicIcon name="loader-2" className="w-8 h-8 mx-auto mb-2 opacity-50 animate-spin" />
@@ -853,14 +1029,58 @@ export default function WarehouseInventory() {
                         onToggle={handleToggleProduct}
                         onChange={handleProductChange}
                         onCheck={handleCheckProduct}
+                        onEnterPress={handleEnterPressProduct}
+                      />
+                    ))
+                  )}
+                </div>
+
+                {/* Materials list */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 bg-amber-50">
+                    <h3 className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+                      <DynamicIcon name="box" className="w-4 h-4" />
+                      Матеріали ({checkedMaterialsCount}/{totalMaterialsCount})
+                    </h3>
+                  </div>
+                  {materialsLoading ? (
+                    <div className="text-center py-8 text-gray-400">
+                      <DynamicIcon name="loader-2" className="w-8 h-8 mx-auto mb-2 opacity-50 animate-spin" />
+                      <p className="text-sm">Завантаження матеріалів...</p>
+                    </div>
+                  ) : materialsError ? (
+                    <div className="text-center py-8 text-red-400">
+                      <DynamicIcon name="alert-triangle" className="w-8 h-8 mx-auto mb-2 opacity-70" />
+                      <p className="text-sm">{materialsError}</p>
+                      <Button size="sm" variant="flat" color="danger" className="mt-3" onPress={loadMaterials}>
+                        Спробувати знову
+                      </Button>
+                    </div>
+                  ) : filteredMaterials.length === 0 ? (
+                    <div className="text-center py-8 text-gray-400">
+                      <DynamicIcon name="search-x" className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">{searchQuery ? 'Позицій не знайдено' : 'Немає матеріалів на малому складі'}</p>
+                    </div>
+                  ) : (
+                    filteredMaterials.map((material, index) => (
+                      <ProductRow
+                        key={material.id}
+                        product={material}
+                        index={index}
+                        isOpen={openMaterialId === material.id}
+                        onToggle={handleToggleMaterial}
+                        onChange={handleMaterialChange}
+                        onCheck={handleCheckMaterial}
+                        onEnterPress={handleEnterPressMaterial}
                       />
                     ))
                   )}
                 </div>
 
                 {/* Summary */}
-                {checkedCount > 0 && (
-                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">                    <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                {totalCheckedAll > 0 && (
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                    <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
                       <DynamicIcon name="bar-chart-2" className="w-4 h-4" />
                       Підсумок
                     </h3>
@@ -875,6 +1095,7 @@ export default function WarehouseInventory() {
                           </tr>
                         </thead>
                         <tbody>
+                          {/* Products */}
                           {products
                             .filter((p) => p.checked || totalPortions(p) !== null)
                             .map((p) => {
@@ -884,6 +1105,27 @@ export default function WarehouseInventory() {
                                 <tr key={p.id} className="border-t border-gray-100">
                                   <td className="py-2 px-3 text-gray-700">{p.name}</td>
                                   <td className="py-2 px-3 text-center text-gray-600">{p.systemBalance}</td>
+                                  <td className="py-2 px-3 text-center font-medium">{total ?? '—'}</td>
+                                  <td className="py-2 px-3 text-center">
+                                    {dev === null ? '—' : (
+                                      <span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                                        {dev > 0 ? '+' : ''}{dev}
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          {/* Materials */}
+                          {materials
+                            .filter((m) => m.checked || totalPortions(m) !== null)
+                            .map((m) => {
+                              const total = totalPortions(m);
+                              const dev = total !== null ? total - m.systemBalance : null;
+                              return (
+                                <tr key={m.id} className="border-t border-gray-100">
+                                  <td className="py-2 px-3 text-gray-700">{m.name}</td>
+                                  <td className="py-2 px-3 text-center text-gray-600">{m.systemBalance}</td>
                                   <td className="py-2 px-3 text-center font-medium">{total ?? '—'}</td>
                                   <td className="py-2 px-3 text-center">
                                     {dev === null ? '—' : (
@@ -934,18 +1176,18 @@ export default function WarehouseInventory() {
                         Зберегти чернетку
                       </Button>
                       <Button
-                        color={deviationCount > 0 ? 'danger' : 'success'}
+                        color={(deviationCount + deviationMaterialsCount) > 0 ? 'danger' : 'success'}
                         className="text-white"
-                        isDisabled={checkedCount === 0}
+                        isDisabled={totalCheckedAll === 0}
                         onPress={() => setShowConfirmFinish(true)}
                         startContent={
                           <DynamicIcon
-                            name={deviationCount > 0 ? 'alert-triangle' : 'check'}
+                            name={(deviationCount + deviationMaterialsCount) > 0 ? 'alert-triangle' : 'check'}
                             className="w-4 h-4"
                           />
                         }
                       >
-                        {deviationCount > 0 ? 'Завершити і зафіксувати відхилення' : 'Завершити'}
+                        {(deviationCount + deviationMaterialsCount) > 0 ? 'Завершити і зафіксувати відхилення' : 'Завершити'}
                       </Button>
                     </div>
                   </div>
@@ -1007,13 +1249,13 @@ export default function WarehouseInventory() {
       {/* ──────────── Confirm finish modal ──────────── */}
       <ConfirmModal
         isOpen={showConfirmFinish}
-        title={deviationCount > 0 ? 'Зафіксувати відхилення?' : 'Завершити інвентаризацію?'}
+        title={(deviationCount + deviationMaterialsCount) > 0 ? 'Зафіксувати відхилення?' : 'Завершити інвентаризацію?'}
         message={
-          deviationCount > 0
-            ? `Перевірено ${checkedCount} з ${totalCount} позицій. Знайдено ${deviationCount} відхилень від системних залишків.`
-            : `Перевірено ${checkedCount} з ${totalCount} позицій.`
+          (deviationCount + deviationMaterialsCount) > 0
+            ? `Перевірено ${totalCheckedAll} з ${totalAll} позицій. Знайдено ${deviationCount + deviationMaterialsCount} відхилень від системних залишків.`
+            : `Перевірено ${totalCheckedAll} з ${totalAll} позицій.`
         }
-        confirmText={deviationCount > 0 ? 'Зафіксувати і завершити' : 'Завершити'}
+        confirmText={(deviationCount + deviationMaterialsCount) > 0 ? 'Зафіксувати і завершити' : 'Завершити'}
         cancelText="Назад"
         onConfirm={handleFinish}
         onCancel={() => setShowConfirmFinish(false)}

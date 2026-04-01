@@ -60,7 +60,7 @@ export const sortChecklistItems = (items: OrderChecklistItem[]): OrderChecklistI
  * @param apiCall - Функція для API викликів
  * @param expandedItems - Об'єкт для накопичення результатів
  * @param visitedSets - Set для відстеження відвіданих SKU (запобігання циклічним посиланням)
- * @param depth - Поточна глибина рекурсії (для безпеки)
+ * @param depth - Поточна глибина рекурсії (для безпеки). depth=0 означає прямий товар в замовленні
  * @param monolithicCategories - Список назв категорій, які не повинні розгортатися
  */
 const expandProductRecursively = async (
@@ -98,35 +98,45 @@ const expandProductRecursively = async (
     if (product.set && Array.isArray(product.set) && product.set.length > 0) {
       // 🚀 НОВА ЛОГІКА: Якщо це монолітна категорія, не розгортаємо його далі
       const categoryIdStr = product.categoryId?.toString();
-      LoggingService.orderAssemblyLog(`📦 Перевірка комплекту: "${product.name}" (SKU: ${sku}), categoryId: ${product.categoryId}, categoryName: "${product.categoryName}", monolithicCategories: [${monolithicCategories.join(', ')}]`);
+      LoggingService.orderAssemblyLog(`📦 Перевірка комплекту: "${product.name}" (SKU: ${sku}), categoryId: ${product.categoryId}, categoryName: "${product.categoryName}", monolithicCategories: [${monolithicCategories.join(', ')}], depth=${depth}`);
       
       if (categoryIdStr && Array.isArray(monolithicCategories) && monolithicCategories.includes(categoryIdStr)) {
-        LoggingService.orderAssemblyLog(`📦 Монолітний комплект: "${product.name}" (SKU: ${sku}). Рекурсія зупинена.`);
+        LoggingService.orderAssemblyLog(`📦 Монолітний комплект: "${product.name}" (SKU: ${sku}). Рекурсія зупинена. depth=${depth}`);
 
         // Збираємо склад комплекту для відображення комірнику
+        // ВАЖЛИВО: Показуємо кількість кожного компонента на ОДИН комплект (не множимо на quantity)
         const compositionPromises = product.set
           .filter(si => si.id)
           .map(async si => {
+            const componentLabel = si.quantity > 0 ? `x${si.quantity}` : '';
             if (si.name) {
-              return si.name;
+              return componentLabel ? `${si.name} ${componentLabel}` : si.name;
             } else {
               // Спробуємо отримати назву компонента через API
               try {
                 const componentResponse = await apiCall(`/api/products/${si.id}`);
                 if (componentResponse.ok) {
                   const componentData = await componentResponse.json();
-                  return componentData.name || `Товар ${si.id}`;
+                  const name = componentData.name || `Товар ${si.id}`;
+                  return componentLabel ? `${name} ${componentLabel}` : name;
                 }
               } catch (error) {
                 console.warn(`Не вдалося отримати назву компонента ${si.id}:`, error);
               }
-              return `Товар ${si.id} (x${si.quantity})`;
+              return `Товар ${si.id} ${componentLabel}`;
             }
           });
 
         const composition = await Promise.all(compositionPromises);
 
-        addOrUpdateExpandedItem(expandedItems, product, quantity, sku, composition);
+        // 🔑 Рахуємо порції для всіх монолітних комплектів (depth == 0 або depth > 0)
+        // Порції = кількість компонентів у комплекті (по одному кожного)
+        const portionsPerSet = product.set.reduce((sum, si) => sum + (si.quantity || 0), 0);
+        
+        const totalPortions = portionsPerSet * quantity;
+        LoggingService.orderAssemblyLog(`📊 Монолітний комплект "${product.name}" (depth=${depth}): ${quantity} × ${portionsPerSet} = ${totalPortions} порцій`);
+
+        addOrUpdateExpandedItem(expandedItems, product, quantity, sku, composition, portionsPerSet);
         return;
       }
 
@@ -189,22 +199,28 @@ const addOrUpdateExpandedItem = (
   product: Product,
   quantity: number,
   sku: string,
-  composition?: string[]
+  composition?: string[],
+  portionsPerItem?: number
 ): void => {
   const itemName = product.name;
 
-  if (expandedItems[itemName]) {
+  // Ключ для об'єднання товарів:
+  // - Звичайні товари: itemName (об'єднуються за назвою)
+  // - Монолітні товари: itemName + sku (щоб розрізняти одну й ту саму назву з різних контекстів)
+  const key = portionsPerItem !== undefined ? `${itemName}:::${sku}` : itemName;
+
+  if (expandedItems[key]) {
     // Товар вже є - збільшуємо кількість
-    expandedItems[itemName].quantity += quantity;
-    expandedItems[itemName].expectedWeight = calculateExpectedWeight(product, expandedItems[itemName].quantity);
+    expandedItems[key].quantity += quantity;
+    expandedItems[key].expectedWeight = calculateExpectedWeight(product, expandedItems[key].quantity);
 
     // Оновлюємо склад, якщо він ще не був доданий
-    if (composition && (!expandedItems[itemName].composition || expandedItems[itemName].composition!.length === 0)) {
-      expandedItems[itemName].composition = composition;
+    if (composition && (!expandedItems[key].composition || expandedItems[key].composition!.length === 0)) {
+      expandedItems[key].composition = composition;
     }
   } else {
     // Додаємо новий товар
-    expandedItems[itemName] = {
+    expandedItems[key] = {
       id: sku,
       name: itemName,
       quantity: quantity,
@@ -214,11 +230,13 @@ const addOrUpdateExpandedItem = (
       sku: sku,
       barcode: product.barcode || sku,
       manualOrder: product.manualOrder,
-      composition: composition
+      composition: composition,
+      portionsPerItem: portionsPerItem
+
     };
   }
 
-  LoggingService.orderAssemblyLog(`  ✅ Додано: ${itemName} × ${quantity} (SKU: ${sku})${composition ? ' [M]' : ''}`);
+  LoggingService.orderAssemblyLog(`  ✅ Додано: ${itemName} × ${quantity} (SKU: ${sku})${composition ? ' [M]' : ''}${portionsPerItem ? ` [portionsPerItem=${portionsPerItem}]` : ''}`);
 };
 
 /**
@@ -234,7 +252,8 @@ export const expandProductSets = async (
 ): Promise<OrderChecklistItem[]> => {
   const expandedItems: { [key: string]: OrderChecklistItem } = {};
 
-  LoggingService.orderAssemblyLog(`🚀 Початок розгортання ${orderItems.length} товарів замовлення... (Монолітні категорії: ${monolithicCategoryIds.join(', ') || 'немає'})`);
+  LoggingService.orderAssemblyLog(`🚀 Початок розгортання ${orderItems.length} товарів замовлення... (Монолітні категорії ID: [${monolithicCategoryIds.join(', ') || 'немає'}])`);
+  LoggingService.orderAssemblyLog(`📋 Вхідні товари: ${JSON.stringify(orderItems.map(item => ({ name: item.productName, sku: item.sku, quantity: item.quantity })))}`);
 
   for (const item of orderItems) {
     try {
@@ -282,6 +301,11 @@ export const expandProductSets = async (
   }));
 
   LoggingService.orderAssemblyLog(`\n✅ Розгортання завершено. Отримано ${result.length} унікальних товарів.`);
+  LoggingService.orderAssemblyLog(`📊 Детальний список з portionsPerItem:`);
+  result.forEach((item, i) => {
+    const portions = item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity;
+    LoggingService.orderAssemblyLog(`  ${i+1}. ${item.name} × ${item.quantity}${item.portionsPerItem ? ` (portionsPerItem=${item.portionsPerItem}, всього=${portions})` : ` (всього=${portions})`}`);
+  });
   
   return result;
 };
@@ -362,8 +386,11 @@ export const combineBoxesWithItems = (
     // 1. Весь товар — в одну коробку (не дробити)
     // 2. Обираємо коробку з найменшою поточною вагою (балансування по вазі)
     for (const item of sortedItems) {
-      const itemWeightPerUnit = item.expectedWeight / item.quantity;
-      let remaining = item.quantity;
+      // Для монолітних комплектів використовуємо portionsPerItem для розподілу
+      // але display quantity залишається незміненим
+      const quantityForDistribution = item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity;
+      const itemWeightPerUnit = item.expectedWeight / quantityForDistribution;
+      let remaining = quantityForDistribution;
       let partIndex = 0;
       let itemUnallocated = 0;
       
@@ -390,11 +417,16 @@ export const combineBoxesWithItems = (
           candidatesForWhole.sort((a, b) => a.currentWeight - b.currentWeight);
           const targetBox = candidatesForWhole[0];
           
+          // Для монолітних комплектів: розподіл робиться по порціях (remaining),
+          // але в productItems зберігаємо оригінальну кількість з portionsPerItem
+          // щоб при підрахунку portions не множити подвійно
+          const displayQuantity = item.portionsPerItem ? item.quantity : remaining;
+          
           productItems.push({
             ...item,
             id: `product_${targetBox.index}_${item.id}${partIndex > 0 ? `_part${partIndex}` : ''}`,
             type: 'product' as const,
-            quantity: remaining,
+            quantity: displayQuantity,
             expectedWeight: itemWeightPerUnit * remaining,
             boxIndex: targetBox.index
           });
@@ -442,11 +474,16 @@ export const combineBoxesWithItems = (
             break;
           }
           
+          // Для монолітних комплектів: розподіл робиться по порціях (toAdd),
+          // але в productItems зберігаємо оригінальну кількість з portionsPerItem
+          // щоб при підрахунку portions не множити подвійно
+          const displayQuantity = item.portionsPerItem ? item.quantity : toAdd;
+          
           productItems.push({
             ...item,
             id: `product_${targetBox.index}_${item.id}${partIndex > 0 ? `_part${partIndex}` : ''}`,
             type: 'product' as const,
-            quantity: toAdd,
+            quantity: displayQuantity,
             expectedWeight: itemWeightPerUnit * toAdd,
             boxIndex: targetBox.index
           });

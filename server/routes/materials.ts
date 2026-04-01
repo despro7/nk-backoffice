@@ -31,7 +31,20 @@ router.get('/', authenticateToken, async (req, res) => {
       orderBy: [{ manualOrder: 'asc' }, { name: 'asc' }],
     });
 
-    res.json({ success: true, materials });
+    // Парсимо залишки для клієнта
+    const materialWithStock = materials.map(m => ({
+      ...m,
+      stockBalanceByStock: m.stockBalanceByStock ? (() => {
+        try {
+          return JSON.parse(m.stockBalanceByStock);
+        } catch (e) {
+          console.warn(`Ошибка парсинга stockBalanceByStock для материала ${m.sku}:`, e);
+          return null;
+        }
+      })() : null,
+    }));
+
+    res.json({ success: true, materials: materialWithStock });
   } catch (error) {
     console.error('[Materials] GET / error:', error);
     res.status(500).json({ error: 'Помилка отримання матеріалів' });
@@ -105,13 +118,16 @@ router.post('/sync', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER),
     const folderNameMap = new Map<string, string>(folders.map(f => [f.id, f.name]));
 
     const { DilovodApiClient } = await import('../services/dilovod/DilovodApiClient.js');
+    const { DilovodDataProcessor } = await import('../services/dilovod/DilovodDataProcessor.js');
     const apiClient = new DilovodApiClient();
+    const dataProcessor = new DilovodDataProcessor(apiClient);
     await new Promise(r => setTimeout(r, 100));
 
     let created = 0;
     let updated = 0;
     const errors: string[] = [];
     const seenDilovodIds = new Set<string>();
+    const skusForSync = new Set<string>(); // Збираємо SKU для синхронізації залишків
 
     try {
       const response = await apiClient.makeRequest<any>({
@@ -166,6 +182,11 @@ router.post('/sync', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER),
             await prisma.material.create({ data: { ...data, dilovodId } });
             created++;
           }
+
+          // Збираємо SKU для синхронізації залишків
+          if (sku) {
+            skusForSync.add(sku);
+          }
         } catch (itemErr) {
           errors.push(`good ${good.id}: ${itemErr instanceof Error ? itemErr.message : String(itemErr)}`);
         }
@@ -184,6 +205,34 @@ router.post('/sync', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER),
         },
         data: { isActive: false },
       });
+    }
+
+    // Синхронізація залишків для матеріалів
+    if (skusForSync.size > 0) {
+      try {
+        const skuArray = Array.from(skusForSync);
+        const stockResponse = await apiClient.getStockBalance(skuArray, (apiClient as any).config.defaultFirmId);
+        const processedStock = dataProcessor.processStockBalance(stockResponse);
+
+        for (const stock of processedStock) {
+          try {
+            const stockBalance = {
+              "1": stock.mainStorage,
+              "2": stock.smallStorage
+            };
+            await prisma.material.updateMany({
+              where: { sku: stock.sku },
+              data: {
+                stockBalanceByStock: JSON.stringify(stockBalance),
+              }
+            });
+          } catch (stockErr) {
+            errors.push(`stock for ${stock.sku}: ${stockErr instanceof Error ? stockErr.message : String(stockErr)}`);
+          }
+        }
+      } catch (stockFetchErr) {
+        errors.push(`stock fetch: ${stockFetchErr instanceof Error ? stockFetchErr.message : String(stockFetchErr)}`);
+      }
     }
 
     res.json({

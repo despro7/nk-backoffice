@@ -44,13 +44,6 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
     return null;
   }
 
-  // Функція для форматування кількості порцій
-  // const formatQuantity = (qty: number) => {
-  //   if (qty === 1) return '1 порція';
-  //   if (qty < 5) return `${qty} порції`;
-  //   return `${qty} порцій`;
-  // };
-
   const isDone = status === 'done';
 
   const itemStateClasses = cn(

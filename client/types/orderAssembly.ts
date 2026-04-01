@@ -16,6 +16,7 @@ export interface OrderChecklistItem {
   barcode?: string; // Штрих-код товару
   manualOrder?: number; // Ручне сортування
   composition?: string[]; // Склад монолітного комплекту (назви компонентів)
+  portionsPerItem?: number; // Для монолітних комплектів: кількість порцій в одному комплекті
 }
 
 export interface OrderForAssembly {

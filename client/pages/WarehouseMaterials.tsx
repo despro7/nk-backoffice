@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { Input, Switch } from '@heroui/react';
+import { Input, Switch, Tooltip } from '@heroui/react';
 import {
   Chip,
   Button,
@@ -23,6 +23,7 @@ interface Material {
   parentId: string | null;
   categoryName: string | null;
   barcode: string | null;
+  stockBalanceByStock: Record<string, number> | null;
   manualOrder: number;
   isActive: boolean;
   lastSyncAt: string;
@@ -271,11 +272,11 @@ const WarehouseMaterials: React.FC = () => {
         {/* Table */}
         <div className="p-4">
           {/* Table header */}
-          <div className="grid grid-cols-[48px_24px_1fr_200px_140px_120px] gap-2 px-4 py-2 bg-gray-50 rounded-sm border-b border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">
+          <div className="grid grid-cols-[48px_24px_1fr_160px_140px_120px] gap-2 px-4 py-2 bg-gray-100 rounded-sm text-xs font-medium text-gray-500 uppercase tracking-wide">
             <div />
             <div>#</div>
             <div>Матеріали</div>
-            <div>Штрих-код</div>
+            <div>Залишки</div>
             <div>Категорія</div>
             <div>Оновлено</div>
           </div>
@@ -305,7 +306,7 @@ const WarehouseMaterials: React.FC = () => {
                           <div
                             ref={drag.innerRef}
                             {...drag.draggableProps}
-                            className={`grid grid-cols-[32px_40px_1fr_200px_140px_120px] gap-2 px-4 py-3 border-b border-gray-50 items-center transition-colors rounded-sm ${snapshot.isDragging ? 'bg-gray-100 shadow-md' : 'hover:bg-gray-50'} ${!material.isActive ? 'opacity-40' : ''}`}
+                            className={`grid grid-cols-[32px_40px_1fr_160px_140px_120px] gap-2 px-4 py-3 border-b border-gray-50 items-center transition-colors rounded-sm ${snapshot.isDragging ? 'bg-gray-100 shadow-md' : 'hover:bg-gray-50'} ${!material.isActive ? 'opacity-40' : ''}`}
                           >
                             {/* Drag handle */}
                             <div
@@ -317,54 +318,73 @@ const WarehouseMaterials: React.FC = () => {
                             </div>
                             {/* Index */}
                             <div className="text-sm text-gray-400 text-center">{index + 1}</div>
-                            {/* Name + SKU */}
+                            {/* Name + SKU + Barcode */}
                             <div className="flex flex-col gap-0.5 min-w-0">
                               <span className="text-sm font-semibold text-gray-900 truncate">{material.name}</span>
-                              {material.sku && (
-                                <span className="flex items-center gap-1 text-xs text-gray-500">
-                                  SKU: {material.sku}
-                                </span>
-                              )}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {material.sku && (
+                                  <span className="text-sm text-gray-500">
+                                    SKU: {material.sku}
+                                  </span>
+                                )}
+                                {editingBarcode === material.id ? (
+                                  <>
+                                    <input
+                                      type="text"
+                                      value={barcodeValue}
+                                      onChange={e => setBarcodeValue(e.target.value)}
+                                      className="w-32 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      autoFocus
+                                      disabled={savingBarcode === material.id}
+                                      placeholder="---"
+                                      onKeyDown={e => {
+                                        if (e.key === 'Enter') saveBarcode(material);
+                                        else if (e.key === 'Escape') cancelBarcodeEdit();
+                                      }}
+                                      onFocus={e => e.currentTarget.select()}
+                                    />
+                                    <Button size="sm" color="success" variant="flat" onPress={() => saveBarcode(material)} isDisabled={savingBarcode === material.id} className="min-w-0 px-2">
+                                      {savingBarcode === material.id
+                                        ? <DynamicIcon name="loader-2" className="animate-spin" size={12} />
+                                        : <DynamicIcon name="check" size={12} />}
+                                    </Button>
+                                    <Button size="sm" color="danger" variant="flat" onPress={cancelBarcodeEdit} isDisabled={savingBarcode === material.id} className="min-w-0 px-2">
+                                      <DynamicIcon name="x" size={12} />
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <div
+                                    className={`flex items-center gap-1 text-sm text-gray-700 bg-gray-100 ${canEditProducts() ? 'cursor-pointer hover:bg-gray-200' : 'cursor-not-allowed opacity-60'} px-2 py-1 rounded min-w-[80px]`}
+                                    onClick={() => canEditProducts() && startBarcodeEdit(material)}
+                                    title={canEditProducts() ? 'Натисніть для редагування' : 'Немає прав'}
+                                  >
+                                    <DynamicIcon name="scan-barcode" size={14} />
+                                    {material.barcode || <span className="text-neutral-400">додати штрих‑код</span>}
+                                  </div>
+                                )}
+                              </div>
                               {!material.isActive && (
                                 <span className="w-fit text-xs py-0.5 px-1.5 rounded bg-gray-400 text-white">Неактивний</span>
                               )}
                             </div>
-                            {/* Barcode */}
-                            <div className="flex items-center gap-1">
-                              {editingBarcode === material.id ? (
-                                <>
-                                  <input
-                                    type="text"
-                                    value={barcodeValue}
-                                    onChange={e => setBarcodeValue(e.target.value)}
-                                    className="w-32 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    autoFocus
-                                    disabled={savingBarcode === material.id}
-                                    placeholder="---"
-                                    onKeyDown={e => {
-                                      if (e.key === 'Enter') saveBarcode(material);
-                                      else if (e.key === 'Escape') cancelBarcodeEdit();
-                                    }}
-                                    onFocus={e => e.currentTarget.select()}
-                                  />
-                                  <Button size="sm" color="success" variant="flat" onPress={() => saveBarcode(material)} isDisabled={savingBarcode === material.id} className="min-w-0 px-2">
-                                    {savingBarcode === material.id
-                                      ? <DynamicIcon name="loader-2" className="animate-spin" size={12} />
-                                      : <DynamicIcon name="check" size={12} />}
-                                  </Button>
-                                  <Button size="sm" color="danger" variant="flat" onPress={cancelBarcodeEdit} isDisabled={savingBarcode === material.id} className="min-w-0 px-2">
-                                    <DynamicIcon name="x" size={12} />
-                                  </Button>
-                                </>
+                            {/* Stock balances */}
+                            <div className="flex flex-col gap-1 text-sm">
+                              {material.stockBalanceByStock ? (
+                                <Tooltip content="Склад ГП / Склад М" color="secondary" size="sm">
+                                  <div className="flex items-center gap-1 text-sm cursor-help">
+                                    <DynamicIcon name="package" size={14} />
+                                    <span>{material.stockBalanceByStock['1'] ?? 0}</span>
+                                    <span className="text-gray-500">/</span>
+                                    <span>{material.stockBalanceByStock['2'] ?? 0}</span>
+                                  </div>
+                                </Tooltip>
                               ) : (
-                                <div
-                                  className={`flex items-center gap-1 text-sm text-gray-700 bg-gray-100 ${canEditProducts() ? 'cursor-pointer hover:bg-gray-200' : 'cursor-not-allowed opacity-60'} px-2 py-1 rounded min-w-[80px]`}
-                                  onClick={() => canEditProducts() && startBarcodeEdit(material)}
-                                  title={canEditProducts() ? 'Натисніть для редагування' : 'Немає прав'}
-                                >
-                                  <DynamicIcon name="scan-barcode" size={14} />
-                                  {material.barcode || <span className="text-neutral-400">додати</span>}
-                                </div>
+                                <Tooltip content="Записи відсутні" color="secondary" size="sm">
+                                  <div className="flex items-center gap-1 text-sm text-gray-300 cursor-help">
+                                    <DynamicIcon name="package" size={14} />
+                                    <span>0 / 0</span>
+                                  </div>
+                                </Tooltip>
                               )}
                             </div>
                             {/* Category name */}

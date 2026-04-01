@@ -19,6 +19,7 @@ import type {
   DilovodSettings,
   DilovodChannelMapping
 } from '../../../shared/types/dilovod.js';
+import { normalizePhoneNumber } from '../../../shared/utils/phoneNormalizer.js';
 import { getDilovodConfigFromDB } from './DilovodUtils.js';
 import { logWithTimestamp, DilovodService } from './index.js';
 import { orderDatabaseService } from '../orderDatabaseService.js';
@@ -347,9 +348,10 @@ export class DilovodExportBuilder {
 
     try {
       // Збираємо дані про клієнта з замовлення
+      const normalizedPhone = normalizePhoneNumber(order.customerPhone || '');
       const customerData = {
         customerName: order.customerName || 'Невідомий клієнт',
-        customerPhone: order.customerPhone || '',
+        customerPhone: normalizedPhone,
         customerEmail: order.customerEmail || order.rawData?.email || '',
         deliveryAddress: this.extractDeliveryAddress(order)
       };
@@ -417,11 +419,12 @@ export class DilovodExportBuilder {
       warnings.push(errorMessage);
 
       // У разі помилки використовуємо fallback з мок-даними
+      const fallbackPhone = normalizePhoneNumber(order.customerPhone || '');
       const fallbackPerson: DilovodPerson = {
         id: '',  // Fallback ID
         code: '',
         name: order.customerName || 'Невідомий клієнт',
-        phone: order.customerPhone || '',
+        phone: fallbackPhone,
         personType: DILOVOD_CONSTANTS.PERSON_TYPE_INDIVIDUAL
       };
 

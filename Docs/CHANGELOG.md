@@ -6,6 +6,29 @@
 
 ---
 
+## 2026-04-01 — Нормалізація номерів телефонів для контрагентів Dilovod
+**Files:** `shared/utils/phoneNormalizer.ts`, `server/services/dilovod/DilovodExportBuilder.ts`
+
+Винесена в утиліти функція нормалізації номерів телефонів до формату 38 (0→380, видаляє спецсимволи). Використовується при пошуку/створенні контрагентів для правильної ідентифікації в Dilovod API.
+
+---
+
+## 2026-04-01 — Виправлення розрахунку порцій для монолітних комплектів
+**Files:** `client/lib/orderAssemblyUtils.ts`, `client/types/orderAssembly.ts`, `client/pages/OrderView.tsx`, `client/components/OrderChecklist.tsx`
+
+**Problem:** Прогрес-бар показував "63/37" замість "37/37"; монолітні комплекти (категорія 20) відображались як "Вінегрет × 4" замість "× 1".
+
+**Solution:**
+- Додано поле `portionsPerItem?: number` до типу `OrderChecklistItem`
+- При розподілі по коробках: розраховуємо розподіл порцій, але зберігаємо оригінальну кількість комплектів (не помножену)
+- Оновлено розрахунок `totalPortions` та `totalPackedPortions` для коректного множення на `portionsPerItem`
+
+**Result:** ✅ Прогрес-бар "37/37", на екрані "Вінегрет × 1" = 4 порції
+
+Докладніше `Docs/features/monolithic-sets-handling.md`
+
+---
+
 ## 2026-04-01 — Функціонал "Монолітних категорій" у збірці замовлень
 **Files:** `server/routes/products.ts`, `client/components/SettingsProductSets.tsx`, `client/lib/orderAssemblyUtils.ts`
 - Виправлено проблему з монолітними категоріями: певні категорії продуктів тепер правильно не розгортаються під час збірки замовлень
@@ -13,7 +36,6 @@
 - Переміщено маршрут `categories-mapping` перед маршрутом `/:sku` для уникнення конфлікту маршрутів
 - Виправлено логіку порівняння в `orderAssemblyUtils.ts`: тепер використовується `product.categoryId` замість `product.categoryName`
 - Додано конвертацію старих назв категорій на ID в `SettingsProductSets.tsx` для сумісності з існуючими налаштуваннями
-- Видалено дебаг логування після успішного тестування функціоналу
 
 ---
 

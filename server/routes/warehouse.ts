@@ -360,6 +360,64 @@ router.get('/inventory/products', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/warehouse/inventory/materials
+// Повертає список матеріалів з ненульовим залишком на малому складі ("2")
+// Використовується сторінкою інвентаризації малого складу
+router.get('/inventory/materials', authenticateToken, async (req, res) => {
+  try {
+    console.log('📦 [Warehouse] GET /inventory/materials — завантаження матеріалів малого складу...');
+
+    const materials = await prisma.material.findMany({
+      where: {
+        stockBalanceByStock: { not: null },
+        isActive: true,
+      },
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        stockBalanceByStock: true,
+      },
+      orderBy: [
+        { manualOrder: 'asc' },
+        { name: 'asc' },
+      ],
+    });
+
+    // Фільтруємо: тільки ті, у кого є залишок на малому складі ("2")
+    const result = materials
+      .map(material => {
+        try {
+          const stock: Record<string, number> = material.stockBalanceByStock
+            ? JSON.parse(material.stockBalanceByStock)
+            : {};
+          const smallStockBalance = stock['2'] ?? 0;
+          if (smallStockBalance <= 0) return null;
+
+          // Матеріали зазвичай штучні (pcs)
+          return {
+            id: String(material.id),
+            sku: material.sku,
+            name: material.name,
+            systemBalance: smallStockBalance,
+            unit: 'pcs' as const,
+            portionsPerBox: 1,
+          };
+        } catch {
+          console.warn(`⚠️ [Warehouse/Inventory] Не вдалось розпарсити stockBalanceByStock для матеріалу ${material.sku}`);
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    console.log(`✅ [Warehouse] Знайдено ${result.length} матеріалів на малому складі`);
+    res.json({ materials: result, total: result.length });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Error fetching inventory materials:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Получить документ по ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {

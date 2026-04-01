@@ -20,10 +20,11 @@ interface OrderItem {
   type: 'box' | 'product';
   boxSettings?: any;
   boxCount?: number;
-  boxIndex?: number; // Индекс коробки (0, 1, 2...)
-  portionsRange?: { start: number; end: number }; // Диапазон порций для коробки
-  portionsPerBox?: number; // Количество порций на коробку
+  boxIndex?: number; // Індекс коробки (0, 1, 2...)
+  portionsRange?: { start: number; end: number }; // Діапазон порцій для коробки
+  portionsPerBox?: number; // Кількість порцій на коробку
   manualOrder?: number; // Ручне сортування
+  portionsPerItem?: number; // Для монолітних комплектів: кількість порцій в одному комплекті
 }
 
 interface OrderChecklistProps {
@@ -224,7 +225,11 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
   const totalPackedPortions = useMemo(() => {
     return items
       .filter(item => item.type === 'product' && item.status === 'done')
-      .reduce((acc, item) => acc + item.quantity, 0);
+      .reduce((acc, item) => {
+        // Для монолітних комплектів множимо quantity на portionsPerItem
+        const portions = item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity;
+        return acc + portions;
+      }, 0);
   }, [items]);
 
   // Перевіряємо, чи завершено всє замовлення

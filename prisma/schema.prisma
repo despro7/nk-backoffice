@@ -337,19 +337,20 @@ model ShippingProvider {
   @@map("shipping_providers")
 }
 model Material {
-  id           Int      @id @default(autoincrement())
-  dilovodId    String   @unique          // ID товару в Діловоді
-  sku          String?  @unique          // productNum (артикул)
-  name         String                    // Назва матеріалу
-  parentId     String                    // ID батьківської папки в Діловоді
-  categoryId   Int?                      // ID категорії (з назви папки, якщо є)
-  categoryName String?                   // Назва категорії / папки
-  barcode      String?                   // Штрих-код (заповнюється вручну)
-  manualOrder  Int      @default(0)      // Ручне сортування
-  isActive     Boolean  @default(true)   // false = більше немає в Діловоді
-  lastSyncAt   DateTime @default(now())
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                   Int      @id @default(autoincrement())
+  dilovodId            String   @unique          // ID товару в Діловоді
+  sku                  String?  @unique          // productNum (артикул)
+  name                 String                    // Назва матеріалу
+  parentId             String                    // ID батьківської папки в Діловоді
+  categoryId           Int?                      // ID категорії (з назви папки, якщо є)
+  categoryName         String?                   // Назва категорії / папки
+  barcode              String?                   // Штрих-код (заповнюється вручну)
+  stockBalanceByStock  String?  @db.LongText     // JSON: залишки по складам (e.g., {"1": 100, "2": 50})
+  manualOrder          Int      @default(0)      // Ручне сортування
+  isActive             Boolean  @default(true)   // false = більше немає в Діловоді
+  lastSyncAt           DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@index([sku])
   @@index([parentId])
