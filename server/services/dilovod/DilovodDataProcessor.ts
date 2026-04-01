@@ -255,7 +255,7 @@ export class DilovodDataProcessor {
         }
       }
       
-      const set: Array<{ id: string; quantity: number }> = [];
+      const set: Array<{ id: string; name?: string; quantity: number }> = [];
       
       componentsArray.forEach((row: DilovodSetComponent) => {
         const componentId = String(row.good);
@@ -275,8 +275,18 @@ export class DilovodDataProcessor {
         
         const quantity = parseFloat(row.qty) || 0;
         
+        // Отримуємо назву компонента
+        let componentName: string | undefined;
+        if (goodsById[componentId]) {
+          componentName = goodsById[componentId].name;
+        } else if (additionalSkuMap[componentId]) {
+          // Спробуємо отримати назву через API, якщо можливо
+          // Але поки що залишимо undefined - буде fallback в orderAssemblyUtils
+        }
+        
         set.push({
           id: sku,
+          name: componentName,
           quantity: quantity
         });
       });

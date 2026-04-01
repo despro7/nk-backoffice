@@ -17,6 +17,7 @@ interface OrderItem {
   manualOrder?: number;
   sku?: string;
   barcode?: string;
+  composition?: string[];
 }
 
 interface OrderChecklistItemProps {
@@ -32,7 +33,7 @@ interface OrderChecklistItemProps {
   onClick: () => void;
 }
 
-const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick }: OrderChecklistItemProps) => {
+const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick }: OrderChecklistItemProps) => {
   const { name, quantity, status, expectedWeight, type, boxSettings, sku, barcode } = item;
 
   const { isDebugMode } = useDebug();
@@ -50,10 +51,7 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, currentBoxTotalPor
   //   return `${qty} порцій`;
   // };
 
-  const { isAdmin } = useRoleAccess();
-
   const isDone = status === 'done';
-  const isBoxDone = type === 'box' && status === 'done';
 
   const itemStateClasses = cn(
     'p-4 rounded-sm flex items-center justify-between outline-2 outline-transparent transition-background transition-colors duration-300 animate-duration-[100ms]',
@@ -71,13 +69,11 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, currentBoxTotalPor
   // const isClickable = !isDone && !isItemBoxConfirmed && !isBoxDone && (type === 'box' ? status === 'awaiting_confirmation' : isBoxConfirmed && status === 'default');
   const isClickable = isBoxConfirmed && type === 'product' && status === 'default';
 
-  // console.log('🔄 [OrderChecklistItem] item:', item);
-
   return (
     <div className={itemStateClasses} onClick={isClickable ? onClick : undefined}>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 w-full">
         {/* Індикатор статусу */}
-        <div className={cn("w-6 h-6 rounded-sm flex items-center justify-center bg-transparent transition-colors duration-300", {
+        <div className={cn("w-6 h-6 shrink-0 rounded-sm flex items-center justify-center bg-transparent transition-colors duration-300", {
           "bg-gray-400": isDone,
           "border-2 border-gray-400": !isDone && status !== 'success' && status !== 'awaiting_confirmation',
           "border-2 border-warning-600": status === 'pending' || status === 'awaiting_confirmation',
@@ -86,38 +82,47 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, currentBoxTotalPor
         })}>
           {(isDone || status === 'success') && <Check size={18} className="text-white" />}
         </div>
-        <div className="flex items-center gap-2">
-          <span className={cn({
-            "font-semibold": type === 'box',
-            "font-normal": type === 'product'
-          })}>
-            {name} {type !== 'box' && (<span>× <span className="text-[18px] font-mono rounded-sm bg-gray-950/5 px-2.5 py-1">{quantity}</span></span>)}
-          </span>
-          {/* {item.manualOrder && isAdmin() && (<span className="text-[13px] text-neutral-300 tabular-nums">#{item.manualOrder}</span>)} */}
-          {type === 'box' && boxSettings && (
-            <>
-            <span className="text-[13px] tabular-nums bg-gray-950/5 px-2 py-1 rounded">
-              {boxSettings.width}×{boxSettings.height}×{boxSettings.length} см
+        <div className="flex flex-col gap-0.5 overflow-hidden">
+          <div className="flex items-center gap-2">
+            <span className={cn({
+              "font-semibold": type === 'box',
+              "font-normal": type === 'product'
+            })}>
+              {name} {type !== 'box' && (<span>× <span className="text-[18px] font-mono rounded-sm bg-gray-950/5 px-2.5 py-1">{quantity}</span></span>)}
             </span>
-            {(currentBoxTotalWeight.totalOrderWeight && currentBoxTotalWeight.totalOrderWeight > 0 && currentBoxTotalWeight.totalOrderWeight !== currentBoxTotalWeight.currentBoxWeight) && (
-              <span className={`text-[14px] font-medium ${item.status === 'awaiting_confirmation' && 'text-warning-800'}`}>
-                {currentBoxTotalPortions} порцій / {currentBoxTotalWeight.currentBoxWeight.toFixed(2)} кг
+            {type === 'box' && boxSettings && (
+              <>
+              <span className="text-[13px] tabular-nums bg-gray-950/5 px-2 py-1 rounded">
+                {boxSettings.width}×{boxSettings.height}×{boxSettings.length} см
+              </span>
+              {(currentBoxTotalWeight.totalOrderWeight && currentBoxTotalWeight.totalOrderWeight > 0 && currentBoxTotalWeight.totalOrderWeight !== currentBoxTotalWeight.currentBoxWeight) && (
+                <span className={`text-[14px] font-medium ${item.status === 'awaiting_confirmation' && 'text-warning-800'}`}>
+                  {currentBoxTotalPortions} порцій / {currentBoxTotalWeight.currentBoxWeight.toFixed(2)} кг
+                </span>
+              )}
+              </>
+            )}
+            {isDebugMode && (
+              <span
+                className="flex items-center gap-1 ml-4 text-[12px] text-neutral-400 tabular-nums cursor-pointer hover:text-neutral-600 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const code = sku || (type === 'box' ? boxSettings.barcode : barcode);
+                  navigator.clipboard.writeText(code || '');
+                }}
+                title="Click to copy"
+              >
+                <DynamicIcon name="scan-barcode" size={14} /> {sku || (type === 'box' ? boxSettings.barcode : barcode)}
               </span>
             )}
-            </>
-          )}
-          {isDebugMode && (
-            <span 
-              className="flex items-center gap-1 ml-4 text-[12px] text-neutral-400 tabular-nums cursor-pointer hover:text-neutral-600 transition-colors" 
-              onClick={(e) => {
-                e.stopPropagation();
-                const code = sku || (type === 'box' ? boxSettings.barcode : barcode);
-                navigator.clipboard.writeText(code || '');
-              }}
-              title="Click to copy"
-            >
-              <DynamicIcon name="scan-barcode" size={14} /> {sku || (type === 'box' ? boxSettings.barcode : barcode)}
-            </span>
+          </div>
+          {/* Відображення складу монолітного набору */}
+          {item.composition && item.composition.length > 0 && (
+            <ul className="text-[13px] text-blue-500 mt-1">
+              {item.composition.map((component, index) => (
+                <li className="before:content-['•'] before:mr-1.5 before:text-blue-500" key={index}>{component}</li>
+              ))}
+            </ul>
           )}
         </div>
       </div>
@@ -127,7 +132,7 @@ const OrderChecklistItem = ({ item, isActive, isBoxConfirmed, currentBoxTotalPor
         {status === 'error' && <X size={24} />}
         
         {/* Лічильник порцій */}
-        <span className="text-[13px] tabular-nums">
+        <span className="text-[13px] tabular-nums text-nowrap">
           ~{expectedWeight.toFixed(3)} кг
           {/* {type === 'box' ? `Вага коробки: ${expectedWeight.toFixed(3)} кг` : `~${expectedWeight.toFixed(3)} кг`} */}
         </span>

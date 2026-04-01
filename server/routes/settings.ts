@@ -622,6 +622,62 @@ const isPublicSetting = (key: string): boolean => {
   return PUBLIC_SETTINGS.includes(key);
 };
 
+// Специфические маршруты для monolithic_assembly_categories
+router.get('/monolithic_assembly_categories', authenticateToken, async (req, res) => {
+  try {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    const setting = await prisma.settingsBase.findUnique({
+      where: { key: 'monolithic_assembly_categories' }
+    });
+    if (!setting) {
+      return res.json({ value: '[]' });
+    }
+    res.json({ value: setting.value });
+  } catch (error) {
+    console.error('Error getting monolithic assembly categories:', error);
+    res.status(500).json({ success: false, error: 'Failed to get monolithic assembly categories' });
+  }
+});
+
+router.put('/monolithic_assembly_categories', authenticateToken, async (req, res) => {
+  try {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    const { value } = req.body;
+
+    if (value === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: 'Value is required'
+      });
+    }
+
+    await prisma.settingsBase.upsert({
+      where: { key: 'monolithic_assembly_categories' },
+      update: { value },
+      create: {
+        key: 'monolithic_assembly_categories',
+        value,
+        description: 'Monolithic assembly categories',
+        category: 'products',
+        isActive: true
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Monolithic assembly categories saved successfully'
+    });
+  } catch (error) {
+    console.error('Error saving monolithic assembly categories:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to save monolithic assembly categories'
+    });
+  }
+});
+
 // Получить конкретную настройку по ключу (публичный для безопасных настроек)
 router.get('/:key', async (req, res) => {
   try {

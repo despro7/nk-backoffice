@@ -382,6 +382,37 @@ router.route('/export-to-salesdrive')
     }
   });
 
+// Отримати відповідність назв категорій до ID
+// GET /api/products/categories-mapping
+router.get('/categories-mapping', authenticateToken, async (req, res) => {
+  try {
+    // Отримуємо унікальні пари categoryName -> categoryId
+    const categoryMappings = await prisma.product.findMany({
+      where: {
+        categoryName: { not: null },
+        categoryId: { not: null }
+      },
+      select: {
+        categoryName: true,
+        categoryId: true
+      },
+      distinct: ['categoryName', 'categoryId']
+    });
+
+    // Групуємо по categoryName, вибираємо перший categoryId (якщо є кілька)
+    const mapping: { [name: string]: number } = {};
+    categoryMappings.forEach(item => {
+      if (item.categoryName && item.categoryId && !mapping[item.categoryName]) {
+        mapping[item.categoryName] = item.categoryId;
+      }
+    });
+
+    res.json({ mapping });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Отримати товар за SKU
 // GET /api/products/:sku
 router.get('/:sku', authenticateToken, async (req, res) => {

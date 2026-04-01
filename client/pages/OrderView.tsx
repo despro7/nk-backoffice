@@ -35,6 +35,7 @@ export default function OrderView() {
   const [expandedItems, setExpandedItems] = useState<OrderChecklistItem[]>([]);
   const [expandingSets, setExpandingSets] = useState(false);
   const [checklistItems, setChecklistItems] = useState<OrderChecklistItem[]>([]);
+  const [monolithicCategoryIds, setMonolithicCategoryIds] = useState<number[]>([]);
 
   // Стан коробок
   const [selectedBoxes, setSelectedBoxes] = useState<any[]>([]);
@@ -233,7 +234,7 @@ export default function OrderView() {
   }, [handlePrintTTN, order]);
 
   // Завантажуємо деталі замовлення
-  const fetchOrderDetails = async (id: string) => {
+  const fetchOrderDetails = async (id: string, monolithicIds?: number[]) => {
     try {
       setLoading(true);
       setChecklistItems([]);
@@ -246,7 +247,7 @@ export default function OrderView() {
 
         setExpandingSets(true);
         try {
-          const expanded = await expandProductSets(data.data.items, apiCall);
+          const expanded = await expandProductSets(data.data.items, apiCall, monolithicIds || monolithicCategoryIds);
           setExpandedItems(expanded);
 
           const orderIsReadyToShip = data.data.status >= '3';
@@ -350,8 +351,27 @@ export default function OrderView() {
       setExpandedItems([]);
       setSelectedBoxes([]);
       setIsReadyToShip(false);
-      
-      fetchOrderDetails(externalId);
+
+      // Спершу завантажуємо налаштування монолітних категорій
+      apiCall('/api/settings/monolithic_assembly_categories')
+        .then(res => res.json())
+        .then(data => {
+          let ids: number[] = [];
+          if (data && data.value) {
+            try {
+              const parsed = JSON.parse(data.value);
+              ids = Array.isArray(parsed) ? parsed.map(Number) : [];
+            } catch (e) {
+              console.error('Error parsing monolithic categories:', e);
+            }
+          }
+          setMonolithicCategoryIds(ids);
+          fetchOrderDetails(externalId, ids);
+        })
+        .catch(err => {
+          console.error('Error fetching monolithic categories:', err);
+          fetchOrderDetails(externalId);
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalId]); // Тільки externalId в залежностях, щоб уникнути циклів

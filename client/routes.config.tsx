@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Orders from './pages/Orders';
 import WarehouseMovement from './pages/WarehouseMovement';
 import WarehouseInventory from './pages/WarehouseInventory';
+import WarehouseMaterials from './pages/WarehouseMaterials';
 import Reports from './pages/Reports';
 import ReportsSales from './pages/ReportsSales';
 import ReportsShipment from './pages/ReportsShipment';
@@ -117,6 +118,18 @@ export const appRoutes: AppRoute[] = [
     order: 3,
     parent: 'warehouse',
     minRole: ROLES.STOREKEEPER, // storekeeper і вище
+  },
+  {
+    path: '/warehouse/materials',
+    component: WarehouseMaterials,
+    title: 'Матеріали',
+    pageTitle: 'Матеріали | NK Backoffice',
+    navLabel: 'Матеріали',
+    icon: <DynamicIcon name="box" size={16} />,
+    inNav: true,
+    order: 4,
+    parent: 'warehouse',
+    minRole: ROLES.STOREKEEPER,
   },
   {
     path: '/reports/sales',

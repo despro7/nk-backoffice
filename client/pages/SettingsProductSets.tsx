@@ -3,7 +3,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useAuth } from '../contexts/AuthContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatPrice, formatRelativeDate, getCategoryColors } from '../lib/formatUtils';
-import { Input, addToast, Textarea, Switch, Tooltip } from '@heroui/react';
+import { Input, addToast, Textarea, Switch, Tooltip, Select, SelectItem } from '@heroui/react';
 import { ToastService } from '@/services/ToastService';
 import ProductsStatsSummary, { type ProductsStats } from '@/components/ProductsStatsSummary';
 
@@ -166,6 +166,12 @@ const ProductSets: React.FC = () => {
   const [setParentIdsSaving, setSetParentIdsSaving] = useState(false);
   const [newSetParentIdInput, setNewSetParentIdInput] = useState('');
 
+  // Стан для монолітних категорій (комплекти яких не розгортаються)
+  const [monolithicCategories, setMonolithicCategories] = useState<Set<string>>(new Set());
+  const [monolithicLoading, setMonolithicLoading] = useState(false);
+  const [monolithicSaving, setMonolithicSaving] = useState(false);
+  const [categoriesMapping, setCategoriesMapping] = useState<{ [name: string]: number }>({});
+
   // Завантажити whitelist з сервера
   const fetchSkuWhitelist = async () => {
     try {
@@ -237,6 +243,87 @@ const ProductSets: React.FC = () => {
       fetchSetParentIds();
     }
   }, [isSetParentIdsModalOpen]);
+
+  // Завантажити монолітні категорії
+  const fetchMonolithicCategories = async () => {
+    setMonolithicLoading(true);
+    try {
+      const response = await fetch('/api/settings/monolithic_assembly_categories', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        // Дані зберігаються як JSON stringified array в полі value
+        try {
+          const ids = JSON.parse(data.value);
+          
+          // Конвертуємо старі назви в ID, якщо потрібно
+          const convertedIds = Array.isArray(ids) ? ids.map(item => {
+            // Якщо це вже число (ID), повертаємо як є
+            if (typeof item === 'number') return item;
+            // Якщо це рядок, намагаємося знайти відповідний ID в mapping
+            if (typeof item === 'string' && categoriesMapping[item]) {
+              return categoriesMapping[item];
+            }
+            // Якщо не знайшли, повертаємо як є (може бути вже ID як рядок)
+            return item;
+          }) : [];
+          
+          setMonolithicCategories(new Set(convertedIds.map(String)));
+        } catch (error) {
+          setMonolithicCategories(new Set());
+        }
+      } else {
+      }
+    } catch (error) {
+      console.warn('Не вдалося завантажити монолітні категорії:', error);
+    } finally {
+      setMonolithicLoading(false);
+    }
+  };
+
+  // Завантажити mapping назв категорій до ID
+  const fetchCategoriesMapping = async () => {
+    try {
+      const response = await fetch('/api/products/categories-mapping', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setCategoriesMapping(data.mapping || {});
+      } else {
+      }
+    } catch (error) {
+      console.warn('Не вдалося завантажити mapping категорій:', error);
+    }
+  };
+
+  const saveMonolithicCategories = async (keys: Selection) => {
+    const selectedIds = Array.from(keys as Set<string>);
+    setMonolithicCategories(new Set(selectedIds));
+
+    setMonolithicSaving(true);
+    try {
+      await fetch('/api/settings/monolithic_assembly_categories', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: JSON.stringify(selectedIds) }),
+        credentials: 'include',
+      });
+      ToastService.show({ title: 'Збережено', description: 'Список монолітних категорій оновлено', color: 'success' });
+    } catch (error) {
+      ToastService.show({ title: 'Помилка збереження', description: String(error), color: 'danger' });
+    } finally {
+      setMonolithicSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategoriesMapping();
+  }, []);
+
+  // Завантажуємо monolithic categories після завантаження mapping
+  useEffect(() => {
+    if (Object.keys(categoriesMapping).length > 0) {
+      fetchMonolithicCategories();
+    }
+  }, [categoriesMapping]);
 
   // Стан для вибору товарів у таблиці
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set([]));
@@ -1879,88 +1966,129 @@ const ProductSets: React.FC = () => {
             <div className="flex flex-col gap-4 p-2">
               {/* Кнопки дій */}
               <div className={`flex flex-wrap gap-4 pb-6 ${!isAdmin() ? 'hidden' : ''}`} >
-                <Switch isSelected={manualSyncEnabled} onValueChange={setManualSyncEnabled}></Switch>
-                <Button
-                  onPress={openManualSyncModal}
-                  disabled={manualSyncing || !isAdmin()}
-                  color="primary"
-                  variant="flat"
-                  className="bg-blue-400 text-white"
-                >
-                  <DynamicIcon name="list-filter" size={14} />
-                  Ручна синхронізація
-                  {selectedKeys !== 'all' && (selectedKeys as Set<string>).size > 0 && (
-                      " (" + (selectedKeys as Set<string>).size + ")"
-                  )}
-                </Button>
+                {/* Ліва частина - основні кнопки */}
+                <div className="flex flex-1 items-center gap-3">
+                  <Switch isSelected={manualSyncEnabled} onValueChange={setManualSyncEnabled}></Switch>
+                  <Button
+                    onPress={openManualSyncModal}
+                    disabled={manualSyncing || !isAdmin()}
+                    color="primary"
+                    variant="flat"
+                    className="bg-blue-400 text-white"
+                  >
+                    <DynamicIcon name="list-filter" size={14} />
+                    Ручна синхронізація
+                    {selectedKeys !== 'all' && (selectedKeys as Set<string>).size > 0 && (
+                        " (" + (selectedKeys as Set<string>).size + ")"
+                    )}
+                  </Button>
 
-                <Button
-                  onPress={syncProductsWithDilovod}
-                  disabled={syncStatus?.isRunning || !isAdmin()}
-                  color="primary"
-                >
-                  {syncStatus?.isRunning ? (
-                    <>
-                      <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                      Синхронізація...
-                    </>
-                  ) : (
-                    <>
-                      <DynamicIcon name="refresh-cw" size={14} />
-                      Синхронізувати всі товари
-                    </>
-                  )}
-                </Button>
+                  <Button
+                    onPress={syncProductsWithDilovod}
+                    disabled={syncStatus?.isRunning || !isAdmin()}
+                    color="primary"
+                  >
+                    {syncStatus?.isRunning ? (
+                      <>
+                        <DynamicIcon name="loader-2" className="animate-spin" size={14} />
+                        Синхронізація...
+                      </>
+                    ) : (
+                      <>
+                        <DynamicIcon name="refresh-cw" size={14} />
+                        Синхронізувати всі товари
+                      </>
+                    )}
+                  </Button>
 
-                <Button
-                  onPress={syncStockBalances}
-                  disabled={stockSyncing || !isAdmin()}
-                  color="success"
-                  className="text-white"
-                >
-                  {stockSyncing ? (
-                    <>
-                      <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                      Синхронізація...
-                    </>
-                  ) : (
-                    <>
-                      <DynamicIcon name="refresh-cw" size={14} />
-                      Оновити залишки
-                    </>
-                  )}
-                </Button>
+                  <Button
+                    onPress={syncStockBalances}
+                    disabled={stockSyncing || !isAdmin()}
+                    color="success"
+                    className="text-white"
+                  >
+                    {stockSyncing ? (
+                      <>
+                        <DynamicIcon name="loader-2" className="animate-spin" size={14} />
+                        Синхронізація...
+                      </>
+                    ) : (
+                      <>
+                        <DynamicIcon name="refresh-cw" size={14} />
+                        Оновити залишки
+                      </>
+                    )}
+                  </Button>
 
-                <Button
-                  onPress={prepareExportToSalesDrive}
-                  disabled={!isAdmin()}
-                  color="secondary"
-                  className="text-white"
-                >
-                  <DynamicIcon name="upload" size={14} />
-                  Експорт в SalesDrive
-                </Button>
+                  <Button
+                    onPress={prepareExportToSalesDrive}
+                    disabled={!isAdmin()}
+                    color="secondary"
+                    className="text-white"
+                  >
+                    <DynamicIcon name="upload" size={14} />
+                    Експорт в SalesDrive
+                  </Button>
 
-                {/* Перемикач режиму експорту */}
-                <div className="flex items-center gap-2">
-                  <Switch isSelected={expandSets} onValueChange={handleExpandSetsChange} isDisabled={expandSetsSaving}></Switch>
-                  <span className="text-sm text-gray-700 leading-4">Розгорнути <br/>комплекти</span>
-                  <Tooltip color="primary" content="Якщо увімкнено, товари, які є комплектами, будуть розгорнуті на свої складові при експорті в SalesDrive">
-                    <DynamicIcon 
-                      name="help-circle" 
-                      size={16} 
-                      className="text-gray-400 cursor-help"
-                    />
-                  </Tooltip>
+                  {/* Перемикач режиму експорту */}
+                  <div className="flex items-center gap-2">
+                    <Switch isSelected={expandSets} onValueChange={handleExpandSetsChange} isDisabled={expandSetsSaving}></Switch>
+                    <span className="text-sm text-gray-700 leading-4">Розгорнути <br/>комплекти</span>
+                    <Tooltip color="primary" content="Якщо увімкнено, товари, які є комплектами, будуть розгорнуті на свої складові при експорті в SalesDrive">
+                      <DynamicIcon 
+                        name="help-circle" 
+                        size={16} 
+                        className="text-gray-400 cursor-help"
+                      />
+                    </Tooltip>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-3 ml-auto">          
+                {/* Права частина - налаштування */}
+                <div className="flex flex-1 items-center justify-end gap-3">
+                  {/* Вибір монолітних категорій */}
+                  <Select
+                    label="Монолітні комплекти"
+                    placeholder="Оберіть категорії..."
+                    selectionMode="multiple"
+                    size="sm"
+                    className="max-w-[200px] flex-shrink-0"
+                    selectedKeys={monolithicCategories}
+                    onSelectionChange={saveMonolithicCategories}
+                    isDisabled={monolithicLoading}
+                    startContent={monolithicSaving ? <DynamicIcon name="loader-2" className="animate-spin" size={14} /> : <DynamicIcon name="layout-list" size={14} />}
+                    // description="Комплекти цих категорій не розгортатимуться в чеклисті"
+                  >
+                    {(stats?.categoriesCount || [])
+                      .filter((cat) => {
+                        const lowerName = cat.name.toLowerCase();
+                        return lowerName.includes('набори') || 
+                               lowerName.includes('набір') || 
+                               lowerName.includes('комплект') ||
+                               lowerName.includes('набор');
+                      })
+                      .filter((cat, index, arr) => {
+                        const categoryId = categoriesMapping[cat.name] || cat.name;
+                        // Залишаємо тільки перше входження кожного categoryId
+                        return arr.findIndex(c => (categoriesMapping[c.name] || c.name) === categoryId) === index;
+                      })
+                      .map((cat) => {
+                        const categoryId = categoriesMapping[cat.name] || cat.name;
+                        return (
+                          <SelectItem key={categoryId.toString()} textValue={cat.name}>
+                            {cat.name}
+                          </SelectItem>
+                        );
+                      })}
+                  </Select>
+
                   {/* Кнопка управління ID груп комплектів */}
                   <Button
                     onPress={() => setIsSetParentIdsModalOpen(true)}
                     disabled={!isAdmin()}
                     color="warning"
                     variant="flat"
+                    className="flex-shrink-0"
                   >
                     <DynamicIcon name="layers" size={14} />
                     Set Parent IDs
@@ -1970,12 +2098,12 @@ const ProductSets: React.FC = () => {
                   <Button
                     onPress={() => setIsSkuWhitelistModalOpen(true)}
                     variant="flat"
+                    className="flex-shrink-0"
                   >
                     <DynamicIcon name="shield-check" size={14} />
                     SKU Whitelist
                   </Button>
                 </div>
-
               </div>
 
               {/* Пошук і фільтри */}

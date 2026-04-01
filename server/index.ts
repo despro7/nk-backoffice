@@ -23,6 +23,7 @@ import { salesdriveRouter } from './routes/salesdrive.js';
 import metaLogsRouter from './routes/meta-logs.js';
 import wordpressReceiptRoutes from './routes/wordpress-receipt.js';
 import notificationsRouter from './routes/notifications.js';
+import materialsRouter from './routes/materials.js';
 
 // Увеличиваем лимит listeners для process events
 process.setMaxListeners(20);
@@ -131,6 +132,9 @@ export function createServer() {
 
   // Warehouse routes
   app.use("/api/warehouse", warehouseRoutes);
+
+  // Materials routes
+  app.use("/api/materials", materialsRouter);
 
   // Webhook routes (должны быть до protected routes)
   app.use('/api/webhooks', webhookRoutes);

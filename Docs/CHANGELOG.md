@@ -6,6 +6,17 @@
 
 ---
 
+## 2026-04-01 — Функціонал "Монолітних категорій" у збірці замовлень
+**Files:** `server/routes/products.ts`, `client/components/SettingsProductSets.tsx`, `client/lib/orderAssemblyUtils.ts`
+- Виправлено проблему з монолітними категоріями: певні категорії продуктів тепер правильно не розгортаються під час збірки замовлень
+- Додано API endpoint `GET /api/products/categories-mapping` для отримання мапінгу назв категорій на їх ID
+- Переміщено маршрут `categories-mapping` перед маршрутом `/:sku` для уникнення конфлікту маршрутів
+- Виправлено логіку порівняння в `orderAssemblyUtils.ts`: тепер використовується `product.categoryId` замість `product.categoryName`
+- Додано конвертацію старих назв категорій на ID в `SettingsProductSets.tsx` для сумісності з існуючими налаштуваннями
+- Видалено дебаг логування після успішного тестування функціоналу
+
+---
+
 ## 2026-03-30 — Інвентаризація малого складу: реальні дані + збереження чернеток
 **Files:** `server/routes/warehouse.ts`, `client/pages/WarehouseInventory.tsx`, `client/pages/SettingsProductSets.tsx`, `prisma/schema.prisma`, `prisma/migrations/20260329234602_add_inventory_sessions/`, `prisma/migrations/20260329232854_add_portions_per_box_to_products/`
 

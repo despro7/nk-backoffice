@@ -4,15 +4,14 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = Router();
 
-// Вспомогательные функции для работы с остатками
+// Допоміжні функції для роботи із залишками
 const WAREHOUSE_IDS = {
-  MAIN: '1',      // Основной склад (Склад ГП)
-  KYIV: '2',      // Киевский склад
-  SMALL: '3'      // Малый склад
+  MAIN: '1',      // Головний склад (Склад ДП)
+  SMALL: '2'      // Малий склад
 } as const;
 
 /**
- * Обновляет остатки товара на складах
+ * Оновлює залишки товару на складах
  */
 async function updateProductStock(sku: string, sourceWarehouse: string, destinationWarehouse: string, portionsQuantity: number) {
   console.log(`📦 [Stock Update] Обновление остатка товара ${sku}: ${sourceWarehouse} -> ${destinationWarehouse}, порций: ${portionsQuantity}`);
@@ -25,18 +24,17 @@ async function updateProductStock(sku: string, sourceWarehouse: string, destinat
     throw new Error(`Товар с SKU ${sku} не найден`);
   }
 
-  // Маппинг названий складов на их ID (как хранится в БД)
+  // Прив'язує назви складів до їхніх ID (як зберігається в БД)
   const warehouseMapping = {
     "Основний склад": "1",
-    "Київський склад": "2",
-    "Малий склад": "3"
+    "Малий склад": "2"
   };
 
-  // Получаем ID складов
+  // Отримуємо ID складів
   const sourceWarehouseId = warehouseMapping[sourceWarehouse] || sourceWarehouse;
   const destinationWarehouseId = warehouseMapping[destinationWarehouse] || destinationWarehouse;
 
-  // Парсим текущие остатки (в порциях)
+  // Аналізуємо поточні залишки (по частинах)
   const currentStock = product.stockBalanceByStock
     ? JSON.parse(product.stockBalanceByStock)
     : {};
@@ -48,19 +46,19 @@ async function updateProductStock(sku: string, sourceWarehouse: string, destinat
   console.log(`   ${sourceWarehouse} (ID: ${sourceWarehouseId}): ${sourceStockPortions} порций`);
   console.log(`   ${destinationWarehouse} (ID: ${destinationWarehouseId}): ${destStockPortions} порций`);
 
-  // Проверяем достаточность остатков
+  // Перевіряємо достатність залишків
   if (sourceStockPortions < portionsQuantity) {
     throw new Error(`Недостаточно остатков товара ${sku} на складе ${sourceWarehouse}. Доступно: ${sourceStockPortions} порций, требуется: ${portionsQuantity} порций`);
   }
 
-  // Обновляем остатки (работаем с порциями)
+  // Оновлюємо залишки (працюємо з порціями)
   const newStock = {
     ...currentStock,
     [sourceWarehouseId]: Math.max(0, sourceStockPortions - portionsQuantity),
     [destinationWarehouseId]: destStockPortions + portionsQuantity
   };
 
-  // Сохраняем обновленные остатки
+  // Зберігаємо оновлені залишки
   await prisma.product.update({
     where: { sku },
     data: {
@@ -83,7 +81,7 @@ async function updateProductStock(sku: string, sourceWarehouse: string, destinat
 }
 
 /**
- * Создает записи в истории движения остатков
+ * Створює записи в історії руху залишків
  */
 async function createStockMovementHistory(
   sku: string,
@@ -99,18 +97,17 @@ async function createStockMovementHistory(
 ) {
   console.log(`📊 [Movement History] Создание записей истории для ${sku}: перемещено ${movedPortions} порций`);
 
-  // Маппинг названий складов на их ID (как хранится в БД)
+  // Маппінг назв складів на їхні ID (як зберігається в БД)
   const warehouseMapping = {
     "Основний склад": "1",
-    "Київський склад": "2",
-    "Малий склад": "3"
+    "Малий склад": "2"
   };
 
-  // Получаем ID складов
+  // Отримуємо ID складів
   const sourceWarehouseId = warehouseMapping[sourceWarehouse] || sourceWarehouse;
   const destinationWarehouseId = warehouseMapping[destinationWarehouse] || destinationWarehouse;
 
-  // Списываем с исходного склада
+  // Списуємо з вихідного складу
   await prisma.stockMovementHistory.create({
     data: {
       productSku: sku,
@@ -247,8 +244,7 @@ router.get('/products-for-movement', authenticateToken, async (req, res) => {
 
           // Остатки хранятся как порции в соответствующих складах
           const mainStockPortions = stockBalance["1"] || 0;  // Порции на основном складе
-          const kyivStockPortions = stockBalance["2"] || 0;   // Порции на киевском складе
-          const smallStockPortions = stockBalance["3"] || 0;  // Порции на малом складе
+          const smallStockPortions = stockBalance["2"] || 0;  // Порции на малом складе
 
           // Для отображения конвертируем в формат "ящики / порции"
           const PORTIONS_PER_BOX = 24;
@@ -274,7 +270,6 @@ router.get('/products-for-movement', authenticateToken, async (req, res) => {
               },
               stockData: {
                 mainStock: mainStockPortions,     // Порции на основном складе
-                kyivStock: kyivStockPortions,     // Порции на киевском складе
                 smallStock: smallStockPortions,   // Порции на малом складе
                 displayFormat: {
                   main: `${mainStockBoxes} / ${mainStockRemainder}`,     // "ящики / порции"
@@ -305,7 +300,7 @@ router.get('/products-for-movement', authenticateToken, async (req, res) => {
 });
 
 // GET /api/warehouse/inventory/products
-// Повертає список товарів з ненульовим залишком на малому складі ("3")
+// Повертає список товарів з ненульовим залишком на малому складі ("2")
 // Використовується сторінкою інвентаризації малого складу
 router.get('/inventory/products', authenticateToken, async (req, res) => {
   try {
@@ -329,14 +324,14 @@ router.get('/inventory/products', authenticateToken, async (req, res) => {
       ],
     });
 
-    // Фільтруємо: тільки ті, у кого є залишок на малому складі ("3")
+    // Фільтруємо: тільки ті, у кого є залишок на малому складі ("2")
     const result = products
       .map(product => {
         try {
           const stock: Record<string, number> = product.stockBalanceByStock
             ? JSON.parse(product.stockBalanceByStock)
             : {};
-          const smallStockBalance = stock['1'] ?? 0;
+          const smallStockBalance = stock['2'] ?? 0;
           if (smallStockBalance <= 0) return null;
 
           // Якщо portionsPerBox > 1 — порційний товар; 1 — штучний
@@ -765,8 +760,7 @@ async function revertStockMovement(
   // Маппинг названий складов на их ID (как хранится в БД)
   const warehouseMapping = {
     "Основний склад": "1",
-    "Київський склад": "2",
-    "Малий склад": "3"
+    "Малий склад": "2"
   };
 
   // Получаем ID складов

@@ -8,9 +8,10 @@ export interface Product {
   name: string;
   weight?: number; // Вага в грамах
   categoryId?: number; // ID категорії для визначення ваги за замовчуванням
+  categoryName?: string; // Назва категорії
   manualOrder?: number; // Ручне сортування
   barcode?: string; // Штрих-код товару
-  set: Array<{ id: string; quantity: number }> | null;
+  set: Array<{ id: string; name?: string; quantity: number }> | null;
 }
 
 /**
@@ -60,6 +61,7 @@ export const sortChecklistItems = (items: OrderChecklistItem[]): OrderChecklistI
  * @param expandedItems - Об'єкт для накопичення результатів
  * @param visitedSets - Set для відстеження відвіданих SKU (запобігання циклічним посиланням)
  * @param depth - Поточна глибина рекурсії (для безпеки)
+ * @param monolithicCategories - Список назв категорій, які не повинні розгортатися
  */
 const expandProductRecursively = async (
   sku: string,
@@ -67,7 +69,8 @@ const expandProductRecursively = async (
   apiCall: any,
   expandedItems: { [key: string]: OrderChecklistItem },
   visitedSets: Set<string> = new Set(),
-  depth: number = 0
+  depth: number = 0,
+  monolithicCategories: string[] = []
 ): Promise<void> => {
   // Захист від нескінченної рекурсії
   const MAX_DEPTH = 10;
@@ -93,7 +96,41 @@ const expandProductRecursively = async (
 
     // Перевіряємо, чи це комплект
     if (product.set && Array.isArray(product.set) && product.set.length > 0) {
-      // Це комплект - додаємо його до відвіданих і розгортаємо компоненти
+      // 🚀 НОВА ЛОГІКА: Якщо це монолітна категорія, не розгортаємо його далі
+      const categoryIdStr = product.categoryId?.toString();
+      LoggingService.orderAssemblyLog(`📦 Перевірка комплекту: "${product.name}" (SKU: ${sku}), categoryId: ${product.categoryId}, categoryName: "${product.categoryName}", monolithicCategories: [${monolithicCategories.join(', ')}]`);
+      
+      if (categoryIdStr && Array.isArray(monolithicCategories) && monolithicCategories.includes(categoryIdStr)) {
+        LoggingService.orderAssemblyLog(`📦 Монолітний комплект: "${product.name}" (SKU: ${sku}). Рекурсія зупинена.`);
+
+        // Збираємо склад комплекту для відображення комірнику
+        const compositionPromises = product.set
+          .filter(si => si.id)
+          .map(async si => {
+            if (si.name) {
+              return si.name;
+            } else {
+              // Спробуємо отримати назву компонента через API
+              try {
+                const componentResponse = await apiCall(`/api/products/${si.id}`);
+                if (componentResponse.ok) {
+                  const componentData = await componentResponse.json();
+                  return componentData.name || `Товар ${si.id}`;
+                }
+              } catch (error) {
+                console.warn(`Не вдалося отримати назву компонента ${si.id}:`, error);
+              }
+              return `Товар ${si.id} (x${si.quantity})`;
+            }
+          });
+
+        const composition = await Promise.all(compositionPromises);
+
+        addOrUpdateExpandedItem(expandedItems, product, quantity, sku, composition);
+        return;
+      }
+
+      // Це звичайний комплект - розгортаємо компоненти рекурсивно
       const validSetItems = product.set.filter(setItem =>
         setItem && typeof setItem === 'object' && setItem.id && setItem.quantity
       );
@@ -126,7 +163,8 @@ const expandProductRecursively = async (
           apiCall,
           expandedItems,
           new Set(visitedSets), // Створюємо копію Set для кожної гілки рекурсії
-          depth + 1
+          depth + 1,
+          monolithicCategories
         );
       }
 
@@ -135,7 +173,7 @@ const expandProductRecursively = async (
 
     } else {
       // Це звичайний товар (не комплект) - додаємо до результату
-      addOrUpdateExpandedItem(expandedItems, product, quantity, sku);
+      addOrUpdateExpandedItem(expandedItems, product, quantity, sku, undefined);
     }
 
   } catch (error) {
@@ -150,7 +188,8 @@ const addOrUpdateExpandedItem = (
   expandedItems: { [key: string]: OrderChecklistItem },
   product: Product,
   quantity: number,
-  sku: string
+  sku: string,
+  composition?: string[]
 ): void => {
   const itemName = product.name;
 
@@ -158,6 +197,11 @@ const addOrUpdateExpandedItem = (
     // Товар вже є - збільшуємо кількість
     expandedItems[itemName].quantity += quantity;
     expandedItems[itemName].expectedWeight = calculateExpectedWeight(product, expandedItems[itemName].quantity);
+
+    // Оновлюємо склад, якщо він ще не був доданий
+    if (composition && (!expandedItems[itemName].composition || expandedItems[itemName].composition!.length === 0)) {
+      expandedItems[itemName].composition = composition;
+    }
   } else {
     // Додаємо новий товар
     expandedItems[itemName] = {
@@ -169,25 +213,33 @@ const addOrUpdateExpandedItem = (
       type: 'product',
       sku: sku,
       barcode: product.barcode || sku,
-      manualOrder: product.manualOrder
+      manualOrder: product.manualOrder,
+      composition: composition
     };
   }
 
-  LoggingService.orderAssemblyLog(`  ✅ Додано: ${itemName} × ${quantity} (SKU: ${sku})`);
+  LoggingService.orderAssemblyLog(`  ✅ Додано: ${itemName} × ${quantity} (SKU: ${sku})${composition ? ' [M]' : ''}`);
 };
 
 /**
  * Розгортає набори товарів в окремі компоненти (з підтримкою вкладених комплектів)
+ * @param orderItems - Товари замовлення
+ * @param apiCall - Функція для API викликів
+ * @param monolithicCategoryIds - Список ID категорій, які не повинні розгортатися
  */
-export const expandProductSets = async (orderItems: any[], apiCall: any): Promise<OrderChecklistItem[]> => {
+export const expandProductSets = async (
+  orderItems: any[],
+  apiCall: any,
+  monolithicCategoryIds: number[] = []
+): Promise<OrderChecklistItem[]> => {
   const expandedItems: { [key: string]: OrderChecklistItem } = {};
 
-  LoggingService.orderAssemblyLog(`🚀 Початок розгортання ${orderItems.length} товарів замовлення...`);
+  LoggingService.orderAssemblyLog(`🚀 Початок розгортання ${orderItems.length} товарів замовлення... (Монолітні категорії: ${monolithicCategoryIds.join(', ') || 'немає'})`);
 
   for (const item of orderItems) {
     try {
       LoggingService.orderAssemblyLog(`\n📦 Обробка: ${item.productName} (SKU: ${item.sku}) × ${item.quantity}`);
-      
+
       // Рекурсивно розгортаємо кожен товар замовлення
       await expandProductRecursively(
         item.sku,
@@ -195,7 +247,8 @@ export const expandProductSets = async (orderItems: any[], apiCall: any): Promis
         apiCall,
         expandedItems,
         new Set(), // Новий Set для кожного товару замовлення
-        0 // Починаємо з глибини 0
+        0, // Починаємо з глибини 0
+        monolithicCategoryIds.map(id => id.toString()) // Конвертуємо ID категорій в строки для порівняння
       );
 
     } catch (error) {

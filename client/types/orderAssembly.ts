@@ -15,6 +15,7 @@ export interface OrderChecklistItem {
   sku?: string; // SKU товару для пошуку по штрих-коду
   barcode?: string; // Штрих-код товару
   manualOrder?: number; // Ручне сортування
+  composition?: string[]; // Склад монолітного комплекту (назви компонентів)
 }
 
 export interface OrderForAssembly {
