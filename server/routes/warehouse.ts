@@ -153,7 +153,7 @@ async function createStockMovementHistory(
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { status, warehouse, page = 1, limit = 20 } = req.query;
-    
+
     const where: any = {};
     if (status) where.status = status;
     if (warehouse) {
@@ -164,7 +164,7 @@ router.get('/', authenticateToken, async (req, res) => {
     }
 
     const skip = (Number(page) - 1) * Number(limit);
-    
+
     const [movements, total] = await Promise.all([
       prisma.warehouseMovement.findMany({
         where,
@@ -196,7 +196,7 @@ router.get('/drafts', authenticateToken, async (req, res) => {
   try {
     console.log('🏪 [Warehouse] GET /drafts - запрос черновиков...');
     const userId = (req as any).user?.userId || (req as any).user?.id;
-    
+
     if (!userId) {
       console.error('❌ [Warehouse] Missing userId from authentication token');
       return res.status(401).json({ error: 'User ID not found in token' });
@@ -336,7 +336,7 @@ router.get('/inventory/products', authenticateToken, async (req, res) => {
           const stock: Record<string, number> = product.stockBalanceByStock
             ? JSON.parse(product.stockBalanceByStock)
             : {};
-          const smallStockBalance = stock['2'] ?? 0;
+          const smallStockBalance = stock['1'] ?? 0;
           if (smallStockBalance <= 0) return null;
 
           // Якщо portionsPerBox > 1 — порційний товар; 1 — штучний
@@ -369,13 +369,13 @@ router.get('/inventory/products', authenticateToken, async (req, res) => {
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Проверяем наличие и валидность ID
     if (!id || isNaN(Number(id))) {
       console.error('❌ [Warehouse] Invalid ID parameter:', id);
       return res.status(400).json({ error: 'Valid movement ID is required' });
     }
-    
+
     const movement = await prisma.warehouseMovement.findUnique({
       where: { id: Number(id) }
     });
@@ -447,7 +447,7 @@ router.post('/', authenticateToken, async (req, res) => {
   try {
     console.log('🏪 [Warehouse] POST / - создание нового документа...');
     console.log('🏪 [Warehouse] Request body:', JSON.stringify(req.body, null, 2));
-    
+
     const { items, deviations, sourceWarehouse, destinationWarehouse, notes } = req.body;
     const userId = (req as any).user?.userId || (req as any).user?.id;
 
@@ -666,7 +666,7 @@ router.post('/:id/send', authenticateToken, async (req, res) => {
 router.get('/stock/history', authenticateToken, async (req, res) => {
   try {
     const { sku, warehouse, movementType, startDate, endDate, page = 1, limit = 50 } = req.query;
-    
+
     const where: any = {};
     if (sku) where.productSku = sku;
     if (warehouse) where.warehouse = warehouse;
@@ -678,7 +678,7 @@ router.get('/stock/history', authenticateToken, async (req, res) => {
     }
 
     const skip = (Number(page) - 1) * Number(limit);
-    
+
     const [history, total] = await Promise.all([
       prisma.stockMovementHistory.findMany({
         where,
@@ -708,7 +708,7 @@ router.get('/stock/history', authenticateToken, async (req, res) => {
 router.get('/stock/current', authenticateToken, async (req, res) => {
   try {
     const { warehouse } = req.query;
-    
+
     const where: any = {};
     if (warehouse) where.warehouse = warehouse;
 

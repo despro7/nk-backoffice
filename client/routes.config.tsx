@@ -187,42 +187,6 @@ export const appRoutes: AppRoute[] = [
     },
   },
   {
-    path: '/settings/design',
-    component: DesignSystem,
-    title: 'Дизайн-система',
-    pageTitle: 'Дизайн-система | NK Backoffice',
-    navLabel: 'Дизайн система',
-    icon: <DynamicIcon name="palette" size={20} className="max-w-full max-h-full" />,
-    inNav: true,
-    parent: 'settings',
-    order: 5,
-    roles: [ROLES.ADMIN] // Тільки admin
-  },
-  {
-    path: '/settings/test-auth',
-    component: SettingsTestAuth,
-    title: 'Тест системи авторизації (JWT)',
-    pageTitle: 'Тестова сторінка | NK Backoffice',
-    navLabel: 'Тест авторизації',
-    icon: <DynamicIcon name="user-lock" size={20} className="max-w-full max-h-full" />,
-    inNav: true,
-    parent: 'settings',
-    order: 6,
-    roles: [ROLES.ADMIN] // Тільки admin
-  },
-  {
-    path: '/settings/product-sets',
-    component: SettingsProductSets,
-    title: 'Товари і комплекти з Dilovod',
-    pageTitle: 'Товари і комплекти | NK Backoffice',
-    navLabel: 'Товари і комплекти',
-    icon: <DynamicIcon name="shopping-bag" size={20} className="max-w-full max-h-full" />,
-    inNav: true,
-    parent: 'settings',
-    order: 2,
-    minRole: ROLES.STOREKEEPER  // storekeeper і вище
-  },
-  {
     path: '/settings/order-assembly',
     component: SettingsOrderAssembly,
     title: 'Налаштування комплектування замовлень',
@@ -271,6 +235,42 @@ export const appRoutes: AppRoute[] = [
     minRole: ROLES.SHOP_MANAGER // shop-manager і вище (admin, boss, shop-manager)
   },
   {
+    path: '/settings/design',
+    component: DesignSystem,
+    title: 'Дизайн-система',
+    pageTitle: 'Дизайн-система | NK Backoffice',
+    navLabel: 'Дизайн система',
+    icon: <DynamicIcon name="palette" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 20,
+    roles: [ROLES.ADMIN] // Тільки admin
+  },
+  {
+    path: '/settings/test-auth',
+    component: SettingsTestAuth,
+    title: 'Тест системи авторизації (JWT)',
+    pageTitle: 'Тестова сторінка | NK Backoffice',
+    navLabel: 'Тест авторизації',
+    icon: <DynamicIcon name="user-lock" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 25,
+    roles: [ROLES.ADMIN] // Тільки admin
+  },
+  {
+    path: '/product-sets',
+    component: SettingsProductSets,
+    title: 'Товари і комплекти з Dilovod',
+    pageTitle: 'Товари і комплекти | NK Backoffice',
+    navLabel: 'Товари і комплекти',
+    icon: <DynamicIcon name="shopping-bag" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    // parent: 'settings',
+    order: 9,
+    minRole: ROLES.STOREKEEPER  // storekeeper і вище
+  },
+  {
     path: '/settings/admin',
     component: SettingsAdmin,
     title: 'Адмінські налаштування',
@@ -279,7 +279,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="shield" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     parent: 'settings',
-    order: 9,
+    order: 10,
     roles: [ROLES.ADMIN] // Тільки admin
   },
   {
@@ -290,7 +290,6 @@ export const appRoutes: AppRoute[] = [
     navLabel: 'Тест COM порту',
     icon: <DynamicIcon name="test-tube" size={20} />,
     inNav: false, // Не показувати в навігації
-    order: 10,
     minRole: ROLES.STOREKEEPER // storekeeper і вище
   },
 ];
