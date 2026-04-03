@@ -302,16 +302,17 @@ export class DilovodService {
             .filter(sku => sku.length > 0);
 
           console.log(`📋 Завантажено ${whitelistSkus.length} SKU з whitelist:`, whitelistSkus);
-          skus.push(...whitelistSkus);
+          
+          // Додаємо тільки унікальні SKU (через Set для уникнення дублів)
+          const uniqueSkusSet = new Set(skus);
+          whitelistSkus.forEach(sku => uniqueSkusSet.add(sku));
+          skus = Array.from(uniqueSkusSet);
         }
       } catch (error) {
         console.warn('Не вдалося завантажити SKU whitelist з БД:', error);
       }
 
       console.log(`✅ Отримано ${skus.length} SKU для синхронізації`);
-      console.log('📋 SKU:', skus); //skus.slice(0, 10)
-      // console.log(`... і ще ${skus.length - 10}`);
-      // }
 
       // Крок 2: Отримання інформації про товари та комплекти з Dilovod
       console.log('\n📋 Крок 2: Отримання інформації про товари та комплекти з Dilovod...');
@@ -469,7 +470,9 @@ export class DilovodService {
   async getGoodsInfoWithSetsOptimized(skuList: string[], signal?: AbortSignal): Promise<DilovodProduct[]> {
     try {
       console.log('Отримуємо інформацію про товари та комплекти з Dilovod...');
-      console.log('SKU для обробки:', skuList);
+      console.log('📋 SKU для обробки:', skuList.slice(0, 10));
+      console.log(`... і ще ${skuList.length - 10}`);
+      
 
       // Перевіряємо, чи було скасування перед викликом зовнішнього API
       if (signal?.aborted) {

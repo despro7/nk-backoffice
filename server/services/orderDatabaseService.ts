@@ -1198,10 +1198,13 @@ export class OrderDatabaseService {
 
               // Создаем запись истории только для значимых изменений
               if (changes.includes('ttn') || changes.includes('items')) {
+                // Використовуємо поточний статус замовлення, якщо новий статус не передано
+                const statusForHistory = orderData.status || String(existingOrder.status);
+                
                 await this.createOrderHistory(
                   existingOrder.id,
-                  orderData.status,
-                  orderData.statusText,
+                  statusForHistory,
+                  orderData.statusText || existingOrder.statusText || '',
                   'salesdrive:auto_sync',
                   undefined,
                   `Smart batch update: ${changes.join(', ')}`

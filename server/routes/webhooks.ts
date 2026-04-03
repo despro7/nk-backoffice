@@ -104,7 +104,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
         }
 
         if (existingOrder) {
-          const newStatus = webhookData.statusId;
+          const newStatus = webhookData.statusId.toString();
 
           // Для існуючого замовлення використовуємо дані з webhook, якщо вони є, інакше з БД
           orderDetails = {
@@ -249,7 +249,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           orderDetails = {
             id: parseInt(webhookData.id) || 0, // Використовуємо внутрішній ID з webhook
             orderNumber: externalId, // Використовуємо externalId з префіксом SD (якщо додано)
-            status: webhookData.statusId || '1', // Використовуємо статус з webhook, або '1' (Новий) за замовчуванням
+            status: webhookData.statusId?.toString() || '1', // Використовуємо статус з webhook, або '1' (Новий) за замовчуванням
             statusText: 'Новий', // За замовчуванням
             items: items,
             customerName: customerName || 'Невідомий клієнт',

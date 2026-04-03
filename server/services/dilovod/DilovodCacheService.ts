@@ -18,15 +18,8 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { logServer } from '../../lib/utils.js';
 
 const prisma = new PrismaClient();
-
-// Wrapper для логування з timestamp
-const console.log = (message: string, data?: any) => {
-  const timestamp = new Date().toISOString();
-  logServer(`[${timestamp}] ${message}`, data);
-};
 
 export type CacheType = 'firms' | 'accounts' | 'storages' | 'paymentForms' | 'tradeChanels' | 'deliveryMethods';
 
