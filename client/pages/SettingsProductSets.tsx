@@ -146,6 +146,10 @@ const ProductSets: React.FC = () => {
   const [isManualSyncModalOpen, setIsManualSyncModalOpen] = useState(false);
   const [manualSkuList, setManualSkuList] = useState('');
   const [manualSyncing, setManualSyncing] = useState(false);
+  const manualSyncAbortController = useRef<AbortController | null>(null);
+
+  // AbortController для основної синхронізації
+  const syncAbortController = useRef<AbortController | null>(null);
 
   // Стан для модалки SKU whitelist
   const [isSkuWhitelistModalOpen, setIsSkuWhitelistModalOpen] = useState(false);
@@ -1105,7 +1109,7 @@ const ProductSets: React.FC = () => {
       case 'lastSyncAt':
         return (
           <span className="block text-sm text-gray-500 max-w-[80px]">
-            {formatRelativeDate(product.lastSyncAt)}
+            <Tooltip color="secondary" content={formatRelativeDate(product.lastSyncAt, { maxRelativeHours: 0 })}>{formatRelativeDate(product.lastSyncAt)}</Tooltip>
           </span>
         );
 
@@ -1217,6 +1221,38 @@ const ProductSets: React.FC = () => {
 
   // Синхронізація товарів з Dilovod
   const syncProductsWithDilovod = async () => {
+    // Якщо синхронізація вже йде, скасовуємо її
+    if (syncStatus?.isRunning && syncAbortController.current) {
+      console.log('Скасовуємо синхронізацію товарів...');
+
+      // Скасовуємо на клієнті
+      syncAbortController.current.abort();
+
+      // Також надсилаємо запит на сервер для скасування
+      try {
+        await fetch('/api/products/sync/cancel', {
+          method: 'POST',
+          credentials: 'include'
+        });
+      } catch (error) {
+        console.warn('Не вдалося надіслати запит на скасування на сервер:', error);
+      }
+
+      setSyncStatus({
+        isRunning: false,
+        message: 'Синхронізацію скасовано користувачем',
+        syncedProducts: 0,
+        syncedSets: 0,
+        errors: []
+      });
+      addToast({
+        title: 'Синхронізацію скасовано',
+        description: 'Синхронізацію товарів було перервано',
+        color: 'warning'
+      });
+      return;
+    }
+
     if (!isAdmin()) {
       setSyncStatus({
         isRunning: false,
@@ -1227,6 +1263,9 @@ const ProductSets: React.FC = () => {
       });
       return;
     }
+
+    // Створюємо новий AbortController для цієї синхронізації
+    syncAbortController.current = new AbortController();
 
     setSyncStatus({
       isRunning: true,
@@ -1239,7 +1278,8 @@ const ProductSets: React.FC = () => {
     try {
       const response = await fetch('/api/products/sync', {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
+        signal: syncAbortController.current.signal
       });
 
       if (response.ok) {
@@ -1250,6 +1290,13 @@ const ProductSets: React.FC = () => {
           syncedProducts: result.syncedProducts,
           syncedSets: result.syncedSets,
           errors: result.errors || []
+        });
+
+        // Показуємо toast з результатом синхронізації
+        addToast({
+          title: 'Синхронізацію завершено',
+          description: result.message,
+          color: result.errors?.length > 0 ? 'warning' : 'success'
         });
 
         // Оновлюємо список товарів після синхронізації
@@ -1264,15 +1311,36 @@ const ProductSets: React.FC = () => {
           syncedSets: 0,
           errors: [error.error || 'Невідома помилка']
         });
+
+        addToast({
+          title: 'Помилка синхронізації',
+          description: error.error || 'Невідома помилка',
+          color: 'danger'
+        });
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Перевіряємо, чи це скасування запиту
+      if (error.name === 'AbortError') {
+        console.log('Синхронізація товарів була скасована');
+        return;
+      }
+
+      const errorMessage = error instanceof Error ? error.message : 'Невідома помилка';
       setSyncStatus({
         isRunning: false,
-        message: `Помилка мережі: ${error instanceof Error ? error.message : 'Невідома помилка'}`,
+        message: `Помилка мережі: ${errorMessage}`,
         syncedProducts: 0,
         syncedSets: 0,
-        errors: [error instanceof Error ? error.message : 'Невідома помилка']
+        errors: [errorMessage]
       });
+
+      addToast({
+        title: 'Помилка мережі',
+        description: errorMessage,
+        color: 'danger'
+      });
+    } finally {
+      syncAbortController.current = null;
     }
   };
 
@@ -1440,6 +1508,26 @@ const ProductSets: React.FC = () => {
   // Ручна синхронізація за списком SKU
   const [manualSyncEnabled, setManualSyncEnabled] = useState(false);
   const syncProductsManual = async () => {
+    // Якщо синхронізація вже йде, скасовуємо її
+    if (manualSyncing && manualSyncAbortController.current) {
+      console.log('Скасовуємо ручну синхронізацію товарів...');
+      manualSyncAbortController.current.abort();
+      setManualSyncing(false);
+      setSyncStatus({
+        isRunning: false,
+        message: 'Синхронізацію скасовано користувачем',
+        syncedProducts: 0,
+        syncedSets: 0,
+        errors: []
+      });
+      addToast({
+        title: 'Синхронізацію скасовано',
+        description: 'Ручну синхронізацію товарів було перервано',
+        color: 'warning'
+      });
+      return;
+    }
+
     if (!isAdmin()) {
       addToast({
         title: 'Помилка',
@@ -1464,6 +1552,9 @@ const ProductSets: React.FC = () => {
       return;
     }
 
+    // Створюємо новий AbortController для цієї синхронізації
+    manualSyncAbortController.current = new AbortController();
+
     setManualSyncing(true);
     setSyncStatus({
       isRunning: true,
@@ -1480,7 +1571,8 @@ const ProductSets: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ skus }),
-        credentials: 'include'
+        credentials: 'include',
+        signal: manualSyncAbortController.current.signal
       });
 
       if (response.ok) {
@@ -1522,7 +1614,13 @@ const ProductSets: React.FC = () => {
           color: 'danger'
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Перевіряємо, чи це скасування запиту
+      if (error.name === 'AbortError') {
+        console.log('Ручна синхронізація товарів була скасована');
+        return;
+      }
+
       const errorMessage = error instanceof Error ? error.message : 'Невідома помилка';
       setSyncStatus({
         isRunning: false,
@@ -1539,6 +1637,7 @@ const ProductSets: React.FC = () => {
       });
     } finally {
       setManualSyncing(false);
+      manualSyncAbortController.current = null;
     }
   };
 
@@ -1985,13 +2084,13 @@ const ProductSets: React.FC = () => {
 
                   <Button
                     onPress={syncProductsWithDilovod}
-                    disabled={syncStatus?.isRunning || !isAdmin()}
-                    color="primary"
+                    disabled={!isAdmin()}
+                    color={syncStatus?.isRunning ? 'danger' : 'primary'}
                   >
                     {syncStatus?.isRunning ? (
                       <>
-                        <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                        Синхронізація...
+                        <DynamicIcon name="x" size={14} />
+                        Скасувати синхронізацію
                       </>
                     ) : (
                       <>
@@ -2377,17 +2476,17 @@ const ProductSets: React.FC = () => {
               onPress={() => setIsManualSyncModalOpen(false)}
               disabled={manualSyncing}
             >
-              Скасувати
+              {manualSyncing ? 'Закрити' : 'Скасувати'}
             </Button>
             <Button 
               color="primary" 
               onPress={syncProductsManual}
-              disabled={manualSyncing || manualSkuList.trim().length === 0}
+              disabled={manualSkuList.trim().length === 0}
             >
               {manualSyncing ? (
                 <>
-                  <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                  Синхронізація...
+                  <DynamicIcon name="x" size={14} />
+                  Скасувати синхронізацію
                 </>
               ) : (
                 <>

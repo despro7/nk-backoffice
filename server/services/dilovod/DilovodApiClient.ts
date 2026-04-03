@@ -98,7 +98,7 @@ export class DilovodApiClient {
   }
 
   // Основний метод для виконання запитів до API
-  async makeRequest<T = any>(request: DilovodApiRequest): Promise<T> {
+  async makeRequest<T = any>(request: DilovodApiRequest, signal?: AbortSignal): Promise<T> {
     try {
       // Гарантуємо, що конфігурація завантажена перед першим запитом
       if (this.ready) {
@@ -109,6 +109,11 @@ export class DilovodApiClient {
       if (!this.apiUrl || !this.apiKey) {
         const errors = validateDilovodConfig(this.config);
         throw new Error(`Dilovod API не налаштовано: ${errors.join(', ')}`);
+      }
+
+      // Перевіряємо сигнал скасування перед відправкою запиту
+      if (signal?.aborted) {
+        throw new DOMException('Запит скасовано', 'AbortError');
       }
       
       console.log('Відправляємо запит до Dilovod API:', {
@@ -122,6 +127,7 @@ export class DilovodApiClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(request),
+        signal,
       });
 
       if (!response.ok) {
@@ -136,7 +142,7 @@ export class DilovodApiClient {
       }
 
       const data = await response.json() as T;
-      console.log('Отримано відповідь від Dilovod API:', data);
+      // console.log('Отримано відповідь від Dilovod API:', data);
 
       return data;
     } catch (error) {
@@ -147,7 +153,7 @@ export class DilovodApiClient {
   }
 
   // Отримання товарів з цінами
-  async getGoodsWithPrices(skuList: string[]): Promise<DilovodPricesResponse[]> {
+  async getGoodsWithPrices(skuList: string[], signal?: AbortSignal): Promise<DilovodPricesResponse[]> {
     await this.ensureReady();
     const request: DilovodApiRequest = {
       version: "0.25",
@@ -176,12 +182,12 @@ export class DilovodApiClient {
       }
     };
 
-    const resp = await this.makeRequest<any>(request);
+    const resp = await this.makeRequest<any>(request, signal);
     return this.normalizeToArray<DilovodPricesResponse>(resp);
   }
 
   // Отримання товарів з каталогу
-  async getGoodsFromCatalog(skuList: string[]): Promise<DilovodGoodsResponse[]> {
+  async getGoodsFromCatalog(skuList: string[], signal?: AbortSignal): Promise<DilovodGoodsResponse[]> {
     await this.ensureReady();
     const request: DilovodApiRequest = {
       version: "0.25",
@@ -205,7 +211,7 @@ export class DilovodApiClient {
       }
     };
 
-    const resp = await this.makeRequest<any>(request);
+    const resp = await this.makeRequest<any>(request, signal);
     return this.normalizeToArray<DilovodGoodsResponse>(resp);
   }
 

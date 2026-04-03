@@ -21,7 +21,7 @@ import type {
 } from '../../../shared/types/dilovod.js';
 import { normalizePhoneNumber } from '../../../shared/utils/phoneNormalizer.js';
 import { getDilovodConfigFromDB } from './DilovodUtils.js';
-import { logWithTimestamp, DilovodService } from './index.js';
+import { DilovodService } from './index.js';
 import { orderDatabaseService } from '../orderDatabaseService.js';
 import { dilovodService } from './DilovodService.js';
 
@@ -59,7 +59,7 @@ export class DilovodExportBuilder {
     payload: DilovodExportPayload;
     warnings: string[]
   }> {
-    logWithTimestamp(`📦 Початок формування payload для замовлення ${orderId}`);
+    console.log(`📦 Початок формування payload для замовлення ${orderId}`);
 
     // Контекст побудови
     const context: ExportBuildContext = {
@@ -85,7 +85,7 @@ export class DilovodExportBuilder {
       if (!isChannelConfigured) {
         const channelName = this.getChannelDisplayName(channelId);
         const errorMessage = `Експорт заблоковано: канал "${channelName}" (ID: ${channelId}) не налаштований для експорту через Dilovod. Цей канал не потребує ручного експорту або вивантажується автоматично іншим способом.`;
-        logWithTimestamp(`❌ ${errorMessage}`);
+        console.log(`❌ ${errorMessage}`);
         throw new Error(errorMessage);
       }
 
@@ -102,7 +102,7 @@ export class DilovodExportBuilder {
       const validation = await this.validateCriticalData(context, header, channelMapping, options);
       if (!validation.isValid) {
         const errorMessage = `Експорт заблоковано через критичні помилки:\n${validation.criticalErrors.join('\n')}`;
-        logWithTimestamp(`❌ ЕКСПОРТ ЗАБЛОКОВАНО: ${validation.criticalErrors.length} критичних помилок`);
+        console.log(`❌ ЕКСПОРТ ЗАБЛОКОВАНО: ${validation.criticalErrors.length} критичних помилок`);
         throw new Error(errorMessage);
       }
 
@@ -136,12 +136,12 @@ export class DilovodExportBuilder {
         tableParts
       };
 
-      logWithTimestamp(`✅ Payload успішно сформовано. Попереджень: ${context.warnings.length}`);
+      console.log(`✅ Payload успішно сформовано. Попереджень: ${context.warnings.length}`);
 
       return { payload, warnings: context.warnings };
 
     } catch (error) {
-      logWithTimestamp(`❌ Помилка формування payload: ${error instanceof Error ? error.message : String(error)}`);
+      console.log(`❌ Помилка формування payload: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }
@@ -153,7 +153,7 @@ export class DilovodExportBuilder {
     payload: DilovodExportPayload;
     warnings: string[];
   }> {
-    logWithTimestamp(`📦 Початок формування payload відвантаження для замовлення ${orderId} (baseDoc: ${baseDocId})`);
+    console.log(`📦 Початок формування payload відвантаження для замовлення ${orderId} (baseDoc: ${baseDocId})`);
 
     const context: ExportBuildContext = {
       order: null,
@@ -187,7 +187,7 @@ export class DilovodExportBuilder {
 
       for (const field of FIELDS_TO_REMOVE_FOR_SALE) {
         if (Object.prototype.hasOwnProperty.call(baseHeaderForSale, field)) {
-          logWithTimestamp(`  ⚠️  Видаляємо поле ${field} з header для documents.sale (не підтримується)`);
+          console.log(`  ⚠️  Видаляємо поле ${field} з header для documents.sale (не підтримується)`);
           delete baseHeaderForSale[field];
         }
       }
@@ -200,14 +200,14 @@ export class DilovodExportBuilder {
         const utcReadyDate = new Date(context.order.readyToShipAt);
         const readyDate = new Date(utcReadyDate.getTime() - utcReadyDate.getTimezoneOffset() * 60000);
         saleDate = readyDate.toISOString().replace('T', ' ').substring(0, 19);
-        logWithTimestamp(`  📅 Використовуємо дату готовності до відправки: ${saleDate}`);
+        console.log(`  📅 Використовуємо дату готовності до відправки: ${saleDate}`);
       } else {
         // Fallback на поточну дату, якщо readyToShipAt не встановлено
         const utcNow = new Date();
         const localNow = new Date(utcNow.getTime() - utcNow.getTimezoneOffset() * 60000);
         saleDate = localNow.toISOString().replace('T', ' ').substring(0, 19);
         context.warnings.push('Дата готовності до відправки (readyToShipAt) не встановлена, використовується поточна дата');
-        logWithTimestamp(`  ⚠️  readyToShipAt не встановлено, використовуємо поточну дату: ${saleDate}`);
+        console.log(`  ⚠️  readyToShipAt не встановлено, використовуємо поточну дату: ${saleDate}`);
       }
 
       const header: DilovodExportHeader = {
@@ -234,12 +234,12 @@ export class DilovodExportBuilder {
         tableParts
       };
 
-      logWithTimestamp(`✅ Payload відвантаження успішно сформовано. Попереджень: ${context.warnings.length}`);
+      console.log(`✅ Payload відвантаження успішно сформовано. Попереджень: ${context.warnings.length}`);
 
       return { payload, warnings: context.warnings };
 
     } catch (error) {
-      logWithTimestamp(`❌ Помилка формування payload відвантаження: ${error instanceof Error ? error.message : String(error)}`);
+      console.log(`❌ Помилка формування payload відвантаження: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }
@@ -251,7 +251,7 @@ export class DilovodExportBuilder {
     header: DilovodExportHeader;
     channelMapping: DilovodChannelMapping | null;
   }> {
-    logWithTimestamp(`  📋 Формування заголовка документа...`);
+    console.log(`  📋 Формування заголовка документа...`);
 
     const { order, settings } = context;
 
@@ -335,7 +335,7 @@ export class DilovodExportBuilder {
       deliveryRemark_forDel: deliveryAddress                // Адреса доставки
     };
 
-    logWithTimestamp(`  ✅ Заголовок сформовано для замовлення ${header.number}`);
+    console.log(`  ✅ Заголовок сформовано для замовлення ${header.number}`);
 
     return { header, channelMapping };
   }
@@ -356,11 +356,11 @@ export class DilovodExportBuilder {
         deliveryAddress: this.extractDeliveryAddress(order)
       };
 
-      logWithTimestamp(`  👤 Пошук/створення контрагента: ${customerData.customerName}, ${customerData.customerPhone}`);
+      console.log(`  👤 Пошук/створення контрагента: ${customerData.customerName}, ${customerData.customerPhone}`);
 
       // Якщо передано personId у options — використовуємо його напряму
       if (options?.personId) {
-        logWithTimestamp(`  🔁 Використовуємо переданий personId override: ${options.personId}`);
+        console.log(`  🔁 Використовуємо переданий personId override: ${options.personId}`);
         return {
           id: options.personId,
           code: options.personId,
@@ -392,7 +392,7 @@ export class DilovodExportBuilder {
         } else {
           warnings.push(`Контрагент створено: ${dilovodPerson.name} (без телефону)`);
         }
-        logWithTimestamp(`  ✅ Контрагент створено: ${dilovodPerson.name} (ID: ${dilovodPerson.id})`);
+        console.log(`  ✅ Контрагент створено: ${dilovodPerson.name} (ID: ${dilovodPerson.id})`);
       } else if (!dilovodPerson.id && options?.dryRun) {
         // dry-run mode: person not found, but we intentionally skipped creation
         if (customerData.customerPhone) {
@@ -400,14 +400,14 @@ export class DilovodExportBuilder {
         } else {
           warnings.push(`Контрагент не знайдено (dry-run): ${dilovodPerson.name} (без телефону)`);
         }
-        logWithTimestamp(`  ⚠️  Контрагент не знайдено в dry-run: ${dilovodPerson.name}`);
+        console.log(`  ⚠️  Контрагент не знайдено в dry-run: ${dilovodPerson.name}`);
       } else {
         if (customerData.customerPhone) {
           warnings.push(`Контрагент знайдено: ${dilovodPerson.name} (${customerData.customerPhone})`);
         } else {
           warnings.push(`Контрагент знайдено: ${dilovodPerson.name} (без телефону)`);
         }
-        logWithTimestamp(`  ✅ Контрагент знайдено: ${dilovodPerson.name} (ID: ${dilovodPerson.id})`);
+        console.log(`  ✅ Контрагент знайдено: ${dilovodPerson.name} (ID: ${dilovodPerson.id})`);
       }
 
 
@@ -415,7 +415,7 @@ export class DilovodExportBuilder {
 
     } catch (error) {
       const errorMessage = `Помилка роботи з контрагентом: ${error instanceof Error ? error.message : String(error)}`;
-      logWithTimestamp(`  ❌ ${errorMessage}`);
+      console.log(`  ❌ ${errorMessage}`);
       warnings.push(errorMessage);
 
       // У разі помилки використовуємо fallback з мок-даними
@@ -428,7 +428,7 @@ export class DilovodExportBuilder {
         personType: DILOVOD_CONSTANTS.PERSON_TYPE_INDIVIDUAL
       };
 
-      logWithTimestamp(`  ⚠️ Використовуємо fallback контрагента: ${fallbackPerson.name}`);
+      console.log(`  ⚠️ Використовуємо fallback контрагента: ${fallbackPerson.name}`);
       warnings.push('Використано резервного контрагента (без id/code) через помилку API');
 
       return fallbackPerson;
@@ -439,7 +439,7 @@ export class DilovodExportBuilder {
   * Побудувати табличні частини (товари) - використовуємо прив'язку до Dilovod (products.dilovodId)
    */
   private async buildTableParts(context: ExportBuildContext): Promise<DilovodExportTableParts> {
-    logWithTimestamp(`  📦 Формування табличних частин (товари)...`);
+    console.log(`  📦 Формування табличних частин (товари)...`);
 
     const { order, warnings } = context;
     const tpGoods: DilovodTablePartGood[] = [];
@@ -484,14 +484,14 @@ export class DilovodExportBuilder {
           amountCur: amount
         });
 
-        logWithTimestamp(`    ✅ Товар #${rowNum}: SKU "${sku}" → good_id "${(product as any).dilovodId}", к-ть: ${qty}, ціна: ${price}`);
+        console.log(`    ✅ Товар #${rowNum}: SKU "${sku}" → good_id "${(product as any).dilovodId}", к-ть: ${qty}, ціна: ${price}`);
         rowNum++;
       } catch (error) {
         warnings.push(`Помилка обробки товару "${item.productName}": ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
-    logWithTimestamp(`  ✅ Оброблено ${tpGoods.length} з ${order.items.length} товарів`);
+    console.log(`  ✅ Оброблено ${tpGoods.length} з ${order.items.length} товарів`);
 
     return { tpGoods };
   }
@@ -500,7 +500,7 @@ export class DilovodExportBuilder {
    * Завантажити замовлення з бази даних
    */
   private async loadOrder(orderId: string): Promise<any> {
-    logWithTimestamp(`  📥 Завантаження замовлення ${orderId}...`);
+    console.log(`  📥 Завантаження замовлення ${orderId}...`);
 
     // Спочатку пробуємо знайти за точним ID (якщо orderId - число)
     let order = null;
@@ -535,7 +535,7 @@ export class DilovodExportBuilder {
       rawData: order.rawData ? JSON.parse(order.rawData) : {}
     };
 
-    logWithTimestamp(`  ✅ Замовлення завантажено: ${parsedOrder.orderNumber}, товарів: ${parsedOrder.items.length}, канал: ${parsedOrder.sajt}`);
+    console.log(`  ✅ Замовлення завантажено: ${parsedOrder.orderNumber}, товарів: ${parsedOrder.items.length}, канал: ${parsedOrder.sajt}`);
 
     return parsedOrder;
   }
@@ -544,7 +544,7 @@ export class DilovodExportBuilder {
    * Завантажити налаштування Dilovod
    */
   private async loadSettings(): Promise<DilovodSettings> {
-    logWithTimestamp(`  ⚙️  Завантаження налаштувань Dilovod...`);
+    console.log(`  ⚙️  Завантаження налаштувань Dilovod...`);
 
     const config = await getDilovodConfigFromDB();
 
@@ -585,7 +585,7 @@ export class DilovodExportBuilder {
       liqpayCommission: false
     };
 
-    logWithTimestamp(`  ✅ Налаштування завантажено. Склад: ${settings.storageId}, Фірма: ${settings.defaultFirmId}`);
+    console.log(`  ✅ Налаштування завантажено. Склад: ${settings.storageId}, Фірма: ${settings.defaultFirmId}`);
 
     return settings;
   }
@@ -594,7 +594,7 @@ export class DilovodExportBuilder {
    * Завантажити довідники (рахунки та фірми) з Dilovod
    */
   private async loadDirectories(): Promise<ExportBuildContext['directories']> {
-    logWithTimestamp(`  📚 Завантаження довідників Dilovod...`);
+    console.log(`  📚 Завантаження довідників Dilovod...`);
 
     try {
       const dilovodService = new DilovodService();
@@ -628,7 +628,7 @@ export class DilovodExportBuilder {
       };
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      logWithTimestamp(
+      console.log(
         `  ❌ Критична помилка завантаження довідників Dilovod: ${errMsg}. ` +
         `Експорт може бути заблокований або виконаний з неповними даними. ` +
         `Оновіть кеш довідників через "Керування кешем Dilovod" → "Оновити всі довідники".`
@@ -656,7 +656,7 @@ export class DilovodExportBuilder {
       warnings.push('Мапінг каналів продажів не налаштовано. Використовуються дефолтні значення.');
     }
 
-    logWithTimestamp(`  ✅ Валідація налаштувань пройдена`);
+    console.log(`  ✅ Валідація налаштувань пройдена`);
   }
 
   /**
@@ -667,7 +667,7 @@ export class DilovodExportBuilder {
     const { order, settings, directories, warnings } = context;
     const criticalErrors: string[] = [];
 
-    logWithTimestamp(`  🔍 Критична валідація даних експорту...`);
+    console.log(`  🔍 Критична валідація даних експорту...`);
 
     // Отримуємо зрозумілі назви
     const channelName = this.getChannelDisplayName(order.sajt);
@@ -716,7 +716,7 @@ export class DilovodExportBuilder {
       
       // Логування для готівкових операцій
       if (isCashPayment) {
-        logWithTimestamp(`  💵 Готівкова операція - рахунок не потрібен`);
+        console.log(`  💵 Готівкова операція - рахунок не потрібен`);
       }
     }
 
@@ -756,12 +756,12 @@ export class DilovodExportBuilder {
     const isValid = criticalErrors.length === 0;
 
     if (!isValid) {
-      logWithTimestamp(`  ❌ Критичні помилки валідації (${criticalErrors.length}):`);
+      console.log(`  ❌ Критичні помилки валідації (${criticalErrors.length}):`);
       criticalErrors.forEach((error, index) => {
-        logWithTimestamp(`     ${index + 1}. ${error}`);
+        console.log(`     ${index + 1}. ${error}`);
       });
     } else {
-      logWithTimestamp(`  ✅ Критична валідація пройдена успішно`);
+      console.log(`  ✅ Критична валідація пройдена успішно`);
     }
 
     return { isValid, criticalErrors };
@@ -800,11 +800,11 @@ export class DilovodExportBuilder {
       if (directories?.tradeChanels && directories.tradeChanels.length > 0) {
         const mappedChannel = directories.tradeChanels.find(ch => ch.id === configuredId);
         if (mappedChannel) {
-          logWithTimestamp(`  📺 Канал продажів через ручний мапінг: sajt "${channelCode}" → "${mappedChannel.id__pr || mappedChannel.code}" (ID: ${mappedChannel.id})`);
+          console.log(`  📺 Канал продажів через ручний мапінг: sajt "${channelCode}" → "${mappedChannel.id__pr || mappedChannel.code}" (ID: ${mappedChannel.id})`);
           return mappedChannel.id;
         } else {
           // ID налаштовано, але не знайдено в поточних довідниках — застарілий кеш
-          logWithTimestamp(`  ⚠️  Канал ID=${configuredId} не знайдено серед ${directories.tradeChanels.length} каналів у кеші. Примусове оновлення довідників...`);
+          console.log(`  ⚠️  Канал ID=${configuredId} не знайдено серед ${directories.tradeChanels.length} каналів у кеші. Примусове оновлення довідників...`);
           return this._retryWithFreshTradeChanels(configuredId, channelDisplayName, channelCode, context);
         }
       } else {
@@ -813,7 +813,7 @@ export class DilovodExportBuilder {
           `Не вдалося перевірити канал продажів в Dilovod ID="${configuredId}" для каналу "${channelDisplayName}": довідник tradeChanels порожній або не завантажений. ` +
           `Оновіть кеш довідників через "Керування кешем Dilovod".`
         );
-        logWithTimestamp(`  ⚠️  Довідник tradeChanels порожній — неможливо підтвердити ID=${configuredId}`);
+        console.log(`  ⚠️  Довідник tradeChanels порожній — неможливо підтвердити ID=${configuredId}`);
         // Повертаємо збережений ID як є — нехай Dilovod сам відхилить якщо невірний
         return configuredId;
       }
@@ -824,7 +824,7 @@ export class DilovodExportBuilder {
       `Для каналу "${channelDisplayName}" (sajt: ${channelCode}) не налаштовано канал продажів Dilovod. ` +
       `Перейдіть в Налаштування Dilovod → "Канали продажів" → "${channelDisplayName}" → поле "Канал продажів в Dilovod" та оберіть відповідний канал.`
     );
-    logWithTimestamp(`  ❌ Ручний мапінг tradeChanel не налаштовано для sajt "${channelCode}" (${channelDisplayName})`);
+    console.log(`  ❌ Ручний мапінг tradeChanel не налаштовано для sajt "${channelCode}" (${channelDisplayName})`);
     return '';
   }
 
@@ -842,11 +842,11 @@ export class DilovodExportBuilder {
     try {
       const { dilovodService } = await import('./DilovodService.js');
       const freshChanels = await dilovodService.getTradeChanels(true);
-      logWithTimestamp(`  🔄 Кеш tradeChanels оновлено: ${freshChanels.length} каналів`);
+      console.log(`  🔄 Кеш tradeChanels оновлено: ${freshChanels.length} каналів`);
 
       const found = freshChanels.find((ch: any) => ch.id === configuredId);
       if (found) {
-        logWithTimestamp(`  ✅ Канал ID=${configuredId} знайдено після оновлення кешу: "${found.id__pr || found.code}"`);
+        console.log(`  ✅ Канал ID=${configuredId} знайдено після оновлення кешу: "${found.id__pr || found.code}"`);
         // Також оновлюємо довідники в контексті для подальших кроків валідації
         if (context.directories) {
           context.directories.tradeChanels = freshChanels.map((ch: any) => ({
@@ -863,7 +863,7 @@ export class DilovodExportBuilder {
           `не існує в Dilovod (перевірено після примусового оновлення довідників, ${freshChanels.length} каналів). ` +
           `Перейдіть в Налаштування Dilovod → "Канали продажів" → "${channelDisplayName}" та оберіть коректний канал.`
         );
-        logWithTimestamp(`  ❌ Канал ID=${configuredId} відсутній в Dilovod навіть після оновлення кешу — налаштування некоректне`);
+        console.log(`  ❌ Канал ID=${configuredId} відсутній в Dilovod навіть після оновлення кешу — налаштування некоректне`);
         return '';
       }
     } catch (err) {
@@ -871,7 +871,7 @@ export class DilovodExportBuilder {
         `Не вдалося оновити довідник tradeChanels для перевірки каналу "${channelDisplayName}": ${err instanceof Error ? err.message : String(err)}. ` +
         `Оновіть кеш вручну через "Керування кешем Dilovod".`
       );
-      logWithTimestamp(`  ⚠️  Помилка оновлення кешу tradeChanels: ${err instanceof Error ? err.message : err}`);
+      console.log(`  ⚠️  Помилка оновлення кешу tradeChanels: ${err instanceof Error ? err.message : err}`);
       // Повертаємо збережений ID — нехай Dilovod відхилить якщо невірний
       return configuredId;
     }
@@ -890,7 +890,7 @@ export class DilovodExportBuilder {
   ): Promise<string> {
     const { settings, directories, warnings } = context;
 
-    logWithTimestamp(`  🔍 Визначення фірми: channelMapping=${JSON.stringify({
+    console.log(`  🔍 Визначення фірми: channelMapping=${JSON.stringify({
       cashAccount: channelMapping?.cashAccount,
       paymentForm: channelMapping?.paymentForm,
       salesDrivePaymentMethod: channelMapping?.salesDrivePaymentMethod
@@ -898,54 +898,54 @@ export class DilovodExportBuilder {
 
     // Якщо є cashAccount - знаходимо його власника з довідників
     if (channelMapping?.cashAccount && directories?.cashAccounts) {
-      logWithTimestamp(`  📊 Шукаємо рахунок: ${channelMapping.cashAccount}`);
+      console.log(`  📊 Шукаємо рахунок: ${channelMapping.cashAccount}`);
       const account = directories.cashAccounts.find(acc => acc.id === channelMapping.cashAccount);
 
       if (!account) {
         const accountDisplayName = this.getAccountDisplayName(channelMapping.cashAccount, directories);
         warnings.push(`Рахунок "${accountDisplayName}" не знайдено в довідниках Dilovod. Використовується фірма за замовчуванням.`);
-        logWithTimestamp(`  ⚠️  Рахунок не знайдено в довідниках`);
+        console.log(`  ⚠️  Рахунок не знайдено в довідниках`);
       } else {
-        logWithTimestamp(`  ✅ Рахунок знайдено: ${account.name}, owner=${account.owner}`);
+        console.log(`  ✅ Рахунок знайдено: ${account.name}, owner=${account.owner}`);
       }
 
       if (account?.owner) {
         // Перевіряємо чи існує така фірма в довідниках
-        logWithTimestamp(`  🔍 Шукаємо фірму-власника: ${account.owner}`);
-        logWithTimestamp(`  📋 Всього фірм у довідниках: ${directories.firms?.length || 0}`);
+        console.log(`  🔍 Шукаємо фірму-власника: ${account.owner}`);
+        console.log(`  📋 Всього фірм у довідниках: ${directories.firms?.length || 0}`);
 
         if (directories.firms && directories.firms.length > 0) {
-          logWithTimestamp(`  📋 Перші 3 фірми: ${directories.firms.slice(0, 3).map(f => `${f.name} (${f.id})`).join(', ')}`);
+          console.log(`  📋 Перші 3 фірми: ${directories.firms.slice(0, 3).map(f => `${f.name} (${f.id})`).join(', ')}`);
         }
 
         const firm = directories.firms?.find(f => f.id === account.owner);
         if (firm) {
-          logWithTimestamp(`  🏢 Фірма визначена за рахунком: ${firm.name} (${account.owner})`);
+          console.log(`  🏢 Фірма визначена за рахунком: ${firm.name} (${account.owner})`);
           return account.owner;
         } else {
           const firmDisplayName = this.getFirmDisplayName(account.owner, directories);
-          logWithTimestamp(`  ❌ Фірма ${account.owner} не знайдена в довідниках!`);
+          console.log(`  ❌ Фірма ${account.owner} не знайдена в довідниках!`);
           warnings.push(`Фірма "${firmDisplayName}" (власник рахунку) не знайдена в довідниках. Використовується фірма за замовчуванням.`);
         }
       } else {
         const accountDisplayName = this.getAccountDisplayName(channelMapping.cashAccount, directories);
-        logWithTimestamp(`  ⚠️  Рахунок не має власника (owner)`);
+        console.log(`  ⚠️  Рахунок не має власника (owner)`);
         warnings.push(`Рахунок "${accountDisplayName}" не має власника (owner). Використовується фірма за замовчуванням.`);
       }
     } else {
       if (!channelMapping?.cashAccount) {
-        logWithTimestamp(`  ⚠️  cashAccount не вказано в мапінгу`);
+        console.log(`  ⚠️  cashAccount не вказано в мапінгу`);
         warnings.push(`Рахунок не вказано в мапінгу каналу. Використовується фірма за замовчуванням.`);
       }
       if (!directories?.cashAccounts) {
-        logWithTimestamp(`  ⚠️  Довідник cashAccounts не завантажено`);
+        console.log(`  ⚠️  Довідник cashAccounts не завантажено`);
       }
     }
 
     // Якщо не вдалося визначити за рахунком - використовуємо дефолтну
     if (settings.defaultFirmId) {
       const firmDisplayName = this.getFirmDisplayName(settings.defaultFirmId, directories);
-      logWithTimestamp(`  🏢 Використовується фірма за замовчуванням: "${firmDisplayName}" (ID: ${settings.defaultFirmId})`);
+      console.log(`  🏢 Використовується фірма за замовчуванням: "${firmDisplayName}" (ID: ${settings.defaultFirmId})`);
       return settings.defaultFirmId;
     }
 
@@ -1053,7 +1053,7 @@ export class DilovodExportBuilder {
       warnings.push(`Рахунок не вказаний в мапінгу для каналу "${channelDisplayName}", метод "${paymentMethodDisplayName}"`);
     }
 
-    logWithTimestamp(
+    console.log(
       `  🔗 Мапінг знайдено: канал "${channelDisplayName}" (ID: ${channelId}), метод "${paymentMethodDisplayName}" (ID: ${paymentMethodId}) → ` +
       `форма оплати "${mapping.paymentForm}", рахунок "${mapping.cashAccount}"`
     );
@@ -1083,7 +1083,7 @@ export class DilovodExportBuilder {
     const deliveryMappings = settings.deliveryMappings;
     if (!deliveryMappings || deliveryMappings.length === 0) {
       warnings.push('Мапінги способів доставки не налаштовано. Використовуйте розділ "Мапінг способів доставки" в налаштуваннях Dilovod.');
-      logWithTimestamp(`  ❌ Мапінги способів доставки не налаштовано`);
+      console.log(`  ❌ Мапінги способів доставки не налаштовано`);
       return '';
     }
 
@@ -1098,7 +1098,7 @@ export class DilovodExportBuilder {
         `Мапінг для способу доставки "${shippingMethod}" не знайдено. ` +
         `Налаштуйте мапінг у розділі "Мапінг способів доставки".`
       );
-      logWithTimestamp(`  ❌ Мапінг для способу доставки "${shippingMethod}" не знайдено`);
+      console.log(`  ❌ Мапінг для способу доставки "${shippingMethod}" не знайдено`);
       return '';
     }
 
@@ -1106,11 +1106,11 @@ export class DilovodExportBuilder {
       warnings.push(
         `ID способу доставки Dilovod не вказано в мапінгу для "${shippingMethod}".`
       );
-      logWithTimestamp(`  ❌ ID способу доставки Dilovod не вказано в мапінгу`);
+      console.log(`  ❌ ID способу доставки Dilovod не вказано в мапінгу`);
       return '';
     }
 
-    logWithTimestamp(
+    console.log(
       `  🚚 Мапінг способу доставки: "${shippingMethod}" → Dilovod ID ${mapping.dilovodDeliveryMethodId}`
     );
 
@@ -1155,7 +1155,7 @@ export class DilovodExportBuilder {
         return `${method.name} (ID: ${paymentMethodId})`;
       }
     } catch (error) {
-      logWithTimestamp(`  ⚠️  Не вдалося отримати назву методу оплати з SalesDrive API: ${error}`);
+      console.log(`  ⚠️  Не вдалося отримати назву методу оплати з SalesDrive API: ${error}`);
     }
 
     // Fallback на статичний словник

@@ -1,4 +1,4 @@
-// Утилиты и хелперы для работы с Dilovod
+// Утиліти та хелпери для роботи з Dilovod
 
 import { DilovodConfig } from './DilovodTypes.js';
 
@@ -221,7 +221,7 @@ export async function loadDilovodSettingsFromDB() {
   }
 }
 
-// Получение названия типа цены по ID
+// Отримання назви типу ціни за ID
 export function getPriceTypeNameById(priceTypeId: string): string {
   const priceTypeMap: { [key: string]: string } = {
     "1101300000001006": "Акційна",
@@ -239,13 +239,13 @@ export function getPriceTypeNameById(priceTypeId: string): string {
   return priceTypeMap[priceTypeId] || "Невідомо";
 }
 
-// Форматирование даты для Dilovod API
+// Форматування дати для Dilovod API
 /**
- * Форматирует дату для Dilovod API.
+ * Форматує дату для Dilovod API.
  * @param mode 'UTC_now' | 'Kyiv' | 'UTC_lastDay'
- *   - 'UTC_now': текущее время по UTC
- *   - 'Kyiv': текущее время по Europe/Kyiv (по умолчанию)
- *   - 'UTC_lastDay': сегодня по UTC, но время "00:00:00"
+ *   - 'UTC_now': поточний час за UTC
+ *   - 'Kyiv': поточний час за Europe/Kyiv (за замовчуванням)
+ *   - 'UTC_lastDay': сьогодні по UTC, але час "00:00:00"
  */
 export function formatDateForDilovod(
   mode: 'UTC_now' | 'UTC_lastDay' | 'Kyiv'
@@ -253,35 +253,35 @@ export function formatDateForDilovod(
   const now = new Date();
 
   if (mode === 'UTC_now') {
-    // Формат: YYYY-MM-DD HH:mm:ss по UTC
+    // Формат: YYYY-MM-DD HH:mm:ss за UTC
     const pad = (n: number) => n.toString().padStart(2, '0');
     return `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())} ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
   }
 
   if (mode === 'UTC_lastDay') {
-    // Сегодня по UTC, но время "00:00:00"
+    // Сьогодні по UTC, але час "00:00:00"
     const pad = (n: number) => n.toString().padStart(2, '0');
     return `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())} 00:00:00`;
   }
 
-  // mode === 'Kyiv' по умолчанию
+  // mode === 'Kyiv' за замовчуванням
   return now.toLocaleString('sv-SE', {
-    // Формат: YYYY-MM-DD HH:mm:ss по часовому поясу Europe/Kyiv
+    // Формат: YYYY-MM-DD HH:mm:ss за часовим поясом Europe/Kyiv
     timeZone: 'Europe/Kyiv',
     hour12: false
   }).replace('T', ' ');
 }
 
-// Валидация конфигурации
+// Валідація конфігурації Dilovod
 export function validateDilovodConfig(config: DilovodConfig): string[] {
   const errors: string[] = [];
   
   if (!config.apiUrl) {
-    errors.push('DILOVOD_API_URL не настроен');
+    errors.push('DILOVOD_API_URL не налаштовано');
   }
   
   if (!config.apiKey) {
-    errors.push('DILOVOD_API_KEY не настроен');
+    errors.push('DILOVOD_API_KEY не налаштовано');
   }
   
   if (!config.setParentIds || config.setParentIds.length === 0) {
@@ -289,13 +289,13 @@ export function validateDilovodConfig(config: DilovodConfig): string[] {
   }
   
   if (!config.mainPriceType) {
-    errors.push('Основной тип цены не настроен');
+    errors.push('Основний тип ціни не налаштовано');
   }
   
   return errors;
 }
 
-// Создание базового запроса к API
+// Створення базового запиту до API
 export function createBaseApiRequest(action: string, params: any): any {
   return {
     version: "0.25",
@@ -305,7 +305,7 @@ export function createBaseApiRequest(action: string, params: any): any {
   };
 }
 
-// Создание запроса для получения товаров
+// Створення запиту для отримання товарів
 export function createGoodsRequest(skuList: string[]) {
   return createBaseApiRequest("request", {
     from: {
@@ -330,12 +330,12 @@ export function createGoodsRequest(skuList: string[]) {
   });
 }
 
-// Создание запроса для получения объекта (комплекта)
+// Створення запиту для отримання об'єкта (комплекта)
 export function createGetObjectRequest(id: string) {
   return createBaseApiRequest("getObject", { id });
 }
 
-// Создание запроса для получения товаров из каталога
+// Створення запиту для отримання товарів з каталогу
 export function createCatalogGoodsRequest(skuList: string[]) {
   return createBaseApiRequest("request", {
     from: "catalogs.goods",
@@ -355,57 +355,40 @@ export function createCatalogGoodsRequest(skuList: string[]) {
   });
 }
 
-// Обработка ошибок API
+// Обробка помилок API
 export function handleDilovodApiError(error: any, context: string): string {
   if (error.response) {
-    // Ошибка от сервера
+    // Помилка від сервера
     const status = error.response.status;
     const data = error.response.data;
     
     if (status === 401) {
-      return `Ошибка авторизации в Dilovod API: ${data?.error || 'Неверный API ключ'}`;
+      return `Помилка авторизації в Dilovod API: ${data?.error || 'Невірний API ключ'}`;
     } else if (status === 403) {
-      return `Доступ запрещен в Dilovod API: ${data?.error || 'Недостаточно прав'}`;
+      return `Доступ заборонено в Dilovod API: ${data?.error || 'Недостатньо прав'}`;
     } else if (status === 404) {
-      return `Ресурс не найден в Dilovod API: ${data?.error || 'API endpoint не существует'}`;
+      return `Ресурс не знайдено в Dilovod API: ${data?.error || 'API endpoint не існує'}`;
     } else if (status >= 500) {
-      return `Ошибка сервера Dilovod: ${data?.error || 'Внутренняя ошибка сервера'}`;
+      return `Помилка сервера Dilovod: ${data?.error || 'Внутрішня помилка сервера'}`;
     } else {
-      return `Ошибка Dilovod API (${status}): ${data?.error || 'Неизвестная ошибка'}`;
+      return `Помилка Dilovod API (${status}): ${data?.error || 'Невідома помилка'}`;
     }
   } else if (error.request) {
-    // Ошибка сети
-    return `Ошибка сети при обращении к Dilovod API: ${error.message || 'Нет ответа от сервера'}`;
+    // Помилка мережі
+    return `Помилка мережі при зверненні до Dilovod API: ${error.message || 'Немає відповіді від сервера'}`;
   } else {
-    // Другая ошибка
-    return `Ошибка при работе с Dilovod API: ${error.message || 'Неизвестная ошибка'}`;
+    // Інша помилка
+    return `Помилка при роботі з Dilovod API: ${error.message || 'Невідома помилка'}`;
   }
 }
 
-// Логирование с временными метками и опцией gap
-export function logWithTimestamp(message: string, data?: any, gap?: boolean): void {
-  if (gap) {
-    console.log('\n\n\n------------------------\n\n\n');
-  }
-  const timestamp = new Date().toISOString();
-  const logMessage = `[${timestamp}] ${message}`;
-  
-  if (data) {
-    console.log(logMessage, data);
-  } else {
-    console.log(logMessage);
-  }
-  // if (gap) {
-  //   console.log('\n\n');
-  // }
-}
 
-// Задержка для избежания перегрузки API
+// Затримка для уникнення перевантаження API
 export function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Безопасное извлечение значения из объекта
+// Безпечне отримання значення з об'єкта
 export function safeGet<T>(obj: any, path: string, defaultValue: T): T {
   try {
     const keys = path.split('.');

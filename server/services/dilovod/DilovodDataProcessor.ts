@@ -7,12 +7,11 @@ import {
   DilovodSetComponent
 } from './DilovodTypes.js';
 import { DilovodApiClient } from './DilovodApiClient.js';
-import { DEFAULT_DILOVOD_CONFIG, logWithTimestamp as logTS } from './DilovodUtils.js';
-import {
+import { 
+  DEFAULT_DILOVOD_CONFIG,
   getPriceTypeNameById,
-  logWithTimestamp,
-  delay,
-  getDilovodConfigFromDB
+  getDilovodConfigFromDB,
+  delay
 } from './DilovodUtils.js';
 
 export class DilovodDataProcessor {
@@ -33,7 +32,7 @@ export class DilovodDataProcessor {
     try {
       this.config = await getDilovodConfigFromDB();
     } catch (error) {
-      logWithTimestamp('DilovodDataProcessor: ошибка загрузки конфигурации из БД:', error);
+      console.log('DilovodDataProcessor: ошибка загрузки конфигурации из БД:', error);
     }
   }
 
@@ -57,7 +56,7 @@ export class DilovodDataProcessor {
       // Убираем дубликаты из pricesResponse (каждый товар должен обрабатываться только один раз)
       const uniquePricesResponse = this.removeDuplicatePrices(pricesResponse);
       
-      logWithTimestamp(`📊 Унікальних товарів для обробки: ${uniquePricesResponse.length} (з ${pricesResponse.length} записів цін)`);
+      console.log(`📊 Унікальних товарів для обробки: ${uniquePricesResponse.length} (з ${pricesResponse.length} записів цін)`);
       
       // Создаем маппинги
       const idToSku = this.createIdToSkuMapping(uniquePricesResponse);
@@ -85,7 +84,7 @@ export class DilovodDataProcessor {
       return unique;
       
     } catch (error) {
-      logWithTimestamp('Ошибка обработки товаров с комплектами:', error);
+      console.log('Ошибка обработки товаров с комплектами:', error);
       throw error;
     }
   }
@@ -184,7 +183,7 @@ export class DilovodDataProcessor {
 
       return processedGoods;
     } catch (error) {
-      logWithTimestamp(`❌ ОШИБКА в processGoodsWithSetsAsync:`, error);
+      console.log(`❌ ОШИБКА в processGoodsWithSetsAsync:`, error);
       throw error;
     }
   }
@@ -229,7 +228,7 @@ export class DilovodDataProcessor {
       let additionalSkuMap: { [key: string]: string } = {};
       if (missingIds.length > 0) {
         try {
-          logWithTimestamp(`🔍 Отримуємо SKU для ${missingIds.length} компонентів комплекту...`);
+          console.log(`🔍 Отримуємо SKU для ${missingIds.length} компонентів комплекту...`);
           
           // Використовуємо прямий запит getObject для кожного ID
           for (const componentId of missingIds) {
@@ -240,17 +239,17 @@ export class DilovodDataProcessor {
               const sku = componentInfo?.header?.productNum;
               if (sku) {
                 additionalSkuMap[componentId] = sku;
-                logWithTimestamp(`  ✅ ${componentId} → ${sku}`);
+                console.log(`  ✅ ${componentId} → ${sku}`);
               } else {
-                logWithTimestamp(`  ⚠️ SKU не знайдено для ${componentId}`);
+                console.log(`  ⚠️ SKU не знайдено для ${componentId}`);
               }
               await delay(100); // Невелика затримка між запитами
             } catch (err) {
-              logWithTimestamp(`  ⚠️ Не вдалося отримати SKU для ${componentId}:`, err);
+              console.log(`  ⚠️ Не вдалося отримати SKU для ${componentId}:`, err);
             }
           }
         } catch (error) {
-          logWithTimestamp(`⚠️ Помилка отримання SKU компонентів:`, error);
+          console.log(`⚠️ Помилка отримання SKU компонентів:`, error);
         }
       }
       
@@ -269,7 +268,7 @@ export class DilovodDataProcessor {
         // Якщо все ще немає SKU - використовуємо ID
         if (!sku) {
           sku = componentId;
-          logWithTimestamp(`⚠️ SKU не знайдено для компонента ${componentId}, використовуємо ID`);
+          console.log(`⚠️ SKU не знайдено для компонента ${componentId}, використовуємо ID`);
         }
         
         const quantity = parseFloat(row.qty) || 0;
@@ -293,7 +292,7 @@ export class DilovodDataProcessor {
       return set;
       
     } catch (error) {
-      logWithTimestamp(`Ошибка получения состава комплекта ${goodId}:`, error);
+      console.log(`Ошибка получения состава комплекта ${goodId}:`, error);
       return [];
     }
   }
@@ -371,7 +370,7 @@ export class DilovodDataProcessor {
 
       if (!mappedCategoryId) {
         // Лог для диагностики неподдержанных категорий
-        try { logTS('⚠️ Unmapped category name', { categoryName, normalizedName, categoriesMap: normalizedCategoriesMap }); } catch {}
+        try { console.log('⚠️ Unmapped category name', { categoryName, normalizedName, categoriesMap: normalizedCategoriesMap }); } catch {}
       }
 
       result.push({
@@ -441,7 +440,7 @@ export class DilovodDataProcessor {
     
     // Логируем количество найденных комплектов
     if (sets.length > 0) {
-      logWithTimestamp(`Найдено ${sets.length} комплектов`);
+      console.log(`Найдено ${sets.length} комплектов`);
     }
   }
 
@@ -494,7 +493,7 @@ export class DilovodDataProcessor {
       return result;
       
     } catch (error) {
-      logWithTimestamp('Ошибка обработки остатков:', error);
+      console.log('Ошибка обработки остатков:', error);
       throw error;
     }
   }

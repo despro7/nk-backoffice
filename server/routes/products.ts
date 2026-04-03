@@ -1,7 +1,7 @@
 import express from 'express';
 import { prisma } from '../lib/utils.js';
 import { authenticateToken, requireRole, requireMinRole, ROLE_SETS, ROLES } from '../middleware/auth.js';
-import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
+import { DilovodService } from '../services/dilovod/index.js';
 import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 import { salesDriveService } from '../services/salesDriveService.js';
 import { buildExportPayload } from '../services/productExportHelper.js';
@@ -91,7 +91,7 @@ router.get('/', authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    logWithTimestamp('Error fetching products:', error);
+    console.log('Error fetching products:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -102,7 +102,7 @@ router.get('/dilovod/:sku', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER
   try {
     const { sku } = req.params;
     const dilovodService = new DilovodService();
-    logWithTimestamp(`API: Получаем товар из Dilovod по SKU=${sku}`);
+    console.log(`API: Получаем товар из Dilovod по SKU=${sku}`);
 
     let products;
     try {
@@ -119,7 +119,7 @@ router.get('/dilovod/:sku', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER
 
     return res.json({ product });
   } catch (error) {
-    logWithTimestamp('Error fetching single product from Dilovod:', error);
+    console.log('Error fetching single product from Dilovod:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -135,7 +135,7 @@ router.get('/sku-whitelist', authenticateToken, requireMinRole(ROLES.BOSS), asyn
 
     res.json({ skus: record.skus || '', totalCount: record.totalCount || 0, lastUpdated: record.lastUpdated });
   } catch (error) {
-    logWithTimestamp('Error fetching SKU whitelist:', error);
+    console.log('Error fetching SKU whitelist:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -167,7 +167,7 @@ router.put('/sku-whitelist', authenticateToken, requireMinRole(ROLES.BOSS), asyn
 
     res.json({ success: true, totalCount });
   } catch (error) {
-    logWithTimestamp('Error updating SKU whitelist:', error);
+    console.log('Error updating SKU whitelist:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -201,7 +201,7 @@ router.get('/set-parent-ids', authenticateToken, requireMinRole(ROLES.BOSS), asy
     // Значення за замовчуванням
     res.json({ ids: ['1100300000001315'] });
   } catch (error) {
-    logWithTimestamp('Error fetching set-parent-ids:', error);
+    console.log('Error fetching set-parent-ids:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -233,10 +233,10 @@ router.put('/set-parent-ids', authenticateToken, requireRole(ROLE_SETS.ADMIN_ONL
     const { clearConfigCache } = await import('../services/dilovod/DilovodUtils.js');
     clearConfigCache();
 
-    logWithTimestamp(`✅ dilovod_set_parent_ids оновлено: ${JSON.stringify(cleaned)}`);
+    console.log(`✅ dilovod_set_parent_ids оновлено: ${JSON.stringify(cleaned)}`);
     res.json({ success: true, ids: cleaned });
   } catch (error) {
-    logWithTimestamp('Error updating set-parent-ids:', error);
+    console.log('Error updating set-parent-ids:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -457,7 +457,7 @@ router.get('/:sku', authenticateToken, async (req, res) => {
 
     res.json(parsedProduct);
   } catch (error) {
-    logWithTimestamp('Error fetching product:', error);
+    console.log('Error fetching product:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -579,10 +579,34 @@ router.put('/:id/portions-per-box', authenticateToken, requireMinRole(ROLES.STOR
       data: { portionsPerBox: value }
     });
 
-    logWithTimestamp(`✅ [Products] portionsPerBox updated for product ${existingProduct.sku}: ${existingProduct.portionsPerBox} → ${value}`);
+    console.log(`✅ [Products] portionsPerBox updated for product ${existingProduct.sku}: ${existingProduct.portionsPerBox} → ${value}`);
     res.json({ success: true, product: updatedProduct });
   } catch (error) {
-    logWithTimestamp('Error updating portionsPerBox:', error);
+    console.log('Error updating portionsPerBox:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Скасувати поточну синхронізацію товарів
+// POST /api/products/sync/cancel
+router.post('/sync/cancel', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+  try {
+    const cancelled = DilovodService.cancelCurrentSync();
+
+    if (cancelled) {
+      console.log('✅ Синхронізацію товарів скасовано через API');
+      res.json({
+        success: true,
+        message: 'Синхронізацію скасовано'
+      });
+    } else {
+      res.json({
+        success: false,
+        message: 'Немає активної синхронізації для скасування'
+      });
+    }
+  } catch (error) {
+    console.log('Error cancelling sync:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -604,11 +628,19 @@ router.post('/sync', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
     }
 
     const dilovodService = new DilovodService();
-    const result = await dilovodService.syncProductsWithDilovod();
+    // Реєструємо AbortController глобально — щоб POST /sync/cancel міг його скасувати
+    const abortController = new AbortController();
+    DilovodService.registerSyncAbortController(abortController);
+    req.on('close', () => {
+      console.log('Клієнт закрив зʼєднання — сигналізуємо про скасування синхронізації');
+      abortController.abort();
+    });
+
+    const result = await dilovodService.syncProductsWithDilovod('full', undefined, abortController.signal);
 
     res.json(result);
   } catch (error) {
-    logWithTimestamp('Error starting sync:', error);
+    console.log('Error starting sync:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -639,14 +671,22 @@ router.post('/sync-manual', authenticateToken, requireMinRole(ROLES.STOREKEEPER)
       });
     }
 
-    logWithTimestamp(`API: Ручна синхронізація для ${cleanedSkus.length} SKU`);
+    console.log(`API: Ручна синхронізація для ${cleanedSkus.length} SKU`);
 
     const dilovodService = new DilovodService();
-    const result = await dilovodService.syncProductsWithDilovod('manual', cleanedSkus);
+    // Реєструємо AbortController глобально — щоб POST /sync/cancel міг його скасувати
+    const abortController = new AbortController();
+    DilovodService.registerSyncAbortController(abortController);
+    req.on('close', () => {
+      console.log('Клієнт закрив зʼєднання під час ручної синхронізації — скасовуємо');
+      abortController.abort();
+    });
+
+    const result = await dilovodService.syncProductsWithDilovod('manual', cleanedSkus, abortController.signal);
 
     res.json(result);
   } catch (error) {
-    logWithTimestamp('Error in manual sync:', error);
+    console.log('Error in manual sync:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -672,7 +712,7 @@ router.post('/sync-stock', authenticateToken, requireMinRole(ROLES.STOREKEEPER),
 
     res.json(result);
   } catch (error) {
-    logWithTimestamp('Error starting stock sync:', error);
+    console.log('Error starting stock sync:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -822,7 +862,7 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
       lastSync: lastSync?.lastSyncAt
     });
   } catch (error) {
-    logWithTimestamp('Error fetching stats:', error);
+    console.log('Error fetching stats:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -836,7 +876,7 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    logWithTimestamp('Error testing connection:', error);
+    console.log('Error testing connection:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -845,18 +885,18 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
 // POST /api/products/test-balance-by-sku
 router.post('/test-balance-by-sku', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-    logWithTimestamp('=== API: test-balance-by-sku вызван ===');
+    console.log('=== API: test-balance-by-sku вызван ===');
 
-    logWithTimestamp('API: Создаем DilovodService...');
+    console.log('API: Создаем DilovodService...');
     const dilovodService = new DilovodService();
 
-    logWithTimestamp('API: Вызываем getBalanceBySkuList...');
+    console.log('API: Вызываем getBalanceBySkuList...');
     const result = await dilovodService.getBalanceBySkuList();
 
-    logWithTimestamp('API: Результат остатков по списку SKU получен:', result);
+    console.log('API: Результат остатков по списку SKU получен:', result);
     res.json(result);
   } catch (error: any) {
-    logWithTimestamp('API: Ошибка в test-balance-by-sku:', error);
+    console.log('API: Ошибка в test-balance-by-sku:', error);
 
     if (
       error &&
@@ -877,18 +917,18 @@ router.post('/test-balance-by-sku', authenticateToken, requireMinRole(ROLES.STOR
 // POST /api/products/test-sets-only
 router.post('/test-sets-only', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-    logWithTimestamp('=== API: test-sets-only вызван ===');
+    console.log('=== API: test-sets-only вызван ===');
 
-    logWithTimestamp('API: Создаем DilovodService...');
+    console.log('API: Создаем DilovodService...');
     const dilovodService = new DilovodService();
 
-    logWithTimestamp('API: Вызываем testSetsOnly...');
+    console.log('API: Вызываем testSetsOnly...');
     const result = await dilovodService.testSetsOnly();
 
-    logWithTimestamp('API: Результат только комплектов получен:', result);
+    console.log('API: Результат только комплектов получен:', result);
     res.json(result);
   } catch (error) {
-    logWithTimestamp('API: Ошибка в test-sets-only:', error);
+    console.log('API: Ошибка в test-sets-only:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -929,7 +969,7 @@ router.get('/stock/balance', authenticateToken, requireMinRole(ROLES.STOREKEEPER
       res.json({ products });
     }
   } catch (error) {
-    logWithTimestamp('Error in stock balance:', error);
+    console.log('Error in stock balance:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

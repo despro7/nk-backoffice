@@ -3,7 +3,6 @@
 import crypto from 'crypto';
 import { prisma } from '../../lib/utils.js';
 import { DilovodProduct, DilovodSyncResult } from './DilovodTypes.js';
-import { logWithTimestamp } from './DilovodUtils.js';
 import { syncSettingsService } from '../syncSettingsService.js';
 
 export class DilovodSyncManager {
@@ -31,10 +30,20 @@ export class DilovodSyncManager {
   }
 
   // Основна функція синхронізації товарів з базою даних  
-  async syncProductsToDatabase(dilovodProducts: DilovodProduct[]): Promise<DilovodSyncResult> {
+  async syncProductsToDatabase(
+    dilovodProducts: DilovodProduct[],
+    logError?: (params: {
+      sku: string;
+      errorType: 'missing_price' | 'invalid_data' | 'db_error' | 'validation_error' | 'sync_failed';
+      message: string;
+      productData?: any;
+      initiatedBy?: string;
+    }) => Promise<void>,
+    abortSignal?: AbortSignal
+  ): Promise<DilovodSyncResult> {
     try {
-      logWithTimestamp('Начинаем синхронизацию товаров с базой данных...');
-      logWithTimestamp(`Получено ${dilovodProducts.length} товаров для синхронизации`);
+      console.log('Починаємо синхронізацію товарів з базою даних...');
+      console.log(`Отримано ${dilovodProducts.length} товарів для синхронізації`);
       
       const errors: string[] = [];
       let createdProducts = 0;
@@ -43,30 +52,58 @@ export class DilovodSyncManager {
       let syncedSets = 0;
 
       for (const product of dilovodProducts) {
+        // Перевіряємо, чи був запит на скасування від клієнта/зовнішнього джерела
+        if (abortSignal?.aborted) {
+          console.log('🔻 Синхронізацію з базою даних було скасовано (abortSignal)');
+          break;
+        }
         try {
-          logWithTimestamp(`\n--- Синхронизация товара ${product.sku} ---`);
-          logWithTimestamp(`Название: ${product.name}`);
-          logWithTimestamp(`Категория: ${product.category.name} (ID: ${product.category.id})`);
-          logWithTimestamp(`Цена: ${product.costPerItem} ${product.currency}`);
+          console.log(`\n--- Синхронізація товару ${product.sku} ---`);
+          console.log(`Назва: ${product.name}`);
+          console.log(`Категорія: ${product.category.name} (ID: ${product.category.id})`);
+          console.log(`Ціна: ${product.costPerItem} ${product.currency}`);
           
           // Визначаємо і показуємо вагу  
           const weight = this.determineWeightByCategory(product.category.id);
           if (weight) {
-            logWithTimestamp(`⚖️ Вес: ${weight} гр (категория ID: ${product.category.id})`);
+            console.log(`⚖️ Вага: ${weight} гр (категорія ID: ${product.category.id})`);
           } else {
-            logWithTimestamp(`⚖️ Вес: не определен (категория ID: ${product.category.id})`);
+            console.log(`⚖️ Вага: не визначена (категорія ID: ${product.category.id})`);
           }
           
-          logWithTimestamp(`Комплект: ${product.set.length > 0 ? 'ДА' : 'НЕТ'}`);
+          console.log(`Комплект: ${product.set.length > 0 ? 'ТАК' : 'НІ'}`);
           
           if (product.set.length > 0) {
-            logWithTimestamp(`Состав комплекта:`);
+            console.log(`Склад комплекта:`);
             product.set.forEach((item, index) => {
-              logWithTimestamp(`  ${index + 1}. ${item.id} - ${item.quantity}`);
+              console.log(`  ${index + 1}. ${item.id} - ${item.quantity}`);
             });
           }
           
-          logWithTimestamp(`Дополнительные цены: ${product.additionalPrices.length}`);
+          console.log(`Додаткові ціни: ${product.additionalPrices.length}`);
+          
+          // Валідація даних товару
+          const validationError = this.validateProductData(product);
+          if (validationError) {
+            console.log(`❌ Валідація не пройдена: ${validationError.message}`);
+            errors.push(`Товар ${product.sku}: ${validationError.message}`);
+            
+            // Логуємо помилку в систему повідомлень
+            if (logError) {
+              await logError({
+                sku: product.sku,
+                errorType: validationError.type,
+                message: validationError.message,
+                productData: {
+                  name: product.name,
+                  category: product.category,
+                  costPerItem: product.costPerItem
+                },
+                initiatedBy: 'system'
+              });
+            }
+            continue; // Пропускаємо товар з помилками
+          }
           
           // Перевіряємо, чи існує товар у базі
           const existingProduct = await prisma.product.findUnique({
@@ -81,27 +118,27 @@ export class DilovodSyncManager {
             const dataChanged = existingProduct.dilovodDataHash !== newDataHash;
             
             if (dataChanged) {
-              logWithTimestamp(`🔄 Данные товара ${product.sku} изменились, обновляем...`);
+              console.log(`🔄 Дані товару ${product.sku} змінилися, оновлюємо...`);
               
               const productData = this.prepareProductData(product, false); // false = існуючий товар
-              logWithTimestamp(`Данные для обновления:`, JSON.stringify(productData, null, 2));
+              console.log(`Дані для оновлення:`, JSON.stringify(productData, null, 2));
               
               await prisma.product.update({
                 where: { sku: product.sku },
                 data: productData
               });
-              logWithTimestamp(`✅ Товар ${product.sku} обновлен`);
+              console.log(`✅ Товар ${product.sku} оновлений`);
               updatedProducts++;
             } else {
-              logWithTimestamp(`⏭️  Товар ${product.sku} не изменился, пропускаем обновление`);
+              console.log(`⏭️  Товар ${product.sku} не змінився, пропускаємо оновлення`);
               skippedProducts++;
             }
           } else {
             // Створюємо новий товар
-            logWithTimestamp(`➕ Создаем новый товар ${product.sku}...`);
+            console.log(`➕ Створюємо новий товар ${product.sku}...`);
             
             const productData = this.prepareProductData(product, true); // true = новий товар
-            logWithTimestamp(`Данные для создания:`, JSON.stringify(productData, null, 2));
+            console.log(`Дані для створення:`, JSON.stringify(productData, null, 2));
             
             await prisma.product.create({
               data: ({
@@ -109,39 +146,54 @@ export class DilovodSyncManager {
                 ...productData
               } as any)
             });
-            logWithTimestamp(`✅ Товар ${product.sku} создан`);
+            console.log(`✅ Товар ${product.sku} створений`);
             createdProducts++;
           }
           
           // Підраховуємо комплекти
           if (product.set && product.set.length > 0) {
             syncedSets++;
-            logWithTimestamp(`🎯 Комплект ${product.sku} успешно синхронизирован (${product.set.length} компонентов)`);
+            console.log(`🎯 Комплект ${product.sku} успішно синхронізований (${product.set.length} компонентів)`);
           } else {
-            logWithTimestamp(`📦 Обычный товар ${product.sku} синхронизирован`);
+            console.log(`📦 Звичайний товар ${product.sku} синхронізований`);
           }
 
         } catch (error) {
-          const errorMessage = `Ошибка синхронизации товара ${product.sku}: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`;
-          logWithTimestamp(errorMessage);
+          const errorMessage = `Помилка синхронізації товару ${product.sku}: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
+          console.log(errorMessage);
           errors.push(errorMessage);
+
+          // Логуємо помилку в систему повідомлень
+          if (logError) {
+            await logError({
+              sku: product.sku,
+              errorType: 'sync_failed',
+              message: error instanceof Error ? error.message : 'Невідома помилка',
+              productData: {
+                name: product.name,
+                category: product.category,
+                costPerItem: product.costPerItem
+              },
+              initiatedBy: 'system'
+            });
+          }
         }
       }
 
       const totalProcessed = createdProducts + updatedProducts + skippedProducts;
       
-      logWithTimestamp(`\n=== РЕЗУЛЬТАТ СИНХРОНИЗАЦИИ ===`);
-      logWithTimestamp(`📊 Всього оброблено товарів: ${totalProcessed}`);
-      logWithTimestamp(`  ➕ Створено нових: ${createdProducts}`);
-      logWithTimestamp(`  🔄 Оновлено: ${updatedProducts}`);
-      logWithTimestamp(`  ⏭️  Пропущено (без змін): ${skippedProducts}`);
-      logWithTimestamp(`  🎯 Комплектів: ${syncedSets}`);
-      logWithTimestamp(`  ❌ Помилок: ${errors.length}`);
+      console.log(`\n=== РЕЗУЛЬТАТ СИНХРОНІЗАЦІЇ ===`);
+      console.log(`📊 Всього оброблено товарів: ${totalProcessed}`);
+      console.log(`  ➕ Створено нових: ${createdProducts}`);
+      console.log(`  🔄 Оновлено: ${updatedProducts}`);
+      console.log(`  ⏭️  Пропущено (без змін): ${skippedProducts}`);
+      console.log(`  🎯 Комплектів: ${syncedSets}`);
+      console.log(`  ❌ Помилок: ${errors.length}`);
       
       if (errors.length > 0) {
-        logWithTimestamp(`\nСписок помилок:`);
+        console.log(`\nСписок помилок:`);
         errors.forEach((error, index) => {
-          logWithTimestamp(`  ${index + 1}. ${error}`);
+          console.log(`  ${index + 1}. ${error}`);
         });
       }
 
@@ -165,13 +217,13 @@ export class DilovodSyncManager {
       };
 
     } catch (error) {
-      logWithTimestamp('Ошибка синхронизации с базой данных:', error);
+      console.log('Помилка синхронізації з базою даних:', error);
       return {
         success: false,
-        message: `Ошибка синхронизации с базой данных: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+        message: `Помилка синхронізації з базою даних: ${error instanceof Error ? error.message : 'Невідома помилка'}`,
         syncedProducts: 0,
         syncedSets: 0,
-        errors: [error instanceof Error ? error.message : 'Неизвестная ошибка']
+        errors: [error instanceof Error ? error.message : 'Невідома помилка']
       };
     }
   }
@@ -199,16 +251,69 @@ export class DilovodSyncManager {
     if (isNew) {
       const weight = this.determineWeightByCategory(product.category.id);
       data.weight = weight;
-      logWithTimestamp(`⚖️  Встановлюємо вагу для нового товару: ${weight ?? 'не визначено'} г`);
+      console.log(`⚖️  Встановлюємо вагу для нового товару: ${weight ?? 'не визначено'} г`);
       
       const manualOrder = this.determineManualOrderByCategory(product.category.id);
       data.manualOrder = manualOrder;
-      logWithTimestamp(`📋 Встановлюємо порядок сортування: ${manualOrder}`);
+      console.log(`📋 Встановлюємо порядок сортування: ${manualOrder}`);
     } else {
-      logWithTimestamp(`🔒 Вага і порядок сортування не оновлюються (захист локальних змін)`);
+      console.log(`🔒 Вага і порядок сортування не оновлюються (захист локальних змін)`);
     }
     
     return data;
+  }
+
+  // Валідація даних товару перед синхронізацією
+  private validateProductData(product: DilovodProduct): { type: 'missing_price' | 'invalid_data' | 'validation_error'; message: string } | null {
+    // Перевірка наявності ціни
+    if (!product.costPerItem || parseFloat(product.costPerItem) <= 0) {
+      return {
+        type: 'missing_price',
+        message: `відсутня або невірна ціна (${product.costPerItem})`
+      };
+    }
+
+    // Перевірка наявності назви
+    if (!product.name || product.name.trim().length === 0) {
+      return {
+        type: 'invalid_data',
+        message: 'відсутня назва товару'
+      };
+    }
+
+    // Перевірка наявності SKU
+    if (!product.sku || product.sku.trim().length === 0) {
+      return {
+        type: 'invalid_data',
+        message: 'відсутній SKU товару'
+      };
+    }
+
+    // Перевірка валідності SKU (не повинен містити заборонені символи)
+    if (!/^[A-Za-z0-9\-_.]+$/.test(product.sku)) {
+      return {
+        type: 'invalid_data',
+        message: `невірний формат SKU (${product.sku})`
+      };
+    }
+
+    // Перевірка наявності категорії
+    if (!product.category || !product.category.id) {
+      return {
+        type: 'invalid_data',
+        message: 'відсутня категорія товару'
+      };
+    }
+
+    // Перевірка комплектів (якщо є set, він повинен бути масивом)
+    if (product.set && !Array.isArray(product.set)) {
+      return {
+        type: 'invalid_data',
+        message: 'невірний формат даних комплекту'
+      };
+    }
+
+    return null; // Валідація пройдена
   }
 
   // Визначення ваги товару за категорією
@@ -318,7 +423,7 @@ export class DilovodSyncManager {
       };
       
     } catch (error) {
-      logWithTimestamp('Ошибка получения статистики синхронизации:', error);
+      console.log('Ошибка получения статистики синхронизации:', error);
       throw error;
     }
   }
@@ -336,12 +441,12 @@ export class DilovodSyncManager {
           const settings = await syncSettingsService.getSyncSettings();
           daysOld = settings.dilovod.cleanupDaysOld;
         } catch (error) {
-          logWithTimestamp('Помилка отримання налаштувань Dilovod, використовуємо значення за замовчуванням:', error);
+          console.log('Помилка отримання налаштувань Dilovod, використовуємо значення за замовчуванням:', error);
           daysOld = 30;
         }
       }
 
-      logWithTimestamp(`Очищення товарів, не синхронізованих більше ${daysOld} днів...`);
+      console.log(`Очищення товарів, не синхронізованих більше ${daysOld} днів...`);
       
       const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
       
@@ -353,7 +458,7 @@ export class DilovodSyncManager {
         }
       });
       
-      logWithTimestamp(`Удалено ${deletedProducts.count} старых товаров`);
+      console.log(`Удалено ${deletedProducts.count} старых товаров`);
       
       return {
         success: true,
@@ -362,7 +467,7 @@ export class DilovodSyncManager {
       };
       
     } catch (error) {
-      logWithTimestamp('Ошибка очистки старых товаров:', error);
+      console.log('Ошибка очистки старых товаров:', error);
       return {
         success: false,
         message: `Ошибка очистки: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
@@ -439,7 +544,7 @@ export class DilovodSyncManager {
       };
       
     } catch (error) {
-      logWithTimestamp('Помилка отримання товарів:', error);
+      console.log('Помилка отримання товарів:', error);
       throw error;
     }
   }
@@ -485,7 +590,7 @@ export class DilovodSyncManager {
       };
 
     } catch (error) {
-      logWithTimestamp(`Ошибка обновления остатков для ${sku}:`, error);
+      console.log(`Ошибка обновления остатков для ${sku}:`, error);
       return {
         success: false,
         message: `Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`
@@ -501,8 +606,8 @@ export class DilovodSyncManager {
   //                    manualSkus  = список SKU, які були синхронізовані вручну
   async markOutdatedProducts(currentSkus: string[], scope: 'all' | 'scoped' = 'all', manualSkus?: string[]): Promise<void> {
     try {
-      logWithTimestamp(`Позначаємо застарілі товари... (режим: ${scope})`);
-      logWithTimestamp(`Отримано ${currentSkus.length} актуальних SKU з WordPress`);
+      console.log(`Позначаємо застарілі товари... (режим: ${scope})`);
+      console.log(`Отримано ${currentSkus.length} актуальних SKU з WordPress`);
       
       // Створюємо Set для швидкого пошуку по актуальному списку WordPress
       const currentSkusSet = new Set(currentSkus.map(sku => sku.toLowerCase().trim()));
@@ -514,10 +619,10 @@ export class DilovodSyncManager {
         if (wpSkuRecord && wpSkuRecord.skus) {
           const parsed = wpSkuRecord.skus.split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(s => s.length > 0);
           whitelistSet = new Set(parsed);
-          logWithTimestamp(`Знайдено ${whitelistSet.size} SKU у whitelist`);
+          console.log(`Знайдено ${whitelistSet.size} SKU у whitelist`);
         }
       } catch (e) {
-        logWithTimestamp('Не вдалося завантажити SKU whitelist:', e);
+        console.log('Не вдалося завантажити SKU whitelist:', e);
       }
       
       // При scoped — беремо тільки товари з переданого списку manualSkus
@@ -535,7 +640,7 @@ export class DilovodSyncManager {
         }
       });
       
-      logWithTimestamp(`Товарів для перевірки: ${allProducts.length}`);
+      console.log(`Товарів для перевірки: ${allProducts.length}`);
       
       let markedAsOutdated = 0;
       let unmarkedAsOutdated = 0;
@@ -553,7 +658,7 @@ export class DilovodSyncManager {
             where: { id: product.id },
             data: { isOutdated: true }
           });
-          logWithTimestamp(`  ⚠️  Товар ${product.sku} (${product.name}) позначено як застарілий`);
+          console.log(`  ⚠️  Товар ${product.sku} (${product.name}) позначено як застарілий`);
           markedAsOutdated++;
         }
         
@@ -563,17 +668,17 @@ export class DilovodSyncManager {
             where: { id: product.id },
             data: { isOutdated: false }
           });
-          logWithTimestamp(`  ✅ Товар ${product.sku} (${product.name}) знову актуальний`);
+          console.log(`  ✅ Товар ${product.sku} (${product.name}) знову актуальний`);
           unmarkedAsOutdated++;
         }
       }
       
-      logWithTimestamp(`\n📊 Результат позначення застарілих товарів:`);
-      logWithTimestamp(`  ⚠️  Позначено як застарілих: ${markedAsOutdated}`);
-      logWithTimestamp(`  ✅ Знято позначку застарілості: ${unmarkedAsOutdated}`);
+      console.log(`\n📊 Результат позначення застарілих товарів:`);
+      console.log(`  ⚠️  Позначено як застарілих: ${markedAsOutdated}`);
+      console.log(`  ✅ Знято позначку застарілості: ${unmarkedAsOutdated}`);
       
     } catch (error) {
-      logWithTimestamp('Помилка позначення застарілих товарів:', error);
+      console.log('Помилка позначення застарілих товарів:', error);
       // Не кидаємо помилку, щоб не зупиняти синхронізацію
     }
   }

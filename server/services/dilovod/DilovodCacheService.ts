@@ -23,7 +23,7 @@ import { logServer } from '../../lib/utils.js';
 const prisma = new PrismaClient();
 
 // Wrapper для логування з timestamp
-const logWithTimestamp = (message: string, data?: any) => {
+const console.log = (message: string, data?: any) => {
   const timestamp = new Date().toISOString();
   logServer(`[${timestamp}] ${message}`, data);
 };
@@ -74,7 +74,7 @@ export class DilovodCacheService {
 
       return hoursSinceUpdate < this.CACHE_TTL_HOURS;
     } catch (error) {
-      logWithTimestamp(`❌ Помилка перевірки валідності кешу ${type}:`, error);
+      console.log(`❌ Помилка перевірки валідності кешу ${type}:`, error);
       return false;
     }
   }
@@ -110,7 +110,7 @@ export class DilovodCacheService {
         isValid
       };
     } catch (error) {
-      logWithTimestamp(`❌ Помилка отримання метаданих кешу ${type}:`, error);
+      console.log(`❌ Помилка отримання метаданих кешу ${type}:`, error);
       return {
         lastUpdate: null,
         recordsCount: 0,
@@ -124,12 +124,12 @@ export class DilovodCacheService {
    */
   async getFromCache<T = any>(type: CacheType): Promise<T[] | null> {
     try {
-      // logWithTimestamp(`🔍 Перевірка кешу для ${type}...`);
+      // console.log(`🔍 Перевірка кешу для ${type}...`);
       
       const isValid = await this.isCacheValid(type);
       
       if (!isValid) {
-        logWithTimestamp(`⏰ Кеш ${type} застарів або не існує - буде запит до API`);
+        console.log(`⏰ Кеш ${type} застарів або не існує - буде запит до API`);
         return null;
       }
 
@@ -139,15 +139,15 @@ export class DilovodCacheService {
       });
 
       if (!record) {
-        logWithTimestamp(`❌ Кеш ${type} не знайдено в БД - буде запит до API`);
+        console.log(`❌ Кеш ${type} не знайдено в БД - буде запит до API`);
         return null;
       }
 
       const data = JSON.parse(record.value);
-      // logWithTimestamp(`✅ Кеш ${type} ВИКОРИСТАНО з БД: ${Array.isArray(data) ? data.length : 0} записів`);
+      // console.log(`✅ Кеш ${type} ВИКОРИСТАНО з БД: ${Array.isArray(data) ? data.length : 0} записів`);
       return data;
     } catch (error) {
-      logWithTimestamp(`❌ Помилка читання кешу ${type}:`, error);
+      console.log(`❌ Помилка читання кешу ${type}:`, error);
       return null;
     }
   }
@@ -193,9 +193,9 @@ export class DilovodCacheService {
         }
       });
 
-      logWithTimestamp(`✅ Кеш ${type} оновлено: ${data.length} записів`);
+      console.log(`✅ Кеш ${type} оновлено: ${data.length} записів`);
     } catch (error) {
-      logWithTimestamp(`❌ Помилка оновлення кешу ${type}:`, error);
+      console.log(`❌ Помилка оновлення кешу ${type}:`, error);
       throw error;
     }
   }
@@ -216,9 +216,9 @@ export class DilovodCacheService {
         }
       });
 
-      logWithTimestamp(`🗑️  Кеш ${type} очищено`);
+      console.log(`🗑️  Кеш ${type} очищено`);
     } catch (error) {
-      logWithTimestamp(`❌ Помилка очищення кешу ${type}:`, error);
+      console.log(`❌ Помилка очищення кешу ${type}:`, error);
       throw error;
     }
   }
@@ -236,9 +236,9 @@ export class DilovodCacheService {
         }
       });
 
-      logWithTimestamp(`🗑️  Весь кеш Dilovod очищено`);
+      console.log(`🗑️  Весь кеш Dilovod очищено`);
     } catch (error) {
-      logWithTimestamp(`❌ Помилка очищення всього кешу:`, error);
+      console.log(`❌ Помилка очищення всього кешу:`, error);
       throw error;
     }
   }
@@ -266,7 +266,7 @@ export class DilovodCacheService {
         isValid: goodsStatus.lastSync ? (new Date().getTime() - new Date(goodsStatus.lastSync).getTime()) / (1000 * 60 * 60) < this.CACHE_TTL_HOURS : false
       };
     } catch (error) {
-      logWithTimestamp('❌ Помилка отримання статусу довідника товарів:', error);
+      console.log('❌ Помилка отримання статусу довідника товарів:', error);
       statuses['goods'] = {
         lastUpdate: null,
         recordsCount: 0,

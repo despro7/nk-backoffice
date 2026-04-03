@@ -20,6 +20,38 @@
 2. If the area is undocumented and the task is non-trivial — briefly explore the architecture (grep, read key files) before proceeding.
 3. If the scope of changes is unclear — ask a clarifying question before writing code.
 
+### Plan Before Implementation
+- Do **not** immediately start implementing a task
+- At the beginning of a new request, first **propose a short implementation plan**
+- Wait for **explicit user approval** before making any changes
+
+**Exception:**  
+For **small, unambiguous changes** (1–2 files, straightforward edit) you may proceed  
+without a plan. For anything involving multiple files, architectural decisions,  
+or non-trivial logic — always propose a plan first.
+
+**Expected workflow:**
+1. Propose short plan 🧭  
+2. Wait for approval  
+3. Implement after approval 🚀  
+
+### When User Asks a Question
+- If the user asks a **question**, answer the question **without making code changes**
+- Do not modify files unless the user explicitly asks for it
+
+After answering, if relevant, ask:
+> Would you like me to apply these changes?
+
+**Expected workflow:**
+1. Answer question 💡  
+2. Offer to apply changes (if relevant)
+
+### Response Style
+- Keep responses concise and structured  
+- Avoid unnecessary verbosity  
+- Use emoji **sparingly** to make responses slightly more readable and friendly  
+- Do not overuse emoji (typically 1–3 emoji per response is enough)
+
 ### Documentation & Changelog
 After completing any non-trivial task, **always ask the user**:
 > *"Чи потрібно задокументувати ці зміни?"*

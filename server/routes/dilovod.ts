@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
 import { authenticateToken, requireRole, requireMinRole, ROLES } from '../middleware/auth.js';
-import { DilovodService, logWithTimestamp } from '../services/dilovod/index.js';
+import { DilovodService } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache, isDilovodExportError, getDilovodExportErrorMessage } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
@@ -159,15 +159,15 @@ router.get('/test-connection', authenticateToken, requireMinRole(ROLES.SHOP_MANA
   try {
     const { user } = req as any;
 
-    logWithTimestamp('=== API: test-connection викликано ===');
+    console.log('=== API: test-connection викликано ===');
 
     const dilovodService = new DilovodService();
     const result = await dilovodService.testConnection();
 
-    logWithTimestamp('API: Результат тестування підключення отримано:', result);
+    console.log('API: Результат тестування підключення отримано:', result);
     res.json(result);
   } catch (error) {
-    logWithTimestamp('Error testing connection:', error);
+    console.log('Error testing connection:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -184,7 +184,7 @@ router.post('/orders/test', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER
   try {
     const { user } = req as any;
 
-    logWithTimestamp('=== API: dilovod/orders/test викликано ===');
+    console.log('=== API: dilovod/orders/test викликано ===');
 
     const {
       orderNumber,
@@ -201,7 +201,7 @@ router.post('/orders/test', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER
       });
     }
 
-    logWithTimestamp(`API: Пошук документу типу ${documentType} з номером: ${orderNumber}`);
+    console.log(`API: Пошук документу типу ${documentType} з номером: ${orderNumber}`);
 
     // Формуємо payload через утиліту
     const dilovodPayload = buildDilovodPayload({
@@ -235,7 +235,7 @@ router.post('/orders/test', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER
       );
     }
 
-    logWithTimestamp(`API: Знайдено ${orders.length} документів типу ${documentType}`);
+    console.log(`API: Знайдено ${orders.length} документів типу ${documentType}`);
 
     const responsePayload: Record<string, unknown> = {
       success: true,
@@ -250,7 +250,7 @@ router.post('/orders/test', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER
     res.json(responsePayload);
   } catch (error) {
     const errorMessage = handleDilovodApiError(error, 'Order search');
-    logWithTimestamp('API: Помилка в dilovod/orders/test:', errorMessage);
+    console.log('API: Помилка в dilovod/orders/test:', errorMessage);
     res.status(500).json({
       success: false,
       error: 'Dilovod API error',
@@ -277,7 +277,7 @@ router.get('/orders/:orderId/details', authenticateToken, requireMinRole(ROLES.S
       });
     }
 
-    logWithTimestamp(`=== API: Отримання деталей замовлення ID: ${orderId} ===`);
+    console.log(`=== API: Отримання деталей замовлення ID: ${orderId} ===`);
 
     const dilovodService = new DilovodService();
     const orderDetails = await dilovodService.getOrderDetails(orderId);
@@ -290,7 +290,7 @@ router.get('/orders/:orderId/details', authenticateToken, requireMinRole(ROLES.S
     });
   } catch (error) {
     const errorMessage = handleDilovodApiError(error, 'Order details');
-    logWithTimestamp('API: Помилка отримання деталей замовлення:', errorMessage);
+    console.log('API: Помилка отримання деталей замовлення:', errorMessage);
     res.status(500).json({
       success: false,
       error: 'Dilovod API error',
@@ -315,7 +315,7 @@ router.get('/settings', authenticateToken, requireMinRole(ROLES.STOREKEEPER), as
       data: settings
     });
   } catch (error) {
-    logWithTimestamp('API: Помилка отримання налаштувань Dilovod:', error);
+    console.log('API: Помилка отримання налаштувань Dilovod:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -332,7 +332,7 @@ router.post('/settings', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAG
   try {
     const { user } = req as any;
 
-    logWithTimestamp('=== API: Збереження налаштувань Dilovod ===');
+    console.log('=== API: Збереження налаштувань Dilovod ===');
 
     const settingsData: DilovodSettingsRequest = req.body;
 
@@ -348,14 +348,14 @@ router.post('/settings', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAG
     void cronService.restartStockSync();
     void cronService.restartOrderSync();
 
-    logWithTimestamp('API: Налаштування Dilovod збережено і конфігурацію оновлено');
+    console.log('API: Налаштування Dilovod збережено і конфігурацію оновлено');
     res.json({
       success: true,
       data: savedSettings,
       message: 'Налаштування успішно збережено'
     });
   } catch (error) {
-    logWithTimestamp('API: Помилка збереження налаштувань Dilovod:', error);
+    console.log('API: Помилка збереження налаштувань Dilovod:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -372,7 +372,7 @@ router.get('/directories', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MAN
   try {
     const { user } = req as any;
 
-    logWithTimestamp('=== API: Отримання довідників Dilovod ===');
+    console.log('=== API: Отримання довідників Dilovod ===');
 
     const dilovodService = new DilovodService();
 
@@ -388,37 +388,37 @@ router.get('/directories', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MAN
     try {
       storagesResult = await dilovodService.getStorages();
     } catch (error) {
-      logWithTimestamp('API: ❌ Помилка отримання складів:', error);
+      console.log('API: ❌ Помилка отримання складів:', error);
     }
 
     try {
       accountsResult = await dilovodService.getCashAccounts();
     } catch (error) {
-      logWithTimestamp('API: ❌ Помилка отримання рахунків:', error);
+      console.log('API: ❌ Помилка отримання рахунків:', error);
     }
 
     try {
       paymentFormsResult = await dilovodService.getPaymentForms();
     } catch (error) {
-      logWithTimestamp('API: ❌ Помилка отримання форм оплати:', error);
+      console.log('API: ❌ Помилка отримання форм оплати:', error);
     }
 
     try {
       firmsResult = await dilovodService.getFirms();
     } catch (error) {
-      logWithTimestamp('API: ❌ Помилка отримання фірм:', error);
+      console.log('API: ❌ Помилка отримання фірм:', error);
     }
 
     try {
       tradeChanelsResult = await dilovodService.getTradeChanels();
     } catch (error) {
-      logWithTimestamp('API: ❌ Помилка отримання каналів продажів:', error);
+      console.log('API: ❌ Помилка отримання каналів продажів:', error);
     }
 
     try {
       deliveryMethodsResult = await dilovodService.getDeliveryMethods();
     } catch (error) {
-      logWithTimestamp('API: ❌ Помилка отримання способів доставки:', error);
+      console.log('API: ❌ Помилка отримання способів доставки:', error);
     }
 
     // Отримуємо товари з products (будемо використовувати поле products.dilovodId)
@@ -442,7 +442,7 @@ router.get('/directories', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MAN
 
       await prisma.$disconnect();
     } catch (error) {
-      logWithTimestamp('API: ❌ Помилка отримання товарів з кешу:', error);
+      console.log('API: ❌ Помилка отримання товарів з кешу:', error);
     }
 
     const directories: DilovodDirectories = {
@@ -460,7 +460,7 @@ router.get('/directories', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MAN
       data: directories
     });
   } catch (error) {
-    logWithTimestamp('API: Помилка отримання довідників Dilovod:', error);
+    console.log('API: Помилка отримання довідників Dilovod:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -711,7 +711,7 @@ router.post('/salesdrive/orders/check', authenticateToken, requireMinRole(ROLES.
     // AUTO MODE - автоматична перевірка замовлень з неповними даними
     if (auto === true) {
       const isForceAll = forceAll === true;
-      logWithTimestamp(`=== API [AUTO${isForceAll ? '/FORCE_ALL' : ''}]: Перевірка замовлень в Dilovod (limit: ${limit || 100}, offset: ${offset || 0}) ===`, undefined, true);
+      console.log(`=== API [AUTO${isForceAll ? '/FORCE_ALL' : ''}]: Перевірка замовлень в Dilovod (limit: ${limit || 100}, offset: ${offset || 0}) ===`, undefined, true);
       
       const result = await dilovodService.checkOrderStatuses(limit || 100, offset || 0, isForceAll);
       return res.json(result);
@@ -726,14 +726,14 @@ router.post('/salesdrive/orders/check', authenticateToken, requireMinRole(ROLES.
       });
     }
 
-    logWithTimestamp(`=== API: Перевірка замовлень ${orderNumbers} в Dilovod ===`, undefined, true);
+    console.log(`=== API: Перевірка замовлень ${orderNumbers} в Dilovod ===`, undefined, true);
 
     const result = await dilovodService.checkOrdersByNumbers(orderNumbers);
     return res.json(result);
 
   } catch (error) {
     const errorMessage = handleDilovodApiError(error, 'Order check');
-    logWithTimestamp('API: Помилка перевірки замовлення в Dilovod:', errorMessage);
+    console.log('API: Помилка перевірки замовлення в Dilovod:', errorMessage);
     res.status(500).json({
       success: false,
       error: 'Dilovod API error',
@@ -759,7 +759,7 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, requireMinR
       });
     }
 
-    logWithTimestamp(`=== API: Примусове скидання та перевірка замовлень ${orderNumbers} в Dilovod ===`, undefined, true);
+    console.log(`=== API: Примусове скидання та перевірка замовлень ${orderNumbers} в Dilovod ===`, undefined, true);
 
     // Скидаємо всі Dilovod-поля для вказаних замовлень
     const resetResult = await prisma.order.updateMany({
@@ -776,7 +776,7 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, requireMinR
       }
     });
 
-    logWithTimestamp(`Скинуто Dilovod-поля для ${resetResult.count} замовлень`);
+    console.log(`Скинуто Dilovod-поля для ${resetResult.count} замовлень`);
 
     // Запускаємо перевірку в Dilovod API (тепер поля чисті — буде повний пошук)
     const dilovodService = new DilovodService();
@@ -790,7 +790,7 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, requireMinR
 
   } catch (error) {
     const errorMessage = handleDilovodApiError(error, 'Reset and check');
-    logWithTimestamp('API: Помилка примусової перевірки замовлення в Dilovod:', errorMessage);
+    console.log('API: Помилка примусової перевірки замовлення в Dilovod:', errorMessage);
     res.status(500).json({
       success: false,
       error: 'Dilovod API error',
@@ -820,7 +820,7 @@ router.post('/salesdrive/orders/:orderId/reset-duplicate-count', authenticateTok
       data: { dilovodSaleDocsCount: 1 }
     });
 
-    logWithTimestamp(`API: Скинуто лічильник дублікатів для замовлення ${order.orderNumber} (було: ${order.dilovodSaleDocsCount} → стало: 1)`);
+    console.log(`API: Скинуто лічильник дублікатів для замовлення ${order.orderNumber} (було: ${order.dilovodSaleDocsCount} → стало: 1)`);
 
     return res.json({
       success: true,
@@ -828,7 +828,7 @@ router.post('/salesdrive/orders/:orderId/reset-duplicate-count', authenticateTok
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logWithTimestamp('API: Помилка скидання лічильника дублікатів:', errorMessage);
+    console.log('API: Помилка скидання лічильника дублікатів:', errorMessage);
     res.status(500).json({ success: false, error: errorMessage });
   }
 });
@@ -848,7 +848,7 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, requireMi
       select: { dilovodDocId: true, dilovodExportDate: true }
     });
     if (localOrder?.dilovodDocId) {
-      logWithTimestamp(`ℹ️ Validate: замовлення ${orderNum} (id: ${orderId}) вже експортовано (baseDocId: ${localOrder.dilovodDocId}) — валідація пропускається`);
+      console.log(`ℹ️ Validate: замовлення ${orderNum} (id: ${orderId}) вже експортовано (baseDocId: ${localOrder.dilovodDocId}) — валідація пропускається`);
       return res.json({
         success: true,
         alreadyExported: true,
@@ -866,7 +866,7 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, requireMi
       });
     }
 
-    logWithTimestamp(`=== API: Валідація замовлення ${orderNum} (id: ${orderId}) для експорту в Dilovod ===`, undefined, true);
+    console.log(`=== API: Валідація замовлення ${orderNum} (id: ${orderId}) для експорту в Dilovod ===`, undefined, true);
 
     // Імпортуємо DilovodExportBuilder
     const { dilovodExportBuilder } = await import('../services/dilovod/DilovodExportBuilder.js');
@@ -881,7 +881,7 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, requireMi
       const { payloadCacheService } = await import('../services/dilovod/PayloadCacheService.js');
       const token = payloadCacheService.save({ payload, warnings }, 600); // default 10 min
 
-      logWithTimestamp(`✅ Валідація замовлення ${orderNum} (id: ${orderId}) пройдена успішно`);
+      console.log(`✅ Валідація замовлення ${orderNum} (id: ${orderId}) пройдена успішно`);
 
       // Валідація успішна
       res.json({
@@ -906,7 +906,7 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, requireMi
 
       // Якщо канал не налаштований для експорту
       if (errorMessage.includes('не налаштований для експорту через Dilovod')) {
-        logWithTimestamp(`❌ Замовлення ${orderNum} (id: ${orderId}) не підлягає експорту через цей інструмент`);
+        console.log(`❌ Замовлення ${orderNum} (id: ${orderId}) не підлягає експорту через цей інструмент`);
 
         return res.status(200).json({
           success: false,
@@ -925,7 +925,7 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, requireMi
 
       // Якщо це критична помилка валідації
       if (errorMessage.includes('Експорт заблоковано через критичні помилки:')) {
-        logWithTimestamp(`❌ Валідація замовлення ${orderNum} (id: ${orderId}) не пройдена`);
+        console.log(`❌ Валідація замовлення ${orderNum} (id: ${orderId}) не пройдена`);
 
         return res.status(200).json({
           success: false,
@@ -980,13 +980,13 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
 
     if (existingOrder?.dilovodDocId) {
       // Якщо вже є dilovodDocId — не робимо повторний експорт
-      logWithTimestamp(`ℹ️ Замовлення ${orderNum} (id: ${orderId}) вже експортовано в Dilovod (baseDocId: ${existingOrder.dilovodDocId})`);
+      console.log(`ℹ️ Замовлення ${orderNum} (id: ${orderId}) вже експортовано в Dilovod (baseDocId: ${existingOrder.dilovodDocId})`);
 
       // Якщо відсутній dilovodExportDate — синхронізуємо його з Dilovod API синхронно (замовлення вже відоме по DocId)
       let exportDate = existingOrder.dilovodExportDate;
       if (!exportDate) {
         try {
-          logWithTimestamp(`🔄 Відновлення dilovodExportDate для замовлення ${orderNum} (DocId: ${existingOrder.dilovodDocId})...`);
+          console.log(`🔄 Відновлення dilovodExportDate для замовлення ${orderNum} (DocId: ${existingOrder.dilovodDocId})...`);
           const { dilovodService: dilovodServiceSync } = await import('../services/dilovod/DilovodService.js');
           const found = (await dilovodServiceSync.getOrderByNumber([orderNum])).flat();
           if (found.length > 0 && found[0].date) {
@@ -995,20 +995,20 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
               where: { id: parseInt(orderId) },
               data: { dilovodExportDate: exportDate }
             });
-            logWithTimestamp(`✅ dilovodExportDate відновлено: ${exportDate}`);
+            console.log(`✅ dilovodExportDate відновлено: ${exportDate}`);
           }
         } catch (syncErr) {
-          logWithTimestamp(`⚠️ Не вдалося відновити dilovodExportDate: ${syncErr instanceof Error ? syncErr.message : syncErr}`);
+          console.log(`⚠️ Не вдалося відновити dilovodExportDate: ${syncErr instanceof Error ? syncErr.message : syncErr}`);
         }
       }
 
       // Запускаємо фонову синхронізацію додаткових полів (sale, cashIn) — не блокуємо відповідь
       const missingAdditional = !existingOrder.dilovodSaleExportDate || !existingOrder.dilovodSaleDocsCount || !existingOrder.dilovodCashInDate;
       if (missingAdditional) {
-        logWithTimestamp(`🔄 Запускаємо фонову синхронізацію додаткових Dilovod-полів для замовлення ${orderNum}`);
+        console.log(`🔄 Запускаємо фонову синхронізацію додаткових Dilovod-полів для замовлення ${orderNum}`);
         import('../services/dilovod/DilovodService.js')
           .then(({ dilovodService }) => dilovodService.checkOrdersByNumbers([orderNum]))
-          .catch(err => logWithTimestamp(`⚠️ Фонова синхронізація Dilovod-полів не вдалась: ${err instanceof Error ? err.message : err}`));
+          .catch(err => console.log(`⚠️ Фонова синхронізація Dilovod-полів не вдалась: ${err instanceof Error ? err.message : err}`));
       }
 
       return res.json({
@@ -1034,13 +1034,13 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
     }
 
     // Перевірка в Dilovod API: чи вже існує замовлення (захист від race condition та пропущеного локального стану)
-    logWithTimestamp(`🔍 Перевіряємо в Dilovod API наявність замовлення ${orderNum} перед експортом...`);
+    console.log(`🔍 Перевіряємо в Dilovod API наявність замовлення ${orderNum} перед експортом...`);
     try {
       const { dilovodService: dilovodServiceCheck } = await import('../services/dilovod/DilovodService.js');
       const existingInDilovod = (await dilovodServiceCheck.getOrderByNumber([orderNum])).flat();
       if (existingInDilovod.length > 0) {
         const dilovodDoc = existingInDilovod[0];
-        logWithTimestamp(`⚠️ Замовлення ${orderNum} вже існує в Dilovod (id: ${dilovodDoc.id}) — синхронізуємо локальну БД та блокуємо повторний експорт`);
+        console.log(`⚠️ Замовлення ${orderNum} вже існує в Dilovod (id: ${dilovodDoc.id}) — синхронізуємо локальну БД та блокуємо повторний експорт`);
         // Синхронізуємо локальну БД, щоб наступного разу блокування спрацювало на рівні БД
         await prisma.order.update({
           where: { id: parseInt(orderId) },
@@ -1058,10 +1058,10 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
       }
     } catch (checkError) {
       // Якщо перевірка не вдалася — логуємо, але не блокуємо (щоб не зупиняти роботу при недоступності API)
-      logWithTimestamp(`⚠️ Не вдалося перевірити наявність замовлення ${orderNum} в Dilovod API: ${checkError instanceof Error ? checkError.message : checkError}. Продовжуємо експорт.`);
+      console.log(`⚠️ Не вдалося перевірити наявність замовлення ${orderNum} в Dilovod API: ${checkError instanceof Error ? checkError.message : checkError}. Продовжуємо експорт.`);
     }
 
-    logWithTimestamp(`=== API: Експорт замовлення ${orderNum} (id: ${orderId}) в Dilovod ===`);
+    console.log(`=== API: Експорт замовлення ${orderNum} (id: ${orderId}) в Dilovod ===`);
 
     // Імпортуємо DilovodExportBuilder
     const { dilovodExportBuilder } = await import('../services/dilovod/DilovodExportBuilder.js');
@@ -1077,14 +1077,14 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
       if (cached && cached.payload) {
         payload = cached.payload;
         warnings = cached.warnings || [];
-        logWithTimestamp(`🧩 Використовуємо cached payload для токена ${token}`);
+        console.log(`🧩 Використовуємо cached payload для токена ${token}`);
         // Для кешованого payload ми більше не створюємо контрагентів у коді експортного маршруту.
         // Тепер person буде створений під час валідації (validate) і записаний у кеш.
         if (!payload?.header?.person?.id) {
-          logWithTimestamp(`⚠️ Cached payload для токена ${token} не містить person.id — перевірте, що запускалася validate з allowCreatePerson`);
+          console.log(`⚠️ Cached payload для токена ${token} не містить person.id — перевірте, що запускалася validate з allowCreatePerson`);
         }
       } else {
-        logWithTimestamp(`⚠️ Token ${token} не знайдено або вже використаний — будуємо payload заново`);
+        console.log(`⚠️ Token ${token} не знайдено або вже використаний — будуємо payload заново`);
         const result = await dilovodExportBuilder.buildExportPayload(orderId);
         payload = result.payload;
         warnings = result.warnings;
@@ -1096,7 +1096,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
       warnings = result.warnings;
     }
 
-    logWithTimestamp(`✅ Payload для замовлення ${orderNum} (id: ${orderId}) успішно сформовано`);
+    console.log(`✅ Payload для замовлення ${orderNum} (id: ${orderId}) успішно сформовано`);
 
     // Відправляємо payload в Dilovod через DilovodService
     try {
@@ -1118,9 +1118,9 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
               dilovodExportDate: new Date().toISOString()
             }
           });
-          logWithTimestamp(`✅ baseDoc ID (${exportResult.id}) збережено для замовлення ${orderNum} (id: ${orderId})`);
+          console.log(`✅ baseDoc ID (${exportResult.id}) збережено для замовлення ${orderNum} (id: ${orderId})`);
         } catch (dbError) {
-          logWithTimestamp(`❌ Помилка збереження baseDoc ID в БД:`, dbError);
+          console.log(`❌ Помилка збереження baseDoc ID в БД:`, dbError);
         }
       }
 
@@ -1135,10 +1135,10 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
             personId: payload?.header?.person?.id
           };
           saleToken = payloadCacheService.save(saleData, 600); // same default TTL
-          logWithTimestamp(`🔐 Згенеровано sale token ${saleToken} для замовлення ${orderNum} (orderId: ${orderId}, baseDoc: ${exportResult.id})`);
-          logWithTimestamp('🔒 sale token data:', saleData);
+          console.log(`🔐 Згенеровано sale token ${saleToken} для замовлення ${orderNum} (orderId: ${orderId}, baseDoc: ${exportResult.id})`);
+          console.log('🔒 sale token data:', saleData);
         } catch (err) {
-          logWithTimestamp('❌ Помилка при створенні sale token:', err);
+          console.log('❌ Помилка при створенні sale token:', err);
         }
       }
 
@@ -1260,7 +1260,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
     const { orderId } = req.params;
     const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
-    logWithTimestamp(`=== API: Створення документа відвантаження для замовлення ${orderNum} (id: ${orderId}) в Dilovod ===`, undefined, true);
+    console.log(`=== API: Створення документа відвантаження для замовлення ${orderNum} (id: ${orderId}) в Dilovod ===`, undefined, true);
 
     // Отримуємо замовлення з БД
     const order = await prisma.order.findUnique({
@@ -1284,11 +1284,11 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
       if (cached && cached.baseDocId) {
         // Використовуємо baseDoc з кеша (single-use)
         order.dilovodDocId = cached.baseDocId;
-        logWithTimestamp(`🔁 Використовуємо sale token ${token} -> baseDoc ${cached.baseDocId}`);
+        console.log(`🔁 Використовуємо sale token ${token} -> baseDoc ${cached.baseDocId}`);
         if (cached.personId) {
-          logWithTimestamp(`🔁 sale token містить personId: ${cached.personId} — буде передано у buildSalePayload`);
+          console.log(`🔁 sale token містить personId: ${cached.personId} — буде передано у buildSalePayload`);
         } else {
-          logWithTimestamp(`🔁 sale token ${token} не містить personId (буде побудовано на основі бази)`);
+          console.log(`🔁 sale token ${token} не містить personId (буде побудовано на основі бази)`);
         }
       }
       // Якщо в кеші є personId — можна його додатково зберегти/використати в buildSalePayload, але наразі переходимо далі
@@ -1317,14 +1317,14 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
     }
 
     // Перевірка в Dilovod API: чи вже існує documents.sale (захист від дублів при порожній локальній даті)
-    logWithTimestamp(`🔍 Перевіряємо в Dilovod API наявність документа відвантаження для замовлення ${orderNum} (baseDoc: ${order.dilovodDocId}) перед відправкою...`);
+    console.log(`🔍 Перевіряємо в Dilovod API наявність документа відвантаження для замовлення ${orderNum} (baseDoc: ${order.dilovodDocId}) перед відправкою...`);
     try {
       const { dilovodService: dilovodServiceCheck } = await import('../services/dilovod/DilovodService.js');
       const existingSaleDocs = await dilovodServiceCheck.getDocuments([order.dilovodDocId!], 'sale');
       if (existingSaleDocs.length > 0) {
         const saleDoc = existingSaleDocs[0];
         const saleCount = existingSaleDocs.length;
-        logWithTimestamp(`⚠️ В Dilovod вже існує ${saleCount} документ(ів) відвантаження для замовлення ${orderNum} (sale id: ${saleDoc.id}) — синхронізуємо та блокуємо`);
+        console.log(`⚠️ В Dilovod вже існує ${saleCount} документ(ів) відвантаження для замовлення ${orderNum} (sale id: ${saleDoc.id}) — синхронізуємо та блокуємо`);
         // Синхронізуємо локальну БД
         await prisma.order.update({
           where: { id: parseInt(orderId) },
@@ -1346,7 +1346,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
       }
     } catch (checkError) {
       // Якщо перевірка не вдалася — логуємо, але не блокуємо
-      logWithTimestamp(`⚠️ Не вдалося перевірити наявність documents.sale для замовлення ${orderNum} в Dilovod API: ${checkError instanceof Error ? checkError.message : checkError}. Продовжуємо відвантаження.`);
+      console.log(`⚠️ Не вдалося перевірити наявність documents.sale для замовлення ${orderNum} в Dilovod API: ${checkError instanceof Error ? checkError.message : checkError}. Продовжуємо відвантаження.`);
     }
 
     // Імпортуємо DilovodExportBuilder для створення payload відвантаження
@@ -1355,7 +1355,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
     // Формуємо payload для документа відвантаження (documents.sale)
     const { payload: salePayload, warnings } = await dilovodExportBuilder.buildSalePayload(orderId, order.dilovodDocId, { personId: cached?.personId });
 
-    logWithTimestamp(`✅ Payload для документа відвантаження ${orderNum} (id: ${orderId}) успішно сформовано`);
+    console.log(`✅ Payload для документа відвантаження ${orderNum} (id: ${orderId}) успішно сформовано`);
 
     // Відправляємо payload в Dilovod через DilovodService
     try {
@@ -1382,12 +1382,12 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
           });
           
           const dateSource = order.readyToShipAt ? 'з readyToShipAt' : 'поточна дата';
-          logWithTimestamp(`✅ Дату відвантаження (${dateSource}) збережено для замовлення #${orderNumber} (id: ${orderId})`);
+          console.log(`✅ Дату відвантаження (${dateSource}) збережено для замовлення #${orderNumber} (id: ${orderId})`);
         } catch (dbError) {
-          logWithTimestamp(`❌ Помилка збереження дати відвантаження в БД:`, dbError);
+          console.log(`❌ Помилка збереження дати відвантаження в БД:`, dbError);
         }
       } else if (isExportError) {
-        logWithTimestamp(`❌ Відвантаження для замовлення #${orderNumber} НЕ збережено в БД: ${exportErrorMessage}`);
+        console.log(`❌ Відвантаження для замовлення #${orderNumber} НЕ збережено в БД: ${exportErrorMessage}`);
       }
 
       // Логування в MetaLog
@@ -1516,21 +1516,21 @@ router.post('/cache/refresh', authenticateToken, requireMinRole(ROLES.SHOP_MANAG
   try {
     const { user } = req as any;
 
-    logWithTimestamp('=== API: Примусове оновлення кешу довідників Dilovod ===');
+    console.log('=== API: Примусове оновлення кешу довідників Dilovod ===');
 
     const dilovodService = new DilovodService();
 
     // Оновлюємо весь кеш (НЕ паралельно, щоб уникнути multithreadApiSession blocked)
     const result = await dilovodService.refreshAllDirectoriesCache();
 
-    logWithTimestamp('API: Кеш оновлено успішно');
+    console.log('API: Кеш оновлено успішно');
     res.json({
       success: true,
       data: result,
       message: 'Кеш довідників успішно оновлено'
     });
   } catch (error) {
-    logWithTimestamp('API: Помилка оновлення кешу довідників Dilovod:', error);
+    console.log('API: Помилка оновлення кешу довідників Dilovod:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',

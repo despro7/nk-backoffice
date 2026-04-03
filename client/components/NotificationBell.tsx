@@ -51,6 +51,12 @@ const TITLE_LABELS: Record<string, string> = {
   'Auto export error (saleOrder)':                                  'Помилка авто-експорту замовлення',
   'Auto shipment export result (sale)':                             'Авто-відвантаження замовлення',
   'Auto shipment error (sale)':                                     'Помилка авто-відвантаження',
+  // Product sync errors
+  'Товар без ціни':                                                 'Товар без ціни',
+  'Невірні дані товару':                                           'Невірні дані товару',
+  'Помилка бази даних':                                            'Помилка бази даних',
+  'Помилка валідації':                                             'Помилка валідації',
+  'Помилка синхронізації товару':                                  'Помилка синхронізації товару',
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -62,6 +68,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   'sync':        		'Синхронізація',
   'system':      		'Система',
   'manual':      		'Ручна дія',
+  'product_sync': 		'Синхронізація товарів',
   'default':     		'Загальне',
 };
 
