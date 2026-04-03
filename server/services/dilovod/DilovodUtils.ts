@@ -159,7 +159,6 @@ export async function getDilovodConfigFromDB(): Promise<DilovodConfig> {
     // Кешуємо конфігурацію
     configCache = { config, timestamp: now };
     
-    logWithTimestamp(`Dilovod конфігурація: API Key з ${dilovodSettings.apiKey ? 'БД' : 'ENV'}: ${config.apiKey?.substring(0, 10)}...`);
     return config;
   } catch (error) {
     // У разі помилки повертаємо конфігурацію за замовчуванням

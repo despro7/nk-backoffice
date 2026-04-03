@@ -12,7 +12,6 @@ import {
 import { DilovodStorage } from '../../../shared/types/dilovod.js';
 import {
   handleDilovodApiError,
-  logWithTimestamp,
   validateDilovodConfig,
   DEFAULT_DILOVOD_CONFIG,
   getDilovodConfigFromDB,
@@ -45,14 +44,14 @@ export class DilovodApiClient {
    * Викликається при зміні налаштувань API
    */
   public async reloadConfig(): Promise<void> {
-    logWithTimestamp('DilovodApiClient: Примусове оновлення конфігурації...');
+    console.log('DilovodApiClient: Примусове оновлення конфігурації...');
     
     // Імпортуємо функцію очищення кешу та очищаємо його
     const { clearConfigCache } = await import('./DilovodUtils.js');
     clearConfigCache();
     
     await this.loadConfig();
-    logWithTimestamp(`DilovodApiClient: Конфігурацію оновлено. API Key: ${this.apiKey?.substring(0, 10)}...`);
+    console.log(`DilovodApiClient: Конфігурацію оновлено. API Key: ${this.apiKey?.substring(0, 10)}...`);
   }
 
   private normalizeToArray<T>(data: any): T[] {
@@ -77,15 +76,13 @@ export class DilovodApiClient {
       this.apiUrl = this.config.apiUrl;
       this.apiKey = this.config.apiKey;
 
-      logWithTimestamp('Dilovod конфігурація завантажена з БД');
-
       // Валідируємо конфігурацію (тепер без викидання помилки при старті)
       const errors = validateDilovodConfig(this.config);
       if (errors.length > 0) {
-        logWithTimestamp('⚠️ Попередження конфігурації Dilovod (сервер продовжує роботу):', errors);
+        console.log('⚠️ Попередження конфігурації Dilovod (сервер продовжує роботу):', errors);
       }
     } catch (error) {
-      logWithTimestamp('Помилка завантаження конфігурації Dilovod з БД, використовуємо значення за замовчуванням:', error);
+      console.log('Помилка завантаження конфігурації Dilovod з БД, використовуємо значення за замовчуванням:', error);
 
       // У разі помилки використовуємо конфігурацію за замовчуванням
       this.config = DEFAULT_DILOVOD_CONFIG;
@@ -95,7 +92,7 @@ export class DilovodApiClient {
       // Валідируємо конфігурацію за замовчуванням (теж без викидання помилки)
       const errors = validateDilovodConfig(this.config);
       if (errors.length > 0) {
-        logWithTimestamp('⚠️ Попередження конфігурації Dilovod за замовчуванням:', errors);
+        console.log('⚠️ Попередження конфігурації Dilovod за замовчуванням:', errors);
       }
     }
   }
@@ -114,7 +111,7 @@ export class DilovodApiClient {
         throw new Error(`Dilovod API не налаштовано: ${errors.join(', ')}`);
       }
       
-      logWithTimestamp('Відправляємо запит до Dilovod API:', {
+      console.log('Відправляємо запит до Dilovod API:', {
         ...request,
         key: request.key ? `${String(request.key).substring(0, 6)}***` : undefined
       });
@@ -129,7 +126,7 @@ export class DilovodApiClient {
 
       if (!response.ok) {
         const errorData = await response.text();
-        logWithTimestamp('Помилка відповіді Dilovod API:', {
+        console.log('Помилка відповіді Dilovod API:', {
           status: response.status,
           statusText: response.statusText,
           data: errorData
@@ -139,12 +136,12 @@ export class DilovodApiClient {
       }
 
       const data = await response.json() as T;
-      logWithTimestamp('Отримано відповідь від Dilovod API:', data);
+      console.log('Отримано відповідь від Dilovod API:', data);
 
       return data;
     } catch (error) {
       const errorMessage = handleDilovodApiError(error, 'API Request');
-      logWithTimestamp('Помилка запиту до Dilovod API:', errorMessage);
+      console.log('Помилка запиту до Dilovod API:', errorMessage);
       throw new Error(errorMessage);
     }
   }
@@ -404,7 +401,7 @@ export class DilovodApiClient {
       await this.makeRequest(request);
       return true;
     } catch (error) {
-      logWithTimestamp('Ошибка тестирования подключения:', error);
+      console.log('Помилка під час тестування з\'єднання:', error);
       return false;
     }
   }
@@ -450,7 +447,7 @@ export class DilovodApiClient {
     this.apiUrl = this.config.apiUrl;
     this.apiKey = this.config.apiKey;
     
-    logWithTimestamp('Конфігурація Dilovod оновлена:', this.config);
+    console.log('Конфігурація Dilovod оновлена:', this.config);
   }
 
   // Пошук замовлення за номером з опційними деталями
@@ -493,7 +490,7 @@ export class DilovodApiClient {
           await new Promise(resolve => setTimeout(resolve, 200));
         }
       } catch (error) {
-        logWithTimestamp('DilovodApiClient: Помилка отримання чанку замовлень:', error);
+        console.log('DilovodApiClient: Помилка отримання чанку замовлень:', error);
         // Продовжуємо з іншими чанками
       }
     }
@@ -511,7 +508,7 @@ export class DilovodApiClient {
         const details = await this.getOrderDetails(order.id);
         return { ...order, details };
       } catch (error) {
-        logWithTimestamp('DilovodApiClient: Помилка отримання деталей замовлення за ID:', {
+        console.log('DilovodApiClient: Помилка отримання деталей замовлення за ID:', {
           orderId: order.id,
           error: handleDilovodApiError(error, 'Order details fetch')
         });
@@ -566,7 +563,7 @@ export class DilovodApiClient {
         const details = await this.getOrderDetails(document.id);
         return { ...document, details };
       } catch (error) {
-        logWithTimestamp('DilovodApiClient: Помилка отримання деталей документу за ID:', {
+        console.log('DilovodApiClient: Помилка отримання деталей документу за ID:', {
           documentId: document.id,
           error: handleDilovodApiError(error, 'Document details fetch')
         });
@@ -621,7 +618,7 @@ export class DilovodApiClient {
         const details = await this.getOrderDetails(document.id);
         return { ...document, details };
       } catch (error) {
-        logWithTimestamp('DilovodApiClient: Помилка отримання деталей документу (baseDoc) за ID:', {
+        console.log('DilovodApiClient: Помилка отримання деталей документу (baseDoc) за ID:', {
           documentId: document.id,
           error: handleDilovodApiError(error, 'Document details fetch (baseDoc)')
         });
@@ -685,7 +682,7 @@ export class DilovodApiClient {
           await new Promise(resolve => setTimeout(resolve, 200));
         }
       } catch (error) {
-        logWithTimestamp(`DilovodApiClient: Помилка отримання чанку документів ${documentType}:`, error);
+        console.log(`DilovodApiClient: Помилка отримання чанку документів ${documentType}:`, error);
       }
     }
     
@@ -709,19 +706,19 @@ export class DilovodApiClient {
       }
     };
 
-    logWithTimestamp('DilovodApiClient: Запит складів до Dilovod API');
+    console.log('DilovodApiClient: Запит складів до Dilovod API');
     const result = await this.makeRequest<any>(request);
     
-    logWithTimestamp(`DilovodApiClient: Сира відповідь API: ${JSON.stringify(result)}`);
+    console.log(`DilovodApiClient: Сира відповідь API: ${JSON.stringify(result)}`);
     
     const normalizedResult = this.normalizeToArray<DilovodStorage>(result);
-    logWithTimestamp(`DilovodApiClient: Нормалізовано складів: ${normalizedResult.length}`);
+    console.log(`DilovodApiClient: Нормалізовано складів: ${normalizedResult.length}`);
     
     // Детальний лог перших записів для діагностики
     if (normalizedResult.length > 0) {
-      logWithTimestamp(`DilovodApiClient: Перший склад: ${JSON.stringify(normalizedResult[0])}`);
+      console.log(`DilovodApiClient: Перший склад: ${JSON.stringify(normalizedResult[0])}`);
       if (normalizedResult.length > 1) {
-        logWithTimestamp(`DilovodApiClient: Другий склад: ${JSON.stringify(normalizedResult[1])}`);
+        console.log(`DilovodApiClient: Другий склад: ${JSON.stringify(normalizedResult[1])}`);
       }
     }
     
@@ -732,7 +729,7 @@ export class DilovodApiClient {
     });
     
     if (filteredResult.length !== normalizedResult.length) {
-      logWithTimestamp(`DilovodApiClient: Виключено склад виробничого цеху. Залишилось складів: ${filteredResult.length}`);
+      console.log(`DilovodApiClient: Виключено склад виробничого цеху. Залишилось складів: ${filteredResult.length}`);
     }
     
     return filteredResult;

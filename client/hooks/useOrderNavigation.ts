@@ -12,6 +12,7 @@ interface UseOrderNavigationProps {
   nextOrderExternalId?: string | null;
   checklistItems?: any[];
   orderStatus?: string;
+  onUpdateOrderStatus?: (status: string, statusText: string) => void; // Callback для локального оновлення статусу
 }
 
 export function useOrderNavigation({
@@ -22,7 +23,8 @@ export function useOrderNavigation({
   previousOrderExternalId,
   nextOrderExternalId,
   checklistItems = [],
-  orderStatus
+  orderStatus,
+  onUpdateOrderStatus
 }: UseOrderNavigationProps) {
   const navigate = useNavigate();
 
@@ -125,6 +127,11 @@ export function useOrderNavigation({
 
   /**
    * Допоміжна функція: оновити статус поточного замовлення до "3" (Готове до відправки)
+   * 
+   * Логіка:
+   * 1. Спочатку оновлюємо локальний стан (оптимістичне оновлення) → UI зміниться одразу
+   * 2. Потім відправляємо запит до SalesDrive в тлі (не блокуємо UI)
+   * 3. Якщо запит не пройде — користувач потім зі сервера отримає правильний статус
    */
   const updateCurrentOrderStatusToReady = useCallback(async () => {
     if (!id) return;
@@ -133,6 +140,7 @@ export function useOrderNavigation({
     const statusPayload = { status: '3' };
 
     try {
+      // 1️⃣ СПОЧАТКУ: Отримуємо поточний статус з сервера (без PUT)
       const response = await apiCall(statusUrl);
       if (!response.ok) {
         console.warn('⚠️ [useOrderNavigation] Не вдалося отримати поточний статус замовлення');
@@ -147,6 +155,13 @@ export function useOrderNavigation({
         return;
       }
 
+      // 2️⃣ ОДРАЗУ: Оновлюємо локальний стан (оптимістичне оновлення)
+      // Це забезпечує миттєву зміну UI без очікування відповіді від SalesDrive
+      if (onUpdateOrderStatus) {
+        onUpdateOrderStatus('3', 'На відправку');
+      }
+
+      // 3️⃣ ПОТІМ: Відправляємо запит до SalesDrive в тлі (не блокуємо UI)
       const statusResponse = await apiCall(statusUrl, {
         method: 'PUT',
         headers: {
@@ -174,7 +189,7 @@ export function useOrderNavigation({
       setShowErrorModal(true);
       console.error('❌ [useOrderNavigation] Помилка оновлення статусу поточного замовлення:', error);
     }
-  }, [id, apiCall]);
+  }, [id, apiCall, onUpdateOrderStatus]);
 
   /**
    * Функція для отримання номера наступного замовлення
@@ -223,12 +238,6 @@ export function useOrderNavigation({
       console.log('🖨️ [useOrderNavigation] handlePrintTTN пропущено - вже друкується');
       return;
     }
-
-    // const PrintTest = true;
-    // if (PrintTest) {
-    //   console.log(`🖨️ [useOrderNavigation] handlePrintTTN order.ord_delivery_data: ${JSON.stringify(order.rawData.ord_delivery_data[0].senderId)}`);
-    //   return;
-    // }
 
     try {
       setIsPrintingTTN(true);

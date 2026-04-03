@@ -3,22 +3,6 @@
  * Централізований маппінг статусів між SalesDrive API та внутрішньою системою
  */
 
-/**
- * Маппінг статусів з SalesDrive в нашу систему
- * 
- * SalesDrive statusId -> Internal status string
- */
-export const STATUS_MAPPING: { [key: number]: string } = {
-  1: '1', // Новий
-  2: '2', // Підтверджено
-  3: '3', // На відправку
-  4: '4', // Відправлено
-  5: '5', // Продаж
-  6: '6', // Відмова
-  7: '7', // Повернення
-  8: '8', // Видалений
-  9: '9'  // На утриманні
-};
 
 /**
  * Маппінг внутрішніх статусів на їх текстові назви
@@ -34,17 +18,6 @@ export const STATUS_TEXT_MAPPING: { [key: string]: string } = {
   '8': 'Видалений',
   '9': 'На утриманні'
 };
-
-/**
- * Отримує внутрішній статус по ID з SalesDrive
- * 
- * @param salesDriveStatusId ID статусу з SalesDrive API
- * @param defaultStatus Статус за замовчуванням (якщо маппінг не знайдений)
- * @returns Внутрішній статус (string)
- */
-export function mapSalesDriveStatus(salesDriveStatusId: number, defaultStatus: string = '1'): string {
-  return STATUS_MAPPING[salesDriveStatusId] || defaultStatus;
-}
 
 /**
  * Отримує текстове представлення статусу

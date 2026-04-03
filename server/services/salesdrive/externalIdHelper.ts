@@ -2,8 +2,7 @@
  * Генерує externalId для замовлення з автоматичним додаванням префіксу "SD"
  * 
  * Логіка додавання префіксу "SD":
- * - Якщо sajt = 31, 38, null, "", undefined → "SD{id}"
- * - АБО якщо externalId порожній/null → "SD{id}"
+ * - Якщо sajt = 31, 38, null, "", undefined ТА externalId порожній/null → "SD{id}"
  * - Інакше → оригінальний externalId
  * 
  * @param rawOrder - Об'єкт замовлення з SalesDrive API
@@ -24,7 +23,7 @@ export function generateExternalId(rawOrder: {
   }
   
   // Перевіряємо умови для додавання префіксу SD
-  const needsPrefix = (sajt === 31 || sajt === 38 || !sajt) || !externalId;
+  const needsPrefix = (sajt === 31 || sajt === 38 || !sajt) && !externalId;
   
   if (needsPrefix && rawOrder.id) {
     const generated = `SD${rawOrder.id}`;

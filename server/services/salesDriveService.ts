@@ -11,7 +11,7 @@ import type {
   SalesDriveStatus,
   SalesDriveDirectoryResponse
 } from './salesdrive/SalesDriveTypes.js';
-import { mapSalesDriveStatus, getStatusText } from './salesdrive/statusMapper.js';
+import { getStatusText } from './salesdrive/statusMapper.js';
 import { generateExternalId } from './salesdrive/externalIdHelper.js';
 
 // Node.js types for setInterval
@@ -768,7 +768,7 @@ export class SalesDriveService {
 
         // console.log(`📄 Fetching first page to determine total pages...`);
         const firstPageFullUrl = `${this.apiUrl}/api/order/list/?${firstPageParams}`;
-        console.log(`🔍 [SalesDrive REQUEST] Full request URL (page 1): \x1b[36m${firstPageFullUrl}\x1b[0m`);
+        console.log(`🔍 [SalesDrive REQUEST] Full request URL (page 1): ${firstPageFullUrl}`);
 
         const firstResponse = await fetch(firstPageFullUrl, {
           method: 'GET',
@@ -881,7 +881,7 @@ export class SalesDriveService {
 
           // Динамическая задержка между батчами на основе количества страниц
           if (batchIndex < batches.length - 1) {
-            console.log(`⏱️ Waiting ${requestDelay}ms before next batch (dynamic delay based on ${maxAllowedPages} pages)...`);
+            console.log(`⏱️ [SalesDrive] Waiting ${requestDelay}ms before next batch (dynamic delay based on ${maxAllowedPages} pages)...`);
             await new Promise(resolve => setTimeout(resolve, requestDelay));
           }
         }
@@ -961,7 +961,7 @@ export class SalesDriveService {
 
         console.log(`📄 Fetching first page to determine total pages (updateAt filter)...`);
         const firstPageFullUrl = `${this.apiUrl}/api/order/list/?${firstPageParams}`;
-        console.log(`🔍 [SalesDrive REQUEST] First page request URL: \x1b[36m${firstPageFullUrl}\x1b[0m`);
+        console.log(`🔍 [SalesDrive REQUEST] First page request URL: ${firstPageFullUrl}`);
 
         const firstResponse = await fetch(firstPageFullUrl, {
           method: 'GET',
@@ -1066,12 +1066,12 @@ export class SalesDriveService {
 
           // Динамическая задержка между батчами на основе количества страниц
           if (batchIndex < batches.length - 1) {
-            console.log(`⏱️ Waiting ${requestDelay}ms before next batch (dynamic delay based on ${maxAllowedPages} pages)...`);
+            console.log(`⏱️ [SalesDrive] Waiting ${requestDelay}ms before next batch (dynamic delay based on ${maxAllowedPages} pages)...`);
             await new Promise(resolve => setTimeout(resolve, requestDelay));
           }
         }
 
-        console.log(`✅ Parallel fetch completed: ${allOrders.length} orders from ${maxAllowedPages} pages (updateAt filter)`);
+        console.log(`✅ [SalesDrive] Parallel fetch completed: ${allOrders.length} orders from ${maxAllowedPages} pages (updateAt filter)`);
 
         return {
           success: true,
@@ -1181,7 +1181,7 @@ export class SalesDriveService {
         });
 
         const firstPageFullUrl = `${this.apiUrl}/api/order/list/?${firstPageParams}`;
-        console.log(`🔍 [SalesDrive GET] First page request URL: \x1b[36m${firstPageFullUrl}\x1b[0m`);
+        console.log(`🔍 [SalesDrive GET] First page request URL: ${firstPageFullUrl}`);
 
         const firstResponse = await fetch(firstPageFullUrl, {
           method: 'GET',
@@ -1230,23 +1230,23 @@ export class SalesDriveService {
 
         // Вычисляем задержку на основе количества страниц
         const requestDelay = this.calculateRequestDelay(maxAllowedPages);
-        console.log(`⏱️ [SalesDrive Sequential UpdateAt] Using dynamic delay: ${requestDelay}ms (based on ${maxAllowedPages} pages)`);
+        console.log(`⏱️ [SalesDrive] Using dynamic delay: ${requestDelay}ms (based on ${maxAllowedPages} pages)`);
 
         // Загружаем оставшиеся страницы последовательно
         const allOrders = [...firstPageOrders];
         for (let page = 2; page <= maxAllowedPages; page++) {
-          console.log(`📄 Fetching page ${page}/${maxAllowedPages} (updateAt filter)`);
+          console.log(`📄 [SalesDrive] Fetching page ${page}/${maxAllowedPages} (updateAt filter)`);
           const pageOrders = await this.fetchSinglePageUpdateAt(startDate, endDate, page);
           allOrders.push(...pageOrders);
 
           // Динамическая задержка между страницами на основе количества страниц
           if (page < maxAllowedPages) {
-            console.log(`⏱️ Waiting ${requestDelay}ms before next page (dynamic delay based on ${maxAllowedPages} pages)...`);
+            console.log(`⏱️ [SalesDrive] Waiting ${requestDelay}ms before next page (dynamic delay based on ${maxAllowedPages} pages)...`);
             await new Promise(resolve => setTimeout(resolve, requestDelay));
           }
         }
 
-        console.log(`✅ Sequential fetch completed: ${allOrders.length} orders from ${maxAllowedPages} pages (updateAt filter)`);
+        console.log(`✅ [SalesDrive] Sequential fetch completed: ${allOrders.length} orders from ${maxAllowedPages} pages (updateAt filter)`);
 
         return {
           success: true,
@@ -1303,7 +1303,7 @@ export class SalesDriveService {
     const formattedStartDate = this.formatSalesDriveDate(startDate);
     const formattedEndDate = this.formatSalesDriveDate(endDate);
 
-    console.log(`📅 [UpdateAt] Formatted dates: ${startDate} -> ${formattedStartDate}, ${endDate} -> ${formattedEndDate}`);
+    console.log(`📅 [SalesDrive] Formatted dates filter[updateAt]: ${startDate} -> ${formattedStartDate}, ${endDate} -> ${formattedEndDate}`);
 
     const params = new URLSearchParams({
       page: page.toString(),
@@ -1326,7 +1326,7 @@ export class SalesDriveService {
 
     if (response.status === 429) {
       // При rate limiting - применяем адаптивную задержку и повторяем
-      console.log(`🚦 Rate limit detected on page ${page}, applying adaptive delay...`);
+      console.log(`🚦 [SalesDrive] Rate limit detected on page ${page}, applying adaptive delay...`);
       const adaptiveDelay = this.handleRateLimit();
       await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
 
@@ -1506,8 +1506,8 @@ export class SalesDriveService {
       orderNumber: generateExternalId(rawOrder),
       ttn: rawOrder.ord_delivery_data?.[0]?.trackingNumber || '',
       quantity: quantity,
-      status: mapSalesDriveStatus(rawOrder.statusId, '1'), // Використовуємо централізований маппер
-      statusText: getStatusText(mapSalesDriveStatus(rawOrder.statusId, '1')), // Отримуємо текст з маппера
+      status: rawOrder.statusId, // Використовуємо централізований маппер
+      statusText: getStatusText(rawOrder.statusId), // Отримуємо текст з маппера
       items: rawOrder.products
         ? rawOrder.products.map((p: any) => ({
           productName: p.text,
@@ -1548,9 +1548,9 @@ export class SalesDriveService {
 
       // Подготавливаем URL для обновления заказа
       const updateUrl = `${this.apiUrl}/api/order/update/`;
-      console.log(`📡 [SalesDrive POST] Making API request to: \x1b[36m${updateUrl}\x1b[0m`);
+      console.log(`📡 [SalesDrive POST] Making API request to: ${updateUrl}`);
 
-      // Формируем тело запроса согласно документации
+      // Формируем тело запроса
       const requestBody = {
         form: this.formKey,
         id: id,
@@ -1559,7 +1559,11 @@ export class SalesDriveService {
         }
       };
 
-      console.log(`📤 Request body:`, JSON.stringify(requestBody, null, 2));
+      const maskedFormKey = this.formKey.substring(0, 6) + '*'.repeat(Math.max(0, this.formKey.length - 10)) + this.formKey.slice(-4);
+      console.log(`📤 Request body:`, JSON.stringify({
+        ...requestBody,
+        form: maskedFormKey
+      }, null, 2));
 
       // Выполняем запрос
       const response = await fetch(updateUrl, {
@@ -1849,8 +1853,8 @@ export class SalesDriveService {
           const updateResult = await orderDatabaseService.updateOrdersBatchSmart(updateOrders.filter(o => o && o.id).map(o => ({
             id: o.id,
             orderNumber: o.orderNumber,
-            status: o.status,
-            statusText: o.statusText,
+            // status: o.status,
+            // statusText: o.statusText,
             items: o.items,
             rawData: o.rawData,
             ttn: o.ttn,

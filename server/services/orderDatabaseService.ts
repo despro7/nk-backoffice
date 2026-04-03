@@ -1,8 +1,7 @@
 import { prisma } from '../lib/utils.js';
 import { ordersCacheService } from './ordersCacheService.js';
 
-export interface OrderCreateData {
-  id: number; // Обов'язково - SalesDrive ID
+export interface OrderBaseData {
   externalId: string;
   orderNumber: string;
   ttn: string;
@@ -15,34 +14,23 @@ export interface OrderCreateData {
   customerPhone?: string;
   deliveryAddress?: string;
   totalPrice?: number;
-  orderDate?: string;
-  shippingMethod?: string;
-  paymentMethod?: string;
-  cityName?: string;
-  provider?: string;
-  pricinaZnizki?: string;
-  sajt?: string;
-}
-
-export interface OrderUpdateData {
-  dilovodExportDate?: Date;
-  status?: string;
-  statusText?: string;
-  items?: any[];
-  rawData?: any;
-  customerName?: string;
-  customerPhone?: string;
-  deliveryAddress?: string;
-  totalPrice?: number;
   orderDate?: string | Date;
   shippingMethod?: string;
   paymentMethod?: string;
   cityName?: string;
   provider?: string;
-  ttn?: string;
-  quantity?: number;
   pricinaZnizki?: string;
   sajt?: string;
+  source?: string; // Додаткове поле для відстеження джерела імпорту
+}
+
+export interface OrderCreateData extends OrderBaseData {
+  id: number;
+  source?: string;
+}
+
+export interface OrderUpdateData extends Partial<OrderBaseData> {
+  dilovodExportDate?: Date;
 }
 
 export class OrderDatabaseService {
@@ -63,7 +51,7 @@ export class OrderDatabaseService {
     // Перевіряємо прості поля
     for (const field of fieldsToCheck) {
       if (newData[field] !== undefined && existingOrder[field] !== newData[field]) {
-        console.log(`🔄 [DEBUG] Field '${field}' changed: '${existingOrder[field]}' → '${newData[field]}'`);
+        // console.log(`🔄 [DEBUG] Field '${field}' changed: '${existingOrder[field]}' → '${newData[field]}'`);
         changes.push(field);
         changeDetails[field] = {
           oldValue: existingOrder[field],
@@ -86,7 +74,7 @@ export class OrderDatabaseService {
       const newDate = getLocalDateString(newData.orderDate);
       const existingDate = existingOrder.orderDate ? getLocalDateString(existingOrder.orderDate) : null;
       if (newDate !== existingDate) {
-        console.log(`🔄 [DEBUG] orderDate changed: '${existingDate}' → '${newDate}'`);
+        // console.log(`🔄 [DEBUG] orderDate changed: '${existingDate}' → '${newDate}'`);
         changes.push('orderDate');
         changeDetails.orderDate = {
           oldValue: existingDate,
@@ -104,7 +92,7 @@ export class OrderDatabaseService {
           : JSON.stringify(existingOrder.items);
 
         if (newItemsStr !== existingItemsStr) {
-          console.log(`🔄 [DEBUG] items changed (length: ${newItemsStr.length} vs ${existingItemsStr.length})`);
+          // console.log(`🔄 [DEBUG] items changed (length: ${newItemsStr.length} vs ${existingItemsStr.length})`);
           changes.push('items');
           changeDetails.items = {
             oldValue: existingOrder.items,
@@ -115,7 +103,7 @@ export class OrderDatabaseService {
         }
       } catch (error) {
         // Якщо не вдалося порівняти, вважаємо що змінилося
-        console.log(`🔄 [DEBUG] items comparison failed, assuming changed:`, error);
+        // console.log(`🔄 [DEBUG] items comparison failed, assuming changed:`, error);
         changes.push('items');
         changeDetails.items = {
           oldValue: existingOrder.items,
@@ -134,7 +122,7 @@ export class OrderDatabaseService {
           : JSON.stringify(existingOrder.rawData);
 
         if (newRawDataStr !== existingRawDataStr) {
-          console.log(`🔄 [DEBUG] rawData changed (length: ${newRawDataStr.length} vs ${existingRawDataStr.length})`);
+          // console.log(`🔄 [DEBUG] rawData changed (length: ${newRawDataStr.length} vs ${existingRawDataStr.length})`);
           changes.push('rawData');
           changeDetails.rawData = {
             oldValue: existingOrder.rawData,
@@ -145,7 +133,7 @@ export class OrderDatabaseService {
         }
       } catch (error) {
         // Якщо не вдалося порівняти, вважаємо що змінилося
-        console.log(`🔄 [DEBUG] rawData comparison failed, assuming changed:`, error);
+        // console.log(`🔄 [DEBUG] rawData comparison failed, assuming changed:`, error);
         changes.push('rawData');
         changeDetails.rawData = {
           oldValue: existingOrder.rawData,
@@ -190,7 +178,7 @@ export class OrderDatabaseService {
       });
 
       // Створюємо запис в історії змін
-      await this.createOrderHistory(order.id, data.status, data.statusText || '', 'salesdrive');
+      await this.createOrderHistory(order.id, data.status, data.statusText || '', data.source || 'salesdrive');
 
       // Попередньо рахуємо та кешуємо статистику товарів
       try {
@@ -270,7 +258,7 @@ export class OrderDatabaseService {
 
       // Створюємо запис в історії, якщо змінився статус
       if (data.status && data.status !== order.status) {
-        await this.createOrderHistory(order.id, data.status, data.statusText || '', 'salesdrive');
+        await this.createOrderHistory(order.id, data.status, data.statusText || '', data.source || 'salesdrive');
       }
 
       // Перераховуємо кешовані дані, якщо змінилися items
@@ -885,7 +873,7 @@ export class OrderDatabaseService {
             orderId: order.id,
             status: orderData.status,
             statusText: orderData.statusText,
-            source: 'salesdrive',
+            source: 'manual_sync',
             changedAt: new Date()
           });
 
@@ -935,296 +923,6 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Batch оновлення замовлень з оптимізацією (виправлена версія)
-   */
-  async updateOrdersBatch(ordersData: Array<{
-    id: number;
-    orderNumber: string;
-    status: string;
-    statusText: string;
-    items: any[];
-    rawData: any;
-    ttn?: string;
-    quantity?: number;
-    customerName?: string;
-    customerPhone?: string;
-    deliveryAddress?: string;
-    totalPrice?: number;
-    orderDate?: string;
-    shippingMethod?: string;
-    paymentMethod?: string;
-    cityName?: string;
-    provider?: string;
-    pricinaZnizki?: string;
-    sajt?: string;
-  }>, options: { batchSize?: number; concurrency?: number } = {}) {
-    try {
-      const batchSize = options.batchSize || 50;
-      const concurrency = options.concurrency || 3;
-
-      console.log(`🔄 Starting TRUE batch update of ${ordersData.length} orders (batch: ${batchSize}, concurrency: ${concurrency})...`);
-
-      // Разбиваем на батчи
-      const batches = [];
-      for (let i = 0; i < ordersData.length; i += batchSize) {
-        batches.push(ordersData.slice(i, i + batchSize));
-      }
-
-      console.log(`📦 Split into ${batches.length} batches of ~${batchSize} orders each`);
-
-      const totalUpdated = 0;
-      const totalSkipped = 0;
-      const results = [];
-
-      // Обрабатываем батчи с контролем параллельности
-      for (let i = 0; i < batches.length; i += concurrency) {
-        const batchSlice = batches.slice(i, i + concurrency);
-        console.log(`🔄 Processing batch group ${Math.floor(i / concurrency) + 1}/${Math.ceil(batches.length / concurrency)} (${batchSlice.length} batches)`);
-
-        const batchPromises = batchSlice.map(async (batch, batchIndex) => {
-          try {
-            const batchNumber = i + batchIndex + 1;
-            console.log(`📝 Processing batch ${batchNumber}/${batches.length} (${batch.length} orders)`);
-
-            // Создаем bulk update операции
-            const updatePromises = batch.map(async (orderData) => {
-              try {
-                // Получаем существующий заказ для проверки изменений
-                const existingOrder = await prisma.order.findUnique({
-                  where: { externalId: orderData.orderNumber },
-                  select: {
-                    id: true,
-                    pricinaZnizki: true,
-                    sajt: true,
-                    status: true,
-                    statusText: true,
-                    ttn: true,
-                    quantity: true,
-                    customerName: true,
-                    customerPhone: true,
-                    deliveryAddress: true,
-                    totalPrice: true,
-                    shippingMethod: true,
-                    paymentMethod: true,
-                    cityName: true,
-                    provider: true,
-                    items: true,
-                    rawData: true,
-                    orderDate: true
-                  }
-                });
-
-                // console.log(`🔍 Checking order ${orderData.orderNumber}: ${existingOrder ? 'EXISTS' : 'NOT FOUND'}`);
-
-                if (!existingOrder) {
-                  console.log(`🚀 Order ${orderData.orderNumber} not found - will create new order`);
-                  // Создаем новый заказ
-                  try {
-                    console.log(`🆕 Creating new order ${orderData.orderNumber}`);
-                    const createdOrder = await prisma.order.create({
-                      data: {
-                        id: orderData.id,
-                        externalId: orderData.orderNumber,
-                        status: orderData.status || 'unknown',
-                        statusText: orderData.statusText || '',
-                        ttn: orderData.ttn || null,
-                        quantity: orderData.quantity || 0,
-                        customerName: orderData.customerName || '',
-                        customerPhone: orderData.customerPhone || '',
-                        deliveryAddress: orderData.deliveryAddress || '',
-                        totalPrice: orderData.totalPrice || 0,
-                        orderDate: orderData.orderDate ? new Date(orderData.orderDate).toISOString() : null,
-                        shippingMethod: orderData.shippingMethod || null,
-                        paymentMethod: orderData.paymentMethod || null,
-                        cityName: orderData.cityName || null,
-                        provider: orderData.provider || null,
-                        pricinaZnizki: orderData.pricinaZnizki || null,
-                        sajt: orderData.sajt || null,
-                        items: orderData.items ? JSON.stringify(orderData.items) : null,
-                        rawData: orderData.rawData ? JSON.stringify(orderData.rawData) : null,
-                        lastSynced: new Date(),
-                        syncStatus: 'success',
-                        syncError: null,
-                        updatedAt: orderData.rawData?.updateAt ? new Date(orderData.rawData.updateAt) : new Date()
-                      } as any // Игнорируем типы для создания заказа
-                    });
-                    console.log(`✅ Successfully created order ${orderData.orderNumber} with ID: ${createdOrder.id}`);
-                    return { orderNumber: orderData.orderNumber, action: 'created', reason: 'new order' };
-                  } catch (createError) {
-                    console.error(`❌ Failed to create order ${orderData.orderNumber}:`, createError);
-                    return { orderNumber: orderData.orderNumber, action: 'error', reason: 'create failed' };
-                  }
-                }
-
-                // Умная проверка изменений
-                const changeResult = this.detectOrderChanges(existingOrder, orderData);
-                const changes = changeResult.fields;
-                console.log(`🔄 Order ${orderData.orderNumber} has ${changes.length} changes: ${changes.join(', ')}`);
-
-                if (changes.length === 0) {
-                  console.log(`⏭️ Order ${orderData.orderNumber} skipped - no changes`);
-                  return { orderNumber: orderData.orderNumber, action: 'skipped', reason: 'no changes' };
-                }
-
-                // Обновляем только если есть изменения
-                const updateData: any = {
-                  lastSynced: new Date(),
-                  syncStatus: 'success',
-                  syncError: null
-                };
-
-                // Применяем только изменившиеся поля
-                if (changes.includes('id')) updateData.id = orderData.id;
-                if (changes.includes('status')) updateData.status = orderData.status;
-                if (changes.includes('statusText')) updateData.statusText = orderData.statusText;
-                if (changes.includes('ttn')) updateData.ttn = orderData.ttn;
-                if (changes.includes('quantity')) updateData.quantity = orderData.quantity;
-                if (changes.includes('customerName')) updateData.customerName = orderData.customerName;
-                if (changes.includes('customerPhone')) updateData.customerPhone = orderData.customerPhone;
-                if (changes.includes('deliveryAddress')) updateData.deliveryAddress = orderData.deliveryAddress;
-                if (changes.includes('totalPrice')) updateData.totalPrice = orderData.totalPrice;
-                if (changes.includes('shippingMethod')) updateData.shippingMethod = orderData.shippingMethod;
-                if (changes.includes('paymentMethod')) updateData.paymentMethod = orderData.paymentMethod;
-                if (changes.includes('cityName')) updateData.cityName = orderData.cityName;
-                if (changes.includes('provider')) updateData.provider = orderData.provider;
-                if (changes.includes('pricinaZnizki')) updateData.pricinaZnizki = orderData.pricinaZnizki;
-                if (changes.includes('sajt')) updateData.sajt = orderData.sajt;
-
-                // Сериализуем сложные поля
-                if (changes.includes('items')) {
-                  updateData.items = JSON.stringify(orderData.items);
-                }
-                if (changes.includes('rawData')) {
-                  updateData.rawData = JSON.stringify(orderData.rawData);
-                }
-                if (changes.includes('orderDate')) {
-                  updateData.orderDate = new Date(orderData.orderDate);
-                }
-
-                if (orderData.rawData?.updateAt) {
-                  updateData.updatedAt = new Date(orderData.rawData.updateAt);
-                }
-
-                const updatedOrder = await prisma.order.update({
-                  where: { externalId: orderData.orderNumber },
-                  data: updateData
-                });
-
-                // Создаем запись истории только для значимых изменений
-                if (changes.includes('status') || changes.includes('ttn')) {
-                  await this.createOrderHistory(
-                    existingOrder.id,
-                    orderData.status,
-                    orderData.statusText,
-                    'salesdrive',
-                    undefined,
-                    `Bulk update: ${changes.join(', ')}`
-                  );
-                }
-
-                return {
-                  orderNumber: orderData.orderNumber,
-                  action: 'updated',
-                  changedFields: changes
-                };
-
-              } catch (error) {
-                console.error(`❌ Error updating order ${orderData.orderNumber}:`, error);
-                return {
-                  orderNumber: orderData.orderNumber,
-                  action: 'error',
-                  error: error instanceof Error ? error.message : 'Unknown error'
-                };
-              }
-            });
-
-            const batchResults = await Promise.all(updatePromises);
-            const updatedInBatch = batchResults.filter(r => r.action === 'updated').length;
-            const createdInBatch = batchResults.filter(r => r.action === 'created').length;
-            const skippedInBatch = batchResults.filter(r => r.action === 'skipped').length;
-            const errorsInBatch = batchResults.filter(r => r.action === 'error').length;
-
-            console.log(`✅ Batch ${batchNumber} completed: +${createdInBatch} created, +${updatedInBatch} updated, ${skippedInBatch} skipped, ${errorsInBatch} errors`);
-
-            return batchResults;
-
-          } catch (error) {
-            console.error(`❌ Error processing batch ${i + batchIndex + 1}:`, error);
-            return [];
-          }
-        });
-
-        const groupResults = await Promise.all(batchPromises);
-        results.push(...groupResults.flat());
-
-        // Небольшая задержка между группами батчей
-        if (i + concurrency < batches.length) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-      }
-
-      const totalCreated = results.filter(r => r.action === 'created').length;
-      const totalErrors = results.filter(r => r.action === 'error').length;
-
-      console.log(`✅ SMART batch update completed:`);
-      console.log(`   📊 Total processed: ${ordersData.length}`);
-      console.log(`   🆕 Created: ${totalCreated}`);
-      console.log(`   ✅ Updated: ${totalUpdated}`);
-      console.log(`   ⏭️ Skipped: ${totalSkipped}`);
-      console.log(`   ❌ Errors: ${totalErrors}`);
-      console.log(`   📈 Efficiency: ${(((totalCreated + totalUpdated) / ordersData.length) * 100).toFixed(1)}%`);
-
-      return {
-        success: true,
-        totalProcessed: ordersData.length,
-        totalCreated,
-        totalUpdated,
-        totalSkipped,
-        totalErrors,
-        results
-      };
-    } catch (error) {
-      console.error('❌ TRUE batch update failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Отримує замовлення з моменту останньої синхронізації
-   */
-  async getOrdersSinceLastSync(limit: number = 100) {
-    try {
-      const lastSyncedOrder = await this.getLastSyncedOrder();
-
-      if (!lastSyncedOrder?.lastSynced) {
-        // Если нет последней синхронизации, возвращаем все заказы
-        return this.getOrders({ limit });
-      }
-
-      const orders = await prisma.order.findMany({
-        where: {
-          lastSynced: {
-            gte: lastSyncedOrder.lastSynced
-          }
-        },
-        orderBy: { lastSynced: 'desc' },
-        take: limit,
-        include: {
-          OrdersHistory: {
-            orderBy: { changedAt: 'desc' },
-            take: 5
-          }
-        }
-      });
-
-      return orders;
-    } catch (error) {
-      console.error('❌ Error getting orders since last sync:', error);
-      return [];
-    }
-  }
-
-  /**
    * Отримує статистику синхронізації
    */
   async getSyncStats() {
@@ -1263,165 +961,15 @@ export class OrderDatabaseService {
     }
   }
 
-  /**
-   * Розумне парціальне оновлення замовлення
-   */
-  async updateOrderSmart(externalId: string, newData: OrderUpdateData): Promise<{
-    updated: boolean;
-    changedFields: string[];
-    previousValues: Record<string, any>;
-  }> {
-    try {
-      // Получаем текущий заказ
-      const existingOrder = await this.getOrderByExternalId(externalId);
-      if (!existingOrder) {
-        throw new Error(`Order ${externalId} not found`);
-      }
-
-      // Сравниваем поля и находим изменения
-      const changes: Partial<OrderUpdateData> = {};
-      const previousValues: Record<string, any> = {};
-      const changedFields: string[] = [];
-
-      // Проверяем каждое поле (ДОБАВЛЯЕМ rawData!)
-      const fieldsToCheck = [
-        'id', 'status', 'statusText', 'items', 'ttn', 'quantity',
-        'customerName', 'customerPhone', 'deliveryAddress',
-        'totalPrice', 'orderDate', 'shippingMethod', 'paymentMethod',
-        'cityName', 'provider', 'rawData', 'pricinaZnizki', 'sajt'  // ← Добавляем rawData и новые поля!
-      ];
-
-      for (const field of fieldsToCheck) {
-        if (newData[field] !== undefined) {
-          const oldValue = existingOrder[field];
-          const newValue = newData[field];
-
-          // Специальная обработка для дат
-          if (field === 'orderDate') {
-            const oldDate = oldValue ? new Date(oldValue).toISOString() : null;
-            const newDate = newValue ? new Date(newValue).toISOString() : null;
-
-            if (oldDate !== newDate) {
-              changes[field] = newValue;
-              previousValues[field] = oldValue;
-              changedFields.push(field);
-            }
-          }
-          // Специальная обработка для rawData (всегда обновляем)
-          else if (field === 'rawData') {
-            // Для rawData всегда проверяем изменения, так как это важные данные
-            if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-              changes[field] = newValue;
-              previousValues[field] = oldValue;
-              changedFields.push(field);
-              console.log(`🔄 rawData changed for order ${externalId}`);
-            }
-          }
-          // Специальная обработка для массивов и объектов
-          else if (Array.isArray(oldValue) || Array.isArray(newValue)) {
-            if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-              changes[field] = newValue;
-              previousValues[field] = oldValue;
-              changedFields.push(field);
-            }
-          }
-          // Обычные поля
-          else if (oldValue !== newValue) {
-            changes[field] = newValue;
-            previousValues[field] = oldValue;
-            changedFields.push(field);
-          }
-        }
-      }
-
-      // Если изменений нет - возвращаем без обновления
-      if (changedFields.length === 0) {
-        // console.log(`✅ Order ${externalId}: No changes detected`);
-        return {
-          updated: false,
-          changedFields: [],
-          previousValues: {}
-        };
-      }
-
-      // Подготавливаем данные для обновления
-      const updateData: any = {
-        ...changes,
-        lastSynced: new Date(),
-        syncStatus: 'success',
-        syncError: null
-      };
-
-      // Преобразуем orderDate в Date если это string
-      if (updateData.orderDate && typeof updateData.orderDate === 'string') {
-        updateData.orderDate = new Date(updateData.orderDate);
-      }
-
-      // Преобразуем rawData в строку если это объект
-      if (updateData.rawData && typeof updateData.rawData === 'object') {
-        updateData.rawData = JSON.stringify(updateData.rawData);
-      }
-
-      // Преобразуем items в строку если это массив
-      if (updateData.items && Array.isArray(updateData.items)) {
-        updateData.items = JSON.stringify(updateData.items);
-      }
-
-      // Удаляем поля, которых нет в схеме Order
-      const allowedFields = [
-        'id', 'status', 'statusText', 'items', 'rawData', 'ttn', 'quantity',
-        'customerName', 'customerPhone', 'deliveryAddress', 'totalPrice',
-        'orderDate', 'shippingMethod', 'paymentMethod', 'cityName', 'provider',
-        'lastSynced', 'syncStatus', 'syncError',
-        'pricinaZnizki', 'sajt', 'updatedAt'  // ✅ ДОБАВИТЬ НОВЫЕ ПОЛЯ
-      ];
-
-      Object.keys(updateData).forEach(key => {
-        if (!allowedFields.includes(key)) {
-          console.warn(`⚠️ Removing unknown field '${key}' from order update data`);
-          delete updateData[key];
-        }
-      });
-
-      const updatedOrder = await prisma.order.update({
-        where: { externalId },
-        data: updateData
-      });
-
-      // Создаем запись в истории с деталями изменений
-      if (changedFields.includes('status')) {
-        await this.createOrderHistory(
-          updatedOrder.id,
-          updateData.status!,
-          updateData.statusText || '',
-          'salesdrive',
-          undefined,
-          `Changed fields: ${changedFields.join(', ')}`
-        );
-      }
-
-      console.log(`✅ Order ${externalId} updated: ${changedFields.join(', ')}`);
-
-      return {
-        updated: true,
-        changedFields,
-        previousValues
-      };
-
-    } catch (error) {
-      console.error(`❌ Error updating order ${externalId}:`, error);
-      throw error;
-    }
-  }
-
+ 
   /**
    * Batch оновлення з парціальними оновленнями (розумне оновлення)
    */
   async updateOrdersBatchSmart(ordersData: Array<{
     id: number;
     orderNumber: string;
-    status: string;
-    statusText: string;
+    status?: string;
+    statusText?: string;
     items: any[];
     rawData: any;
     ttn?: string;
@@ -1444,7 +992,7 @@ export class OrderDatabaseService {
 
       console.log(`🔄 Starting SMART batch update of ${ordersData.length} orders (batch: ${batchSize}, concurrency: ${concurrency})...`);
 
-      // Разбиваем на батчи для параллельной обработки
+      // Розбиваємо на партії для паралельної обробки
       const batches = [];
       for (let i = 0; i < ordersData.length; i += batchSize) {
         batches.push(ordersData.slice(i, i + batchSize));
@@ -1464,20 +1012,20 @@ export class OrderDatabaseService {
         console.log(`🔄 Processing smart batch group ${Math.floor(i / concurrency) + 1}/${Math.ceil(batches.length / concurrency)} (${batchSlice.length} batches)`);
 
         // Детальное логирование для отладки
-        console.log(`🔍 [DEBUG] Batch slice contains ${batchSlice.length} batches`);
-        batchSlice.forEach((batch, idx) => {
-          console.log(`🔍 [DEBUG] Batch ${idx + 1}: ${batch.length} orders`);
-          batch.slice(0, 2).forEach((order, orderIdx) => {
-            if (order && order.orderNumber) {
-              console.log(`🔍 [DEBUG] Order ${orderIdx + 1}: ${order.orderNumber} (status: ${order.status || 'N/A'})`);
-            } else {
-              console.log(`🔍 [DEBUG] Order ${orderIdx + 1}: INVALID ORDER OBJECT`);
-            }
-          });
-          if (batch.length > 2) {
-            console.log(`🔍 [DEBUG] ... and ${batch.length - 2} more orders`);
-          }
-        });
+        // console.log(`🔍 [DEBUG] Batch slice contains ${batchSlice.length} batches`);
+        // batchSlice.forEach((batch, idx) => {
+        //   console.log(`🔍 [DEBUG] Batch ${idx + 1}: ${batch.length} orders`);
+        //   batch.slice(0, 2).forEach((order, orderIdx) => {
+        //     if (order && order.orderNumber) {
+        //       console.log(`🔍 [DEBUG] Order ${orderIdx + 1}: ${order.orderNumber} (status: ${order.status || 'N/A'})`);
+        //     } else {
+        //       console.log(`🔍 [DEBUG] Order ${orderIdx + 1}: INVALID ORDER OBJECT`);
+        //     }
+        //   });
+        //   if (batch.length > 2) {
+        //     console.log(`🔍 [DEBUG] ... and ${batch.length - 2} more orders`);
+        //   }
+        // });
 
         const batchPromises = batchSlice.map(async (batch) => {
           const batchResults = [];
@@ -1554,7 +1102,7 @@ export class OrderDatabaseService {
                   };
 
                   const createdOrder = await this.createOrder(newOrderData);
-                  console.log(`✅ [DEBUG] Order ${orderData.orderNumber} successfully created in database (ID: ${createdOrder.id})`);
+                  // console.log(`✅ [DEBUG] Order ${orderData.orderNumber} successfully created in database (ID: ${createdOrder.id})`);
 
                   totalCreated++;
                   batchResults.push({
@@ -1563,7 +1111,7 @@ export class OrderDatabaseService {
                     success: true
                   });
 
-                  console.log(`📊 [DEBUG] Batch results updated: totalCreated=${totalCreated}`);
+                  // console.log(`📊 [DEBUG] Batch results updated: totalCreated=${totalCreated}`);
                 } catch (createError) {
                   console.error(`❌ [DEBUG] Failed to create order ${orderData.orderNumber}:`, createError);
                   totalErrors++;
@@ -1593,7 +1141,7 @@ export class OrderDatabaseService {
                 continue;
               }
 
-              console.log(`✅ [DEBUG] Order ${orderData.orderNumber} will be UPDATED with changes: [${changes.join(', ')}]`);
+              // console.log(`✅ [DEBUG] Order ${orderData.orderNumber} will be UPDATED with changes: [${changes.join(', ')}]`);
 
               // Обновляем только если есть изменения
               const updateData: any = {
@@ -1646,19 +1194,19 @@ export class OrderDatabaseService {
                 data: updateData
               });
 
-              console.log(`✅ [DEBUG] Order ${orderData.orderNumber} successfully updated in database (ID: ${updateResult.id})`);
+              // console.log(`✅ [DEBUG] Order ${orderData.orderNumber} successfully updated in database (ID: ${updateResult.id})`);
 
               // Создаем запись истории только для значимых изменений
-              if (changes.includes('status') || changes.includes('ttn')) {
+              if (changes.includes('ttn') || changes.includes('items')) {
                 await this.createOrderHistory(
                   existingOrder.id,
                   orderData.status,
                   orderData.statusText,
-                  'salesdrive',
+                  'salesdrive:auto_sync',
                   undefined,
                   `Smart batch update: ${changes.join(', ')}`
                 );
-                console.log(`📝 [DEBUG] Created history record for order ${orderData.orderNumber}`);
+                // console.log(`📝 [DEBUG] Created history record for order ${orderData.orderNumber}`);
               }
 
               totalUpdated++;
@@ -1669,7 +1217,7 @@ export class OrderDatabaseService {
                 changeDetails: changeResult.details
               });
 
-              console.log(`📊 [DEBUG] Batch results updated: totalUpdated=${totalUpdated}`);
+              // console.log(`📊 [DEBUG] Batch results updated: totalUpdated=${totalUpdated}`);
 
             } catch (error) {
               console.error(`❌ [DEBUG] Error updating order ${orderData.orderNumber}:`, error);
@@ -1693,12 +1241,12 @@ export class OrderDatabaseService {
         const flattenedResults = groupResults.flat();
         results.push(...flattenedResults);
 
-        console.log(`📊 [DEBUG] Group results summary:`);
-        console.log(`   📦 Batches processed: ${groupResults.length}`);
-        console.log(`   📋 Orders processed: ${flattenedResults.length}`);
-        console.log(`   ✅ Updated: ${flattenedResults.filter(r => r.action === 'updated').length}`);
-        console.log(`   ⏭️ Skipped: ${flattenedResults.filter(r => r.action === 'skipped').length}`);
-        console.log(`   ❌ Errors: ${flattenedResults.filter(r => r.action === 'error').length}`);
+        // console.log(`📊 [DEBUG] Group results summary:`);
+        // console.log(`   📦 Batches processed: ${groupResults.length}`);
+        // console.log(`   📋 Orders processed: ${flattenedResults.length}`);
+        // console.log(`   ✅ Updated: ${flattenedResults.filter(r => r.action === 'updated').length}`);
+        // console.log(`   ⏭️ Skipped: ${flattenedResults.filter(r => r.action === 'skipped').length}`);
+        // console.log(`   ❌ Errors: ${flattenedResults.filter(r => r.action === 'error').length}`);
 
         // Небольшая задержка между группами батчей
         if (i + concurrency < batches.length) {
@@ -1763,17 +1311,20 @@ export class OrderDatabaseService {
     }
   }
 
+
   /**
    * Отримує статистику по замовленням з локальної БД
+   * Виводиться на Dashboard та використовується для швидкого отримання інформації 
+   * про кількість замовлень в кожному статусі без звернення до SalesDrive API
    */
   async getOrdersStats() {
     try {
       console.log('📊 Getting orders statistics from local database...');
 
-      // Получаем общее количество заказов
+      // Отримуємо загальну кількість замовлень
       const totalOrders = await prisma.order.count();
 
-      // Получаем количество заказов по каждому статусу
+      // Отримуємо кількість замовлень по кожному статусу
       const stats = await prisma.order.groupBy({
         by: ['status'],
         _count: {
@@ -1781,7 +1332,7 @@ export class OrderDatabaseService {
         }
       });
 
-      // Создаем объект статистики
+      // Створюємо об'єкт статистики
       const statsMap = new Map();
       stats.forEach(stat => {
         statsMap.set(stat.status, stat._count.status);
@@ -1808,26 +1359,31 @@ export class OrderDatabaseService {
     }
   }
 
+
   /**
    * Отримує час останньої синхронізації
    */
   async getLastSyncInfo() {
     try {
-      const lastSyncedOrder = await prisma.order.findFirst({
+      const lastSyncedOrder = await prisma.syncHistory.findFirst({
         orderBy: {
-          lastSynced: 'desc'
+          id: 'desc'
+        },
+        where: {
+          status: 'success'
         },
         select: {
-          lastSynced: true
+          updatedAt: true
         }
       });
 
-      return lastSyncedOrder?.lastSynced || null;
+      return lastSyncedOrder?.updatedAt || null;
     } catch (error) {
       console.error('❌ Error getting last sync info:', error);
       return null;
     }
   }
+
 
   /**
    * Отримує товар по SKU з парсингом JSON полів
@@ -1878,12 +1434,14 @@ export class OrderDatabaseService {
     }
   }
 
+
   /**
    * Публічний метод для API: обгортка над calculateActualQuantity
    */
   async calculateActualQuantityPublic(items: any[], initialQuantity: number = 0): Promise<number> {
     return this.calculateActualQuantity(items, initialQuantity);
   }
+
 
   /**
    * Обчислює актуальну quantity з врахуванням комплектів (наборів)

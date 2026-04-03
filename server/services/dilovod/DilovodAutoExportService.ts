@@ -10,7 +10,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { logWithTimestamp, isDilovodExportError, getDilovodExportErrorMessage } from './DilovodUtils.js';
+import { isDilovodExportError, getDilovodExportErrorMessage } from './DilovodUtils.js';
 import type { DilovodSettings } from '../../../shared/types/dilovod.js';
 
 const prisma = new PrismaClient();
@@ -56,7 +56,7 @@ export class DilovodAutoExportService {
   ): Promise<void> {
     // --- Dedup Guard 1: mutex — пропускаємо якщо вже обробляється ---
     if (this.inProgressLocks.has(internalOrderId)) {
-      logWithTimestamp(
+      console.log(
         `⏭️ [AutoExport] Пропускаємо ${initiatedBy} для orderId=${internalOrderId} — вже виконується інша обробка`
       );
       return;
@@ -71,7 +71,7 @@ export class DilovodAutoExportService {
       initiatedBy === 'webhook:status_change' &&
       recentTrigger.initiatedBy === 'manual:status_change'
     ) {
-      logWithTimestamp(
+      console.log(
         `⏭️ [AutoExport] Пропускаємо webhook:status_change для orderId=${internalOrderId} — дублікат після manual:status_change (${Math.round((now - recentTrigger.at))}ms тому)`
       );
       return;
@@ -113,7 +113,7 @@ export class DilovodAutoExportService {
         }
       }
     } catch (err) {
-      logWithTimestamp(
+      console.log(
         `⚠️ [AutoExport] processOrderStatusChange failed for orderId=${internalOrderId}: ${err instanceof Error ? err.message : err}`
       );
     } finally {
@@ -139,7 +139,7 @@ export class DilovodAutoExportService {
 
       if (!autoExportEnabled && !autoShipEnabled) return;
 
-      logWithTimestamp(
+      console.log(
         `🤖 [AutoExport] Batch trigger: ${changedOrders.length} order(s) with status change (autoExport=${autoExportEnabled}, autoShip=${autoShipEnabled})`
       );
 
@@ -153,7 +153,7 @@ export class DilovodAutoExportService {
         });
 
         if (!dbOrder) {
-          logWithTimestamp(`⚠️ [AutoExport] Order ${changed.orderNumber} not found in DB, skipping`);
+          console.log(`⚠️ [AutoExport] Order ${changed.orderNumber} not found in DB, skipping`);
           continue;
         }
 
@@ -181,7 +181,7 @@ export class DilovodAutoExportService {
         }
       }
     } catch (err) {
-      logWithTimestamp(
+      console.log(
         `⚠️ [AutoExport] processStatusChangedOrders failed: ${err instanceof Error ? err.message : err}`
       );
     }
@@ -225,7 +225,7 @@ export class DilovodAutoExportService {
       });
 
       if (!order) {
-        logWithTimestamp(`⚠️ [AutoExport/saleOrder] Order id=${internalOrderId} not found in DB`);
+        console.log(`⚠️ [AutoExport/saleOrder] Order id=${internalOrderId} not found in DB`);
         return { triggered: false, success: false, error: 'Order not found' };
       }
 
@@ -233,7 +233,7 @@ export class DilovodAutoExportService {
 
       // Early-exit 1: вже експортовано
       if (order.dilovodDocId) {
-        logWithTimestamp(
+        console.log(
           `ℹ️ [AutoExport/saleOrder] Замовлення ${orderNum} вже експортовано (baseDocId: ${order.dilovodDocId}), пропускаємо`
         );
         return { triggered: false, success: true };
@@ -245,7 +245,7 @@ export class DilovodAutoExportService {
         const existingInDilovod = (await dilovodService.getOrderByNumber([orderNum])).flat();
         if (existingInDilovod.length > 0) {
           const dilovodDoc = existingInDilovod[0];
-          logWithTimestamp(
+          console.log(
             `⚠️ [AutoExport/saleOrder] Замовлення ${orderNum} вже існує в Dilovod (id: ${dilovodDoc.id}), синхронізуємо БД`
           );
           await prisma.order.update({
@@ -258,18 +258,18 @@ export class DilovodAutoExportService {
           return { triggered: false, success: true };
         }
       } catch (checkErr) {
-        logWithTimestamp(
+        console.log(
           `⚠️ [AutoExport/saleOrder] Не вдалося перевірити наявність в Dilovod API: ${checkErr instanceof Error ? checkErr.message : checkErr}. Продовжуємо.`
         );
       }
 
-      logWithTimestamp(`🤖 [AutoExport/saleOrder] Автоматичний export замовлення ${orderNum} (статус: ${newStatus}, ініціатор: ${initiatedBy})`);
+      console.log(`🤖 [AutoExport/saleOrder] Автоматичний export замовлення ${orderNum} (статус: ${newStatus}, ініціатор: ${initiatedBy})`);
 
       // Крок 2: Будуємо payload
       const { dilovodExportBuilder } = await import('./DilovodExportBuilder.js');
       const { payload, warnings } = await dilovodExportBuilder.buildExportPayload(orderId);
 
-      logWithTimestamp(`✅ [AutoExport/saleOrder] Payload для ${orderNum} сформовано`);
+      console.log(`✅ [AutoExport/saleOrder] Payload для ${orderNum} сформовано`);
 
       // Крок 3: Відправляємо в Dilovod
       const { dilovodService } = await import('./DilovodService.js');
@@ -287,11 +287,11 @@ export class DilovodAutoExportService {
             dilovodExportDate: new Date().toISOString()
           }
         });
-        logWithTimestamp(
+        console.log(
           `✅ [AutoExport/saleOrder] Замовлення ${orderNum} успішно експортовано (baseDocId: ${exportResult.id})`
         );
       } else {
-        logWithTimestamp(
+        console.log(
           `❌ [AutoExport/saleOrder] Помилка export замовлення ${orderNum}: ${errorMessage}`
         );
       }
@@ -321,11 +321,11 @@ export class DilovodAutoExportService {
 
       // channel_not_configured — не є помилкою, лише пропускаємо без meta_log
       if (errorMessage.includes('не налаштований для експорту через Dilovod')) {
-        logWithTimestamp(`ℹ️ [AutoExport/saleOrder] Замовлення ${orderNumForLog}: канал не налаштовано, пропускаємо`);
+        console.log(`ℹ️ [AutoExport/saleOrder] Замовлення ${orderNumForLog}: канал не налаштовано, пропускаємо`);
         return { triggered: false, success: true };
       }
 
-      logWithTimestamp(`❌ [AutoExport/saleOrder] Помилка для замовлення ${orderNumForLog}: ${errorMessage}`);
+      console.log(`❌ [AutoExport/saleOrder] Помилка для замовлення ${orderNumForLog}: ${errorMessage}`);
 
       // Для критичних помилок (валідація, тощо) — пишемо в meta_logs
       try {
@@ -377,7 +377,7 @@ export class DilovodAutoExportService {
       });
 
       if (!order) {
-        logWithTimestamp(`⚠️ [AutoExport/sale] Order id=${internalOrderId} not found in DB`);
+        console.log(`⚠️ [AutoExport/sale] Order id=${internalOrderId} not found in DB`);
         return { triggered: false, success: false, error: 'Order not found' };
       }
 
@@ -385,7 +385,7 @@ export class DilovodAutoExportService {
 
       // Early-exit 1: відвантаження вже є
       if (order.dilovodSaleExportDate) {
-        logWithTimestamp(
+        console.log(
           `ℹ️ [AutoExport/sale] Замовлення ${orderNum} вже відвантажено (${new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA')}), пропускаємо`
         );
         return { triggered: false, success: true };
@@ -393,7 +393,7 @@ export class DilovodAutoExportService {
 
       // Early-exit 2: базовий документ відсутній
       if (!order.dilovodDocId) {
-        logWithTimestamp(
+        console.log(
           `ℹ️ [AutoExport/sale] Замовлення ${orderNum} ще не має baseDoc (saleOrder не експортовано), пропускаємо shipment`
         );
         return { triggered: false, success: false, error: 'No baseDoc' };
@@ -406,7 +406,7 @@ export class DilovodAutoExportService {
         if (existingSaleDocs.length > 0) {
           const saleDoc = existingSaleDocs[0];
           const saleCount = existingSaleDocs.length;
-          logWithTimestamp(
+          console.log(
             `⚠️ [AutoExport/sale] В Dilovod вже існує ${saleCount} документ(ів) відвантаження для ${orderNum}, синхронізуємо БД`
           );
           await prisma.order.update({
@@ -419,12 +419,12 @@ export class DilovodAutoExportService {
           return { triggered: false, success: true };
         }
       } catch (checkErr) {
-        logWithTimestamp(
+        console.log(
           `⚠️ [AutoExport/sale] Не вдалося перевірити documents.sale в Dilovod API: ${checkErr instanceof Error ? checkErr.message : checkErr}. Продовжуємо.`
         );
       }
 
-      logWithTimestamp(
+      console.log(
         `🤖 [AutoExport/sale] Автоматичне відвантаження замовлення ${orderNum} (статус: ${newStatus}, baseDoc: ${order.dilovodDocId}, ініціатор: ${initiatedBy})`
       );
 
@@ -435,7 +435,7 @@ export class DilovodAutoExportService {
         order.dilovodDocId
       );
 
-      logWithTimestamp(`✅ [AutoExport/sale] Payload відвантаження для ${orderNum} сформовано`);
+      console.log(`✅ [AutoExport/sale] Payload відвантаження для ${orderNum} сформовано`);
 
       // Крок 3: Відправляємо в Dilovod
       const { dilovodService } = await import('./DilovodService.js');
@@ -456,11 +456,11 @@ export class DilovodAutoExportService {
         });
 
         const dateSource = order.readyToShipAt ? 'readyToShipAt' : 'поточна дата';
-        logWithTimestamp(
+        console.log(
           `✅ [AutoExport/sale] Відвантаження для замовлення ${orderNum} успішно створено (дата: ${dateSource})`
         );
       } else {
-        logWithTimestamp(
+        console.log(
           `❌ [AutoExport/sale] Помилка відвантаження замовлення ${orderNum}: ${errorMessage}`
         );
       }
@@ -489,7 +489,7 @@ export class DilovodAutoExportService {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
-      logWithTimestamp(`❌ [AutoExport/sale] Помилка для замовлення ${orderNumForLog}: ${errorMessage}`);
+      console.log(`❌ [AutoExport/sale] Помилка для замовлення ${orderNumForLog}: ${errorMessage}`);
 
       try {
         const { dilovodService } = await import('./DilovodService.js');
@@ -564,7 +564,7 @@ export class DilovodAutoExportService {
    */
   invalidateSettingsCache(): void {
     this.settingsCache = null;
-    logWithTimestamp('🔄 [AutoExport] Settings cache invalidated');
+    console.log('🔄 [AutoExport] Settings cache invalidated');
   }
 }
 

@@ -104,7 +104,11 @@ export default function OrderView() {
     previousOrderExternalId: order?.previousOrderExternalId,
     nextOrderExternalId: order?.nextOrderExternalId,
     checklistItems,
-    orderStatus: order?.status
+    orderStatus: order?.status,
+    onUpdateOrderStatus: (status, statusText) => {
+      // Оновлюємо локальний стан замовлення без очікування відповіді від сервера
+      setOrder(prev => prev ? { ...prev, status, statusText } : null);
+    }
   });
 
   // Прапорець для відстеження, чи замовлення було відкрите вже зібраним

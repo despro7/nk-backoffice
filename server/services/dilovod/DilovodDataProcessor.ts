@@ -32,7 +32,6 @@ export class DilovodDataProcessor {
   private async loadConfig(): Promise<void> {
     try {
       this.config = await getDilovodConfigFromDB();
-      logWithTimestamp('DilovodDataProcessor: конфигурация загружена из БД');
     } catch (error) {
       logWithTimestamp('DilovodDataProcessor: ошибка загрузки конфигурации из БД:', error);
     }

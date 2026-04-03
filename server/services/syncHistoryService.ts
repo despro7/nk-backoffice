@@ -221,7 +221,7 @@ export class SyncHistoryService {
   }
 
   /**
-   * Получает последнюю успешную синхронизацию
+   * Отримує останню успішну синхронізацію
    */
   async getLastSuccessfulSync(): Promise<SyncHistoryRecord | null> {
     try {
@@ -235,7 +235,7 @@ export class SyncHistoryService {
       });
 
       if (record) {
-        // Десериализуем поле details из JSON строки обратно в объект
+        // Перетворюємо поле details із JSON-рядка назад в об’єкт
         return {
           ...record,
           details: this.parseDetails(record.details)
@@ -250,7 +250,7 @@ export class SyncHistoryService {
   }
 
   /**
-   * Получает записи по типу синхронизации
+   * Отримує записи за типом синхронізації
    */
   async getSyncHistoryByType(
     syncType: 'manual' | 'automatic' | 'background', 
@@ -260,7 +260,7 @@ export class SyncHistoryService {
     sortDirection: string = 'desc'
   ): Promise<{ records: SyncHistoryRecord[], total: number }> {
     try {
-      // Валидация и маппинг колонок
+      // Валідація та маппінг колонок
       const validColumns = ['id', 'createdAt', 'syncType', 'status', 'duration', 'totalOrders', 'newOrders', 'updatedOrders', 'errors'];
       const column = validColumns.includes(sortColumn) ? sortColumn : 'createdAt';
       const direction = sortDirection === 'ascending' ? 'asc' : 'desc';
@@ -278,7 +278,7 @@ export class SyncHistoryService {
         prisma.syncHistory.count({ where })
       ]);
 
-      // Десериализуем поле details из JSON строки обратно в объект
+      // Перетворюємо поле details із JSON-рядка назад в об’єкт
       const parsedRecords = records.map(record => ({
         ...record,
         details: this.parseDetails(record.details)

@@ -742,7 +742,7 @@ router.get('/:id/fiscal-receipts/list', authenticateToken, async (req, res) => {
 
 /**
  * PUT /api/orders/:id/status
- * Оновити статус замовлення в SalesDrive
+ * Оновити статус замовлення локально, в SalesDrive та тригернути автоматичний export/відвантаження в Dilovod, якщо статус змінився на "3" (На відправку)
  */
 router.put('/:id/status', authenticateToken, async (req, res) => {
   try {
@@ -756,24 +756,19 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       });
     }
 
-    // Оновлюємо статус в SalesDrive
-    const result = await salesDriveService.updateSalesDriveOrderStatus(id, status);
-
-    if (result) {
-      // Якщо статус змінився на "3" (Готове до відправки), записуємо дату
-      if (status === '3') {
-        try {
-          await prisma.order.update({
-            where: { id: parseInt(id) },
-            data: { readyToShipAt: new Date() }
-          });
-          logServer(`✅ [Orders API] Order ${id} readyToShipAt set to current time`);
-        } catch (dbError) {
-          console.error(`⚠️ [Orders API] Failed to update readyToShipAt for order ${id}:`, dbError);
-          // Не блокуємо відповідь, якщо не вдалося оновити дату
-        }
+    // Якщо статус змінився на "3" (На відправку), записуємо дату в readyToShipAt
+    if (status === '3') {
+      try {
+        await prisma.order.update({
+          where: { id: parseInt(id) },
+          data: { readyToShipAt: new Date() }
+        });
+        console.log(`✅ [Orders API] Order ${id} readyToShipAt set to current time`);
+      } catch (dbError) {
+        console.error(`⚠️ [Orders API] Failed to update readyToShipAt for order ${id}:`, dbError);
+        // Не блокуємо відповідь, якщо не вдалося оновити дату
       }
-
+    
       // Тригер автоматичного export/відвантаження в Dilovod (фонова операція — не блокує відповідь)
       import('../services/dilovod/DilovodAutoExportService.js')
         .then(({ dilovodAutoExportService }) =>
@@ -786,7 +781,12 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
         .catch(err =>
           console.warn('⚠️ [AutoExport] Manual status change trigger failed:', err instanceof Error ? err.message : err)
         );
+    }
 
+    // Оновлюємо статус в SalesDrive
+    const result = await salesDriveService.updateSalesDriveOrderStatus(id, status);
+
+    if (result) {
       res.json({
         success: true,
         message: 'Order status updated successfully in SalesDrive',

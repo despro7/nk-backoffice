@@ -25,18 +25,18 @@ import wordpressReceiptRoutes from './routes/wordpress-receipt.js';
 import notificationsRouter from './routes/notifications.js';
 import materialsRouter from './routes/materials.js';
 
-// Увеличиваем лимит listeners для process events
+// Збільшуємо ліміт слухачів для обробки подій, щоб уникнути попереджень про витік пам'яті при великій кількості одночасних cron задач або вебхуків.
 process.setMaxListeners(20);
 
 export function createServer() {
   const app = express();
 
-  // Middleware - CORS с поддержкой credentials
+  // Middleware - CORS з підтримкою облікових даних та логуванням дозволених origin
   const allowedOrigins = [
     process.env.CLIENT_URL || 'http://localhost:3000',
     'http://localhost:3000',
     'http://localhost:5173', // Vite dev server
-    'http://localhost:8080', // Дополнительный dev server
+    'http://localhost:8080', // Додатковий dev server
     'https://localhost:3000',
     'https://localhost:5173',
     'https://localhost:8080'
@@ -46,32 +46,33 @@ export function createServer() {
 
   app.use(cors({
     origin: (origin, callback) => {
-      // Логируем только один раз для каждого origin
+      // Логуємо тільки один раз для кожного origin
       const key = origin || 'no-origin';
       if (!loggedOrigins.has(key)) {
         logServer(`✅ CORS: Allowed ${key}`);
         loggedOrigins.add(key);
       }
 
-      // Разрешаем запросы без origin (для webhook от внешних сервисов)
+      // Дозволяємо запити без origin (для webhook від зовнішніх сервісів)
       if (!origin) {
         return callback(null, true);
       }
 
-      // Специально разрешаем webhook запросы от SalesDrive
+      // Спеціально дозволяємо webhook-запити від SalesDrive
       if (key === 'no-origin' || key.includes('salesdrive') || key.includes('webhook')) {
         logServer(`✅ CORS: Webhook allowed for ${key}`);
         return callback(null, true);
       }
 
+      // Перевіряємо, чи origin є в списку дозволених (для клієнтських запитів)
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        logServer(`🚫 CORS: Blocked origin ${origin}`); // это оставить!
+        logServer(`🚫 CORS: Blocked origin ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     },
-    credentials: true, // Обязательно для cookies
+    credentials: true, // Обов’язково для cookies
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
     exposedHeaders: ['Set-Cookie']

@@ -3,7 +3,6 @@
 import { PrismaClient } from '@prisma/client';
 import { prisma } from '../../lib/utils.js';
 import { WordPressProduct } from './DilovodTypes.js';
-import { logWithTimestamp } from './DilovodUtils.js';
 import { syncSettingsService } from '../syncSettingsService.js';
 
 export class DilovodCacheManager {
@@ -20,48 +19,48 @@ export class DilovodCacheManager {
     try {
       const settings = await syncSettingsService.getSyncSettings();
       this.cacheExpiryHours = settings.dilovod.cacheExpiryHours;
-      logWithTimestamp(`Dilovod кеш налаштування завантажені: ${this.cacheExpiryHours} години`);
+      // console.log(`Dilovod кеш налаштування завантажені: ${this.cacheExpiryHours} години`);
     } catch (error) {
-      logWithTimestamp('Помилка завантаження налаштувань кеша Dilovod, використовуємо значення за замовчуванням:', error);
+      console.log('Помилка завантаження налаштувань кеша Dilovod, використовуємо значення за замовчуванням:', error);
     }
   }
 
   // Получение SKU товаров в наличии из WordPress
   async getInStockSkusFromWordPress(): Promise<string[]> {
     try {
-      logWithTimestamp('Отримуємо SKU товарів в наявності з WordPress...');
+      console.log('Отримуємо SKU товарів в наявності з WordPress...');
       
       // Перевіряємо кеш
       const cachedSkus = await this.getCachedSkus();
       if (cachedSkus && cachedSkus.length > 0) {
-        logWithTimestamp(`Використовуємо кешовані SKU: ${cachedSkus.length} товарів`);
+        console.log(`Використовуємо кешовані SKU: ${cachedSkus.length} товарів`);
         return cachedSkus;
       }
 
       // Якщо кеш порожній або застарілий, отримуємо нові дані
-      logWithTimestamp('Кеш порожній або застарілий, отримуємо нові дані з WordPress...');
+      console.log('Кеш порожній або застарілий, отримуємо нові дані з WordPress...');
       const freshSkus = await this.fetchFreshSkusFromWordPress();
       
       // Перевіряємо, що отримали валідні дані
       if (!freshSkus || freshSkus.length === 0) {
-        logWithTimestamp('Попередження: отримано порожній масив SKU з WordPress');
+        console.log('Попередження: отримано порожній масив SKU з WordPress');
         return [];
       }
       
       // Зберігаємо в кеш
-      logWithTimestamp(`Зберігаємо ${freshSkus.length} SKU в кеш...`);
+      console.log(`Зберігаємо ${freshSkus.length} SKU в кеш...`);
       await this.saveSkusToCache(freshSkus);
       
-      logWithTimestamp(`Отримано і збережено в кеш ${freshSkus.length} SKU`);
+      console.log(`Отримано і збережено в кеш ${freshSkus.length} SKU`);
       return freshSkus;
       
     } catch (error) {
-      logWithTimestamp('Помилка отримання SKU з WordPress:', error);
+      console.log('Помилка отримання SKU з WordPress:', error);
       
       // Працюємо з кешем навіть якщо він застарів
       const cachedSkus = await this.getCachedSkus();
       if (cachedSkus && cachedSkus.length > 0) {
-        logWithTimestamp(`Використовуємо застарілий кеш: ${cachedSkus.length} товарів`);
+        console.log(`Використовуємо застарілий кеш: ${cachedSkus.length} товарів`);
         return cachedSkus;
       }
       
@@ -80,22 +79,22 @@ export class DilovodCacheManager {
         try {
           const parsedSkus = JSON.parse(cacheRecord.skus as string);
           if (Array.isArray(parsedSkus) && parsedSkus.length > 0) {
-            logWithTimestamp(`Найден валидный кеш: ${parsedSkus.length} SKU, обновлен ${cacheRecord.lastUpdated.toISOString()}`);
+            console.log(`Найден валидный кеш: ${parsedSkus.length} SKU, обновлен ${cacheRecord.lastUpdated.toISOString()}`);
             return parsedSkus;
           } else {
-            logWithTimestamp('Кеш содержит невалидные данные (не массив или пустой массив)');
+            console.log('Кеш содержит невалидные данные (не массив или пустой массив)');
             return [];
           }
         } catch (parseError) {
-          logWithTimestamp('Ошибка парсинга JSON из кеша:', parseError);
+          console.log('Ошибка парсинга JSON из кеша:', parseError);
           return [];
         }
       }
       
-      logWithTimestamp('Кеш не найден или устарел');
+      console.log('Кеш не найден или устарел');
       return [];
     } catch (error) {
-      logWithTimestamp('Ошибка получения кеша SKU:', error);
+      console.log('Ошибка получения кеша SKU:', error);
       return [];
     }
   }
@@ -104,12 +103,12 @@ export class DilovodCacheManager {
   private async saveSkusToCache(skus: string[]): Promise<void> {
     try {
       if (!skus || skus.length === 0) {
-        logWithTimestamp('Предупреждение: попытка сохранить пустой массив SKU');
+        console.log('Предупреждение: попытка сохранить пустой массив SKU');
         return;
       }
 
       const skuListJson = JSON.stringify(skus);
-      logWithTimestamp(`Подготавливаем к сохранению ${skus.length} SKU: ${skus.slice(0, 5).join(', ')}${skus.length > 5 ? '...' : ''}`);
+      console.log(`Подготавливаем к сохранению ${skus.length} SKU: ${skus.slice(0, 5).join(', ')}${skus.length > 5 ? '...' : ''}`);
       
       // Используем upsert для более надежного обновления
       await prisma.settingsWpSku.upsert({
@@ -127,9 +126,9 @@ export class DilovodCacheManager {
         }
       });
       
-      logWithTimestamp(`Кеш SKU успешно обновлен: ${skus.length} товаров`);
+      console.log(`Кеш SKU успешно обновлен: ${skus.length} товаров`);
     } catch (error) {
-      logWithTimestamp('Ошибка сохранения кеша SKU:', error);
+      console.log('Ошибка сохранения кеша SKU:', error);
       throw error;
     }
   }
@@ -141,8 +140,8 @@ export class DilovodCacheManager {
         throw new Error('WORDPRESS_DATABASE_URL не настроен в переменных окружения');
       }
 
-      logWithTimestamp('Подключаемся к WordPress базе данных...');
-      logWithTimestamp(`URL подключения: ${process.env.WORDPRESS_DATABASE_URL.replace(/\/\/.*@/, '//***@')}`);
+      console.log('Подключаемся к WordPress базе данных...');
+      console.log(`URL подключения: ${process.env.WORDPRESS_DATABASE_URL.replace(/\/\/.*@/, '//***@')}`);
       
       // Создаем отдельное подключение к WordPress базе данных
       const wordpressDb = new PrismaClient({
@@ -154,7 +153,7 @@ export class DilovodCacheManager {
       });
 
       try {
-        logWithTimestamp('Выполняем SQL запрос к WordPress базе...');
+        console.log('Выполняем SQL запрос к WordPress базе...');
         
         // Получаем SKU товаров (пока без проверки количества, так как _stock может отсутствовать)
         const products = await wordpressDb.$queryRaw<WordPressProduct[]>`
@@ -172,10 +171,10 @@ export class DilovodCacheManager {
           ORDER BY pm.meta_value
         `;
 
-        logWithTimestamp(`SQL запрос выполнен успешно. Получено ${products.length} записей из WordPress`);
+        console.log(`SQL запрос выполнен успешно. Получено ${products.length} записей из WordPress`);
         
         if (products.length === 0) {
-          logWithTimestamp('Предупреждение: SQL запрос вернул 0 записей. Возможно, структура таблиц отличается от ожидаемой.');
+          console.log('Предупреждение: SQL запрос вернул 0 записей. Возможно, структура таблиц отличается от ожидаемой.');
           return [];
         }
 
@@ -184,23 +183,23 @@ export class DilovodCacheManager {
           sku: String(p.sku),
           stock_quantity: Number(p.stock_quantity)
         }));
-        logWithTimestamp(`Примеры полученных данных: ${JSON.stringify(sampleProducts)}`);
+        console.log(`Примеры полученных данных: ${JSON.stringify(sampleProducts)}`);
 
         // Фильтруем только валидные SKU (количество может быть любым)
         const validSkus = products
           .filter(product => {
             const isValid = product.sku && product.sku.trim() !== '';
             if (!isValid) {
-              logWithTimestamp(`Пропускаем невалидный товар: SKU="${product.sku}"`);
+              console.log(`Пропускаем невалидный товар: SKU="${product.sku}"`);
             }
             return isValid;
           })
           .map(product => product.sku.trim());
 
-        logWithTimestamp(`После фильтрации осталось ${validSkus.length} валидных SKU`);
+        console.log(`После фильтрации осталось ${validSkus.length} валидных SKU`);
         
         if (validSkus.length > 0) {
-          logWithTimestamp(`Примеры валидных SKU: ${validSkus.slice(0, 5).join(', ')}`);
+          console.log(`Примеры валидных SKU: ${validSkus.slice(0, 5).join(', ')}`);
         }
 
         return validSkus;
@@ -208,11 +207,11 @@ export class DilovodCacheManager {
       } finally {
         // Всегда закрываем соединение
         await wordpressDb.$disconnect();
-        logWithTimestamp('Соединение с WordPress базой закрыто');
+        console.log('Соединение с WordPress базой закрыто');
       }
       
     } catch (error) {
-      logWithTimestamp('Ошибка получения SKU из WordPress:', error);
+      console.log('Ошибка получения SKU из WordPress:', error);
       throw error;
     }
   }
@@ -239,7 +238,7 @@ export class DilovodCacheManager {
       }
 
       const isExpired = cacheRecord.lastUpdated < new Date(Date.now() - this.cacheExpiryHours * 60 * 60 * 1000);
-    logWithTimestamp(`Dilovod кеш: проверка срока действия (${this.cacheExpiryHours} часов)`);
+    console.log(`Dilovod кеш: проверка срока действия (${this.cacheExpiryHours} часов)`);
       
       return {
         hasCache: true,
@@ -248,7 +247,7 @@ export class DilovodCacheManager {
         isExpired
       };
     } catch (error) {
-      logWithTimestamp('Ошибка получения статистики кеша:', error);
+      console.log('Ошибка получения статистики кеша:', error);
       
       return {
         hasCache: false,
@@ -262,7 +261,7 @@ export class DilovodCacheManager {
   // Принудительное обновление кеша
   async forceRefreshCache(): Promise<{ success: boolean; message: string; skuCount: number }> {
     try {
-      logWithTimestamp('Принудительное обновление кеша SKU...');
+      console.log('Принудительное обновление кеша SKU...');
       
       // Получаем свежие данные
       const freshSkus = await this.fetchFreshSkusFromWordPress();
@@ -270,7 +269,7 @@ export class DilovodCacheManager {
       // Сохраняем в кеш
       await this.saveSkusToCache(freshSkus);
       
-      logWithTimestamp(`Кеш принудительно обновлен: ${freshSkus.length} товаров`);
+      console.log(`Кеш принудительно обновлен: ${freshSkus.length} товаров`);
       
       return {
         success: true,
@@ -278,7 +277,7 @@ export class DilovodCacheManager {
         skuCount: freshSkus.length
       };
     } catch (error) {
-      logWithTimestamp('Ошибка принудительного обновления кеша:', error);
+      console.log('Ошибка принудительного обновления кеша:', error);
       
       return {
         success: false,
