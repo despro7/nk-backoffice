@@ -1485,7 +1485,7 @@ export class SalesDriveService {
 
     let customerName = '';
     let customerPhone = '';
-    // Добавляем информацию о клиенте
+    // Додаємо інформацію про клієнта
     if (rawOrder.primaryContact) {
       const contact = rawOrder.primaryContact;
       customerName = `${contact.lName || ''} ${contact.fName || ''} ${contact.mName || ''}`.trim();
@@ -1499,15 +1499,15 @@ export class SalesDriveService {
       quantity = orderDatabaseService.calculateActualQuantityPublic(rawOrder.products.map((p: any) => ({ sku: p.sku, quantity: p.amount })));
     }
 
-    // Базовое форматирование для основного объекта
+    // Базове форматування для основного об’єкта
     const formattedOrder: SalesDriveOrder = {
-      rawData: rawOrder,  // Сохраняем полные сырые данные
+      rawData: rawOrder,  // Зберігаємо повні необроблені дані
       id: rawOrder.id || 0,
       orderNumber: generateExternalId(rawOrder),
       ttn: rawOrder.ord_delivery_data?.[0]?.trackingNumber || '',
       quantity: quantity,
-      status: rawOrder.statusId, // Використовуємо централізований маппер
-      statusText: getStatusText(rawOrder.statusId), // Отримуємо текст з маппера
+      status: String(rawOrder.statusId), // Зберігаємо статус як рядок
+      statusText: statusMap[rawOrder.statusId], // Отримуємо текст з маппера
       items: rawOrder.products
         ? rawOrder.products.map((p: any) => ({
           productName: p.text,

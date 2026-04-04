@@ -111,7 +111,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             id: existingOrder.id,
             orderNumber: existingOrder.orderNumber,
             status: newStatus,
-            statusText: webhookData.statusId.options[0]?.text?.toString() || getStatusText(newStatus),
+            statusText: webhookMeta.statusId.options[0]?.text?.toString() || getStatusText(newStatus),
             items: items || existingOrder.items,
             customerName: customerName || existingOrder.customerName,
             customerPhone: customerPhone || existingOrder.customerPhone,
@@ -251,7 +251,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             id: parseInt(webhookData.id) || 0, // Використовуємо внутрішній ID з webhook
             orderNumber: externalId, // Використовуємо externalId з префіксом SD (якщо додано)
             status: newStatus,
-            statusText: webhookData.statusId.options[0]?.text?.toString() || getStatusText(newStatus),
+            statusText: webhookMeta.statusId.options[0]?.text?.toString() || getStatusText(newStatus),
             items: items,
             customerName: customerName || 'Невідомий клієнт',
             customerPhone: customerPhone || '',
