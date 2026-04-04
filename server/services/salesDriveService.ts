@@ -1493,10 +1493,12 @@ export class SalesDriveService {
     }
 
     // Обчислюємо quantity: спочатку спробуємо kilTPorcij, якщо порожнє — сумуємо amount товарів
-    let quantity = rawOrder.kilTPorcij || 0;
+    // Захист від об'єктів: kilTPorcij може прийти як {} замість null/number
+    const rawQuantity = rawOrder.kilTPorcij;
+    let quantity = (typeof rawQuantity === 'number' && rawQuantity > 0) ? rawQuantity : 0;
     if (!quantity && rawOrder.products && Array.isArray(rawOrder.products)) {
       // Обчислюємо quantity через orderDatabaseService.calculateActualQuantityPublic
-      quantity = orderDatabaseService.calculateActualQuantityPublic(rawOrder.products.map((p: any) => ({ sku: p.sku, quantity: p.amount })));
+      quantity = await orderDatabaseService.calculateActualQuantityPublic(rawOrder.products.map((p: any) => ({ sku: p.sku, quantity: p.amount })));
     }
 
     // Базове форматування для основного об’єкта

@@ -151,12 +151,17 @@ export class OrderDatabaseService {
    */
   async createOrder(data: OrderCreateData) {
     try {
+      // Захист: quantity має бути цілим числом (kilTPorcij може прийти як {} з SalesDrive)
+      const safeQuantity = typeof data.quantity === 'number' && isFinite(data.quantity)
+        ? Math.round(data.quantity)
+        : 0;
+
       const order = await prisma.order.create({
         data: {
           id: data.id,
           externalId: data.externalId,
           ttn: data.ttn,
-          quantity: data.quantity,
+          quantity: safeQuantity,
           status: data.status,
           items: JSON.stringify(data.items),
           rawData: JSON.stringify(data.rawData),
@@ -1075,12 +1080,15 @@ export class OrderDatabaseService {
 
                 try {
                   // Создаем новый заказ
+                  // Обчислюємо актуальну quantity з врахуванням комплектів
+                  const newActualQuantity = await this.calculateActualQuantity(orderData.items || [], orderData.quantity);
+
                   const newOrderData = {
                     id: parseInt(orderData.id),
                     externalId: orderData.orderNumber,
                     orderNumber: orderData.orderNumber,
                     ttn: orderData.ttn || '',
-                    quantity: orderData.quantity || 0,
+                    quantity: newActualQuantity,
                     status: orderData.status || 'unknown',
                     statusText: orderData.statusText || '',
                     items: orderData.items || [],
@@ -1196,7 +1204,7 @@ export class OrderDatabaseService {
 
               // console.log(`✅ [DEBUG] Order ${orderData.orderNumber} successfully updated in database (ID: ${updateResult.id})`);
 
-              // Создаем запись истории только для значимых изменений
+              // Створюємо запис історії лише для суттєвих змін
               if (changes.includes('ttn') || changes.includes('items')) {
                 // Використовуємо поточний статус замовлення, якщо новий статус не передано
                 const statusForHistory = orderData.status || String(existingOrder.status);
