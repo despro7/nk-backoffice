@@ -46,7 +46,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
         const webhookMeta = req.body.meta.fields;
         
         // Перевірка спеціального випадку для статусу "Видалений" (8)
-        const incomingStatus = webhookData.statusId || '1';
+        const incomingStatus = webhookData.statusId?.toString() || '1';
         const isDeleted = isDeletedStatus(incomingStatus);
         
         if (isDeleted && existingOrder) {
@@ -104,14 +104,14 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
         }
 
         if (existingOrder) {
-          const newStatus = webhookData.statusId.toString();
+          const newStatus = webhookData.statusId?.toString() || '1'; // За замовчуванням '1' (Новий) якщо статус не вказано
 
           // Для існуючого замовлення використовуємо дані з webhook, якщо вони є, інакше з БД
           orderDetails = {
             id: existingOrder.id,
             orderNumber: existingOrder.orderNumber,
             status: newStatus,
-            statusText: webhookMeta.statusId.options[0]?.text?.toString() || getStatusText(newStatus),
+            statusText: webhookData.statusId.options[0]?.text?.toString() || getStatusText(newStatus),
             items: items || existingOrder.items,
             customerName: customerName || existingOrder.customerName,
             customerPhone: customerPhone || existingOrder.customerPhone,
@@ -246,11 +246,12 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             console.log(`ℹ️ Cache not updated for order ${existingOrder.externalId} (no items change)`);
           }
         } else { // Якщо нове замовлення – створюємо замовлення на основі даних з webhook, без звернення до SalesDrive API
+          const newStatus = webhookData.statusId?.toString() || '1'; // За замовчуванням '1' (Новий) якщо статус не вказано
           orderDetails = {
             id: parseInt(webhookData.id) || 0, // Використовуємо внутрішній ID з webhook
             orderNumber: externalId, // Використовуємо externalId з префіксом SD (якщо додано)
-            status: webhookData.statusId?.toString() || '1', // Використовуємо статус з webhook, або '1' (Новий) за замовчуванням
-            statusText: 'Новий', // За замовчуванням
+            status: newStatus,
+            statusText: webhookData.statusId.options[0]?.text?.toString() || getStatusText(newStatus),
             items: items,
             customerName: customerName || 'Невідомий клієнт',
             customerPhone: customerPhone || '',
@@ -274,7 +275,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           console.log(`🆕 Creating new order ${orderDetails.orderNumber}`);
 
           // Маппінг статусу для нового замовлення з webhook
-          const newOrderStatus = webhookData.statusId || '1'; // За замовчуванням '1' (Новий)
+          const newOrderStatus = webhookData.statusId?.toString() || '1'; // За замовчуванням '1' (Новий)
           const newOrderStatusText = getStatusText(newOrderStatus);
 
           // Валідація обов'язкових полів перед створенням
