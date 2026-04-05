@@ -5,7 +5,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/Orders';
 import WarehouseMovement from './pages/WarehouseMovement';
-import WarehouseInventory from './pages/WarehouseInventory';
+import WarehouseInventory from './pages/Warehouse/WarehouseInventory';
 import WarehouseMaterials from './pages/WarehouseMaterials';
 import Reports from './pages/Reports';
 import ReportsSales from './pages/ReportsSales';

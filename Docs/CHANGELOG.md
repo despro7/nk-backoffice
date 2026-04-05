@@ -6,6 +6,50 @@
 
 ---
 
+## 2026-04-05 — useUnsavedGuard: блокування навігації при незбережених змінах
+**Files:**
+- Додано: `client/hooks/useUnsavedGuard.ts`
+- Додано: `client/components/modals/UnsavedChangesModal.tsx`
+- Змінено: `client/pages/Warehouse/WarehouseInventory/useWarehouseInventory.ts`
+- Змінено: `client/pages/Warehouse/WarehouseInventory/index.tsx`
+- Додано: `Docs/architecture/unsaved-guard.md`
+
+- Загальний хук `useUnsavedGuard` — перехоплює програмну навігацію (react-router push/replace), кнопки «назад/вперед» (popstate) та закриття вкладки (beforeunload)
+- Сумісний з `BrowserRouter` через `UNSAFE_NavigationContext` (без потреби в data router)
+- `UnsavedChangesModal` — модалка з трьома кнопками: «Зберегти і вийти», «Вийти без збереження», «Залишитись»; всі тексти кастомізуються через props
+- В `useWarehouseInventory` додано `isDirty` (JSON-snapshot порівняння) та `lastSavedSnapshotRef` для відстеження змін
+- Підключено на сторінці інвентаризації складу
+---
+
+## 2026-04-04 — Рефакторинг WarehouseInventory: розбивка на модулі + нова структура Warehouse/
+**Files:**
+- Видалено: `client/pages/WarehouseInventory.tsx`
+- Додано: `client/pages/Warehouse/shared/WarehouseInventoryTypes.ts`
+- Додано: `client/pages/Warehouse/shared/WarehouseInventoryUtils.ts`
+- Додано: `client/pages/Warehouse/shared/StepperInput.tsx`
+- Додано: `client/pages/Warehouse/shared/InfoDisplay.tsx`
+- Додано: `client/pages/Warehouse/shared/HistoryTable.tsx`
+- Додано: `client/pages/Warehouse/WarehouseInventory/index.tsx`
+- Додано: `client/pages/Warehouse/WarehouseInventory/useWarehouseInventory.ts`
+- Додано: `client/pages/Warehouse/WarehouseInventory/components/ProductRow.tsx`
+- Додано: `client/pages/Warehouse/WarehouseInventory/components/InventoryProductList.tsx`
+- Додано: `client/pages/Warehouse/WarehouseInventory/components/InventoryProgressBar.tsx`
+- Додано: `client/pages/Warehouse/WarehouseInventory/components/InventorySummaryTable.tsx`
+- Додано: `client/pages/Warehouse/WarehouseInventory/components/InventoryActionBar.tsx`
+- Додано: `client/pages/Warehouse/WarehouseInventory/components/InventoryStartScreen.tsx`
+- Додано: `client/pages/Warehouse/WarehouseInventory/components/InventorySessionMeta.tsx`
+- Додано: `client/pages/Warehouse/WarehouseInventory/components/InventoryHistoryTab.tsx`
+- Додано: `client/pages/Warehouse/WarehouseInventory/components/InventoryCommentModal.tsx`
+- Оновлено: `client/routes.config.tsx`
+
+Монолітний файл `WarehouseInventory.tsx` (1264 рядки) розбито на модулі без зміни поведінки.
+Введено папку-контейнер `pages/Warehouse/` для всіх сторінок розділу "Склад".
+`shared/` містить компоненти (`StepperInput`, `InfoDisplay`, `HistoryTable`) та утиліти, що будуть повторно використані в `WarehouseMovement` після його рефакторингу.
+
+Докладніше: `Docs/features/warehouse-inventory-refactoring.md`
+
+---
+
 ## 2026-04-01 — Нормалізація номерів телефонів для контрагентів Dilovod
 **Files:** `shared/utils/phoneNormalizer.ts`, `server/services/dilovod/DilovodExportBuilder.ts`
 
