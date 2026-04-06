@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
 import { authenticateToken, requireRole, requireMinRole, ROLES } from '../middleware/auth.js';
 import { DilovodService } from '../services/dilovod/index.js';
-import { handleDilovodApiError, clearConfigCache, isDilovodExportError, getDilovodExportErrorMessage } from '../services/dilovod/DilovodUtils.js';
+import { handleDilovodApiError, clearConfigCache, isDilovodExportError, getDilovodExportErrorMessage, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { cronService } from '../services/cronService.js';
@@ -1143,20 +1143,31 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
       }
 
       // Логування в MetaLog
+      // Для помилок: записуємо коротку версію в message, повну в data.error
+      // Для message збережемо коротку, читабельну версію помилки (назва + артикул)
+      let metaLogMessage = isExportError
+        ? (exportResult?.error ? cleanDilovodErrorMessageShort(String(exportResult.error)) || `Помилка експорту замовлення ${orderNum}` : `Помилка експорту замовлення ${orderNum}`)
+        : `Замовлення ${orderNum} експортовано успішно`;
+
+      const metaLogData: any = {
+        orderId,
+        orderNumber: orderNum,
+        payload,
+        exportResult,
+        warnings: warnings.length > 0 ? warnings : undefined
+      };
+
+      // Якщо помилка від Dilovod — додаємо повну версію в data.error
+      if (isExportError && exportResult?.error) {
+        metaLogData.error = cleanDilovodErrorMessageFull(String(exportResult.error));
+      }
+
       await dilovodService.logMetaDilovodExport({
         title: 'Dilovod export result',
         status: isExportError ? 'error' : 'success',
-        message: isExportError
-          ? (exportResult?.error || exportResult?.message || 'Export failed')
-          : (exportResult?.message || 'Export successful'),
+        message: metaLogMessage,
         initiatedBy: req.user ? String(req.user.userId) : 'unknown',
-        data: {
-          orderId,
-          orderNumber: orderNum,
-          payload,
-          exportResult,
-          warnings: warnings.length > 0 ? warnings : undefined
-        }
+        data: metaLogData
       });
 
       const mainMessage = isExportError
@@ -1391,21 +1402,32 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
       }
 
       // Логування в MetaLog
+      // Для помилок: записуємо коротку версію в message, повну в data.error
+      // Для message збережемо коротку, читабельну версію помилки (назва + артикул)
+      let metaLogMessage = isExportError
+        ? (exportResult?.error ? cleanDilovodErrorMessageShort(String(exportResult.error)) || exportErrorMessage : exportErrorMessage)
+        : 'Shipment created successfully';
+
+      const metaLogData: any = {
+        orderId,
+        orderNumber,
+        baseDoc: order.dilovodDocId,
+        payload: salePayload,
+        exportResult,
+        warnings: warnings.length > 0 ? warnings : undefined
+      };
+
+      // Якщо помилка від Dilovod — додаємо повну версію в data.error
+      if (isExportError && exportResult?.error) {
+        metaLogData.error = cleanDilovodErrorMessageFull(String(exportResult.error));
+      }
+
       await dilovodService.logMetaDilovodExport({
         title: 'Dilovod shipment export result',
         status: isExportError ? 'error' : 'success',
-        message: isExportError
-          ? exportErrorMessage
-          : (exportResult?.message || 'Shipment created successfully'),
+        message: metaLogMessage,
         initiatedBy: req.user ? String(req.user.userId) : 'unknown',
-        data: {
-          orderId,
-          orderNumber,
-          baseDoc: order.dilovodDocId,
-          payload: salePayload,
-          exportResult,
-          warnings: warnings.length > 0 ? warnings : undefined
-        }
+        data: metaLogData
       });
 
       const mainMessage = isExportError

@@ -10,7 +10,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { isDilovodExportError, getDilovodExportErrorMessage } from './DilovodUtils.js';
+import { isDilovodExportError, getDilovodExportErrorMessage, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from './DilovodUtils.js';
 import type { DilovodSettings } from '../../../shared/types/dilovod.js';
 
 const prisma = new PrismaClient();
@@ -248,6 +248,11 @@ export class DilovodAutoExportService {
           console.log(
             `⚠️ [AutoExport/saleOrder] Замовлення ${orderNum} вже існує в Dilovod (id: ${dilovodDoc.id}), синхронізуємо БД`
           );
+
+          console.log(
+            `📝 [AutoExport/saleOrder] EARLY-EXIT 2: ПЕРЕД записом дати від Dilovod API: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodDoc.id=${dilovodDoc.id}, dilovodDoc.date=${dilovodDoc.date}`
+          );
+
           await prisma.order.update({
             where: { id: internalOrderId },
             data: {
@@ -255,6 +260,11 @@ export class DilovodAutoExportService {
               dilovodExportDate: new Date(dilovodDoc.date || new Date()).toISOString()
             }
           });
+
+          console.log(
+            `✅ [AutoExport/saleOrder] EARLY-EXIT 2: ПІСЛЯ запису дати від Dilovod API: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodDocId=${dilovodDoc.id}`
+          );
+
           return { triggered: false, success: true };
         }
       } catch (checkErr) {
@@ -280,6 +290,10 @@ export class DilovodAutoExportService {
 
       // Крок 4: Зберігаємо в БД при успіху
       if (!isError && exportResult?.id) {
+        console.log(
+          `📝 [AutoExport/saleOrder] ПЕРЕД записом дати: orderId=${internalOrderId}, orderNum=${orderNum}, isError=${isError}, exportResult.id=${exportResult?.id}`
+        );
+
         await prisma.order.update({
           where: { id: internalOrderId },
           data: {
@@ -287,31 +301,50 @@ export class DilovodAutoExportService {
             dilovodExportDate: new Date().toISOString()
           }
         });
+
         console.log(
-          `✅ [AutoExport/saleOrder] Замовлення ${orderNum} успішно експортовано (baseDocId: ${exportResult.id})`
+          `✅ [AutoExport/saleOrder] ПІСЛЯ запису дати успішно: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodDocId=${exportResult.id}`
         );
       } else {
         console.log(
-          `❌ [AutoExport/saleOrder] Помилка export замовлення ${orderNum}: ${errorMessage}`
+          `❌ [AutoExport/saleOrder] ПОМИЛКА export замовлення ${orderNum}: isError=${isError}, exportResult?.id=${exportResult?.id}, errorMessage=${errorMessage}`
         );
       }
 
       // Крок 5: Логуємо в meta_logs
+      // Для помилок: записуємо коротку версію в message, повну в data.error
+      // Для повідомлення зручніше записувати коротку, читабельну версію помилки
+      let metaLogMessage = isError
+        ? `[Авто] Помилка export замовлення ${orderNum}: ${
+            exportResult?.error
+              ? cleanDilovodErrorMessageShort(String(exportResult.error)) || errorMessage
+              : errorMessage
+          }`
+        : `[Авто] Замовлення ${orderNum} успішно експортовано в Dilovod`;
+
+      const metaLogData: any = {
+        orderId,
+        orderNumber: orderNum,
+        triggerStatus: newStatus,
+        payload,
+        exportResult,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        // Додаємо індикатор: чи була дата записана в БД при помилці?
+        dbUpdateAttempted: !isError && exportResult?.id,
+        isError: isError
+      };
+
+      // Якщо помилка від Dilovod — додаємо повну версію в data.error
+      if (isError && exportResult?.error) {
+        metaLogData.error = cleanDilovodErrorMessageFull(String(exportResult.error));
+      }
+
       await dilovodService.logMetaDilovodExport({
         title: 'Auto export result (saleOrder)',
         status: isError ? 'error' : 'success',
-        message: isError
-          ? `[Авто] Помилка export замовлення ${orderNum}: ${errorMessage}`
-          : `[Авто] Замовлення ${orderNum} успішно експортовано в Dilovod`,
+        message: metaLogMessage,
         initiatedBy,
-        data: {
-          orderId,
-          orderNumber: orderNum,
-          triggerStatus: newStatus,
-          payload,
-          exportResult,
-          warnings: warnings.length > 0 ? warnings : undefined
-        }
+        data: metaLogData
       });
 
       return { triggered: true, success: !isError };
@@ -409,6 +442,11 @@ export class DilovodAutoExportService {
           console.log(
             `⚠️ [AutoExport/sale] В Dilovod вже існує ${saleCount} документ(ів) відвантаження для ${orderNum}, синхронізуємо БД`
           );
+          
+          console.log(
+            `📝 [AutoExport/sale] EARLY-EXIT 3: ПЕРЕД записом дати від Dilovod API: orderId=${internalOrderId}, orderNum=${orderNum}, saleDoc.date=${saleDoc.date}, saleCount=${saleCount}`
+          );
+
           await prisma.order.update({
             where: { id: internalOrderId },
             data: {
@@ -416,6 +454,11 @@ export class DilovodAutoExportService {
               dilovodSaleDocsCount: saleCount
             }
           });
+
+          console.log(
+            `✅ [AutoExport/sale] EARLY-EXIT 3: ПІСЛЯ запису дати від Dilovod API: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodSaleExportDate=${new Date(saleDoc.date || new Date()).toISOString()}`
+          );
+
           return { triggered: false, success: true };
         }
       } catch (checkErr) {
@@ -450,10 +493,18 @@ export class DilovodAutoExportService {
           ? new Date(order.readyToShipAt).toISOString()
           : new Date().toISOString();
 
+        console.log(
+          `📝 [AutoExport/sale] ПЕРЕД записом дати: orderId=${internalOrderId}, orderNum=${orderNum}, isError=${isError}, exportResult.id=${exportResult?.id}, dateToWrite=${shipmentDate}`
+        );
+
         await prisma.order.update({
           where: { id: internalOrderId },
           data: { dilovodSaleExportDate: shipmentDate }
         });
+
+        console.log(
+          `✅ [AutoExport/sale] ПІСЛЯ запису дати успішно: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodSaleExportDate=${shipmentDate}`
+        );
 
         const dateSource = order.readyToShipAt ? 'readyToShipAt' : 'поточна дата';
         console.log(
@@ -461,27 +512,45 @@ export class DilovodAutoExportService {
         );
       } else {
         console.log(
-          `❌ [AutoExport/sale] Помилка відвантаження замовлення ${orderNum}: ${errorMessage}`
+          `❌ [AutoExport/sale] ПОМИЛКА відвантаження замовлення ${orderNum}: isError=${isError}, exportResult?.id=${exportResult?.id}, errorMessage=${errorMessage}`
         );
       }
 
       // Крок 5: Логуємо в meta_logs
+      // Для помилок: записуємо коротку версію в message, повну в data.error
+      // Для повідомлення зручніше записувати коротку, читабельну версію помилки
+      let metaLogMessage = isError
+        ? `[Авто] Помилка відвантаження замовлення ${orderNum}: ${
+            exportResult?.error
+              ? cleanDilovodErrorMessageShort(String(exportResult.error)) || errorMessage
+              : errorMessage
+          }`
+        : `[Авто] Документ відвантаження для замовлення ${orderNum} успішно створено`;
+
+      const metaLogData: any = {
+        orderId,
+        orderNumber: orderNum,
+        triggerStatus: newStatus,
+        baseDoc: order.dilovodDocId,
+        payload: salePayload,
+        exportResult,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        // Додаємо індикатор: чи була дата записана в БД при помилці?
+        dbUpdateAttempted: !isError && exportResult?.id,
+        isError: isError
+      };
+
+      // Якщо помилка від Dilovod — додаємо повну версію в data.error
+      if (isError && exportResult?.error) {
+        metaLogData.error = cleanDilovodErrorMessageFull(String(exportResult.error));
+      }
+
       await dilovodService.logMetaDilovodExport({
         title: 'Auto shipment export result (sale)',
         status: isError ? 'error' : 'success',
-        message: isError
-          ? `[Авто] Помилка відвантаження замовлення ${orderNum}: ${errorMessage}`
-          : `[Авто] Документ відвантаження для замовлення ${orderNum} успішно створено`,
+        message: metaLogMessage,
         initiatedBy,
-        data: {
-          orderId,
-          orderNumber: orderNum,
-          triggerStatus: newStatus,
-          baseDoc: order.dilovodDocId,
-          payload: salePayload,
-          exportResult,
-          warnings: warnings.length > 0 ? warnings : undefined
-        }
+        data: metaLogData
       });
 
       return { triggered: true, success: !isError };

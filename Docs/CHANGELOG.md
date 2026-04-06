@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-04-06 — Форматування помилок Dilovod: розділення товарів на рядки
+**Files:** `server/services/dilovod/DilovodUtils.ts`, `server/services/dilovod/DilovodAutoExportService.ts`, `server/routes/dilovod.ts`
+
+Додано дві функції для очищення помилок експорту:
+- **`cleanDilovodErrorMessageShort()`** — коротка версія для UI (14% розміру): видаляє HTML, показує назву товару + артикул
+- **`cleanDilovodErrorMessageFull()`** — повна версія для логів (56% розміру): зберігає деталі, **розділяє товари на окремі рядки**
+
+Інтегровано у `DilovodAutoExportService` та `/api/dilovod/*` маршрути (експорт + відвантаження).
+Результат: ✅ NotificationBell показує читабельні помилки, товари розділені на рядки з "-".
+Документація: `Docs/architecture/dilovod-error-formatting.md`
+
+---
+
 ## 2026-04-06 — Жорстка валідація товарів при розгортанні замовлення + усунення помилок у пропаганді
 **Files:**
 - Змінено: `client/lib/orderAssemblyUtils.ts`

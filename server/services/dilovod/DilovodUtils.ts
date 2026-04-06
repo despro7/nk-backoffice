@@ -56,6 +56,112 @@ export function isDilovodExportError(result: any): boolean {
 }
 
 /**
+ * Видаляє HTML-теги та переформатує помилку Dilovod для коротких повідомлень.
+ * Повертає тільки назву товару + артикул у дужках.
+ *
+ * @example
+ * Input: "Недостатня кількість. <span onclick='...'>Квасоля варена, 250г</span> | Код: ... | Артикул: 02009 | ..."
+ * Output: "Недостатня кількість: \n- Квасоля варена, 250г (02009)"
+ */
+export function cleanDilovodErrorMessageShort(errorStr: string): string {
+  if (!errorStr) return '';
+
+  // Видалення основного префіксу помилки (applicationLayerError тощо)
+  let cleaned = errorStr
+    .replace(/^applicationLayerError\s*/i, '')
+    .replace(/^multithreadApiSession\s*/i, '')
+    .trim();
+
+  // Витяг заголовка помилки (напр. "Документ не збережено. Недостатня кількість.")
+  const headerMatch = cleaned.match(/^([^<]*?)\.\s*/);
+  const header = headerMatch ? headerMatch[1].trim() : '';
+
+  // Витяг артикулів та назв товарів
+  // Шаблон: <span ...>НАЗВА_ТОВАРУ</span> | ... | Артикул: АРТИКУЛ
+  const itemRegex = /<span[^>]*>([^<]+)<\/span>\s*\|[^|]*\|\s*Артикул:\s*(\S+)/g;
+  const items: string[] = [];
+  let match;
+
+  while ((match = itemRegex.exec(cleaned)) !== null) {
+    const productName = match[1].trim();
+    const sku = match[2].trim();
+    items.push(`- ${productName} (${sku})`);
+  }
+
+  // Формування результату
+  if (items.length > 0) {
+    // Витяг основної помилки (напр. "Недостатня кількість")
+    const mainError = cleaned.match(/(?:Документ не збережено\.\s+)?([^.]+)/)?.[1]?.trim() || 'Помилка';
+    return `${mainError}:\n${items.join('\n')}`;
+  }
+
+  return cleaned;
+}
+
+/**
+ * Видаляє HTML-теги та переформатує помилку Dilovod для повних логів.
+ * Повертає детальну інформацію про кожен товар (код, артикул, рахунок, залишки).
+ *
+ * @example
+ * Input: "Недостатня кількість. <span onclick='...'>Квасоля</span> | Код: 123 | ... Недостатньо: 1 шт. <span>Гречка</span> | Код: 456 | ..."
+ * Output: "Недостатня кількість.\n- Квасоля | Код: 123 | ... Недостатньо: 1 шт.\n- Гречка | Код: 456 | ... Недостатньо: 2 шт."
+ */
+export function cleanDilovodErrorMessageFull(errorStr: string): string {
+  if (!errorStr) return '';
+
+  // Видалення основного префіксу помилки
+  let cleaned = errorStr
+    .replace(/^applicationLayerError\s*/i, '')
+    .replace(/^multithreadApiSession\s*/i, '')
+    .trim();
+
+  // Видалення HTML-тегів (зберігаємо текст всередину)
+  cleaned = cleaned.replace(/<span[^>]*>([^<]+)<\/span>/g, '$1');
+
+  // Витяг заголовка (все до першого товару включно з першим |)
+  const firstPipeIndex = cleaned.indexOf('|');
+  if (firstPipeIndex === -1) {
+    // Немає | — нема товарів, повернути як є
+    return cleaned;
+  }
+
+  const header = cleaned.substring(0, firstPipeIndex).trim();
+  const content = cleaned.substring(firstPipeIndex + 1).trim();
+
+  // Розділення товарів за паттерном: " шт. " + (велика буква)
+  // Кожен товар закінчується на "шт." або "шт. "
+  // На початок наступного товару вказує: "шт." + " " + велика буква українського алфавіту
+  const items: string[] = [];
+
+  // Замінимо паттерн " шт. " + велика буква на спеціальний розділювач
+  const separator = '|||ITEM_SEPARATOR|||';
+  let processed = content.replace(/(\d+\s+шт\.)\s+(?=[А-Яа-я])/g, `$1${separator}`);
+
+  // Розділимо по розділювачу
+  const parts = processed.split(separator);
+
+  // Перший товар не має розділювача на початку
+  if (parts.length > 0 && parts[0]) {
+    items.push(parts[0].trim());
+  }
+
+  // Решта товарів
+  for (let i = 1; i < parts.length; i++) {
+    if (parts[i].trim()) {
+      items.push(parts[i].trim());
+    }
+  }
+
+  // Формування результату
+  if (items.length > 0) {
+    return `${header}\n- ${items.join('\n- ')}`;
+  }
+
+  // Якщо розділення не спрацювало, повернути простий формат
+  return `${header}\n- ${content}`;
+}
+
+/**
  * Повертає рядок опису помилки з відповіді Dilovod для логування.
  */
 export function getDilovodExportErrorMessage(result: any): string {
@@ -66,7 +172,8 @@ export function getDilovodExportErrorMessage(result: any): string {
     for (const pattern of DILOVOD_SOFT_ERROR_PATTERNS) {
       if (errStr.includes(pattern)) {
         if (pattern === 'applicationLayerError') {
-          return `Dilovod: документ не збережено (applicationLayerError) — ${errStr}`;
+          const shortMsg = cleanDilovodErrorMessageShort(errStr);
+          return shortMsg || `Dilovod: документ не збережено (applicationLayerError)`;
         }
         if (pattern === 'multithreadApiSession') {
           return `Dilovod: заблоковано паралельний запит (multithreadApiSession) — повторіть спробу пізніше`;

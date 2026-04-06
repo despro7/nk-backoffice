@@ -149,3 +149,11 @@ export const DEFAULT_DILOVOD_CONFIG: DilovodConfig = {
 - Ошибки сети
 - Валидация конфигурации
 - Логирование всех ошибок
+
+### Форматирование ошибок для NotificationBell
+
+Смотрите `../../Docs/architecture/dilovod-error-formatting.md` для детальной документации по функциям:
+- `cleanDilovodErrorMessageShort()` — коротка версія для UI
+- `cleanDilovodErrorMessageFull()` — повна версія для логів
+
+Ці функції видаляют HTML-теги та переформатують помилки Dilovod для читаємості.
