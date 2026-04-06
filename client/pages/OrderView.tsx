@@ -12,7 +12,7 @@ import { useBarcodeScanning } from '@/hooks/useBarcodeScanning';
 import { useOrderNavigation } from '@/hooks/useOrderNavigation';
 import { InfoModal } from '../components/modals/InfoModal';
 import { BaseModal } from '../components/modals/BaseModal';
-import { Button } from '@heroui/react';
+import { Button, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
 import { useOrderSettings } from '@/hooks/useOrderSettings';
 import { useBoxInitialStatus } from '@/hooks/useBoxInitialStatus';
 import { OrderViewHeader } from '@/components/OrderViewHeader';
@@ -113,6 +113,10 @@ export default function OrderView() {
 
   // Прапорець для відстеження, чи замовлення було відкрите вже зібраним
   const [wasOpenedAsReady, setWasOpenedAsReady] = useState(false);
+
+  // Стан для критичної помилки завантаження товарів
+  const [productLoadError, setProductLoadError] = useState<string | null>(null);
+  const [showProductErrorModal, setShowProductErrorModal] = useState(false);
 
   // Ваги активні, поки не всі товари/коробки зібрані
   useEffect(() => {
@@ -237,6 +241,33 @@ export default function OrderView() {
     handlePrintTTN(order);
   }, [handlePrintTTN, order]);
 
+  // Функція для синхронізації товарів з Dilovod
+  const handleSyncProducts = useCallback(async () => {
+    try {
+      setLoading(true);
+      console.log('🔄 Початок синхронізації товарів з Dilovod...');
+      
+      const response = await apiCall('/api/products/sync', { method: 'POST' });
+      const result = await response.json();
+
+      if (result.success) {
+        console.log('✅ Синхронізація товарів завершена успішно');
+        // Повторно завантажуємо замовлення
+        setProductLoadError(null);
+        setShowProductErrorModal(false);
+        await fetchOrderDetails(externalId!, monolithicCategoryIds);
+      } else {
+        throw new Error(result.error || 'Помилка синхронізації товарів');
+      }
+    } catch (error) {
+      console.error('❌ Помилка синхронізації товарів:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Невідома помилка';
+      setProductLoadError(`Помилка синхронізації: ${errorMsg}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiCall, externalId, monolithicCategoryIds]);
+
   // Завантажуємо деталі замовлення
   const fetchOrderDetails = async (id: string, monolithicIds?: number[]) => {
     try {
@@ -285,7 +316,14 @@ export default function OrderView() {
             setChecklistItems(processedItems);
           }
         } catch (error) {
-          console.error('Error expanding product sets:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Невідома помилка при завантаженні товарів';
+          console.error('❌ КРИТИЧНА ПОМИЛКА при розгортанні товарів:', error);
+          
+          // Показуємо критичну помилку в модалці
+          setProductLoadError(errorMessage);
+          setShowProductErrorModal(true);
+          
+          // Fallback: показуємо товари як є без розгортання
           const isReadyToShipFallback = data.data.status === '3' || data.data.status === '4';
           const fallbackItems = data.data.items.map((item: any, index: number) => ({
             id: (index + 1).toString(),
@@ -604,6 +642,60 @@ export default function OrderView() {
       {(user && ['admin'].includes(user.role) && isDebugMode) && (
         <OrderDetailsAdmin order={order} externalId={externalId || ''} />
       )}
+
+      {/* Модалка критичної помилки завантаження товарів */}
+      <Modal
+        isOpen={showProductErrorModal}
+        onClose={() => {
+          setShowProductErrorModal(false);
+          // При закритті без синхронізації повертаємось назад
+          navigate('/orders');
+        }}
+        size="lg"
+        isDismissable={false}
+        hideCloseButton={true}
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            <h2 className="text-red-600 flex items-center gap-2">
+              <DynamicIcon name="alert-circle" size={20} />
+              Критична помилка завантаження товарів
+            </h2>
+          </ModalHeader>
+          <ModalBody>
+            <div className="space-y-4">
+              <p className="">
+                {productLoadError}
+              </p>
+
+              <p className="text-sm">
+                Спробуйте синхронізувати товари, натиснувши кнопку нижче. <b>Зачекайте поки синхронізація завершиться</b> (приблизно 20-30 секунд). Якщо помилка повториться, зверніться до адміністратора.
+              </p>
+            </div>
+          </ModalBody>
+          <ModalFooter className="justify-start">
+            <Button
+              color="primary"
+              isLoading={loading}
+              onPress={handleSyncProducts}
+              className="bg-primary text-white"
+            >
+              <DynamicIcon name="refresh-cw" size={18} />
+              Синхронізувати товари
+            </Button>
+            <Button
+              color="default"
+              variant="flat"
+              onPress={() => {
+                setShowProductErrorModal(false);
+                navigate('/orders');
+              }}
+            >
+              Назад до замовлень
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   );
 }

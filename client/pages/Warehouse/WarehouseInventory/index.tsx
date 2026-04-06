@@ -93,27 +93,36 @@ export default function WarehouseInventory() {
                   deviationCount={totalDeviations}
                   searchQuery={inv.searchQuery}
                   onSearchChange={inv.setSearchQuery}
+                  categoryOptions={inv.categoryOptions}
+                  selectedCategory={inv.selectedCategory}
+                  onCategoryChange={inv.setSelectedCategory}
+                  sortBy={inv.sortBy}
+                  onSortByChange={inv.setSortBy}
+                  sortDirection={inv.sortDirection}
+                  onSortDirectionChange={inv.setSortDirection}
                 />
 
                 {/* Список страв */}
-                <InventoryProductList
-                  title="Страви"
-                  icon="utensils"
-                  headerColorClass="bg-blue-50"
-                  headerTextClass="text-blue-900"
-                  checkedCount={inv.checkedCount}
-                  totalCount={inv.totalCount}
-                  items={inv.filteredProducts}
-                  loading={inv.productsLoading}
-                  error={inv.productsError}
-                  searchQuery={inv.searchQuery}
-                  openItemId={inv.openProductId}
-                  onToggle={inv.handleToggleProduct}
-                  onChange={inv.handleProductChange}
-                  onCheck={inv.handleCheckProduct}
-                  onEnterPress={inv.handleEnterPressProduct}
-                  onRetry={inv.loadProducts}
-                />
+                {inv.selectedCategory !== 'Коробки' && (
+                  <InventoryProductList
+                    title="Страви"
+                    icon="utensils"
+                    headerColorClass="bg-blue-50"
+                    headerTextClass="text-blue-900"
+                    checkedCount={inv.checkedCount}
+                    totalCount={inv.totalCount}
+                    items={inv.filteredProducts}
+                    loading={inv.productsLoading}
+                    error={inv.productsError}
+                    searchQuery={inv.searchQuery}
+                    openItemId={inv.openProductId}
+                    onToggle={inv.handleToggleProduct}
+                    onChange={inv.handleProductChange}
+                    onCheck={inv.handleCheckProduct}
+                    onEnterPress={inv.handleEnterPressProduct}
+                    onRetry={inv.loadProducts}
+                  />
+                )}
 
                 {/* Список матеріалів */}
                 <InventoryProductList

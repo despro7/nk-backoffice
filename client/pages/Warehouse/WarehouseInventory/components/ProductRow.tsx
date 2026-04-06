@@ -19,9 +19,11 @@ export interface ProductRowProps {
   onChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
   onCheck: (id: string) => void;
   onEnterPress?: (productId: string) => void;
+  /** Автофокус на першому полі при відкритті акордіона. За замовчуванням true. */
+  autoFocus?: boolean;
 }
 
-export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck, onEnterPress }: ProductRowProps) => {
+export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck, onEnterPress, autoFocus = true }: ProductRowProps) => {
   const total = totalPortions(product);
   const deviation = total !== null ? total - product.systemBalance : null;
   const hasDeviation = deviation !== null && deviation !== 0;
@@ -43,13 +45,13 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
 
   // Автофокус на першому полі при відкритті акордіона
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && autoFocus) {
       const timer = setTimeout(() => {
         firstInputRef.current?.focus();
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [isOpen, product.id]);
+  }, [isOpen, autoFocus, product.id]);
 
   // Підтвердження позиції + перехід до наступного при Enter
   const handleConfirmClick = () => {
@@ -67,15 +69,14 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
         onClick={() => onToggle(product.id)}
       >
         {/* Checkbox */}
-        <button
-          className={`w-7 h-7 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+        <span
+          className={`w-7 h-7 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors select-none ${
             product.checked ? 'border-green-500 bg-green-500' : 'border-gray-300'
           }`}
-          onClick={(e) => { e.stopPropagation(); onCheck(product.id); }}
-          aria-label={product.checked ? 'Відмінити перевірку' : 'Позначити як перевірено'}
+          aria-label={product.checked ? 'Перевірено' : 'Не перевірено'}
         >
           {product.checked && <DynamicIcon name="check" className="w-4 h-4 text-white" />}
-        </button>
+        </span>
 
         {/* Назва */}
         <span className={`flex-1 text-lg font-semibold text-neutral-800 pl-1 ${product.checked ? 'text-gray-400' : ''}`}>

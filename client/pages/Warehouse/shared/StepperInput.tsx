@@ -83,7 +83,7 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
             isIconOnly
             variant="light"
             isDisabled={disabled}
-            className="absolute left-2 top-1/2 -translate-y-1/2 h-14 w-10 min-w-6 z-10"
+            className="absolute left-2 top-1/2 -translate-y-1/2 h-14 w-10 min-w-6 z-10 bg-gray-100"
             onPress={onDecrement}
             aria-label="Зменшити"
           >
@@ -93,7 +93,7 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
             isIconOnly
             variant="light"
             isDisabled={disabled}
-            className="absolute right-2 top-1/2 -translate-y-1/2 h-14 w-10 min-w-6 z-10"
+            className="absolute right-2 top-1/2 -translate-y-1/2 h-14 w-10 min-w-6 z-10 bg-gray-100"
             onPress={onIncrement}
             aria-label="Збільшити"
           >

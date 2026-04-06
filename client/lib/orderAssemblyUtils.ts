@@ -88,8 +88,9 @@ const expandProductRecursively = async (
   try {
     const response = await apiCall(`/api/products/${sku}`);
     if (!response.ok) {
-      console.warn(`⚠️ Не вдалося отримати інформацію про товар: ${sku} (статус: ${response.status})`);
-      return;
+      const errorMessage = `Не вдалося завантажити товар: "${sku}". Можливо товар видалено або синхронізація товарів ще не виконана.`;
+      console.error(`❌ ${errorMessage}`);
+      throw new Error(errorMessage);
     }
 
     const product: Product = await response.json();
@@ -187,7 +188,10 @@ const expandProductRecursively = async (
     }
 
   } catch (error) {
+    // Викидаємо помилку вгору — не ловимо її тут!
+    // Це дозволяє expandProductSets поймати помилку і показати критичну модалку
     console.error(`❌ Помилка розгортання товару ${sku}:`, error);
+    throw error;
   }
 };
 
@@ -256,42 +260,19 @@ export const expandProductSets = async (
   LoggingService.orderAssemblyLog(`📋 Вхідні товари: ${JSON.stringify(orderItems.map(item => ({ name: item.productName, sku: item.sku, quantity: item.quantity })))}`);
 
   for (const item of orderItems) {
-    try {
-      LoggingService.orderAssemblyLog(`\n📦 Обробка: ${item.productName} (SKU: ${item.sku}) × ${item.quantity}`);
+    LoggingService.orderAssemblyLog(`\n📦 Обробка: ${item.productName} (SKU: ${item.sku}) × ${item.quantity}`);
 
-      // Рекурсивно розгортаємо кожен товар замовлення
-      await expandProductRecursively(
-        item.sku,
-        item.quantity,
-        apiCall,
-        expandedItems,
-        new Set(), // Новий Set для кожного товару замовлення
-        0, // Починаємо з глибини 0
-        monolithicCategoryIds.map(id => id.toString()) // Конвертуємо ID категорій в строки для порівняння
-      );
-
-    } catch (error) {
-      console.error(`❌ Помилка розгортання набору для ${item.sku}:`, error);
-      
-      // У випадку помилки додаємо товар як є (fallback)
-      const itemName = item.productName;
-      if (expandedItems[itemName]) {
-        expandedItems[itemName].quantity += item.quantity;
-        expandedItems[itemName].expectedWeight = expandedItems[itemName].quantity * 0.33;
-      } else {
-        expandedItems[itemName] = {
-          id: item.sku,
-          name: itemName,
-          quantity: item.quantity,
-          expectedWeight: item.quantity * 0.33,
-          status: 'default' as const,
-          type: 'product',
-          sku: item.sku,
-          barcode: item.sku,
-          manualOrder: 999
-        };
-      }
-    }
+    // Рекурсивно розгортаємо кожен товар замовлення
+    // Помилка буде викинута вгору до OrderView.tsx для обробки
+    await expandProductRecursively(
+      item.sku,
+      item.quantity,
+      apiCall,
+      expandedItems,
+      new Set(), // Новий Set для кожного товару замовлення
+      0, // Починаємо з глибини 0
+      monolithicCategoryIds.map(id => id.toString()) // Конвертуємо ID категорій в строки для порівняння
+    );
   }
 
   // Перетворюємо об'єкт в масив і призначаємо унікальні ID

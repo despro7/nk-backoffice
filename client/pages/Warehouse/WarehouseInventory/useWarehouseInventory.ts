@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { ToastService } from '@/services/ToastService';
-import { totalPortions, serializeItems } from '../shared/WarehouseInventoryUtils';
+import { totalPortions, serializeItems, sortItems } from '../shared/WarehouseInventoryUtils';
 import type { InventoryProduct, InventorySession, InventoryStatus } from '../shared/WarehouseInventoryTypes';
 
 // ---------------------------------------------------------------------------
@@ -33,9 +33,16 @@ export interface UseWarehouseInventoryReturn {
   filteredMaterials: InventoryProduct[];
   openMaterialId: string | null;
 
-  // Пошук
+  // Пошук і сортування
   searchQuery: string;
   setSearchQuery: (v: string) => void;
+  selectedCategory: string;
+  setSelectedCategory: (v: string) => void;
+  categoryOptions: string[];
+  sortBy: 'name' | 'sku' | 'balance' | 'deviation';
+  setSortBy: (v: 'name' | 'sku' | 'balance' | 'deviation') => void;
+  sortDirection: 'asc' | 'desc';
+  setSortDirection: (v: 'asc' | 'desc') => void;
 
   // Прогрес
   checkedCount: number;
@@ -89,6 +96,9 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
   /** ID поточної сесії в БД (null = ще не збережена) */
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [products, setProducts] = useState<InventoryProduct[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState('Усі категорії');
+  const [sortBy, setSortBy] = useState<'name' | 'sku' | 'balance' | 'deviation'>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState<string | null>(null);
   const [materials, setMaterials] = useState<InventoryProduct[]>([]);
@@ -128,6 +138,7 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
         id: p.id,
         sku: p.sku,
         name: p.name,
+        categoryName: p.categoryName ?? 'Без категорії',
         systemBalance: p.systemBalance,
         unit: p.unit as 'portions' | 'pcs',
         portionsPerBox: p.portionsPerBox,
@@ -283,22 +294,46 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
     [materials]
   );
 
+  const categoryOptions = useMemo(() => {
+    const categories = new Set<string>();
+    categories.add('Усі категорії');
+    categories.add('Коробки');
+    products.forEach((p) => {
+      if (p.categoryName && p.categoryName.trim()) {
+        categories.add(p.categoryName);
+      }
+    });
+    return Array.from(categories);
+  }, [products]);
+
   const filteredProducts = useMemo(
-    () => products.filter(
-      (p) =>
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.sku.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    [products, searchQuery]
+    () => {
+      let result = products.filter((p) => {
+        if (selectedCategory === 'Коробки') {
+          return false;
+        }
+        const matchesSearch =
+          p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p.sku.toLowerCase().includes(searchQuery.toLowerCase());
+        if (!matchesSearch) return false;
+        if (selectedCategory === 'Усі категорії') return true;
+        return p.categoryName === selectedCategory;
+      });
+      return sortItems(result, sortBy, sortDirection);
+    },
+    [products, searchQuery, selectedCategory, sortBy, sortDirection]
   );
 
   const filteredMaterials = useMemo(
-    () => materials.filter(
-      (m) =>
-        m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        m.sku.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    [materials, searchQuery]
+    () => {
+      const result = materials.filter(
+        (m) =>
+          m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          m.sku.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      return sortItems(result, sortBy, sortDirection);
+    },
+    [materials, searchQuery, sortBy, sortDirection]
   );
 
   /**
@@ -468,6 +503,8 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
     commentDraft, setCommentDraft,
     isSavingDraft,
     products, productsLoading, productsError, filteredProducts, openProductId,
+    selectedCategory, setSelectedCategory, categoryOptions,
+    sortBy, setSortBy, sortDirection, setSortDirection,
     materials, materialsLoading, materialsError, filteredMaterials, openMaterialId,
     searchQuery, setSearchQuery,
     checkedCount, totalCount, progressPercent,

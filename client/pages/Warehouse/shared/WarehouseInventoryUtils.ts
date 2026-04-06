@@ -25,6 +25,38 @@ export const formatBalanceBreakdown = (total: number, portionsPerBox: number): s
 };
 
 // ---------------------------------------------------------------------------
+// Сортує товари за обраним критерієм та напрямком
+// ---------------------------------------------------------------------------
+
+export const sortItems = (
+  items: InventoryProduct[],
+  sortBy: 'name' | 'sku' | 'balance' | 'deviation',
+  direction: 'asc' | 'desc'
+): InventoryProduct[] => {
+  const sorted = [...items];
+
+  sorted.sort((a, b) => {
+    let compareValue = 0;
+
+    if (sortBy === 'name') {
+      compareValue = a.name.localeCompare(b.name, 'uk-UA');
+    } else if (sortBy === 'sku') {
+      compareValue = a.sku.localeCompare(b.sku);
+    } else if (sortBy === 'balance') {
+      compareValue = (a.systemBalance ?? 0) - (b.systemBalance ?? 0);
+    } else if (sortBy === 'deviation') {
+      const deviationA = totalPortions(a) ?? 0;
+      const deviationB = totalPortions(b) ?? 0;
+      compareValue = Math.abs(deviationA - (a.systemBalance ?? 0)) - Math.abs(deviationB - (b.systemBalance ?? 0));
+    }
+
+    return direction === 'asc' ? compareValue : -compareValue;
+  });
+
+  return sorted;
+};
+
+// ---------------------------------------------------------------------------
 // Словники для відображення статусу
 // ---------------------------------------------------------------------------
 
@@ -45,6 +77,6 @@ export const statusColor: Record<InventoryStatus, 'default' | 'warning' | 'succe
 // ---------------------------------------------------------------------------
 
 export const serializeItems = (prods: InventoryProduct[], mats: InventoryProduct[]) =>
-  [...prods, ...mats].map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked }) => ({
-    id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked,
+  [...prods, ...mats].map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
+    id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
   }));

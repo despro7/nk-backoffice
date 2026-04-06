@@ -316,6 +316,7 @@ router.get('/inventory/products', authenticateToken, async (req, res) => {
         sku: true,
         name: true,
         portionsPerBox: true,
+        categoryName: true,
         stockBalanceByStock: true,
       },
       orderBy: [
@@ -341,6 +342,7 @@ router.get('/inventory/products', authenticateToken, async (req, res) => {
             id: String(product.id),
             sku: product.sku,
             name: product.name,
+            categoryName: product.categoryName ?? 'Без категорії',
             systemBalance: smallStockBalance,
             unit: isPortioned ? 'portions' : 'pcs',
             portionsPerBox: product.portionsPerBox,

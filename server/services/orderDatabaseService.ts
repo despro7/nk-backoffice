@@ -642,7 +642,8 @@ export class OrderDatabaseService {
         totalPrice: true,
         pricinaZnizki: true,
         sajt: true,
-        dilovodSaleExportDate: true
+        dilovodSaleExportDate: true,
+        dilovodReturnDate: true
       };
 
       let select: any;

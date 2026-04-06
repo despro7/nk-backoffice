@@ -71,6 +71,7 @@ export const InventoryProductList = ({
           onChange={onChange}
           onCheck={onCheck}
           onEnterPress={onEnterPress}
+          autoFocus={false}
         />
       ))
     )}

@@ -8,6 +8,7 @@ export interface InventoryProduct {
   id: string;
   sku: string;
   name: string;
+  categoryName?: string;
   systemBalance: number; // Залишок за системою (порції або штуки)
   actualCount: number | null; // Фактична кількість (порції або штуки)
   boxCount: number | null; // Кількість повних коробок (тільки для порційних товарів)

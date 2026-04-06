@@ -22,11 +22,12 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
+  Tooltip,
 } from "@heroui/react";
 import { useApi } from "../hooks/useApi";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { formatRelativeDate } from "../lib/formatUtils";
+import { formatRelativeDate, formatDate } from "../lib/formatUtils";
 import { addToast } from "@heroui/react";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
@@ -95,36 +96,10 @@ type SortDescriptor = {
   direction: "ascending" | "descending";
 };
 
-const statusOptions = [
-  { key: "all", label: "Всі статуси" },
-  { key: "1", label: "Нові" },
-  { key: "2", label: "Підтверджені" },
-  { key: "3", label: "Готові до відправки" },
-  { key: "4", label: "Відправлені" },
-  { key: "5", label: "Продані" },
-  { key: "6", label: "Відхилені" },
-  { key: "7", label: "Повернені" },
-  { key: "8", label: "Видалені" }
-];
+import { getStatusColor, ORDER_STATUSES } from '@/lib/formatUtils.js';
+import { formatTrackingNumberWithIcon } from "@/lib/formatUtilsJSX";
 
-const getStatusLabel = (status: string) => {
-  const option = statusOptions.find(o => o.key === status);
-  return option ? option.label : status;
-};
-
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "1": return "bg-blue-100 text-blue-700";
-    case "2": return "bg-cyan-100 text-cyan-700";
-    case "3": return "bg-orange-100 text-orange-700";
-    case "4": return "bg-purple-100 text-purple-700";
-    case "5": return "bg-green-100 text-green-700";
-    case "6": return "bg-red-100 text-red-700";
-    case "7": return "bg-gray-100 text-gray-700";
-    case "8": return "bg-neutral-100 text-neutral-700";
-    default: return "bg-neutral-100 text-neutral-700";
-  }
-};
+const statusOptions = ORDER_STATUSES;
 
 // Функція для правильного відмінювання українських слів
 const pluralize = (count: number, one: string, few: string, many: string): string => {
@@ -243,7 +218,11 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
       const params = new URLSearchParams();
       params.append("shippedOnly", "true");
 
-      if (statusFilter !== "all") {
+      if (statusFilter === "all") {
+        ["1","2","3","4","5","6","7"].forEach(status => {
+          params.append("status", status);
+        });
+      } else {
         params.append("status", statusFilter);
       }
 
@@ -315,7 +294,11 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
       params.append("sku", selectedProduct);
       params.append("shippedOnly", "true");
 
-      if (statusFilter !== "all") {
+      if (statusFilter === "all") {
+        ["1","2","3","4","5","6","7"].forEach(status => {
+          params.append("status", status);
+        });
+      } else {
         params.append("status", statusFilter);
       }
 
@@ -363,7 +346,11 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
       params.append("sku", sku);
       params.append("shippedOnly", "true");
 
-      if (statusFilter !== "all") {
+      if (statusFilter === "all") {
+        ["1","2","3","4","5","6","7"].forEach(status => {
+          params.append("status", status);
+        });
+      } else {
         params.append("status", statusFilter);
       }
 
@@ -1182,6 +1169,7 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
                         >
                           <TableHeader>
                             <TableColumn className="text-sm font-medium">№</TableColumn>
+                            <TableColumn className="text-sm font-medium">ТТН</TableColumn>
                             <TableColumn className="text-sm font-medium">Оформлено</TableColumn>
                             <TableColumn className="text-sm font-medium">Відвантажено</TableColumn>
                             <TableColumn className="text-sm font-medium">Статус</TableColumn>
@@ -1195,35 +1183,45 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
                                 <TableCell className="font-medium text-sm">
                                   {order.orderNumber}
                                 </TableCell>
-                                <TableCell className="text-sm text-neutral-600">
-                                  {new Date(order.orderDate).toLocaleDateString('uk-UA', {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-																		hour: '2-digit',
-																		minute: '2-digit',
+                                <TableCell className="font-medium text-sm">
+                                  {order.ttn && formatTrackingNumberWithIcon(order.ttn, {
+                                    compactMode: true,
+                                    boldLastGroup: true,
+                                    showIcon: false
                                   })}
+                                </TableCell>
+                                <TableCell className="text-sm text-neutral-600">
+                                  {formatDate(order.orderDate)}
                                 </TableCell>
 																<TableCell className="text-sm text-neutral-600">
-                                  {new Date(order.dilovodSaleExportDate).toLocaleDateString('uk-UA', {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-																		hour: '2-digit',
-																		minute: '2-digit',
-                                  })}
+                                  {formatDate(order.dilovodSaleExportDate)}
                                 </TableCell>
                                 <TableCell className="text-sm">
-                                  <Chip
-                                    size="sm"
-                                    variant="flat"
-                                    className="text-xs"
-                                    classNames={{
-                                      base: getStatusColor(order.status),
-                                    }}
-                                  >
-                                    {order.statusText}
-                                  </Chip>
+                                  {order.dilovodReturnDate ? (
+                                    <Tooltip color="secondary" content={`Повернено ${formatDate(order.dilovodReturnDate)}`}>
+                                      <Chip
+                                        size="sm"
+                                        variant="flat"
+                                        className="text-xs"
+                                        classNames={{
+                                          base: getStatusColor(order.status),
+                                        }}
+                                      >
+                                        {order.statusText}
+                                      </Chip>
+                                    </Tooltip>
+                                  ) : (
+                                    <Chip
+                                      size="sm"
+                                      variant="flat"
+                                      className="text-xs"
+                                      classNames={{
+                                        base: getStatusColor(order.status),
+                                      }}
+                                    >
+                                      {order.statusText}
+                                    </Chip>
+                                  )}
                                 </TableCell>
                                 <TableCell className="text-center text-sm font-semibold">
                                   {order.productQuantity}

@@ -110,11 +110,12 @@ export class DilovodExportBuilder {
       const tableParts = await this.buildTableParts(context);
       const orderNumber = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
-      // 9. Додаткова перевірка товарів
-      if (tableParts.tpGoods.length === 0) {
+      // 9. КРИТИЧНА ВАЛІДАЦІЯ ТОВАРІВ - перевіряємо що всі товари успішно обробені
+      const goodsValidation = this.validateOrderGoods(context, tableParts);
+      if (!goodsValidation.isValid) {
         await dilovodService.logMetaDilovodExport({
-          title: 'Експорт замовлення заблоковано - немає товарів для відправки',
-          message: 'Експорт заблоковано: немає товарів для відправки в Dilovod. Перевірте SKU товарів у замовленні.',
+          title: 'Експорт замовлення заблоковано - критичні помилки з товарами',
+          message: `Експорт заблоковано: ${goodsValidation.criticalErrors.join('; ')}`,
           status: 'error',
           initiatedBy: 'system:exportBuilder',
           data: {
@@ -122,11 +123,14 @@ export class DilovodExportBuilder {
             orderNumber,
             payload: tableParts,
             exportResult: null,
-            warnings: context.warnings.length > 0 ? context.warnings : undefined
+            warnings: context.warnings.length > 0 ? context.warnings : undefined,
+            criticalErrors: goodsValidation.criticalErrors
           }
         });
 
-        throw new Error('Експорт заблоковано: немає товарів для відправки в Dilovod. Перевірте SKU товарів у замовленні.');
+        const errorMessage = `Експорт заблоковано через критичні помилки з товарами:\n${goodsValidation.criticalErrors.join('\n')}`;
+        console.log(`❌ ТОВАРИ НЕВАЛІДНІ: ${goodsValidation.criticalErrors.length} критичних помилок`);
+        throw new Error(errorMessage);
       }
 
       // 10. Сформувати фінальний payload
@@ -222,9 +226,12 @@ export class DilovodExportBuilder {
       // 6. Побудувати табличні частини (товари) - такі самі як у замовленні
       const tableParts = await this.buildTableParts(context);
 
-      // 7. Додаткова перевірка товарів
-      if (tableParts.tpGoods.length === 0) {
-        throw new Error('Експорт заблоковано: немає товарів для відвантаження.');
+      // 7. КРИТИЧНА ВАЛІДАЦІЯ ТОВАРІВ - перевіряємо що всі товари успішно обробени
+      const goodsValidation = this.validateOrderGoods(context, tableParts);
+      if (!goodsValidation.isValid) {
+        const errorMessage = `Експорт заблоковано через критичні помилки з товарами:\n${goodsValidation.criticalErrors.join('\n')}`;
+        console.log(`❌ ТОВАРИ НЕВАЛІДНІ: ${goodsValidation.criticalErrors.length} критичних помилок`);
+        throw new Error(errorMessage);
       }
 
       // 8. Сформувати фінальний payload
@@ -433,6 +440,70 @@ export class DilovodExportBuilder {
 
       return fallbackPerson;
     }
+  }
+
+  /**
+   * Валідувати товари замовлення
+   * 
+   * Перевіряє:
+   * 1. Чи немає товарів в замовленні
+   * 2. Чи всі товари успішно оброблені (чи не було пропущено товарів через помилки)
+   * 3. Чи немає товарів, котрі не знайдені в локальній БД
+   * 
+   * Блокує експорт якщо:
+   * - Замовлення не містить товарів
+   * - Кількість оброблених товарів < кількість товарів у замовленні (деякі пропущені)
+   */
+  private validateOrderGoods(
+    context: ExportBuildContext,
+    tableParts: DilovodExportTableParts
+  ): { isValid: boolean; criticalErrors: string[] } {
+    const { order, warnings } = context;
+    const criticalErrors: string[] = [];
+
+    console.log(`  🔍 Валідація товарів замовлення...`);
+
+    // 1. Перевірка що замовлення містить товари
+    if (!order.items || order.items.length === 0) {
+      criticalErrors.push('Замовлення не містить жодного товару');
+      console.log(`  ❌ Замовлення не містить товарів`);
+      return { isValid: false, criticalErrors };
+    }
+
+    // 2. Перевірка що всі товари були успішно оброблені
+    const expectedGoodsCount = order.items.length;
+    const processedGoodsCount = tableParts.tpGoods.length;
+
+    if (processedGoodsCount === 0) {
+      criticalErrors.push(`Жодного товару не вдалося обробити для експорту в Dilovod. Причина: товари не знайдені в локальній базі даних або не мають SKU. Перевірте синхронізацію товарів.`);
+      console.log(`  ❌ Жодного товару не обробено (0/${expectedGoodsCount})`);
+      return { isValid: false, criticalErrors };
+    }
+
+    if (processedGoodsCount < expectedGoodsCount) {
+      const skippedCount = expectedGoodsCount - processedGoodsCount;
+      
+      // Знаходимо товари, котрі були пропущені (немає в tableParts)
+      const processedSkus = tableParts.tpGoods.map((good: any) => good.good);
+      const skippedItems = order.items
+        .filter((item: any) => !processedSkus.includes((item as any).sku))
+        .map((item: any) => `"${item.productName || 'Unknown'}" (SKU: ${item.sku || 'None'})`)
+        .slice(0, 5) // Показуємо максимум 5 товарів
+        .join(', ');
+
+      const moreText = skippedCount > 5 ? ` та ще ${skippedCount - 5} інших` : '';
+
+      criticalErrors.push(
+        `Експорт заблоковано: ${skippedCount} з ${expectedGoodsCount} товарів не вдалося обробити. ` +
+        `Пропущено: ${skippedItems}${moreText}. ` +
+        `Можливі причини: товари не знайдені в локальній БД, немають SKU або немають dilovodId у Dilovod.`
+      );
+      console.log(`  ❌ Частково обробено: ${processedGoodsCount}/${expectedGoodsCount} товарів`);
+      return { isValid: false, criticalErrors };
+    }
+
+    console.log(`  ✅ Валідація товарів пройдена: ${processedGoodsCount}/${expectedGoodsCount} обробено успішно`);
+    return { isValid: true, criticalErrors: [] };
   }
 
   /**
