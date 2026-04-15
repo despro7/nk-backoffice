@@ -1,7 +1,7 @@
 import React from 'react';
 import { WeightToleranceSettings } from '../components/WeightToleranceSettings';
 import { BoxSettingsManager } from '../components/BoxSettingsManager';
-import { OrderInterfaceSettings } from '../components/OrderInterfaceSettings';
+import { OrderAssemblySettings } from '../components/OrderAssemblySettings';
 import { OrderSoundSettingsCard } from '@/components/OrderSoundSettingsCard';
 import { ShippingProvidersManager } from '../components/ShippingProvidersManager';
 
@@ -10,7 +10,7 @@ const SettingsOrderAssembly: React.FC = () => {
     <div className="space-y-8">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="space-y-8">
-          <OrderInterfaceSettings />
+          <OrderAssemblySettings />
           <OrderSoundSettingsCard />
         </div>
           <WeightToleranceSettings />

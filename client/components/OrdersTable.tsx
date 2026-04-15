@@ -10,6 +10,10 @@ import { cn } from "../lib/utils";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate, getStatusColor } from "../lib/formatUtils";
 import { formatTrackingNumberWithIcon } from "@/lib/formatUtilsJSX";
+import { generateWarehouseChecklistHTML } from "../lib/receiptTemplates";
+import { expandProductSets } from "../lib/orderAssemblyUtils";
+import { useEquipmentFromAuth } from "@/contexts/AuthContext";
+import { receiptClientService } from "../services/ReceiptService";
 
 interface OrderItem {
   productName: string;
@@ -56,6 +60,7 @@ const columns = [
   { key: "ttn", label: "ТТН", className: "w-2/10" },
   { key: "quantity", label: "Кіл-ть", className: "w-1/10" },
   { key: "status", label: "Статус", className: "w-2/10" },
+  { key: "printReceipt", label: "Чек", className: "w-1/10" },
 ];
 
 export function OrdersTable({ className, filter = "all", searchQuery = "", onTabChange }: OrdersTableProps) {
@@ -82,6 +87,63 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
   });
   const [page, setPage] = useState(1);
   const { apiCall } = useApi();
+  const [equipmentState] = useEquipmentFromAuth();
+
+  // ID замовлення, для якого зараз завантажується чек (щоб показати spinner на кнопці)
+  const [loadingReceiptId, setLoadingReceiptId] = useState<string | null>(null);
+
+  /**
+   * При кліку:
+   * - якщо принтер чеків налаштований і увімкнений → друкує ESC/POS через QZ Tray
+   * - інакше → відкриває HTML чек-ліст у новому вікні браузера
+   */
+  const handleWarehouseChecklist = async (externalId: string) => {
+    setLoadingReceiptId(externalId);
+    try {
+      const response = await apiCall(`/api/orders/${externalId}`);
+      const data = await response.json();
+
+      if (!data.success || !data.data) {
+        console.error('[OrdersTable] Не вдалося завантажити замовлення:', data);
+        return;
+      }
+
+      const order = data.data;
+
+      // Розкладаємо набори по компонентах (та сама логіка що і в OrderView)
+      const expandedItems = await expandProductSets(order.items || [], apiCall);
+
+      const orderInfo = {
+        orderNumber: order.orderNumber || externalId,
+        ttn: order.ttn,
+        customerName: order.customerName,
+      };
+
+      const receiptPrinter = equipmentState.config?.receiptPrinter;
+
+      if (receiptPrinter?.enabled && receiptPrinter?.name) {
+        // Друк через QZ Tray
+        receiptClientService.setApiCall(apiCall);
+        await receiptClientService.printWarehouseChecklist({
+          items: expandedItems,
+          orderInfo,
+          printerName: receiptPrinter.name,
+        });
+      } else {
+        // Fallback — відкрити у браузері
+        const html = generateWarehouseChecklistHTML(expandedItems, orderInfo);
+        const w = window.open('', '_blank', 'width=900,height=700');
+        if (w) {
+          w.document.write(html);
+          w.document.close();
+        }
+      }
+    } catch (error) {
+      console.error('[OrdersTable] Помилка чек-листа:', error);
+    } finally {
+      setLoadingReceiptId(null);
+    }
+  };
 
   // Загружаем настройки размера страницы из базы данных
   useEffect(() => {
@@ -366,6 +428,20 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
                     </div>
                   </PopoverContent>
                 </Popover>
+              </TableCell>
+              <TableCell>
+                <Button 
+                  size="sm"
+                  className="min-w-3 bg-neutral-300/50 text-neutral-500"
+                  isLoading={loadingReceiptId === order.externalId}
+                  onPress={(e) => {
+                    handleWarehouseChecklist(order.externalId);
+                  }}
+                >
+                  {loadingReceiptId !== order.externalId && (
+                    <DynamicIcon name="clipboard-list" size={20} strokeWidth={1.5} />
+                  )}
+                </Button>
               </TableCell>
             </TableRow>
           )}

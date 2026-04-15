@@ -6,6 +6,187 @@
 
 ---
 
+## 2026-04-15 — Рефакторинг кнопки чека в OrderViewHeader + підтримка warehouse чек-листа
+**Files:** `client/components/OrderViewHeader.tsx`, `client/hooks/useReceiptPrinting.ts`, `client/pages/OrderView.tsx`
+
+- Видалено legacy-логіку `handleFetchReceipt` / `tryOpenWordPressPDF` з `OrderViewHeader` — замінено на props-based підхід.
+- `OrderViewHeader` тепер приймає `onPrintReceipt`, `onViewReceipt`, `onPrintWarehouseChecklist`, `onViewWarehouseChecklist`.
+- **1 фіскальний чек:** `ButtonGroup` — основна кнопка = 🖨 друк через QZ Tray, dropdown зі стрілкою = preview у браузері + секція warehouse.
+- **Кілька фіскальних чеків:** основна кнопка = друк першого, dropdown = пари "Друкувати / Переглянути" для кожного + секція warehouse.
+- `useReceiptPrinting` розширено: `handlePrintReceipt(type?, receiptIndex?)` та `handleViewReceipt(type?, receiptIndex?)` тепер підтримують передачу індексу конкретного чека до `ReceiptClientService`.
+- `OrderView.tsx` передає всі 4 пропси до `OrderViewHeader`, warehouse чек-лист прив'язаний до `handlePrintReceipt('warehouse')` / `handleViewReceipt('warehouse')`.
+
+---
+
+## 2026-04-15 — Фікс: ESC/POS друк через QZ Tray — перехід на format:'hex'
+**Files:** `client/services/printerService.ts`, `client/pages/SettingsEquipment.tsx`, `scripts/escpos-tcp-listener.js` *(new)*, `Docs/hardware/receipt-printer-escpos.md`
+
+- **Проблема:** `format:'plain'` і `format:'base64'` ламали CP866 кирилицю — QZ Tray перекодовував дані через системне CP1251 (Windows), ігноруючи параметр `encoding` в конфізі.
+- **Рішення:** `PrinterService.printRaw()` тепер конвертує байти у HEX рядок і передає як `{ type:'raw', format:'hex', data: hexString }` — QZ Tray передає байти 1:1 без жодного перекодування.
+- **Діагностика:** додано тимчасовий блок «🧪 Діагностика QZ Tray» в `SettingsEquipment.tsx` (6 кнопок-тестів) і скрипт `scripts/escpos-tcp-listener.js` — TCP емулятор принтера з HEX дампом.
+- **Підтверджено через TCP listener:** CP866 байти для "Тест" = `92 a5 e1 e2` ✅
+
+---
+
+## 2026-04-15 — Друк складських чек-листів і фіскальних чеків через QZ Tray (ESC/POS)
+**Files:**
+`client/services/printerService.ts`,
+`client/services/ReceiptService.ts`,
+`client/lib/receiptTemplates.ts`,
+`client/components/OrdersTable.tsx`,
+`client/pages/SettingsEquipment.tsx`,
+`Docs/hardware/receipt-printer-escpos.md` *(new)*
+
+- **`PrinterService.printRaw()`** — новий метод для відправки ESC/POS байтів на термопринтер через QZ Tray; використовує `type:'raw', format:'plain', data: number[]` — єдиний надійний спосіб передачі бінарних ESC/POS даних без перекодування на стороні QZ Tray.
+- **`PrinterService.escPosToBytes()`** — конвертує Unicode JavaScript рядок у `number[]` з кодуванням CP866; статична таблиця `UNICODE_TO_CP866` охоплює А-Я, а-я, Ё/ё та апроксимацію для Ї/Є/Ґ.
+- **`PrinterService.printPdf()`** — виправлено параметри для 58мм рулону: `size:{width:58, height:null}, units:'mm', scaleContent:true`.
+- **`generateWarehouseChecklistEscPos()`** — новий ESC/POS шаблон складського чек-листа (32 символи ширина, список товарів з кількостями, склад комплектів, підсумок, автообрізка).
+- **`generateFiscalReceiptEscPos()`** — новий ESC/POS шаблон фіскального чека з Dilovod JSON (шапка ФОП, товари, оплата, QR-код ДПС).
+- **`ESC t 0x11`** — команда вибору кодової сторінки CP866 (code page 17) додана на початок обох ESC/POS шаблонів.
+- **`OrdersTable.tsx`** — кнопка "Чек": якщо принтер налаштований → `expandProductSets()` + `printWarehouseChecklist()`; інакше → HTML у `window.open()`.
+- **`SettingsEquipment.tsx`** — новий розділ "Принтер чеків (QZ Tray)": поля увімкнення, назви принтера, ширини, щільності + кнопка тесту.
+- **Діагностичний лог** у `printRaw`: `[printRaw] ESC/POS input length: N → bytes: M` у консолі браузера.
+- **Документація:** `Docs/hardware/receipt-printer-escpos.md` — повний опис архітектури, CP866 таблиці, діагностики та обмежень.
+---
+
+## 2026-04-15 — Рефакторинг: видалення useWarehouse.ts
+**Files:** `client/hooks/useWarehouse.ts` (видалено), `client/pages/Warehouse/WarehouseMovement/useWarehouseMovement.ts`, `client/pages/Warehouse/WarehouseMovement/index.tsx`
+- Видалено застарілий хук `useWarehouse.ts` з `client/hooks/` — 4 з 12 методів були мертвим кодом.
+- API-функції вбудовано безпосередньо у `useWarehouseMovement` через `useApi` + `useCallback`.
+- `useWarehouseMovement()` тепер викликається без параметрів.
+---
+
+## 2026-04-13 — Кнопка "Оновити деталі" + кешування деталей в БД + фільтри пресетів дат в Історії переміщень
+**Files:**
+`shared/types/movement.ts`, `server/modules/Warehouse/WarehouseTypes.ts`,
+`server/modules/Warehouse/MovementHistoryService.ts`, `server/modules/Warehouse/WarehouseController.ts`,
+`client/components/MonthSwitcher.tsx` *(new)*,
+`client/pages/Warehouse/shared/MovementHistoryTable.tsx`,
+`client/pages/Warehouse/WarehouseMovement/useMovementHistory.ts`,
+`client/pages/Warehouse/WarehouseMovement/components/MovementHistoryTab.tsx`,
+`client/pages/Warehouse/WarehouseMovement/index.tsx`
+
+- **Кнопка "Оновити деталі"** у акордіоні кожного документа (доступна всім ролям); `?force=true` обходить кеш і йде в Діловод
+- **Кешування деталей в БД**: `GET /details/:id` спочатку перевіряє `warehouse_movement.items` — якщо є, повертає з `fromCache: true`; в Діловод тільки при порожньому кеші або `force=true`
+- **Збагачення при завантаженні списку**: `GET /history` після отримання документів від Діловода — одним запитом дістає `items` з БД і вкладає `details` прямо у відповідь; акордіони з уже збереженими товарами розкриваються без запиту
+- **Skip existing при persist**: `persistDocumentsToDB` тепер робить `findMany` → `create` тільки для нових документів (раніше `upsert` для всіх)
+- **Пресети дат** в `MovementHistoryTab`: 7 днів (дефолт) / 14 / 30 / По місяцях
+- **`MonthSwitcher`** — shared компонент (`client/components/`): `←` / Select-місяць / `→`; `disableFuture` блокує майбутні місяці
+- **`toDate`** параметр наскрізно: `shared/types`, `WarehouseTypes`, `MovementHistoryService` (фільтр `date < toDate` в Діловод), `WarehouseController`
+- Виправлено баг in-memory кешу деталей: раніше `setDocuments` не зупиняв виконання `fetchDetails`, запит все одно йшов
+
+---
+
+## 2026-04-11 — Кешування партій + виправлення передачі дати
+
+**Files:** `server/modules/Warehouse/WarehouseController.ts`, `client/.../hooks/useBatchNumbers.ts`, `useMovementProducts.ts`, `useMovementDraftState.ts`, `useMovementSync.ts`, `useWarehouseMovement.ts`, `MovementProductRow.tsx`, `BatchNumbersAutocomplete.tsx`
+
+- Серверний in-memory кеш для `/batch-numbers/:sku`: TTL 12 год для старих дат, 5 хв для свіжих; `?force=true` скидає кеш; кнопка 🔄 у Drawer
+- Виправлено: `asOfDate` не передавалась у `refreshBatchQuantities` при завантаженні чернетки/документа — `loadDraftIntoProducts` отримав параметр `asOfDate?`
+- Виправлено баг дублікатів партій: перевірка унікальності за `batchId:storage`; вже додані партії відображаються у Drawer з беджем "Вже додано"
+
+---
+
+## 2026-04-11 — Відправка переміщень між складами до Діловода
+**Files:** `prisma/schema.prisma`, `prisma/seed.ts`, `server/modules/Warehouse/WarehousePayloadBuilder.ts` *(new)*, `server/modules/Warehouse/WarehouseController.ts`, `server/routes/settings.ts`, `server/types/warehouse.ts`, `shared/types/movement.ts`, `client/hooks/useWarehouseMovementSettings.ts` *(new)*, `client/pages/SettingsWarehouseMovement.tsx` *(new)*, `client/routes.config.tsx`, `client/pages/Warehouse/WarehouseMovement/index.tsx`, `client/pages/Warehouse/WarehouseMovement/components/PayloadPreviewModal.tsx`, `client/pages/Warehouse/WarehouseMovement/components/MovementActionBar.tsx`, `client/pages/Warehouse/shared/WarehouseMovementTypes.ts`, `client/pages/Warehouse/WarehouseMovement/components/MovementDraftsTab.tsx`
+- Серверний `WarehousePayloadBuilder` — читає налаштування з БД, будує Dilovod payload
+- `POST /api/warehouse/movements/send` — підтримує `dryRun=true` (preview) та `dryRun=false` (відправка)
+- `GET/PUT /api/settings/warehouse-movement` — CRUD налаштувань переміщення
+- Нова сторінка `/settings/warehouse-movement` (тільки ADMIN) з вибором фірми/складів/параметрів
+- `PayloadPreviewModal` рефакторинг — приймає готовий payload з сервера, прибрано клієнтську побудову
+- `MovementActionBar` — нова кнопка «Показати payload» видима тільки адміністраторам
+- `WarehouseMovement` schema: видалено `createdAt`/`updatedAt`, додано `docNumber`, `dilovodDocId`; `User`: додано `dilovodUserId`
+- 8 seed-записів `settings_base` з `category='warehouse_movement'`
+
+---
+
+## 2026-04-09 — Автокомпліт партій + ліміти по залишках у WarehouseMovement
+
+### Огляд
+Реалізовано повний цикл вибору партії товару при переміщенні між складами: від UI-компонента вибору до обмеження введення кількості на основі залишків обраної партії, та автоматичного коригування при зміні партії.
+
+### Backend
+
+**`server/services/dilovod/DilovodApiClient.ts`**
+- Додано метод `getBatchNumbersBySku(sku, firmId?)` — запит до регістру залишків Dilovod з dimension-фільтрами `["good", "goodPart", "storage", "firm"]`
+- Повертає масив `{ batchNumber, storage, storageDisplayName, quantity, firm, firmDisplayName }`
+- `quantity` = `parseFloat(row.qty)` — завжди числовий тип
+
+**`server/services/dilovod/DilovodService.ts`**
+- Додано публічний метод `getBatchNumbersBySku(sku, firmId?)` як проксі до `DilovodApiClient`
+
+**`server/modules/Warehouse/WarehouseController.ts`**
+- Новий ендпоінт `GET /api/warehouse/batch-numbers/:sku` — повертає партії по SKU
+- Фільтрація малого складу (`config.smallStorageId`) — переміщення завжди з основного до малого, партії малого складу не показуються
+
+**`server/modules/Warehouse/WarehouseService.ts`**
+- В `getProductsForMovement()` додано поля `batchStorage: ''` і `batchQuantity: 0` до об'єкта `details` кожного товару — без цього ліміти не працювали
+
+### Frontend
+
+**`client/pages/Warehouse/WarehouseMovement/hooks/useBatchNumbers.ts`** *(новий файл)*
+- Хук `useBatchNumbers()` з 5-хвилинним кешуванням (`Map`) та `AbortController` для скасування попередніх запитів
+- Сортування партій за спаданням кількості
+
+**`client/pages/Warehouse/WarehouseMovement/components/BatchNumbersAutocomplete.tsx`** *(новий файл)*
+- Drawer-компонент (HeroUI v2.8 flat imports: `Drawer`, `DrawerContent`, `DrawerHeader`, `DrawerBody`, `DrawerFooter`)
+- Відкривається зліва при фокусі на полі "№ партії"
+- Prop `selectedStorage` для коректного підсвічування: `isSelected = batchNumber === selected && storage === selectedStorage`
+- Виправлено нескінченний цикл відкриття/закриття: HeroUI при закритті відновлює фокус на input → `isDrawerJustClosed` ref-прапорець ігнорує цей `onFocus`
+
+**`client/pages/Warehouse/WarehouseMovement/components/MovementProductRow.tsx`**
+- Інтеграція `BatchNumbersAutocomplete` та `useBatchNumbers`
+- `handleBatchSelect` зберігає три поля: `batchNumber`, `batchStorage`, `batchQuantity`
+- **Автоматична корекція при виборі партії**: якщо поточна кількість перевищує залишок обраної партії — автоматично встановлюється максимально можлива кількість коробок + залишкові порції, показується `ToastService` warning
+- IIFE в JSX для обчислення `maxBoxes` та `maxPortions` на основі `batchQuantity`
+
+**`client/pages/Warehouse/shared/StepperInput.tsx`**
+- Додано проп `max?: number`
+- `onChange` клампує значення: `Math.max(0, Math.min(v, max))`
+- Кнопка `+` disabled коли `value >= max`
+
+**`client/pages/Warehouse/shared/WarehouseMovementTypes.ts`**
+- Додано поля `batchStorage: string` і `batchQuantity: number` до `details` в `MovementProduct`
+- Додано поле `batchStorage: string` до `MovementItem`
+
+**`client/pages/Warehouse/shared/WarehouseMovementUtils.ts`**
+- `serializeMovementItems` тепер включає `batchStorage` при збереженні в БД
+
+**`client/pages/Warehouse/WarehouseMovement/useWarehouseMovement.ts`**
+- `handleProductChange` обробляє нові поля `'batchStorage'` і `'batchQuantity'`
+- `loadDraftIntoProducts` відновлює `batchStorage` з чернетки при завантаженні
+
+### Виправлені баги
+- **Ліміти не працювали**: сервер не повертав `batchStorage`/`batchQuantity` в `details` → `batchQuantity` завжди `0` або `undefined` → `Infinity` як fallback. Виправлено в `WarehouseService.getProductsForMovement()`
+- **Нескінченний цикл Drawer**: HeroUI focus restore → `isDrawerJustClosed` ref
+- **Обидві партії підсвічувались**: порівняння лише `batchNumber` без `storage` → додано `selectedStorage` prop
+
+---
+
+## 2026-04-06 — Рефакторинг WarehouseMovement на основі WarehouseInventory
+**Files:** 
+- Видалено: `client/pages/WarehouseMovement.tsx`
+- Створено: `client/pages/Warehouse/WarehouseMovement/` (структурована папка)
+  - `index.tsx` — головний компонент-оркестратор
+  - `useWarehouseMovement.ts` — весь стан, API, handlers
+  - `components/` — UI-компоненти (6 шт)
+- Створено: `client/pages/Warehouse/shared/WarehouseMovementTypes.ts` — типи для переміщень
+- Створено: `client/pages/Warehouse/shared/WarehouseMovementUtils.ts` — утиліти для переміщень
+- Оновлено: `client/routes.config.tsx` — новий імпорт
+
+**Особливості:**
+- ✅ Список товарів без матеріалів (коробок) — тільки страви
+- ✅ Без прогрес-бару (все переміщується одразу)
+- ✅ **Нова кнопка "Синхронізувати залишки"** — перезавантажує залишки з сервера
+- ✅ Два складози: "Основний" → "Малий"
+- ✅ Архітектура на основі WarehouseInventory для масштабованості
+- ✅ Повна типізація TypeScript
+- ✅ Спільне використання `StepperInput`, `InfoDisplay` з `shared/`
+
+Документація: `Docs/features/warehouse-movement-refactoring.md`
+
+---
+
 ## 2026-04-06 — Форматування помилок Dilovod: розділення товарів на рядки
 **Files:** `server/services/dilovod/DilovodUtils.ts`, `server/services/dilovod/DilovodAutoExportService.ts`, `server/routes/dilovod.ts`
 

@@ -27,7 +27,7 @@ import {
 import { useApi } from "../hooks/useApi";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { formatRelativeDate, formatDate } from "../lib/formatUtils";
+import { formatRelativeDate, formatDate, pluralize } from "../lib/formatUtils";
 import { addToast } from "@heroui/react";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
@@ -100,20 +100,6 @@ import { getStatusColor, ORDER_STATUSES } from '@/lib/formatUtils.js';
 import { formatTrackingNumberWithIcon } from "@/lib/formatUtilsJSX";
 
 const statusOptions = ORDER_STATUSES;
-
-// Функція для правильного відмінювання українських слів
-const pluralize = (count: number, one: string, few: string, many: string): string => {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  
-  if (mod10 === 1 && mod100 !== 11) {
-    return one;
-  } else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
-    return few;
-  } else {
-    return many;
-  }
-};
 
 export default function ProductShippedStatsTable({ className, onSummaryChange }: ProductShippedStatsTableProps) {
   const { isAdmin } = useRoleAccess();

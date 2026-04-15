@@ -20,7 +20,7 @@ import { UNSAFE_NavigationContext as NavigationContext } from 'react-router-dom'
 
 export interface UseUnsavedGuardOptions {
   isDirty: boolean;
-  onSaveDraft: () => Promise<void>;
+  onSaveDraft: () => Promise<unknown>;
 }
 
 export interface UnsavedGuardModalProps {
@@ -29,10 +29,37 @@ export interface UnsavedGuardModalProps {
   onSave: () => Promise<void>;
   onLeave: () => void;
   onCancel: () => void;
+  // Кастомні тексти — можуть змінюватись в залежності від дії
+  title?: string;
+  message?: string;
+  saveText?: string;
+  leaveText?: string;
+  cancelText?: string;
+  modalSize?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
+}
+
+/** Кастомні тексти для конкретного guardAction-виклику */
+export interface GuardActionLabels {
+  title?: string;
+  message?: string;
+  saveText?: string;
+  leaveText?: string;
+  cancelText?: string;
+  modalSize?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
 }
 
 export interface UseUnsavedGuardReturn {
   modalProps: UnsavedGuardModalProps;
+  /**
+   * Обгортає довільну async-дію захистом від незбережених змін.
+   * Якщо isDirty=true — показує модалку і виконує дію лише після рішення користувача.
+   * Якщо isDirty=false — виконує дію одразу.
+   *
+   * Використання:
+   *   onPress={guard.guardAction(mov.handleSyncBalances)}
+   *   onPress={guard.guardAction(mov.handleSyncBalances, { title: 'Увага!', message: '...' })}
+   */
+  guardAction: (action: () => void | Promise<void>, labels?: GuardActionLabels) => () => void;
 }
 
 export function useUnsavedGuard({ isDirty, onSaveDraft }: UseUnsavedGuardOptions): UseUnsavedGuardReturn {
@@ -41,6 +68,9 @@ export function useUnsavedGuard({ isDirty, onSaveDraft }: UseUnsavedGuardOptions
 
   // Зберігаємо відкладений callback навігації — виконаємо після рішення користувача
   const pendingNavigationRef = useRef<(() => void) | null>(null);
+
+  // Зберігаємо кастомні тексти для поточного виклику guardAction
+  const pendingLabelsRef = useRef<GuardActionLabels | null>(null);
 
   // Доступ до history через NavigationContext (сумісно з BrowserRouter)
   const { navigator } = useContext(NavigationContext);
@@ -127,7 +157,24 @@ export function useUnsavedGuard({ isDirty, onSaveDraft }: UseUnsavedGuardOptions
   const handleCancel = useCallback(() => {
     setIsOpen(false);
     pendingNavigationRef.current = null;
+    pendingLabelsRef.current = null;
   }, []);
+
+  // ── guardAction — перехоплення довільних дій (не навігації) ──────────────
+  const guardAction = useCallback(
+    (action: () => void | Promise<void>, labels?: GuardActionLabels) => () => {
+      if (!isDirty) {
+        // Немає незбережених змін — виконуємо одразу
+        void action();
+        return;
+      }
+      // Є незбережені зміни — зберігаємо відкладену дію і показуємо модалку
+      pendingNavigationRef.current = () => void action();
+      pendingLabelsRef.current = labels ?? null;
+      setIsOpen(true);
+    },
+    [isDirty],
+  );
 
   return {
     modalProps: {
@@ -136,6 +183,9 @@ export function useUnsavedGuard({ isDirty, onSaveDraft }: UseUnsavedGuardOptions
       onSave: handleSave,
       onLeave: handleLeave,
       onCancel: handleCancel,
+      // Кастомні тексти від guardAction (або undefined — модалка покаже дефолтні)
+      ...pendingLabelsRef.current,
     },
+    guardAction,
   };
 }

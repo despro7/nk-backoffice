@@ -4,7 +4,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 // Import page components
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/Orders';
-import WarehouseMovement from './pages/WarehouseMovement';
+import WarehouseMovement from './pages/Warehouse/WarehouseMovement';
 import WarehouseInventory from './pages/Warehouse/WarehouseInventory';
 import WarehouseMaterials from './pages/WarehouseMaterials';
 import Reports from './pages/Reports';
@@ -20,6 +20,7 @@ import SettingsEquipment from "./pages/SettingsEquipment";
 import SettingsOrders from "./pages/SettingsOrders";
 import SettingsAdmin from "./pages/SettingsAdmin";
 import SettingsDilovod from "./pages/SettingsDilovod";
+import SettingsWarehouseMovement from "./pages/SettingsWarehouseMovement";
 import SalesDriveOrders from "./pages/SalesDriveOrders";
 import TestSerialCom from "./pages/test-serial-com";
 
@@ -246,6 +247,18 @@ export const appRoutes: AppRoute[] = [
     parent: 'settings',
     order: 8,
     minRole: ROLES.SHOP_MANAGER // shop-manager і вище (admin, boss, shop-manager)
+  },
+  {
+    path: '/settings/warehouse-movement',
+    component: SettingsWarehouseMovement,
+    title: 'Налаштування переміщень між складами',
+    pageTitle: 'Налаштування переміщень між складами | NK Backoffice',
+    navLabel: 'Переміщення між складами',
+    icon: <DynamicIcon name="combine" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 9,
+    roles: [ROLES.ADMIN]
   },
   {
     path: '/settings/design',

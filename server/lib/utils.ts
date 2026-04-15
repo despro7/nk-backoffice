@@ -1,12 +1,13 @@
-// Глобальная переменная для отслеживания времени старта приложения
+import { PrismaClient } from '@prisma/client';
+import { UserType } from '../types/auth.js';
+
+// Глобальна змінна для відстеження часу старту додатка
 const appStartTime = Date.now();
 
-import { PrismaClient } from '@prisma/client';
-
-// === ФУНКЦИИ ДЛЯ РАБОТЫ С ИСТОЧНИКАМИ ЗАКАЗОВ ===
+// === ФУНКЦІЇ ДЛЯ РОБОТИ З ДЖЕРЕЛАМИ ЗАМОВЛЕНЬ ===
 
 /**
- * Детальное отображение источников для модального окна (По джерелах)
+ * Детальне відображення джерел для модального вікна (за джерелами)
  */
 const SOURCE_MAP_DETAILED: Record<string, string> = Object.fromEntries([
   ['19', 'nk-food.shop'],
@@ -16,7 +17,7 @@ const SOURCE_MAP_DETAILED: Record<string, string> = Object.fromEntries([
 ]);
 
 /**
- * Укрупненные категории источников для общей таблицы
+ * Укрупнені категорії джерел для загальної таблиці
  */
 const SOURCE_CATEGORY_MAP: Record<string, string> = Object.fromEntries([
   ['19', 'сайт'],
@@ -25,34 +26,34 @@ const SOURCE_CATEGORY_MAP: Record<string, string> = Object.fromEntries([
 ]);
 
 /**
- * Получить детальный источник заказа для модального окна
- * @param sajt - код источника
- * @returns детальное название источника
+ * Отримати детальне джерело замовлення для модального вікна
+ * @param sajt - код джерела
+ * @returns детальна назва джерела
  */
 export function getOrderSourceDetailed(sajt: string): string {
   return sajt ? (SOURCE_MAP_DETAILED[sajt] || 'інше') : 'інше';
 }
 
 /**
- * Получить категорию источника заказа для общей таблицы
- * @param sajt - код источника
- * @returns укрупненная категория источника
+ * Отримати категорію джерела замовлення для загальної таблиці
+ * @param sajt - код джерела
+ * @returns укрупнена категорія джерела
  */
 export function getOrderSourceCategory(sajt: string): string {
   return sajt ? SOURCE_CATEGORY_MAP[sajt] : 'інше';
 }
 
 /**
- * Универсальная функция для получения источника с выбором уровня детализации
- * @param sajt - код источника
- * @param detailed - true для детального отображения, false для категории
- * @returns источник или категория
+ * Універсальна функція для отримання джерела з вибором рівня деталізації
+ * @param sajt - код джерела
+ * @param detailed - true для детального відображення, false для категорії
+ * @returns джерело або категорія
  */
 export function getOrderSourceByLevel(sajt: string, detailed: boolean = false): string {
   return detailed ? getOrderSourceDetailed(sajt) : getOrderSourceCategory(sajt);
 }
 
-// Централизованная инициализация Prisma клиента с оптимизированными настройками
+// Централізована ініціалізація Prisma клієнта з оптимізованими налаштуваннями
 export const prisma = new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
   datasources: {
@@ -63,7 +64,7 @@ export const prisma = new PrismaClient({
 });
 
 /**
- * Форматирует время в формате HH:MM:SS
+ * Форматує час у форматі HH:MM:SS
  */
 export function formatTimeOnly(dateString: string): string {
   const date = new Date(dateString);
@@ -76,9 +77,9 @@ export function formatTimeOnly(dateString: string): string {
 }
 
 /**
- * Функция для логирования сервера с временными метками
- * @param message - сообщение для логирования
- * @param data - дополнительные данные (опционально)
+ * Функція для логування сервера з часовими відмітками
+ * @param message - повідомлення для логування
+ * @param data - додаткові дані (опціонально)
  */
 export const logServer = (message: string, data?: any) => {
   const timestamp = new Date().toISOString();
@@ -88,7 +89,7 @@ export const logServer = (message: string, data?: any) => {
 
 /**
  * Отримує час початку звітного дня з налаштувань
- * @returns час початку звітного дня (0-23), за замовчуванням 0 (полунічь)
+ * @returns час початку звітного дня (0-23), за замовчуванням 0 (північ)
  */
 export async function getReportingDayStartHour(): Promise<number> {
   try {
@@ -136,11 +137,11 @@ export function getReportingDate(orderDate: Date, dayStartHour: number = 0): str
  * 
  * Для звітної дати 17.10 з dayStartHour = 16:
  * - start: 16.10 16:00:00 (попередній день о 16:00!)
- * - end: 17.10 15:59:59 (сьогодня о 15:59:59)
+ * - end: 17.10 15:59:59 (сьогодні о 15:59:59)
  * 
  * @param reportingDate - звітна дата у форматі YYYY-MM-DD
  * @param dayStartHour - година початку звітного дня (0-23)
- * @returns об'єкт з началом та кінцем діапазону дат
+ * @returns об'єкт з початком та кінцем діапазону дат
  */
 export function getReportingDateRange(reportingDate: string, dayStartHour: number = 0): { start: Date; end: Date } {
   const [year, month, day] = reportingDate.split('-').map(Number);
@@ -172,4 +173,29 @@ export function pluralize(n, one, few, many) {
   if (mod10 === 1) return one;
   if (mod10 >= 2 && mod10 <= 4) return few;
   return many;
+}
+
+
+/**
+ * Отримуємо користувача за його ID
+ * @param id - ID користувача
+ * @param fields - масив полів, які потрібно отримати
+ * @returns об'єкт користувача або null, якщо користувача не знайдено
+ */
+export async function getUserById<T extends keyof UserType = "name" | "email">(id: string, fields?: T[]): Promise<Pick<UserType, T> | null> {
+  if (!id) return null;
+
+  // Якщо поля не вказані, вибираємо дефолтний набір
+  const defaultFields: (keyof UserType)[] = ['name', 'email'];
+  const selectFields = fields && fields.length > 0 ? fields : defaultFields;
+  
+  const user = await prisma.user.findUnique({
+    where: { id: parseInt(id, 10) },
+    select: selectFields.reduce((acc, field) => {
+      acc[field] = true;
+      return acc;
+    }, {} as Record<keyof UserType, boolean>)
+  });
+
+  return user ? (user as Pick<UserType, T>) : null;
 }

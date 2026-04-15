@@ -1,22 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { Button, NumberInput } from '@heroui/react';
-import { Select, SelectItem } from '@heroui/react';
+import { useState, useEffect } from 'react';
+import { Button, NumberInput, Select, SelectItem, Card, CardHeader, CardBody } from '@heroui/react';
 import { useApi } from '../hooks/useApi';
-import { Card, CardHeader, CardBody } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from "@/services/ToastService";
-import { title } from 'process';
 
 interface OrderInterfaceSettingsType {
   defaultTab: "confirmed" | "readyToShip" | "shipped" | "all";
   pageSize: number;
-  boxInitialStatus: "default" | "pending" | "awaiting_confirmation";
 }
 
 const DEFAULT_SETTINGS: OrderInterfaceSettingsType = {
   defaultTab: "confirmed",
   pageSize: 8,
-  boxInitialStatus: "default"
 };
 
 const TAB_OPTIONS = [
@@ -24,11 +19,6 @@ const TAB_OPTIONS = [
   { value: "readyToShip", label: "Готові до відправлення" },
   { value: "shipped", label: "Відправлені" },
   { value: "all", label: "Всі" }
-] as const;
-
-const BOX_STATUS_OPTIONS = [
-  { value: "default", label: "За замовчуванням (потребує сканування та зважування)" },
-  { value: "pending", label: "Очікує зважування (вже відсканована)" }
 ] as const;
 
 
@@ -40,7 +30,7 @@ export const OrderInterfaceSettings: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Загрузка настроек
+  // Завантаження налаштувань
   const loadSettings = async () => {
     setIsLoading(true);
     try {
@@ -48,15 +38,13 @@ export const OrderInterfaceSettings: React.FC = () => {
       if (response.ok) {
         const allSettings = await response.json();
 
-        // Ищем настройки интерфейса заказов
+        // Шукаємо налаштування інтерфейсу замовлень
         const defaultTabSetting = allSettings.find((s: any) => s.key === 'orders_default_tab');
         const pageSizeSetting = allSettings.find((s: any) => s.key === 'orders_page_size');
-        const boxInitialStatusSetting = allSettings.find((s: any) => s.key === 'box_initial_status');
 
         setSettings({
           defaultTab: (defaultTabSetting?.value as OrderInterfaceSettingsType['defaultTab']) || DEFAULT_SETTINGS.defaultTab,
           pageSize: parseInt(pageSizeSetting?.value) || DEFAULT_SETTINGS.pageSize,
-          boxInitialStatus: (boxInitialStatusSetting?.value as OrderInterfaceSettingsType['boxInitialStatus']) || DEFAULT_SETTINGS.boxInitialStatus
         });
       }
     } catch (error) {
@@ -66,7 +54,7 @@ export const OrderInterfaceSettings: React.FC = () => {
     }
   };
 
-  // Сохранение настройки
+  // Збереження налаштування
   const saveSetting = async (key: string, value: string, description: string) => {
     try {
       const response = await apiCall('/api/settings', {
@@ -80,7 +68,7 @@ export const OrderInterfaceSettings: React.FC = () => {
       });
 
       if (!response.ok) {
-        // Если настройка уже существует, обновляем её
+        // Якщо налаштування вже існує, оновлюємо його
         const updateResponse = await apiCall(`/api/settings/${key}`, {
           method: 'PUT',
           body: JSON.stringify({ value })
@@ -95,7 +83,7 @@ export const OrderInterfaceSettings: React.FC = () => {
     }
   };
 
-  // Сохранение всех настроек
+  // Збереження всіх налаштувань
   const handleSaveSettings = async () => {
     setIsSaving(true);
     try {
@@ -112,11 +100,6 @@ export const OrderInterfaceSettings: React.FC = () => {
           settings.pageSize.toString(),
           'Количество заказов на странице'
         ),
-        saveSetting(
-          'box_initial_status',
-          settings.boxInitialStatus,
-          'Початковий статус коробки при відкритті замовлення'
-        )
       ];
 
       const results = await Promise.all(promises);
@@ -127,7 +110,7 @@ export const OrderInterfaceSettings: React.FC = () => {
           hideIcon: false,
           color: 'success'
         });
-        await loadSettings(); // Перезагружаем настройки
+        await loadSettings(); // Перезавантажуємо налаштування
       } else {
         ToastService.show({
           title: 'Помилка збереження деяких налаштувань',
@@ -145,7 +128,7 @@ export const OrderInterfaceSettings: React.FC = () => {
     }
   };
 
-  // Сброс к настройкам по умолчанию
+  // Скидання до стандартних налаштувань (тимчасово вимкнено, щоб уникнути випадкових скидань)
   const handleResetToDefaults = async () => {
     if (!confirm('Ви впевнені, що хочете скинути налаштування до значень за замовчуванням?')) {
       return;
@@ -165,107 +148,71 @@ export const OrderInterfaceSettings: React.FC = () => {
   }, []);
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardHeader className="border-b px-5">
-        <h3 className="font-semibold text-gray-900">Інтерфейс сторінки замовлень</h3>
-      </CardHeader>
-      <CardBody className="p-5">
-        {isLoading ? (
-          <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="text-gray-500 mt-2">Завантаження...</p>
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Таб за замовчуванням */}
-              <div className="space-y-2">
-                
-                <Select
-                  selectedKeys={settings ? [settings.defaultTab] : []}
-                  onSelectionChange={(keys) => {
-                    const selected = Array.from(keys)[0] as OrderInterfaceSettingsType['defaultTab'];
-                    setSettings(prev => prev ? { ...prev, defaultTab: selected } : null);
-                  }}
-                  placeholder="Виберіть таб"
-                  className="w-full"
-                  label="Таб за замовчуванням"
-                  labelPlacement="outside"
-                >
-                  {TAB_OPTIONS.map((option) => (
-                    <SelectItem key={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </Select>
-              </div>
+    <>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Таб за замовчуванням */}
+      <div className="space-y-2">
+        
+        <Select
+          selectedKeys={settings ? [settings.defaultTab] : []}
+          onSelectionChange={(keys) => {
+            const selected = Array.from(keys)[0] as OrderInterfaceSettingsType['defaultTab'];
+            setSettings(prev => prev ? { ...prev, defaultTab: selected } : null);
+          }}
+          placeholder="Виберіть таб"
+          className="w-full"
+          label="Таб за замовчуванням"
+          labelPlacement="outside"
+        >
+          {TAB_OPTIONS.map((option) => (
+            <SelectItem key={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </Select>
+      </div>
 
-              {/* Кількість замовлень на сторінку */}
-              <div className="space-y-2">
-                <NumberInput
-                  value={settings?.pageSize || DEFAULT_SETTINGS.pageSize}
-                  onValueChange={(num) => {
-                    if (num > 0 && num <= 100) {
-                      setSettings(prev => prev ? { ...prev, pageSize: num } : DEFAULT_SETTINGS);
-                    }
-                  }}
-                  min={1}
-                  max={100}
-                  step={1}
-                  placeholder="10"
-                  labelPlacement="outside"
-                  label="Кількість замовлень на сторінку"
-                  className="w-full"
-                />
-              </div>
+      {/* Кількість замовлень на сторінку */}
+      <div className="space-y-2">
+        <NumberInput
+          value={settings?.pageSize || DEFAULT_SETTINGS.pageSize}
+          onValueChange={(num) => {
+            if (num > 0 && num <= 100) {
+              setSettings(prev => prev ? { ...prev, pageSize: num } : DEFAULT_SETTINGS);
+            }
+          }}
+          min={1}
+          max={100}
+          step={1}
+          placeholder="10"
+          labelPlacement="outside"
+          label="Кількість замовлень на сторінку"
+          className="w-full"
+        />
+      </div>
+    </div>
 
-              {/* Початковий статус коробки */}
-              <div className="space-y-2 md:col-span-2">
-                <Select
-                  selectedKeys={settings ? [settings.boxInitialStatus] : []}
-                  onSelectionChange={(keys) => {
-                    const selected = Array.from(keys)[0] as OrderInterfaceSettingsType['boxInitialStatus'];
-                    setSettings(prev => prev ? { ...prev, boxInitialStatus: selected } : null);
-                  }}
-                  placeholder="Виберіть статус"
-                  className="w-full"
-                  label="Початковий статус коробки при відкритті замовлення"
-                  labelPlacement="outside"
-                  description="Визначає, в якому стані буде коробка при першому відкритті замовлення"
-                >
-                  {BOX_STATUS_OPTIONS.map((option) => (
-                    <SelectItem key={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </Select>
-              </div>
-            </div>
-
-            {/* Кнопки действий */}
-            <div className="flex space-x-3 mt-6">
-              <Button
-                onPress={handleSaveSettings}
-                disabled={isSaving}
-                variant="solid"
-                color="primary"
-                // className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <DynamicIcon name="save" size={14} /> {isSaving ? 'Збереження...' : 'Зберегти'}
-              </Button>
-              {/* <Button
-                onPress={handleResetToDefaults}
-                variant="flat"
-                disabled={isSaving}
-                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-              >
-                Скинути до замовчувань
-              </Button> */}
-              
-            </div>
-          </>
-        )}
-      </CardBody>
-    </Card>
+    {/* Кнопки дій */}
+    <div className="flex space-x-3 mt-6">
+      <Button
+        onPress={handleSaveSettings}
+        disabled={isSaving}
+        variant="solid"
+        color="primary"
+        // className="bg-blue-600 hover:bg-blue-700 text-white"
+      >
+        <DynamicIcon name="save" size={14} /> {isSaving ? 'Збереження...' : 'Зберегти'}
+      </Button>
+      {/* <Button
+        onPress={handleResetToDefaults}
+        variant="flat"
+        disabled={isSaving}
+        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+      >
+        Скинути до замовчувань
+      </Button> */}
+      
+    </div>
+    </>
   );
 };

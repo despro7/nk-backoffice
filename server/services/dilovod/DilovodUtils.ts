@@ -27,7 +27,7 @@ const DILOVOD_SOFT_ERROR_PATTERNS = [
  *  - `clientMessages` містить повідомлення типу 'error' або 'warn'
  *    разом з відсутнім `id`.
  *
- * @param result - сира відповідь від `exportOrderToDilovod` / `makeRequest`
+ * @param result - сира відповідь від `exportToDilovod` / `makeRequest`
  */
 export function isDilovodExportError(result: any): boolean {
   if (!result) return true;
@@ -57,14 +57,25 @@ export function isDilovodExportError(result: any): boolean {
 
 /**
  * Видаляє HTML-теги та переформатує помилку Dilovod для коротких повідомлень.
- * Повертає тільки назву товару + артикул у дужках.
+ * Витягує: назву товару, артикул, партію, потрібно, вільний залишок, недостатньо.
  *
  * @example
- * Input: "Недостатня кількість. <span onclick='...'>Квасоля варена, 250г</span> | Код: ... | Артикул: 02009 | ..."
- * Output: "Недостатня кількість: \n- Квасоля варена, 250г (02009)"
+ * Input:  "applicationLayerError Документ не збережено. Недостатня кількість.
+ *          <span ...>Каша гречана зі курячим м'ясом</span> | Код: 0000000313 | Артикул: 03004 |
+ *          Партія: 51203 | Рахунок Готова продукція. Потрібно: 58.000 шт | Вільний залишок: 0 шт | Недостатньо: 58.000 шт."
+ * Output: "Недостатня кількість:
+ *          - Каша гречана зі курячим м'ясом | арт: 03004 | партія: 51203 | потрібно: 58 шт | залишок: 0 шт | бракує: 58 шт"
  */
 export function cleanDilovodErrorMessageShort(errorStr: string): string {
   if (!errorStr) return '';
+
+  // emptyRequiredReq — окремий тип, делегуємо parseEmptyRequiredReqError
+  if (errorStr.toLowerCase().includes('emptyrequiredreq')) {
+    const fields = parseEmptyRequiredReqError(errorStr);
+    return fields
+      ? `Відсутні обов'язкові поля:\n${fields.map(f => `- ${f}`).join('\n')}`
+      : `Відсутні обов'язкові поля у запиті до Діловода`;
+  }
 
   // Видалення основного префіксу помилки (applicationLayerError тощо)
   let cleaned = errorStr
@@ -72,30 +83,43 @@ export function cleanDilovodErrorMessageShort(errorStr: string): string {
     .replace(/^multithreadApiSession\s*/i, '')
     .trim();
 
-  // Витяг заголовка помилки (напр. "Документ не збережено. Недостатня кількість.")
-  const headerMatch = cleaned.match(/^([^<]*?)\.\s*/);
-  const header = headerMatch ? headerMatch[1].trim() : '';
+  // Витяг основної помилки (напр. "Недостатня кількість") — перший рядок після "Документ не збережено."
+  const mainError = cleaned.match(/(?:Документ не збережено\.\s+)?([^.<]+)/)?.[1]?.trim() || 'Помилка';
 
-  // Витяг артикулів та назв товарів
-  // Шаблон: <span ...>НАЗВА_ТОВАРУ</span> | ... | Артикул: АРТИКУЛ
-  const itemRegex = /<span[^>]*>([^<]+)<\/span>\s*\|[^|]*\|\s*Артикул:\s*(\S+)/g;
+  /**
+   * Витягуємо по одному блоку: <span>НАЗВА</span> ... аж до наступного <span> або кінця рядка.
+   * Кожен блок містить: Код, Артикул, Партія, Потрібно, Вільний залишок, Недостатньо.
+   */
+  const blockRegex = /<span[^>]*>([^<]+)<\/span>([\s\S]*?)(?=<span|$)/g;
   const items: string[] = [];
   let match;
 
-  while ((match = itemRegex.exec(cleaned)) !== null) {
+  while ((match = blockRegex.exec(cleaned)) !== null) {
     const productName = match[1].trim();
-    const sku = match[2].trim();
-    items.push(`- ${productName} (${sku})`);
+    const block = match[2];
+
+    const sku      = block.match(/Артикул:\s*(\S+)/)?.[1]?.replace(/\s*\|.*$/, '').trim() ?? '';
+    const batch    = block.match(/Партія:\s*(\S+)/)?.[1]?.replace(/\s*\|.*$/, '').trim() ?? '';
+    const needed   = block.match(/Потрібно:\s*([\d.,]+\s*шт)/)?.[1]?.trim() ?? '';
+    const free     = block.match(/Вільний залишок:\s*([\d.,]+\s*шт)/)?.[1]?.trim() ?? '';
+    const shortage = block.match(/Недостатньо:\s*([\d.,]+\s*шт)/)?.[1]?.trim() ?? '';
+
+    const parts: string[] = [productName];
+    if (sku)      parts.push(`арт: ${sku}`);
+    if (batch)    parts.push(`партія: ${batch}`);
+    if (needed)   parts.push(`потрібно: ${needed}`);
+    if (free)     parts.push(`залишок: ${free}`);
+    if (shortage) parts.push(`бракує: ${shortage}`);
+
+    items.push(`- ${parts.join(' | ')}`);
   }
 
-  // Формування результату
   if (items.length > 0) {
-    // Витяг основної помилки (напр. "Недостатня кількість")
-    const mainError = cleaned.match(/(?:Документ не збережено\.\s+)?([^.]+)/)?.[1]?.trim() || 'Помилка';
     return `${mainError}:\n${items.join('\n')}`;
   }
 
-  return cleaned;
+  // Fallback: прибираємо HTML і повертаємо як є
+  return cleaned.replace(/<[^>]+>/g, '').replace(/\s{2,}/g, ' ').trim();
 }
 
 /**
@@ -192,6 +216,140 @@ export function getDilovodExportErrorMessage(result: any): string {
   }
 
   return 'Невідома помилка';
+}
+
+/**
+ * Таблиця перекладів технічних помилок Dilovod → зрозуміле повідомлення для користувача.
+ * Ключі — підрядки, що можуть зустрічатися у полі `error` відповіді Dilovod API.
+ */
+const DILOVOD_ERROR_TRANSLATIONS: Array<{ pattern: string | RegExp; title: string; message: string }> = [
+  { pattern: 'object locked',         title: 'Документ заблоковано',           message: 'Зараз його редагує інший користувач. Зверніться до зав. виробництва, щоб розблокувати документ.' },
+  { pattern: 'multithreadApiSession', title: 'Паралельний запит заблоковано',  message: 'Зачекайте кілька секунд і спробуйте ще раз.' },
+  { pattern: 'applicationLayerError', title: 'Документ не збережено',          message: 'Помилка даних у Діловоді. Перевірте позиції та спробуйте ще раз.' },
+  { pattern: 'access denied',         title: 'Доступ заборонено',              message: 'Перевірте права користувача в Діловоді.' },
+  { pattern: 'not found',             title: 'Об\'єкт не знайдено',            message: 'Документ або довідник не існує в Діловоді. Можливо, він був видалений.' },
+  { pattern: 'invalid parameter',     title: 'Некоректні дані',                message: 'Помилка параметрів запиту до Діловода. Зверніться до адміністратора.' },
+];
+
+/**
+ * Відомі поля у помилці `emptyRequiredReq` від Dilovod API
+ * та їх зрозумілий опис з підказкою що перевірити.
+ *
+ * Формат помилки: "emptyRequiredReq ПОЛЕ1 (НАЗВА1)|ПОЛЕ2 (НАЗВА2)"
+ */
+const EMPTY_REQUIRED_REQ_FIELDS: Record<string, { label: string; hint: string }> = {
+  'balanceregisters.goods': {
+    label: 'Складські запаси',
+    hint: 'перевірте партію та кількість товарів — поле "goodPart" або "qty" порожнє/некоректне',
+  },
+  'business': {
+    label: 'Напрям бізнесу',
+    hint: 'не вказано напрям бізнесу (businessId) у налаштуваннях переміщення — окреме поле, не те саме що підприємство (firm)',
+  },
+  'storage': {
+    label: 'Склад',
+    hint: 'не вказано склад-донор (storageFrom) у налаштуваннях',
+  },
+  'storageto': {
+    label: 'Склад призначення',
+    hint: 'не вказано склад-реципієнт (storageTo) у налаштуваннях',
+  },
+  'good': {
+    label: 'Товар',
+    hint: 'у рядку відсутній ID товару в Діловоді (dilovodId)',
+  },
+  'goodpart': {
+    label: 'Партія',
+    hint: 'партія товару не вибрана або не існує',
+  },
+  'unit': {
+    label: 'Одиниця виміру',
+    hint: 'не вказано одиницю виміру (unit) у налаштуваннях',
+  },
+  'docmode': {
+    label: 'Режим документа',
+    hint: 'не вказано режим документа (docMode) у налаштуваннях',
+  },
+  'firm': {
+    label: 'Підприємство',
+    hint: 'не вказано підприємство (firm) у налаштуваннях переміщення',
+  },
+};
+
+/**
+ * Парсить помилку типу `emptyRequiredReq` від Dilovod API.
+ * Повертає масив зрозумілих рядків з підказками, або null якщо це не цей тип.
+ *
+ * @example
+ * Input:  "emptyRequiredReq balanceRegisters.goods (Складські запаси)|business (Бізнес)"
+ * Output: [
+ *   "Складські запаси — перевірте партію та кількість товарів",
+ *   "Підприємство — не вказано підприємство (firm) у налаштуваннях переміщення",
+ * ]
+ */
+export function parseEmptyRequiredReqError(rawError: string): string[] | null {
+  if (!rawError?.toLowerCase().includes('emptyrequiredreq')) return null;
+
+  // Видаляємо префікс "emptyRequiredReq " і парсимо пари "ПОЛЕ (НАЗВА)"
+  const body = rawError.replace(/^emptyRequiredReq\s*/i, '').trim();
+
+  // Розбиваємо по "|" — кожен елемент: "ПОЛЕ (НАЗВА)" або просто "ПОЛЕ"
+  const parts = body.split('|').map(p => p.trim()).filter(Boolean);
+  const results: string[] = [];
+
+  for (const part of parts) {
+    // Витягуємо технічну назву поля (до першого пробілу або дужки)
+    const fieldMatch = part.match(/^([\w.]+)/);
+    const fieldKey = fieldMatch?.[1]?.toLowerCase() ?? '';
+
+    // Витягуємо локалізовану назву з дужок (якщо є)
+    const labelMatch = part.match(/\(([^)]+)\)/);
+    const dilovodLabel = labelMatch?.[1]?.trim() ?? '';
+
+    const known = EMPTY_REQUIRED_REQ_FIELDS[fieldKey];
+    if (known) {
+      results.push(`${known.label} — ${known.hint}`);
+    } else {
+      // Невідоме поле — показуємо що є
+      const display = dilovodLabel || fieldKey || part;
+      results.push(`${display} — обов'язкове поле відсутнє у запиті`);
+    }
+  }
+
+  return results.length > 0 ? results : null;
+}
+
+export interface DilovodErrorTranslation {
+  title: string;
+  message: string;
+}
+
+/**
+ * Перекладає технічне повідомлення помилки від Dilovod API
+ * у зрозумілий title + message для Toast-повідомлення.
+ * Якщо відповідний переклад не знайдено — повертає оригінальний рядок як message.
+ */
+export function translateDilovodError(rawError: string): DilovodErrorTranslation {
+  if (!rawError) return { title: 'Помилка Діловода', message: 'Невідома помилка від Діловода' };
+
+  // emptyRequiredReq — окремий тип з детальним парсингом
+  if (rawError.toLowerCase().includes('emptyrequiredreq')) {
+    const fields = parseEmptyRequiredReqError(rawError);
+    const message = fields
+      ? `Відсутні обов'язкові поля:\n${fields.map(f => `- ${f}`).join('\n')}`
+      : 'Відсутні обов\'язкові поля у запиті до Діловода. Перевірте налаштування.';
+    return { title: 'Незаповнені обов\'язкові поля', message };
+  }
+
+  const lower = rawError.toLowerCase();
+  for (const entry of DILOVOD_ERROR_TRANSLATIONS) {
+    const matches = typeof entry.pattern === 'string'
+      ? lower.includes(entry.pattern.toLowerCase())
+      : entry.pattern.test(lower);
+    if (matches) return { title: entry.title, message: entry.message };
+  }
+
+  return { title: 'Помилка Діловода', message: rawError };
 }
 
 // Простий кеш для конфігурації з TTL 10 хвилин

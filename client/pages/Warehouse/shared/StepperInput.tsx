@@ -15,6 +15,7 @@ export interface StepperInputProps {
   forwardRef?: React.RefObject<HTMLInputElement>;
   onEnter?: () => void;
   disabled?: boolean;
+  max?: number; // Максимально допустиме значення (для обмеження по залишкам партії)
 }
 
 /**
@@ -24,7 +25,7 @@ export interface StepperInputProps {
  * Кнопки ± дозволяють коригувати значення без клавіатури.
  */
 export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
-  ({ label, value, onChange, onIncrement, onDecrement, onEnter, disabled }, ref) => {
+  ({ label, value, onChange, onIncrement, onDecrement, onEnter, disabled, max }, ref) => {
     const inputRef = useRef<HTMLInputElement>(null);
     const [isFocused, setIsFocused] = useState(false);
 
@@ -60,11 +61,13 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
             inputMode="numeric"
             value={value}
             min={0}
+            max={max}
             disabled={disabled}
             onChange={(e) => {
               if (disabled) return;
               const v = parseInt(e.target.value, 10);
-              onChange(isNaN(v) ? 0 : Math.max(0, v));
+              const clamped = isNaN(v) ? 0 : Math.max(0, max !== undefined ? Math.min(v, max) : v);
+              onChange(clamped);
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && onEnter && !disabled) {
@@ -92,7 +95,7 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
           <Button
             isIconOnly
             variant="light"
-            isDisabled={disabled}
+            isDisabled={disabled || (max !== undefined && value >= max)}
             className="absolute right-2 top-1/2 -translate-y-1/2 h-14 w-10 min-w-6 z-10 bg-gray-100"
             onPress={onIncrement}
             aria-label="Збільшити"

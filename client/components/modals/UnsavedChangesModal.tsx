@@ -16,13 +16,8 @@ import type { UnsavedGuardModalProps } from '@/hooks/useUnsavedGuard';
 //   cancelText      — текст кнопки скасування (за замовчуванням: 'Залишитись')
 // ---------------------------------------------------------------------------
 
-interface UnsavedChangesModalProps extends UnsavedGuardModalProps {
-  title?: string;
-  message?: string;
-  saveText?: string;
-  leaveText?: string;
-  cancelText?: string;
-}
+// Всі кастомні тексти вже включені в UnsavedGuardModalProps
+type UnsavedChangesModalProps = UnsavedGuardModalProps;
 
 export function UnsavedChangesModal({
   isOpen,
@@ -30,19 +25,22 @@ export function UnsavedChangesModal({
   onSave,
   onLeave,
   onCancel,
-  title = 'Незбережені зміни',
-  message = 'Ви маєте незбережені зміни. Що зробити перед виходом?',
+  title = 'Зміни не збережені',
+  message = 'Якщо продовжити, всі зміни будуть втрачені. Що зробити перед виходом?',
   saveText = 'Зберегти і вийти',
   leaveText = 'Вийти без збереження',
   cancelText = 'Залишитись',
+  modalSize = 'xl',
 }: UnsavedChangesModalProps) {
   return (
     <Modal
       isOpen={isOpen}
       onClose={onCancel}
-			size="xl"
-      // Забороняємо закрити кліком на фон під час збереження
+			size={modalSize}
       isDismissable={!isSaving}
+      classNames={{
+        base: 'py-2 bg-white rounded-lg shadow-lg',
+      }}
     >
       <ModalContent>
         <ModalHeader className="flex items-center gap-2 text-lg font-semibold">
@@ -51,17 +49,17 @@ export function UnsavedChangesModal({
         </ModalHeader>
 
         <ModalBody>
-          <p className="text-sm text-gray-600">{message}</p>
+          <p className="text-gray-600">{message}</p>
         </ModalBody>
 
-        <ModalFooter className="flex flex-col sm:flex-row gap-2">
+        <ModalFooter className="flex flex-col sm:flex-row justify-start gap-2 mt-1">
           {/* Головна дія — зберегти чернетку і продовжити навігацію */}
           <Button
             color="primary"
             onPress={onSave}
             isLoading={isSaving}
             isDisabled={isSaving}
-            startContent={!isSaving && <DynamicIcon name="save" className="w-4 h-4" />}
+            startContent={!isSaving && <DynamicIcon name="save" className="w-4 h-4 shrink-0" />}
             className="w-full sm:w-auto"
           >
             {saveText}
@@ -73,7 +71,7 @@ export function UnsavedChangesModal({
             variant="flat"
             onPress={onLeave}
             isDisabled={isSaving}
-            startContent={<DynamicIcon name="log-out" className="w-4 h-4" />}
+            startContent={<DynamicIcon name="log-out" className="w-4 h-4 shrink-0" />}
             className="w-full sm:w-auto"
           >
             {leaveText}

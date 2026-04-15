@@ -3,7 +3,9 @@ import type { AppNotification, NotificationsResponse } from '../../shared/types/
 import { useApi } from './useApi';
 
 const POLL_INTERVAL_MS = 30_000;
-const BASE_SEVERITY = 'severity=error,warning';
+// Базові severity: помилки та попередження
+// + success лише для категорії warehouse_movement (автофіналізація переміщень)
+const BASE_SEVERITY = 'severity=error,warning&successCategories=warehouse_movement';
 
 export interface UseNotificationsReturn {
   notifications: AppNotification[];

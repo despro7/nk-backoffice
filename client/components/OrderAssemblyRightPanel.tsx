@@ -10,6 +10,9 @@ import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { ConfirmModal } from './modals/ConfirmModal';
 import { shippingClientService } from '../services/ShippingService';
 import type { OrderForAssembly } from '../types/orderAssembly';
+import type { ReceiptType } from '@/hooks/useReceiptPrinting';
+import { Button } from '@heroui/react';
+import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface OrderAssemblyRightPanelProps {
   orderForAssembly: OrderForAssembly;
@@ -29,6 +32,10 @@ interface OrderAssemblyRightPanelProps {
   order: any;
   externalId: string;
   onOrderRefresh?: (updatedOrder: any) => void;
+  /** Друк чека через QZ Tray */
+  onPrintReceipt?: (type?: ReceiptType) => Promise<void>;
+  /** Перегляд чека у браузері */
+  onViewReceipt?: (type?: ReceiptType) => Promise<void>;
 }
 
 export function OrderAssemblyRightPanel({
@@ -48,7 +55,9 @@ export function OrderAssemblyRightPanel({
   onPrintTTN,
   order,
   externalId,
-  onOrderRefresh
+  onOrderRefresh,
+  onPrintReceipt,
+  onViewReceipt,
 }: OrderAssemblyRightPanelProps) {
   const [showPrintConfirmModal, setShowPrintConfirmModal] = useState(false);
   const { expectedWeight, cumulativeTolerance } = getWeightData();
@@ -56,6 +65,8 @@ export function OrderAssemblyRightPanel({
   // Анімація перемикання
   const [autoPrintTransition, setAutoPrintTransition] = useState(false);
   const autoPrint = !!equipmentState.config?.printer?.autoPrintOnComplete;
+
+  const receiptConfig = equipmentState.config?.receiptPrinter;
 
   return (
     <>

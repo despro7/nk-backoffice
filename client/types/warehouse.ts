@@ -51,6 +51,9 @@ export interface CreateWarehouseMovementRequest {
   sourceWarehouse: string;
   destinationWarehouse: string;
   notes?: string;
+  movementDate?: string;
+  docNumber?: string;
+  dilovodDocId?: string;
 }
 
 export interface UpdateWarehouseMovementRequest {

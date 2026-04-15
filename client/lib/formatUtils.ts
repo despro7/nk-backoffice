@@ -340,6 +340,35 @@ export const formatPhone = (phone: string): string => {
 };
 
 /**
+ * Функція для правильного відмінювання українських слів
+  * @param count - кількість
+  * @param one - форма для 1 (наприклад, "порція")
+  * @param few - форма для 2, 3, 4 (наприклад, "порції")
+  * @param many - форма для інших чисел (наприклад, "порцій")
+  * 
+  * @example
+  * pluralize(1, 'порція', 'порції', 'порцій') // "порція"
+  * pluralize(2, 'порція', 'порції', 'порцій') // "порції"
+  * pluralize(5, 'порція', 'порції', 'порцій') // "порцій"
+ */
+export const pluralize = (count: number, one: string, few: string, many: string, fallback: string = "-"): string => {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  
+  if (count === 0) return fallback;
+  
+  if (mod10 === 1 && mod100 !== 11) {
+    return one;
+  } else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
+    return few;
+  } else {
+    return many;
+  }
+};
+
+
+
+/**
  * Возвращает CSS классы для цвета статуса заказа
  * @param status - строка со статусом заказа
  * @returns строка с CSS классами для цвета

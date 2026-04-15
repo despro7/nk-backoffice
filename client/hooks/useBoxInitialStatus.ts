@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApi } from './useApi';
 
 type BoxInitialStatus = 'default' | 'pending' | 'awaiting_confirmation';
@@ -10,14 +10,16 @@ export function useBoxInitialStatus() {
   const { apiCall } = useApi();
   const [boxInitialStatus, setBoxInitialStatus] = useState<BoxInitialStatus>('default');
   const [isLoading, setIsLoading] = useState(true);
+  const apiCallRef = useRef(apiCall);
+  useEffect(() => { apiCallRef.current = apiCall; });
 
   useEffect(() => {
     const loadBoxInitialStatus = async () => {
       try {
-        const response = await apiCall('/api/settings');
+        const response = await apiCallRef.current('/api/settings');
         if (response.ok) {
           const settings = await response.json();
-          const boxStatusSetting = settings.find((s: any) => s.key === 'box_initial_status');
+          const boxStatusSetting = settings.find((s: any) => s.key === 'assembly_box_initial_status');
           
           if (boxStatusSetting?.value) {
             setBoxInitialStatus(boxStatusSetting.value as BoxInitialStatus);
@@ -31,7 +33,7 @@ export function useBoxInitialStatus() {
     };
 
     loadBoxInitialStatus();
-  }, [apiCall]);
+  }, []);
 
   return { boxInitialStatus, isLoading };
 }
@@ -45,7 +47,7 @@ export async function getBoxInitialStatus(apiCall: any): Promise<BoxInitialStatu
     const response = await apiCall('/api/settings');
     if (response.ok) {
       const settings = await response.json();
-      const boxStatusSetting = settings.find((s: any) => s.key === 'box_initial_status');
+      const boxStatusSetting = settings.find((s: any) => s.key === 'assembly_box_initial_status');
       
       if (boxStatusSetting?.value) {
         return boxStatusSetting.value as BoxInitialStatus;

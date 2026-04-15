@@ -204,6 +204,113 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
+// === WAREHOUSE MOVEMENT SETTINGS ===
+
+// GET /settings/warehouse-movement — повернути налаштування переміщень (category='warehouse_movement')
+router.get('/warehouse-movement', authenticateToken, async (req, res) => {
+  try {
+    const rows = await prisma.settingsBase.findMany({
+      where: { category: 'warehouse_movement', isActive: true },
+    });
+
+    // Збираємо ключ→значення у об'єкт налаштувань
+    const map: Record<string, string> = {};
+    for (const row of rows) {
+      map[row.key] = row.value;
+    }
+
+    // Fallback для firm/storage — беремо з налаштувань Dilovod
+    let firmId = map['wm_firmId'] || '';
+    let storageFrom = map['wm_storageFrom'] || '';
+    let storageTo = map['wm_storageTo'] || '';
+
+    if (!firmId || !storageFrom || !storageTo) {
+      const dilovodRows = await prisma.settingsBase.findMany({
+        where: {
+          key: { in: ['dilovod_default_firm_id', 'dilovod_main_storage_id', 'dilovod_small_storage_id'] },
+          isActive: true,
+        },
+      });
+      const dilovodMap: Record<string, string> = {};
+      for (const row of dilovodRows) {
+        dilovodMap[row.key] = row.value;
+      }
+      if (!firmId) firmId = dilovodMap['dilovod_default_firm_id'] || '';
+      if (!storageFrom) storageFrom = dilovodMap['dilovod_main_storage_id'] || '';
+      if (!storageTo) storageTo = dilovodMap['dilovod_small_storage_id'] || '';
+    }
+
+    res.json({
+      success: true,
+      data: {
+        numberGeneration: (map['wm_numberGeneration'] === 'server' ? 'server' : 'dilovod') as 'server' | 'dilovod',
+        numberTemplate: map['wm_numberTemplate'] || 'WM-{YYYY}{MM}{DD}-{###}',
+        firmId,
+        storageFrom,
+        storageTo,
+        businessId: map['wm_businessId'] || '',
+        docMode: map['wm_docMode'] || '1004000000000409',
+        unitId: map['wm_unitId'] || '1103600000000001',
+        accountId: map['wm_accountId'] || '1119000000001076',
+      },
+    });
+  } catch (error) {
+    console.error('Error getting warehouse movement settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to get warehouse movement settings' });
+  }
+});
+
+// PUT /settings/warehouse-movement — зберегти налаштування переміщень
+router.put('/warehouse-movement', authenticateToken, async (req, res) => {
+  try {
+    const body = req.body as Partial<{
+      numberGeneration: string;
+      numberTemplate: string;
+      firmId: string;
+      businessId: string;
+      storageFrom: string;
+      storageTo: string;
+      docMode: string;
+      unitId: string;
+      accountId: string;
+    }>;
+
+    // Маппінг поле→ключ у БД
+    const fieldToKey: Record<string, string> = {
+      numberGeneration: 'wm_numberGeneration',
+      numberTemplate: 'wm_numberTemplate',
+      firmId: 'wm_firmId',
+      businessId: 'wm_businessId',
+      storageFrom: 'wm_storageFrom',
+      storageTo: 'wm_storageTo',
+      docMode: 'wm_docMode',
+      unitId: 'wm_unitId',
+      accountId: 'wm_accountId',
+    };
+
+    for (const [field, key] of Object.entries(fieldToKey)) {
+      const value = (body as any)[field];
+      if (value !== undefined) {
+        await prisma.settingsBase.upsert({
+          where: { key },
+          update: { value: String(value) },
+          create: {
+            key,
+            value: String(value),
+            category: 'warehouse_movement',
+            description: `Warehouse Movement: ${field}`,
+          },
+        });
+      }
+    }
+
+    res.json({ success: true, message: 'Налаштування переміщень збережено' });
+  } catch (error) {
+    console.error('Error saving warehouse movement settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to save warehouse movement settings' });
+  }
+});
+
 // === LOGGING SETTINGS ===
 // Get logging settings from DB
 router.get('/logging', authenticateToken, async (req, res) => {
@@ -578,7 +685,7 @@ router.put('/:key', authenticateToken, async (req, res) => {
     const prisma = new PrismaClient();
     
     const { key } = req.params;
-    const { value } = req.body;
+    const { value, description, category } = req.body;
 
     if (value === undefined) {
       return res.status(400).json({
@@ -587,30 +694,31 @@ router.put('/:key', authenticateToken, async (req, res) => {
       });
     }
 
-    const updatedSetting = await prisma.settingsBase.update({
+    const upsertedSetting = await prisma.settingsBase.upsert({
       where: { key },
-      data: { value }
+      update: { value },
+      create: {
+        key,
+        value,
+        description: description ?? null,
+        category: category ?? 'general',
+        isActive: true,
+      },
     });
 
     res.json({
-      id: updatedSetting.id,
-      key: updatedSetting.key,
-      value: updatedSetting.value,
-      description: updatedSetting.description,
-      createdAt: updatedSetting.createdAt,
-      updatedAt: updatedSetting.updatedAt
+      id: upsertedSetting.id,
+      key: upsertedSetting.key,
+      value: upsertedSetting.value,
+      description: upsertedSetting.description,
+      createdAt: upsertedSetting.createdAt,
+      updatedAt: upsertedSetting.updatedAt
     });
   } catch (error) {
-    console.error('Error updating setting:', error);
-    if (error.code === 'P2025') {
-      return res.status(404).json({
-        success: false,
-        error: 'Setting not found'
-      });
-    }
+    console.error('Error upserting setting:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to update setting'
+      error: 'Failed to save setting'
     });
   }
 });

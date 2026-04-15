@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import type { OrderChecklistItem, ToleranceSettings } from '../types/orderAssembly';
 import { calcBoxTolerance, calcCumulativeTolerance } from '@/lib/utils';
 import { sortChecklistItems } from '@/lib/orderAssemblyUtils';
-import { addToast } from '@heroui/toast';
+import { addToast, Toast } from '@heroui/toast';
 import { ToastService } from '@/services/ToastService';
 
 interface UseWeightManagementProps {
@@ -10,13 +10,23 @@ interface UseWeightManagementProps {
   activeBoxIndex: number;
   toleranceSettings: ToleranceSettings;
   setChecklistItems: React.Dispatch<React.SetStateAction<OrderChecklistItem[]>>;
+  autoSelectNext?: boolean;
+  successIndicationMs?: number;
+  successToastMs?: number;
+  errorIndicationMs?: number;
+  errorToastMs?: number;
 }
 
 export function useWeightManagement({
   checklistItems,
   activeBoxIndex,
   toleranceSettings,
-  setChecklistItems
+  setChecklistItems,
+  autoSelectNext = true,
+  successIndicationMs = 1500,
+  successToastMs = 3000,
+  errorIndicationMs = 1000,
+  errorToastMs = 3000,
 }: UseWeightManagementProps) {
 
   /**
@@ -188,7 +198,7 @@ export function useWeightManagement({
       // Якщо коробка не відсканована, блокуємо зважування
       if (awaitingBox && !completedBox) {
         console.log('🚫 [useWeightManagement] Зважування заблоковано - коробка не відсканована');
-        addToast({
+        ToastService.show({
           title: "Спочатку відскануйте коробку",
           description: "Не можна зважувати коробку, поки вона не буде відсканована",
           color: "warning",
@@ -221,15 +231,16 @@ export function useWeightManagement({
           });
 
           // Показуємо повідомлення про успіх
-          addToast({
+          ToastService.show({
             title: "Коробка зважена",
             description: `${scannedBox.name}: ${weight.toFixed(3)} кг (очікувано: ${expectedWeight.toFixed(3)} кг)`,
             color: "success",
-            icon: ToastService.createIcon("check-circle", 20),
-            timeout: 3000
+            icon: "check-circle",
+            hideIcon: false,
+            timeout: successToastMs
           });
 
-          // Через 1.5 секунди переводимо в done
+          // Через successIndicationMs переводимо в done
           setTimeout(() => {
             setChecklistItems(prevItems =>
               prevItems.map(item => {
@@ -241,28 +252,30 @@ export function useWeightManagement({
             );
 
             // Автоматично вибираємо перший товар в коробці з урахуванням сортування
-            // setChecklistItems(prevItems => {
-            //   const currentBoxItems = prevItems.filter(item =>
-            //     item.type === 'product' &&
-            //     (item.boxIndex || 0) === activeBoxIndex &&
-            //     item.status === 'default'
-            //   );
+            if (autoSelectNext) {
+              setChecklistItems(prevItems => {
+                const currentBoxItems = prevItems.filter(item =>
+                  item.type === 'product' &&
+                  (item.boxIndex || 0) === activeBoxIndex &&
+                  item.status === 'default'
+                );
 
-            //   // Сортуємо і беремо перший елемент
-            //   const sortedItems = sortChecklistItems(currentBoxItems);
-            //   const firstProduct = sortedItems[0];
+                // Сортуємо і беремо перший елемент
+                const sortedItems = sortChecklistItems(currentBoxItems);
+                const firstProduct = sortedItems[0];
 
-            //   if (firstProduct) {
-            //     return prevItems.map(item => {
-            //       if (item.id === firstProduct.id) {
-            //         return { ...item, status: 'pending' as const };
-            //       }
-            //       return item;
-            //     });
-            //   }
-            //   return prevItems;
-            // });
-          }, 1500);
+                if (firstProduct) {
+                  return prevItems.map(item => {
+                    if (item.id === firstProduct.id) {
+                      return { ...item, status: 'pending' as const };
+                    }
+                    return item;
+                  });
+                }
+                return prevItems;
+              });
+            }
+          }, successIndicationMs);
 
           return updatedItems;
         } else {
@@ -280,11 +293,11 @@ export function useWeightManagement({
             description: `Очікувано: ${expectedWeight.toFixed(3)}кг ± ${tolerance.toFixed(0)}г. Фактична вага: ${weight.toFixed(3)}кг`,
             color: "danger",
             hideIcon: false,
-            icon: ToastService.createIcon("alert-circle", 20),
-            timeout: 5000
+            icon: "alert-circle",
+            timeout: errorToastMs
           });
 
-          // Через 2 секунди повертаємо в pending для повторного зважування
+          // Через errorIndicationMs повертаємо в pending для повторного зважування
           setTimeout(() => {
             setChecklistItems(prevItems =>
               prevItems.map(item => {
@@ -294,7 +307,7 @@ export function useWeightManagement({
                 return item;
               })
             );
-          }, 2000);
+          }, errorIndicationMs);
 
           return updatedItems;
         }
@@ -360,17 +373,17 @@ export function useWeightManagement({
           return item;
         });
 
-        // Показываем уведомление об успехе
-        addToast({
+        // Показуємо повідомлення про успіх
+        ToastService.show({
           title: "Вага відповідає",
           description: `${pendingItem.name}: ${weight.toFixed(3)} кг (очікувано: ${expectedCumulativeWeight.toFixed(3)} кг)`,
           hideIcon: false,
-          icon: ToastService.createIcon("check-circle", 20),
+          icon: "check-circle",
           color: "success",
-          timeout: 3000
+          timeout: successToastMs
         });
 
-        // Через 1.5 секунди переводимо в done
+        // Через successIndicationMs переводимо в done
         setTimeout(() => {
           setChecklistItems(prevItems =>
             prevItems.map(item => {
@@ -382,29 +395,31 @@ export function useWeightManagement({
           );
 
           // Автоматично вибираємо наступний товар в коробці з урахуванням сортування
-          // setChecklistItems(prevItems => {
-          //   const currentBoxItems = prevItems.filter(item => 
-          //     item.type === 'product' && 
-          //     (item.boxIndex || 0) === activeBoxIndex && 
-          //     item.status === 'default'
-          //   );
+          if (autoSelectNext) {
+            setChecklistItems(prevItems => {
+              const currentBoxItems = prevItems.filter(item => 
+                item.type === 'product' && 
+                (item.boxIndex || 0) === activeBoxIndex && 
+                item.status === 'default'
+              );
 
-          //   // Сортуємо і беремо перший елемент
-          //   const sortedItems = sortChecklistItems(currentBoxItems);
-          //   const nextItem = sortedItems[0];
+              // Сортуємо і беремо перший елемент
+              const sortedItems = sortChecklistItems(currentBoxItems);
+              const nextItem = sortedItems[0];
 
-          //   if (nextItem) {
-          //     console.log('🔄 [useWeightManagement] Автоматично вибираємо наступний товар:', nextItem.name);
-          //     return prevItems.map(item => {
-          //       if (item.id === nextItem.id) {
-          //         return { ...item, status: 'pending' as const };
-          //       }
-          //       return item;
-          //     });
-          //   }
-          //   return prevItems;
-          // });
-        }, 1500);
+              if (nextItem) {
+                console.log('🔄 [useWeightManagement] Автоматично вибираємо наступний товар:', nextItem.name);
+                return prevItems.map(item => {
+                  if (item.id === nextItem.id) {
+                    return { ...item, status: 'pending' as const };
+                  }
+                  return item;
+                });
+              }
+              return prevItems;
+            });
+          }
+        }, successIndicationMs);
 
         return updatedItems;
       } else {
@@ -424,13 +439,12 @@ export function useWeightManagement({
           description: `${pendingItem.name}: ${weight.toFixed(3)}кг (очікувано: ${expectedCumulativeWeight.toFixed(3)} ± ${(cumulativeTolerance).toFixed(0)}г)`,
           color: "danger",
           hideIcon: false,
-          icon: ToastService.createIcon("scale", 20),
-          timeout: 5000
+          icon: "scale",
+          timeout: errorToastMs
         });
 
-        // Через 2 секунди повертаємо в pending для повторного зважування
+        // Через errorIndicationMs повертаємо в pending для повторного зважування
         setTimeout(() => {
-          // console.log('🔄 [useWeightManagement] Товар повертається в статус pending:', pendingItem.name);
           setChecklistItems(prevItems =>
             prevItems.map(item => {
               if (item.id === pendingItem.id) {
@@ -439,12 +453,12 @@ export function useWeightManagement({
               return item;
             })
           );
-        }, 2000);
+        }, errorIndicationMs);
 
         return updatedItems;
       }
     });
-  }, [activeBoxIndex, setChecklistItems, toleranceSettings]);
+  }, [activeBoxIndex, setChecklistItems, toleranceSettings, autoSelectNext, successIndicationMs, successToastMs, errorIndicationMs, errorToastMs]);
 
   return {
     getWeightData,

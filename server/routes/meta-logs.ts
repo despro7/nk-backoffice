@@ -2,6 +2,7 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { dilovodService } from '../services/dilovod/DilovodService.js';
+import { getUserById } from '../lib/utils.js';
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -85,14 +86,7 @@ router.get('/:id', async (req, res) => {
     // Resolve initiatedBy user name
     const raw: string | null = (log as any).initiatedBy ?? null;
     const isUserId = raw && /^\d+$/.test(raw);
-    let userRecord: { name: string | null; email: string } | undefined;
-    if (isUserId) {
-      const u = await prisma.user.findUnique({
-        where: { id: parseInt(raw!, 10) },
-        select: { name: true, email: true }
-      });
-      if (u) userRecord = u;
-    }
+    let userRecord = isUserId ? await getUserById(raw) : undefined;
 
     res.json({
       ...(log as any),

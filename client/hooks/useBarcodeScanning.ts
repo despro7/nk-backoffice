@@ -135,12 +135,14 @@ export function useBarcodeScanning({
 
     if (hasPendingItem) {
       console.log('🚫 [useBarcodeScanning] Заборонено сканувати - є активний pending статус');
-      showToastWithCountdown({
+      ToastService.show({
         title: "Сканування заборонено",
         description: "Завершіть поточну операцію перед новим скануванням",
-        color: "warning",
+        color: "danger",
+        icon: "alert-triangle",
+        hideIcon: false,
         timeout: 3000
-      }, `pending-active`);
+      });
       return;
     }
 
@@ -194,24 +196,28 @@ export function useBarcodeScanning({
       // Перевіряємо, чи не має товар вже статус 'done' - ЗАБОРОНЯЄМО сканування
       if (foundItem.status === 'done') {
         console.log('🚫 [useBarcodeScanning] Запрещено сканировать товар в статусе done:', foundItem.name);
-        showToastWithCountdown({
+        ToastService.show({
           title: "Сканування заборонено",
           description: `${foundItem.name} вже завершено - сканування заборонено`,
           color: "danger",
+          icon: "alert-triangle",
+          hideIcon: false,
           timeout: 3000
-        }, `scan-forbidden-${foundItem.id}`);
+        });
         return;
       }
 
       // Перевіряємо, що коробку можна сканувати тільки в статусі 'default'
       if (foundItem.type === 'box' && foundItem.status !== 'default') {
         console.log('🚫 [useBarcodeScanning] Коробку можна сканувати тільки в статусі default:', foundItem.name);
-        showToastWithCountdown({
+        ToastService.show({
           title: "Сканування заборонено",
           description: "Коробку вже відсканована або завершена",
           color: "warning",
+          icon: "alert-triangle",
+          hideIcon: false,
           timeout: 3000
-        }, `box-scan-forbidden-${foundItem.id}`);
+        });
         return;
       }
 

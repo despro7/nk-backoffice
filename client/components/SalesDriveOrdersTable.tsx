@@ -204,7 +204,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         ToastService.show({
           title: 'Помилка',
           description: 'Не вдалося завантажити замовлення',
-          color: 'danger'
+          color: 'danger',
+          hideIcon: false,
+          icon: "x-circle"
         });
       }
     } catch (error) {
@@ -212,7 +214,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       ToastService.show({
         title: 'Помилка',
         description: 'Помилка при завантаженні замовлень',
-        color: 'danger'
+        color: 'danger',
+        hideIcon: false,
+        icon: "x-circle"
       });
     } finally {
       setLoading(false);
@@ -294,7 +298,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       ToastService.show({
         title: 'Немає вибраних замовлень для перевірки',
         description: 'Виберіть замовлення для масової перевірки',
-        color: 'warning'
+        color: 'warning',
+        hideIcon: false,
+        icon: "x-circle",
       });
       return;
     }
@@ -304,7 +310,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       description: `Перевіряємо ${filteredOrders.length} вибраних замовлень у Dilovod`,
       color: 'primary',
       hideIcon: false,
-      icon: <DynamicIcon name="text-search" size={16} strokeWidth={1.5} className="shrink-0" />,
+      icon: "text-search",
       timeout: 2000
     });
 
@@ -340,7 +346,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           description: result.error || 'Помилка масової перевірки',
           color: 'danger',
           hideIcon: false,
-          icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
+          icon: "octagon-alert",
         });
       }
     } catch {
@@ -349,7 +355,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         description: 'Помилка з\'єднання з сервером',
         color: 'danger',
         hideIcon: false,
-        icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
+        icon: "octagon-alert",
       });
     }
   };
@@ -378,7 +384,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           ToastService.show({
             title: 'Документи не знайдені',
             description: 'Жодного документа не було знайдено або завантажено в Діловод',
-            color: 'danger'
+            color: 'danger',
+            hideIcon: false,
+            icon: "x-circle",
           });
         } else {
           ToastService.show({
@@ -386,7 +394,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             description: `Перевірку завершено для замовлення ${order.orderNumber}`,
             color: 'success',
             hideIcon: false,
-            icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />
+            icon: "check-circle",
           });
           fetchOrders();
         }
@@ -400,14 +408,18 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         ToastService.show({
           title: 'Помилка',
           description: result.error || 'Помилка перевірки в Діловоді',
-          color: 'danger'
+          color: 'danger',
+          hideIcon: false,
+          icon: "octagon-alert",
         });
       }
     } catch {
       ToastService.show({
         title: 'Помилка',
         description: 'Помилка з\'єднання з сервером',
-        color: 'danger'
+        color: 'danger',
+        hideIcon: false,
+        icon: "octagon-alert",
       });
     }
   };
@@ -420,7 +432,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         description: `Скидання даних та перевірка замовлення ${order.orderNumber} в Діловоді`,
         color: 'warning',
         hideIcon: false,
-        icon: <DynamicIcon name="refresh-ccw-dot" size={16} strokeWidth={1.5} className="shrink-0" />,
+        icon: "refresh-ccw-dot",
         timeout: 3000
       });
 
@@ -440,14 +452,18 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         ToastService.show({
           title: 'Помилка примусової перевірки',
           description: result.message || 'Не вдалося виконати операцію',
-          color: 'danger'
+          color: 'danger',
+          hideIcon: false,
+          icon: "x-circle",
         });
       }
     } catch {
       ToastService.show({
         title: 'Помилка',
         description: 'Помилка з\'єднання з сервером',
-        color: 'danger'
+        color: 'danger',
+        hideIcon: false,
+        icon: "octagon-alert",
       });
     }
   };
@@ -465,7 +481,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           description: `Лічильник дублів для ${order.orderNumber} скинуто до 1`,
           color: 'success',
           hideIcon: false,
-          icon: <DynamicIcon name="shield-check" size={16} strokeWidth={1.5} className="shrink-0" />,
+          icon: "shield-check",
           timeout: 4000
         });
         fetchOrders();
@@ -473,14 +489,18 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         ToastService.show({
           title: 'Помилка',
           description: result.message || result.error || 'Не вдалося скинути лічильник',
-          color: 'danger'
+          color: 'danger',
+          hideIcon: false,
+          icon: "x-circle",
         });
       }
     } catch {
       ToastService.show({
         title: 'Помилка',
         description: 'Помилка з\'єднання з сервером',
-        color: 'danger'
+        color: 'danger',
+        hideIcon: false,
+        icon: "octagon-alert",
       });
     }
   };
@@ -532,7 +552,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         description: `Експортуємо замовлення ${order.orderNumber} в Діловод`,
         color: 'primary',
         hideIcon: false,
-        icon: <DynamicIcon name="upload-cloud" size={20} className="shrink-0" />,
+        icon: "upload-cloud",
         timeout: 1500
       });
 
@@ -558,7 +578,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               description: result.message || `Замовлення ${order.orderNumber} вже експортовано раніше`,
               color: 'warning',
               hideIcon: false,
-              icon: <DynamicIcon name="triangle-alert" size={20} className="shrink-0" />,
+              icon: "triangle-alert",
               timeout: 4000
             });
             fetchOrders();
@@ -568,7 +588,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               description: result.error || result.message || 'Жодного документа не було експортовано в Діловод',
               color: 'danger',
               hideIcon: false,
-              icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
+              icon: "octagon-alert",
             });
           }
         } else {
@@ -577,7 +597,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             ToastService.show({
               title: 'Успішно!',
               description: result.message || 'Замовлення успішно експортовано в Діловод',
-              color: 'success'
+              color: 'success',
+              hideIcon: false,
+              icon: "check-circle",
             });
             fetchOrders();
             // Якщо сервер повернув saleToken — збережемо для створення shipment
@@ -591,7 +613,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               description: 'Замовлення вже було актуальним у Діловоді, змін не внесено',
               color: 'default',
               hideIcon: false,
-              icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
+              icon: "octagon-alert",
             });
           }
         }
@@ -602,7 +624,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           description: result.message || 'Замовлення вже є в Dilovod. Локальну БД синхронізовано.',
           color: 'warning',
           hideIcon: false,
-          icon: <DynamicIcon name="triangle-alert" size={20} className="shrink-0" />
+          icon: "triangle-alert"
         });
         // Оновлюємо таблицю — БД вже синхронізована сервером
         fetchOrders();
@@ -614,14 +636,18 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         ToastService.show({
           title: 'Помилка',
           description: result.error || result.message || 'Помилка вивантаження',
-          color: 'danger'
+          color: 'danger',
+          hideIcon: false,
+          icon: "x-circle",
         });
       }
     } catch {
       ToastService.show({
         title: 'Помилка',
         description: 'Помилка з\'єднання з сервером',
-        color: 'danger'
+        color: 'danger',
+        hideIcon: false,
+        icon: "x-circle",
       });
     }
   };
@@ -634,7 +660,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         description: `Створюємо документ відвантаження для ${order.orderNumber}`,
         color: 'primary',
         hideIcon: false,
-        icon: <DynamicIcon name="upload-cloud" size={20} className="shrink-0" />
+        icon: "upload-cloud"
       });
 
       const token = saleTokens?.[order.id];
@@ -650,7 +676,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         ToastService.show({
           title: 'Успішно!',
           description: result.message,
-          color: 'success'
+          color: 'success',
+          hideIcon: false,
+          icon: "check-circle"
         });
         // Оновлюємо дані після створення документа
         fetchOrders();
@@ -664,7 +692,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           description: result.message || 'Документ відвантаження вже існує в Dilovod',
           color: 'warning',
           hideIcon: false,
-          icon: <DynamicIcon name="triangle-alert" size={20} className="shrink-0" />
+          icon: "triangle-alert"
         });
         // Оновлюємо таблицю — БД вже синхронізована сервером
         fetchOrders();
@@ -672,14 +700,18 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         ToastService.show({
           title: 'Помилка',
           description: result.error || result.message || 'Помилка створення документу',
-          color: 'danger'
+          color: 'danger',
+          hideIcon: false,
+          icon: "x-circle",
         });
       }
     } catch {
       ToastService.show({
         title: 'Помилка',
         description: 'Помилка з\'єднання з сервером',
-        color: 'danger'
+        color: 'danger',
+        hideIcon: false,
+        icon: "x-circle",
       });
     }
   };
@@ -692,7 +724,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       description: `Виконується експорт для ${selectedOrderIds.length} замовлень`,
       color: 'primary',
       hideIcon: false,
-      icon: <DynamicIcon name="upload-cloud" size={20} className="shrink-0" />,
+      icon: "upload-cloud",
       timeout: 2000
     });
 
@@ -719,7 +751,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             description: validateResult.details || 'Помилка',
             color: 'danger',
             hideIcon: false,
-            icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
+            icon: "octagon-alert",
           });
           results.push({ orderNumber: order.orderNumber, exportSuccess, shipmentSuccess: false, errors });
           continue;
@@ -738,7 +770,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             description: result.message || 'Успішно',
             color: 'success',
             hideIcon: false,
-            icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />,
+            icon: "check-circle",
             timeout: 1500
           });
         } else {
@@ -748,7 +780,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             description: result.error || result.message || 'Помилка',
             color: 'danger',
             hideIcon: false,
-            icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+            icon: "x-circle",
             timeout: 1500
           });
         }
@@ -759,7 +791,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           description: 'Помилка зʼєднання при експорті',
           color: 'danger',
           hideIcon: false,
-          icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+          icon: "x-circle",
         });
       }
       results.push({ orderNumber: order.orderNumber, exportSuccess, shipmentSuccess: false, errors });
@@ -781,7 +813,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       description: `Виконується відвантаження для ${selectedOrderIds.length} замовлень`,
       color: 'primary',
       hideIcon: false,
-      icon: <DynamicIcon name="truck" size={20} className="shrink-0" />,
+      icon: "truck",
       timeout: 2000
     });
 
@@ -813,7 +845,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             description: shipmentResult.message || 'Успішно',
             color: 'success',
             hideIcon: false,
-            icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />,
+            icon: "check-circle",
             timeout: 1500
           });
           if (token) setSaleTokens(prev => { const copy = { ...prev }; delete copy[order.id]; return copy; });
@@ -824,7 +856,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             description: shipmentResult.error || shipmentResult.message || 'Помилка',
             color: 'danger',
             hideIcon: false,
-            icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+            icon: "x-circle",
             timeout: 1500
           });
         }
@@ -835,7 +867,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           description: 'Помилка зʼєднання при відвантаженні',
           color: 'danger',
           hideIcon: false,
-          icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+          icon: "x-circle",
         });
       }
       results.push({ orderNumber: order.orderNumber, exportSuccess: false, shipmentSuccess, errors });
@@ -857,7 +889,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       description: `Виконується експорт та відвантаження для ${selectedOrderIds.length} замовлень`,
       color: 'primary',
       hideIcon: false,
-      icon: <DynamicIcon name="upload-cloud" size={20} className="shrink-0" />,
+      icon: "upload-cloud",
       timeout: 2000
     });
 
@@ -886,7 +918,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             description: validateResult.details || 'Помилка',
             color: 'danger',
             hideIcon: false,
-            icon: <DynamicIcon name="octagon-alert" size={20} strokeWidth={1.5} className="shrink-0" />
+            icon: "octagon-alert",
           });
           results.push({
             orderNumber: order.orderNumber,
@@ -910,7 +942,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             description: result.message || 'Успішно',
             color: 'success',
             hideIcon: false,
-            icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />,
+            icon: "check-circle",
             timeout: 1500
           });
         } else {
@@ -920,7 +952,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
             description: result.error || result.message || 'Помилка',
             color: 'danger',
             hideIcon: false,
-            icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+            icon: "x-circle",
             timeout: 1500
           });
           results.push({
@@ -947,7 +979,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 description: shipmentResult.message || 'Успішно',
                 color: 'success',
                 hideIcon: false,
-                icon: <DynamicIcon name="check-circle" size={20} className="shrink-0" />,
+                icon: "check-circle",
                 timeout: 1500
               });
             } else {
@@ -957,7 +989,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
                 description: shipmentResult.error || shipmentResult.message || 'Помилка',
                 color: 'danger',
                 hideIcon: false,
-                icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+                icon: "x-circle",
                 timeout: 1500
               });
             }
@@ -968,7 +1000,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               description: 'Помилка зʼєднання при відвантаженні',
               color: 'danger',
               hideIcon: false,
-              icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+              icon: "x-circle",
             });
           }
         }
@@ -979,7 +1011,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
           description: 'Помилка зʼєднання при експорті',
           color: 'danger',
           hideIcon: false,
-          icon: <DynamicIcon name="x-circle" size={20} className="shrink-0" />,
+          icon: "x-circle",
         });
       }
       results.push({
@@ -1010,7 +1042,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
       description: `Скидання та перевірка ${filteredOrders.length} замовлень у Діловоді`,
       color: 'warning',
       hideIcon: false,
-      icon: <DynamicIcon name="rotate-ccw" size={16} strokeWidth={1.5} className="shrink-0" />,
+      icon: "rotate-ccw",
       timeout: 2000
     });
 
@@ -1032,14 +1064,18 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         ToastService.show({
           title: 'Помилка примусової перевірки',
           description: result.message || 'Не вдалося виконати операцію',
-          color: 'danger'
+          color: 'danger',
+          hideIcon: false,
+          icon: "x-circle",
         });
       }
     } catch {
       ToastService.show({
         title: 'Помилка',
         description: 'Помилка зʼєднання з сервером',
-        color: 'danger'
+        color: 'danger',
+        hideIcon: false,
+        icon: "x-circle",
       });
     }
   };
@@ -1079,14 +1115,18 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         ToastService.show({
           title: 'Немає логів',
           description: 'Для цього замовлення логи експорту не знайдено',
-          color: 'default'
+          color: 'default',
+          hideIcon: false,
+          icon: "info-circle",
         });
       }
     } catch (e) {
       ToastService.show({
         title: 'Помилка',
         description: 'Не вдалося отримати логи експорту',
-        color: 'danger'
+        color: 'danger',
+        hideIcon: false,
+        icon: "x-circle",
       });
     } finally {
       setLoading(false);
@@ -1102,7 +1142,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         description: `Запит на перевірку до ${autoCheckLimit} замовлень${autoCheckOffset > 0 ? `, пропускаємо перші ${autoCheckOffset}` : ''}${autoCheckForceAll ? ' (всі, включно з повними)' : ''}`,
         color: 'secondary',
         hideIcon: false,
-        icon: <DynamicIcon name="search-check" size={16} strokeWidth={1.5} className="shrink-0" />,
+        icon: "search-check",
       });
 
       const response = await apiCall('/api/dilovod/salesdrive/orders/check', {
@@ -1128,14 +1168,18 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         ToastService.show({
           title: 'Помилка авто-перевірки',
           description: result.message || 'Не вдалося виконати операцію',
-          color: 'danger'
+          color: 'danger',
+          hideIcon: false,
+          icon: "octagon-alert",
         });
       }
     } catch {
       ToastService.show({
         title: 'Помилка',
         description: 'Помилка з\'єднання з сервером',
-        color: 'danger'
+        color: 'danger',
+        hideIcon: false,
+        icon: "x-circle",
       });
     } finally {
       setIsAutoChecking(false);
@@ -1148,7 +1192,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
     ToastService.show({
       title: 'Скопійовано',
       description: `Скопійовано "${text}" у буфер обміну`,
-      color: 'success'
+      color: 'success',
+      hideIcon: false,
+      icon: "check-circle",
     });
   };
 

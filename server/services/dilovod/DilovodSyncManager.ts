@@ -598,6 +598,71 @@ export class DilovodSyncManager {
     }
   }
 
+  // Масове оновлення залишків товарів (для оптимізації при великій кількості товарів)
+  async updateProductStockBalancesBulk(
+    items: {
+      sku: string;
+      mainStorage: number;
+      smallStorage: number;
+    }[]
+  ): Promise<{
+    success: boolean;
+    updated: number;
+    errors: string[];
+  }> {
+    const errors: string[] = [];
+    let updated = 0;
+
+    try {
+      await prisma.$transaction(
+        items.map((item) =>
+          prisma.product.update({
+            where: { sku: item.sku },
+            data: {
+              stockBalanceByStock: JSON.stringify({
+                "1": item.mainStorage,
+                "2": item.smallStorage
+              })
+            }
+          })
+        )
+      );
+
+      updated = items.length;
+
+    } catch (error) {
+      console.error("Bulk update error:", error);
+
+      // fallback — поштучно щоб знайти проблемні SKU
+      for (const item of items) {
+        try {
+          await prisma.product.update({
+            where: { sku: item.sku },
+            data: {
+              stockBalanceByStock: JSON.stringify({
+                "1": item.mainStorage,
+                "2": item.smallStorage
+              })
+            }
+          });
+
+          updated++;
+
+        } catch (err) {
+          errors.push(
+            `${item.sku}: ${err instanceof Error ? err.message : "error"}`
+          );
+        }
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      updated,
+      errors
+    };
+  }
+
   // Позначення застарілих товарів (які є в БД але немає в WordPress)
   // scope = 'all'    — перевіряє всі товари в БД (full sync)
   //                    currentSkus = повний список SKU з WordPress

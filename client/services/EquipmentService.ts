@@ -48,6 +48,13 @@ export interface EquipmentConfig {
     autoPrintOnComplete?: boolean;
     autoPrintDelayMs?: number;
   };
+  receiptPrinter?: {
+    enabled: boolean;
+    name: string;
+    defaultReceiptType?: 'fiscal' | 'warehouse' | 'both';
+    autoPrintOnComplete?: boolean;
+    autoPrintDelayMs?: number;
+  };
 }
 
 export class EquipmentService {

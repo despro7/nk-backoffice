@@ -15,6 +15,8 @@ import { BaseModal } from '../components/modals/BaseModal';
 import { Button, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
 import { useOrderSettings } from '@/hooks/useOrderSettings';
 import { useBoxInitialStatus } from '@/hooks/useBoxInitialStatus';
+import { useAssemblySettings } from '@/hooks/useAssemblySettings';
+import { useReceiptPrinting } from '@/hooks/useReceiptPrinting';
 import { OrderViewHeader } from '@/components/OrderViewHeader';
 import { OrderAssemblyRightPanel } from '@/components/OrderAssemblyRightPanel';
 import { OrderDetailsAdmin } from '@/components/OrderDetailsAdmin';
@@ -61,12 +63,24 @@ export default function OrderView() {
   // Використовуємо створені хуки
   const { orderSoundSettings, toleranceSettings, playOrderStatusSound } = useOrderSettings();
   const { boxInitialStatus } = useBoxInitialStatus();
+  const assemblySettings = useAssemblySettings(!!user);
+
+  const {
+    handlePrintReceipt,
+    handleViewReceipt,
+    handleAutoPrintIfEnabled,
+  } = useReceiptPrinting({ order, checklistItems, apiCall });
 
   const { getWeightData, handleWeightChange } = useWeightManagement({
     checklistItems,
     activeBoxIndex,
     toleranceSettings,
-    setChecklistItems
+    setChecklistItems,
+    autoSelectNext: assemblySettings.autoSelectNext,
+    successIndicationMs: assemblySettings.successIndicationMs,
+    successToastMs: assemblySettings.successToastMs,
+    errorIndicationMs: assemblySettings.errorIndicationMs,
+    errorToastMs: assemblySettings.errorToastMs,
   });
 
   const { handleBarcodeScan } = useBarcodeScanning({
@@ -125,6 +139,11 @@ export default function OrderView() {
     );
     setIsWeightWidgetActive(!allCollected && equipmentState.isScaleConnected);
     setIsWeightWidgetPaused(allCollected);
+
+    // Автодрук чека при завершенні збору
+    if (allCollected) {
+      handleAutoPrintIfEnabled();
+    }
   }, [checklistItems, equipmentState.isScaleConnected]);
 
   // Sound notification effect
@@ -500,6 +519,10 @@ export default function OrderView() {
         order={order}
         externalId={externalId || ''}
         onBackClick={() => navigate("/orders")}
+        onPrintReceipt={(receiptIndex) => handlePrintReceipt('fiscal', receiptIndex)}
+        onViewReceipt={(receiptIndex) => handleViewReceipt('fiscal', receiptIndex)}
+        onPrintWarehouseChecklist={() => handlePrintReceipt('warehouse')}
+        onViewWarehouseChecklist={() => handleViewReceipt('warehouse')}
       />
 
       {/* Блок комплектації */}
@@ -575,6 +598,7 @@ export default function OrderView() {
                   );
                   startActivePolling();
                 }}
+                allowManualSelect={assemblySettings.allowManualSelect}
                 onPrintTTN={handlePrintTTNCallback}
                 showPrintTTN={showPrintTTN}
                 wasOpenedAsReady={wasOpenedAsReady}
@@ -608,6 +632,8 @@ export default function OrderView() {
           order={order}
           externalId={externalId || ''}
           onOrderRefresh={handleOrderRefresh}
+          onPrintReceipt={handlePrintReceipt}
+          onViewReceipt={handleViewReceipt}
         />
       </div>
 

@@ -36,6 +36,13 @@ export const EQUIPMENT_DEFAULTS = {
     name: 'ZDesigner ZD220-203dpi ZPL',
     autoPrintOnComplete: true,
     autoPrintDelayMs: 3000
+  },
+  receiptPrinter: {
+    enabled: false,
+    name: '',
+    defaultReceiptType: 'fiscal' as const,
+    autoPrintOnComplete: false,
+    autoPrintDelayMs: 1000
   }
 } as const;
 

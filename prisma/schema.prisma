@@ -21,6 +21,7 @@ model User {
   isActive              Boolean         @default(true)
   lastActivityAt        DateTime?
   lastLoginAt           DateTime?
+  dilovodUserId         String?         // ID користувача в Діловоді (для відправки документів від його імені)
   OrdersHistory         OrdersHistory[]
 
   @@map("users")
@@ -178,20 +179,23 @@ model WarehouseMovement {
   id                   Int       @id @default(autoincrement())
   draftCreatedAt       DateTime  @default(now())
   draftLastEditedAt    DateTime  @updatedAt
-  sentToDilovodAt      DateTime?
+  movementDate         DateTime? // Дата/час переміщення (використовується для запиту партій та формування payload для Діловода)
+  sentToDilovodAt      DateTime? // Дата першої відправки до Діловода
+  lastSentToDilovodAt  DateTime? // Дата останньої (проміжної або фінальної) відправки до Діловода
   internalDocNumber    String    @unique @default("00001")
+  docNumber            String?   // Номер документа від Діловода (після відправки)
+  dilovodDocId         String?   @unique // ID документа в Діловоді (унікальний — для upsert при імпорті з history)
   items                String    @db.LongText
   deviations           String?   @db.LongText
-  status               String    @default("draft")
+  status               String    @default("draft") // 'draft' | 'active' | 'finalized'
   sourceWarehouse      String
   destinationWarehouse String
   notes                String?
   createdBy            Int
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
 
   @@index([status])
   @@index([draftCreatedAt])
+  @@index([movementDate])
   @@index([sentToDilovodAt])
   @@index([sourceWarehouse])
   @@index([destinationWarehouse])

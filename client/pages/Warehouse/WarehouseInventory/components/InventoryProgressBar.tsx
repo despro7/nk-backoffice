@@ -1,5 +1,7 @@
 import { Chip, Input, Progress, Select, SelectItem } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { SortSelect } from '../../shared/SortSelect';
+import type { SortOption } from '../../shared/SortSelect';
 
 // ---------------------------------------------------------------------------
 // InventoryProgressBar — прогрес + чіп відхилень + поле пошуку + сортування
@@ -27,23 +29,16 @@ export const InventoryProgressBar = ({
   categoryOptions, selectedCategory, onCategoryChange,
   sortBy, onSortByChange, sortDirection, onSortDirectionChange,
 }: InventoryProgressBarProps) => {
-  const sortOptions = [
-    { key: 'name_asc', label: 'За назвою [↓]' },
-    { key: 'name_desc', label: 'За назвою [↑]' },
-    { key: 'sku_asc', label: 'За артикулами [↓]' },
-    { key: 'sku_desc', label: 'За артикулами [↑]' },
-    { key: 'balance_asc', label: 'За залишками [↓]' },
-    { key: 'balance_desc', label: 'За залишками [↑]' },
-    { key: 'deviation_asc', label: 'За відхиленнями [↓]' },
+  const sortOptions: SortOption<'name' | 'sku' | 'balance' | 'deviation'>[] = [
+    { key: 'name_asc',       label: 'За назвою [↓]' },
+    { key: 'name_desc',      label: 'За назвою [↑]' },
+    { key: 'sku_asc',        label: 'За артикулами [↓]' },
+    { key: 'sku_desc',       label: 'За артикулами [↑]' },
+    { key: 'balance_asc',    label: 'За залишками [↓]' },
+    { key: 'balance_desc',   label: 'За залишками [↑]' },
+    { key: 'deviation_asc',  label: 'За відхиленнями [↓]' },
     { key: 'deviation_desc', label: 'За відхиленнями [↑]' },
   ];
-
-  const handleSortChange = (keys: any) => {
-    const selected = Array.from(keys)[0]?.toString() ?? 'name_asc';
-    const [type, dir] = selected.split('_');
-    onSortByChange(type as 'name' | 'sku' | 'balance' | 'deviation');
-    onSortDirectionChange(dir as 'asc' | 'desc');
-  };
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
@@ -105,21 +100,13 @@ export const InventoryProgressBar = ({
           onClear={() => onSearchChange('')}
         />
 
-        <Select
-          aria-label="Сортування"
-          size="lg"
-          variant="flat"
-          color="default"
-          selectedKeys={[`${sortBy}_${sortDirection}`]}
-          onSelectionChange={handleSortChange}
-          className="flex-1 min-w-[200px]"
-        >
-          {sortOptions.map((option) => (
-            <SelectItem key={option.key} textValue={option.label}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </Select>
+        <SortSelect
+            sortBy={sortBy}
+            sortDirection={sortDirection}
+            options={sortOptions}
+            onSortByChange={onSortByChange}
+            onSortDirectionChange={onSortDirectionChange}
+          />
       </div>
     </div>
   );

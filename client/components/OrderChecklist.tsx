@@ -36,6 +36,7 @@ interface OrderChecklistProps {
   onPrintTTN?: () => void; // Callback для печати ТТН
   showPrintTTN?: boolean;
   wasOpenedAsReady?: boolean; // Чи було замовлення відкрите вже зібраним (без автодруку)
+  allowManualSelect?: boolean; // Дозволити ручний вибір товару кліком
   onNextOrder?: () => void; // Callback для перехода к следующему заказу
   showNextOrder?: boolean;
   nextOrderNumber?: string; // Номер наступного замовлення
@@ -44,7 +45,7 @@ interface OrderChecklistProps {
   isDebugMode?: boolean; // Флаг дебаг-режима
 }
 
-const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders }: OrderChecklistProps) => {
+const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders, allowManualSelect = false }: OrderChecklistProps) => {
   const navigate = useNavigate();
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [equipmentState] = useEquipmentFromAuth(); // <-- Використовуємо глобальний стан обладнання
@@ -346,6 +347,11 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
 
     // Товари не клікабельні, поки коробка не зважена
     if (clickedItem?.type === 'product' && !isCurrentBoxConfirmed) {
+      return;
+    }
+
+    // Ручний вибір товару заблокований в налаштуваннях
+    if (clickedItem?.type === 'product' && !allowManualSelect) {
       return;
     }
 

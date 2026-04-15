@@ -74,7 +74,7 @@ export const ToastSettings: React.FC = () => {
         description: 'Toast-налаштування успішно оновлено',
         color: 'success',
         hideIcon: false,
-        icon: ToastService.createIcon("check-circle", 20),
+        icon: "check-circle",
       });
     } catch (error) {
       ToastService.show({
@@ -82,7 +82,7 @@ export const ToastSettings: React.FC = () => {
         description: 'Не вдалося зберегти toast-налаштування',
         color: 'danger',
         hideIcon: false,
-        icon: ToastService.createIcon("alert-circle", 20),
+        icon: "alert-circle",
       });
     } finally {
       setIsLoading(false);

@@ -44,4 +44,38 @@ router.get('/check/:externalId', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * Завантажує PDF чек з WordPress сайту та повертає його як base64
+ * GET /api/wordpress-receipt/fetch/:externalId
+ */
+router.get('/fetch/:externalId', authenticateToken, async (req, res) => {
+  try {
+    const { externalId } = req.params;
+
+    if (!externalId) {
+      return res.status(400).json({ success: false, error: 'externalId обов\'язковий' });
+    }
+
+    const pdfUrl = `https://nk-food.shop/wp-content/plugins/checkbox-pro/receipts-pdf/receipts/${externalId}.pdf`;
+
+    const response = await fetch(pdfUrl);
+
+    if (!response.ok) {
+      return res.json({ success: false, error: 'PDF not found' });
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+
+    return res.json({
+      success: true,
+      data: base64,
+      mimeType: 'application/pdf',
+    });
+  } catch (error) {
+    console.error('Помилка завантаження WordPress PDF:', error);
+    return res.status(500).json({ success: false, error: 'Помилка завантаження PDF' });
+  }
+});
+
 export default router;

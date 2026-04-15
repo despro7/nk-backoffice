@@ -52,6 +52,13 @@ export interface EquipmentSettings {
     autoPrintOnComplete?: boolean;
     autoPrintDelayMs?: number;
   };
+  receiptPrinter?: {
+    enabled: boolean;
+    name: string;
+    defaultReceiptType?: 'fiscal' | 'warehouse' | 'both';
+    autoPrintOnComplete?: boolean;
+    autoPrintDelayMs?: number;
+  };
 }
 
 export class EquipmentSettingsService {
@@ -139,6 +146,7 @@ export class EquipmentSettingsService {
         scale: settings.scale,
         scanner: settings.scanner,
         printer: settings.printer,
+        receiptPrinter: settings.receiptPrinter,
         orderSoundSettings: settings.orderSoundSettings
       });
 
@@ -153,6 +161,9 @@ export class EquipmentSettingsService {
       }
       if (settings.printer) {
         savePromises.push(this.savePrinterSettings(settings.printer));
+      }
+      if (settings.receiptPrinter) {
+        savePromises.push(this.saveReceiptPrinterSettings(settings.receiptPrinter));
       }
       if (settings.orderSoundSettings) {
         savePromises.push(this.saveOrderSoundSettings(settings.orderSoundSettings));
@@ -408,6 +419,33 @@ export class EquipmentSettingsService {
 
     if (printerSettingsList.length > 0) {
       await this.batchUpsertSettings(printerSettingsList);
+    }
+  }
+
+  // Збереження налаштувань принтера чеків
+  private async saveReceiptPrinterSettings(receiptPrinterSettings: EquipmentSettings['receiptPrinter']): Promise<void> {
+    if (!receiptPrinterSettings) return;
+
+    const list = [];
+
+    if (receiptPrinterSettings.enabled !== undefined) {
+      list.push({ key: 'equipment_receiptPrinter.enabled', value: JSON.stringify(receiptPrinterSettings.enabled), description: 'Принтер чеків увімкнено' });
+    }
+    if (receiptPrinterSettings.name !== undefined) {
+      list.push({ key: 'equipment_receiptPrinter.name', value: JSON.stringify(receiptPrinterSettings.name), description: "Ім'я принтера чеків" });
+    }
+    if (receiptPrinterSettings.defaultReceiptType !== undefined) {
+      list.push({ key: 'equipment_receiptPrinter.defaultReceiptType', value: JSON.stringify(receiptPrinterSettings.defaultReceiptType), description: 'Тип чека за замовчуванням' });
+    }
+    if (receiptPrinterSettings.autoPrintOnComplete !== undefined) {
+      list.push({ key: 'equipment_receiptPrinter.autoPrintOnComplete', value: JSON.stringify(receiptPrinterSettings.autoPrintOnComplete), description: 'Автодрук чека при завершенні збору' });
+    }
+    if (receiptPrinterSettings.autoPrintDelayMs !== undefined) {
+      list.push({ key: 'equipment_receiptPrinter.autoPrintDelayMs', value: JSON.stringify(receiptPrinterSettings.autoPrintDelayMs), description: 'Затримка автодруку чека (мс)' });
+    }
+
+    if (list.length > 0) {
+      await this.batchUpsertSettings(list);
     }
   }
 

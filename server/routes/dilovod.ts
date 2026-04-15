@@ -1102,7 +1102,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
     try {
       // Використовуємо коректний singleton import
       const { dilovodService } = await import('../services/dilovod/DilovodService.js');
-      const exportResult = await dilovodService.exportOrderToDilovod(payload);
+      const exportResult = await dilovodService.exportToDilovod(payload);
 
       // Визначаємо статус відповіді
       const isExportError = isDilovodExportError(exportResult);
@@ -1371,7 +1371,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
     // Відправляємо payload в Dilovod через DilovodService
     try {
       const { dilovodService } = await import('../services/dilovod/DilovodService.js');
-      const exportResult = await dilovodService.exportOrderToDilovod(salePayload);
+      const exportResult = await dilovodService.exportToDilovod(salePayload);
 
       const isExportError = isDilovodExportError(exportResult);
       const exportErrorMessage = isExportError ? getDilovodExportErrorMessage(exportResult) : '';

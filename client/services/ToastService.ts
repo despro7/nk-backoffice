@@ -10,10 +10,12 @@ export interface ToastOptions {
 	icon?: React.ReactNode;
 	variant?: "flat" | "solid" | "bordered";
 	color?: "default" | "primary" | "secondary" | "success" | "warning" | "danger";
+	className?: string;
 	timeout?: number;
 	shouldShowTimeoutProgress?: boolean;
-	// Optional key from ToastSettingsTypes to gate showing this toast
-	settingKey?: keyof ToastSettingsTypes;
+	settingKey?: keyof ToastSettingsTypes; // Optional key from ToastSettingsTypes to gate showing this toast
+	iconSpin?: boolean; // Додатково: чи анімувати іконку (наприклад, для процесу завантаження)
+	iconSize?: number; // Додатково: розмір іконки в пікселях (за замовчуванням 24)
 }
 
 export class ToastService {
@@ -21,8 +23,7 @@ export class ToastService {
 		return {
 			variant: "flat",
 			color: "default",
-			hideIcon: true,
-			icon: ToastService.createIcon("check-circle"),
+			icon: "check-circle",
 			timeout: 5000,
 			shouldShowTimeoutProgress: true
 		};
@@ -77,10 +78,18 @@ export class ToastService {
 	}
 
 	// Helper функція для створення іконок
-	static createIcon(iconName: string, size: number = 20) {
-		return createElement(DynamicIcon, { name: iconName as any, size, color: "currentColor" });
+	static createIcon(iconName: string, iconSize: number = 24, animation?: boolean) {
+		return createElement("span", {},
+			createElement(DynamicIcon, {
+				name: iconName as any,
+				size: iconSize,
+				color: "currentColor",
+				className: `${animation ? 'animate-spin' : ''} shrink-0`
+			})
+		);
 	}
 
+	// Загальний метод для показу тостів з урахуванням налаштувань
 	static show(options: ToastOptions) {
 		const mergedOptions = { ...this.defaultOptions, ...options } as Required<Partial<ToastOptions>> & ToastOptions;
 
@@ -89,13 +98,22 @@ export class ToastService {
 			return;
 		}
 
+		// console.log('🔄 Параметри запиту: ', mergedOptions);
+		let warning_color = '';
+		mergedOptions.color === 'warning' && (warning_color = 'bg-yellow-100 text-yellow-700');
+
 		addToast({
 			title: mergedOptions.title,
 			description: mergedOptions.description,
 			variant: mergedOptions.variant,
-			hideIcon: mergedOptions.hideIcon,
-			icon: mergedOptions.icon,
+			hideIcon: mergedOptions.hideIcon ?? false,
+			icon: this.createIcon(mergedOptions.icon as string, mergedOptions.iconSize, mergedOptions.iconSpin || false),
 			color: mergedOptions.color,
+			classNames: {
+				base: warning_color,
+				title: warning_color,
+				description: warning_color,
+			},
 			timeout: mergedOptions.timeout,
 			shouldShowTimeoutProgress: mergedOptions.shouldShowTimeoutProgress,
 		});

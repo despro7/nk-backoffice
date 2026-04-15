@@ -49,13 +49,20 @@ export class DilovodService {
     return await this.goodsCacheManager.getStatus();
   }
 
+  // Публичный метод для получения конфигурации API (для использования в контроллерах)
+  getDilovodConfig() {
+    return this.apiClient.getConfig();
+  }
+
   async refreshGoodsCache(skuList?: string[]) {
     return await this.goodsCacheManager.refresh(skuList);
   }
   /**
    * Експортувати замовлення в Dilovod (створити документ saleOrder)
    */
-  async exportOrderToDilovod(payload: any): Promise<any> {
+  async exportToDilovod(payload: any): Promise<any> {
+    // Гарантуємо, що конфіг (і apiKey) завантажено перед синхронним getApiKey()
+    await this.apiClient.ensureReady();
     // Викликає API-клієнт для створення документа
     return this.apiClient.makeRequest({
       version: '0.25',
@@ -63,6 +70,15 @@ export class DilovodService {
       action: 'saveObject',
       params: payload
     });
+  }
+
+  /**
+   * Отримати документ переміщення з Діловода за його ID.
+   * Використовується після першої відправки для отримання номера (header.number).
+   */
+  async getMovementDocument(dilovodDocId: string): Promise<any> {
+    await this.apiClient.ensureReady();
+    return this.apiClient.getObject(dilovodDocId);
   }
   private apiClient: DilovodApiClient;
   private cacheManager: DilovodCacheManager;
@@ -650,6 +666,27 @@ export class DilovodService {
     } catch (error) {
       console.log('Помилка отримання залишків за SKU:', error);
       throw error;
+    }
+  }
+
+  // Отримання доступних партій (goodPart) по SKU з залишками по складах
+  async getBatchNumbersBySku(sku: string, firmId?: string, asOfDate?: Date): Promise<Array<{
+    batchId: string;
+    batchNumber: string;
+    storage: string;
+    storageDisplayName: string;
+    quantity: number;
+    firm: string;
+    firmDisplayName: string;
+  }>> {
+    try {
+      console.log(`📦 [Dilovod] Запит партій для SKU: ${sku}${asOfDate ? ` на дату ${asOfDate.toLocaleString('uk-UA')}` : ''}${firmId ? ` (фірма: ${firmId})` : ''}`);
+      const batches = await this.apiClient.getBatchNumbersBySku(sku, firmId, asOfDate);
+      console.log(`✅ [Dilovod] Отримано ${batches.length} партій для SKU: ${sku}`);
+      return batches;
+    } catch (error) {
+      console.error(`🚨 [Dilovod] Помилка отримання партій для SKU ${sku}:`, error);
+      return [];
     }
   }
 

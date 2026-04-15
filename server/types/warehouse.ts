@@ -16,7 +16,9 @@ export interface WarehouseMovement {
   draftCreatedAt: Date;
   draftLastEditedAt: Date;
   sentToDilovodAt?: Date;
-  internalDocNumber: string; // Порядковый номер с ведущими нулями (00001, 00002, etc.)
+  internalDocNumber: string; // Порядковий номер з ведучими нулями (00001, 00002, etc.)
+  docNumber?: string | null;     // Номер документа від Діловода (після відправки)
+  dilovodDocId?: string | null;  // ID документа в Діловоді (для редагування)
   items: WarehouseMovementItem[];
   deviations?: WarehouseMovementDeviation[];
   status: 'draft' | 'sent' | 'confirmed' | 'cancelled';
@@ -24,8 +26,6 @@ export interface WarehouseMovement {
   destinationWarehouse: string;
   notes?: string;
   createdBy: number;
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 export interface StockMovementHistory {

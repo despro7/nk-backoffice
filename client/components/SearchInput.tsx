@@ -6,9 +6,10 @@ interface SearchInputProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  className?: string;
 }
 
-export function SearchInput({ value, onChange, placeholder = "Пошук замовлення" }: SearchInputProps) {
+export function SearchInput({ value, onChange, placeholder = "Пошук замовлення", className }: SearchInputProps) {
   // Этот хук будет запускаться при каждом изменении внешнего значения (например, от NumberPad).
   useEffect(() => {
     // Разрешаем только цифры и ограничиваем длину до 18 символов
@@ -38,6 +39,7 @@ export function SearchInput({ value, onChange, placeholder = "Пошук зам�
       value={value}
       onValueChange={handleValueChange} // Используем наш обработчик для прямого ввода
       startContent={ <DynamicIcon name="package-search" className="text-gray-400" strokeWidth={1.5} size={24} /> }
+      className={className}
       classNames={{
         base: "w-full",
         mainWrapper: "h-full",

@@ -1757,11 +1757,25 @@ const ProductSets: React.FC = () => {
         setExportPayload([]);
       } else {
         const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-        ToastService.show({ title: 'Помилка експорту', description: error.error || 'Не вдалося експортувати товари', color: 'danger', hideIcon: false, icon: <DynamicIcon name="alert-triangle" size={16} /> } );
+        ToastService.show({ 
+          title: 'Помилка експорту',
+          description: error.error || 'Не вдалося експортувати товари',
+          color: 'danger',
+          hideIcon: false,
+          icon: "alert-triangle",
+          iconSize: 16,
+        });
       }
     } catch (error) {
       console.error('Error exporting to SalesDrive:', error);
-      ToastService.show({ title: 'Помилка мережі', description: error instanceof Error ? error.message : 'Невідома помилка', color: 'danger', hideIcon: false, icon: <DynamicIcon name="alert-triangle" size={16} /> });
+      ToastService.show({
+        title: 'Помилка мережі',
+        description: error instanceof Error ? error.message : 'Невідома помилка',
+        color: 'danger',
+        hideIcon: false,
+        icon: "alert-triangle",
+        iconSize: 16,
+      });
     } finally {
       setExporting(false);
     }

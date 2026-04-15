@@ -283,7 +283,7 @@ export class DilovodAutoExportService {
 
       // Крок 3: Відправляємо в Dilovod
       const { dilovodService } = await import('./DilovodService.js');
-      const exportResult = await dilovodService.exportOrderToDilovod(payload);
+      const exportResult = await dilovodService.exportToDilovod(payload);
 
       const isError = isDilovodExportError(exportResult);
       const errorMessage = isError ? getDilovodExportErrorMessage(exportResult) : '';
@@ -482,7 +482,7 @@ export class DilovodAutoExportService {
 
       // Крок 3: Відправляємо в Dilovod
       const { dilovodService } = await import('./DilovodService.js');
-      const exportResult = await dilovodService.exportOrderToDilovod(salePayload);
+      const exportResult = await dilovodService.exportToDilovod(salePayload);
 
       const isError = isDilovodExportError(exportResult);
       const errorMessage = isError ? getDilovodExportErrorMessage(exportResult) : '';

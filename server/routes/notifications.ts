@@ -62,15 +62,33 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
     const limit  = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const severityParam = (req.query.severity as string | undefined)
       ?.split(',').map(s => s.trim()) ?? ['error', 'warning'];
+    // successCategories — категорії, success-записи яких теж відображаємо в bell
+    // Передається як: &successCategories=warehouse_movement,other_category
+    const successCategoriesParam = (req.query.successCategories as string | undefined)
+      ?.split(',').map(s => s.trim()) ?? [];
     const unreadOnly = req.query.unreadOnly === '1' || req.query.unreadOnly === 'true';
 
-    const statusFilter: string[] = [];
-    if (severityParam.includes('error'))   statusFilter.push('error');
-    if (severityParam.includes('warning')) statusFilter.push('warning');
-    if (severityParam.includes('success')) statusFilter.push('success');
+    const baseStatuses: string[] = [];
+    if (severityParam.includes('error'))   baseStatuses.push('error');
+    if (severityParam.includes('warning')) baseStatuses.push('warning');
+    // success без категорій — показуємо всі success
+    if (severityParam.includes('success') && successCategoriesParam.length === 0) baseStatuses.push('success');
+
+    // Будуємо WHERE: базові severity OR (success + конкретні категорії)
+    let whereClause: any = undefined;
+    if (baseStatuses.length > 0 && successCategoriesParam.length > 0) {
+      whereClause = {
+        OR: [
+          { status: { in: baseStatuses } },
+          { status: 'success', category: { in: successCategoriesParam } },
+        ],
+      };
+    } else if (baseStatuses.length > 0) {
+      whereClause = { status: { in: baseStatuses } };
+    }
 
     const logs = await prisma.meta_logs.findMany({
-      where: statusFilter.length > 0 ? { status: { in: statusFilter } } : undefined,
+      where: whereClause,
       orderBy: { datetime: 'desc' },
       take: limit,
       select: {

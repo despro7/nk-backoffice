@@ -531,6 +531,219 @@ export const SettingsEquipment = () => {
     }
   };
 
+  // Оновлення налаштувань принтера чеків з збереженням у БД
+  const updateReceiptPrinterSetting = async (field: string, value: any) => {
+    try {
+      if (!localConfig) {
+        addToast({
+          title: "Помилка",
+          description: "Конфігурація не завантажена",
+          color: "danger",
+          timeout: 3000,
+        });
+        return;
+      }
+
+      const updatedConfig: EquipmentConfig = {
+        ...localConfig,
+        receiptPrinter: {
+          ...(localConfig.receiptPrinter || { enabled: false, name: '', defaultReceiptType: 'fiscal', autoPrintOnComplete: false, autoPrintDelayMs: 1000 }),
+          [field]: value,
+        },
+      };
+
+      setLocalConfig(updatedConfig);
+      await actions.saveConfig(updatedConfig);
+
+      addToast({
+        title: "Налаштування збережено",
+        description: `Налаштування принтера чеків оновлено`,
+        color: "success",
+        timeout: 2000,
+      });
+    } catch (error) {
+      console.error('❌ Помилка збереження налаштувань принтера чеків:', error);
+      addToast({
+        title: "Помилка",
+        description: "Не вдалося зберегти налаштування принтера чеків",
+        color: "danger",
+        timeout: 3000,
+      });
+    }
+  };
+
+  // Тестовий друк ESC/POS для принтера чеків
+  const handleTestReceiptPrint = async () => {
+    if (!localConfig?.receiptPrinter?.name) {
+      addToast({
+        title: "Помилка",
+        description: "Вкажіть ім'я принтера чеків",
+        color: "danger",
+        timeout: 3000,
+      });
+      return;
+    }
+    try {
+      // ESC/POS: reset + center + bold + text + cut
+      const testData =
+        '\x1B@' +
+        '\x1Ba\x01' +
+        '\x1BE\x01' +
+        'NK Food Shop\n' +
+        '\x1BE\x00' +
+        '\x1Ba\x00' +
+        '--------------------------------\n' +
+        'Тест принтера чеків\n' +
+        '--------------------------------\n' +
+        '\n\n\n' +
+        '\x1DV\x41\x00';
+      await PrinterService.printRaw(localConfig.receiptPrinter.name, testData);
+      addToast({
+        title: "Тест надіслано",
+        description: `Тестовий чек відправлено на "${localConfig.receiptPrinter.name}"`,
+        color: "success",
+        timeout: 3000,
+      });
+    } catch (error) {
+      console.error('❌ Помилка тестового друку чека:', error);
+      addToast({
+        title: "Помилка друку",
+        description: "Не вдалося надіслати тестовий чек",
+        color: "danger",
+        timeout: 3000,
+      });
+    }
+  };
+
+  // 🧪 Діагностичний друк — 4 тести різних форматів QZ Tray
+  const handleDebugPrint = async (testNumber: number) => {
+    const printerName = localConfig?.receiptPrinter?.name;
+
+    try {
+      // Підключення до QZ Tray
+      const qz = (await import('qz-tray')).default;
+      if (!qz.websocket.isActive()) {
+        const { initializeQzTray } = await import('../lib/qzConfig');
+        initializeQzTray();
+        await qz.websocket.connect();
+      }
+
+      let config: any;
+      let data: any[];
+      let description: string;
+
+      switch (testNumber) {
+        case 1: {
+          // Тест 1: Plain string до реального принтера
+          if (!printerName) { addToast({ title: "Помилка", description: "Вкажіть ім'я принтера", color: "danger", timeout: 3000 }); return; }
+          description = `Plain string → "${printerName}"`;
+          config = qz.configs.create(printerName);
+          data = ['Hello from QZ Tray!\n\n\n'];
+          break;
+        }
+        case 2: {
+          // Тест 2: raw/plain до реального принтера
+          if (!printerName) { addToast({ title: "Помилка", description: "Вкажіть ім'я принтера", color: "danger", timeout: 3000 }); return; }
+          description = `raw/plain → "${printerName}"`;
+          config = qz.configs.create(printerName);
+          data = [{ type: 'raw', format: 'plain', data: 'Test 2: raw/plain object\n\n\n' }];
+          break;
+        }
+        case 3: {
+          // Тест 3: raw/base64 до реального принтера
+          if (!printerName) { addToast({ title: "Помилка", description: "Вкажіть ім'я принтера", color: "danger", timeout: 3000 }); return; }
+          description = `raw/base64 → "${printerName}"`;
+          config = qz.configs.create(printerName);
+          data = [{ type: 'raw', format: 'base64', data: btoa('Test 3: base64 data\n\n\n') }];
+          break;
+        }
+        case 4: {
+          // Тест 4: raw/hex до реального принтера
+          if (!printerName) { addToast({ title: "Помилка", description: "Вкажіть ім'я принтера", color: "danger", timeout: 3000 }); return; }
+          description = `raw/hex → "${printerName}"`;
+          config = qz.configs.create(printerName);
+          const text = 'Test 4: hex data\n\n\n';
+          const hex = Array.from(text).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+          data = [{ type: 'raw', format: 'hex', data: hex }];
+          break;
+        }
+        case 5: {
+          // Тест 5: Зберегти ESC/POS у файл (не потрібен фізичний принтер!)
+          // QZ Tray вміє писати прямо у файл — вказуємо тип 'file'
+          description = 'ESC/POS → файл C:\\escpos_test.bin';
+          config = qz.configs.create(null);
+          data = [{
+            type: 'raw',
+            format: 'base64',
+            data: btoa('\x1B@\x1Ba\x01\x1BE\x01NK Food Shop\n\x1BE\x00\x1Ba\x00--------------------------------\nTest 5: save to file\n--------------------------------\n\n\n\x1DV\x41\x00'),
+            options: { language: 'ESCPOS', destination: 'file', path: 'C:\\escpos_test.bin' },
+          }];
+          break;
+        }
+        case 6: {
+          // Тест 6: format:'hex' через TCP — байти мають бути точно CP866 (92 a5 e1 e2 для "Тест")
+          description = 'ESC/POS hex → TCP 127.0.0.1:9100';
+          config = qz.configs.create({ host: '127.0.0.1', port: 9100 } as any);
+          // Ручна CP866 конвертація: "Тест кирилиця" → CP866 байти → hex
+          // Т=0x92, е=0xa5, с=0xe1, т=0xe2 (CP866)
+          const escPosText =
+            '\x1B@' +            // RESET
+            '\x1Bt\x11' +        // CP866
+            '\x1Ba\x01' +        // center
+            '\x1BE\x01' +        // bold on
+            'NK Food Shop\n' +
+            '\x1BE\x00' +        // bold off
+            '\x1Ba\x00' +        // left
+            '--------------------------------\n' +
+            'Тест hex: СКЛАД ЧЕК-ЛІСТ\n' +
+            '--------------------------------\n' +
+            '\n\n\n' +
+            '\x1DV\x41\x00';     // CUT
+          // CP866 таблиця (спрощена — тільки для тесту)
+          const cp866Map: Record<number, number> = {
+            0x0410:0x80,0x0411:0x81,0x0412:0x82,0x0413:0x83,0x0414:0x84,0x0415:0x85,0x0416:0x86,0x0417:0x87,
+            0x0418:0x88,0x0419:0x89,0x041A:0x8A,0x041B:0x8B,0x041C:0x8C,0x041D:0x8D,0x041E:0x8E,0x041F:0x8F,
+            0x0420:0x90,0x0421:0x91,0x0422:0x92,0x0423:0x93,0x0424:0x94,0x0425:0x95,0x0426:0x96,0x0427:0x97,
+            0x0428:0x98,0x0429:0x99,0x042A:0x9A,0x042B:0x9B,0x042C:0x9C,0x042D:0x9D,0x042E:0x9E,0x042F:0x9F,
+            0x0430:0xA0,0x0431:0xA1,0x0432:0xA2,0x0433:0xA3,0x0434:0xA4,0x0435:0xA5,0x0436:0xA6,0x0437:0xA7,
+            0x0438:0xA8,0x0439:0xA9,0x043A:0xAA,0x043B:0xAB,0x043C:0xAC,0x043D:0xAD,0x043E:0xAE,0x043F:0xAF,
+            0x0440:0xE0,0x0441:0xE1,0x0442:0xE2,0x0443:0xE3,0x0444:0xE4,0x0445:0xE5,0x0446:0xE6,0x0447:0xE7,
+            0x0448:0xE8,0x0449:0xE9,0x044A:0xEA,0x044B:0xEB,0x044C:0xEC,0x044D:0xED,0x044E:0xEE,0x044F:0xEF,
+            0x0406:0x49,0x0456:0x69,0x0407:0x9F,0x0457:0xEF,0x0404:0x85,0x0454:0xA5,0x0490:0x83,0x0491:0xA3,
+          };
+          const hexBytes: string[] = [];
+          for (let ci = 0; ci < escPosText.length; ci++) {
+            const code = escPosText.charCodeAt(ci);
+            if (code < 0x80) hexBytes.push(code.toString(16).padStart(2, '0'));
+            else hexBytes.push((cp866Map[code] ?? 0x3F).toString(16).padStart(2, '0'));
+          }
+          data = [{ type: 'raw', format: 'hex', data: hexBytes.join('') }];
+          break;
+        }
+        default:
+          return;
+      }
+
+      console.log(`🧪 Тест ${testNumber} (${description}):`, JSON.stringify(data));
+      await qz.print(config, data);
+
+      addToast({
+        title: `✅ Тест ${testNumber} відправлено`,
+        description: description,
+        color: "success",
+        timeout: 5000,
+      });
+    } catch (error: any) {
+      console.error(`❌ Тест ${testNumber} помилка:`, error);
+      addToast({
+        title: `❌ Тест ${testNumber} помилка`,
+        description: error?.message || String(error),
+        color: "danger",
+        timeout: 5000,
+      });
+    }
+  };
+
   // Функция для получения отображаемых названий полей принтера
   const getPrinterFieldDisplayName = (field: string): string => {
     const names: Record<string, string> = {
@@ -2065,6 +2278,148 @@ export const SettingsEquipment = () => {
                   <p><strong>QZ Tray:</strong> Дозволяє друкувати ZPL/EPL етикетки напряму на термопринтер.</p>
                   <p><strong>Автоматичний друк:</strong> Друкувати ТТН автоматично при завершенні замовлення, показі ТТН або в режимі налагодження.</p>
                   <p><strong>Затримка:</strong> Час очікування перед автоматичним друком (1-10 секунд). Дозволяє користувачу побачити завершення замовлення.</p>
+                </div>
+              </Card>
+
+              {/* Налаштування принтера чеків (QZ Tray / Xprinter X58) */}
+              <Card className="flex w-full flex-col gap-6 p-4 h-fit">
+                <h3 className="font-medium text-gray-400">Принтер чеків (QZ Tray)</h3>
+
+                <Switch
+                  id="receiptPrinterEnabled"
+                  size="sm"
+                  isSelected={localConfig.receiptPrinter?.enabled || false}
+                  onValueChange={(value) => updateReceiptPrinterSetting("enabled", value)}
+                  color="primary"
+                >
+                  Увімкнути принтер чеків
+                </Switch>
+
+                <Input
+                  id="receiptPrinterName"
+                  label="Ім'я принтера чеків"
+                  labelPlacement="outside"
+                  placeholder="Наприклад: Xprinter XP-58"
+                  value={localConfig.receiptPrinter?.name || ""}
+                  onValueChange={(value) => updateReceiptPrinterSetting("name", value)}
+                  isDisabled={!localConfig.receiptPrinter?.enabled}
+                />
+
+                {printers.length > 0 && (
+                  <Select
+                    label="Оберіть зі знайдених принтерів"
+                    labelPlacement="outside"
+                    placeholder="Виберіть принтер зі списку"
+                    isDisabled={!localConfig.receiptPrinter?.enabled}
+                    selectedKeys={localConfig.receiptPrinter?.name ? [localConfig.receiptPrinter.name] : []}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0] as string;
+                      updateReceiptPrinterSetting("name", value);
+                    }}
+                  >
+                    {printers.map((printer) => (
+                      <SelectItem key={printer}>
+                        {printer}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                )}
+
+                <Select
+                  label="Тип чека за замовчуванням"
+                  labelPlacement="outside"
+                  isDisabled={!localConfig.receiptPrinter?.enabled}
+                  selectedKeys={[localConfig.receiptPrinter?.defaultReceiptType || "fiscal"]}
+                  onSelectionChange={(keys) => {
+                    const value = Array.from(keys)[0] as string;
+                    updateReceiptPrinterSetting("defaultReceiptType", value);
+                  }}
+                >
+                  <SelectItem key="fiscal">Фіскальний чек</SelectItem>
+                  <SelectItem key="warehouse">Складський чек-ліст</SelectItem>
+                  <SelectItem key="both">Обидва типи</SelectItem>
+                </Select>
+
+                <Switch
+                  id="receiptAutoPrintOnComplete"
+                  size="sm"
+                  isSelected={localConfig.receiptPrinter?.autoPrintOnComplete || false}
+                  onValueChange={(value) => updateReceiptPrinterSetting("autoPrintOnComplete", value)}
+                  color="primary"
+                  isDisabled={!localConfig.receiptPrinter?.enabled}
+                >
+                  Автоматичний друк при зборі замовлення
+                </Switch>
+
+                <Input
+                  type="number"
+                  id="receiptAutoPrintDelayMs"
+                  label="Затримка перед автодруком (мс)"
+                  labelPlacement="outside"
+                  value={localConfig.receiptPrinter?.autoPrintDelayMs?.toString() || "1000"}
+                  onValueChange={(value) => updateReceiptPrinterSetting("autoPrintDelayMs", parseInt(value) || 1000)}
+                  isDisabled={!localConfig.receiptPrinter?.enabled || !localConfig.receiptPrinter?.autoPrintOnComplete}
+                  description="Час очікування після завершення збору замовлення (1000 = 1 секунда)"
+                />
+
+                <div className="flex gap-2">
+                  <Button
+                    color="primary"
+                    size="sm"
+                    onPress={handleTestReceiptPrint}
+                    isDisabled={!localConfig.receiptPrinter?.enabled}
+                  >
+                    <DynamicIcon name="receipt" size={14} />
+                    Тест чека
+                  </Button>
+                  <Button
+                    color="secondary"
+                    variant="flat"
+                    size="sm"
+                    onPress={handleFindPrinters}
+                    isDisabled={!localConfig.receiptPrinter?.enabled}
+                    className="text-gray-600"
+                  >
+                    <DynamicIcon name="search" size={14} />
+                    Знайти принтери
+                  </Button>
+                </div>
+
+                {/* 🧪 Діагностика друку — тимчасова секція */}
+                <div className="border border-warning-200 bg-warning-50 rounded-lg p-3 space-y-2">
+                  <p className="text-xs font-semibold text-warning-700">🧪 Діагностика QZ Tray (тимчасово)</p>
+                  <p className="text-xs text-warning-600">Тести 1–4: до вибраного принтера. Тест 5: зберегти у файл (без принтера). Тест 6: TCP socket.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="flat" color="warning" onPress={() => handleDebugPrint(1)}
+                      isDisabled={!localConfig.receiptPrinter?.enabled}>
+                      1: Plain string
+                    </Button>
+                    <Button size="sm" variant="flat" color="warning" onPress={() => handleDebugPrint(2)}
+                      isDisabled={!localConfig.receiptPrinter?.enabled}>
+                      2: raw/plain
+                    </Button>
+                    <Button size="sm" variant="flat" color="warning" onPress={() => handleDebugPrint(3)}
+                      isDisabled={!localConfig.receiptPrinter?.enabled}>
+                      3: raw/base64
+                    </Button>
+                    <Button size="sm" variant="flat" color="warning" onPress={() => handleDebugPrint(4)}
+                      isDisabled={!localConfig.receiptPrinter?.enabled}>
+                      4: raw/hex
+                    </Button>
+                    <Button size="sm" variant="flat" color="danger" onPress={() => handleDebugPrint(5)}>
+                      5: → файл
+                    </Button>
+                    <Button size="sm" variant="flat" color="danger" onPress={() => handleDebugPrint(6)}>
+                      6: TCP socket
+                    </Button>
+                  </div>
+                  <p className="text-xs text-warning-500">Тест 5 не потребує принтера — перевір файл <code>C:\escpos_test.bin</code></p>
+                </div>
+                <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded space-y-1">
+                  <p><strong>Термопринтер:</strong> Підтримує 58мм термопринтери Xprinter X58 та сумісні (ESC/POS).</p>
+                  <p><strong>Фіскальний чек:</strong> Дані з WordPress PDF або Dilovod JSON.</p>
+                  <p><strong>Складський чек-ліст:</strong> Список товарів із кількостями для складу.</p>
+                  <p><strong>Обидва типи:</strong> Буде надруковано обидва чеки послідовно.</p>
                 </div>
               </Card>
             </div>

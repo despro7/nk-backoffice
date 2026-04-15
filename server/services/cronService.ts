@@ -82,6 +82,7 @@ export class CronService {
   private productsSyncJob: cron.ScheduledTask | null = null;
   private stockSyncJob: cron.ScheduledTask | null = null;
   private statusCheckJob: cron.ScheduledTask | null = null;
+  private warehouseAutoFinalizeJob: cron.ScheduledTask | null = null;
   private isTaskRunning = false;
   private isProductsSyncRunning = false;
   private isStockSyncRunning = false;
@@ -475,6 +476,7 @@ export class CronService {
     void this.startProductsSync();
     void this.startStockSync();
     this.startOrderStatusCheck();
+    this.startWarehouseAutoFinalize();
   }
 
   stopAll(): void {
@@ -482,6 +484,34 @@ export class CronService {
     this.stopProductsSync();
     this.stopStockSync();
     this.stopOrderStatusCheck();
+    this.stopWarehouseAutoFinalize();
+  }
+
+  // ─── Warehouse auto-finalize о 23:55 ──────────────────────────────────────
+
+  startWarehouseAutoFinalize(): void {
+    if (this.warehouseAutoFinalizeJob) return;
+
+    // 55 23 * * * — щодня о 23:55
+    this.warehouseAutoFinalizeJob = cron.schedule('55 23 * * *', async () => {
+      console.log('🏭 [CronService] Запуск автофіналізації переміщень (23:55)...');
+      try {
+        const { warehouseAutoFinalizeService } = await import('../modules/Warehouse/WarehouseAutoFinalizeService.js');
+        const result = await warehouseAutoFinalizeService.finalizeActiveMovements();
+        console.log(`🏭 [CronService] Автофіналізація завершена: ${result.finalized} фіналізовано, ${result.failed} з помилками.`);
+      } catch (err) {
+        console.error('🏭 [CronService] Помилка автофіналізації переміщень:', err);
+      }
+    });
+
+    console.log('🏭 [CronService] Warehouse auto-finalize job запущено (23:55 щодня)');
+  }
+
+  stopWarehouseAutoFinalize(): void {
+    if (this.warehouseAutoFinalizeJob) {
+      this.warehouseAutoFinalizeJob.stop();
+      this.warehouseAutoFinalizeJob = null;
+    }
   }
 }
 

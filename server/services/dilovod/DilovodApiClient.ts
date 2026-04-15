@@ -32,7 +32,7 @@ export class DilovodApiClient {
     this.ready = this.loadConfig();
   }
 
-  private async ensureReady(): Promise<void> {
+  public async ensureReady(): Promise<void> {
     if (this.ready) {
       await this.ready;
     }
@@ -843,6 +843,104 @@ export class DilovodApiClient {
 
     const result = await this.makeRequest<any>(request);
     return this.normalizeToArray(result);
+  }
+
+  // Отримання доступних партій (goodPart) по SKU з залишками по складах
+  // Параметр asOfDate дозволяє отримати партії на конкретну дату
+  async getBatchNumbersBySku(sku: string, firmId?: string, asOfDate?: Date): Promise<Array<{
+    batchId: string;       // ID партії в Діловоді (goodPart) — для поля goodPart у payload
+    batchNumber: string;   // Людська назва партії (goodPart__pr) — для відображення у UI
+    storage: string;
+    storageDisplayName: string;
+    quantity: number;
+    firm: string;
+    firmDisplayName: string;
+  }>> {
+    await this.ensureReady();
+    
+    // Якщо дата передана, використовуємо її; інакше поточна дата
+    // Форматуємо дату до YYYY-MM-DD HH:mm:ss у часовому поясі Europe/Kyiv
+    let formattedDate: string;
+    if (asOfDate) {
+      const date = new Date(asOfDate);
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      // Конвертуємо у Kyiv timezone
+      const kyivDate = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' }));
+      formattedDate = `${kyivDate.getFullYear()}-${pad(kyivDate.getMonth() + 1)}-${pad(kyivDate.getDate())} ${pad(kyivDate.getHours())}:${pad(kyivDate.getMinutes())}:${pad(kyivDate.getSeconds())}`;
+    } else {
+      formattedDate = formatDateForDilovod('Kyiv');
+    }
+    
+    // Якщо firmId не передана, беремо з конфігурації
+    const effectiveFirmId = firmId || this.config.defaultFirmId;
+
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: {
+          type: "balance",
+          register: "goods",
+          date: formattedDate,
+          dimensions: ["good", "goodPart", "storage", "firm"]
+        },
+        fields: {
+          good: "id",
+          "good.productNum": "sku",
+          goodPart: "goodPart",
+          storage: "storage",
+          qty: "qty",
+          firm: "firm"
+        },
+        filters: [
+          {
+            alias: "sku",
+            operator: "=",
+            value: sku
+          },
+          {
+            alias: "qty",
+            operator: ">",
+            value: 0
+          },
+          ...(effectiveFirmId ? [{ alias: "firm", operator: "=", value: effectiveFirmId }] : [])
+        ]
+      }
+    };
+
+    try {
+      console.log(`📦 [DilovodApiClient] Запит партій для SKU ${sku} на дату ${formattedDate}${effectiveFirmId ? ` з фірмою ${effectiveFirmId}` : ' (без фільтра по фірмі)'}`);
+      // console.log(`📦 [DilovodApiClient] Запит:`, JSON.stringify(request, null, 2));
+      
+      const result = await this.makeRequest<any>(request);
+      
+      // console.log(`📦 [DilovodApiClient] Сира відповідь Dilovod:`, JSON.stringify(result, null, 2));
+      
+      const rows = this.normalizeToArray<any>(result);
+
+      // console.log(`📦 [DilovodApiClient] Нормалізовано ${rows.length} рядків`);
+      
+      // Трансформуємо відповідь з Dilovod в зручний формат для клієнта
+      const transformed = rows.map((row: any) => {
+        console.log(`📦 [DilovodApiClient] Обробляємо рядок:`, row);
+        return {
+          batchId: row.goodPart || '',
+          batchNumber: row.goodPart__pr || row.goodPart || 'невідома',
+          storage: row.storage || 'unknown',
+          storageDisplayName: row.storage__pr || 'невідомий склад',
+          quantity: parseFloat(row.qty) || 0,
+          firm: row.firm || 'unknown',
+          firmDisplayName: row.firm__pr || 'невідома фірма'
+        };
+      });
+      
+      console.log(`✅ [DilovodApiClient] Трансформовано ${transformed.length} партій для SKU ${sku}`);
+      return transformed;
+    } catch (error) {
+      console.error(`🚨 Помилка отримання партій для SKU ${sku}:`, error);
+      return [];
+    }
   }
 
   // Отримання поточної конфігурації
