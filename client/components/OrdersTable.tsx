@@ -10,10 +10,14 @@ import { cn } from "../lib/utils";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate, getStatusColor } from "../lib/formatUtils";
 import { formatTrackingNumberWithIcon } from "@/lib/formatUtilsJSX";
-import { generateWarehouseChecklistHTML } from "../lib/receiptTemplates";
+import { generateWarehouseChecklistHTML, generateWarehouseChecklistEscPos } from "../lib/receiptTemplates";
 import { expandProductSets } from "../lib/orderAssemblyUtils";
 import { useEquipmentFromAuth } from "@/contexts/AuthContext";
+import { useDebug } from "@/contexts/DebugContext";
 import { receiptClientService } from "../services/ReceiptService";
+import { EscPosDebugModal } from "./modals/EscPosDebugModal";
+import type { OrderChecklistItem } from "../types/orderAssembly";
+import type { WarehouseChecklistOrderInfo } from "../lib/receiptTemplates";
 
 interface OrderItem {
   productName: string;
@@ -54,15 +58,6 @@ type SortDescriptor = {
   direction: "ascending" | "descending";
 };
 
-const columns = [
-  { key: "externalId", label: "№ Замов.", className: "w-2/10" },
-  { key: "orderDate", label: "Дата створення", className: "w-3/10" },
-  { key: "ttn", label: "ТТН", className: "w-2/10" },
-  { key: "quantity", label: "Кіл-ть", className: "w-1/10" },
-  { key: "status", label: "Статус", className: "w-2/10" },
-  { key: "printReceipt", label: "Чек", className: "w-1/10" },
-];
-
 export function OrdersTable({ className, filter = "all", searchQuery = "", onTabChange }: OrdersTableProps) {
   const { lastChecked } = useServerStatus();
   const navigate = useNavigate();
@@ -88,12 +83,27 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
   const [page, setPage] = useState(1);
   const { apiCall } = useApi();
   const [equipmentState] = useEquipmentFromAuth();
+  const { isDebugMode } = useDebug();
 
   // ID замовлення, для якого зараз завантажується чек (щоб показати spinner на кнопці)
   const [loadingReceiptId, setLoadingReceiptId] = useState<string | null>(null);
 
+  // Стан debug-модалки з ESC/POS даними
+  const [debugModal, setDebugModal] = useState<{
+    isOpen: boolean;
+    escPosData: string;
+    items: OrderChecklistItem[];
+    orderInfo: WarehouseChecklistOrderInfo;
+  }>({
+    isOpen: false,
+    escPosData: '',
+    items: [],
+    orderInfo: { orderNumber: '' },
+  });
+
   /**
    * При кліку:
+   * - debug-режим → показує EscPosDebugModal з hex dump / командами / HTML-preview
    * - якщо принтер чеків налаштований і увімкнений → друкує ESC/POS через QZ Tray
    * - інакше → відкриває HTML чек-ліст у новому вікні браузера
    */
@@ -110,14 +120,34 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
 
       const order = data.data;
 
+      // Завантажуємо монолітні категорії (ті ж самі, що використовує OrderView)
+      let monolithicCategoryIds: number[] = [];
+      try {
+        const settingsRes = await apiCall('/api/settings/monolithic_assembly_categories');
+        const settingsData = await settingsRes.json();
+        if (settingsData?.value) {
+          const parsed = JSON.parse(settingsData.value);
+          monolithicCategoryIds = Array.isArray(parsed) ? parsed.map(Number) : [];
+        }
+      } catch {
+        // Якщо не вдалося — продовжуємо без монолітних категорій
+      }
+
       // Розкладаємо набори по компонентах (та сама логіка що і в OrderView)
-      const expandedItems = await expandProductSets(order.items || [], apiCall);
+      const expandedItems = await expandProductSets(order.items || [], apiCall, monolithicCategoryIds);
 
       const orderInfo = {
         orderNumber: order.orderNumber || externalId,
         ttn: order.ttn,
         customerName: order.customerName,
       };
+
+      // Debug-режим: показуємо модалку з ESC/POS даними замість реального друку
+      if (isDebugMode) {
+        const escPosData = generateWarehouseChecklistEscPos(expandedItems, orderInfo);
+        setDebugModal({ isOpen: true, escPosData, items: expandedItems, orderInfo });
+        return;
+      }
 
       const receiptPrinter = equipmentState.config?.receiptPrinter;
 
@@ -310,8 +340,26 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
     setSortDescriptor(descriptor);
   }, []);
 
+  const columns = [
+    { key: "externalId", label: "№ Замов.", className: "w-2/10" },
+    { key: "orderDate", label: "Дата створення", className: "w-3/10" },
+    { key: "ttn", label: "ТТН", className: "w-2/10" },
+    { key: "quantity", label: "Кіл-ть", className: "w-1/10 text-center 2xl:text-left" },
+    { key: "status", label: "Статус", className: "w-2/10" },
+    { key: "printReceipt", label: "Чек", className: "w-1/10" },
+  ];
+
   return (
     <div className="space-y-4">
+      {/* Debug-модалка ESC/POS (тільки в debug-режимі) */}
+      <EscPosDebugModal
+        isOpen={debugModal.isOpen}
+        onClose={() => setDebugModal((prev) => ({ ...prev, isOpen: false }))}
+        escPosData={debugModal.escPosData}
+        items={debugModal.items}
+        orderInfo={debugModal.orderInfo}
+      />
+
       {/* Панель управления */}
       <div className="flex justify-between items-center">
         <TabsFilter
@@ -399,7 +447,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
                   })}
                 </div>
               </TableCell>
-              <TableCell onClick={() => handleRowClick(order.externalId)}>
+              <TableCell onClick={() => handleRowClick(order.externalId)} className="text-center 2xl:text-left">
                 {order.quantity}
               </TableCell>
               <TableCell>
@@ -432,14 +480,23 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
               <TableCell>
                 <Button 
                   size="sm"
-                  className="min-w-3 bg-neutral-300/50 text-neutral-500"
+                  className={cn(
+                    "min-w-3 text-neutral-500",
+                    isDebugMode
+                      ? "bg-danger-100/60 text-danger-600"
+                      : "bg-neutral-300/50"
+                  )}
                   isLoading={loadingReceiptId === order.externalId}
                   onPress={(e) => {
                     handleWarehouseChecklist(order.externalId);
                   }}
                 >
                   {loadingReceiptId !== order.externalId && (
-                    <DynamicIcon name="clipboard-list" size={20} strokeWidth={1.5} />
+                    <DynamicIcon
+                      name={isDebugMode ? "bug" : "clipboard-list"}
+                      size={20}
+                      strokeWidth={1.5}
+                    />
                   )}
                 </Button>
               </TableCell>

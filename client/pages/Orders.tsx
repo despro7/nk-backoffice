@@ -85,7 +85,7 @@ export default function Orders() {
           {/* Кнопка відхилення */}
           <DeviationButton />
 
-          {isAdmin && (
+          {isAdmin() && (
           <Button
             variant="flat"
             size="md"

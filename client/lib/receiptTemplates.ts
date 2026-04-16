@@ -451,7 +451,6 @@ export function generateWarehouseChecklistEscPos(
   out += `Замовлення №${orderInfo.orderNumber}` + LINE_FEED;
   out += `Дата: ${currentDate()}  ${currentTime()}` + LINE_FEED;
   if (orderInfo.ttn) out += `ТТН: ${orderInfo.ttn}` + LINE_FEED;
-  if (orderInfo.customerName) out += wrapText(`Клієнт: ${orderInfo.customerName}`);
 
   out += divider();
 
@@ -468,7 +467,7 @@ export function generateWarehouseChecklistEscPos(
     // Склад монолітного комплекту
     if (item.composition && item.composition.length > 0) {
       item.composition.forEach((comp) => {
-        out += `     - ${comp}` + LINE_FEED;
+        out += `    - ${comp}` + LINE_FEED;
       });
     }
   });
@@ -476,7 +475,7 @@ export function generateWarehouseChecklistEscPos(
   out += divider();
 
   // Підсумок
-  const totalQty = productItems.reduce((sum, item) => sum + item.quantity, 0);
+  const totalQty = productItems.reduce((sum, item) => sum + item.quantity * (item.portionsPerItem ?? 1), 0);
   out += `Позицій: ${productItems.length}   Одиниць: ${totalQty}` + LINE_FEED;
 
   out += LINE_FEED + LINE_FEED + LINE_FEED;
@@ -494,25 +493,23 @@ export function generateWarehouseChecklistHTML(
   orderInfo: WarehouseChecklistOrderInfo,
 ): string {
   const productItems = items.filter((item) => item.type === 'product');
-  const totalQty = productItems.reduce((sum, item) => sum + item.quantity, 0);
+  const totalQty = productItems.reduce((sum, item) => sum + item.quantity * (item.portionsPerItem ?? 1), 0);
 
   const rowsHTML = productItems
     .map(
-      (item, idx) => `
+      (item) => `
     <tr>
-      <td style="text-align:center; width:32px;">${idx + 1}</td>
       <td>
-        <strong>${item.name}</strong>
+        <span style="font-size:16px; font-weight:bold;">${item.name}</span>
         ${
           item.composition && item.composition.length > 0
-            ? `<ul style="margin:2px 0 0 16px; padding:0; font-size:11px; color:#555;">
+            ? `<ul style="list-style-type: disc; margin:4px 0 0 14px; padding:0; font-size:14px; color:#333;">
                 ${item.composition.map((c) => `<li>${c}</li>`).join('')}
                </ul>`
             : ''
         }
       </td>
-      <td style="text-align:center; font-size:18px; font-weight:bold; width:60px;">${item.quantity}</td>
-      <td style="text-align:center; width:40px;"><span style="display:inline-block; width:22px; height:22px; border:2px solid #333; border-radius:3px;"></span></td>
+      <td style="text-align:center; font-size:16px; width:40px;">${item.quantity}</td>
     </tr>
   `,
     )
@@ -526,12 +523,16 @@ export function generateWarehouseChecklistHTML(
       <title>Складський чек-ліст №${orderInfo.orderNumber}</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; font-size: 14px; padding: 20px; }
+        body { font-family: monospace, "Courier New", Courier; font-size: 14px; padding: 20px; }
         h2 { font-size: 20px; margin-bottom: 6px; }
-        .meta { font-size: 13px; color: #555; margin-bottom: 12px; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-        th { background: #f0f0f0; font-weight: 600; }
-        th, td { border: 1px solid #ccc; padding: 6px 8px; vertical-align: middle; }
+        .meta { font-size: 14px; color: #555; margin-bottom: 16px; }
+				.meta p { margin-bottom: 4px; }
+        table { width: 100%; border: none; border-collapse: collapse; margin-bottom: 12px; }
+        th { background: #f0f0f0; font-weight: 600; text-align: left; }
+        th, td { border-bottom: 1px solid #ccc; padding: 6px 8px; vertical-align: middle; }
+				td:first-child { border-right: 1px solid #ccc; padding-left: 0; }
+				td:last-child { padding-right: 0; }
+				tr:last-child td { border-bottom: none; }
         .footer { font-size: 13px; color: #333; border-top: 2px solid #333; padding-top: 8px; }
         @media print {
           body { padding: 8px; }
@@ -539,22 +540,12 @@ export function generateWarehouseChecklistHTML(
       </style>
     </head>
     <body>
-      <h2>Складський чек-ліст</h2>
+      <h2>Замовлення №${orderInfo.orderNumber}</h2>
       <div class="meta">
-        <strong>Замовлення №${orderInfo.orderNumber}</strong>
-        &nbsp;|&nbsp; Дата: ${currentDate()} ${currentTime()}
-        ${orderInfo.ttn ? `&nbsp;|&nbsp; ТТН: ${orderInfo.ttn}` : ''}
-        ${orderInfo.customerName ? `&nbsp;|&nbsp; Клієнт: ${orderInfo.customerName}` : ''}
+        <p>Дата: ${currentDate()} ${currentTime()}</p>
+        ${orderInfo.ttn ? `<p>ТТН: ${orderInfo.ttn.slice(0, 2)} ${orderInfo.ttn.slice(2, 6)} ${orderInfo.ttn.slice(6, 10)} ${orderInfo.ttn.slice(10, 14)}</p>` : ''}
       </div>
       <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Назва товару</th>
-            <th>К-сть</th>
-            <th>✓</th>
-          </tr>
-        </thead>
         <tbody>
           ${rowsHTML}
         </tbody>

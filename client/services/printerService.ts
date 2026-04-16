@@ -238,6 +238,41 @@ class PrinterService {
     }
   }
 
+  /** Друкує HTML-рядок через QZ Tray (тип 'html'). */
+  public async printHtml(printerName: string, html: string): Promise<boolean> {
+    try {
+      if (!(await this.connect())) {
+        throw new Error("Немає з'єднання з QZ Tray");
+      }
+
+      const config = qz.configs.create(printerName) as any;
+      const printData: any[] = [{
+        type: 'html',
+        format: 'plain',
+        data: html,
+      }];
+
+      await qz.print(config, printData);
+
+      ToastService.show({
+        title: 'Друк чек-листа',
+        description: `Завдання відправлено на принтер ${printerName}`,
+        color: 'success',
+        timeout: 2000,
+      });
+      return true;
+    } catch (error) {
+      console.error('Помилка друку HTML:', error);
+      ToastService.show({
+        title: 'Помилка друку чек-листа',
+        description: error.message,
+        color: 'danger',
+        timeout: 3000,
+      });
+      return false;
+    }
+  }
+
   public async printPdf(printerName: string, base64Pdf: string): Promise<boolean> {
     try {
       if (!(await this.connect())) {
