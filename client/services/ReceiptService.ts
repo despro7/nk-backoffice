@@ -191,7 +191,7 @@ export class ReceiptClientService {
   }
 
   /**
-   * Друкує складський чек-ліст на принтер чеків (HTML через QZ Tray).
+   * Друкує складський чек-ліст на принтер чеків (ESC/POS через QZ Tray).
    */
   async printWarehouseChecklist({
     items,
@@ -199,8 +199,8 @@ export class ReceiptClientService {
     printerName,
   }: PrintWarehouseChecklistOptions): Promise<void> {
     try {
-      const html = generateWarehouseChecklistHTML(items, orderInfo);
-      await PrinterService.printHtml(printerName, html);
+      const escPos = generateWarehouseChecklistEscPos(items, orderInfo);
+      await PrinterService.printRaw(printerName, escPos);
     } catch (error) {
       console.error('[ReceiptClientService] printWarehouseChecklist error:', error);
       ToastService.show({

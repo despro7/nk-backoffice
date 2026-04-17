@@ -273,7 +273,7 @@ export function EscPosDebugModal({
       onClose={onClose}
       size="5xl"
       scrollBehavior="outside"
-      classNames={{ base: 'max-h-[95vh] mx-4' }}
+      classNames={{ base: 'max-h-[95vh] mx-4 bg-neutral-100' }}
     >
       <ModalContent>
         <ModalHeader className="flex items-center gap-2 pb-2 border-b border-neutral-100">
@@ -287,7 +287,7 @@ export function EscPosDebugModal({
         </ModalHeader>
 
         <ModalBody className="pt-3 pb-2 px-4">
-          <div className="grid grid-cols-[1fr_280px_1fr] gap-10" style={{ height: '75vh' }}>
+          <div className="grid grid-cols-[1fr_230px_1fr] gap-10" style={{ height: '75vh' }}>
 
             {/* ── Ліва панель: ESC/POS команди ── */}
             <div className="flex flex-col min-h-0">
@@ -295,7 +295,7 @@ export function EscPosDebugModal({
                 <DynamicIcon name="terminal" size={12} />
                 ESC/POS команди
               </div>
-              <div className="font-mono text-xs overflow-y-auto flex-1 bg-neutral-50 rounded-lg p-3 border border-neutral-200">
+              <div className="font-mono text-xs overflow-y-auto flex-1 bg-neutral-50 rounded p-3 border border-neutral-200">
                 {commands.map((cmd, idx) => {
                   if (cmd.type === 'lf') {
                     return (
@@ -330,7 +330,7 @@ export function EscPosDebugModal({
                 <DynamicIcon name="receipt" size={12} />
                 Термочек
               </div>
-              <div className="overflow-y-auto flex-1 bg-white rounded-lg border border-neutral-200 shadow-inner">
+              <div className="overflow-y-auto flex-1 bg-white rounded border border-neutral-200 shadow-inner">
                 {/* Імітація термопаперу */}
                 <div
                   className="mx-auto py-3 px-2"
@@ -366,7 +366,7 @@ export function EscPosDebugModal({
                 <DynamicIcon name="file-text" size={12} />
                 HTML Preview
               </div>
-              <div className="flex-1 border border-neutral-200 rounded-lg overflow-hidden">
+              <div className="flex-1 border border-neutral-200 rounded overflow-hidden">
                 <iframe
                   title="Warehouse checklist preview"
                   srcDoc={htmlPreview}

@@ -448,9 +448,9 @@ export function generateWarehouseChecklistEscPos(
   out += divider();
 
   // Заголовок
-  out += `Замовлення №${orderInfo.orderNumber}` + LINE_FEED;
-  out += `Дата: ${currentDate()}  ${currentTime()}` + LINE_FEED;
-  if (orderInfo.ttn) out += `ТТН: ${orderInfo.ttn}` + LINE_FEED;
+  out += `Замовлення #${orderInfo.orderNumber}` + LINE_FEED;
+  out += `Дата: ${currentDate()}, ${currentTime()}` + LINE_FEED;
+  if (orderInfo.ttn) out += `ТТН: ${orderInfo.ttn.slice(0, 2)} ${orderInfo.ttn.slice(2, 6)} ${orderInfo.ttn.slice(6, 10)} ${orderInfo.ttn.slice(10, 14)}` + LINE_FEED;
 
   out += divider();
 
@@ -459,15 +459,31 @@ export function generateWarehouseChecklistEscPos(
   productItems.forEach((item, idx) => {
     const num = padLeft(`${idx + 1}.`, 3);
     const qty = `x${item.quantity}`;
-    const nameWidth = LINE_WIDTH - num.length - qty.length - 1;
-    const name = item.name.length > nameWidth ? item.name.substring(0, nameWidth - 1) + '…' : padRight(item.name, nameWidth);
+    const nameWidth = LINE_WIDTH - num.length - qty.length - 2;
+    const name = item.name.length > nameWidth ? item.name.substring(0, nameWidth - 1) + '.' : padRight(item.name, nameWidth);
 
     out += `${num} ${name} ${qty}` + LINE_FEED;
 
-    // Склад монолітного комплекту
+    // Склад монолітного комплекту (відступ "    - " = 6 символів)
     if (item.composition && item.composition.length > 0) {
+      // Доступна ширина після відступу "    - " (6 символів)
+      const compWidth = LINE_WIDTH - 6;
       item.composition.forEach((comp) => {
-        out += `    - ${comp}` + LINE_FEED;
+        // Розбиваємо "Назва продукту x1" на назву і кількість
+        const compMatch = comp.match(/^(.+?)\s+(x\d+)$/);
+        if (compMatch) {
+          const [, cName, cQty] = compMatch;
+          // Залишаємо мінімум 1 пробіл між назвою і кількістю
+          const maxNameLen = compWidth - cQty.length - 1;
+          const truncName = cName.length > maxNameLen
+            ? cName.substring(0, maxNameLen - 1) + '.'
+            : cName;
+          out += `    - ${rowSpaceBetween(truncName, cQty, compWidth)}` + LINE_FEED;
+        } else {
+          // Якщо формат нестандартний — просто обрізаємо
+          const truncComp = comp.length > compWidth ? comp.substring(0, compWidth - 1) + '.' : comp;
+          out += `    - ${truncComp}` + LINE_FEED;
+        }
       });
     }
   });
@@ -500,16 +516,16 @@ export function generateWarehouseChecklistHTML(
       (item) => `
     <tr>
       <td>
-        <span style="font-size:16px; font-weight:bold;">${item.name}</span>
+        <span style="font-size:13px; font-weight:bold;">${item.name}</span>
         ${
           item.composition && item.composition.length > 0
-            ? `<ul style="list-style-type: disc; margin:4px 0 0 14px; padding:0; font-size:14px; color:#333;">
+            ? `<ul style="list-style-type: none; margin:4px 0 0 14px; padding:0; font-size:11px; color:#333;">
                 ${item.composition.map((c) => `<li>${c}</li>`).join('')}
                </ul>`
             : ''
         }
       </td>
-      <td style="text-align:center; font-size:16px; width:40px;">${item.quantity}</td>
+      <td style="text-align:center; font-size:13px; width:40px;">${item.quantity}</td>
     </tr>
   `,
     )
@@ -523,7 +539,7 @@ export function generateWarehouseChecklistHTML(
       <title>Складський чек-ліст №${orderInfo.orderNumber}</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: monospace, "Courier New", Courier; font-size: 14px; padding: 20px; }
+        body { font-family: "Courier New", Courier, monospace; font-size: 14px; padding: 20px; }
         h2 { font-size: 20px; margin-bottom: 6px; }
         .meta { font-size: 14px; color: #555; margin-bottom: 16px; }
 				.meta p { margin-bottom: 4px; }
@@ -535,7 +551,7 @@ export function generateWarehouseChecklistHTML(
 				tr:last-child td { border-bottom: none; }
         .footer { font-size: 13px; color: #333; border-top: 2px solid #333; padding-top: 8px; }
         @media print {
-          body { padding: 8px; }
+          body { padding: 0; margin: 0; }
         }
       </style>
     </head>
