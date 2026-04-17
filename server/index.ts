@@ -19,6 +19,7 @@ import shippingProvidersRoutes from './routes/shipping-providers.js';
 import qzTrayRoutes from './routes/qz-tray.js';
 import goodsCacheRouter from './routes/goods-cache.js';
 import { dilovodRouter } from './routes/dilovod.js';
+import cashInRouter from './routes/dilovod-cash-in.js';
 import { salesdriveRouter } from './routes/salesdrive.js';
 import metaLogsRouter from './routes/meta-logs.js';
 import wordpressReceiptRoutes from './routes/wordpress-receipt.js';
@@ -155,6 +156,9 @@ export function createServer() {
 
   // Dilovod routes
   app.use("/api/dilovod", dilovodRouter);
+
+  // Cash-In Import routes (реєстр переказів → documents.cashIn)
+  app.use("/api/dilovod/cash-in", cashInRouter);
 
   // SalesDrive cache routes
   app.use("/api/salesdrive", salesdriveRouter);

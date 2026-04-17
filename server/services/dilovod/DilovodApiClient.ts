@@ -298,6 +298,9 @@ export class DilovodApiClient {
     };
 
     const resp = await this.makeRequest<any>(request);
+    if (resp?.error) {
+      throw new Error(`Dilovod API error: ${resp.error}`);
+    }
     return this.normalizeToArray<{ id: string; name: string; phone: string }>(resp);
   }
 

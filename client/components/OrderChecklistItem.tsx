@@ -1,6 +1,5 @@
 import { Check, X } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useDebug } from '@/contexts/DebugContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
 

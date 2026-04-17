@@ -6,7 +6,18 @@
 
 ---
 
-## 2026-04-15 — Рефакторинг кнопки чека в OrderViewHeader + підтримка warehouse чек-листа
+## 2026-04-17 — Cash-In Import: перевірка дублікатів + виправлення паралельних запитів до Dilovod
+**Files:** `shared/types/cashIn.ts`, `server/services/dilovod/CashInImportService.ts`, `server/services/dilovod/CashInExportBuilder.ts`, `server/services/dilovod/DilovodApiClient.ts`, `client/pages/CashInImport/components/CashInPreviewTable.tsx`, `client/pages/CashInImport/components/CashInSummary.tsx`
+
+- Додано статус `duplicate_cash_in` — якщо для замовлення вже заповнено `dilovodCashInDate` в БД, рядок позначається як можливий дублікат.
+- В таблиці preview для рядків-дублікатів відображається жовтий банер з попередженням та тоглом "Все одно відправити" (за замовчуванням вимкнений).
+- `CashInSummary` включає дублікати до відправки лише якщо менеджер явно увімкнув тогл; показує чіп "Дублікати: N".
+- Виправлено `buildPayloads`: замінено `Promise.all` на послідовний `for`-цикл — Dilovod повертав `multithreadApiSession blocked` при паралельних запитах.
+- Виправлено `findPersonByPhone` в `DilovodApiClient`: при відповіді `{"error":"..."}` тепер кидається виключення замість повернення `undefined`.
+
+---
+
+
 **Files:** `client/components/OrderViewHeader.tsx`, `client/hooks/useReceiptPrinting.ts`, `client/pages/OrderView.tsx`
 
 - Видалено legacy-логіку `handleFetchReceipt` / `tryOpenWordPressPDF` з `OrderViewHeader` — замінено на props-based підхід.
