@@ -669,9 +669,37 @@ export class DilovodService {
     }
   }
 
+  // Отримання зведених залишків для списку SKU на конкретну дату (один запит до Dilovod)
+  async getStockBalanceForSkus(
+    skus: string[],
+    asOfDate?: Date,
+  ): Promise<Array<{ sku: string; mainStorage: number; smallStorage: number; total: number }>> {
+    try {
+      const firmId = this.apiClient.getConfig().defaultFirmId;
+      const label = asOfDate ? asOfDate.toLocaleString('uk-UA') : 'поточна';
+      console.log(`📊 [Dilovod] Запит залишків для ${skus.length} SKU на дату: ${label}`);
+      const stockResponse = await this.apiClient.getStockBalance(skus, firmId, asOfDate);
+      const processed = this.dataProcessor.processStockBalance(stockResponse);
+
+      // Для SKU без відповіді від Dilovod — встановлюємо 0
+      const bySkuMap = new Map(processed.map(item => [item.sku, item]));
+      return skus.map(sku => {
+        const item = bySkuMap.get(sku);
+        return {
+          sku,
+          mainStorage: item?.mainStorage ?? 0,
+          smallStorage: item?.smallStorage ?? 0,
+          total: item?.total ?? 0,
+        };
+      });
+    } catch (error) {
+      console.error('🚨 [Dilovod] Помилка отримання залишків для SKU:', error);
+      throw error;
+    }
+  }
+
   // Отримання доступних партій (goodPart) по SKU з залишками по складах
-  async getBatchNumbersBySku(sku: string, firmId?: string, asOfDate?: Date): Promise<Array<{
-    batchId: string;
+  async getBatchNumbersBySku(sku: string, firmId?: string, asOfDate?: Date): Promise<Array<{    batchId: string;
     batchNumber: string;
     storage: string;
     storageDisplayName: string;

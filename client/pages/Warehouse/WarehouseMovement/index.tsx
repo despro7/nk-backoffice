@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo } from 'react';
+import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { Tabs, Tab } from '@heroui/react';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
@@ -69,6 +69,20 @@ export default function WarehouseMovement() {
   const [sortBy, setSortBy] = useState<'name' | 'sku' | 'stock'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
+  // Режим відображення залишків: на поточну дату або на дату переміщення
+  const [stockDateMode, setStockDateMode] = useState<'movement' | 'now'>('now');
+
+  const handleStockDateModeChange = useCallback((mode: 'movement' | 'now') => {
+    setStockDateMode(mode);
+    // Оновлюємо stockData (стовпець залишків у списку) з відповідною датою
+    const asOfDate = mode === 'movement' ? mov.selectedDateTime : undefined;
+    mov.refreshStockData(mov.products, asOfDate);
+    // Також оновлюємо залишки партій для вже відкритих товарів
+    if (mov.selectedProductIds.size > 0) {
+      mov.refreshBatchQuantities(mov.products, mov.selectedProductIds, asOfDate);
+    }
+  }, [mov]);
+
   const sortedFilteredProducts = useMemo(() => {
     const items = [...mov.filteredProducts];
     const dir = sortDirection === 'asc' ? 1 : -1;
@@ -95,6 +109,7 @@ export default function WarehouseMovement() {
   const [payloadPreview, setPayloadPreview] = useState<DilovodMovementPayload | null>(null);
   const [isLoadingPayload, setIsLoadingPayload] = useState(false);
   const [isSendingToDialovod, setIsSendingToDilovod] = useState(false);
+  const [isFinalizingLocally, setIsFinalizingLocally] = useState(false);
   // Модалка підтвердження фінальної відправки
   const [showConfirmFinalize, setShowConfirmFinalize] = useState(false);
 
@@ -183,6 +198,29 @@ export default function WarehouseMovement() {
 
   /** Фінальна відправка (isFinal=true) — показуємо підтвердження перед відправкою */
   const handleSendFinal = () => setShowConfirmFinalize(true);
+
+  /** Завершити локально без відправки в Діловод */
+  const handleFinalizeLocally = async () => {
+    if (!mov.savedDraft) return;
+    setIsFinalizingLocally(true);
+    try {
+      const res = await fetch(`/api/warehouse/${mov.savedDraft.id}/finalize-local`, {
+        method: 'PATCH',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (data.success) {
+        ToastService.show({ title: 'Переміщення завершено локально', color: 'success' });
+        mov.setSavedDraft({ ...mov.savedDraft, status: 'finalized' });
+      } else {
+        ToastService.show({ title: data.error ?? 'Помилка при завершенні', color: 'danger' });
+      }
+    } catch {
+      ToastService.show({ title: 'Помилка мережі', color: 'danger' });
+    } finally {
+      setIsFinalizingLocally(false);
+    }
+  };
   /** Dry-run: завантажити payload із сервера та відкрити модалку (тільки адмін) */
   const handleShowPayload = async () => {
     // Якщо чернетки ще немає в БД (id=0 або відсутня) — спочатку зберегти
@@ -263,14 +301,16 @@ export default function WarehouseMovement() {
           {/* Верхня панель дій */}
           {mov.products.length > 0 && activeTab === 'current' && (
             <MovementTopActions
-              onRefreshBalances={guard.guardAction(mov.handleSyncBalances, { 
-                message: 'Ви маєте незбережені зміни. Зберегти перед оновленням товарів?',
-                saveText: 'Зберегти і оновити',
-                leaveText: 'Оновити без збереження',
-                cancelText: 'Скасувати',
-                modalSize: 'xl',
-
-              })}
+              onRefreshBalances={guard.guardAction(
+                () => mov.handleSyncBalances(stockDateMode, mov.selectedDateTime),
+                { 
+                  message: 'Ви маєте незбережені зміни. Зберегти перед оновленням товарів?',
+                  saveText: 'Зберегти і оновити',
+                  leaveText: 'Оновити без збереження',
+                  cancelText: 'Скасувати',
+                  modalSize: 'xl',
+                }
+              )}
               onSyncFromDilovod={guard.guardAction(mov.handleSyncStockFromDilovod, {
                 message: 'Ви маєте незбережені зміни. Зберегти перед синхронізацією з Діловодом?',
                 saveText: 'Зберегти і синхронізувати',
@@ -340,12 +380,21 @@ export default function WarehouseMovement() {
             searchQuery={mov.searchQuery}
             onSearchChange={mov.setSearchQuery}
             selectedDate={mov.selectedDateTime}
-            onDateChange={mov.handleDateChange}
+            onDateChange={(date) => {
+              mov.handleDateChange(date, stockDateMode);
+              // Якщо залишки показуються на дату переміщення — оновлюємо stockData теж
+              if (stockDateMode === 'movement') {
+                mov.refreshStockData(mov.products, date);
+              }
+            }}
             isRefreshingBatches={mov.isRefreshingBatches}
+            isRefreshingStock={mov.isRefreshingStock}
             sortBy={sortBy}
             sortDirection={sortDirection}
             onSortByChange={setSortBy}
             onSortDirectionChange={setSortDirection}
+            stockDateMode={stockDateMode}
+            onStockDateModeChange={handleStockDateModeChange}
           />
         )}
 
@@ -400,6 +449,8 @@ export default function WarehouseMovement() {
             onSaveDraft={mov.handleSaveDraft}
             onSendIntermediate={handleSendIntermediate}
             onSendFinal={handleSendFinal}
+            onFinalizeLocally={handleFinalizeLocally}
+            isFinalizingLocally={isFinalizingLocally}
             isAdmin={isAdmin}
             isDebugMode={isDebugMode}
             onShowPayload={handleShowPayload}

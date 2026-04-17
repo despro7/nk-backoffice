@@ -34,6 +34,10 @@ export interface UseMovementProductsReturn {
     asOfDate?: Date,
   ) => Promise<void>;
   loadDraftIntoProducts: (prods: MovementProduct[], draftItems: any[], asOfDate?: Date) => Promise<void>;
+  /** Оновлює stockData (mainStock/smallStock) для всіх товарів на задану дату */
+  refreshStockData: (allProds: MovementProduct[], asOfDate?: Date) => Promise<void>;
+  /** true поки виконується refreshStockData */
+  isRefreshingStock: boolean;
   /** Згортає акордіони товарів без партій (не впливають на isDirty) */
   collapseEmptyAccordionsWithProducts: (prods: MovementProduct[]) => void;
 }
@@ -46,6 +50,7 @@ export const useMovementProducts = (
   const [searchQuery, setSearchQuery] = useState('');
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState<string | null>(null);
+  const [isRefreshingStock, setIsRefreshingStock] = useState(false);
 
   // Snapshot для відстеження незбережених змін (isDirty)
   const lastSavedSnapshotRef = useRef<string>('');
@@ -295,6 +300,75 @@ export const useMovementProducts = (
     [refreshBatchQuantities],
   );
 
+  // ─────────────────────────────────────────────────────────────────────
+  // Оновлення stockData (mainStock / smallStock) для всіх товарів у списку
+  // Робить один запит до /api/warehouse/stock-snapshot з усіма SKU
+  // Якщо asOfDate не передана — перезавантажує товари з БД (поточна дата)
+  // ─────────────────────────────────────────────────────────────────────
+
+  const refreshStockData = useCallback(
+    async (allProds: MovementProduct[], asOfDate?: Date): Promise<void> => {
+      if (allProds.length === 0) return;
+
+      // Якщо дата не передана (режим "поточна дата") — оновлюємо з нашої БД
+      if (!asOfDate) {
+        setIsRefreshingStock(true);
+        try {
+          await loadProducts();
+        } finally {
+          setIsRefreshingStock(false);
+        }
+        return;
+      }
+
+      LoggingService.warehouseMovementLog(
+        `📊 Оновлення stockData для ${allProds.length} товарів на дату ${asOfDate.toLocaleString('uk-UA')}...`,
+      );
+
+      setIsRefreshingStock(true);
+      try {
+        const skus = allProds.map(p => p.sku).join(',');
+        const url = new URL('/api/warehouse/stock-snapshot', window.location.origin);
+        url.searchParams.set('skus', skus);
+        url.searchParams.set('asOfDate', asOfDate.toISOString());
+
+        const response = await fetch(url.toString(), {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+
+        const stocks: Record<string, { mainStock: number; smallStock: number }> = data.stocks ?? {};
+
+        setProducts(prev =>
+          prev.map(p => {
+            const s = stocks[p.sku];
+            if (!s) return p;
+            const { portionsPerBox } = p;
+            return {
+              ...p,
+              stockData: {
+                mainStock: s.mainStock,
+                smallStock: s.smallStock,
+              },
+            };
+            void portionsPerBox; // portionsPerBox не змінюється
+          }),
+        );
+
+        LoggingService.warehouseMovementLog(`✅ stockData оновлено для ${allProds.length} товарів`);
+      } catch (err: any) {
+        LoggingService.warehouseMovementLog(`🚨 Помилка оновлення stockData: ${err?.message}`);
+        throw err;
+      } finally {
+        setIsRefreshingStock(false);
+      }
+    },
+    [loadProducts],
+  );
+
   return {
     products,
     setProducts,
@@ -311,6 +385,8 @@ export const useMovementProducts = (
     handleToggleProduct,
     handleProductChange,
     refreshBatchQuantities,
+    refreshStockData,
+    isRefreshingStock,
     loadDraftIntoProducts,
     collapseEmptyAccordionsWithProducts,
   };

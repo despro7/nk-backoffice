@@ -416,8 +416,19 @@ export class DilovodApiClient {
   }
 
   // Отримання залишків товарів
-  async getStockBalance(skuList: string[], firmId?: string): Promise<any[]> {
+  async getStockBalance(skuList: string[], firmId?: string, asOfDate?: Date): Promise<any[]> {
     await this.ensureReady();
+
+    // Якщо дата передана — форматуємо у Kyiv timezone; інакше поточна дата
+    let formattedDate: string;
+    if (asOfDate) {
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const kyivDate = new Date(asOfDate.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' }));
+      formattedDate = `${kyivDate.getFullYear()}-${pad(kyivDate.getMonth() + 1)}-${pad(kyivDate.getDate())} ${pad(kyivDate.getHours())}:${pad(kyivDate.getMinutes())}:${pad(kyivDate.getSeconds())}`;
+    } else {
+      formattedDate = formatDateForDilovod('Kyiv');
+    }
+
     const request: DilovodApiRequest = {
       version: "0.25",
       key: this.apiKey,
@@ -426,7 +437,7 @@ export class DilovodApiClient {
         from: {
           "type": "balance",
           "register": "goods",
-          "date": formatDateForDilovod('Kyiv'),
+          "date": formattedDate,
           "dimensions": ["good", "storage", "firm"]
         },
         fields: {

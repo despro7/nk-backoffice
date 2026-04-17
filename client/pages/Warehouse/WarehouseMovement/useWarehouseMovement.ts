@@ -49,7 +49,7 @@ export interface UseWarehouseMovementReturn {
   selectedDateTime: Date;
   setSelectedDateTime: (date: Date) => void;
   isRefreshingBatches: boolean;
-  handleDateChange: (date: Date) => void;
+  handleDateChange: (date: Date, stockDateMode?: 'movement' | 'now') => void;
 
   // Модалки підтвердження
   showConfirmFinish: boolean;
@@ -63,6 +63,9 @@ export interface UseWarehouseMovementReturn {
 
   // Handlers
   loadProducts: () => Promise<MovementProduct[]>;
+  refreshBatchQuantities: (prods: MovementProduct[], selectedIds: Set<string>, asOfDate?: Date) => Promise<void>;
+  refreshStockData: (allProds: MovementProduct[], asOfDate?: Date) => Promise<void>;
+  isRefreshingStock: boolean;
   loadHistory: () => Promise<void>;
   loadMovementFromHistory: (doc: any) => Promise<void>;
   handleToggleProduct: (id: string) => void;
@@ -70,7 +73,7 @@ export interface UseWarehouseMovementReturn {
   handleFinish: () => Promise<void>;
   handleReset: () => Promise<void>;
   handleSaveDraft: () => Promise<MovementDraft | null>;
-  handleSyncBalances: () => Promise<void>;
+  handleSyncBalances: (stockDateMode?: 'movement' | 'now', selectedDateTime?: Date) => Promise<void>;
   handleSyncStockFromDilovod: () => Promise<void>;
   loadDraftObject: (draft: MovementDraft) => Promise<void>;
 
@@ -323,11 +326,14 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
     await draft$.handleReset();
   };
 
-  const handleSyncBalances = (): Promise<void> =>
+  const handleSyncBalances = (stockDateMode?: 'movement' | 'now', selectedDateTime?: Date): Promise<void> =>
     sync$.handleSyncBalances(
       products$.loadProducts,
       draft$.savedDraft,
       products$.loadDraftIntoProducts,
+      products$.refreshStockData,
+      stockDateMode,
+      selectedDateTime,
     );
 
   const handleSyncStockFromDilovod = (): Promise<void> =>
@@ -337,13 +343,14 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
       products$.loadDraftIntoProducts,
     );
 
-  const handleDateChange = (date: Date): void =>
+  const handleDateChange = (date: Date, stockDateMode?: 'movement' | 'now'): void =>
     sync$.handleDateChange(
       date,
       products$.products,
       products$.selectedProductIds,
       products$.refreshBatchQuantities,
       draft$.setSelectedDateTime,
+      stockDateMode,
     );
 
   const loadMovementFromHistory = (doc: any): Promise<void> =>
@@ -396,6 +403,9 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
     historyLoading: false,
 
     loadProducts: products$.loadProducts,
+    refreshBatchQuantities: products$.refreshBatchQuantities,
+    refreshStockData: products$.refreshStockData,
+    isRefreshingStock: products$.isRefreshingStock,
     loadHistory,
     loadMovementFromHistory,
     handleToggleProduct: products$.handleToggleProduct,

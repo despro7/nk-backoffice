@@ -19,6 +19,9 @@ interface MovementActionBarProps {
   onSendIntermediate: () => void;
   /** Фінальна відправка (isFinal=true) — статус → 'finalized', документ блокується */
   onSendFinal: () => void;
+  /** Завершити локально без відправки в Діловод */
+  onFinalizeLocally?: () => void;
+  isFinalizingLocally?: boolean;
   /** Тільки для адмінів — відображення кнопки "Показати payload" */
   onShowPayload?: () => void;
   isAdmin?: boolean;
@@ -37,6 +40,8 @@ export const MovementActionBar = ({
   onSaveDraft,
   onSendIntermediate,
   onSendFinal,
+  onFinalizeLocally,
+  isFinalizingLocally = false,
   onShowPayload,
   isAdmin = false,
   isDebugMode = false,
@@ -62,21 +67,6 @@ export const MovementActionBar = ({
 
       {/* Права частина */}
       <div className="flex items-center gap-3 flex-wrap">
-        {/* Кнопка "Показати payload" — тільки для адміністраторів */}
-        { isDebugMode && isAdmin && onShowPayload && (
-          <Button
-            variant="flat"
-            color="default"
-            size="lg"
-            onPress={onShowPayload}
-            isLoading={isLoadingPayload}
-            // isDisabled={!hasDraft || isSending || isLoadingPayload}
-            startContent={!isLoadingPayload ? <DynamicIcon name="code-2" className="w-4 h-4" /> : undefined}
-          >
-            payload
-          </Button>
-        )}
-
         {/* Зберегти чернетку — закоментовано: автозбереження відбувається перед відправкою */}
         {canEdit && (
           <Button
@@ -120,6 +110,38 @@ export const MovementActionBar = ({
             startContent={!isSending ? <DynamicIcon name="check-circle" className="w-4 h-4" /> : undefined}
           >
             Завершити переміщення
+          </Button>
+        )}
+      </div>
+      <div className="flex items-center ml-auto gap-3 flex-wrap">
+        {/* Кнопка "Показати payload" — тільки для адміністраторів */}
+        { isDebugMode && isAdmin && onShowPayload && (
+          <Button
+            variant="flat"
+            color="primary"
+            className="bg-blue-200"
+            size="lg"
+            onPress={onShowPayload}
+            isLoading={isLoadingPayload}
+            // isDisabled={!hasDraft || isSending || isLoadingPayload}
+            startContent={!isLoadingPayload ? <DynamicIcon name="code-2" className="w-4 h-4" /> : undefined}
+          >
+            payload
+          </Button>
+        )}
+
+        {/* Завершити без Діловода — локальне завершення без відправки в ERP (лише debug-режим) */}
+        {isDebugMode && canEdit && draftStatus === 'active' && onFinalizeLocally && (
+          <Button
+            variant="solid"
+            color="danger"
+            size="lg"
+            isDisabled={isSending || isFinalizingLocally}
+            onPress={onFinalizeLocally}
+            isLoading={isFinalizingLocally}
+            startContent={!isFinalizingLocally ? <DynamicIcon name="check" className="w-4 h-4" /> : undefined}
+          >
+            Завершити без Діловода
           </Button>
         )}
       </div>

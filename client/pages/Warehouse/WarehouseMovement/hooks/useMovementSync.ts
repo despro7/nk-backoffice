@@ -19,6 +19,9 @@ export interface UseMovementSyncReturn {
     loadProducts: () => Promise<MovementProduct[]>,
     savedDraft: MovementDraft | null,
     loadDraftIntoProducts: (prods: MovementProduct[], items: any[], asOfDate?: Date) => Promise<void>,
+    refreshStockData?: (prods: MovementProduct[], asOfDate?: Date) => Promise<void>,
+    stockDateMode?: 'movement' | 'now',
+    selectedDateTime?: Date,
   ) => Promise<void>;
   handleSyncStockFromDilovod: (
     loadProducts: () => Promise<MovementProduct[]>,
@@ -35,6 +38,8 @@ export interface UseMovementSyncReturn {
       asOfDate?: Date,
     ) => Promise<void>,
     setSelectedDateTime: (date: Date) => void,
+    /** Якщо 'movement' — перераховує залишки на нову дату; якщо 'now' — не змінює дату залишків */
+    stockDateMode?: 'movement' | 'now',
   ) => void;
 }
 
@@ -73,6 +78,9 @@ export const useMovementSync = (
       loadProducts: () => Promise<MovementProduct[]>,
       savedDraft: MovementDraft | null,
       loadDraftIntoProducts: (prods: MovementProduct[], items: any[], asOfDate?: Date) => Promise<void>,
+      refreshStockData?: (prods: MovementProduct[], asOfDate?: Date) => Promise<void>,
+      stockDateMode?: 'movement' | 'now',
+      selectedDateTime?: Date,
     ): Promise<void> => {
       try {
         const prods = await loadProducts();
@@ -82,6 +90,11 @@ export const useMovementSync = (
           if (draftItems.length > 0) {
             await loadDraftIntoProducts(prods, draftItems);
           }
+        }
+
+        // Якщо залишки показуються на дату переміщення — перезавантажуємо stockData на ту ж дату
+        if (stockDateMode === 'movement' && selectedDateTime && refreshStockData && prods.length > 0) {
+          await refreshStockData(prods, selectedDateTime);
         }
 
         ToastService.show({
@@ -178,6 +191,7 @@ export const useMovementSync = (
         asOfDate?: Date,
       ) => Promise<void>,
       setSelectedDateTime: (date: Date) => void,
+      stockDateMode: 'movement' | 'now' = 'now',
     ): void => {
       setSelectedDateTime(date);
 
@@ -185,6 +199,9 @@ export const useMovementSync = (
       if (dateDebounceRef.current !== null) {
         clearTimeout(dateDebounceRef.current);
       }
+
+      // Якщо режим "на поточну дату" — залишки не перераховуємо при зміні дати переміщення
+      if (stockDateMode === 'now') return;
 
       // Перераховуємо залишки лише якщо є вибрані товари з партіями
       const hasSelectedWithBatches = products.some(

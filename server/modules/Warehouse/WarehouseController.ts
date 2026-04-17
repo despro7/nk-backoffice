@@ -246,6 +246,57 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
   }
 });
 
+// Отримати зведені залишки для списку SKU на конкретну дату (один запит до Dilovod)
+// GET /api/warehouse/stock-snapshot?skus=sku1,sku2,...&asOfDate=2026-04-14T09:00:00Z
+router.get('/stock-snapshot', authenticateToken, async (req, res) => {
+  try {
+    const { skus: skusRaw, asOfDate: asOfDateRaw } = req.query;
+
+    if (!skusRaw || typeof skusRaw !== 'string') {
+      return res.status(400).json({ error: 'Parameter "skus" is required (comma-separated list)' });
+    }
+
+    const skus = skusRaw.split(',').map(s => s.trim()).filter(Boolean);
+    if (skus.length === 0) {
+      return res.status(400).json({ error: 'Parameter "skus" must contain at least one SKU' });
+    }
+
+    let parsedDate: Date | undefined;
+    if (asOfDateRaw && typeof asOfDateRaw === 'string') {
+      parsedDate = new Date(asOfDateRaw);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid "asOfDate" format. Expected ISO string.' });
+      }
+    }
+
+    const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
+    const dilovodService = new DilovodService();
+
+    const label = parsedDate ? parsedDate.toLocaleString('uk-UA') : 'поточна';
+    console.log(`📊 [Warehouse] GET /stock-snapshot — ${skus.length} SKU на дату: ${label}`);
+
+    const balances = await dilovodService.getStockBalanceForSkus(skus, parsedDate);
+
+    // Перетворюємо на словник { [sku]: { mainStock, smallStock } } для зручності на клієнті
+    const result: Record<string, { mainStock: number; smallStock: number }> = {};
+    for (const item of balances) {
+      result[item.sku] = {
+        mainStock: item.mainStorage,
+        smallStock: item.smallStorage,
+      };
+    }
+
+    console.log(`✅ [Warehouse] stock-snapshot: повернено залишки для ${balances.length} SKU`);
+    res.json({ success: true, asOfDate: parsedDate?.toISOString() ?? null, stocks: result });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Помилка при отриманні stock-snapshot:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Внутрішня помилка сервера',
+    });
+  }
+});
+
 // Отримати історію переміщень з Діловода
 router.get('/history', authenticateToken, async (req, res) => {
   try {
@@ -374,6 +425,56 @@ router.get('/details/:id', authenticateToken, async (req, res) => {
     console.error('🚨 [Warehouse] Помилка при отриманні деталей переміщення:', error);
     res.status(500).json({ 
       error: error instanceof Error ? error.message : 'Внутрішня помилка сервера' 
+    });
+  }
+});
+
+// PATCH /:id/finalize-local — завершити переміщення локально без відправки в Діловод
+router.patch('/:id/finalize-local', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ error: 'Invalid movement ID' });
+    }
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Перевіряємо що документ існує, належить юзеру і ще не завершений
+    const existing = await prisma.warehouseMovement.findFirst({
+      where: {
+        id: Number(id),
+        createdBy: userId,
+        status: { in: ['draft', 'active'] },
+      },
+      select: { id: true, status: true },
+    });
+
+    if (!existing) {
+      const anyDoc = await prisma.warehouseMovement.findFirst({
+        where: { id: Number(id), createdBy: userId },
+        select: { status: true },
+      });
+      if (anyDoc?.status === 'finalized') {
+        return res.status(409).json({ error: 'Документ вже завершено' });
+      }
+      return res.status(404).json({ error: 'Документ не знайдено або немає доступу' });
+    }
+
+    const updated = await prisma.warehouseMovement.update({
+      where: { id: Number(id) },
+      data: { status: 'finalized' },
+    });
+
+    console.log(`✅ [Warehouse] Документ #${id} завершено локально (без Діловода)`);
+    res.json({ success: true, id: updated.id, status: updated.status });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Помилка при локальному завершенні:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Внутрішня помилка сервера',
     });
   }
 });

@@ -1,5 +1,5 @@
 import type { DateValue } from '@internationalized/date';
-import { Button, Input, DatePicker, Spinner } from '@heroui/react';
+import { Button, Input, DatePicker, Spinner, Select, SelectItem } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { I18nProvider } from '@react-aria/i18n';
 import { getLocalTimeZone, now, today, parseZonedDateTime } from '@internationalized/date';
@@ -20,6 +20,11 @@ interface MovementFilterBarProps {
   onSortByChange?: (value: 'name' | 'sku' | 'stock') => void;
   sortDirection?: 'asc' | 'desc';
   onSortDirectionChange?: (value: 'asc' | 'desc') => void;
+  /** Режим дати для відображення залишків: на дату переміщення або на поточну дату */
+  stockDateMode?: 'movement' | 'now';
+  onStockDateModeChange?: (mode: 'movement' | 'now') => void;
+  /** true поки виконується запит на оновлення залишків stockData */
+  isRefreshingStock?: boolean;
 }
 
 export const MovementFilterBar = ({
@@ -32,6 +37,9 @@ export const MovementFilterBar = ({
   onSortByChange,
   sortDirection = 'asc',
   onSortDirectionChange,
+  stockDateMode = 'now',
+  onStockDateModeChange,
+  isRefreshingStock = false,
 }: MovementFilterBarProps) => {
   const sortOptions: SortOption<'name' | 'sku' | 'stock'>[] = [
     { key: 'name_asc',  label: 'За назвою [↓]' },
@@ -107,6 +115,39 @@ export const MovementFilterBar = ({
           inputWrapper: "hover:bg-white! focus-within:bg-white!",
         }}
       />
+
+      {/* Фільтр "Залишки на дату" */}
+      {onStockDateModeChange && (
+        <div className="flex items-center gap-2 shrink-0">
+          <Select
+            aria-label="Залишки на дату"
+            label="Залишки на дату"
+            labelPlacement="inside"
+            size="sm"
+            selectedKeys={[stockDateMode]}
+            onSelectionChange={(keys) => {
+              const val = Array.from(keys)[0] as 'movement' | 'now';
+              if (val) onStockDateModeChange(val);
+            }}
+            disallowEmptySelection
+            isDisabled={isRefreshingStock}
+            classNames={{
+              base: "w-[210px]",
+              trigger: "hover:bg-white! transition-colors duration-200 rounded-[14px]",
+            }}
+          >
+            <SelectItem key="now">На поточну дату</SelectItem>
+            <SelectItem key="movement">На дату переміщення</SelectItem>
+          </Select>
+          {/* Індикатор завантаження залишків */}
+          <div className="w-5 flex items-center justify-center">
+            {isRefreshingStock
+              ? <Spinner size="sm" color="primary" />
+              : <DynamicIcon name="check" className="w-4 h-4 text-success-500 opacity-70" />
+            }
+          </div>
+        </div>
+      )}
 
       {/* Календар з вибором дати та часу, кнопка "Сьогодні" всередині попапу */}
       <div className="flex items-end gap-2">
