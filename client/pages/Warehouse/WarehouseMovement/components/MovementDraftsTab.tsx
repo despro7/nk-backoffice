@@ -3,7 +3,7 @@ import { Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { formatDate } from '@/lib/formatUtils';
-import type { MovementDraft, MovementStatus } from '../../shared/WarehouseMovementTypes';
+import type { MovementDraft, MovementStatus } from '../WarehouseMovementTypes';
 
 // ---------------------------------------------------------------------------
 // MovementDraftsTab — вміст вкладки "Чернетки"

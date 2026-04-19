@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { ToastService } from '@/services/ToastService';
-import { totalPortions, serializeItems, sortItems } from '../shared/WarehouseInventoryUtils';
-import type { InventoryProduct, InventorySession, InventoryStatus } from '../shared/WarehouseInventoryTypes';
+import { totalPortions, serializeItems, sortItems } from './WarehouseInventoryUtils';
+import type { InventoryProduct, InventorySession, InventoryStatus } from './WarehouseInventoryTypes';
 
 // ---------------------------------------------------------------------------
 // Повертає весь стан та логіку для сторінки WarehouseInventory
@@ -13,6 +13,7 @@ export interface UseWarehouseInventoryReturn {
   setActiveTab: (tab: 'current' | 'history') => void;
   sessionStatus: InventoryStatus | null;
   sessionId: number | null;
+  sessionDate: string | null; // ISO-дата створення активної сесії
   comment: string;
   setComment: (v: string) => void;
   commentDraft: string;
@@ -95,6 +96,8 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
   const [sessionStatus, setSessionStatus] = useState<InventoryStatus | null>(null);
   /** ID поточної сесії в БД (null = ще не збережена) */
   const [sessionId, setSessionId] = useState<number | null>(null);
+  /** Дата створення активної сесії (ISO-рядок) */
+  const [sessionDate, setSessionDate] = useState<string | null>(null);
   const [products, setProducts] = useState<InventoryProduct[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('Усі категорії');
   const [sortBy, setSortBy] = useState<'name' | 'sku' | 'balance' | 'deviation'>('name');
@@ -224,6 +227,7 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
       setMaterials(mergedMaterials);
       setSessionId(draft.id);
       setSessionStatus('in_progress');
+      setSessionDate(draft.createdAt ?? null);
       setComment(draft.comment ?? '');
       // Фіксуємо snapshot — щойно завантажена чернетка вважається "чистою"
       lastSavedSnapshotRef.current = JSON.stringify(serializeItems(mergedProducts, mergedMaterials));
@@ -249,6 +253,8 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
       const sessions: InventorySession[] = (data.sessions ?? []).map((s: any) => ({
         id: String(s.id),
         createdAt: s.createdAt,
+        createdBy: String(s.createdBy ?? ''),
+        createdByName: s.createdByName ?? null,
         status: s.status as InventoryStatus,
         completedAt: s.completedAt ?? null,
         comment: s.comment ?? '',
@@ -367,6 +373,7 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
       if (!res.ok) return;
       const data = await res.json();
       setSessionId(data.session.id);
+      setSessionDate(data.session.createdAt ?? new Date().toISOString());
       // Фіксуємо snapshot щойно завантаженого "чистого" списку
       lastSavedSnapshotRef.current = JSON.stringify(serializeItems(loadedProducts, loadedMaterials));
     } catch {
@@ -498,7 +505,7 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
 
   return {
     activeTab, setActiveTab,
-    sessionStatus, sessionId,
+    sessionStatus, sessionId, sessionDate,
     comment, setComment,
     commentDraft, setCommentDraft,
     isSavingDraft,

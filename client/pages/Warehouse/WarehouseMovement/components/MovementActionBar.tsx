@@ -66,7 +66,7 @@ export const MovementActionBar = ({
       </Button>
 
       {/* Права частина */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-3">
         {/* Зберегти чернетку — закоментовано: автозбереження відбувається перед відправкою */}
         {canEdit && (
           <Button
@@ -113,7 +113,7 @@ export const MovementActionBar = ({
           </Button>
         )}
       </div>
-      <div className="flex items-center ml-auto gap-3 flex-wrap">
+      <div className="flex items-center gap-3 w-full justify-end">
         {/* Кнопка "Показати payload" — тільки для адміністраторів */}
         { isDebugMode && isAdmin && onShowPayload && (
           <Button

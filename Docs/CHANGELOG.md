@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-04-19 — WarehouseMovement: ID складів у БД, видалення deviation
+**Files:** `server/modules/Warehouse/WarehouseController.ts`, `server/modules/Warehouse/WarehouseService.ts`, `client/pages/Warehouse/WarehouseMovement/hooks/useMovementDraftState.ts`, `client/pages/Warehouse/WarehouseMovement/useWarehouseMovement.ts`, `client/pages/Warehouse/WarehouseMovement/WarehouseMovementTypes.ts`, `client/types/warehouse.ts`, `shared/types/movement.ts`
+- `/products-for-movement` тепер повертає `warehouseConfig: { storageFrom, storageTo }` — Dilovod ID складів із `settings_base`
+- При створенні чернетки `sourceWarehouse`/`destinationWarehouse` записуються як ID складів (раніше були захардкожені людські назви)
+- Повністю видалено `deviation`/`deviations` (недореалізований функціонал): з типів, сервісу, контролера, хуків
+
+---
+
+## 2026-04-19 — Оптимізація bulk-оновлення залишків товарів
+**Files:** `server/services/dilovod/DilovodSyncManager.ts`, `server/services/dilovod/DilovodService.ts`
+- Видалено стару `updateProductStockBalance()` (single-item, N запитів у циклі)
+- Додано `updateProductStockBalancesBulk()`: 1 SELECT на всі SKU → фільтрація незмінених → chunk-транзакції по 25
+- `updateStockBalancesInDatabase()` переведено на новий bulk-метод; логування показує `updated` + `skipped`
+
+---
+
 ## 2026-04-17 — Cash-In Import: перевірка дублікатів + виправлення паралельних запитів до Dilovod
 **Files:** `shared/types/cashIn.ts`, `server/services/dilovod/CashInImportService.ts`, `server/services/dilovod/CashInExportBuilder.ts`, `server/services/dilovod/DilovodApiClient.ts`, `client/pages/CashInImport/components/CashInPreviewTable.tsx`, `client/pages/CashInImport/components/CashInSummary.tsx`
 

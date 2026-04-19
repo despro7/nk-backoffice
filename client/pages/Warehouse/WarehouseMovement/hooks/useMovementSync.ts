@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { ToastService } from '@/services/ToastService';
 import { LoggingService } from '@/services/LoggingService';
-import type { MovementProduct, MovementDraft } from '../../shared/WarehouseMovementTypes';
+import type { MovementProduct, MovementDraft } from '../WarehouseMovementTypes';
 
 // ---------------------------------------------------------------------------
 // useMovementSync — синхронізація залишків та обробка дати документа

@@ -199,3 +199,29 @@ export async function getUserById<T extends keyof UserType = "name" | "email">(i
 
   return user ? (user as Pick<UserType, T>) : null;
 }
+
+/**
+ * Резолвить імена авторів для списку записів з полем createdBy (number | null).
+ * Повертає копію масиву з доданим полем createdByName: string | null.
+ *
+ * @example
+ * const sessions = await resolveAuthorNames(rawSessions);
+ * // session.createdByName → 'Іван Іванов' | null
+ */
+export async function resolveAuthorNames<T extends { createdBy: number | null }>(
+  items: T[]
+): Promise<(T & { createdByName: string | null })[]> {
+  const ids = [...new Set(items.map((i) => i.createdBy).filter((id): id is number => id !== null))];
+
+  const users =
+    ids.length > 0
+      ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+      : [];
+
+  const namesMap = new Map(users.map((u) => [u.id, u.name]));
+
+  return items.map((item) => ({
+    ...item,
+    createdByName: item.createdBy != null ? (namesMap.get(item.createdBy) ?? null) : null,
+  }));
+}

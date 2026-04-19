@@ -20,6 +20,7 @@ import { MovementSummaryTable } from './components/MovementSummaryTable';
 import { MovementHistoryTab } from './components/MovementHistoryTab';
 import { MovementDraftsTab } from './components/MovementDraftsTab';
 import { PayloadPreviewModal } from './components/PayloadPreviewModal';
+import { EmptyBatchesWarningModal, type EmptyBatchInfo } from './components/EmptyBatchesWarningModal';
 import { useDebug } from '@/contexts/DebugContext';
 import type { DilovodMovementPayload } from '@shared/types/movement';
 
@@ -83,6 +84,18 @@ export default function WarehouseMovement() {
     }
   }, [mov]);
 
+  // Коли документ отримує статус 'active' — автоматично перемикаємо на дату переміщення.
+  // Це примусово показує залишки "на момент переміщення", а не поточні.
+  const prevSessionStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    const status = mov.sessionStatus;
+    if (status === 'active' && prevSessionStatusRef.current !== 'active') {
+      handleStockDateModeChange('movement');
+    }
+    prevSessionStatusRef.current = status;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mov.sessionStatus]);
+
   const sortedFilteredProducts = useMemo(() => {
     const items = [...mov.filteredProducts];
     const dir = sortDirection === 'asc' ? 1 : -1;
@@ -104,19 +117,41 @@ export default function WarehouseMovement() {
   const draftsManager = useMovementDrafts(getDrafts, deleteDraft);
   const [activeTab, setActiveTab] = useState<'current' | 'drafts' | 'history'>('current');
 
-  // Стан для модалі перегляду payload
+  // Стан для модалки перегляду payload
   const [showPayloadPreview, setShowPayloadPreview] = useState(false);
   const [payloadPreview, setPayloadPreview] = useState<DilovodMovementPayload | null>(null);
   const [isLoadingPayload, setIsLoadingPayload] = useState(false);
-  const [isSendingToDialovod, setIsSendingToDilovod] = useState(false);
+  const [isSendingToDilovod, setIsSendingToDilovod] = useState(false);
   const [isFinalizingLocally, setIsFinalizingLocally] = useState(false);
-  // Модалка підтвердження фінальної відправки
+  
+  // Модалка підтвердження відправки
+  const [showConfirmIntermediate, setShowConfirmIntermediate] = useState(false);
   const [showConfirmFinalize, setShowConfirmFinalize] = useState(false);
+
+  // Модалка попередження про пусті партії
+  const [emptyBatchesModal, setEmptyBatchesModal] = useState<{
+    items: EmptyBatchInfo[];
+    pendingAction: 'intermediate' | 'final';
+  } | null>(null);
+
+  // --------------------------------------------------------------------------
+  // Валідація пустих партій — повертає список товарів з нульовими партіями
+  // --------------------------------------------------------------------------
+  const findEmptyBatches = (): EmptyBatchInfo[] => {
+    return mov.products
+      .filter((p) => mov.selectedProductIds.has(p.id))
+      .flatMap((product) => {
+        const emptyBatchIndices = product.details.batches
+          .map((batch, idx) => (batch.boxes === 0 && batch.portions === 0 ? idx : -1))
+          .filter((idx) => idx !== -1);
+        return emptyBatchIndices.length > 0 ? [{ product, emptyBatchIndices }] : [];
+      });
+  };
 
   // --------------------------------------------------------------------------
   // Спільна логіка відправки до Діловода
   // --------------------------------------------------------------------------
-  const sendToDialovod = async (isFinal: boolean) => {
+  const sendToDilovod = async (isFinal: boolean) => {
     let draft = mov.savedDraft;
     // Завжди зберігаємо актуальний стан перед відправкою
     // (для нового документа — створює, для існуючого draft/active — оновлює items)
@@ -125,7 +160,7 @@ export default function WarehouseMovement() {
 
     setIsSendingToDilovod(true);
     try {
-      const response = await fetch('/api/warehouse/movements/send', {
+      const response = await fetch('/api/warehouse/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -186,7 +221,7 @@ export default function WarehouseMovement() {
         LoggingService.log('[WarehouseMovement] Діловод відповів з помилкою:', data);
       }
     } catch (err) {
-      LoggingService.log('[WarehouseMovement] sendToDialovod error:', err);
+      LoggingService.log('[WarehouseMovement] sendToDilovod error:', err);
       ToastService.show({ title: 'Помилка при відправці до Діловода', color: 'danger' });
     } finally {
       setIsSendingToDilovod(false);
@@ -194,10 +229,41 @@ export default function WarehouseMovement() {
   };
 
   /** Проміжна відправка (isFinal=false) — статус → 'active', документ залишається відкритим */
-  const handleSendIntermediate = () => sendToDialovod(false);
+  const handleSendIntermediate = () => {
+    const empty = findEmptyBatches();
+    if (empty.length > 0) {
+      setEmptyBatchesModal({ items: empty, pendingAction: 'intermediate' });
+      return;
+    }
+    setShowConfirmIntermediate(true);
+  };
 
   /** Фінальна відправка (isFinal=true) — показуємо підтвердження перед відправкою */
-  const handleSendFinal = () => setShowConfirmFinalize(true);
+  const handleSendFinal = () => {
+    const empty = findEmptyBatches();
+    if (empty.length > 0) {
+      setEmptyBatchesModal({ items: empty, pendingAction: 'final' });
+      return;
+    }
+    setShowConfirmFinalize(true);
+  };
+
+  /** Автоматично видаляє пусті партії і продовжує відправку */
+  const handleAutoCleanAndSend = () => {
+    if (!emptyBatchesModal) return;
+    // Видаляємо пусті партії по всіх товарах
+    emptyBatchesModal.items.forEach(({ product, emptyBatchIndices }) => {
+      const cleaned = product.details.batches.filter((_, idx) => !emptyBatchIndices.includes(idx));
+      mov.handleProductChange(product.id, cleaned);
+    });
+    const action = emptyBatchesModal.pendingAction;
+    setEmptyBatchesModal(null);
+    if (action === 'final') {
+      setShowConfirmFinalize(true);
+    } else {
+      setShowConfirmIntermediate(true);
+    }
+  };
 
   /** Завершити локально без відправки в Діловод */
   const handleFinalizeLocally = async () => {
@@ -232,7 +298,7 @@ export default function WarehouseMovement() {
 
     setIsLoadingPayload(true);
     try {
-      const response = await fetch('/api/warehouse/movements/send', {
+      const response = await fetch('/api/warehouse/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -442,7 +508,7 @@ export default function WarehouseMovement() {
             selectedCount={mov.selectedProductIds.size}
             isDirty={mov.isDirty}
             isSavingDraft={mov.isSaving}
-            isSending={isSendingToDialovod}
+            isSending={isSendingToDilovod}
             hasDraft={mov.savedDraft !== null}
             draftStatus={mov.savedDraft?.status ?? null}
             onCancel={() => mov.setShowConfirmCancel(true)}
@@ -501,8 +567,23 @@ export default function WarehouseMovement() {
         summaryItems={mov.summaryItems}
         internalDocNumber={mov.savedDraft?.internalDocNumber}
         isLoading={isLoadingPayload}
-        isSending={isSendingToDialovod}
+        isSending={isSendingToDilovod}
         onSend={handleSendIntermediate}
+      />
+
+      {/* Модалка підтвердження проміжної відправки */}
+      <ConfirmModal
+        isOpen={showConfirmIntermediate}
+        title="Відправити в Діловод?"
+        message="Документ буде відправлено в Діловод. Після відправки ви зможете продовжити редагування."
+        onConfirm={async () => {
+          setShowConfirmIntermediate(false);
+          await sendToDilovod(false);
+        }}
+        onCancel={() => setShowConfirmIntermediate(false)}
+        confirmText="Відправити"
+        confirmColor="primary"
+        cancelText="Скасувати"
       />
 
       {/* Модалка підтвердження фінальної відправки */}
@@ -512,7 +593,7 @@ export default function WarehouseMovement() {
         message="Після завершення накладну не можна буде редагувати. Впевнені?"
         onConfirm={async () => {
           setShowConfirmFinalize(false);
-          await sendToDialovod(true);
+          await sendToDilovod(true);
         }}
         onCancel={() => setShowConfirmFinalize(false)}
         confirmText="Завершити"
@@ -535,6 +616,15 @@ export default function WarehouseMovement() {
 
       {/* Модалка незбережених змін (leave guard) */}
       <UnsavedChangesModal {...guard.modalProps} />
+
+      {/* Модалка попередження про пусті партії */}
+      <EmptyBatchesWarningModal
+        isOpen={emptyBatchesModal !== null}
+        items={emptyBatchesModal?.items ?? []}
+        onReview={() => setEmptyBatchesModal(null)}
+        onAutoClean={handleAutoCleanAndSend}
+        isPending={isSendingToDilovod}
+      />
     </div>
   );
 }

@@ -93,14 +93,14 @@ export const MovementHistoryTable = ({
         <div key={doc.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           {/* Заголовок акордеона */}
           <button
-            className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+            className="w-full px-4 py-3 flex items-center justify-between bg-neutral-100 transition-colors"
             onClick={() => setExpandedDocId(expandedDocId === doc.id ? null : doc.id)}
           >
             <div className="grid grid-cols-[36px_200px_200px_200px_180px_1fr] items-center flex-1 min-w-0">
               <DynamicIcon
                 name="chevron-right"
-                className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform transition-300 ${expandedDocId === doc.id && 'rotate-90'}`}
-                />
+                className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${expandedDocId === doc.id ? 'rotate-90' : ''}`}
+              />
 
               {/* Номер документа */}
               <div className="flex flex-col items-start min-w-0">

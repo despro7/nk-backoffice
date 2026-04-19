@@ -68,6 +68,7 @@ export default function WarehouseInventory() {
           <InventorySessionMeta
             sessionStatus={inv.sessionStatus}
             userName={user?.name ?? user?.email}
+            sessionDate={inv.sessionDate}
           />
         </div>
 

@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from '@heroui/react';
-import { totalPortions } from '../../shared/WarehouseInventoryUtils';
-import type { InventoryProduct } from '../../shared/WarehouseInventoryTypes';
+import { totalPortions } from '../WarehouseInventoryUtils';
+import type { InventoryProduct } from '../WarehouseInventoryTypes';
 
 // ---------------------------------------------------------------------------
 // InventorySummaryTable — підсумкова таблиця відхилень з HeroUI

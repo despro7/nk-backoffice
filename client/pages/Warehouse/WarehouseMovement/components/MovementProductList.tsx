@@ -1,5 +1,5 @@
 import { DynamicIcon } from 'lucide-react/dynamic';
-import type { MovementProduct } from '../../shared/WarehouseMovementTypes';
+import type { MovementProduct } from '../WarehouseMovementTypes';
 
 // ---------------------------------------------------------------------------
 // MovementProductList — список товарів для переміщення

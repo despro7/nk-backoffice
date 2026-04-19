@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Select, SelectItem, Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { MonthSwitcher } from '../../../../components/MonthSwitcher';
-import { MovementHistoryTable } from '../../shared/MovementHistoryTable';
+import { MovementHistoryTable } from './MovementHistoryTable';
 import type { DatePreset } from '../useMovementHistory';
 import type { GoodMovingDocument } from '@shared/types/movement';
 

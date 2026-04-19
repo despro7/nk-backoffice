@@ -25,7 +25,6 @@ export interface MovementProduct {
   details: {
     batches: MovementBatch[]; // Масив партій для цього товару
     forecast: number; // Прогноз (довідково)
-    deviation: number; // Відхилення (якщо є)
   };
   stockData: {
     mainStock: number; // Залишок на основному складі (порції)
@@ -44,19 +43,12 @@ export interface MovementItem {
   forecast: number;
 }
 
-export interface MovementDeviation {
-  sku: string;
-  batchNumber: string;
-  deviation: number;
-}
-
 export interface MovementDraft {
   id: number;
   status: MovementStatus;
   sourceWarehouse: string;
   destinationWarehouse: string;
   items: MovementItem[];
-  deviations?: MovementDeviation[];
   notes?: string;
   movementDate?: string; // Дата документа переміщення (локальний час, формат "YYYY-MM-DD HH:mm:ss")
   draftCreatedAt?: string;
@@ -79,5 +71,4 @@ export interface MovementSession {
   status: MovementStatus;
   sentToDilovodAt: string | null;
   items: MovementItem[];
-  deviations: MovementDeviation[];
 }

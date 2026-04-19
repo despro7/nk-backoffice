@@ -5,7 +5,7 @@
  * Запускається о 23:55 щодня.
  *
  * Логіка:
- *  1. Знаходить усі документи зі статусом 'active' або 'draft' (з непорожніми items)
+ *  1. Знаходить усі документи зі статусом 'active' (з непорожніми items)
  *  2. Для кожного будує payload і відправляє в Діловод (saveObject)
  *  3. Оновлює статус на 'finalized', фіксує lastSentToDilovodAt
  *  4. Записує результат у meta_logs (category: 'warehouse_movement', status: 'success'/'error')
@@ -31,9 +31,12 @@ export class WarehouseAutoFinalizeService {
     // Шукаємо всі 'active' і 'draft' документи з items
     const movements = await prisma.warehouseMovement.findMany({
       where: {
-        status: { in: ['active', 'draft'] },
-        // Враховуємо тільки ті, у кого є хоч якісь items (не порожня чернетка)
-        items: { not: null },
+        status: { in: ['active'] },
+        // Враховуємо тільки ті, у кого є хоч якісь items
+        NOT: [
+          { items: "" },
+          { items: "[]" }
+        ]
       },
     });
 

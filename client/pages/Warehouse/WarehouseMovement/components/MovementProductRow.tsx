@@ -8,7 +8,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useBatchNumbers, type BatchNumber } from '../hooks/useBatchNumbers';
 import { ToastService } from '@/services/ToastService';
 import { pluralize } from '@/lib/formatUtils';
-import type { MovementProduct, MovementBatch } from '../../shared/WarehouseMovementTypes';
+import type { MovementProduct, MovementBatch } from '../WarehouseMovementTypes';
 
 // ---------------------------------------------------------------------------
 // MovementProductRow — рядок товару з акордіоном для редагування багатьох партій
@@ -36,6 +36,7 @@ export const MovementProductRow = ({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingBatchIndex, setEditingBatchIndex] = useState<number | null>(null);
   const [deleteConfirmBatchIndex, setDeleteConfirmBatchIndex] = useState<number | null>(null);
+  const [isCollapseConfirmOpen, setIsCollapseConfirmOpen] = useState(false);
   const batchInputRef = useRef<HTMLInputElement>(null);
   const isDrawerJustClosed = useRef(false);
   const { batches, loading, fetchBatches } = useBatchNumbers();
@@ -45,6 +46,21 @@ export const MovementProductRow = ({
     (sum, batch) => sum + batch.boxes * product.portionsPerBox + batch.portions,
     0
   );
+
+  const handleToggle = () => {
+    // Якщо намагаємося закрити акордіон і вже є партії — питаємо підтвердження
+    if (isOpen && product.details.batches.length > 0) {
+      setIsCollapseConfirmOpen(true);
+      return;
+    }
+    onToggle(product.id);
+  };
+
+  const handleConfirmCollapse = () => {
+    setIsCollapseConfirmOpen(false);
+    onChange(product.id, []); // очищаємо всі партії
+    onToggle(product.id);
+  };
 
   const handleAddBatchClick = () => {
     setEditingBatchIndex(-1); // -1 означає "додавання нової партії"
@@ -196,7 +212,7 @@ export const MovementProductRow = ({
   return (
     <div className="border-b border-gray-200">
       {/* Заголовок акордіона */}
-      <div className="flex items-center justify-between px-6 py-4 cursor-pointer" onClick={() => onToggle(product.id)}>
+      <div className="flex items-center justify-between px-6 py-4 cursor-pointer" onClick={handleToggle}>
         <div className="flex items-center gap-4">
           <div
             className={`w-6 h-6 rounded-full border-2 leading-[100%] pb-[2px] flex items-center justify-center flex-shrink-0 transition-colors ${
@@ -216,12 +232,17 @@ export const MovementProductRow = ({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <DynamicIcon name="box" className="w-5 h-5 text-neutral-300" />
-          <div className="flex items-center gap-2 font-semibold text-lg text-neutral-800">
-            <span>{product.stockData.mainStock}</span> {totalPortions > 0 && <span className="text-danger-400">{"->"} {product.stockData.mainStock - totalPortions}</span>}
-            /
-            <span>{product.stockData.smallStock} {totalPortions > 0 && <span className="text-green-600">{"->"} {product.stockData.smallStock + totalPortions}</span>}</span>
+        <div className="flex flex-col items-end">
+          <div className="flex items-center gap-2">
+            <DynamicIcon name="box" className="w-5 h-5 text-neutral-300" />
+            <div className="flex items-center gap-2 font-semibold text-lg text-neutral-800">
+              <span className={`${product.stockData.mainStock == 0 && 'text-danger-400'}`}>{product.stockData.mainStock}</span> {totalPortions > 0 && <span className="text-danger-400">{"->"} {product.stockData.mainStock - totalPortions}</span>}
+              /
+              <span className={`${product.stockData.smallStock == 0 && 'text-danger-400'}`}>{product.stockData.smallStock} {totalPortions > 0 && <span className="text-green-600">{"->"} {product.stockData.smallStock + totalPortions}</span>}</span>
+            </div>
+          </div>
+          <div className="text-xs text-gray-400/60">
+            Склад ГП / Склад М
           </div>
         </div>
       </div>
@@ -393,6 +414,17 @@ export const MovementProductRow = ({
         cancelText="Скасувати"
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteConfirmBatchIndex(null)}
+      />
+
+      {/* ConfirmModal для згортання акордіона з партіями */}
+      <ConfirmModal
+        isOpen={isCollapseConfirmOpen}
+        title="Виключити товар зі списку?"
+        message={`Товар «${product.name}» вже має ${product.details.batches.length} ${pluralize(product.details.batches.length, 'партію', 'партії', 'партій')} (${totalPortions} пор.). Після закриття всі партії будуть видалені.`}
+        confirmText="Видалити і закрити"
+        cancelText="Скасувати"
+        onConfirm={handleConfirmCollapse}
+        onCancel={() => setIsCollapseConfirmOpen(false)}
       />
     </div>
   );

@@ -228,7 +228,7 @@ model StockMovementHistory {
   @@map("stock_movement_history")
 }
 
-model InventorySession {
+model WarehouseInventory {
   id          Int       @id @default(autoincrement())
   warehouse   String    @default("small")   // Склад: "small" = Малий склад
   status      String    @default("draft")   // draft | in_progress | completed
@@ -243,7 +243,7 @@ model InventorySession {
   @@index([createdBy])
   @@index([createdAt])
   @@index([warehouse])
-  @@map("inventory_sessions")
+  @@map("warehouse_inventory")
 }
 
 model SyncLogs {

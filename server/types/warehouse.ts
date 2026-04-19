@@ -28,23 +28,6 @@ export interface WarehouseMovement {
   createdBy: number;
 }
 
-export interface StockMovementHistory {
-  id: number;
-  productSku: string;
-  warehouse: string;
-  movementType: 'in' | 'out' | 'transfer_in' | 'transfer_out' | 'adjustment';
-  quantity: number;
-  quantityType: 'box' | 'portion';
-  batchNumber?: string;
-  referenceId?: string;
-  referenceType?: 'order' | 'warehouse_movement' | 'adjustment';
-  previousBalance: number;
-  newBalance: number;
-  movementDate: Date;
-  notes?: string;
-  createdBy?: number;
-}
-
 export interface CreateWarehouseMovementRequest {
   items: WarehouseMovementItem[];
   deviations?: WarehouseMovementDeviation[];

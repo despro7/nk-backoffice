@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate } from '@/lib/formatUtils';
-import type { InventorySession } from './WarehouseInventoryTypes';
-import { statusLabel, statusColor, totalPortions } from './WarehouseInventoryUtils';
+import type { InventorySession } from '../WarehouseInventoryTypes';
+import { statusLabel, statusColor, totalPortions } from '../WarehouseInventoryUtils';
 
 // ---------------------------------------------------------------------------
 // HistoryTable — список інвентаризацій як акордеон з плавною анімацією
@@ -104,23 +104,47 @@ export const HistoryTable = ({ sessions }: HistoryTableProps) => {
         <div key={session.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           {/* Заголовок акордеона */}
           <button
-            className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+            className="w-full px-4 py-3 flex items-center justify-between bg-neutral-100 transition-colors"
             onClick={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}
           >
             <div className="flex items-center gap-4 flex-1">
               <DynamicIcon
-                name={expandedSessionId === session.id ? 'chevron-down' : 'chevron-right'}
-                className="w-5 h-5 text-gray-400"
+                name="chevron-right"
+                className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${expandedSessionId === session.id ? 'rotate-90' : ''}`}
               />
               <div className="text-left">
-                <p className="text-sm font-medium text-gray-700">{formatDate(session.createdAt)}</p>
+                <p className="text-sm font-medium text-gray-700 tabular-nums">{formatDate(session.createdAt)}</p>
               </div>
               <div>
                 <Chip size="sm" color={statusColor[session.status]} variant="flat">
                   {statusLabel[session.status]}
                 </Chip>
               </div>
-              <div className="text-sm text-gray-500 italic flex-1">{session.comment || '—'}</div>
+              <div className="flex items-center gap-10 ml-auto text-xs text-gray-500">
+                <div className="text-left">
+                  <span className="text-medium font-semibold leading-none">{getSessionDetails(session.id).reduce((sum, item) => sum + item.systemBalance, 0)}</span>
+                  <p className="leading-none">за обліком</p>
+                </div>
+                <div className="gray-text-left">
+                  <span className="text-medium font-semibold leading-none">{getSessionDetails(session.id).reduce((sum, item) => sum + (totalPortions(item) ?? 0), 0)}</span>
+                  <p className="leading-none">фактично</p>
+                </div>
+                <div className="text-left">
+                  <span className="text-medium font-semibold leading-none">{(() => {
+                    const dev = getSessionDetails(session.id).reduce((sum, item) => {
+                      const t = totalPortions(item);
+                      return t !== null ? sum + (t - item.systemBalance) : sum;
+                    }, 0);
+                    return dev === 0
+                      ? <span className="text-green-600">0</span>
+                      : dev > 0
+                        ? <span className="text-blue-600">+{dev}</span>
+                        : <span className="text-red-500">{dev}</span>;
+                    })()}
+                  </span>
+                  <p className="leading-none">відхилення</p>
+                </div>
+              </div>
             </div>
           </button>
 
@@ -141,15 +165,17 @@ export const HistoryTable = ({ sessions }: HistoryTableProps) => {
               className="p-4"
             >
               <div className="mb-4">
-                <h4 className="text-sm font-semibold text-gray-700 mb-1">Деталі інвентаризації</h4>
-                <p className="text-xs text-gray-500">
-                  {getSessionDetails(session.id).length} позицій
-                </p>
+                <h3 className="text-md font-semibold text-gray-700 mb-2">Деталі інвентаризації #{session.id} від {formatDate(session.createdAt)}</h3>
+                <div className="flex items-center gap-3 text-xs text-gray-500">
+                  <span>Кількість позицій: <b>{getSessionDetails(session.id).length}</b></span>
+                  <span className="border-l border-gray-300 pl-3">Автор: <b>{session.createdByName || 'N/A'}</b></span>
+                  {session.comment && <span className="border-l border-gray-300 pl-3">Коментар: {session.comment}</span>}
+                </div>
               </div>
 
               {/* Таблиця позицій */}
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-white border-b border-gray-200">
                       <th
@@ -216,22 +242,17 @@ export const HistoryTable = ({ sessions }: HistoryTableProps) => {
                   </thead>
                   <tbody>
                     {getSortedSessionItems(session.id).map(({ item, total, dev }, idx) => (
-                      <tr key={`${session.id}-item-${idx}`} className="border-b border-gray-100 hover:bg-white transition-colors">
-                        <td className="py-2 px-3 text-gray-600 font-mono">{item.sku}</td>
-                        <td className="py-2 px-3 text-gray-700">{item.name}</td>
-                        <td className="py-2 px-3 text-center text-gray-600">{item.systemBalance}</td>
-                        <td className="py-2 px-3 text-center font-medium">
-                          {total ?? '—'}
+                      <tr key={`${session.id}-item-${idx}`} className="border-b border-gray-100 hover:bg-white text-gray-700 transition-colors">
+                        <td className="py-2 px-3 font-mono">{item.sku}</td>
+                        <td className="py-2 px-3">{item.name}</td>
+                        <td className="py-2 px-3 text-center">{item.systemBalance}</td>
+                        <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>
+                          {total ?? '–'}
                         </td>
-                        <td className="py-2 px-3 text-center">
-                          {dev === null ? '—' : (
-                            <span
-                              className={`font-semibold ${
-                                dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'
-                              }`}
-                            >
-                              {dev > 0 ? '+' : ''}
-                              {dev}
+                        <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>
+                          {dev === null ? '–' : (
+                            <span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                              {dev > 0 ? '+' : ''} {dev}
                             </span>
                           )}
                         </td>

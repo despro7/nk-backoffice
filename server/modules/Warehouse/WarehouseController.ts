@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
+import { resolveAuthorNames } from '../../lib/utils.js';
 import { authenticateToken } from '../../middleware/auth.js';
 import { WarehouseService } from './WarehouseService.js';
 import { MovementHistoryService } from './MovementHistoryService.js';
@@ -63,38 +64,16 @@ function isBatchCacheValid(entry: BatchCacheEntry): boolean {
 // Отримати всі документи про переміщення
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { status, warehouse, page = 1, limit = 20 } = req.query;
+    const { status, warehouse, page, limit } = req.query;
 
-    const where: any = {};
-    if (status) where.status = status;
-    if (warehouse) {
-      where.OR = [
-        { sourceWarehouse: warehouse },
-        { destinationWarehouse: warehouse }
-      ];
-    }
-
-    const skip = (Number(page) - 1) * Number(limit);
-
-    const [movements, total] = await Promise.all([
-      prisma.warehouseMovement.findMany({
-        where,
-        orderBy: { draftCreatedAt: 'desc' },
-        skip,
-        take: Number(limit)
-      }),
-      prisma.warehouseMovement.count({ where })
-    ]);
-
-    res.json({
-      movements,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        pages: Math.ceil(total / Number(limit))
-      }
+    const result = await WarehouseService.getMovements({
+      status: status as string | undefined,
+      warehouse: warehouse as string | undefined,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 20,
     });
+
+    res.json(result);
   } catch (error) {
     console.error('Error fetching warehouse movements:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -121,17 +100,8 @@ router.get('/drafts', authenticateToken, async (req, res) => {
       }
     });
 
-    // Резолвимо імена авторів через окремий запит (JOIN не підтримується для warehouseMovement)
-    const authorIds = [...new Set(rawDrafts.map(d => d.createdBy).filter(Boolean))] as number[];
-    const authors = authorIds.length > 0
-      ? await prisma.user.findMany({ where: { id: { in: authorIds } }, select: { id: true, name: true } })
-      : [];
-    const authorsMap = Object.fromEntries(authors.map(u => [u.id, u.name]));
-
-    const drafts = rawDrafts.map(d => ({
-      ...d,
-      createdByName: d.createdBy ? (authorsMap[d.createdBy] ?? null) : null,
-    }));
+    // Резолвимо імена авторів через спільний хелпер resolveAuthorNames
+    const drafts = await resolveAuthorNames(rawDrafts);
 
     console.log(`✅ [Warehouse] Знайдено ${drafts.length} чернеток для користувача ${userId}`);
     res.json({ drafts });
@@ -145,8 +115,17 @@ router.get('/drafts', authenticateToken, async (req, res) => {
 router.get('/products-for-movement', authenticateToken, async (req, res) => {
   try {
     console.log('🏪 [Warehouse] GET /products-for-movement - запит товарів для переміщення...');
-    const result = await WarehouseService.getProductsForMovement();
-    res.json(result);
+    const [result, settings] = await Promise.all([
+      WarehouseService.getProductsForMovement(),
+      WarehousePayloadBuilder.loadSettings(),
+    ]);
+    res.json({
+      ...result,
+      warehouseConfig: {
+        storageFrom: settings.storageFrom,
+        storageTo: settings.storageTo,
+      },
+    });
   } catch (error) {
     console.error('🚨 [Warehouse] Помилка при отриманні товарів для переміщення:', error);
     res.status(500).json({ error: 'Внутрішня помилка сервера' });
@@ -269,8 +248,7 @@ router.get('/stock-snapshot', authenticateToken, async (req, res) => {
       }
     }
 
-    const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
-    const dilovodService = new DilovodService();
+    const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
 
     const label = parsedDate ? parsedDate.toLocaleString('uk-UA') : 'поточна';
     console.log(`📊 [Warehouse] GET /stock-snapshot — ${skus.length} SKU на дату: ${label}`);
@@ -331,7 +309,7 @@ function hasValidSkus(items: Array<{ sku: string; productName: string }>): boole
   return items.every((item) => item.sku !== item.productName);
 }
 
-// Отримати деталі переміщення за ID
+// GET /api/warehouse/movements/:id - отримати деталі переміщення за ID
 // ?force=true — примусово оновити з Dilovod (ігнорувати кешовані items в БД)
 router.get('/details/:id', authenticateToken, async (req, res) => {
   try {
@@ -479,7 +457,7 @@ router.patch('/:id/finalize-local', authenticateToken, async (req, res) => {
   }
 });
 
-// Отримати документ за ID
+// GET /api/warehouse/:id - отримати документ за ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -502,12 +480,12 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// PUT /:id - оновити чернетку
+// PUT /api/warehouse/:id - оновити чернетку
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
-    console.log('🏪 [Warehouse] PUT /:id - оновлення чернетки...');
+    console.log('🏪 [Warehouse] PUT /api/warehouse/:id - оновлення чернетки...');
     const { id } = req.params;
-    const { items, deviations, notes, movementDate } = req.body;
+    const { items, notes, movementDate } = req.body;
     const userId = (req as any).user?.userId || (req as any).user?.id;
 
     if (!id || isNaN(Number(id))) {
@@ -551,7 +529,6 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     const updatedDraft = await WarehouseService.updateMovement(Number(id), {
       items,
-      deviations,
       notes,
       movementDate: parsedMovementDate
     });
@@ -564,13 +541,13 @@ router.put('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Створити новий документ
+// POST /api/warehouse/ - створити новий документ переміщення
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    console.log('🏪 [Warehouse] POST / - створення нового документа...');
+    console.log('🏪 [Warehouse] POST /api/warehouse/ - створення нового документа...');
     console.log('🏪 [Warehouse] Request body:', JSON.stringify(req.body, null, 2));
 
-    const { items, deviations, sourceWarehouse, destinationWarehouse, notes, movementDate, docNumber, dilovodDocId } = req.body;
+    const { items, sourceWarehouse, destinationWarehouse, notes, movementDate, docNumber, dilovodDocId } = req.body;
     const userId = (req as any).user?.userId || (req as any).user?.id;
 
     console.log('🏪 [Warehouse] User from token:', (req as any).user);
@@ -639,12 +616,12 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
-// POST /movements/send — формування payload та/або відправка до Діловода
+// POST /api/warehouse/send — формування payload та/або відправка до Діловода
 // dryRun=true (default) — тільки повернути payload без відправки
 // dryRun=false — реальна відправка до Діловода
 // isFinal=false (default) — проміжна відправка, статус → 'active', документ редагується далі
 // isFinal=true — фінальна відправка, статус → 'finalized', документ заблоковано
-router.post('/movements/send', authenticateToken, async (req, res) => {
+router.post('/send', authenticateToken, async (req, res) => {
   try {
     const { draftId, summaryItems, movementDate, overrides, dryRun = true, isFinal = false } = req.body;
     const userId = (req as any).user?.userId || (req as any).user?.id;
@@ -847,6 +824,27 @@ router.post('/movements/send', authenticateToken, async (req, res) => {
 
     console.log(`✅ [Warehouse] Документ ${draft.id} відправлено до Діловода. ID: ${dilovodDocId}, Номер: ${docNumber}, Статус: ${newStatus}`);
 
+    // Тригеримо оновлення залишків у фоні (fire-and-forget)
+    // Виконуємо після кожної успішної відправки в Діловод, незалежно від isFinal.
+    // Якщо синхронізація залишків вимкнена в налаштуваннях — пропускаємо.
+    void (async () => {
+      try {
+        const { syncSettingsService } = await import('../../services/syncSettingsService.js');
+        const isEnabled = await syncSettingsService.isSyncEnabled('stocks');
+        if (!isEnabled) {
+          console.log(`⏭️ [Warehouse] Stock sync після відправки пропущено — синхронізація залишків вимкнена`);
+          return;
+        }
+        console.log(`🔄 [Warehouse] Запускаємо оновлення залишків після відправки документа ${draft.id}...`);
+        const { DilovodService: DilovodServiceCls } = await import('../../services/dilovod/DilovodService.js');
+        const stockService = new DilovodServiceCls();
+        const result = await stockService.updateStockBalancesInDatabase();
+        console.log(`✅ [Warehouse] Залишки оновлено після відправки документа ${draft.id}:`, result?.message ?? 'OK');
+      } catch (err) {
+        console.warn(`⚠️ [Warehouse] Не вдалось оновити залишки після відправки документа ${draft.id}:`, err);
+      }
+    })();
+
     return res.json({
       success: true,
       dryRun: false,
@@ -868,73 +866,7 @@ router.post('/movements/send', authenticateToken, async (req, res) => {
   }
 });
 
-// Відправити в Dilovod (оновлює статус і фіксує залишки)
-router.post('/:id/send', authenticateToken, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userId = (req as any).user?.userId || (req as any).user?.id;
-
-    console.log(`🏪 [Warehouse] Відправлення документа ${id} в Dilovod...`);
-
-    // Отримуємо документ
-    const movement = await prisma.warehouseMovement.findUnique({
-      where: { id: Number(id) }
-    });
-
-    if (!movement) {
-      return res.status(404).json({ error: 'Movement not found' });
-    }
-
-    if (movement.status !== 'draft') {
-      return res.status(400).json({ error: 'Only draft movements can be sent' });
-    }
-
-    // Якщо залишки ще не були оновлені (наприклад, якщо документ був створений до додавання цієї логіки),
-    // оновлюємо їх зараз
-    if (movement.items && Array.isArray(movement.items) && movement.items.length > 0) {
-      for (const item of movement.items) {
-        const portionsQuantity = item.boxQuantity * item.portionQuantity; // Розрахунок порцій
-
-        try {
-          const stockUpdateResult = await WarehouseService.updateProductStock(
-            item.sku,
-            movement.sourceWarehouse,
-            movement.destinationWarehouse,
-            portionsQuantity
-          );
-
-          await WarehouseService.createStockMovementHistory({
-            sku: item.sku,
-            sourceWarehouse: movement.sourceWarehouse,
-            destinationWarehouse: movement.destinationWarehouse,
-            movedPortions: portionsQuantity,
-            boxQuantity: item.boxQuantity,
-            portionQuantity: item.portionQuantity,
-            batchNumber: item.batchNumber,
-            movementId: movement.id,
-            userId: userId,
-            stockUpdateResult
-          });
-        } catch (error) {
-          console.error(`🚨 [Warehouse] Error processing item ${item.sku}:`, error);
-          // Продовжуємо з іншими товарами, але логгуємо помилку
-        }
-      }
-    }
-
-    // Оновлюємо статус документа
-    const updatedMovement = await WarehouseService.sendToDilovod(movement.id, 'Dilovod Doc Number'); // Тут треба передати реальний номер
-
-    console.log(`✅ [Warehouse] Документ ${id} відправлено в Dilovod`);
-    res.json(updatedMovement);
-  } catch (error) {
-    console.error('🚨 [Warehouse] Помилка при відправці документа складу:', error);
-    res.status(500).json({ error: 'Внутрішня помилка сервера' });
-  }
-});
-
-
-// DELETE /:id - видалити чернетку та скасувати переміщення залишків
+// DELETE /api/warehouse/:id - видалити чернетку (доступно лише для документів зі статусом 'draft' і які належать користувачу)
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -964,27 +896,6 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Якщо залишки були оновлені, скасовуємо переміщення
-    if (movement.items && Array.isArray(movement.items) && movement.items.length > 0) {
-      for (const item of movement.items) {
-        const portionsQuantity = item.boxQuantity * item.portionQuantity;
-
-        try {
-          await WarehouseService.revertStockMovement({
-            sku: item.sku,
-            sourceWarehouse: movement.sourceWarehouse,
-            destinationWarehouse: movement.destinationWarehouse,
-            portionsToReturn: portionsQuantity,
-            movementId: movement.id,
-            userId: userId
-          });
-        } catch (error) {
-          console.error(`🚨 [Warehouse] Error reverting item ${item.sku}:`, error);
-          // Продовжуємо з іншими товарами
-        }
-      }
-    }
-
     // Видаляємо документ
     await prisma.warehouseMovement.delete({
       where: { id: Number(id) }
@@ -999,207 +910,291 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 });
 
 // ============================================================================
-// ІНВЕНТАРИЗАЦІЯ
+// ІНВЕНТАРИЗАЦІЯ — ДОВІДНИКИ
 // ============================================================================
 
 // GET /api/warehouse/inventory/products
-// Повертає список товарів з ненульовим залишком на малому складі ("2")
-// Використовується сторінкою інвентаризації малого складу
+// Повертає всі активні товари (isOutdated=false) з їх залишком на малому складі ("2").
 router.get('/inventory/products', authenticateToken, async (req, res) => {
   try {
-    console.log('📦 [Warehouse] GET /inventory/products — завантаження товарів малого складу...');
+    console.log('📦 [Inventory] GET /inventory/products — завантаження товарів малого складу...');
 
     const products = await prisma.product.findMany({
-      where: {
-        stockBalanceByStock: { not: null },
-        isOutdated: false,
-      },
-      select: {
-        id: true,
-        sku: true,
-        name: true,
-        portionsPerBox: true,
-        categoryName: true,
-        stockBalanceByStock: true,
-      },
-      orderBy: [
-        { manualOrder: 'asc' },
-        { name: 'asc' },
-      ],
+      where: { AND: [{ isOutdated: false, set: null }] },
+      select: { id: true, sku: true, name: true, portionsPerBox: true, categoryName: true, stockBalanceByStock: true },
+      orderBy: [{ manualOrder: 'asc' }, { name: 'asc' }],
     });
 
-    // Фільтруємо: тільки ті, у кого є залишок на малому складі ("2")
     const result = products
-      .map(product => {
+      .map((product) => {
         try {
-          const stockBalance = product.stockBalanceByStock
+          const stock: Record<string, number> = product.stockBalanceByStock
             ? JSON.parse(product.stockBalanceByStock)
             : {};
-          const smallStockPortions = stockBalance["2"] || 0;
+          const systemBalance = stock['2'] ?? 0;
 
-          if (smallStockPortions > 0) {
-            return {
-              id: product.id,
-              sku: product.sku,
-              name: product.name,
-              portionsPerBox: product.portionsPerBox,
-              categoryName: product.categoryName,
-              currentStock: smallStockPortions,
-              expectedBoxes: Math.floor(smallStockPortions / product.portionsPerBox),
-              expectedRemainder: smallStockPortions % product.portionsPerBox
-            };
-          }
-          return null;
-        } catch (error) {
-          console.warn(`Failed to parse stock for product ${product.sku}:`, error);
+          return {
+            id: String(product.id),
+            sku: product.sku,
+            name: product.name,
+            categoryName: product.categoryName ?? null,
+            systemBalance,
+            unit: product.portionsPerBox > 1 ? 'portions' : 'pcs',
+            portionsPerBox: product.portionsPerBox,
+          };
+        } catch {
+          console.warn(`⚠️ [Inventory] Не вдалось розпарсити stockBalanceByStock для ${product.sku}`);
           return null;
         }
       })
       .filter(Boolean);
 
-    console.log(`✅ [Warehouse] Знайдено ${result.length} товарів на малому складі`);
+    console.log(`✅ [Inventory] Знайдено ${result.length} активних товарів для інвентаризації`);
     res.json({ products: result, total: result.length });
   } catch (error) {
-    console.error('🚨 [Warehouse] Error fetching inventory products:', error);
+    console.error('🚨 [Inventory] Error fetching inventory products:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // GET /api/warehouse/inventory/materials
-// Повертає список матеріалів з ненульовим залишком на малому складі ("2")
-// Використовується сторінкою інвентаризації малого складу
+// Повертає всі активні матеріали з їх залишком на малому складі ("2").
 router.get('/inventory/materials', authenticateToken, async (req, res) => {
   try {
-    console.log('📦 [Warehouse] GET /inventory/materials — завантаження матеріалів малого складу...');
+    console.log('📦 [Inventory] GET /inventory/materials — завантаження матеріалів малого складу...');
 
     const materials = await prisma.material.findMany({
-      where: {
-        stockBalanceByStock: { not: null },
-        isActive: true,
-      },
-      select: {
-        id: true,
-        sku: true,
-        name: true,
-        stockBalanceByStock: true,
-      },
-      orderBy: [
-        { manualOrder: 'asc' },
-        { name: 'asc' },
-      ],
+      where: { isActive: true },
+      select: { id: true, sku: true, name: true, stockBalanceByStock: true },
+      orderBy: [{ manualOrder: 'asc' }, { name: 'asc' }],
     });
 
-    // Фільтруємо: тільки ті, у кого є залишок на малому складі ("2")
     const result = materials
-      .map(material => {
+      .map((material) => {
         try {
-          const stockBalance = material.stockBalanceByStock
+          const stock: Record<string, number> = material.stockBalanceByStock
             ? JSON.parse(material.stockBalanceByStock)
             : {};
-          const smallStockPortions = stockBalance["2"] || 0;
+          const systemBalance = stock['2'] ?? 0;
 
-          if (smallStockPortions > 0) {
-            return {
-              id: material.id,
-              sku: material.sku,
-              name: material.name,
-              currentStock: smallStockPortions
-            };
-          }
-          return null;
-        } catch (error) {
-          console.warn(`Failed to parse stock for material ${material.sku}:`, error);
+          return {
+            id: String(material.id),
+            sku: material.sku,
+            name: material.name,
+            systemBalance,
+            unit: 'pcs' as const,
+            portionsPerBox: 1,
+          };
+        } catch {
+          console.warn(`⚠️ [Inventory] Не вдалось розпарсити stockBalanceByStock для матеріалу ${material.sku}`);
           return null;
         }
       })
       .filter(Boolean);
 
-    console.log(`✅ [Warehouse] Знайдено ${result.length} матеріалів на малому складі`);
+    console.log(`✅ [Inventory] Знайдено ${result.length} активних матеріалів для інвентаризації`);
     res.json({ materials: result, total: result.length });
   } catch (error) {
-    console.error('🚨 [Warehouse] Error fetching inventory materials:', error);
+    console.error('🚨 [Inventory] Error fetching inventory materials:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // ============================================================================
-// ІСТОРІЯ ТА ЗАЛИШКИ
+// ІНВЕНТАРИЗАЦІЯ — СЕСІЇ (CRUD)
 // ============================================================================
 
-// Отримати історію руху залишків
-router.get('/stock/history', authenticateToken, async (req, res) => {
+// GET /api/warehouse/inventory/draft
+// Повертає активну чернетку (статус draft/in_progress) для авторизованого юзера
+router.get('/inventory/draft', authenticateToken, async (req, res) => {
   try {
-    const { sku, warehouse, movementType, startDate, endDate, page = 1, limit = 50 } = req.query;
+    const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
 
-    const where: any = {};
-    if (sku) where.productSku = sku;
-    if (warehouse) where.warehouse = warehouse;
-    if (movementType) where.movementType = movementType;
-    if (startDate || endDate) {
-      where.movementDate = {};
-      if (startDate) where.movementDate.gte = new Date(startDate as string);
-      if (endDate) where.movementDate.lte = new Date(endDate as string);
+    const draft = await prisma.warehouseInventory.findFirst({
+      where: { createdBy: userId, status: { in: ['draft', 'in_progress'] } },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    res.json({ draft: draft ?? null });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error fetching draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/warehouse/inventory/draft
+// Створює нову сесію інвентаризації (або повертає незавершену існуючу)
+router.post('/inventory/draft', authenticateToken, async (req, res) => {
+  try {
+    const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const { comment, items } = req.body as { comment?: string; items?: unknown[] };
+
+    // Якщо є незавершена сесія — оновлюємо її замість створення нової
+    const existing = await prisma.warehouseInventory.findFirst({
+      where: { createdBy: userId, status: { in: ['draft', 'in_progress'] } },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (existing) {
+      const updated = await prisma.warehouseInventory.update({
+        where: { id: existing.id },
+        data: {
+          status: 'in_progress',
+          comment: comment !== undefined ? comment : existing.comment,
+          items: items !== undefined ? JSON.stringify(items) : existing.items,
+        },
+      });
+      console.log(`✅ [Inventory] Відновлено існуючу сесію #${updated.id} для userId=${userId}`);
+      return res.json({ session: updated });
     }
 
-    const skip = (Number(page) - 1) * Number(limit);
+    const session = await prisma.warehouseInventory.create({
+      data: {
+        createdBy: userId,
+        warehouse: 'small',
+        status: 'in_progress',
+        comment: comment ?? null,
+        items: items !== undefined ? JSON.stringify(items) : '[]',
+      },
+    });
+    console.log(`✅ [Inventory] Створено нову сесію #${session.id} для userId=${userId}`);
+    res.status(201).json({ session });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error creating draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
-    const [history, total] = await Promise.all([
-      prisma.stockMovementHistory.findMany({
-        where,
-        orderBy: { movementDate: 'desc' },
+// PUT /api/warehouse/inventory/draft/:id
+// Зберігає поточний стан чернетки (items + comment)
+router.put('/inventory/draft/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const { comment, items } = req.body as { comment?: string; items?: unknown[] };
+
+    const existing = await prisma.warehouseInventory.findFirst({
+      where: { id: sessionId, createdBy: userId },
+    });
+    if (!existing) return res.status(404).json({ error: 'Session not found' });
+    if (existing.status === 'completed') return res.status(400).json({ error: 'Cannot edit completed session' });
+
+    const updated = await prisma.warehouseInventory.update({
+      where: { id: sessionId },
+      data: {
+        comment: comment !== undefined ? comment : existing.comment,
+        items: items !== undefined ? JSON.stringify(items) : existing.items,
+      },
+    });
+
+    console.log(`✅ [Inventory] Збережено чернетку #${sessionId} для userId=${userId}`);
+    res.json({ session: updated });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error updating draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/warehouse/inventory/draft/:id/complete
+// Завершує сесію інвентаризації
+router.post('/inventory/draft/:id/complete', authenticateToken, async (req, res) => {
+  try {
+    const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const { comment, items } = req.body as { comment?: string; items?: unknown[] };
+
+    const existing = await prisma.warehouseInventory.findFirst({
+      where: { id: sessionId, createdBy: userId },
+    });
+    if (!existing) return res.status(404).json({ error: 'Session not found' });
+    if (existing.status === 'completed') return res.status(400).json({ error: 'Session already completed' });
+
+    const completed = await prisma.warehouseInventory.update({
+      where: { id: sessionId },
+      data: {
+        status: 'completed',
+        completedAt: new Date(),
+        comment: comment !== undefined ? comment : existing.comment,
+        items: items !== undefined ? JSON.stringify(items) : existing.items,
+      },
+    });
+
+    console.log(`✅ [Inventory] Завершено інвентаризацію #${sessionId} для userId=${userId}`);
+    res.json({ session: completed });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error completing session:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/warehouse/inventory/draft/:id
+// Видаляє (скасовує) незавершену чернетку
+router.delete('/inventory/draft/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const existing = await prisma.warehouseInventory.findFirst({
+      where: { id: sessionId, createdBy: userId },
+    });
+    if (!existing) return res.status(404).json({ error: 'Session not found' });
+    if (existing.status === 'completed') return res.status(400).json({ error: 'Cannot delete completed session' });
+
+    await prisma.warehouseInventory.delete({ where: { id: sessionId } });
+
+    console.log(`✅ [Inventory] Видалено чернетку #${sessionId} для userId=${userId}`);
+    res.json({ message: 'Draft deleted' });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error deleting draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/warehouse/inventory/history
+// Повертає завершені та активні інвентаризації (пагінація: page, limit)
+router.get('/inventory/history', authenticateToken, async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+    const historyStatuses = { in: ['completed', 'in_progress'] };
+
+    const [rawSessions, total] = await Promise.all([
+      prisma.warehouseInventory.findMany({
+        where: { status: historyStatuses },
+        orderBy: { createdAt: 'desc' },
         skip,
-        take: Number(limit)
+        take: Number(limit),
       }),
-      prisma.stockMovementHistory.count({ where })
+      prisma.warehouseInventory.count({ where: { status: historyStatuses } }),
     ]);
 
+    const sessions = await resolveAuthorNames(rawSessions);
+
     res.json({
-      history,
+      sessions,
       pagination: {
         page: Number(page),
         limit: Number(limit),
         total,
-        pages: Math.ceil(total / Number(limit))
-      }
+        pages: Math.ceil(total / Number(limit)),
+      },
     });
   } catch (error) {
-    console.error('Error fetching stock history:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Отримати поточні залишки по складах
-router.get('/stock/current', authenticateToken, async (req, res) => {
-  try {
-    const { warehouse } = req.query;
-
-    const where: any = {};
-    if (warehouse) where.warehouse = warehouse;
-
-    const currentStock = await prisma.stockMovementHistory.groupBy({
-      by: ['productSku', 'warehouse'],
-      _max: {
-        movementDate: true
-      }
-    });
-
-    // Отримуємо останні записи для кожного SKU і складу
-    const stockData = await Promise.all(
-      currentStock.map(async (item) => {
-        const lastRecord = await prisma.stockMovementHistory.findFirst({
-          where: {
-            productSku: item.productSku,
-            warehouse: item.warehouse,
-            movementDate: item._max.movementDate
-          }
-        });
-        return lastRecord;
-      })
-    );
-
-    res.json(stockData.filter(Boolean));
-  } catch (error) {
-    console.error('Error fetching current stock:', error);
+    console.error('🚨 [Inventory] Error fetching history:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

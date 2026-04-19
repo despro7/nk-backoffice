@@ -144,7 +144,6 @@ export interface MovementDraft {
   destinationWarehouse: string;
   notes: string | null;
   items: string;
-  deviations: string | null;
   movementDate: string | null;
   draftCreatedAt: string;
   draftLastEditedAt: string;

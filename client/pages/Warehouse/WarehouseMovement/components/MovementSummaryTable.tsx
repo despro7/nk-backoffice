@@ -1,5 +1,5 @@
 import { Textarea } from '@heroui/react';
-import type { MovementProduct } from '../../shared/WarehouseMovementTypes';
+import type { MovementProduct } from '../WarehouseMovementTypes';
 
 // ---------------------------------------------------------------------------
 // MovementSummaryTable — таблиця обраних товарів для переміщення
@@ -87,19 +87,19 @@ export const MovementSummaryTable = ({
           <h4 className="text-sm font-semibold text-gray-900 mb-3">Підсумки</h4>
           <div className="grid grid-cols-4 gap-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">{items.length}</div>
+              <div className="text-2xl font-bold">{items.length}</div>
               <div className="text-sm text-gray-600">Позицій</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">{formatBoxValue(totalBoxes)}</div>
+              <div className="text-2xl font-bold">{formatBoxValue(totalBoxes)}</div>
               <div className="text-sm text-gray-600">Коробок</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-orange-600">+{totalAdditionalPortions}</div>
+              <div className="text-2xl font-bold">+{totalAdditionalPortions}</div>
               <div className="text-sm text-gray-600">порцій</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-purple-600">{totalAllPortions}</div>
+              <div className="text-2xl font-bold">{totalAllPortions}</div>
               <div className="text-sm text-gray-600">Разом</div>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { HistoryTable } from '../../shared/HistoryTable';
-import type { InventorySession } from '../../shared/WarehouseInventoryTypes';
+import { HistoryTable } from './InventoryHistoryTable';
+import type { InventorySession } from '../WarehouseInventoryTypes';
 
 // ---------------------------------------------------------------------------
 // InventoryHistoryTab — вміст вкладки "Історія"

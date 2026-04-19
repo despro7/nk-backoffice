@@ -4,7 +4,7 @@ import { useApi } from '@/hooks/useApi';
 import { useMovementProducts } from './hooks/useMovementProducts';
 import { useMovementDraftState } from './hooks/useMovementDraftState';
 import { useMovementSync } from './hooks/useMovementSync';
-import type { MovementProduct, MovementDraft, MovementStatus, MovementBatch } from '../shared/WarehouseMovementTypes';
+import type { MovementProduct, MovementDraft, MovementStatus, MovementBatch } from './WarehouseMovementTypes';
 import type { CreateWarehouseMovementRequest, UpdateWarehouseMovementRequest } from '@/types/warehouse';
 
 const API_BASE = '/api/warehouse';
@@ -20,7 +20,7 @@ const API_BASE = '/api/warehouse';
 // Також відповідає за:
 //   * ініціалізацію при монтуванні (завантаження товарів + чернетки)
 //   * обчислення похідних значень (sessionStatus, sessionId, isDirty)
-//   * публічні обгортки handleFinish / handleReset / handleSaveDraft /
+//   * публічні обгортки handleReset / handleSaveDraft /
 //     handleSyncBalances / handleSyncStockFromDilovod / handleDateChange /
 //     loadMovementFromHistory / loadDraftObject
 // ---------------------------------------------------------------------------
@@ -70,7 +70,6 @@ export interface UseWarehouseMovementReturn {
   loadMovementFromHistory: (doc: any) => Promise<void>;
   handleToggleProduct: (id: string) => void;
   handleProductChange: (id: string, batches: MovementBatch[]) => void;
-  handleFinish: () => Promise<void>;
   handleReset: () => Promise<void>;
   handleSaveDraft: () => Promise<MovementDraft | null>;
   handleSyncBalances: (stockDateMode?: 'movement' | 'now', selectedDateTime?: Date) => Promise<void>;
@@ -112,7 +111,12 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   const getProductsForMovement = useCallback(async (): Promise<any> => {
     const response = await api.apiCall(`${API_BASE}/products-for-movement`, { method: 'GET' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
+    const data = await response.json();
+    // Зберігаємо ID складів для використання при створенні чернетки
+    if (data?.warehouseConfig) {
+      warehouseConfigRef.current = data.warehouseConfig;
+    }
+    return data;
   }, [api]);
 
   const getDrafts = useCallback(async (): Promise<any> => {
@@ -131,20 +135,11 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
     return response.json();
   }, [api]);
 
-  const updateDraft = useCallback(async (id: number, data: { items: any[]; deviations?: any[]; notes?: string }): Promise<any> => {
+  const updateDraft = useCallback(async (id: number, data: { items: any[]; notes?: string }): Promise<any> => {
     const response = await api.apiCall(`${API_BASE}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }, [api]);
-
-  const sendToDilovod = useCallback(async (id: number): Promise<any> => {
-    const response = await api.apiCall(`${API_BASE}/${id}/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
@@ -178,8 +173,11 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
 
   // ─── Спеціалізовані хуки ─────────────────────────────────────────────
 
+  // ID складів, завантажені разом з товарами (/products-for-movement)
+  const warehouseConfigRef = useRef<{ storageFrom: string; storageTo: string } | null>(null);
+
   const products$ = useMovementProducts(getProductsForMovement);
-  const draft$ = useMovementDraftState(createMovement, updateDraft, sendToDilovod);
+  const draft$ = useMovementDraftState(createMovement, updateDraft, warehouseConfigRef);
   const sync$ = useMovementSync(syncStockFromDilovod);
 
   // ─── Локальний стан оркестратора ─────────────────────────────────────
@@ -316,9 +314,6 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   const handleSaveDraft = (): Promise<MovementDraft | null> =>
     draft$.handleSaveDraft(products$.summaryItems, products$.lastSavedSnapshotRef);
 
-  const handleFinish = (): Promise<void> =>
-    draft$.handleFinish(loadHistory);
-
   const handleReset = async (): Promise<void> => {
     products$.setSelectedProductIds(new Set());
     products$.setProducts([]);
@@ -410,7 +405,6 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
     loadMovementFromHistory,
     handleToggleProduct: products$.handleToggleProduct,
     handleProductChange: products$.handleProductChange,
-    handleFinish,
     handleReset,
     handleSaveDraft,
     handleSyncBalances,

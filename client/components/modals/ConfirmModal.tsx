@@ -6,6 +6,7 @@ interface ConfirmModalProps {
   message: string;
   confirmText?: string;
   cancelText?: string;
+  confirmColor?: "primary" | "danger" | "success" | "warning";
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -16,6 +17,7 @@ export function ConfirmModal({
   message,
   confirmText = "Так",
   cancelText = "Ні",
+  confirmColor = "danger",
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -26,7 +28,7 @@ export function ConfirmModal({
       message={message}
       confirmText={confirmText}
       cancelText={cancelText}
-      confirmColor="danger"
+      confirmColor={confirmColor}
       onConfirm={onConfirm}
       onCancel={onCancel}
     />

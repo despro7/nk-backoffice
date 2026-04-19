@@ -186,9 +186,13 @@ export const MovementFilterBar = ({
                       variant="flat"
                       className={`h-auto px-2 py-1.5 min-w-0 flex-auto`}
                       onPress={() => {
-                        const h = hour ?? new Date().getHours();
-                        const m = minute ?? new Date().getMinutes();
-                        onDateChange(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), h, m));
+                        if (hour === null) {
+                          // "Зараз" — поточна дата і поточний час
+                          onDateChange(new Date());
+                        } else {
+                          // Фіксований час — зберігаємо дату з календаря
+                          onDateChange(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), hour, minute ?? 0));
+                        }
                       }}
                     >
                       {label}

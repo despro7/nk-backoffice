@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { ToastService } from '@/services/ToastService';
-import type { MovementDraft } from '../shared/WarehouseMovementTypes';
+import type { MovementDraft } from './WarehouseMovementTypes';
 
 // ---------------------------------------------------------------------------
 // useMovementDrafts — завантаження та управління чернетками переміщень

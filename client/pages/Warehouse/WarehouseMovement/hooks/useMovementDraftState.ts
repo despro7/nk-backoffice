@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef } from 'react';
 import { ToastService } from '@/services/ToastService';
 import { LoggingService } from '@/services/LoggingService';
-import { serializeMovementItems } from '../../shared/WarehouseMovementUtils';
-import type { MovementProduct, MovementDraft, MovementBatch } from '../../shared/WarehouseMovementTypes';
+import { serializeMovementItems } from '../WarehouseMovementUtils';
+import type { MovementProduct, MovementDraft, MovementBatch } from '../WarehouseMovementTypes';
 
 // ---------------------------------------------------------------------------
 // useMovementDraftState — стан і логіка чернетки переміщення
@@ -12,7 +12,6 @@ import type { MovementProduct, MovementDraft, MovementBatch } from '../../shared
 //   • formatLocalDateTime / buildEffectiveNotes (утиліти нотаток)
 //   • isHistoryDocRef — чи документ завантажений з Dilovod
 //   • handleSaveDraft — збереження або оновлення чернетки в БД
-//   • handleFinish — відправка документа в Dilovod
 //   • handleReset — скидання стану до початкового
 //   • loadDraftObject — відновлення чернетки з об'єкту MovementDraft
 //   • loadMovementFromHistory — відновлення документа з Dilovod-History
@@ -86,7 +85,6 @@ export interface UseMovementDraftStateReturn {
     summaryItems: MovementProduct[],
     lastSavedSnapshotRef: React.MutableRefObject<string>,
   ) => Promise<MovementDraft | null>;
-  handleFinish: (loadHistory: () => Promise<void>) => Promise<void>;
   handleReset: () => Promise<void>;
   loadDraftObject: (
     draft: MovementDraft,
@@ -110,7 +108,7 @@ export interface UseMovementDraftStateReturn {
 export const useMovementDraftState = (
   createMovement: (data: any) => Promise<any>,
   updateDraft: (id: number, data: any) => Promise<any>,
-  sendToDilovod: (id: number) => Promise<any>,
+  warehouseConfigRef: React.MutableRefObject<{ storageFrom: string; storageTo: string } | null>,
 ): UseMovementDraftStateReturn => {
   const [savedDraft, setSavedDraft] = useState<MovementDraft | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -146,14 +144,6 @@ export const useMovementDraftState = (
       try {
         const items = serializeMovementItems(summaryItems);
 
-        const deviations = summaryItems.flatMap(item =>
-          item.details.batches.map(batch => ({
-            sku: item.sku,
-            batchNumber: batch.batchNumber || '',
-            deviation: item.details.deviation,
-          })),
-        );
-
         let result: any;
 
         if (savedDraft && savedDraft.status !== 'finalized' && savedDraft.id > 0) {
@@ -161,20 +151,20 @@ export const useMovementDraftState = (
           const effectiveNotes = buildEffectiveNotes(notes, false);
           result = await updateDraft(savedDraft.id, {
             items,
-            deviations,
             movementDate: selectedDateTime.toISOString(),
             notes: effectiveNotes,
           });
         } else {
           LoggingService.warehouseMovementLog('🏪 Створюємо нову чернетку');
-          // Документи з Dilovod (isHistoryDoc=true) → завжди "Оновлено", нові → "Додано"
           const isAdd = !isHistoryDocRef.current;
           const effectiveNotes = buildEffectiveNotes(notes, isAdd);
+          // Використовуємо ID складів з налаштувань (завантажені разом з товарами)
+          const storageFrom = warehouseConfigRef.current?.storageFrom ?? savedDraft?.sourceWarehouse ?? '';
+          const storageTo   = warehouseConfigRef.current?.storageTo   ?? savedDraft?.destinationWarehouse ?? '';
           result = await createMovement({
-            sourceWarehouse: savedDraft?.sourceWarehouse || 'Основний склад',
-            destinationWarehouse: savedDraft?.destinationWarehouse || 'Малий склад',
+            sourceWarehouse: storageFrom,
+            destinationWarehouse: storageTo,
             items,
-            deviations,
             movementDate: selectedDateTime.toISOString(),
             notes: effectiveNotes,
             ...(savedDraft?.docNumber != null && { docNumber: savedDraft.docNumber }),
@@ -220,40 +210,7 @@ export const useMovementDraftState = (
         setIsSaving(false);
       }
     },
-    [savedDraft, notes, selectedDateTime, createMovement, updateDraft],
-  );
-
-  // ─────────────────────────────────────────────────────────────────────
-  // Відправлення в Dilovod
-  // ─────────────────────────────────────────────────────────────────────
-
-  const handleFinish = useCallback(
-    async (loadHistory: () => Promise<void>): Promise<void> => {
-      if (!savedDraft) {
-        ToastService.show({ title: 'Спочатку збережіть чернетку', color: 'danger' });
-        return;
-      }
-
-      setIsSending(true);
-      try {
-        LoggingService.warehouseMovementLog(`🏪 Відправляємо документ: ${savedDraft.id}`);
-        const result = await sendToDilovod(savedDraft.id);
-
-        if (result) {
-          setSavedDraft(prev => (prev ? { ...prev, status: 'active' } : null));
-          ToastService.show({ title: '✅ Накладну успішно відправлено!', color: 'success' });
-          LoggingService.warehouseMovementLog('✅ Документ відправлено');
-          await loadHistory();
-        }
-      } catch (err: any) {
-        const message = err?.message || 'Невідома помилка';
-        ToastService.show({ title: 'Помилка відправлення', description: message, color: 'danger' });
-        LoggingService.warehouseMovementLog(`🚨 Помилка відправлення: ${message}`);
-      } finally {
-        setIsSending(false);
-      }
-    },
-    [savedDraft, sendToDilovod],
+    [savedDraft, notes, selectedDateTime, createMovement, updateDraft, warehouseConfigRef],
   );
 
   // ─────────────────────────────────────────────────────────────────────
@@ -520,7 +477,6 @@ export const useMovementDraftState = (
     setSelectedDateTime,
     isHistoryDocRef,
     handleSaveDraft,
-    handleFinish,
     handleReset,
     loadDraftObject,
     loadMovementFromHistory,

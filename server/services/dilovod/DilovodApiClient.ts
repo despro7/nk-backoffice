@@ -458,7 +458,9 @@ export class DilovodApiClient {
       }
     };
 
-    return this.makeRequest<any[]>(request);
+    const response = await this.makeRequest<any[]>(request);
+
+    return response;
   }
 
   // Оновлення конфігурації

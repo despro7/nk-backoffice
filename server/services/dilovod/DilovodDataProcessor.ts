@@ -449,7 +449,7 @@ export class DilovodDataProcessor {
     try {
       const result: any[] = [];
       const stockBySku: { [key: string]: { [key: string]: number } } = {};
-      
+
       // Группируем остатки по SKU и складам
       stockResponse.forEach((row) => {
         // Используем правильные поля из ответа Dilovod API
@@ -465,8 +465,8 @@ export class DilovodDataProcessor {
           stockBySku[sku]._name = name;
         }
         
-        // Сохраняем количество по складу
-        stockBySku[sku][storage] = quantity;
+        // Сохраняем количество по складу (сумуємо між фірмами, якщо той самий склад є у кількох фірмах)
+        stockBySku[sku][storage] = (stockBySku[sku][storage] || 0) + quantity;
       });
       
       // Формируем результат

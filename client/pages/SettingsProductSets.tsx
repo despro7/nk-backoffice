@@ -44,13 +44,13 @@ interface Product {
   currency: string;
   categoryId: number;
   categoryName: string;
-  weight?: number; // Вес в граммах
+  weight?: number; // Вага в грамах
   manualOrder?: number; // Ручне сортування
   barcode?: string; // Штрих‑код
   portionsPerBox?: number; // Порцій у коробці (для порційних товарів, default 24)
-  set: any; // Уже распарсенный объект или null
-  additionalPrices: any; // Уже распарсенный объект или null
-  stockBalanceByStock: any; // Уже распарсенный объект или null
+  set: any; // Вже розпарсений об'єкт або null
+  additionalPrices: any; // Вже розпарсений об'єкт або null
+  stockBalanceByStock: any; // Вже розпарсений об'єкт або null
   lastSyncAt: string;
   isOutdated?: boolean; // Чи застарілий товар (немає в WordPress)
   dilovodId?: string; // ID товару в Діловоді
@@ -77,17 +77,17 @@ const ProductSets: React.FC = () => {
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [showOutdated, setShowOutdated] = useState(false);
 
-  // Безопасная функция для получения остатков по складам
+  // Безпечна функція для отримання залишків за складами
   const parseStockBalance = (stockBalanceByStock: any): Record<string, number> => {
     if (!stockBalanceByStock) return {};
 
     try {
-      // Если это уже объект, возвращаем как есть
+      // Якщо це вже об'єкт, повертаємо як є
       if (typeof stockBalanceByStock === 'object' && stockBalanceByStock !== null) {
         return stockBalanceByStock as Record<string, number>;
       }
 
-      // Если это строка, пытаемся распарсить (для обратной совместимости)
+      // Якщо це рядок, намагаємось розпарити (для зворотної сумісності)
       if (typeof stockBalanceByStock === 'string') {
         const parsed = JSON.parse(stockBalanceByStock);
         return parsed || {};
@@ -127,16 +127,16 @@ const ProductSets: React.FC = () => {
     errors: string[];
   } | null>(null);
 
-  // Состояние для сортировки (дефолт: ручний порядок по зростанню)
+  // Стан для сортування (за замовчуванням: ручне сортування за зростанням)
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | undefined>({
     column: 'manualOrder',
     direction: 'ascending'
   } as any);
 
-  // Состояние для редактирования веса
+  // Стан для редагування ваги
   const [editingWeight, setEditingWeight] = useState<{ [key: string]: string }>({});
   const [savingWeight, setSavingWeight] = useState<string | null>(null);
-  const [forceUpdate, setForceUpdate] = useState(0); // Для принудительного обновления
+  const [forceUpdate, setForceUpdate] = useState(0); // Для примусового оновлення
   const inputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
   // Стан для підтвердження видалення ваги

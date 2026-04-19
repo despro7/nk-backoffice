@@ -1,6 +1,6 @@
 import { Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import type { InventoryStatus } from '../../shared/WarehouseInventoryTypes';
+import type { InventoryStatus } from '../WarehouseInventoryTypes';
 
 // ---------------------------------------------------------------------------
 // InventorySessionMeta — права частина рядка табів (статус, дата, хто проводить)
@@ -9,9 +9,15 @@ import type { InventoryStatus } from '../../shared/WarehouseInventoryTypes';
 interface InventorySessionMetaProps {
   sessionStatus: InventoryStatus | null;
   userName: string | undefined;
+  sessionDate?: string | null; // ISO-рядок дати активної/завершеної сесії
 }
 
-export const InventorySessionMeta = ({ sessionStatus, userName }: InventorySessionMetaProps) => (
+export const InventorySessionMeta = ({ sessionStatus, userName, sessionDate }: InventorySessionMetaProps) => {
+  const displayDate = sessionDate
+    ? new Date(sessionDate).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : new Date().toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  return (
   <div className="flex items-center gap-3 text-sm text-gray-500 shrink-0 bg-neutral-50 px-4 py-2 h-12 rounded-lg">
     {/* Статус */}
     <div className="flex items-center gap-1.5">
@@ -38,7 +44,7 @@ export const InventorySessionMeta = ({ sessionStatus, userName }: InventorySessi
     {/* Дата */}
     <span className="flex items-center gap-1.5 text-gray-500">
       <DynamicIcon name="calendar" className="w-3.5 h-3.5 text-gray-400" />
-      {new Date().toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+      {displayDate}
     </span>
 
     <span className="text-gray-300">|</span>
@@ -49,4 +55,5 @@ export const InventorySessionMeta = ({ sessionStatus, userName }: InventorySessi
       {userName ?? '—'}
     </span>
   </div>
-);
+  );
+};

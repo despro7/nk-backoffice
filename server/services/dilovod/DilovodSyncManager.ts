@@ -554,51 +554,7 @@ export class DilovodSyncManager {
     await prisma.$disconnect();
   }
 
-  // Оновлення залишків товару в базі даних
-  async updateProductStockBalance(
-    sku: string, 
-    mainStorage: number, 
-    smallStorage: number
-  ): Promise<{ success: boolean; message: string }> {
-    try {
-      // Перевіряємо, чи існує товар
-      const existingProduct = await prisma.product.findUnique({
-        where: { sku }
-      });
-
-      if (!existingProduct) {
-        return {
-          success: false,
-          message: `Товар с SKU ${sku} не найден в базе`
-        };
-      }
-
-      // Оновлюємо залишки
-      await prisma.product.update({
-        where: { sku },
-        data: {
-          stockBalanceByStock: JSON.stringify({
-            "1": mainStorage,    // Склад 1 (головний)
-            "2": smallStorage    // Склад 2 (малий склад для відвантажень)
-          })
-        }
-      });
-
-      return {
-        success: true,
-        message: `Остатки для ${sku} обновлены`
-      };
-
-    } catch (error) {
-      console.log(`Ошибка обновления остатков для ${sku}:`, error);
-      return {
-        success: false,
-        message: `Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`
-      };
-    }
-  }
-
-  // Масове оновлення залишків товарів (для оптимізації при великій кількості товарів)
+  // Масове оновлення залишків товарів (chunk-based для оптимізації при великій кількості товарів)
   async updateProductStockBalancesBulk(
     items: {
       sku: string;
@@ -608,50 +564,94 @@ export class DilovodSyncManager {
   ): Promise<{
     success: boolean;
     updated: number;
+    skipped: number;
     errors: string[];
   }> {
+    const CHUNK_SIZE = 25;
     const errors: string[] = [];
     let updated = 0;
+    let skipped = 0;
 
-    try {
-      await prisma.$transaction(
-        items.map((item) =>
-          prisma.product.update({
-            where: { sku: item.sku },
-            data: {
-              stockBalanceByStock: JSON.stringify({
-                "1": item.mainStorage,
-                "2": item.smallStorage
-              })
-            }
-          })
-        )
-      );
+    // 1. Один запит для отримання поточних залишків усіх товарів
+    const existingProducts = await prisma.product.findMany({
+      where: { sku: { in: items.map((i) => i.sku) } },
+      select: { sku: true, stockBalanceByStock: true }
+    });
 
-      updated = items.length;
-
-    } catch (error) {
-      console.error("Bulk update error:", error);
-
-      // fallback — поштучно щоб знайти проблемні SKU
-      for (const item of items) {
+    const existingMap = new Map(
+      existingProducts.map((p) => {
+        // Парсимо JSON-рядок у об'єкт для порівняння
+        let parsed: Record<string, number> | null = null;
         try {
-          await prisma.product.update({
-            where: { sku: item.sku },
-            data: {
-              stockBalanceByStock: JSON.stringify({
-                "1": item.mainStorage,
-                "2": item.smallStorage
-              })
-            }
-          });
+          parsed = p.stockBalanceByStock ? JSON.parse(p.stockBalanceByStock) : null;
+        } catch {
+          // Якщо рядок некоректний — вважаємо що треба оновити
+        }
+        return [p.sku, parsed];
+      })
+    );
 
-          updated++;
+    // 2. Фільтруємо лише ті, де залишки дійсно змінилися
+    const itemsToUpdate = items.filter((item) => {
+      const existing = existingMap.get(item.sku);
+      if (!existing) return true; // Товар не знайдено — оновлюємо
 
-        } catch (err) {
-          errors.push(
-            `${item.sku}: ${err instanceof Error ? err.message : "error"}`
-          );
+      const unchanged =
+        existing["1"] === item.mainStorage &&
+        existing["2"] === item.smallStorage;
+
+      if (unchanged) skipped++;
+      return !unchanged;
+    });
+
+    console.log(
+      `📦 Залишки: ${items.length} товарів → потребують оновлення: ${itemsToUpdate.length}, пропущено (без змін): ${skipped}`
+    );
+
+    if (itemsToUpdate.length === 0) {
+      return { success: true, updated: 0, skipped, errors: [] };
+    }
+
+    // 3. Оновлюємо чанками по CHUNK_SIZE
+    for (let i = 0; i < itemsToUpdate.length; i += CHUNK_SIZE) {
+      const chunk = itemsToUpdate.slice(i, i + CHUNK_SIZE);
+
+      try {
+        await prisma.$transaction(
+          chunk.map((item) =>
+            prisma.product.update({
+              where: { sku: item.sku },
+              data: {
+                stockBalanceByStock: JSON.stringify({
+                  "1": item.mainStorage,
+                  "2": item.smallStorage
+                })
+              }
+            })
+          )
+        );
+
+        updated += chunk.length;
+
+      } catch (chunkError) {
+        console.error(`Помилка chunk-транзакції [${i}..${i + chunk.length - 1}]:`, chunkError);
+
+        // Fallback — оновлюємо поштучно щоб знайти проблемний SKU
+        for (const item of chunk) {
+          try {
+            await prisma.product.update({
+              where: { sku: item.sku },
+              data: {
+                stockBalanceByStock: JSON.stringify({
+                  "1": item.mainStorage,
+                  "2": item.smallStorage
+                })
+              }
+            });
+            updated++;
+          } catch (err) {
+            errors.push(`${item.sku}: ${err instanceof Error ? err.message : "error"}`);
+          }
         }
       }
     }
@@ -659,6 +659,7 @@ export class DilovodSyncManager {
     return {
       success: errors.length === 0,
       updated,
+      skipped,
       errors
     };
   }

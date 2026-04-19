@@ -2,7 +2,7 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useState } from 'react';
 import { ToastService } from '@/services/ToastService';
-import type { MovementProduct } from '@/pages/Warehouse/shared/WarehouseMovementTypes';
+import type { MovementProduct } from '@/pages/Warehouse/WarehouseMovement/WarehouseMovementTypes';
 import type { DilovodMovementPayload } from '@shared/types/movement';
 
 // ---------------------------------------------------------------------------

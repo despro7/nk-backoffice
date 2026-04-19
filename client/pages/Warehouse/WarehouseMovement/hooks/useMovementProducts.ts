@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { LoggingService } from '@/services/LoggingService';
-import type { MovementProduct, MovementBatch } from '../../shared/WarehouseMovementTypes';
+import type { MovementProduct, MovementBatch } from '../WarehouseMovementTypes';
 
 // ---------------------------------------------------------------------------
 // useMovementProducts — управління списком товарів для переміщення
@@ -310,19 +310,8 @@ export const useMovementProducts = (
     async (allProds: MovementProduct[], asOfDate?: Date): Promise<void> => {
       if (allProds.length === 0) return;
 
-      // Якщо дата не передана (режим "поточна дата") — оновлюємо з нашої БД
-      if (!asOfDate) {
-        setIsRefreshingStock(true);
-        try {
-          await loadProducts();
-        } finally {
-          setIsRefreshingStock(false);
-        }
-        return;
-      }
-
       LoggingService.warehouseMovementLog(
-        `📊 Оновлення stockData для ${allProds.length} товарів на дату ${asOfDate.toLocaleString('uk-UA')}...`,
+        `📊 Оновлення stockData для ${allProds.length} товарів${asOfDate ? ` на дату ${asOfDate.toLocaleString('uk-UA')}` : ' (поточні залишки)'}...`,
       );
 
       setIsRefreshingStock(true);
@@ -330,7 +319,9 @@ export const useMovementProducts = (
         const skus = allProds.map(p => p.sku).join(',');
         const url = new URL('/api/warehouse/stock-snapshot', window.location.origin);
         url.searchParams.set('skus', skus);
-        url.searchParams.set('asOfDate', asOfDate.toISOString());
+        if (asOfDate) {
+          url.searchParams.set('asOfDate', asOfDate.toISOString());
+        }
 
         const response = await fetch(url.toString(), {
           method: 'GET',
@@ -366,7 +357,7 @@ export const useMovementProducts = (
         setIsRefreshingStock(false);
       }
     },
-    [loadProducts],
+    [],
   );
 
   return {

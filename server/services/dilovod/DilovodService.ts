@@ -683,6 +683,7 @@ export class DilovodService {
 
       // Для SKU без відповіді від Dilovod — встановлюємо 0
       const bySkuMap = new Map(processed.map(item => [item.sku, item]));
+
       return skus.map(sku => {
         const item = bySkuMap.get(sku);
         return {
@@ -718,7 +719,7 @@ export class DilovodService {
     }
   }
 
-  // Нова функція: оновлення залишків товарів у БД
+  // Оновлення залишків товарів у БД (bulk-варіант з пропуском незмінених)
   async updateStockBalancesInDatabase(): Promise<{
     success: boolean;
     message: string;
@@ -742,47 +743,26 @@ export class DilovodService {
 
       console.log(`Отримано ${stockBalances.length} товарів з залишками для оновлення`);
 
-      const errors: string[] = [];
-      let updatedProducts = 0;
-
-      // Оновлюємо залишки в базі даних
-      for (const stockBalance of stockBalances) {
-        try {
-          const result = await this.syncManager.updateProductStockBalance(
-            stockBalance.sku,
-            stockBalance.mainStorage,
-            stockBalance.smallStorage
-          );
-
-          if (result.success) {
-            updatedProducts++;
-            console.log(`✅ Залишки для ${stockBalance.sku} оновлено: Склад1=${stockBalance.mainStorage}, Склад2=${stockBalance.smallStorage}`);
-          } else {
-            errors.push(`Помилка оновлення ${stockBalance.sku}: ${result.message}`);
-          }
-        } catch (error) {
-          const errorMessage = `Помилка оновлення залишків ${stockBalance.sku}: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
-          console.log(errorMessage);
-          errors.push(errorMessage);
-        }
-      }
+      // Bulk-оновлення: 1 SELECT + chunk-транзакції, пропускає незмінені
+      const result = await this.syncManager.updateProductStockBalancesBulk(stockBalances);
 
       console.log(`\n=== РЕЗУЛЬТАТ ОНОВЛЕННЯ ЗАЛИШКІВ ===`);
-      console.log(`Оновлено товарів: ${updatedProducts}`);
-      console.log(`Помилок: ${errors.length}`);
+      console.log(`  🔄 Оновлено: ${result.updated}`);
+      console.log(`  ⏭️  Пропущено (без змін): ${result.skipped}`);
+      console.log(`  ❌ Помилок: ${result.errors.length}`);
 
-      if (errors.length > 0) {
+      if (result.errors.length > 0) {
         console.log(`Список помилок:`);
-        errors.forEach((error, index) => {
-          console.log(`${index + 1}. ${error}`);
+        result.errors.forEach((error, index) => {
+          console.log(`  ${index + 1}. ${error}`);
         });
       }
 
       return {
-        success: errors.length === 0,
-        message: `Оновлено ${updatedProducts} товарів з залишками`,
-        updatedProducts,
-        errors
+        success: result.success,
+        message: `Оновлено ${result.updated} товарів, пропущено ${result.skipped} (без змін)`,
+        updatedProducts: result.updated,
+        errors: result.errors
       };
 
     } catch (error) {

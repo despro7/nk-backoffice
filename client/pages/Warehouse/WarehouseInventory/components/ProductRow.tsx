@@ -4,8 +4,8 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { AnimatePresence, motion } from 'framer-motion';
 import { StepperInput } from '../../shared/StepperInput';
 import { InfoDisplay } from '../../shared/InfoDisplay';
-import { totalPortions, formatBalanceBreakdown } from '../../shared/WarehouseInventoryUtils';
-import type { InventoryProduct } from '../../shared/WarehouseInventoryTypes';
+import { totalPortions, formatBalanceBreakdown } from '../WarehouseInventoryUtils';
+import type { InventoryProduct } from '../WarehouseInventoryTypes';
 
 // ---------------------------------------------------------------------------
 // ProductRow — рядок-акордіон для одного товару або матеріалу

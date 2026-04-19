@@ -1,6 +1,6 @@
 import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import type { InventoryProduct } from '../../shared/WarehouseInventoryTypes';
+import type { InventoryProduct } from '../WarehouseInventoryTypes';
 import { ProductRow, type ProductRowProps } from './ProductRow';
 
 // ---------------------------------------------------------------------------

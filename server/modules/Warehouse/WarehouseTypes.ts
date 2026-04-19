@@ -1,4 +1,4 @@
-import { WarehouseMovementItem, WarehouseMovementDeviation, WarehouseMovement, StockMovementHistory, CreateWarehouseMovementRequest, UpdateWarehouseMovementRequest } from '../../types/warehouse.js';
+import { WarehouseMovementItem, WarehouseMovementDeviation, WarehouseMovement, CreateWarehouseMovementRequest, UpdateWarehouseMovementRequest } from '../../types/warehouse.js';
 import type { GoodMovingDocument, GoodMovingFilter, MovementHistoryResponse } from '../../../shared/types/movement.js';
 
 // Додаткові типи для Warehouse модуля
@@ -13,28 +13,6 @@ export interface StockUpdateResult {
 
 export interface WarehouseMapping {
   [key: string]: string; // Наприклад, "Основний склад": "1"
-}
-
-export interface CreateStockMovementHistoryParams {
-  sku: string;
-  sourceWarehouse: string;
-  destinationWarehouse: string;
-  movedPortions: number;
-  boxQuantity: number;
-  portionQuantity: number;
-  batchNumber?: string;
-  movementId: number;
-  userId: number;
-  stockUpdateResult: StockUpdateResult;
-}
-
-export interface RevertStockMovementParams {
-  sku: string;
-  sourceWarehouse: string;
-  destinationWarehouse: string;
-  portionsToReturn: number;
-  movementId: number;
-  userId: number;
 }
 
 /**
@@ -53,7 +31,6 @@ export type {
   WarehouseMovementItem,
   WarehouseMovementDeviation,
   WarehouseMovement,
-  StockMovementHistory,
   CreateWarehouseMovementRequest,
   UpdateWarehouseMovementRequest,
   GoodMovingDocument,
