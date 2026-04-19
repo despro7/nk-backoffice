@@ -476,79 +476,15 @@ const ProductSets: React.FC = () => {
     [isDebugMode]
   );
 
-  // Фільтруємо та сортуємо дані для відображення
+  // Фільтруємо дані для відображення.
+  // Пошук, категорія та сортування — серверні (передаємо в API).
+  // Тут залишається лише локальний фільтр "показати застарілі".
   const displayProducts = useMemo(() => {
-    let filtered = [...products];
-
-    // Фільтр по пошуку
-    if (searchTerm) {
-      filtered = filtered.filter(product =>
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.sku.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    // Фільтр по категорії
-    if (selectedCategory) {
-      filtered = filtered.filter(product =>
-        product.categoryName === selectedCategory
-      );
-    }
-
-    // Фільтр по застарілим товарам
     if (!showOutdated) {
-      filtered = filtered.filter(product => !product.isOutdated);
+      return products.filter(product => !product.isOutdated);
     }
-
-    // Сортування
-    if (sortDescriptor?.column) {
-      filtered.sort((a, b) => {
-        let first: any = a[sortDescriptor.column as keyof Product];
-        let second: any = b[sortDescriptor.column as keyof Product];
-
-        // Обработка специальных случаев для колонок
-        if (sortDescriptor.column === 'category') {
-          first = a.categoryName;
-          second = b.categoryName;
-        } else if (sortDescriptor.column === 'stock1') {
-          const stockA = parseStockBalance(a.stockBalanceByStock);
-          const stockB = parseStockBalance(b.stockBalanceByStock);
-          first = stockA["1"] || 0;
-          second = stockB["1"] || 0;
-        } else if (sortDescriptor.column === 'stock2') {
-          const stockA = parseStockBalance(a.stockBalanceByStock);
-          const stockB = parseStockBalance(b.stockBalanceByStock);
-          first = stockA["2"] || 0;
-          second = stockB["2"] || 0;
-        } else if (sortDescriptor.column === 'weight') {
-          first = a.weight || 0;
-          second = b.weight || 0;
-        } else if (sortDescriptor.column === 'manualOrder') {
-          first = (a.manualOrder ?? 0);
-          second = (b.manualOrder ?? 0);
-        } else if (sortDescriptor.column === 'barcode') {
-          first = a.barcode || '';
-          second = b.barcode || '';
-        } else if (sortDescriptor.column === 'portions') {
-          const pA = portionsBySku.get(a.sku);
-          const pB = portionsBySku.get(b.sku);
-          first = (pA?.newQty ?? 0) + (pA?.confirmedQty ?? 0);
-          second = (pB?.newQty ?? 0) + (pB?.confirmedQty ?? 0);
-        }
-
-        if (first === null || first === undefined) first = '';
-        if (second === null || second === undefined) second = '';
-
-        let cmp = 0;
-        if (first < second) cmp = -1;
-        else if (first > second) cmp = 1;
-
-        return sortDescriptor.direction === 'descending' ? -cmp : cmp;
-      });
-    }
-
-    return filtered;
-  }, [products, searchTerm, selectedCategory, sortDescriptor, showOutdated, portionsBySku]);
+    return products;
+  }, [products, showOutdated]);
 
   // Функція для рендеринга комірок таблиці
   const renderCell = (product: Product, columnKey: React.Key) => {
@@ -1293,11 +1229,22 @@ const ProductSets: React.FC = () => {
         });
 
         // Показуємо toast з результатом синхронізації
-        addToast({
-          title: 'Синхронізацію завершено',
-          description: result.message,
-          color: result.errors?.length > 0 ? 'warning' : 'success'
-        });
+        if (result.errors?.length > 0) {
+          const errorList = result.errors.slice(0, 5).join('\n');
+          const moreCount = result.errors.length > 5 ? ` (+${result.errors.length - 5} ще)` : '';
+          addToast({
+            title: `Синхронізація завершена з помилками (${result.errors.length})`,
+            description: errorList + moreCount,
+            color: 'danger',
+            timeout: 10000
+          });
+        } else {
+          addToast({
+            title: 'Синхронізацію завершено',
+            description: result.message,
+            color: 'success'
+          });
+        }
 
         // Оновлюємо список товарів після синхронізації
         fetchProducts();
@@ -1593,6 +1540,18 @@ const ProductSets: React.FC = () => {
           description: result.message,
           color: result.errors?.length > 0 ? 'warning' : 'success'
         });
+
+        // Окремий toast з переліком помилок по товарах
+        if (result.errors?.length > 0) {
+          const errorList = result.errors.slice(0, 5).join('\n');
+          const moreCount = result.errors.length > 5 ? ` (+${result.errors.length - 5} ще)` : '';
+          addToast({
+            title: `Товари з помилками (${result.errors.length})`,
+            description: errorList + moreCount,
+            color: 'danger',
+            timeout: 12000
+          });
+        }
 
         // Оновлюємо список товарів після синхронізації
         fetchProducts();
@@ -1904,26 +1863,49 @@ const ProductSets: React.FC = () => {
 
   // Автоматичне оновлення при зміні фільтрів
   useEffect(() => {
-    fetchProducts();
     fetchStats();
     fetchAllProducts();
   }, []); // Завантажуємо тільки при монтуванні
 
-  // Оновлення даних при зміні категорії
+  // Refs для пропуску першого рендеру у фільтрових ефектах
+  const categoryMountedRef = useRef(false);
+  const searchMountedRef = useRef(false);
+  const sortMountedRef = useRef(false);
+
+  // Зміна категорії → скидаємо на сторінку 1 та запитуємо
   useEffect(() => {
-    setCurrentPage(1);
+    if (!categoryMountedRef.current) { categoryMountedRef.current = true; return; }
+    if (currentPage !== 1) {
+      setCurrentPage(1); // зміна currentPage спровокує fetch через нижній ефект
+    } else {
+      fetchProducts(1, searchTerm, selectedCategory);
+    }
   }, [selectedCategory]);
 
-  // Затримка для пошуку, щоб не робити запит при кожному символі
+  // Зміна пошуку → debounce → скидаємо на сторінку 1 та запитуємо
   useEffect(() => {
+    if (!searchMountedRef.current) { searchMountedRef.current = true; return; }
     const timer = setTimeout(() => {
-      setCurrentPage(1);
+      if (currentPage !== 1) {
+        setCurrentPage(1);
+      } else {
+        fetchProducts(1, searchTerm, selectedCategory);
+      }
     }, 500);
-
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // При зміні сторінки потрібно перезапитувати товари
+  // Зміна сортування → скидаємо на сторінку 1 та запитуємо
+  useEffect(() => {
+    if (!sortMountedRef.current) { sortMountedRef.current = true; return; }
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    } else {
+      fetchProducts(1, searchTerm, selectedCategory);
+    }
+  }, [sortDescriptor]);
+
+  // При зміні сторінки запитуємо товари (включаючи початкове завантаження)
   useEffect(() => {
     fetchProducts(currentPage, searchTerm, selectedCategory);
   }, [currentPage]);
