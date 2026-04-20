@@ -12,6 +12,7 @@ export default function Reports() {
 	return (
 		<div className="flex flex-col gap-6">
 			<ShipmentSummaryCards summary={summary} />
+			{/* TODO: Швидкий перемикач дат */}
 			<div className="bg-white rounded-lg p-6">
 				<ProductShippedStatsTable onSummaryChange={setSummary} />
 			</div>

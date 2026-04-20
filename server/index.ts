@@ -25,6 +25,7 @@ import metaLogsRouter from './routes/meta-logs.js';
 import wordpressReceiptRoutes from './routes/wordpress-receipt.js';
 import notificationsRouter from './routes/notifications.js';
 import materialsRouter from './routes/materials.js';
+import statRouter from './routes/stat.js';
 
 // Збільшуємо ліміт слухачів для обробки подій, щоб уникнути попереджень про витік пам'яті при великій кількості одночасних cron задач або вебхуків.
 process.setMaxListeners(20);
@@ -137,6 +138,9 @@ export function createServer() {
 
   // Materials routes
   app.use("/api/materials", materialsRouter);
+
+  // Stat routes (sales dynamics, etc.)
+  app.use("/api/stat", statRouter);
 
   // Webhook routes (должны быть до protected routes)
   app.use('/api/webhooks', webhookRoutes);

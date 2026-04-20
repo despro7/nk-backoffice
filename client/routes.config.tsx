@@ -10,6 +10,7 @@ import WarehouseMaterials from './pages/WarehouseMaterials';
 import Reports from './pages/Reports';
 import ReportsSales from './pages/ReportsSales';
 import ReportsShipment from './pages/ReportsShipment';
+import ReportsSalesDynamics from './pages/ReportsSalesDynamics';
 import DesignSystem from './pages/DesignSystem';
 import OrderView from './pages/OrderView';
 import SettingsTestAuth from "./pages/SettingsTestAuth";
@@ -172,6 +173,18 @@ export const appRoutes: AppRoute[] = [
     parent: 'reports',
     order: 2,
     minRole: ROLES.SHOP_MANAGER // shop-manager і вище
+  },
+  {
+    path: '/reports/sales-dynamics',
+    component: ReportsSalesDynamics,
+    title: 'Динаміка продажів по тижнях',
+    pageTitle: 'Динаміка продажів | NK Backoffice',
+    navLabel: 'Динаміка продажів',
+    icon: <DynamicIcon name="trending-up" size={16} />,
+    inNav: true,
+    parent: 'reports',
+    order: 3,
+    minRole: ROLES.ADS_MANAGER // ads-manager і вище
   },
   {
     path: '/salesdrive-to-dilovod',

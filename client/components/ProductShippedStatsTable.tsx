@@ -11,6 +11,7 @@ import {
   Select,
   SelectItem,
   DateRangePicker,
+  DatePicker,
   Chip,
   Spinner,
   Dropdown,
@@ -26,12 +27,12 @@ import {
 } from "@heroui/react";
 import { useApi } from "../hooks/useApi";
 import type { DateRange } from "@react-types/datepicker";
+import { CalendarDate, today, getLocalTimeZone } from "@internationalized/date";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { formatRelativeDate, formatDate, pluralize } from "../lib/formatUtils";
+import { formatRelativeDate, formatDate, pluralize, getValueColor, createStandardDatePresets } from "../lib";
 import { addToast } from "@heroui/react";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
-import { createStandardDatePresets } from "../lib";
 import {
   CacheRefreshConfirmModal,
   CachePeriodSelectModal,
@@ -390,6 +391,18 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
 	// Попередньо встановлені діапазони дат
   const datePresets = useMemo(() => createStandardDatePresets(), []);
 
+  /**
+   * Визначає ключ preset'у для одиночної дати.
+   * Повертає "today" / "yesterday" / "custom".
+   */
+  const getPresetKeyForDate = useCallback((date: CalendarDate): string => {
+    const todayDate = today(getLocalTimeZone());
+    const yesterdayDate = todayDate.subtract({ days: 1 });
+    if (date.compare(todayDate) === 0) return "today";
+    if (date.compare(yesterdayDate) === 0) return "yesterday";
+    return "custom";
+  }, []);
+
   // Обробник зміни вибраного товару
   const handleProductChange = useCallback((sku: string) => {
     if (process.env.NODE_ENV === 'development') {
@@ -643,55 +656,6 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
     }
   }, [productStats, dateStats, sortDescriptor, viewMode]);
 
-  // Кольорова градація для значень (м'які кольори в стилі flat HeroUI)
-  // Повертаємо об'єкт з base і content, 5 градацій, нулі — сірий текст, без фону
-  const getValueColor = (value: number, values: number[]) => {
-    if (values.length === 0 || value === 0) {
-      return {
-        base: "bg-transparent",
-        content: "text-gray-400 font-medium"
-      };
-    }
-
-    const min = Math.min(...values.filter(v => v > 0));
-    const max = Math.max(...values);
-
-    if (min === max) {
-      return {
-        base: "bg-neutral-100/50",
-        content: "text-gray-700 font-medium"
-      };
-    }
-
-    const normalized = (value - min) / (max - min);
-
-	if (normalized < 0.1) {
-	// Червоний
-		return {
-			base: "bg-danger/10",
-			content: "text-danger font-medium"
-		};
-	} else if (normalized < 0.35) {
-	// Жовтий
-		return {
-			base: "bg-yellow-500/10",
-			content: "text-yellow-700/80 font-medium"
-		};
-	} else if (normalized < 0.75) {
-		// Жовтий
-			return {
-				base: "bg-lime-500/10",
-				content: "text-lime-600/80 font-medium"
-			};
-	} else {
-		// Зелений
-		return {
-			base: "bg-lime-500/20",
-			content: "text-lime-600 font-medium"
-		};
-	}
-  };
-
   // Отримання всіх значень для кожного стовпця
   const getAllOrderedQuantities = useMemo(() =>
     viewMode === "dates"
@@ -728,101 +692,181 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
   return (
     <div className={`${className}`}>
       {/* Фільтри */}
-      <div className="flex flex-wrap gap-4 items-end">
-        <div className="flex-1">
-          <Select
-            aria-label="Фільтр по товару"
-            placeholder="Всі товари"
-            selectedKeys={selectedProduct ? [selectedProduct] : []}
-            onSelectionChange={(keys) => {
-              const selected = Array.from(keys);
-              const sku = selected.length > 0 ? (selected[0] as string) : "";
-              handleProductChange(sku);
-            }}
-            renderValue={(items) => {
-              if (items.length === 0) return "Всі товари";
-              const selectedItem = items[0];
-              const product = productStats.find(p => p.sku === selectedItem.key);
-              return product ? `${product.name} (${product.sku})` : "Всі товари";
-            }}
-            size="md"
-            startContent={<DynamicIcon name="package" className="text-gray-400" size={19} />}
-            classNames={{
-              trigger: "h-10 max-w-80",
-              innerWrapper: "gap-2"
-            }}
-          >
-            {productOptions}
-          </Select>
-        </div>
+      <div className="flex gap-4 items-end">
+        <Select
+          aria-label="Фільтр по товару"
+          placeholder="Всі товари"
+          selectedKeys={selectedProduct ? [selectedProduct] : []}
+          onSelectionChange={(keys) => {
+            const selected = Array.from(keys);
+            const sku = selected.length > 0 ? (selected[0] as string) : "";
+            handleProductChange(sku);
+          }}
+          renderValue={(items) => {
+            if (items.length === 0) return "Всі товари";
+            const selectedItem = items[0];
+            const product = productStats.find(p => p.sku === selectedItem.key);
+            return product ? `${product.name} (${product.sku})` : "Всі товари";
+          }}
+          size="md"
+          startContent={<DynamicIcon name="package" size={19} className="text-gray-400 shrink-0" />}
+          classNames={{
+            base: "max-w-70",
+            trigger: "h-10 max-w-80",
+            innerWrapper: "gap-2"
+          }}
+        >
+          {productOptions}
+        </Select>
 
-        <div className="flex-1">
-          <Select
-            aria-label="Статус замовлення"
-            placeholder="Всі статуси"
-            selectedKeys={statusFilter === "all" ? [] : [statusFilter]}
-            onSelectionChange={(keys) => {
-              const selected = Array.from(keys);
-              const newStatus =
-                selected.length > 0 ? (selected[0] as string) : "all";
-              setStatusFilter(newStatus);
-            }}
-            size="md"
-			startContent={<DynamicIcon name="filter" className="text-gray-400" size={19} />}
-			classNames={{
-				trigger: "h-10",
-				innerWrapper: "gap-2"
-			}}
-          >
-            {statusOptions.map((option) => (
-              <SelectItem key={option.key}>{option.label}</SelectItem>
-            ))}
-          </Select>
-        </div>
+        <Select
+          aria-label="Статус замовлення"
+          placeholder="Всі статуси"
+          selectedKeys={statusFilter === "all" ? [] : [statusFilter]}
+          onSelectionChange={(keys) => {
+            const selected = Array.from(keys);
+            const newStatus =
+              selected.length > 0 ? (selected[0] as string) : "all";
+            setStatusFilter(newStatus);
+          }}
+          size="md"
+          startContent={<DynamicIcon name="filter" size={18} className="text-gray-400 shrink-0" />}
+          classNames={{
+            base: "max-w-50",
+            trigger: "h-10",
+            innerWrapper: "gap-2"
+          }}
+        >
+          {statusOptions.map((option) => (
+            <SelectItem key={option.key}>{option.label}</SelectItem>
+          ))}
+        </Select>
 
-        <div className="flex-1">
-          <Select
-            aria-label="Швидкий вибір періоду"
-            placeholder="Оберіть період"
-			selectedKeys={datePresetKey ? [datePresetKey] : []}
-            onSelectionChange={keys => {
-				const selectedKey = Array.from(keys)[0] as string;
-				setDatePresetKey(selectedKey);
-				const preset = datePresets.find(p => p.key === selectedKey);
-				if (preset) setDateRange(preset.getRange());
-			}}
-            size="md"
-			startContent={<DynamicIcon name="calendar" className="text-gray-400" size={19} />}
-			classNames={{
-				trigger: "h-10",
-				innerWrapper: "gap-2"
-			}}
-          >
-            {datePresets.map((preset) => (
+        <Select
+          aria-label="Швидкий вибір періоду"
+          placeholder="Оберіть період"
+          selectedKeys={datePresetKey ? [datePresetKey] : []}
+          onSelectionChange={keys => {
+            const selectedKey = Array.from(keys)[0] as string;
+            setDatePresetKey(selectedKey);
+            const preset = datePresets.find(p => p.key === selectedKey);
+            if (preset) setDateRange(preset.getRange());
+          }}
+          size="md"
+          startContent={<DynamicIcon name="calendar-check" size={18} className="text-gray-400 shrink-0" />}
+          classNames={{
+            base: "max-w-50 ml-auto",
+            trigger: "h-10",
+            innerWrapper: "gap-2"
+          }}
+        >
+          {[
+            ...datePresets.map((preset) => (
               <SelectItem key={preset.key}>{preset.label}</SelectItem>
-            ))}
-          </Select>
-        </div>
+            )),
+            ...(datePresetKey === "custom"
+              ? [<SelectItem key="custom">Обрана дата</SelectItem>]
+              : []),
+          ]}
+        </Select>
 
-        <div className="flex-1">
-          <I18nProvider locale="uk-UA">
-            <DateRangePicker
-              aria-label="Або власний період"
-              value={dateRange}
-              onChange={(value) => {
-                setDateRange(value);
-                setDatePresetKey(null);
-              }}
-              size="md"
-              selectorButtonPlacement="start"
-              selectorIcon={<DynamicIcon name="calendar" size={18} />}
-              classNames={{
-              inputWrapper: "h-10",
-              segment: "rounded"
-              }}
-            />
-          </I18nProvider>
-        </div>
+        {/* DatePicker (одна дата) або DateRangePicker (діапазон) */}
+        {(() => {
+          // Визначаємо режим: одна дата або діапазон
+          const isSingleDate =
+            dateRange?.start &&
+            dateRange?.end &&
+            (dateRange.start as CalendarDate).compare(dateRange.end as CalendarDate) === 0;
+
+          const maxDate = today(getLocalTimeZone());
+
+          if (isSingleDate) {
+            const currentDate = dateRange!.start as CalendarDate;
+            const isNextDisabled = currentDate.compare(maxDate) >= 0;
+
+            return (
+              <div className="flex items-center gap-0">
+                {/* Стрілка назад */}
+                <Button
+                  isIconOnly
+                  size="md"
+                  variant="flat"
+                  aria-label="Попередній день"
+                  onPress={() => {
+                    const prev = currentDate.subtract({ days: 1 });
+                    setDateRange({ start: prev, end: prev });
+                    setDatePresetKey(getPresetKeyForDate(prev));
+                  }}
+                  className="h-10 rounded-r-none border-r-0"
+                >
+                  <DynamicIcon name="chevron-left" className="w-4 h-4" />
+                </Button>
+
+                {/* DatePicker */}
+                <I18nProvider locale="uk-UA">
+                  <DatePicker
+                    aria-label="Вибір дати"
+                    value={currentDate}
+                    onChange={(value) => {
+                      if (value) {
+                        setDateRange({ start: value, end: value });
+                        setDatePresetKey(getPresetKeyForDate(value as CalendarDate));
+                      }
+                    }}
+                    maxValue={maxDate}
+                    size="md"
+                    selectorButtonPlacement="start"
+                    selectorIcon={<DynamicIcon name="calendar-days" size={18} className="shrink-0" />}
+                    classNames={{
+                      base: "w-auto",
+                      inputWrapper: "h-10 rounded-none",
+                      segment: "rounded",
+                    }}
+                  />
+                </I18nProvider>
+
+                {/* Стрілка вперед */}
+                <Button
+                  isIconOnly
+                  size="md"
+                  variant="flat"
+                  aria-label="Наступний день"
+                  onPress={() => {
+                    const next = currentDate.add({ days: 1 });
+                    setDateRange({ start: next, end: next });
+                    setDatePresetKey(getPresetKeyForDate(next));
+                  }}
+                  isDisabled={isNextDisabled}
+                  className="h-10 rounded-l-none border-l-0"
+                >
+                  <DynamicIcon name="chevron-right" className="w-4 h-4" />
+                </Button>
+              </div>
+            );
+          }
+
+          return (
+            <I18nProvider locale="uk-UA">
+              <DateRangePicker
+                aria-label="Або власний період"
+                value={dateRange}
+                onChange={(value) => {
+                  setDateRange(value);
+                  setDatePresetKey(null);
+                }}
+                maxValue={maxDate}
+                size="md"
+                selectorButtonPlacement="start"
+                selectorIcon={<DynamicIcon name="calendar" size={18} />}
+                classNames={{
+                  base: "w-auto",
+                  inputWrapper: "h-10",
+                  segment: "rounded",
+                }}
+              />
+            </I18nProvider>
+          );
+        })()}
 
         {/* Кнопка скидання фільтрів */}
         <Button
@@ -832,7 +876,7 @@ export default function ProductShippedStatsTable({ className, onSummaryChange }:
           variant="flat"
           className="h-10 px-3 gap-2 bg-transparent border-1.5 border-neutral-200 hover:bg-red-100 hover:border-red-200 hover:text-red-500"
         >
-          <DynamicIcon name="rotate-ccw" size={16} />
+          <DynamicIcon name="rotate-ccw" size={16} className="shrink-0" />
 		      Скинути
         </Button>
       </div>

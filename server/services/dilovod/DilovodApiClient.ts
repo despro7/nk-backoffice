@@ -458,9 +458,9 @@ export class DilovodApiClient {
       }
     };
 
-    const response = await this.makeRequest<any[]>(request);
+    const response = await this.makeRequest<any>(request);
 
-    return response;
+    return this.normalizeToArray<any>(response);
   }
 
   // Оновлення конфігурації

@@ -26,7 +26,7 @@ import { useApi } from "../hooks/useApi";
 import type { DateRange } from "@react-types/datepicker";
 import { CacheRefreshConfirmModal, CachePeriodSelectModal, useCacheRefreshModals } from "./modals/CacheRefreshConfirmModal";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { formatRelativeDate, getStatusColor, getStatusLabel, ORDER_STATUSES, convertCalendarRangeToReportingRange, createStandardDatePresets } from "../lib";
+import { formatRelativeDate, getStatusColor, getStatusLabel, ORDER_STATUSES, convertCalendarRangeToReportingRange, createStandardDatePresets, getValueColor } from "../lib";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { addToast } from "@heroui/react";
@@ -47,6 +47,9 @@ interface SalesData {
   priceWithDiscountReason: number;
   discountReasonText: string;
   totalPrice: number | undefined;
+  vidskoduvannaTotal: number;    // кількість замовлень з відшкодуванням за день
+  vidskoduvannaGrnTotal: number; // загальна сума відшкодувань за день (грн)
+  vidskoduvannaPortions: number; // кількість порцій з відшкодуванням за день
   orders: Array<{
     orderNumber: string;
     portionsCount: number;
@@ -60,6 +63,8 @@ interface SalesData {
     totalPrice?: number | undefined;
     hasDiscount?: boolean;
     discountReasonCode?: string | null;
+    vidskoduvanna?: number | null;    // кількість відшкодованих порцій із rawData
+    vidskoduvannaGrn?: number | null; // сума відшкодування в грн із rawData
   }>;
 }
 
@@ -105,6 +110,8 @@ const extraFilterOptions = [
 export default function SalesReportTable({ className }: SalesReportTableProps) {
   // Додатковий фільтр
   const [extraFilters, setExtraFilters] = useState<Set<string>>(new Set());
+  // Кольорове форматування таблиці
+  const [colored, setColored] = useState(true);
   const { isAdmin } = useRoleAccess();
   const { apiCall } = useApi();
   const { isLoading: isAuthLoading } = useAuth();
@@ -116,8 +123,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
   });
 
   // Модальное окно с деталями
-  const [selectedDateDetails, setSelectedDateDetails] =
-    useState<SalesData | null>(null);
+  const [selectedDateDetails, setSelectedDateDetails] = useState<SalesData | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
   // Кеширование
@@ -535,6 +541,9 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
           portionsByStatus,
           ordersWithDiscountReason,
           portionsWithDiscountReason,
+          vidskoduvannaTotal: filteredOrders.filter((o) => (o as any).vidskoduvanna != null && Number((o as any).vidskoduvanna) > 0).length,
+          vidskoduvannaGrnTotal: filteredOrders.reduce((sum, o) => sum + (Number((o as any).vidskoduvannaGrn) || 0), 0),
+          vidskoduvannaPortions: filteredOrders.reduce((sum, o) => sum + (Number((o as any).vidskoduvanna) || 0), 0),
         };
       })
       .filter((d): d is SalesData => Boolean(d));
@@ -585,67 +594,26 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
       sourceChatPrice: filteredSalesData.reduce((sum, item) => sum + (item.priceBySource?.["інше"] || 0), 0),
       discountReason: filteredSalesData.reduce((sum, item) => sum + item.ordersWithDiscountReason, 0),
       discountReasonPortions: filteredSalesData.reduce((sum, item) => sum + item.portionsWithDiscountReason, 0),
+      vidskoduvannaTotal: filteredSalesData.reduce((sum, item) => sum + (item.vidskoduvannaTotal || 0), 0),
+      vidskoduvannaGrnTotal: filteredSalesData.reduce((sum, item) => sum + (item.vidskoduvannaGrnTotal || 0), 0),
+      vidskoduvannaPortions: filteredSalesData.reduce((sum, item) => sum + (item.vidskoduvannaPortions || 0), 0),
     }),
     [filteredSalesData],
   );
 
-  // Получение статуса по ключу
+  // Отримання статусу за ключем
   // const getStatusLabel = (statusKey: string) => {
   //   const status = statusOptions.find((s) => s.key === statusKey);
   //   return status ? status.label : statusKey;
   // };
 
-  // Обработчик открытия модального окна с деталями
+  // Обробник відкриття модального вікна з деталями
   const handleOpenDetails = (dateData: SalesData) => {
     setSelectedDateDetails(dateData);
     setIsDetailsModalOpen(true);
   };
 
-  // Цветовая градация для значений
-  const getValueColor = (value: number, values: number[]) => {
-    if (values.length === 0 || value === 0) {
-      return {
-        base: "bg-transparent",
-        content: "text-gray-400 font-medium",
-      };
-    }
-
-    const min = Math.min(...values.filter((v) => v > 0));
-    const max = Math.max(...values);
-
-    if (min === max) {
-      return {
-        base: "bg-neutral-100/50",
-        content: "text-gray-700 font-medium",
-      };
-    }
-
-    const normalized = (value - min) / (max - min);
-
-    if (normalized < 0.1) {
-      return {
-        base: "bg-danger/10",
-        content: "text-danger font-medium",
-      };
-    } else if (normalized < 0.35) {
-      return {
-        base: "bg-yellow-500/10",
-        content: "text-yellow-700/80 font-medium",
-      };
-    } else if (normalized < 0.75) {
-      return {
-        base: "bg-lime-500/10",
-        content: "text-lime-600/80 font-medium",
-      };
-    } else {
-      return {
-        base: "bg-lime-500/20",
-        content: "text-lime-600 font-medium",
-      };
-    }
-  };
-
-  // Получение всех значений для каждого столбца
+  // Набуття всіх значень для кожного стовпця
   const getAllOrdersCounts = useMemo(
     () => filteredSalesData.map((item) => item.ordersCount),
     [filteredSalesData],
@@ -683,6 +651,11 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
 
   const getAllDiscountReasonCounts = useMemo(
     () => filteredSalesData.map((item) => item.ordersWithDiscountReason),
+    [filteredSalesData],
+  );
+
+  const getAllVidskoduvannaGrn = useMemo(
+    () => filteredSalesData.map((item) => item.vidskoduvannaGrnTotal || 0),
     [filteredSalesData],
   );
 
@@ -736,12 +709,18 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
       sortable: false,
       className: "w-2/19 text-center",
     },
+    // {
+    //   key: "vidskoduvanna",
+    //   label: "Відшкод.",
+    //   sortable: false,
+    //   className: "w-2/19 text-center",
+    // },
   ];
 
   return (
     <div className={`space-y-4 ${className}`}>
-  {/* Фільтри */}
-  <div className="flex flex-wrap gap-4 items-end">
+      {/* Фільтри */}
+      <div className="flex flex-wrap gap-4 items-end">
         <div className="flex-1">
           <Select
             aria-label="Статус замовлення"
@@ -888,6 +867,20 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
           </Select>
         </div>
 
+        {/* Перемикач кольорового форматування */}
+        <Button
+          onPress={() => setColored((prev) => !prev)}
+          size="md"
+          variant="flat"
+          isIconOnly={true}
+          startContent={<DynamicIcon name="palette" size={18} className="shrink-0" />}
+          className={`h-10 px-3 gap-2 border-1.5 transition-colors ${
+            colored
+              ? "bg-lime-100 border-lime-500/50 text-lime-600/70 hover:bg-lime-100"
+              : "bg-transparent border-neutral-200 text-neutral-400 hover:bg-neutral-100"
+          }`}
+        />
+
         {/* Кнопка сброса фильтров */}
         <Button
           onPress={resetFilters}
@@ -903,42 +896,43 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
 
       {/* Прогресс кеширования */}
       {cacheProgress && (
-        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <DynamicIcon
-                name="database"
-                size={20}
-                className="text-blue-600"
-              />
-              <span className="text-sm font-medium text-blue-800">
-                Оновлення кеша статистики
-              </span>
-            </div>
-            <span className="text-sm text-blue-600">
-              {cacheProgress.processed} / {cacheProgress.total}
+      <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <DynamicIcon
+              name="database"
+              size={20}
+              className="text-blue-600"
+            />
+            <span className="text-sm font-medium text-blue-800">
+              Оновлення кеша статистики
             </span>
           </div>
-
-          <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
-            <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-              style={{
-                width: `${(cacheProgress.processed / cacheProgress.total) * 100}%`,
-              }}
-            />
-          </div>
-
-          <div className="flex justify-between text-xs text-blue-600">
-            <span>Оброблено: {cacheProgress.processed}</span>
-            <span>Помилки: {cacheProgress.errors}</span>
-          </div>
+          <span className="text-sm text-blue-600">
+            {cacheProgress.processed} / {cacheProgress.total}
+          </span>
         </div>
+
+        <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
+          <div
+            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+            style={{
+              width: `${(cacheProgress.processed / cacheProgress.total) * 100}%`,
+            }}
+          />
+        </div>
+
+        <div className="flex justify-between text-xs text-blue-600">
+          <span>Оброблено: {cacheProgress.processed}</span>
+          <span>Помилки: {cacheProgress.errors}</span>
+        </div>
+      </div>
       )}
 
       {/* Таблица */}
       <div className="relative">
         <Table
+          key={String(colored)}
           aria-label="Звіт продажів"
           sortDescriptor={sortDescriptor}
           onSortChange={(descriptor) =>
@@ -1011,11 +1005,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                     size="md"
                     variant="flat"
                     classNames={{
-                      base: getValueColor(item.ordersCount, getAllOrdersCounts)
+                      base: getValueColor(item.ordersCount, getAllOrdersCounts, colored)
                         .base,
                       content: getValueColor(
                         item.ordersCount,
                         getAllOrdersCounts,
+                        colored,
                       ).content,
                     }}
                   >
@@ -1030,10 +1025,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                       base: getValueColor(
                         item.portionsCount,
                         getAllPortionsCounts,
+                        colored,
                       ).base,
                       content: getValueColor(
                         item.portionsCount,
                         getAllPortionsCounts,
+                        colored,
                       ).content,
                     }}
                   >
@@ -1048,10 +1045,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                       base: getValueColor(
                         item.totalPrice || 0,
                         getAllTotalPrice,
+                        colored,
                       ).base,
                       content: getValueColor(
                         item.totalPrice || 0,
                         getAllTotalPrice,
+                        colored,
                       ).content,
                     }}
                   >
@@ -1070,10 +1069,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                       base: getValueColor(
                         item.ordersBySource["nk-food.shop"] || 0,
                         getAllSourceWebsiteCounts,
+                        colored,
                       ).base,
                       content: getValueColor(
                         item.ordersBySource["nk-food.shop"] || 0,
                         getAllSourceWebsiteCounts,
+                        colored,
                       ).content,
                     }}
                   >
@@ -1089,10 +1090,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                       base: getValueColor(
                         item.ordersBySource["rozetka"] || 0,
                         getAllSourceRozetkaCounts,
+                        colored,
                       ).base,
                       content: getValueColor(
                         item.ordersBySource["rozetka"] || 0,
                         getAllSourceRozetkaCounts,
+                        colored,
                       ).content,
                     }}
                   >
@@ -1108,10 +1111,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                       base: getValueColor(
                         item.ordersBySource["prom.ua"] || 0,
                         getAllSourcePromCounts,
+                        colored,
                       ).base,
                       content: getValueColor(
                         item.ordersBySource["prom.ua"] || 0,
                         getAllSourcePromCounts,
+                        colored,
                       ).content,
                     }}
                   >
@@ -1127,10 +1132,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                       base: getValueColor(
                         item.ordersBySource["інше"] || 0,
                         getAllSourceChatCounts,
+                        colored,
                       ).base,
                       content: getValueColor(
                         item.ordersBySource["інше"] || 0,
                         getAllSourceChatCounts,
+                        colored,
                       ).content,
                     }}
                   >
@@ -1146,10 +1153,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                       base: getValueColor(
                         item.ordersWithDiscountReason,
                         getAllDiscountReasonCounts,
+                        colored,
                       ).base,
                       content: getValueColor(
                         item.ordersWithDiscountReason,
                         getAllDiscountReasonCounts,
+                        colored,
                       ).content,
                     }}
                   >
@@ -1157,13 +1166,30 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                     {item.portionsWithDiscountReason}
                   </Chip>
                 </TableCell>
+                {/* <TableCell className="text-center text-base">
+                  {(item.vidskoduvannaTotal || 0) > 0 ? (
+                    <Chip
+                      size="md"
+                      variant="bordered"
+                      classNames={{
+                        base: "border-red-700 border-1",
+                        content: "text-red-700/80 font-medium",
+                      }}
+                    >
+                      {item.vidskoduvannaTotal} /{" "}
+                      {(item.vidskoduvannaGrnTotal || 0).toLocaleString("uk-UA", { maximumFractionDigits: 0 })} ₴
+                    </Chip>
+                  ) : (
+                    <span className="text-neutral-300 text-sm">—</span>
+                  )}
+                </TableCell> */}
               </TableRow>
             )}
           </TableBody>
         </Table>
 
-  {/* Итоговая строка */}
-  {filteredSalesData.length > 0 && (
+    {/* Итоговая строка */}
+    {filteredSalesData.length > 0 && (
           <div className="border-t-1 border-gray-200 py-2">
             <div className="flex items-center justify-between text-sm">
               <div className="w-3/19"></div>
@@ -1174,9 +1200,9 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                 {totals.portionsCount}
               </div>
               <div className="text-center font-bold text-gray-800 w-2/19">
-    {(totals.totalPrice || 0)
-      .toLocaleString("uk-UA", { style: "currency", currency: "UAH", maximumFractionDigits: 0 })
-      .replace(/\s?грн\.?|UAH|₴/gi, " ₴")}
+                {(totals.totalPrice || 0)
+                  .toLocaleString("uk-UA", { style: "currency", currency: "UAH", maximumFractionDigits: 0 })
+                  .replace(/\s?грн\.?|UAH|₴/gi, " ₴")}
               </div>
               <div className="text-center font-bold text-gray-800 w-2/19">
                 {totals.sourceWebsite} / {totals.sourceWebsitePortions}
@@ -1193,6 +1219,11 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
               <div className="text-center font-bold text-gray-800 w-2/19">
                 {totals.discountReason} / {totals.discountReasonPortions}
               </div>
+              {/* <div className="text-center font-bold text-gray-800 w-2/19">
+                {totals.vidskoduvannaTotal > 0
+                  ? `${totals.vidskoduvannaTotal} / ${totals.vidskoduvannaGrnTotal.toLocaleString("uk-UA", { maximumFractionDigits: 0 })} ₴`
+                  : "—"}
+              </div> */}
             </div>
           </div>
         )}
@@ -1238,25 +1269,79 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
               <ModalBody>
                 {selectedDateDetails && (
                   <div className="space-y-4">
-                    {/* Главные карточки */}
-                    <div className="grid grid-cols-2 gap-4">
+                    {/* Головні картки */}
+                    <div className="grid grid-cols-4 gap-4">
                       <div className="p-4 bg-blue-50 rounded-lg text-center">
-                        <div className="text-sm text-blue-600 font-medium">
-                          Загалом замовлень
+                        <div className="text-sm text-blue-700 font-medium">
+                          Замовлень
                         </div>
-                        <div className="text-3xl font-bold text-blue-800">
+                        <div className="text-3xl font-bold text-blue-700">
                           {selectedDateDetails.ordersCount}
                         </div>
                       </div>
                       <div className="p-4 bg-green-50 rounded-lg text-center">
-                        <div className="text-sm text-green-600 font-medium">
-                          Загалом порцій
+                        <div className="text-sm text-green-700 font-medium">
+                          Порцій
                         </div>
-                        <div className="text-3xl font-bold text-green-800">
+                        <div className="text-3xl font-bold text-green-700">
                           {selectedDateDetails.portionsCount}
                         </div>
                       </div>
+                      <div className="p-4 bg-yellow-50 rounded-lg text-center">
+                        <div className="text-sm text-yellow-700 font-medium">
+                          Загальна сума
+                        </div>
+                        <div className="text-3xl font-bold text-yellow-700">
+                          {selectedDateDetails.totalPrice !== undefined
+                            ? selectedDateDetails.totalPrice
+                                .toLocaleString("uk-UA", { style: "currency", currency: "UAH", maximumFractionDigits: 0 })
+                                .replace(/\s?грн\.?|UAH|₴/gi, " ₴")
+                            : "—"}
+                        </div>
+                      </div>
+                      <div className="p-4 bg-fuchsia-50 rounded-lg text-center">
+                        <div className="text-sm text-fuchsia-700 font-medium">
+                          Середній чек
+                        </div>
+                        <div className="text-3xl font-bold text-fuchsia-700">
+                          {selectedDateDetails.totalPrice !== undefined
+                            ? (selectedDateDetails.totalPrice / (selectedDateDetails.ordersCount || 1))
+                                .toLocaleString("uk-UA", { style: "currency", currency: "UAH", maximumFractionDigits: 0 })
+                                .replace(/\s?грн\.?|UAH|₴/gi, " ₴")
+                            : "—"}
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Картки відшкодувань (показуємо тільки якщо є дані) */}
+                    {(selectedDateDetails.vidskoduvannaTotal || 0) > 0 && (
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-center">
+                          <div className="text-xs text-orange-700 font-medium mb-1">
+                            Замовлень з відшкодуванням
+                          </div>
+                          <div className="text-2xl font-bold text-orange-700">
+                            {selectedDateDetails.vidskoduvannaTotal}
+                          </div>
+                        </div>
+                        <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-center">
+                          <div className="text-xs text-orange-700 font-medium mb-1">
+                            Кількість порцій
+                          </div>
+                          <div className="text-2xl font-bold text-orange-700">
+                            {selectedDateDetails.vidskoduvannaPortions || 0}
+                          </div>
+                        </div>
+                        <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-center">
+                          <div className="text-xs text-orange-700 font-medium mb-1">
+                            Сума відшкодувань
+                          </div>
+                          <div className="text-2xl font-bold text-orange-700">
+                            {(selectedDateDetails.vidskoduvannaGrnTotal || 0).toLocaleString("uk-UA", { maximumFractionDigits: 0 })} ₴
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Оптимизированные секции */}
                     <div className="flex gap-4">
@@ -1375,6 +1460,12 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                                 <TableColumn className="text-sm font-medium">
                                   Знижка
                                 </TableColumn>
+                                {/* <TableColumn className="text-sm font-medium">
+                                  Відшкод.
+                                </TableColumn>
+                                <TableColumn className="text-sm font-medium">
+                                  Відшкод. ₴
+                                </TableColumn> */}
                                 <TableColumn className="text-sm font-medium">
                                   Статус
                                 </TableColumn>
@@ -1411,6 +1502,16 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
                                         <span className="text-sm text-neutral-200">—</span>
                                       )}
                                     </TableCell>
+                                    {/* <TableCell className="text-sm text-neutral-600">
+                                      {(order as any).vidskoduvanna != null && Number((order as any).vidskoduvanna) > 0
+                                        ? <Chip size="sm" variant="flat" classNames={{ base: 'bg-orange-100', content: 'text-orange-700' }}>{Number((order as any).vidskoduvanna)}</Chip>
+                                        : <span className="text-neutral-200">—</span>}
+                                    </TableCell>
+                                    <TableCell className="text-sm text-neutral-600">
+                                      {(order as any).vidskoduvannaGrn != null && Number((order as any).vidskoduvannaGrn) > 0
+                                        ? <Chip size="sm" variant="flat" classNames={{ base: 'bg-orange-100', content: 'text-orange-700' }}>{Number((order as any).vidskoduvannaGrn).toLocaleString("uk-UA", { maximumFractionDigits: 0 })} ₴</Chip>
+                                        : <span className="text-neutral-200">—</span>}
+                                    </TableCell> */}
                                     <TableCell className="text-sm">
                                       <Chip
                                         size="sm"

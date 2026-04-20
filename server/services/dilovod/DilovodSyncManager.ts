@@ -594,7 +594,7 @@ export class DilovodSyncManager {
     // 2. Фільтруємо лише ті, де залишки дійсно змінилися
     const itemsToUpdate = items.filter((item) => {
       const existing = existingMap.get(item.sku);
-      if (!existing) return true; // Товар не знайдено — оновлюємо
+      if (!existing) return false; // SKU немає в БД — пропускаємо (update впаде з P2025)
 
       const unchanged =
         existing["1"] === item.mainStorage &&

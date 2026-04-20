@@ -2281,13 +2281,13 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders/sales/report
- * Получить отчет продаж по дням для таблицы
+ * Отримати звіт продажу днями для таблиці
  */
 router.get('/sales/report', authenticateToken, async (req, res) => {
   try {
     const { status, startDate, endDate, sync, products, singleDay } = req.query;
 
-    // Получаем час начала звітного дня
+    // Отримуємо час початку звітного дня
     const dayStartHour = await getReportingDayStartHour();
 
     const productsKey = Array.isArray(products) ? [...products].sort().join(',') : products || 'all';
@@ -2303,7 +2303,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       }
     }
 
-    // Парсим статусы: если строка содержит запятую, разбиваем на массив
+    // Парсимо статуси: якщо рядок містить кому, розбиваємо на масив
     let parsedStatus: string | string[] | undefined = status as string;
     if (typeof status === 'string' && status.includes(',')) {
       parsedStatus = status.split(',').map(s => s.trim());
@@ -2316,7 +2316,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       });
     }
 
-    // Если запрошена синхронизация, сначала синхронизируем
+    // Якщо запитується синхронізація, спочатку синхронізуємо
     if (sync === 'true') {
       console.log('🔄 Sync requested for sales report, starting synchronization...');
       const syncResult = await salesDriveService.syncOrdersWithDatabase();
@@ -2326,7 +2326,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       }
     }
 
-    // Фильтруем по дате (с учетом dayStartHour)
+    // Фільтруємо за датою (з урахуванням dayStartHour)
     let start: Date, end: Date;
 
     if (startDate === endDate) {
@@ -2346,32 +2346,43 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       console.log(`📅 Date range mode: ${startDate} - ${endDate}, range: ${start.toISOString()} - ${end.toISOString()}`);
     }
 
-    // Получаем заказы с фильтрами включая дату
+    // Отримуємо замовлення з фільтрами, включаючи дату
     const orders = await orderDatabaseService.getOrders({
       status: parsedStatus,
-      limit: 10000, // Увеличиваем лимит для получения большего количества данных
+      limit: 10000, // Збільшуємо ліміт для отримання більшої кількості даних
       sortBy: 'orderDate',
       sortOrder: 'asc',
-      // Добавляем фильтр по дате в запрос к БД
+      includeRaw: true, // Потрібно для читання vidskoduvanna / vidskoduvannaGrn
+      // Додаємо фільтр по даті в запит до БД
       dateRange: {
         start: start,
         end: end
       }
     });
 
-    const filteredOrders = orders; // Уже отфильтрованы в БД
+    // [DEBUG] Логування rawData для перших 3 замовлень — допомагає перевірити наявність полів
+    const sampleOrders = orders.slice(0, 3);
+    for (const o of sampleOrders) {
+      const raw = (o as any).rawData;
+      console.log(`🔍 [SALES REPORT DEBUG] order=${o.externalId} rawData type=${typeof raw} keys=${raw && typeof raw === 'object' ? Object.keys(raw).slice(0, 10).join(',') : String(raw)?.slice(0, 100)}`);
+      if (raw && typeof raw === 'object') {
+        console.log(`🔍   vidskoduvanna=${raw.vidskoduvanna ?? 'undefined'} vidskoduvannaGrn=${raw.vidskoduvannaGrn ?? 'undefined'}`);
+      }
+    }
 
-    // Функция определения группы товара
+    const filteredOrders = orders; // Вже відфільтровані у БД
+
+    // Функція визначення групи товару
     const getProductGroup = (productName: string): string => {
       const name = productName.toLowerCase();
       if (name.includes('борщ') || name.includes('суп') || name.includes('перший') || name.includes('перша')) {
         return 'first_courses';
       }
-      // По умолчанию все остальные товары считаем вторыми блюдами
+      // За замовчуванням решту товарів вважаємо іншими стравами
       return 'main_courses';
     };
 
-    // Обрабатываем фильтр по товарам
+    // Обробляємо фільтр за товарами
     let filterProducts: string[] = [];
     let filterGroups: string[] = [];
 
@@ -2382,7 +2393,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         filterProducts = [products as string];
       }
 
-      // Разделяем на группы и индивидуальные товары
+      // Поділяємо на групи та індивідуальні товари
       const individualProducts = filterProducts.filter(p => !p.startsWith('group_'));
       const groupFilters = filterProducts.filter(p => p.startsWith('group_'));
 
@@ -2390,22 +2401,13 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       filterGroups = groupFilters.map(g => g.replace('group_', ''));
     }
 
-    // Карта для маппинга кодов сайтов в названия источников
-    const sourceMapping: Record<string, string> = {
-      '19': 'Сайт',
-      '22': 'Розетка',
-      '24': 'Пром',
-      '28': 'Пром',
-      '31': 'Інше'
-    };
-
-    // Получаем все externalId для bulk-запроса к кешу
+    // Отримуємо все externalId для bulk-запиту до кешу
     const orderExternalIds = filteredOrders.map(order => order.externalId);
 
-    // Получаем все кеши одним запросом
+    // Отримуємо всі кеші одним запитом
     const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
 
-    // Собираем данные по дням (используя звітні дати)
+    // Збираємо дані по днях (використовуючи звітні дати)
     const salesData: {
       [dateKey: string]: {
         ordersCount: number;
@@ -2420,6 +2422,9 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         portionsWithDiscountReason: number;
         priceWithDiscountReason: number;
         discountReasonText: string;
+        vidskoduvannaTotal: number;    // загальна кількість замовлень з відшкодуванням за день
+        vidskoduvannaGrnTotal: number; // загальна сума відшкодувань за день (грн)
+        vidskoduvannaPortions: number; // кількість порцій з відшкодуванням за день
         orders: Array<{
           orderNumber: string;
           portionsCount: number;
@@ -2431,13 +2436,15 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           totalPrice?: number | undefined;
           hasDiscount?: boolean;
           discountReasonCode?: string | null;
+          vidskoduvanna?: number | null;    // кількість відшкодованих порцій із rawData
+          vidskoduvannaGrn?: number | null; // сума відшкодування в грн із rawData
         }>;
       }
     } = {};
 
     for (const order of filteredOrders) {
       try {
-        // Используем звітну дату вместо просто локальной даты
+        // Використовуємо звітну дату замість просто локальної дати
         const reportingDate = getReportingDate(order.orderDate, dayStartHour);
         const dateKey = reportingDate; // YYYY-MM-DD в форматі звітної дати
 
@@ -2455,11 +2462,14 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
             portionsWithDiscountReason: 0,
             priceWithDiscountReason: 0,
             discountReasonText: '',
+            vidskoduvannaPortions: 0,
+            vidskoduvannaTotal: 0,
+            vidskoduvannaGrnTotal: 0,
             orders: []
           };
         }
 
-        // Проверяем фильтр по товарам
+        // Перевіряємо фільтр по товарам
         let shouldIncludeOrder = false;
         let orderPortions = 0;
 
@@ -2472,15 +2482,15 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
                 let shouldInclude = false;
 
                 if (filterProducts.length === 0 && filterGroups.length === 0) {
-                  // Нет фильтров - включаем все товары
+                  // Немає фільтрів - включаємо всі товари
                   shouldInclude = true;
                 } else {
-                  // Проверяем индивидуальные товары
+                  // Перевіряємо індивідуальні товари
                   if (filterProducts.includes(item.sku)) {
                     shouldInclude = true;
                   }
 
-                  // Проверяем группы товаров
+                  // Перевіряємо групи товарів
                   if (filterGroups.length > 0) {
                     const productGroup = getProductGroup(item.name || item.sku);
                     if (filterGroups.includes(productGroup)) {
@@ -2499,7 +2509,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         }
 
         if (shouldIncludeOrder) {
-          // Добавляем заказ к статистике дня
+          // Додаємо замовлення до статистики дня
           salesData[dateKey].ordersCount += 1;
           salesData[dateKey].portionsCount += orderPortions;
           salesData[dateKey].totalPrice += Number(order.totalPrice) || 0;
@@ -2513,7 +2523,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           salesData[dateKey].ordersByStatus[ordStatus] += 1;
           salesData[dateKey].portionsByStatus[ordStatus] += orderPortions;
 
-          // Статистика по источникам
+          // Статистика за джерелами
           const sourceCode = order.sajt || '';
           const sourceName = getOrderSourceDetailed(sourceCode) || 'Інше';
 
@@ -2532,10 +2542,34 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
             salesData[dateKey].portionsWithDiscountReason += orderPortions;
             salesData[dateKey].priceWithDiscountReason += Number(order.totalPrice) || 0;
 
-            // Определяем причину скидки
+            // Визначаємо причину знижки
             if (order.pricinaZnizki === '33') {
               salesData[dateKey].discountReasonText = 'Військові/волонтери';
             }
+          }
+
+          // Зчитуємо vidskoduvanna / vidskoduvannaGrn з rawData (серіалізований JSON)
+          let vidskoduvanna: number | null = null;
+          let vidskoduvannaGrn: number | null = null;
+          if (order.rawData) {
+            try {
+              const raw = typeof order.rawData === 'string' ? JSON.parse(order.rawData) : order.rawData;
+              if (raw.vidskoduvanna != null) vidskoduvanna = Number(raw.vidskoduvanna) || 0;
+              if (raw.vidskoduvannaGrn != null) vidskoduvannaGrn = Number(raw.vidskoduvannaGrn) || 0;
+            } catch {
+              // rawData не є валідним JSON — ігноруємо
+            }
+          }
+
+          // Агрегуємо відшкодування по дню
+          if (vidskoduvanna != null && vidskoduvanna > 0) {
+            salesData[dateKey].vidskoduvannaTotal += 1;
+          }
+          if (vidskoduvannaGrn != null) {
+            salesData[dateKey].vidskoduvannaGrnTotal += vidskoduvannaGrn;
+          }
+          if (vidskoduvanna != null) {
+            salesData[dateKey].vidskoduvannaPortions += vidskoduvanna;
           }
 
           salesData[dateKey].orders.push({
@@ -2557,6 +2591,8 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
             totalPrice: order.totalPrice != null ? Number(order.totalPrice) : undefined,
             hasDiscount: !!(order.pricinaZnizki && String(order.pricinaZnizki).trim() !== ''),
             discountReasonCode: order.pricinaZnizki ? String(order.pricinaZnizki) : null,
+            vidskoduvanna,
+            vidskoduvannaGrn,
           });
         }
 
@@ -2565,7 +2601,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       }
     }
 
-    // Конвертируем в массив для ответа
+    // Конвертуємо в масив для відповіді
     const salesDataArray = Object.entries(salesData)
       .map(([dateKey, data]) => ({
         date: dateKey,
@@ -2581,6 +2617,9 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         portionsWithDiscountReason: data.portionsWithDiscountReason,
         priceWithDiscountReason: data.priceWithDiscountReason,
         discountReasonText: data.discountReasonText,
+        vidskoduvannaTotal: data.vidskoduvannaTotal,
+        vidskoduvannaGrnTotal: data.vidskoduvannaGrnTotal,
+        vidskoduvannaPortions: data.vidskoduvannaPortions,
         orders: data.orders.sort((a, b) => new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime())
       }))
       .sort((a, b) => a.date.localeCompare(b.date));

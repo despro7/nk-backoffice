@@ -84,3 +84,68 @@ export function calcCumulativeTolerance(
 
   return boxTolerance + itemTolerance;
 }
+
+/**
+ * Повертає CSS-класи для кольорової градації значення відносно масиву значень.
+ * Використовується для візуального виділення комірок таблиць звітів.
+ * @param value - поточне значення
+ * @param values - масив усіх значень у стовпці
+ * @param colored - якщо false, кольорове форматування вимкнено (за замовчуванням true)
+ * @returns об'єкт з класами `base` (фон) та `content` (текст)
+ */
+export function getValueColor(
+  value: number,
+  values: number[],
+  colored: boolean = true
+): { base: string; content: string } {
+  if (!colored || values.length === 0 || value === 0) {
+    return {
+      base: "bg-transparent",
+      content: value === 0 ? "text-gray-400 font-medium" : "text-gray-700 font-medium",
+    };
+  }
+
+  const min = Math.min(...values.filter((v) => v > 0));
+  const max = Math.max(...values);
+
+  if (min === max) {
+    return {
+      base: "bg-neutral-100/50",
+      content: "text-gray-700 font-medium",
+    };
+  }
+
+  const normalized = (value - min) / (max - min);
+
+  if (normalized < 0.1) {
+    return {
+      base: "bg-danger/10",
+      content: "text-danger-700/80 font-medium",
+    };
+  } else if (normalized < 0.5) {
+    return {
+      base: "bg-amber-400/20",
+      content: "text-amber-800/70 font-medium",
+    };
+  } else if (normalized < 0.7) {
+    return {
+      base: "bg-lime-500/10",
+      content: "text-lime-600/80 font-medium",
+    };
+  } else if (normalized > 2) {
+    return {
+      base: "bg-lime-600/90 shadow-lg shadow-lime-700/40",
+      content: "text-white font-medium text-shadow-sm",
+    };
+  } else if (normalized > 1) {
+    return {
+      base: "bg-lime-500/30 shadow-lg shadow-lime-700/20 ring-1 ring-lime-600/50",
+      content: "text-lime-700 font-medium",
+    };
+  } else {
+    return {
+      base: "bg-lime-500/20",
+      content: "text-lime-600 font-medium",
+    };
+  }
+}

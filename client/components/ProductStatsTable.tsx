@@ -22,6 +22,7 @@ import { CalendarDate, getLocalTimeZone, today } from "@internationalized/date";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate, ORDER_STATUSES } from "../lib/formatUtils";
+import { getValueColor } from "../lib/utils";
 import { addToast } from "@heroui/react";
 import { I18nProvider } from "@react-aria/i18n";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
@@ -131,9 +132,9 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
   const columns = useMemo(() => {
     return [
       { key: viewMode === "dates" ? "date" : "name", label: viewMode === "dates" ? "Дата" : "Назва товару", sortable: true, className: viewMode === "dates" ? "w-3/16" : "w-6/16" },
-      { key: viewMode === "dates" ? "name" : "sku", label: viewMode === "dates" ? "Назва товару" : "SKU", sortable: false, className: viewMode === "dates" ? "w-5/16" : "w-2/16" },
+      { key: viewMode === "dates" ? "name" : "sku", label: viewMode === "dates" ? "Назва товару" : "SKU", sortable: viewMode !== "dates", className: viewMode === "dates" ? "w-5/16" : "w-2/16" },
       { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-2/16 text-center" },
-      { key: "totalStock", label: "Залишки", sortable: true, className: "w-2/16 text-center" },
+      { key: "totalStock", label: "Залишки Σ", sortable: true, className: "w-2/16 text-center" },
       { key: "mainStock", label: "Склад ГП", sortable: true, className: "w-2/16 text-center" },
       { key: "smallStock", label: "Склад М", sortable: true, className: "w-2/16 text-center" }
     ];
@@ -502,58 +503,6 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
   }, [lastCacheUpdate]);
 
   // Сортування даних
-  const sortedItems = useMemo(() => {
-    if (viewMode === "dates") {
-      const items = [...dateStats];
-
-      items.sort((a, b) => {
-        const first = a[sortDescriptor.column as keyof ProductDateStats];
-        const second = b[sortDescriptor.column as keyof ProductDateStats];
-
-        let cmp = 0;
-
-        if (sortDescriptor.column === "date") {
-          cmp = a.date.localeCompare(b.date);
-        } else if (sortDescriptor.column === "totalStock") {
-          // Для загальної кількості на складах
-          const firstTotal = Object.values(a.stockBalances).reduce((sum, balance) => sum + balance, 0);
-          const secondTotal = Object.values(b.stockBalances).reduce((sum, balance) => sum + balance, 0);
-          cmp = firstTotal - secondTotal;
-        } else if (typeof first === "number" && typeof second === "number") {
-          cmp = first - second;
-        }
-
-        return sortDescriptor.direction === "descending" ? -cmp : cmp;
-      });
-
-      return items;
-    } else {
-      const items = [...productStats];
-
-      items.sort((a, b) => {
-        const first = a[sortDescriptor.column as keyof ProductStats];
-        const second = b[sortDescriptor.column as keyof ProductStats];
-
-        let cmp = 0;
-
-        if (sortDescriptor.column === "totalStock") {
-          // Для загальної кількості на складах
-          const firstTotal = Object.values(a.stockBalances).reduce((sum, balance) => sum + balance, 0);
-          const secondTotal = Object.values(b.stockBalances).reduce((sum, balance) => sum + balance, 0);
-          cmp = firstTotal - secondTotal;
-        } else if (typeof first === "string" && typeof second === "string") {
-          cmp = first.localeCompare(second);
-        } else if (typeof first === "number" && typeof second === "number") {
-          cmp = first - second;
-        }
-
-        return sortDescriptor.direction === "descending" ? -cmp : cmp;
-      });
-
-      return items;
-    }
-  }, [productStats, dateStats, sortDescriptor, viewMode]);
-
   // Форматування загального залишку на складах
   const getTotalStock = (stockBalances: { [warehouse: string]: number }) => {
     return Object.values(stockBalances).reduce((sum, balance) => sum + balance, 0);
@@ -572,54 +521,65 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
       .reduce((sum, [, balance]) => sum + balance, 0);
   };
 
-  // Кольорова градація для значень (м'які кольори в стилі flat HeroUI)
-  // Повертаємо об'єкт з base і content, 5 градацій, нулі — сірий текст, без фону
-  const getValueColor = (value: number, values: number[]) => {
-    if (values.length === 0 || value === 0) {
-      return {
-        base: "bg-transparent",
-        content: "text-gray-400 font-medium"
-      };
+  const sortedItems = useMemo(() => {
+    if (viewMode === "dates") {
+      const items = [...dateStats];
+
+      items.sort((a, b) => {
+        let cmp = 0;
+
+        if (sortDescriptor.column === "date") {
+          cmp = a.date.localeCompare(b.date);
+        } else if (sortDescriptor.column === "totalStock") {
+          const firstTotal = Object.values(a.stockBalances).reduce((sum, balance) => sum + balance, 0);
+          const secondTotal = Object.values(b.stockBalances).reduce((sum, balance) => sum + balance, 0);
+          cmp = firstTotal - secondTotal;
+        } else if (sortDescriptor.column === "mainStock") {
+          cmp = getMainStock(a.stockBalances) - getMainStock(b.stockBalances);
+        } else if (sortDescriptor.column === "smallStock") {
+          cmp = getSmallStock(a.stockBalances) - getSmallStock(b.stockBalances);
+        } else {
+          const first = a[sortDescriptor.column as keyof ProductDateStats];
+          const second = b[sortDescriptor.column as keyof ProductDateStats];
+          if (typeof first === "number" && typeof second === "number") {
+            cmp = first - second;
+          }
+        }
+
+        return sortDescriptor.direction === "descending" ? -cmp : cmp;
+      });
+
+      return items;
+    } else {
+      const items = [...productStats];
+
+      items.sort((a, b) => {
+        let cmp = 0;
+
+        if (sortDescriptor.column === "totalStock") {
+          const firstTotal = Object.values(a.stockBalances).reduce((sum, balance) => sum + balance, 0);
+          const secondTotal = Object.values(b.stockBalances).reduce((sum, balance) => sum + balance, 0);
+          cmp = firstTotal - secondTotal;
+        } else if (sortDescriptor.column === "mainStock") {
+          cmp = getMainStock(a.stockBalances) - getMainStock(b.stockBalances);
+        } else if (sortDescriptor.column === "smallStock") {
+          cmp = getSmallStock(a.stockBalances) - getSmallStock(b.stockBalances);
+        } else {
+          const first = a[sortDescriptor.column as keyof ProductStats];
+          const second = b[sortDescriptor.column as keyof ProductStats];
+          if (typeof first === "string" && typeof second === "string") {
+            cmp = first.localeCompare(second);
+          } else if (typeof first === "number" && typeof second === "number") {
+            cmp = first - second;
+          }
+        }
+
+        return sortDescriptor.direction === "descending" ? -cmp : cmp;
+      });
+
+      return items;
     }
-
-    const min = Math.min(...values.filter(v => v > 0));
-    const max = Math.max(...values);
-
-    if (min === max) {
-      return {
-        base: "bg-neutral-100/50",
-        content: "text-gray-700 font-medium"
-      };
-    }
-
-    const normalized = (value - min) / (max - min);
-
-	if (normalized < 0.1) {
-	// Червоний
-		return {
-			base: "bg-danger/10",
-			content: "text-danger font-medium"
-		};
-	} else if (normalized < 0.35) {
-	// Жовтий
-		return {
-			base: "bg-yellow-500/10",
-			content: "text-yellow-700/80 font-medium"
-		};
-	} else if (normalized < 0.75) {
-		// Жовтий
-			return {
-				base: "bg-lime-500/10",
-				content: "text-lime-600/80 font-medium"
-			};
-	} else {
-		// Зелений
-		return {
-			base: "bg-lime-500/20",
-			content: "text-lime-600 font-medium"
-		};
-	}
-  };
+  }, [productStats, dateStats, sortDescriptor, viewMode]);
 
   // Отримання всіх значень для кожного стовпця
   const getAllOrderedQuantities = useMemo(() =>

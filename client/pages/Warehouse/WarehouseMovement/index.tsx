@@ -365,7 +365,7 @@ export default function WarehouseMovement() {
           </Tabs>
 
           {/* Верхня панель дій */}
-          {mov.products.length > 0 && activeTab === 'current' && (
+          {activeTab === 'current' && (
             <MovementTopActions
               onRefreshBalances={guard.guardAction(
                 () => mov.handleSyncBalances(stockDateMode, mov.selectedDateTime),

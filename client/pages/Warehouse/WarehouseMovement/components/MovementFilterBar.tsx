@@ -120,8 +120,7 @@ export const MovementFilterBar = ({
       {onStockDateModeChange && (
         <div className="flex items-center gap-2 shrink-0">
           <Select
-            aria-label="Залишки на дату"
-            label="Залишки на дату"
+            label="Відображати залишки"
             labelPlacement="inside"
             size="sm"
             selectedKeys={[stockDateMode]}
