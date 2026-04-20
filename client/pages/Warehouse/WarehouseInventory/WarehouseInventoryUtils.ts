@@ -76,7 +76,25 @@ export const statusColor: Record<InventoryStatus, 'default' | 'warning' | 'succe
 // Серіалізує поточний стан items для збереження в БД
 // ---------------------------------------------------------------------------
 
-export const serializeItems = (prods: InventoryProduct[], mats: InventoryProduct[]) =>
-  [...prods, ...mats].map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
-    id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
-  }));
+export type SerializedInventoryItem = {
+  type: 'product' | 'material';
+  id: string;
+  sku: string;
+  name: string;
+  systemBalance: number;
+  unit: 'portions' | 'pcs';
+  portionsPerBox: number;
+  actualCount: number | null;
+  boxCount: number | null;
+  checked: boolean;
+  categoryName?: string;
+};
+
+export const serializeItems = (prods: InventoryProduct[], mats: InventoryProduct[]): SerializedInventoryItem[] => [
+  ...prods.map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
+    type: 'product' as const, id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
+  })),
+  ...mats.map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
+    type: 'material' as const, id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
+  })),
+];

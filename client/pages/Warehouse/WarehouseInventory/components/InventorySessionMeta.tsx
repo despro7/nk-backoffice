@@ -1,6 +1,7 @@
 import { Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { InventoryStatus } from '../WarehouseInventoryTypes';
+import { DateTimePicker } from '@/components/DateTimePicker';
 
 // ---------------------------------------------------------------------------
 // InventorySessionMeta — права частина рядка табів (статус, дата, хто проводить)
@@ -8,19 +9,18 @@ import type { InventoryStatus } from '../WarehouseInventoryTypes';
 
 interface InventorySessionMetaProps {
   sessionStatus: InventoryStatus | null;
-  userName: string | undefined;
   sessionDate?: string | null; // ISO-рядок дати активної/завершеної сесії
+  onSessionDateChange?: (date: Date) => void; // колбек зміни дати (лише для активних сесій)
 }
 
-export const InventorySessionMeta = ({ sessionStatus, userName, sessionDate }: InventorySessionMetaProps) => {
-  const displayDate = sessionDate
-    ? new Date(sessionDate).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    : new Date().toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+export const InventorySessionMeta = ({ sessionStatus, sessionDate, onSessionDateChange }: InventorySessionMetaProps) => {
+  const sessionDateObj = sessionDate ? new Date(sessionDate) : new Date();
+  const displayDate = sessionDateObj.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   return (
-  <div className="flex items-center gap-3 text-sm text-gray-500 shrink-0 bg-neutral-50 px-4 py-2 h-12 rounded-lg">
+  <div className="flex items-center gap-3 text-sm text-gray-500">
     {/* Статус */}
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5 shrink-0 bg-neutral-50 px-4 py-2 h-12 rounded-lg">
       <span>Статус:</span>
       {sessionStatus === null && (
         <Chip size="sm" color="default" variant="flat" startContent={<DynamicIcon name="file" className="w-3 h-3 ml-1" />}>
@@ -38,22 +38,15 @@ export const InventorySessionMeta = ({ sessionStatus, userName, sessionDate }: I
         </Chip>
       )}
     </div>
-
-    <span className="text-gray-300">|</span>
-
-    {/* Дата */}
-    <span className="flex items-center gap-1.5 text-gray-500">
-      <DynamicIcon name="calendar" className="w-3.5 h-3.5 text-gray-400" />
-      {displayDate}
-    </span>
-
-    <span className="text-gray-300">|</span>
-
-    {/* Хто проводить */}
-    <span className="flex items-center gap-1.5 text-gray-500">
-      <DynamicIcon name="user" className="w-3.5 h-3.5 text-gray-400" />
-      {userName ?? '—'}
-    </span>
+    
+    {/* Дата: редагований пікер для активної сесії, або просто текст */}
+    {onSessionDateChange && sessionStatus !== 'completed' && (
+      <DateTimePicker
+        value={sessionDateObj}
+        onChange={onSessionDateChange}
+        label="Дата інвентаризації"
+      />
+    )}
   </div>
   );
 };

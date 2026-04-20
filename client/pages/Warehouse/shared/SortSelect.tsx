@@ -36,7 +36,7 @@ export const SortSelect = <T extends string>({
   sortDirection,
   onSortByChange,
   onSortDirectionChange,
-  className = 'flex-1 max-w-[200px]',
+  className = 'flex-1 min-w-[200px]',
 	classNames = {
 		trigger: 'duration-150 rounded-[14px]',
 	},

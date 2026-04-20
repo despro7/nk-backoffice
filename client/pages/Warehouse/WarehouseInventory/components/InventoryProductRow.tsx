@@ -19,11 +19,17 @@ export interface ProductRowProps {
   onChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
   onCheck: (id: string) => void;
   onEnterPress?: (productId: string) => void;
-  /** Автофокус на першому полі при відкритті акордіона. За замовчуванням true. */
+  /** Автофокус для звичайних (не тач) пристроїв */
   autoFocus?: boolean;
+  /** Автофокус для тач-пристроїв (за замовчуванням false, щоб не відкривати клавіатуру) */
+  autoFocusTouch?: boolean;
 }
 
-export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck, onEnterPress, autoFocus = true }: ProductRowProps) => {
+/** Повертає true, якщо пристрій є тач-пристроєм */
+const isTouchDevice = (): boolean =>
+  typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+
+export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck, onEnterPress, autoFocus = true, autoFocusTouch = false }: ProductRowProps) => {
   const total = totalPortions(product);
   const deviation = total !== null ? total - product.systemBalance : null;
   const hasDeviation = deviation !== null && deviation !== 0;
@@ -44,14 +50,16 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
   const firstInputRef = useRef<HTMLInputElement>(null);
 
   // Автофокус на першому полі при відкритті акордіона
+  // Для тач-пристроїв використовується окремий параметр autoFocusTouch
   useEffect(() => {
-    if (isOpen && autoFocus) {
+    const shouldFocus = isTouchDevice() ? autoFocusTouch : autoFocus;
+    if (isOpen && shouldFocus) {
       const timer = setTimeout(() => {
         firstInputRef.current?.focus();
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [isOpen, autoFocus, product.id]);
+  }, [isOpen, autoFocus, autoFocusTouch, product.id]);
 
   // Підтвердження позиції + перехід до наступного при Enter
   const handleConfirmClick = () => {
@@ -80,7 +88,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
 
         {/* Назва */}
         <span className={`flex-1 text-lg font-semibold text-neutral-800 pl-1 ${product.checked ? 'text-gray-400' : ''}`}>
-          {product.name}
+          {product.name} <span className="text-[16px] font-mono font-normal text-gray-400 ml-1">{product.id}</span>
         </span>
 
         {/* Відхилення */}

@@ -6,6 +6,7 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { ServerStatusModal } from "@/components/modals/ServerStatusModal";
 import { useServerStatusWithModal } from "@/hooks/useServerStatusWithModal";
+import { UpdateNotificationBanner } from "@/components/UpdateNotificationBanner";
 import { Button } from "@heroui/button";
 import { DynamicIcon } from "lucide-react/dynamic";
 
@@ -97,6 +98,8 @@ export function Layout({ children }: LayoutProps) {
         onClose={onCloseModal}
         isOffline={isOffline}
       />
+
+      <UpdateNotificationBanner />
     </div>
   );
 }

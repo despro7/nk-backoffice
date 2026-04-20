@@ -1,10 +1,8 @@
-import type { DateValue } from '@internationalized/date';
-import { Button, Input, DatePicker, Spinner, Select, SelectItem } from '@heroui/react';
+import { Input, Select, SelectItem, Spinner } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { I18nProvider } from '@react-aria/i18n';
-import { getLocalTimeZone, now, today, parseZonedDateTime } from '@internationalized/date';
 import { SortSelect } from '../../shared/SortSelect';
 import type { SortOption } from '../../shared/SortSelect';
+import { DateTimePicker } from '@/components/DateTimePicker';
 
 // ---------------------------------------------------------------------------
 // MovementFilterBar — рядок фільтрації та пошуку
@@ -50,39 +48,10 @@ export const MovementFilterBar = ({
     { key: 'stock_desc',label: 'За залишками [↑]' },
   ];
 
-  // Конвертуємо JS Date в ZonedDateTime для DatePicker
-  const toZonedDateTime = (date: Date): DateValue => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const tzOffset = getLocalTimeZone();
-    return parseZonedDateTime(`${year}-${month}-${day}T${hours}:${minutes}:00[${tzOffset}]`);
-  };
-
   // Конвертуємо DateValue назад у JS Date
-  const fromDateValue = (dateValue: DateValue): Date => {
-    const year = dateValue.year;
-    const month = dateValue.month - 1;
-    const day = dateValue.day;
-    const hours = 'hour' in dateValue ? dateValue.hour : 0;
-    const minutes = 'minute' in dateValue ? dateValue.minute : 0;
-    return new Date(year, month, day, hours, minutes);
+  const handleDateTimeChange = (date: Date) => {
+    onDateChange(date);
   };
-
-  const handleDateTimeChange = (dateValue: DateValue | null) => {
-    if (dateValue) {
-      const newDate = fromDateValue(dateValue);
-      onDateChange(newDate);
-    }
-  };
-
-   const PRESET_TIMES = [
-      { label: '9:00', hour: 9, minute: 0 },
-      { label: '16:00', hour: 16, minute: 0 },
-      { label: 'Зараз', hour: null, minute: null }, // null = поточний час
-    ];
 
   return (
     <div className="mt-4 flex items-center gap-4 justify-between">
@@ -148,60 +117,14 @@ export const MovementFilterBar = ({
         </div>
       )}
 
-      {/* Календар з вибором дати та часу, кнопка "Сьогодні" всередині попапу */}
-      <div className="flex items-end gap-2">
-        <I18nProvider locale="uk-UA">
-          <DatePicker
-            showMonthAndYearPickers
-            value={toZonedDateTime(selectedDate)}
-            onChange={handleDateTimeChange}
-            granularity="minute"
-            hideTimeZone
-            hourCycle={24}
-            shouldForceLeadingZeros
-            label="Дата і час переміщення"
-            labelPlacement="outside-left"
-            selectorButtonPlacement="start"
-            size="lg"
-            isDisabled={isRefreshingBatches}
-            maxValue={now(getLocalTimeZone())}
-            classNames={{
-              base: "w-fit",
-              inputWrapper: "hover:bg-white focus-within:bg-white!",
-              segment: "rounded focus:bg-neutral-300/80",
-              label: "text-[13px] text-gray-500 max-w-26 leading-tight text-right pr-1",
-            }}
-            endContent={
-              isRefreshingBatches
-                ? <Spinner size="sm" color="primary" />
-                : undefined
-            }
-            CalendarBottomContent={
-                <div className="px-3 pb-3 flex items-center gap-1">
-                  {PRESET_TIMES.map(({ label, hour, minute }) => (
-                    <Button
-                      key={label}
-                      size="sm"
-                      variant="flat"
-                      className={`h-auto px-2 py-1.5 min-w-0 flex-auto`}
-                      onPress={() => {
-                        if (hour === null) {
-                          // "Зараз" — поточна дата і поточний час
-                          onDateChange(new Date());
-                        } else {
-                          // Фіксований час — зберігаємо дату з календаря
-                          onDateChange(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), hour, minute ?? 0));
-                        }
-                      }}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-            }
-          />
-        </I18nProvider>
-      </div>
+      {/* Календар з вибором дати та часу */}
+      <DateTimePicker
+        value={selectedDate}
+        onChange={handleDateTimeChange}
+        label="Дата і час переміщення"
+        isDisabled={isRefreshingBatches}
+        isLoading={isRefreshingBatches}
+      />
     </div>
   );
 };

@@ -493,7 +493,7 @@ export class CronService {
     if (this.warehouseAutoFinalizeJob) return;
 
     // 55 23 * * * — щодня о 23:55
-    this.warehouseAutoFinalizeJob = cron.schedule('55 23 * * *', async () => {
+    this.warehouseAutoFinalizeJob = cron.schedule('12 0 * * *', async () => {
       console.log('🏭 [CronService] Запуск автофіналізації переміщень (23:55)...');
       try {
         const { warehouseAutoFinalizeService } = await import('../modules/Warehouse/WarehouseAutoFinalizeService.js');

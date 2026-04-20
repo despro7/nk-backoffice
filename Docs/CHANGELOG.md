@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-04-21 — Інвентаризація: логічна дата проведення (inventoryDate) + DateTimePicker
+**Files:** `prisma/schema.prisma`, `server/modules/Warehouse/WarehouseController.ts`, `client/pages/Warehouse/WarehouseInventory/useWarehouseInventory.ts`, `client/components/DateTimePicker.tsx`, `client/pages/Warehouse/WarehouseInventory/components/InventorySessionMeta.tsx`, `client/pages/Warehouse/WarehouseMovement/components/MovementFilterBar.tsx`, `server/modules/Warehouse/WarehouseAutoFinalizeService.ts`, `Docs/features/warehouse-inventory.md`
+
+- **Нове поле `inventoryDate DateTime?`** у моделі `WarehouseInventory` — логічна дата проведення інвентаризації (задається користувачем), незалежна від `createdAt`.
+- Міграція `20260420224459_add_inventory_date_to_warehouse_inventory` застосована.
+- **API оновлено** — всі 4 ендпоінти (`GET`, `POST`, `PUT /inventory/draft`, `POST /complete`) приймають і повертають `inventoryDate` (ISO-рядок).
+- **Клієнт**: `useWarehouseInventory` при завантаженні чернетки читає `draft.inventoryDate ?? draft.createdAt`; передає `inventoryDate: sessionDate` при збереженні/завершенні.
+- **`DateTimePicker`** — новий shared-компонент (`client/components/DateTimePicker.tsx`) з пресетами (9:00 / 16:00 / Зараз), замінив дублювання в `MovementFilterBar` та `InventorySessionMeta`.
+- **`handleSessionDateChange`**: зміна дати → `isDirty = true` + debounce 1 сек → `refreshSystemBalances` → оновлює `systemBalance` всіх товарів/матеріалів із `/api/warehouse/stock-snapshot`.
+- **Bugfix `WarehouseAutoFinalizeService`**: виправлено маппінг плоских items з БД (`batchId`, `boxQuantity`, `portionQuantity`) у вкладений масив `batches` — усував помилку "Список товарів порожній" при автофіналізації.
+- Оновлено `Docs/features/warehouse-inventory.md`: схема БД, API, таблиця стану, логіка `sessionDate`.
+
+---
+
 ## 2026-04-19 — WarehouseMovement: ID складів у БД, видалення deviation
 **Files:** `server/modules/Warehouse/WarehouseController.ts`, `server/modules/Warehouse/WarehouseService.ts`, `client/pages/Warehouse/WarehouseMovement/hooks/useMovementDraftState.ts`, `client/pages/Warehouse/WarehouseMovement/useWarehouseMovement.ts`, `client/pages/Warehouse/WarehouseMovement/WarehouseMovementTypes.ts`, `client/types/warehouse.ts`, `shared/types/movement.ts`
 - `/products-for-movement` тепер повертає `warehouseConfig: { storageFrom, storageTo }` — Dilovod ID складів із `settings_base`

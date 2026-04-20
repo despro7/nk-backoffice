@@ -37,7 +37,7 @@ export default function WarehouseInventory() {
 
         {/* Підзаголовок сторінки */}
         <p className="text-sm text-gray-500">
-          Підрахунок фактичних залишків малого складу від {formatDate(new Date().toISOString())}
+          Підрахунок фактичних залишків малого складу на {formatDate(inv.sessionDate ? new Date(inv.sessionDate).toISOString() : new Date().toISOString())}
         </p>
 
         {/* Рядок табів */}
@@ -67,8 +67,8 @@ export default function WarehouseInventory() {
 
           <InventorySessionMeta
             sessionStatus={inv.sessionStatus}
-            userName={user?.name ?? user?.email}
             sessionDate={inv.sessionDate}
+            onSessionDateChange={inv.handleSessionDateChange}
           />
         </div>
 

@@ -8,25 +8,37 @@
 
 ## Схема БД
 
-### Таблиця `inventory_sessions`
+### Таблиця `warehouse_inventory` (модель `WarehouseInventory`)
 
 ```prisma
-model InventorySession {
-  id          Int       @id @default(autoincrement())
-  warehouse   String    @default("small")   // "small" = Малий склад
-  status      String    @default("draft")   // draft | in_progress | completed
-  comment     String?   @db.Text
-  items       String    @db.LongText        // JSON: InventoryProduct[]
-  createdBy   Int                           // users.id
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  completedAt DateTime?
+model WarehouseInventory {
+  id            Int       @id @default(autoincrement())
+  warehouse     String    @default("small")   // "small" = Малий склад
+  status        String    @default("draft")   // draft | in_progress | completed
+  comment       String?   @db.Text
+  items         String    @db.LongText        // JSON: InventoryProduct[]
+  createdBy     Int                           // users.id
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  completedAt   DateTime?
+  inventoryDate DateTime?                     // Логічна дата проведення (задається користувачем)
 
-  @@map("inventory_sessions")
+  @@map("warehouse_inventory")
 }
 ```
 
-Міграція: `20260329234602_add_inventory_sessions`
+Міграції:
+- `20260329234602_add_inventory_sessions` — початкова
+- `20260420224459_add_inventory_date_to_warehouse_inventory` — додано поле `inventoryDate`
+
+#### Поле `inventoryDate`
+
+| Аспект | Деталі |
+|---|---|
+| Тип | `DateTime?` (nullable) |
+| Семантика | Логічна дата проведення інвентаризації — обирається користувачем через `DateTimePicker` |
+| Відмінність від `createdAt` | `createdAt` — технічна дата створення запису; `inventoryDate` — дата, станом на яку рахуються залишки |
+| За замовчуванням | `null` (для старих записів); UI показує `createdAt` якщо `inventoryDate` відсутня |
 
 ### Поле `portionsPerBox` у таблиці `products`
 
@@ -83,6 +95,8 @@ portionsPerBox  Int  @default(24)
 
 **Відповідь:** `{ draft: InventorySession | null }`
 
+> `inventoryDate` повертається як ISO-рядок або `null`.
+
 ---
 
 #### `POST /api/warehouse/inventory/draft`
@@ -93,7 +107,8 @@ portionsPerBox  Int  @default(24)
 ```json
 {
   "comment": "Планова інвентаризація",
-  "items": [...]
+  "items": [...],
+  "inventoryDate": "2026-04-21T09:00:00.000Z"
 }
 ```
 
@@ -103,14 +118,14 @@ portionsPerBox  Int  @default(24)
 
 #### `PUT /api/warehouse/inventory/draft/:id`
 
-Зберігає поточний стан чернетки (items + comment). Не можна редагувати завершені сесії.
+Зберігає поточний стан чернетки (items + comment + inventoryDate). Не можна редагувати завершені сесії.
 
 **Тіло запиту:**
 ```json
 {
   "comment": "...",
   "items": [...],
-  "status": "in_progress"
+  "inventoryDate": "2026-04-21T09:00:00.000Z"
 }
 ```
 
@@ -122,7 +137,7 @@ portionsPerBox  Int  @default(24)
 
 Завершує інвентаризацію: `status → completed`, записує `completedAt`.
 
-**Тіло запиту:** `{ comment?: string, items?: [...] }`
+**Тіло запиту:** `{ comment?: string, items?: [...], inventoryDate?: string }`
 
 **Відповідь:** `{ session: InventorySession }`
 
@@ -162,9 +177,12 @@ portionsPerBox  Int  @default(24)
 |---|---|---|
 | `sessionId` | `number \| null` | ID поточної сесії в БД |
 | `sessionStatus` | `InventoryStatus \| null` | Локальний статус UI |
+| `sessionDate` | `string \| null` | ISO-дата: спочатку `inventoryDate` з БД, потім `createdAt`; змінюється через `DateTimePicker` |
 | `products` | `InventoryProduct[]` | Список товарів з введеними даними |
 | `historySessions` | `InventorySession[]` | Завершені інвентаризації |
 | `isSavingDraft` | `boolean` | Spinner на кнопці збереження |
+| `isDirty` | `boolean` | `true` — є незбережені зміни відносно останнього збереження |
+| `isRefreshingBalances` | `boolean` | `true` — виконується запит оновлення залишків на дату |
 
 ### Lifecycle
 
@@ -180,11 +198,25 @@ mount
 
 | Handler | Дія |
 |---|---|
-| `handleStartSession` | `setSessionStatus('in_progress')` + `POST /inventory/draft` |
-| `handleSaveDraft` | `PUT /inventory/draft/:id` або `POST /inventory/draft` (якщо ще немає ID) |
-| `handleFinish` | `POST /inventory/draft/:id/complete` → `setSessionStatus('completed')` |
+| `handleStartSession` | `setSessionStatus('in_progress')` + `POST /inventory/draft` (передає `inventoryDate`) |
+| `handleSaveDraft` | `PUT /inventory/draft/:id` або `POST /inventory/draft` якщо ще немає ID (передає `inventoryDate`) |
+| `handleFinish` | `POST /inventory/draft/:id/complete` → `setSessionStatus('completed')` (передає `inventoryDate`) |
 | `handleReset` | `DELETE /inventory/draft/:id` → скидання стану → `loadProducts()` |
+| `handleSessionDateChange` | Оновлює `sessionDate`, ставить `isDirty`, запускає debounce 1с → `refreshSystemBalances` |
 | `loadHistory` | `GET /inventory/history` → `setHistorySessions(...)` |
+
+### Логіка `sessionDate`
+
+При завантаженні чернетки (`loadDraft`):
+```
+draft.inventoryDate ?? draft.createdAt ?? null
+```
+Тобто пріоритет — обрана користувачем логічна дата; якщо відсутня — технічна дата створення.
+
+При зміні дати через `DateTimePicker`:
+1. `setSessionDate(date.toISOString())` — оновлює локальний стан
+2. `setLastSavedSnapshot('')` — позначає `isDirty = true`
+3. Debounce 1 сек → `refreshSystemBalances(date)` — оновлює `systemBalance` всіх товарів/матеріалів із `/api/warehouse/stock-snapshot`
 
 ### Таб "Історія"
 

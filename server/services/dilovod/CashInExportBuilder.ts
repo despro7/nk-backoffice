@@ -138,7 +138,7 @@ export class CashInExportBuilder {
         cashAccount,
         person,
         currency: CASH_IN_CONSTANTS.CURRENCY,
-        content: `Післяплата Замовлення ${row.orderNumber}`,
+        content: `Післяплата замовлення ${row.orderNumber}`,
         cashItem: CASH_IN_CONSTANTS.CASH_ITEM,
         amountCur: row.amountReceived,
         amountCurCommission: row.commissionAmount,
@@ -147,6 +147,7 @@ export class CashInExportBuilder {
         settlementsKind: CASH_IN_CONSTANTS.SETTLEMENTS_KIND,
         taxAccount: 1,
         author: authorId,
+        remark: `Автоматично додано через Backoffice - ${new Date().toLocaleString('uk-UA')}`,
       },
       // Таблична частина — Dilovod бере суму саме з tpAnalytics (не з header.amountCur)
       tableParts: {

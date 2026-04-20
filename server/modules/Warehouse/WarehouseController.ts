@@ -1016,7 +1016,13 @@ router.get('/inventory/draft', authenticateToken, async (req, res) => {
       orderBy: { updatedAt: 'desc' },
     });
 
-    res.json({ draft: draft ?? null });
+    // Повертаємо inventoryDate як ISO-рядок для зручності клієнта
+    const result = draft ? {
+      ...draft,
+      inventoryDate: draft.inventoryDate?.toISOString() ?? null,
+    } : null;
+
+    res.json({ draft: result });
   } catch (error) {
     console.error('🚨 [Inventory] Error fetching draft:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1030,7 +1036,13 @@ router.post('/inventory/draft', authenticateToken, async (req, res) => {
     const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
     if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
 
-    const { comment, items } = req.body as { comment?: string; items?: unknown[] };
+    const { comment, items, inventoryDate } = req.body as {
+      comment?: string;
+      items?: unknown[];
+      inventoryDate?: string;
+    };
+
+    const parsedInventoryDate = inventoryDate ? new Date(inventoryDate) : null;
 
     // Якщо є незавершена сесія — оновлюємо її замість створення нової
     const existing = await prisma.warehouseInventory.findFirst({
@@ -1045,10 +1057,11 @@ router.post('/inventory/draft', authenticateToken, async (req, res) => {
           status: 'in_progress',
           comment: comment !== undefined ? comment : existing.comment,
           items: items !== undefined ? JSON.stringify(items) : existing.items,
+          ...(parsedInventoryDate !== null && { inventoryDate: parsedInventoryDate }),
         },
       });
       console.log(`✅ [Inventory] Відновлено існуючу сесію #${updated.id} для userId=${userId}`);
-      return res.json({ session: updated });
+      return res.json({ session: { ...updated, inventoryDate: updated.inventoryDate?.toISOString() ?? null } });
     }
 
     const session = await prisma.warehouseInventory.create({
@@ -1058,10 +1071,11 @@ router.post('/inventory/draft', authenticateToken, async (req, res) => {
         status: 'in_progress',
         comment: comment ?? null,
         items: items !== undefined ? JSON.stringify(items) : '[]',
+        inventoryDate: parsedInventoryDate,
       },
     });
     console.log(`✅ [Inventory] Створено нову сесію #${session.id} для userId=${userId}`);
-    res.status(201).json({ session });
+    res.status(201).json({ session: { ...session, inventoryDate: session.inventoryDate?.toISOString() ?? null } });
   } catch (error) {
     console.error('🚨 [Inventory] Error creating draft:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1069,7 +1083,7 @@ router.post('/inventory/draft', authenticateToken, async (req, res) => {
 });
 
 // PUT /api/warehouse/inventory/draft/:id
-// Зберігає поточний стан чернетки (items + comment)
+// Зберігає поточний стан чернетки (items + comment + inventoryDate)
 router.put('/inventory/draft/:id', authenticateToken, async (req, res) => {
   try {
     const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
@@ -1078,7 +1092,11 @@ router.put('/inventory/draft/:id', authenticateToken, async (req, res) => {
     const sessionId = parseInt(req.params.id);
     if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
 
-    const { comment, items } = req.body as { comment?: string; items?: unknown[] };
+    const { comment, items, inventoryDate } = req.body as {
+      comment?: string;
+      items?: unknown[];
+      inventoryDate?: string;
+    };
 
     const existing = await prisma.warehouseInventory.findFirst({
       where: { id: sessionId, createdBy: userId },
@@ -1091,11 +1109,12 @@ router.put('/inventory/draft/:id', authenticateToken, async (req, res) => {
       data: {
         comment: comment !== undefined ? comment : existing.comment,
         items: items !== undefined ? JSON.stringify(items) : existing.items,
+        ...(inventoryDate !== undefined && { inventoryDate: new Date(inventoryDate) }),
       },
     });
 
     console.log(`✅ [Inventory] Збережено чернетку #${sessionId} для userId=${userId}`);
-    res.json({ session: updated });
+    res.json({ session: { ...updated, inventoryDate: updated.inventoryDate?.toISOString() ?? null } });
   } catch (error) {
     console.error('🚨 [Inventory] Error updating draft:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1112,7 +1131,11 @@ router.post('/inventory/draft/:id/complete', authenticateToken, async (req, res)
     const sessionId = parseInt(req.params.id);
     if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
 
-    const { comment, items } = req.body as { comment?: string; items?: unknown[] };
+    const { comment, items, inventoryDate } = req.body as {
+      comment?: string;
+      items?: unknown[];
+      inventoryDate?: string;
+    };
 
     const existing = await prisma.warehouseInventory.findFirst({
       where: { id: sessionId, createdBy: userId },
@@ -1127,11 +1150,12 @@ router.post('/inventory/draft/:id/complete', authenticateToken, async (req, res)
         completedAt: new Date(),
         comment: comment !== undefined ? comment : existing.comment,
         items: items !== undefined ? JSON.stringify(items) : existing.items,
+        ...(inventoryDate !== undefined && { inventoryDate: new Date(inventoryDate) }),
       },
     });
 
     console.log(`✅ [Inventory] Завершено інвентаризацію #${sessionId} для userId=${userId}`);
-    res.json({ session: completed });
+    res.json({ session: { ...completed, inventoryDate: completed.inventoryDate?.toISOString() ?? null } });
   } catch (error) {
     console.error('🚨 [Inventory] Error completing session:', error);
     res.status(500).json({ error: 'Internal server error' });

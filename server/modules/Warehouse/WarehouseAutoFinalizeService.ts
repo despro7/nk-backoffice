@@ -85,15 +85,25 @@ export class WarehouseAutoFinalizeService {
           .map((item: any) => {
             const product = productMap[item.sku];
             if (!product) return null;
+
+            // Items у БД зберігаються у плоскій структурі (один запис = один товар + одна партія).
+            // Тому конвертуємо плоскі поля у вкладений масив batches, очікуваний PayloadMovementProduct.
+            const batches = Array.isArray(item.batches)
+              ? item.batches
+              : [{
+                  batchNumber: item.batchNumber ?? '',
+                  batchId: item.batchId ?? null,
+                  boxes: item.boxQuantity ?? 0,
+                  portions: item.portionQuantity ?? 0,
+                }];
+
             return {
               id: item.sku,
               sku: item.sku,
               name: product.name,
               dilovodId: product.dilovodId ?? null,
               portionsPerBox: product.portionsPerBox ?? 1,
-              details: {
-                batches: Array.isArray(item.batches) ? item.batches : [],
-              },
+              details: { batches },
             };
           })
           .filter((i): i is NonNullable<typeof i> => i !== null);
@@ -135,7 +145,7 @@ export class WarehouseAutoFinalizeService {
         if (!validation.valid) {
           const errText = validation.errors.join('; ');
           logServer(`${TAG} ❌ Рух #${movement.id}: validation failed — ${errText}`);
-          await this.writeLog('error', movement, `Помилка валідації при автофіналізації: ${errText}`);
+          await this.writeLog('error', movement, `Помилка валідації при автофіналізації: ${errText}. Автоматична фіналізація не відбулась.`);
           failed++;
           continue;
         }
@@ -235,9 +245,9 @@ export class WarehouseAutoFinalizeService {
           status,
           title: status === 'success'
             ? `Автофіналізація накладної №${docLabel}`
-            : `Помилка автофіналізації накладної №${docLabel}`,
+            : `Помилка автофіналізації накладноїПомилка автофіналізації накладної №${docLabel}, автор документу: ${authorName}.`,
           message: status === 'success'
-            ? `Документ накладної на переміщення **№${docLabel}**, створений користувачем ${authorName}, було автоматично відправлено в Діловод і фіналізовано.`
+            ? `Документ накладної на переміщення №${docLabel}, створений користувачем ${authorName}, було автоматично відправлено в Діловод і фіналізовано.`
             : errorMessage ?? 'Невідома помилка',
           initiatedBy: 'cron:warehouse-auto-finalize',
         },
