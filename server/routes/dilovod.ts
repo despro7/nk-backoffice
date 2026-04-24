@@ -470,6 +470,72 @@ router.get('/directories', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MAN
 });
 
 /**
+ * GET /api/dilovod/salesdrive/orders/shipment-counts
+ * Підрахунок замовлень по фільтрам відвантаження (not_shipped, not_shipped_all, duplicates)
+ */
+router.get('/salesdrive/orders/shipment-counts', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
+  try {
+    const channelsParam = req.query.channels as string;
+    const includeUnknown = req.query.includeUnknown === 'true';
+
+    // Базова умова: виключаємо статус 8
+    const baseWhere: any = {
+      NOT: [{ status: { in: ['8'] } }]
+    };
+
+    // Фільтр каналів
+    if (channelsParam || includeUnknown) {
+      const channels = channelsParam ? channelsParam.split(',').filter(ch => ch.trim()) : [];
+      if (channels.length > 0 && includeUnknown) {
+        baseWhere.OR = [{ sajt: { in: channels } }, { sajt: null }, { sajt: '' }];
+      } else if (channels.length > 0) {
+        baseWhere.sajt = { in: channels };
+      } else if (includeUnknown) {
+        baseWhere.OR = [{ sajt: null }, { sajt: '' }];
+      }
+    }
+
+    // Підраховуємо паралельно
+    const [notShippedCount, notShippedAllCount, duplicatesCount] = await Promise.all([
+      // not_shipped: невідвантажені, лише статуси 3, 4, 5
+      prisma.order.count({
+        where: {
+          ...baseWhere,
+          dilovodSaleExportDate: null,
+          status: { in: ['3', '4', '5'] }
+        }
+      }),
+      // not_shipped_all: невідвантажені у всіх статусах
+      prisma.order.count({
+        where: {
+          ...baseWhere,
+          dilovodSaleExportDate: null
+        }
+      }),
+      // duplicates: дублікати відвантажень
+      prisma.order.count({
+        where: {
+          ...baseWhere,
+          dilovodSaleDocsCount: { gt: 1 }
+        }
+      })
+    ]);
+
+    res.json({
+      success: true,
+      counts: {
+        not_shipped: notShippedCount,
+        not_shipped_all: notShippedAllCount,
+        duplicates: duplicatesCount
+      }
+    });
+  } catch (error) {
+    console.log('API: Помилка отримання лічильників відвантаження:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+/**
  * GET /api/dilovod/salesdrive/orders
  * Отримання замовлень SalesDrive для моніторингу вивантаження в Dilovod
  */
@@ -552,7 +618,14 @@ router.get('/salesdrive/orders', authenticateToken, requireMinRole(ROLES.WAREHOU
           { dilovodSaleExportDate: { not: null } }
         ];
       } else if (shipmentStatus === 'not_shipped') {
-        // Не відвантажені в цьому діапазоні: дата замовлення в діапазоні І дата відвантаження null
+        // Не відвантажені (статуси 3, 4, 5) в цьому діапазоні
+        whereCondition.AND = [
+          { orderDate: dateFilter },
+          { dilovodSaleExportDate: null },
+          { status: { in: ['3', '4', '5'] } }
+        ];
+      } else if (shipmentStatus === 'not_shipped_all') {
+        // Всі не відвантажені в цьому діапазоні: дата замовлення в діапазоні І дата відвантаження null
         whereCondition.AND = [
           { orderDate: dateFilter },
           { dilovodSaleExportDate: null }
@@ -565,7 +638,11 @@ router.get('/salesdrive/orders', authenticateToken, requireMinRole(ROLES.WAREHOU
       // Якщо дати не вказані, але вказано "відвантажені" - показуємо всі відвантажені
       whereCondition.dilovodSaleExportDate = { not: null };
     } else if (shipmentStatus === 'not_shipped') {
-      // Якщо дати не вказані, але вказано "не відвантажені" - показуємо всі не відвантажені
+      // Не відвантажені, лише статуси 3, 4, 5
+      whereCondition.dilovodSaleExportDate = null;
+      whereCondition.status = { in: ['3', '4', '5'] };
+    } else if (shipmentStatus === 'not_shipped_all') {
+      // Всі не відвантажені у всіх статусах
       whereCondition.dilovodSaleExportDate = null;
     } else if (shipmentStatus === 'duplicates') {
       // Дублікати: замовлення з більше ніж одним документом відвантаження

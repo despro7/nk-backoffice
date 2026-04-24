@@ -117,7 +117,7 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
   const [selectedStatus, setSelectedStatus] = useState<StatusFilterType>('all');
 
   // State для фільтру по даті відвантаження
-  type ShipmentFilterType = 'all' | 'shipped' | 'not_shipped' | 'duplicates';
+  type ShipmentFilterType = 'all' | 'shipped' | 'not_shipped' | 'not_shipped_all' | 'duplicates';
   const [shipmentFilter, setShipmentFilter] = useState<ShipmentFilterType>('all');
 
   // State для фільтру по конкретним датам відвантаження (DateRangePicker)
@@ -128,6 +128,13 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
 
   // Кількість замовлень по кожному статусу (оновлюється разом з fetchOrders)
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+
+  // Лічильники для фільтрів відвантаження
+  const [shipmentCounts, setShipmentCounts] = useState<{ not_shipped: number; not_shipped_all: number; duplicates: number }>({
+    not_shipped: 0,
+    not_shipped_all: 0,
+    duplicates: 0,
+  });
 
   // Функція для завантаження замовлень
   const fetchOrders = useCallback(async () => {
@@ -173,6 +180,8 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         params.append('shipmentStatus', 'shipped');
       } else if (shipmentFilter === 'not_shipped') {
         params.append('shipmentStatus', 'not_shipped');
+      } else if (shipmentFilter === 'not_shipped_all') {
+        params.append('shipmentStatus', 'not_shipped_all');
       } else if (shipmentFilter === 'duplicates') {
         params.append('shipmentStatus', 'duplicates');
       }
@@ -199,6 +208,17 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
         setTotalCount(data.pagination.totalCount);
         setStatusCounts(data.statusCounts ?? {});
         setSelectedOrderIds([]);
+
+        // Оновлюємо лічильники фільтрів відвантаження
+        const countsParams = new URLSearchParams();
+        const channelsForCounts = Array.from(selectedChannels).filter(ch => ch !== 'unknown');
+        const hasUnknownForCounts = Array.from(selectedChannels).includes('unknown');
+        if (channelsForCounts.length > 0) countsParams.append('channels', channelsForCounts.join(','));
+        if (hasUnknownForCounts) countsParams.append('includeUnknown', 'true');
+        apiCall(`/api/dilovod/salesdrive/orders/shipment-counts?${countsParams}`)
+          .then(r => r.json())
+          .then(d => { if (d.success) setShipmentCounts(d.counts); })
+          .catch(() => {});
       } else {
         console.error('Failed to fetch orders:', data);
         ToastService.show({
@@ -1449,8 +1469,9 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               >
                 {shipmentFilter === 'all' && 'Всі замовлення'}
                 {shipmentFilter === 'shipped' && 'Відвантажені'}
-                {shipmentFilter === 'not_shipped' && 'Не відвантажені'}
-                {shipmentFilter === 'duplicates' && 'Дублікати відвантажень'}
+                {shipmentFilter === 'not_shipped' && `Невідвантажені (${shipmentCounts.not_shipped})`}
+                {shipmentFilter === 'not_shipped_all' && `Всі невідвантажені (${shipmentCounts.not_shipped_all})`}
+                {shipmentFilter === 'duplicates' && `Дублікати відвантажень (${shipmentCounts.duplicates})`}
               </Button>
             </DropdownTrigger>
             <DropdownMenu
@@ -1479,17 +1500,39 @@ export default function SalesDriveOrdersTable({ className }: SalesDriveOrdersTab
               </DropdownItem>
               <DropdownItem 
                 key="not_shipped"
-                textValue="Не відвантажені"
-                startContent={<DynamicIcon name="clock" size={16} className="text-orange-600" />}
+                textValue="Невідвантажені"
+                startContent={<DynamicIcon name="package-x" size={16} className="text-orange-600" />}
               >
-                Не відвантажені
+                <span>Невідвантажені</span>
+                {shipmentCounts.not_shipped > 0 && (
+                  <span className="ml-1.5 border-1 bg-orange-300/15 border-orange-300 text-orange-500 px-1.5 py-0.5 rounded text-xs font-medium">
+                    {shipmentCounts.not_shipped}
+                  </span>
+                )}
+              </DropdownItem>
+              <DropdownItem 
+                key="not_shipped_all"
+                textValue="Всі невідвантажені"
+                startContent={<DynamicIcon name="package-x" size={16} className="text-orange-600" />}
+              >
+                <span>Всі невідвантажені</span>
+                {shipmentCounts.not_shipped_all > 0 && (
+                  <span className="ml-1.5 border-1 bg-orange-300/15 border-orange-300 text-orange-500 px-1.5 py-0.5 rounded text-xs font-medium">
+                    {shipmentCounts.not_shipped_all}
+                  </span>
+                )}
               </DropdownItem>
               <DropdownItem 
                 key="duplicates"
                 textValue="Дублікати відвантажень"
                 startContent={<DynamicIcon name="copy-x" size={16} className="text-red-600" />}
               >
-                Дублікати відвантажень
+                <span>Дублікати відвантажень</span>
+                {shipmentCounts.duplicates > 0 && (
+                  <span className="ml-1.5 border-1 border-red-300 text-red-500 px-1.5 py-0.5 rounded text-xs font-medium">
+                    {shipmentCounts.duplicates}
+                  </span>
+                )}
               </DropdownItem>
             </DropdownMenu>
           </Dropdown>

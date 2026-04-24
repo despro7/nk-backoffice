@@ -18,7 +18,16 @@ export const InventorySessionMeta = ({ sessionStatus, sessionDate, onSessionDate
   const displayDate = sessionDateObj.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   return (
-  <div className="flex items-center gap-3 text-sm text-gray-500">
+  <div className="flex items-center gap-4 text-sm text-gray-500">
+    {/* Дата: редагований пікер для активної сесії, або просто текст */}
+    {onSessionDateChange && sessionStatus !== 'completed' && (
+      <DateTimePicker
+        value={sessionDateObj}
+        onChange={onSessionDateChange}
+        label="Дата інвентаризації"
+      />
+    )}
+
     {/* Статус */}
     <div className="flex items-center gap-1.5 shrink-0 bg-neutral-50 px-4 py-2 h-12 rounded-lg">
       <span>Статус:</span>
@@ -38,15 +47,6 @@ export const InventorySessionMeta = ({ sessionStatus, sessionDate, onSessionDate
         </Chip>
       )}
     </div>
-    
-    {/* Дата: редагований пікер для активної сесії, або просто текст */}
-    {onSessionDateChange && sessionStatus !== 'completed' && (
-      <DateTimePicker
-        value={sessionDateObj}
-        onChange={onSessionDateChange}
-        label="Дата інвентаризації"
-      />
-    )}
   </div>
   );
 };
