@@ -11,16 +11,17 @@ interface InventorySessionMetaProps {
   sessionStatus: InventoryStatus | null;
   sessionDate?: string | null; // ISO-рядок дати активної/завершеної сесії
   onSessionDateChange?: (date: Date) => void; // колбек зміни дати (лише для активних сесій)
+  isEditable?: boolean; // якщо адмін редагує завершену сесію — показати пікер дати
 }
 
-export const InventorySessionMeta = ({ sessionStatus, sessionDate, onSessionDateChange }: InventorySessionMetaProps) => {
+export const InventorySessionMeta = ({ sessionStatus, sessionDate, onSessionDateChange, isEditable = false }: InventorySessionMetaProps) => {
   const sessionDateObj = sessionDate ? new Date(sessionDate) : new Date();
   const displayDate = sessionDateObj.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   return (
   <div className="flex items-center gap-4 text-sm text-gray-500">
     {/* Дата: редагований пікер для активної сесії, або просто текст */}
-    {onSessionDateChange && sessionStatus !== 'completed' && (
+    {onSessionDateChange && (sessionStatus !== 'completed' || isEditable) && (
       <DateTimePicker
         value={sessionDateObj}
         onChange={onSessionDateChange}

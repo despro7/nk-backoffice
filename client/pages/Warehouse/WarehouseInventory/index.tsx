@@ -1,7 +1,9 @@
 import { Button, Tabs, Tab } from '@heroui/react';
+import { useState } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/AuthContext';
+import { ROLES } from '@shared/constants/roles';
 import { ToastService } from '@/services/ToastService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
@@ -23,7 +25,10 @@ import { InventoryCommentModal } from './components/InventoryCommentModal';
 
 export default function WarehouseInventory() {
   const { user } = useAuth();
-  const inv = useWarehouseInventory();
+  const isAdmin = user?.role === ROLES.ADMIN;
+  const inv = useWarehouseInventory(isAdmin);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
   const totalDeviations = inv.deviationCount + inv.deviationMaterialsCount;
 
@@ -33,8 +38,15 @@ export default function WarehouseInventory() {
   });
 
   const handleAdminDeleteSession = async (sessionId: string): Promise<void> => {
+    // Покажемо confirm modal, фактичне видалення робить handleConfirmDelete
+    setDeleteTargetId(sessionId);
+    setShowConfirmDelete(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetId) return;
     try {
-      const res = await fetch(`/api/warehouse/inventory/draft/${sessionId}`, {
+      const res = await fetch(`/api/warehouse/inventory/draft/${deleteTargetId}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -43,6 +55,9 @@ export default function WarehouseInventory() {
       inv.loadHistory();
     } catch {
       ToastService.show({ title: 'Помилка видалення сесії', color: 'danger' });
+    } finally {
+      setShowConfirmDelete(false);
+      setDeleteTargetId(null);
     }
   };
 
@@ -84,6 +99,7 @@ export default function WarehouseInventory() {
             sessionStatus={inv.sessionStatus}
             sessionDate={inv.sessionDate}
             onSessionDateChange={inv.handleSessionDateChange}
+            isEditable={inv.sessionStatus === 'completed' && isAdmin}
           />
         </div>
 
@@ -166,8 +182,8 @@ export default function WarehouseInventory() {
                   materials={inv.materials}
                 />
 
-                {/* Панель дій для активної сесії */}
-                {inv.sessionStatus === 'in_progress' && (
+                {/* Панель дій: для редагованої сесії (in_progress) або для адміна, що редагує completed */}
+                {inv.isEditable && (
                   <InventoryActionBar
                     deviationCount={totalDeviations}
                     totalCheckedAll={inv.totalCheckedAll}
@@ -177,6 +193,7 @@ export default function WarehouseInventory() {
                     onOpenComment={() => { inv.setCommentDraft(inv.comment); inv.setShowCommentModal(true); }}
                     onSaveDraft={inv.handleSaveDraft}
                     onFinish={() => inv.setShowConfirmFinish(true)}
+                    isEditingCompleted={inv.sessionStatus === 'completed' && isAdmin}
                   />
                 )}
 
@@ -213,13 +230,25 @@ export default function WarehouseInventory() {
       {/* Модалка підтвердження завершення */}
       <ConfirmModal
         isOpen={inv.showConfirmFinish}
-        title={totalDeviations > 0 ? 'Зафіксувати відхилення?' : 'Завершити інвентаризацію?'}
-        message={
-          totalDeviations > 0
-            ? `Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій. Знайдено ${totalDeviations} відхилень від системних залишків.`
-            : `Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій.`
+        title={
+          inv.sessionStatus === 'completed' && isAdmin
+            ? (totalDeviations > 0 ? 'Перезавершити і зафіксувати відхилення?' : 'Перезавершити інвентаризацію?')
+            : (totalDeviations > 0 ? 'Зафіксувати відхилення?' : 'Завершити інвентаризацію?')
         }
-        confirmText={totalDeviations > 0 ? 'Зафіксувати і завершити' : 'Завершити'}
+        message={
+          inv.sessionStatus === 'completed' && isAdmin
+            ? (totalDeviations > 0
+                ? `Ви перезаписуєте завершену сесію. Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій. Знайдено ${totalDeviations} відхилень.`
+                : `Ви перезаписуєте завершену сесію. Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій.`)
+            : (totalDeviations > 0
+                ? `Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій. Знайдено ${totalDeviations} відхилень від системних залишків.`
+                : `Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій.`)
+        }
+        confirmText={
+          inv.sessionStatus === 'completed' && isAdmin
+            ? (totalDeviations > 0 ? 'Перезавершити і зафіксувати' : 'Перезавершити')
+            : (totalDeviations > 0 ? 'Зафіксувати і завершити' : 'Завершити')
+        }
         cancelText="Назад"
         onConfirm={inv.handleFinish}
         onCancel={() => inv.setShowConfirmFinish(false)}
@@ -243,6 +272,17 @@ export default function WarehouseInventory() {
         onCommentDraftChange={inv.setCommentDraft}
         onSave={inv.handleSaveComment}
         onClose={() => inv.setShowCommentModal(false)}
+      />
+
+      {/* Модалка підтвердження видалення */}
+      <ConfirmModal
+        isOpen={showConfirmDelete}
+        title="Видалити інвентаризацію?"
+        message="Ця дія назавжди видалить запис інвентаризації. Продовжити?"
+        confirmText="Видалити"
+        cancelText="Назад"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setShowConfirmDelete(false)}
       />
 
       {/* Блокування навігації при незбережених змінах */}

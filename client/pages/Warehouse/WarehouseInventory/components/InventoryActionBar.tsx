@@ -14,11 +14,13 @@ interface InventoryActionBarProps {
   onOpenComment: () => void;
   onSaveDraft: () => void;
   onFinish: () => void;
+  isEditingCompleted?: boolean;
 }
 
 export const InventoryActionBar = ({
   deviationCount, totalCheckedAll, isSavingDraft, comment,
   onCancel, onOpenComment, onSaveDraft, onFinish,
+  isEditingCompleted = false,
 }: InventoryActionBarProps) => (
   <div className="flex items-center justify-between gap-8 mt-2">
     {/* Ліва частина */}
@@ -54,7 +56,7 @@ export const InventoryActionBar = ({
         isLoading={isSavingDraft}
         startContent={!isSavingDraft ? <DynamicIcon name="save" className="w-4 h-4 -ml-0.5" /> : undefined}
       >
-        Зберегти чернетку
+        {isEditingCompleted ? 'Зберегти зміни' : 'Зберегти чернетку'}
       </Button>
       <Button
         color={deviationCount > 0 ? 'danger' : 'success'}
@@ -69,7 +71,7 @@ export const InventoryActionBar = ({
           />
         }
       >
-        {deviationCount > 0 ? 'Завершити і зафіксувати відхилення' : 'Завершити'}
+        {isEditingCompleted ? (deviationCount > 0 ? 'Перезавершити і зафіксувати відхилення' : 'Перезавершити') : (deviationCount > 0 ? 'Завершити і зафіксувати відхилення' : 'Завершити')}
       </Button>
     </div>
   </div>

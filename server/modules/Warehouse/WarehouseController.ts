@@ -1131,7 +1131,7 @@ router.put('/inventory/draft/:id', authenticateToken, async (req, res) => {
       where: { id: sessionId, ...(!isAdmin && { createdBy: userId }) },
     });
     if (!existing) return res.status(404).json({ error: 'Session not found' });
-    if (existing.status === 'completed') return res.status(400).json({ error: 'Cannot edit completed session' });
+    if (!isAdmin && existing.status === 'completed') return res.status(400).json({ error: 'Cannot edit completed session' });
 
     const updated = await prisma.warehouseInventory.update({
       where: { id: sessionId },
@@ -1173,7 +1173,7 @@ router.post('/inventory/draft/:id/complete', authenticateToken, async (req, res)
       where: { id: sessionId, ...(!isAdmin && { createdBy: userId }) },
     });
     if (!existing) return res.status(404).json({ error: 'Session not found' });
-    if (existing.status === 'completed') return res.status(400).json({ error: 'Session already completed' });
+    if (!isAdmin && existing.status === 'completed') return res.status(400).json({ error: 'Session already completed' });
 
     const completed = await prisma.warehouseInventory.update({
       where: { id: sessionId },
@@ -1211,7 +1211,7 @@ router.delete('/inventory/draft/:id', authenticateToken, async (req, res) => {
       where: { id: sessionId, ...(!isAdmin && { createdBy: userId }) },
     });
     if (!existing) return res.status(404).json({ error: 'Session not found' });
-    if (existing.status === 'completed') return res.status(400).json({ error: 'Cannot delete completed session' });
+    if (!isAdmin && existing.status === 'completed') return res.status(400).json({ error: 'Cannot delete completed session' });
 
     await prisma.warehouseInventory.delete({ where: { id: sessionId } });
 

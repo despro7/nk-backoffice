@@ -96,9 +96,11 @@ export interface UseWarehouseInventoryReturn {
   isRefreshingBalances: boolean;
   /** true — є незбережені зміни відносно останнього збереження/завантаження */
   isDirty: boolean;
+  /** true — поточна сесія редагується (active) або адмін редагує завершену */
+  isEditable: boolean;
 }
 
-export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
+export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInventoryReturn => {
   const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
   const [sessionStatus, setSessionStatus] = useState<InventoryStatus | null>(null);
   /** ID поточної сесії в БД (null = ще не збережена) */
@@ -380,11 +382,16 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
       ...mats.map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
     ]);
 
+  // Дозвіл редагування: звичайна активна сесія або завершена сесія, яка редагується адміном
+  const isEditable = useMemo(() => {
+    return sessionStatus === 'in_progress' || (sessionStatus === 'completed' && isAdmin);
+  }, [sessionStatus, isAdmin]);
+
   const isDirty = useMemo(() => {
-    if (sessionStatus !== 'in_progress') return false;
+    if (!isEditable) return false;
     if (lastSavedSnapshot === null) return false;
     return serializeForDirtyCheck(products, materials) !== lastSavedSnapshot;
-  }, [sessionStatus, products, materials, lastSavedSnapshot]);
+  }, [isEditable, products, materials, lastSavedSnapshot]);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -691,5 +698,6 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
     handleFinish, handleReset, handleSaveDraft, handleSaveComment,
     handleSessionDateChange, handleAdminLoadSession, isRefreshingBalances,
     isDirty,
+    isEditable,
   };
 };

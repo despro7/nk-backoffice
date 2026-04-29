@@ -45,6 +45,13 @@ export const MovementHistoryTable = ({
     );
   }
 
+  // Сортуємо документи за датою: найновіші зверху
+  const sortedDocuments = [...documents].sort((a, b) => {
+    const ta = new Date(a.date).getTime() || 0;
+    const tb = new Date(b.date).getTime() || 0;
+    return tb - ta;
+  });
+
   // Вимірюємо висоту контенту коли розгортаємо
   useEffect(() => {
     if (expandedDocId && contentRefs.current[expandedDocId]) {
@@ -89,7 +96,7 @@ export const MovementHistoryTable = ({
 
   return (
     <div className="space-y-2">
-      {documents.map((doc) => (
+      {sortedDocuments.map((doc) => (
         <div key={doc.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           {/* Заголовок акордеона */}
           <button
