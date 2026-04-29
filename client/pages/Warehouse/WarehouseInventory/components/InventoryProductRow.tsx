@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { StepperInput } from '../../shared/StepperInput';
 import { InfoDisplay } from '../../shared/InfoDisplay';
 import { totalPortions, formatBalanceBreakdown } from '../WarehouseInventoryUtils';
+import { useDebug } from '@/contexts/DebugContext';
 import type { InventoryProduct } from '../WarehouseInventoryTypes';
 
 // ---------------------------------------------------------------------------
@@ -30,6 +31,7 @@ const isTouchDevice = (): boolean =>
   typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
 export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck, onEnterPress, autoFocus = true, autoFocusTouch = false }: ProductRowProps) => {
+  const { isDebugMode } = useDebug();
   const total = totalPortions(product);
   const deviation = total !== null ? total - product.systemBalance : null;
   const hasDeviation = deviation !== null && deviation !== 0;
@@ -87,9 +89,13 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
         </span>
 
         {/* Назва */}
-        <span className={`flex-1 text-lg font-semibold text-neutral-800 pl-1 ${product.checked ? 'text-gray-400' : ''}`}>
-          {product.name} <span className="text-[16px] font-mono font-normal text-gray-400 ml-1">{product.id}</span>
-        </span>
+        <div className="flex flex-col flex-1 pl-1">
+          <span className="text-lg font-semibold text-neutral-800">{product.name}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">sku <span className="font-medium">{product.sku}</span></span>
+            <span className="text-xs text-gray-400 pl-2 border-l-1">в коробці: <span className="font-medium">{product.portionsPerBox}</span></span>
+          </div>
+        </div>
 
         {/* Відхилення */}
         {hasDeviation && (

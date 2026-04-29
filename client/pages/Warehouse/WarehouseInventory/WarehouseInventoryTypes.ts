@@ -19,6 +19,7 @@ export interface InventoryProduct {
 
 export interface InventorySession {
   id: string;
+  inventoryDate: string;
   createdAt: string;
   createdBy: string;
   createdByName: string | null;

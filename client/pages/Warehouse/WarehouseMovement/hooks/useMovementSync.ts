@@ -40,6 +40,7 @@ export interface UseMovementSyncReturn {
     setSelectedDateTime: (date: Date) => void,
     /** Якщо 'movement' — перераховує залишки на нову дату; якщо 'now' — не змінює дату залишків */
     stockDateMode?: 'movement' | 'now',
+    refreshStockData?: (prods: MovementProduct[], asOfDate?: Date) => Promise<void>,
   ) => void;
 }
 
@@ -48,8 +49,10 @@ export const useMovementSync = (
 ): UseMovementSyncReturn => {
   const [isRefreshingBatches, setIsRefreshingBatches] = useState(false);
 
-  // Таймер debounce для оновлення залишків після зміни дати (1 сек)
+  // Таймер debounce для оновлення залишків партій після зміни дати (1 сек)
   const dateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Таймер debounce для оновлення stockData (stock-snapshot) після зміни дати (1 сек)
+  const stockDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─────────────────────────────────────────────────────────────────────
   // Допоміжна функція: парсить items з чернетки (рядок або масив)
@@ -192,16 +195,28 @@ export const useMovementSync = (
       ) => Promise<void>,
       setSelectedDateTime: (date: Date) => void,
       stockDateMode: 'movement' | 'now' = 'now',
+      refreshStockData?: (prods: MovementProduct[], asOfDate?: Date) => Promise<void>,
     ): void => {
       setSelectedDateTime(date);
 
-      // Скасовуємо попередній таймер
+      // Скасовуємо попередні таймери
       if (dateDebounceRef.current !== null) {
         clearTimeout(dateDebounceRef.current);
+      }
+      if (stockDebounceRef.current !== null) {
+        clearTimeout(stockDebounceRef.current);
       }
 
       // Якщо режим "на поточну дату" — залишки не перераховуємо при зміні дати переміщення
       if (stockDateMode === 'now') return;
+
+      // Debounce оновлення stockData (stock-snapshot) — 1 сек
+      if (refreshStockData) {
+        stockDebounceRef.current = setTimeout(() => {
+          stockDebounceRef.current = null;
+          refreshStockData(products, date);
+        }, 1000);
+      }
 
       // Перераховуємо залишки лише якщо є вибрані товари з партіями
       const hasSelectedWithBatches = products.some(
@@ -209,9 +224,9 @@ export const useMovementSync = (
       );
       if (!hasSelectedWithBatches) return;
 
-      setIsRefreshingBatches(true);
       dateDebounceRef.current = setTimeout(() => {
         dateDebounceRef.current = null;
+        setIsRefreshingBatches(true);
         refreshBatchQuantities(products, selectedProductIds, date).finally(() => {
           setIsRefreshingBatches(false);
         });

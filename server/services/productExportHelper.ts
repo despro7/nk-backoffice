@@ -30,8 +30,8 @@ export interface BuildExportPayloadOptions {
   /** Розгортати комплекти на кінцеві товари. За замовчуванням false. */
   expandSets?: boolean;
   /**
-   * Коригувати залишок складу "1" на кількість порцій у активних замовленнях
-   * (статуси 1=Нові, 2=Підтверджені). За замовчуванням true.
+   * Коригувати залишок складу "2" на кількість порцій у активних замовленнях
+   * (статуси 1 = Нові, 2 = Підтверджені, 9 = На утриманні). За замовчуванням true.
    */
   adjustStock?: boolean;
 }
@@ -40,15 +40,15 @@ export interface BuildExportPayloadOptions {
 
 /**
  * Підраховує загальну кількість кожного SKU у активних замовленнях
- * (статуси 1=Нові та 2=Підтверджені) через кеш порцій.
+ * (статуси 1 = Нові, 2 = Підтверджені, 9 = На утриманні) через кеш порцій.
  * Повертає Map<sku, totalQuantity>.
  */
 export async function getPortionsInOrdersBySku(): Promise<Map<string, number>> {
   const portionsMap = new Map<string, number>();
 
-  // Отримуємо всі замовлення зі статусами 1 (Нові) та 2 (Підтверджені)
+  // Отримуємо всі замовлення зі статусами 1 (Нові), 2 (Підтверджені) та 9 (На утриманні)
   const activeOrders = await prisma.order.findMany({
-    where: { status: { in: ['1', '2'] } },
+    where: { status: { in: ['1', '2', '9'] } },
     select: { externalId: true },
   });
 
@@ -136,7 +136,8 @@ async function expandSetRecursively(
 
 /**
  * Збирає повний payload для експорту товарів у SalesDrive.
- * Коригує залишок складу "1" на кількість порцій в активних замовленнях.
+ * Коригує залишок складу "2" на кількість порцій в активних замовленнях
+ * (статуси 1 = Нові, 2 = Підтверджені, 9 = На утриманні).
  */
 export async function buildExportPayload(
   options: BuildExportPayloadOptions = {}
@@ -179,14 +180,14 @@ export async function buildExportPayload(
         console.warn(`Failed to parse stockBalanceByStock for product ${product.sku}`);
       }
 
-      // Коригуємо залишок складу "1"
+      // Коригуємо залишок складу "2"
       if (adjustStock) {
         const inOrders = portionsMap.get(product.sku) ?? 0;
         if (inOrders > 0) {
-          const current = Number(stockBalanceByStock['1']) || 0;
+          const current = Number(stockBalanceByStock['2']) || 0;
           stockBalanceByStock = {
             ...stockBalanceByStock,
-            '1': Math.max(0, current - inOrders),
+            '2': Math.max(0, current - inOrders),
           };
           adjustedCount++;
         }

@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { Chip } from '@heroui/react';
+import { Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate } from '@/lib/formatUtils';
+import { useAuth } from '@/contexts/AuthContext';
+import { ROLES } from '@shared/constants/roles';
 import type { InventorySession } from '../WarehouseInventoryTypes';
 import { statusLabel, statusColor, totalPortions } from '../WarehouseInventoryUtils';
 
@@ -11,13 +13,19 @@ import { statusLabel, statusColor, totalPortions } from '../WarehouseInventoryUt
 
 interface HistoryTableProps {
   sessions: InventorySession[];
+  onLoadSession?: (session: InventorySession) => Promise<void>;
+  onDeleteSession?: (sessionId: string) => Promise<void>;
 }
 
 type SortColumn = 'sku' | 'name' | 'systemBalance' | 'actual' | 'deviation';
 type SortDirection = 'ascending' | 'descending';
 
-export const HistoryTable = ({ sessions }: HistoryTableProps) => {
+export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession }: HistoryTableProps) => {
+  const { user } = useAuth();
+  const isAdmin = user?.role === ROLES.ADMIN;
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+  const [loadingLoadId, setLoadingLoadId] = useState<string | null>(null);
+  const [loadingDeleteId, setLoadingDeleteId] = useState<string | null>(null);
   const [sortColumn, setSortColumn] = useState<SortColumn>('sku');
   const [sortDirection, setSortDirection] = useState<SortDirection>('ascending');
   const [contentHeights, setContentHeights] = useState<Record<string, number>>({});
@@ -113,19 +121,57 @@ export const HistoryTable = ({ sessions }: HistoryTableProps) => {
                 className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${expandedSessionId === session.id ? 'rotate-90' : ''}`}
               />
               <div className="text-left">
-                <p className="text-sm font-medium text-gray-700 tabular-nums">{formatDate(session.createdAt)}</p>
+                <p className="text-sm font-medium text-gray-700 tabular-nums">{formatDate(session.inventoryDate)}</p>
               </div>
               <div>
                 <Chip size="sm" color={statusColor[session.status]} variant="flat">
                   {statusLabel[session.status]}
                 </Chip>
               </div>
+              {/* Кнопки дій для адміна (лише для активних/чернеткових сесій) */}
+              {isAdmin && session.status !== 'completed' && (
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  {onLoadSession && (
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      color="primary"
+                      className="bg-blue-200"
+                      isLoading={loadingLoadId === session.id}
+                      isDisabled={!!loadingDeleteId}
+                      startContent={loadingLoadId !== session.id ? <DynamicIcon name="pencil" className="w-3.5 h-3.5" /> : undefined}
+                      onPress={async () => {
+                        setLoadingLoadId(session.id);
+                        try { await onLoadSession(session); } finally { setLoadingLoadId(null); }
+                      }}
+                    >
+                      Редагувати
+                    </Button>
+                  )}
+                  {onDeleteSession && (
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      color="danger"
+                      isLoading={loadingDeleteId === session.id}
+                      isDisabled={!!loadingLoadId}
+                      startContent={loadingDeleteId !== session.id ? <DynamicIcon name="trash-2" className="w-3.5 h-3.5" /> : undefined}
+                      onPress={async () => {
+                        setLoadingDeleteId(session.id);
+                        try { await onDeleteSession(session.id); } finally { setLoadingDeleteId(null); }
+                      }}
+                    >
+                      Видалити
+                    </Button>
+                  )}
+                </div>
+              )}
               <div className="flex items-center gap-10 ml-auto text-xs text-gray-500">
                 <div className="text-left">
                   <span className="text-medium font-semibold leading-none">{getSessionDetails(session.id).reduce((sum, item) => sum + item.systemBalance, 0)}</span>
                   <p className="leading-none">за обліком</p>
                 </div>
-                <div className="gray-text-left">
+                <div className="text-left">
                   <span className="text-medium font-semibold leading-none">{getSessionDetails(session.id).reduce((sum, item) => sum + (totalPortions(item) ?? 0), 0)}</span>
                   <p className="leading-none">фактично</p>
                 </div>
@@ -165,10 +211,11 @@ export const HistoryTable = ({ sessions }: HistoryTableProps) => {
               className="p-4"
             >
               <div className="mb-4">
-                <h3 className="text-md font-semibold text-gray-700 mb-2">Деталі інвентаризації #{session.id} від {formatDate(session.createdAt)}</h3>
+                <h3 className="text-md font-semibold text-gray-700 mb-2">Деталі інвентаризації #{session.id}</h3>
                 <div className="flex items-center gap-3 text-xs text-gray-500">
-                  <span>Кількість позицій: <b>{getSessionDetails(session.id).length}</b></span>
-                  <span className="border-l border-gray-300 pl-3">Автор: <b>{session.createdByName || 'N/A'}</b></span>
+                  <span>Автор: <b>{session.createdByName || 'N/A'}</b></span>
+                  <span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(session.createdAt)}</b></span>
+                  <span className="border-l border-gray-300 pl-3">Кількість позицій: <b>{getSessionDetails(session.id).length}</b></span>
                   {session.comment && <span className="border-l border-gray-300 pl-3">Коментар: {session.comment}</span>}
                 </div>
               </div>

@@ -447,11 +447,8 @@ export default function WarehouseMovement() {
             onSearchChange={mov.setSearchQuery}
             selectedDate={mov.selectedDateTime}
             onDateChange={(date) => {
+              // refreshStockData тепер передається всередину handleDateChange (з debounce)
               mov.handleDateChange(date, stockDateMode);
-              // Якщо залишки показуються на дату переміщення — оновлюємо stockData теж
-              if (stockDateMode === 'movement') {
-                mov.refreshStockData(mov.products, date);
-              }
             }}
             isRefreshingBatches={mov.isRefreshingBatches}
             isRefreshingStock={mov.isRefreshingStock}
@@ -532,6 +529,7 @@ export default function WarehouseMovement() {
             onRefresh={draftsManager.loadDrafts}
             onLoadDraft={async (draft) => {
               await mov.loadDraftObject(draft);
+              setStockDateMode('movement');
               setActiveTab('current');
             }}
             onDeleteDraft={draftsManager.removeDraft}
@@ -553,6 +551,7 @@ export default function WarehouseMovement() {
             onChangeMonth={history.changeMonth}
             onEditMovement={async (doc) => {
               await mov.loadMovementFromHistory(doc);
+              setStockDateMode('movement');
               setActiveTab('current');
             }}
           />

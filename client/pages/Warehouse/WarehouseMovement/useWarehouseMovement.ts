@@ -346,6 +346,7 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
       products$.refreshBatchQuantities,
       draft$.setSelectedDateTime,
       stockDateMode,
+      products$.refreshStockData,
     );
 
   const loadMovementFromHistory = (doc: any): Promise<void> =>

@@ -333,7 +333,7 @@ const ProductSets: React.FC = () => {
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set([]));
 
   // Стан для статистики порцій (тільки в debug-режимі) — кількість в активних замовленнях
-  const [portionsBySku, setPortionsBySku] = useState<Map<string, { newQty: number; confirmedQty: number }>>(new Map());
+  const [portionsBySku, setPortionsBySku] = useState<Map<string, { newQty: number; confirmedQty: number; holdQty: number }>>(new Map());
   const [portionsLoading, setPortionsLoading] = useState(false);
   // Ref для читання актуального isDebugMode всередині async-функції без stale closure
   const isDebugModeRef = useRef(isDebugMode);
@@ -343,17 +343,18 @@ const ProductSets: React.FC = () => {
     if (!isDebugModeRef.current) return;
     setPortionsLoading(true);
     try {
-      const [resNew, resConf] = await Promise.all([
+      const [resNew, resConf, resHold] = await Promise.all([
         fetch('/api/orders/products/stats?status=1', { credentials: 'include' }),
         fetch('/api/orders/products/stats?status=2', { credentials: 'include' }),
+        fetch('/api/orders/products/stats?status=9', { credentials: 'include' }),
       ]);
-      const [datNew, datConf] = await Promise.all([resNew.json(), resConf.json()]);
+      const [datNew, datConf, datHold] = await Promise.all([resNew.json(), resConf.json(), resHold.json()]);
 
-      const map = new Map<string, { newQty: number; confirmedQty: number }>();
+      const map = new Map<string, { newQty: number; confirmedQty: number; holdQty: number }>();
       if (datNew.success && Array.isArray(datNew.data)) {
         for (const item of datNew.data) {
           if (item.sku && item.orderedQuantity > 0) {
-            const existing = map.get(item.sku) ?? { newQty: 0, confirmedQty: 0 };
+            const existing = map.get(item.sku) ?? { newQty: 0, confirmedQty: 0, holdQty: 0 };
             map.set(item.sku, { ...existing, newQty: item.orderedQuantity });
           }
         }
@@ -361,8 +362,16 @@ const ProductSets: React.FC = () => {
       if (datConf.success && Array.isArray(datConf.data)) {
         for (const item of datConf.data) {
           if (item.sku && item.orderedQuantity > 0) {
-            const existing = map.get(item.sku) ?? { newQty: 0, confirmedQty: 0 };
+            const existing = map.get(item.sku) ?? { newQty: 0, confirmedQty: 0, holdQty: 0 };
             map.set(item.sku, { ...existing, confirmedQty: item.orderedQuantity });
+          }
+        }
+      }
+      if (datHold.success && Array.isArray(datHold.data)) {
+        for (const item of datHold.data) {
+          if (item.sku && item.orderedQuantity > 0) {
+            const existing = map.get(item.sku) ?? { newQty: 0, confirmedQty: 0, holdQty: 0 };
+            map.set(item.sku, { ...existing, holdQty: item.orderedQuantity });
           }
         }
       }
@@ -832,7 +841,7 @@ const ProductSets: React.FC = () => {
 
         if (isDebugMode) {
           const p = portionsBySku.get(product.sku);
-          const inOrders = (p?.newQty ?? 0) + (p?.confirmedQty ?? 0);
+          const inOrders = (p?.newQty ?? 0) + (p?.confirmedQty ?? 0) + (p?.holdQty ?? 0);
           const available = stock1Value - inOrders;
           return (
             <div className="flex flex-col gap-0.5 leading-tight">
@@ -861,7 +870,8 @@ const ProductSets: React.FC = () => {
         const p = portionsBySku.get(product.sku);
         const qNew = p?.newQty ?? 0;
         const qConf = p?.confirmedQty ?? 0;
-        const total = qNew + qConf;
+        const qHold = p?.holdQty ?? 0;
+        const total = qNew + qConf + qHold;
         if (total === 0) return <span className="text-gray-300 text-sm">—</span>;
         return (
           <div className="flex gap-1 text-sm leading-tight">
@@ -872,12 +882,21 @@ const ProductSets: React.FC = () => {
                   {qNew}
                 </span>
               )}
-              /
               {qConf > 0 && (
-                <span className="text-green-700 font-medium" title="Підтверджені">
+                <>
+                {qNew > 0 && "/ " }<span className="text-green-700 font-medium" title="Підтверджені">
                   {qConf}
                 </span>
-              )})
+                </>
+              )}
+              {qHold > 0 && (
+                <>
+                {qConf > 0 && "/ " }<span className="text-red-700 font-medium" title="На утриманні">
+                  {qHold}
+                </span>
+                </>
+              )}
+              )
             </div>
           </div>
         );

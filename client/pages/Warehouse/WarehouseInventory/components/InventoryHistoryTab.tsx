@@ -11,9 +11,11 @@ interface InventoryHistoryTabProps {
   sessions: InventorySession[];
   loading: boolean;
   onRefresh: () => void;
+  onLoadSession?: (session: InventorySession) => Promise<void>;
+  onDeleteSession?: (sessionId: string) => Promise<void>;
 }
 
-export const InventoryHistoryTab = ({ sessions, loading, onRefresh }: InventoryHistoryTabProps) => (
+export const InventoryHistoryTab = ({ sessions, loading, onRefresh, onLoadSession, onDeleteSession }: InventoryHistoryTabProps) => (
   <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
     <div className="flex items-center justify-between mb-4">
       <h2 className="text-base font-semibold text-gray-800">Попередні інвентаризації</h2>
@@ -43,7 +45,7 @@ export const InventoryHistoryTab = ({ sessions, loading, onRefresh }: InventoryH
         </Button>
       </div>
     ) : (
-      <HistoryTable sessions={sessions} />
+      <HistoryTable sessions={sessions} onLoadSession={onLoadSession} onDeleteSession={onDeleteSession} />
     )}
   </div>
 );

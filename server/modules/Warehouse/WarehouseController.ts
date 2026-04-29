@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
 import { resolveAuthorNames } from '../../lib/utils.js';
 import { authenticateToken } from '../../middleware/auth.js';
+import { ROLES } from '../../../shared/constants/roles.js';
 import { WarehouseService } from './WarehouseService.js';
 import { MovementHistoryService } from './MovementHistoryService.js';
 import { WarehousePayloadBuilder } from './WarehousePayloadBuilder.js';
@@ -90,9 +91,13 @@ router.get('/drafts', authenticateToken, async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+
     const rawDrafts = await prisma.warehouseMovement.findMany({
       where: {
-        createdBy: userId,
+        // Адмін бачить всі активні чернетки, інші — тільки свої
+        ...(!isAdmin && { createdBy: userId }),
         status: { in: ['draft', 'active'] }, // 'finalized' — вже завершені, у чернетках не показуємо
       },
       orderBy: {
@@ -420,11 +425,15 @@ router.patch('/:id/finalize-local', authenticateToken, async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Перевіряємо що документ існує, належить юзеру і ще не завершений
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+
+    // Перевіряємо що документ існує, ще не завершений
+    // Адмін може завершувати будь-який документ
     const existing = await prisma.warehouseMovement.findFirst({
       where: {
         id: Number(id),
-        createdBy: userId,
+        ...(!isAdmin && { createdBy: userId }),
         status: { in: ['draft', 'active'] },
       },
       select: { id: true, status: true },
@@ -432,7 +441,10 @@ router.patch('/:id/finalize-local', authenticateToken, async (req, res) => {
 
     if (!existing) {
       const anyDoc = await prisma.warehouseMovement.findFirst({
-        where: { id: Number(id), createdBy: userId },
+        where: {
+          id: Number(id),
+          ...(!isAdmin && { createdBy: userId }),
+        },
         select: { status: true },
       });
       if (anyDoc?.status === 'finalized') {
@@ -496,11 +508,15 @@ router.put('/:id', authenticateToken, async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+
     // Перевіряємо що документ належить користувачу і не є фіналізованим
+    // Адмін може редагувати будь-який документ
     const existingDraft = await prisma.warehouseMovement.findFirst({
       where: {
         id: Number(id),
-        createdBy: userId,
+        ...(!isAdmin && { createdBy: userId }),
         status: { in: ['draft', 'active'] }, // 'finalized' — не редагується
       }
     });
@@ -508,7 +524,10 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (!existingDraft) {
       // Перевіряємо чи документ існує взагалі (щоб дати точне повідомлення)
       const anyDoc = await prisma.warehouseMovement.findFirst({
-        where: { id: Number(id), createdBy: userId },
+        where: {
+          id: Number(id),
+          ...(!isAdmin && { createdBy: userId }),
+        },
         select: { status: true },
       });
       if (anyDoc?.status === 'finalized') {
@@ -579,7 +598,7 @@ router.post('/', authenticateToken, async (req, res) => {
       if (docNumber) orConditions.push({ docNumber: String(docNumber) });
 
       const existingDraft = await prisma.warehouseMovement.findFirst({
-        where: { OR: orConditions, createdBy: userId },
+        where: { OR: orConditions },
       });
 
       if (existingDraft) {
@@ -588,13 +607,7 @@ router.post('/', authenticateToken, async (req, res) => {
       }
     }
 
-    // Генеруємо унікальний номер документа
-    // Використовуємо MAX(id)+1 замість COUNT+1 — щоб уникнути колізій при видаленні записів
-    const maxRecord = await prisma.warehouseMovement.findFirst({ orderBy: { id: 'desc' }, select: { id: true } });
-    const nextInternalDocNumber = ((maxRecord?.id ?? 0) + 1).toString().padStart(5, '0');
-
     const movement = await WarehouseService.createMovement({
-      internalDocNumber: nextInternalDocNumber,
       items,
       sourceWarehouse,
       destinationWarehouse,
@@ -609,7 +622,20 @@ router.post('/', authenticateToken, async (req, res) => {
     console.log('✅ [Warehouse] Чернетка переміщення створена:', movement.id);
 
     res.status(201).json(movement);
-  } catch (error) {
+  } catch (error: any) {
+    // P2002 — порушення унікального обмеження (dilovodDocId вже існує)
+    // Може виникнути при race condition, якщо два запити пройшли перевірку одночасно
+    if (error?.code === 'P2002' && error?.meta?.target === 'warehouse_movement_dilovodDocId_key') {
+      const { dilovodDocId } = req.body;
+      const existing = dilovodDocId
+        ? await prisma.warehouseMovement.findUnique({ where: { dilovodDocId: String(dilovodDocId) } })
+        : null;
+      if (existing) {
+        console.log(`♻️ [Warehouse] Race condition: повертаємо існуючий запис #${existing.id} для dilovodDocId=${dilovodDocId}`);
+        return res.status(200).json({ ...existing, _existing: true });
+      }
+      return res.status(409).json({ error: 'Документ з таким dilovodDocId вже існує' });
+    }
     console.error('🚨 [Warehouse] Error creating warehouse movement:', error);
     console.error('🚨 [Warehouse] Stack trace:', error.stack);
     res.status(500).json({ error: 'Internal server error', details: error.message });
@@ -1098,8 +1124,11 @@ router.put('/inventory/draft/:id', authenticateToken, async (req, res) => {
       inventoryDate?: string;
     };
 
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+
     const existing = await prisma.warehouseInventory.findFirst({
-      where: { id: sessionId, createdBy: userId },
+      where: { id: sessionId, ...(!isAdmin && { createdBy: userId }) },
     });
     if (!existing) return res.status(404).json({ error: 'Session not found' });
     if (existing.status === 'completed') return res.status(400).json({ error: 'Cannot edit completed session' });
@@ -1137,8 +1166,11 @@ router.post('/inventory/draft/:id/complete', authenticateToken, async (req, res)
       inventoryDate?: string;
     };
 
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+
     const existing = await prisma.warehouseInventory.findFirst({
-      where: { id: sessionId, createdBy: userId },
+      where: { id: sessionId, ...(!isAdmin && { createdBy: userId }) },
     });
     if (!existing) return res.status(404).json({ error: 'Session not found' });
     if (existing.status === 'completed') return res.status(400).json({ error: 'Session already completed' });
@@ -1172,8 +1204,11 @@ router.delete('/inventory/draft/:id', authenticateToken, async (req, res) => {
     const sessionId = parseInt(req.params.id);
     if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
 
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+
     const existing = await prisma.warehouseInventory.findFirst({
-      where: { id: sessionId, createdBy: userId },
+      where: { id: sessionId, ...(!isAdmin && { createdBy: userId }) },
     });
     if (!existing) return res.status(404).json({ error: 'Session not found' });
     if (existing.status === 'completed') return res.status(400).json({ error: 'Cannot delete completed session' });

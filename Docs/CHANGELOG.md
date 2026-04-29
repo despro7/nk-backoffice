@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-04-29 — WarehouseMovement + WarehouseInventory: адмін-доступ та дрібні виправлення
+**Files:** `server/modules/Warehouse/WarehouseController.ts`, `client/pages/Warehouse/WarehouseMovement/hooks/use*`, `client/pages/Warehouse/WarehouseMovement/index.tsx`, `client/pages/Warehouse/WarehouseInventory/useWarehouseInventory.ts`, `client/pages/Warehouse/WarehouseInventory/components/InventoryHistoryTable.tsx`
+
+- **Адмін-доступ**: `PUT /:id`, `PATCH /:id/finalize-local`, `PUT /inventory/draft/:id`, `POST /inventory/draft/:id/complete`, `DELETE /inventory/draft/:id` — адмін більше не обмежений `createdBy` фільтром. `GET /drafts` також показує всі активні чернетки.
+- **Admin UI в InventoryHistoryTable**: кнопки "Редагувати" / "Видалити" для `in_progress` сесій (тільки для адміна).
+- **Fix P2002 + race condition**: прибрано `createdBy` з duplicate-check; `internalDocNumber` генерується через create+update (уникає колізій).
+- **Fix boxQuantity=0 у старих чернетках**: перерахунок `boxes/portions` через `totalPortions / portionsPerBox`.
+- **Fix isDirty при завантаженні**: snapshot більше не включає `systemBalance` — оновлення залишків не ставить `isDirty`.
+- **Автозавантаження залишків**: при відкритті чернетки `refreshSystemBalances` викликається одразу з merged-даними (через `refreshSystemBalancesRef`).
+- **Debounce**: `setIsRefreshingBatches(true)` і `refreshStockData` перенесено всередину `setTimeout`.
+
+---
+
 ## 2026-04-21 — Інвентаризація: логічна дата проведення (inventoryDate) + DateTimePicker
 **Files:** `prisma/schema.prisma`, `server/modules/Warehouse/WarehouseController.ts`, `client/pages/Warehouse/WarehouseInventory/useWarehouseInventory.ts`, `client/components/DateTimePicker.tsx`, `client/pages/Warehouse/WarehouseInventory/components/InventorySessionMeta.tsx`, `client/pages/Warehouse/WarehouseMovement/components/MovementFilterBar.tsx`, `server/modules/Warehouse/WarehouseAutoFinalizeService.ts`, `Docs/features/warehouse-inventory.md`
 

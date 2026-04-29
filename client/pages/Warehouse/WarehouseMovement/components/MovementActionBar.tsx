@@ -99,7 +99,7 @@ export const MovementActionBar = ({
         )}
 
         {/* Завершити переміщення — фінальна відправка, документ блокується */}
-        {canEdit && draftStatus === 'active' && (
+        {isDebugMode && canEdit && draftStatus === 'active' && (
           <Button
             color="success"
             size="lg"

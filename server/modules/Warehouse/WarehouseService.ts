@@ -31,9 +31,10 @@ export class WarehouseService {
     };
   }
 
-  // Створення документа переміщення
+  // Створення документа переміщення.
+  // internalDocNumber генерується атомарно на основі id запису (авто-інкремент БД),
+  // тому race condition при одночасному створенні двома юзерами неможливий.
   static async createMovement(data: {
-    internalDocNumber: string;
     items: WarehouseMovementItem[];
     sourceWarehouse: string;
     destinationWarehouse: string;
@@ -43,9 +44,10 @@ export class WarehouseService {
     docNumber?: string;
     dilovodDocId?: string;
   }): Promise<WarehouseMovement> {
-    const result = await prisma.warehouseMovement.create({
+    // Крок 1: створюємо запис з унікальним тимчасовим номером
+    const tmp = await prisma.warehouseMovement.create({
       data: {
-        internalDocNumber: data.internalDocNumber,
+        internalDocNumber: `TMP-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         items: JSON.stringify(data.items),
         sourceWarehouse: data.sourceWarehouse,
         destinationWarehouse: data.destinationWarehouse,
@@ -55,6 +57,12 @@ export class WarehouseService {
         ...(data.docNumber != null && { docNumber: data.docNumber }),
         ...(data.dilovodDocId != null && { dilovodDocId: data.dilovodDocId }),
       }
+    });
+
+    // Крок 2: одразу оновлюємо internalDocNumber на базі id (гарантовано унікальний)
+    const result = await prisma.warehouseMovement.update({
+      where: { id: tmp.id },
+      data: { internalDocNumber: tmp.id.toString().padStart(5, '0') },
     });
 
     // Перетворюємо JsonValue в WarehouseMovementItem[]

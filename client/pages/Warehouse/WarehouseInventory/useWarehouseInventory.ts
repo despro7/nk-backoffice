@@ -90,6 +90,8 @@ export interface UseWarehouseInventoryReturn {
   handleSaveComment: () => void;
   /** Оновлює залишки "За обліком" з Dilovod на вказану дату + встановлює isDirty */
   handleSessionDateChange: (date: Date) => void;
+  /** Адмін: завантажує чужу сесію в поточний перегляд для редагування */
+  handleAdminLoadSession: (session: InventorySession) => Promise<void>;
   /** true поки виконується запит на оновлення залишків */
   isRefreshingBalances: boolean;
   /** true — є незбережені зміни відносно останнього збереження/завантаження */
@@ -126,6 +128,11 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
   /** Debounce-таймер для оновлення залишків після зміни дати (1 сек) */
   const balancesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Ref для refreshSystemBalances — щоб loadDraft/handleAdminLoadSession могли викликати функцію,
+   * яка оголошується пізніше (уникнення TDZ для const useCallback).
+   */
+  const refreshSystemBalancesRef = useRef<(asOfDate: Date, overrideProducts?: InventoryProduct[], overrideMaterials?: InventoryProduct[]) => Promise<void>>(async () => {});
 
   /**
    * Snapshot серіалізованих items на момент останнього збереження або завантаження.
@@ -241,12 +248,18 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
       // Пріоритет: inventoryDate (обрана користувачем) > createdAt (технічна дата)
       setSessionDate(draft.inventoryDate ?? draft.createdAt ?? null);
       setComment(draft.comment ?? '');
-      // Фіксуємо snapshot — щойно завантажена чернетка вважається "чистою"
-      setLastSavedSnapshot(JSON.stringify(serializeItems(mergedProducts, mergedMaterials)));
+      // Фіксуємо snapshot лише user-editable полів — щоб оновлення systemBalance не тригерило isDirty
+      setLastSavedSnapshot(JSON.stringify(
+        [...mergedProducts, ...mergedMaterials].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+      ));
+      // Завантажуємо залишки за обліком на дату чернетки (через ref, щоб уникнути TDZ)
+      const dateToUse = new Date(draft.inventoryDate ?? draft.createdAt);
+      if (!isNaN(dateToUse.getTime())) {
+        await refreshSystemBalancesRef.current(dateToUse, mergedProducts, mergedMaterials);
+      }
     } catch {
       // Тихо ігноруємо — просто не відновлюємо чернетку
-    }
-  }, [loadProducts, loadMaterials]);
+    }  }, [loadProducts, loadMaterials]);
 
   useEffect(() => {
     loadDraft();
@@ -264,6 +277,7 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
       const data = await res.json();
       const sessions: InventorySession[] = (data.sessions ?? []).map((s: any) => ({
         id: String(s.id),
+        inventoryDate: s.inventoryDate ?? s.createdAt,
         createdAt: s.createdAt,
         createdBy: String(s.createdBy ?? ''),
         createdByName: s.createdByName ?? null,
@@ -357,11 +371,19 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
   /**
    * true — є незбережені зміни відносно lastSavedSnapshot.
    * Активний лише під час сесії (sessionStatus === 'in_progress').
+   * ВАЖЛИВО: порівнюємо лише поля, що редагує користувач (actualCount, boxCount, checked).
+   * systemBalance виключено — воно оновлюється системою при завантаженні і не повинно впливати на dirty-flag.
    */
+  const serializeForDirtyCheck = (prods: InventoryProduct[], mats: InventoryProduct[]) =>
+    JSON.stringify([
+      ...prods.map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+      ...mats.map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+    ]);
+
   const isDirty = useMemo(() => {
     if (sessionStatus !== 'in_progress') return false;
     if (lastSavedSnapshot === null) return false;
-    return JSON.stringify(serializeItems(products, materials)) !== lastSavedSnapshot;
+    return serializeForDirtyCheck(products, materials) !== lastSavedSnapshot;
   }, [sessionStatus, products, materials, lastSavedSnapshot]);
 
   // ---------------------------------------------------------------------------
@@ -386,8 +408,10 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
       const data = await res.json();
       setSessionId(data.session.id);
       setSessionDate(data.session.createdAt ?? new Date().toISOString());
-      // Фіксуємо snapshot щойно завантаженого "чистого" списку
-      setLastSavedSnapshot(JSON.stringify(serializeItems(loadedProducts, loadedMaterials)));
+      // Фіксуємо snapshot лише user-editable полів
+      setLastSavedSnapshot(JSON.stringify(
+        [...loadedProducts, ...loadedMaterials].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+      ));
     } catch {
       // Не критично — ID збережеться при першому збереженні чернетки
     }
@@ -500,8 +524,10 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
         description: 'Ви можете повернутись до інвентаризації пізніше',
         color: 'success',
       });
-      // Оновлюємо snapshot — поточний стан тепер вважається "чистим"
-      setLastSavedSnapshot(JSON.stringify(serializeItems(products, materials)));
+      // Оновлюємо snapshot лише user-editable полів — поточний стан тепер вважається "чистим"
+      setLastSavedSnapshot(JSON.stringify(
+        [...products, ...materials].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+      ));
     } catch {
       ToastService.show({ title: 'Помилка збереження чернетки', color: 'danger' });
     } finally {
@@ -519,9 +545,14 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
   // Оновлення залишків "За обліком" з Dilovod на вказану дату
   // ---------------------------------------------------------------------------
 
-  const refreshSystemBalances = useCallback(async (asOfDate: Date): Promise<void> => {
-    const allProducts = products.length > 0 ? products : [];
-    const allMaterials = materials.length > 0 ? materials : [];
+  const refreshSystemBalances = useCallback(async (
+    asOfDate: Date,
+    overrideProducts?: InventoryProduct[],
+    overrideMaterials?: InventoryProduct[],
+  ): Promise<void> => {
+    // Якщо передано override — використовуємо їх (дані ще не потрапили в стан)
+    const allProducts = overrideProducts ?? (products.length > 0 ? products : []);
+    const allMaterials = overrideMaterials ?? (materials.length > 0 ? materials : []);
     if (allProducts.length === 0 && allMaterials.length === 0) return;
 
     setIsRefreshingBalances(true);
@@ -563,6 +594,12 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
     }
   }, [products, materials]);
 
+  // Оновлюємо ref при кожній зміні refreshSystemBalances
+  // (щоб loadDraft та handleAdminLoadSession завжди мали актуальну версію)
+  useEffect(() => {
+    refreshSystemBalancesRef.current = refreshSystemBalances;
+  }, [refreshSystemBalances]);
+
   // ---------------------------------------------------------------------------
   // Зміна дати сесії: оновлює sessionDate, ставить isDirty, запускає debounce
   // ---------------------------------------------------------------------------
@@ -580,6 +617,51 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
       refreshSystemBalances(date);
     }, 1000);
   }, [refreshSystemBalances]);
+
+  // ---------------------------------------------------------------------------
+  // Адмін: завантажити чужу сесію (in_progress) у поточний перегляд
+  // ---------------------------------------------------------------------------
+
+  const handleAdminLoadSession = useCallback(async (session: InventorySession): Promise<void> => {
+    const freshProducts = await loadProducts();
+    const freshMaterials = await loadMaterials();
+
+    const savedItems: Array<{ type?: string; id: string; actualCount: number | null; boxCount: number | null; checked: boolean }>
+      = session.items as any;
+    const savedProductsMap = new Map(
+      savedItems.filter((i) => i.type === 'product' || i.type === undefined).map((i) => [i.id, i]),
+    );
+    const savedMaterialsMap = new Map(
+      savedItems.filter((i) => i.type === 'material').map((i) => [i.id, i]),
+    );
+
+    const mergedProducts = freshProducts.map((p) => {
+      const saved = savedProductsMap.get(p.id);
+      if (!saved) return p;
+      return { ...p, actualCount: saved.actualCount, boxCount: saved.boxCount, checked: saved.checked };
+    });
+    const mergedMaterials = freshMaterials.map((m) => {
+      const saved = savedMaterialsMap.get(m.id);
+      if (!saved) return m;
+      return { ...m, actualCount: saved.actualCount, boxCount: saved.boxCount, checked: saved.checked };
+    });
+
+    setProducts(mergedProducts);
+    setMaterials(mergedMaterials);
+    setSessionId(Number(session.id));
+    setSessionStatus(session.status);
+    setSessionDate(session.inventoryDate ?? session.createdAt ?? null);
+    setComment(session.comment ?? '');
+    setLastSavedSnapshot(JSON.stringify(
+      [...mergedProducts, ...mergedMaterials].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+    ));
+    setActiveTab('current');
+    // Завантажуємо залишки за обліком на дату сесії (через ref, щоб уникнути TDZ)
+    const dateToUse = new Date(session.inventoryDate ?? session.createdAt);
+    if (!isNaN(dateToUse.getTime())) {
+      await refreshSystemBalancesRef.current(dateToUse, mergedProducts, mergedMaterials);
+    }
+  }, [loadProducts, loadMaterials]);
 
   return {
     activeTab, setActiveTab,
@@ -607,7 +689,7 @@ export const useWarehouseInventory = (): UseWarehouseInventoryReturn => {
     handleProductChange, handleCheckProduct,
     handleMaterialChange, handleCheckMaterial,
     handleFinish, handleReset, handleSaveDraft, handleSaveComment,
-    handleSessionDateChange, isRefreshingBalances,
+    handleSessionDateChange, handleAdminLoadSession, isRefreshingBalances,
     isDirty,
   };
 };

@@ -258,15 +258,25 @@ export const useMovementProducts = (
         const forecast = skuItems[0].forecast ?? product.details.forecast;
 
         // quantity = 0 — актуальне значення оновимо нижче через refreshBatchQuantities
-        const batches: MovementBatch[] = skuItems.map((item, idx) => ({
-          id: `batch-${product.sku}-${idx}`,
-          batchId: item.batchId || '',
-          batchNumber: item.batchNumber || '',
-          storage: item.batchStorage || '',
-          quantity: 0,
-          boxes: item.boxQuantity || 0,
-          portions: item.portionQuantity || 0,
-        }));
+        const batches: MovementBatch[] = skuItems.map((item, idx) => {
+          // Якщо boxQuantity=0, але є totalPortions — перераховуємо через portionsPerBox.
+          // Це виправляє старі записи, де всі порції зберігались у portionQuantity без поділу.
+          const rawBoxes: number = item.boxQuantity ?? 0;
+          const rawPortions: number = item.portionQuantity ?? 0;
+          const total: number = item.totalPortions ?? (rawBoxes * product.portionsPerBox + rawPortions);
+          const boxes = rawBoxes > 0 ? rawBoxes : Math.floor(total / (product.portionsPerBox || 1));
+          const portions = rawBoxes > 0 ? rawPortions : total % (product.portionsPerBox || 1);
+
+          return {
+            id: `batch-${product.sku}-${idx}`,
+            batchId: item.batchId || '',
+            batchNumber: item.batchNumber || '',
+            storage: item.batchStorage || '',
+            quantity: 0,
+            boxes,
+            portions,
+          };
+        });
 
         return { ...product, details: { ...product.details, batches, forecast } };
       });

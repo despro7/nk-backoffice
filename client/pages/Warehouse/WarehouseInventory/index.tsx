@@ -2,6 +2,7 @@ import { Button, Tabs, Tab } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/AuthContext';
+import { ToastService } from '@/services/ToastService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
@@ -30,6 +31,20 @@ export default function WarehouseInventory() {
     isDirty: inv.isDirty,
     onSaveDraft: inv.handleSaveDraft,
   });
+
+  const handleAdminDeleteSession = async (sessionId: string): Promise<void> => {
+    try {
+      const res = await fetch(`/api/warehouse/inventory/draft/${sessionId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      ToastService.show({ title: 'Сесію видалено', color: 'success' });
+      inv.loadHistory();
+    } catch {
+      ToastService.show({ title: 'Помилка видалення сесії', color: 'danger' });
+    }
+  };
 
   return (
     <div className="container">
@@ -189,6 +204,8 @@ export default function WarehouseInventory() {
             sessions={inv.historySessions}
             loading={inv.historyLoading}
             onRefresh={inv.loadHistory}
+            onLoadSession={inv.handleAdminLoadSession}
+            onDeleteSession={handleAdminDeleteSession}
           />
         )}
       </div>
