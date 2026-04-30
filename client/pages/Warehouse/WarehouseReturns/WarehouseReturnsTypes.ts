@@ -1,5 +1,3 @@
-export type ReturnReason = 'Брак' | 'Не забрали замовлення з пошти' | 'Не було зв\'язку з клієнтом' | 'Інше';
-
 export interface ReturnBatch {
   id: string;       // унікальний id для UI-рендерингу
   batchId: string;  // ID партії в Dilovod (goodPart)
@@ -29,7 +27,7 @@ export interface ReturnDraft {
   dilovodDocId: string;
   firmId: string | null;
   items: ReturnItem[];
-  returnReason: ReturnReason | string;
+  returnReason: string;
   customReason?: string;
   comment: string;
   status: 'draft' | 'completed';

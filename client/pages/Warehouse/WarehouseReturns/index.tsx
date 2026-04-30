@@ -10,15 +10,15 @@ import { OrderSearchInput } from './OrderSearchInput';
 import { ReturnsActionBar } from './ReturnsActionBar';
 import { ReturnsConfirmModal } from './ReturnsConfirmModal';
 import { ReturnsItemRow } from './ReturnsItemRow';
-import type { ReturnReason } from './WarehouseReturnsTypes';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { ToastService } from '@/services/ToastService';
 
-const RETURN_REASONS: ReturnReason[] = [
-  'Брак',
+const RETURN_REASONS: string[] = [
+  'Брак товару',
   'Не забрали замовлення з пошти',
   'Не було зв\'язку з клієнтом',
+  'Совісті немає у людини 😄',
   'Інше',
 ];
 
@@ -34,6 +34,7 @@ export default function WarehouseReturns() {
   const canSubmit = returns.orderSelected && returns.items.length > 0 && !returns.isSubmitting;
 
   const itemCount = returns.items.length;
+  const portionCount = returns.items.reduce((sum, item) => sum + item.quantity, 0);
 
   const { isDebugMode } = useDebug();
   const { isAdmin } = useRoleAccess();
@@ -101,6 +102,9 @@ export default function WarehouseReturns() {
           onSearch={returns.handleSearch}
           searchResults={returns.searchResults}
           loading={returns.searchLoading}
+          hasSearchExecuted={returns.hasSearchExecuted}
+          orderSelected={returns.orderSelected}
+          selectedOrderId={returns.selectedOrderId}
           onSelectOrder={returns.loadOrderForReturn}
         />
 
@@ -130,11 +134,7 @@ export default function WarehouseReturns() {
 										<div className="text-xs">Фірма</div>
 										<div className="text-gray-900">{returns.firmName || returns.firmId || 'Не визначено'}</div>
 									</div>
-									<div className="space-y-1">
-										<div className="text-xs">Порцій</div>
-										<div className="text-gray-900">{itemCount}</div>
-									</div>
-									<div className="space-y-1">
+                  <div className="space-y-1">
 										<div className="text-xs">ТТН</div>
 										<div className="text-gray-900">
 											{returns.ttn && formatTrackingNumberWithIcon(returns.ttn, {
@@ -143,6 +143,14 @@ export default function WarehouseReturns() {
 												boldLastGroup: true
 											}) || 'Не визначено'}
 										</div>
+									</div>
+									<div className="space-y-1">
+										<div className="text-xs">Позицій</div>
+										<div className="text-gray-900">{itemCount}</div>
+									</div>
+                  <div className="space-y-1">
+										<div className="text-xs">Порцій</div>
+										<div className="text-gray-900">{portionCount}</div>
 									</div>
 								</div>
 

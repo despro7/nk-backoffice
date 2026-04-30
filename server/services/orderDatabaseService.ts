@@ -490,10 +490,11 @@ export class OrderDatabaseService {
       const where: any = {};
 
       if (filters?.status) {
-        // Если передан массив статусов, используем IN
         if (Array.isArray(filters.status)) {
-          where.status = { in: filters.status };
-        } else {
+          if (!filters.status.includes('all')) {
+            where.status = { in: filters.status };
+          }
+        } else if (filters.status !== 'all') {
           where.status = filters.status;
         }
       } else {
@@ -566,10 +567,11 @@ export class OrderDatabaseService {
       const where: any = {};
 
       if (filters?.status) {
-        // Если передан массив статусов, используем IN
         if (Array.isArray(filters.status)) {
-          where.status = { in: filters.status };
-        } else {
+          if (!filters.status.includes('all')) {
+            where.status = { in: filters.status };
+          }
+        } else if (filters.status !== 'all') {
           where.status = filters.status;
         }
       } else {
@@ -655,7 +657,8 @@ export class OrderDatabaseService {
         pricinaZnizki: true,
         sajt: true,
         dilovodSaleExportDate: true,
-        dilovodReturnDate: true
+        dilovodReturnDate: true,
+        dilovodReturnDocsCount: true
       };
 
       let select: any;

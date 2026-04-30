@@ -266,12 +266,24 @@ router.get('/returns/prepare', authenticateToken, requireMinRole(ROLES.STOREKEEP
         orderDate: true,
         dilovodSaleExportDate: true,
         dilovodDocId: true,
+        dilovodReturnDate: true,
+        dilovodReturnDocsCount: true,
         items: true,
       },
     });
 
     if (!order) {
       return res.status(404).json({ success: false, error: 'Замовлення не знайдено' });
+    }
+
+    if (order.dilovodReturnDate || (order.dilovodReturnDocsCount ?? 0) > 0) {
+      const countLabel = order.dilovodReturnDocsCount && order.dilovodReturnDocsCount > 1
+        ? ` (${order.dilovodReturnDocsCount} документи)`
+        : '';
+      return res.status(400).json({
+        success: false,
+        error: `Замовлення вже має документ повернення${countLabel}`,
+      });
     }
 
     const baseDocId = order.dilovodDocId;

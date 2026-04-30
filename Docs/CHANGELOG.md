@@ -6,6 +6,17 @@
 
 ---
 
+## 2026-04-30 — WarehouseReturns: створено новий розділ повернень із debug payload preview
+**Files:** `server/services/dilovod/DilovodExportBuilder.ts`, `server/modules/Warehouse/WarehouseController.ts`, `client/pages/Warehouse/WarehouseReturns/index.tsx`, `client/pages/Warehouse/WarehouseReturns/ReturnsActionBar.tsx`, `Docs/features/warehouse-returns-dry-run.md`
+
+- **Новий розділ Warehouse Returns**: реалізовано інтерфейс пошуку замовлень, підготовки повернення, вибору партій і збереження чернетки.
+- **Dry-run payload**: `POST /api/warehouse/returns/send` тепер підтримує `dryRun: true` і повертає сформований `payload` без експорту в Dilovod.
+- **Debug-only кнопка payload**: у UI `ReturnsActionBar` кнопка `payload` доступна лише адміністратору в debug-режимі.
+- **Нова документація**: створено розділ `Docs/features/warehouse-returns-dry-run.md` для опису dry-run payload і логіки повернень.
+- **Чистий header**: `buildReturnPayload()` прибирає `state`, `number`, `deliveryRemark_forDel` з заголовка та передає `person` як `person.id`.
+
+---
+
 ## 2026-04-29 — WarehouseMovement + WarehouseInventory: адмін-доступ та дрібні виправлення
 **Files:** `server/modules/Warehouse/WarehouseController.ts`, `client/pages/Warehouse/WarehouseMovement/hooks/use*`, `client/pages/Warehouse/WarehouseMovement/index.tsx`, `client/pages/Warehouse/WarehouseInventory/useWarehouseInventory.ts`, `client/pages/Warehouse/WarehouseInventory/components/InventoryHistoryTable.tsx`
 

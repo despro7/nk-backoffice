@@ -2,13 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { expandProductSets } from '@/lib/orderAssemblyUtils';
 import { useApi } from '@/hooks/useApi';
 import { ToastService } from '@/services/ToastService';
-import type { ReturnDraft, ReturnItem, ReturnBatch, ReturnReason } from './WarehouseReturnsTypes';
+import type { ReturnDraft, ReturnItem, ReturnBatch } from './WarehouseReturnsTypes';
 
 interface OrderSearchResult {
   id: number;
   externalId?: string;
   orderNumber?: string;
   customerName?: string;
+  orderDate?: string;
+  updatedAt?: string;
+  ttn?: string;
+  status?: string;
+  statusText?: string;
+  dilovodReturnDate?: string | null;
+  dilovodReturnDocsCount?: number | null;
 }
 
 interface PrepareReturnResponse {
@@ -47,6 +54,7 @@ export function useWarehouseReturns() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<OrderSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [hasSearchExecuted, setHasSearchExecuted] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [selectedOrderNumber, setSelectedOrderNumber] = useState<string>('');
   const [selectedOrderExternalId, setSelectedOrderExternalId] = useState<string>('');
@@ -57,7 +65,7 @@ export function useWarehouseReturns() {
   const [ttn, setTtn] = useState<string>('');
   const [items, setItems] = useState<ReturnItem[]>([]);
   const [comment, setComment] = useState('');
-  const [returnReason, setReturnReason] = useState<ReturnReason | string>('Брак');
+  const [returnReason, setReturnReason] = useState<string>('Брак товару');
   const [customReason, setCustomReason] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
@@ -108,7 +116,7 @@ export function useWarehouseReturns() {
     setTtn('');
     setItems([]);
     setComment('');
-    setReturnReason('Брак');
+    setReturnReason('Брак товару');
     setCustomReason('');
     setError(null);
     setIsDirty(false);
@@ -134,7 +142,6 @@ export function useWarehouseReturns() {
   }, [apiCall]);
 
   const loadOrderForReturn = useCallback(async (orderId: number) => {
-    setSearchResults([]);
     setIsLoading(true);
     setError(null);
     setItems([]);
@@ -187,7 +194,7 @@ export function useWarehouseReturns() {
       });
 
       setItems(preparedItems);
-      setReturnReason('Брак');
+      setReturnReason('Брак товару');
       setCustomReason('');
       const batchDate = payload.dilovodSaleExportDate
         ? new Date(payload.dilovodSaleExportDate)
@@ -295,6 +302,7 @@ export function useWarehouseReturns() {
   const handleSearch = useCallback(async () => {
     resetReturnDetails();
     setSearchResults([]);
+    setHasSearchExecuted(false);
 
     if (!searchQuery.trim()) {
       return;
@@ -303,7 +311,7 @@ export function useWarehouseReturns() {
     setSearchLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ search: searchQuery.trim(), limit: '20' });
+      const params = new URLSearchParams({ search: searchQuery.trim(), limit: '20', status: 'all' });
       const response = await apiCall(`/api/orders?${params.toString()}`);
       const data = await response.json();
       if (!response.ok || !data.success) {
@@ -319,6 +327,8 @@ export function useWarehouseReturns() {
         qty: order.qty,
         status: order.status,
         statusText: order.statusText,
+        dilovodReturnDate: order.dilovodReturnDate,
+        dilovodReturnDocsCount: order.dilovodReturnDocsCount,
       })));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Невідома помилка пошуку';
@@ -326,6 +336,7 @@ export function useWarehouseReturns() {
       setSearchResults([]);
     } finally {
       setSearchLoading(false);
+      setHasSearchExecuted(true);
     }
   }, [apiCall, resetReturnDetails, searchQuery]);
   const handleQuantityChange = useCallback((itemId: string, quantity: number) => {
@@ -346,7 +357,7 @@ export function useWarehouseReturns() {
     setIsDirty(true);
   }, []);
 
-  const handleReturnReasonChange = useCallback((reason: ReturnReason | string) => {
+  const handleReturnReasonChange = useCallback((reason: string) => {
     setReturnReason(reason);
     if (reason !== 'Інше') {
       setCustomReason('');
@@ -463,6 +474,7 @@ export function useWarehouseReturns() {
     setSearchQuery,
     searchResults,
     searchLoading,
+    hasSearchExecuted,
     handleSearch,
     selectedOrderId,
     selectedOrderNumber,

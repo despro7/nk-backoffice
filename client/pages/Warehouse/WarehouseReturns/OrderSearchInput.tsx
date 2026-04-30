@@ -7,19 +7,24 @@ interface OrderSearchInputProps {
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
   onSearch: () => Promise<void>;
-  searchResults: Array<{ 
-		id: number;
-		externalId?: string;
-		orderNumber?: string;
-		customerName?: string;
-		orderDate?: string;
-		updatedAt?: string;
-		ttn?: string;
-		qty?: number;
-		status?: string;
-		statusText?: string;
-	}>;
+  searchResults: Array<{
+    id: number;
+    externalId?: string;
+    orderNumber?: string;
+    customerName?: string;
+    orderDate?: string;
+    updatedAt?: string;
+    ttn?: string;
+    qty?: number;
+    status?: string;
+    statusText?: string;
+    dilovodReturnDate?: string | null;
+    dilovodReturnDocsCount?: number | null;
+  }>;
   loading: boolean;
+  hasSearchExecuted: boolean;
+  orderSelected: boolean;
+  selectedOrderId?: number | null;
   onSelectOrder: (orderId: number) => void;
 }
 
@@ -29,6 +34,9 @@ export function OrderSearchInput({
   onSearch,
   searchResults,
   loading,
+  hasSearchExecuted,
+  orderSelected,
+  selectedOrderId,
   onSelectOrder,
 }: OrderSearchInputProps) {
   return (
@@ -39,7 +47,7 @@ export function OrderSearchInput({
           onValueChange={onSearchQueryChange}
           placeholder="Пошук замовлення за №, ТТН або ПІБ"
           size="lg"
-					className="w-full"
+          className="w-full"
           startContent={<DynamicIcon name="search" className="text-gray-400" size={18} />}
           classNames={{ inputWrapper: 'rounded-lg border border-gray-200 bg-white' }}
           onKeyDown={(event) => {
@@ -53,46 +61,68 @@ export function OrderSearchInput({
           onPress={onSearch}
           size="lg"
           // isLoading={loading}
-					color="primary"
+          color="primary"
           className="w-full sm:w-auto"
-					startContent={!loading ? <DynamicIcon name="search" size={18} /> : <DynamicIcon name="loader-2" size={18} className="animate-spin" />}
+          startContent={!loading ? <DynamicIcon name="search" size={18} /> : <DynamicIcon name="loader-2" size={18} className="animate-spin" />}
         >
           Знайти
         </Button>
       </div>
 
+      {!loading && searchResults.length === 0 && hasSearchExecuted && !orderSelected && (
+        <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900">
+          Замовлення не знайдено. Спробуйте інший номер, ТТН або ПІБ.
+        </div>
+      )}
+
       {searchResults.length > 0 && (
-        <div className="grid gap-2">
-          {searchResults.map((order) => (
-            <button
-              key={order.id}
-              type="button"
-              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-left transition hover:border-primary/70 hover:bg-primary/5"
-              onClick={() => onSelectOrder(order.id)}
-            >
+        <div className="space-y-3">
+          {searchResults.map((order) => {
+            const isHidden = selectedOrderId != null && order.id !== selectedOrderId;
+            return (
+              <div
+                key={order.id}
+                className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isHidden ? 'max-h-0 opacity-0 py-0 mb-0' : 'max-h-[1000px] opacity-100'}`}
+              >
+                <button
+                  type="button"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-left transition hover:border-primary/70 hover:bg-primary/5"
+                  onClick={() => onSelectOrder(order.id)}
+                  disabled={isHidden}
+                >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="flex items-center gap-1 text-md font-semibold text-gray-900">
                     Замовлення №{order.externalId || order.orderNumber || order.id}
-										<span className="font-normal text-gray-600">{order.orderDate && ` від ${new Date(order.orderDate).toLocaleDateString('uk-UA')}`}</span>
-										<span className="ml-4 font-medium inline-flex items-center gap-1">
-											{order.ttn && formatTrackingNumberWithIcon(order.ttn, {
-												iconSize: 'absolute',
-												iconSizeValue: '1rem',
-												compactMode: true,
-												boldLastGroup: false
-											})}
-										</span>
+                    <span className="font-normal text-gray-600">{order.orderDate && ` від ${new Date(order.orderDate).toLocaleDateString('uk-UA')}`}</span>
+                    <span className="ml-4 font-medium inline-flex items-center gap-1">
+                      {order.ttn && formatTrackingNumberWithIcon(order.ttn, {
+                        iconSize: 'absolute',
+                        iconSizeValue: '1rem',
+                        compactMode: true,
+                        boldLastGroup: false
+                      })}
+                    </span>
                   </div>
-                  <div className="text-sm text-gray-500">{order.customerName || 'Клієнт не вказаний'}</div>
+                  <div className="text-sm text-gray-500">
+                    {order.customerName || 'Клієнт не вказаний'}
+                    {order.dilovodReturnDate && (
+                      <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">Повернення: {new Date(order.dilovodReturnDate).toLocaleDateString('uk-UA')}</span>
+                    )}
+                    {order.dilovodReturnDocsCount != null && order.dilovodReturnDocsCount > 1 && (
+                      <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">Дубль: {order.dilovodReturnDocsCount}</span>
+                    )}
+                  </div>
                 </div>
                 <div className="text-right flex flex-col items-center gap-1">
-									<div className={`inline-flex w-auto rounded-full px-3 py-1 text-xs ${getStatusColor(order.status)}`}>{order.statusText || 'Статус невідомий'}</div>
-									<div className="flex items-center gap-0.5 text-xs text-gray-400"><DynamicIcon name="calendar-1" className="mb-0.5" size={12} /> {order.updatedAt && new Date(order.updatedAt).toLocaleDateString('uk-UA')}</div>
-								</div>
+                  <div className={`inline-flex w-auto rounded-full px-3 py-1 text-xs ${getStatusColor(order.status)}`}>{order.statusText || 'Статус невідомий'}</div>
+                  <div className="flex items-center gap-0.5 text-xs text-gray-400"><DynamicIcon name="calendar-1" className="mb-0.5" size={12} /> {order.updatedAt && new Date(order.updatedAt).toLocaleDateString('uk-UA')}</div>
+                </div>
               </div>
             </button>
-          ))}
+          </div>
+            );
+          })}
         </div>
       )}
     </div>
