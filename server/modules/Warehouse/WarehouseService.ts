@@ -183,14 +183,14 @@ export class WarehouseService {
   }
 
   // Отримати товари для переміщення між складами
-  static async getProductsForMovement() {
+  static async getProductsForMovement(asOfDate?: Date) {
     try {
       console.log('🏭 [WarehouseService] Отримання товарів для переміщення...');
 
-      // Отримуємо товари з бази даних (всі не застарілі)
+      // Отримуємо товари з бази даних (всі — не фільтруємо за isOutdated тут)
       const products = await prisma.product.findMany({
         where: {
-          AND: [{ isOutdated: false, set: null }]
+          AND: [{ set: null }]
         },
         select: {
           sku: true,
@@ -198,24 +198,48 @@ export class WarehouseService {
           portionsPerBox: true,
           stockBalanceByStock: true,
           barcode: true,
-          dilovodId: true
+          dilovodId: true,
+          isOutdated: true
         },
         orderBy: { name: 'asc' }
       });
 
       console.log(`🏭 [WarehouseService] Знайдено ${products.length} активних товарів`);
 
-      // Фільтруємо товари з залишками на основному складі та парсим JSON
+      // Якщо передана дата — запитуємо з Dilovod історичні залишки для всіх SKU,
+      // інакше використовуємо значення з БД (stockBalanceByStock)
+      let balancesFromApi: Array<any> | null = null;
+      if (asOfDate) {
+        try {
+          const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
+          balancesFromApi = await dilovodService.getStockBalanceForSkus(products.map(p => p.sku), asOfDate);
+        } catch (err) {
+          console.warn('⚠️ [WarehouseService] Не вдалося отримати historical balances from Dilovod:', err);
+          balancesFromApi = null;
+        }
+      }
+
       const productsWithStock = products
         .map(product => {
           try {
-            const stockBalance = product.stockBalanceByStock
-              ? JSON.parse(product.stockBalanceByStock)
-              : {};
+            let mainStockPortions = 0;
+            let smallStockPortions = 0;
 
-            // Залишки зберігаються як порції у відповідних складах
-            const mainStockPortions = stockBalance["1"] || 0;  // Порції на основному складі
-            const smallStockPortions = stockBalance["2"] || 0;   // Порції на малому складі
+            if (balancesFromApi && Array.isArray(balancesFromApi)) {
+              const found = balancesFromApi.find((b: any) => b.sku === product.sku);
+              if (found) {
+                mainStockPortions = found.mainStorage ?? 0;
+                smallStockPortions = found.smallStorage ?? 0;
+              }
+            } else {
+              const stockBalance = product.stockBalanceByStock
+                ? JSON.parse(product.stockBalanceByStock)
+                : {};
+
+              // Залишки зберігаються як порції у відповідних складах
+              mainStockPortions = stockBalance['1'] || 0; // Порції на основному складі
+              smallStockPortions = stockBalance['2'] || 0; // Порції на малому складі
+            }
 
             // Кількість порцій в коробці — береться з БД для кожного товару окремо
             const portionsPerBox = product.portionsPerBox;
@@ -225,10 +249,11 @@ export class WarehouseService {
             const smallStockRemainder = smallStockPortions % portionsPerBox;
 
 
-            // Повертаємо товари з залишком > 0 хоча б на одному складі
-            if (mainStockPortions <= 0 && smallStockPortions <= 0) return null;
+            const totalPortions = (mainStockPortions || 0) + (smallStockPortions || 0);
 
-            return {
+            // Формуємо об'єкт товару — безпосередньо повернемо всі товари,
+            // фільтрацію по застарілим/актуальним проведемо нижче.
+            const item = {
               id: product.sku,
               sku: product.sku,
               name: product.name,
@@ -240,27 +265,38 @@ export class WarehouseService {
                 forecast: 125, // Заглушка
               },
               stockData: {
-                mainStock: mainStockPortions,     // Порції на основному складі
-                smallStock: smallStockPortions,   // Порції на малому складі
+                mainStock: mainStockPortions, // Порції на основному складі
+                smallStock: smallStockPortions, // Порції на малому складі
                 displayFormat: {
-                  main: `${mainStockBoxes} / ${mainStockRemainder}`,     // "ящики / порції"
-                  small: `${smallStockBoxes} / ${smallStockRemainder}`   // "ящики / порції"
-                }
-              }
+                  main: `${mainStockBoxes} / ${mainStockRemainder}`,
+                  small: `${smallStockBoxes} / ${smallStockRemainder}`,
+                },
+              },
+              isOutdated: !!product.isOutdated,
+              _totalPortions: totalPortions,
             };
+
+            return item;
           } catch (error) {
             console.warn(`🚨 [WarehouseService] Failed to parse stockBalanceByStock for product ${product.sku}:`, error);
             console.warn(`🚨 [WarehouseService] Raw data:`, product.stockBalanceByStock);
             return null;
           }
         })
-        .filter(Boolean);
+        .filter(Boolean) as any[];
 
-      console.log(`✅ [WarehouseService] Повернено ${productsWithStock.length} товарів із залишком на хоча б одному складі`);
+      // Фільтруємо за політикою: показуємо всі актуальні товари (isOutdated = false),
+      // та застарілі товари лише якщо їхній totalPortions > 0
+      const filtered = productsWithStock.filter(p => !p.isOutdated || (p._totalPortions && p._totalPortions > 0));
+
+      // Видаляємо внутрішнє поле _totalPortions перед віддачею
+      filtered.forEach(p => { delete p._totalPortions; });
+
+      console.log(`✅ [WarehouseService] Повернено ${filtered.length} товарів для переміщення (asOfDate=${asOfDate ? asOfDate.toISOString() : 'now'})`);
 
       return {
         success: true,
-        products: productsWithStock
+        products: filtered
       };
     } catch (error) {
       console.error('🚨 [WarehouseService] Помилка отримання товарів для переміщення:', error);

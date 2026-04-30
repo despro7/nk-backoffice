@@ -122,8 +122,16 @@ router.get('/drafts', authenticateToken, async (req, res) => {
 router.get('/products-for-movement', authenticateToken, async (req, res) => {
   try {
     console.log('🏪 [Warehouse] GET /products-for-movement - запит товарів для переміщення...');
+    // Парсимо asOfDate якщо передано в query
+    let parsedDate: Date | undefined;
+    if (req.query.asOfDate && typeof req.query.asOfDate === 'string') {
+      parsedDate = new Date(req.query.asOfDate);
+      if (isNaN(parsedDate.getTime())) parsedDate = undefined;
+      else console.log(`📅 /products-for-movement requested for date: ${parsedDate.toLocaleString('uk-UA')}`);
+    }
+
     const [result, settings] = await Promise.all([
-      WarehouseService.getProductsForMovement(),
+      WarehouseService.getProductsForMovement(parsedDate),
       WarehousePayloadBuilder.loadSettings(),
     ]);
     res.json({

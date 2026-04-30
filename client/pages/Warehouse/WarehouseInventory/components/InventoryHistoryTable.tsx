@@ -117,11 +117,28 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession }: Histo
         const materialActualSum = materials.reduce((s, it) => s + ((totalPortions(it) ?? 0)), 0);
         const productDev = products.reduce((s, it) => s + ((totalPortions(it) ?? 0) - (it.systemBalance ?? 0)), 0);
         const materialDev = materials.reduce((s, it) => s + ((totalPortions(it) ?? 0) - (it.systemBalance ?? 0)), 0);
-        const totalSystem = `${productSystem}/${materialSystem}`;
+        const productDevShortfall = products.reduce((s, it) => {
+          const total = totalPortions(it);
+          const system = it.systemBalance ?? 0;
+          return s + (total !== null && total < system ? system - total : 0);
+        }, 0);
+        const productDevSurplus = products.reduce((s, it) => {
+          const total = totalPortions(it);
+          const system = it.systemBalance ?? 0;
+          return s + (total !== null && total > system ? total - system : 0);
+        }, 0);
+        const materialDevShortfall = materials.reduce((s, it) => {
+          const total = totalPortions(it);
+          const system = it.systemBalance ?? 0;
+          return s + (total !== null && total < system ? system - total : 0);
+        }, 0);
+        const materialDevSurplus = materials.reduce((s, it) => {
+          const total = totalPortions(it);
+          const system = it.systemBalance ?? 0;
+          return s + (total !== null && total > system ? total - system : 0);
+        }, 0);
         const productHasActual = products.some((it) => totalPortions(it) !== null);
         const materialHasActual = materials.some((it) => totalPortions(it) !== null);
-        const totalActual = `${productHasActual ? productActualSum : '–'}/${materialHasActual ? materialActualSum : '–'}`;
-        const totalDev = { productDev, materialDev };
 
         return (
           <div key={session.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -138,55 +155,34 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession }: Histo
               </div>
 
               <div className="flex items-center gap-4">
-                {isAdmin && (
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    {onLoadSession && (
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="primary"
-                        className="bg-blue-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60"
-                        isLoading={loadingLoadId === session.id}
-                        isDisabled={!!loadingDeleteId}
-                        startContent={loadingLoadId !== session.id ? <DynamicIcon name="pencil" className="w-3 h-3" /> : undefined}
-                        onPress={async () => { setLoadingLoadId(session.id); try { await onLoadSession!(session); } finally { setLoadingLoadId(null); } }}
-                      >
-                        Редагувати
-                      </Button>
-                    )}
-                    {onDeleteSession && (
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="danger"
-                        className="bg-red-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60"
-                        isLoading={loadingDeleteId === session.id}
-                        isDisabled={!!loadingLoadId}
-                        startContent={loadingDeleteId !== session.id ? <DynamicIcon name="trash-2" className="w-3 h-3" /> : undefined}
-                        onPress={async () => { setLoadingDeleteId(session.id); try { await onDeleteSession!(session.id); } finally { setLoadingDeleteId(null); } }}
-                      >
-                        Видалити
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                <div className="grid grid-cols-3 w-90 gap-8 ml-2 text-xs text-gray-500">
-                  <div className="text-right">
+                <div className="grid grid-cols-2 w-90 gap-8 ml-2 text-xs text-gray-500">
+                  {/* <div className="text-right">
                     <span className="text-medium font-semibold leading-none">{`${productSystem} / ${materialSystem}`}</span>
                     <p className="leading-none">за обліком</p>
                   </div>
                   <div className="text-right">
                     <span className="text-medium font-semibold leading-none">{`${productHasActual ? productActualSum : '–'} / ${materialHasActual ? materialActualSum : '–'}`}</span>
                     <p className="leading-none">фактично</p>
+                  </div> */}
+                  <div className="text-right">
+                    {productHasActual ? (
+                      <div className="text-medium font-semibold leading-none">
+                        <span className="text-red-500">{productDevShortfall > 0 ? `-${productDevShortfall}` : '0'}</span>
+                        <span> / </span>
+                        <span className="text-blue-600">{productDevSurplus > 0 ? `+${productDevSurplus}` : '+0'}</span>
+                      </div>
+                    ) : '–'}
+                    <p className="leading-none">відхилення товарів</p>
                   </div>
                   <div className="text-right">
-                    <span className="text-medium font-semibold leading-none">
-                      <span className={productDev === 0 ? 'text-green-600' : productDev > 0 ? 'text-blue-600' : 'text-red-500'}>{productHasActual ? (productDev === 0 ? '0' : (productDev > 0 ? `+${productDev}` : `${productDev}`)) : '–'}</span>
-                      <span> / </span>
-                      <span className={materialDev === 0 ? 'text-green-600' : materialDev > 0 ? 'text-blue-600' : 'text-red-500'}>{materialHasActual ? (materialDev === 0 ? '0' : (materialDev > 0 ? `+${materialDev}` : `${materialDev}`)) : '–'}</span>
-                    </span>
-                    <p className="leading-none">відхилення</p>
+                    {materialHasActual ? (
+                      <div className="text-medium font-semibold leading-none">
+                        <span className="text-red-500">{materialDevShortfall > 0 ? `-${materialDevShortfall}` : '0'}</span>
+                        <span> / </span>
+                        <span className="text-blue-600">{materialDevSurplus > 0 ? `+${materialDevSurplus}` : '+0'}</span>
+                      </div>
+                    ) : '–'}
+                    <p className="leading-none">відхилення матеріалів</p>
                   </div>
                 </div>
               </div>
@@ -206,7 +202,41 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession }: Histo
                 className="p-4"
               >
                 <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Деталі інвентаризації #{session.id}</h3>
+                  <div className="flex items-center gap-4">
+                    <h3 className="text-lg font-semibold text-gray-700 mb-2">Деталі інвентаризації #{session.id}</h3>
+                    {isAdmin && (
+                      <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
+                        {onLoadSession && (
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="primary"
+                            className="bg-blue-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60"
+                            isLoading={loadingLoadId === session.id}
+                            isDisabled={!!loadingDeleteId}
+                            startContent={loadingLoadId !== session.id ? <DynamicIcon name="pencil" className="w-3 h-3" /> : undefined}
+                            onPress={async () => { setLoadingLoadId(session.id); try { await onLoadSession!(session); } finally { setLoadingLoadId(null); } }}
+                          >
+                            Редагувати
+                          </Button>
+                        )}
+                        {onDeleteSession && (
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="danger"
+                            className="bg-red-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60"
+                            isLoading={loadingDeleteId === session.id}
+                            isDisabled={!!loadingLoadId}
+                            startContent={loadingDeleteId !== session.id ? <DynamicIcon name="trash-2" className="w-3 h-3" /> : undefined}
+                            onPress={async () => { setLoadingDeleteId(session.id); try { await onDeleteSession!(session.id); } finally { setLoadingDeleteId(null); } }}
+                          >
+                            Видалити
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
                     <span>Автор: <b>{session.createdByName || 'N/A'}</b></span>
                     <span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(session.createdAt)}</b></span>
@@ -218,24 +248,8 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession }: Histo
                 {/* Products table */}
                 {products.length > 0 && (
                   <div className="mb-6">
-                    <div className="flex items-center gap-2 bg-gray-50 justify-between p-3 rounded-t-md border-1 border-b-0 border-gray-200">
+                    <div className="flex items-center gap-2 bg-gray-50 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200">
                       <h4 className="text-md font-medium text-gray-700">Товари</h4>
-                      <div className="flex gap-8 text-xs text-gray-500">
-                        <div className="text-right">
-                          <span className="text-gray-400 leading-none mr-1">за обліком</span>
-                          <span className="text-medium font-semibold leading-none">{productSystem}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-gray-400 leading-none mr-1">фактично</span>
-                          <span className="text-medium font-semibold leading-none">{`${productHasActual ? productActualSum : '–'} / ${materialHasActual ? materialActualSum : '–'}`}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-gray-400 leading-none mr-1">відхилення</span>
-                          <span className="text-medium font-semibold leading-none">
-                            <span className={productDev === 0 ? 'text-green-600' : productDev > 0 ? 'text-blue-600' : 'text-red-500'}>{productHasActual ? (productDev === 0 ? '0' : (productDev > 0 ? `+${productDev}` : `${productDev}`)) : '–'}</span>
-                          </span>
-                        </div>
-                      </div>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm bg-white border-1 border-gray-200">
@@ -268,6 +282,21 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession }: Histo
                               <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{dev === null ? '–' : (<span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>{dev > 0 ? '+' : ''} {dev}</span>)}</td>
                             </tr>
                           ))}
+                          <tr className="bg-gray-100/60">
+                            <td></td>
+                            <td></td>
+                            <td className="text-center font-semibold py-2">{productSystem}</td>
+                            <td className="text-center font-semibold py-2">{productHasActual ? productActualSum : '–'}</td>
+                            <td className="text-center font-semibold py-2">
+                              {productHasActual ? (
+                                <>
+                                  <span className="text-red-500">{productDevShortfall > 0 ? `-${productDevShortfall}` : '0'}</span>
+                                  <span> / </span>
+                                  <span className="text-blue-600">{productDevSurplus > 0 ? `+${productDevSurplus}` : '+0'}</span>
+                                </>
+                              ) : '–'}
+                            </td>
+                          </tr>
                         </tbody>
                       </table>
                     </div>
@@ -277,24 +306,8 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession }: Histo
                 {/* Materials table */}
                 {materials.length > 0 && (
                   <div className="mb-6">
-                    <div className="flex items-center gap-2 bg-gray-50 justify-between p-3 rounded-t-md border-1 border-b-0 border-gray-200">
+                    <div className="flex items-center gap-2 bg-gray-50 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200">
                       <h4 className="text-md font-medium text-gray-700">Матеріали</h4>
-                      <div className="flex items-center gap-8 ml-2 text-xs text-gray-500">
-                        <div className="text-right">
-                          <span className="text-gray-400 leading-none mr-1">за обліком</span>
-                          <span className="text-medium font-semibold leading-none">{materialSystem}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-gray-400 leading-none mr-1">фактично</span>
-                          <span className="text-medium font-semibold leading-none">{materialHasActual ? materialActualSum : '–'}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-gray-400 leading-none mr-1">відхилення</span>
-                          <span className="text-medium font-semibold leading-none">
-                            <span className={materialDev === 0 ? 'text-green-600' : materialDev > 0 ? 'text-blue-600' : 'text-red-500'}>{materialHasActual ? (materialDev === 0 ? '0' : (materialDev > 0 ? `+${materialDev}` : `${materialDev}`)) : '–'}</span>
-                          </span>
-                        </div>
-                      </div>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm bg-white border-1 border-gray-200">
@@ -327,6 +340,21 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession }: Histo
                               <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{dev === null ? '–' : (<span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>{dev > 0 ? '+' : ''} {dev}</span>)}</td>
                             </tr>
                           ))}
+                          <tr className="bg-gray-100/60">
+                            <td></td>
+                            <td></td>
+                            <td className="text-center font-semibold py-2">{materialSystem}</td>
+                            <td className="text-center font-semibold py-2">{materialHasActual ? materialActualSum : '–'}</td>
+                            <td className="text-center font-semibold py-2">
+                              {materialHasActual ? (
+                                <>
+                                  <span className="text-red-500">{materialDevShortfall > 0 ? `-${materialDevShortfall}` : '0'}</span>
+                                  <span> / </span>
+                                  <span className="text-blue-600">{materialDevSurplus > 0 ? `+${materialDevSurplus}` : '+0'}</span>
+                                </>
+                              ) : '–'}
+                            </td>
+                          </tr>
                         </tbody>
                       </table>
                     </div>

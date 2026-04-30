@@ -106,10 +106,18 @@ export interface UseWarehouseMovementReturn {
 export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   const api = useApi();
 
+  // Реф для поточної обраної дати документа — використовується в getProductsForMovement
+  const selectedDateTimeRef = useRef<Date | null>(null);
+  const dateLoadDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ─── API-функції (раніше були у useWarehouse.ts) ──────────────────────
 
   const getProductsForMovement = useCallback(async (): Promise<any> => {
-    const response = await api.apiCall(`${API_BASE}/products-for-movement`, { method: 'GET' });
+    let path = `${API_BASE}/products-for-movement`;
+    if (selectedDateTimeRef.current) {
+      path += `?asOfDate=${encodeURIComponent(selectedDateTimeRef.current.toISOString())}`;
+    }
+    const response = await api.apiCall(path, { method: 'GET' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     // Зберігаємо ID складів для використання при створенні чернетки
@@ -179,6 +187,21 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   const products$ = useMovementProducts(getProductsForMovement);
   const draft$ = useMovementDraftState(createMovement, updateDraft, warehouseConfigRef);
   const sync$ = useMovementSync(syncStockFromDilovod);
+
+  // Оновлюємо реф при зміні дати в draft$
+  useEffect(() => {
+    selectedDateTimeRef.current = draft$.selectedDateTime ?? null;
+  }, [draft$.selectedDateTime]);
+
+  // Очистка debounce таймера при розмонтуванні
+  useEffect(() => {
+    return () => {
+      if (dateLoadDebounceRef.current) {
+        clearTimeout(dateLoadDebounceRef.current as any);
+        dateLoadDebounceRef.current = null;
+      }
+    };
+  }, []);
 
   // ─── Локальний стан оркестратора ─────────────────────────────────────
 
@@ -338,7 +361,35 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
       products$.loadDraftIntoProducts,
     );
 
-  const handleDateChange = (date: Date, stockDateMode?: 'movement' | 'now'): void =>
+  const handleDateChange = (date: Date, stockDateMode?: 'movement' | 'now'): void => {
+    // Зберігаємо дату в чернетці та оновлюємо реф для запиту товарів
+    draft$.setSelectedDateTime(date);
+    selectedDateTimeRef.current = date;
+
+    if (stockDateMode === 'movement') {
+      // Debounce: чекаємо 1 секунду після останньої зміни дати, щоб не кидати одразу запит
+      if (dateLoadDebounceRef.current) {
+        clearTimeout(dateLoadDebounceRef.current as any);
+      }
+      dateLoadDebounceRef.current = setTimeout(() => {
+        dateLoadDebounceRef.current = null;
+        // Завантажуємо список товарів на цю дату (щоб включити застарілі з наявністю залишку),
+        // потім перераховуємо партії та stockData через useMovementSync
+        products$.loadProducts().then(() => {
+          sync$.handleDateChange(
+            date,
+            products$.products,
+            products$.selectedProductIds,
+            products$.refreshBatchQuantities,
+            draft$.setSelectedDateTime,
+            stockDateMode,
+            products$.refreshStockData,
+          );
+        });
+      }, 1000);
+      return;
+    }
+
     sync$.handleDateChange(
       date,
       products$.products,
@@ -348,6 +399,7 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
       stockDateMode,
       products$.refreshStockData,
     );
+  };
 
   const loadMovementFromHistory = (doc: any): Promise<void> =>
     draft$.loadMovementFromHistory(
