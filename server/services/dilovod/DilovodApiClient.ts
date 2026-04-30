@@ -62,6 +62,10 @@ export class DilovodApiClient {
     for (const candidate of possibleArrays) {
       if (Array.isArray(candidate)) return candidate as T[];
     }
+    // Порожній об'єкт означає відсутність рядків
+    if (typeof data === 'object' && Object.keys(data).length === 0) {
+      return [] as T[];
+    }
     // Якщо прийшов одиночний об'єкт – обгортаємо в масив
     if (typeof data === 'object') return [data as T];
     return [] as T[];

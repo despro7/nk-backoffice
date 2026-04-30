@@ -292,6 +292,7 @@ export interface DilovodExportHeader {
 export interface DilovodTablePartGood {
   rowNum: number;        // Номер рядка
   good: string;         // ID товару в Dilovod (recommended: use products.dilovodId)
+  goodPart?: string;     // ID партії (goodPart)
   // productNum?: string;   // Артикул товару (SKU) - застарілий спосіб
   unit: string;          // ID одиниці виміру (1103600000000001 - шт)
   qty: number;           // Кількість

@@ -507,14 +507,20 @@ export class OrderDatabaseService {
         where.syncStatus = filters.syncStatus;
       }
 
-      // Добавляем фильтр по поиску (номер замовлення або ТТН)
+      // Добавляем фильтр по поиску (номер замовлення, ПІБ клієнта або ТТН за останніми 4 цифрами)
       // Для MySQL используем contains без mode (MySQL по умолчанию case-insensitive для VARCHAR)
       if (filters?.search && filters.search.trim() !== '') {
         const searchTerm = filters.search.trim();
-        where.OR = [
+        const orConditions: any[] = [
           { orderNumber: { contains: searchTerm } },
-          { ttn: { contains: searchTerm } }
+          { customerName: { contains: searchTerm } }
         ];
+
+        if (/^\d{1,4}$/.test(searchTerm)) {
+          orConditions.push({ ttn: { endsWith: searchTerm } });
+        }
+
+        where.OR = orConditions;
       }
 
       const count = await prisma.order.count({ where });
@@ -601,10 +607,16 @@ export class OrderDatabaseService {
       // Для MySQL используем contains без mode (MySQL по умолчанию case-insensitive для VARCHAR)
       if (filters?.search && filters.search.trim() !== '') {
         const searchTerm = filters.search.trim();
-        where.OR = [
+        const orConditions: any[] = [
           { orderNumber: { contains: searchTerm } },
-          { ttn: { contains: searchTerm } }
+          { customerName: { contains: searchTerm } }
         ];
+
+        if (/^\d{1,4}$/.test(searchTerm)) {
+          orConditions.push({ ttn: { endsWith: searchTerm } });
+        }
+
+        where.OR = orConditions;
       }
 
       // Определяем сортировку

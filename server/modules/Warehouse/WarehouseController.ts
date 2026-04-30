@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
 import { resolveAuthorNames } from '../../lib/utils.js';
-import { authenticateToken } from '../../middleware/auth.js';
+import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
 import { WarehouseService } from './WarehouseService.js';
 import { MovementHistoryService } from './MovementHistoryService.js';
@@ -34,14 +34,16 @@ const BATCH_CACHE_OLD_THRESHOLD_MS = 30 * 60 * 1000;
  * Генерує ключ кешу: sku:firmId:YYYY-MM-DD_HH:mm (округлення до хвилини)
  * Якщо дата не передана — використовується токен "now"
  */
-function buildBatchCacheKey(sku: string, firmId: string | undefined, asOfDate: Date | undefined): string {
+type BatchStorageMode = 'all' | 'exclude-small' | 'small-only';
+
+function buildBatchCacheKey(sku: string, firmId: string | undefined, asOfDate: Date | undefined, storageMode: BatchStorageMode): string {
   const firmPart = firmId ?? 'default';
   if (!asOfDate) {
-    return `${sku}:${firmPart}:now`;
+    return `${sku}:${firmPart}:${storageMode}:now`;
   }
   const pad = (n: number) => n.toString().padStart(2, '0');
   const datePart = `${asOfDate.getFullYear()}-${pad(asOfDate.getMonth() + 1)}-${pad(asOfDate.getDate())}_${pad(asOfDate.getHours())}:${pad(asOfDate.getMinutes())}`;
-  return `${sku}:${firmPart}:${datePart}`;
+  return `${sku}:${firmPart}:${storageMode}:${datePart}`;
 }
 
 /**
@@ -141,8 +143,10 @@ router.get('/products-for-movement', authenticateToken, async (req, res) => {
 router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
   try {
     const { sku } = req.params;
-    const { firmId, asOfDate, force } = req.query;
+    const { firmId, asOfDate, force, includeSmallStorage, onlySmallStorage } = req.query;
     const forceRefresh = force === 'true';
+    const shouldIncludeSmallStorage = includeSmallStorage === 'true';
+    const shouldOnlySmallStorage = onlySmallStorage === 'true';
 
     if (!sku || sku.trim() === '') {
       return res.status(400).json({ error: 'SKU is required' });
@@ -176,7 +180,12 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
     }
 
     // --- Кеш ---
-    const cacheKey = buildBatchCacheKey(sku, finalFirmId, parsedDate);
+    const storageMode: BatchStorageMode = shouldOnlySmallStorage
+      ? 'small-only'
+      : shouldIncludeSmallStorage
+        ? 'all'
+        : 'exclude-small';
+    const cacheKey = buildBatchCacheKey(sku, finalFirmId, parsedDate, storageMode);
     const ttl = resolveBatchCacheTtl(parsedDate);
     const ttlLabel = ttl === BATCH_CACHE_TTL_LONG ? '12 год' : '5 хв';
 
@@ -205,10 +214,19 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
 
     const batches = await dilovodService.getBatchNumbersBySku(sku, finalFirmId, parsedDate);
 
-    // Фільтруємо малий склад — переміщення завжди йдуть з основного до малого
-    const filteredBatches = batches.filter(b => b.storage !== dilovodConfig.smallStorageId);
+    const filteredBatches = shouldOnlySmallStorage
+      ? batches.filter(b => b.storage === dilovodConfig.smallStorageId)
+      : shouldIncludeSmallStorage
+        ? batches
+        : batches.filter(b => b.storage !== dilovodConfig.smallStorageId);
 
-    console.log(`✅ [Warehouse] Отримано ${batches.length} партій для SKU: ${sku}, після фільтрації малого складу: ${filteredBatches.length}. Кешуємо на ${ttlLabel}`);
+    const filterLabel = shouldOnlySmallStorage
+      ? 'лише малий склад'
+      : shouldIncludeSmallStorage
+        ? 'усі склади'
+        : 'без малого складу';
+
+    console.log(`✅ [Warehouse] Отримано ${batches.length} партій для SKU: ${sku}, після фільтрації (${filterLabel}): ${filteredBatches.length}. Кешуємо на ${ttlLabel}`);
 
     // Зберігаємо в кеш
     batchCache.set(cacheKey, { data: filteredBatches, timestamp: Date.now(), ttl });
@@ -227,6 +245,111 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
       success: false,
       error: error instanceof Error ? error.message : 'Внутрішня помилка сервера'
     });
+  }
+});
+
+// Підготувати повернення для замовлення
+router.get('/returns/prepare', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+  try {
+    const orderId = req.query.orderId as string;
+    if (!orderId) {
+      return res.status(400).json({ success: false, error: 'orderId is required' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: Number(orderId) },
+      select: {
+        id: true,
+        externalId: true,
+        orderNumber: true,
+        ttn: true,
+        orderDate: true,
+        dilovodSaleExportDate: true,
+        dilovodDocId: true,
+        items: true,
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Замовлення не знайдено' });
+    }
+
+    const baseDocId = order.dilovodDocId;
+    if (!baseDocId) {
+      return res.status(400).json({ success: false, error: 'Замовлення ще не має повʼязаного документа в Dilovod' });
+    }
+
+    const { dilovodExportBuilder } = await import('../../services/dilovod/DilovodExportBuilder.js');
+    const prepareData = await dilovodExportBuilder.prepareReturn(String(order.id));
+
+    const orderDate = order.dilovodSaleExportDate ?? order.orderDate ?? null;
+    res.json({
+      success: true,
+      data: {
+        ...prepareData,
+        ttn: order.ttn || null,
+        orderDate: orderDate ? orderDate.toISOString() : null,
+        dilovodSaleExportDate: order.dilovodSaleExportDate ? order.dilovodSaleExportDate.toISOString() : null,
+      },
+    });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Помилка підготовки повернення:', error);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' });
+  }
+});
+
+// Оприбуткування повернення від покупця в Діловод
+router.post('/returns/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+  try {
+    const { orderId, items, comment, dryRun } = req.body;
+
+    if (!orderId || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, error: 'orderId та items обовʼязкові' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: Number(orderId) },
+      select: { id: true, dilovodDocId: true },
+    });
+
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Замовлення не знайдено' });
+    }
+
+    const baseDocId = order.dilovodDocId;
+    if (!baseDocId) {
+      return res.status(400).json({ success: false, error: 'Замовлення ще не відправлено в Діловод (немає baseDoc)' });
+    }
+
+    const { dilovodExportBuilder } = await import('../../services/dilovod/DilovodExportBuilder.js');
+    const { payload, warnings } = await dilovodExportBuilder.buildReturnPayload(
+      String(orderId),
+      baseDocId,
+      items.map((item: any) => ({
+        sku: item.sku,
+        batchId: item.batchId,
+        quantity: Number(item.quantity),
+        price: Number(item.price),
+      }))
+    );
+
+    if (dryRun === true) {
+      return res.json({ success: true, payload, warnings });
+    }
+
+    const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
+    const dilovodService = new DilovodService();
+    const result = await dilovodService.exportToDilovod(payload);
+
+    if (result?.error) {
+      return res.status(422).json({ success: false, error: result.error, warnings });
+    }
+
+    console.log(`✅ Повернення для замовлення ${orderId} успішно відправлено в Діловод`);
+    res.json({ success: true, payload, dilovodResponse: result, warnings });
+  } catch (error) {
+    console.error('🚨 [Returns] Помилка відправки повернення:', error);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' });
   }
 });
 

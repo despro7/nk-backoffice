@@ -217,7 +217,7 @@ export const PayloadPreviewModal = ({
             <ModalFooter className="gap-2">
               {/* Кнопка копіювання JSON */}
               <Button
-                size="sm"
+                // size="sm"
                 variant="flat"
                 startContent={<DynamicIcon name="copy" size={14} />}
                 onPress={() => {

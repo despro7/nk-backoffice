@@ -382,7 +382,7 @@ export const getStatusColor = (status: string): string => {
     case "3": // На відправку
       return "text-orange-500 bg-orange-100";
     case "4": // Відправлено
-      return "text-neutral-600 bg-blue-100";
+      return "text-sky-800/80 bg-blue-100";
     case "5": // Продаж
       return "text-green-600 bg-green-100";
     case "6": // Відмова

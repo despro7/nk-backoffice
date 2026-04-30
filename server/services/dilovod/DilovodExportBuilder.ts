@@ -252,6 +252,143 @@ export class DilovodExportBuilder {
   }
 
   /**
+   * Побудувати payload для документа повернення (documents.saleReturn)
+   * docMode: 1004000000000354 (Повернення товарів і послуг)
+   */
+  async buildReturnPayload(
+    orderId: string,
+    baseDocId: string,
+    returnItems: Array<{ sku: string; batchId: string; quantity: number; price: number }>
+  ): Promise<{ payload: DilovodExportPayload; warnings: string[] }> {
+    console.log(`📦 Початок формування payload повернення для замовлення ${orderId} (baseDoc: ${baseDocId})`);
+
+    const context: ExportBuildContext = {
+      order: null,
+      settings: {} as DilovodSettings,
+      warnings: []
+    };
+
+    try {
+      context.order = await this.loadOrder(orderId);
+      if (!context.order) {
+        throw new Error(`Замовлення ${orderId} не знайдено`);
+      }
+
+      context.settings = await this.loadSettings();
+      context.directories = await this.loadDirectories();
+      this.validateSettings(context);
+
+      const { header: baseHeader, channelMapping } = await this.buildHeaderWithMapping(context, { allowCreatePerson: false });
+      const person = await this.findOrCreatePerson(context, { allowCreatePerson: false });
+
+      const utcNow = new Date();
+      const localNow = new Date(utcNow.getTime() - utcNow.getTimezoneOffset() * 60000);
+      const docDate = localNow.toISOString().replace('T', ' ').substring(0, 19);
+
+      const { state, number, deliveryRemark_forDel, remarkFromPerson, ...cleanedHeader } = baseHeader as any;
+      const header: DilovodExportHeader = {
+        ...cleanedHeader,
+        id: 'documents.saleReturn',
+        date: docDate,
+        person: person.id,
+        storage: context.settings.storageId,
+        contract: baseDocId,
+        posted: 1,
+        docMode: '1004000000000354', // Повернення товарів і послуг
+      };
+
+      const tpGoods: DilovodTablePartGood[] = [];
+      let rowNum = 1;
+
+      for (const item of returnItems) {
+        const product = await prisma.product.findFirst({ where: { sku: item.sku } });
+        if (!product?.dilovodId) {
+          context.warnings.push(`Товар ${item.sku} не має Dilovod ID, пропущено.`);
+          continue;
+        }
+
+        tpGoods.push({
+          rowNum,
+          good: product.dilovodId,
+          goodPart: item.batchId,
+          unit: DILOVOD_CONSTANTS.UNIT_PIECE,
+          qty: item.quantity,
+          baseQty: item.quantity,
+          priceAmount: item.quantity * item.price,
+          price: item.price,
+          amountCur: item.quantity * item.price,
+        });
+        rowNum++;
+      }
+
+      const tableParts: DilovodExportTableParts = { tpGoods };
+      const payload: DilovodExportPayload = {
+        saveType: 1,
+        header,
+        tableParts,
+      };
+
+      return { payload, warnings: context.warnings };
+    } catch (error) {
+      console.error(`❌ Помилка формування payload повернення: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Підготувати інформацію для сторінки повернень
+   */
+  async prepareReturn(orderId: string): Promise<{
+    orderId: string;
+    externalId?: string;
+    orderNumber?: string;
+    dilovodDocId: string;
+    firmId: string | null;
+    storageId: string | null;
+    items: Array<{ sku: string; productName?: string; quantity: number; dilovodId?: string | null }>;
+  }> {
+    console.log(`📦 Підготовка даних для повернення замовлення ${orderId}`);
+
+    const context: ExportBuildContext = {
+      order: null,
+      settings: {} as DilovodSettings,
+      warnings: []
+    };
+
+    context.order = await this.loadOrder(orderId);
+    if (!context.order) {
+      throw new Error(`Замовлення ${orderId} не знайдено`);
+    }
+
+    context.settings = await this.loadSettings();
+    context.directories = await this.loadDirectories();
+    this.validateSettings(context);
+
+    const { header } = await this.buildHeaderWithMapping(context, { allowCreatePerson: false });
+    const baseDoc = context.order.dilovodSaleDocId || context.order.dilovodDocId;
+    if (!baseDoc) {
+      throw new Error('Не знайдено базового документа Dilovod для цього замовлення');
+    }
+
+    const items = Array.isArray(context.order.items) ? context.order.items : [];
+    return {
+      orderId: String(context.order.id),
+      externalId: context.order.externalId,
+      orderNumber: context.order.orderNumber,
+      dilovodDocId: baseDoc,
+      firmId: header.firm ?? null,
+      storageId: context.settings.storageId ?? null,
+      items: items.map((item: any) => ({
+        sku: item.sku,
+        productName: item.productName,
+        quantity: Number(item.quantity || 0),
+        price: Number(item.price || 0),
+        dilovodId: item.dilovodId ?? null,
+      })),
+    };
+  }
+
+  /**
    * Побудувати заголовок документа з мапінгом каналу
    */
   private async buildHeaderWithMapping(context: ExportBuildContext, options?: { dryRun?: boolean; personId?: string; allowCreatePerson?: boolean }): Promise<{
