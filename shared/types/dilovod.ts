@@ -284,6 +284,7 @@ export interface DilovodExportHeader {
   baseDoc?: string;                // ID базового документа (для documents.sale → documents.saleOrder)
   docMode?: string;                // Режим документа (операція)
   contract?: string;               // Договір (зазвичай такий самий як docMode)
+  author?: string;                 // ID користувача-автора (для логування)
 }
 
 /**

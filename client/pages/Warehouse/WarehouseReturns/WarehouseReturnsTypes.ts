@@ -12,7 +12,8 @@ export interface ReturnItem {
   sku: string;
   name: string;
   dilovodId: string | null;
-  quantity: number;
+  quantity: number; // поточна (редагована) кількість для повернення
+  orderedQuantity: number; // кількість, яка була замовлена (незмінна при редагуванні)
   portionsPerBox: number;
   firmId: string | null;
   availableBatches: ReturnBatch[] | null;
@@ -31,4 +32,35 @@ export interface ReturnDraft {
   customReason?: string;
   comment: string;
   status: 'draft' | 'completed';
+}
+
+// ---------------------------------------------------------------------------
+// Types for Return History
+// ---------------------------------------------------------------------------
+
+export interface ReturnHistoryItem {
+  sku: string;
+  name: string;
+  quantity: number;
+  batchId: string | null;
+  batchNumber?: string;
+  price: number;
+}
+
+export interface ReturnHistoryRecord {
+  id: string;
+  orderId: number;
+  orderNumber: string;
+  ttn?: string | null;
+  firmId: string | null;
+  firmName?: string;
+  orderDate?: string | null;
+  items: ReturnHistoryItem[];
+  returnReason: string;
+  customReason?: string;
+  comment: string;
+  payload: Record<string, any>;
+  createdAt: string;
+  createdBy: string;
+  createdByName?: string | null;
 }

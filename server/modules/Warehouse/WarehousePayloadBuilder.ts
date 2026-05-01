@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/utils.js';
+import { getDilovodUserId } from '../../services/dilovod/DilovodUtils.js';
 import type {
   WarehouseMovementSettings,
   DilovodMovementPayload,
@@ -239,12 +240,9 @@ export class WarehousePayloadBuilder {
 
   // --------------------------------------------------------------------------
   // Допоміжний метод: отримати dilovodUserId автора з БД
+  // Використовує спільну функцію getDilovodUserId з DilovodUtils
   // --------------------------------------------------------------------------
   static async getAuthorDilovodId(userId: number): Promise<string> {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { dilovodUserId: true, name: true },
-    });
-    return user?.dilovodUserId || '';
+    return getDilovodUserId(userId, { logPrefix: '[Warehouse] ' });
   }
 }

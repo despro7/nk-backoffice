@@ -20,7 +20,7 @@ import type {
   DilovodChannelMapping
 } from '../../../shared/types/dilovod.js';
 import { normalizePhoneNumber } from '../../../shared/utils/phoneNormalizer.js';
-import { getDilovodConfigFromDB } from './DilovodUtils.js';
+import { getDilovodConfigFromDB, getDilovodUserId } from './DilovodUtils.js';
 import { DilovodService } from './index.js';
 import { orderDatabaseService } from '../orderDatabaseService.js';
 import { dilovodService } from './DilovodService.js';
@@ -256,9 +256,13 @@ export class DilovodExportBuilder {
    * docMode: 1004000000000354 (Повернення товарів і послуг)
    */
   async buildReturnPayload(
+    userId: number | undefined,
     orderId: string,
     baseDocId: string,
-    returnItems: Array<{ sku: string; batchId: string; quantity: number; price: number }>
+    comment: string,
+    reason: string,
+    returnItems: Array<{ sku: string; batchId: string; quantity: number; price: number }>,
+    documentId?: string, // ID документа в Dilovod (для видалення/оновлення)
   ): Promise<{ payload: DilovodExportPayload; warnings: string[] }> {
     console.log(`📦 Початок формування payload повернення для замовлення ${orderId} (baseDoc: ${baseDocId})`);
 
@@ -278,22 +282,26 @@ export class DilovodExportBuilder {
       context.directories = await this.loadDirectories();
       this.validateSettings(context);
 
-      const { header: baseHeader, channelMapping } = await this.buildHeaderWithMapping(context, { allowCreatePerson: false });
+      const { header: baseHeader } = await this.buildHeaderWithMapping(context, { allowCreatePerson: false, userId: userId });
       const person = await this.findOrCreatePerson(context, { allowCreatePerson: false });
 
       const utcNow = new Date();
       const localNow = new Date(utcNow.getTime() - utcNow.getTimezoneOffset() * 60000);
       const docDate = localNow.toISOString().replace('T', ' ').substring(0, 19);
 
+      // Об'єднуємо comment та reason у remark
+      const remarkParts = [reason, comment].filter(Boolean);
+      const remark = remarkParts.length > 0 ? remarkParts.join(' | ') : undefined;
+
       const { state, number, deliveryRemark_forDel, remarkFromPerson, ...cleanedHeader } = baseHeader as any;
       const header: DilovodExportHeader = {
         ...cleanedHeader,
-        id: 'documents.saleReturn',
+        id: documentId || 'documents.saleReturn', // Використовуємо documentId для видалення/оновлення
         date: docDate,
         person: person.id,
         storage: context.settings.storageId,
         contract: baseDocId,
-        posted: 1,
+        remark,
         docMode: '1004000000000354', // Повернення товарів і послуг
       };
 
@@ -330,7 +338,7 @@ export class DilovodExportBuilder {
 
       return { payload, warnings: context.warnings };
     } catch (error) {
-      console.error(`❌ Помилка формування payload повернення: ${error}`);
+      console.error(`❌ Помилка формування payload повернення: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }
@@ -391,7 +399,7 @@ export class DilovodExportBuilder {
   /**
    * Побудувати заголовок документа з мапінгом каналу
    */
-  private async buildHeaderWithMapping(context: ExportBuildContext, options?: { dryRun?: boolean; personId?: string; allowCreatePerson?: boolean }): Promise<{
+  private async buildHeaderWithMapping(context: ExportBuildContext, options?: { dryRun?: boolean; personId?: string; allowCreatePerson?: boolean; userId?: number }): Promise<{
     header: DilovodExportHeader;
     channelMapping: DilovodChannelMapping | null;
   }> {
@@ -457,7 +465,13 @@ export class DilovodExportBuilder {
       documentDate = localNow.toISOString().replace('T', ' ').substring(0, 19);
     }
 
+    // Отримуємо номер замовлення для поля number (з суфіксом/префіксом, якщо потрібно)
     const orderNumber = await orderDatabaseService.getOrderNumberFromId(Number(order.id));
+
+    const userId = options?.userId || undefined;
+
+    // Отримуємо dilovodUserId автора
+    const authorDilovodId = await getDilovodUserId(userId, { logPrefix: '[Common Builder] ' });
 
     const header: DilovodExportHeader = {
       id: 'documents.saleOrder',                            // Тип документа "Замовлення на продаж"
@@ -476,7 +490,8 @@ export class DilovodExportBuilder {
       remarkFromPerson: order.rawData?.comment || '',       // Коментар від клієнта
       business: DILOVOD_CONSTANTS.BUSINESS_PROCESS,         // Вид бізнесу
       deliveryMethod_forDel: deliveryMethodId,              // Спосіб доставки
-      deliveryRemark_forDel: deliveryAddress                // Адреса доставки
+      deliveryRemark_forDel: deliveryAddress,               // Адреса доставки
+      author: authorDilovodId,                              // Автор документа
     };
 
     console.log(`  ✅ Заголовок сформовано для замовлення ${header.number}`);

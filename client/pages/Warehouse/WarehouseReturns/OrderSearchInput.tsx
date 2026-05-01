@@ -86,9 +86,13 @@ export function OrderSearchInput({
               >
                 <button
                   type="button"
-                  className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-left transition hover:border-primary/70 hover:bg-primary/5"
+                  className={`w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-left transition ${
+                    order.dilovodReturnDate || (order.dilovodReturnDocsCount ?? 0) > 0
+                      ? 'cursor-not-allowed bg-gray-50 text-gray-400'
+                      : 'hover:border-primary/70 hover:bg-primary/5'
+                  }`}
                   onClick={() => onSelectOrder(order.id)}
-                  disabled={isHidden}
+                  disabled={isHidden || order.dilovodReturnDate != null || (order.dilovodReturnDocsCount ?? 0) > 0}
                 >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -112,6 +116,9 @@ export function OrderSearchInput({
                     {order.dilovodReturnDocsCount != null && order.dilovodReturnDocsCount > 1 && (
                       <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">Дубль: {order.dilovodReturnDocsCount}</span>
                     )}
+                    {order.dilovodReturnDate || (order.dilovodReturnDocsCount ?? 0) > 0 ? (
+                      <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">Недоступно</span>
+                    ) : null}
                   </div>
                 </div>
                 <div className="text-right flex flex-col items-center gap-1">

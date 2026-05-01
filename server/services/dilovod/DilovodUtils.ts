@@ -1,6 +1,7 @@
 // Утиліти та хелпери для роботи з Dilovod
 
 import { DilovodConfig } from './DilovodTypes.js';
+import { prisma } from '../../lib/utils.js';
 
 // ============================================================
 // Діагностика результату saveObject від Dilovod API
@@ -671,4 +672,47 @@ export function safeGet<T>(obj: any, path: string, defaultValue: T): T {
   } catch {
     return defaultValue;
   }
+}
+
+// ============================================================================
+// Спільна функція для отримання dilovodUserId автора з БД
+// Використовується в різних модулях формування payload для Діловода
+// ============================================================================
+
+/**
+ * Отримати dilovodUserId автора за локальним userId з БД.
+ * @param userId - ID користувача в локальній БД (може бути undefined)
+ * @param options - опції: fallback (значення за замовчуванням), logPrefix (префікс для логів)
+ * @returns dilovodUserId або fallback (за замовчуванням — '1000200000001021', Користувач API)
+ */
+export async function getDilovodUserId(
+  userId: number | undefined,
+  options?: { fallback?: string; logPrefix?: string }
+): Promise<string> {
+  const { fallback = '1000200000001021', logPrefix = '' } = options || {};
+
+  if (!userId) {
+    if (fallback) {
+      console.log(`⚠️ ${logPrefix}Користувач не вказаний, використовується fallback author: ${fallback} (Користувач API)`);
+    }
+    return fallback;
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { dilovodUserId: true, name: true },
+    });
+
+    if (user?.dilovodUserId) {
+      console.log(`✅ ${logPrefix}Автор: ${user.name} → dilovodUserId=${user.dilovodUserId}`);
+      return user.dilovodUserId;
+    }
+
+    console.log(`⚠️ ${logPrefix}Користувач ${userId} не має dilovodUserId, повертається fallback`);
+  } catch (e: any) {
+    console.log(`⚠️ ${logPrefix}Помилка резолвингу автора: ${e.message}`);
+  }
+
+  return fallback;
 }

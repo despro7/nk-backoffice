@@ -31,17 +31,17 @@ export function ReturnsConfirmModal({
       <ModalContent>
         <ModalHeader className="flex items-center gap-2 text-lg font-semibold">
           <DynamicIcon name="check-circle" className="w-5 h-5 text-emerald-600" />
-          Підтвердити оприбуткування повернення
+          Підтвердити оприбуткування повернення?
         </ModalHeader>
         <ModalBody className="space-y-4">
           <p className="text-sm text-gray-600">
-            Ви намагаєтеся надіслати повернення для замовлення <span className="font-semibold">{orderNumber}</span>.
+            Ви намагаєтеся створити повернення для замовлення №<span className="font-semibold">{orderNumber}</span>.
           </p>
           <div className="grid gap-2 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
             <div>Позицій: <span className="font-semibold">{totalRows}</span></div>
             <div>Загальна кількість: <span className="font-semibold">{totalQuantity}</span></div>
             <div>Причина повернення: <span className="font-semibold">{returnReason || 'не визначено'}</span></div>
-            <div>Коментар до повернення: <span className="font-semibold">{comment || 'немає'}</span></div>
+            <div>Коментар: <span className={comment ? 'font-semibold' : 'text-gray-400'}>{comment || 'немає'}</span></div>
           </div>
           <div className="space-y-2">
             {items.slice(0, 5).map((item) => (
@@ -67,6 +67,7 @@ export function ReturnsConfirmModal({
           </Button>
           <Button
             variant="flat"
+            size="lg"
             onPress={onClose}
             isDisabled={isSubmitting}
             className="w-full sm:w-auto"

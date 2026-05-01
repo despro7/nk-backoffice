@@ -21,18 +21,22 @@ export function ReturnsItemRow({
 
       <div className="space-y-2">
         <Input
-					label="Кількість"
-					labelPlacement="outside"
+          label="Кількість"
+          labelPlacement="outside"
           type="number"
           value={String(item.quantity)}
-          min={1}
+          min={0}
+          max={item.orderedQuantity}
           onValueChange={(value) => {
             const parsed = Number(value);
             onQuantityChange(item.id, Number.isNaN(parsed) ? 0 : parsed);
           }}
           classNames={{ label: 'text-xs font-medium text-gray-500', inputWrapper: 'border border-gray-200 bg-white' }}
         />
-        <div className="text-xs text-gray-400">Замовлено: {item.quantity}</div>
+        <div className="text-xs text-gray-400">Було замовлено: {item.orderedQuantity}</div>
+        {item.quantity < item.orderedQuantity && (
+          <div className="text-xs text-red-500">При оприбуткуванні віднімуться: {item.orderedQuantity - item.quantity} шт.</div>
+        )}
       </div>
 
       <div className="space-y-2">

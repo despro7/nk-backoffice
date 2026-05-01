@@ -247,6 +247,31 @@ model WarehouseInventory {
   @@map("warehouse_inventory")
 }
 
+model WarehouseReturnHistory {
+  id            Int         @id @default(autoincrement())
+  orderId       Int
+  orderNumber   String
+  returnNumber  String?     @db.VarChar(255)  // Номер повернення з API Dilovod
+  ttn           String?     @db.VarChar(255)
+  firmId        String?     @db.VarChar(255)
+  firmName      String?     @db.VarChar(255)
+  orderDate     DateTime?
+  items         String      @db.LongText        // JSON: ReturnHistoryItem[]
+  returnReason  String
+  customReason  String?     @db.Text
+  comment       String?     @db.Text
+  payload       String      @db.LongText        // JSON: повний payload відправки
+  createdBy     Int
+  createdByName String?     @db.VarChar(255)
+  createdAt     DateTime    @default(now())
+
+  @@index([orderId])
+  @@index([returnNumber])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@map("warehouse_return_history")
+}
+
 model SyncLogs {
   id               Int       @id @default(autoincrement())
   type             String

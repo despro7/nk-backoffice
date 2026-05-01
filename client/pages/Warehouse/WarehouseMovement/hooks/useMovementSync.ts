@@ -137,7 +137,7 @@ export const useMovementSync = (
           hideIcon: false,
           icon: 'refresh-cw',
           iconSpin: true,
-          timeout: 10000,
+          timeout: 3000,
         });
         LoggingService.warehouseMovementLog('🔄 Запит синхронізації залишків з Dilovod');
 

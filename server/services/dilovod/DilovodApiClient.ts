@@ -688,12 +688,17 @@ export class DilovodApiClient {
         action: "request",
         params: {
           from: `documents.${documentType}`,
-          fields: { id: "id", date: "date", baseDoc: "baseDoc", contract: "contract" },
+          fields: { id: "id", date: "date", baseDoc: "baseDoc", contract: "contract", delMark: "delMark" },
           filters: [
             {
               alias: filterAlias,
               operator: "IL",
               value: chunk
+            },
+            {
+              alias: "delMark",
+              operator: "=",
+              value: false
             }
           ]
         }

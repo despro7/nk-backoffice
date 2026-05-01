@@ -11,7 +11,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { dilovodService } from './DilovodService.js';
-import { isDilovodExportError, getDilovodExportErrorMessage } from './DilovodUtils.js';
+import { isDilovodExportError, getDilovodExportErrorMessage, getDilovodUserId } from './DilovodUtils.js';
 import { logServer } from '../../lib/utils.js';
 import type { CashInConfirmedRow, CashInExportResponse } from '../../../shared/types/cashIn.js';
 
@@ -167,24 +167,14 @@ export class CashInExportBuilder {
 
   /**
    * Резолвить dilovodUserId автора за локальним userId з БД.
+   * Використовує спільну функцію getDilovodUserId з DilovodUtils.
    * Якщо userId не переданий або запис не знайдений — повертає хардкодований AUTHOR.
    */
   private async resolveAuthorId(userId: number | undefined): Promise<string> {
-    if (!userId) return CASH_IN_CONSTANTS.AUTHOR;
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { dilovodUserId: true, name: true },
-      });
-      if (user?.dilovodUserId) {
-        logServer(`✅ [CashIn] Автор: ${user.name} → dilovodUserId=${user.dilovodUserId}`);
-        return user.dilovodUserId;
-      }
-      logServer(`⚠️ [CashIn] Користувач ${userId} не має dilovodUserId, використовується дефолтний автор`);
-    } catch (e: any) {
-      logServer(`⚠️ [CashIn] Помилка резолвингу автора: ${e.message}`);
-    }
-    return CASH_IN_CONSTANTS.AUTHOR;
+    return getDilovodUserId(userId, {
+      fallback: CASH_IN_CONSTANTS.AUTHOR, // Менеджер зі збуту як дефолтний автор для cashIn
+      logPrefix: '[CashIn] '
+    });
   }
 
   /**

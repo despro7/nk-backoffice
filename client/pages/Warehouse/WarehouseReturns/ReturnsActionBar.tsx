@@ -2,21 +2,15 @@ import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface ReturnsActionBarProps {
-  canSaveDraft: boolean;
   canSubmit: boolean;
-  isSavingDraft: boolean;
   isSubmitting: boolean;
-  onSaveDraft: () => void;
   onOpenConfirm: () => void;
   onShowPayload?: () => void;
 }
 
 export function ReturnsActionBar({
-  canSaveDraft,
   canSubmit,
-  isSavingDraft,
   isSubmitting,
-  onSaveDraft,
   onOpenConfirm,
   onShowPayload,
 }: ReturnsActionBarProps) {
@@ -35,20 +29,9 @@ export function ReturnsActionBar({
             onPress={onShowPayload}
             startContent={<DynamicIcon name="code-2" className="w-4 h-4" />}
           >
-            payload
+            Payload
           </Button>
         )}
-        {/* <Button
-          color="default"
-          size="lg"
-          variant="flat"
-          onPress={onSaveDraft}
-          isLoading={isSavingDraft}
-          isDisabled={!canSaveDraft}
-          startContent={!isSavingDraft ? <DynamicIcon name="save" className="w-4 h-4" /> : undefined}
-        >
-          Зберегти чернетку
-        </Button> */}
         <Button
           color="primary"
           size="lg"

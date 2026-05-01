@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { expandProductSets } from '@/lib/orderAssemblyUtils';
 import { useApi } from '@/hooks/useApi';
 import { ToastService } from '@/services/ToastService';
-import type { ReturnDraft, ReturnItem, ReturnBatch } from './WarehouseReturnsTypes';
+import { ReturnsHistoryService } from '@/services/ReturnsHistoryService';
+import type { ReturnDraft, ReturnItem, ReturnBatch, ReturnHistoryRecord } from './WarehouseReturnsTypes';
 
 interface OrderSearchResult {
   id: number;
@@ -40,6 +41,7 @@ function createReturnItem(item: { sku: string; productName?: string; quantity: n
     name: item.productName || item.sku,
     dilovodId: item.dilovodId ?? null,
     quantity: item.quantity,
+    orderedQuantity: item.quantity,
     portionsPerBox: 1,
     firmId,
     availableBatches: null,
@@ -73,6 +75,21 @@ export function useWarehouseReturns() {
   const [error, setError] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  // Завантажити історію при ініціалізації
+  useEffect(() => {
+    void (async () => {
+      try {
+        const history = await ReturnsHistoryService.getHistory();
+        // Повертаємо історію через callback у батьківському компоненті
+        // Тут просто логуємо для перевірки
+        console.log('[useWarehouseReturns] History loaded:', history.length, 'records');
+      } catch (error) {
+        console.error('[useWarehouseReturns] Error loading history:', error);
+      }
+    })();
+  }, []);
 
   const draftKey = useMemo(() => {
     return selectedOrderId ? `${DRAFT_STORAGE_KEY}-${selectedOrderId}` : undefined;
@@ -184,6 +201,7 @@ export function useWarehouseReturns() {
           name: item.name,
           dilovodId: null,
           quantity: item.quantity,
+          orderedQuantity: item.quantity,
           portionsPerBox: item.portionsPerItem ?? 1,
           firmId: payload.firmId,
           availableBatches: null,
@@ -205,7 +223,8 @@ export function useWarehouseReturns() {
 
       const draft = loadDraft(orderId);
       if (draft && draft.items.length > 0) {
-        setItems(draft.items);
+        // Ensure backward compatibility: older drafts may not have `orderedQuantity`
+        setItems(draft.items.map((it) => ({ ...it, orderedQuantity: (it as any).orderedQuantity ?? it.quantity })) as ReturnItem[]);
         setComment(draft.comment);
         setFirmId(draft.firmId);
         if (draft.firmId) {
@@ -452,20 +471,72 @@ export function useWarehouseReturns() {
       });
       const data = await response.json();
       if (!response.ok || !data.success) {
+        // Обробка помилки дублювання повернення
+        if (data.error === 'already_returned_in_dilovod') {
+          throw new Error(data.message || 'Це замовлення вже було оприбутковано в Діловод');
+        }
         throw new Error(data?.error || `Помилка відправки: ${response.status}`);
+      }
+
+      // Зберегти запис в історію повернень
+      try {
+        const historyRecord: Omit<ReturnHistoryRecord, 'id' | 'createdAt' | 'createdBy' | 'createdByName'> = {
+          orderId: selectedOrderId,
+          orderNumber: selectedOrderNumber,
+          ttn: ttn || undefined,
+          firmId: firmId,
+          firmName: firmName || undefined,
+          orderDate: orderDate || undefined,
+          items: items.map((item) => ({
+            sku: item.sku,
+            name: item.name,
+            quantity: item.quantity,
+            batchId: item.selectedBatchId,
+            batchNumber: item.availableBatches?.find((b) => b.id === item.selectedBatchKey)?.batchNumber,
+            price: item.price,
+          })),
+          returnReason: returnReason,
+          customReason: returnReason === 'Інше' ? customReason : undefined,
+          comment: comment || undefined,
+          payload: data.payload || payload,
+        };
+        await ReturnsHistoryService.saveRecord(historyRecord);
+      } catch (historyError) {
+        console.error('[useWarehouseReturns] Error saving to history:', historyError);
+        // Не блокуємо успішне оприбуткування, якщо не вдалось зберегти історію
       }
 
       clearDraft(selectedOrderId);
       setIsDirty(false);
       ToastService.show({ title: 'Повернення успішно відправлено', color: 'success' });
       setConfirmOpen(false);
+      setShowSuccess(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Невідома помилка при відправці';
-      ToastService.show({ title: message, color: 'danger' });
+      ToastService.show({ title: 'Помилка оприбуткування', description: message, color: 'danger' });
     } finally {
       setIsSubmitting(false);
     }
-  }, [apiCall, clearDraft, comment, customReason, items, returnReason, selectedOrderId]);
+  }, [apiCall, clearDraft, comment, customReason, firmId, firmName, items, orderDate, returnReason, selectedOrderId, selectedOrderNumber, ttn]);
+
+  const handleNewReturn = useCallback(() => {
+    setShowSuccess(false);
+    // Очистити всі поля
+    setSearchQuery('');
+    setSelectedOrderId(null);
+    setSelectedOrderNumber(null);
+    setSelectedOrderExternalId(null);
+    setOrderDate(null);
+    setDilovodDocId(null);
+    setFirmId(null);
+    setFirmName(null);
+    setTtn(null);
+    setItems([]);
+    setComment('');
+    setReturnReason('Брак товару');
+    setCustomReason('');
+    setIsDirty(false);
+  }, []);
 
   const orderSelected = Boolean(selectedOrderId);
 
@@ -496,6 +567,8 @@ export function useWarehouseReturns() {
     isDirty,
     confirmOpen,
     setConfirmOpen,
+    showSuccess,
+    setShowSuccess,
     orderSelected,
     loadOrderForReturn,
     handleQuantityChange,
@@ -505,6 +578,10 @@ export function useWarehouseReturns() {
     handleSaveDraft,
     handleSubmit,
     sendReturn,
+    handleNewReturn,
     setSelectedOrderId,
+    setItems,
+    setReturnReason,
+    setCustomReason,
   };
 }
