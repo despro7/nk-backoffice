@@ -1,5 +1,5 @@
-import { Card, CardBody, CardHeader, Select, SelectItem, Spinner, Textarea, Input, Tab, Tabs, Button } from '@heroui/react';
-import { useMemo, useState } from 'react';
+import { Card, CardBody, CardHeader, Select, SelectItem, Spinner, Input, Tab, Tabs, Button } from '@heroui/react';
+import { useMemo, useState, useEffect } from 'react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useDebug } from '@/contexts/DebugContext';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
@@ -13,6 +13,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { ToastService } from '@/services/ToastService';
 import { ReturnsHistoryService } from '@/services/ReturnsHistoryService';
+import { DateTimePicker } from '@/components/DateTimePicker';
 import type { ReturnHistoryRecord } from './WarehouseReturnsTypes';
 
 const RETURN_REASONS: string[] = [
@@ -49,16 +50,64 @@ export default function WarehouseReturns() {
     return 'Оприбуткування повернень';
   }, [returns.selectedOrderNumber]);
 
+  // When a return is successfully sent, ensure main tab shows updated (cleared) state
+  // but keep the success screen visible. This prevents old form data from remaining.
+  useEffect(() => {
+    if (returns.showSuccess) {
+      setActiveTab('main');
+      // Clear form fields but keep showSuccess=true so success screen is shown
+      returns.setSelectedOrderId(null);
+      returns.setItems([]);
+      returns.setComment('');
+      returns.setReturnReason('Брак товару');
+      returns.setCustomReason('');
+      // Clear search state
+      returns.setSearchQuery('');
+      returns.setSearchResults([]);
+
+      // Auto-hide success after 5 seconds and fully reset transient state
+      const t = setTimeout(() => {
+        returns.setShowSuccess(false);
+        // ensure form is fully reset
+        returns.resetAllState?.();
+      }, 5000);
+
+      return () => clearTimeout(t);
+    }
+  }, [returns.showSuccess]);
+
   const handleShowPayload = async () => {
     if (!returns.selectedOrderId) return;
     setIsLoadingPayload(true);
-    try {
+      try {
+      console.debug('[WarehouseReturns] handleShowPayload - returns.returnDate:', returns.returnDate);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const formatDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      const parseStoredDate = (s?: string | null) => {
+        if (!s) return null;
+        try {
+          if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
+            const [datePart, timePart] = s.split(' ');
+            const [y, m, d] = datePart.split('-').map(Number);
+            const [hh, mm, ss] = timePart.split(':').map(Number);
+            return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, ss || 0);
+          }
+          const parsed = new Date(s);
+          if (!Number.isNaN(parsed.getTime())) return parsed;
+        } catch (e) {}
+        return null;
+      };
+      const dateValue = (() => {
+        const parsed = parseStoredDate(returns.returnDate);
+        return parsed ? formatDate(parsed) : formatDate(new Date());
+      })();
       const response = await fetch('/api/warehouse/returns/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
           orderId: returns.selectedOrderId,
+          date: dateValue,
           items: returns.items.map((item) => ({
             sku: item.sku,
             batchId: item.selectedBatchId,
@@ -148,31 +197,44 @@ export default function WarehouseReturns() {
   const [pendingDeleteRecordId, setPendingDeleteRecordId] = useState<string | null>(null);
 
   const handleDeleteSession = async (recordId: string) => {
-    // Спочатку робимо dry run, щоб показати payload
     setIsLoadingDeletePayload(true);
     try {
-      const url = isDebugMode
-        ? `/api/warehouse/returns/history/${recordId}?dryRun=true`
-        : `/api/warehouse/returns/history/${recordId}`;
-      const response = await fetch(url, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      });
-      const data = await response.json();
-      if (response.ok && data.success && data.payload) {
-        setDeletePayloadPreview(data.payload);
-        setPendingDeleteRecordId(recordId);
-        setShowDeletePayloadPreview(true);
+      if (isDebugMode) {
+        // Dry run in debug mode: request payload preview from server
+        const url = `/api/warehouse/returns/history/${recordId}?dryRun=true`;
+        const response = await fetch(url, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok && data.success && data.payload) {
+          setDeletePayloadPreview(data.payload);
+          setPendingDeleteRecordId(recordId);
+          setShowDeletePayloadPreview(true);
+        } else if (response.ok && data.success) {
+          // Server returned success but no payload -> treat as deleted
+          setHistory((h) => h.filter((r) => r.id !== recordId));
+          ToastService.show({ title: 'Успішно', description: 'Запис успішно видалено', color: 'success', hideIcon: false });
+        } else {
+          const message = data.error || 'Не вдалось отримати попередній перегляд для видалення';
+          throw new Error(message);
+        }
       } else {
-        // Якщо dry run не вдався — видаляємо одразу
-        console.warn('[WarehouseReturns] Dry run failed, deleting directly:', data.error);
-        await performDelete(recordId);
+        // Normal mode: perform deletion immediately without dry run
+        const result = await ReturnsHistoryService.deleteRecord(recordId);
+        if (result && result.success) {
+          setHistory((h) => h.filter((r) => r.id !== recordId));
+          ToastService.show({ title: 'Успішно', description: 'Запис успішно видалено', color: 'success', hideIcon: false });
+        } else {
+          const message = (result && result.error) || 'Не вдалось видалити запис';
+          throw new Error(message);
+        }
       }
     } catch (error) {
-      console.error('[WarehouseReturns] Dry run error:', error);
-      // При помилці — видаляємо одразу
-      await performDelete(recordId);
+      console.error('[WarehouseReturns] Delete error:', error);
+      ToastService.show({ title: 'Помилка видалення', description: error instanceof Error ? error.message : 'Не вдалось видалити запис', color: 'danger', hideIcon: false, icon: 'x-circle' });
     } finally {
       setIsLoadingDeletePayload(false);
     }
@@ -182,10 +244,10 @@ export default function WarehouseReturns() {
     try {
       await ReturnsHistoryService.deleteRecord(recordId);
       setHistory(history.filter((r) => r.id !== recordId));
-      ToastService.show({ title: 'Успішно', description: 'Запис видалено', color: 'success' });
+      ToastService.show({ title: 'Успішно', description: 'Запис успішно видалено', color: 'success', hideIcon: false });
     } catch (error) {
       console.error('[WarehouseReturns] handleDeleteSession error:', error);
-      ToastService.show({ title: 'Помилка видалення', description: 'Не вдалось видалити запис', color: 'danger' });
+      ToastService.show({ title: 'Помилка видалення', description: 'Не вдалось видалити запис', color: 'danger', hideIcon: false, icon: 'x-circle' });
     }
   };
 
@@ -196,7 +258,7 @@ export default function WarehouseReturns() {
     try {
       await ReturnsHistoryService.deleteRecord(pendingDeleteRecordId);
       setHistory(history.filter((r) => r.id !== pendingDeleteRecordId));
-      ToastService.show({ title: 'Успішно', description: 'Запис видалено', color: 'success' });
+      ToastService.show({ title: 'Успішно', description: 'Запис успішно видалено', color: 'success' });
     } catch (error) {
       console.error('[WarehouseReturns] Delete with payload error:', error);
       ToastService.show({ title: 'Помилка видалення', description: 'Не вдалось видалити запис', color: 'danger' });
@@ -224,7 +286,8 @@ export default function WarehouseReturns() {
         onSelectionChange={(key) => {
           const tab = key as 'main' | 'history';
           setActiveTab(tab);
-          if (tab === 'history' && history.length === 0) {
+          // returns.resetAllState?.();
+          if (tab === 'history') {
             loadHistory();
           }
         }}
@@ -243,9 +306,9 @@ export default function WarehouseReturns() {
         <Tab key="history" title="Історія" />
       </Tabs>
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-        <div className="p-4">
+        <div key={activeTab} className="p-4">
           {activeTab === 'main' && (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-5">
               <div className="text-base font-semibold text-gray-900">Пошук замовлення</div>
               <OrderSearchInput
                 searchQuery={returns.searchQuery}
@@ -296,9 +359,9 @@ export default function WarehouseReturns() {
                           <div className="font-medium text-gray-900">№{returns.selectedOrderNumber}</div>
                         </div>
                         <div className="space-y-1">
-                          <div className="text-xs">Дата</div>
+                          <div className="text-xs">Відвантажено</div>
                           <div className="font-medium text-gray-900">
-                            {returns.orderDate && new Date(returns.orderDate).toLocaleDateString('uk-UA')}
+                            {returns.dilovodSaleExportDate && new Date(returns.dilovodSaleExportDate).toLocaleDateString('uk-UA')}
                           </div>
                         </div>
                         <div className="space-y-1">
@@ -363,7 +426,7 @@ export default function WarehouseReturns() {
                             />
                           </div>
                         )}
-                        <div className="sm:col-span-2">
+                        <div className="flex gap-4 sm:col-span-2">
                           <Input
                             label="Коментар до повернення"
                             labelPlacement="outside"
@@ -376,6 +439,39 @@ export default function WarehouseReturns() {
                               input: 'placeholder:opacity-50!',
                             }}
                           />
+                        
+                          <DateTimePicker
+                            label="Дата оприбуткування"
+                            labelPlacement="outside"
+                            size="md"
+                            labelStyle="text-xs font-medium text-gray-800"
+                            value={(() => {
+                              const s = returns.returnDate;
+                              if (!s) return new Date();
+                              // Accept either our formatted `YYYY-MM-DD HH:mm:ss` or ISO strings
+                              try {
+                                if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
+                                  const [datePart, timePart] = s.split(' ');
+                                  const [y, m, d] = datePart.split('-').map(Number);
+                                  const [hh, mm, ss] = timePart.split(':').map(Number);
+                                  return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, ss || 0);
+                                }
+                                // fallback to Date parsing (handles ISO)
+                                const parsed = new Date(s);
+                                if (!Number.isNaN(parsed.getTime())) return parsed;
+                              } catch (e) {
+                                // ignore
+                              }
+                              return new Date();
+                            })()}
+                            onChange={(d) => {
+                              const pad = (n: number) => String(n).padStart(2, '0');
+                              const formatted = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                              console.debug('[WarehouseReturns] DateTimePicker onChange -> formatted:', formatted);
+                              returns.setReturnDate?.(formatted);
+                            }}
+                            isDisabled={returns.isSubmitting}
+                          />
                         </div>
                       </div>
                     </CardBody>
@@ -387,13 +483,14 @@ export default function WarehouseReturns() {
                     </CardHeader>
                     <CardBody>
                       {returns.items.map((item) => (
-                        <ReturnsItemRow
-                          key={item.id}
-                          item={item}
-                          onQuantityChange={returns.handleQuantityChange}
-                          onBatchChange={returns.handleBatchChange}
-                        />
-                      ))}
+                            <ReturnsItemRow
+                              key={item.id}
+                              item={item}
+                              onQuantityChange={returns.handleQuantityChange}
+                              onPriceChange={returns.handlePriceChange}
+                              onBatchChange={returns.handleBatchChange}
+                            />
+                          ))}
                     </CardBody>
                   </Card>
 

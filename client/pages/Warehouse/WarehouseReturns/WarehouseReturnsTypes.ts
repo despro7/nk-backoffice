@@ -54,7 +54,7 @@ export interface ReturnHistoryRecord {
   ttn?: string | null;
   firmId: string | null;
   firmName?: string;
-  orderDate?: string | null;
+  returnDate?: string | null;
   items: ReturnHistoryItem[];
   returnReason: string;
   customReason?: string;

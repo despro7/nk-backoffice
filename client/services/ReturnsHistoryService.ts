@@ -55,7 +55,7 @@ export class ReturnsHistoryService {
   /**
    * Видалити запис про повернення (тільки для адміністратора)
    */
-  static async deleteRecord(id: string): Promise<void> {
+  static async deleteRecord(id: string): Promise<any> {
     try {
       const response = await fetch(`/api/warehouse/returns/history/${id}`, {
         method: 'DELETE',
@@ -63,9 +63,14 @@ export class ReturnsHistoryService {
         credentials: 'include',
       });
 
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        throw new Error('Не вдалось видалити історію повернення');
+        const message = data?.error || 'Не вдалось видалити історію повернення';
+        throw new Error(message);
       }
+
+      return data;
     } catch (error) {
       console.error('[ReturnsHistoryService] deleteRecord error:', error);
       throw error;

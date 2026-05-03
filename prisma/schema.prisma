@@ -255,7 +255,7 @@ model WarehouseReturnHistory {
   ttn           String?     @db.VarChar(255)
   firmId        String?     @db.VarChar(255)
   firmName      String?     @db.VarChar(255)
-  orderDate     DateTime?
+  returnDate    DateTime?
   items         String      @db.LongText        // JSON: ReturnHistoryItem[]
   returnReason  String
   customReason  String?     @db.Text

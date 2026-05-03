@@ -23,9 +23,12 @@ interface WarehouseDateTimePickerProps {
   value: Date;
   onChange: (date: Date) => void;
   label?: string;
+  labelPlacement?: 'outside-left' | 'outside' | 'inside';
   isDisabled?: boolean;
   isLoading?: boolean;
   presets?: PresetTime[];
+  labelStyle?: string;
+  size?: 'sm' | 'md' | 'lg';
 }
 
 // Конвертуємо JS Date в ZonedDateTime для DatePicker
@@ -49,6 +52,9 @@ export const DateTimePicker = ({
   value,
   onChange,
   label = 'Дата і час',
+  labelPlacement = 'outside-left',
+  labelStyle = 'text-[13px] text-gray-500 max-w-26 leading-tight text-right pr-1',
+  size = 'md',
   isDisabled = false,
   isLoading = false,
   presets = DEFAULT_PRESETS,
@@ -68,16 +74,16 @@ export const DateTimePicker = ({
         hourCycle={24}
         shouldForceLeadingZeros
         label={label}
-        labelPlacement="outside-left"
+        labelPlacement={labelPlacement}
         selectorButtonPlacement="start"
-        size="lg"
+        size={size}
         isDisabled={isDisabled}
         maxValue={now(getLocalTimeZone())}
         classNames={{
           base: 'w-fit',
           inputWrapper: 'hover:bg-white focus-within:bg-white!',
           segment: 'rounded focus:bg-neutral-300/80',
-          label: 'text-[13px] text-gray-500 max-w-26 leading-tight text-right pr-1',
+          label: labelStyle,
         }}
         endContent={isLoading ? <Spinner size="sm" color="primary" /> : undefined}
         CalendarBottomContent={

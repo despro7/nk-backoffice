@@ -4,39 +4,51 @@ import type { ReturnBatch, ReturnItem } from './WarehouseReturnsTypes';
 interface ReturnsItemRowProps {
   item: ReturnItem;
   onQuantityChange: (itemId: string, quantity: number) => void;
+  onPriceChange?: (itemId: string, price: number) => void;
   onBatchChange: (itemId: string, batchId: string | null) => void;
 }
 
 export function ReturnsItemRow({
   item,
   onQuantityChange,
+  onPriceChange,
   onBatchChange,
 }: ReturnsItemRowProps) {
   return (
-    <div className="grid gap-5 border-b border-gray-100 py-4 sm:grid-cols-[1fr_15%_25%]">
+    <div className="grid gap-5 border-b border-gray-100 py-4 sm:grid-cols-[1fr_20%_25%]">
       <div className="space-y-2">
         <div className="font-semibold text-gray-900">{item.name}</div>
         <div className="text-sm text-gray-500">SKU: {item.sku}</div>
       </div>
 
       <div className="space-y-2">
-        <Input
-          label="Кількість"
-          labelPlacement="outside"
-          type="number"
-          value={String(item.quantity)}
-          min={0}
-          max={item.orderedQuantity}
-          onValueChange={(value) => {
-            const parsed = Number(value);
-            onQuantityChange(item.id, Number.isNaN(parsed) ? 0 : parsed);
-          }}
-          classNames={{ label: 'text-xs font-medium text-gray-500', inputWrapper: 'border border-gray-200 bg-white' }}
-        />
-        <div className="text-xs text-gray-400">Було замовлено: {item.orderedQuantity}</div>
-        {item.quantity < item.orderedQuantity && (
-          <div className="text-xs text-red-500">При оприбуткуванні віднімуться: {item.orderedQuantity - item.quantity} шт.</div>
-        )}
+        <div className="flex items-center gap-3">
+          <div className="flex-1">
+            <Input
+              label="Кількість"
+              labelPlacement="outside"
+              type="number"
+              value={String(item.quantity)}
+              min={0}
+              max={item.orderedQuantity}
+              readOnly
+              classNames={{ label: 'text-xs font-medium text-gray-500', inputWrapper: 'border border-gray-200 bg-white' }}
+            />
+          </div>
+          <div className="flex-1">
+            <Input
+              label="Ціна"
+              labelPlacement="outside"
+              type="number"
+              value={String(item.price ?? '')}
+              onValueChange={(v) => {
+                const parsed = Number(v);
+                onPriceChange?.(item.id, Number.isNaN(parsed) ? 0 : parsed);
+              }}
+              classNames={{ label: 'text-xs font-medium text-gray-500', inputWrapper: 'border border-gray-200 bg-white' }}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="space-y-2">

@@ -113,6 +113,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
     const userId = (req as any).user?.userId || (req as any).user?.id;
 
     const { dilovodExportBuilder } = await import('../../services/dilovod/DilovodExportBuilder.js');
+    const requestedDate = req.body?.date ?? null;
     const { payload, warnings } = await dilovodExportBuilder.buildReturnPayload(
       userId,
       String(orderId),
@@ -124,7 +125,8 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
         batchId: item.batchId,
         quantity: Number(item.quantity),
         price: Number(item.price),
-      }))
+      })),
+      requestedDate,
     );
 
     if (dryRun === true) {
@@ -190,7 +192,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
     const updateResult = await prisma.order.update({
       where: { id: Number(orderId) },
       data: {
-        dilovodReturnDate: new Date(),
+        dilovodReturnDate: requestedDate ? new Date(requestedDate).toISOString() : new Date().toISOString(),
         dilovodReturnDocsCount: { increment: 1 },
       },
     });
@@ -213,7 +215,8 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
           ttn: orderDetails?.ttn || null,
           firmId: null,
           firmName: null,
-          orderDate: orderDetails?.orderDate || null,
+          // Use requestedDate (from DateTimePicker) when provided, otherwise fallback to original orderDate
+          returnDate: requestedDate ? new Date(requestedDate).toISOString() : (orderDetails?.orderDate || null),
           items: JSON.stringify(items),
           returnReason: reason || '',
           customReason: null,
@@ -294,13 +297,13 @@ router.post('/history', authenticateToken, async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const {
+      const {
       orderId,
       orderNumber,
       ttn,
       firmId,
       firmName,
-      orderDate,
+      returnDate,
       items,
       returnReason,
       customReason,
@@ -329,7 +332,7 @@ router.post('/history', authenticateToken, async (req, res) => {
           ttn: ttn || null,
           firmId: firmId || null,
           firmName: firmName || null,
-          orderDate: orderDate ? new Date(orderDate) : null,
+          returnDate: returnDate ? new Date(returnDate) : null,
           items: JSON.stringify(items),
           returnReason,
           customReason: customReason || null,
@@ -350,7 +353,7 @@ router.post('/history', authenticateToken, async (req, res) => {
           ttn: ttn || null,
           firmId: firmId || null,
           firmName: firmName || null,
-          orderDate: orderDate ? new Date(orderDate) : null,
+          returnDate: returnDate ? new Date(returnDate) : null,
           items: JSON.stringify(items),
           returnReason,
           customReason: customReason || null,

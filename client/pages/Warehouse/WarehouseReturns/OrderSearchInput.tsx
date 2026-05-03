@@ -69,8 +69,8 @@ export function OrderSearchInput({
         </Button>
       </div>
 
-      {!loading && searchResults.length === 0 && hasSearchExecuted && !orderSelected && (
-        <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900">
+      {!loading && searchResults.length === 0 && hasSearchExecuted && searchQuery.trim() !== '' && (
+        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900">
           Замовлення не знайдено. Спробуйте інший номер, ТТН або ПІБ.
         </div>
       )}

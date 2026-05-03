@@ -262,6 +262,7 @@ export class DilovodExportBuilder {
     comment: string,
     reason: string,
     returnItems: Array<{ sku: string; batchId: string; quantity: number; price: number }>,
+    documentDate?: string | null, // optional date string (YYYY-MM-DD HH:mm:ss or ISO) to use for header.date
     documentId?: string, // ID документа в Dilovod (для видалення/оновлення)
   ): Promise<{ payload: DilovodExportPayload; warnings: string[] }> {
     console.log(`📦 Початок формування payload повернення для замовлення ${orderId} (baseDoc: ${baseDocId})`);
@@ -285,9 +286,34 @@ export class DilovodExportBuilder {
       const { header: baseHeader } = await this.buildHeaderWithMapping(context, { allowCreatePerson: false, userId: userId });
       const person = await this.findOrCreatePerson(context, { allowCreatePerson: false });
 
+      // Determine document date: prefer provided documentDate, fall back to current local time
+      const parseProvidedDate = (s?: string | null) => {
+        if (!s) return null;
+        try {
+          // Accept format YYYY-MM-DD HH:mm:ss
+          if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
+            const [datePart, timePart] = s.split(' ');
+            const [y, m, d] = datePart.split('-').map(Number);
+            const [hh, mm, ss] = timePart.split(':').map(Number);
+            return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, ss || 0);
+          }
+          const parsed = new Date(s);
+          if (!Number.isNaN(parsed.getTime())) return parsed;
+        } catch (e) {}
+        return null;
+      };
+
       const utcNow = new Date();
       const localNow = new Date(utcNow.getTime() - utcNow.getTimezoneOffset() * 60000);
-      const docDate = localNow.toISOString().replace('T', ' ').substring(0, 19);
+
+      // If the caller provided a date in the exact `YYYY-MM-DD HH:mm:ss` form, preserve it verbatim
+      let docDate: string;
+      if (documentDate && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(documentDate)) {
+        docDate = String(documentDate).substring(0, 19);
+      } else {
+        const effectiveDate = parseProvidedDate(documentDate) ?? localNow;
+        docDate = effectiveDate.toISOString().replace('T', ' ').substring(0, 19);
+      }
 
       // Об'єднуємо comment та reason у remark
       const remarkParts = [reason, comment].filter(Boolean);

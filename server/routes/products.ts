@@ -96,6 +96,47 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+// Отримати масив продуктів за списком SKU з можливістю вибіркових полів
+// GET /api/products/batch?skus=SKU1,SKU2&fields=costPerItem,additionalPrices
+router.get('/batch', authenticateToken, async (req, res) => {
+  try {
+    const skusParam = req.query.skus as string || '';
+    const fieldsParam = req.query.fields as string || '';
+    const skus = skusParam.split(',').map(s => s.trim()).filter(s => s.length > 0);
+
+    if (skus.length === 0) return res.status(400).json({ error: 'skus query parameter required' });
+
+    // Build select projection based on requested fields, always include sku
+    const select: any = { sku: true };
+    for (const f of fieldsParam.split(',').map(s => s.trim()).filter(Boolean)) {
+      if (['costPerItem', 'additionalPrices', 'set', 'name', 'id'].includes(f)) {
+        select[f] = true;
+      }
+    }
+
+    const products = await prisma.product.findMany({
+      where: { sku: { in: skus } },
+      select
+    });
+
+    // Parse JSON fields if present
+    const parsed = products.map(p => ({
+      ...p,
+      additionalPrices: (p as any).additionalPrices ? (() => {
+        try { return JSON.parse((p as any).additionalPrices); } catch { return null; }
+      })() : null,
+      set: (p as any).set ? (() => {
+        try { return JSON.parse((p as any).set); } catch { return null; }
+      })() : null,
+    }));
+
+    res.json({ products: parsed });
+  } catch (error) {
+    console.error('Error in /api/products/batch:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Отримати один товар безпосередньо з Dilovod за SKU (без повної синхронізації)
 // GET /api/products/dilovod/:sku
 router.get('/dilovod/:sku', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {

@@ -16,8 +16,8 @@ interface ReturnsHistoryTabProps {
 }
 
 export const ReturnsHistoryTab = ({ records, loading, onRefresh, onLoadRecord, onDeleteRecord }: ReturnsHistoryTabProps) => (
-  <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-    <div className="flex items-center justify-between mb-4">
+  <>
+    <div className="flex items-start justify-between mb-4">
       <h2 className="text-base font-semibold text-gray-800">Попередні повернення</h2>
       <Button
         size="sm"
@@ -51,5 +51,5 @@ export const ReturnsHistoryTab = ({ records, loading, onRefresh, onLoadRecord, o
         onDeleteRecord={onDeleteRecord}
       />
     )}
-  </div>
+  </>
 );
