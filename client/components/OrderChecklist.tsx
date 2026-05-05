@@ -196,9 +196,12 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     );
     
     const total = currentBoxItems.reduce((acc, item) => {
-      return acc + item.quantity;
+      // Якщо товар є монолітним комплектом (portionsPerItem зазначено),
+      // кількість порцій = quantity * portionsPerItem
+      const portions = item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity;
+      return acc + portions;
     }, 0);
-    
+
     return total;
   }, [items, activeBoxIndex]);
 

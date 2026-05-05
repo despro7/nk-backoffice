@@ -499,6 +499,23 @@ export class DilovodExportBuilder {
     // Отримуємо dilovodUserId автора
     const authorDilovodId = await getDilovodUserId(userId, { logPrefix: '[Common Builder] ' });
 
+    // Визначаємо початковий статус документа залежно від форми оплати
+    let headerStateId: string = DILOVOD_CONSTANTS.STATE_POSTED;
+    try {
+      if (channelMapping?.paymentForm && context.directories?.paymentForms) {
+        const paymentForm = context.directories.paymentForms.find(f => f.id === channelMapping.paymentForm);
+        if (paymentForm && paymentForm.name) {
+          const pfName = String(paymentForm.name).toLowerCase();
+          // Якщо назва форми оплати містить підказки про післяплату/COD — використовуємо STATE_COD
+          if (pfName.includes('після') || pfName.includes('rozetka') || pfName.includes('cod') || pfName.includes('наклад')) {
+            headerStateId = DILOVOD_CONSTANTS.STATE_COD;
+          }
+        }
+      }
+    } catch (e) {
+      // У разі будь-якої помилки — лишаємо статус як STATE_POSTED
+    }
+
     const header: DilovodExportHeader = {
       id: 'documents.saleOrder',                            // Тип документа "Замовлення на продаж"
       storage: settings.storageId!,                         // Склад
@@ -507,7 +524,7 @@ export class DilovodExportBuilder {
       firm: firmId,                                         // Фірма
       currency: DILOVOD_CONSTANTS.CURRENCY_UAH,             // Валюта UAH
       posted: 1,                                            // Провести документ
-      state: { id: DILOVOD_CONSTANTS.STATE_POSTED },        // Статус "Виконано"
+      state: { id: headerStateId },                         // Статус (залежить від форми оплати)
       taxAccount: 1,                                        // Податковий облік
       tradeChanel: tradeChanel,                             // Канал продажів
       paymentForm: channelMapping?.paymentForm || '',       // Форма оплати
