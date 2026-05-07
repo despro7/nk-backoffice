@@ -163,6 +163,33 @@ export function useBarcodeScanning({
     // 1️⃣ СПОЧАТКУ ШУКАЄМО КОРОБКУ (якщо коробка ще не відсканована/не зважена)
     let foundItem: OrderChecklistItem | undefined;
 
+    // У режимі no_scales віддаємо пріоритет пошуку товару (по barcode або sku),
+    // навіть якщо коробка ще в статусі 'default'. Це робить сканери та емулятор
+    // консистентними: скануючи штрих-код у no_scales ви отримаєте той самий
+    // результат, що й при введенні SKU — товар одразу переходить у 'done'.
+    if (assemblyMode === 'no_scales') {
+      const productFoundInNoScales = currentChecklistItems.find(item =>
+        item.type === 'product' &&
+        (item.barcode === scannedCode || item.sku === scannedCode) &&
+        (item.boxIndex || 0) === currentActiveBoxIndex
+      );
+
+      if (productFoundInNoScales) {
+        console.log('✅ [useBarcodeScanning] no_scales: знайдений товар по barcode/sku, ставимо done:', productFoundInNoScales.name);
+        setChecklistItems(prevItems =>
+          prevItems.map(item => item.id === productFoundInNoScales.id ? { ...item, status: 'done' as const } : item)
+        );
+        ToastService.show({
+          title: "Товар відмічено як зібраний",
+          description: productFoundInNoScales.name,
+          color: "success",
+          hideIcon: false,
+          timeout: 2000
+        });
+        return;
+      }
+    }
+
     if (currentBox?.status === 'default') {
       // Шукаємо коробку по barcode
       foundItem = currentChecklistItems.find(item => 
@@ -230,7 +257,7 @@ export function useBarcodeScanning({
         setChecklistItems(prevItems =>
           prevItems.map(item => {
             if (item.id === foundItem.id) {
-              return { ...item, status: boxNewStatus as const };
+              return { ...item, status: (assemblyMode === 'no_scales' ? 'done' : 'pending') as OrderChecklistItem['status'] };
             }
             return item;
           })
