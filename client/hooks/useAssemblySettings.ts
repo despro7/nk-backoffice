@@ -12,6 +12,10 @@ export interface AssemblySettings {
   errorToastMs: number;
 }
 
+export interface AssemblySettingsWithLoaded extends AssemblySettings {
+  isLoaded: boolean;
+}
+
 const DEFAULT_ASSEMBLY_SETTINGS: AssemblySettings = {
   mode: 'standard',
   boxInitialStatus: 'default',
@@ -27,9 +31,10 @@ const DEFAULT_ASSEMBLY_SETTINGS: AssemblySettings = {
  * Хук для отримання налаштувань збирання замовлень з бази даних.
  * @param isAuthenticated — передавати !!user з AuthContext, щоб запит виконувався тільки після авторизації
  */
-export function useAssemblySettings(isAuthenticated: boolean = false): AssemblySettings {
+export function useAssemblySettings(isAuthenticated: boolean = false): AssemblySettingsWithLoaded {
   const { apiCall } = useApi();
   const [settings, setSettings] = useState<AssemblySettings>(DEFAULT_ASSEMBLY_SETTINGS);
+  const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
   // apiCall не є стабільною референцією, тому використовуємо ref
   // щоб уникнути нескінченного циклу в useEffect
@@ -58,6 +63,7 @@ export function useAssemblySettings(isAuthenticated: boolean = false): AssemblyS
           errorToastMs: parseInt(find('assembly_error_toast_ms')?.value) || DEFAULT_ASSEMBLY_SETTINGS.errorToastMs,
         };
         setSettings(loaded);
+        setIsLoaded(true);
       } catch (error) {
         console.error('[useAssemblySettings] Помилка завантаження налаштувань:', error);
       }
@@ -66,5 +72,5 @@ export function useAssemblySettings(isAuthenticated: boolean = false): AssemblyS
     loadSettings();
   }, [isAuthenticated]);
 
-  return settings;
+  return { ...settings, isLoaded };
 }

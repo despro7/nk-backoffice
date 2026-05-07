@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import type { OrderChecklistItem } from '../types/orderAssembly';
 import { addToast } from '@heroui/toast';
-import { DynamicIcon } from "lucide-react/dynamic";
 import { ToastService } from '@/services/ToastService';
 
 interface UseBarcodeScanningProps {
@@ -125,6 +124,9 @@ export function useBarcodeScanning({
     setLastScannedCode(scannedCode);
 
     console.log('📱 [useBarcodeScanning] Нове сканування:', scannedCode);
+    // Додатковий діагностичний лог для перевірки режиму збірки та стану коробки
+    // (користувач просив підтвердити, що assemblyMode дійсно 'no_scales')
+    console.log('ℹ️ [useBarcodeScanning] assemblyMode:', assemblyMode);
 
     // Отримуємо актуальні дані з ref
     const currentChecklistItems = checklistItemsRef.current;

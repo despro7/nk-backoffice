@@ -210,11 +210,12 @@ export default function OrderView() {
 
   // Обробка сканування штрих-кодів
   useEffect(() => {
-    if (equipmentState.lastBarcode) {
+    // Дочекатись завантаження налаштувань збірки, інакше можемо використовувати дефолт 'standard'
+    if (equipmentState.lastBarcode && assemblySettings?.isLoaded) {
       handleBarcodeScan(equipmentState.lastBarcode.code);
       equipmentActions.resetScanner();
     }
-  }, [equipmentState.lastBarcode, handleBarcodeScan, equipmentActions]);
+  }, [equipmentState.lastBarcode, handleBarcodeScan, equipmentActions, assemblySettings?.isLoaded]);
 
   // Обробник зміни коробок
   const handleBoxesChange = useCallback((boxes: any[], totalWeight: number, boxesInfo?: any) => {
