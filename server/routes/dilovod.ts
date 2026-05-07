@@ -3,7 +3,7 @@ import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js
 import { authenticateToken, requireRole, requireMinRole, ROLES } from '../middleware/auth.js';
 import { DilovodService } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache, isDilovodExportError, getDilovodExportErrorMessage, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from '../services/dilovod/DilovodUtils.js';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { cronService } from '../services/cronService.js';
 import type {
@@ -495,30 +495,41 @@ router.get('/salesdrive/orders/shipment-counts', authenticateToken, requireMinRo
       }
     }
 
+    // Додаємо пошук проблемних orderNumber з meta_logs та враховуємо їх у лічильниках
+    // Використовуємо raw SQL з JSON_EXTRACT для надійної перевірки ключа `_all` у hiddenBy
+    let errorOrderNumbers: string[] = [];
+    try {
+      const rows = await prisma.$queryRaw(Prisma.sql`
+        SELECT DISTINCT orderNumber
+        FROM meta_logs
+        WHERE status = 'error'
+          AND orderNumber IS NOT NULL
+          AND (
+            LOWER(title) LIKE '%shipment%' OR LOWER(title) LIKE '%відвантаж%' OR
+            LOWER(message) LIKE '%shipment%' OR LOWER(message) LIKE '%відвантаж%'
+          )
+          AND JSON_EXTRACT(hiddenBy, '$._all') IS NULL
+      `) as Array<{ orderNumber: string | null }>;
+      errorOrderNumbers = Array.from(new Set(rows.map(r => String((r as any).orderNumber)))).filter(Boolean);
+    } catch (err) {
+      console.log('dilovod: error fetching meta_logs for shipment-counts (raw):', err);
+    }
+
+    const notShippedWhere = errorOrderNumbers.length > 0
+      ? { ...baseWhere, AND: [{ OR: [{ dilovodSaleExportDate: null, status: { in: ['3', '4', '5'] } }, { orderNumber: { in: errorOrderNumbers } }] }] }
+      : { ...baseWhere, dilovodSaleExportDate: null, status: { in: ['3', '4', '5'] } };
+
+    const notShippedAllWhere = errorOrderNumbers.length > 0
+      ? { ...baseWhere, AND: [{ OR: [{ dilovodSaleExportDate: null }, { orderNumber: { in: errorOrderNumbers } }] }] }
+      : { ...baseWhere, dilovodSaleExportDate: null };
+
+    const duplicatesWhere = { ...baseWhere, dilovodSaleDocsCount: { gt: 1 } };
+
     // Підраховуємо паралельно
     const [notShippedCount, notShippedAllCount, duplicatesCount] = await Promise.all([
-      // not_shipped: невідвантажені, лише статуси 3, 4, 5
-      prisma.order.count({
-        where: {
-          ...baseWhere,
-          dilovodSaleExportDate: null,
-          status: { in: ['3', '4', '5'] }
-        }
-      }),
-      // not_shipped_all: невідвантажені у всіх статусах
-      prisma.order.count({
-        where: {
-          ...baseWhere,
-          dilovodSaleExportDate: null
-        }
-      }),
-      // duplicates: дублікати відвантажень
-      prisma.order.count({
-        where: {
-          ...baseWhere,
-          dilovodSaleDocsCount: { gt: 1 }
-        }
-      })
+      prisma.order.count({ where: notShippedWhere }),
+      prisma.order.count({ where: notShippedAllWhere }),
+      prisma.order.count({ where: duplicatesWhere })
     ]);
 
     res.json({
@@ -550,7 +561,7 @@ router.get('/salesdrive/orders', authenticateToken, requireMinRole(ROLES.WAREHOU
     const searchCategory = (req.query.searchCategory as string) || 'orderNumber'; // 'orderNumber' | 'ttn' | 'phone' | 'name' | 'all'
     const channelsParam = req.query.channels as string;
     const includeUnknown = req.query.includeUnknown === 'true';
-    const shipmentStatus = req.query.shipmentStatus as string; // 'shipped' | 'not_shipped'
+    const shipmentStatus = (req.query.shipmentFilter as string) || (req.query.shipmentStatus as string); // 'shipped' | 'not_shipped'
     const shipmentDateFrom = req.query.shipmentDateFrom as string; // ISO date string
     const shipmentDateTo = req.query.shipmentDateTo as string; // ISO date string
     const statusesParam = req.query.statuses as string; // comma-separated status keys, e.g. '1,2,3'
@@ -559,7 +570,6 @@ router.get('/salesdrive/orders', authenticateToken, requireMinRole(ROLES.WAREHOU
 
     // Побудова умов запиту
     let whereCondition: any = {
-      // Виключаємо статуси 6, 7, 8
       NOT: [
         { status: { in: ['8'] } }
       ]
@@ -639,8 +649,55 @@ router.get('/salesdrive/orders', authenticateToken, requireMinRole(ROLES.WAREHOU
       whereCondition.dilovodSaleExportDate = { not: null };
     } else if (shipmentStatus === 'not_shipped') {
       // Не відвантажені, лише статуси 3, 4, 5
-      whereCondition.dilovodSaleExportDate = null;
-      whereCondition.status = { in: ['3', '4', '5'] };
+      // Додатково — включаємо замовлення, по яких є активні meta_logs з помилками відвантаження
+      const baseNotShipped = {
+        dilovodSaleExportDate: null,
+        status: { in: ['3', '4', '5'] }
+      };
+
+      try {
+        // Шукаємо error-логи пов'язані з відвантаженням — використовуємо raw SQL,
+        // щоб надійно ігнорувати записи, де hiddenBy має ключ `_all`.
+        const rows = await prisma.$queryRaw(Prisma.sql`
+          SELECT DISTINCT orderNumber
+          FROM meta_logs
+          WHERE status = 'error'
+            AND orderNumber IS NOT NULL
+            AND (
+              LOWER(title) LIKE '%shipment%' OR LOWER(title) LIKE '%відвантаж%' OR
+              LOWER(message) LIKE '%shipment%' OR LOWER(message) LIKE '%відвантаж%'
+            )
+            AND JSON_EXTRACT(hiddenBy, '$._all') IS NULL
+        `) as Array<{ orderNumber: string | null }>;
+
+        const errorOrderNumbers = Array.from(new Set(rows.map(r => String((r as any).orderNumber)))).filter(Boolean);
+
+        if (errorOrderNumbers.length > 0) {
+          // Комбінуємо з іншими фільтрами: зберігаємо наявні умови (канали, пошук тощо)
+          const existingWhere = { ...whereCondition };
+          // Видаляємо можливий status/dilovodSaleExportDate у existingWhere, щоб не конфліктувати
+          delete (existingWhere as any).dilovodSaleExportDate;
+          delete (existingWhere as any).status;
+
+          whereCondition = {
+            ...existingWhere,
+            AND: [
+              {
+                OR: [
+                  baseNotShipped,
+                  { orderNumber: { in: errorOrderNumbers } }
+                ]
+              }
+            ]
+          };
+        } else {
+          // Нема активних логів — звичайна поведінка
+          whereCondition = { ...whereCondition, ...baseNotShipped };
+        }
+      } catch (e) {
+        // У разі помилки при читанні логів — fallback на стандартний фільтр
+        whereCondition = { ...whereCondition, ...baseNotShipped };
+      }
     } else if (shipmentStatus === 'not_shipped_all') {
       // Всі не відвантажені у всіх статусах
       whereCondition.dilovodSaleExportDate = null;
@@ -767,7 +824,7 @@ router.get('/salesdrive/orders', authenticateToken, requireMinRole(ROLES.WAREHOU
     });
 
   } catch (error) {
-    console.error('Error fetching SalesDrive orders:', error);
+    console.log('Error fetching SalesDrive orders:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -857,7 +914,8 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, requireMinR
 
     // Запускаємо перевірку в Dilovod API (тепер поля чисті — буде повний пошук)
     const dilovodService = new DilovodService();
-    const checkResult = await dilovodService.checkOrdersByNumbers(orderNumbers);
+    // Для примусової перевірки: просимо перевірити документи у всіх статусах
+    const checkResult = await dilovodService.checkOrdersByNumbers(orderNumbers, true);
 
     return res.json({
       ...checkResult,
@@ -1024,7 +1082,7 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, requireMi
     }
 
   } catch (error) {
-    console.error('Error validating order for Dilovod export:', error);
+    console.log('Error validating order for Dilovod export:', error);
 
     res.status(500).json({
       success: false,
@@ -1272,7 +1330,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
         }
       });
     } catch (exportError) {
-      console.error('Помилка експорту замовлення в Dilovod:', exportError);
+      console.log('Помилка експорту замовлення в Dilovod:', exportError);
       res.status(500).json({
         success: false,
         error: 'Dilovod export error',
@@ -1286,7 +1344,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
     }
 
   } catch (error) {
-    console.error('Error exporting order to Dilovod:', error);
+    console.log('Error exporting order to Dilovod:', error);
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
@@ -1531,7 +1589,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
       });
 
     } catch (exportError) {
-      console.error('Помилка створення відвантаження в Dilovod:', exportError);
+      console.log('Помилка створення відвантаження в Dilovod:', exportError);
       res.status(500).json({
         success: false,
         error: 'Dilovod export error',
@@ -1546,7 +1604,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
     }
 
   } catch (error) {
-    console.error('Error creating shipment in Dilovod:', error);
+    console.log('Error creating shipment in Dilovod:', error);
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
@@ -1574,7 +1632,7 @@ router.get('/salesdrive/payment-methods', authenticateToken, requireMinRole(ROLE
       data: paymentMethods
     });
   } catch (error) {
-    console.error('❌ [API] Error fetching payment methods:', error);
+    console.log('❌ [API] Error fetching payment methods:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch payment methods',
@@ -1598,7 +1656,7 @@ router.get('/cache/status', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER
       data: status
     });
   } catch (error) {
-    console.error('❌ [API] Error getting cache status:', error);
+    console.log('❌ [API] Error getting cache status:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to get cache status',

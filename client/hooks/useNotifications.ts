@@ -41,7 +41,7 @@ export function useNotifications(): UseNotificationsReturn {
   const fetchNotifications = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await apiCallRef.current('/api/notifications?' + BASE_SEVERITY + '&limit=50');
+      const response = await apiCallRef.current('/api/notifications?' + BASE_SEVERITY + '&limit=250');
       if (!response.ok) return;
       const json: NotificationsResponse = await response.json();
       setNotifications(json.data);

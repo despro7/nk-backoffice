@@ -267,39 +267,9 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
         await loadHistory();
 
         if (!wasDismissed && draftsData?.drafts?.length > 0) {
-          const latestDraft: MovementDraft = draftsData.drafts[0];
-          draft$.setSavedDraft(latestDraft);
-
-          // Відновлюємо нотатку (без службового суфіксу)
-          if (latestDraft.notes) {
-            draft$.setNotes(
-              latestDraft.notes
-                .replace(/(?:\s*\|\s*)?(?:Додано|Оновлено) з Backoffice.*$/, '')
-                .trim(),
-            );
-          }
-
-          // Відновлюємо дату документа
-          if (latestDraft.movementDate) {
-            draft$.setSelectedDateTime(new Date(latestDraft.movementDate));
-          }
-
-          // Відновлюємо партії з чернетки
-          let draftItems: any[] = [];
-          try {
-            if (typeof latestDraft.items === 'string') {
-              draftItems = JSON.parse(latestDraft.items);
-            } else if (Array.isArray(latestDraft.items)) {
-              draftItems = latestDraft.items;
-            }
-          } catch (parseErr) {
-            LoggingService.warehouseMovementLog(`Помилка розпарсення items: ${parseErr}`);
-          }
-
-          if (draftItems.length > 0 && productsData) {
-            const draftDate = latestDraft.movementDate ? new Date(latestDraft.movementDate) : undefined;
-            await products$.loadDraftIntoProducts(productsData, draftItems, draftDate);
-          }
+          // Є збережені чернетки — не присвоюємо їх автоматично до поточної сесії.
+          // Адмін може їх відкрити явно через вкладку "Чернетки" або кнопку "Редагувати".
+          // Якщо потрібно — draftsData.drafts доступні для відображення у списку.
         }
       } catch (err: any) {
         LoggingService.warehouseMovementLog(`Помилка ініціалізації: ${err?.message}`);

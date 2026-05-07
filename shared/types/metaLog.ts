@@ -1,0 +1,21 @@
+export type MetaLogRow = {
+  id: number | string;
+  createdAt: string;
+  title?: string | null;
+  author?: string | null;
+  docNumber?: string | null;
+  dilovodResponse?: string | null;
+  orderNumber?: string | null;
+  productName?: string | null;
+  sku?: string | null;
+  needed?: number | null;
+  stock?: number | null;
+  missing?: number | null;
+  initiator?: string | null | { raw?: string; name?: string; email?: string };
+  attempts?: number | null;
+  rawMessage?: string | null;
+	data?: Record<string, any>;
+  occurrenceCount?: number;
+  sourceIds?: Array<number | string>;
+  attemptsList?: Array<{ id: number | string; datetime: string; initiator?: string | null | { raw?: string; name?: string; email?: string } }>;
+};

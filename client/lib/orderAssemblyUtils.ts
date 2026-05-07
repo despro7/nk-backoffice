@@ -35,7 +35,12 @@ export const calculateExpectedWeight = (product: Product, quantity: number): num
  */
 export const sortChecklistItems = (items: OrderChecklistItem[]): OrderChecklistItem[] => {
   return [...items].sort((a, b) => {
-    // Спочатку сортуємо по manualOrder, потім по типу, потім по імені
+    // Коробки завжди першими, незалежно від manualOrder
+    if (a.type !== b.type) {
+      return a.type === 'box' ? -1 : 1;
+    }
+
+    // Серед однакових типів сортуємо по manualOrder, потім по імені
     const aManualOrder = a.manualOrder ?? 999;
     const bManualOrder = b.manualOrder ?? 999;
 
@@ -43,12 +48,7 @@ export const sortChecklistItems = (items: OrderChecklistItem[]): OrderChecklistI
       return aManualOrder - bManualOrder;
     }
 
-    // Якщо manualOrder однаковий, спочатку коробки, потім товари
-    if (a.type !== b.type) {
-      return a.type === 'box' ? -1 : 1;
-    }
-
-    // Для однакового типу сортуємо по імені
+    // Для однакового типу і manualOrder сортуємо по імені
     return a.name.localeCompare(b.name);
   });
 };
@@ -303,7 +303,7 @@ export const combineBoxesWithItems = (
   boxes: any[], 
   items: OrderChecklistItem[], 
   isReadyToShip: boolean = false,
-  boxInitialStatus: 'default' | 'pending' | 'awaiting_confirmation' = 'default'
+  boxInitialStatus: 'default' | 'pending' | 'awaiting_confirmation' | 'done' = 'default'
 ): { checklistItems: OrderChecklistItem[]; unallocatedPortions: number; unallocatedItems: Array<{ name: string; quantity: number }> } => {
   // Перевіряємо, що у нас є валідні коробки
   if (!boxes || boxes.length === 0) {

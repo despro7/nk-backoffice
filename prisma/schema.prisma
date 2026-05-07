@@ -395,7 +395,7 @@ model meta_logs {
   category    String   @db.VarChar(32)
   title       String?  @db.VarChar(255)
   status      String   @db.VarChar(16)
-  message     String?
+  message     String?  @db.Text
   data        Json?
   readBy      Json?    // { [userId]: "ISO", "_all": "ISO" } — хто і коли прочитав
   hiddenBy    Json?    // { [userId]: "ISO", "_all": "ISO" } — хто і коли приховав

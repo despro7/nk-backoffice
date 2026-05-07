@@ -492,8 +492,8 @@ export class CronService {
   startWarehouseAutoFinalize(): void {
     if (this.warehouseAutoFinalizeJob) return;
 
-    // 55 23 * * * — щодня о 23:55
-    this.warehouseAutoFinalizeJob = cron.schedule('12 0 * * *', async () => {
+    // 55 23 * * * — щодня о 23:55 (Kyiv)
+    this.warehouseAutoFinalizeJob = cron.schedule('55 23 * * *', async () => {
       console.log('🏭 [CronService] Запуск автофіналізації переміщень (23:55)...');
       try {
         const { warehouseAutoFinalizeService } = await import('../modules/Warehouse/WarehouseAutoFinalizeService.js');
@@ -503,7 +503,8 @@ export class CronService {
         console.error('🏭 [CronService] Помилка автофіналізації переміщень:', err);
       }
     });
-
+    this.warehouseAutoFinalizeJob.start();
+    cronJobsRegistry.add(this.warehouseAutoFinalizeJob);
     console.log('🏭 [CronService] Warehouse auto-finalize job запущено (23:55 щодня)');
   }
 

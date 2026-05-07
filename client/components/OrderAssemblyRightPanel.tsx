@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useEquipmentFromAuth } from '@/contexts/AuthContext';
+import { useDebug } from '@/contexts/DebugContext';
 import { RightPanel } from './RightPanel';
 import { WeightDisplayWidget } from './WeightDisplayWidget';
 import { BoxSelector } from './BoxSelector';
@@ -36,6 +37,8 @@ interface OrderAssemblyRightPanelProps {
   onPrintReceipt?: (type?: ReceiptType) => Promise<void>;
   /** Перегляд чека у браузері */
   onViewReceipt?: (type?: ReceiptType) => Promise<void>;
+  /** Емуляція сканування ШК (Debug) */
+  onBarcodeScan?: (code: string) => void;
 }
 
 export function OrderAssemblyRightPanel({
@@ -58,10 +61,13 @@ export function OrderAssemblyRightPanel({
   onOrderRefresh,
   onPrintReceipt,
   onViewReceipt,
+  onBarcodeScan,
 }: OrderAssemblyRightPanelProps) {
   const [showPrintConfirmModal, setShowPrintConfirmModal] = useState(false);
   const { expectedWeight, cumulativeTolerance } = getWeightData();
   const [equipmentState, equipmentActions] = useEquipmentFromAuth();
+  const { isDebugMode } = useDebug();
+  const [debugScanCode, setDebugScanCode] = useState('');
   // Анімація перемикання
   const [autoPrintTransition, setAutoPrintTransition] = useState(false);
   const autoPrint = !!equipmentState.config?.printer?.autoPrintOnComplete;
@@ -197,6 +203,30 @@ export function OrderAssemblyRightPanel({
               </div>
             </Switch>
           </div> */}
+
+          {/* Емулятор сканера (Debug) */}
+          {isDebugMode && onBarcodeScan && (
+            <div className="w-full border-2 border-dashed border-warning-400 rounded-lg p-3 bg-warning-50">
+              <p className="text-xs font-semibold text-warning-700 mb-2 flex items-center gap-1">
+                <DynamicIcon name="scan-barcode" size={14} />
+                Емулятор сканера [DEBUG]
+              </p>
+              <input
+                type="text"
+                value={debugScanCode}
+                onChange={e => setDebugScanCode(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && debugScanCode.trim()) {
+                    onBarcodeScan(debugScanCode.trim());
+                    setDebugScanCode('');
+                  }
+                }}
+                placeholder="ШК / SKU і Enter..."
+                className="w-full text-sm px-3 py-1.5 rounded border border-warning-300 bg-white focus:outline-none focus:border-warning-500 font-mono"
+                autoComplete="off"
+              />
+            </div>
+          )}
 
           {/* Активні комплекти */}
           {order?.items && (

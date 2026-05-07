@@ -25,6 +25,7 @@ import SettingsDilovod from "./pages/SettingsDilovod";
 import SettingsWarehouseMovement from "./pages/SettingsWarehouseMovement";
 import SalesDriveOrders from "./pages/SalesDriveOrders";
 import TestSerialCom from "./pages/test-serial-com";
+import MetaLogNotifications from './pages/MetaLogs';
 
 // Определяем роли и их иерархию
 import { ROLES, ROLE_HIERARCHY, hasAccess } from '@shared/constants/roles';
@@ -198,6 +199,19 @@ export const appRoutes: AppRoute[] = [
     parent: 'reports',
     order: 3,
     minRole: ROLES.ADS_MANAGER // ads-manager і вище
+  },
+  {
+    path: '/reports/meta-logs',
+    component: MetaLogNotifications,
+    title: 'Звіт по помилкам',
+    pageTitle: 'Звіт по помилкам | NK Backoffice',
+    navLabel: 'Звіт по помилкам',
+    icon: <DynamicIcon name="alert-triangle" size={16} />,
+    inNav: true,
+    parent: 'reports',
+    order: 9,
+    minRole: ROLES.STOREKEEPER,
+    hasOwnTitle: true,
   },
   {
     path: '/salesdrive-to-dilovod',

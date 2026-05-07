@@ -5,8 +5,10 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '@/services/ToastService';
 
 type BoxInitialStatus = 'default' | 'pending' | 'awaiting_confirmation';
+type AssemblyMode = 'standard' | 'no_scales';
 
 interface OrderAssemblySettingsType {
+  mode: AssemblyMode;
   boxInitialStatus: BoxInitialStatus;
   autoSelectNext: boolean;
   allowManualSelect: boolean;
@@ -17,6 +19,7 @@ interface OrderAssemblySettingsType {
 }
 
 const DEFAULT_SETTINGS: OrderAssemblySettingsType = {
+  mode: 'standard',
   boxInitialStatus: 'default',
   autoSelectNext: true,
   allowManualSelect: false,
@@ -48,6 +51,7 @@ export const OrderAssemblySettings: React.FC = () => {
         const find = (key: string) => allSettings.find((s: any) => s.key === key);
 
         const loaded: OrderAssemblySettingsType = {
+          mode: (find('assembly_mode')?.value as AssemblyMode) || DEFAULT_SETTINGS.mode,
           boxInitialStatus: (find('assembly_box_initial_status')?.value as BoxInitialStatus) || DEFAULT_SETTINGS.boxInitialStatus,
           autoSelectNext: (find('assembly_auto_select_next')?.value ?? 'true') === 'true',
           allowManualSelect: (find('assembly_allow_manual_select')?.value ?? 'false') === 'true',
@@ -82,6 +86,7 @@ export const OrderAssemblySettings: React.FC = () => {
 
   // Мапи ключів → опис для відправки на сервер
   const SETTING_META: Record<keyof OrderAssemblySettingsType, { key: string; description: string; serialize: (v: any) => string }> = {
+    mode:                { key: 'assembly_mode',                     description: 'Режим комплектації (standard | no_scales)',         serialize: String },
     boxInitialStatus:     { key: 'assembly_box_initial_status',     description: 'Початковий статус коробки при відкритті замовлення', serialize: String },
     autoSelectNext:       { key: 'assembly_auto_select_next',       description: 'Автовибір наступного товару після успішного зважування', serialize: String },
     allowManualSelect:    { key: 'assembly_allow_manual_select',    description: 'Дозволити ручний вибір товару кліком',              serialize: String },
@@ -146,6 +151,25 @@ export const OrderAssemblySettings: React.FC = () => {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-6">
+              {/* Режим комплектації */}
+              <div className="space-y-2 col-span-2">
+                <Select
+                  selectedKeys={settings ? [settings.mode] : []}
+                  onSelectionChange={(keys) => {
+                    const selected = Array.from(keys)[0] as AssemblyMode;
+                    setSettings(prev => prev ? { ...prev, mode: selected } : null);
+                  }}
+                  placeholder="Виберіть режим"
+                  className="w-full"
+                  label="Режим комплектації"
+                  labelPlacement="outside"
+                  description="Виберіть режим: стандартний або Без вагів"
+                >
+                  <SelectItem key="standard">Стандартний</SelectItem>
+                  <SelectItem key="no_scales">Без вагів</SelectItem>
+                </Select>
+              </div>
+
               {/* Початковий статус коробки */}
               <div className="space-y-2 col-span-2">
                 <Select
@@ -168,15 +192,17 @@ export const OrderAssemblySettings: React.FC = () => {
                 </Select>
               </div>
 
-              {/* Автовибір наступного товару */}
-              <div className="col-span-2">
-                <Switch
-                  isSelected={settings?.autoSelectNext ?? DEFAULT_SETTINGS.autoSelectNext}
-                  onValueChange={(val) => setSettings(prev => prev ? { ...prev, autoSelectNext: val } : null)}
-                >
-                  Автовибір наступного товару після успішного зважування
-                </Switch>
-              </div>
+              {/* Автовибір наступного товару (не показувати в режимі Без вагів) */}
+              {settings?.mode !== 'no_scales' && (
+                <div className="col-span-2">
+                  <Switch
+                    isSelected={settings?.autoSelectNext ?? DEFAULT_SETTINGS.autoSelectNext}
+                    onValueChange={(val) => setSettings(prev => prev ? { ...prev, autoSelectNext: val } : null)}
+                  >
+                    Автовибір наступного товару після успішного зважування
+                  </Switch>
+                </div>
+              )}
 
               {/* Ручний вибір товару */}
               <div className="col-span-2">

@@ -310,19 +310,36 @@ export const useMovementDraftState = (
 
         const goodsFromDoc = Object.values(doc.details.tableParts.tpGoods) as any[];
 
+        // (diagnostics removed)
+
         // Групуємо товари за good (ID товару)
         const goodsMap = new Map<string, any[]>();
         goodsFromDoc.forEach(good => {
-          const existing = goodsMap.get(good.good) || [];
+          const key = String(good.good ?? '').trim();
+          const existing = goodsMap.get(key) || [];
           existing.push(good);
-          goodsMap.set(good.good, existing);
+          goodsMap.set(key, existing);
         });
 
-        // Оновлюємо products на основі документа з Dilovod
+        // Універсальна функція для зіставлення рядка документа з товаром
+        const matchGoodToProduct = (g: any, p: any): boolean => {
+          const gId = String(g.good ?? '').trim();
+          const gName = String(g.good__pr ?? '').trim().toLowerCase();
+          const gSku = String(g.productNum ?? g.sku ?? '').trim();
+
+          if (gId && (p.id === gId || String(p.id) === gId)) return true;
+          if (gSku && (p.sku === gSku || String(p.sku) === gSku)) return true;
+          if (gName && p.name && p.name.toLowerCase() === gName) return true;
+          // Фолбек: коли назви частково співпадають (скорочення, ваги тощо)
+          if (gName && p.name && p.name.toLowerCase().includes(gName)) return true;
+          // І ще один фолбек: іноді good__pr містить SKU або інший ідентифікатор
+          if (gName && (p.sku && gName.includes(p.sku))) return true;
+          return false;
+        };
+
+        // Оновлюємо products на основі документа з Dilovod (з більш гнучким зіставленням)
         const updated = currentProducts.map(product => {
-          const docsGoods = Array.from(goodsMap.values())
-            .flat()
-            .filter(g => g.good === product.id || g.good__pr === product.name);
+          const docsGoods = Array.from(goodsFromDoc).filter(g => matchGoodToProduct(g, product));
 
           if (docsGoods.length > 0) {
             return {
@@ -341,9 +358,7 @@ export const useMovementDraftState = (
         const selectedIds = new Set(
           goodsFromDoc
             .map(good => {
-              const prod = currentProducts.find(
-                p => p.id === good.good || p.name === good.good__pr,
-              );
+              const prod = currentProducts.find(p => matchGoodToProduct(good, p));
               return prod?.id ?? null;
             })
             .filter((id): id is string => id !== null),
@@ -363,16 +378,14 @@ export const useMovementDraftState = (
           destinationWarehouse: doc.storageTo || '',
           items: Array.from(goodsMap.entries()).flatMap(([, goods]) =>
             goods.map(good => {
-              const product = updated.find(p => p.id === good.good || p.name === good.good__pr);
+              const product = updated.find(p => matchGoodToProduct(good, p));
               const totalPortions = parseFloat(good.qty) || 0;
               const portionsPerBox = product?.portionsPerBox || 1;
               return {
-                sku: good.good,
-                productName: good.good__pr,
+                sku: product?.sku ?? good.productNum ?? good.sku ?? good.good,
+                productName: product?.name ?? good.good__pr,
                 batchId: good.goodPart || '',
                 batchNumber: good.goodPart__pr || '',
-                // batchStorage: у tpGoods Діловода немає поля складу партії — є лише unit (одиниця виміру).
-                // Склад партії відомий лише при ручному виборі через BatchNumbersAutocomplete.
                 batchStorage: '',
                 forecast: 0,
                 boxQuantity: Math.floor(totalPortions / portionsPerBox),

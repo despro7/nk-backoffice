@@ -160,7 +160,13 @@ export class WarehouseAutoFinalizeService {
         if (dilovodResult?.error || dilovodResult?.errorMessage || !dilovodResult?.id) {
           const rawErr = dilovodResult?.error ?? dilovodResult?.errorMessage ?? 'Немає id у відповіді';
           logServer(`${TAG} ❌ Рух #${movement.id}: Діловод повернув помилку — ${rawErr}`);
-          await this.writeLog('error', movement, `Діловод відхилив документ при автофіналізації: ${rawErr}`);
+          await this.writeLog(
+            'error',
+            movement,
+            `Діловод відхилив документ при автофіналізації: ${rawErr}`,
+            undefined,
+            { dilovodId: dilovodResult?.id ?? movement.dilovodDocId ?? null, dilovodResponse: String(rawErr) },
+          );
           failed++;
           continue;
         }
@@ -205,7 +211,13 @@ export class WarehouseAutoFinalizeService {
 
       } catch (err: any) {
         logServer(`${TAG} ❌ Непередбачена помилка при фіналізації руху #${movement.id}: ${err?.message}`);
-        await this.writeLog('error', movement, `Непередбачена помилка: ${err?.message ?? 'Unknown'}`);
+        await this.writeLog(
+          'error',
+          movement,
+          `Непередбачена помилка: ${err?.message ?? 'Unknown'}`,
+          undefined,
+          { dilovodResponse: err?.message ?? String(err) },
+        );
         failed++;
       }
     }
@@ -223,6 +235,7 @@ export class WarehouseAutoFinalizeService {
     movement: { id: number; docNumber: string | null; internalDocNumber: string; createdBy: number | null },
     errorMessage: string | null,
     resolvedDocNumber?: string | null,
+    details?: { dilovodId?: string | number | null; dilovodResponse?: string | null },
   ): Promise<void> {
     try {
       const docLabel = resolvedDocNumber ?? movement.docNumber ?? movement.internalDocNumber;
@@ -239,16 +252,30 @@ export class WarehouseAutoFinalizeService {
         } catch { /* ignore */ }
       }
 
+      const metaTitle = status === 'success'
+        ? `Автофіналізація накладної №${docLabel}`
+        : `Помилка автофіналізації накладної`;
+
+      const metaMessage = status === 'success'
+        ? `Документ накладної на переміщення №${docLabel}, створений користувачем ${authorName}, було автоматично відправлено в Діловод і фіналізовано.`
+        : `Помилка автофіналізації накладної №${docLabel}, автор документу: ${authorName}`;
+
+      const metaDataObj = {
+        docNumber: docLabel,
+        docId: movement.id,
+        dilovodId: details?.dilovodId ?? null,
+        dilovodResponse: details?.dilovodResponse ?? errorMessage ?? null,
+        authorId: movement.createdBy ?? null,
+        authorName,
+      };
+
       await prisma.meta_logs.create({
         data: {
           category: 'warehouse_movement',
           status,
-          title: status === 'success'
-            ? `Автофіналізація накладної №${docLabel}`
-            : `Помилка автофіналізації накладноїПомилка автофіналізації накладної №${docLabel}, автор документу: ${authorName}.`,
-          message: status === 'success'
-            ? `Документ накладної на переміщення №${docLabel}, створений користувачем ${authorName}, було автоматично відправлено в Діловод і фіналізовано.`
-            : errorMessage ?? 'Невідома помилка',
+          title: metaTitle,
+          message: metaMessage,
+          data: metaDataObj ? JSON.stringify(metaDataObj) : null,
           initiatedBy: 'cron:warehouse-auto-finalize',
         },
       });

@@ -5,6 +5,7 @@ import { useAuth, useEquipmentFromAuth } from '../contexts/AuthContext';
 import { useDebug } from '../contexts/DebugContext';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { LoggingService } from '@/services/LoggingService';
+import { ToastService } from '@/services/ToastService';
 import type { OrderChecklistItem } from '../types/orderAssembly';
 import { expandProductSets, combineBoxesWithItems } from '@/lib/orderAssemblyUtils';
 import { useWeightManagement } from '@/hooks/useWeightManagement';
@@ -65,6 +66,11 @@ export default function OrderView() {
   const { boxInitialStatus } = useBoxInitialStatus();
   const assemblySettings = useAssemblySettings(!!user);
 
+  // У режимі no_scales "Вже відсканована" (pending) одразу означає "done"
+  const effectiveBoxInitialStatus = (assemblySettings.mode === 'no_scales' && boxInitialStatus === 'pending')
+    ? 'done' as const
+    : boxInitialStatus;
+
   const {
     handlePrintReceipt,
     handleViewReceipt,
@@ -87,7 +93,8 @@ export default function OrderView() {
     checklistItems,
     activeBoxIndex,
     setChecklistItems,
-    debugMode: isDebugMode
+    debugMode: isDebugMode,
+    assemblyMode: assemblySettings.mode ?? 'standard'
   });
 
   const {
@@ -235,7 +242,7 @@ export default function OrderView() {
     // Використовуємо checklistItems якщо вони є (зі збереженням статусів), інакше expandedItems
     const currentItems = checklistItems.length > 0 ? checklistItems : expandedItems;
     const itemsWithoutBoxes = currentItems.filter(item => item.type !== 'box');
-    const combined = combineBoxesWithItems(updatedBoxes, itemsWithoutBoxes, isReadyToShip, boxInitialStatus);
+    const combined = combineBoxesWithItems(updatedBoxes, itemsWithoutBoxes, isReadyToShip, effectiveBoxInitialStatus);
 
     setChecklistItems(combined.checklistItems);
     setUnallocatedPortions(combined.unallocatedPortions);
@@ -320,7 +327,7 @@ export default function OrderView() {
 
           if (selectedBoxes.length > 0) {
             const itemsWithoutBoxes = processedItems.filter(item => item.type !== 'box');
-            const combined = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, orderIsReadyToShip, boxInitialStatus);
+            const combined = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, orderIsReadyToShip, effectiveBoxInitialStatus);
 
             if (combined && combined.checklistItems.length > 0) {
               setChecklistItems(combined.checklistItems);
@@ -357,7 +364,7 @@ export default function OrderView() {
 
           if (selectedBoxes.length > 0) {
             const itemsWithoutBoxes = fallbackItems.filter(item => item.type !== 'box');
-            const combined = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, isReadyToShipFallback, boxInitialStatus);
+            const combined = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, isReadyToShipFallback, effectiveBoxInitialStatus);
 
             if (combined && combined.checklistItems.length > 0) {
               setChecklistItems(combined.checklistItems);
@@ -585,20 +592,34 @@ export default function OrderView() {
                 activeBoxIndex={activeBoxIndex}
                 onActiveBoxChange={setActiveBoxIndex}
                 onItemStatusChange={(itemId, status) => {
-                  setChecklistItems(prevItems =>
-                    prevItems.map(item => {
+                  // Respect the requested status (was previously forcing 'pending')
+                  setChecklistItems(prevItems => {
+                    const newItems = prevItems.map(item => {
                       if (item.id === itemId) {
-                        return { ...item, status: 'pending' };
+                        return { ...item, status: status as OrderChecklistItem['status'] };
                       }
-                      if (item.status === 'pending' && (item.boxIndex || 0) === activeBoxIndex) {
-                        return { ...item, status: 'default' };
+
+                      // If we're setting a new 'pending', clear other pending items in the same box
+                      if (status === 'pending' && item.status === 'pending' && (item.boxIndex || 0) === activeBoxIndex) {
+                        return { ...item, status: 'default' as const };
                       }
+
                       return item;
-                    })
-                  );
+                    });
+
+                    // Show success toast for products marked done
+                    const changed = newItems.find(i => i.id === itemId);
+                    if (changed && changed.status === 'done' && changed.type === 'product') {
+                      ToastService.show({ title: 'Товар відмічено як зібраний', description: `${changed.name}`, color: 'success' });
+                    }
+
+                    return newItems;
+                  });
                   startActivePolling();
                 }}
                 allowManualSelect={assemblySettings.allowManualSelect}
+                assemblyMode={assemblySettings.mode ?? 'standard'}
+                onBarcodeScan={handleBarcodeScan}
                 onPrintTTN={handlePrintTTNCallback}
                 showPrintTTN={showPrintTTN}
                 wasOpenedAsReady={wasOpenedAsReady}
@@ -634,6 +655,7 @@ export default function OrderView() {
           onOrderRefresh={handleOrderRefresh}
           onPrintReceipt={handlePrintReceipt}
           onViewReceipt={handleViewReceipt}
+          onBarcodeScan={handleBarcodeScan}
         />
       </div>
 

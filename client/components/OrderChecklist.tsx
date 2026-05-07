@@ -24,6 +24,8 @@ interface OrderItem {
   portionsRange?: { start: number; end: number }; // Діапазон порцій для коробки
   portionsPerBox?: number; // Кількість порцій на коробку
   manualOrder?: number; // Ручне сортування
+  sku?: string;
+  barcode?: string;
   portionsPerItem?: number; // Для монолітних комплектів: кількість порцій в одному комплекті
 }
 
@@ -37,15 +39,17 @@ interface OrderChecklistProps {
   showPrintTTN?: boolean;
   wasOpenedAsReady?: boolean; // Чи було замовлення відкрите вже зібраним (без автодруку)
   allowManualSelect?: boolean; // Дозволити ручний вибір товару кліком
+  assemblyMode?: 'standard' | 'no_scales';
   onNextOrder?: () => void; // Callback для перехода к следующему заказу
   showNextOrder?: boolean;
   nextOrderNumber?: string; // Номер наступного замовлення
   nextOrderDate?: string; // Дата наступного замовлення
   showNoMoreOrders?: boolean; // Показувати повідомлення про відсутність замовлень
   isDebugMode?: boolean; // Флаг дебаг-режима
+  onBarcodeScan?: (code: string) => void; // Емуляція сканування ШК (Debug)
 }
 
-const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders, allowManualSelect = false }: OrderChecklistProps) => {
+const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders, allowManualSelect = false, assemblyMode = 'standard', onBarcodeScan }: OrderChecklistProps) => {
   const navigate = useNavigate();
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [equipmentState] = useEquipmentFromAuth(); // <-- Використовуємо глобальний стан обладнання
@@ -221,9 +225,13 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       item.type === 'box' && (item.boxIndex || 0) === activeBoxIndex
     );
 
+    // У режимі 'no_scales' без коробок вважаємо автоматично підтвердженим
+    if (assemblyMode === 'no_scales' && !currentBox) return true;
+
     // Коробка вважається зваженою, якщо вона має статус 'done'
-    return currentBox?.status === 'done';
-  }, [items, activeBoxIndex]);
+    // У режимі 'no_scales' також вважаємо коробку підтвердженою коли її статус 'pending'
+    return currentBox?.status === 'done' || (assemblyMode === 'no_scales' && currentBox?.status === 'pending');
+  }, [items, activeBoxIndex, assemblyMode]);
 
   // Вираховуємо загальну кількість упакованих порцій по всьому замовленню
   const totalPackedPortions = useMemo(() => {
@@ -341,30 +349,73 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
 
   const handleItemClick = (itemId: string) => {
     const clickedItem = items.find(item => item.id === itemId);
+    LoggingService.orderAssemblyLog('[OrderChecklist] handleItemClick', {
+      itemId,
+      itemType: clickedItem?.type,
+      itemStatus: clickedItem?.status,
+      activeBoxIndex,
+      assemblyMode,
+      allowManualSelect
+    });
 
-    // Коробки не клікабельні, крім awaiting_confirmation
-    // Коробки зі статусом 'done' повністю заблоковані від повторного зважування
-    if (clickedItem?.type === 'box' && clickedItem?.status !== 'awaiting_confirmation') {
-      return;
+    // Коробки: зазвичай не клікабельні, крім awaiting_confirmation.
+    // У режимі 'no_scales' дозволяємо підтвердження коробки кліком, якщо вона в статусі 'pending'.
+    if (clickedItem?.type === 'box') {
+      LoggingService.orderAssemblyLog('[OrderChecklist] clicked box', { id: clickedItem.id, status: clickedItem.status, assemblyMode });
+      if (clickedItem?.status === 'awaiting_confirmation') {
+        // allow click through to other logic (if any)
+      } else if (assemblyMode === 'no_scales') {
+        // In 'no_scales' mode allow confirming the box by click regardless of current non-done status
+        LoggingService.orderAssemblyLog('[OrderChecklist] confirming box in no_scales mode (flexible)', { boxId: clickedItem.id, previousStatus: clickedItem.status });
+        if (onItemStatusChange) {
+          onItemStatusChange(clickedItem.id, 'done');
+        }
+        return;
+      } else {
+        LoggingService.orderAssemblyLog('[OrderChecklist] box click ignored (not awaiting_confirmation and not no_scales)', { boxId: clickedItem.id, status: clickedItem.status });
+        return;
+      }
     }
+    // Товари: поведінка відрізняється для режиму 'no_scales'
+    if (clickedItem?.type === 'product') {
+      LoggingService.orderAssemblyLog('[OrderChecklist] clicked product', { id: clickedItem.id, status: clickedItem.status, assemblyMode, allowManualSelect, isCurrentBoxConfirmed });
+      // У режимі 'no_scales' клік може відмічати товар як 'done', якщо дозволений ручний вибір
+      if (assemblyMode === 'no_scales') {
+        if (!allowManualSelect) {
+          LoggingService.orderAssemblyLog('[OrderChecklist] product click ignored: manual select disabled in no_scales', { id: clickedItem.id });
+          return; // без ручного вибору клік не робить нічого
+        }
+        LoggingService.orderAssemblyLog('[OrderChecklist] marking product done in no_scales mode', { id: clickedItem.id });
+        if (onItemStatusChange) {
+          onItemStatusChange(itemId, 'done');
+        }
+        return;
+      }
 
-    // Товари не клікабельні, поки коробка не зважена
-    if (clickedItem?.type === 'product' && !isCurrentBoxConfirmed) {
-      return;
-    }
+      // Стандартна поведінка: товари клікабельні лише якщо коробка підтверджена
+      if (!isCurrentBoxConfirmed) {
+        LoggingService.orderAssemblyLog('[OrderChecklist] product click ignored: box not confirmed', { id: clickedItem.id });
+        return;
+      }
+      if (!allowManualSelect) {
+        // У Debug-режимі емулюємо сканування ШК замість ручного вибору
+        if (isDebugMode && onBarcodeScan) {
+          const code = clickedItem.barcode || clickedItem.sku;
+          if (code) {
+            LoggingService.orderAssemblyLog('[OrderChecklist] debug: emulating barcode scan for product', { id: clickedItem.id, code });
+            onBarcodeScan(code);
+          }
+        }
+        LoggingService.orderAssemblyLog('[OrderChecklist] product click ignored: manual select disabled', { id: clickedItem.id });
+        return;
+      }
 
-    // Ручний вибір товару заблокований в налаштуваннях
-    if (clickedItem?.type === 'product' && !allowManualSelect) {
-      return;
-    }
+      setActiveItemId(itemId);
 
-    setActiveItemId(itemId);
-
-    // Оновлюємо статус через callback
-    if (onItemStatusChange) {
+      // Встановлюємо 'pending' і скидаємо інші pending в тій же коробці
+      if (onItemStatusChange) {
+        LoggingService.orderAssemblyLog('[OrderChecklist] marking product pending (manual select)', { id: clickedItem.id });
         onItemStatusChange(itemId, 'pending');
-        // Скидаємо статус інших елементів в default
-        // Шукаємо поточний елемент, щоб отримати його boxIndex
         const currentItem = items.find(item => item.id === itemId);
         const currentBoxIndex = currentItem?.boxIndex || 0;
 
@@ -373,8 +424,9 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
             onItemStatusChange(item.id, 'default');
           }
         });
-
       }
+      return;
+    }
   };
 
   return (
@@ -425,6 +477,8 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
               isBoxConfirmed={isCurrentBoxConfirmed}
               currentBoxTotalPortions={currentBoxTotalPortions}
               currentBoxTotalWeight={weightInfo}
+              assemblyMode={assemblyMode}
+              allowManualSelect={allowManualSelect}
               onClick={() => handleItemClick(item.id)}
             />
           </div>

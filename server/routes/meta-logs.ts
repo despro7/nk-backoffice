@@ -1,6 +1,6 @@
 
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { dilovodService } from '../services/dilovod/DilovodService.js';
 import { getUserById } from '../lib/utils.js';
 
@@ -124,3 +124,30 @@ router.post('/', async (req, res) => {
 });
 
 export default router;
+
+// POST /api/meta-logs/hide - mark meta_logs as hidden for given orderNumbers by setting hiddenBy._all
+router.post('/hide', async (req, res) => {
+  try {
+    const { orderNumbers } = req.body;
+    if (!Array.isArray(orderNumbers) || orderNumbers.length === 0) {
+      return res.status(400).json({ success: false, error: 'orderNumbers must be a non-empty array' });
+    }
+
+    const now = new Date().toISOString();
+
+    // Build safe SQL list
+    const placeholders = Prisma.join(orderNumbers.map((n: string) => Prisma.sql`${n}`), ',');
+
+    const updated = await prisma.$executeRaw(Prisma.sql`
+      UPDATE meta_logs
+      SET hiddenBy = JSON_SET(COALESCE(hiddenBy, JSON_OBJECT()), '$._all', ${now})
+      WHERE orderNumber IN (${placeholders})
+        AND JSON_EXTRACT(hiddenBy, '$._all') IS NULL
+    `);
+
+    res.json({ success: true, updated });
+  } catch (err) {
+    console.error('meta-logs: failed to hide logs', err);
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});

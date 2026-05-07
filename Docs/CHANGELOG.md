@@ -5,6 +5,36 @@
 
 
 ---
+ 
+## 2026-05-07 — Фікс: meta_logs — форматування помилок автофіналізації
+**Files:** `server/modules/Warehouse/WarehouseAutoFinalizeService.ts`
+
+- **Формат логів:** виправлено формування записів у `meta_logs` при помилках автофіналізації.
+- **Title & Message:** тепер `title` = `Помилка автофіналізації накладної`, `message` = `Помилка автофіналізації накладної №{docNumber}, автор документу: {authorName}`.
+- **Data:** поле `data` зберігається як серіалізований JSON з полями `docNumber`, `docId`, `dilovodId`, `dilovodResponse`, `authorId`, `authorName`.
+- **Callers:** оновлено виклики `writeLog` для передачі `details` (dilovodId / dilovodResponse) при помилках Dilovod і непередбачених помилках.
+
+---
+
+## 2026-05-07 — Фікс: серіалізація запитів до Dilovod і стабілізація Cron
+**Files:** `server/services/dilovod/DilovodApiClient.ts`, `server/services/cronService.ts`
+
+- **Серіалізація запитів:** додано внутрішню чергу у `DilovodApiClient.makeRequest()` — запити до Dilovod тепер виконуються послідовно, щоб уникнути помилки `multithreadApiSession`.
+- **Retry & backoff:** при тимчасових помилках (multithread) застосовується exponential backoff і коротка пауза (30s penalty) перед повторними спробами.
+- **Cron:** виправлено cron-вираз автофіналізації (тепер щодня о 23:55) і додано реєстрацію job у process-level registry, щоб уникнути дублювання завдань при HMR.
+
+---
+
+## 2026-05-06 — Додавання збереження фільтрів SalesDrive у hash URL
+**Files:** `client/components/SalesDriveOrdersTable.tsx`, `Docs/features/salesdrive-filter-url.md`
+
+- **Серiалізація фільтрів у hash:** стан фільтрів сторінки SalesDrive (пошук, категорія пошуку, канали, shipment-фільтр, статус, діапазон дат, сторінка/розмір) тепер зберігається в `window.location.hash`.
+- **Читабельні канали:** список каналів серіалізується через крапку (наприклад `channels=19.22.24.unknown`) — це уникaє URL-encode `%2C` і більш зручно для візуального копіювання.
+- **Опускання дефолтів:** значення за замовчуванням не потрапляють у hash — `searchCategory=orderNumber` і повний набір каналів не записуються, щоб URL залишався коротким.
+- **Відновлення стану:** при завантаженні сторінки фільтри відновлюються з hash (захищено від перезапису під час початкового завантаження каналів).
+- **Документація:** короткий опис правил серіалізації/парсингу доступний у `Docs/features/salesdrive-filter-url.md`.
+
+---
 
 ## 2026-04-30 — WarehouseReturns: створено новий розділ повернень із debug payload preview
 **Files:** `server/services/dilovod/DilovodExportBuilder.ts`, `server/modules/Warehouse/WarehouseController.ts`, `client/pages/Warehouse/WarehouseReturns/index.tsx`, `client/pages/Warehouse/WarehouseReturns/ReturnsActionBar.tsx`, `Docs/features/warehouse-returns-dry-run.md`

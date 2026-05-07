@@ -17,8 +17,23 @@ import {
   getDilovodConfigFromDB,
   formatDateForDilovod
 } from './DilovodUtils.js';
+import { delay } from './DilovodUtils.js';
 
 export class DilovodApiClient {
+  // Простий внутрішній черговий механізм для серіалізації запитів
+  private requestQueue: Array<{
+    request: any;
+    signal?: AbortSignal;
+    resolve: (v: any) => void;
+    reject: (e: any) => void;
+  }> = [];
+
+  // Якщо Dilovod повідомив про penalty — зупиняємо обробку черги до цього часу (ms)
+  private pauseUntil: number | null = null;
+
+  // Чи запускається обробник черги
+  private isProcessingQueue = false;
+
   public getApiKey(): string {
     return this.apiKey;
   }
@@ -101,59 +116,136 @@ export class DilovodApiClient {
     }
   }
 
-  // Основний метод для виконання запитів до API
+  // Основний метод для виконання запитів до API — додає запит у внутрішню чергу
   async makeRequest<T = any>(request: DilovodApiRequest, signal?: AbortSignal): Promise<T> {
-    try {
-      // Гарантуємо, що конфігурація завантажена перед першим запитом
-      if (this.ready) {
-        await this.ready;
-      }
-      
-      // Перевіряємо конфігурацію перед запитом
-      if (!this.apiUrl || !this.apiKey) {
-        const errors = validateDilovodConfig(this.config);
-        throw new Error(`Dilovod API не налаштовано: ${errors.join(', ')}`);
-      }
-
-      // Перевіряємо сигнал скасування перед відправкою запиту
-      if (signal?.aborted) {
-        throw new DOMException('Запит скасовано', 'AbortError');
-      }
-      
-      console.log('Відправляємо запит до Dilovod API:', {
-        ...request,
-        key: request.key ? `${String(request.key).substring(0, 6)}***` : undefined
-      });
-      
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(request),
-        signal,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        console.log('Помилка відповіді Dilovod API:', {
-          status: response.status,
-          statusText: response.statusText,
-          data: errorData
-        });
-        
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json() as T;
-      // console.log('Отримано відповідь від Dilovod API:', data);
-
-      return data;
-    } catch (error) {
-      const errorMessage = handleDilovodApiError(error, 'API Request');
-      console.log('Помилка запиту до Dilovod API:', errorMessage);
-      throw new Error(errorMessage);
+    // Гарантуємо, що конфігурація завантажена перед першим запитом
+    if (this.ready) {
+      await this.ready;
     }
+
+    // Перевіряємо конфігурацію перед запитом
+    if (!this.apiUrl || !this.apiKey) {
+      const errors = validateDilovodConfig(this.config);
+      throw new Error(`Dilovod API не налаштовано: ${errors.join(', ')}`);
+    }
+
+    // Перевіряємо сигнал скасування перед додаванням у чергу
+    if (signal?.aborted) {
+      throw new DOMException('Запит скасовано', 'AbortError');
+    }
+
+    return new Promise<T>((resolve, reject) => {
+      this.requestQueue.push({ request, signal, resolve, reject });
+      // Запускаємо обробку черги (якщо ще не запущено)
+      void this.processQueue();
+    });
+  }
+
+  // Обробник черги запитів — серіалізує запити до Dilovod
+  private async processQueue(): Promise<void> {
+    if (this.isProcessingQueue) return;
+    this.isProcessingQueue = true;
+
+    while (this.requestQueue.length > 0) {
+      // Якщо встановлена пауза (penalty) — чекаємо
+      if (this.pauseUntil && Date.now() < this.pauseUntil) {
+        const waitMs = this.pauseUntil - Date.now();
+        console.log(`DilovodApiClient: Paused due to Dilovod penalty for ${waitMs}ms`);
+        await delay(waitMs);
+      }
+
+      const task = this.requestQueue.shift();
+      if (!task) break;
+
+      const { request, signal, resolve, reject } = task;
+
+      // Якщо зовнішній сигнал уже скасовано — одразу відхиляємо
+      if (signal?.aborted) {
+        reject(new DOMException('Запит скасовано', 'AbortError'));
+        continue;
+      }
+
+      // Повторюємо спроби при тимчасових помилках (multithread)
+      const maxAttempts = 4;
+      let attempt = 0;
+      let lastError: any = null;
+
+      while (attempt < maxAttempts) {
+        attempt++;
+        try {
+          console.log('Відправляємо запит до Dilovod API (черга):', {
+            ...request,
+            key: request.key ? `${String(request.key).substring(0, 6)}***` : undefined,
+            attempt
+          });
+
+          const resp = await fetch(this.apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request),
+            signal,
+          });
+
+          const text = await resp.text();
+
+          if (!resp.ok) {
+            console.log('Помилка відповіді Dilovod API (черга):', { status: resp.status, statusText: resp.statusText, data: text });
+            throw new Error(`HTTP ${resp.status}: ${resp.statusText} ${text}`);
+          }
+
+          // Парсимо JSON (можливі помилки парсингу)
+          let data: any;
+          try { data = JSON.parse(text); } catch { data = text as any; }
+
+          // Якщо Dilovod повернув помилку multithread — ставимо паузу та retry
+          const errStr = data && (data.error || (typeof data === 'string' ? data : undefined));
+          if (errStr && String(errStr).toLowerCase().includes('multithread')) {
+            console.log('DilovodApiClient: Отримано multithread помилку від Dilovod — застосовуємо паузу 30s');
+            // Встановлюємо паузу на 30 секунд
+            this.pauseUntil = Date.now() + 30_000;
+            lastError = new Error('Dilovod: multithreadApiSession');
+            // Якщо ще є спроби — зачекаємо зростаюче backoff
+            const backoffMs = attempt < maxAttempts ? (attempt === 1 ? 1000 : attempt === 2 ? 2000 : 5000) : 30000;
+            await delay(backoffMs);
+            continue;
+          }
+
+          // Успіх — повертаємо результат
+          resolve(data);
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+          const msg = handleDilovodApiError(err, 'Queue request');
+          // Якщо помилка містить multithread — застосовуємо паузу і спробуємо ще раз
+          if (String(msg).toLowerCase().includes('multithread')) {
+            console.log('DilovodApiClient: Помилка multithread в catch — чекаємо 30s перед retry');
+            this.pauseUntil = Date.now() + 30_000;
+            const backoffMs = attempt < maxAttempts ? (attempt === 1 ? 1000 : attempt === 2 ? 2000 : 5000) : 30000;
+            await delay(backoffMs);
+            continue;
+          }
+
+          // Якщо сигнал скасовано — відхиляємо без retry
+          if (signal?.aborted) {
+            reject(new DOMException('Запит скасовано', 'AbortError'));
+            break;
+          }
+
+          // Інші помилки — лог і retry з невеликою затримкою
+          console.log(`DilovodApiClient: Помилка запиту (attempt ${attempt}):`, msg);
+          const backoffMs = attempt < maxAttempts ? 500 * attempt : 1000 * attempt;
+          await delay(backoffMs);
+        }
+      }
+
+      if (lastError) {
+        const finalMsg = handleDilovodApiError(lastError, 'Final queue request');
+        reject(new Error(finalMsg));
+      }
+    }
+
+    this.isProcessingQueue = false;
   }
 
   // Отримання товарів з цінами

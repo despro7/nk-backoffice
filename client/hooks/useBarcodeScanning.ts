@@ -9,6 +9,7 @@ interface UseBarcodeScanningProps {
   activeBoxIndex: number;
   setChecklistItems: React.Dispatch<React.SetStateAction<OrderChecklistItem[]>>;
   debugMode?: boolean;
+  assemblyMode?: 'standard' | 'no_scales';
 }
 
 const SCAN_COUNTDOWN = 2000; // 2 секунди між скануваннями
@@ -18,7 +19,8 @@ export function useBarcodeScanning({
   checklistItems,
   activeBoxIndex,
   setChecklistItems,
-  debugMode = false
+  debugMode = false,
+  assemblyMode = 'standard'
 }: UseBarcodeScanningProps) {
   const [lastScannedCode, setLastScannedCode] = useState<string>('');
   const [lastScanTimestamp, setLastScanTimestamp] = useState<number>(() => Date.now() - 3000);
@@ -176,8 +178,8 @@ export function useBarcodeScanning({
       }
     }
 
-    // 2️⃣ ЯКЩО КОРОБКА НЕ ЗНАЙДЕНА І КОРОБКА ЗВАЖЕНА - ШУКАЄМО ТОВАР
-    if (!foundItem && currentBox?.status === 'done') {
+    // 2️⃣ ЯКЩО КОРОБКА НЕ ЗНАЙДЕНА І КОРОБКА ЗВАЖЕНА (або режим no_scales) - ШУКАЄМО ТОВАР
+    if (!foundItem && (currentBox?.status === 'done' || assemblyMode === 'no_scales')) {
       // Спочатку шукаємо по barcode, потім fallback на SKU
       foundItem = currentChecklistItems.find(item => 
         item.type === 'product' && 
@@ -221,13 +223,14 @@ export function useBarcodeScanning({
         return;
       }
 
-      // Якщо це коробка в статусі 'default' - переводимо її в 'pending'
+      // Якщо це коробка в статусі 'default' — переводимо в 'done' (no_scales) або 'pending' (standard)
       if (foundItem.type === 'box' && foundItem.status === 'default') {
-        console.log('✅ [useBarcodeScanning] Коробка відсканована, переводимо в статус pending:', foundItem.name);
+        const boxNewStatus = assemblyMode === 'no_scales' ? 'done' : 'pending';
+        console.log(`✅ [useBarcodeScanning] Коробка відсканована, переводимо в статус ${boxNewStatus}:`, foundItem.name);
         setChecklistItems(prevItems =>
           prevItems.map(item => {
             if (item.id === foundItem.id) {
-              return { ...item, status: 'pending' as const };
+              return { ...item, status: boxNewStatus as const };
             }
             return item;
           })
@@ -236,7 +239,9 @@ export function useBarcodeScanning({
         // Показуємо повідомлення про успішне сканування коробки
         ToastService.show({
           title: "Коробка відсканована",
-          description: `${foundItem.name} готова до зважування`,
+          description: assemblyMode === 'no_scales'
+            ? `${foundItem.name} підтверджено`
+            : `${foundItem.name} готова до зважування`,
           color: "success",
           hideIcon: false,
           timeout: 2000
@@ -256,29 +261,47 @@ export function useBarcodeScanning({
         return;
       }
 
-      // ТОЧНО ТАКА Ж ЛОГІКА ЯК В handleItemClick:
-      // 1. Встановлюємо статус 'pending' для знайденого товару
-      setChecklistItems(prevItems =>
-        prevItems.map(item => {
-          if (item.id === foundItem.id) {
-            return { ...item, status: 'pending' as const };
-          }
-          // 2. Скидаємо статус інших елементів в default тільки в активній коробці
-          if (item.status === 'pending' && (item.boxIndex || 0) === currentActiveBoxIndex) {
-            return { ...item, status: 'default' as const };
-          }
-          return item;
-        })
-      );
-
-      // Показываем уведомление
-      ToastService.show({
-        title: "Штрих-код відскановано",
-        description: `${foundItem.name} вибрано для комплектації`,
-        color: "success",
-        hideIcon: false,
-        timeout: 2000
-      });
+      if (assemblyMode === 'no_scales') {
+        // У режимі no_scales одразу ставимо товар як done
+        console.log('✅ [useBarcodeScanning] no_scales: товар відскановано → done:', foundItem.name);
+        setChecklistItems(prevItems =>
+          prevItems.map(item => {
+            if (item.id === foundItem.id) {
+              return { ...item, status: 'done' as const };
+            }
+            return item;
+          })
+        );
+        ToastService.show({
+          title: "Товар відмічено як зібраний",
+          description: foundItem.name,
+          color: "success",
+          hideIcon: false,
+          timeout: 2000
+        });
+      } else {
+        // Стандартний режим: встановлюємо 'pending' для зважування
+        // 1. Встановлюємо статус 'pending' для знайденого товару
+        setChecklistItems(prevItems =>
+          prevItems.map(item => {
+            if (item.id === foundItem.id) {
+              return { ...item, status: 'pending' as const };
+            }
+            // 2. Скидаємо статус інших елементів в default тільки в активній коробці
+            if (item.status === 'pending' && (item.boxIndex || 0) === currentActiveBoxIndex) {
+              return { ...item, status: 'default' as const };
+            }
+            return item;
+          })
+        );
+        ToastService.show({
+          title: "Штрих-код відскановано",
+          description: `${foundItem.name} вибрано для комплектації`,
+          color: "success",
+          hideIcon: false,
+          timeout: 2000
+        });
+      }
 
     } else {
       console.log('❌ [useBarcodeScanning] Товар/коробка не знайдені:', scannedCode);

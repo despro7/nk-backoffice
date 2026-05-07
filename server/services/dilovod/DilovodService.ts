@@ -1646,21 +1646,21 @@ export class DilovodService {
     const orderNumbers = forceAll
       ? await this.fetchAllOrderNumbers(limit, offset)
       : await this.fetchIncompleteOrderNumbers(limit, offset);
-    return this.processOrderCheck(orderNumbers);
+    return this.processOrderCheck(orderNumbers, forceAll);
   }
 
   /**
    * MANUAL MODE: Перевірка конкретних номерів замовлень
    * Використання: UI з масивом orderNumbers
    */
-  async checkOrdersByNumbers(orderNumbers: string[]): Promise<{
+  async checkOrdersByNumbers(orderNumbers: string[], includeAllStatuses: boolean = false): Promise<{
     success: boolean;
     message: string;
     updatedCount: number;
     errors?: any[];
     data: any[];
   }> {
-    return this.processOrderCheck(orderNumbers);
+    return this.processOrderCheck(orderNumbers, includeAllStatuses);
   }
 
   /**
@@ -1793,7 +1793,7 @@ export class DilovodService {
   /**
    * ПРИВАТНИЙ: Спільна логіка перевірки замовлень в Dilovod
    */
-  private async processOrderCheck(orderNumbers: string[]): Promise<{
+  private async processOrderCheck(orderNumbers: string[], includeAllStatuses: boolean = false): Promise<{
     success: boolean;
     message: string;
     updatedCount: number;
@@ -1953,6 +1953,7 @@ export class DilovodService {
 
           // Sale потрібен для status >= '3' завжди (для підрахунку дублікатів навіть якщо дата вже є)
           const needSaleRequest = contractIds.filter(id => {
+            if (includeAllStatuses) return true;
             const order = existingOrders.find(o => o.dilovodDocId === id);
             const orderStatus = parseInt(order?.status || '0');
             // Запитуємо для всіх зі статусом >= 3 — щоб виявляти дублікати при кожній перевірці
@@ -2033,9 +2034,9 @@ export class DilovodService {
             const localOrder = existingOrders.find(o => o.dilovodDocId === contractId);
             const updateData: any = {};
 
-            // Sale тільки для status >= '3'
+            // Sale тільки для status >= '3' (або примусово, коли includeAllStatuses === true)
             const orderStatus = parseInt(localOrder?.status || '0');
-            if (orderStatus >= 3 && saleByContract.has(contractId)) {
+            if ((orderStatus >= 3 || includeAllStatuses) && saleByContract.has(contractId)) {
               // Записуємо дату відвантаження, якщо ще немає
               if (!localOrder?.dilovodSaleExportDate) {
                 updateData.dilovodSaleExportDate = new Date(saleByContract.get(contractId).date).toISOString();
@@ -2048,7 +2049,7 @@ export class DilovodService {
                   console.log(`⚠️ Замовлення ${orderInfo.orderNumber}: знайдено ${saleCount} документів відвантаження (має бути 1)!`);
                 }
               }
-            } else if (orderStatus >= 3 && !saleByContract.has(contractId) && needSaleRequest.includes(contractId)) {
+            } else if ((orderStatus >= 3 || includeAllStatuses) && !saleByContract.has(contractId) && needSaleRequest.includes(contractId)) {
               // Запит виконували, але документів не знайдено — скидаємо лічильник
               if (localOrder?.dilovodSaleDocsCount !== 0) {
                 updateData.dilovodSaleDocsCount = 0;

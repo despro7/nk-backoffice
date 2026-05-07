@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useApi } from './useApi';
 
 export interface AssemblySettings {
+  mode?: 'standard' | 'no_scales';
   boxInitialStatus: 'default' | 'pending';
   autoSelectNext: boolean;
   allowManualSelect: boolean;
@@ -12,6 +13,7 @@ export interface AssemblySettings {
 }
 
 const DEFAULT_ASSEMBLY_SETTINGS: AssemblySettings = {
+  mode: 'standard',
   boxInitialStatus: 'default',
   autoSelectNext: true,
   allowManualSelect: false,
@@ -46,6 +48,7 @@ export function useAssemblySettings(isAuthenticated: boolean = false): AssemblyS
         const find = (key: string) => allSettings.find((s: any) => s.key === key);
 
         const loaded = {
+          mode: (find('assembly_mode')?.value as 'standard' | 'no_scales') || DEFAULT_ASSEMBLY_SETTINGS.mode,
           boxInitialStatus: (find('assembly_box_initial_status')?.value || DEFAULT_ASSEMBLY_SETTINGS.boxInitialStatus) as 'default' | 'pending',
           autoSelectNext: (find('assembly_auto_select_next')?.value ?? 'true') === 'true',
           allowManualSelect: (find('assembly_allow_manual_select')?.value ?? 'false') === 'true',

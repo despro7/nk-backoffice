@@ -30,9 +30,11 @@ interface OrderChecklistItemProps {
     totalOrderWeight: number;
   };
   onClick: () => void;
+  assemblyMode?: 'standard' | 'no_scales';
+  allowManualSelect?: boolean;
 }
 
-const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick }: OrderChecklistItemProps) => {
+const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick, assemblyMode = 'standard', allowManualSelect = false }: OrderChecklistItemProps) => {
   const { name, quantity, status, expectedWeight, type, boxSettings, sku, barcode } = item;
 
   const { isDebugMode } = useDebug();
@@ -59,7 +61,10 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
 
   // Коробки/Товари клікабельні тільки якщо очікують підтвердження
   // const isClickable = !isDone && !isItemBoxConfirmed && !isBoxDone && (type === 'box' ? status === 'awaiting_confirmation' : isBoxConfirmed && status === 'default');
-  const isClickable = isBoxConfirmed && type === 'product' && status === 'default';
+  const isNoScales = assemblyMode === 'no_scales';
+  const isClickable = isNoScales
+    ? (type === 'box' ? status !== 'done' : (allowManualSelect && status !== 'done'))
+    : (isBoxConfirmed && type === 'product' && status === 'default');
 
   return (
     <div className={itemStateClasses} onClick={isClickable ? onClick : undefined}>
