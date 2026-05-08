@@ -620,20 +620,8 @@ export class DilovodExportBuilder {
       console.log(`  ❌ ${errorMessage}`);
       warnings.push(errorMessage);
 
-      // У разі помилки використовуємо fallback з мок-даними
-      const fallbackPhone = normalizePhoneNumber(order.customerPhone || '');
-      const fallbackPerson: DilovodPerson = {
-        id: '',  // Fallback ID
-        code: '',
-        name: order.customerName || 'Невідомий клієнт',
-        phone: fallbackPhone,
-        personType: DILOVOD_CONSTANTS.PERSON_TYPE_INDIVIDUAL
-      };
-
-      console.log(`  ⚠️ Використовуємо fallback контрагента: ${fallbackPerson.name}`);
-      warnings.push('Використано резервного контрагента (без id/code) через помилку API');
-
-      return fallbackPerson;
+      // Без fallback: передаємо помилку вгору, щоб зупинити процес експорту
+      throw new Error(errorMessage);
     }
   }
 

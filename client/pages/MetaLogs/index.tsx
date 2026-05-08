@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Tabs, Tab, Button } from '@heroui/react';
-import MetaLogTable from './components/MetaLogTable';
+import ShipmentMetaLogTable from './components/ShipmentMetaLogTable';
+import DocumentMetaLogTable from './components/DocumentMetaLogTable';
+import OtherMetaLogTable from './components/OtherMetaLogTable';
 import useMetaLogs from './hooks/useMetaLogs';
 import { useNotifications } from '../../hooks/useNotifications';
 import { ToastService } from '../../services/ToastService';
@@ -57,15 +59,15 @@ export default function MetaLogNotifications() {
           </div>
       </div>
         {activeTab === 'shipment' && (
-          <MetaLogTable rows={rowsShipment} title="Відвантаження замовлень" isAdmin={isAdmin} onResolve={handleResolve} loading={loading} />
+          <ShipmentMetaLogTable rows={rowsShipment} title="Відвантаження замовлень" isAdmin={isAdmin} onResolve={handleResolve} loading={loading} />
         )}
 
         {activeTab === 'doc' && (
-          <MetaLogTable rows={rowsDoc} title="Збереження документів" hideOrderNumber={true} isAdmin={isAdmin} onResolve={handleResolve} loading={loading} />
+          <DocumentMetaLogTable rows={rowsDoc} title="Збереження документів" isAdmin={isAdmin} onResolve={handleResolve} loading={loading} />
         )}
 
         {activeTab === 'other' && (
-          <MetaLogTable rows={rowsOther} title="Інші помилки" isAdmin={isAdmin} onResolve={handleResolve} loading={loading} simple={true} />
+          <OtherMetaLogTable rows={rowsOther} title="Інші помилки" isAdmin={isAdmin} onResolve={handleResolve} loading={loading} />
         )}
     </div>
   );
