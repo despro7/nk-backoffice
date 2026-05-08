@@ -32,7 +32,7 @@ export function parseShipmentMessage(row: MetaLogRow): ParsedItems {
     // exclude lines containing em-dash separators that usually indicate field errors
     if (it.includes('—') || it.includes('--')) return false;
     // product-like heuristics: keep only lines that contain SKU or unit or comma+digits
-    const isSku = /арт[:\s]*[0-9A-Za-z\-]+/i.test(it);
+    const isSku = /(?<!\p{L})арт[:\s]*[0-9A-Za-z\-]+/iu.test(it);
     const isUnit = /,\s*\d+[\d.,]*\s*(г|кг|шт|шт\.|мл|л)/i.test(it) || /\b\d+[\d.,]*\s*(шт|шт\.)/i.test(it) || /\d+\s*г/i.test(it);
     if (!isSku && !isUnit) return false;
     return true;
@@ -45,7 +45,7 @@ export function parseShipmentMessage(row: MetaLogRow): ParsedItems {
   const missing: string[] = [];
 
   for (const it of filteredItems) {
-    const skuMatch = it.match(/арт[:\s]*([^|,\s]+)/i);
+    const skuMatch = it.match(/(?<!\p{L})арт[:\s]*([^|]+)/iu);
     const needMatch = it.match(/потрібн[оа]*[:\s]*([^|]+)/i);
     const stockMatch = it.match(/залишок[:\s]*([^|]+)/i);
     const missingMatch = it.match(/бракує[:\s]*([^|]+)/i);
@@ -55,7 +55,14 @@ export function parseShipmentMessage(row: MetaLogRow): ParsedItems {
     if (!name && row.productName) name = String(row.productName);
 
     names.push(name || '—');
-    skus.push((skuMatch && skuMatch[1].trim()) || (row.sku ? String(row.sku) : '—'));
+    let skuVal = (skuMatch && skuMatch[1].trim()) || (row.sku ? String(row.sku) : '—');
+    // clean sku: take first token of captured group and remove non-alphanumerics
+    if (skuVal && skuVal !== '—') {
+      const tok = String(skuVal).trim().split(/[\s|,]+/)[0];
+      const cleaned = (tok.match(/[0-9A-Za-z\-]+/) || [tok])[0];
+      skuVal = cleaned || skuVal;
+    }
+    skus.push(skuVal);
     needed.push((needMatch && needMatch[1].trim()) || (row.needed != null ? String(row.needed) : '—'));
     stock.push((stockMatch && stockMatch[1].trim()) || (row.stock != null ? String(row.stock) : '—'));
     missing.push((missingMatch && missingMatch[1].trim()) || (row.missing != null ? String(row.missing) : '—'));
@@ -65,7 +72,7 @@ export function parseShipmentMessage(row: MetaLogRow): ParsedItems {
     // fallback only if productName/sku looks like a product (contains unit or SKU)
     const pn = row.productName ? String(row.productName) : '';
     const hasSku = row.sku ? true : false;
-    const pnIsProduct = /,\s*\d+[\d.,]*\s*(г|кг|шт|шт\.|мл|л)/i.test(pn) || /арт[:\s]*[0-9A-Za-z\-]+/i.test(pn);
+    const pnIsProduct = /,\s*\d+[\d.,]*\s*(г|кг|шт|шт\.|мл|л)/i.test(pn) || /(?<!\p{L})арт[:\s]*[0-9A-Za-z\-]+/iu.test(pn);
     if (pnIsProduct || hasSku) {
       return {
         names: [row.productName ?? '—'],
