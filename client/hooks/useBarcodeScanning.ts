@@ -362,7 +362,7 @@ export function useBarcodeScanning({
         }, `unknown-not-found-${scannedCode}`);
       }
     }
-  }, [debugMode, showToastWithCountdown, setChecklistItems]);
+  }, [debugMode, showToastWithCountdown, setChecklistItems, assemblyMode]);
 
   return {
     handleBarcodeScan,
