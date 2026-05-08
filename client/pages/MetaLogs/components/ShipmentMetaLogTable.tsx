@@ -4,7 +4,7 @@ import { Tooltip, Drawer, DrawerContent, DrawerHeader, DrawerBody } from '@herou
 import { DynamicIcon } from 'lucide-react/dynamic';
 import SalesDriveOrdersTable from '../../../components/SalesDriveOrdersTable';
 import type { MetaLogRow } from '@shared/types/metaLog';
-import { parseShipmentMessage as parseShipmentMessageUtil, dedupeAndNormalize } from '@/lib/metaLogsParser';
+import { parseShipmentMessage as parseShipmentMessageUtil, dedupeAndNormalize, formatInitiator } from '@/lib/metaLogsParser';
 
 export default function ShipmentMetaLogTable({ rows, title, isAdmin, onResolve, loading }: { rows: MetaLogRow[]; title?: string; isAdmin?: boolean; onResolve?: (sourceIds: Array<number | string>) => Promise<void>; loading?: boolean }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -54,28 +54,6 @@ export default function ShipmentMetaLogTable({ rows, title, isAdmin, onResolve, 
     if (v === null || v === undefined) return '—';
     if (Number.isFinite(v)) return (Math.round(v) === v ? String(v) : String(v));
     return String(v);
-  };
-
-  const formatInitiator = (initiator: MetaLogRow['initiator'] | string | undefined) => {
-    if (!initiator) return 'system';
-    const raw = typeof initiator === 'string' ? initiator : (initiator as any).name ?? (initiator as any).raw ?? String(initiator);
-    // split tokens and map webhook/manual to emojis
-    const parts = String(raw).split(/[,;|]\s*/).map(p => p.trim()).filter(Boolean);
-    let hasHumanName = false;
-    const mapped = parts.map(p => {
-      const low = p.toLowerCase();
-      if (/(webhook|^webhook:)/.test(low)) return '🤖 Webhook';
-      if (/^manual[:\-]?/i.test(low) || /\bmanual\b/i.test(low)) return '👤 WH Keeper';
-      if (/\p{L}+\s+\p{L}+/u.test(p)) { hasHumanName = true; return `👤 ${p}`; }
-      return p;
-    });
-    // if we have a named human, drop plain '👤 WH Keeper' tokens only when an actual name exists
-    const filtered = mapped.filter(x => !(hasHumanName && x === '👤 WH Keeper'));
-    const unique = Array.from(new Set(filtered));
-    // prefer returning human names only when present
-    const humanOnly = unique.filter(x => x.startsWith('👤'));
-    if (humanOnly.length > 0) return humanOnly.join(', ');
-    return unique.join(', ');
   };
 
   const renderAttemptsTooltip = (attemptsList: MetaLogRow['attemptsList']) => {

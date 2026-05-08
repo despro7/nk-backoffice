@@ -151,7 +151,7 @@ export function OrderRefreshButton({ orderId, lastSynced, onRefreshComplete }: O
 						color: 'default',
 						timeout: 3000,
 						hideIcon: false,
-						icon: <DynamicIcon name="info" strokeWidth={2} />
+						icon: 'info'
 					});
 				}
 

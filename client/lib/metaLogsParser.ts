@@ -142,3 +142,36 @@ export function dedupeAndNormalize(parsed: ParsedItems): ParsedItems {
   }
   return { names: dedupNames, skus: dedupSkus, needed: dedupNeeded, stock: dedupStock, missing: dedupMissing };
 }
+
+export function formatInitiator(initiator: any): string {
+  if (!initiator) return 'system';
+  const raw = typeof initiator === 'string' ? initiator : (initiator as any).name ?? (initiator as any).raw ?? String(initiator);
+  const parts = String(raw).split(/[,;|]\s*/).map((p) => p.trim()).filter(Boolean);
+  let hasHumanName = false;
+  const mapped = parts.map(p => {
+    const low = p.toLowerCase();
+    if (/(webhook|^webhook:)/.test(low)) return '🤖 Webhook';
+    if (/^manual[:\-]?/i.test(low) || /\bmanual\b/i.test(low)) return '👤 WH Keeper';
+    if (/\p{L}+\s+\p{L}+/u.test(p)) { hasHumanName = true; return `👤 ${p}`; }
+    if (/^[\p{Lu}][\p{L}\p{M}'’\-]+$/u.test(p)) { hasHumanName = true; return `👤 ${p}`; }
+    return p;
+  });
+  const filtered = mapped.filter(x => !(hasHumanName && x === '👤 WH Keeper'));
+  const unique = Array.from(new Set(filtered));
+  const humanOnly = unique.filter(x => x.startsWith('👤'));
+  if (humanOnly.length > 0) return humanOnly.join(', ');
+  return unique.join(', ');
+}
+
+export function parseSkuFromMessage(msg: string | undefined | null): string | undefined {
+  if (!msg) return undefined;
+  const m = String(msg).match(/Артикул[:\s]*([^|,;\s]+)/i)
+    || String(msg).match(/(?<!\p{L})арт\.?[:\s]*([^|,;\s]+)/iu)
+    || String(msg).match(/(?<!\p{L})арт[:\s]*([^|,\s]+)/iu);
+  if (!m) return undefined;
+  const raw = m[1].trim();
+  // take first token and keep alphanumerics and dash
+  const tok = raw.split(/[\s|,]+/)[0];
+  const cleaned = (tok.match(/[0-9A-Za-z\-]+/) || [tok])[0];
+  return cleaned || undefined;
+}

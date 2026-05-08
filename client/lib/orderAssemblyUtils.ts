@@ -401,7 +401,7 @@ export const combineBoxesWithItems = (
           // Для монолітних комплектів: розподіл робиться по порціях (remaining),
           // але в productItems зберігаємо оригінальну кількість з portionsPerItem
           // щоб при підрахунку portions не множити подвійно
-          const displayQuantity = item.portionsPerItem ? item.quantity : remaining;
+          const displayQuantity = item.portionsPerItem ? Math.floor(remaining / (item.portionsPerItem || 1)) : remaining;
           
           productItems.push({
             ...item,
@@ -458,7 +458,20 @@ export const combineBoxesWithItems = (
           // Для монолітних комплектів: розподіл робиться по порціях (toAdd),
           // але в productItems зберігаємо оригінальну кількість з portionsPerItem
           // щоб при підрахунку portions не множити подвійно
-          const displayQuantity = item.portionsPerItem ? item.quantity : toAdd;
+          // Якщо товар монолітний (portionsPerItem) — округлюємо додані порції до кратного кількості порцій в одному комплекті
+          let toAddAdjusted = toAdd;
+          if (item.portionsPerItem) {
+            const per = item.portionsPerItem || 1;
+            toAddAdjusted = Math.floor(toAdd / per) * per;
+            if (toAddAdjusted <= 0) {
+              console.warn(`⚠️ Не вдалося розподілити ${remaining} порцій товару "${item.name}" - недостатньо місця для повного комплекту`);
+              itemUnallocated = remaining;
+              totalUnallocated += remaining;
+              break;
+            }
+          }
+
+          const displayQuantity = item.portionsPerItem ? Math.floor(toAddAdjusted / (item.portionsPerItem || 1)) : toAddAdjusted;
           
           productItems.push({
             ...item,
@@ -469,9 +482,9 @@ export const combineBoxesWithItems = (
             boxIndex: targetBox.index
           });
           
-          targetBox.portionsCount += toAdd;
-          targetBox.currentWeight += itemWeightPerUnit * toAdd;
-          remaining -= toAdd;
+          targetBox.portionsCount += toAddAdjusted;
+          targetBox.currentWeight += itemWeightPerUnit * toAddAdjusted;
+          remaining -= toAddAdjusted;
           partIndex++;
         }
       }

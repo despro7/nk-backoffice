@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { formatRelativeDate } from "@/lib/formatUtils";
 import { Tooltip, Drawer, DrawerContent, DrawerHeader, DrawerBody } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import SalesDriveOrdersTable from '../../../components/SalesDriveOrdersTable';
+import SalesDriveOrdersTable from '@/components/SalesDriveOrdersTable';
+import { formatInitiator, parseSkuFromMessage } from '@/lib/metaLogsParser';
 import type { MetaLogRow } from '@shared/types/metaLog';
 
 export default function MetaLogTable({ rows, title, hideOrderNumber = false, isAdmin, onResolve, loading, simple = false }: { rows: MetaLogRow[]; title?: string; hideOrderNumber?: boolean; isAdmin?: boolean; onResolve?: (sourceIds: Array<number | string>) => Promise<void>; loading?: boolean; simple?: boolean }) {
@@ -13,37 +14,18 @@ export default function MetaLogTable({ rows, title, hideOrderNumber = false, isA
   };
 
   const renderInitiator = (initiator: MetaLogRow['initiator']) => {
-    if (!initiator) return <span>system</span>;
-    const raw = typeof initiator === 'object' ? (initiator.name ?? (initiator as any).raw ?? JSON.stringify(initiator)) : String(initiator);
-    // split tokens by comma/semicolon/pipe only — keep multi-word names intact
-    const parts = raw.split(/[,;|]\s*/).map(p => p.trim()).filter(Boolean);
-    const emojis = new Set<string>();
-    const textParts = new Set<string>();
-    for (const p of parts) {
-      const low = p.toLowerCase();
-      if (/(manual|user|human|person)/.test(low)) { emojis.add('👤'); continue; }
-      if (/(webhook|bot|robot|auto|system|cron)/.test(low)) { emojis.add('🤖'); continue; }
-      // keep meaningful tokens like status_change
-      textParts.add(p);
-    }
-    const emojiStr = Array.from(emojis).join(' ');
-    const textStr = Array.from(textParts).join(', ');
-    const label = [emojiStr, textStr].filter(Boolean).join(' | ');
-    return (
-      <span className="flex items-center gap-2"><span className="text-sm">{label}</span></span>
-    );
+    const mapped = formatInitiator((initiator as any) ?? undefined);
+    return <span className="flex items-center gap-2"><span className="text-sm">{mapped}</span></span>;
   };
+  
   const getMessageText = (r: MetaLogRow) => {
     const raw = (r.rawMessage ?? (r as any).message ?? (r.data && ((r.data.error as string) ?? (r.data.dilovodResponse && (r.data.dilovodResponse.error as string))))) ?? '';
     // strip simple HTML tags for plain display
     return String(raw).replace(/<[^>]+>/g, '').replace(/\s{2,}/g, ' ').trim();
   };
 
-  const parseSkuFromMessage = (msg: string) => {
-    if (!msg) return undefined;
-    const m = msg.match(/Артикул[:\s]*([^|,;\s]+)/i) || msg.match(/арт\.?[:\s]*([^|,;\s]+)/i);
-    return m ? m[1] : undefined;
-  };
+  // use centralized parser
+  // parseSkuFromMessage imported from metaLogsParser
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerOrder, setDrawerOrder] = useState<string | null>(null);
   const [processingIds, setProcessingIds] = useState<Array<number | string>>([]);
@@ -188,17 +170,24 @@ export default function MetaLogTable({ rows, title, hideOrderNumber = false, isA
                     <td className="px-3 py-2 align-top text-red-600 font-medium">{r.missing == null ? '—' : (r.missing === 0 ? '—' : String(r.missing))}</td>
                     <td className="px-3 py-2 align-top">{renderInitiator(r.initiator)}</td>
                     <td className="px-3 py-2 align-top">
-                      {Array.isArray(r.attemptsList) && r.attemptsList.length > 1 ? (
-                        <Tooltip
-                          content={<div className="text-xs max-w-[320px]">{r.attemptsList.slice().sort((a,b)=> new Date(a.datetime).getTime() - new Date(b.datetime).getTime()).map(a => (
-                                <div key={String(a.id)} className="py-0.5">{new Date(a.datetime).toLocaleString()} – {typeof a.initiator === 'string' ? a.initiator : (a.initiator && (a.initiator as any).name) ?? (a.initiator && (a.initiator as any).raw) ?? '—'}</div>
-                              ))}</div>}
-                        >
-                          <span className="underline cursor-help">{r.attemptsList.length}</span>
-                        </Tooltip>
-                      ) : (
-                        <span>{r.attempts ?? r.occurrenceCount ?? '—'}</span>
-                      )}
+                      {(() => {
+                        const combined = (() => {
+                          const map = new Map<string, any>();
+                          if (Array.isArray(r.attemptsList)) for (const a of r.attemptsList) map.set(String(a.id), a);
+                          if (Array.isArray((r as any)._rows)) for (const sub of (r as any)._rows) if (Array.isArray(sub.attemptsList)) for (const a of sub.attemptsList) map.set(String(a.id), a);
+                          return Array.from(map.values()).sort((a,b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+                        })();
+                        if (combined.length > 1) {
+                          return (
+                            <Tooltip content={<div className="text-xs max-w-[320px]">{combined.map(a => (
+                              <div key={String(a.id)} className="py-0.5">{new Date(a.datetime).toLocaleString()} – {formatInitiator(a.initiator)}{typeof a.initiator === 'object' ? ` (${((a.initiator as any).name ?? (a.initiator as any).raw) ?? JSON.stringify(a.initiator)})` : ''}</div>
+                            ))}</div>}>
+                              <span className="underline cursor-help">{combined.length}</span>
+                            </Tooltip>
+                          );
+                        }
+                        return <span>{(r.attempts ?? r.occurrenceCount ?? '—')}</span>;
+                      })()}
                     </td>
                     <td className="px-3 py-2 align-top">
                       {isAdmin && onResolve ? (
