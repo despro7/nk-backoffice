@@ -406,9 +406,10 @@ export default function OrderView() {
     if (!externalId) return;
     
     console.log('🔄 [OrderView] Повне оновлення замовлення після refresh');
-    await fetchOrderDetails(externalId);
+    // Передаємо monolithicCategoryIds явно, щоб розгортання наборів зберігало монолітні категорії
+    await fetchOrderDetails(externalId, monolithicCategoryIds);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalId]);
+  }, [externalId, monolithicCategoryIds]);
 
   // Завантажуємо деталі замовлення при зміні externalId
   useEffect(() => {
@@ -561,9 +562,7 @@ export default function OrderView() {
                   <div className="flex items-start gap-3">
                     <DynamicIcon name="alert-triangle" size={24} className="text-red-600 flex-shrink-0 mt-0.5" />
                     <div className="flex-1">
-                      <h3 className="text-lg font-bold text-red-900 mb-2">
-                        ⚠️ Критична помилка розподілу товарів
-                      </h3>
+                      <h3 className="text-lg font-bold text-red-900 mb-2">Критична помилка розподілу товарів</h3>
                       <p className="text-red-800 font-semibold mb-2">
                         Не всі товари поміщаються в обрані коробки! Відсутні <strong>{unallocatedPortions} порцій</strong>.
                       </p>
@@ -578,7 +577,7 @@ export default function OrderView() {
                         </ul>
                       </div>
                       <p className="text-sm text-red-700 mt-3">
-                        <strong>Рішення:</strong> Додайте більше коробок або оберіть коробки більшої місткості.
+                        <strong>Рішення:</strong> Зверніться до адміністратора.
                       </p>
                     </div>
                   </div>

@@ -36,6 +36,11 @@ export default function WarehouseReturns() {
 
   const { isDebugMode } = useDebug();
   const { isAdmin } = useRoleAccess();
+  // load available firms on mount
+  useEffect(() => {
+    returns.loadAvailableFirms?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [showPayloadPreview, setShowPayloadPreview] = useState(false);
   const [payloadPreview, setPayloadPreview] = useState<Record<string, any> | null>(null);
   const [isLoadingPayload, setIsLoadingPayload] = useState(false);
@@ -108,6 +113,7 @@ export default function WarehouseReturns() {
         body: JSON.stringify({
           orderId: returns.selectedOrderId,
           date: dateValue,
+          firmId: returns.firmId || undefined,
           items: returns.items.map((item) => ({
             sku: item.sku,
             batchId: item.selectedBatchId,
@@ -159,6 +165,10 @@ export default function WarehouseReturns() {
       returns.setComment(record.comment || '');
       returns.setReturnReason(record.returnReason);
       returns.setCustomReason(record.customReason || '');
+
+      // restore selected firm from history record
+      returns.setFirmId?.(record.firmId ?? null);
+      returns.setFirmName?.(record.firmName || '');
 
       // Завантажити замовлення
       await returns.handleSearch();
@@ -366,7 +376,30 @@ export default function WarehouseReturns() {
                         </div>
                         <div className="space-y-1">
                           <div className="text-xs">Фірма</div>
-                          <div className="text-gray-900">{returns.firmName || returns.firmId || 'Не визначено'}</div>
+                          {returns.availableFirms && returns.availableFirms.length > 0 ? (
+                            <Select
+                              id="select-firm"
+                              labelPlacement="outside"
+                              value={returns.firmId ?? ''}
+                              onChange={(e) => {
+                                const v = e.target.value || null;
+                                returns.setFirmId?.(v);
+                                const f = returns.availableFirms.find((x) => x.id === v);
+                                returns.setFirmName?.(f?.name || '');
+                              }}
+                              selectedKeys={returns.firmId ? [returns.firmId] : []}
+                              classNames={{ trigger: 'w-full min-w-[200px] border border-gray-200 bg-white' }}
+                            >
+                              <SelectItem key="" textValue="Не визначено">Не визначено</SelectItem>
+                              <>
+                                {returns.availableFirms.map((f) => (
+                                  <SelectItem key={f.id} textValue={f.name}>{f.name}</SelectItem>
+                                ))}
+                              </>
+                            </Select>
+                          ) : (
+                            <div className="text-gray-900">{returns.firmName || returns.firmId || 'Не визначено'}</div>
+                          )}
                         </div>
                         <div className="space-y-1">
                           <div className="text-xs">ТТН</div>

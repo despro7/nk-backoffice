@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { expandProductSets } from '@/lib/orderAssemblyUtils';
 import { useApi } from '@/hooks/useApi';
 import { ToastService } from '@/services/ToastService';
@@ -48,6 +48,7 @@ export function useWarehouseReturns() {
   const [dilovodDocId, setDilovodDocId] = useState<string>('');
   const [firmId, setFirmId] = useState<string | null>(null);
   const [firmName, setFirmName] = useState<string>('');
+  const [availableFirms, setAvailableFirms] = useState<Array<{ id: string; name: string }>>([]);
   const [ttn, setTtn] = useState<string>('');
 
   const [items, setItems] = useState<ReturnItem[]>([]);
@@ -113,6 +114,21 @@ export function useWarehouseReturns() {
     }
   }, [apiCall]);
 
+  const loadAvailableFirms = useCallback(async () => {
+    try {
+      const response = await apiCall('/api/dilovod/directories');
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data?.error || 'Failed to load directories');
+      const firms = Array.isArray(data.data?.firms) ? data.data.firms : [];
+      setAvailableFirms(firms.map((f: any) => ({ id: f.id, name: f.name })));
+      return firms;
+    } catch (err) {
+      console.warn('[useWarehouseReturns] loadAvailableFirms failed:', err);
+      setAvailableFirms([]);
+      return [];
+    }
+  }, [apiCall]);
+
   const loadBatchNumbersForItems = useCallback(async (orderFirmId: string | null, itemsToLoad: ReturnItem[], asOfDate?: Date) => {
     const itemsNeedingBatches = itemsToLoad.filter((item) => item.availableBatches === null);
     if (itemsNeedingBatches.length === 0) return;
@@ -173,6 +189,19 @@ export function useWarehouseReturns() {
       };
     }));
   }, []);
+
+  // When firmId changes, reload batches for current items
+  useEffect(() => {
+    if (items.length === 0) return;
+
+    // Prepare items with cleared batches so loader will fetch them
+    const itemsToReload = items.map((it) => ({ ...it, availableBatches: null }));
+    setItems(itemsToReload);
+
+    const batchDate = dilovodSaleExportDate ? new Date(dilovodSaleExportDate) : returnDate ? new Date(returnDate) : undefined;
+    void loadBatchNumbersForItems(firmId, itemsToReload, batchDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firmId, items.length, dilovodSaleExportDate, returnDate, loadBatchNumbersForItems]);
 
   const loadOrderForReturn = useCallback(async (orderId: number) => {
     setIsLoading(true);
@@ -373,6 +402,7 @@ export function useWarehouseReturns() {
         date: payloadDate,
         comment,
         reason: returnReason === 'Інше' ? customReason || returnReason : returnReason,
+        firmId: firmId || undefined,
         items: items.map((item) => ({ sku: item.sku, batchId: item.selectedBatchId, quantity: item.quantity, price: item.price })),
       };
 
@@ -437,7 +467,11 @@ export function useWarehouseReturns() {
     dilovodDocId,
     firmId,
     firmName,
+    availableFirms,
     items,
+    loadAvailableFirms,
+    setFirmId,
+    setFirmName,
     comment,
     setComment,
     ttn,
@@ -469,3 +503,4 @@ export function useWarehouseReturns() {
     setCustomReason,
   } as const;
 }
+

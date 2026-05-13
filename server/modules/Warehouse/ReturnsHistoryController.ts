@@ -114,6 +114,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
 
     const { dilovodExportBuilder } = await import('../../services/dilovod/DilovodExportBuilder.js');
     const requestedDate = req.body?.date ?? null;
+    const overrideFirmId = req.body?.firmId ?? null;
     const { payload, warnings } = await dilovodExportBuilder.buildReturnPayload(
       userId,
       String(orderId),
@@ -126,6 +127,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
         quantity: Number(item.quantity),
         price: Number(item.price),
       })),
+      overrideFirmId,
       requestedDate,
     );
 

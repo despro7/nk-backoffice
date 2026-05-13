@@ -262,6 +262,7 @@ export class DilovodExportBuilder {
     comment: string,
     reason: string,
     returnItems: Array<{ sku: string; batchId: string; quantity: number; price: number }>,
+    overrideFirmId?: string | null,
     documentDate?: string | null, // optional date string (YYYY-MM-DD HH:mm:ss or ISO) to use for header.date
     documentId?: string, // ID документа в Dilovod (для видалення/оновлення)
   ): Promise<{ payload: DilovodExportPayload; warnings: string[] }> {
@@ -283,7 +284,7 @@ export class DilovodExportBuilder {
       context.directories = await this.loadDirectories();
       this.validateSettings(context);
 
-      const { header: baseHeader } = await this.buildHeaderWithMapping(context, { allowCreatePerson: false, userId: userId });
+      const { header: baseHeader } = await this.buildHeaderWithMapping(context, { allowCreatePerson: false, userId: userId, overrideFirmId });
       const person = await this.findOrCreatePerson(context, { allowCreatePerson: false });
 
       // Determine document date: prefer provided documentDate, fall back to current local time
@@ -425,7 +426,7 @@ export class DilovodExportBuilder {
   /**
    * Побудувати заголовок документа з мапінгом каналу
    */
-  private async buildHeaderWithMapping(context: ExportBuildContext, options?: { dryRun?: boolean; personId?: string; allowCreatePerson?: boolean; userId?: number }): Promise<{
+  private async buildHeaderWithMapping(context: ExportBuildContext, options?: { dryRun?: boolean; personId?: string; allowCreatePerson?: boolean; userId?: number; overrideFirmId?: string | null }): Promise<{
     header: DilovodExportHeader;
     channelMapping: DilovodChannelMapping | null;
   }> {
@@ -441,7 +442,7 @@ export class DilovodExportBuilder {
     const channelMapping = await this.getChannelMapping(context);
 
     // Визначаємо фірму (за рахунком або за замовчуванням)
-    const firmId = await this.determineFirmId(context, channelMapping);
+    const firmId = await this.determineFirmId(context, channelMapping, options?.overrideFirmId ?? null);
 
     // Визначаємо канал продажів
     const tradeChanel = await this.determineTradeChanel(context);
@@ -1140,10 +1141,21 @@ export class DilovodExportBuilder {
    */
   private async determineFirmId(
     context: ExportBuildContext,
-    channelMapping: DilovodChannelMapping | null
+    channelMapping: DilovodChannelMapping | null,
+    overrideFirmId?: string | null
   ): Promise<string> {
     const { settings, directories, warnings } = context;
 
+    // If caller provided overrideFirmId, prefer it (validate against directories)
+    if (overrideFirmId) {
+      console.log(`  🔁 Override firmId requested: ${overrideFirmId}`);
+      if (directories?.firms && directories.firms.find(f => f.id === overrideFirmId)) {
+        console.log(`  ✅ Override firmId found in directories: ${overrideFirmId}`);
+        return overrideFirmId;
+      }
+      warnings.push(`Передана фірма (ID: ${overrideFirmId}) не знайдена в довідниках Dilovod. Ігноруємо override.`);
+      console.log(`  ⚠️  Override firmId ${overrideFirmId} не знайдено в довідниках, продовжуємо визначення`);
+    }
     console.log(`  🔍 Визначення фірми: channelMapping=${JSON.stringify({
       cashAccount: channelMapping?.cashAccount,
       paymentForm: channelMapping?.paymentForm,
