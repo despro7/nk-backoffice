@@ -295,7 +295,8 @@ export class DilovodApiClient {
           id: "id",
           productNum: "sku",
           parent: "parent",
-          id__pr: "name"
+          id__pr: "name",
+          packageRatio: "packageRatio"
         },
         filters: [
           {

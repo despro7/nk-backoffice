@@ -47,23 +47,23 @@ export class DilovodDataProcessor {
     await this.loadConfig();
   }
 
-  // Основной метод обработки товаров с комплектами
+  // Основний метод обробки товарів у комплекті
   async processGoodsWithSets(
     pricesResponse: DilovodPricesResponse[],
     goodsResponse: DilovodGoodsResponse[]
   ): Promise<DilovodProduct[]> {
     try {
-      // Убираем дубликаты из pricesResponse (каждый товар должен обрабатываться только один раз)
+      // Видаляємо дублікати з pricesResponse (кожен товар має оброблятися лише один раз)
       const uniquePricesResponse = this.removeDuplicatePrices(pricesResponse);
       
       console.log(`📊 Унікальних товарів для обробки: ${uniquePricesResponse.length} (з ${pricesResponse.length} записів цін)`);
       
-      // Создаем маппинги
+      // Створюємо маппінги
       const idToSku = this.createIdToSkuMapping(uniquePricesResponse);
-      const pricesByGoodId = this.createPricesMapping(pricesResponse); // Оставляем оригинальный для цен
+      const pricesByGoodId = this.createPricesMapping(pricesResponse); // Залишаємо оригінальний для цін
       const goodsById = this.createGoodsMapping(goodsResponse);
 
-      // Обрабатываем товары и получаем комплекты
+      // Обробляємо товари і отримуємо комплекти
       // ВАЖЛИВО: передаємо uniquePricesResponse, а не pricesResponse, щоб уникнути зайвих запитів до API
       const processedGoods = await this.processGoodsWithSetsAsync(
         uniquePricesResponse, 
@@ -72,24 +72,24 @@ export class DilovodDataProcessor {
         goodsById
       );
 
-      // Формируем финальный результат
+      // Формуємо фінальний результат
       const result = this.buildFinalProducts(processedGoods, pricesByGoodId);
       
-      // Убираем дубликаты по SKU
+      // Видаляємо дублікати по SKU
       const unique = this.removeDuplicates(result);
       
-      // Логируем финальный результат для анализа
+      // Логуємо фінальний результат для аналізу
       this.logFinalResult(unique);
       
       return unique;
       
     } catch (error) {
-      console.log('Ошибка обработки товаров с комплектами:', error);
+      console.log('Помилка обробки товарів у комплекті:', error);
       throw error;
     }
   }
 
-  // Создание маппинга ID -> SKU
+  // Створення маппінгу ID -> SKU
   private createIdToSkuMapping(pricesResponse: DilovodPricesResponse[] | any): { [key: string]: string } {
     const mapping: { [key: string]: string } = {};
     
@@ -105,7 +105,7 @@ export class DilovodDataProcessor {
     return mapping;
   }
 
-  // Создание маппинга цен по товарам
+  // Створення маппінгу цін по товарам
   private createPricesMapping(pricesResponse: DilovodPricesResponse[] | any): { [key: string]: Array<{ priceType: string; price: string }> } {
     const mapping: { [key: string]: Array<{ priceType: string; price: string }> } = {};
     
@@ -125,7 +125,7 @@ export class DilovodDataProcessor {
     return mapping;
   }
 
-  // Создание маппинга товаров
+  // Створення маппінгу товарів
   private createGoodsMapping(goodsResponse: DilovodGoodsResponse[] | any): { [key: string]: DilovodGoodsResponse } {
     const mapping: { [key: string]: DilovodGoodsResponse } = {};
     
@@ -137,7 +137,7 @@ export class DilovodDataProcessor {
     return mapping;
   }
 
-  // Асинхронная обработка товаров с комплектами
+  // Асинхронна обробка товарів з комплектами
   private async processGoodsWithSetsAsync(
     pricesResponse: DilovodPricesResponse[],
     idToSku: { [key: string]: string },
@@ -145,25 +145,25 @@ export class DilovodDataProcessor {
     goodsById: { [key: string]: DilovodGoodsResponse }
   ): Promise<any[]> {
     try {
-      // Обрабатываем товары последовательно (не параллельно) для правильной работы задержек
+      // Обробляємо товари послідовно (не паралельно) для правильної роботи затримок
       const processedGoods: any[] = [];
       
       for (let index = 0; index < pricesResponse.length; index++) {
         const good = pricesResponse[index];
         
         if (this.config.setParentIds.includes(good.parent)) {
-          // Получаем детальную информацию о комплекте
+          // Отримуємо детальну інформацію про комплект
           const set = await this.getSetComponents(good.id, idToSku, goodsById);
           good.set = set;
           
-          // Увеличенная задержка для избежания блокировки API
+          // Збільшена затримка для уникнення блокування API
           await delay(500);
           
         } else {
-          good.set = []; // не комплект, массив set будет []
+          good.set = []; // не комплект, масив set буде []
         }
         
-        // Разрешаем название категории через каталог: берём presentation у родителя
+        // Дозволяємо назву категорії через каталог: беремо presentation у батька
         try {
           const parentId = good.parent;
           const parentGood = parentId ? goodsById[parentId] : undefined;
@@ -172,9 +172,33 @@ export class DilovodDataProcessor {
             (good as any).categoryNameResolved = parentName;
           }
         } catch {}
+
+        // Merge additional fields from goods catalog (goodsById) into the price-based record
+        try {
+          const catalog = goodsById[good.id];
+          if (catalog) {
+            // packageRatio -> portionsPerBox mapping will be handled later in buildFinalProducts,
+            // but we ensure the raw field is available on the `good` object here.
+            if (catalog.packageRatio !== undefined) {
+              (good as any).packageRatio = catalog.packageRatio;
+            }
+            if (catalog.id__pr !== undefined) {
+              (good as any).id__pr = catalog.id__pr;
+            }
+            if ((catalog as any).presentation !== undefined) {
+              (good as any).presentation = (catalog as any).presentation;
+            }
+            if (catalog.parent__pr !== undefined) {
+              (good as any).parent__pr = catalog.parent__pr;
+            }
+          }
+        } catch (err) {
+          // non-fatal: просто лог для діагностики
+          try { console.log('DilovodDataProcessor: помилка мерджу полів каталогу для', good.id, err); } catch {};
+        }
         
-        // Задержка для всех товаров, чтобы не перегружать API
-        if (index < pricesResponse.length - 1) { // Не задерживаемся после последнего товара
+        // Затримка для всіх товарів, щоб не перевантажувати API
+        if (index < pricesResponse.length - 1) { // Не затримуємося після останнього товару
           await delay(200);
         }
         
@@ -183,19 +207,19 @@ export class DilovodDataProcessor {
 
       return processedGoods;
     } catch (error) {
-      console.log(`❌ ОШИБКА в processGoodsWithSetsAsync:`, error);
+      console.log(`❌ ПОМИЛКА в processGoodsWithSetsAsync:`, error);
       throw error;
     }
   }
 
-  // Получение компонентов комплекта
+  // Отримання компонентів комплекту
   private async getSetComponents(
     goodId: string, 
     idToSku: { [key: string]: string }, 
     goodsById: { [key: string]: DilovodGoodsResponse }
   ): Promise<Array<{ id: string; quantity: number }>> {
     try {
-      // Вызываем API для получения детальной информации об объекте
+      // Викликаємо API для отримання детальної інформації про об'єкт
       const object = await this.apiClient.getObject(goodId);
       
       if (!object || !object.tableParts || !object.tableParts.tpGoods) {
@@ -204,12 +228,12 @@ export class DilovodDataProcessor {
       
       const setComponents = object.tableParts.tpGoods;
       
-      // tpGoods может быть объектом, а не массивом - преобразуем в массив
+      // tpGoods може бути об'єктом, а не масивом - перетворюємо в масив
       let componentsArray: any[] = [];
       if (Array.isArray(setComponents)) {
         componentsArray = setComponents;
       } else if (typeof setComponents === 'object' && setComponents !== null) {
-        // Преобразуем объект в массив
+        // Перетворюємо об'єкт в масив
         componentsArray = Object.values(setComponents);
       } else {
         return [];
@@ -297,14 +321,14 @@ export class DilovodDataProcessor {
     }
   }
 
-  // Формирование финальных товаров
+  // Формування фінальних товарів
   private buildFinalProducts(
     processedGoods: any[], 
     pricesByGoodId: { [key: string]: Array<{ priceType: string; price: string }> }
   ): DilovodProduct[] {
     const result: DilovodProduct[] = [];
     
-    // Подготавливаем нормализованную карту категорий (мерджим дефолт и БД)
+    // Підготовлюємо нормалізовану карту категорій (мерджимо дефолт і БД)
     const normalizedCategoriesMap: { [key: string]: number } = {};
     const mergedCategoriesMap = {
       ...(DEFAULT_DILOVOD_CONFIG.categoriesMap || {}),
@@ -319,7 +343,7 @@ export class DilovodDataProcessor {
       let costPerItem = '';
       const additionalPrices: Array<{ priceType: string; priceValue: string }> = [];
       
-      // Заполняем массив всех цен по товару
+      // Заповнюємо масив всіх цін по товару
       const prices = pricesByGoodId[good.id] || [];
       
       prices.forEach((priceRow) => {
@@ -333,21 +357,21 @@ export class DilovodDataProcessor {
         }
       });
 
-      // Фильтруем дополнительные цены (только положительные)
+      // Фільтруємо додаткові ціни (тільки позитивні)
       const filteredAdditionalPrices = additionalPrices.filter(
         (p) => parseFloat(p.priceValue) > 0
       );
 
-      // Получаем название и категорию
+      // Отримуємо назву та категорію
       const productName = this.extractProductName(good);
       const categoryNameRaw = (good as any).categoryNameResolved || this.extractCategoryName(good);
-      const categoryName = categoryNameRaw?.toString()?.trim() || 'Без категории';
+      const categoryName = categoryNameRaw?.toString()?.trim() || 'Без категорії';
       const normalizedName = this.normalizeCategoryName(categoryName);
       let mappedCategoryId = normalizedName in normalizedCategoriesMap
         ? normalizedCategoriesMap[normalizedName]
         : 0;
 
-      // Heuristic fallback: категоризация по подстроке, если маппинг не сработал
+      // Heuristic fallback: категоризація по підстроках, якщо маппінг не спрацював
       if (!mappedCategoryId) {
         if (normalizedName.includes('архів')) {
           mappedCategoryId = 0;
@@ -355,7 +379,7 @@ export class DilovodDataProcessor {
           mappedCategoryId = 16;
         } else if (normalizedName.includes('друг')) {
           mappedCategoryId = 21;
-        } else if (normalizedName.includes('набор') || normalizedName.includes('комплект')) {
+        } else if (normalizedName.includes('набор') || (normalizedName.includes('набір') || normalizedName.includes('комплект'))) {
           mappedCategoryId = 19;
         } else if (normalizedName.includes('салат')) {
           mappedCategoryId = 20;
@@ -369,7 +393,7 @@ export class DilovodDataProcessor {
       }
 
       if (!mappedCategoryId) {
-        // Лог для диагностики неподдержанных категорий
+        // Лог для диагностики непідтриманих категорій
         try { console.log('⚠️ Unmapped category name', { categoryName, normalizedName, categoriesMap: normalizedCategoriesMap }); } catch {}
       }
 
@@ -385,29 +409,33 @@ export class DilovodDataProcessor {
         },
         set: good.set || [],
         additionalPrices: filteredAdditionalPrices,
-        parent: good.parent // Сохраняем parent для определения комплектов
+        parent: good.parent // Зберігаємо parent для визначення комплектів
+        ,
+        portionsPerBox: (good.packageRatio !== undefined && good.packageRatio !== null)
+          ? parseInt(String(good.packageRatio))
+          : undefined
       });
     });
 
     return result;
   }
 
-  // Извлечение названия товара
+  // Витягування назви товару
   private extractProductName(good: any): string {
-    return good['id__pr'] || good['presentation'] || good.sku || 'Без названия';
+    return good['id__pr'] || good['presentation'] || good.sku || 'Без назви';
   }
 
-  // Извлечение названия категории
+  // Витягування назви категорії
   private extractCategoryName(good: any): string {
-    return good['parent__pr'] || good['parentName'] || "Без категории";
+    return good['parent__pr'] || good['parentName'] || "Без категорії";
   }
 
-  // Нормализация названия категории для сравнения
+  // Нормалізація назви категорії для порівняння
   private normalizeCategoryName(name: string | undefined): string {
     return (name || '').toString().trim().toLowerCase();
   }
 
-  // Удаление дубликатов по SKU
+  // Видалення дублікатів по SKU
   private removeDuplicates(products: DilovodProduct[]): DilovodProduct[] {
     const unique: { [key: string]: DilovodProduct } = {};
     
@@ -418,13 +446,13 @@ export class DilovodDataProcessor {
     return Object.values(unique);
   }
   
-  // Удаление дубликатов цен по ID товара (оставляем только один экземпляр каждого товара)
+  // Видалення дублікатів цін по ID товару (залишаємо тільки один екземпляр кожного товару)
   private removeDuplicatePrices(pricesResponse: DilovodPricesResponse[] | any): DilovodPricesResponse[] {
     const unique: { [key: string]: DilovodPricesResponse } = {};
     
     if (!Array.isArray(pricesResponse)) return [];
     pricesResponse.forEach((item) => {
-      // Используем ID товара как ключ для уникальности
+      // Використовуємо ID товару як ключ для унікальності
       if (!unique[item.id]) {
         unique[item.id] = item;
       }
@@ -433,26 +461,26 @@ export class DilovodDataProcessor {
     return Object.values(unique);
   }
 
-  // Логирование финального результата
+  // Логування фінального результату
   private logFinalResult(products: DilovodProduct[]): void {
     // Группируем товары по типам
     const sets = products.filter(p => this.config.setParentIds.includes(p.parent) && p.set && p.set.length > 0);
     
-    // Логируем количество найденных комплектов
+    // Логування кількості знайдених комплектів
     if (sets.length > 0) {
-      console.log(`Найдено ${sets.length} комплектов`);
+      console.log(`Знайдено ${sets.length} комплектів`);
     }
   }
 
-  // Обработка остатков товаров
+  // Обробка залишків товарів
   processStockBalance(stockResponse: any[]): any[] {
     try {
       const result: any[] = [];
       const stockBySku: { [key: string]: { [key: string]: number } } = {};
 
-      // Группируем остатки по SKU и складам
+      // Групуємо залишки по SKU та складам
       stockResponse.forEach((row) => {
-        // Используем правильные поля из ответа Dilovod API
+        // Використовуємо правильні поля з відповіді Dilovod API
         const sku = row.sku;
         const name = row.id__pr;
         const storage = row.storage;
@@ -461,15 +489,15 @@ export class DilovodDataProcessor {
         
         if (!stockBySku[sku]) {
           stockBySku[sku] = {};
-          // Сохраняем название товара для каждого SKU
+          // Зберігаємо назву товару для кожного SKU
           stockBySku[sku]._name = name;
         }
         
-        // Сохраняем количество по складу (сумуємо між фірмами, якщо той самий склад є у кількох фірмах)
+        // Зберігаємо кількість по складу (сумуємо між фірмами, якщо той самий склад є у кількох фірмах)
         stockBySku[sku][storage] = (stockBySku[sku][storage] || 0) + quantity;
       });
       
-      // Формируем результат
+      // Формуємо результат
       Object.keys(stockBySku).forEach(sku => {
         const stockData = stockBySku[sku];
 
@@ -493,12 +521,12 @@ export class DilovodDataProcessor {
       return result;
       
     } catch (error) {
-      console.log('Ошибка обработки остатков:', error);
+      console.log('Помилка обробки залишків:', error);
       throw error;
     }
   }
 
-  // Обновление конфигурации
+  // Оновлення конфігурації
   updateConfig(newConfig: Partial<typeof DEFAULT_DILOVOD_CONFIG>): void {
     this.config = { ...this.config, ...newConfig };
   }

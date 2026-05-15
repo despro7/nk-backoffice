@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
-import { useAuth } from '../contexts/AuthContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatPrice, formatRelativeDate, getCategoryColors } from '../lib/formatUtils';
 import { Input, addToast, Textarea, Switch, Tooltip, Select, SelectItem } from '@heroui/react';
 import { ToastService } from '@/services/ToastService';
 import ProductsStatsSummary, { type ProductsStats } from '@/components/ProductsStatsSummary';
-
+import { LoggingService } from '@/services/LoggingService';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { useDebug } from '@/contexts/DebugContext';
 import {
   Table,
   TableHeader,
@@ -31,9 +32,6 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from '@heroui/react';
-import { LoggingService } from '@/services/LoggingService';
-import { useRoleAccess } from '@/hooks/useRoleAccess';
-import { useDebug } from '@/contexts/DebugContext';
 
 
 interface Product {
@@ -69,7 +67,6 @@ interface ProductsResponse {
 type StatsResponse = ProductsStats;
 
 const ProductSets: React.FC = () => {
-  const { user } = useAuth();
   const { isDebugMode } = useDebug();
   const { isAdmin, canEditProducts } = useRoleAccess();
   const [products, setProducts] = useState<Product[]>([]);
@@ -335,12 +332,10 @@ const ProductSets: React.FC = () => {
   // Стан для статистики порцій (тільки в debug-режимі) — кількість в активних замовленнях
   const [portionsBySku, setPortionsBySku] = useState<Map<string, { newQty: number; confirmedQty: number; holdQty: number }>>(new Map());
   const [portionsLoading, setPortionsLoading] = useState(false);
-  // Ref для читання актуального isDebugMode всередині async-функції без stale closure
-  const isDebugModeRef = useRef(isDebugMode);
-  useEffect(() => { isDebugModeRef.current = isDebugMode; });
+  // (Раніше використовувався isDebugModeRef для уникнення stale-closure,
+  //  але це призводило до негарантованого виклику fetchPortions у деяких випадках)
 
   const fetchPortions = useCallback(async () => {
-    if (!isDebugModeRef.current) return;
     setPortionsLoading(true);
     try {
       const [resNew, resConf, resHold] = await Promise.all([
@@ -354,24 +349,27 @@ const ProductSets: React.FC = () => {
       if (datNew.success && Array.isArray(datNew.data)) {
         for (const item of datNew.data) {
           if (item.sku && item.orderedQuantity > 0) {
-            const existing = map.get(item.sku) ?? { newQty: 0, confirmedQty: 0, holdQty: 0 };
-            map.set(item.sku, { ...existing, newQty: item.orderedQuantity });
+            const skuKey = String(item.sku).trim().toLowerCase();
+            const existing = map.get(skuKey) ?? { newQty: 0, confirmedQty: 0, holdQty: 0 };
+            map.set(skuKey, { ...existing, newQty: item.orderedQuantity });
           }
         }
       }
       if (datConf.success && Array.isArray(datConf.data)) {
         for (const item of datConf.data) {
           if (item.sku && item.orderedQuantity > 0) {
-            const existing = map.get(item.sku) ?? { newQty: 0, confirmedQty: 0, holdQty: 0 };
-            map.set(item.sku, { ...existing, confirmedQty: item.orderedQuantity });
+            const skuKey = String(item.sku).trim().toLowerCase();
+            const existing = map.get(skuKey) ?? { newQty: 0, confirmedQty: 0, holdQty: 0 };
+            map.set(skuKey, { ...existing, confirmedQty: item.orderedQuantity });
           }
         }
       }
       if (datHold.success && Array.isArray(datHold.data)) {
         for (const item of datHold.data) {
           if (item.sku && item.orderedQuantity > 0) {
-            const existing = map.get(item.sku) ?? { newQty: 0, confirmedQty: 0, holdQty: 0 };
-            map.set(item.sku, { ...existing, holdQty: item.orderedQuantity });
+            const skuKey = String(item.sku).trim().toLowerCase();
+            const existing = map.get(skuKey) ?? { newQty: 0, confirmedQty: 0, holdQty: 0 };
+            map.set(skuKey, { ...existing, holdQty: item.orderedQuantity });
           }
         }
       }
@@ -385,7 +383,14 @@ const ProductSets: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (isDebugMode) fetchPortions();
+    if (isDebugMode) {
+      // Refresh portions stats and then refresh products to ensure table updates
+      fetchPortions()
+        .catch(err => console.error('[SettingsProductSets] fetchPortions failed', err))
+        .then(() => {
+          fetchProducts().catch(err => console.error('[SettingsProductSets] fetchProducts failed', err));
+        });
+    }
   }, [isDebugMode, fetchPortions]);
 
   // Завантажуємо збережене налаштування "Розгорнути комплекти" з сервера
@@ -839,24 +844,6 @@ const ProductSets: React.FC = () => {
         const stock1Data = parseStockBalance(product.stockBalanceByStock);
         const stock1Value = stock1Data["1"] || 0;
 
-        if (isDebugMode) {
-          const p = portionsBySku.get(product.sku);
-          const inOrders = (p?.newQty ?? 0) + (p?.confirmedQty ?? 0) + (p?.holdQty ?? 0);
-          const available = stock1Value - inOrders;
-          return (
-            <div className="flex flex-col gap-0.5 leading-tight">
-              <span className={`text-sm font-medium ${available > 0 ? 'text-gray-900' : available === 0 ? 'text-gray-400' : 'text-red-600 font-bold'}`}>
-                {available}
-              </span>
-              {inOrders > 0 && (
-                <span className="text-[11px] text-gray-400">
-                  з {stock1Value}
-                </span>
-              )}
-            </div>
-          );
-        }
-
         return (
           <span className={`text-sm ${stock1Value > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
             {stock1Value}
@@ -864,47 +851,28 @@ const ProductSets: React.FC = () => {
         );
       }
 
-      case 'portions': {
-        if (!isDebugMode) return null;
-        if (portionsLoading) return <span className="text-gray-300 text-xs">…</span>;
-        const p = portionsBySku.get(product.sku);
-        const qNew = p?.newQty ?? 0;
-        const qConf = p?.confirmedQty ?? 0;
-        const qHold = p?.holdQty ?? 0;
-        const total = qNew + qConf + qHold;
-        if (total === 0) return <span className="text-gray-300 text-sm">—</span>;
-        return (
-          <div className="flex gap-1 text-sm leading-tight">
-            <span className="font-bold text-neutral-800">{total}</span>
-            <div className="flex gap-0.5">
-              ({qNew > 0 && (
-                <span className="text-yellow-700 font-medium" title="Нові">
-                  {qNew}
-                </span>
-              )}
-              {qConf > 0 && (
-                <>
-                {qNew > 0 && "/ " }<span className="text-green-700 font-medium" title="Підтверджені">
-                  {qConf}
-                </span>
-                </>
-              )}
-              {qHold > 0 && (
-                <>
-                {qConf > 0 && "/ " }<span className="text-red-700 font-medium" title="На утриманні">
-                  {qHold}
-                </span>
-                </>
-              )}
-              )
-            </div>
-          </div>
-        );
-      }
-
       case 'stock2':
         const stock2Data = parseStockBalance(product.stockBalanceByStock);
         const stock2Value = stock2Data["2"] || 0;
+
+        if (isDebugMode) {
+          const p = portionsBySku.get(String(product.sku ?? '').trim().toLowerCase());
+          const inOrders = (p?.newQty ?? 0) + (p?.confirmedQty ?? 0) + (p?.holdQty ?? 0);
+          const available = stock2Value - inOrders;
+          return (
+            <div className="flex flex-col gap-0.5 leading-tight">
+              <span className={`text-sm font-medium ${available > 0 ? 'text-gray-900' : available === 0 ? 'text-gray-400' : 'text-red-600 font-bold'}`}>
+                {available}
+              </span>
+              {inOrders > 0 && (
+                <span className="text-[11px] text-gray-400">
+                  з {stock2Value}
+                </span>
+              )}
+            </div>
+          );
+        }
+
         return (
           <span className={`text-sm ${stock2Value > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
             {stock2Value}
@@ -912,93 +880,63 @@ const ProductSets: React.FC = () => {
         );
 
       case 'portionsPerBox': {
-        const productIdStr2 = product.id.toString();
-        const ppbKey = `ppb-${productIdStr2}`;
-        const isEditingPpb = editingWeight[ppbKey] !== undefined;
-        const isSavingPpb = savingWeight === ppbKey;
         const currentPpb = (product as any).portionsPerBox ?? 24;
 
-        // Комплектні товари — portionsPerBox не редагуємо
+        // Комплектні товари — portionsPerBox не відображаємо
         const isSetProduct = product.set && Array.isArray(product.set) && (product.set as unknown[]).length > 0;
         if (isSetProduct) {
           return <span className="text-sm text-gray-400" title="Комплектний товар">—</span>;
         }
 
-        const startEditingPpb = () => {
-          setEditingWeight(prev => ({ ...prev, [ppbKey]: String(currentPpb) }));
-          setForceUpdate(v => v + 1);
-        };
-        const cancelEditingPpb = () => {
-          setEditingWeight(prev => {
-            const next = { ...prev };
-            delete next[ppbKey];
-            return next;
-          });
-        };
-        const finishEditingPpb = async () => {
-          const value = (inputRefs.current as any)[ppbKey]?.value ?? editingWeight[ppbKey];
-          if (value === undefined || value === '') { cancelEditingPpb(); return; }
-          const newPpb = parseInt(String(value));
-          if (isNaN(newPpb) || newPpb < 1) {
-            ToastService.show({ title: 'Некоректне значення', description: 'Має бути ціле число ≥ 1', color: 'warning' });
-            cancelEditingPpb();
-            return;
-          }
-          try {
-            setSavingWeight(ppbKey);
-            const response = await fetch(`/api/products/${productIdStr2}/portions-per-box`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ portionsPerBox: newPpb }),
-              credentials: 'include',
-            });
-            if (!response.ok) {
-              const err = await response.json().catch(() => ({}));
-              ToastService.show({ title: 'Помилка', description: `Не вдалося оновити: ${err.error || response.statusText}`, color: 'danger' });
-            } else {
-              setProducts(prev => prev.map(p => p.id === product.id ? ({ ...p, portionsPerBox: newPpb } as any) : p));
-              ToastService.show({ title: 'Оновлено', description: `Порцій у коробці: ${newPpb}`, color: 'success' });
-            }
-          } finally {
-            setSavingWeight(null);
-            cancelEditingPpb();
-          }
-        };
-
+        // Статичне відображення без можливості редагування
         return (
-          <div className="flex items-center gap-1">
-            {isEditingPpb ? (
-              <>
-                <input
-                  ref={el => { (inputRefs.current as any)[ppbKey] = el; }}
-                  key={`ppb-input-${productIdStr2}-${forceUpdate}`}
-                  type="number"
-                  defaultValue={editingWeight[ppbKey] ?? ''}
-                  onChange={e => setEditingWeight(prev => ({ ...prev, [ppbKey]: e.target.value }))}
-                  className="w-12 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  min="1" step="1"
-                  disabled={isSavingPpb}
-                  onKeyDown={e => { if (e.key === 'Enter') finishEditingPpb(); else if (e.key === 'Escape') cancelEditingPpb(); }}
-                  onWheel={e => e.currentTarget.blur()}
-                  autoFocus
-                  onFocus={e => e.currentTarget.select()}
-                />
-                <Button size="sm" color="success" variant="flat" onPress={finishEditingPpb} disabled={isSavingPpb} className="min-w-0 p-1">
-                  {isSavingPpb ? <DynamicIcon name="loader-2" className="animate-spin" size={12} /> : <DynamicIcon name="check" size={12} />}
-                </Button>
-                <Button size="sm" color="default" variant="flat" onPress={cancelEditingPpb} disabled={isSavingPpb} className="min-w-0 p-1 text-neutral-600">
-                  <DynamicIcon name="x" size={12} />
-                </Button>
-              </>
-            ) : (
-              <div
-                className={`text-sm text-center text-gray-900 ${canEditProducts() ? 'cursor-pointer hover:bg-gray-100' : 'cursor-not-allowed opacity-60'} px-1.5 py-1 rounded min-w-[36px] tabular-nums underline underline-offset-3 decoration-dotted`}
-                onClick={() => canEditProducts() && startEditingPpb()}
-                title={canEditProducts() ? 'Натисніть для редагування' : 'Немає прав для редагування'}
-              >
-                {currentPpb}
-              </div>
-            )}
+          <div className="text-sm text-gray-900 font-medium px-1.5 py-1 rounded min-w-[36px] tabular-nums">
+            {currentPpb}
+          </div>
+        );
+      }
+
+      case 'portions': {
+        if (!isDebugMode) return null;
+        if (portionsLoading) return <span className="text-gray-300 text-xs">…</span>;
+        const p = portionsBySku.get(String(product.sku ?? '').trim().toLowerCase());
+        const qNew = p?.newQty ?? 0;
+        const qConf = p?.confirmedQty ?? 0;
+        const qHold = p?.holdQty ?? 0;
+        const total = qNew + qConf + qHold;
+        if (total === 0) return <span className="text-gray-300 text-sm">—</span>;
+        return (
+          <div className="flex items-center gap-1 text-sm leading-tight">
+            <span className="font-bold text-neutral-800">{total}</span>
+            <div className="flex gap-0.5 text-xs px-1 py-0.5 rounded bg-gray-100">
+              {qNew > 0 && (
+                <Tooltip color="secondary" content="Нові замовлення">
+                  <span className="text-blue-600 font-medium">
+                    {qNew}
+                  </span>
+                </Tooltip>
+              )}
+              {qConf > 0 && (
+                <>
+                {qNew > 0 && "/ " }
+                <Tooltip color="secondary" content="Підтверджені замовлення">
+                  <span className="text-green-700 font-medium">
+                    {qConf}
+                  </span>
+                </Tooltip>
+                </>
+              )}
+              {qHold > 0 && (
+                <>
+                {qConf > 0 && "/ " }
+                <Tooltip color="secondary" content="Замовлення на утриманні">
+                  <span className="text-red-700 font-medium">
+                    {qHold}
+                  </span>
+                </Tooltip>
+                </>
+              )}
+            </div>
           </div>
         );
       }
@@ -2098,24 +2036,6 @@ const ProductSets: React.FC = () => {
                   </Button>
 
                   <Button
-                    onPress={syncProductsWithDilovod}
-                    disabled={!isAdmin()}
-                    color={syncStatus?.isRunning ? 'danger' : 'primary'}
-                  >
-                    {syncStatus?.isRunning ? (
-                      <>
-                        <DynamicIcon name="x" size={14} />
-                        Скасувати синхронізацію
-                      </>
-                    ) : (
-                      <>
-                        <DynamicIcon name="refresh-cw" size={14} />
-                        Синхронізувати всі товари
-                      </>
-                    )}
-                  </Button>
-
-                  <Button
                     onPress={syncStockBalances}
                     disabled={stockSyncing || !isAdmin()}
                     color="success"
@@ -2287,7 +2207,8 @@ const ProductSets: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Кнопка очищення фільтрів */}
+                <div className="flex gap-4 ml-auto">
+                  {/* Кнопка очищення фільтрів */}
                   {(searchTerm || selectedCategory) && (
                     <Button
                       variant="light"
@@ -2299,12 +2220,31 @@ const ProductSets: React.FC = () => {
                         setCurrentPage(1);
                         fetchProducts(1, '', '');
                       }}
-                      className="text-red-700 flex items-center ml-auto"
+                      className="text-red-700 flex items-center"
                     >
                       <DynamicIcon name="x-circle" size={14} />
                       Очистити
                     </Button>
                   )}
+
+                  {/* Кнопка синхронізації товарів */}
+                  <Button
+                    onPress={syncProductsWithDilovod}
+                    color={syncStatus?.isRunning ? 'danger' : 'primary'}
+                  >
+                    {syncStatus?.isRunning ? (
+                      <>
+                        <DynamicIcon name="x" size={14} />
+                        Скасувати синхронізацію
+                      </>
+                    ) : (
+                      <>
+                        <DynamicIcon name="refresh-cw" size={14} />
+                        Синхронізувати всі товари
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           }

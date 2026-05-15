@@ -11,6 +11,7 @@ export interface DilovodProduct {
     name: string;
   };
   weight?: number; // Вага товару в грамах
+  portionsPerBox?: number; // Кількість порцій у коробці (mapping from Dilovod packageRatio)
   set: Array<{
     id: string;
     quantity: number;
@@ -90,6 +91,7 @@ export interface DilovodGoodsResponse {
   sku: string;
   parent: string;
   id__pr?: string;
+  packageRatio?: string | number; // Поле з Dilovod (packageRatio) — використовується для portionsPerBox
   [key: string]: any;
 }
 
@@ -124,6 +126,7 @@ export interface DatabaseProduct {
   } | null;
   dilovodId: string;
   lastSyncAt: Date;
+  portionsPerBox?: number;
 }
 
 export interface DilovodConfig {

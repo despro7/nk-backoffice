@@ -307,25 +307,29 @@ export class DilovodService {
         };
       }
 
-      // Підмішуємо SKU з Whitelist
-      try {
-        const whitelistRecord = await prisma.settingsWpSku.findFirst();
-        if (whitelistRecord?.skus) {
-          // Розділяємо рядок на масив SKU (припускаємо, що SKU розділені комами або новими рядками)
-          const whitelistSkus = whitelistRecord.skus
-            .split(/[\n,]/)
-            .map(sku => sku.trim())
-            .filter(sku => sku.length > 0);
+      // Підмішуємо SKU з Whitelist — тільки при повній синхронізації (full).
+      if (mode === 'full') {
+        try {
+          const whitelistRecord = await prisma.settingsWpSku.findFirst();
+          if (whitelistRecord?.skus) {
+            // Розділяємо рядок на масив SKU (припускаємо, що SKU розділені комами або новими рядками)
+            const whitelistSkus = whitelistRecord.skus
+              .split(/[\n,]/)
+              .map(sku => sku.trim())
+              .filter(sku => sku.length > 0);
 
-          console.log(`📋 Завантажено ${whitelistSkus.length} SKU з whitelist:`, whitelistSkus);
-          
-          // Додаємо тільки унікальні SKU (через Set для уникнення дублів)
-          const uniqueSkusSet = new Set(skus);
-          whitelistSkus.forEach(sku => uniqueSkusSet.add(sku));
-          skus = Array.from(uniqueSkusSet);
+            console.log(`📋 Завантажено ${whitelistSkus.length} SKU з whitelist:`, whitelistSkus);
+            
+            // Додаємо тільки унікальні SKU (через Set для уникнення дублів)
+            const uniqueSkusSet = new Set(skus);
+            whitelistSkus.forEach(sku => uniqueSkusSet.add(sku));
+            skus = Array.from(uniqueSkusSet);
+          }
+        } catch (error) {
+          console.warn('Не вдалося завантажити SKU whitelist з БД:', error);
         }
-      } catch (error) {
-        console.warn('Не вдалося завантажити SKU whitelist з БД:', error);
+      } else {
+        console.log('📋 Manual sync: whitelist не додається до списку SKU');
       }
 
       console.log(`✅ Отримано ${skus.length} SKU для синхронізації`);
@@ -535,40 +539,6 @@ export class DilovodService {
 
       // Отримуємо товари з каталогу для додаткової інформації
       const goodsResponse = await this.apiClient.getGoodsFromCatalog(skuList, signal);
-
-      // const goodsResponse = [
-      //   {
-      //     id: '1100300000001561',
-      //     id__pr: 'Курка з грибами, 180г',
-      //     sku: '02010',
-      //     parent: '1100300000001578',
-      //     parent__pr: 'Основи для салатів',
-      //     priceType: '1101300000001012',
-      //     priceType__pr: 'Військові',
-      //     price: '125.00000'
-      //   },
-      //   {
-      //     id: '1100300000001575',
-      //     id__pr: 'Вінегрет класичний, 850г',
-      //     sku: '02011',
-      //     parent: '1100300000001653',
-      //     parent__pr: 'Салатні набори',
-      //     priceType: '1101300000001005',
-      //     priceType__pr: 'Роздріб (Розетка)',
-      //     price: '268.00000'
-      //   },
-      //   {
-      //     id: '1100300000001576',
-      //     id__pr: 'Вінегрет з квасолею, 850г',
-      //     sku: '02012',
-      //     parent: '1100300000001653',
-      //     parent__pr: 'Салатні набори',
-      //     priceType: '1101300000001005',
-      //     priceType__pr: 'Роздріб (Розетка)',
-      //     price: '282.00000'
-      //   }
-      // ];
-
       console.log(`Отримано ${goodsResponse.length} товарів з каталогу`);
 
       // ПЕРЕВІРКА: чи всі запитувані SKU повернулися в відповіді з каталогу

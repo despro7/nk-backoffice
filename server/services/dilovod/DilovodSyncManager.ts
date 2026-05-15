@@ -21,6 +21,7 @@ export class DilovodSyncManager {
       categoryId: product.category.id,
       categoryName: product.category.name,
       set: product.set,
+      portionsPerBox: product.portionsPerBox ?? null,
       additionalPrices: product.additionalPrices,
       dilovodId: product.id
     };
@@ -245,6 +246,13 @@ export class DilovodSyncManager {
       dilovodDataHash: dilovodDataHash,
       lastSyncAt: new Date()
     };
+
+    // Портії в коробці (якщо прийшли з Dilovod) — зберігаємо в БД
+    if (product.portionsPerBox !== undefined && product.portionsPerBox !== null) {
+      const ppb = parseInt(String(product.portionsPerBox));
+      data.portionsPerBox = Number.isNaN(ppb) ? undefined : ppb;
+      console.log(`ℹ️  portionsPerBox з Dilovod: ${data.portionsPerBox}`);
+    }
     
     // Вага і manualOrder встановлюємо ТІЛЬКИ для нових товарів
     // Для існуючих товарів НЕ перезаписуємо (захист локальних змін)
@@ -334,35 +342,27 @@ export class DilovodSyncManager {
 
   // Визначення порядку сортування за категорією
   private determineManualOrderByCategory(categoryId: number): number {
-    // Перші страви - 1000
-    if (categoryId === 16) {
+    if (categoryId === 16) { // Перші страви - 1000
       return 1000;
     }
-    
-    // Другі страви - 2000
-    if (categoryId === 21) {
+    if (categoryId === 21) { // Другі страви - 2000
       return 2000;
     }
-    
-    // Комплекти - 3000
-    if (categoryId === 19) {
+    if (categoryId === 19) { // Комплекти - 3000
       return 3000;
     }
-
-    // Салати - 4000
-    if (categoryId === 20) {
+    if (categoryId === 20) { // Салати і Салатні набори - 4000
       return 4000;
     }
-
-    // Напої - 5000
-    if (categoryId === 33) {
+    if (categoryId === 35) { // Основи для салатів - 4500
+      return 4500;
+    }
+    if (categoryId === 34) { // М'ясні страви - 5000
       return 5000;
     }
-
-    if (categoryId === 0) {
-      return 99999; // Відправляемо в кінець списку
+    if (categoryId === 33) { // Напої - 9000
+      return 9000;
     }
-    
     // За замовчуванням - 0 (на початку списку)
     return 0;
   }
@@ -594,11 +594,16 @@ export class DilovodSyncManager {
     // 2. Фільтруємо лише ті, де залишки дійсно змінилися
     const itemsToUpdate = items.filter((item) => {
       const existing = existingMap.get(item.sku);
-      if (!existing) return false; // SKU немає в БД — пропускаємо (update впаде з P2025)
+      // Якщо SKU не знайдено в БД — пропускаємо (update впаде з P2025)
+      if (existing === undefined) return false;
 
+      // Якщо в БД немає даних про залишки (null) — вважаємо, що потрібно оновити
+      if (existing === null) return true;
+
+      // Порівнюємо значення по складах. Якщо ключів немає — використовуємо 0 як дефолт.
       const unchanged =
-        existing["1"] === item.mainStorage &&
-        existing["2"] === item.smallStorage;
+        (existing["1"] ?? 0) === item.mainStorage &&
+        (existing["2"] ?? 0) === item.smallStorage;
 
       if (unchanged) skipped++;
       return !unchanged;
