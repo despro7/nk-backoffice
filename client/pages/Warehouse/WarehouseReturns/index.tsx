@@ -81,7 +81,7 @@ export default function WarehouseReturns() {
     }
   }, [returns.showSuccess]);
 
-  const handleShowPayload = async () => {
+      const handleShowPayload = async () => {
     if (!returns.selectedOrderId) return;
     setIsLoadingPayload(true);
       try {
@@ -110,10 +110,10 @@ export default function WarehouseReturns() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
+          body: JSON.stringify({
           orderId: returns.selectedOrderId,
           date: dateValue,
-          firmId: returns.firmId || undefined,
+          firmId: returns.receiveFirmId || undefined,
           items: returns.items.map((item) => ({
             sku: item.sku,
             batchId: item.selectedBatchId,
@@ -167,8 +167,11 @@ export default function WarehouseReturns() {
       returns.setCustomReason(record.customReason || '');
 
       // restore selected firm from history record
-      returns.setFirmId?.(record.firmId ?? null);
-      returns.setFirmName?.(record.firmName || '');
+      // legacy: record.firmId was payload firm (receiving). New records may contain shipFirmId/shipFirmName
+      returns.setShipFirmId?.(record.shipFirmId ?? record.firmId ?? null);
+      returns.setShipFirmName?.(record.shipFirmName ?? record.firmName ?? '');
+      returns.setReceiveFirmId?.(record.receiveFirmId ?? record.firmId ?? null);
+      returns.setReceiveFirmName?.(record.receiveFirmName ?? record.firmName ?? '');
 
       // Завантажити замовлення
       await returns.handleSearch();
@@ -187,7 +190,7 @@ export default function WarehouseReturns() {
           quantity: item.quantity,
           orderedQuantity: item.quantity,
           portionsPerBox: 1,
-          firmId: record.firmId,
+          firmId: record.shipFirmId ?? record.firmId,
           availableBatches: null,
           selectedBatchId: null,
           selectedBatchKey: null,
@@ -359,35 +362,37 @@ export default function WarehouseReturns() {
               ) : returns.orderSelected && (
                 <div className="grid gap-6">
                   <Card className="rounded-xl border border-gray-200 bg-white shadow-small p-1">
-                    <CardHeader className="text-lg font-semibold text-gray-900">
+                    <CardHeader className="text-lg font-medium text-gray-900">
                       <DynamicIcon name="info" size={20} className="mr-1" /> Деталі повернення
                     </CardHeader>
                     <CardBody className="flex flex-col gap-4">
-                      <div className="flex items-center gap-4 justify-between mb-4">
+                      <div className="flex items-start gap-4 justify-between mb-4">
                         <div className="space-y-1">
-                          <div className="text-xs">Замовлення</div>
-                          <div className="font-medium text-gray-900">№{returns.selectedOrderNumber}</div>
+                          <div className="text-xs font-medium">Замовлення</div>
+                          <div className="font-medium text-gray-900 h-10 flex items-center">№{returns.selectedOrderNumber}</div>
                         </div>
                         <div className="space-y-1">
-                          <div className="text-xs">Відвантажено</div>
-                          <div className="font-medium text-gray-900">
+                          <div className="text-xs font-medium">Відвантажено</div>
+                          <div className="font-medium text-gray-900 h-10 flex items-center">
                             {returns.dilovodSaleExportDate && new Date(returns.dilovodSaleExportDate).toLocaleDateString('uk-UA')}
                           </div>
                         </div>
                         <div className="space-y-1">
-                          <div className="text-xs">Фірма</div>
+                          <div className="text-xs font-medium">Фірма відвантаження</div>
                           {returns.availableFirms && returns.availableFirms.length > 0 ? (
                             <Select
-                              id="select-firm"
+                              id="select-ship-firm"
                               labelPlacement="outside"
-                              value={returns.firmId ?? ''}
+                              aria-label="Фірма відвантаження"
+                              disallowEmptySelection={true}
+                              value={returns.shipFirmId ?? ''}
                               onChange={(e) => {
                                 const v = e.target.value || null;
-                                returns.setFirmId?.(v);
+                                returns.setShipFirmId?.(v);
                                 const f = returns.availableFirms.find((x) => x.id === v);
-                                returns.setFirmName?.(f?.name || '');
+                                returns.setShipFirmName?.(f?.name || '');
                               }}
-                              selectedKeys={returns.firmId ? [returns.firmId] : []}
+                              selectedKeys={returns.shipFirmId ? [returns.shipFirmId] : []}
                               classNames={{ trigger: 'w-full min-w-[200px] border border-gray-200 bg-white' }}
                             >
                               <SelectItem key="" textValue="Не визначено">Не визначено</SelectItem>
@@ -398,12 +403,41 @@ export default function WarehouseReturns() {
                               </>
                             </Select>
                           ) : (
-                            <div className="text-gray-900">{returns.firmName || returns.firmId || 'Не визначено'}</div>
+                            <div className="text-gray-900">{returns.shipFirmName || returns.shipFirmId || 'Не визначено'}</div>
                           )}
                         </div>
                         <div className="space-y-1">
-                          <div className="text-xs">ТТН</div>
-                          <div className="text-gray-900">
+                          <div className="text-xs font-medium">Фірма оприбуткування</div>
+                          {returns.availableFirms && returns.availableFirms.length > 0 ? (
+                            <Select
+                              id="select-receive-firm"
+                              labelPlacement="outside"
+                              aria-label="Фірма оприбуткування"
+                              disallowEmptySelection={true}
+                              value={returns.receiveFirmId ?? ''}
+                              onChange={(e) => {
+                                const v = e.target.value || null;
+                                returns.setReceiveFirmId?.(v);
+                                const f = returns.availableFirms.find((x) => x.id === v);
+                                returns.setReceiveFirmName?.(f?.name || '');
+                              }}
+                              selectedKeys={returns.receiveFirmId ? [returns.receiveFirmId] : []}
+                              classNames={{ trigger: 'w-full min-w-[200px] border border-gray-200 bg-white' }}
+                            >
+                              <SelectItem key="" textValue="Не визначено">Не визначено</SelectItem>
+                              <>
+                                {returns.availableFirms.map((f) => (
+                                  <SelectItem key={f.id} textValue={f.name}>{f.name}</SelectItem>
+                                ))}
+                              </>
+                            </Select>
+                          ) : (
+                            <div className="text-gray-900">{returns.receiveFirmName || returns.receiveFirmId || 'Не визначено'}</div>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-xs font-medium">ТТН</div>
+                          <div className="text-gray-900 h-10 flex items-center">
                             {returns.ttn && formatTrackingNumberWithIcon(returns.ttn, {
                               showIcon: false,
                               compactMode: false,
@@ -412,20 +446,20 @@ export default function WarehouseReturns() {
                           </div>
                         </div>
                         <div className="space-y-1">
-                          <div className="text-xs">Позицій</div>
-                          <div className="text-gray-900">{itemCount}</div>
+                          <div className="text-xs font-medium">Позицій</div>
+                          <div className="text-gray-900 h-10 flex items-center">{itemCount}</div>
                         </div>
                         <div className="space-y-1">
-                          <div className="text-xs">Порцій</div>
+                          <div className="text-xs font-medium">Порцій</div>
                           <div className="flex items-baseline gap-1">
-                            <div className="text-gray-900">{orderedPortionCount}</div>
+                            <div className="text-gray-900 h-10 flex items-center">{orderedPortionCount}</div>
                             {portionDiff > 0 && (<div className="text-red-500">(-{portionDiff})</div>)}
                           </div>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <div className={`${returns.returnReason === 'Інше' ? 'sm:col-span-1' : 'sm:col-span-2'} space-y-1`}>
+                      <div className="flex items-center gap-4">
+                        <div className={`${returns.returnReason === 'Інше' ? 'w-60' : 'min-w-[280px]'} space-y-1`}>
                           <Select
                             id="return-reason"
                             label="Причина повернення"
@@ -445,7 +479,7 @@ export default function WarehouseReturns() {
                           </Select>
                         </div>
                         {returns.returnReason === 'Інше' && (
-                          <div className="sm:col-span-1 space-y-1">
+                          <div className="flex-1">
                             <Input
                               label="Додаткова причина"
                               labelPlacement="outside"
@@ -455,29 +489,32 @@ export default function WarehouseReturns() {
                               classNames={{
                                 label: 'text-xs font-medium text-gray-500 mb-1',
                                 inputWrapper: 'w-full border border-gray-200 bg-white',
+                                input: 'placeholder:opacity-50!',
                               }}
                             />
                           </div>
                         )}
-                        <div className="flex gap-4 sm:col-span-2">
+                        <div className="flex-1">
                           <Input
                             label="Коментар до повернення"
                             labelPlacement="outside"
                             value={returns.comment}
                             onValueChange={returns.setComment}
-                            placeholder="За бажанням, коментар для операції повернення"
+                            placeholder="Коментар для операції повернення (необов'язково)"
                             classNames={{
                               label: 'text-xs font-medium text-gray-500',
                               inputWrapper: 'w-full border border-gray-200 bg-white',
                               input: 'placeholder:opacity-50!',
                             }}
                           />
-                        
+                        </div>
+                        <div className="flex">
                           <DateTimePicker
                             label="Дата оприбуткування"
                             labelPlacement="outside"
                             size="md"
                             labelStyle="text-xs font-medium text-gray-800"
+                            inputStyle="border border-gray-200 bg-white hover:bg-gray-100 focus-within:bg-gray-100"
                             value={(() => {
                               const s = returns.returnDate;
                               if (!s) return new Date();

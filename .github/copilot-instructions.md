@@ -6,7 +6,7 @@
 - **Build**: Vite for frontend, TSC for backend, npm package manager (NOT pnpm/yarn)
 - **Dev server**: Single port (8080) serves both client and API via Vite's `expressPlugin` in `vite.config.dev.ts`
 - **Production**: PM2 process manager (`ecosystem.config.cjs`), separate client/server builds
-- **Styling**: TailwindCSS 4, HeroUI component library, design tokens in `client/global.css`
+- **Styling**: TailwindCSS 4, HeroUI v2.8.x component library, design tokens in `client/global.css`
 - **Database**: MySQL via Prisma (`prisma/schema.prisma`), migrations in `prisma/migrations/`
 
 ## Copilot Behavior Rules
@@ -18,7 +18,7 @@
 ### Before Starting Any Task
 1. **Check `/Docs`** for relevant documentation on the affected area before making changes.
 2. If the area is undocumented and the task is non-trivial — briefly explore the architecture (grep, read key files) before proceeding.
-3. If the scope of changes is unclear — ask a clarifying question before writing code.
+3. If the task description lacks specific details about affected files or functionality, ask a clarifying question before writing code.
 
 ### Plan Before Implementation
 - Do **not** immediately start implementing a task
@@ -30,10 +30,16 @@ For **small, unambiguous changes** (1–2 files, straightforward edit) you may p
 without a plan. For anything involving multiple files, architectural decisions,  
 or non-trivial logic — always propose a plan first.
 
+### Verification & Self-Correction
+- **After applying changes**, check the **"Problems" tab** in VS Code or look for diagnostic highlights (red/yellow underlines) in the editor.
+- If your changes introduce any TypeScript errors, syntax issues, or broken imports, **fix them immediately** without waiting for a user prompt.
+- Consider a task finished only when the modified files are free of new critical IDE diagnostics.
+
 **Expected workflow:**
-1. Propose short plan 🧭  
-2. Wait for approval  
-3. Implement after approval 🚀  
+1.	Propose short plan 🧭
+2.	Wait for approval
+3.	Implement after approval 🚀
+4.	Check for IDE errors & fix them 🛠️
 
 ### When User Asks a Question
 - If the user asks a **question**, answer the question **without making code changes**

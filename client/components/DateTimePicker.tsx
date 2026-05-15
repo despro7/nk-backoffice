@@ -28,6 +28,7 @@ interface WarehouseDateTimePickerProps {
   isLoading?: boolean;
   presets?: PresetTime[];
   labelStyle?: string;
+  inputStyle?: string;
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -54,6 +55,7 @@ export const DateTimePicker = ({
   label = 'Дата і час',
   labelPlacement = 'outside-left',
   labelStyle = 'text-[13px] text-gray-500 max-w-26 leading-tight text-right pr-1',
+  inputStyle = 'hover:bg-white focus-within:bg-white!',
   size = 'md',
   isDisabled = false,
   isLoading = false,
@@ -81,7 +83,7 @@ export const DateTimePicker = ({
         maxValue={now(getLocalTimeZone())}
         classNames={{
           base: 'w-fit',
-          inputWrapper: 'hover:bg-white focus-within:bg-white!',
+          inputWrapper: inputStyle,
           segment: 'rounded focus:bg-neutral-300/80',
           label: labelStyle,
         }}

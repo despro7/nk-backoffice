@@ -46,8 +46,12 @@ export function useWarehouseReturns() {
   const [returnDate, setReturnDate] = useState<string | null>(null);
   const [dilovodSaleExportDate, setDilovodSaleExportDate] = useState<string | null>(null);
   const [dilovodDocId, setDilovodDocId] = useState<string>('');
-  const [firmId, setFirmId] = useState<string | null>(null);
-  const [firmName, setFirmName] = useState<string>('');
+  // Split firms: shipFirmId used to fetch batches (фірма відвантаження)
+  // receiveFirmId used for payload (фірма оприбуткування)
+  const [shipFirmId, setShipFirmId] = useState<string | null>(null);
+  const [shipFirmName, setShipFirmName] = useState<string>('');
+  const [receiveFirmId, setReceiveFirmId] = useState<string | null>(null);
+  const [receiveFirmName, setReceiveFirmName] = useState<string>('');
   const [availableFirms, setAvailableFirms] = useState<Array<{ id: string; name: string }>>([]);
   const [ttn, setTtn] = useState<string>('');
 
@@ -70,8 +74,9 @@ export function useWarehouseReturns() {
     setDilovodSaleExportDate(null);
     setSelectedOrderExternalId('');
     setDilovodDocId('');
-    setFirmId(null);
-    setFirmName('');
+    setShipFirmId(null);
+    setShipFirmName('');
+    // keep receiveFirmId/receiveFirmName so system default remains selected
     setTtn('');
     setItems([]);
     setComment('');
@@ -105,11 +110,13 @@ export function useWarehouseReturns() {
       }
       const firms = Array.isArray(data.data?.firms) ? data.data.firms : [];
       const firm = firms.find((item: any) => item.id === fid);
-      setFirmName(firm?.name ?? '');
+      // set both names if caller expects different contexts
+      setShipFirmName((prev) => (prev || firm?.name) ?? '');
+      setReceiveFirmName((prev) => (prev || firm?.name) ?? '');
       return firm?.name ?? null;
     } catch (err) {
       console.error('Помилка завантаження імені фірми:', err);
-      setFirmName('');
+      setShipFirmName('');
       return null;
     }
   }, [apiCall]);
@@ -121,6 +128,27 @@ export function useWarehouseReturns() {
       if (!response.ok || !data.success) throw new Error(data?.error || 'Failed to load directories');
       const firms = Array.isArray(data.data?.firms) ? data.data.firms : [];
       setAvailableFirms(firms.map((f: any) => ({ id: f.id, name: f.name })));
+      // Also attempt to load dilovod settings to get default firm id
+      try {
+        const resp = await apiCall('/api/dilovod/settings');
+        const settingsJson = await resp.json();
+        if (resp.ok && settingsJson?.data) {
+          const defaultFirmId = settingsJson.data.defaultFirmId || null;
+          if (defaultFirmId) {
+            // initialize both selects to system default if not already set
+            setReceiveFirmId((prev) => prev ?? defaultFirmId);
+            setShipFirmId((prev) => prev ?? defaultFirmId);
+            const firm = firms.find((f: any) => f.id === defaultFirmId);
+            if (firm) {
+              setReceiveFirmName((prev) => prev || firm.name);
+              setShipFirmName((prev) => prev || firm.name);
+            }
+          }
+        }
+      } catch (err) {
+        // ignore settings load error
+        console.warn('[useWarehouseReturns] loadAvailableFirms: failed to load settings', err);
+      }
       return firms;
     } catch (err) {
       console.warn('[useWarehouseReturns] loadAvailableFirms failed:', err);
@@ -190,7 +218,7 @@ export function useWarehouseReturns() {
     }));
   }, []);
 
-  // When firmId changes, reload batches for current items
+  // When shipping firm changes, reload batches for current items
   useEffect(() => {
     if (items.length === 0) return;
 
@@ -199,17 +227,17 @@ export function useWarehouseReturns() {
     setItems(itemsToReload);
 
     const batchDate = dilovodSaleExportDate ? new Date(dilovodSaleExportDate) : returnDate ? new Date(returnDate) : undefined;
-    void loadBatchNumbersForItems(firmId, itemsToReload, batchDate);
+    void loadBatchNumbersForItems(shipFirmId, itemsToReload, batchDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firmId, items.length, dilovodSaleExportDate, returnDate, loadBatchNumbersForItems]);
+  }, [shipFirmId, items.length, dilovodSaleExportDate, returnDate, loadBatchNumbersForItems]);
 
   const loadOrderForReturn = useCallback(async (orderId: number) => {
     setIsLoading(true);
     setError(null);
     setItems([]);
     setComment('');
-    setFirmId(null);
-    setFirmName('');
+    setShipFirmId(null);
+    setShipFirmName('');
     setReturnDate(null);
     setSelectedOrderId(orderId);
     setSelectedOrderNumber('');
@@ -223,8 +251,10 @@ export function useWarehouseReturns() {
       if (!response.ok || !data.success) throw new Error(data?.error || `Помилка підготовки повернення (${response.status})`);
 
       const payload = data.data as PrepareReturnResponse;
-      setFirmId(payload.firmId);
-      setFirmName('');
+      // payload.firmId represents the firm used when the order was shipped.
+      // Use it to prefill shipping firm for batch selection.
+      setShipFirmId(payload.firmId);
+      setShipFirmName('');
       // Do not prefill `returnDate` with server orderDate — keep picker default as current date
       setReturnDate(null);
       setDilovodSaleExportDate(payload.dilovodSaleExportDate || null);
@@ -402,7 +432,8 @@ export function useWarehouseReturns() {
         date: payloadDate,
         comment,
         reason: returnReason === 'Інше' ? customReason || returnReason : returnReason,
-        firmId: firmId || undefined,
+        // payload firm should be the receiving firm
+        firmId: receiveFirmId || undefined,
         items: items.map((item) => ({ sku: item.sku, batchId: item.selectedBatchId, quantity: item.quantity, price: item.price })),
       };
 
@@ -414,12 +445,16 @@ export function useWarehouseReturns() {
       }
 
       try {
-        const historyRecord: Omit<ReturnHistoryRecord, 'id' | 'createdAt' | 'createdBy' | 'createdByName'> = {
+        // Save history: keep top-level `firmId` as receiving firm for compatibility,
+        // and include shipping firm info as extra fields in the record.
+        const historyRecord: any = {
           orderId: selectedOrderId,
           orderNumber: selectedOrderNumber,
           ttn: ttn || undefined,
-          firmId: firmId,
-          firmName: firmName || undefined,
+          firmId: receiveFirmId,
+          firmName: receiveFirmName || undefined,
+          shipFirmId: shipFirmId || undefined,
+          shipFirmName: shipFirmName || undefined,
           returnDate: returnDate || undefined,
           items: items.map((item) => ({ sku: item.sku, name: item.name, quantity: item.quantity, batchId: item.selectedBatchId, batchNumber: item.availableBatches?.find((b) => b.id === item.selectedBatchKey)?.batchNumber, price: item.price })),
           returnReason: returnReason,
@@ -442,7 +477,7 @@ export function useWarehouseReturns() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [apiCall, comment, customReason, firmId, firmName, items, returnDate, returnReason, selectedOrderId, selectedOrderNumber, ttn]);
+  }, [apiCall, comment, customReason, receiveFirmId, receiveFirmName, shipFirmId, shipFirmName, items, returnDate, returnReason, selectedOrderId, selectedOrderNumber, ttn]);
 
   const handleNewReturn = useCallback(() => {
     // reset everything like a fresh page
@@ -465,13 +500,18 @@ export function useWarehouseReturns() {
     returnDate,
     dilovodSaleExportDate,
     dilovodDocId,
-    firmId,
-    firmName,
+    // Backwards-compatible: keep `firmId`/`firmName` absent. Expose new fields.
+    shipFirmId,
+    shipFirmName,
+    receiveFirmId,
+    receiveFirmName,
     availableFirms,
     items,
     loadAvailableFirms,
-    setFirmId,
-    setFirmName,
+    setShipFirmId,
+    setShipFirmName,
+    setReceiveFirmId,
+    setReceiveFirmName,
     comment,
     setComment,
     ttn,

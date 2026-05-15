@@ -1,4 +1,5 @@
 import { Input, Select, SelectItem } from '@heroui/react';
+import { DynamicIcon } from 'lucide-react/dynamic';
 import type { ReturnBatch, ReturnItem } from './WarehouseReturnsTypes';
 
 interface ReturnsItemRowProps {
@@ -52,37 +53,47 @@ export function ReturnsItemRow({
       </div>
 
       <div className="space-y-2">
-        <Select
-          label="Партія"
-          labelPlacement="outside"
-          selectedKeys={[item.selectedBatchKey ?? '']}
-          onSelectionChange={(keys) => {
-            const next = Array.from(keys)[0] as string | undefined;
-            onBatchChange(item.id, next || null);
-          }}
-          classNames={{
-            label: 'text-xs font-medium text-gray-500',
-            trigger: 'border border-gray-200 bg-white',
-          }}
-        >
-          {(item.availableBatches ?? []).map((batch) => {
-						const label = `${batch.batchNumber} (${batch.quantity} шт.)`;
-            return (
-              <SelectItem
-                key={batch.id}
-                textValue={label}
-              >
-                {label}
-              </SelectItem>
-            );
-          })}
-        </Select>
-        {item.availableBatches === null && (
-          <div className="text-xs text-gray-500">Завантаження партій...</div>
-        )}
-        {item.availableBatches !== null && item.availableBatches.length === 0 && (
-          <div className="text-xs text-red-500">Партії не знайдено</div>
-        )}
+        <div className="flex items-center gap-1 text-xs font-medium">
+          {/* <DynamicIcon name="package" className="w-4 h-4 text-gray-500" /> */}
+          Партія
+        </div>
+        {item.availableBatches === null ? (
+          <div className="text-xs px-3 py-[11px] text-gray-500 border border-gray-200 rounded-md">Завантаження партій...</div>
+        ) : (item.availableBatches.length === 0 ? (
+          <div className="text-xs px-3 py-[11px] text-red-500 border border-red-500/50 rounded-md">Партії не знайдено</div>
+        ) : (item.availableBatches.length === 1 ? (
+          // If only one batch is available, show plain text with a small icon
+          <div className="flex items-center gap-2 justify-between text-sm text-green-700 bg-green-700/3 px-3 py-2 border border-green-700/20 rounded-md">
+            <span className="font-medium">{`${item.availableBatches[0].batchNumber} (${item.availableBatches[0].quantity} шт.)`}</span>
+            <DynamicIcon name="check-circle" className="w-3 h-3 text-green-500" />
+          </div>
+        ) : (
+          <Select
+            aria-label="Партія"
+            labelPlacement="outside"
+            selectedKeys={[item.selectedBatchKey ?? '']}
+            onSelectionChange={(keys) => {
+              const next = Array.from(keys)[0] as string | undefined;
+              onBatchChange(item.id, next || null);
+            }}
+            classNames={{
+              label: 'text-xs font-medium text-gray-500',
+              trigger: 'border border-gray-200 bg-white',
+            }}
+          >
+            {(item.availableBatches ?? []).map((batch) => {
+              const label = `${batch.batchNumber} (${batch.quantity} шт.)`;
+              return (
+                <SelectItem
+                  key={batch.id}
+                  textValue={label}
+                >
+                  {label}
+                </SelectItem>
+              );
+            })}
+          </Select>
+        )))}
       </div>
     </div>
   );

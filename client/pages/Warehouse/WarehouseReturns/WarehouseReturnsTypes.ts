@@ -54,6 +54,11 @@ export interface ReturnHistoryRecord {
   ttn?: string | null;
   firmId: string | null;
   firmName?: string;
+  // Optional fields added to track both shipping and receiving firms
+  shipFirmId?: string | null;
+  shipFirmName?: string | null;
+  receiveFirmId?: string | null;
+  receiveFirmName?: string | null;
   returnDate?: string | null;
   items: ReturnHistoryItem[];
   returnReason: string;

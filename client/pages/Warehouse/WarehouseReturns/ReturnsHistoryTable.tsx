@@ -190,7 +190,7 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
                   <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
                     <span>Автор: <b>{record.createdByName || record.createdBy}</b></span>
                     <span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(record.createdAt)}</b></span>
-                    <span className="border-l border-gray-300 pl-3">Фірма: <b>{record.firmName || record.firmId || 'Не визначено'}</b></span>
+                    <span className="border-l border-gray-300 pl-3">Фірма (оприбуткування): <b>{record.firmName || record.firmId || 'Не визначено'}</b>{record.shipFirmName || record.shipFirmId ? <span className="ml-2">(відвантаження: <b>{record.shipFirmName || record.shipFirmId}</b>)</span> : null}</span>
                     {record.returnDate && (
                       <span className="border-l border-gray-300 pl-3">
                         Дата повернення: <b>{new Date(record.returnDate).toLocaleDateString('uk-UA')}</b>

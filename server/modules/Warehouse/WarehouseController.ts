@@ -944,8 +944,11 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Movement not found' });
     }
 
-    // Перевіряємо, що документ належить користувачу і має статус draft
-    if (movement.createdBy !== userId || movement.status !== 'draft') {
+    // Перевіряємо статус і власника: адміну дозволено видаляти чужі чернетки
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+
+    if (movement.status !== 'draft' || (!isAdmin && movement.createdBy !== userId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
