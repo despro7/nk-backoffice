@@ -643,12 +643,13 @@ export class DilovodService {
   async getStockBalanceForSkus(
     skus: string[],
     asOfDate?: Date,
+    firmId?: string,
   ): Promise<Array<{ sku: string; mainStorage: number; smallStorage: number; total: number }>> {
     try {
-      const firmId = this.apiClient.getConfig().defaultFirmId;
+      const finalFirmId = firmId ?? this.apiClient.getConfig().defaultFirmId;
       const label = asOfDate ? asOfDate.toLocaleString('uk-UA') : 'поточна';
-      console.log(`📊 [Dilovod] Запит залишків для ${skus.length} SKU на дату: ${label}`);
-      const stockResponse = await this.apiClient.getStockBalance(skus, firmId, asOfDate);
+      console.log(`📊 [Dilovod] Запит залишків для ${skus.length} SKU на дату: ${label}${finalFirmId ? ` (фірма: ${finalFirmId})` : ''}`);
+      const stockResponse = await this.apiClient.getStockBalance(skus, finalFirmId, asOfDate);
       const processed = this.dataProcessor.processStockBalance(stockResponse);
 
       // Для SKU без відповіді від Dilovod — встановлюємо 0

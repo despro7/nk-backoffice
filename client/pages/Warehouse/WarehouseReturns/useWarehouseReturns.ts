@@ -57,7 +57,7 @@ export function useWarehouseReturns() {
 
   const [items, setItems] = useState<ReturnItem[]>([]);
   const [comment, setComment] = useState('');
-  const [returnReason, setReturnReason] = useState<string>('Брак товару');
+  const [returnReason, setReturnReason] = useState<string>('');
   const [customReason, setCustomReason] = useState('');
 
   const [isLoading, setIsLoading] = useState(false);
@@ -80,7 +80,7 @@ export function useWarehouseReturns() {
     setTtn('');
     setItems([]);
     setComment('');
-    setReturnReason('Брак товару');
+    setReturnReason('');
     setCustomReason('');
     setError(null);
     setIsDirty(false);
@@ -214,7 +214,9 @@ export function useWarehouseReturns() {
         availableBatches: batches,
         selectedBatchKey: item.selectedBatchKey ?? batches[0]?.id ?? null,
         selectedBatchId: item.selectedBatchId ?? batches[0]?.batchId ?? null,
-      };
+        // If batches available, set orderedQuantity to first batch quantity so StepperInput max is correct
+        orderedQuantity: (batches[0]?.quantity ?? item.orderedQuantity ?? item.quantity ?? 1),
+      } as ReturnItem;
     }));
   }, []);
 
@@ -282,7 +284,7 @@ export function useWarehouseReturns() {
       } as ReturnItem));
 
       setItems(preparedItems);
-      setReturnReason('Брак товару');
+      setReturnReason('');
       setCustomReason('');
       const batchDate = payload.dilovodSaleExportDate ? new Date(payload.dilovodSaleExportDate) : payload.orderDate ? new Date(payload.orderDate) : undefined;
       void loadBatchNumbersForItems(payload.firmId, preparedItems, batchDate);
@@ -434,6 +436,8 @@ export function useWarehouseReturns() {
         reason: returnReason === 'Інше' ? customReason || returnReason : returnReason,
         // payload firm should be the receiving firm
         firmId: receiveFirmId || undefined,
+        // Include shipping firm so server can decide whether to keep `contract` in header
+        shipFirmId: shipFirmId || undefined,
         items: items.map((item) => ({ sku: item.sku, batchId: item.selectedBatchId, quantity: item.quantity, price: item.price })),
       };
 

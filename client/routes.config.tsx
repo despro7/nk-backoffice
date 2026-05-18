@@ -7,6 +7,7 @@ import Orders from './pages/Orders';
 import WarehouseMovement from './pages/Warehouse/WarehouseMovement';
 import WarehouseInventory from './pages/Warehouse/WarehouseInventory';
 import WarehouseReturns from './pages/Warehouse/WarehouseReturns';
+import WarehouseWriteOff from './pages/Warehouse/WarehouseWriteOff';
 import WarehouseMaterials from './pages/WarehouseMaterials';
 import Reports from './pages/Reports';
 import ReportsSales from './pages/ReportsSales';
@@ -132,6 +133,18 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="undo-2" size={16} />,
     inNav: true,
     order: 4,
+    parent: 'warehouse',
+    minRole: ROLES.STOREKEEPER,
+  },
+  {
+    path: '/warehouse/writeoff',
+    component: WarehouseWriteOff,
+    title: 'Списання зі складу',
+    pageTitle: 'Списання зі складу | NK Backoffice',
+    navLabel: 'Списання',
+    icon: <DynamicIcon name="trash" size={16} />,
+    inNav: true,
+    order: 5,
     parent: 'warehouse',
     minRole: ROLES.STOREKEEPER,
   },

@@ -1,4 +1,4 @@
-import { Card, CardBody, CardHeader, Select, SelectItem, Spinner, Input, Tab, Tabs, Button } from '@heroui/react';
+import { Card, CardBody, CardHeader, Select, SelectItem, Spinner, Input, Tab, Tabs, Button, Tooltip, Alert } from '@heroui/react';
 import { useMemo, useState, useEffect } from 'react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useDebug } from '@/contexts/DebugContext';
@@ -17,17 +17,28 @@ import { DateTimePicker } from '@/components/DateTimePicker';
 import type { ReturnHistoryRecord } from './WarehouseReturnsTypes';
 
 const RETURN_REASONS: string[] = [
-  'Брак товару',
-  'Не забрали замовлення з пошти',
-  'Не було зв\'язку з клієнтом',
-  'Совісті немає у людини 😄',
-  'Інше',
+  '😩 Брак товару',
+  '📦 Не забрали замовлення з пошти',
+  '📵 Не було зв\'язку з клієнтом',
+  '😡 Совісті немає у людини!',
+  '📝 Інше',
 ];
 
 export default function WarehouseReturns() {
   const returns = useWarehouseReturns();
 
-  const canSubmit = returns.orderSelected && returns.items.length > 0 && !returns.isSubmitting;
+  const itemsBatchesReady = returns.items.length > 0 && returns.items.every((item) => Array.isArray(item.availableBatches) && item.availableBatches.length > 0 && Boolean(item.selectedBatchId));
+
+  const canSubmit = returns.orderSelected && returns.items.length > 0 && !returns.isSubmitting
+    && itemsBatchesReady
+    && Boolean(returns.returnReason) && (!returns.returnReason.includes('Інше') || (returns.customReason && returns.customReason.trim() !== ''));
+
+  const isOtherReason = Boolean(returns.returnReason && returns.returnReason.includes('Інше'));
+  const missingReasonMessage = !returns.returnReason
+    ? 'Оберіть причину повернення!'
+    : (isOtherReason && (!returns.customReason || returns.customReason.trim() === ''))
+      ? 'Вкажіть додаткову причину повернення.'
+      : '';
 
   const itemCount = returns.items.length;
   const portionCount = returns.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -64,7 +75,7 @@ export default function WarehouseReturns() {
       returns.setSelectedOrderId(null);
       returns.setItems([]);
       returns.setComment('');
-      returns.setReturnReason('Брак товару');
+      returns.setReturnReason('');
       returns.setCustomReason('');
       // Clear search state
       returns.setSearchQuery('');
@@ -114,6 +125,7 @@ export default function WarehouseReturns() {
           orderId: returns.selectedOrderId,
           date: dateValue,
           firmId: returns.receiveFirmId || undefined,
+          shipFirmId: returns.shipFirmId || undefined,
           items: returns.items.map((item) => ({
             sku: item.sku,
             batchId: item.selectedBatchId,
@@ -236,13 +248,38 @@ export default function WarehouseReturns() {
         }
       } else {
         // Normal mode: perform deletion immediately without dry run
-        const result = await ReturnsHistoryService.deleteRecord(recordId);
-        if (result && result.success) {
-          setHistory((h) => h.filter((r) => r.id !== recordId));
-          ToastService.show({ title: 'Успішно', description: 'Запис успішно видалено', color: 'success', hideIcon: false });
-        } else {
-          const message = (result && result.error) || 'Не вдалось видалити запис';
-          throw new Error(message);
+        try {
+          const result = await ReturnsHistoryService.deleteRecord(recordId);
+          if (result && result.success) {
+            setHistory((h) => h.filter((r) => r.id !== recordId));
+            ToastService.show({ title: 'Успішно', description: 'Запис успішно видалено', color: 'success', hideIcon: false });
+          } else {
+            const message = (result && result.error) || 'Не вдалось видалити запис';
+            throw new Error(message);
+          }
+        } catch (err: any) {
+          // If Dilovod reports the document not found, offer to delete the local record anyway
+          const resp = err?.response;
+          const isNotFound = resp?.error === 'dilovod_object_not_found' || (resp?.message && resp.message.toString().toLowerCase().includes('не знайдено')) || (err?.message && err.message.toString().toLowerCase().includes('not found'));
+          if (isNotFound) {
+            const confirmDelete = window.confirm('Документ не знайдено в Діловоді. Видалити локальний запис все одно?');
+            if (confirmDelete) {
+              try {
+                const res2 = await ReturnsHistoryService.deleteRecord(recordId, { forceLocal: true });
+                if (res2 && res2.success) {
+                  setHistory((h) => h.filter((r) => r.id !== recordId));
+                  ToastService.show({ title: 'Успішно', description: 'Локальний запис видалено', color: 'success' });
+                } else {
+                  ToastService.show({ title: 'Помилка', description: 'Не вдалось видалити локальний запис', color: 'danger' });
+                }
+              } catch (err2) {
+                ToastService.show({ title: 'Помилка', description: err2 instanceof Error ? err2.message : 'Не вдалось видалити локальний запис', color: 'danger' });
+              }
+            }
+          } else {
+            const message = err instanceof Error ? err.message : 'Не вдалось видалити запис';
+            throw new Error(message);
+          }
         }
       }
     } catch (error) {
@@ -318,6 +355,7 @@ export default function WarehouseReturns() {
         <Tab key="main" title="Оприбуткування" />
         <Tab key="history" title="Історія" />
       </Tabs>
+      
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div key={activeTab} className="p-4">
           {activeTab === 'main' && (
@@ -459,14 +497,15 @@ export default function WarehouseReturns() {
                       </div>
 
                       <div className="flex items-center gap-4">
-                        <div className={`${returns.returnReason === 'Інше' ? 'w-60' : 'min-w-[280px]'} space-y-1`}>
+                        <div className={`${returns.returnReason === 'Інше' ? 'w-60' : 'min-w-[300px]'} space-y-1`}>
                           <Select
                             id="return-reason"
-                            label="Причина повернення"
+                            label={<span>Причина повернення <span className="text-red-500">(обов'язково)</span></span>}
+                            placeholder="Оберіть причину повернення"
                             labelPlacement="outside"
                             value={returns.returnReason}
                             onChange={(event) => returns.handleReturnReasonChange(event.target.value)}
-                            selectedKeys={[returns.returnReason]}
+                            selectedKeys={returns.returnReason ? [returns.returnReason] : []}
                             disallowEmptySelection={true}
                             classNames={{
                               label: 'text-xs font-medium text-gray-500 mb-1',
@@ -510,7 +549,7 @@ export default function WarehouseReturns() {
                         </div>
                         <div className="flex">
                           <DateTimePicker
-                            label="Дата оприбуткування"
+                            label={<span className="flex gap-1">Дата оприбуткування <Tooltip content="Уважно оберіть дату та час, це вплине на облік повернених товарів" color="primary" className="max-w-80"><DynamicIcon name="info" size={14} className="text-red-500" /></Tooltip></span>}
                             labelPlacement="outside"
                             size="md"
                             labelStyle="text-xs font-medium text-gray-800"
@@ -563,6 +602,19 @@ export default function WarehouseReturns() {
                           ))}
                     </CardBody>
                   </Card>
+
+                  {(() => {
+                    const itemsWithNoBatches = returns.items.filter((it) => Array.isArray(it.availableBatches) && it.availableBatches.length === 0);
+                    if (itemsWithNoBatches.length > 0 || missingReasonMessage) {
+                      return (
+                        <Alert color="danger" classNames={{ base: "text-sm" }}>
+                          {missingReasonMessage && <div className="mb-1">{missingReasonMessage}</div>}
+                          {itemsWithNoBatches.length > 0 && <div>Не знайдено партій для товарів: {itemsWithNoBatches.map(i => i.sku).join(', ')} <br />Спробуйте обрати іншу фірму відвантаження в деталях повернення ↑</div>}
+                        </Alert>
+                      );
+                    }
+                    return null;
+                  })()}
 
                   <ReturnsActionBar
                     canSubmit={canSubmit}

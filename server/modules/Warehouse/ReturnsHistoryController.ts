@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
 import { resolveAuthorNames } from '../../lib/utils.js';
+import { salesDriveService } from '../../services/salesDriveService.js';
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
 
@@ -131,6 +132,37 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
       requestedDate,
     );
 
+    // If shipping firm (shipFirmId) differs from receiving firm (overrideFirmId), remove `contract` from header
+    try {
+      const shipFirmId = req.body?.shipFirmId ?? null;
+      // Determine effective receiving firm: prefer overrideFirmId from request, fallback to header.firm produced by builder
+      const receiveFirmId = overrideFirmId ?? (payload && payload.header ? (payload.header as any).firm ?? null : null);
+
+      // If both present and different (string compare), remove `contract` from header
+      if (shipFirmId != null && receiveFirmId != null && String(shipFirmId) !== String(receiveFirmId)) {
+        if (payload && payload.header) {
+          if (Object.prototype.hasOwnProperty.call(payload.header, 'contract')) {
+            console.log(`[Returns] shipFirmId (${shipFirmId}) !== receiveFirmId (${receiveFirmId}), removing 'contract' from payload.header`);
+            delete (payload.header as any).contract;
+          }
+
+          // Prepend order number to remark (e.g. "№16220 | ...")
+          try {
+            const orderRow = await prisma.order.findUnique({ where: { id: Number(orderId) }, select: { orderNumber: true } });
+            const orderNumber = orderRow?.orderNumber ?? `order_${orderId}`;
+            const existingRemark = (payload.header as any).remark;
+            const prefixed = `№${orderNumber}${existingRemark ? ' | ' + existingRemark : ''}`;
+            (payload.header as any).remark = prefixed;
+            console.log(`[Returns] Prepended order number to remark: ${prefixed}`);
+          } catch (e) {
+            console.warn('[Returns] Failed to prepend order number to remark:', e);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Returns] Failed to apply ship/receive firm contract rule:', e);
+    }
+
     if (dryRun === true) {
       return res.json({ success: true, payload, warnings });
     }
@@ -199,6 +231,31 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
       },
     });
 
+    // Оновити статус замовлення локально на '7' (Повернення) та сповістити SalesDrive
+    let statusUpdateInfo = { local: false, salesDrive: false };
+    try {
+      const localUpdate = await prisma.order.update({ where: { id: Number(orderId) }, data: { status: '7', statusText: 'Повернення' } });
+      console.log(`✅ [Returns] Local order ${orderId} status updated to: ${localUpdate.status}/${localUpdate.statusText}`);
+      statusUpdateInfo.local = true;
+    } catch (updateStatusErr) {
+      console.warn(`⚠️ [Returns] Failed to update local order status to 7 for order ${orderId}:`, updateStatusErr);
+      warnings.push('Не вдалося оновити локальний статус замовлення');
+    }
+
+    try {
+      const sdResult = await salesDriveService.updateSalesDriveOrderStatus(String(orderId), '7');
+      if (sdResult) {
+        statusUpdateInfo.salesDrive = true;
+        console.log(`✅ [Returns] SalesDrive status updated to 7 for order ${orderId}`);
+      } else {
+        console.warn(`⚠️ [Returns] Failed to update SalesDrive status for order ${orderId}`);
+        warnings.push('Не вдалося оновити статус у SalesDrive');
+      }
+    } catch (sdErr) {
+      console.warn(`⚠️ [Returns] Error notifying SalesDrive for order ${orderId}:`, sdErr);
+      warnings.push('Помилка при оновленні статусу в SalesDrive');
+    }
+
     // Створити запис в історії повернень
     try {
       const userId = (req as any).user?.userId || (req as any).user?.id;
@@ -242,7 +299,8 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
       payload, 
       dilovodResponse: result, 
       returnNumber: dilovodDocId, // Повертаємо ID документа Dilovod
-      warnings 
+      warnings,
+      statusUpdate: statusUpdateInfo,
     });
   } catch (error) {
     console.log('🚨 [Returns] Помилка відправки повернення:', error);
@@ -465,18 +523,41 @@ router.delete('/history/:id', authenticateToken, requireMinRole(ROLES.ADMIN), as
       });
     }
 
-    // Відправити payload в Dilovod (цей запит не блокується механізмом дублювання)
-    const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
-    const dilovodService = new DilovodService();
-    const dilovodResult = await dilovodService.exportToDilovod(payload);
+    // If client requested force-local delete, skip Dilovod and delete only locally
+    const forceLocal = req.query?.forceLocal === 'true';
+    let dilovodResult: any = null;
+    if (!forceLocal) {
+      // Відправити payload в Dilovod (цей запит не блокується механізмом дублювання)
+      const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
+      const dilovodService = new DilovodService();
+      const dilovodResult = await dilovodService.exportToDilovod(payload);
 
-    if (dilovodResult?.error) {
-      console.log(`❌ [Returns] Error sending delMark request to Dilovod: ${dilovodResult.error}`);
-      return res.status(422).json({
-        success: false,
-        error: `Failed to send request to Dilovod: ${dilovodResult.error}`,
-        warnings,
-      });
+      if (dilovodResult?.error) {
+        console.log(`❌ [Returns] Error sending delMark request to Dilovod: ${dilovodResult.error}`);
+
+        // Detect Dilovod 'object not found' error to provide clearer message and allow force-delete
+        const errMsg = String(dilovodResult.error || '').toLowerCase();
+        const objectNotFound = /object with id .* not found/.test(errMsg) || errMsg.includes('not found');
+
+        if (objectNotFound) {
+          return res.status(422).json({
+            success: false,
+            error: 'dilovod_object_not_found',
+            message: `Не знайдено документ в Діловоді (ID: ${returnRecord.returnNumber}). Можливо він вже видалений у Діловоді.`,
+            canForceDelete: true,
+            returnNumber: returnRecord.returnNumber,
+            warnings,
+          });
+        }
+
+        return res.status(422).json({
+          success: false,
+          error: `Failed to send request to Dilovod: ${dilovodResult.error}`,
+          warnings,
+        });
+      }
+    } else {
+      console.log(`⚠️ [Returns] forceLocal=true — skipping Dilovod deletion for return ${returnRecord.returnNumber}`);
     }
 
     // Видалити запис про повернення

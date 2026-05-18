@@ -65,6 +65,18 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
   const [loading, setLoading] = useState(false);
   const [totalOrders, setTotalOrders] = useState(0);
   const [pageSize, setPageSize] = useState<number>(8);
+  const sortMountedRef = useRef(false);
+  const pageSizeLoadedRef = useRef(false);
+
+  // Cookie helpers for per-user page size
+  const readCookie = (name: string) => {
+    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return match ? decodeURIComponent(match[2]) : null;
+  };
+  const setCookie = (name: string, value: string, days = 365) => {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/`;
+  };
   const [statusCounts, setStatusCounts] = useState<{
     confirmed: number;
     readyToShip: number;
@@ -179,6 +191,19 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
   useEffect(() => {
     const loadPageSize = async () => {
       try {
+        // Сначала проверяем cookie — индивидуальна настройка пользователя
+        const cookieVal = readCookie('orders_page_size');
+        if (cookieVal) {
+          const parsed = parseInt(cookieVal);
+          if (!isNaN(parsed) && parsed > 0) {
+            setPageSize(parsed);
+            // Initial fetch using saved page size
+            await fetchOrders(1, parsed, filter, sortDescriptor, searchQuery);
+            pageSizeLoadedRef.current = true;
+            return;
+          }
+        }
+
         const response = await apiCall('/api/settings');
         if (response.ok) {
           const allSettings = await response.json();
@@ -186,17 +211,37 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
           // Ищем настройку размера страницы
           const pageSizeSetting = allSettings.find((s: any) => s.key === 'orders_page_size');
           if (pageSizeSetting) {
-            setPageSize(parseInt(pageSizeSetting.value));
+            const parsed = parseInt(pageSizeSetting.value);
+            setPageSize(parsed);
+            await fetchOrders(1, parsed, filter, sortDescriptor, searchQuery);
+            pageSizeLoadedRef.current = true;
+            return;
           }
         }
+
+        // No cookie / setting found — fetch with current default pageSize
+        await fetchOrders(1, pageSize, filter, sortDescriptor, searchQuery);
+        pageSizeLoadedRef.current = true;
       } catch (error) {
         console.error('Error loading page size setting:', error);
-        // Оставляем значение по умолчанию (10)
+        // Оставляем значение по умолчанию
       }
     };
 
     loadPageSize();
   }, []);
+
+  // При зміні сортування — переходимо на першу сторінку, щоб сортування враховувало весь набір
+  useEffect(() => {
+    if (!sortMountedRef.current) { sortMountedRef.current = true; return; }
+    if (page !== 1) {
+      setPage(1);
+      return; // fetchOrders виконається через залежність [page, pageSize, sortDescriptor]
+    }
+    // Якщо ми вже на першій сторінці — одразу оновлюємо
+    fetchOrders(1, pageSize, filter, sortDescriptor, searchQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortDescriptor]);
 
   // Загрузка заказов с пагинацией и фильтрацией
   const fetchOrders = async (pageNum: number = 1, currentPageSize: number = pageSize, statusFilter?: string, currentSortDescriptor: SortDescriptor = sortDescriptor, search?: string) => {
@@ -263,6 +308,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
   // Загружаем заказы при изменении фильтра или страницы
   useEffect(() => {
     // При изменении фильтра или поискового запроса, всегда возвращаемся на первую страницу
+    if (!pageSizeLoadedRef.current) return;
     if (page !== 1) {
       setPage(1);
       return; // Прерываем текущее выполнение, чтобы избежать лишнего запроса
@@ -273,6 +319,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
   // Автооновлення таблиці при кожному пінгу сервера (lastChecked)
   useEffect(() => {
     if (!lastChecked) return;
+    if (!pageSizeLoadedRef.current) return;
     fetchOrders(page, pageSize, filter, sortDescriptor, searchQuery);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastChecked]);
@@ -378,7 +425,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
         classNames={{
           base: "max-w-7xl",
           wrapper: "rounded-lg w-full",
-          th: [
+          th: [ 
             "first:rounded-s-sm",
             "last:rounded-e-sm",
             "bg-neutral-100",
@@ -390,6 +437,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
             "leading-5",
             "px-2.5"
           ],
+          tr: "last:border-b-1 border-gray-200/50",
           td: [
             "text-black",
             "text-base",
@@ -397,7 +445,6 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
             "leading-[130%]",
             "px-2.5",
             "py-3",
-            "last:border-b-0",
           ],
           tbody: "divide-y divide-grey-200"
         }}
@@ -418,7 +465,7 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
           emptyContent={<div className="text-grey-500/75">Замовлень не знайдено</div>}
           isLoading={loading}
           loadingContent={
-            <div className="text-grey-500 bg-white/50 backdrop-blur-sm rounded-lg flex items-center justify-center self-start mt-5 p-10 z-10 shadow-lg">
+            <div className="text-grey-500 bg-white/50 backdrop-blur-sm rounded-lg flex items-center justify-center self-start mt-20 p-10 z-10 shadow-lg">
               <DynamicIcon name="loader-2" className="animate-spin mr-2" size={16} />
               <span>Завантаження замовлень...</span>
             </div>
@@ -505,24 +552,59 @@ export function OrdersTable({ className, filter = "all", searchQuery = "", onTab
         </TableBody>
       </Table>
 
-      {/* Пагинация */}
+      {/* Пагинация: селект размера страницы слева, пагинация по центру, кнопка обновить справа */}
       {totalOrders > pageSize && (
-        <div className="flex justify-center">
-          <Pagination
-            total={pages}
-            page={page}
-            onChange={(newPage) => {
-              setPage(newPage);
-            }}
-            showControls
-            showShadow
-            classNames={{
-              cursor: "bg-neutral-500 text-white",
-              item: "cursor-pointer",
-              next: "cursor-pointer",
-              prev: "cursor-pointer",
-            }}
-          />
+        <div className="mt-4 flex items-center justify-between">
+          {/* Left: page size select */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600">На сторінці:</label>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                const newSize = parseInt(e.target.value, 10) || 10;
+                setPageSize(newSize);
+                // зберігаємо в cookie
+                setCookie('orders_page_size', String(newSize), 365);
+                // повертаємося на першу сторінку
+                setPage(1);
+              }}
+              className="px-2 py-1 border rounded text-sm"
+            >
+              <option value={8}>8</option>
+              <option value={16}>16</option>
+              <option value={24}>24</option>
+              <option value={48}>48</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+
+          {/* Center: pagination */}
+          <div>
+            <Pagination
+              total={pages}
+              page={page}
+              onChange={(newPage) => setPage(newPage)}
+              showControls
+              showShadow
+              classNames={{
+                cursor: "bg-neutral-500 text-white",
+                item: "cursor-pointer",
+                next: "cursor-pointer",
+                prev: "cursor-pointer",
+              }}
+            />
+          </div>
+
+          {/* Right: refresh button */}
+          <div>
+            <Button
+              onPress={() => fetchOrders(page, pageSize, filter, sortDescriptor, searchQuery)}
+              color="primary"
+              className="px-3 py-1 text-sm bg-neutral-400"
+            >
+              Оновити
+            </Button>
+          </div>
         </div>
       )}
     </div>

@@ -151,6 +151,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
                 {product.unit === 'portions' && (
                   <StepperInput
                     ref={firstInputRef}
+                    size="lg"
                     label={`Коробок × ${product.portionsPerBox}`}
                     value={product.boxCount ?? 0}
                     onChange={(v) => onChange(product.id, 'boxCount', v)}
@@ -163,6 +164,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
 
                 <StepperInput
                   ref={product.unit === 'pcs' ? firstInputRef : undefined}
+                  size="lg"
                   label={product.unit === 'portions' ? 'Залишок порцій' : 'Фактична кількість'}
                   value={product.actualCount ?? 0}
                   onChange={(v) => onChange(product.id, 'actualCount', v)}

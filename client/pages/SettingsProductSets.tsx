@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatPrice, formatRelativeDate, getCategoryColors } from '../lib/formatUtils';
-import { Input, addToast, Textarea, Switch, Tooltip, Select, SelectItem } from '@heroui/react';
+import { Input, addToast, Textarea, Switch, Tooltip, Select, SelectItem, ButtonGroup, toast } from '@heroui/react';
 import { ToastService } from '@/services/ToastService';
 import ProductsStatsSummary, { type ProductsStats } from '@/components/ProductsStatsSummary';
 import { LoggingService } from '@/services/LoggingService';
@@ -15,11 +15,13 @@ import {
   TableBody,
   TableRow,
   TableCell,
+  Pagination,
   Chip,
   Dropdown,
   DropdownTrigger,
   DropdownMenu,
   DropdownItem,
+  DropdownSection,
   SortDescriptor,
   Button,
   Modal,
@@ -102,11 +104,22 @@ const ProductSets: React.FC = () => {
     total: number;
     pages: number;
   } | null>(null);
+  const [pageSize, setPageSize] = useState<number>(20);
+
+  // Cookie helpers
+  const readCookie = (name: string) => {
+    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return match ? decodeURIComponent(match[2]) : null;
+  };
+  const setCookie = (name: string, value: string, days = 365) => {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/`;
+  };
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [testResults, setTestResults] = useState<string>('');
   const [syncStatus, setSyncStatus] = useState<{
@@ -117,6 +130,7 @@ const ProductSets: React.FC = () => {
     errors: string[];
   } | null>(null);
   const [stockSyncing, setStockSyncing] = useState(false);
+  const [wpSyncing, setWpSyncing] = useState(false);
   const [stockSyncStatus, setStockSyncStatus] = useState<{
     isRunning: boolean;
     message: string;
@@ -144,6 +158,9 @@ const ProductSets: React.FC = () => {
   const [manualSkuList, setManualSkuList] = useState('');
   const [manualSyncing, setManualSyncing] = useState(false);
   const manualSyncAbortController = useRef<AbortController | null>(null);
+  // Confirm modal for full sync
+  const [isFullSyncConfirmOpen, setIsFullSyncConfirmOpen] = useState(false);
+  const [isFullSyncSubmitting, setIsFullSyncSubmitting] = useState(false);
 
   // AbortController для основної синхронізації
   const syncAbortController = useRef<AbortController | null>(null);
@@ -383,14 +400,15 @@ const ProductSets: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (isDebugMode) {
-      // Refresh portions stats and then refresh products to ensure table updates
-      fetchPortions()
-        .catch(err => console.error('[SettingsProductSets] fetchPortions failed', err))
-        .then(() => {
-          fetchProducts().catch(err => console.error('[SettingsProductSets] fetchProducts failed', err));
-        });
-    }
+    if (!isDebugMode) return;
+    // Don't run debug fetches until initial pageSize load completed to avoid duplicate product requests
+    if (!pageSizeLoadedRef.current) return;
+    // Refresh portions stats and then refresh products to ensure table updates
+    fetchPortions()
+      .catch(err => console.error('[SettingsProductSets] fetchPortions failed', err))
+      .then(() => {
+        fetchProducts(currentPage, searchTerm, selectedCategories, pageSize).catch(err => console.error('[SettingsProductSets] fetchProducts failed', err));
+      });
   }, [isDebugMode, fetchPortions]);
 
   // Завантажуємо збережене налаштування "Розгорнути комплекти" з сервера
@@ -493,12 +511,94 @@ const ProductSets: React.FC = () => {
   // Фільтруємо дані для відображення.
   // Пошук, категорія та сортування — серверні (передаємо в API).
   // Тут залишається лише локальний фільтр "показати застарілі".
-  const displayProducts = useMemo(() => {
-    if (!showOutdated) {
-      return products.filter(product => !product.isOutdated);
+  // Колонки, які сервер вміє сортувати
+  const serverSortableColumns = useMemo(() => ['lastSyncAt', 'name', 'categoryName', 'weight', 'manualOrder'], []);
+
+  // Колонки, які будемо сортувати на клієнті (дані похідні або в JSON-полі)
+  const clientSortableColumns = useMemo(() => ['stock1', 'stock2', 'portionsPerBox', 'portions', 'set'], []);
+
+  // Отримати числове значення для сортування по колонці (для клієнтського сортування)
+  const getSortValue = (product: Product, column?: string): number | null => {
+    if (!column) return null;
+    switch (column) {
+      case 'stock1': {
+        const stock1Data = parseStockBalance(product.stockBalanceByStock);
+        return Number(stock1Data['1'] || 0);
+      }
+      case 'stock2': {
+        const stock2Data = parseStockBalance(product.stockBalanceByStock);
+        return Number(stock2Data['2'] || 0);
+      }
+      case 'portionsPerBox': {
+        return Number((product as any).portionsPerBox ?? 24);
+      }
+      case 'portions': {
+        const p = portionsBySku.get(String(product.sku ?? '').trim().toLowerCase());
+        const total = (p?.newQty ?? 0) + (p?.confirmedQty ?? 0) + (p?.holdQty ?? 0);
+        return Number(total);
+      }
+      case 'set': {
+        const s = (product as any).set;
+        if (!s) return 0;
+        if (Array.isArray(s)) return s.length;
+        if (typeof s === 'object') return Object.keys(s).length;
+        return 0;
+      }
+      default:
+        return null;
     }
-    return products;
-  }, [products, showOutdated]);
+  };
+
+  const displayProducts = useMemo(() => {
+    // Якщо клієнтське сортування — намагаємось брати з allProducts (повний набір).
+    // Але якщо allProducts ще не завантажені — fallback на products щоб уникнути пустої таблиці.
+    const isClientSort = !!(sortDescriptor && clientSortableColumns.includes(String(sortDescriptor.column)));
+    const sourceCollection = isClientSort && allProducts && allProducts.length > 0 ? allProducts : products;
+    const base = !showOutdated ? sourceCollection.filter(product => !product.isOutdated) : [...sourceCollection];
+
+    // Якщо сортування – клієнтське, застосовуємо локальний компаратор тут
+    if (isClientSort) {
+      const col = String(sortDescriptor!.column);
+      const dir = sortDescriptor!.direction === 'ascending' ? 1 : -1;
+      return [...base].sort((a, b) => {
+        const va = getSortValue(a, col) ?? 0;
+        const vb = getSortValue(b, col) ?? 0;
+        if (va < vb) return -1 * dir;
+        if (va > vb) return 1 * dir;
+        // Стабільне сортування: tie-breaker по назві
+        const nameCmp = String(a.name || '').localeCompare(String(b.name || ''));
+        return nameCmp * dir;
+      });
+    }
+
+    return base;
+  }, [products, allProducts, showOutdated, sortDescriptor, portionsBySku, clientSortableColumns, forceUpdate]);
+
+  // Пагіновані дані та кількість сторінок (враховуємо локальне або серверне сортування)
+  const pagesCount = useMemo(() => {
+    const isClientSort = sortDescriptor && clientSortableColumns.includes(String(sortDescriptor.column));
+    if (isClientSort) {
+      return Math.max(1, Math.ceil(displayProducts.length / pageSize));
+    }
+    return pagination?.pages || 1;
+  }, [displayProducts, pageSize, pagination, sortDescriptor]);
+
+  const paginatedProducts = useMemo(() => {
+    const isClientSort = sortDescriptor && clientSortableColumns.includes(String(sortDescriptor.column));
+    if (isClientSort) {
+      const start = (currentPage - 1) * pageSize;
+      return displayProducts.slice(start, start + pageSize);
+    }
+    return displayProducts;
+  }, [displayProducts, currentPage, pageSize, sortDescriptor]);
+
+  const isClientSortActive = !!(sortDescriptor && clientSortableColumns.includes(String(sortDescriptor.column)));
+  const showPagination = useMemo(() => {
+    if (isClientSortActive) {
+      return displayProducts.length > pageSize;
+    }
+    return (pagination?.total || 0) > pageSize;
+  }, [isClientSortActive, displayProducts.length, pageSize, pagination]);
 
   // Функція для рендеринга комірок таблиці
   const renderCell = (product: Product, columnKey: React.Key) => {
@@ -1011,29 +1111,44 @@ const ProductSets: React.FC = () => {
     }
   };
 
-  const fetchProducts = async (pageParam?: number, searchParam?: string, categoryParam?: string) => {
+  const fetchProducts = async (pageParam?: number, searchParam?: string, categoryParam?: string | string[], limitParam?: number) => {
     setLoading(true);
     try {
+      const requestedSortBy = (sortDescriptor?.column as string) || 'manualOrder';
+      const requestedSortOrder = sortDescriptor?.direction === 'ascending' ? 'asc' : 'desc';
+      const effectiveLimit = typeof limitParam === 'number' ? limitParam : (requestedSortBy === 'lastSyncAt' ? 1000 : pageSize);
+
       const params = new URLSearchParams({
         page: (pageParam ?? currentPage).toString(),
-        limit: '100', // Збільшуємо ліміт для завантаження всіх товарів
-        sortBy: (sortDescriptor?.column as string) || 'manualOrder',
-        sortOrder: sortDescriptor?.direction === 'ascending' ? 'asc' : 'desc'
+        limit: String(effectiveLimit),
+        sortBy: requestedSortBy,
+        sortOrder: requestedSortOrder
       });
 
       const searchToUse = typeof searchParam === 'string' ? searchParam : searchTerm;
-      const categoryToUse = typeof categoryParam === 'string' ? categoryParam : selectedCategory;
+      const categoryToUse: string | string[] | undefined = (typeof categoryParam === 'string' || Array.isArray(categoryParam)) ? categoryParam as any : selectedCategories;
 
       if (searchToUse) {
         params.append('search', searchToUse);
       }
 
       if (categoryToUse) {
-        params.append('category', categoryToUse);
+        if (Array.isArray(categoryToUse)) {
+          const cleaned = categoryToUse.filter(Boolean);
+          if (cleaned.length > 0) params.append('category', cleaned.join(','));
+        } else {
+          params.append('category', categoryToUse);
+        }
+      }
+
+      // Include outdated products only when user enabled the toggle
+      if (showOutdated) {
+        params.append('showOutdated', 'true');
       }
 
       const response = await fetch(`/api/products?${params}`, {
-        credentials: 'include'
+        credentials: 'include',
+        cache: 'no-store'
       });
 
       if (response.ok) {
@@ -1044,6 +1159,14 @@ const ProductSets: React.FC = () => {
         // Отладочная информация для первого товара
         if (data.products.length > 0) {
           const firstProduct = data.products[0];
+          LoggingService.productSetsLog('🛒 [SettingsProductSets] fetchProducts response info', {
+            requestedSortBy,
+            requestedSortOrder,
+            effectiveLimit,
+            returnedFirstProductSku: firstProduct.sku,
+            returnedFirstProductLastSyncAt: firstProduct.lastSyncAt,
+            returnedFirstProductName: firstProduct.name,
+          });
           LoggingService.productSetsLog('🛒 [SettingsProductSets] Перший товар - структура даних:', {
             categoryId: firstProduct.categoryId,
             categoryIdType: typeof firstProduct.categoryId,
@@ -1078,18 +1201,51 @@ const ProductSets: React.FC = () => {
   };
 
   // Загрузка всех товаров для поиска названий в комплектах
-  const fetchAllProducts = async () => {
-    try {
-      const response = await fetch('/api/products?limit=1000', {
-        credentials: 'include'
-      });
+  // Дедуплікація: використовуємо in-flight проміс та TTL кеш (5 хв)
+  const allProductsPromiseRef = useRef<Promise<void> | null>(null);
+  const allProductsLoadedAtRef = useRef<number | null>(null);
+  const ALL_PRODUCTS_TTL = 5 * 60 * 1000; // 5 minutes
 
-      if (response.ok) {
-        const data: ProductsResponse = await response.json();
-        setAllProducts(data.products);
+  const fetchAllProducts = async ({ force = false }: { force?: boolean } = {}) => {
+    try {
+      const now = Date.now();
+      if (!force && allProductsLoadedAtRef.current && (now - allProductsLoadedAtRef.current) < ALL_PRODUCTS_TTL) {
+        // кеш ще свіжий
+        return;
       }
-    } catch (error) {
-      console.error('Error fetching all products:', error);
+
+      if (allProductsPromiseRef.current) {
+        // вже є in-flight запит — повертаємо його
+        return allProductsPromiseRef.current;
+      }
+
+      const p = (async () => {
+        try {
+          console.debug('[SettingsProductSets] fetchAllProducts: fetching full products list (limit=1000)', { force });
+          const response = await fetch('/api/products?limit=1000', {
+            credentials: 'include',
+            cache: 'no-store'
+          });
+
+          if (response.ok) {
+            const data: ProductsResponse = await response.json();
+            setAllProducts(data.products);
+            allProductsLoadedAtRef.current = Date.now();
+          } else {
+            console.warn('[SettingsProductSets] fetchAllProducts: response not ok', response.status);
+          }
+        } catch (error) {
+          console.error('Error fetching all products:', error);
+        } finally {
+          // очистимо референс in-flight промісу
+          allProductsPromiseRef.current = null;
+        }
+      })();
+
+      allProductsPromiseRef.current = p;
+      return p;
+    } catch (err) {
+      console.error('fetchAllProducts wrapper error:', err);
     }
   };
 
@@ -1138,7 +1294,7 @@ const ProductSets: React.FC = () => {
         syncedSets: 0,
         errors: []
       });
-      addToast({
+      ToastService.show({
         title: 'Синхронізацію скасовано',
         description: 'Синхронізацію товарів було перервано',
         color: 'warning'
@@ -1189,14 +1345,14 @@ const ProductSets: React.FC = () => {
         if (result.errors?.length > 0) {
           const errorList = result.errors.slice(0, 5).join('\n');
           const moreCount = result.errors.length > 5 ? ` (+${result.errors.length - 5} ще)` : '';
-          addToast({
+          ToastService.show({
             title: `Синхронізація завершена з помилками (${result.errors.length})`,
             description: errorList + moreCount,
             color: 'danger',
             timeout: 10000
           });
         } else {
-          addToast({
+          ToastService.show({
             title: 'Синхронізацію завершено',
             description: result.message,
             color: 'success'
@@ -1204,8 +1360,9 @@ const ProductSets: React.FC = () => {
         }
 
         // Оновлюємо список товарів після синхронізації
-        fetchProducts();
-        fetchAllProducts(); // Оновлюємо всі товари для комплектів
+        fetchProducts(currentPage, searchTerm, selectedCategories, pageSize);
+        // Форсуємо оновлення повного набору — синхронізація змінила дані
+        fetchAllProducts({ force: true }); // Оновлюємо всі товари для комплектів
       } else {
         const error = await response.json();
         setSyncStatus({
@@ -1216,7 +1373,7 @@ const ProductSets: React.FC = () => {
           errors: [error.error || 'Невідома помилка']
         });
 
-        addToast({
+        ToastService.show({
           title: 'Помилка синхронізації',
           description: error.error || 'Невідома помилка',
           color: 'danger'
@@ -1238,7 +1395,7 @@ const ProductSets: React.FC = () => {
         errors: [errorMessage]
       });
 
-      addToast({
+      ToastService.show({
         title: 'Помилка мережі',
         description: errorMessage,
         color: 'danger'
@@ -1279,7 +1436,7 @@ const ProductSets: React.FC = () => {
           });
 
           // Оновлюємо список товарів після синхронізації залишків
-          await fetchProducts();
+          await fetchProducts(currentPage, searchTerm, selectedCategories, pageSize);
         } else {
           setStockSyncStatus({
             isRunning: false,
@@ -1424,7 +1581,7 @@ const ProductSets: React.FC = () => {
         syncedSets: 0,
         errors: []
       });
-      addToast({
+      ToastService.show({
         title: 'Синхронізацію скасовано',
         description: 'Ручну синхронізацію товарів було перервано',
         color: 'warning'
@@ -1433,7 +1590,7 @@ const ProductSets: React.FC = () => {
     }
 
     if (!isAdmin()) {
-      addToast({
+      ToastService.show({
         title: 'Помилка',
         description: 'У вас немає прав для виконання синхронізації',
         color: 'danger'
@@ -1448,7 +1605,7 @@ const ProductSets: React.FC = () => {
       .filter(s => s.length > 0);
 
     if (skus.length === 0) {
-      addToast({
+      ToastService.show({
         title: 'Помилка',
         description: 'Введіть хоча б один SKU для синхронізації',
         color: 'warning'
@@ -1492,7 +1649,7 @@ const ProductSets: React.FC = () => {
           ...(result.skippedProducts !== undefined && { skippedProducts: result.skippedProducts }),
         } as any);
 
-        addToast({
+        ToastService.show({
           title: 'Синхронізацію завершено',
           description: result.message,
           color: result.errors?.length > 0 ? 'warning' : 'success'
@@ -1502,7 +1659,7 @@ const ProductSets: React.FC = () => {
         if (result.errors?.length > 0) {
           const errorList = result.errors.slice(0, 5).join('\n');
           const moreCount = result.errors.length > 5 ? ` (+${result.errors.length - 5} ще)` : '';
-          addToast({
+          ToastService.show({
             title: `Товари з помилками (${result.errors.length})`,
             description: errorList + moreCount,
             color: 'danger',
@@ -1511,8 +1668,9 @@ const ProductSets: React.FC = () => {
         }
 
         // Оновлюємо список товарів після синхронізації
-        fetchProducts();
-        fetchAllProducts();
+        fetchProducts(currentPage, searchTerm, selectedCategories, pageSize);
+        // Форсуємо оновлення повного набору — синхронізація змінила дані
+        fetchAllProducts({ force: true });
         setIsManualSyncModalOpen(false);
       } else {
         const error = await response.json();
@@ -1524,7 +1682,7 @@ const ProductSets: React.FC = () => {
           errors: [error.error || 'Невідома помилка']
         });
 
-        addToast({
+        ToastService.show({
           title: 'Помилка синхронізації',
           description: error.error || 'Невідома помилка',
           color: 'danger'
@@ -1546,7 +1704,7 @@ const ProductSets: React.FC = () => {
         errors: [errorMessage]
       });
 
-      addToast({
+      ToastService.show({
         title: 'Помилка мережі',
         description: errorMessage,
         color: 'danger'
@@ -1638,18 +1796,17 @@ const ProductSets: React.FC = () => {
         const adjustMsg = result.adjustedStock && result.adjustedCount > 0
           ? `. Залишки скориговано для ${result.adjustedCount} SKU`
           : '';
-        addToast({ 
+        ToastService.show({ 
           title: 'Payload готовий', 
           description: `${result.count} товарів. ${modeMsg}${adjustMsg}`, 
-          color: 'success' 
         });
       } else {
         const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-        addToast({ title: 'Помилка', description: error.error || 'Не вдалося отримати дані для експорту', color: 'danger' });
+        ToastService.show({ title: 'Помилка', description: error.error || 'Не вдалося отримати дані для експорту', color: 'danger', hideIcon: false });
       }
     } catch (error) {
       console.error('Error preparing export:', error);
-      addToast({ title: 'Помилка мережі', description: error instanceof Error ? error.message : 'Невідома помилка', color: 'danger' });
+      ToastService.show({ title: 'Помилка мережі', description: error instanceof Error ? error.message : 'Невідома помилка', color: 'danger', hideIcon: false });
     }
   };
 
@@ -1728,7 +1885,7 @@ const ProductSets: React.FC = () => {
           return newState;
         });
 
-        addToast({
+        ToastService.show({
           title: "Успішно оновлено",
           description: `Вес товара обновлен на ${newWeight}г.`,
           color: "success"
@@ -1739,13 +1896,13 @@ const ProductSets: React.FC = () => {
 
         try {
           const error = JSON.parse(errorText);
-          addToast({
+          ToastService.show({
             title: "Помилка",
             description: `Ошибка обновления веса: ${error.error || 'Неизвестная ошибка'}`,
             color: "danger"
           });
         } catch {
-          addToast({
+          ToastService.show({
             title: "Помилка",
             description: `Ошибка обновления веса: ${response.status} ${response.statusText}`,
             color: "danger"
@@ -1753,7 +1910,7 @@ const ProductSets: React.FC = () => {
         }
       }
     } catch (error) {
-      addToast({
+      ToastService.show({
         title: "Помилка мережі",
         description: `Ошибка сети: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
         color: "danger"
@@ -1784,7 +1941,7 @@ const ProductSets: React.FC = () => {
       if (!isNaN(newWeight) && newWeight >= 0) {
         updateProductWeight(productId, newWeight);
       } else {
-        addToast({
+        ToastService.show({
           title: "Некоректний ввід",
           description: 'Введите корректный вес (целое число >= 0)',
           color: "warning"
@@ -1796,7 +1953,7 @@ const ProductSets: React.FC = () => {
         });
       }
     } else {
-      addToast({
+      ToastService.show({
         title: "Відсутній ввід",
         description: 'Введите вес',
         color: "warning"
@@ -1820,14 +1977,41 @@ const ProductSets: React.FC = () => {
 
   // Автоматичне оновлення при зміні фільтрів
   useEffect(() => {
-    fetchStats();
-    fetchAllProducts();
+    const doInitialLoad = async () => {
+      // Read saved page size from cookie (if any)
+      const cookieVal = readCookie('products_page_size');
+      if (cookieVal) {
+        const parsed = parseInt(cookieVal, 10);
+        if (!isNaN(parsed) && parsed > 0) setPageSize(parsed);
+      }
+
+      fetchStats();
+
+      // Fetch initial page using saved page size (if any) to ensure server receives correct limit.
+      if (cookieVal) {
+        const parsed = parseInt(cookieVal, 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          // Pass parsed as limitParam to ensure the initial request uses the saved pageSize
+          await fetchProducts(1, searchTerm, selectedCategories, parsed).catch(() => {/* silent */});
+          pageSizeLoadedRef.current = true;
+          return;
+        }
+      }
+
+      // No saved cookie — fetch with current pageSize
+      await fetchProducts(1, searchTerm, selectedCategories, pageSize).catch(() => {/* silent */});
+      pageSizeLoadedRef.current = true;
+    };
+
+    doInitialLoad();
   }, []); // Завантажуємо тільки при монтуванні
 
   // Refs для пропуску першого рендеру у фільтрових ефектах
   const categoryMountedRef = useRef(false);
   const searchMountedRef = useRef(false);
   const sortMountedRef = useRef(false);
+  const pageSizeLoadedRef = useRef(false);
+  const pageEffectSkipRef = useRef(false);
 
   // Зміна категорії → скидаємо на сторінку 1 та запитуємо
   useEffect(() => {
@@ -1835,9 +2019,9 @@ const ProductSets: React.FC = () => {
     if (currentPage !== 1) {
       setCurrentPage(1); // зміна currentPage спровокує fetch через нижній ефект
     } else {
-      fetchProducts(1, searchTerm, selectedCategory);
+      fetchProducts(1, searchTerm, selectedCategories, pageSize);
     }
-  }, [selectedCategory]);
+  }, [selectedCategories]);
 
   // Зміна пошуку → debounce → скидаємо на сторінку 1 та запитуємо
   useEffect(() => {
@@ -1846,7 +2030,7 @@ const ProductSets: React.FC = () => {
       if (currentPage !== 1) {
         setCurrentPage(1);
       } else {
-        fetchProducts(1, searchTerm, selectedCategory);
+        fetchProducts(1, searchTerm, selectedCategories, pageSize);
       }
     }, 500);
     return () => clearTimeout(timer);
@@ -1855,17 +2039,69 @@ const ProductSets: React.FC = () => {
   // Зміна сортування → скидаємо на сторінку 1 та запитуємо
   useEffect(() => {
     if (!sortMountedRef.current) { sortMountedRef.current = true; return; }
-    if (currentPage !== 1) {
-      setCurrentPage(1);
-    } else {
-      fetchProducts(1, searchTerm, selectedCategory);
+    const col = sortDescriptor?.column as string | undefined;
+
+    // If server-sortable column
+    if (col && serverSortableColumns.includes(col)) {
+      const limitForSort = col === 'lastSyncAt' ? 1000 : pageSize;
+
+      // If not on first page, we'll navigate to page 1 and perform a single fetch with desired limit.
+      if (currentPage !== 1) {
+        pageEffectSkipRef.current = true;
+        setCurrentPage(1);
+        (async () => {
+          try {
+            await fetchProducts(1, searchTerm, selectedCategories, limitForSort);
+          } catch {
+            // silent
+          }
+        })();
+        return;
+      }
+
+      // Already on first page — perform fetch with desired limit
+      fetchProducts(1, searchTerm, selectedCategories, limitForSort);
+      return;
     }
+
+    // Client-side sort: ensure full dataset loaded
+    (async () => {
+      try {
+        await fetchAllProducts();
+        setForceUpdate(v => v + 1);
+      } catch {
+        // silent
+      }
+    })();
   }, [sortDescriptor]);
 
   // При зміні сторінки запитуємо товари (включаючи початкове завантаження)
   useEffect(() => {
-    fetchProducts(currentPage, searchTerm, selectedCategory);
+    if (!pageSizeLoadedRef.current) return;
+    if (pageEffectSkipRef.current) { pageEffectSkipRef.current = false; return; }
+    const col = sortDescriptor?.column as string | undefined;
+    const isClientSort = col && clientSortableColumns.includes(col);
+    if (isClientSort) {
+      // Локальна пагінація працює на paginatedProducts — серверний виклик не потрібен
+      return;
+    }
+    fetchProducts(currentPage, searchTerm, selectedCategories, pageSize);
   }, [currentPage]);
+
+  // Якщо змінився pageSize — скидаємо на першу сторінку і перезавантажуємо (якщо не client-side режим)
+  useEffect(() => {
+    if (!pageSizeLoadedRef.current) return;
+    const col = sortDescriptor?.column as string | undefined;
+    const isClientSort = col && clientSortableColumns.includes(col);
+    // Завжди скидаємо поточну сторінку на 1
+    if (currentPage !== 1) setCurrentPage(1);
+
+    if (!isClientSort) {
+      // Запит до сервера з новим pageSize
+      fetchProducts(1, searchTerm, selectedCategories, pageSize).catch(() => {/* silent */});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageSize]);
 
 
   return (
@@ -2016,90 +2252,164 @@ const ProductSets: React.FC = () => {
           }}
           topContent={
             <div className="flex flex-col gap-4 p-2">
-              {/* Кнопки дій */}
-              <div className={`flex flex-wrap gap-4 pb-6 ${!isAdmin() ? 'hidden' : ''}`} >
-                {/* Ліва частина - основні кнопки */}
-                <div className="flex flex-1 items-center gap-3">
-                  <Switch isSelected={manualSyncEnabled} onValueChange={setManualSyncEnabled}></Switch>
-                  <Button
-                    onPress={openManualSyncModal}
-                    disabled={manualSyncing || !isAdmin()}
-                    color="primary"
-                    variant="flat"
-                    className="bg-blue-400 text-white"
-                  >
-                    <DynamicIcon name="list-filter" size={14} />
-                    Ручна синхронізація
-                    {selectedKeys !== 'all' && (selectedKeys as Set<string>).size > 0 && (
-                        " (" + (selectedKeys as Set<string>).size + ")"
-                    )}
-                  </Button>
-
-                  <Button
-                    onPress={syncStockBalances}
-                    disabled={stockSyncing || !isAdmin()}
-                    color="success"
-                    className="text-white"
-                  >
-                    {stockSyncing ? (
-                      <>
-                        <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                        Синхронізація...
-                      </>
-                    ) : (
-                      <>
-                        <DynamicIcon name="refresh-cw" size={14} />
-                        Оновити залишки
-                      </>
-                    )}
-                  </Button>
-
-                  <Button
-                    onPress={prepareExportToSalesDrive}
-                    disabled={!isAdmin()}
-                    color="secondary"
-                    className="text-white"
-                  >
-                    <DynamicIcon name="upload" size={14} />
-                    Експорт в SalesDrive
-                  </Button>
-
-                  {/* Перемикач режиму експорту */}
-                  <div className="flex items-center gap-2">
-                    <Switch isSelected={expandSets} onValueChange={handleExpandSetsChange} isDisabled={expandSetsSaving}></Switch>
-                    <span className="text-sm text-gray-700 leading-4">Розгорнути <br/>комплекти</span>
-                    <Tooltip color="primary" content="Якщо увімкнено, товари, які є комплектами, будуть розгорнуті на свої складові при експорті в SalesDrive">
-                      <DynamicIcon 
-                        name="help-circle" 
-                        size={16} 
-                        className="text-gray-400 cursor-help"
-                      />
-                    </Tooltip>
+              {/* Пошук і фільтри */}
+              <div className="flex items-center gap-4">
+                <div className="flex gap-2 items-center">
+                  {/* Switch "Відображати застарілі товари" */}
+                  <div className="flex items-center gap-2 mr-4">
+                    <Switch
+                      isSelected={showOutdated}
+                      onValueChange={setShowOutdated}
+                    />
+                    <span className="text-sm text-gray-700 leading-4">Показати<br/>застарілі</span>
                   </div>
+
+                  {/* Фільтр по категорії */}
+                  {(() => {
+                    // Build items where key is categoryId if mapping exists, otherwise fallback to name
+                    // Split categories into dishes vs sets based on name heuristics
+                    const setNameRegex = /набор|набір|комплект/i;
+                    const setsNames = categories.filter(name => setNameRegex.test(name));
+                    const dishesNames = categories.filter(name => !setNameRegex.test(name));
+
+                    const dishesItems = dishesNames.map(name => ({ key: categoriesMapping[name] ? String(categoriesMapping[name]) : name, label: name }));
+                    const setsItems = setsNames.map(name => ({ key: categoriesMapping[name] ? String(categoriesMapping[name]) : name, label: name }));
+
+                    const categoryItems = [
+                      { key: '', label: 'Всі категорії' as string },
+                      { key: '__header_dishes', label: 'Страви' },
+                      ...dishesItems,
+                      { key: '__header_sets', label: 'Набори' },
+                      ...setsItems
+                    ];
+
+                    const labelMap = new Map<string, string>();
+                    categoryItems.forEach(it => labelMap.set(it.key, it.label));
+
+                    const allNonEmptyKeys = [...dishesItems, ...setsItems].map(it => it.key);
+
+                    // Compute compact label for trigger
+                    const triggerLabel = (() => {
+                      if (!selectedCategories || selectedCategories.length === 0) return 'Всі категорії';
+                      // If all selected (either user selected explicit '' or selected all keys)
+                      const selectedSet = new Set(selectedCategories);
+                      const isAllSelected = selectedSet.has('') || allNonEmptyKeys.every(k => selectedSet.has(k));
+                      if (isAllSelected) return `Всі категорії (${allNonEmptyKeys.length})`;
+                      if (selectedCategories.length === 1) return labelMap.get(selectedCategories[0]) || selectedCategories[0];
+                      return `Обрано ${selectedCategories.length} кат.`;
+                    })();
+
+                    return (
+                      <Dropdown>
+                        <DropdownTrigger>
+                          <Button
+                            variant="flat"
+                            className="justify-between"
+                          >
+                            {triggerLabel}
+                            <DynamicIcon name="chevron-down" size={16} className="text-gray-400" />
+                          </Button>
+                        </DropdownTrigger>
+
+                        <DropdownMenu
+                          selectedKeys={new Set(selectedCategories)}
+                          selectionMode="multiple"
+                          onSelectionChange={(keys) => {
+                            const arrRaw = Array.from(keys).map(k => String(k));
+                            // If user selected the empty key, treat as select-all
+                            if (arrRaw.includes('')) {
+                              setSelectedCategories(allNonEmptyKeys);
+                              return;
+                            }
+                            const filtered = arrRaw.filter(k => k !== '' && !k.startsWith('__header'));
+                            setSelectedCategories(filtered);
+                          }}
+                        >
+                          <DropdownSection title="Страви">
+                            {dishesItems.map(it => {
+                              const countFromStats = (stats as any)?.categoriesCount?.find((c: any) => c.name === it.label)?.count;
+                              const fallbackCount = allProducts.filter(p => p.categoryName === it.label).length;
+                              const count = typeof countFromStats === 'number' ? countFromStats : fallbackCount;
+                              return (
+                                <DropdownItem key={it.key}>
+                                  {it.label} ({count ?? 0})
+                                </DropdownItem>
+                              );
+                            })}
+                          </DropdownSection>
+
+                          <DropdownSection title="Набори" showDivider>
+                            {setsItems.map(it => {
+                              const countFromStats = (stats as any)?.categoriesCount?.find((c: any) => c.name === it.label)?.count;
+                              const fallbackCount = allProducts.filter(p => p.categoryName === it.label).length;
+                              const count = typeof countFromStats === 'number' ? countFromStats : fallbackCount;
+                              return (
+                                <DropdownItem key={it.key}>
+                                  {it.label} ({count ?? 0})
+                                </DropdownItem>
+                              );
+                            })}
+                          </DropdownSection>
+                        </DropdownMenu>
+                      </Dropdown>
+                    );
+                  })()}
                 </div>
 
-                {/* Права частина - налаштування */}
-                <div className="flex flex-1 items-center justify-end gap-3">
+                {/* Пошук товарів */}
+                <div className="flex flex-col sm:flex-row gap-4 items-center">
+                  <Input
+                    placeholder="Пошук по назві або SKU..."
+                    value={searchTerm}
+                    isClearable
+                    onClear={() => setSearchTerm('')}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    startContent={<DynamicIcon name="search" size={16} className="" />}
+                    className="min-w-62"
+                  />
+                </div>
+
+                {/* Кнопка очищення фільтрів */}
+                {(searchTerm || selectedCategories.length > 0) && (
+                  <Button
+                    variant="light"
+                    color="danger"
+                    onPress={() => {
+                      setSearchTerm('');
+                      setSelectedCategories([]);
+                      setCurrentPage(1);
+                      fetchProducts(1, '', [], pageSize);
+                    }}
+                    className="bg-red-100 text-red-600 flex items-center"
+                  >
+                    <DynamicIcon name="x-circle" size={14} className="flex-shrink-0" />
+                    Очистити
+                  </Button>
+                )}
+
+                <div className="flex items-center gap-4 ml-auto min-w-0">
                   {/* Вибір монолітних категорій */}
                   <Select
-                    label="Монолітні комплекти"
+                    aria-label="Монолітні набори"
                     placeholder="Оберіть категорії..."
                     selectionMode="multiple"
-                    size="sm"
-                    className="max-w-[200px] flex-shrink-0"
+                    className={`min-w-[210px] ${!isAdmin() ? 'hidden' : ''}`}
+                    renderValue={(items: any[]) => {
+                      const count = items?.length || 0;
+                      return count === 0 ? 'Монолітні набори' : `Монолітні набори (${count})`;
+                    }}
                     selectedKeys={monolithicCategories}
                     onSelectionChange={saveMonolithicCategories}
                     isDisabled={monolithicLoading}
                     startContent={monolithicSaving ? <DynamicIcon name="loader-2" className="animate-spin" size={14} /> : <DynamicIcon name="layout-list" size={14} />}
-                    // description="Комплекти цих категорій не розгортатимуться в чеклисті"
                   >
                     {(stats?.categoriesCount || [])
                       .filter((cat) => {
                         const lowerName = cat.name.toLowerCase();
                         return lowerName.includes('набори') || 
-                               lowerName.includes('набір') || 
-                               lowerName.includes('комплект') ||
-                               lowerName.includes('набор');
+                                lowerName.includes('набір') || 
+                                lowerName.includes('комплект') ||
+                                lowerName.includes('набор');
                       })
                       .filter((cat, index, arr) => {
                         const categoryId = categoriesMapping[cat.name] || cat.name;
@@ -2115,137 +2425,107 @@ const ProductSets: React.FC = () => {
                         );
                       })}
                   </Select>
-
-                  {/* Кнопка управління ID груп комплектів */}
-                  <Button
-                    onPress={() => setIsSetParentIdsModalOpen(true)}
-                    disabled={!isAdmin()}
-                    color="warning"
-                    variant="flat"
-                    className="flex-shrink-0"
-                  >
-                    <DynamicIcon name="layers" size={14} />
-                    Set Parent IDs
-                  </Button>
-
-                  {/* Whitelist номерів SKU, які не підлягають застаріванню */}
-                  <Button
-                    onPress={() => setIsSkuWhitelistModalOpen(true)}
-                    variant="flat"
-                    className="flex-shrink-0"
-                  >
-                    <DynamicIcon name="shield-check" size={14} />
-                    SKU Whitelist
-                  </Button>
-                </div>
-              </div>
-
-              {/* Пошук і фільтри */}
-              <div className="flex flex-wrap gap-4 w-full">
-                <div className="flex flex-wrap gap-2 items-center">
-                  {/* Switch "Відображати застарілі товари" */}
-                  <div className="flex items-center gap-2 mr-4">
-                    <Switch
-                      isSelected={showOutdated}
-                      onValueChange={setShowOutdated}
-                    />
-                    <span className="text-sm text-gray-700 leading-4">Показати<br/>застарілі</span>
-                  </div>
-
-                  {/* Фільтр по категорії */}
-                  <Dropdown>
-                    <DropdownTrigger>
-                      <Button
-                        variant="flat"
-                        className="justify-between"
-                      >
-                        {selectedCategory || 'Всі категорії'}
-                        <DynamicIcon name="chevron-down" size={16} className="text-gray-400" />
-                      </Button>
-                    </DropdownTrigger>
-                    <DropdownMenu
-                      selectedKeys={selectedCategory ? [selectedCategory] : []}
-                      onSelectionChange={(keys) => {
-                        const selected = Array.from(keys)[0] as string;
-                        setSelectedCategory(selected || '');
-                      }}
-                      selectionMode="single"
-                      items={[
-                        { key: "", label: "Всі категорії" },
-                        ...categories.map(category => ({ key: category, label: category }))
-                      ]}
-                    >
-                      {(item) => (
-                        <DropdownItem key={item.key}>
-                          {item.label} ({item.key === "" ? allProducts.length : allProducts.filter(p => p.categoryName === item.key).length})
-                        </DropdownItem>
-                      )}
-                    </DropdownMenu>
-                  </Dropdown>
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-4 items-center">
-                  <Input
-                    placeholder="Пошук по назві або SKU..."
-                    value={searchTerm}
-                    isClearable
-                    onClear={() => setSearchTerm('')}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    startContent={<DynamicIcon name="search" size={16} className="" />}
-                  />
                   
-                  <div className="flex items-center text-small text-default-400 whitespace-nowrap">
-                    {(searchTerm || selectedCategory) && (
-                      <span>Знайдено: {displayProducts.length}</span>
-                    )}
-                    {loading && (
-                      <span className="flex items-center gap-1">
-                        <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                        Пошук...
-                      </span>
-                    )}
-                  </div>
-                </div>
+                  {/* Всі кнопки Дій */}
+                  <ButtonGroup variant="solid" className="flex-shrink-0">
+                    <Dropdown placement="bottom-end">
+                      <DropdownTrigger>
+                        <Button
+                          color="primary"
+                          className="font-medium px-4 py-2.5 h-auto flex-shrink-0 whitespace-nowrap rounded-md"
+                        >
+                          Дії <DynamicIcon name="chevron-down" size={16} />
+                        </Button>
+                      </DropdownTrigger>
+                      <DropdownMenu
+                        aria-label="Дії експорту"
+                        // closeOnSelect={false}
+                        onAction={async (key) => {
+                          // if (!isAdmin()) return ToastService.show({ title: 'Недостатньо прав', description: 'Лише адміністратори можуть виконувати цю дію', color: 'warning' });
+                          if (key === 'wpSync') {
+                            try {
+                              setWpSyncing(true);
+                              const resp = await fetch('/api/products/trigger-wp-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' });
+                              if (resp.ok) ToastService.show({ title: 'Запущено', description: 'Тригер оновлення залишків на сайті надіслано', color: 'success', hideIcon: false });
+                              else { const err = await resp.json().catch(() => ({})); ToastService.show({ title: 'Помилка', description: err.error || 'Не вдалося надіслати тригер', color: 'danger', hideIcon: false, icon: 'x-circle' }); }
+                            } catch (e) { ToastService.show({ title: 'Помилка мережі', description: e instanceof Error ? e.message : 'Невідома помилка', color: 'danger', hideIcon: false, icon: 'x-circle' }); }
+                            finally { setWpSyncing(false); }
+                          }
+                          if (key === 'setParentIds') {
+                            setIsSetParentIdsModalOpen(true);
+                          }
+                          if (key === 'skuWhitelist') {
+                            setIsSkuWhitelistModalOpen(true);
+                          }
+                          if (key === 'fullSync') {
+                            setIsFullSyncConfirmOpen(true);
+                          }
+                          if (key === 'syncStock') {
+                            await syncStockBalances();
+                          }
+                          if (key === 'exportSD') {
+                            await prepareExportToSalesDrive();
+                          }
+                          if (key === 'manual') {
+                            openManualSyncModal();
+                          }
+                        }}
+                      >
+                        <DropdownSection title="Синхронізація" showDivider dividerProps={{ className: 'mt-1 bg-neutral-200' }}>
+                          <DropdownItem key="fullSync" startContent={<DynamicIcon name="refresh-cw" size={16} className="shrink-0" />}>Синхронізувати всі товари</DropdownItem>
+                          <DropdownItem key="manual" startContent={<DynamicIcon name="list-filter" size={16} className="shrink-0" />}>
+                            <div className="flex items-center justify-between gap-2 w-full">
+                              <span className="text-sm">Вибіркова синхронізація</span>
+                              <Switch size="sm" className={!isAdmin() ? 'hidden' : ''} isSelected={manualSyncEnabled} onValueChange={setManualSyncEnabled} />
+                            </div>
+                          </DropdownItem>
+                          <DropdownItem key="toggleExpandSets" className={!isAdmin() ? 'hidden' : ''}>
+                            <div className="flex items-center justify-between w-full">
+                              <div className="flex items-center gap-2">
+                                <Switch size="sm" isSelected={expandSets} onValueChange={handleExpandSetsChange} isDisabled={expandSetsSaving || !isAdmin()}>Розгорнути комплекти</Switch>
+                                <Tooltip color="primary" size="sm" className="max-w-50" content="Якщо увімкнено, товари, які є комплектами, будуть розгорнуті на свої складові при експорті в SalesDrive">
+                                  <DynamicIcon 
+                                    name="help-circle" 
+                                    size={16} 
+                                    className="text-gray-400 cursor-help"
+                                  />
+                                </Tooltip>
+                              </div>
+                            </div>
+                          </DropdownItem>
+                        </DropdownSection>
 
-                <div className="flex gap-4 ml-auto">
-                  {/* Кнопка очищення фільтрів */}
-                  {(searchTerm || selectedCategory) && (
-                    <Button
-                      variant="light"
-                      color="danger"
-                      // size="sm"
-                      onPress={() => {
-                        setSearchTerm('');
-                        setSelectedCategory('');
-                        setCurrentPage(1);
-                        fetchProducts(1, '', '');
-                      }}
-                      className="text-red-700 flex items-center"
-                    >
-                      <DynamicIcon name="x-circle" size={14} />
-                      Очистити
-                    </Button>
-                  )}
+                        <DropdownSection title="Налаштування" showDivider dividerProps={{ className: 'mt-1 bg-neutral-200' }} className={`${!isAdmin() ? 'hidden' : ''}`}>
+                          <DropdownItem key="setParentIds" startContent={<DynamicIcon name="layers" size={16} className="shrink-0" />}>Set Parent IDs</DropdownItem>
+                          <DropdownItem key="skuWhitelist" startContent={<DynamicIcon name="shield-check" size={16} className="shrink-0" />}>SKU Whitelist</DropdownItem>
+                        </DropdownSection>
 
-                  {/* Кнопка синхронізації товарів */}
-                  <Button
-                    onPress={syncProductsWithDilovod}
-                    color={syncStatus?.isRunning ? 'danger' : 'primary'}
-                  >
-                    {syncStatus?.isRunning ? (
-                      <>
-                        <DynamicIcon name="x" size={14} />
-                        Скасувати синхронізацію
-                      </>
-                    ) : (
-                      <>
-                        <DynamicIcon name="refresh-cw" size={14} />
-                        Синхронізувати всі товари
-                      </>
-                    )}
-                  </Button>
+                        <DropdownSection title="Експорт">
+                          <DropdownItem key="exportSD" startContent={<DynamicIcon name="upload-cloud" size={16} className="shrink-0" />}>Експорт в SalesDrive</DropdownItem>
+                        </DropdownSection>
+
+                        <DropdownSection title="Залишки" showDivider dividerProps={{ className: 'mt-1 bg-neutral-200' }}>
+                          <DropdownItem key="syncStock" startContent={<DynamicIcon name="refresh-cw" size={16} className="shrink-0" />}>Оновити залишки в Backoffice</DropdownItem>
+                          <DropdownItem key="wpSync" startContent={<DynamicIcon name="upload" size={16} className="shrink-0" />}>Оновити залишки на сайті</DropdownItem>
+                        </DropdownSection>
+                      </DropdownMenu>
+                    </Dropdown>
+                  </ButtonGroup>
                 </div>
               </div>
+
+              <div className="flex items-center text-small text-default-400 whitespace-nowrap">
+                {(searchTerm || selectedCategories.length > 0) && (
+                  <span>Знайдено: {displayProducts.length}</span>
+                )}
+                {loading && (
+                  <span className="flex items-center gap-1">
+                    <DynamicIcon name="loader-2" className="animate-spin" size={14} />
+                    Пошук...
+                  </span>
+                )}
+              </div>
+              
             </div>
           }
         >
@@ -2261,7 +2541,7 @@ const ProductSets: React.FC = () => {
             )}
           </TableHeader>
           <TableBody
-            items={displayProducts}
+            items={paginatedProducts}
             emptyContent={showOutdated ? "Товари не знайдено" : (
               <div className="flex flex-col items-center gap-3 py-4">
                 <span>Товари не знайдено, спробуйте увімкнути фільтр</span>
@@ -2292,32 +2572,63 @@ const ProductSets: React.FC = () => {
         </Table>
       </div>
 
-      {/* Пагинация */}
-      {pagination && pagination.pages > 1 && (
-        <div className="mt-6 flex justify-center">
-          <nav className="flex space-x-2">
-            <Button
-              onPress={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-              variant="flat"
-              size="sm"
+      {/* Пагинация: селект размера страницы слева, пагинация по центру, кнопка обновить справа */}
+      {showPagination && (
+        <div className="mt-6 flex items-center justify-between">
+          {/* Left: page size select */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600">На сторінці:</label>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                const newSize = parseInt(e.target.value, 10) || 24;
+                setPageSize(newSize);
+                setCookie('products_page_size', String(newSize), 365);
+                setCurrentPage(1);
+              }}
+              className="px-2 py-1 border rounded text-sm"
             >
-              Попередня
-            </Button>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
 
-            <span className="px-3 py-2 text-sm text-gray-700">
-              Сторінка {currentPage} з {pagination.pages}
-            </span>
+          {/* Center: pagination */}
+          <div>
+            <Pagination
+              total={pagesCount}
+              page={currentPage}
+              onChange={(newPage) => setCurrentPage(newPage)}
+              showControls
+              showShadow
+              classNames={{
+                cursor: "bg-neutral-500 text-white",
+                item: "cursor-pointer",
+                next: "cursor-pointer",
+                prev: "cursor-pointer",
+              }}
+            />
+          </div>
 
+          {/* Right: refresh button */}
+          <div>
             <Button
-              onPress={() => setCurrentPage(Math.min(pagination.pages, currentPage + 1))}
-              disabled={currentPage === pagination.pages}
-              variant="flat"
-              size="sm"
+              onPress={async () => {
+                if (isClientSortActive) {
+                  // Оновлюємо повний набір для клієнтського сортування
+                  await fetchAllProducts({ force: true });
+                } else {
+                  await fetchProducts(currentPage, searchTerm, selectedCategories, pageSize);
+                }
+              }}
+              color="primary"
+              className="px-3 py-1 text-sm"
             >
-              Наступна
+              Оновити
             </Button>
-          </nav>
+          </div>
         </div>
       )}
 
@@ -2385,6 +2696,27 @@ const ProductSets: React.FC = () => {
             updateProductWeight(deleteConfirmProductId, 0);
           }
           setDeleteConfirmProductId(null);
+        }}
+      />
+
+      {/* Підтвердження повної синхронізації (попередження про 15-20s) */}
+      <ConfirmModal
+        isOpen={isFullSyncConfirmOpen}
+        title="Синхронізація всіх товарів"
+        message="Ця операція може зайняти приблизно 15-20 секунд. Не закривайте сторінку під час виконання. Продовжити?"
+        confirmText="Синхронізувати"
+        cancelText="Скасувати"
+        confirmColor="primary"
+        onCancel={() => setIsFullSyncConfirmOpen(false)}
+        confirmLoading={isFullSyncSubmitting}
+        onConfirm={async () => {
+          try {
+            setIsFullSyncSubmitting(true);
+            await syncProductsWithDilovod();
+          } finally {
+            setIsFullSyncSubmitting(false);
+            setIsFullSyncConfirmOpen(false);
+          }
         }}
       />
 
@@ -2502,14 +2834,14 @@ const ProductSets: React.FC = () => {
                   });
 
                   if (response.ok) {
-                    addToast({ title: 'Збережено', description: 'Whitelist збережено на сервері', color: 'success' });
+                    ToastService.show({ title: 'Збережено', description: 'Whitelist збережено на сервері', color: 'success' });
                     setIsSkuWhitelistModalOpen(false);
                   } else {
                     const err = await response.json().catch(() => ({}));
-                    addToast({ title: 'Помилка', description: err.error || 'Не вдалося зберегти whitelist', color: 'danger' });
+                    ToastService.show({ title: 'Помилка', description: err.error || 'Не вдалося зберегти whitelist', color: 'danger' });
                   }
                 } catch (error) {
-                  addToast({ title: 'Помилка мережі', description: error instanceof Error ? error.message : 'Невідома помилка', color: 'danger' });
+                  ToastService.show({ title: 'Помилка мережі', description: error instanceof Error ? error.message : 'Невідома помилка', color: 'danger' });
                 } finally {
                   setSkuWhitelistSaving(false);
                 }

@@ -23,7 +23,6 @@ export class ToastService {
 		return {
 			variant: "flat",
 			color: "default",
-			icon: "check-circle",
 			timeout: 5000,
 			shouldShowTimeoutProgress: true
 		};
@@ -78,10 +77,10 @@ export class ToastService {
 	}
 
 	// Helper функція для створення іконок
-	static createIcon(iconName: string, iconSize: number = 24, animation?: boolean) {
+	static createIcon(color: string, iconName: string, iconSize: number = 24, animation?: boolean) {
 		return createElement("span", {},
 			createElement(DynamicIcon, {
-				name: iconName as any,
+				name: iconName as any || (color === "success" ? "circle-check-big" : color === "danger" ? "triangle-alert" : "info"),
 				size: iconSize,
 				color: "currentColor",
 				className: `${animation ? 'animate-spin' : ''} shrink-0`
@@ -107,7 +106,7 @@ export class ToastService {
 			description: mergedOptions.description,
 			variant: mergedOptions.variant,
 			hideIcon: mergedOptions.hideIcon ?? false,
-			icon: this.createIcon(mergedOptions.icon as string, mergedOptions.iconSize, mergedOptions.iconSpin || false),
+			icon: this.createIcon(mergedOptions.color, mergedOptions.icon as string, mergedOptions.iconSize, mergedOptions.iconSpin || false),
 			color: mergedOptions.color,
 			classNames: {
 				base: warning_color,

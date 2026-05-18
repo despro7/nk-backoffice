@@ -9,6 +9,7 @@ interface ConfirmModalProps {
   confirmColor?: "primary" | "danger" | "success" | "warning";
   onConfirm: () => void;
   onCancel: () => void;
+  confirmLoading?: boolean;
 }
 
 export function ConfirmModal({
@@ -20,6 +21,7 @@ export function ConfirmModal({
   confirmColor = "danger",
   onConfirm,
   onCancel,
+  confirmLoading = false,
 }: ConfirmModalProps) {
   return (
     <BaseModal
@@ -31,6 +33,7 @@ export function ConfirmModal({
       confirmColor={confirmColor}
       onConfirm={onConfirm}
       onCancel={onCancel}
+      confirmLoading={confirmLoading}
     />
   );
 }

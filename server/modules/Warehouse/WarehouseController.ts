@@ -261,7 +261,7 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
 // GET /api/warehouse/stock-snapshot?skus=sku1,sku2,...&asOfDate=2026-04-14T09:00:00Z
 router.get('/stock-snapshot', authenticateToken, async (req, res) => {
   try {
-    const { skus: skusRaw, asOfDate: asOfDateRaw } = req.query;
+    const { skus: skusRaw, asOfDate: asOfDateRaw, firmId: firmIdRaw } = req.query;
 
     if (!skusRaw || typeof skusRaw !== 'string') {
       return res.status(400).json({ error: 'Parameter "skus" is required (comma-separated list)' });
@@ -280,12 +280,14 @@ router.get('/stock-snapshot', authenticateToken, async (req, res) => {
       }
     }
 
+    const firmId = typeof firmIdRaw === 'string' ? firmIdRaw : undefined;
+
     const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
 
     const label = parsedDate ? parsedDate.toLocaleString('uk-UA') : 'поточна';
-    console.log(`📊 [Warehouse] GET /stock-snapshot — ${skus.length} SKU на дату: ${label}`);
+    console.log(`📊 [Warehouse] GET /stock-snapshot — ${skus.length} SKU на дату: ${label}${firmId ? ` (firmId=${firmId})` : ''}`);
 
-    const balances = await dilovodService.getStockBalanceForSkus(skus, parsedDate);
+    const balances = await dilovodService.getStockBalanceForSkus(skus, parsedDate, firmId);
 
     // Перетворюємо на словник { [sku]: { mainStock, smallStock } } для зручності на клієнті
     const result: Record<string, { mainStock: number; smallStock: number }> = {};
@@ -304,6 +306,52 @@ router.get('/stock-snapshot', authenticateToken, async (req, res) => {
       success: false,
       error: error instanceof Error ? error.message : 'Внутрішня помилка сервера',
     });
+  }
+});
+
+// POST /api/warehouse/stock-snapshot
+// Body: { skus: string[] | string, asOfDate?: string, firmId?: string }
+router.post('/stock-snapshot', authenticateToken, async (req, res) => {
+  try {
+    const { skus: skusBody, asOfDate, firmId } = req.body as any;
+    let skus: string[] = [];
+
+    if (Array.isArray(skusBody)) {
+      skus = skusBody.map((s: any) => String(s).trim()).filter(Boolean);
+    } else if (typeof skusBody === 'string') {
+      skus = skusBody.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+
+    if (skus.length === 0) {
+      return res.status(400).json({ error: 'Parameter "skus" is required in body and must contain at least one SKU' });
+    }
+
+    let parsedDate: Date | undefined;
+    if (asOfDate && typeof asOfDate === 'string') {
+      parsedDate = new Date(asOfDate);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid "asOfDate" format. Expected ISO string.' });
+      }
+    }
+
+    const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
+
+    console.log(`📊 [Warehouse] POST /stock-snapshot — ${skus.length} SKU${firmId ? ` (firmId=${firmId})` : ''}`);
+
+    const balances = await dilovodService.getStockBalanceForSkus(skus, parsedDate, firmId);
+
+    const result: Record<string, { mainStock: number; smallStock: number }> = {};
+    for (const item of balances) {
+      result[item.sku] = {
+        mainStock: item.mainStorage,
+        smallStock: item.smallStorage,
+      };
+    }
+
+    res.json({ success: true, asOfDate: parsedDate?.toISOString() ?? null, stocks: result });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Помилка при POST stock-snapshot:', error);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Внутрішня помилка сервера' });
   }
 });
 

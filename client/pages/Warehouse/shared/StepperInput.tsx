@@ -7,7 +7,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 // ---------------------------------------------------------------------------
 
 export interface StepperInputProps {
-  label: string;
+  label?: string;
   value: number;
   onChange: (value: number) => void;
   onIncrement: () => void;
@@ -16,6 +16,11 @@ export interface StepperInputProps {
   onEnter?: () => void;
   disabled?: boolean;
   max?: number; // Максимально допустиме значення (для обмеження по залишкам партії)
+  size?: 'sm' | 'md' | 'lg'; // Візуальні налаштування розміру
+  className?: string;
+  labelClassName?: string;
+  inputClassName?: string;
+  buttonClassName?: string;
 }
 
 /**
@@ -25,7 +30,7 @@ export interface StepperInputProps {
  * Кнопки ± дозволяють коригувати значення без клавіатури.
  */
 export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
-  ({ label, value, onChange, onIncrement, onDecrement, onEnter, disabled, max }, ref) => {
+  ({ label, value, onChange, onIncrement, onDecrement, onEnter, disabled, max, size = 'md', className = '', labelClassName = '', inputClassName = '', buttonClassName = '' }, ref) => {
     const inputRef = useRef<HTMLInputElement>(null);
     const [isFocused, setIsFocused] = useState(false);
 
@@ -37,18 +42,20 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
     useImperativeHandle(ref, () => inputRef.current!);
 
     return (
-      <div className="flex flex-col items-center gap-2">
-        <span className="text-sm text-gray-500">{label}</span>
+      <div className={`flex flex-col items-center gap-2 ${className}`}>
+        {label && <span className={`text-sm text-gray-500 ${labelClassName}`}>{label}</span>}
         <div className="relative w-full">
           {/* Видима область — клік відкриває OSK */}
           <div
-            className={`w-full h-18 flex items-center justify-center text-2xl font-medium rounded-xl transition-colors select-none ${
+            className={`w-full flex items-center justify-center font-medium transition-colors select-none ${
+              size === 'sm' ? 'h-10 text-lg rounded-md border-1' : 
+              size === 'lg' ? 'h-18 text-2xl rounded-lg border-2' : 
+              'h-12 text-xl rounded-md border-1'
+            } ${
               disabled
-                ? 'bg-gray-100 border-2 border-gray-200 text-gray-400 cursor-not-allowed'
-                : `bg-white border-2 text-gray-800 cursor-text ${
-                    isFocused ? 'border-blue-500' : 'border-gray-200'
-                  }`
-            }`}
+                ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                : `bg-white text-gray-800 cursor-text ${isFocused ? 'border-blue-500' : 'border-gray-200'}`
+            } ${inputClassName}`}
             onClick={focusInput}
           >
             {value}
@@ -86,23 +93,31 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
             isIconOnly
             variant="light"
             isDisabled={disabled}
-            className="absolute left-2 top-1/2 -translate-y-1/2 h-14 w-10 min-w-6 z-10 bg-gray-100"
+            className={`absolute top-1/2 -translate-y-1/2 z-10 bg-gray-100 rounded-sm ${
+              size === 'sm' ? 'h-8 min-w-7 w-7 left-1' : 
+              size === 'lg' ? 'h-14 w-10 left-2' :
+              'h-10 min-w-8 w-8 left-1'
+            } ${buttonClassName}`}
             onPress={onDecrement}
             tabIndex={-1}
             aria-label="Зменшити"
           >
-            <DynamicIcon name="minus" className="w-6 h-6" />
+            <DynamicIcon name="minus" className={`flex-shrink-0 ${size === 'sm' ? 'h-4 w-4' : size === 'md' ? 'h-5 w-5' : 'h-6 w-6'}`} />
           </Button>
           <Button
             isIconOnly
             variant="light"
             isDisabled={disabled || (max !== undefined && value >= max)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 h-14 w-10 min-w-6 z-10 bg-gray-100"
+            className={`absolute top-1/2 -translate-y-1/2 z-10 bg-gray-100 rounded-sm ${
+              size === 'sm' ? 'h-8 min-w-7 w-7 right-1' : 
+              size === 'lg' ? 'h-14 w-10 right-2' :
+              'h-10 min-w-8 w-8 right-1'
+            } ${buttonClassName}`}
             onPress={onIncrement}
             tabIndex={-1}
             aria-label="Збільшити"
           >
-            <DynamicIcon name="plus" className="w-6 h-6" />
+            <DynamicIcon name="plus" className={`flex-shrink-0 ${size === 'sm' ? 'h-4 w-4' : size === 'md' ? 'h-5 w-5' : 'h-6 w-6'}`} />
           </Button>
         </div>
       </div>

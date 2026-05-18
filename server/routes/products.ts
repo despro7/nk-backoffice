@@ -29,7 +29,27 @@ router.get('/', authenticateToken, async (req, res) => {
     }
 
     if (category) {
-      where.categoryName = category;
+      // Support comma-separated values. Accept numeric categoryId values and/or names.
+      const parts = category.split(',').map(s => s.trim()).filter(Boolean);
+      const numericIds = parts.map(p => parseInt(p, 10)).filter(n => !isNaN(n));
+      const nonNumeric = parts.filter(p => isNaN(parseInt(p, 10)));
+
+      if (numericIds.length > 0 && nonNumeric.length > 0) {
+        // Mixed: match either by ID or by name
+        where.OR = [
+          { categoryId: { in: numericIds } },
+          { categoryName: { in: nonNumeric } }
+        ];
+      } else if (numericIds.length > 0) {
+        where.categoryId = { in: numericIds };
+      } else if (nonNumeric.length > 0) {
+        where.categoryName = { in: nonNumeric };
+      }
+    }
+
+    // By default exclude outdated products unless client explicitly requests to show them
+    if (req.query.showOutdated !== 'true') {
+      where.isOutdated = false;
     }
 
     const sortBy = (req.query.sortBy as string) || 'lastSyncAt';
@@ -829,6 +849,27 @@ router.post('/sync-and-export', authenticateToken, requireRole(ROLE_SETS.ADMIN_O
 
     console.log(`🏁 [sync-and-export #${jobId}] Chain finished in ${Date.now() - startTime}ms`);
   })();
+});
+
+// Тригер лише кроку SD → WP (HTTP виклик до syncStock.php)
+// POST /api/products/trigger-wp-sync
+// Доступно починаючи з ролі STOREKEEPER (комірник)
+router.post('/trigger-wp-sync', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+  try {
+    console.log(`API: trigger-wp-sync called by ${req.user.email}`);
+    const wpSyncUrl = 'https://nk-food.shop/wp-content/plugins/mrkv-salesdrive/inc/syncStock.php';
+    const wpResponse = await fetch(wpSyncUrl, { signal: AbortSignal.timeout(30_000) });
+    if (wpResponse.ok) {
+      console.log(`API: trigger-wp-sync HTTP ${wpResponse.status}`);
+      return res.json({ success: true, status: wpResponse.status });
+    }
+    const body = await wpResponse.text().catch(() => '');
+    console.warn(`API: trigger-wp-sync returned ${wpResponse.status}`);
+    return res.status(502).json({ success: false, status: wpResponse.status, body });
+  } catch (error) {
+    console.error('API: trigger-wp-sync failed:', error);
+    return res.status(500).json({ success: false, error: 'WP sync request failed' });
+  }
 });
 
 // Отримати статистику по товарах

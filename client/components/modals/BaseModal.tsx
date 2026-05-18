@@ -11,6 +11,7 @@ interface BaseModalProps {
   confirmColor?: "primary" | "danger" | "success" | "warning";
   onConfirm?: () => void;
   onCancel?: () => void;
+  confirmLoading?: boolean;
 }
 
 export function BaseModal({
@@ -23,6 +24,7 @@ export function BaseModal({
   confirmColor = "primary",
   onConfirm,
   onCancel,
+  confirmLoading = false,
 }: BaseModalProps) {
   return (
     <Modal isOpen={isOpen} onClose={onCancel}>
@@ -34,7 +36,7 @@ export function BaseModal({
         <ModalBody>{message}</ModalBody>
         <ModalFooter>
           {confirmText && (
-            <Button color={confirmColor} onPress={onConfirm}>
+            <Button color={confirmColor} onPress={onConfirm} isLoading={confirmLoading}>
               {confirmText}
             </Button>
           )}

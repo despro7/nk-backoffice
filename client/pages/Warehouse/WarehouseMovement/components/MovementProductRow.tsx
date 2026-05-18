@@ -285,6 +285,7 @@ export const MovementProductRow = ({
                         <div className="grid grid-cols-[1fr_1fr_1fr_320px] items-end gap-3 pb-3">
                           <StepperInput
                             label={`коробок × ${product.portionsPerBox}`}
+                            size="lg"
                             value={batch.boxes}
                             max={maxBoxes}
                             onChange={(val) => handleUpdateBatchQuantity(index, 'boxes', val)}
@@ -297,6 +298,7 @@ export const MovementProductRow = ({
                           />
                           <StepperInput
                             label="порцій"
+                            size="lg"
                             value={batch.portions}
                             max={maxPortions}
                             onChange={(val) => handleUpdateBatchQuantity(index, 'portions', val)}
@@ -317,7 +319,7 @@ export const MovementProductRow = ({
                             <Button
                               size="lg"
                               variant="light"
-                              className="h-19 px-12 text-purple-500 bg-purple-100 hover:bg-purple-200!"
+                              className="h-19 px-12 rounded-lg text-purple-500 bg-purple-100 hover:bg-purple-200!"
                               onPress={() => handleMaxBatch(index)}
                               startContent={<DynamicIcon name="package-plus" strokeWidth={1.5} className="w-6 h-6 shrink-0 -mx-1" />}
                             >
@@ -327,7 +329,7 @@ export const MovementProductRow = ({
                               isIconOnly
                               size="lg"
                               variant="light"
-                              className="h-19 px-12 text-blue-500 bg-blue-100 hover:bg-blue-200!"
+                              className="h-19 px-12 rounded-lg text-blue-500 bg-blue-100 hover:bg-blue-200!"
                               onPress={() => handleEditBatchClick(index)}
                             >
                               <DynamicIcon name="edit-2" strokeWidth={1.5} className="w-6 h-6 shrink-0" />
@@ -336,7 +338,7 @@ export const MovementProductRow = ({
                               isIconOnly
                               size="lg"
                               variant="light"
-                              className="h-19 px-12 text-red-500 bg-red-100 hover:bg-red-200!"
+                              className="h-19 px-12 rounded-lg text-red-500 bg-red-100 hover:bg-red-200!"
                               onPress={() => handleOpenDeleteConfirm(index)}
                             >
                               <DynamicIcon name="trash-2" strokeWidth={1.5} className="w-6 h-6 shrink-0" />

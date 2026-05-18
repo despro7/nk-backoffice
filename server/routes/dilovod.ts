@@ -368,7 +368,7 @@ router.post('/settings', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAG
  * GET /api/dilovod/directories
  * Отримання довідників з Dilovod (склади, рахунки, форми оплати, фірми)
  */
-router.get('/directories', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
+router.get('/directories', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
     const { user } = req as any;
 

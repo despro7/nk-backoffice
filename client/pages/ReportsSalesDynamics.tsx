@@ -11,12 +11,16 @@ import {
   SelectItem,
   Chip,
   Tooltip,
+  Alert,
+  Button,
 } from '@heroui/react';
+import { DynamicIcon } from 'lucide-react/dynamic';
 import { getValueColor } from "../lib/utils";
 import type { SortDescriptor } from '@heroui/react';
 import { MonthSwitcher } from '@/components/MonthSwitcher';
 import { useApi } from '@/hooks/useApi';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 
 // ---------------------------------------------------------------------------
 // Типи
@@ -145,6 +149,23 @@ function getPercentSortValue(totalSold: number, openingStock: number | undefined
 export default function ReportsSalesDynamics() {
   const { apiCall } = useApi();
   const { isLoading: isAuthLoading } = useAuth();
+  const dilovodSettings = useDilovodSettings();
+  const [selectedFirmId, setSelectedFirmId] = useState<string | undefined>(undefined);
+
+  // Встановлюємо фірму за замовчуванням, коли довідники/налаштування завантажилися
+  useEffect(() => {
+    if (selectedFirmId) return;
+    const defaultFirm = dilovodSettings?.settings?.defaultFirmId;
+    const firstFirm = dilovodSettings?.directories?.firms?.[0]?.id;
+    if (defaultFirm) setSelectedFirmId(defaultFirm);
+    else if (firstFirm) setSelectedFirmId(firstFirm);
+  }, [dilovodSettings?.settings?.defaultFirmId, dilovodSettings?.directories]);
+
+  // Ім'я обраної фірми (щоб показувати дружню назву замість id)
+  const selectedFirmName = useMemo(() => {
+    const firms = dilovodSettings?.directories?.firms ?? [];
+    return firms.find(f => f.id === selectedFirmId)?.name;
+  }, [selectedFirmId, dilovodSettings?.directories?.firms]);
 
   // --- Стан фільтрів ---
   const [selectedMonth, setSelectedMonth] = useState<Date>(() => {
@@ -215,21 +236,37 @@ export default function ReportsSalesDynamics() {
 
     setIsStockLoading(true);
 
-    apiCall(`/api/warehouse/stock-snapshot?skus=${encodeURIComponent(skusParam)}&asOfDate=${asOfDate}`)
-      .then(r => r.json())
-      .then((data: StockSnapshotResponse) => {
+    // Додаємо можливість передавати firmId у GET-параметрі або у POST-тілі.
+    const firmId = selectedFirmId ?? dilovodSettings?.settings?.defaultFirmId ?? undefined;
+
+    // Якщо рядок параметрів занадто довгий — використовуємо POST
+    const encodedLen = encodeURIComponent(skusParam).length + encodeURIComponent(asOfDate).length + (firmId ? encodeURIComponent(firmId).length : 0);
+    const usePost = encodedLen > 2000;
+
+    (async () => {
+      try {
+        let resp: Response;
+        if (usePost) {
+          resp = await apiCall('/api/warehouse/stock-snapshot', {
+            method: 'POST',
+            body: JSON.stringify({ skus, asOfDate, firmId }),
+          });
+        } else {
+          const url = `/api/warehouse/stock-snapshot?skus=${encodeURIComponent(skusParam)}&asOfDate=${asOfDate}` + (firmId ? `&firmId=${encodeURIComponent(firmId)}` : '');
+          resp = await apiCall(url);
+        }
+        const data: StockSnapshotResponse = await resp.json();
         if (!cancelled) setStockData(data);
-      })
-      .catch(err => {
+      } catch (err) {
         console.error('[SalesDynamics] Помилка завантаження залишків:', err);
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setIsStockLoading(false);
-      });
+      }
+    })();
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [salesData]);
+  }, [salesData, selectedFirmId]);
 
   // ---------------------------------------------------------------------------
   // Мемоізовані дані
@@ -254,6 +291,20 @@ export default function ReportsSalesDynamics() {
     }
     return map;
   }, [stockData]);
+
+  // Якщо більшість SKU мають нульові залишки — показуємо інфо-алерт
+  const zeroStocksCount = useMemo(() => {
+    if (!stockData?.stocks || rows.length === 0) return 0;
+    let cnt = 0;
+    for (const r of rows) {
+      const s = stockData.stocks[r.sku];
+      const total = s ? (s.mainStock ?? 0) + (s.smallStock ?? 0) : 0;
+      if (total === 0) cnt++;
+    }
+    return cnt;
+  }, [stockData, rows]);
+
+  const showFirmInfoAlert = zeroStocksCount > Math.floor(rows.length / 2);
 
   /** Відсортовані рядки */
   const sortedRows = useMemo<SalesDynamicsRow[]>(() => {
@@ -393,6 +444,21 @@ export default function ReportsSalesDynamics() {
       <div className="bg-white rounded-xl p-4 flex flex-wrap items-center gap-3 justify-between">
         <h1 className="text-lg font-semibold text-default-800">Динаміка продажів по тижнях</h1>
         <div className="flex items-center gap-3">
+          <Select
+            aria-label="Фірма"
+            size="sm"
+            className="w-48"
+            selectedKeys={selectedFirmId ? [selectedFirmId] : []}
+            onSelectionChange={(keys) => {
+              const val = Array.from(keys)[0] as string | undefined;
+              setSelectedFirmId(val);
+            }}
+            disabled={!dilovodSettings?.directories?.firms || dilovodSettings.loadingDirectories}
+          >
+            {(dilovodSettings?.directories?.firms || []).map(f => (
+              <SelectItem key={f.id}>{f.name}</SelectItem>
+            ))}
+          </Select>
           <MonthSwitcher
             value={selectedMonth}
             onChange={setSelectedMonth}
@@ -416,7 +482,24 @@ export default function ReportsSalesDynamics() {
         </div>
       </div>
 
-      {/* Повідомлення про помилку */}
+        {/* Інформаційний алерт про залежність залишків від фірми */}
+        {showFirmInfoAlert && (
+          <Alert
+            title="Залишки на початок місяця залежать від фірми!"
+            description={(
+              <>
+                Більшість товарів повертають нульові залишки для обраної фірми. Спробуйте обрати іншу фірму у фільтрах.
+              </>
+            )}
+            color="warning"
+            variant="faded"
+            
+            classNames={{ base: 'mb-2' }}
+          >
+          </Alert>
+        )}
+
+        {/* Повідомлення про помилку */}
       {salesError && (
         <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 text-danger-700 text-sm">
           ❌ {salesError}

@@ -272,6 +272,28 @@ model WarehouseReturnHistory {
   @@map("warehouse_return_history")
 }
 
+model WarehouseWriteOffHistory {
+  id             Int         @id @default(autoincrement())
+  writeOffNumber String?     @db.VarChar(255)  // ID документа в Dilovod (якщо є)
+  firmId         String?     @db.VarChar(255)
+  firmName       String?     @db.VarChar(255)
+  storageId      String?     @db.VarChar(255)
+  writeOffDate   DateTime?
+  items          String      @db.LongText        // JSON: WriteOffItem[]
+  writeOffReason String
+  customReason   String?     @db.Text
+  comment        String?     @db.Text
+  payload        String      @db.LongText        // JSON: повний payload відправки
+  createdBy      Int
+  createdByName  String?     @db.VarChar(255)
+  createdAt      DateTime    @default(now())
+
+  @@index([writeOffNumber])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@map("warehouse_write_off_history")
+}
+
 model SyncLogs {
   id               Int       @id @default(autoincrement())
   type             String

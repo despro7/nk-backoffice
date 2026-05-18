@@ -35,7 +35,6 @@ export function OrderSearchInput({
   searchResults,
   loading,
   hasSearchExecuted,
-  orderSelected,
   selectedOrderId,
   onSelectOrder,
 }: OrderSearchInputProps) {
@@ -45,9 +44,10 @@ export function OrderSearchInput({
         <Input
           value={searchQuery}
           onValueChange={onSearchQueryChange}
-          placeholder="Пошук замовлення за №, ТТН або ПІБ"
+          placeholder="Пошук за № замовлення, ТТН або ПІБ"
           size="lg"
           className="w-full"
+          isClearable={true}
           startContent={<DynamicIcon name="search" className="text-gray-400" size={18} />}
           classNames={{ inputWrapper: 'rounded-lg border border-gray-200 bg-white' }}
           onKeyDown={(event) => {

@@ -22,7 +22,7 @@ const DEFAULT_PRESETS: PresetTime[] = [
 interface WarehouseDateTimePickerProps {
   value: Date;
   onChange: (date: Date) => void;
-  label?: string;
+  label?: string | React.ReactNode;
   labelPlacement?: 'outside-left' | 'outside' | 'inside';
   isDisabled?: boolean;
   isLoading?: boolean;
