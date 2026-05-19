@@ -142,7 +142,7 @@ export const appRoutes: AppRoute[] = [
     title: 'Списання зі складу',
     pageTitle: 'Списання зі складу | NK Backoffice',
     navLabel: 'Списання',
-    icon: <DynamicIcon name="trash" size={16} />,
+    icon: <DynamicIcon name="trash-2" size={16} />,
     inNav: true,
     order: 5,
     parent: 'warehouse',

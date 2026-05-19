@@ -178,13 +178,9 @@ export const WriteOffHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: 
                   </div>
                   <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
                     <span>Автор: <b>{record.createdByName || record.createdBy}</b></span>
-                    <span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(record.createdAt)}</b></span>
-                    <span className="border-l border-gray-300 pl-3">Фірма (оприбуткування): <b>{record.firmName || record.firmId || 'Не визначено'}</b>{record.shipFirmName || record.shipFirmId ? <span className="ml-2">(відвантаження: <b>{record.shipFirmName || record.shipFirmId}</b>)</span> : null}</span>
-                    {record.writeOffDate && (
-                      <span className="border-l border-gray-300 pl-3">
-                        Дата списання: <b>{new Date(record.writeOffDate).toLocaleDateString('uk-UA')}</b>
-                      </span>
-                    )}
+                    <span className="border-l border-gray-300 pl-3">Створено: {formatDate(record.createdAt)}</span>
+                    <span className="border-l border-gray-300 pl-3">Фірма (списання): <b>{record.firmName || record.firmId || 'Не визначено'}</b>{record.shipFirmName || record.shipFirmId ? <span className="ml-2">(відвантаження: <b>{record.shipFirmName || record.shipFirmId}</b>)</span> : null}</span>
+                    <span className="border-l border-gray-300 pl-3">Дата списання: <b>{record.writeOffDate ? formatDate(record.writeOffDate) : formatDate(record.createdAt)}</b></span>
                     {record.comment && <span className="border-l border-gray-300 pl-3">Коментар: {record.comment}</span>}
                   </div>
                 </div>

@@ -105,12 +105,13 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
                   name="chevron-right"
                   className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}
                 />
-                <div className="text-left pr-2">
-                  <p className="text-sm font-medium text-gray-700 tabular-nums">
+                <div className="flex flex-col items-start">
+                  <p className="font-medium text-gray-700 tabular-nums text-left pr-2 whitespace-nowrap">
                     Замовлення №{record.orderNumber}
                   </p>
+                  <span className="flex gap-0.5 items-center text-xs text-gray-400" title="Дата оприбутковання"><DynamicIcon name="undo-2" className="w-3 h-3 mb-0.5" /> {record.returnDate ? formatDate(record.returnDate) : formatDate(record.createdAt)}</span>
                 </div>
-                <Chip size="sm" color="default" variant="flat">
+                <Chip size="sm" color="default" variant="flat" className="max-w-sm min-w-0 *:[span]:truncate" title={getReturnReasonLabel(record.returnReason, record.customReason)}>
                   {getReturnReasonLabel(record.returnReason, record.customReason)}
                 </Chip>
               </div>
@@ -189,13 +190,9 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
                   </div>
                   <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
                     <span>Автор: <b>{record.createdByName || record.createdBy}</b></span>
-                    <span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(record.createdAt)}</b></span>
+                    <span className="border-l border-gray-300 pl-3">Створено: {formatDate(record.createdAt)}</span>
                     <span className="border-l border-gray-300 pl-3">Фірма (оприбуткування): <b>{record.firmName || record.firmId || 'Не визначено'}</b>{record.shipFirmName || record.shipFirmId ? <span className="ml-2">(відвантаження: <b>{record.shipFirmName || record.shipFirmId}</b>)</span> : null}</span>
-                    {record.returnDate && (
-                      <span className="border-l border-gray-300 pl-3">
-                        Дата повернення: <b>{new Date(record.returnDate).toLocaleDateString('uk-UA')}</b>
-                      </span>
-                    )}
+                    <span className="border-l border-gray-300 pl-3">Дата оприбуткування: <b>{record.returnDate ? formatDate(record.returnDate) : formatDate(record.createdAt)}</b></span>
                     {record.comment && <span className="border-l border-gray-300 pl-3">Коментар: {record.comment}</span>}
                   </div>
                 </div>

@@ -61,6 +61,19 @@ export default function WarehouseInventory() {
     }
   };
 
+  const handleRefreshSessionBalances = async (sessionId: string) => {
+    try {
+      const res = await fetch(`/api/warehouse/inventory/${sessionId}/refresh-balances`, { method: 'POST', credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      // NOTE: Do NOT auto-refresh history here — keep returned report for UI modal.
+      return data as { items?: Array<any> } | null;
+    } catch (err) {
+      ToastService.show({ title: 'Помилка оновлення залишків', color: 'danger' });
+      return null;
+    }
+  };
+
   return (
     <div className="container">
       <div className="flex flex-col gap-4 pb-12 w-full">
@@ -223,6 +236,7 @@ export default function WarehouseInventory() {
             onRefresh={inv.loadHistory}
             onLoadSession={inv.handleAdminLoadSession}
             onDeleteSession={handleAdminDeleteSession}
+            onRefreshSessionBalances={handleRefreshSessionBalances}
           />
         )}
       </div>

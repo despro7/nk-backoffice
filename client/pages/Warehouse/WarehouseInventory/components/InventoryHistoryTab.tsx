@@ -13,9 +13,10 @@ interface InventoryHistoryTabProps {
   onRefresh: () => void;
   onLoadSession?: (session: InventorySession) => Promise<void>;
   onDeleteSession?: (sessionId: string) => Promise<void>;
+  onRefreshSessionBalances?: (sessionId: string) => Promise<{ items?: Array<any> } | null>;
 }
 
-export const InventoryHistoryTab = ({ sessions, loading, onRefresh, onLoadSession, onDeleteSession }: InventoryHistoryTabProps) => (
+export const InventoryHistoryTab = ({ sessions, loading, onRefresh, onLoadSession, onDeleteSession, onRefreshSessionBalances }: InventoryHistoryTabProps) => (
   <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
     <div className="flex items-center justify-between mb-4">
       <h2 className="text-base font-semibold text-gray-800">Попередні інвентаризації</h2>
@@ -24,8 +25,7 @@ export const InventoryHistoryTab = ({ sessions, loading, onRefresh, onLoadSessio
         variant="flat"
         color="default"
         onPress={onRefresh}
-        isLoading={loading}
-        startContent={!loading ? <DynamicIcon name="refresh-cw" className="w-3.5 h-3.5" /> : undefined}
+        startContent={<DynamicIcon name="refresh-cw" className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
       >
         Оновити
       </Button>
@@ -45,7 +45,7 @@ export const InventoryHistoryTab = ({ sessions, loading, onRefresh, onLoadSessio
         </Button>
       </div>
     ) : (
-      <HistoryTable sessions={sessions} onLoadSession={onLoadSession} onDeleteSession={onDeleteSession} />
+      <HistoryTable sessions={sessions} onLoadSession={onLoadSession} onDeleteSession={onDeleteSession} onRefreshSessionBalances={onRefreshSessionBalances} onRefresh={onRefresh} />
     )}
   </div>
 );

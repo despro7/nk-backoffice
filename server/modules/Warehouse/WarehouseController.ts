@@ -1336,4 +1336,110 @@ router.get('/inventory/history', authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/warehouse/inventory/:id/refresh-balances
+// Оновлює залишки у БД для SKU, що присутні в сесії інвентаризації, на дату інвентаризації
+router.post('/inventory/:id/refresh-balances', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const session = await prisma.warehouseInventory.findUnique({ where: { id: sessionId } });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    // Використовуємо inventoryDate якщо задано, інакше createdAt
+    const asOfDate = session.inventoryDate ?? session.createdAt;
+
+    // Розпарсимо items (якщо помилка парсингу — повертаємо пустий звіт)
+    let items: any[] = [];
+    try {
+      items = session.items ? JSON.parse(session.items) : [];
+    } catch (e) {
+      console.warn('[Inventory] Failed to parse session.items for refresh-balances:', e);
+      items = [];
+    }
+
+    const skus = Array.from(new Set(items.map((it: any) => (it && it.sku) ? String(it.sku).trim() : '').filter(Boolean)));
+    if (skus.length === 0) {
+      return res.json({ success: true, asOfDate: asOfDate?.toISOString() ?? null, items: [] });
+    }
+
+    // Отримуємо залишки з Dilovod на потрібну дату
+    const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
+    const dilovodService = new DilovodService();
+
+    const balances = await dilovodService.getStockBalanceForSkus(skus, asOfDate);
+
+    const report: Array<any> = [];
+
+    // Map SKU -> serialized item from session (warehouse_inventory.items)
+    const sessionItemsBySku = new Map<string, any>();
+    for (const it of items) {
+      if (it && it.sku) sessionItemsBySku.set(String(it.sku).trim(), it);
+    }
+
+    // Для кожного балансу формуємо звіт: "before" беремо з session.items (systemBalance),
+    // "after" беремо з Dilovod (smallStorage). Ніяких записів у products/materials не робимо.
+    for (const b of balances) {
+      const sku = b.sku;
+      const newSmall = Number(b.smallStorage ?? 0);
+      const sessionItem = sessionItemsBySku.get(sku);
+
+      if (sessionItem) {
+        const before = typeof sessionItem.systemBalance === 'number' ? Number(sessionItem.systemBalance) : (sessionItem.systemBalance ? Number(sessionItem.systemBalance) : null);
+        report.push({ sku, name: sessionItem.name ?? null, type: sessionItem.type ?? 'product', before, after: newSmall });
+      } else {
+        // Якщо SKU відсутній у сесії — віддаємо у звіт з before = null
+        report.push({ sku, name: null, type: 'missing', before: null, after: newSmall });
+      }
+    }
+
+    console.log(`✅ [Inventory] Refreshed balances for session #${sessionId} — ${report.length} items processed`);
+
+    // Якщо в query передано apply=true — запускаємо асинхронну задачу, яка оновить
+    // поле `items` в таблиці `warehouse_inventory`, змінюючи лише systemBalance.
+    const shouldApply = req.query.apply === 'true';
+    if (shouldApply) {
+      // Не чекаємо завершення — робимо в фоні. Логування помилок всередині промісу.
+      (async () => {
+        try {
+          // Розпарсимо ще раз session.items (початковий стан)
+          let originalItems: any[] = [];
+          try {
+            originalItems = session.items ? JSON.parse(session.items) : [];
+          } catch (e) {
+            console.warn('[Inventory][Apply] Failed to parse original session.items during apply:', e);
+            originalItems = [];
+          }
+
+          // Map SKU -> after value
+          const afterBySku = new Map<string, number>();
+          for (const r of report) {
+            if (r && r.sku) afterBySku.set(String(r.sku), Number(r.after ?? 0));
+          }
+
+          // Build updated items array (only update systemBalance for matching SKUs)
+          const updatedItems = originalItems.map((it: any) => {
+            if (it && it.sku && afterBySku.has(String(it.sku))) {
+              const newVal = afterBySku.get(String(it.sku));
+              return { ...it, systemBalance: typeof newVal === 'number' ? newVal : it.systemBalance };
+            }
+            return it;
+          });
+
+          // Write back to DB
+          await prisma.warehouseInventory.update({ where: { id: sessionId }, data: { items: JSON.stringify(updatedItems) } });
+          console.log(`✅ [Inventory][Apply] Applied balances to warehouse_inventory #${sessionId} (items updated: ${report.length})`);
+        } catch (e) {
+          console.error('🚨 [Inventory][Apply] Error applying balances in background:', e);
+        }
+      })();
+    }
+
+    res.json({ success: true, asOfDate: asOfDate?.toISOString() ?? null, items: report, applyScheduled: shouldApply });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error in refresh-balances:', error);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' });
+  }
+});
+
 export default router;

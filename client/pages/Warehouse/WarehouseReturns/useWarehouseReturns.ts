@@ -35,6 +35,17 @@ interface PrepareReturnResponse {
 export function useWarehouseReturns() {
   const { apiCall } = useApi();
 
+  // Remove emoji and other pictographic Unicode characters from user-provided text
+  const sanitizeText = (s?: string | null) => {
+    if (s == null) return s;
+    try {
+      return s.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{1F900}-\u{1F9FF}]/gu, '').trim();
+    } catch (e) {
+      // Fallback: remove common emoji variation selector and basic pictographs
+      return s.replace(/[\uFE0F\u200D]/g, '').trim();
+    }
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<OrderSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -429,11 +440,15 @@ export function useWarehouseReturns() {
         const parsed = parseStoredDate(returnDate);
         return parsed ? formatDate(parsed) : formatDate(new Date());
       })();
+      const sanitizedComment = sanitizeText(comment) ?? '';
+      const sanitizedReason = sanitizeText(returnReason) ?? '';
+      const sanitizedCustom = sanitizeText(customReason) ?? '';
+
       const payload = {
         orderId: String(selectedOrderId),
         date: payloadDate,
-        comment,
-        reason: returnReason === 'Інше' ? customReason || returnReason : returnReason,
+        comment: sanitizedComment,
+        reason: sanitizedReason === 'Інше' ? sanitizedCustom || sanitizedReason : sanitizedReason,
         // payload firm should be the receiving firm
         firmId: receiveFirmId || undefined,
         // Include shipping firm so server can decide whether to keep `contract` in header
@@ -461,9 +476,10 @@ export function useWarehouseReturns() {
           shipFirmName: shipFirmName || undefined,
           returnDate: returnDate || undefined,
           items: items.map((item) => ({ sku: item.sku, name: item.name, quantity: item.quantity, batchId: item.selectedBatchId, batchNumber: item.availableBatches?.find((b) => b.id === item.selectedBatchKey)?.batchNumber, price: item.price })),
+          // Preserve original return reason (with emoji) in local DB; payload sent to Dilovod is sanitized
           returnReason: returnReason,
           customReason: returnReason === 'Інше' ? customReason : undefined,
-          comment: comment || undefined,
+          comment: sanitizedComment || undefined,
           payload: data.payload || payload,
         };
         await ReturnsHistoryService.saveRecord(historyRecord);
