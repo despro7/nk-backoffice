@@ -77,7 +77,7 @@ router.post(
   requireMinRole(ROLES.SHOP_MANAGER),
   async (req, res) => {
     try {
-      const { rows } = req.body as CashInExportRequest;
+      const { rows, fileCashAccount } = req.body as CashInExportRequest;
 
       if (!Array.isArray(rows) || rows.length === 0) {
         res.status(400).json({ message: 'Масив рядків порожній або відсутній' });
@@ -90,12 +90,14 @@ router.post(
       if (isDryRun) {
         // Dry-run: повертаємо payload без відправки (тільки для ADMIN в debug-режимі)
         logServer(`🔍 [CashIn] Dry-run: побудова payload для ${rows.length} рядків`);
-        const result = await cashInExportBuilder.buildPayloads(rows, userId);
+        const result = await cashInExportBuilder.buildPayloads(rows, userId, fileCashAccount);
         res.json({
           dryRun: true,
           count: result.payloads.length,
           firm: result.firm,
+          firmName: result.firmName ?? null,
           cashAccount: result.cashAccount,
+          fileCashAccount: fileCashAccount || null,
           payloads: result.payloads,
         });
         return;
@@ -103,7 +105,7 @@ router.post(
 
       // Реальна відправка
       logServer(`🚀 [CashIn] Відправка ${rows.length} рядків в Діловод...`);
-      const result = await cashInExportBuilder.exportAll(rows, userId);
+      const result = await cashInExportBuilder.exportAll(rows, userId, fileCashAccount);
       res.json(result);
     } catch (error: any) {
       logServer(`❌ [CashIn] Помилка експорту: ${error.message}`);

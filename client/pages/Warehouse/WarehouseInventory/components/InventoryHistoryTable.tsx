@@ -618,14 +618,20 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRefre
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     const data = await res.json();
                     if (data && data.applyScheduled) {
-                      ToastService.show({ title: 'Оновлення застосовано', description: 'Оновлення облікових залишків запущено у фоновому режимі', color: 'success' });
-                      // Schedule retries to pick up background update
-                      setTimeout(() => { try { onRefresh?.(); } catch (e) {} }, 2000);
-                      setTimeout(() => { try { onRefresh?.(); } catch (e) {} }, 6000);
+                      ToastService.show({ title: 'Оновлення запущено', description: 'Оновлення облікових залишків запущено у фоновому режимі', color: 'success' });
                     } else {
-                      ToastService.show({ title: 'Оновлення завершено', color: 'success' });
-                      onRefresh?.();
+                      // Synchronous apply completed (or no apply requested) — refresh and wait
+                      ToastService.show({ title: 'Оновлення застосовано', color: 'success' });
+                      try {
+                        const maybe: any = onRefresh?.();
+                        if (maybe && typeof maybe.then === 'function') {
+                          await maybe;
+                        }
+                      } catch (e) {
+                        // ignore refresh errors here; user will see stale data
+                      }
                     }
+                    // Close modal after apply (and after refresh awaited when applicable)
                     setIsRefreshModalOpen(false);
                   } catch (err) {
                     ToastService.show({ title: 'Помилка застосування', description: err instanceof Error ? err.message : 'Не вдалося застосувати оновлення', color: 'danger' });

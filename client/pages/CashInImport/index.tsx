@@ -20,9 +20,11 @@ const STEP_LABELS: Record<Step, string> = {
 export default function CashInImport() {
   const [step, setStep] = useState<Step>('upload');
   const [rows, setRows] = useState<CashInRow[]>([]);
+  const [fileCashAccount, setFileCashAccount] = useState<string | null>(null);
+  const [firm, setFirm] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [exportResult, setExportResult] = useState<{ exported: number; errors: number } | null>(null);
+  const [exportResult, setExportResult] = useState<{ exported: number; errors: Array<{ rowIndex: number; orderNumber: string; error: string }> } | null>(null);
 
   // Стан модального вікна Payload (debug)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -48,7 +50,52 @@ export default function CashInImport() {
 
       const data: CashInPreviewResponse = await res.json();
       setRows(data.rows);
+      setFileCashAccount(data.fileCashAccount ?? null);
+      setFirm(null);
       setStep('preview');
+
+      // Автоматично спробувати визначити фірму по рахунку з файлу (dry-run), щоб показати у Summary
+      (async () => {
+        try {
+          // Підготуємо підтверджені рядки, які будуть відправлятися (логіка аналогічна в Summary)
+          const confirmedRows: CashInConfirmedRow[] = (data.rows ?? [])
+            .filter((r) => {
+              const orderNum = r.resolvedOrderNumber ?? r.orderNumber;
+              if (!orderNum) return false;
+              if (r.status === 'ok') return true;
+              if (r.status === 'duplicate_cash_in' && r.allowDuplicate) return true;
+              return false;
+            })
+            .map((r) => ({
+              rowIndex: r.rowIndex,
+              transferDate: r.transferDate,
+              amountReceived: r.amountReceived,
+              commissionAmount: r.commissionAmount,
+              orderNumber: (r.resolvedOrderNumber ?? r.orderNumber)!,
+              dilovodDocId: r.dilovodDocId ?? null,
+            }));
+
+          if (confirmedRows.length === 0) return;
+
+          const res2 = await fetch('/api/dilovod/cash-in/export?dryRun=true', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ rows: confirmedRows, fileCashAccount: data.fileCashAccount ?? null }),
+          });
+          if (!res2.ok) return;
+          const dry = await res2.json().catch(() => null);
+          if (dry) {
+            const name = dry.firmName ?? dry.firm;
+            if (name) {
+              console.info('[CashIn] Auto-dryRun determined firm:', name, 'for fileCashAccount:', data.fileCashAccount);
+              setFirm(name);
+            }
+          }
+        } catch (e) {
+          // silently ignore auto-dry failures
+        }
+      })();
     } catch (err: any) {
       ToastService.show({ title: 'Помилка парсингу', description: err.message, color: 'danger' });
     } finally {
@@ -71,7 +118,7 @@ export default function CashInImport() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ rows: confirmedRows }),
+        body: JSON.stringify({ rows: confirmedRows, fileCashAccount }),
       });
 
       if (!res.ok) {
@@ -80,7 +127,9 @@ export default function CashInImport() {
       }
 
       const data = await res.json();
-      setExportResult({ exported: data.exportedCount, errors: data.errors?.length ?? 0 });
+      // Log firm info if available
+      console.info('[CashIn] Export response', { exportedCount: data.exportedCount, errors: data.errors?.length ?? 0, fileCashAccount, firm });
+      setExportResult({ exported: data.exportedCount, errors: data.errors ?? [] });
       setStep('done');
 
       if (data.exportedCount > 0) {
@@ -103,15 +152,23 @@ export default function CashInImport() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ rows: confirmedRows }),
+        body: JSON.stringify({ rows: confirmedRows, fileCashAccount }),
       });
 
       const data = await res.json();
+      // Server returns mapped firm in dry-run — store and log it
+      if (data) {
+        const name = data.firmName ?? data.firm;
+        if (name) {
+          console.info(`[CashIn] Determined firm for cash-in: ${name} (fileCashAccount: ${fileCashAccount})`);
+          setFirm(name);
+        }
+      }
       setPayloadData(data);
     } catch (err: any) {
       ToastService.show({ title: 'Помилка payload', description: err.message, color: 'danger' });
     }
-  }, []);
+  }, [fileCashAccount]);
 
   // --- Скидання стану ---
   const handleReset = useCallback(() => {
@@ -160,29 +217,51 @@ export default function CashInImport() {
             onExport={handleExport}
             onShowPayload={handleShowPayload}
             onReset={handleReset}
+            fileCashAccount={fileCashAccount ?? undefined}
+            firm={firm ?? undefined}
           />
         </div>
       )}
 
       {/* Крок 3: Done */}
       {step === 'done' && exportResult && (
-        <div className="flex flex-col items-center gap-4 py-8">
-          <div className="w-16 h-16 rounded-full bg-success-100 flex items-center justify-center">
-            <DynamicIcon name="circle-check" size={36} className="text-success-600" />
-          </div>
-          <p className="text-base font-medium text-gray-800">
-            Імпорт завершено
-          </p>
-          <p className="text-sm text-gray-500">
-            Відправлено: <b>{exportResult.exported}</b> документів
-            {exportResult.errors > 0 && (
-              <> · <span className="text-warning-600">Помилок: {exportResult.errors}</span></>
+        <div className="flex flex-col items-center gap-4 py-8 w-full">
+            {/* Icon: green if no errors, warning if any errors */}
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center ${exportResult?.errors && exportResult.errors.length > 0 ? 'bg-warning-100' : 'bg-success-100'}`}>
+              {exportResult?.errors && exportResult.errors.length > 0 ? (
+                <DynamicIcon name="triangle-alert" size={36} className="text-warning-600" />
+              ) : (
+                <DynamicIcon name="circle-check" size={36} className="text-success-600" />
+              )}
+            </div>
+            <p className="text-base font-medium text-gray-800">
+              Імпорт завершено
+            </p>
+            <p className="text-sm text-gray-500">
+              Відправлено: <b>{exportResult?.exported ?? 0}</b> документів
+              {exportResult?.errors && exportResult.errors.length > 0 && (
+                <> · <span className="text-warning-600">Помилок: {exportResult.errors.length}</span></>
+              )}
+            </p>
+
+            {/* Якщо є помилки — показати їх список */}
+            {exportResult?.errors && exportResult.errors.length > 0 && (
+              <div className="mt-4 w-full max-w-2xl bg-white border border-warning-100 rounded p-4">
+                <p className="text-sm font-medium text-warning-700 mb-2">Деталі помилок:</p>
+                <ul className="list-disc list-inside text-sm text-gray-700">
+                  {exportResult.errors.map((e) => (
+                    <li key={`${e.rowIndex}-${e.orderNumber}`} className="mb-1">
+                      <strong>Рядок {e.rowIndex}</strong> — замовлення {e.orderNumber ?? '(—)'}: {e.error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
-          </p>
-          <Button variant="flat" color="primary" onPress={handleReset} startContent={<DynamicIcon name="rotate-ccw" size={15} />}>
-            Новий імпорт
-          </Button>
-        </div>
+
+            <Button variant="solid" color="primary" onPress={handleReset} startContent={<DynamicIcon name="rotate-ccw" size={15} />}>
+              Новий імпорт
+            </Button>
+          </div>
       )}
 
       {/* Модальне вікно Payload (debug) */}

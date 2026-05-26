@@ -1395,47 +1395,47 @@ router.post('/inventory/:id/refresh-balances', authenticateToken, async (req, re
 
     console.log(`✅ [Inventory] Refreshed balances for session #${sessionId} — ${report.length} items processed`);
 
-    // Якщо в query передано apply=true — запускаємо асинхронну задачу, яка оновить
-    // поле `items` в таблиці `warehouse_inventory`, змінюючи лише systemBalance.
+    // Якщо в query передано apply=true — застосовуємо оновлення синхронно (чекаємо завершення)
     const shouldApply = req.query.apply === 'true';
+    let applyScheduled = false;
+    let applyCompleted = false;
     if (shouldApply) {
-      // Не чекаємо завершення — робимо в фоні. Логування помилок всередині промісу.
-      (async () => {
+      try {
+        // Розпарсимо ще раз session.items (початковий стан)
+        let originalItems: any[] = [];
         try {
-          // Розпарсимо ще раз session.items (початковий стан)
-          let originalItems: any[] = [];
-          try {
-            originalItems = session.items ? JSON.parse(session.items) : [];
-          } catch (e) {
-            console.warn('[Inventory][Apply] Failed to parse original session.items during apply:', e);
-            originalItems = [];
-          }
-
-          // Map SKU -> after value
-          const afterBySku = new Map<string, number>();
-          for (const r of report) {
-            if (r && r.sku) afterBySku.set(String(r.sku), Number(r.after ?? 0));
-          }
-
-          // Build updated items array (only update systemBalance for matching SKUs)
-          const updatedItems = originalItems.map((it: any) => {
-            if (it && it.sku && afterBySku.has(String(it.sku))) {
-              const newVal = afterBySku.get(String(it.sku));
-              return { ...it, systemBalance: typeof newVal === 'number' ? newVal : it.systemBalance };
-            }
-            return it;
-          });
-
-          // Write back to DB
-          await prisma.warehouseInventory.update({ where: { id: sessionId }, data: { items: JSON.stringify(updatedItems) } });
-          console.log(`✅ [Inventory][Apply] Applied balances to warehouse_inventory #${sessionId} (items updated: ${report.length})`);
+          originalItems = session.items ? JSON.parse(session.items) : [];
         } catch (e) {
-          console.error('🚨 [Inventory][Apply] Error applying balances in background:', e);
+          console.warn('[Inventory][Apply] Failed to parse original session.items during apply:', e);
+          originalItems = [];
         }
-      })();
+
+        // Map SKU -> after value
+        const afterBySku = new Map<string, number>();
+        for (const r of report) {
+          if (r && r.sku) afterBySku.set(String(r.sku), Number(r.after ?? 0));
+        }
+
+        // Build updated items array (only update systemBalance for matching SKUs)
+        const updatedItems = originalItems.map((it: any) => {
+          if (it && it.sku && afterBySku.has(String(it.sku))) {
+            const newVal = afterBySku.get(String(it.sku));
+            return { ...it, systemBalance: typeof newVal === 'number' ? newVal : it.systemBalance };
+          }
+          return it;
+        });
+
+        // Write back to DB (synchronously)
+        await prisma.warehouseInventory.update({ where: { id: sessionId }, data: { items: JSON.stringify(updatedItems) } });
+        console.log(`✅ [Inventory][Apply] Applied balances to warehouse_inventory #${sessionId} (items updated: ${report.length})`);
+        applyCompleted = true;
+      } catch (e) {
+        console.error('🚨 [Inventory][Apply] Error applying balances:', e);
+        // if apply fails, we do not schedule background job here
+      }
     }
 
-    res.json({ success: true, asOfDate: asOfDate?.toISOString() ?? null, items: report, applyScheduled: shouldApply });
+    res.json({ success: true, asOfDate: asOfDate?.toISOString() ?? null, items: report, applyScheduled, applyCompleted });
   } catch (error) {
     console.error('🚨 [Inventory] Error in refresh-balances:', error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' });

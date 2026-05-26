@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useDebug } from '@/contexts/DebugContext';
@@ -12,6 +12,8 @@ interface CashInSummaryProps {
   onExport: (confirmedRows: CashInConfirmedRow[]) => void;
   onShowPayload: (confirmedRows: CashInConfirmedRow[]) => void;
   onReset: () => void;
+  fileCashAccount?: string;
+  firm?: string;
 }
 
 export default function CashInSummary({
@@ -20,6 +22,8 @@ export default function CashInSummary({
   onExport,
   onShowPayload,
   onReset,
+  fileCashAccount,
+  firm,
 }: CashInSummaryProps) {
   const { isDebugMode } = useDebug();
   const { user } = useAuth();
@@ -55,8 +59,22 @@ export default function CashInSummary({
   const duplicateCount = rows.filter((r) => r.status === 'duplicate_cash_in').length;
   const duplicateAllowedCount = rows.filter((r) => r.status === 'duplicate_cash_in' && r.allowDuplicate).length;
 
+  useEffect(() => {
+    if (firm) {
+      console.info(`[CashIn] Summary shows firm: ${firm} (fileCashAccount: ${fileCashAccount})`);
+    }
+  }, [firm, fileCashAccount]);
+
   return (
     <div className="flex flex-col gap-5">
+      {/* Фірма/рахунок */}
+      {(firm || fileCashAccount) && (
+        <div className="text-sm text-gray-600">
+          {firm ? <span className="font-medium"><strong>Фірма для надходження грошей:</strong> {firm}</span> : <span className="font-medium"><strong>Рахунок надходження грошей:</strong> {fileCashAccount}</span>}
+        </div>
+      )}
+
+      
       {/* Статистика */}
       <div className="flex flex-wrap gap-3">
         <Chip color="success" variant="flat" startContent={<DynamicIcon name="circle-check" size={14} className="ml-1 shrink-0" />}>

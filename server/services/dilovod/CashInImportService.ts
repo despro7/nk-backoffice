@@ -58,6 +58,13 @@ export class CashInImportService {
 
     logServer(`📊 [CashIn] Всього рядків у файлі: ${allRows.length}`);
 
+    // Витягуємо номер рахунку з верхньої частини файлу (рядок 5 -> індекс 4, колонка 3 -> індекс 2)
+    const rawFileAccount = allRows?.[4]?.[2] ?? null;
+    const fileCashAccount = this.parseString(rawFileAccount);
+    if (fileCashAccount) {
+      logServer(`📂 [CashIn] Рахунок з файлу: ${fileCashAccount}`);
+    }
+
     // 2. Беремо рядки даних починаючи з DATA_START_ROW
     const dataRows = allRows.slice(DATA_START_ROW);
     logServer(`📊 [CashIn] Рядків для обробки (до фільтрації): ${dataRows.length}`);
@@ -101,6 +108,7 @@ export class CashInImportService {
       ambiguousCount,
       notFoundCount,
       duplicateCount,
+      fileCashAccount: fileCashAccount || undefined,
     };
   }
 

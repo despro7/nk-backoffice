@@ -39,7 +39,8 @@ export interface CashInPayloadItem {
 export interface CashInBuildResult {
   payloads: CashInPayloadItem[];
   cashAccount: string;
-  firm: string;
+  firm: string; // firm id
+  firmName?: string; // optional human-readable firm name
 }
 
 export class CashInExportBuilder {
@@ -47,8 +48,21 @@ export class CashInExportBuilder {
    * Будує масив payload-ів для всіх підтверджених рядків (без відправки).
    * Використовується для dry-run (кнопка "Payload" в debug-режимі).
    */
-  async buildPayloads(rows: CashInConfirmedRow[], userId?: number): Promise<CashInBuildResult> {
-    const { firm, cashAccount } = await this.loadSettings();
+  async buildPayloads(rows: CashInConfirmedRow[], userId?: number, fileCashAccount?: string): Promise<CashInBuildResult> {
+    const { firm: defaultFirm, cashAccount, channelPaymentMapping } = await this.loadSettings();
+    // Якщо передано номер рахунку з файлу — намагаємося отримати фірму за цим рахунком
+    let firm = defaultFirm;
+    let firmName: string | undefined = undefined;
+    if (fileCashAccount) {
+      const resolved = await this.resolveFirmByCashAccount(channelPaymentMapping, fileCashAccount);
+      if (resolved?.id) {
+        firm = resolved.id;
+        firmName = resolved.name;
+        logServer(`🔍 [CashIn] Маппінг фірми за рахунком ${fileCashAccount} → firm=${firm} (${firmName ?? '<без назви>'})`);
+      } else {
+        logServer(`🔍 [CashIn] Не знайдено маппінг фірми для рахунку ${fileCashAccount}, використовуємо дефолтну firm=${defaultFirm}`);
+      }
+    }
     const authorId = await this.resolveAuthorId(userId);
 
     // Послідовно (Dilovod блокує паралельні запити через multithreadApiSession)
@@ -57,17 +71,17 @@ export class CashInExportBuilder {
       payloads.push(await this.buildSinglePayload(row, firm, cashAccount, authorId));
     }
 
-    return { payloads, cashAccount, firm };
+    return { payloads, cashAccount, firm, firmName };
   }
 
   /**
    * Будує payload-и та відправляє їх в Dilovod.
    * Повертає зведений результат з лічильниками успіхів та помилок.
    */
-  async exportAll(rows: CashInConfirmedRow[], userId?: number): Promise<CashInExportResponse> {
+  async exportAll(rows: CashInConfirmedRow[], userId?: number, fileCashAccount?: string): Promise<CashInExportResponse> {
     logServer(`🚀 [CashIn] Починаємо відправку ${rows.length} документів в Діловод...`);
 
-    const { payloads } = await this.buildPayloads(rows, userId);
+    const { payloads } = await this.buildPayloads(rows, userId, fileCashAccount);
 
     let exportedCount = 0;
     const errors: CashInExportResponse['errors'] = [];
@@ -204,7 +218,12 @@ export class CashInExportBuilder {
   /**
    * Завантажує firm та cashAccount з налаштувань
    */
-  private async loadSettings(): Promise<{ firm: string; cashAccount: string }> {
+  
+
+  /**
+   * Розширена loadSettings — повертає також сирий JSON мапінгу каналів
+   */
+  private async loadSettings(): Promise<{ firm: string; cashAccount: string; channelPaymentMapping?: string }> {
     const settings = await prisma.settingsBase.findMany({
       where: { category: 'dilovod', isActive: true },
       select: { key: true, value: true },
@@ -214,9 +233,11 @@ export class CashInExportBuilder {
 
     const firm = map.get('dilovod_default_firm_id') ?? '';
 
+    const mappingJson = map.get('dilovod_channel_payment_mapping');
+
     // Знаходимо cashAccount з channelPaymentMapping по формі оплати "Післяплата"
     const cashAccount = this.resolveCashAccount(
-      map.get('dilovod_channel_payment_mapping'),
+      mappingJson,
       CASH_IN_CONSTANTS.PAYMENT_FORM_POSTPAY
     );
 
@@ -229,7 +250,70 @@ export class CashInExportBuilder {
       logServer(`✅ [CashIn] cashAccount знайдено: ${cashAccount}`);
     }
 
-    return { firm, cashAccount };
+    return { firm, cashAccount, channelPaymentMapping: mappingJson };
+  }
+
+  /**
+   * Повертає фірму (firm id) по номеру рахунку, якщо знайдено у channelPaymentMapping
+   */
+  private async resolveFirmByCashAccount(mappingJson: string | undefined, account: string): Promise<{ id?: string; name?: string } | undefined> {
+    // 1) Спроба знайти у channelPaymentMapping (якщо там зберігають firm)
+    if (mappingJson && account) {
+      try {
+        const channelMap: Record<string, any> = JSON.parse(mappingJson);
+        const normalized = String(account).replace(/\s+/g, '');
+        for (const channelSettings of Object.values(channelMap)) {
+          const mappings: any[] = channelSettings?.mappings ?? [];
+          const match = mappings.find((m: any) => String(m?.cashAccount ?? '').replace(/\s+/g, '') === normalized || String(m?.cashAccount ?? '').replace(/\s+/g, '').includes(normalized));
+          if (match) {
+            const candidate = match.firm || match.firmId || match.company || match.contractFirm || undefined;
+            logServer(`🔎 [CashIn] Збіг channelPaymentMapping: keys=${Object.keys(match).join(', ')}; candidateFirm=${candidate ?? '<none>'}`);
+            if (candidate) {
+              // Спробуємо дізнатись людинозрозумілу назву фірми з довідників
+              try {
+                const firms = await dilovodService.getFirms();
+                const firmObj = (firms || []).find((f: any) => f.id === candidate);
+                const name = firmObj?.name ?? undefined;
+                return { id: candidate, name };
+              } catch (e) {
+                return { id: candidate };
+              }
+            }
+          }
+        }
+      } catch (e) {
+        logServer(`⚠️ [CashIn] Помилка парсингу channelPaymentMapping для пошуку фірми: ${e?.message ?? e}`);
+      }
+    }
+
+    // 2) Якщо не знайшли — звертаємося до Dilovod довідників: знаходимо рахунок за назвою (IBAN) або за id
+    try {
+      logServer(`🔍 [CashIn] Шукаємо рахунок у довідниках Dilovod за значенням: ${account}`);
+      const cashAccounts = await dilovodService.getCashAccounts();
+      const firms = await dilovodService.getFirms();
+
+      const normalized = String(account).replace(/\s+/g, '');
+      // Пошук по id або по назві що містить IBAN
+      const found = (cashAccounts || []).find((acc: any) => {
+        if (!acc) return false;
+        const accId = String(acc.id || '').replace(/\s+/g, '');
+        const accName = String(acc.name || '').replace(/\s+/g, '');
+        return accId === normalized || accName.includes(normalized) || normalized.includes(accId);
+      });
+
+      if (found) {
+        const owner = found.owner;
+        const firmObj = (firms || []).find((f: any) => f.id === owner);
+        const firmId = firmObj?.id ?? owner;
+        const name = firmObj?.name ?? undefined;
+        logServer(`🔍 [CashIn] Рахунок знайдено у довідниках: accountId=${found.id}, ownerFirm=${firmId}`);
+        return { id: firmId, name };
+      }
+    } catch (e: any) {
+      logServer(`⚠️ [CashIn] Помилка при зверненні до Dilovod довідників: ${e?.message ?? e}`);
+    }
+
+    return undefined;
   }
 
   /**

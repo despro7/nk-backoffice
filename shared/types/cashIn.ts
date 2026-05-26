@@ -56,6 +56,8 @@ export interface CashInPreviewResponse {
   ambiguousCount: number;
   notFoundCount: number;
   duplicateCount: number;
+  /** Номер рахунку, витягнутий з верхньої частини Excel-файлу (4 колонка, 7 рядок) */
+  fileCashAccount?: string;
 }
 
 // Підтверджений рядок для відправки (після ручного редагування)
@@ -71,6 +73,8 @@ export interface CashInConfirmedRow {
 // Тіло запиту POST /api/dilovod/cash-in/export
 export interface CashInExportRequest {
   rows: CashInConfirmedRow[];
+  /** Опціонально: номер рахунку з файлу, для мапінгу фірми у Dilovod */
+  fileCashAccount?: string;
 }
 
 // Відповідь сервера на POST /api/dilovod/cash-in/export
