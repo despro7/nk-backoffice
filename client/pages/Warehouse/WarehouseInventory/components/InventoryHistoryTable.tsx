@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Fragment } from 'react';
 import { Button, Chip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { formatDate } from '@/lib/formatUtils';
+import { formatDate, formatRelativeDate } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROLES } from '@shared/constants/roles';
-import type { InventorySession } from '../WarehouseInventoryTypes';
+import type { InventorySession, ProductHistoryEntry } from '../WarehouseInventoryTypes';
 import { statusLabel, statusColor, totalPortions } from '../WarehouseInventoryUtils';
 import { ToastService } from '@/services/ToastService';
 
@@ -28,6 +28,10 @@ type SortDirection = 'ascending' | 'descending';
 export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRefreshSessionBalances, onRefresh }: HistoryTableProps) => {
   const { user } = useAuth();
   const isAdmin = user?.role === ROLES.ADMIN;
+  const currentUserId = user?.id ? String(user.id) : null;
+  const latestOwnSessionId = currentUserId
+    ? sessions.find((s) => String(s.createdBy) === currentUserId)?.id ?? null
+    : null;
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [loadingLoadId, setLoadingLoadId] = useState<string | null>(null);
   const [loadingDeleteId, setLoadingDeleteId] = useState<string | null>(null);
@@ -46,6 +50,9 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRefre
   const [isApplying, setIsApplying] = useState(false);
   const [sortColumnModal, setSortColumnModal] = useState<'sku' | 'name' | 'before' | 'after' | 'delta'>('name');
   const [sortDirectionModal, setSortDirectionModal] = useState<SortDirection>('ascending');
+  const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
+  const [rowHistoryCache, setRowHistoryCache] = useState<Record<string, ProductHistoryEntry[]>>({});
+  const [rowHistoryLoading, setRowHistoryLoading] = useState<string | null>(null);
 
   if (sessions.length === 0) {
     return (
@@ -149,16 +156,43 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRefre
     return list;
   };
 
+  const handleRowClick = async (sessionId: string, sku: string): Promise<void> => {
+    const key = `${sessionId}-${sku}`;
+    if (expandedRowKey === key) {
+      setExpandedRowKey(null);
+      return;
+    }
+    setExpandedRowKey(key);
+    if (!rowHistoryCache[sku]) {
+      setRowHistoryLoading(sku);
+      try {
+        const res = await fetch(`/api/warehouse/inventory/product-history?sku=${encodeURIComponent(sku)}&days=21`, { credentials: 'include' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: { sku: string; entries: ProductHistoryEntry[] } = await res.json();
+        setRowHistoryCache((prev) => ({ ...prev, [sku]: data.entries ?? [] }));
+      } catch {
+        setRowHistoryCache((prev) => ({ ...prev, [sku]: [] }));
+      } finally {
+        setRowHistoryLoading(null);
+      }
+    }
+  };
+
   useEffect(() => {
     if (expandedSessionId && contentRefs.current[expandedSessionId]) {
       const h = contentRefs.current[expandedSessionId]?.scrollHeight || 0;
       setContentHeights((p) => ({ ...p, [expandedSessionId]: h }));
     }
-  }, [expandedSessionId, sortColumnProd, sortDirectionProd, sortColumnMat, sortDirectionMat]);
+  }, [expandedSessionId, sortColumnProd, sortDirectionProd, sortColumnMat, sortDirectionMat, expandedRowKey, rowHistoryCache]);
 
   return (
     <div className="space-y-2">
       {sessions.map((session) => {
+        const canAuthorEditThisSession = !isAdmin
+          && currentUserId !== null
+          && String(session.createdBy) === currentUserId
+          && latestOwnSessionId !== null
+          && String(session.id) === String(latestOwnSessionId);
         const { products, materials } = getSessionItems(session.id);
         const productSystem = products.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
         const materialSystem = materials.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
@@ -281,37 +315,33 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRefre
                         </Button>
                       )}
 
-                      {isAdmin && (
-                        <>
-                          {onLoadSession && (
-                            <Button
-                              size="sm"
-                              variant="flat"
-                              color="primary"
-                              className="bg-blue-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60"
-                              isLoading={loadingLoadId === session.id}
-                              isDisabled={!!loadingDeleteId}
-                              startContent={loadingLoadId !== session.id ? <DynamicIcon name="pencil" className="w-3 h-3" /> : undefined}
-                              onPress={async () => { setLoadingLoadId(session.id); try { await onLoadSession!(session); } finally { setLoadingLoadId(null); } }}
-                            >
-                              Редагувати
-                            </Button>
-                          )}
-                          {onDeleteSession && (
-                            <Button
-                              size="sm"
-                              variant="flat"
-                              color="danger"
-                              className="bg-red-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60"
-                              isLoading={loadingDeleteId === session.id}
-                              isDisabled={!!loadingLoadId}
-                              startContent={loadingDeleteId !== session.id ? <DynamicIcon name="trash-2" className="w-3 h-3" /> : undefined}
-                              onPress={async () => { setLoadingDeleteId(session.id); try { await onDeleteSession!(session.id); } finally { setLoadingDeleteId(null); } }}
-                            >
-                              Видалити
-                            </Button>
-                          )}
-                        </>
+                      {(isAdmin || canAuthorEditThisSession) && onLoadSession && (
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="primary"
+                          className="bg-blue-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60"
+                          isLoading={loadingLoadId === session.id}
+                          isDisabled={!!loadingDeleteId}
+                          startContent={loadingLoadId !== session.id ? <DynamicIcon name="pencil" className="w-3 h-3" /> : undefined}
+                          onPress={async () => { setLoadingLoadId(session.id); try { await onLoadSession!(session); } finally { setLoadingLoadId(null); } }}
+                        >
+                          Редагувати
+                        </Button>
+                      )}
+                      {isAdmin && onDeleteSession && (
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="danger"
+                          className="bg-red-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60"
+                          isLoading={loadingDeleteId === session.id}
+                          isDisabled={!!loadingLoadId}
+                          startContent={loadingDeleteId !== session.id ? <DynamicIcon name="trash-2" className="w-3 h-3" /> : undefined}
+                          onPress={async () => { setLoadingDeleteId(session.id); try { await onDeleteSession!(session.id); } finally { setLoadingDeleteId(null); } }}
+                        >
+                          Видалити
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -354,16 +384,77 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRefre
                           </tr>
                         </thead>
                         <tbody>
-                          {sortItems(products, sortColumnProd, sortDirectionProd).map(({ item, total, dev }, idx) => (
-                            <tr key={`${session.id}-prod-${idx}`} className="border-b not-last:border-b-gray-100 hover:bg-white text-gray-700 transition-colors">
-                              <td className="py-2 px-3 font-mono">{item.sku}</td>
-                              <td className="py-2 px-3">{item.name}</td>
-                              <td className="py-2 px-3 text-center">{item.portionsPerBox ?? '–'}</td>
-                              <td className="py-2 px-3 text-center">{item.unit === 'portions' ? formatCompact(item.systemBalance, item.portionsPerBox) : item.systemBalance}</td>
-                              <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{total === null ? '–' : (item.unit === 'portions' ? formatCompact(total, item.portionsPerBox, item) : String(total))}</td>
-                              <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{dev === null ? '–' : (<span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>{dev > 0 ? '+' : ''} {dev}</span>)}</td>
-                            </tr>
-                          ))}
+                          {sortItems(products, sortColumnProd, sortDirectionProd).map(({ item, total, dev }, idx) => {
+                            const rowKey = `${session.id}-${item.sku}`;
+                            const isRowExpanded = expandedRowKey === rowKey;
+                            const historyEntries = rowHistoryCache[item.sku];
+                            const isRowLoading = rowHistoryLoading === item.sku;
+                            return (
+                              <Fragment key={`${session.id}-prod-${idx}`}>
+                                <tr
+                                  className="border-b not-last:border-b-gray-100 hover:bg-blue-50/30 text-gray-700 transition-colors cursor-pointer select-none"
+                                  onClick={() => handleRowClick(session.id, item.sku)}
+                                >
+                                  <td className="py-2 px-3 font-mono">
+                                    <div className="flex items-center gap-1">
+                                      <DynamicIcon name="chevron-right" className={`w-3 h-3 text-gray-400 transition-transform duration-200 flex-shrink-0 ${isRowExpanded ? 'rotate-90' : ''}`} />
+                                      {item.sku}
+                                    </div>
+                                  </td>
+                                  <td className="py-2 px-3">{item.name}</td>
+                                  <td className="py-2 px-3 text-center">{item.portionsPerBox ?? '–'}</td>
+                                  <td className="py-2 px-3 text-center">{item.unit === 'portions' ? formatCompact(item.systemBalance, item.portionsPerBox) : item.systemBalance}</td>
+                                  <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{total === null ? '–' : (item.unit === 'portions' ? formatCompact(total, item.portionsPerBox, item) : String(total))}</td>
+                                  <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{dev === null ? '–' : (<span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>{dev > 0 ? '+' : ''} {dev}</span>)}</td>
+                                </tr>
+                                {isRowExpanded && (
+                                  <tr>
+                                    <td colSpan={6} className="p-0 bg-blue-50/60 border-b border-blue-100">
+                                      <div className="px-2 py-2">
+                                        {isRowLoading ? (
+                                          <div className="flex items-center justify-center gap-2 py-4 text-xs text-gray-500">
+                                            <DynamicIcon name="loader-2" className="w-3 h-3 animate-spin" />
+                                            Завантаження...
+                                          </div>
+                                        ) : !historyEntries || historyEntries.length === 0 ? (
+                                          <p className="text-xs text-gray-400 py-1">Немає даних інвентаризацій за останні 30 днів</p>
+                                        ) : (
+                                          <table className="w-[90.5%] text-xs ml-auto">
+                                            <thead>
+                                              <tr className="text-gray-500 border-b border-blue-100">
+                                                <th className="text-left py-1 pr-4 font-medium">Дата</th>
+                                                <th className="text-center py-1 px-2 font-medium w-[13.8%]">За обліком</th>
+                                                <th className="text-center py-1 px-2 font-medium w-[13.8%]">Факт</th>
+                                                <th className="text-center py-1 px-2 font-medium w-[13.8%]">Відхилення</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-blue-50">
+                                              {historyEntries.map((entry) => (
+                                                <tr key={entry.sessionId} className='tabular-nums text-gray-600 hover:bg-white/40'>
+                                                  <td className="py-0.5 pr-4">{formatRelativeDate(entry.date, {showTime: false, maxRelativeDays: 30, maxRelativeHours: 24, includeWeekdays: true, shortWeekday: true })}</td>
+                                                  <td className="py-0.5 px-2 text-center">{entry.systemBalance ?? '–'}</td>
+                                                  <td className="py-0.5 px-2 text-center">{entry.actual ?? '–'}</td>
+                                                  <td className="py-0.5 px-2 text-center">
+                                                    {entry.deviation === null ? (
+                                                      <span className="text-gray-300">–</span>
+                                                    ) : (
+                                                      <span className={`font-semibold ${entry.deviation === 0 ? 'text-green-600' : entry.deviation < 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                                                        {entry.deviation > 0 ? '+' : ''}{entry.deviation}
+                                                      </span>
+                                                    )}
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          })}
                           <tr className="bg-gray-100/60">
                             <td></td>
                             <td></td>
@@ -417,16 +508,77 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRefre
                           </tr>
                         </thead>
                         <tbody>
-                          {sortItems(materials, sortColumnMat, sortDirectionMat).map(({ item, total, dev }, idx) => (
-                            <tr key={`${session.id}-mat-${idx}`} className="border-b not-last:border-b-gray-100 hover:bg-white text-gray-700 transition-colors">
-                              <td className="py-2 px-3 font-mono">{item.sku}</td>
-                              <td className="py-2 px-3">{item.name}</td>
-                              <td className="py-2 px-3 text-center">{item.portionsPerBox ?? '–'}</td>
-                              <td className="py-2 px-3 text-center">{item.unit === 'portions' ? formatCompact(item.systemBalance, item.portionsPerBox) : item.systemBalance}</td>
-                              <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{total === null ? '–' : (item.unit === 'portions' ? formatCompact(total, item.portionsPerBox, item) : String(total))}</td>
-                              <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{dev === null ? '–' : (<span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>{dev > 0 ? '+' : ''} {dev}</span>)}</td>
-                            </tr>
-                          ))}
+                          {sortItems(materials, sortColumnMat, sortDirectionMat).map(({ item, total, dev }, idx) => {
+                            const rowKey = `${session.id}-${item.sku}`;
+                            const isRowExpanded = expandedRowKey === rowKey;
+                            const historyEntries = rowHistoryCache[item.sku];
+                            const isRowLoading = rowHistoryLoading === item.sku;
+                            return (
+                              <Fragment key={`${session.id}-mat-${idx}`}>
+                                <tr
+                                  className="border-b not-last:border-b-gray-100 hover:bg-blue-50/30 text-gray-700 transition-colors cursor-pointer select-none"
+                                  onClick={() => handleRowClick(session.id, item.sku)}
+                                >
+                                  <td className="py-2 px-3 font-mono">
+                                    <div className="flex items-center gap-1">
+                                      <DynamicIcon name="chevron-right" className={`w-3 h-3 text-gray-400 transition-transform duration-200 flex-shrink-0 ${isRowExpanded ? 'rotate-90' : ''}`} />
+                                      {item.sku}
+                                    </div>
+                                  </td>
+                                  <td className="py-2 px-3">{item.name}</td>
+                                  <td className="py-2 px-3 text-center">{item.portionsPerBox ?? '–'}</td>
+                                  <td className="py-2 px-3 text-center">{item.unit === 'portions' ? formatCompact(item.systemBalance, item.portionsPerBox) : item.systemBalance}</td>
+                                  <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{total === null ? '–' : (item.unit === 'portions' ? formatCompact(total, item.portionsPerBox, item) : String(total))}</td>
+                                  <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{dev === null ? '–' : (<span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>{dev > 0 ? '+' : ''} {dev}</span>)}</td>
+                                </tr>
+                                {isRowExpanded && (
+                                  <tr>
+                                    <td colSpan={6} className="p-0 bg-blue-50/40 border-b border-blue-100">
+                                      <div className="px-6 py-2">
+                                        {isRowLoading ? (
+                                          <div className="flex items-center gap-2 py-1 text-xs text-gray-500">
+                                            <DynamicIcon name="loader-2" className="w-3 h-3 animate-spin" />
+                                            Завантаження...
+                                          </div>
+                                        ) : !historyEntries || historyEntries.length === 0 ? (
+                                          <p className="text-xs text-gray-400 py-1">Немає даних інвентаризацій за останні 30 днів</p>
+                                        ) : (
+                                          <table className="w-full text-xs">
+                                            <thead>
+                                              <tr className="text-gray-500 border-b border-blue-100">
+                                                <th className="text-left py-1 pr-4 font-medium">Дата</th>
+                                                <th className="text-center py-1 px-2 font-medium">За обліком</th>
+                                                <th className="text-center py-1 px-2 font-medium">Факт</th>
+                                                <th className="text-center py-1 px-2 font-medium">Відхилення</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {historyEntries.map((entry) => (
+                                                <tr key={entry.sessionId} className={String(entry.sessionId) === session.id ? 'font-semibold text-gray-800' : 'text-gray-600'}>
+                                                  <td className="py-0.5 pr-4">{formatDate(entry.date)}</td>
+                                                  <td className="py-0.5 px-2 text-center">{entry.systemBalance ?? '–'}</td>
+                                                  <td className="py-0.5 px-2 text-center">{entry.actual ?? '–'}</td>
+                                                  <td className="py-0.5 px-2 text-center">
+                                                    {entry.deviation === null ? (
+                                                      <span className="text-gray-300">–</span>
+                                                    ) : (
+                                                      <span className={`font-semibold ${entry.deviation === 0 ? 'text-green-600' : entry.deviation < 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                                                        {entry.deviation > 0 ? '+' : ''}{entry.deviation}
+                                                      </span>
+                                                    )}
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          })}
                           <tr className="bg-gray-100/60">
                             <td></td>
                             <td></td>

@@ -1209,7 +1209,19 @@ router.put('/inventory/draft/:id', authenticateToken, async (req, res) => {
       where: { id: sessionId, ...(!isAdmin && { createdBy: userId }) },
     });
     if (!existing) return res.status(404).json({ error: 'Session not found' });
-    if (!isAdmin && existing.status === 'completed') return res.status(400).json({ error: 'Cannot edit completed session' });
+    if (!isAdmin && existing.status === 'completed') {
+      const latestOwnSession = await prisma.warehouseInventory.findFirst({
+        where: {
+          createdBy: userId,
+          status: { in: ['completed', 'in_progress'] },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      if (!latestOwnSession || latestOwnSession.id !== existing.id) {
+        return res.status(403).json({ error: 'Only the latest own inventory session can be edited' });
+      }
+    }
 
     const updated = await prisma.warehouseInventory.update({
       where: { id: sessionId },
@@ -1251,7 +1263,19 @@ router.post('/inventory/draft/:id/complete', authenticateToken, async (req, res)
       where: { id: sessionId, ...(!isAdmin && { createdBy: userId }) },
     });
     if (!existing) return res.status(404).json({ error: 'Session not found' });
-    if (!isAdmin && existing.status === 'completed') return res.status(400).json({ error: 'Session already completed' });
+    if (!isAdmin && existing.status === 'completed') {
+      const latestOwnSession = await prisma.warehouseInventory.findFirst({
+        where: {
+          createdBy: userId,
+          status: { in: ['completed', 'in_progress'] },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      if (!latestOwnSession || latestOwnSession.id !== existing.id) {
+        return res.status(403).json({ error: 'Only the latest own inventory session can be edited' });
+      }
+    }
 
     const completed = await prisma.warehouseInventory.update({
       where: { id: sessionId },
@@ -1439,6 +1463,79 @@ router.post('/inventory/:id/refresh-balances', authenticateToken, async (req, re
   } catch (error) {
     console.error('🚨 [Inventory] Error in refresh-balances:', error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' });
+  }
+});
+
+// GET /api/warehouse/inventory/product-history?sku=:sku&days=21
+// Повертає статистику інвентаризацій для конкретного SKU за останні N днів
+router.get('/inventory/product-history', authenticateToken, async (req, res) => {
+  try {
+    const { sku, days = '21' } = req.query;
+    if (!sku || typeof sku !== 'string') {
+      return res.status(400).json({ error: 'sku is required' });
+    }
+
+    const daysNum = Math.min(Math.max(parseInt(String(days), 10) || 21, 1), 365);
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - daysNum);
+
+    const sessions = await prisma.warehouseInventory.findMany({
+      where: {
+        status: { in: ['completed', 'in_progress'] },
+        createdAt: { gte: fromDate },
+      },
+      orderBy: { inventoryDate: 'desc' },
+      select: { id: true, inventoryDate: true, createdAt: true, items: true },
+    });
+
+    const entries: Array<{
+      sessionId: number;
+      date: string;
+      systemBalance: number | null;
+      actual: number | null;
+      deviation: number | null;
+    }> = [];
+
+    for (const session of sessions) {
+      let items: any[] = [];
+      try {
+        items = session.items ? JSON.parse(session.items) : [];
+      } catch {
+        continue;
+      }
+
+      const item = items.find((it: any) => it && String(it.sku).trim() === String(sku).trim());
+      if (!item) continue;
+
+      const systemBalance: number | null = typeof item.systemBalance === 'number' ? item.systemBalance : null;
+
+      // Обчислення фактичного залишку (аналог totalPortions на фронтенді)
+      let actual: number | null = null;
+      if (item.unit === 'portions' && item.portionsPerBox != null && Number(item.portionsPerBox) > 0) {
+        const bc = typeof item.boxCount === 'number' ? item.boxCount : null;
+        const ac = typeof item.actualCount === 'number' ? item.actualCount : null;
+        if (bc !== null || ac !== null) {
+          actual = (bc ?? 0) * Number(item.portionsPerBox) + (ac ?? 0);
+        }
+      } else if (typeof item.actualCount === 'number') {
+        actual = item.actualCount;
+      }
+
+      const deviation = actual !== null && systemBalance !== null ? actual - systemBalance : null;
+
+      entries.push({
+        sessionId: session.id,
+        date: (session.inventoryDate ?? session.createdAt).toISOString(),
+        systemBalance,
+        actual,
+        deviation,
+      });
+    }
+
+    res.json({ sku, entries });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error fetching product history:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

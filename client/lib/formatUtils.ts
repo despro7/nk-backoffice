@@ -59,12 +59,20 @@
 // };
 
 /**
- * Расширенное форматирование относительной даты с настраиваемыми опциями
- * @param dateString - строка с датой или null
- * @param options - опции форматирования
- * @returns отформатированная строка
+ * Розширене форматування відносної дати з настроюваними параметрами
+ * @param dateString - рядок із датою або null
+ * @param options - параметри форматування
+ * @param options.showTime - чи показувати час (за замовчуванням true)
+ * @param options.showYear - чи показувати рік у даті (за замовчуванням true)
+ * @param options.maxRelativeDays - максимальна кількість днів для відносного формату (за замовчуванням 7)
+ * @param options.maxRelativeHours - максимальна кількість годин для відносного формату (за замовчуванням 7)
+ * @param options.includeWeekdays - чи включати назву дня тижня для дат в межах maxRelativeDays (за замовчуванням false)
+ * @param options.include2DaysAgo - чи включати "Позавчора" для дат, що на 2 дні старші за сьогодні (за замовчуванням false)
+ * @param options.weekdayOnly - якщо true, то для дат в межах maxRelativeDays буде повертатися только день недели (за замовчуванням false)
+ * @param options.shortWeekday - якщо true, то для дат в межах maxRelativeDays буде повертатися коротке назва дня тижня (за замовчуванням false)
+ * @returns відформатований рядок
  * 
- * @example // Если сейчас 15.01.2025, 10:35, то:
+ * @example // Якщо зараз 15.01.2025, 10:35, то:
  * formatRelativeDateExtended('2024-01-15T10:30:00Z') // "5 хв тому"
  * formatRelativeDateExtended('2024-01-14T15:20:00Z') // "Вчора о 15:20"
  * formatRelativeDateExtended('2024-01-12T15:20:00Z') // "3 дн тому в 15:20"

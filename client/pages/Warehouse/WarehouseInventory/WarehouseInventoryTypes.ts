@@ -28,3 +28,11 @@ export interface InventorySession {
   comment: string;
   items: InventoryProduct[];
 }
+
+export interface ProductHistoryEntry {
+  sessionId: number;
+  date: string;
+  systemBalance: number | null;
+  actual: number | null;
+  deviation: number | null;
+}

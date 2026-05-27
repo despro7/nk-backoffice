@@ -30,6 +30,19 @@ export default function WarehouseInventory() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
+  const currentUserId = user?.id ? String(user.id) : null;
+  const latestOwnHistorySessionId = currentUserId
+    ? inv.historySessions.find((s) => String(s.createdBy) === currentUserId)?.id ?? null
+    : null;
+  const canAuthorEditLoadedCompleted = !isAdmin
+    && currentUserId !== null
+    && inv.sessionStatus === 'completed'
+    && inv.sessionId !== null
+    && latestOwnHistorySessionId !== null
+    && String(inv.sessionId) === String(latestOwnHistorySessionId);
+  const canEditCompletedSession = isAdmin || canAuthorEditLoadedCompleted;
+  const canEditCurrentSession = inv.sessionStatus === 'in_progress' || (inv.sessionStatus === 'completed' && canEditCompletedSession);
+
   const totalDeviations = inv.deviationCount + inv.deviationMaterialsCount;
 
   const guard = useUnsavedGuard({
@@ -112,7 +125,7 @@ export default function WarehouseInventory() {
             sessionStatus={inv.sessionStatus}
             sessionDate={inv.sessionDate}
             onSessionDateChange={inv.handleSessionDateChange}
-            isEditable={inv.sessionStatus === 'completed' && isAdmin}
+            isEditable={inv.sessionStatus === 'completed' && canEditCompletedSession}
           />
         </div>
 
@@ -196,7 +209,7 @@ export default function WarehouseInventory() {
                 />
 
                 {/* Панель дій: для редагованої сесії (in_progress) або для адміна, що редагує completed */}
-                {inv.isEditable && (
+                {canEditCurrentSession && (
                   <InventoryActionBar
                     deviationCount={totalDeviations}
                     totalCheckedAll={inv.totalCheckedAll}
@@ -206,7 +219,7 @@ export default function WarehouseInventory() {
                     onOpenComment={() => { inv.setCommentDraft(inv.comment); inv.setShowCommentModal(true); }}
                     onSaveDraft={inv.handleSaveDraft}
                     onFinish={() => inv.setShowConfirmFinish(true)}
-                    isEditingCompleted={inv.sessionStatus === 'completed' && isAdmin}
+                    isEditingCompleted={inv.sessionStatus === 'completed' && canEditCompletedSession}
                   />
                 )}
 
@@ -245,12 +258,12 @@ export default function WarehouseInventory() {
       <ConfirmModal
         isOpen={inv.showConfirmFinish}
         title={
-          inv.sessionStatus === 'completed' && isAdmin
+          inv.sessionStatus === 'completed' && canEditCompletedSession
             ? (totalDeviations > 0 ? 'Перезавершити і зафіксувати відхилення?' : 'Перезавершити інвентаризацію?')
             : (totalDeviations > 0 ? 'Зафіксувати відхилення?' : 'Завершити інвентаризацію?')
         }
         message={
-          inv.sessionStatus === 'completed' && isAdmin
+          inv.sessionStatus === 'completed' && canEditCompletedSession
             ? (totalDeviations > 0
                 ? `Ви перезаписуєте завершену сесію. Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій. Знайдено ${totalDeviations} відхилень.`
                 : `Ви перезаписуєте завершену сесію. Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій.`)
@@ -259,7 +272,7 @@ export default function WarehouseInventory() {
                 : `Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій.`)
         }
         confirmText={
-          inv.sessionStatus === 'completed' && isAdmin
+          inv.sessionStatus === 'completed' && canEditCompletedSession
             ? (totalDeviations > 0 ? 'Перезавершити і зафіксувати' : 'Перезавершити')
             : (totalDeviations > 0 ? 'Зафіксувати і завершити' : 'Завершити')
         }
