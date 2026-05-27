@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken, requireRole, requireMinRole, ROLE_SETS, ROLES } from '../middleware/auth.js';
 import { salesDriveCacheService } from '../services/salesdrive/SalesDriveCacheService.js';
+import type { SalesDriveChannel } from '../services/salesdrive/SalesDriveTypes.js';
 
 const router = Router();
 
@@ -29,29 +30,35 @@ router.post('/cache/refresh', authenticateToken, requireMinRole(ROLES.SHOP_MANAG
 
     console.log('🔄 [SalesDrive Cache] Starting cache refresh...');
 
-    // Отримуємо свіжі дані з SalesDrive API
-    const [channels, paymentMethods, shippingMethods, statuses] = await Promise.all([
-      salesDriveService.fetchChannels(),
+    // Канали — user-managed, без API-джерела; оновлюємо лише якщо DB порожня
+    const existingChannels = await salesDriveCacheService.getRawFromDB<SalesDriveChannel[]>('channels');
+    if (!existingChannels) {
+      const channels = await salesDriveService.fetchChannels();
+      await salesDriveCacheService.updateCache('channels', channels);
+      console.log(`✅ [SalesDrive Cache] Seeded ${channels.length} channels from static list`);
+    } else {
+      console.log(`ℹ️ [SalesDrive Cache] Channels are user-managed, skipping refresh (${existingChannels.length} records in DB)`);
+    }
+
+    // Оновлюємо дані з SalesDrive API
+    const [paymentMethods, shippingMethods, statuses] = await Promise.all([
       salesDriveService.fetchPaymentMethods(),
       salesDriveService.fetchShippingMethods(),
       salesDriveService.fetchStatuses()
     ]);
 
-    // Оновлюємо кеш
     await Promise.all([
-      salesDriveCacheService.updateCache('channels', channels),
       salesDriveCacheService.updateCache('paymentMethods', paymentMethods),
       salesDriveCacheService.updateCache('shippingMethods', shippingMethods),
       salesDriveCacheService.updateCache('statuses', statuses)
     ]);
 
-    console.log(`✅ [SalesDrive Cache] Cache refreshed: ${channels.length} channels, ${paymentMethods.length} payment methods, ${shippingMethods.length} shipping methods, ${statuses.length} statuses`);
+    console.log(`✅ [SalesDrive Cache] Cache refreshed: ${paymentMethods.length} payment methods, ${shippingMethods.length} shipping methods, ${statuses.length} statuses`);
 
     res.json({
       success: true,
       message: 'Кеш SalesDrive успішно оновлено',
       data: {
-        channels: channels.length,
         paymentMethods: paymentMethods.length,
         shippingMethods: shippingMethods.length,
         statuses: statuses.length
@@ -91,12 +98,22 @@ router.post('/cache/clear', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER
 
 /**
  * GET /api/salesdrive/channels
- * Отримати список каналів продажів SalesDrive (з кешу або API)
+ * Отримати список каналів продажів SalesDrive.
+ * Канали зберігаються в DB і управляються вручну (без API-джерела).
+ * Якщо в DB нічого немає — сідимо зі статичного списку.
  */
 router.get('/channels', authenticateToken, async (req, res) => {
   try {
-    const { salesDriveService } = await import('../services/salesDriveService.js');
-    const channels = await salesDriveService.fetchChannels();
+    // Читаємо з DB незалежно від TTL (канали user-managed)
+    let channels = await salesDriveCacheService.getRawFromDB<SalesDriveChannel[]>('channels');
+
+    if (!channels) {
+      // Перший запуск — сідимо зі статичного списку
+      const { salesDriveService } = await import('../services/salesDriveService.js');
+      channels = await salesDriveService.fetchChannels();
+      await salesDriveCacheService.updateCache('channels', channels);
+      console.log(`✅ [SalesDrive] Seeded ${channels.length} channels from static list`);
+    }
 
     res.json({
       success: true,
@@ -107,6 +124,50 @@ router.get('/channels', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch channels',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * PUT /api/salesdrive/channels
+ * Зберегти оновлений список каналів продажів у DB.
+ */
+router.put('/channels', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {
+  try {
+    const { channels } = req.body as { channels: unknown };
+
+    if (!Array.isArray(channels)) {
+      return res.status(400).json({ success: false, error: 'channels must be an array' });
+    }
+
+    for (const ch of channels as any[]) {
+      if (typeof ch?.id !== 'string' || !String(ch.id).trim() || typeof ch?.name !== 'string' || !String(ch.name).trim()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Кожен канал повинен мати непорожні поля id (string) і name (string)'
+        });
+      }
+    }
+
+    const validated: SalesDriveChannel[] = (channels as any[]).map(ch => ({
+      id: String(ch.id).trim(),
+      name: String(ch.name).trim()
+    }));
+
+    await salesDriveCacheService.updateCache('channels', validated);
+    console.log(`✅ [SalesDrive] Channels updated: ${validated.length} records`);
+
+    res.json({
+      success: true,
+      message: `Канали продажів оновлено (${validated.length} записів)`,
+      data: validated
+    });
+  } catch (error) {
+    console.error('❌ [API] Error updating channels:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update channels',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }

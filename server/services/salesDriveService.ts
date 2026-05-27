@@ -426,12 +426,13 @@ export class SalesDriveService {
     // Статичний список каналів (SalesDrive API не має такого ендпоінту)
     const channels: SalesDriveChannel[] = [
       { id: '19', name: 'nk-food.shop' },
-      { id: '22', name: 'Rozetka (Сергій)' },
+      { id: '22', name: 'Rozetka (old)' },
       { id: '24', name: 'prom (old)' },
       { id: '28', name: 'prom' },
       { id: '31', name: 'інше (менеджер)' },
       { id: '38', name: 'дрібні магазини' },
-      { id: '39', name: 'Rozetka (Марія)' }
+      { id: '39', name: 'Rozetka (Марія)' },
+      { id: '48', name: 'Rozetka (Сергій)' },
     ];
 
     // Кешуємо статичний список на 24 години

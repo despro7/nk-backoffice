@@ -30,6 +30,17 @@ const DilovodSettingsManager: React.FC = () => {
 	const [loadingSalesDriveData, setLoadingSalesDriveData] = useState(false);
 	const [shippingMethods, setShippingMethods] = useState<Array<{ name: string }>>([]);
 	const [loadingShippingMethods, setLoadingShippingMethods] = useState(false);
+	// Акордіон: які канали розгорнуті
+	const [expandedChannels, setExpandedChannels] = useState<Set<string>>(new Set());
+
+	const toggleChannel = (channelId: string): void => {
+		setExpandedChannels(prev => {
+			const next = new Set(prev);
+			if (next.has(channelId)) next.delete(channelId);
+			else next.add(channelId);
+			return next;
+		});
+	};
 
 	// Функції для валідації каналів
 	const getUsedPaymentFormsForChannel = (channelId: string, excludeMappingId?: string): string[] => {
@@ -1059,507 +1070,553 @@ const DilovodSettingsManager: React.FC = () => {
 							const channel = salesChannels.find(ch => ch.id === channelId);
 							if (!channel || !channelSettings || !channelSettings.mappings || channelSettings.mappings.length === 0) return null;
 
-							return (
-								<div key={channelId} className="border border-gray-200 rounded-lg p-4">
-									<div className="flex justify-between items-center mb-4">
-										<h3 className="text-lg font-medium text-gray-800">
-											<DynamicIcon name="radio" size={20} className="text-lime-600 inline mr-2" />
-											{channel.name} <span className="text-sm bg-amber-100 rounded px-1.5 py-0.5 ml-2">ID: {channelId}</span>
-										</h3>
-									</div>
+							const isExpanded = expandedChannels.has(channelId);
+							const dilovodTradeChannel = directories?.tradeChanels?.find(tc => tc.id === channelSettings.dilovodTradeChannelId);
+							const mappingsCount = channelSettings.mappings.length;
 
-									{/* Налаштування префіксу та суфіксу для каналу */}
-									<div className="rounded-lg p-4 border border-gray-200 shadow-md shadow-gray-100 mb-4">
-										<h4 className="text-sm font-medium text-neutral-900 mb-3">Налаштування номера замовлення для каналу</h4>
-										<div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-											<div>
-												<label className="text-xs text-neutral-700 mb-1 block">Префікс до номера замовлення</label>
-												<Input
-													value={channelSettings.prefixOrder || ''}
-													onChange={(e) => {
-														const currentMapping = formData.channelPaymentMapping || {};
-														const updatedChannelSettings = {
-															...channelSettings,
-															prefixOrder: e.target.value || undefined
-														};
-														handleFieldChange('channelPaymentMapping', {
-															...currentMapping,
-															[channelId]: updatedChannelSettings
-														});
-													}}
-													size="sm"
-												/>
+							return (
+								<div key={channelId} className="border border-gray-200 rounded-lg overflow-hidden">
+									{/* Заголовок акордіону */}
+									<button
+										type="button"
+										className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100/80 transition-colors text-left"
+										onClick={() => toggleChannel(channelId)}
+									>
+										<div className="flex items-center gap-3 min-w-0">
+											<DynamicIcon name="radio" size={18} className="text-lime-600 shrink-0" />
+											<div className="flex items-center gap-4 min-w-0">
+												<div className="flex items-center gap-2 flex-wrap">
+													<span className="text-base font-medium text-gray-800">{channel.name}</span>
+													<span className="text-xs bg-amber-100 rounded px-1.5 py-0.5">ID: {channelId}</span>
+												</div>
+												<div className="flex items-center gap-3 mt-0.5 flex-wrap">
+													<span className="text-sm text-gray-500">
+														<span className="font-medium text-gray-600">Dilovod:</span>{' '}
+														{dilovodTradeChannel
+															? <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs">{dilovodTradeChannel.id__pr}</span>
+															: <span className="bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded text-xs">не вказано ⚠</span>
+														}
+													</span>
+													<span className="text-xs text-gray-400">•</span>
+													<span className="text-sm text-gray-500">
+														<span className="font-medium text-gray-600">Маппінгів оплати:</span>{' '}
+														<span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{mappingsCount}</span>
+													</span>
+												</div>
 											</div>
-											<div>
-												<label className="text-xs text-neutral-700 mb-1 block">Суфікс до номера замовлення</label>
-												<Input
-													value={channelSettings.sufixOrder || ''}
-													onChange={(e) => {
-														const currentMapping = formData.channelPaymentMapping || {};
-														const updatedChannelSettings = {
-															...channelSettings,
-															sufixOrder: e.target.value || undefined
-														};
-														handleFieldChange('channelPaymentMapping', {
-															...currentMapping,
-															[channelId]: updatedChannelSettings
-														});
-													}}
-													size="sm"
-												/>
-											</div>
-											<div>
-												<label className="text-xs text-neutral-700 mb-1 block">Канал продажів в Dilovod</label>
-												<Select
-													placeholder="Автоматично"
-													selectedKeys={(() => {
-														// Перевіряємо, чи існує обраний канал продажів у списку
-														if (!channelSettings.dilovodTradeChannelId) return [];
-														const channelExists = directories?.tradeChanels?.some(tc => tc.id === channelSettings.dilovodTradeChannelId);
-														return channelExists ? [channelSettings.dilovodTradeChannelId] : [];
-													})()}
-													onSelectionChange={(keys) => {
-														const value = Array.from(keys)[0] as string;
-														const currentMapping = formData.channelPaymentMapping || {};
-														const updatedChannelSettings = {
-															...channelSettings,
-															dilovodTradeChannelId: value || undefined
-														};
-														handleFieldChange('channelPaymentMapping', {
-															...currentMapping,
-															[channelId]: updatedChannelSettings
-														});
-													}}
-													size="sm"
-													aria-label="Канал продажів в Dilovod"
-													classNames={{
-														trigger: "min-h-[32px] h-8",
-														value: "text-small"
-													}}
-													renderValue={(items) => {
-														if (items.length === 0) return "Автоматично";
-														const item = items[0];
-														const tradeChannel = directories?.tradeChanels?.find(tc => tc.id === item.key);
-														return tradeChannel ? tradeChannel.id__pr : item.textValue;
-													}}
-												>
-													{directories?.tradeChanels?.map((tradeChannel) => (
-														<SelectItem key={tradeChannel.id} textValue={tradeChannel.id__pr}>
-															<div className="flex flex-col">
-																<span className="text-small">{tradeChannel.id__pr}</span>
-																<span className="text-tiny text-default-400">Код: {tradeChannel.code}, ID: {tradeChannel.id}</span>
+										</div>
+										<DynamicIcon
+											name={isExpanded ? 'chevron-up' : 'chevron-down'}
+											size={18}
+											className="text-gray-400 shrink-0 transition-transform"
+										/>
+									</button>
+
+									{/* Тіло акордіону з анімацією розкриття */}
+									<div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+										<div className="overflow-hidden">
+											<div className="p-4 border-t border-gray-200">
+
+												{/* Налаштування префіксу та суфіксу для каналу */}
+												<div className="rounded-lg p-4 border border-gray-200 shadow-md shadow-gray-100 mb-4">
+													<h4 className="text-sm font-medium text-neutral-900 mb-3">Налаштування номера замовлення для каналу</h4>
+													<div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+														<div>
+															<label className="text-xs text-neutral-700 mb-1 block">Префікс до номера замовлення</label>
+															<Input
+																value={channelSettings.prefixOrder || ''}
+																onChange={(e) => {
+																	const currentMapping = formData.channelPaymentMapping || {};
+																	const updatedChannelSettings = {
+																		...channelSettings,
+																		prefixOrder: e.target.value || undefined
+																	};
+																	handleFieldChange('channelPaymentMapping', {
+																		...currentMapping,
+																		[channelId]: updatedChannelSettings
+																	});
+																}}
+																size="sm"
+															/>
+														</div>
+														<div>
+															<label className="text-xs text-neutral-700 mb-1 block">Суфікс до номера замовлення</label>
+															<Input
+																value={channelSettings.sufixOrder || ''}
+																onChange={(e) => {
+																	const currentMapping = formData.channelPaymentMapping || {};
+																	const updatedChannelSettings = {
+																		...channelSettings,
+																		sufixOrder: e.target.value || undefined
+																	};
+																	handleFieldChange('channelPaymentMapping', {
+																		...currentMapping,
+																		[channelId]: updatedChannelSettings
+																	});
+																}}
+																size="sm"
+															/>
+														</div>
+														<div>
+															<label className="text-xs text-neutral-700 mb-1 block">
+																Канал продажів в Dilovod
+																<span className="text-danger ml-0.5">*</span>
+															</label>
+															<Select
+																placeholder="Оберіть канал"
+																isRequired
+																disallowEmptySelection
+																selectedKeys={(() => {
+																	// Перевіряємо, чи існує обраний канал продажів у списку
+																	if (!channelSettings.dilovodTradeChannelId) return [];
+																	const channelExists = directories?.tradeChanels?.some(tc => tc.id === channelSettings.dilovodTradeChannelId);
+																	return channelExists ? [channelSettings.dilovodTradeChannelId] : [];
+																})()}
+																onSelectionChange={(keys) => {
+																	const value = Array.from(keys)[0] as string;
+																	if (!value) return;
+																	const currentMapping = formData.channelPaymentMapping || {};
+																	const updatedChannelSettings = {
+																		...channelSettings,
+																		dilovodTradeChannelId: value
+																	};
+																	handleFieldChange('channelPaymentMapping', {
+																		...currentMapping,
+																		[channelId]: updatedChannelSettings
+																	});
+																}}
+																size="sm"
+																aria-label="Канал продажів в Dilovod"
+																classNames={{
+																	trigger: "min-h-[32px] h-8",
+																	value: "text-small"
+																}}
+																renderValue={(items) => {
+																	const item = items[0];
+																	if (!item) return null;
+																	const tradeChannel = directories?.tradeChanels?.find(tc => tc.id === item.key);
+																	return tradeChannel ? tradeChannel.id__pr : item.textValue;
+																}}
+															>
+																{directories?.tradeChanels?.map((tradeChannel) => (
+																	<SelectItem key={tradeChannel.id} textValue={tradeChannel.id__pr}>
+																		<div className="flex flex-col">
+																			<span className="text-small">{tradeChannel.id__pr}</span>
+																			<span className="text-tiny text-default-400">Код: {tradeChannel.code}, ID: {tradeChannel.id}</span>
+																		</div>
+																	</SelectItem>
+																)) || []}
+															</Select>
+														</div>
+													</div>
+												</div>
+
+											{/* Список мапінгів для цього каналу */}
+											<div className="space-y-4">
+												{channelSettings.mappings.map((mapping, index) => (
+													<div key={mapping.id} className="rounded-lg p-4 border border-gray-200 shadow-md shadow-gray-100">
+														<div className="flex justify-between items-center mb-3">
+															<span className="text-sm font-medium text-gray-700">
+																Мапінг #{index + 1}
+															</span>
+															<Button
+																size="sm"
+																color="danger"
+																variant="light"
+																onPress={() => {
+																	const currentMapping = formData.channelPaymentMapping || {};
+																	const currentChannelSettings = currentMapping[channelId];
+																	if (!currentChannelSettings) return;
+
+																	const updatedMappings = currentChannelSettings.mappings.filter(m => m.id !== mapping.id);
+
+																	// Якщо мапінгів не залишилося, видаляємо весь канал
+																	if (updatedMappings.length === 0) {
+																		const { [channelId]: removed, ...restMapping } = currentMapping;
+																		handleFieldChange('channelPaymentMapping', restMapping);
+																	} else {
+																		// Інакше оновлюємо мапінги в налаштуваннях каналу
+																		const updatedChannelSettings = {
+																			...currentChannelSettings,
+																			mappings: updatedMappings
+																		};
+																		handleFieldChange('channelPaymentMapping', {
+																			...currentMapping,
+																			[channelId]: updatedChannelSettings
+																		});
+																	}
+																}}
+																startContent={<DynamicIcon name="trash-2" size={12} />}
+															>
+																Видалити
+															</Button>
+														</div>
+
+														{/* Dilovod mapping - 3 columns */}
+														<div className="grid grid-cols-[1fr_1fr_1fr] gap-4">
+															{/* Метод оплати з SalesDrive */}
+															<div className="">
+																<label className="text-sm text-gray-600 mb-1 block">
+																	Метод оплати з SalesDrive
+																	{/* <span className="text-xs text-gray-500 ml-2">(з замовлення)</span> */}
+																</label>
+																<Select
+																	aria-label="Метод оплати SalesDrive"
+																	maxListboxHeight={400}
+																	placeholder="Оберіть метод оплати"
+																	selectedKeys={(() => {
+																		// Перевіряємо, чи існує обраний метод оплати у списку
+																		if (!mapping.salesDrivePaymentMethod) return [];
+																		const methodExists = paymentMethods.some(m => m.id === mapping.salesDrivePaymentMethod);
+																		return methodExists ? [String(mapping.salesDrivePaymentMethod)] : [];
+																	})()}
+																	onSelectionChange={(keys) => {
+																		const value = Array.from(keys)[0] as string;
+																		const numericValue = value ? Number(value) : undefined;
+																		const currentMapping = formData.channelPaymentMapping || {};
+																		const currentChannelSettings = currentMapping[channelId];
+																		if (!currentChannelSettings) return;
+
+																		const updatedMappings = currentChannelSettings.mappings.map(m =>
+																			m.id === mapping.id ? { ...m, salesDrivePaymentMethod: numericValue } : m
+																		);
+
+																		const updatedChannelSettings = {
+																			...currentChannelSettings,
+																			mappings: updatedMappings
+																		};
+
+																		handleFieldChange('channelPaymentMapping', {
+																			...currentMapping,
+																			[channelId]: updatedChannelSettings
+																		});
+																	}}
+																	isDisabled={loadingPaymentMethods || paymentMethods.length === 0}
+																	classNames={{ trigger: 'min-h-[64px]' }}
+																	renderValue={(items) => {
+																		const item = items[0];
+																		if (!item) return null;
+
+																		const method = paymentMethods.find(m => m.id === Number(item.key));
+																		if (!method) return item.textValue;
+
+																		return (
+																			<div className="flex items-center gap-2">
+																				{getPaymentIcon(method.name)}
+																				<div className="flex flex-col">
+																					<span className="text-small">{method.name}</span>
+																					<span className="border-1 border-default-400 px-1 mt-0.5 rounded text-default-400 text-xs inline-block w-fit">ID: {method.id}</span>
+																				</div>
+																			</div>
+																		);
+																	}}
+																>
+																	{paymentMethods.map((method) => {
+																		const isUsed = isSalesDrivePaymentMethodUsedInChannel(method.id, channelId, mapping.id);
+																		return (
+																			<SelectItem
+																				key={method.id}
+																				textValue={method.name}
+																				isDisabled={isUsed}
+																			>
+																				<div className={`flex items-center gap-2 ${isUsed ? 'opacity-60' : ''}`}>
+																					{getPaymentIcon(method.name)}
+																					<div className="flex flex-col">
+																						<span className="text-small">{method.name} {isUsed ? '(Вже використовується в цьому каналі)' : ''}</span>
+																						<span className="text-default-400 text-xs inline-block w-fit">ID: {method.id}</span>
+																					</div>
+																				</div>
+																			</SelectItem>
+																		);
+																	})}
+																</Select>
+																{/* Попередження про відсутній метод оплати */}
+																{mapping.salesDrivePaymentMethod && !paymentMethods.some(m => m.id === mapping.salesDrivePaymentMethod) && (
+																	<div className="mt-2 p-2 bg-warning/10 border border-warning rounded-md">
+																		<div className="flex items-start gap-2">
+																			<DynamicIcon name="alert-triangle" size={16} className="text-warning mt-0.5" />
+																			<div className="text-xs text-warning-700">
+																				<p className="font-medium">Метод оплати не знайдено</p>
+																				<p className="text-warning-600">ID: {mapping.salesDrivePaymentMethod}</p>
+																				<p className="text-warning-600 mt-1">Цей метод оплати не знайдено у списку методів SalesDrive. Можливо, API недоступний або метод був видалений.</p>
+																			</div>
+																		</div>
+																	</div>
+																)}
 															</div>
-														</SelectItem>
-													)) || []}
-												</Select>
+
+															{/* Засіб оплати Dilovod */}
+															<div>
+																<label className="text-sm text-gray-600 mb-1 block">
+																	Форма оплати в Dilovod
+																	{/* <span className="text-xs text-gray-500 ml-2">(куди мапити)</span> */}
+																</label>
+																<Select
+																	aria-label="Засіб оплати"
+																	maxListboxHeight={400}
+																	placeholder="Оберіть форму оплати"
+																	selectedKeys={(() => {
+																		// Перевіряємо, чи існує обрана форма оплати у довідниках
+																		if (!mapping.paymentForm) return [];
+																		const formExists = directories?.paymentForms?.some(f => f.id === mapping.paymentForm);
+																		return formExists ? [mapping.paymentForm] : [];
+																	})()}
+																	onSelectionChange={(keys) => {
+																		const value = Array.from(keys)[0] as string;
+																		const currentMapping = formData.channelPaymentMapping || {};
+																		const currentChannelSettings = currentMapping[channelId];
+																		if (!currentChannelSettings) return;
+
+																		// Перевіряємо, чи нова форма оплати є готівковою
+																		const selectedPaymentForm = directories?.paymentForms?.find(f => f.id === value);
+																		const isCashPayment = selectedPaymentForm?.name?.toLowerCase().includes('готівк') ||
+																			selectedPaymentForm?.name?.toLowerCase().includes('cash') ||
+																			selectedPaymentForm?.name?.toLowerCase().includes('наличн');
+
+																		const updatedMappings = currentChannelSettings.mappings.map(m =>
+																			m.id === mapping.id ? {
+																				...m,
+																				paymentForm: value || undefined,
+																				// Якщо це готівка - очищаємо рахунок
+																				cashAccount: isCashPayment ? undefined : m.cashAccount
+																			} : m
+																		);
+
+																		const updatedChannelSettings = {
+																			...currentChannelSettings,
+																			mappings: updatedMappings
+																		};
+
+																		handleFieldChange('channelPaymentMapping', {
+																			...currentMapping,
+																			[channelId]: updatedChannelSettings
+																		});
+																	}}
+																	isDisabled={!directories || loadingDirectories}
+																	classNames={{ trigger: 'min-h-[64px]' }}
+																	renderValue={(items) => {
+																		const item = items[0];
+																		if (!item) return null;
+
+																		const form = directories?.paymentForms?.find(f => f.id === item.key);
+																		if (!form) return item.textValue;
+
+																		return (
+																			<div className="flex items-center gap-2">
+																				{getPaymentIcon(form.name)}
+																				<div className="flex flex-col">
+																					<span className="text-small">{form.name}</span>
+																					<span className="border-1 border-default-400 px-1 mt-0.5 rounded text-default-400 text-xs inline-block w-fit">ID: {form.id}</span>
+																				</div>
+																			</div>
+																		);
+																	}}
+																>
+																	{directories?.paymentForms?.map((form) => {
+																		const isUsed = isPaymentFormUsedInChannel(form.id, channelId, mapping.id);
+																		return (
+																			<SelectItem
+																				key={form.id}
+																				textValue={form.name}
+																			// isDisabled={isUsed}
+																			>
+																				<div className={`flex items-center gap-2`}>
+																					{getPaymentIcon(form.name)}
+																					<div className="flex flex-col">
+																						<span className="text-small">{form.name}</span>
+																						<span className="text-default-400 text-xs inline-block w-fit text-nowrap">ID: {form.id}</span>
+																					</div>
+																				</div>
+																			</SelectItem>
+																		);
+																	}) || []}
+																</Select>
+																{/* Попередження про відсутню форму оплати */}
+																{mapping.paymentForm && !directories?.paymentForms?.some(f => f.id === mapping.paymentForm) && (
+																	<div className="mt-2 p-2 bg-warning/10 border border-warning rounded-md">
+																		<div className="flex items-start gap-2">
+																			<DynamicIcon name="alert-triangle" size={16} className="text-warning mt-0.5" />
+																			<div className="text-xs text-warning-700">
+																				<p className="font-medium">Форму оплати не знайдено</p>
+																				<p className="text-warning-600">ID: {mapping.paymentForm}</p>
+																				<p className="text-warning-600 mt-1">Ця форма оплати більше не існує в довідниках Dilovod. Оберіть іншу форму оплати.</p>
+																			</div>
+																		</div>
+																	</div>
+																)}
+															</div>
+
+															{/* Рахунок */}
+															<div>
+																<label className="text-sm text-gray-600 mb-1 block">
+																	Рахунок в Dilovod
+																	<span className="text-xs text-gray-500 ml-2">(визначає фірму)</span>
+																</label>
+																<Select
+																	aria-label="Рахунок"
+																	maxListboxHeight={400}
+																	placeholder={(() => {
+																		// Перевіряємо, чи обрана форма оплати є готівковою
+																		const selectedPaymentForm = directories?.paymentForms?.find(f => f.id === mapping.paymentForm);
+																		const isCashPayment = selectedPaymentForm?.name?.toLowerCase().includes('готівкою') || selectedPaymentForm?.name?.toLowerCase().includes('готівка');
+
+																		// Виводимо сповіщення якщо це готівка
+																		return isCashPayment ? "Для готівкових операцій рахунок не вказується" : "Оберіть рахунок";
+																	})()}
+																	selectedKeys={(() => {
+																		// Перевіряємо, чи існує обраний рахунок у довідниках
+																		if (!mapping.cashAccount) return [];
+																		const accountExists = directories?.cashAccounts?.some(acc => acc.id === mapping.cashAccount);
+																		return accountExists ? [mapping.cashAccount] : [];
+																	})()}
+																	onSelectionChange={(keys) => {
+																		const value = Array.from(keys)[0] as string;
+																		const currentMapping = formData.channelPaymentMapping || {};
+																		const currentChannelSettings = currentMapping[channelId];
+																		if (!currentChannelSettings) return;
+
+																		const updatedMappings = currentChannelSettings.mappings.map(m =>
+																			m.id === mapping.id ? { ...m, cashAccount: value || undefined } : m
+																		);
+
+																		const updatedChannelSettings = {
+																			...currentChannelSettings,
+																			mappings: updatedMappings
+																		};
+
+																		handleFieldChange('channelPaymentMapping', {
+																			...currentMapping,
+																			[channelId]: updatedChannelSettings
+																		});
+																	}}
+																	isDisabled={(() => {
+																		// Перевіряємо, чи обрана форма оплати є готівковою
+																		const selectedPaymentForm = directories?.paymentForms?.find(f => f.id === mapping.paymentForm);
+																		const isCashPayment = selectedPaymentForm?.name?.toLowerCase().includes('готівкою') || selectedPaymentForm?.name?.toLowerCase().includes('готівка');
+
+																		// Блокуємо Select якщо це готівка або якщо немає довідників
+																		return isCashPayment || !directories || loadingDirectories;
+																	})()}
+																	classNames={{ trigger: 'min-h-[64px]' }}
+																	renderValue={(items) => {
+																		const item = items[0];
+																		if (!item) return null;
+
+																		const account = directories?.cashAccounts?.find(acc => acc.id === item.key);
+																		if (!account) return item.textValue;
+
+																		// Знаходимо фірму-власника
+																		const ownerFirm = account.owner && directories?.firms?.find(firm => firm.id === account.owner);
+																		const ownerName = ownerFirm ? ownerFirm.name : 'Невідомий власник';
+
+																		// Перевіряємо чи рахунок закритий
+																		const isClosed = account.name.startsWith('Закритий');
+																		const displayName = isClosed ? account.name.replace(/^Закритий/, '').trim() : account.name;
+
+																		return (
+																			<div className={`flex items-center gap-2 ${isClosed ? 'opacity-60 grayscale' : ''}`}>
+																				{getBankIcon(account.name)}
+																				<div className="flex flex-col">
+																					<span className="flex items-center gap-2 text-small">{ownerName} <span className="border-1 border-default-400 px-1 rounded text-default-500 text-xs inline-block w-fit">ID: {ownerFirm?.id}</span> {isClosed ? '(Закритий)' : ''}</span>
+																					<span className="text-tiny text-default-400">{displayName}</span>
+																					<span className="text-tiny text-default-500 bg-default-500/10 px-1 rounded inline-block w-fit">ID: {account.id}</span>
+																				</div>
+																			</div>
+																		);
+																	}}
+																>
+																	{directories?.cashAccounts?.map((account) => {
+																		// Знаходимо фірму-власника
+																		const ownerFirm = account.owner && directories?.firms?.find(firm => firm.id === account.owner);
+																		const ownerName = ownerFirm ? ownerFirm.name : 'Невідомий власник';
+
+																		// Перевіряємо чи рахунок закритий або вже використовується
+																		const isClosed = account.name.startsWith('Закритий');
+																		// const isUsed = isCashAccountUsedInChannel(account.id, channelId, mapping.id);
+																		const displayName = isClosed ? account.name.replace(/^Закритий/, '').trim() : account.name;
+																		const isDisabled = isClosed;
+
+																		return (
+																			<SelectItem
+																				key={account.id}
+																				textValue={`${ownerName} (ID: ${account.id})`}
+																				isDisabled={isDisabled}
+																			>
+																				<div className={`flex items-center gap-2 ${isDisabled ? 'opacity-60 grayscale' : ''}`}>
+																					{getBankIcon(account.name)}
+																					<div className="flex flex-col">
+																						<span className="text-small">
+																							{ownerName} <span className="border-1 border-default-400 px-1 rounded text-default-500 text-xs inline-block w-fit">ID: {ownerFirm?.id}</span>
+																							{isClosed ? ' (Закритий)' : ''}
+																							{/* {isUsed ? ' (Вже використовується в цьому каналі)' : ''} */}
+																						</span>
+																						<span className="text-tiny text-default-400">{displayName}</span>
+																						<span className="text-tiny text-default-500 bg-default-500/10 px-1 rounded inline-block w-fit">ID: {account.id}</span>
+																					</div>
+																				</div>
+																			</SelectItem>
+																		);
+																	}) || []}
+																</Select>
+
+																{/* Попередження про відсутній рахунок */}
+																{mapping.cashAccount && !directories?.cashAccounts?.some(acc => acc.id === mapping.cashAccount) && (
+																	<div className="mt-2 p-2 bg-warning/10 border border-warning rounded-md">
+																		<div className="flex items-start gap-2">
+																			<DynamicIcon name="alert-triangle" size={16} className="text-warning mt-0.5" />
+																			<div className="text-xs text-warning-700">
+																				<p className="font-medium">Рахунок не знайдено</p>
+																				<p className="text-warning-600">ID: {mapping.cashAccount}</p>
+																				<p className="text-warning-600 mt-1">Цей рахунок більше не існує в довідниках Dilovod. Оберіть інший рахунок.</p>
+																			</div>
+																		</div>
+																	</div>
+																)}
+															</div>
+														</div>
+														{/* End of 2-column grid for Dilovod mapping */}
+													</div>
+												))}
+
+												{/* Кнопка додавання нового мапінгу до існуючого каналу */}
+												<Button
+													size="sm"
+													variant="bordered"
+													color="primary"
+													className="border-1.5"
+													onPress={() => {
+														const currentMapping = formData.channelPaymentMapping || {};
+														const currentChannelSettings = currentMapping[channelId];
+														if (!currentChannelSettings) return;
+
+														const newMapping = {
+															id: generateMappingId(),
+															channelId: channelId,
+															paymentForm: undefined,
+															cashAccount: undefined
+														};
+
+														const updatedChannelSettings = {
+															...currentChannelSettings,
+															mappings: [...currentChannelSettings.mappings, newMapping]
+														};
+
+														handleFieldChange('channelPaymentMapping', {
+															...currentMapping,
+															[channelId]: updatedChannelSettings
+														});
+													}}
+													startContent={<DynamicIcon name="plus-circle" size={14} />}
+												>
+													Додати ще один мапінг до {channel.name}
+												</Button>
+											</div>
 											</div>
 										</div>
 									</div>
-
-									{/* Список мапінгів для цього каналу */}
-									<div className="space-y-4">
-										{channelSettings.mappings.map((mapping, index) => (
-											<div key={mapping.id} className="rounded-lg p-4 border border-gray-200 shadow-md shadow-gray-100">
-												<div className="flex justify-between items-center mb-3">
-													<span className="text-sm font-medium text-gray-700">
-														Мапінг #{index + 1}
-													</span>
-													<Button
-														size="sm"
-														color="danger"
-														variant="light"
-														onPress={() => {
-															const currentMapping = formData.channelPaymentMapping || {};
-															const currentChannelSettings = currentMapping[channelId];
-															if (!currentChannelSettings) return;
-
-															const updatedMappings = currentChannelSettings.mappings.filter(m => m.id !== mapping.id);
-
-															// Якщо мапінгів не залишилося, видаляємо весь канал
-															if (updatedMappings.length === 0) {
-																const { [channelId]: removed, ...restMapping } = currentMapping;
-																handleFieldChange('channelPaymentMapping', restMapping);
-															} else {
-																// Інакше оновлюємо мапінги в налаштуваннях каналу
-																const updatedChannelSettings = {
-																	...currentChannelSettings,
-																	mappings: updatedMappings
-																};
-																handleFieldChange('channelPaymentMapping', {
-																	...currentMapping,
-																	[channelId]: updatedChannelSettings
-																});
-															}
-														}}
-														startContent={<DynamicIcon name="trash-2" size={12} />}
-													>
-														Видалити
-													</Button>
-												</div>
-
-												{/* Dilovod mapping - 3 columns */}
-												<div className="grid grid-cols-[1fr_1fr_1fr] gap-4">
-													{/* Метод оплати з SalesDrive */}
-													<div className="">
-														<label className="text-sm text-gray-600 mb-1 block">
-															Метод оплати з SalesDrive
-															{/* <span className="text-xs text-gray-500 ml-2">(з замовлення)</span> */}
-														</label>
-														<Select
-															aria-label="Метод оплати SalesDrive"
-															maxListboxHeight={400}
-															placeholder="Оберіть метод оплати"
-															selectedKeys={(() => {
-																// Перевіряємо, чи існує обраний метод оплати у списку
-																if (!mapping.salesDrivePaymentMethod) return [];
-																const methodExists = paymentMethods.some(m => m.id === mapping.salesDrivePaymentMethod);
-																return methodExists ? [String(mapping.salesDrivePaymentMethod)] : [];
-															})()}
-															onSelectionChange={(keys) => {
-																const value = Array.from(keys)[0] as string;
-																const numericValue = value ? Number(value) : undefined;
-																const currentMapping = formData.channelPaymentMapping || {};
-																const currentChannelSettings = currentMapping[channelId];
-																if (!currentChannelSettings) return;
-
-																const updatedMappings = currentChannelSettings.mappings.map(m =>
-																	m.id === mapping.id ? { ...m, salesDrivePaymentMethod: numericValue } : m
-																);
-
-																const updatedChannelSettings = {
-																	...currentChannelSettings,
-																	mappings: updatedMappings
-																};
-
-																handleFieldChange('channelPaymentMapping', {
-																	...currentMapping,
-																	[channelId]: updatedChannelSettings
-																});
-															}}
-															isDisabled={loadingPaymentMethods || paymentMethods.length === 0}
-															classNames={{ trigger: 'min-h-[64px]' }}
-															renderValue={(items) => {
-																const item = items[0];
-																if (!item) return null;
-
-																const method = paymentMethods.find(m => m.id === Number(item.key));
-																if (!method) return item.textValue;
-
-																return (
-																	<div className="flex items-center gap-2">
-																		{getPaymentIcon(method.name)}
-																		<div className="flex flex-col">
-																			<span className="text-small">{method.name}</span>
-																			<span className="border-1 border-default-400 px-1 mt-0.5 rounded text-default-400 text-xs inline-block w-fit">ID: {method.id}</span>
-																		</div>
-																	</div>
-																);
-															}}
-														>
-															{paymentMethods.map((method) => {
-																const isUsed = isSalesDrivePaymentMethodUsedInChannel(method.id, channelId, mapping.id);
-																return (
-																	<SelectItem
-																		key={method.id}
-																		textValue={method.name}
-																		isDisabled={isUsed}
-																	>
-																		<div className={`flex items-center gap-2 ${isUsed ? 'opacity-60' : ''}`}>
-																			{getPaymentIcon(method.name)}
-																			<div className="flex flex-col">
-																				<span className="text-small">{method.name} {isUsed ? '(Вже використовується в цьому каналі)' : ''}</span>
-																				<span className="text-default-400 text-xs inline-block w-fit">ID: {method.id}</span>
-																			</div>
-																		</div>
-																	</SelectItem>
-																);
-															})}
-														</Select>
-														{/* Попередження про відсутній метод оплати */}
-														{mapping.salesDrivePaymentMethod && !paymentMethods.some(m => m.id === mapping.salesDrivePaymentMethod) && (
-															<div className="mt-2 p-2 bg-warning/10 border border-warning rounded-md">
-																<div className="flex items-start gap-2">
-																	<DynamicIcon name="alert-triangle" size={16} className="text-warning mt-0.5" />
-																	<div className="text-xs text-warning-700">
-																		<p className="font-medium">Метод оплати не знайдено</p>
-																		<p className="text-warning-600">ID: {mapping.salesDrivePaymentMethod}</p>
-																		<p className="text-warning-600 mt-1">Цей метод оплати не знайдено у списку методів SalesDrive. Можливо, API недоступний або метод був видалений.</p>
-																	</div>
-																</div>
-															</div>
-														)}
-													</div>
-
-													{/* Засіб оплати Dilovod */}
-													<div>
-														<label className="text-sm text-gray-600 mb-1 block">
-															Форма оплати в Dilovod
-															{/* <span className="text-xs text-gray-500 ml-2">(куди мапити)</span> */}
-														</label>
-														<Select
-															aria-label="Засіб оплати"
-															maxListboxHeight={400}
-															placeholder="Оберіть форму оплати"
-															selectedKeys={(() => {
-																// Перевіряємо, чи існує обрана форма оплати у довідниках
-																if (!mapping.paymentForm) return [];
-																const formExists = directories?.paymentForms?.some(f => f.id === mapping.paymentForm);
-																return formExists ? [mapping.paymentForm] : [];
-															})()}
-															onSelectionChange={(keys) => {
-																const value = Array.from(keys)[0] as string;
-																const currentMapping = formData.channelPaymentMapping || {};
-																const currentChannelSettings = currentMapping[channelId];
-																if (!currentChannelSettings) return;
-
-																// Перевіряємо, чи нова форма оплати є готівковою
-																const selectedPaymentForm = directories?.paymentForms?.find(f => f.id === value);
-																const isCashPayment = selectedPaymentForm?.name?.toLowerCase().includes('готівк') ||
-																	selectedPaymentForm?.name?.toLowerCase().includes('cash') ||
-																	selectedPaymentForm?.name?.toLowerCase().includes('наличн');
-
-																const updatedMappings = currentChannelSettings.mappings.map(m =>
-																	m.id === mapping.id ? {
-																		...m,
-																		paymentForm: value || undefined,
-																		// Якщо це готівка - очищаємо рахунок
-																		cashAccount: isCashPayment ? undefined : m.cashAccount
-																	} : m
-																);
-
-																const updatedChannelSettings = {
-																	...currentChannelSettings,
-																	mappings: updatedMappings
-																};
-
-																handleFieldChange('channelPaymentMapping', {
-																	...currentMapping,
-																	[channelId]: updatedChannelSettings
-																});
-															}}
-															isDisabled={!directories || loadingDirectories}
-															classNames={{ trigger: 'min-h-[64px]' }}
-															renderValue={(items) => {
-																const item = items[0];
-																if (!item) return null;
-
-																const form = directories?.paymentForms?.find(f => f.id === item.key);
-																if (!form) return item.textValue;
-
-																return (
-																	<div className="flex items-center gap-2">
-																		{getPaymentIcon(form.name)}
-																		<div className="flex flex-col">
-																			<span className="text-small">{form.name}</span>
-																			<span className="border-1 border-default-400 px-1 mt-0.5 rounded text-default-400 text-xs inline-block w-fit">ID: {form.id}</span>
-																		</div>
-																	</div>
-																);
-															}}
-														>
-															{directories?.paymentForms?.map((form) => {
-																const isUsed = isPaymentFormUsedInChannel(form.id, channelId, mapping.id);
-																return (
-																	<SelectItem
-																		key={form.id}
-																		textValue={form.name}
-																	// isDisabled={isUsed}
-																	>
-																		<div className={`flex items-center gap-2`}>
-																			{getPaymentIcon(form.name)}
-																			<div className="flex flex-col">
-																				<span className="text-small">{form.name}</span>
-																				<span className="text-default-400 text-xs inline-block w-fit text-nowrap">ID: {form.id}</span>
-																			</div>
-																		</div>
-																	</SelectItem>
-																);
-															}) || []}
-														</Select>
-														{/* Попередження про відсутню форму оплати */}
-														{mapping.paymentForm && !directories?.paymentForms?.some(f => f.id === mapping.paymentForm) && (
-															<div className="mt-2 p-2 bg-warning/10 border border-warning rounded-md">
-																<div className="flex items-start gap-2">
-																	<DynamicIcon name="alert-triangle" size={16} className="text-warning mt-0.5" />
-																	<div className="text-xs text-warning-700">
-																		<p className="font-medium">Форму оплати не знайдено</p>
-																		<p className="text-warning-600">ID: {mapping.paymentForm}</p>
-																		<p className="text-warning-600 mt-1">Ця форма оплати більше не існує в довідниках Dilovod. Оберіть іншу форму оплати.</p>
-																	</div>
-																</div>
-															</div>
-														)}
-													</div>
-
-													{/* Рахунок */}
-													<div>
-														<label className="text-sm text-gray-600 mb-1 block">
-															Рахунок в Dilovod
-															<span className="text-xs text-gray-500 ml-2">(визначає фірму)</span>
-														</label>
-														<Select
-															aria-label="Рахунок"
-															maxListboxHeight={400}
-															placeholder={(() => {
-																// Перевіряємо, чи обрана форма оплати є готівковою
-																const selectedPaymentForm = directories?.paymentForms?.find(f => f.id === mapping.paymentForm);
-																const isCashPayment = selectedPaymentForm?.name?.toLowerCase().includes('готівкою') || selectedPaymentForm?.name?.toLowerCase().includes('готівка');
-
-																// Виводимо сповіщення якщо це готівка
-																return isCashPayment ? "Для готівкових операцій рахунок не вказується" : "Оберіть рахунок";
-															})()}
-															selectedKeys={(() => {
-																// Перевіряємо, чи існує обраний рахунок у довідниках
-																if (!mapping.cashAccount) return [];
-																const accountExists = directories?.cashAccounts?.some(acc => acc.id === mapping.cashAccount);
-																return accountExists ? [mapping.cashAccount] : [];
-															})()}
-															onSelectionChange={(keys) => {
-																const value = Array.from(keys)[0] as string;
-																const currentMapping = formData.channelPaymentMapping || {};
-																const currentChannelSettings = currentMapping[channelId];
-																if (!currentChannelSettings) return;
-
-																const updatedMappings = currentChannelSettings.mappings.map(m =>
-																	m.id === mapping.id ? { ...m, cashAccount: value || undefined } : m
-																);
-
-																const updatedChannelSettings = {
-																	...currentChannelSettings,
-																	mappings: updatedMappings
-																};
-
-																handleFieldChange('channelPaymentMapping', {
-																	...currentMapping,
-																	[channelId]: updatedChannelSettings
-																});
-															}}
-															isDisabled={(() => {
-																// Перевіряємо, чи обрана форма оплати є готівковою
-																const selectedPaymentForm = directories?.paymentForms?.find(f => f.id === mapping.paymentForm);
-																const isCashPayment = selectedPaymentForm?.name?.toLowerCase().includes('готівкою') || selectedPaymentForm?.name?.toLowerCase().includes('готівка');
-
-																// Блокуємо Select якщо це готівка або якщо немає довідників
-																return isCashPayment || !directories || loadingDirectories;
-															})()}
-															classNames={{ trigger: 'min-h-[64px]' }}
-															renderValue={(items) => {
-																const item = items[0];
-																if (!item) return null;
-
-																const account = directories?.cashAccounts?.find(acc => acc.id === item.key);
-																if (!account) return item.textValue;
-
-																// Знаходимо фірму-власника
-																const ownerFirm = account.owner && directories?.firms?.find(firm => firm.id === account.owner);
-																const ownerName = ownerFirm ? ownerFirm.name : 'Невідомий власник';
-
-																// Перевіряємо чи рахунок закритий
-																const isClosed = account.name.startsWith('Закритий');
-																const displayName = isClosed ? account.name.replace(/^Закритий/, '').trim() : account.name;
-
-																return (
-																	<div className={`flex items-center gap-2 ${isClosed ? 'opacity-60 grayscale' : ''}`}>
-																		{getBankIcon(account.name)}
-																		<div className="flex flex-col">
-																			<span className="flex items-center gap-2 text-small">{ownerName} <span className="border-1 border-default-400 px-1 rounded text-default-500 text-xs inline-block w-fit">ID: {ownerFirm?.id}</span> {isClosed ? '(Закритий)' : ''}</span>
-																			<span className="text-tiny text-default-400">{displayName}</span>
-																			<span className="text-tiny text-default-500 bg-default-500/10 px-1 rounded inline-block w-fit">ID: {account.id}</span>
-																		</div>
-																	</div>
-																);
-															}}
-														>
-															{directories?.cashAccounts?.map((account) => {
-																// Знаходимо фірму-власника
-																const ownerFirm = account.owner && directories?.firms?.find(firm => firm.id === account.owner);
-																const ownerName = ownerFirm ? ownerFirm.name : 'Невідомий власник';
-
-																// Перевіряємо чи рахунок закритий або вже використовується
-																const isClosed = account.name.startsWith('Закритий');
-																// const isUsed = isCashAccountUsedInChannel(account.id, channelId, mapping.id);
-																const displayName = isClosed ? account.name.replace(/^Закритий/, '').trim() : account.name;
-																const isDisabled = isClosed;
-
-																return (
-																	<SelectItem
-																		key={account.id}
-																		textValue={`${ownerName} (ID: ${account.id})`}
-																		isDisabled={isDisabled}
-																	>
-																		<div className={`flex items-center gap-2 ${isDisabled ? 'opacity-60 grayscale' : ''}`}>
-																			{getBankIcon(account.name)}
-																			<div className="flex flex-col">
-																				<span className="text-small">
-																					{ownerName} <span className="border-1 border-default-400 px-1 rounded text-default-500 text-xs inline-block w-fit">ID: {ownerFirm?.id}</span>
-																					{isClosed ? ' (Закритий)' : ''}
-																					{/* {isUsed ? ' (Вже використовується в цьому каналі)' : ''} */}
-																				</span>
-																				<span className="text-tiny text-default-400">{displayName}</span>
-																				<span className="text-tiny text-default-500 bg-default-500/10 px-1 rounded inline-block w-fit">ID: {account.id}</span>
-																			</div>
-																		</div>
-																	</SelectItem>
-																);
-															}) || []}
-														</Select>
-
-														{/* Попередження про відсутній рахунок */}
-														{mapping.cashAccount && !directories?.cashAccounts?.some(acc => acc.id === mapping.cashAccount) && (
-															<div className="mt-2 p-2 bg-warning/10 border border-warning rounded-md">
-																<div className="flex items-start gap-2">
-																	<DynamicIcon name="alert-triangle" size={16} className="text-warning mt-0.5" />
-																	<div className="text-xs text-warning-700">
-																		<p className="font-medium">Рахунок не знайдено</p>
-																		<p className="text-warning-600">ID: {mapping.cashAccount}</p>
-																		<p className="text-warning-600 mt-1">Цей рахунок більше не існує в довідниках Dilovod. Оберіть інший рахунок.</p>
-																	</div>
-																</div>
-															</div>
-														)}
-													</div>
-												</div>
-												{/* End of 2-column grid for Dilovod mapping */}
-											</div>
-										))}
-
-										{/* Кнопка додавання нового мапінгу до існуючого каналу */}
-										<Button
-											size="sm"
-											variant="bordered"
-											color="primary"
-											className="border-1.5"
-											onPress={() => {
-												const currentMapping = formData.channelPaymentMapping || {};
-												const currentChannelSettings = currentMapping[channelId];
-												if (!currentChannelSettings) return;
-
-												const newMapping = {
-													id: generateMappingId(),
-													channelId: channelId,
-													paymentForm: undefined,
-													cashAccount: undefined
-												};
-
-												const updatedChannelSettings = {
-													...currentChannelSettings,
-													mappings: [...currentChannelSettings.mappings, newMapping]
-												};
-
-												handleFieldChange('channelPaymentMapping', {
-													...currentMapping,
-													[channelId]: updatedChannelSettings
-												});
-											}}
-											startContent={<DynamicIcon name="plus-circle" size={14} />}
-										>
-											Додати ще один мапінг до {channel.name}
-										</Button>
-									</div>
 								</div>
-							);
-						})}
-
+							)}
+						)}
 						{/* Кнопка додавання нового каналу */}
 						<div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
 							<div className="flex flex-col items-center gap-4">

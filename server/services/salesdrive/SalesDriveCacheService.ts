@@ -28,6 +28,20 @@ export class SalesDriveCacheService {
     }
   }
 
+  /**
+   * Отримати дані з DB незалежно від TTL (для user-managed довідників як канали)
+   */
+  async getRawFromDB<T>(type: SalesDriveCacheType): Promise<T | null> {
+    const key = getCacheKey(type);
+    const record = await prisma.settingsBase.findUnique({ where: { key } });
+    if (!record || !record.value) return null;
+    try {
+      return JSON.parse(record.value);
+    } catch {
+      return null;
+    }
+  }
+
   async updateCache<T>(type: SalesDriveCacheType, data: T): Promise<void> {
     const key = getCacheKey(type);
     await prisma.settingsBase.upsert({

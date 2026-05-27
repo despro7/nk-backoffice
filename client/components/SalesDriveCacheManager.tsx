@@ -19,6 +19,12 @@ interface CacheStatus {
 	statuses: CacheMetadata;
 }
 
+interface DirectoryRecord {
+	id: string;
+	name: string;
+	[key: string]: any;
+}
+
 export const SalesDriveCacheManager: React.FC = () => {
 	const [cacheStatus, setCacheStatus] = useState<CacheStatus | null>(null);
 	const [loading, setLoading] = useState(false);
@@ -120,6 +126,31 @@ export const SalesDriveCacheManager: React.FC = () => {
 				color: 'danger'
 			});
 		}
+	};
+
+	// Зберегти відредагований список каналів
+	const saveChannels = async (records: DirectoryRecord[]) => {
+		const response = await fetch('/api/salesdrive/channels', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			credentials: 'include',
+			body: JSON.stringify({ channels: records })
+		});
+
+		const data = await response.json();
+		if (!data.success) {
+			throw new Error(data.error || 'Не вдалося зберегти канали');
+		}
+
+		ToastService.show({
+			title: 'Канали продажів оновлено',
+			description: data.message || '',
+			color: 'success'
+		});
+
+		// Оновлюємо дані в модалці та статус кешу
+		setViewingDirectory(prev => prev ? { ...prev, data: records } : null);
+		await fetchCacheStatus();
 	};
 	// Отримати іконку для типу довідника
 	const getIcon = (type: keyof CacheStatus): IconName => {
@@ -269,6 +300,7 @@ export const SalesDriveCacheManager: React.FC = () => {
 					records={viewingDirectory.data}
 					columns={getColumns(viewingDirectory.type)}
 					onClose={() => setViewingDirectory(null)}
+					onSave={viewingDirectory.type === 'channels' ? saveChannels : undefined}
 				/>
 			)}
 		</Card>
