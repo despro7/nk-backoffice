@@ -15,6 +15,7 @@ interface OrderItem {
   id: string;
   name: string;
   quantity: number;
+  scannedCount?: number;
   expectedWeight: number;
   status: 'default' | 'pending' | 'success' | 'error' | 'done' | 'awaiting_confirmation';
   type: 'box' | 'product';
@@ -40,6 +41,7 @@ interface OrderChecklistProps {
   wasOpenedAsReady?: boolean; // Чи було замовлення відкрите вже зібраним (без автодруку)
   allowManualSelect?: boolean; // Дозволити ручний вибір товару кліком
   assemblyMode?: 'standard' | 'no_scales';
+  productScanMode?: 'single_per_item' | 'by_quantity';
   onNextOrder?: () => void; // Callback для перехода к следующему заказу
   showNextOrder?: boolean;
   nextOrderNumber?: string; // Номер наступного замовлення
@@ -49,7 +51,7 @@ interface OrderChecklistProps {
   onBarcodeScan?: (code: string) => void; // Емуляція сканування ШК (Debug)
 }
 
-const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders, allowManualSelect = false, assemblyMode = 'standard', onBarcodeScan }: OrderChecklistProps) => {
+const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders, allowManualSelect = false, assemblyMode = 'standard', productScanMode = 'single_per_item', onBarcodeScan }: OrderChecklistProps) => {
   const navigate = useNavigate();
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [equipmentState] = useEquipmentFromAuth(); // <-- Використовуємо глобальний стан обладнання
@@ -443,7 +445,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
           </div>
           {weightInfo.totalOrderWeight > 0 && (
             <span className="text-base tabular-nums leading-[100%] border-1 border-success-700/10 bg-success-700/5 rounded p-1">
-              ~{weightInfo.totalOrderWeight.toFixed(3)} кг
+              ≈ {weightInfo.totalOrderWeight.toFixed(3)} кг
             </span>
           )}
         </div>
@@ -478,6 +480,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
               currentBoxTotalPortions={currentBoxTotalPortions}
               currentBoxTotalWeight={weightInfo}
               assemblyMode={assemblyMode}
+              productScanMode={productScanMode}
               allowManualSelect={allowManualSelect}
               onClick={() => handleItemClick(item.id)}
             />

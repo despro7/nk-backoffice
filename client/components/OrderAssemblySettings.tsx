@@ -6,10 +6,12 @@ import { ToastService } from '@/services/ToastService';
 
 type BoxInitialStatus = 'default' | 'pending' | 'awaiting_confirmation';
 type AssemblyMode = 'standard' | 'no_scales';
+type ProductScanMode = 'single_per_item' | 'by_quantity';
 
 interface OrderAssemblySettingsType {
   mode: AssemblyMode;
   boxInitialStatus: BoxInitialStatus;
+  productScanMode: ProductScanMode;
   autoSelectNext: boolean;
   allowManualSelect: boolean;
   successIndicationMs: number;
@@ -21,6 +23,7 @@ interface OrderAssemblySettingsType {
 const DEFAULT_SETTINGS: OrderAssemblySettingsType = {
   mode: 'standard',
   boxInitialStatus: 'default',
+  productScanMode: 'single_per_item',
   autoSelectNext: true,
   allowManualSelect: false,
   successIndicationMs: 1500,
@@ -32,6 +35,11 @@ const DEFAULT_SETTINGS: OrderAssemblySettingsType = {
 const BOX_STATUS_OPTIONS = [
   { value: 'default', label: 'Потребує сканування' },
   { value: 'pending', label: 'Вже відсканована' },
+] as const;
+
+const PRODUCT_SCAN_MODE_OPTIONS = [
+  { value: 'single_per_item', label: 'Одне сканування на позицію' },
+  { value: 'by_quantity', label: 'Відповідно до кількості товарів' },
 ] as const;
 
 export const OrderAssemblySettings: React.FC = () => {
@@ -53,6 +61,7 @@ export const OrderAssemblySettings: React.FC = () => {
         const loaded: OrderAssemblySettingsType = {
           mode: (find('assembly_mode')?.value as AssemblyMode) || DEFAULT_SETTINGS.mode,
           boxInitialStatus: (find('assembly_box_initial_status')?.value as BoxInitialStatus) || DEFAULT_SETTINGS.boxInitialStatus,
+          productScanMode: (find('assembly_product_scan_mode')?.value as ProductScanMode) || DEFAULT_SETTINGS.productScanMode,
           autoSelectNext: (find('assembly_auto_select_next')?.value ?? 'true') === 'true',
           allowManualSelect: (find('assembly_allow_manual_select')?.value ?? 'false') === 'true',
           successIndicationMs: parseInt(find('assembly_success_indication_ms')?.value) || DEFAULT_SETTINGS.successIndicationMs,
@@ -88,6 +97,7 @@ export const OrderAssemblySettings: React.FC = () => {
   const SETTING_META: Record<keyof OrderAssemblySettingsType, { key: string; description: string; serialize: (v: any) => string }> = {
     mode:                { key: 'assembly_mode',                     description: 'Режим комплектації (standard | no_scales)',         serialize: String },
     boxInitialStatus:     { key: 'assembly_box_initial_status',     description: 'Початковий статус коробки при відкритті замовлення', serialize: String },
+    productScanMode:      { key: 'assembly_product_scan_mode',      description: 'Режим сканування товарів (single_per_item | by_quantity)', serialize: String },
     autoSelectNext:       { key: 'assembly_auto_select_next',       description: 'Автовибір наступного товару після успішного зважування', serialize: String },
     allowManualSelect:    { key: 'assembly_allow_manual_select',    description: 'Дозволити ручний вибір товару кліком',              serialize: String },
     successIndicationMs:  { key: 'assembly_success_indication_ms',  description: 'Час індикації success-статусу (мс)',                 serialize: String },
@@ -185,6 +195,28 @@ export const OrderAssemblySettings: React.FC = () => {
                   description="В якому стані буде коробка при відкритті замовлення"
                 >
                   {BOX_STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </Select>
+              </div>
+
+              {/* Режим сканування товарів */}
+              <div className="space-y-2 col-span-2">
+                <Select
+                  selectedKeys={settings ? [settings.productScanMode] : []}
+                  onSelectionChange={(keys) => {
+                    const selected = Array.from(keys)[0] as ProductScanMode;
+                    setSettings(prev => prev ? { ...prev, productScanMode: selected } : null);
+                  }}
+                  placeholder="Виберіть режим сканування"
+                  className="w-full"
+                  label="Режим сканування товарів"
+                  labelPlacement="outside"
+                  description="Визначає, скільки разів потрібно сканувати товар"
+                >
+                  {PRODUCT_SCAN_MODE_OPTIONS.map((option) => (
                     <SelectItem key={option.value}>
                       {option.label}
                     </SelectItem>

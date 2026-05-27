@@ -17,6 +17,7 @@ export interface OrderChecklistItem {
   manualOrder?: number; // Ручне сортування
   composition?: string[]; // Склад монолітного комплекту (назви компонентів)
   portionsPerItem?: number; // Для монолітних комплектів: кількість порцій в одному комплекті
+  scannedCount?: number; // Для режиму by_quantity: скільки одиниць вже відскановано
 }
 
 export interface OrderForAssembly {

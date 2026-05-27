@@ -3,6 +3,7 @@ import { useApi } from './useApi';
 
 export interface AssemblySettings {
   mode?: 'standard' | 'no_scales';
+  productScanMode: 'single_per_item' | 'by_quantity';
   boxInitialStatus: 'default' | 'pending';
   autoSelectNext: boolean;
   allowManualSelect: boolean;
@@ -18,6 +19,7 @@ export interface AssemblySettingsWithLoaded extends AssemblySettings {
 
 const DEFAULT_ASSEMBLY_SETTINGS: AssemblySettings = {
   mode: 'standard',
+  productScanMode: 'single_per_item',
   boxInitialStatus: 'default',
   autoSelectNext: true,
   allowManualSelect: false,
@@ -54,6 +56,7 @@ export function useAssemblySettings(isAuthenticated: boolean = false): AssemblyS
 
         const loaded = {
           mode: (find('assembly_mode')?.value as 'standard' | 'no_scales') || DEFAULT_ASSEMBLY_SETTINGS.mode,
+          productScanMode: (find('assembly_product_scan_mode')?.value as 'single_per_item' | 'by_quantity') || DEFAULT_ASSEMBLY_SETTINGS.productScanMode,
           boxInitialStatus: (find('assembly_box_initial_status')?.value || DEFAULT_ASSEMBLY_SETTINGS.boxInitialStatus) as 'default' | 'pending',
           autoSelectNext: (find('assembly_auto_select_next')?.value ?? 'true') === 'true',
           allowManualSelect: (find('assembly_allow_manual_select')?.value ?? 'false') === 'true',

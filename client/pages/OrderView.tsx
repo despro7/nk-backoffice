@@ -94,7 +94,8 @@ export default function OrderView() {
     activeBoxIndex,
     setChecklistItems,
     debugMode: isDebugMode,
-    assemblyMode: assemblySettings.mode ?? 'standard'
+    assemblyMode: assemblySettings.mode ?? 'standard',
+    productScanMode: assemblySettings.productScanMode,
   });
 
   const {
@@ -619,6 +620,7 @@ export default function OrderView() {
                 }}
                 allowManualSelect={assemblySettings.allowManualSelect}
                 assemblyMode={assemblySettings.mode ?? 'standard'}
+                productScanMode={assemblySettings.productScanMode}
                 onBarcodeScan={handleBarcodeScan}
                 onPrintTTN={handlePrintTTNCallback}
                 showPrintTTN={showPrintTTN}

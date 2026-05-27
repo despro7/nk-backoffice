@@ -7,6 +7,7 @@ interface OrderItem {
   id: string;
   name: string;
   quantity: number;
+  scannedCount?: number;
   expectedWeight: number;
   status: 'default' | 'pending' | 'success' | 'error' | 'done' | 'awaiting_confirmation' | 'confirmed';
   type: 'box' | 'product';
@@ -31,30 +32,37 @@ interface OrderChecklistItemProps {
   };
   onClick: () => void;
   assemblyMode?: 'standard' | 'no_scales';
+  productScanMode?: 'single_per_item' | 'by_quantity';
   allowManualSelect?: boolean;
 }
 
-const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick, assemblyMode = 'standard', allowManualSelect = false }: OrderChecklistItemProps) => {
+const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick, assemblyMode = 'standard', productScanMode = 'single_per_item', allowManualSelect = false }: OrderChecklistItemProps) => {
   const { name, quantity, status, expectedWeight, type, boxSettings, sku, barcode } = item;
 
   const { isDebugMode } = useDebug();
 
   // Перевіряємо, що у нас є валідні дані для відображення
   if (!name || !status || expectedWeight === undefined) {
-    console.warn('OrderChecklistItem: Невалидные данные для элемента:', item);
+    console.warn('OrderChecklistItem: Неправильні дані для елемента:', item);
     return null;
   }
 
   const isDone = status === 'done';
+  const isByQuantityProduct = productScanMode === 'by_quantity' && type === 'product';
+  const scannedCount = isByQuantityProduct
+    ? Math.max(0, Math.min(quantity, item.scannedCount ?? (isDone ? quantity : 0)))
+    : 0;
+  const fillPercent = isByQuantityProduct && quantity > 0 ? (scannedCount / quantity) * 100 : 0;
 
   const itemStateClasses = cn(
-    'p-4 rounded-sm flex items-center justify-between outline-2 outline-transparent transition-background transition-colors duration-300 animate-duration-[100ms]',
+    'relative overflow-hidden p-3.5 rounded-sm flex items-center justify-between outline-1 outline-transparent transition-background transition-colors duration-300 animate-duration-[100ms]',
     {
       'bg-gray-50 text-neutral-900 cursor-pointer outline-1 outline-neutral-200': status === 'default',
       'bg-warning-400 outline-2 outline-warning-500 cursor-pointer': status === 'pending' || status === 'awaiting_confirmation',
       'bg-success-500 text-white animate-pulse animate-thrice cursor-pointer': status === 'success',
       'bg-danger text-white cursor-pointer': status === 'error',
-      'bg-gray-200 text-gray-500': status === 'done',
+      'bg-gray-200 text-gray-500 outline-gray-300/75 delay-150': status === 'done',
+      // 'outline-success-500/25 bg-success-500/5': fillPercent > 0 && fillPercent < 100,
       // 'cursor-not-allowed opacity-75': isBoxDone,
     }
   );
@@ -68,6 +76,14 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
 
   return (
     <div className={itemStateClasses} onClick={isClickable ? onClick : undefined}>
+      {isByQuantityProduct && (
+        <div
+          className={`absolute inset-y-0 left-0 pointer-events-none transition-all duration-600 ${fillPercent != 100 ? 'bg-gray-500/15' : ''}`}
+          style={{ width: `${fillPercent}%` }}
+          aria-hidden="true"
+        />
+      )}
+
       <div className="flex items-center gap-4 w-full">
         {/* Індикатор статусу */}
         <div className={cn("w-6 h-6 shrink-0 rounded-sm flex items-center justify-center bg-transparent transition-colors duration-300", {
@@ -85,8 +101,9 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
               "font-semibold": type === 'box',
               "font-normal": type === 'product'
             })}>
-              {name} {type !== 'box' && (<span>× <span className="text-[18px] font-mono rounded-sm bg-gray-950/5 px-2.5 py-1">{quantity}</span></span>)}
+              {name}
             </span>
+            
             {type === 'box' && boxSettings && (
               <>
               <span className="text-[13px] tabular-nums bg-gray-950/5 px-2 py-1 rounded">
@@ -99,6 +116,10 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
               )}
               </>
             )}
+
+            {/* Кількість одиниць × Вага позиції */}
+            <span className="text-sm text-gray-400 tabular-nums text-nowrap">{type === 'product' && `× ${quantity}`} ≈ {expectedWeight.toFixed(3)} кг</span>
+            
             {isDebugMode && (
               <span
                 className="flex items-center gap-1 ml-4 text-[12px] text-neutral-400 tabular-nums cursor-pointer hover:text-neutral-600 transition-colors"
@@ -128,16 +149,8 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
         {/* Індикатор помилки */}
         {status === 'error' && <X size={24} />}
         
-        {/* Лічильник порцій */}
-        <span className="text-[13px] tabular-nums text-nowrap">
-          ~{expectedWeight.toFixed(3)} кг
-          {/* {type === 'box' ? `Вага коробки: ${expectedWeight.toFixed(3)} кг` : `~${expectedWeight.toFixed(3)} кг`} */}
-        </span>
-          {/* {type !== 'box' && (
-            <span className="font-medium">
-              {formatQuantity(quantity)}
-            </span>
-          )} */}
+        {/* Лічильник одиниць порцій */}
+        <span className={`text-[18px] tabular-nums rounded-sm bg-gray-950/6 px-2 py-0.5`}>{isByQuantityProduct ? `${scannedCount}/${quantity}` : quantity}</span>
       </div>
     </div>
   );
