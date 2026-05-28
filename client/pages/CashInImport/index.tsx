@@ -143,7 +143,7 @@ export default function CashInImport() {
     } finally {
       setIsExporting(false);
     }
-  }, []);
+  }, [fileCashAccount, firm]);
 
   // --- Debug: показати Payload ---
   const handleShowPayload = useCallback(async (confirmedRows: CashInConfirmedRow[]) => {
