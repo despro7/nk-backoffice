@@ -1,10 +1,11 @@
+import { useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { LoggingService } from '../services/LoggingService';
 
 export const useApi = () => {
   const { refreshToken, forceLogout, checkAuthStatus } = useAuth();
 
-  const apiCall = async (url: string, options: RequestInit = {}) => {
+  const apiCall = useCallback(async (url: string, options: RequestInit = {}) => {
     const startTime = Date.now();
     const method = options.method || 'GET';
     LoggingService.apiLog(`🚀 Starting ${method} request to ${url}`);
@@ -87,7 +88,7 @@ export const useApi = () => {
       LoggingService.perfLog(`❌ Failed request time: ${errorTime}ms`);
       throw error;
     }
-  };
+  }, [checkAuthStatus, forceLogout, refreshToken]);
 
   return { apiCall };
 };

@@ -1,0 +1,712 @@
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableColumn,
+  TableRow,
+  TableCell,
+  Button,
+  Chip,
+} from "@heroui/react";
+import { useApi } from "@/hooks/useApi";
+import type { DateRange } from "@react-types/datepicker";
+import { CalendarDate, today, getLocalTimeZone } from "@internationalized/date";
+import { DynamicIcon } from "lucide-react/dynamic";
+import { createStandardDatePresets, getValueColor } from "@/lib";
+import { useRoleAccess } from "@/hooks/useRoleAccess";
+import { ToastService } from "@/services/ToastService";
+import {
+  CacheRefreshConfirmModal,
+  CachePeriodSelectModal,
+} from "@/components/modals/CacheRefreshConfirmModal";
+import { ORDER_STATUSES } from "@/lib/formatUtils.js";
+import { ReportCacheProgressCard } from "../../shared/ReportCacheProgressCard";
+import { ReportLoadingOverlay } from "../../shared/ReportLoadingOverlay";
+import { ReportRefreshCacheActions } from "../../shared/ReportRefreshCacheActions";
+import { ReportTableEmptyState } from "../../shared/ReportTableEmptyState";
+import {
+  appendStatusParams,
+  getOrderedQuantityTotal,
+  getOrderedQuantityValues,
+  sortReportItems,
+} from "../../shared/ReportsSharedUtils";
+import useReportClientCache from "../../shared/useReportClientCache";
+import useReportCacheValidation from "../../shared/useReportCacheValidation";
+import useReportProductStatsFetchers from "../../shared/useReportProductStatsFetchers";
+import useReportStatsCacheClear from "../../shared/useReportStatsCacheClear";
+import {
+  ReportsFilterBuilder,
+  type ReportFilterConfig,
+} from "../../shared/filters";
+import {
+  createDateRangeFilterConfig,
+  createProductToolbarFilterConfigs,
+  createResetFilterConfig,
+  createSingleDateFilterConfig,
+} from "../../shared/filters/ReportFilterPresets";
+import { ShipmentOrdersModal } from "./ShipmentOrdersModal";
+import type {
+  ProductDateStats,
+  ProductDateStatsResponse,
+  ProductShippedStatsTableProps,
+  ProductStats,
+  ProductStatsResponse,
+  ShipmentSummary,
+  ShipmentModalProduct,
+  ShipmentProductOrder,
+  ShipmentSortDescriptor,
+} from "../ReportsShipmentTypes";
+import {
+  buildShipmentCacheKey,
+  getPresetKeyForShipmentDate,
+  SHIPMENT_DEFAULT_PRESET_KEY,
+  toShipmentApiDateValue,
+} from "../ReportsShipmentUtils";
+
+function getDefaultShipmentDateRange() {
+  const preset = createStandardDatePresets().find((item) => item.key === SHIPMENT_DEFAULT_PRESET_KEY);
+  return preset ? preset.getRange() : null;
+}
+
+function buildShipmentSummary(productItems: ProductStats[], totalOrders: number): ShipmentSummary {
+  return {
+    totalOrders,
+    totalPortions: productItems.reduce((sum, item) => sum + item.orderedQuantity, 0),
+    uniqueProducts: productItems.length,
+  };
+}
+
+export default function ProductShippedStatsTable({
+  className,
+  onSummaryChange,
+}: ProductShippedStatsTableProps) {
+  const { apiCall } = useApi();
+  const { isAdmin } = useRoleAccess();
+  const [productStats, setProductStats] = useState<ProductStats[]>([]);
+  const [totalOrders, setTotalOrders] = useState(0);
+  const [dateStats, setDateStats] = useState<ProductDateStats[]>([]);
+  const [selectedProductInfo, setSelectedProductInfo] = useState<ShipmentModalProduct | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedProduct, setSelectedProduct] = useState("");
+  const [viewMode, setViewMode] = useState<"products" | "dates">("products");
+  const [sortDescriptor, setSortDescriptor] = useState<ShipmentSortDescriptor>({
+    column: "orderedQuantity",
+    direction: "descending",
+  });
+  const [dateRange, setDateRange] = useState<DateRange | null>(() => getDefaultShipmentDateRange());
+  const [datePresetKey, setDatePresetKey] = useState<string | null>(SHIPMENT_DEFAULT_PRESET_KEY);
+  const [isOrdersModalOpen, setIsOrdersModalOpen] = useState(false);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalOrders, setModalOrders] = useState<ShipmentProductOrder[]>([]);
+  const [selectedProductForModal, setSelectedProductForModal] = useState<ShipmentModalProduct | null>(null);
+
+  const statusOptions = ORDER_STATUSES;
+
+  const columns = useMemo(() => {
+    if (viewMode === "dates") {
+      return [
+        { key: "date", label: "Дата", sortable: true, className: "w-4/16" },
+        { key: "name", label: "Назва товару", sortable: false, className: "w-8/16" },
+        { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-4/16 text-center" },
+      ];
+    }
+
+    return [
+      { key: "name", label: "Назва товару", sortable: true, className: "w-10/16" },
+      { key: "sku", label: "SKU", sortable: true, className: "w-3/16 text-left" },
+      { key: "orderedQuantity", label: "Порції", sortable: true, className: "w-3/16 text-center" },
+    ];
+  }, [viewMode]);
+
+  const sortableColumnKeys = useMemo(
+    () => columns.filter((column) => column.sortable).map((column) => column.key),
+    [columns],
+  );
+  // Клієнтський кеш за фільтрами
+  const { cache, clearCache, invalidateCacheKey, setCacheEntry } = useReportClientCache<{
+    data: ProductStats[];
+    totalOrders: number;
+    timestamp: number;
+  }>();
+  const CACHE_DURATION = 30000; // 30 секунд кешування на клієнті
+  const fetchProductStatsRef = useRef<(() => Promise<void>) | null>(null);
+  const fetchProductDateStatsRef = useRef<(() => Promise<void>) | null>(null);
+
+  const {
+    cacheLoading,
+    cacheModals,
+    cacheProgress,
+    handleRefreshAllCache,
+    handleRefreshPeriodCache,
+    lastCacheUpdate,
+    markCacheUpdated,
+  } = useReportCacheValidation({
+    apiCall,
+    dateRange,
+    onCacheValidated: async () => {
+      clearCache();
+      await fetchProductStatsRef.current?.();
+    },
+    consoleErrorLabel: 'Помилка валідації кешу статистики відвантажень:',
+  });
+
+  const buildProductStatsUrl = useCallback((currentDateRange: DateRange | null, currentStatusFilter: string) => {
+    const params = new URLSearchParams();
+    params.append("shippedOnly", "true");
+    appendStatusParams(params, currentStatusFilter, ["1", "2", "3", "4", "5", "6", "7"]);
+
+    if (currentDateRange?.start && currentDateRange?.end) {
+      params.append("startDate", toShipmentApiDateValue(currentDateRange.start));
+      params.append("endDate", toShipmentApiDateValue(currentDateRange.end));
+    }
+
+    return `/api/orders/products/stats?${params.toString()}`;
+  }, []);
+
+  const buildDateStatsUrl = useCallback((sku: string, currentDateRange: DateRange | null, currentStatusFilter: string) => {
+    const params = new URLSearchParams();
+    params.append("sku", sku);
+    params.append("shippedOnly", "true");
+    appendStatusParams(params, currentStatusFilter, ["1", "2", "3", "4", "5", "6", "7"]);
+
+    if (currentDateRange?.start && currentDateRange?.end) {
+      params.append("startDate", toShipmentApiDateValue(currentDateRange.start));
+      params.append("endDate", toShipmentApiDateValue(currentDateRange.end));
+    }
+
+    return `/api/orders/products/stats/dates?${params.toString()}`;
+  }, []);
+
+  const syncSummary = useCallback((nextProductStats: ProductStats[], nextTotalOrders: number) => {
+    if (!onSummaryChange) {
+      return;
+    }
+
+    onSummaryChange(buildShipmentSummary(nextProductStats, nextTotalOrders));
+  }, [onSummaryChange]);
+
+  const handleDateStatsSuccess = useCallback((validatedData: ProductDateStats[], product: ShipmentModalProduct) => {
+    setDateStats(validatedData);
+    setSelectedProductInfo(product);
+    setViewMode("dates");
+  }, []);
+
+  const handleProductStatsCacheHit = useCallback((entry: { data: ProductStats[]; totalOrders: number; timestamp: number }) => {
+    const cachedData = entry.data;
+    const nextTotalOrders = entry.totalOrders ?? 0;
+
+    setProductStats(cachedData);
+    setTotalOrders(nextTotalOrders);
+  }, []);
+
+  const handleProductStatsNetworkSuccess = useCallback((validatedData: ProductStats[], metadata: ProductStatsResponse["metadata"]) => {
+    setProductStats(validatedData);
+    setTotalOrders(metadata.totalOrders);
+  }, []);
+
+  const { fetchProductDateStats, fetchProductStats } = useReportProductStatsFetchers<
+    ProductStats,
+    ProductDateStats,
+    ProductStatsResponse["metadata"],
+    ProductDateStatsResponse["product"],
+    { data: ProductStats[]; totalOrders: number; timestamp: number }
+  >({
+    apiCall,
+    buildProductStatsUrl,
+    buildDateStatsUrl,
+    cache,
+    cacheDuration: CACHE_DURATION,
+    dateRange,
+    dateStatsErrorMessage: 'Помилка завантаження статистики відвантажень по датах:',
+    getCacheKey: buildShipmentCacheKey,
+    markCacheUpdated,
+    onDateStatsSuccess: handleDateStatsSuccess,
+    onProductStatsCacheHit: handleProductStatsCacheHit,
+    onProductStatsNetworkSuccess: handleProductStatsNetworkSuccess,
+    productStatsErrorMessage: 'Помилка завантаження статистики відвантажень:',
+    selectedProduct,
+    setCacheEntry,
+    setLoading,
+    statusFilter,
+    toCacheEntry: (validatedData, metadata, timestamp) => ({
+      data: validatedData,
+      totalOrders: metadata.totalOrders,
+      timestamp,
+    }),
+  });
+
+  const { clearStatsCacheLoading, handleClearStatsCache } = useReportStatsCacheClear({
+    apiCall,
+    onCacheCleared: async () => {
+      clearCache();
+      if (viewMode === "dates" && selectedProduct) {
+        await fetchProductDateStats(true);
+        return;
+      }
+
+      await fetchProductStats(true);
+    },
+    consoleErrorLabel: "Помилка очищення серверного кешу статистики відвантажень:",
+  });
+
+  // Функція для завантаження замовлень конкретного товару
+  const fetchOrdersForProduct = useCallback(async (sku: string, name: string, date?: string) => {
+    setSelectedProductForModal({ name, sku });
+    setIsOrdersModalOpen(true);
+    setModalLoading(true);
+    setModalOrders([]);
+
+    try {
+      const params = new URLSearchParams();
+      params.append("sku", sku);
+      params.append("shippedOnly", "true");
+
+      if (statusFilter === "all") {
+        ["1","2","3","4","5","6","7"].forEach(status => {
+          params.append("status", status);
+        });
+      } else {
+        params.append("status", statusFilter);
+      }
+
+      if (date) {
+        // Якщо передана конкретна дата (з режиму "dates")
+        params.append("startDate", date);
+        params.append("endDate", date);
+      } else if (dateRange?.start && dateRange?.end) {
+        // Інакше використовуємо загальний діапазон
+        const startDate = toShipmentApiDateValue(dateRange.start);
+        const endDate = toShipmentApiDateValue(dateRange.end);
+        params.append("startDate", startDate);
+        params.append("endDate", endDate);
+      }
+
+      const response = await apiCall(`/api/orders/products/orders?${params.toString()}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setModalOrders(data.data);
+      }
+    } catch (error) {
+      console.error('Помилка завантаження замовлень для товару:', error);
+      ToastService.show({
+        title: "Помилка",
+        description: "Не вдалося завантажити список замовлень.",
+        color: "danger",
+        icon: "triangle-alert",
+      });
+    } finally {
+      setModalLoading(false);
+    }
+  }, [statusFilter, dateRange, apiCall]);
+
+  // Обгортка для кнопки оновлення даних
+  const handleRefreshData = useCallback(() => {
+    // Очищаємо кеш для поточних фільтрів
+    const cacheKey = buildShipmentCacheKey(statusFilter, dateRange);
+    invalidateCacheKey(cacheKey);
+
+    if (viewMode === "dates" && selectedProduct) {
+      fetchProductDateStats(true).catch(console.error);
+    } else {
+      fetchProductStats(true).catch(console.error);
+    }
+  }, [fetchProductStats, fetchProductDateStats, statusFilter, dateRange, viewMode, selectedProduct, invalidateCacheKey]);
+
+  const handleSortChange = useCallback((descriptor: ShipmentSortDescriptor) => {
+    setSortDescriptor((current) => {
+      if (
+        current.column === descriptor.column
+        && current.direction === descriptor.direction
+      ) {
+        return current;
+      }
+
+      return descriptor;
+    });
+  }, []);
+
+  // Попередньо встановлені діапазони дат
+  const datePresets = useMemo(() => createStandardDatePresets(), []);
+  const maxDate = useMemo(() => today(getLocalTimeZone()), []);
+  const isSingleDate = Boolean(
+    dateRange?.start
+    && dateRange?.end
+    && (dateRange.start as CalendarDate).compare(dateRange.end as CalendarDate) === 0,
+  );
+
+  // Обробник зміни вибраного товару
+  const handleProductChange = useCallback((sku: string) => {
+    setSelectedProduct(sku);
+    if (sku) {
+      // Переключаємося в режим по датах
+      setViewMode("dates");
+      // Не викликаємо fetchProductDateStats тут, він викличеться в useEffect
+    } else {
+      // Повертаємося до загального режиму
+      setViewMode("products");
+      setDateStats([]);
+      setSelectedProductInfo(null);
+    }
+  }, []);
+
+  // Функція скидання фільтрів
+  const resetFilters = useCallback(() => {
+    setStatusFilter("all");
+    setDateRange(getDefaultShipmentDateRange());
+    setDatePresetKey(SHIPMENT_DEFAULT_PRESET_KEY);
+    setSelectedProduct("");
+    setViewMode("products");
+    setDateStats([]);
+    setSelectedProductInfo(null);
+    clearCache(); // Очищаємо весь кеш при скиданні фільтрів
+  }, [clearCache]);
+
+  useEffect(() => {
+    fetchProductStatsRef.current = () => fetchProductStats(true);
+    fetchProductDateStatsRef.current = () => fetchProductDateStats(true);
+  }, [fetchProductDateStats, fetchProductStats]);
+
+  // Завантаження даних при зміні фільтрів
+  useEffect(() => {
+    if (viewMode === "dates" && selectedProduct) {
+      fetchProductDateStatsRef.current?.();
+    } else {
+      fetchProductStatsRef.current?.();
+    }
+  }, [viewMode, selectedProduct, statusFilter, dateRange?.start, dateRange?.end]);
+
+  useEffect(() => {
+    if (sortableColumnKeys.includes(sortDescriptor.column)) {
+      return;
+    }
+
+    const fallbackColumn = viewMode === "dates" ? "orderedQuantity" : "orderedQuantity";
+
+    setSortDescriptor((current) => {
+      if (current.column === fallbackColumn) {
+        return current;
+      }
+
+      return {
+        column: fallbackColumn,
+        direction: current.direction,
+      };
+    });
+  }, [sortableColumnKeys, sortDescriptor.column, viewMode]);
+
+  // Сортування даних
+  const sortedItems = useMemo(() => {
+    return sortReportItems({
+      dateItems: dateStats,
+      productItems: productStats,
+      sortDescriptor,
+      viewMode,
+    });
+  }, [productStats, dateStats, sortDescriptor, viewMode]);
+
+  // Отримання всіх значень для кожного стовпця
+  const getAllOrderedQuantities = useMemo(
+    () => getOrderedQuantityValues(viewMode, dateStats, productStats),
+    [productStats, dateStats, viewMode],
+  );
+
+  // Розрахунок підсумкових значень
+  const totals = useMemo(() => {
+    if (viewMode === "dates") {
+      return {
+        orderedQuantity: getOrderedQuantityTotal(viewMode, dateStats, productStats),
+      };
+    } else {
+      return {
+        orderedQuantity: getOrderedQuantityTotal(viewMode, dateStats, productStats),
+      };
+    }
+  }, [productStats, dateStats, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "products") {
+      return;
+    }
+
+    syncSummary(productStats, totalOrders);
+  }, [productStats, totalOrders, syncSummary, viewMode]);
+
+  const filters = useMemo<ReportFilterConfig[]>(() => {
+    const extraFilters: ReportFilterConfig[] = [];
+
+    if (isSingleDate) {
+      extraFilters.push(createSingleDateFilterConfig({
+        value: dateRange?.start ?? null,
+        onChange: (value) => {
+          if (!value) {
+            return;
+          }
+
+          const nextDate = value as CalendarDate;
+          setDateRange({ start: nextDate, end: nextDate });
+          setDatePresetKey(getPresetKeyForShipmentDate(nextDate));
+        },
+        maxValue: maxDate,
+        className: "w-auto",
+        triggerClassName: "h-10 rounded-none",
+        previousButtonClassName: "h-10 rounded-r-none border-r-0",
+        nextButtonClassName: "h-10 rounded-l-none border-l-0",
+      }));
+    } else {
+      extraFilters.push(createDateRangeFilterConfig({
+        value: dateRange,
+        onChange: (value) => {
+          setDateRange(value);
+          setDatePresetKey(null);
+        },
+        maxValue: maxDate,
+        className: "flex-1",
+        inputWrapperClassName: "h-10",
+      }));
+    }
+
+    return createProductToolbarFilterConfigs({
+      products: productStats.map((product) => ({
+        sku: product.sku,
+        name: product.name,
+      })),
+      selectedProduct: selectedProduct || null,
+      onSelectedProductChange: (sku) => handleProductChange(sku ?? ""),
+      statusFilter: statusFilter === "all" ? null : statusFilter,
+      onStatusFilterChange: (selectedKey) => {
+        setStatusFilter(selectedKey ?? "all");
+      },
+      statusOptions,
+      periodPresetKey: datePresetKey,
+      onPeriodPresetChange: (selectedKey) => {
+        if (!selectedKey) {
+          return;
+        }
+
+        setDatePresetKey(selectedKey);
+        const preset = datePresets.find((item) => item.key === selectedKey);
+        if (preset) {
+          setDateRange(preset.getRange());
+        }
+      },
+      periodPresetOptions: [
+        ...datePresets,
+        ...(datePresetKey === "custom" ? [{ key: "custom", label: "Обрана дата" }] : []),
+      ],
+      loading,
+      productClassName: "flex-1 max-w-70",
+      productBaseClassName: "max-w-70",
+      productTriggerClassName: "h-10",
+      statusClassName: "max-w-50",
+      statusTriggerClassName: "h-10",
+      periodClassName: "max-w-50 ml-auto",
+      periodTriggerClassName: "h-10",
+      periodIconName: "calendar-check",
+      extraFilters,
+      includeReset: false,
+    }).concat(
+      createResetFilterConfig({
+        onPress: resetFilters,
+        disabled: loading,
+      }),
+    );
+  }, [
+    datePresetKey,
+    datePresets,
+    dateRange,
+    handleProductChange,
+    isSingleDate,
+    loading,
+    maxDate,
+    productStats,
+    resetFilters,
+    selectedProduct,
+    statusFilter,
+    statusOptions,
+  ]);
+
+  return (
+    <div className={`${className}`}>
+      {/* Фільтри */}
+      <ReportsFilterBuilder filters={filters} />
+
+      <ReportCacheProgressCard progress={cacheProgress} />
+
+      {/* Таблиця */}
+      <div className="relative">
+        <Table
+          aria-label="Статистика відвантажених товарів"
+          sortDescriptor={sortDescriptor}
+          onSortChange={(descriptor) =>
+            handleSortChange(descriptor as ShipmentSortDescriptor)
+          }
+          classNames={{
+            wrapper: "min-h-128 px-0 shadow-none",
+            th: [
+              "first:rounded-s-md",
+              "last:rounded-e-md",
+            ],
+          }}
+        >
+          <TableHeader>
+            {columns.map((column) => (
+              <TableColumn
+                key={column.key}
+                allowsSorting={column.sortable}
+                className={`${column.className} text-sm`}
+              >
+                {column.label}
+              </TableColumn>
+            ))}
+          </TableHeader>
+          <TableBody
+            items={sortedItems as any}
+            emptyContent={
+              <ReportTableEmptyState
+                loading={loading}
+                emptyMessage={
+                  viewMode === "dates"
+                    ? "Немає даних по датах для цього товару"
+                    : "Немає даних для відображення"
+                }
+              />
+            }
+            isLoading={loading}
+          >
+            {(item) => {
+              if (viewMode === "dates") {
+                const dateItem = item as ProductDateStats;
+                return (
+                  <TableRow 
+                    key={`${selectedProductInfo?.sku || ''}-${dateItem.date}`} 
+                    className="hover:bg-grey-50 cursor-pointer transition-colors duration-200"
+                    onClick={() => fetchOrdersForProduct(selectedProductInfo?.sku || '', selectedProductInfo?.name || '', dateItem.date)}
+                  >
+                    <TableCell className="font-medium text-base">
+                      {new Date(dateItem.date).toLocaleDateString('uk-UA', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                      })}
+                    </TableCell>
+                    <TableCell className="font-medium text-base">{selectedProductInfo?.name || selectedProduct}</TableCell>
+                    <TableCell className="text-center text-base">
+                      <Chip
+                        size="md"
+                        variant="flat"
+                        classNames={{
+                          base: getValueColor(dateItem.orderedQuantity, getAllOrderedQuantities).base,
+                          content: getValueColor(dateItem.orderedQuantity, getAllOrderedQuantities).content,
+                        }}
+                      >
+                        {dateItem.orderedQuantity}
+                      </Chip>
+                    </TableCell>
+                  </TableRow>
+                );
+              } else {
+                const productItem = item as any;
+                return (
+                  <TableRow 
+                    key={productItem.sku} 
+                    className="hover:bg-grey-50 cursor-pointer transition-colors duration-200"
+                    onClick={() => fetchOrdersForProduct(productItem.sku, productItem.name)}
+                  >
+                    <TableCell className="font-medium text-base">
+                      <div className="flex items-center gap-2">
+                        {productItem.name}
+                        <DynamicIcon name="external-link" size={14} className="text-neutral-300" />
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-mono text-base">
+                      <Button 
+                        size="sm" 
+                        variant="light" 
+                        className="font-mono text-base h-auto p-1 min-w-0 text-blue-600 hover:bg-blue-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleProductChange(productItem.sku);
+                        }}
+                      >
+                        {productItem.sku}
+                      </Button>
+                    </TableCell>
+                    <TableCell className="text-center text-base">
+                      <Chip
+                        size="md"
+                        variant="flat"
+                        classNames={{
+                          base: getValueColor(productItem.orderedQuantity, getAllOrderedQuantities).base,
+                          content: getValueColor(productItem.orderedQuantity, getAllOrderedQuantities).content,
+                        }}
+                      >
+                        {productItem.orderedQuantity}
+                      </Chip>
+                    </TableCell>
+                  </TableRow>
+                );
+              }
+            }}
+          </TableBody>
+        </Table>
+
+        {/* Підсумковий рядок */}
+        {((viewMode === "products" && productStats.length > 0) || (viewMode === "dates" && dateStats.length > 0)) && (
+          <div className="border-t-1 border-gray-200 py-2">
+            <div className="flex items-center justify-between">
+              <div className={`font-bold text-gray-800 ${viewMode === "dates" ? "w-12/16" : "w-13/16"} pl-3`}>
+                {viewMode === "dates"
+                  ? `Знайдено ${dateStats.length} днів для товару ${selectedProductInfo?.name || selectedProduct}`
+                  : `Знайдено ${productStats.length} товарів`
+                }
+              </div>
+              <div className={`text-center font-bold text-gray-800 min-w-[100px] ${viewMode === "dates" ? "w-4/16" : "w-3/16"}`}>
+                {totals.orderedQuantity}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Напівпрозорий бекдроп лоадера з анімацією */}
+        <ReportLoadingOverlay
+          loading={loading}
+          message="Завантаження відвантажень..."
+        />
+      </div>
+
+      {/* Інформація про результати та кеш з кнопками */}
+      <div className="flex justify-between items-center text-sm text-gray-600 mt-4">
+        <div></div>
+        <div className="flex items-center gap-4">
+          <ReportRefreshCacheActions
+            lastCacheUpdate={lastCacheUpdate}
+            loading={loading}
+            cacheLoading={cacheLoading}
+            clearStatsCacheLoading={clearStatsCacheLoading}
+            canManageCache={isAdmin()}
+            onRefreshData={handleRefreshData}
+            onRefreshAllCache={handleRefreshAllCache}
+            onRefreshPeriodCache={handleRefreshPeriodCache}
+            onClearStatsCache={handleClearStatsCache}
+          />
+          <CacheRefreshConfirmModal {...cacheModals.confirmModalProps} />
+          <CachePeriodSelectModal
+            {...cacheModals.periodModalProps}
+            cacheLoading={cacheLoading}
+          />
+        </div>
+      </div>
+
+      <ShipmentOrdersModal
+        isOpen={isOrdersModalOpen}
+        onOpenChange={setIsOrdersModalOpen}
+        isLoading={modalLoading}
+        orders={modalOrders}
+        product={selectedProductForModal}
+      />
+    </div>
+  );
+}

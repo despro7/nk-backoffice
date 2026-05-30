@@ -5,6 +5,17 @@
 
 
 ---
+
+## 2026-05-30 — Рефакторинг домену Reports і дедуплікація shared-логіки
+**Files:** `client/pages/Reports/**`, `client/lib/dateReportingUtils.ts`, `client/hooks/useApi.ts`, `Docs/features/reports-domain-refactor.md`
+
+- Домен `Reports` розбитий на окремі піддомени `ReportsGeneral`, `ReportsSales`, `ReportsShipment`, `ReportsSalesDynamics`.
+- Спільні типи, утиліти, cache hooks і fetch-flow винесені в `client/pages/Reports/shared`.
+- Прибрано дублювання preset-ів дат, cache validation і локального client-cache orchestration між report-компонентами.
+- Для `Sales` спрощено дефолтні значення фільтрів: прибрані зайві alias-константи, залишені прямі `last7Days`, `last30Days`, `day`.
+- Додано коротку документацію: `Docs/features/reports-domain-refactor.md`.
+
+---
  
 ## 2026-05-07 — Фікс: meta_logs — форматування помилок автофіналізації
 **Files:** `server/modules/Warehouse/WarehouseAutoFinalizeService.ts`

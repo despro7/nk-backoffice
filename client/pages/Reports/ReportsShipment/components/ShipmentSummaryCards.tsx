@@ -1,15 +1,7 @@
 import React from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Spinner } from '@heroui/react';
-
-export interface ShipmentSummary {
-  /** Загальна кількість відправлених замовлень за обраний період */
-  totalOrders: number;
-  /** Загальна кількість відправлених порцій за обраний період */
-  totalPortions: number;
-  /** Кількість унікальних товарів у відправленнях */
-  uniqueProducts: number;
-}
+import type { ShipmentSummary } from '../ReportsShipmentTypes';
 
 interface ShipmentSummaryCardsProps {
   summary: ShipmentSummary | null;

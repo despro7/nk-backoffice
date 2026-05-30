@@ -11,7 +11,7 @@ const appStartTime = Date.now();
  */
 const SOURCE_MAP_DETAILED: Record<string, string> = Object.fromEntries([
   ['19', 'nk-food.shop'],
-  ...['22', '39'].map(k => [k, 'rozetka']),
+  ...['22', '39', '48'].map(k => [k, 'rozetka']),
   ...['24', '28'].map(k => [k, 'prom.ua']),
   ['31', 'інше']
 ]);
@@ -21,17 +21,89 @@ const SOURCE_MAP_DETAILED: Record<string, string> = Object.fromEntries([
  */
 const SOURCE_CATEGORY_MAP: Record<string, string> = Object.fromEntries([
   ['19', 'сайт'],
-  ...['22', '24', '28'].map(k => [k, 'маркетплейси']),
+  ...['22', '24', '28', '39', '48'].map(k => [k, 'маркетплейси']),
   ['31', 'інше'] // інші джерела
 ]);
+
+type SourceMaps = {
+  detailed: Record<string, string>;
+  category: Record<string, string>;
+};
+
+type SalesDriveChannelRecord = {
+  id: string;
+  name: string;
+};
+
+const SALESDRIVE_CHANNELS_CACHE_KEY = 'salesdrive.cache.channels';
+
+function normalizeDetailedSourceName(channelName: string): string {
+  const normalized = channelName.trim().toLowerCase();
+
+  if (!normalized) return 'інше';
+  if (/(nk-food\.shop|nk food|^site$)/u.test(normalized)) return 'nk-food.shop';
+  if (/(rozetka|розетка)/u.test(normalized)) return 'rozetka';
+  if (/(prom\.ua|prom)/u.test(normalized)) return 'prom.ua';
+  if (/(інше|other)/u.test(normalized)) return 'інше';
+
+  // Нові/нестандартні канали без явної категорії відносимо до "інше",
+  return 'інше';
+}
+
+function toSourceCategory(detailedSource: string): string {
+  if (detailedSource === 'nk-food.shop') return 'сайт';
+  if (/^(rozetka|prom\.ua)$/u.test(detailedSource)) return 'маркетплейси';
+  return 'інше';
+}
+
+/**
+ * Отримати мапи джерел замовлень на основі user-managed каналів SalesDrive.
+ * Якщо довідник порожній або некоректний — повертається статичний fallback.
+ */
+export async function getOrderSourceMaps(): Promise<SourceMaps> {
+  try {
+    const record = await prisma.settingsBase.findUnique({
+      where: { key: SALESDRIVE_CHANNELS_CACHE_KEY }
+    });
+
+    if (!record?.value) {
+      return { detailed: SOURCE_MAP_DETAILED, category: SOURCE_CATEGORY_MAP };
+    }
+
+    const parsed = JSON.parse(record.value);
+    if (!Array.isArray(parsed)) {
+      return { detailed: SOURCE_MAP_DETAILED, category: SOURCE_CATEGORY_MAP };
+    }
+
+    const channels = parsed as SalesDriveChannelRecord[];
+    const detailed = { ...SOURCE_MAP_DETAILED };
+    const category = { ...SOURCE_CATEGORY_MAP };
+
+    for (const channel of channels) {
+      const channelId = String(channel?.id || '').trim();
+      const channelName = String(channel?.name || '').trim();
+      if (!channelId || !channelName) continue;
+
+      const detailedName = normalizeDetailedSourceName(channelName);
+      detailed[channelId] = detailedName;
+      category[channelId] = toSourceCategory(detailedName);
+    }
+
+    return { detailed, category };
+  } catch (error) {
+    console.error('Error building dynamic order source maps, using fallback:', error);
+    return { detailed: SOURCE_MAP_DETAILED, category: SOURCE_CATEGORY_MAP };
+  }
+}
 
 /**
  * Отримати детальне джерело замовлення для модального вікна
  * @param sajt - код джерела
  * @returns детальна назва джерела
  */
-export function getOrderSourceDetailed(sajt: string): string {
-  return sajt ? (SOURCE_MAP_DETAILED[sajt] || 'інше') : 'інше';
+export function getOrderSourceDetailed(sajt: string, detailedMap?: Record<string, string>): string {
+  const map = detailedMap || SOURCE_MAP_DETAILED;
+  return sajt ? (map[sajt] || 'інше') : 'інше';
 }
 
 /**
@@ -39,8 +111,9 @@ export function getOrderSourceDetailed(sajt: string): string {
  * @param sajt - код джерела
  * @returns укрупнена категорія джерела
  */
-export function getOrderSourceCategory(sajt: string): string {
-  return sajt ? SOURCE_CATEGORY_MAP[sajt] : 'інше';
+export function getOrderSourceCategory(sajt: string, categoryMap?: Record<string, string>): string {
+  const map = categoryMap || SOURCE_CATEGORY_MAP;
+  return sajt ? (map[sajt] || 'інше') : 'інше';
 }
 
 /**

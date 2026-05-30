@@ -2,7 +2,7 @@ import { CalendarDate, getLocalTimeZone, today } from "@internationalized/date";
 import type { DateRange } from "@react-types/datepicker";
 
 /**
- * Утіліти для роботи з датами в звітах
+ * Утиліти для роботи з датами в звітах
  * 
  * Обробляє конвертацію між календарними датами та звітними датами
  * з урахуванням налаштувань звітного дня (dayStartHour)
