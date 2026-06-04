@@ -23,6 +23,7 @@ import type {
   ShipmentModalProduct,
   ShipmentProductOrder,
 } from "../ReportsShipmentTypes";
+import { useMemo, useState } from "react";
 
 interface ShipmentOrdersModalProps {
   isOpen: boolean;
@@ -43,6 +44,56 @@ export function ShipmentOrdersModal({
     (sum, order) => sum + (order.productQuantity || 0),
     0,
   );
+
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  const sortedOrders = useMemo(() => {
+    if (!sortField) return orders;
+
+    const getComparable = (o: ShipmentProductOrder) => {
+      const v: any = (o as any)[sortField];
+      if (v === undefined || v === null) return "";
+      // detect dates (ISO strings or Date)
+      if (typeof v === "string") {
+        const d = Date.parse(v);
+        if (!Number.isNaN(d)) return d;
+        return v.toLowerCase();
+      }
+      if (v instanceof Date) return v.getTime();
+      if (typeof v === "number") return v;
+      return String(v).toLowerCase();
+    };
+
+    const copy = [...orders];
+    copy.sort((a, b) => {
+      const A = getComparable(a);
+      const B = getComparable(b);
+
+      if (A === B) return 0;
+
+      // numbers (dates are numbers after parse)
+      if (typeof A === "number" && typeof B === "number") {
+        return sortDirection === "asc" ? A - B : B - A;
+      }
+
+      // fallback to string compare
+      return sortDirection === "asc"
+        ? String(A).localeCompare(String(B))
+        : String(B).localeCompare(String(A));
+    });
+
+    return copy;
+  }, [orders, sortField, sortDirection]);
+
+  const handleSortToggle = (field: string) => {
+    if (sortField === field) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
 
   return (
     <Modal
@@ -90,16 +141,34 @@ export function ShipmentOrdersModal({
                         }}
                       >
                         <TableHeader>
-                          <TableColumn className="text-sm font-medium">№</TableColumn>
-                          <TableColumn className="text-sm font-medium">ТТН</TableColumn>
-                          <TableColumn className="text-sm font-medium">Оформлено</TableColumn>
-                          <TableColumn className="text-sm font-medium">Відвантажено</TableColumn>
-                          <TableColumn className="text-sm font-medium">Статус</TableColumn>
-                          <TableColumn className="text-sm font-medium text-center">Порцій</TableColumn>
-                          <TableColumn className="text-sm font-medium text-right">Сума</TableColumn>
+                          <TableColumn className="text-sm font-medium">
+                            <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => handleSortToggle("orderNumber")}>№
+                              {sortField === "orderNumber" && (
+                                <DynamicIcon name={sortDirection === "asc" ? "chevron-up" : "chevron-down"} size={14} />
+                              )}
+                            </div>
+                          </TableColumn>
+                          <TableColumn className="text-sm font-medium">
+                            <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => handleSortToggle("ttn")}>ТТН{sortField === "ttn" && <DynamicIcon name={sortDirection === "asc" ? "chevron-up" : "chevron-down"} size={14} />}</div>
+                          </TableColumn>
+                          <TableColumn className="text-sm font-medium">
+                            <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => handleSortToggle("orderDate")}>Оформлено{sortField === "orderDate" && <DynamicIcon name={sortDirection === "asc" ? "chevron-up" : "chevron-down"} size={14} />}</div>
+                          </TableColumn>
+                          <TableColumn className="text-sm font-medium">
+                            <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => handleSortToggle("dilovodSaleExportDate")}>Відвантажено{sortField === "dilovodSaleExportDate" && <DynamicIcon name={sortDirection === "asc" ? "chevron-up" : "chevron-down"} size={14} />}</div>
+                          </TableColumn>
+                          <TableColumn className="text-sm font-medium">
+                            <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => handleSortToggle("status")}>Статус{sortField === "status" && <DynamicIcon name={sortDirection === "asc" ? "chevron-up" : "chevron-down"} size={14} />}</div>
+                          </TableColumn>
+                          <TableColumn className="text-sm font-medium text-center">
+                            <div className="flex items-center gap-2 justify-center cursor-pointer select-none" onClick={() => handleSortToggle("productQuantity")}>Порцій{sortField === "productQuantity" && <DynamicIcon name={sortDirection === "asc" ? "chevron-up" : "chevron-down"} size={14} />}</div>
+                          </TableColumn>
+                          <TableColumn className="text-sm font-medium text-right">
+                            <div className="flex items-center gap-2 justify-end cursor-pointer select-none" onClick={() => handleSortToggle("totalPrice")}>Сума{sortField === "totalPrice" && <DynamicIcon name={sortDirection === "asc" ? "chevron-up" : "chevron-down"} size={14} />}</div>
+                          </TableColumn>
                           <TableColumn className="text-sm font-medium text-center">Дії</TableColumn>
                         </TableHeader>
-                        <TableBody items={orders}>
+                        <TableBody items={sortedOrders}>
                           {(order) => (
                             <TableRow key={order.externalId} className="hover:bg-grey-50 transition-colors duration-200">
                               <TableCell className="font-medium text-sm">{order.orderNumber}</TableCell>
