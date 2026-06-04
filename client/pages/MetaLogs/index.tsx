@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Tabs, Tab, Button } from '@heroui/react';
+import { Tab, Button } from '@heroui/react';
+import PageTabs from '@/components/PageTabs';
 import ShipmentMetaLogTable from './components/ShipmentMetaLogTable';
 import DocumentMetaLogTable from './components/DocumentMetaLogTable';
 import OtherMetaLogTable from './components/OtherMetaLogTable';
@@ -31,23 +32,11 @@ export default function MetaLogNotifications() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-4 justify-between">
-        <Tabs
-          selectedKey={activeTab}
-          onSelectionChange={(key) => setActiveTab(key as 'shipment'|'doc'|'other')}
-          variant="solid"
-          color="default"
-          size="lg"
-          classNames={{
-            tabList: "gap-2 p-[6px] bg-gray-100 rounded-lg",
-            cursor: "bg-secondary text-white shadow-sm rounded-md",
-            tab: "px-3 py-1.5 text-sm font-normal data-[hover-unselected=true]:opacity-100 text-neutral-500",
-            tabContent: "group-data-[selected=true]:text-white text-neutral-400",
-          }}
-        >
+        <PageTabs selectedKey={activeTab} onSelectionChange={(key) => setActiveTab(key as 'shipment'|'doc'|'other')}>
             <Tab key="shipment" title="Відвантаження замовлень" />
             <Tab key="doc" title="Збереження документів" />
             <Tab key="other" title="Інші помилки" />
-        </Tabs>
+        </PageTabs>
           <div className="flex items-center gap-4">
             <div className="text-sm text-gray-600">
               <span className="mr-4">Унікальних помилок: <strong>{totalUnique}</strong></span>

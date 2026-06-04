@@ -19,7 +19,7 @@ interface InventoryHistoryTabProps {
 export const InventoryHistoryTab = ({ sessions, loading, onRefresh, onLoadSession, onDeleteSession, onRefreshSessionBalances }: InventoryHistoryTabProps) => (
   <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
     <div className="flex items-center justify-between mb-4">
-      <h2 className="text-base font-semibold text-gray-800">Попередні інвентаризації</h2>
+      <h2 className="text-base font-semibold text-gray-800">Минулі інвентаризації</h2>
       <Button
         size="sm"
         variant="flat"

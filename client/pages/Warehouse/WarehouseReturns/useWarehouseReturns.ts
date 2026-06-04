@@ -225,8 +225,10 @@ export function useWarehouseReturns() {
         availableBatches: batches,
         selectedBatchKey: item.selectedBatchKey ?? batches[0]?.id ?? null,
         selectedBatchId: item.selectedBatchId ?? batches[0]?.batchId ?? null,
-        // If batches available, set orderedQuantity to first batch quantity so StepperInput max is correct
-        orderedQuantity: (batches[0]?.quantity ?? item.orderedQuantity ?? item.quantity ?? 1),
+        // Preserve original orderedQuantity (it represents what was ordered).
+        // Do not overwrite it with batch quantity; batch quantity is the available max and
+        // will be used by UI components when present.
+        orderedQuantity: (item.orderedQuantity ?? item.quantity ?? 1),
       } as ReturnItem;
     }));
   }, []);

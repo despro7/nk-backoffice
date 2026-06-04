@@ -18,10 +18,13 @@ export default function ReasonSelector({ reason, setReason, customReason, setCus
           aria-label="Причина списання"
           value={reason}
           onChange={(e:any)=>setReason(e.target.value)}
-          selectedKeys={reason ? [reason] : []}
+          placeholder="Оберіть причину (обов'язково)"
+          selectedKeys={reason ? [reason] : ['']}
+          disallowEmptySelection={true}
           classNames={{ base: "max-w-xs", trigger: 'w-full border border-gray-200 bg-white' }}
         >
           <SelectItem key="Брак товару" textValue="Брак товару">Брак товару</SelectItem>
+          <SelectItem key="Компенсація" textValue="Компенсація">Компенсація</SelectItem>
           <SelectItem key="Проба" textValue="Проба">Проба</SelectItem>
           <SelectItem key="Інше" textValue="Інше">Інше</SelectItem>
         </Select>

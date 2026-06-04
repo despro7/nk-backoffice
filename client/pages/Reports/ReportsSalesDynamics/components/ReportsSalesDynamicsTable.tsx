@@ -45,7 +45,7 @@ export default function ReportsSalesDynamicsTable({
             "py-2 text-default-700",
             "[&>*]:z-1 [&>*]:relative",
             "before:pointer-events-none before:content-[''] before:absolute before:z-0 before:inset-0 before:opacity-0 before:bg-default/40",
-            "group-hover/tr:before:opacity-70",
+            "group-hover/tr:before:opacity-40",
             "first:before:rounded-s-sm last:before:rounded-e-sm",
           ],
         }}

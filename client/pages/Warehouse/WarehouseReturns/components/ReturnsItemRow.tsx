@@ -1,6 +1,6 @@
 import { Input, Select, SelectItem } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import type { ReturnBatch, ReturnItem } from './WarehouseReturnsTypes';
+import type { ReturnBatch, ReturnItem } from '../WarehouseReturnsTypes';
 
 interface ReturnsItemRowProps {
   item: ReturnItem;
@@ -31,9 +31,10 @@ export function ReturnsItemRow({
               type="number"
               value={String(item.quantity)}
               min={0}
-              max={item.orderedQuantity}
+              // Use available batch quantity as max when present; otherwise fall back to orderedQuantity
+              max={item.availableBatches && item.availableBatches.length > 0 ? item.availableBatches[0].quantity : item.orderedQuantity}
               readOnly
-              classNames={{ label: 'text-xs font-medium text-gray-500', inputWrapper: 'border border-gray-200 bg-white' }}
+              classNames={{ label: 'text-xs font-medium text-gray-500', inputWrapper: 'border border-gray-200 bg-white!', input: 'cursor-not-allowed' }}
             />
           </div>
           <div className="flex-1">

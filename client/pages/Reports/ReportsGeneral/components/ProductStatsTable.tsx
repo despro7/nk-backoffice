@@ -480,9 +480,13 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
           }
           classNames={{
             wrapper: "min-h-128 px-0 shadow-none",
-            th: [
-              "first:rounded-s-md",
-              "last:rounded-e-md",
+            th: "bg-default-200/60 first:rounded-s-sm last:rounded-e-sm",
+            td: [
+              "py-2 text-default-700",
+              "[&>*]:z-1 [&>*]:relative",
+              "before:pointer-events-none before:content-[''] before:absolute before:z-0 before:inset-0 before:opacity-0 before:bg-default/40",
+              "group-hover/tr:before:opacity-40",
+              "first:before:rounded-s-sm last:before:rounded-e-sm",
             ],
           }}
         >
@@ -515,7 +519,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
               if (viewMode === "dates") {
                 const dateItem = item as ProductDateStats;
                 return (
-                  <TableRow key={`${selectedProductInfo?.sku || ''}-${dateItem.date}`} className="hover:bg-neutral-50 transition-colors duration-200">
+                  <TableRow key={`${selectedProductInfo?.sku || ''}-${dateItem.date}`}>
                     <TableCell className="font-medium text-base">
                       {new Date(dateItem.date).toLocaleDateString('uk-UA', {
                         day: '2-digit',
@@ -577,7 +581,7 @@ export default function ProductStatsTable({ className }: ProductStatsTableProps)
               } else {
                 const productItem = item as any;
                 return (
-                  <TableRow key={productItem.sku} className="hover:bg-neutral-50 transition-colors duration-200">
+                  <TableRow key={productItem.sku}>
                     <TableCell className="font-medium text-base">{productItem.name}</TableCell>
                     <TableCell className="font-mono text-base">{productItem.sku}</TableCell>
                     <TableCell className="text-center text-base">

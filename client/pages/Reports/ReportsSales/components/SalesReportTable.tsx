@@ -194,9 +194,15 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
             handleSortChange(descriptor as SalesSortDescriptor);
           }}
           classNames={{
-            wrapper:
-              "min-h-80 p-0 pb-1 shadow-none bg-transparent rounded-none",
-            th: ["first:rounded-s-md", "last:rounded-e-md"],
+            wrapper: "min-h-80 p-0 pb-1 shadow-none bg-transparent rounded-none",
+            th: "bg-default-200/60 first:rounded-s-sm last:rounded-e-sm",
+            td: [
+              "py-2 text-default-700 cursor-pointer",
+              "[&>*]:z-1 [&>*]:relative",
+              "before:pointer-events-none before:content-[''] before:absolute before:z-0 before:inset-0 before:opacity-0 before:bg-default/40",
+              "group-hover/tr:before:opacity-40",
+              "first:before:rounded-s-sm last:before:rounded-e-sm",
+            ],
           }}
         >
           <TableHeader>
@@ -253,6 +259,13 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
           onClearStatsCache={handleClearStatsCache}
           onExportToExcel={exportToExcel}
           onExportToTxt={exportToTXT}
+        />
+
+        {/* Модальне вікно деталей по даті */}
+        <SalesDateDetailsModal
+          isOpen={isDetailsModalOpen}
+          onOpenChange={setIsDetailsModalOpen}
+          details={selectedDateDetails}
         />
 
         {/* Модальне вікно підтвердження та вибору періоду для оновлення кеша */}

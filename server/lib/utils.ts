@@ -298,3 +298,25 @@ export async function resolveAuthorNames<T extends { createdBy: number | null }>
     createdByName: item.createdBy != null ? (namesMap.get(item.createdBy) ?? null) : null,
   }));
 }
+
+// Server-side helper: resolve firm display name using Dilovod directories (async)
+export async function getFirmDisplayNameServer(firmId: any, firmName?: any): Promise<string | null> {
+  // Prefer explicit firmName when provided
+  if (firmName && String(firmName).trim() !== '') return String(firmName);
+  if (firmId == null) return null;
+  const idStr = String(firmId).trim();
+  if (!idStr) return null;
+
+  try {
+    // Use dilovodService to read cached firms (will fetch from cache or API)
+    const { dilovodService } = await import('./../services/dilovod/DilovodService.js');
+    const firms = await dilovodService.getFirms(false);
+    const f = Array.isArray(firms) ? firms.find((x: any) => String(x.id) === idStr || (x.id && String(x.id).trim() === idStr)) : null;
+    if (f) return f.name || String(f.id);
+  } catch (e) {
+    // ignore and fallback to raw id
+    console.warn('[getFirmDisplayNameServer] failed to resolve firm name:', e);
+  }
+
+  return idStr;
+}

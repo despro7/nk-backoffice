@@ -1,6 +1,6 @@
 import { Button, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import type { ReturnItem } from './WarehouseReturnsTypes';
+import type { ReturnItem } from '../WarehouseReturnsTypes';
 
 interface ReturnsConfirmModalProps {
   isOpen: boolean;

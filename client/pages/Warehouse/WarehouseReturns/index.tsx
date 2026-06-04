@@ -1,14 +1,15 @@
-import { Card, CardBody, CardHeader, Select, SelectItem, Spinner, Input, Tab, Tabs, Button, Tooltip, Alert } from '@heroui/react';
+import { Card, CardBody, CardHeader, Select, SelectItem, Spinner, Input, Tab, Button, Tooltip, Alert } from '@heroui/react';
+import PageTabs from '@/components/PageTabs';
 import { useMemo, useState, useEffect } from 'react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useDebug } from '@/contexts/DebugContext';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { useWarehouseReturns } from './useWarehouseReturns';
-import { OrderSearchInput } from './OrderSearchInput';
-import { ReturnsActionBar } from './ReturnsActionBar';
-import { ReturnsConfirmModal } from './ReturnsConfirmModal';
-import { ReturnsItemRow } from './ReturnsItemRow';
-import { ReturnsHistoryTab } from './ReturnsHistoryTab';
+import { OrderSearchInput } from './components/OrderSearchInput';
+import { ReturnsActionBar } from './components/ReturnsActionBar';
+import { ReturnsConfirmModal } from './components/ReturnsConfirmModal';
+import { ReturnsItemRow } from './components/ReturnsItemRow';
+import { ReturnsHistoryTab } from './components/ReturnsHistoryTab';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { ToastService } from '@/services/ToastService';
@@ -68,13 +69,6 @@ export default function WarehouseReturns() {
   const [history, setHistory] = useState<ReturnHistoryRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'main' | 'history'>('main');
-
-  const pageTitle = useMemo(() => {
-    if (returns.selectedOrderNumber) {
-      return `Повернення для замовлення ${returns.selectedOrderNumber}`;
-    }
-    return 'Оприбуткування повернень';
-  }, [returns.selectedOrderNumber]);
 
   // When a return is successfully sent, ensure main tab shows updated (cleared) state
   // but keep the success screen visible. This prevents old form data from remaining.
@@ -341,312 +335,296 @@ export default function WarehouseReturns() {
         <p className="text-sm text-gray-500">Швидкий інтерфейс для оприбуткування повернень клієнтів у Dilovod.</p>
       </div>
 
-      <Tabs
-        selectedKey={activeTab}
-        onSelectionChange={(key) => {
-          const tab = key as 'main' | 'history';
-          setActiveTab(tab);
-          // returns.resetAllState?.();
-          if (tab === 'history') {
-            loadHistory();
-          }
-        }}
-        variant="solid"
-        color="default"
-        size="lg"
-        classNames={{
-          base: 'mb-4',
-          tabList: "gap-2 p-[6px] bg-gray-100 rounded-lg",
-          cursor: "bg-secondary text-white shadow-sm rounded-md",
-          tab: "px-3 py-1.5 text-sm font-normal data-[hover-unselected=true]:opacity-100 text-neutral-500",
-          tabContent: "group-data-[selected=true]:text-white text-neutral-400",
-        }}
-      >
+      <PageTabs selectedKey={activeTab} onSelectionChange={(key) => {
+        const tab = key as 'main' | 'history';
+        setActiveTab(tab);
+        if (tab === 'history') {
+          loadHistory();
+        }
+      }}>
         <Tab key="main" title="Оприбуткування" />
         <Tab key="history" title="Історія" />
-      </Tabs>
+      </PageTabs>
       
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-        <div key={activeTab} className="p-4">
-          {activeTab === 'main' && (
-            <div className="flex flex-col gap-5">
-              <div className="text-base font-semibold text-gray-900">Пошук замовлення</div>
-              <OrderSearchInput
-                searchQuery={returns.searchQuery}
-                onSearchQueryChange={returns.setSearchQuery}
-                onSearch={returns.handleSearch}
-                searchResults={returns.searchResults}
-                loading={returns.searchLoading}
-                hasSearchExecuted={returns.hasSearchExecuted}
-                orderSelected={returns.orderSelected}
-                selectedOrderId={returns.selectedOrderId}
-                onSelectOrder={returns.loadOrderForReturn}
-              />
+      <div key={activeTab}>
+        {activeTab === 'main' && (
+          <Card className="flex flex-col gap-5 rounded-xl border border-gray-200 bg-white shadow-small p-4">
+            <div className="text-base font-semibold text-gray-900">Пошук замовлення</div>
+            <OrderSearchInput
+              searchQuery={returns.searchQuery}
+              onSearchQueryChange={returns.setSearchQuery}
+              onSearch={returns.handleSearch}
+              searchResults={returns.searchResults}
+              loading={returns.searchLoading}
+              hasSearchExecuted={returns.hasSearchExecuted}
+              orderSelected={returns.orderSelected}
+              selectedOrderId={returns.selectedOrderId}
+              onSelectOrder={returns.loadOrderForReturn}
+            />
 
-              {returns.error && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{returns.error}</div>
-              )}
+            {returns.error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{returns.error}</div>
+            )}
 
-              {returns.isLoading ? (
-                <div className="flex items-center justify-center rounded-xl border border-gray-200 bg-white p-10">
-                  <Spinner size="lg" />
-                </div>
-              ) : returns.showSuccess ? (
-                // Екран успішного відправлення
-                <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center">
-                  <DynamicIcon name="check-circle" className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold text-green-700 mb-2">Повернення успішно створено!</h3>
-                  <p className="text-green-700 mb-6">Документ повернення для замовлення №{returns.selectedOrderNumber} відправлено в Діловод.</p>
-                  <Button
-                    color="success"
-                    variant="solid"
-                    onPress={returns.handleNewReturn}
-                    startContent={<DynamicIcon name="plus-circle" className="w-4 h-4" />}
-                    className="text-white"
-                  >
-                    Нове повернення
-                  </Button>
-                </div>
-              ) : returns.orderSelected && (
-                <div className="grid gap-6">
-                  <Card className="rounded-xl border border-gray-200 bg-white shadow-small p-1">
-                    <CardHeader className="text-lg font-medium text-gray-900">
-                      <DynamicIcon name="info" size={20} className="mr-1" /> Деталі повернення
-                    </CardHeader>
-                    <CardBody className="flex flex-col gap-4">
-                      <div className="flex items-start gap-4 justify-between mb-4">
-                        <div className="space-y-1">
-                          <div className="text-xs font-medium">Замовлення</div>
-                          <div className="font-medium text-gray-900 h-10 flex items-center">№{returns.selectedOrderNumber}</div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs font-medium">Відвантажено</div>
-                          <div className="font-medium text-gray-900 h-10 flex items-center">
-                            {returns.dilovodSaleExportDate && new Date(returns.dilovodSaleExportDate).toLocaleDateString('uk-UA')}
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs font-medium">Фірма відвантаження</div>
-                          {returns.availableFirms && returns.availableFirms.length > 0 ? (
-                            <Select
-                              id="select-ship-firm"
-                              labelPlacement="outside"
-                              aria-label="Фірма відвантаження"
-                              disallowEmptySelection={true}
-                              value={returns.shipFirmId ?? ''}
-                              onChange={(e) => {
-                                const v = e.target.value || null;
-                                returns.setShipFirmId?.(v);
-                                const f = returns.availableFirms.find((x) => x.id === v);
-                                returns.setShipFirmName?.(f?.name || '');
-                              }}
-                              selectedKeys={returns.shipFirmId ? [returns.shipFirmId] : []}
-                              classNames={{ trigger: 'w-full min-w-[200px] border border-gray-200 bg-white' }}
-                            >
-                              <SelectItem key="" textValue="Не визначено">Не визначено</SelectItem>
-                              <>
-                                {returns.availableFirms.map((f) => (
-                                  <SelectItem key={f.id} textValue={f.name}>{f.name}</SelectItem>
-                                ))}
-                              </>
-                            </Select>
-                          ) : (
-                            <div className="text-gray-900">{returns.shipFirmName || returns.shipFirmId || 'Не визначено'}</div>
-                          )}
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs font-medium">Фірма оприбуткування</div>
-                          {returns.availableFirms && returns.availableFirms.length > 0 ? (
-                            <Select
-                              id="select-receive-firm"
-                              labelPlacement="outside"
-                              aria-label="Фірма оприбуткування"
-                              disallowEmptySelection={true}
-                              value={returns.receiveFirmId ?? ''}
-                              onChange={(e) => {
-                                const v = e.target.value || null;
-                                returns.setReceiveFirmId?.(v);
-                                const f = returns.availableFirms.find((x) => x.id === v);
-                                returns.setReceiveFirmName?.(f?.name || '');
-                              }}
-                              selectedKeys={returns.receiveFirmId ? [returns.receiveFirmId] : []}
-                              classNames={{ trigger: 'w-full min-w-[200px] border border-gray-200 bg-white' }}
-                            >
-                              <SelectItem key="" textValue="Не визначено">Не визначено</SelectItem>
-                              <>
-                                {returns.availableFirms.map((f) => (
-                                  <SelectItem key={f.id} textValue={f.name}>{f.name}</SelectItem>
-                                ))}
-                              </>
-                            </Select>
-                          ) : (
-                            <div className="text-gray-900">{returns.receiveFirmName || returns.receiveFirmId || 'Не визначено'}</div>
-                          )}
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs font-medium">ТТН</div>
-                          <div className="text-gray-900 h-10 flex items-center">
-                            {returns.ttn && formatTrackingNumberWithIcon(returns.ttn, {
-                              showIcon: false,
-                              compactMode: false,
-                              boldLastGroup: true
-                            }) || 'Не визначено'}
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs font-medium">Позицій</div>
-                          <div className="text-gray-900 h-10 flex items-center">{itemCount}</div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs font-medium">Порцій</div>
-                          <div className="flex items-baseline gap-1">
-                            <div className="text-gray-900 h-10 flex items-center">{orderedPortionCount}</div>
-                            {portionDiff > 0 && (<div className="text-red-500">(-{portionDiff})</div>)}
-                          </div>
+            {returns.isLoading ? (
+              <div className="flex items-center justify-center rounded-xl border border-gray-200 bg-white p-10">
+                <Spinner size="lg" />
+              </div>
+            ) : returns.showSuccess ? (
+              // Екран успішного відправлення
+              <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center">
+                <DynamicIcon name="check-circle" className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-green-700 mb-2">Повернення успішно створено!</h3>
+                <p className="text-green-700 mb-6">Документ повернення для замовлення №{returns.selectedOrderNumber} відправлено в Діловод.</p>
+                <Button
+                  color="success"
+                  variant="solid"
+                  onPress={returns.handleNewReturn}
+                  startContent={<DynamicIcon name="plus-circle" className="w-4 h-4" />}
+                  className="text-white"
+                >
+                  Нове повернення
+                </Button>
+              </div>
+            ) : returns.orderSelected && (
+              <div className="grid gap-6">
+                <Card className="rounded-xl border border-gray-200 bg-white shadow-small p-1">
+                  <CardHeader className="text-lg font-medium text-gray-900">
+                    <DynamicIcon name="info" size={20} className="mr-1" /> Деталі повернення
+                  </CardHeader>
+                  <CardBody className="flex flex-col gap-4">
+                    <div className="flex items-start gap-4 justify-between mb-4">
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium">Замовлення</div>
+                        <div className="font-medium text-gray-900 h-10 flex items-center">№{returns.selectedOrderNumber}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium">Відвантажено</div>
+                        <div className="font-medium text-gray-900 h-10 flex items-center">
+                          {returns.dilovodSaleExportDate && new Date(returns.dilovodSaleExportDate).toLocaleDateString('uk-UA')}
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-4">
-                        <div className={`${returns.returnReason === 'Інше' ? 'w-60' : 'min-w-[300px]'} space-y-1`}>
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium">Фірма відвантаження</div>
+                        {returns.availableFirms && returns.availableFirms.length > 0 ? (
                           <Select
-                            id="return-reason"
-                            label={<span>Причина повернення <span className="text-red-500">(обов'язково)</span></span>}
-                            placeholder="Оберіть причину повернення"
+                            id="select-ship-firm"
                             labelPlacement="outside"
-                            value={returns.returnReason}
-                            onChange={(event) => returns.handleReturnReasonChange(event.target.value)}
-                            selectedKeys={returns.returnReason ? [returns.returnReason] : []}
+                            aria-label="Фірма відвантаження"
                             disallowEmptySelection={true}
-                            classNames={{
-                              label: 'text-xs font-medium text-gray-500 mb-1',
-                              trigger: 'w-full border border-gray-200 bg-white',
+                            value={returns.shipFirmId ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value || null;
+                              returns.setShipFirmId?.(v);
+                              const f = returns.availableFirms.find((x) => x.id === v);
+                              returns.setShipFirmName?.(f?.name || '');
                             }}
+                            selectedKeys={returns.shipFirmId ? [returns.shipFirmId] : []}
+                            classNames={{ trigger: 'w-full min-w-[200px] border border-gray-200 bg-white' }}
                           >
-                            {RETURN_REASONS.map((reason) => (
-                              <SelectItem key={reason} textValue={reason}>{reason}</SelectItem>
-                            ))}
+                            <SelectItem key="" textValue="Не визначено">Не визначено</SelectItem>
+                            <>
+                              {returns.availableFirms.map((f) => (
+                                <SelectItem key={f.id} textValue={f.name}>{f.name}</SelectItem>
+                              ))}
+                            </>
                           </Select>
-                        </div>
-                        {returns.returnReason === 'Інше' && (
-                          <div className="flex-1">
-                            <Input
-                              label="Додаткова причина"
-                              labelPlacement="outside"
-                              value={returns.customReason}
-                              onValueChange={returns.handleCustomReasonChange}
-                              placeholder="Опишіть причину повернення"
-                              classNames={{
-                                label: 'text-xs font-medium text-gray-500 mb-1',
-                                inputWrapper: 'w-full border border-gray-200 bg-white',
-                                input: 'placeholder:opacity-50!',
-                              }}
-                            />
-                          </div>
+                        ) : (
+                          <div className="text-gray-900">{returns.shipFirmName || returns.shipFirmId || 'Не визначено'}</div>
                         )}
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium">Фірма оприбуткування</div>
+                        {returns.availableFirms && returns.availableFirms.length > 0 ? (
+                          <Select
+                            id="select-receive-firm"
+                            labelPlacement="outside"
+                            aria-label="Фірма оприбуткування"
+                            disallowEmptySelection={true}
+                            value={returns.receiveFirmId ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value || null;
+                              returns.setReceiveFirmId?.(v);
+                              const f = returns.availableFirms.find((x) => x.id === v);
+                              returns.setReceiveFirmName?.(f?.name || '');
+                            }}
+                            selectedKeys={returns.receiveFirmId ? [returns.receiveFirmId] : []}
+                            classNames={{ trigger: 'w-full min-w-[200px] border border-gray-200 bg-white' }}
+                          >
+                            <SelectItem key="" textValue="Не визначено">Не визначено</SelectItem>
+                            <>
+                              {returns.availableFirms.map((f) => (
+                                <SelectItem key={f.id} textValue={f.name}>{f.name}</SelectItem>
+                              ))}
+                            </>
+                          </Select>
+                        ) : (
+                          <div className="text-gray-900">{returns.receiveFirmName || returns.receiveFirmId || 'Не визначено'}</div>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium">ТТН</div>
+                        <div className="text-gray-900 h-10 flex items-center">
+                          {returns.ttn && formatTrackingNumberWithIcon(returns.ttn, {
+                            showIcon: false,
+                            compactMode: false,
+                            boldLastGroup: true
+                          }) || 'Не визначено'}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium">Позицій</div>
+                        <div className="text-gray-900 h-10 flex items-center">{itemCount}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium">Порцій</div>
+                        <div className="flex items-baseline gap-1">
+                          <div className="text-gray-900 h-10 flex items-center">{orderedPortionCount}</div>
+                          {portionDiff > 0 && (<div className="text-red-500">(-{portionDiff})</div>)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className={`${returns.returnReason === 'Інше' ? 'w-60' : 'min-w-[300px]'} space-y-1`}>
+                        <Select
+                          id="return-reason"
+                          label={<span>Причина повернення <span className="text-red-500">(обов'язково)</span></span>}
+                          placeholder="Оберіть причину повернення"
+                          labelPlacement="outside"
+                          value={returns.returnReason}
+                          onChange={(event) => returns.handleReturnReasonChange(event.target.value)}
+                          selectedKeys={returns.returnReason ? [returns.returnReason] : []}
+                          disallowEmptySelection={true}
+                          classNames={{
+                            label: 'text-xs font-medium text-gray-500 mb-1',
+                            trigger: 'w-full border border-gray-200 bg-white',
+                          }}
+                        >
+                          {RETURN_REASONS.map((reason) => (
+                            <SelectItem key={reason} textValue={reason}>{reason}</SelectItem>
+                          ))}
+                        </Select>
+                      </div>
+                      {returns.returnReason === 'Інше' && (
                         <div className="flex-1">
                           <Input
-                            label="Коментар до повернення"
+                            label="Додаткова причина"
                             labelPlacement="outside"
-                            value={returns.comment}
-                            onValueChange={returns.setComment}
-                            placeholder="Коментар для операції повернення (необов'язково)"
+                            value={returns.customReason}
+                            onValueChange={returns.handleCustomReasonChange}
+                            placeholder="Опишіть причину повернення"
                             classNames={{
-                              label: 'text-xs font-medium text-gray-500',
+                              label: 'text-xs font-medium text-gray-500 mb-1',
                               inputWrapper: 'w-full border border-gray-200 bg-white',
                               input: 'placeholder:opacity-50!',
                             }}
                           />
                         </div>
-                        <div className="flex">
-                          <DateTimePicker
-                            label={<span className="flex gap-1">Дата оприбуткування <Tooltip content="Уважно оберіть дату та час, це вплине на облік повернених товарів" color="primary" className="max-w-80"><DynamicIcon name="info" size={14} className="text-red-500" /></Tooltip></span>}
-                            labelPlacement="outside"
-                            size="md"
-                            labelStyle="text-xs font-medium text-gray-800"
-                            inputStyle="border border-gray-200 bg-white hover:bg-gray-100 focus-within:bg-gray-100"
-                            value={(() => {
-                              const s = returns.returnDate;
-                              if (!s) return new Date();
-                              // Accept either our formatted `YYYY-MM-DD HH:mm:ss` or ISO strings
-                              try {
-                                if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
-                                  const [datePart, timePart] = s.split(' ');
-                                  const [y, m, d] = datePart.split('-').map(Number);
-                                  const [hh, mm, ss] = timePart.split(':').map(Number);
-                                  return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, ss || 0);
-                                }
-                                // fallback to Date parsing (handles ISO)
-                                const parsed = new Date(s);
-                                if (!Number.isNaN(parsed.getTime())) return parsed;
-                              } catch (e) {
-                                // ignore
-                              }
-                              return new Date();
-                            })()}
-                            onChange={(d) => {
-                              const pad = (n: number) => String(n).padStart(2, '0');
-                              const formatted = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-                              console.debug('[WarehouseReturns] DateTimePicker onChange -> formatted:', formatted);
-                              returns.setReturnDate?.(formatted);
-                            }}
-                            isDisabled={returns.isSubmitting}
-                          />
-                        </div>
+                      )}
+                      <div className="flex-1">
+                        <Input
+                          label="Коментар до повернення"
+                          labelPlacement="outside"
+                          value={returns.comment}
+                          onValueChange={returns.setComment}
+                          placeholder="Коментар для операції повернення (необов'язково)"
+                          classNames={{
+                            label: 'text-xs font-medium text-gray-500',
+                            inputWrapper: 'w-full border border-gray-200 bg-white',
+                            input: 'placeholder:opacity-50!',
+                          }}
+                        />
                       </div>
-                    </CardBody>
-                  </Card>
+                      <div className="flex">
+                        <DateTimePicker
+                          label={<span className="flex gap-1">Дата оприбуткування <Tooltip content="Уважно оберіть дату та час, це вплине на облік повернених товарів" color="primary" className="max-w-80"><DynamicIcon name="info" size={14} className="text-red-500" /></Tooltip></span>}
+                          labelPlacement="outside"
+                          size="md"
+                          labelStyle="text-xs font-medium text-gray-800"
+                          inputStyle="border border-gray-200 bg-white hover:bg-gray-100 focus-within:bg-gray-100"
+                          value={(() => {
+                            const s = returns.returnDate;
+                            if (!s) return new Date();
+                            // Accept either our formatted `YYYY-MM-DD HH:mm:ss` or ISO strings
+                            try {
+                              if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
+                                const [datePart, timePart] = s.split(' ');
+                                const [y, m, d] = datePart.split('-').map(Number);
+                                const [hh, mm, ss] = timePart.split(':').map(Number);
+                                return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, ss || 0);
+                              }
+                              // fallback to Date parsing (handles ISO)
+                              const parsed = new Date(s);
+                              if (!Number.isNaN(parsed.getTime())) return parsed;
+                            } catch (e) {
+                              // ignore
+                            }
+                            return new Date();
+                          })()}
+                          onChange={(d) => {
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            const formatted = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                            console.debug('[WarehouseReturns] DateTimePicker onChange -> formatted:', formatted);
+                            returns.setReturnDate?.(formatted);
+                          }}
+                          isDisabled={returns.isSubmitting}
+                        />
+                      </div>
+                    </div>
+                  </CardBody>
+                </Card>
 
-                  <Card className="rounded-xl border border-gray-200 bg-white shadow-small p-1">
-                    <CardHeader className="text-lg font-semibold text-gray-900">
-                      <DynamicIcon name="package" size={20} className="mr-1" /> Товари для повернення
-                    </CardHeader>
-                    <CardBody>
-                      {returns.items.map((item) => (
-                            <ReturnsItemRow
-                              key={item.id}
-                              item={item}
-                              onQuantityChange={returns.handleQuantityChange}
-                              onPriceChange={returns.handlePriceChange}
-                              onBatchChange={returns.handleBatchChange}
-                            />
-                          ))}
-                    </CardBody>
-                  </Card>
+                <Card className="rounded-xl border border-gray-200 bg-white shadow-small p-1">
+                  <CardHeader className="text-lg font-semibold text-gray-900">
+                    <DynamicIcon name="package" size={20} className="mr-1" /> Товари для повернення
+                  </CardHeader>
+                  <CardBody>
+                    {returns.items.map((item) => (
+                      <ReturnsItemRow
+                        key={item.id}
+                        item={item}
+                        onQuantityChange={returns.handleQuantityChange}
+                        onPriceChange={returns.handlePriceChange}
+                        onBatchChange={returns.handleBatchChange}
+                      />
+                    ))}
+                  </CardBody>
+                </Card>
 
-                  {(() => {
-                    const itemsWithNoBatches = returns.items.filter((it) => Array.isArray(it.availableBatches) && it.availableBatches.length === 0);
-                    if (itemsWithNoBatches.length > 0 || missingReasonMessage) {
-                      return (
-                        <Alert color="danger" classNames={{ base: "text-sm" }}>
-                          {missingReasonMessage && <div className="mb-1">{missingReasonMessage}</div>}
-                          {itemsWithNoBatches.length > 0 && <div>Не знайдено партій для товарів: {itemsWithNoBatches.map(i => i.sku).join(', ')} <br />Спробуйте обрати іншу фірму відвантаження в деталях повернення ↑</div>}
-                        </Alert>
-                      );
-                    }
-                    return null;
-                  })()}
+                {(() => {
+                  const itemsWithNoBatches = returns.items.filter((it) => Array.isArray(it.availableBatches) && it.availableBatches.length === 0);
+                  if (itemsWithNoBatches.length > 0 || missingReasonMessage) {
+                    return (
+                      <Alert color="danger" classNames={{ base: "text-sm" }}>
+                        {missingReasonMessage && <div className="mb-1">{missingReasonMessage}</div>}
+                        {itemsWithNoBatches.length > 0 && <div>Не знайдено партій для товарів: {itemsWithNoBatches.map(i => i.sku).join(', ')} <br />Спробуйте обрати іншу фірму відвантаження в деталях повернення ↑</div>}
+                      </Alert>
+                    );
+                  }
+                  return null;
+                })()}
 
-                  <ReturnsActionBar
-                    canSubmit={canSubmit}
-                    isSubmitting={returns.isSubmitting}
-                    onOpenConfirm={returns.handleSubmit}
-                    onShowPayload={isDebugMode && isAdmin() ? handleShowPayload : undefined}
-                  />
-                </div>
-              )}
-            </div>
-          )}
+                <ReturnsActionBar
+                  canSubmit={canSubmit}
+                  isSubmitting={returns.isSubmitting}
+                  onOpenConfirm={returns.handleSubmit}
+                  onShowPayload={isDebugMode && isAdmin() ? handleShowPayload : undefined}
+                />
+              </div>
+            )}
+          </Card>
+        )}
 
-          {activeTab === 'history' && (
-            <ReturnsHistoryTab
-              records={history}
-              loading={historyLoading}
-              onRefresh={loadHistory}
-              onLoadRecord={handleLoadSession}
-              onDeleteRecord={handleDeleteSession}
-            />
-          )}
-        </div>
+        {activeTab === 'history' && (
+          <ReturnsHistoryTab
+            records={history}
+            loading={historyLoading}
+            onRefresh={loadHistory}
+            onLoadRecord={handleLoadSession}
+            onDeleteRecord={handleDeleteSession}
+          />
+        )}
       </div>
 
       <ReturnsConfirmModal

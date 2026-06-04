@@ -5,7 +5,7 @@ import { formatDate } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROLES } from '@shared/constants/roles';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
-import type { ReturnHistoryRecord, ReturnHistoryItem } from './WarehouseReturnsTypes';
+import type { ReturnHistoryRecord, ReturnHistoryItem } from '../WarehouseReturnsTypes';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 
 // ---------------------------------------------------------------------------

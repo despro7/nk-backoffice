@@ -47,7 +47,6 @@ export function renderSalesReportTableRow({
   return (
     <TableRow
       key={item.date}
-      className="hover:bg-default-100/70 group/tr transition-colors duration-200"
       onClick={() => onOpenDetails(item)}
     >
       <TableCell className="font-medium text-[15px]">

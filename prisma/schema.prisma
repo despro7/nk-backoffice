@@ -294,6 +294,26 @@ model WarehouseWriteOffHistory {
   @@map("warehouse_write_off_history")
 }
 
+model WarehouseReleaseSet {
+  id            Int      @id @default(autoincrement())
+  setSku        String?  @db.VarChar(191)
+  quantity      Int
+  items         Json
+  storageId     String?  @db.VarChar(191)
+  firmId        String?  @db.VarChar(255)
+  comment       String?  @db.Text
+  status        String   @default("created")
+  createdBy     Int?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([setSku])
+  @@index([status])
+  @@index([createdBy])
+  @@map("warehouse_release_set")
+}
+
 model SyncLogs {
   id               Int       @id @default(autoincrement())
   type             String

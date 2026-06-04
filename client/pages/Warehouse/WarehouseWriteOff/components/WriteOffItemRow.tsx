@@ -1,7 +1,7 @@
 import { Select, SelectItem, Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import type { ReturnBatch, ReturnItem } from '../WarehouseReturns/WarehouseReturnsTypes';
-import { StepperInput } from '../shared/StepperInput';
+import type { ReturnBatch, ReturnItem } from '../../WarehouseReturns/WarehouseReturnsTypes';
+import { StepperInput } from '../../shared/StepperInput';
 
 interface WriteOffItemRowProps {
   item: ReturnItem;

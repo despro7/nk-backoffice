@@ -423,6 +423,9 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRefre
                                             <thead>
                                               <tr className="text-gray-500 border-b border-blue-100">
                                                 <th className="text-left py-1 pr-4 font-medium">Дата</th>
+                                                <th className="text-center py-1 px-2 font-medium w-[13.8%]">Відвантаження</th>
+                                                <th className="text-center py-1 px-2 font-medium w-[13.8%]">Повернення</th>
+                                                <th className="text-center py-1 px-2 font-medium w-[13.8%]">Списання</th>
                                                 <th className="text-center py-1 px-2 font-medium w-[13.8%]">За обліком</th>
                                                 <th className="text-center py-1 px-2 font-medium w-[13.8%]">Факт</th>
                                                 <th className="text-center py-1 px-2 font-medium w-[13.8%]">Відхилення</th>
@@ -432,6 +435,21 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRefre
                                               {historyEntries.map((entry) => (
                                                 <tr key={entry.sessionId} className='tabular-nums text-gray-600 hover:bg-white/40'>
                                                   <td className="py-0.5 pr-4">{formatRelativeDate(entry.date, {showTime: false, maxRelativeDays: 30, maxRelativeHours: 24, includeWeekdays: true, shortWeekday: true })}</td>
+                                                  <td className="py-0.5 px-2 text-center">
+                                                    {entry.shipped == null ? '–' : (
+                                                      <span className="text-red-600 font-medium">-{Math.abs(entry.shipped)}</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="py-0.5 px-2 text-center">
+                                                    {entry.returned == null ? '–' : (
+                                                      <span className="text-green-600 font-medium">+{Math.abs(entry.returned)}</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="py-0.5 px-2 text-center">
+                                                    {entry.writtenOff == null ? '–' : (
+                                                      <span className="text-red-500 font-medium">-{Math.abs(entry.writtenOff)}</span>
+                                                    )}
+                                                  </td>
                                                   <td className="py-0.5 px-2 text-center">{entry.systemBalance ?? '–'}</td>
                                                   <td className="py-0.5 px-2 text-center">{entry.actual ?? '–'}</td>
                                                   <td className="py-0.5 px-2 text-center">
@@ -547,6 +565,9 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRefre
                                             <thead>
                                               <tr className="text-gray-500 border-b border-blue-100">
                                                 <th className="text-left py-1 pr-4 font-medium">Дата</th>
+                                                <th className="text-center py-1 px-2 font-medium">Відвантаження</th>
+                                                <th className="text-center py-1 px-2 font-medium">Повернення</th>
+                                                <th className="text-center py-1 px-2 font-medium">Списання</th>
                                                 <th className="text-center py-1 px-2 font-medium">За обліком</th>
                                                 <th className="text-center py-1 px-2 font-medium">Факт</th>
                                                 <th className="text-center py-1 px-2 font-medium">Відхилення</th>
@@ -556,6 +577,21 @@ export const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRefre
                                               {historyEntries.map((entry) => (
                                                 <tr key={entry.sessionId} className={String(entry.sessionId) === session.id ? 'font-semibold text-gray-800' : 'text-gray-600'}>
                                                   <td className="py-0.5 pr-4">{formatDate(entry.date)}</td>
+                                                  <td className="py-0.5 px-2 text-center">
+                                                    {entry.shipped == null ? '–' : (
+                                                      <span className="text-red-600 font-medium">-{Math.abs(entry.shipped)}</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="py-0.5 px-2 text-center">
+                                                    {entry.returned == null ? '–' : (
+                                                      <span className="text-green-600 font-medium">+{Math.abs(entry.returned)}</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="py-0.5 px-2 text-center">
+                                                    {entry.writtenOff == null ? '–' : (
+                                                      <span className="text-red-500 font-medium">-{Math.abs(entry.writtenOff)}</span>
+                                                    )}
+                                                  </td>
                                                   <td className="py-0.5 px-2 text-center">{entry.systemBalance ?? '–'}</td>
                                                   <td className="py-0.5 px-2 text-center">{entry.actual ?? '–'}</td>
                                                   <td className="py-0.5 px-2 text-center">

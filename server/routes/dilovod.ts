@@ -1666,6 +1666,23 @@ router.get('/cache/status', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER
 });
 
 /**
+ * GET /api/dilovod/cache/firms/:id
+ * Повертає назву фірми з локального кешу за її ID (без звернення до зовнішнього API).
+ */
+router.get('/cache/firms/:id', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const utils = await import('../lib/utils.js');
+    const name = await utils.getFirmNameById(id);
+
+    res.json({ success: true, data: name });
+  } catch (error) {
+    console.log('❌ [API] Error resolving firm name by id:', error);
+    res.status(500).json({ success: false, error: 'Failed to resolve firm name', details: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+/**
  * POST /api/dilovod/cache/refresh
  * Примусово оновити кеш довідників Dilovod
  */

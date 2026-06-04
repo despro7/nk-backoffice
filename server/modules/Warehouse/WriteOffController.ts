@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
+import { getFirmDisplayNameServer } from '../../lib/utils.js';
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
 
@@ -261,7 +262,13 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
 router.get('/history', authenticateToken, async (req, res) => {
   try {
     const history = await prisma.warehouseWriteOffHistory.findMany({ orderBy: { createdAt: 'desc' } });
-    res.json({ success: true, data: history });
+
+    const enriched = await Promise.all(history.map(async (rec: any) => ({
+      ...rec,
+      firmDisplayName: await getFirmDisplayNameServer(rec.firmId, rec.firmName),
+    })));
+
+    res.json({ success: true, data: enriched });
   } catch (error) {
     console.error('[WriteOff] Error fetching history:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });

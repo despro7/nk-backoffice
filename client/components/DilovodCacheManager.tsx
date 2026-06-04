@@ -22,25 +22,14 @@ interface CacheStatus {
   goods: CacheMetadata;
 }
 
-interface CacheRefreshResult {
-  firms: number;
-  accounts: number;
-  storages: number;
-  paymentForms: number;
-  tradeChanels: number;
-  deliveryMethods: number;
-  goods: number;
-}
-
 export const DilovodCacheManager: React.FC = () => {
+  // Стан для оновлення довідника товарів
+  const [updatingGoodsCache, setUpdatingGoodsCache] = useState(false);
 
-	// Стан для оновлення довідника товарів
-	const [updatingGoodsCache, setUpdatingGoodsCache] = useState(false);
-
-	// Окрема функція для оновлення довідника товарів
-	const handleRefreshGoodsCache = async () => {
-		setUpdatingGoodsCache(true);
-		try {
+  // Окрема функція для оновлення довідника товарів
+  const handleRefreshGoodsCache = async () => {
+    setUpdatingGoodsCache(true);
+    try {
       // Спочатку отримуємо свіжий список SKU з WordPress (без кешу)
       const skusResp = await fetch('/api/dilovod/cache/fresh-skus', {
         method: 'GET',
@@ -56,35 +45,35 @@ export const DilovodCacheManager: React.FC = () => {
         body: JSON.stringify({ skuList: skus })
       });
 
-			let data = null;
-			try {
-				const text = await response.text();
-				data = text ? JSON.parse(text) : null;
-			} catch (jsonError) {
-				throw new Error('Некоректна відповідь сервера (не JSON)');
-			}
+      let data: any = null;
+      try {
+        const text = await response.text();
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        throw new Error('Некоректна відповідь сервера (не JSON)');
+      }
 
-			if (response.ok && data && data.success && data.result) {
-				ToastService.show({
-					title: 'Довідник товарів успішно оновлено',
-					description: `Оновлено товарів: ${data.result.count}`,
-					color: 'success'
-				});
-				await fetchCacheStatus();
-			} else {
-				throw new Error(data?.error || 'Unknown error');
-			}
-		} catch (error) {
-			console.error('Error refreshing goods cache:', error);
-			ToastService.show({
-				title: 'Помилка оновлення довідника товарів',
-				description: error instanceof Error ? error.message : 'Unknown error',
-				color: 'danger'
-			});
-		} finally {
-			setUpdatingGoodsCache(false);
-		}
-	};
+      if (response.ok && data && data.success && data.result) {
+        ToastService.show({
+          title: 'Довідник товарів успішно оновлено',
+          description: `Оновлено товарів: ${data.result.count}`,
+          color: 'success'
+        });
+        await fetchCacheStatus();
+      } else {
+        throw new Error(data?.error || 'Unknown error');
+      }
+    } catch (error) {
+      console.error('Error refreshing goods cache:', error);
+      ToastService.show({
+        title: 'Помилка оновлення довідника товарів',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        color: 'danger'
+      });
+    } finally {
+      setUpdatingGoodsCache(false);
+    }
+  };
 
   const [cacheStatus, setCacheStatus] = useState<CacheStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -98,20 +87,14 @@ export const DilovodCacheManager: React.FC = () => {
   const fetchCacheStatus = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/dilovod/cache/status', {
-        credentials: 'include'
-      });
+      const response = await fetch('/api/dilovod/cache/status', { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch cache status');
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch cache status');
-      }
+      const result = await response.json();
+      if (!result || !result.success) throw new Error(result?.error || 'Unknown error');
 
-      const data = await response.json();
-      if (data.success) {
-        setCacheStatus(data.data);
-      } else {
-        throw new Error(data.error || 'Unknown error');
-      }
+      // result.data should contain metadata about cache status per directory
+      setCacheStatus(result.data || null);
     } catch (error) {
       console.error('Error fetching cache status:', error);
       ToastService.show({
@@ -124,7 +107,6 @@ export const DilovodCacheManager: React.FC = () => {
     }
   };
 
-  // Оновити весь кеш довідників
   const refreshCache = async () => {
     setRefreshing(true);
     try {
@@ -133,11 +115,11 @@ export const DilovodCacheManager: React.FC = () => {
         credentials: 'include'
       });
 
-      let data = null;
+      let data: any = null;
       try {
         const text = await response.text();
         data = text ? JSON.parse(text) : null;
-      } catch (jsonError) {
+      } catch {
         throw new Error('Некоректна відповідь сервера (не JSON)');
       }
 
@@ -171,13 +153,8 @@ export const DilovodCacheManager: React.FC = () => {
   // Завантажити дані довідника для перегляду
   const viewDirectory = async (type: keyof CacheStatus) => {
     try {
-      const response = await fetch(`/api/dilovod/directories`, {
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch directory data');
-      }
+      const response = await fetch(`/api/dilovod/directories`, { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch directory data');
 
       const result = await response.json();
       if (result.success) {
@@ -191,12 +168,19 @@ export const DilovodCacheManager: React.FC = () => {
           deliveryMethods: 'deliveryMethods',
           goods: 'goods'
         };
-        
+
         const apiKey = apiKeyMap[type];
         const data = result.data[apiKey] || [];
-        
+
         console.log(`Loading ${type} from API key ${apiKey}:`, data);
         setViewingDirectory({ type, data });
+
+        try {
+          const { setDilovodDirectories } = await import('@shared/utils/firmUtils');
+          setDilovodDirectories(result.data || null);
+        } catch {
+          // ignore if dynamic import fails
+        }
       } else {
         throw new Error(result.error || 'Unknown error');
       }
@@ -335,7 +319,7 @@ export const DilovodCacheManager: React.FC = () => {
             <p className="text-sm text-default-500">
               Кеш оновлюється автоматично раз на добу. Ви можете оновити вручну за потреби.
             </p>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(Object.keys(cacheStatus) as Array<keyof CacheStatus>).map((type) => {
                 const metadata = cacheStatus[type];
@@ -346,14 +330,14 @@ export const DilovodCacheManager: React.FC = () => {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex gap-2">
-												<DynamicIcon name={getIcon(type)} className="w-4 h-4 text-primary shrink-0" />
-												<span className="font-semibold text-sm">{getName(type)}</span>
-											</div>
-											<Chip size="sm" color={metadata.isValid ? 'success' : 'warning'} variant="flat">
-												{metadata.isValid ? 'Актуальний' : 'Застарів'}
-											</Chip>
+                        <DynamicIcon name={getIcon(type)} className="w-4 h-4 text-primary shrink-0" />
+                        <span className="font-semibold text-sm">{getName(type)}</span>
+                      </div>
+                      <Chip size="sm" color={metadata.isValid ? 'success' : 'warning'} variant="flat">
+                        {metadata.isValid ? 'Актуальний' : 'Застарів'}
+                      </Chip>
                     </div>
-                    
+
                     <div className="text-sm space-y-1">
                       <div className="flex gap-2 items-center">
                         <span className="text-default-500">Записів:</span>
@@ -362,27 +346,27 @@ export const DilovodCacheManager: React.FC = () => {
                       <div className="flex gap-2 items-center">
                         <span className="text-default-500">Оновлено:</span>
                         <div className="flex items-center gap-2">
-													<span className="font-medium">{formatRelativeDate(metadata.lastUpdate)}</span>
-												</div>
+                          <span className="font-medium">{formatRelativeDate(metadata.lastUpdate)}</span>
+                        </div>
                       </div>
                     </div>
 
-										{metadata.recordsCount > 0 && (
-												<div className="mt-3">
-													<Button
-														size="sm"
-														variant="bordered"
-														color="primary"
-														className='border-0 border-neutral-300 shadow-sm bg-neutral-100'
-														startContent={<DynamicIcon name="eye" className="w-4 h-4" />}
-														onPress={() => viewDirectory(type)}
-														fullWidth
-													>
-														Переглянути записи
-													</Button>
-												</div>
-											)}
-											
+                    {metadata.recordsCount > 0 && (
+                      <div className="mt-3">
+                        <Button
+                          size="sm"
+                          variant="bordered"
+                          color="primary"
+                          className='border-0 border-neutral-300 shadow-sm bg-neutral-100'
+                          startContent={<DynamicIcon name="eye" className="w-4 h-4" />}
+                          onPress={() => viewDirectory(type)}
+                          fullWidth
+                        >
+                          Переглянути записи
+                        </Button>
+                      </div>
+                    )}
+
                   </div>
                 );
               })}
@@ -409,3 +393,5 @@ export const DilovodCacheManager: React.FC = () => {
     </Card>
   );
 };
+
+export default DilovodCacheManager;

@@ -101,6 +101,43 @@ router.get('/', authenticateToken, async (req, res) => {
       })() : null
     }));
 
+    // Enrich set items with component names when available in DB to avoid client-side race
+    try {
+      const allSetSkus = new Set<string>();
+      for (const p of parsedProducts) {
+        const s = p.set;
+        if (Array.isArray(s)) {
+          for (const it of s) {
+            const id = it?.id ?? it?.sku;
+            if (id) allSetSkus.add(String(id).trim().toLowerCase());
+          }
+        }
+      }
+
+      if (allSetSkus.size > 0) {
+        const skusArray = Array.from(allSetSkus);
+        const components = await prisma.product.findMany({ where: { sku: { in: skusArray } }, select: { sku: true, name: true } });
+        const nameBySku: Record<string, string> = {};
+        for (const c of components) {
+          if (c && c.sku) nameBySku[String(c.sku).trim().toLowerCase()] = c.name || '';
+        }
+
+        for (const p of parsedProducts) {
+          const s = p.set;
+          if (Array.isArray(s)) {
+            for (const it of s) {
+              const id = String(it?.id ?? it?.sku).trim().toLowerCase();
+              if (!it.name && nameBySku[id]) {
+                it.name = nameBySku[id];
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to enrich set items with names:', e);
+    }
+
     res.json({
       products: parsedProducts,
       pagination: {
@@ -149,6 +186,43 @@ router.get('/batch', authenticateToken, async (req, res) => {
         try { return JSON.parse((p as any).set); } catch { return null; }
       })() : null,
     }));
+
+      // Enrich set items with component names when available in DB
+      try {
+        const allSetSkus = new Set<string>();
+        for (const p of parsed) {
+          const s = (p as any).set;
+          if (Array.isArray(s)) {
+            for (const it of s) {
+              const id = it?.id ?? it?.sku;
+              if (id) allSetSkus.add(String(id).trim().toLowerCase());
+            }
+          }
+        }
+
+        if (allSetSkus.size > 0) {
+          const skusArray = Array.from(allSetSkus);
+          const components = await prisma.product.findMany({ where: { sku: { in: skusArray } }, select: { sku: true, name: true } });
+          const nameBySku: Record<string, string> = {};
+          for (const c of components) {
+            if (c && c.sku) nameBySku[String(c.sku).trim().toLowerCase()] = c.name || '';
+          }
+
+          for (const p of parsed) {
+            const s = (p as any).set;
+            if (Array.isArray(s)) {
+              for (const it of s) {
+                const id = String(it?.id ?? it?.sku).trim().toLowerCase();
+                if (!it.name && nameBySku[id]) {
+                  it.name = nameBySku[id];
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to enrich batch set items with names:', e);
+      }
 
     res.json({ products: parsed });
   } catch (error) {
@@ -312,7 +386,8 @@ async function expandProductSetRecursively(
   product: any,
   expandedComponents: { [sku: string]: { component: any; quantity: number } } = {},
   visitedSets: Set<string> = new Set(),
-  depth: number = 0
+  depth: number = 0,
+  multiplier: number = 1
 ): Promise<void> {
   const MAX_DEPTH = 10;
   
@@ -351,6 +426,9 @@ async function expandProductSetRecursively(
         continue;
       }
 
+      // Effective quantity taking into account parent multiplier
+      const effectiveQty = Number(setItem.quantity) * Number(multiplier || 1);
+
       // Перевіряємо, чи компонент є комплектом
       let componentSet = [];
       try {
@@ -362,21 +440,22 @@ async function expandProductSetRecursively(
       const isComponentASet = Array.isArray(componentSet) && componentSet.length > 0;
 
       if (isComponentASet) {
-        // Це комплект - рекурсивно розгортаємо його
+        // Це комплект - рекурсивно розгортаємо його з effectiveQty як множник
         await expandProductSetRecursively(
           component,
           expandedComponents,
           new Set(visitedSets),
-          depth + 1
+          depth + 1,
+          effectiveQty
         );
       } else {
         // Це кінцевий товар - додаємо його до результату
         if (expandedComponents[setItem.id]) {
-          expandedComponents[setItem.id].quantity += setItem.quantity;
+          expandedComponents[setItem.id].quantity += effectiveQty;
         } else {
           expandedComponents[setItem.id] = {
             component,
-            quantity: setItem.quantity
+            quantity: effectiveQty
           };
         }
       }

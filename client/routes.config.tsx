@@ -8,6 +8,7 @@ import WarehouseMovement from './pages/Warehouse/WarehouseMovement';
 import WarehouseInventory from './pages/Warehouse/WarehouseInventory';
 import WarehouseReturns from './pages/Warehouse/WarehouseReturns';
 import WarehouseWriteOff from './pages/Warehouse/WarehouseWriteOff';
+import WarehouseReleaseSets from './pages/Warehouse/WarehouseReleaseSets';
 import WarehouseMaterials from './pages/WarehouseMaterials';
 import Reports from './pages/Reports/ReportsGeneral';
 import ReportsSales from './pages/Reports/ReportsSales';
@@ -149,6 +150,18 @@ export const appRoutes: AppRoute[] = [
     minRole: ROLES.STOREKEEPER,
   },
   {
+    path: '/warehouse/releases',
+    component: WarehouseReleaseSets,
+    title: 'Випуск готових наборів',
+    pageTitle: 'Випуск наборів | NK Backoffice',
+    navLabel: 'Випуск наборів',
+    icon: <DynamicIcon name="box" size={16} />,
+    inNav: true,
+    order: 6,
+    parent: 'warehouse',
+    minRole: ROLES.STOREKEEPER,
+  },
+  {
     path: '/warehouse/materials',
     component: WarehouseMaterials,
     title: 'Матеріали',
@@ -156,7 +169,7 @@ export const appRoutes: AppRoute[] = [
     navLabel: 'Матеріали',
     icon: <DynamicIcon name="box" size={16} />,
     inNav: true,
-    order: 5,
+    order: 7,
     parent: 'warehouse',
     minRole: ROLES.STOREKEEPER,
   },

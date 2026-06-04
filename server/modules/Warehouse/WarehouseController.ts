@@ -1532,7 +1532,115 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
       });
     }
 
-    res.json({ sku, entries });
+    // For each entry, compute movement totals (shipped / returned / writtenOff) within the same inventory day
+    const enrichedEntries = await Promise.all(entries.map(async (e) => {
+      try {
+        const asOf = new Date(e.date);
+        // define day window [startOfDay, endOfDay)
+        const startOfDay = new Date(asOf);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setDate(endOfDay.getDate() + 1);
+
+        // Helper to sum quantities for a given list of DB rows (items stored as JSON)
+        const sumQtyForSku = (rows: any[] | null, skuToMatch: string) => {
+          if (!rows || rows.length === 0) return 0;
+          let sum = 0;
+          for (const r of rows) {
+            try {
+              const raw = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
+              if (!Array.isArray(raw)) continue;
+              for (const it of raw) {
+                if (!it || !it.sku) continue;
+                if (String(it.sku) !== String(skuToMatch)) continue;
+                const q = Number(it.portionQuantity ?? it.qty ?? it.quantity ?? it.boxQuantity ?? 0) || 0;
+                sum += q;
+              }
+            } catch (parseErr) {
+              // ignore malformed rows
+            }
+          }
+          return sum;
+        };
+
+        // Shipments: aggregate from orders with dilovodSaleExportDate in the same day.
+        // We prefer cached processedItems in orders_cache (contains orderedQuantity per SKU),
+        // fallback to parsing order.items when cache missing.
+        const orders = await prisma.order.findMany({
+          where: { dilovodSaleExportDate: { gte: startOfDay, lt: endOfDay } },
+          select: { externalId: true },
+        });
+
+        const orderExternalIds = orders.map(o => o.externalId).filter(Boolean);
+        let shipped = 0;
+        if (orderExternalIds.length > 0) {
+          const caches = await prisma.ordersCache.findMany({
+            where: { externalId: { in: orderExternalIds } },
+            select: { externalId: true, processedItems: true },
+          });
+
+          const cacheByExternal = new Map(caches.map(c => [c.externalId, c.processedItems]));
+
+          // Sum from cache when available
+          for (const externalId of orderExternalIds) {
+            const processed = cacheByExternal.get(externalId);
+            if (processed) {
+              try {
+                const parsed = JSON.parse(processed);
+                if (Array.isArray(parsed)) {
+                  for (const it of parsed) {
+                    if (it && (it.sku === sku)) {
+                      shipped += Number(it.orderedQuantity ?? it.quantity ?? 0) || 0;
+                    }
+                  }
+                  continue; // processedItems handled
+                }
+              } catch {
+                // fallthrough to order.items
+              }
+            }
+
+            // Fallback: load order and parse raw items
+            try {
+              const ord = await prisma.order.findUnique({ where: { externalId }, select: { items: true } });
+              if (ord && ord.items) {
+                const raw = typeof ord.items === 'string' ? JSON.parse(ord.items) : ord.items;
+                if (Array.isArray(raw)) {
+                  for (const it of raw) {
+                    if (!it || !it.sku) continue;
+                    if (String(it.sku) !== String(sku)) continue;
+                    shipped += Number(it.quantity ?? it.qty ?? it.orderedQuantity ?? 0) || 0;
+                  }
+                }
+              }
+            } catch (e) {
+              // ignore parse errors
+            }
+          }
+        }
+
+        // Fetch return records
+        const returns = await prisma.warehouseReturnHistory.findMany({
+          where: { returnDate: { gte: startOfDay, lt: endOfDay } },
+          select: { items: true },
+        });
+
+        // Fetch write-off records
+        const writeoffs = await prisma.warehouseWriteOffHistory.findMany({
+          where: { writeOffDate: { gte: startOfDay, lt: endOfDay } },
+          select: { items: true },
+        });
+
+        const returned = sumQtyForSku(returns, sku);
+        const writtenOff = sumQtyForSku(writeoffs, sku);
+
+        return { ...e, shipped, returned, writtenOff };
+      } catch (err) {
+        return { ...e, shipped: 0, returned: 0, writtenOff: 0 };
+      }
+    }));
+
+    res.json({ sku, entries: enrichedEntries });
   } catch (error) {
     console.error('🚨 [Inventory] Error fetching product history:', error);
     res.status(500).json({ error: 'Internal server error' });

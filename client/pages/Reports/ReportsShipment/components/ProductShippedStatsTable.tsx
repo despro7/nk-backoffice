@@ -545,9 +545,13 @@ export default function ProductShippedStatsTable({
           }
           classNames={{
             wrapper: "min-h-128 px-0 shadow-none",
-            th: [
-              "first:rounded-s-md",
-              "last:rounded-e-md",
+            th: "bg-default-200/60 first:rounded-s-sm last:rounded-e-sm",
+            td: [
+              "py-2 text-default-700 cursor-pointer",
+              "[&>*]:z-1 [&>*]:relative",
+              "before:pointer-events-none before:content-[''] before:absolute before:z-0 before:inset-0 before:opacity-0 before:bg-default/40",
+              "group-hover/tr:before:opacity-40",
+              "first:before:rounded-s-sm last:before:rounded-e-sm",
             ],
           }}
         >
@@ -582,7 +586,6 @@ export default function ProductShippedStatsTable({
                 return (
                   <TableRow 
                     key={`${selectedProductInfo?.sku || ''}-${dateItem.date}`} 
-                    className="hover:bg-grey-50 cursor-pointer transition-colors duration-200"
                     onClick={() => fetchOrdersForProduct(selectedProductInfo?.sku || '', selectedProductInfo?.name || '', dateItem.date)}
                   >
                     <TableCell className="font-medium text-base">
@@ -612,7 +615,6 @@ export default function ProductShippedStatsTable({
                 return (
                   <TableRow 
                     key={productItem.sku} 
-                    className="hover:bg-grey-50 cursor-pointer transition-colors duration-200"
                     onClick={() => fetchOrdersForProduct(productItem.sku, productItem.name)}
                   >
                     <TableCell className="font-medium text-base">
@@ -626,8 +628,7 @@ export default function ProductShippedStatsTable({
                         size="sm" 
                         variant="light" 
                         className="font-mono text-base h-auto p-1 min-w-0 text-blue-600 hover:bg-blue-50"
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onPress={() => {
                           handleProductChange(productItem.sku);
                         }}
                       >

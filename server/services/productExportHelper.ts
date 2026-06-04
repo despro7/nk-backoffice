@@ -84,7 +84,8 @@ async function expandSetRecursively(
   product: any,
   expandedComponents: Record<string, { component: any; quantity: number }>,
   visitedSets: Set<string>,
-  depth: number
+  depth: number,
+  multiplier = 1
 ): Promise<void> {
   const MAX_DEPTH = 10;
   if (depth > MAX_DEPTH) {
@@ -111,6 +112,9 @@ async function expandSetRecursively(
     const component = await prisma.product.findFirst({ where: { sku: setItem.id } });
     if (!component) continue;
 
+    // Effective quantity taking into account parent multiplier
+    const effectiveQty = Number(setItem.quantity) * Number(multiplier || 1);
+
     let componentSet: any[] = [];
     try {
       componentSet = typeof component.set === 'string' ? JSON.parse(component.set) : component.set || [];
@@ -119,12 +123,13 @@ async function expandSetRecursively(
     }
 
     if (Array.isArray(componentSet) && componentSet.length > 0) {
-      await expandSetRecursively(component, expandedComponents, new Set(visitedSets), depth + 1);
+      // Pass effectiveQty as multiplier to child expansion so nested components are scaled
+      await expandSetRecursively(component, expandedComponents, new Set(visitedSets), depth + 1, effectiveQty);
     } else {
       if (expandedComponents[setItem.id]) {
-        expandedComponents[setItem.id].quantity += setItem.quantity;
+        expandedComponents[setItem.id].quantity += effectiveQty;
       } else {
-        expandedComponents[setItem.id] = { component, quantity: setItem.quantity };
+        expandedComponents[setItem.id] = { component, quantity: effectiveQty };
       }
     }
   }

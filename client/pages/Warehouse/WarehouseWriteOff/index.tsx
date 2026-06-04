@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react';
 import { useWarehouseReturns } from '../WarehouseReturns/useWarehouseReturns';
 import useWarehouseWriteOff from './useWarehouseWriteOff';
 import { Tabs, Tab, Card } from '@heroui/react';
-import OrderSearchPanel from './OrderSearchPanel';
-import ProductSearchPanel from './ProductSearchPanel';
-import OrderLinesList from './OrderLinesList';
-import WriteOffItemsPanel from './WriteOffItemsPanel';
-import ReasonSelector from './ReasonSelector';
-import ActionsBar from './ActionsBar';
-import WriteOffDetails from './WriteOffDetails';
-import { WriteOffHistoryTab } from './WriteOffHistoryTab';
+import PageTabs from '@/components/PageTabs';
+import OrderSearchPanel from './components/OrderSearchPanel';
+import ProductSearchPanel from './components/ProductSearchPanel';
+import OrderLinesList from './components/OrderLinesList';
+import WriteOffItemsPanel from './components/WriteOffItemsPanel';
+import ReasonSelector from './components/ReasonSelector';
+import ActionsBar from './components/ActionsBar';
+import WriteOffDetails from '../shared/WarehouseDetails';
+import { WriteOffHistoryTab } from './components/WriteOffHistoryTab';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { ToastService } from '@/services/ToastService';
@@ -91,7 +92,7 @@ export default function WarehouseWriteOff() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // reuse returns hook state for search and items
-  const [reason, setReason] = useState('Брак товару');
+  const [reason, setReason] = useState('');
   const [customReason, setCustomReason] = useState('');
   const [comment, setComment] = useState('');
   // manual add removed — use product/order search flows to add items
@@ -211,130 +212,154 @@ export default function WarehouseWriteOff() {
         <p className="text-sm text-gray-500">Зручний інтерфейс для списання товарів у Dilovod.</p>
       </div>
 
-      <Tabs
-        selectedKey={pageTab}
-        onSelectionChange={(key) => {
-          const tab = key as 'main' | 'history';
-          setPageTab(tab);
-          if (tab === 'history') {
-            // load history for writeoffs if not already loaded
-            if (writeoff.history?.length === 0) {
-              void (async () => {
-                setHistoryLoading(true);
-                try { await writeoff.loadHistory?.(); } catch (e) { /* ignore */ } finally { setHistoryLoading(false); }
-              })();
-            }
+      <PageTabs selectedKey={pageTab} onSelectionChange={(key) => {
+        const tab = key as 'main' | 'history';
+        setPageTab(tab);
+        if (tab === 'history') {
+          if (writeoff.history?.length === 0) {
+            void (async () => {
+              setHistoryLoading(true);
+              try { await writeoff.loadHistory?.(); } catch (e) { /* ignore */ } finally { setHistoryLoading(false); }
+            })();
           }
-        }}
-        variant="solid"
-        color="default"
-        size="lg"
-        classNames={{
-          base: 'mb-4',
-          tabList: "gap-2 p-[6px] bg-gray-100 rounded-lg",
-          cursor: "bg-secondary text-white shadow-sm rounded-md",
-          tab: "px-3 py-1.5 text-sm font-normal data-[hover-unselected=true]:opacity-100 text-neutral-500",
-          tabContent: "group-data-[selected=true]:text-white text-neutral-400",
-        }}
-      >
+        }
+      }}>
         <Tab key="main" title="Списання" />
         <Tab key="history" title="Історія" />
-      </Tabs>
+      </PageTabs>
 
       {pageTab === 'main' && (
-      <Card className="p-4 bg-white rounded-xl mb-6">
-				<Tabs 
-					aria-label="Тип пошуку"
-					size="lg"
-					fullWidth
-					selectedKey={activeTab}
-					onSelectionChange={(k:any)=>setActiveTab(k)}
-					classNames={{ base: "mb-6", cursor: "bg-white", tab: "h-12" }}
-				>
-					<Tab key="byOrder" title="Пошук по замовленню" />
-					<Tab key="byProduct" title="Пошук по товару" />
-				</Tabs>
+        <>
+          <Card className="p-4 bg-white rounded-xl mb-6">
+            <Tabs
+              aria-label="Тип пошуку"
+              size="lg"
+              fullWidth
+              selectedKey={activeTab}
+              onSelectionChange={(k:any)=>setActiveTab(k)}
+              classNames={{ base: "mb-6", cursor: "bg-white", tab: "h-12" }}
+            >
+              <Tab key="byOrder" title="Пошук по замовленню" />
+              <Tab key="byProduct" title="Пошук по товару" />
+            </Tabs>
+            {activeTab === 'byOrder' && (
+              <OrderSearchPanel
+              returns={returns}
+              setOrderDetails={setOrderDetails}
+              setSelectedOrderExternalId={setSelectedOrderExternalId}
+              setSelectedOrderIdState={setSelectedOrderIdState}
+              />
+            )}
+            {activeTab === 'byProduct' && (
+              <ProductSearchPanel writeoff={writeoff} returns={returns} resetSignal={productSearchReset} />
+            )}
+          </Card>
 
-        {activeTab === 'byOrder' && (
-          <OrderSearchPanel
-          returns={returns}
-          setOrderDetails={setOrderDetails}
-          setSelectedOrderExternalId={setSelectedOrderExternalId}
-          setSelectedOrderIdState={setSelectedOrderIdState}
+          {/* Рядки замовлення */}
+          {activeTab === 'byOrder' && orderDetails && Array.isArray(orderDetails.items) && (
+            <OrderLinesList orderDetails={orderDetails} disabledSkus={disabledSkus} onAddLine={handleAddOrderLine} />
+          )}
+          {orderDetails && !Array.isArray(orderDetails.items) && (
+            <div className="text-sm text-gray-500">Немає доступних рядків замовлення для списання.</div>
+          )}
+
+          {/* Параметри списання */}
+          <WriteOffDetails returns={returns} storages={storages && storages.length > 0 ? storages : writeoff.storages} selectedStorage={selectedStorage} setSelectedStorage={setSelectedStorage} />
+
+          {/* Товари для списання */}
+          {returns.items && returns.items.length > 0 && (
+            <>
+              <WriteOffItemsPanel returns={returns} setDisabledSkus={setDisabledSkus} />
+              <ReasonSelector reason={reason} setReason={setReason} customReason={customReason} setCustomReason={setCustomReason} comment={comment} setComment={setComment} />
+            </>
+          )}
+
+          {/* Дії */}
+          <ActionsBar
+            onPreview={isDebugMode && isAdmin() ? handleSendPreview : undefined}
+            onSend={async () => {
+              // Validate reason selection before opening confirm modal for sending to Dilovod
+              const selectedReason = reason;
+              const selectedCustom = customReason;
+              if (!selectedReason || selectedReason.trim() === '') {
+                ToastService.show({ title: 'Оберіть причину списання', color: 'warning' });
+                return;
+              }
+              if (selectedReason === 'Інше' && (!selectedCustom || selectedCustom.trim() === '')) {
+                ToastService.show({ title: 'Вкажіть додаткову причину', color: 'warning' });
+                return;
+              }
+              setShowSendConfirm(true);
+            }}
+            onCancel={() => setShowClearConfirm(true)}
+            disabled={returns.items.length===0}
           />
-        )}
-
-        {activeTab === 'byProduct' && (
-          <ProductSearchPanel writeoff={writeoff} returns={returns} resetSignal={productSearchReset} />
-        )}
-      </Card>
+        </>
       )}
 
       {pageTab === 'history' && (
-        <Card className="p-4 bg-white rounded-xl mb-6">
-          <WriteOffHistoryTab
-            records={writeoff.history || []}
-            loading={historyLoading}
-            onRefresh={async () => {
-              setHistoryLoading(true);
-              try { await writeoff.loadHistory?.(); } catch (e) { /* ignore */ } finally { setHistoryLoading(false); }
-            }}
-            onLoadRecord={async (record: any) => {
-              try {
-                // Populate returns state with selected history record
-                const items = Array.isArray(record.items) ? record.items : JSON.parse(record.items || '[]');
-                const prepared = (items || []).map((it: any) => ({
-                  id: crypto.randomUUID?.() ?? `${it.sku}-${Date.now()}-${Math.random()}`,
-                  sku: it.sku,
-                  name: it.name || it.sku,
-                  dilovodId: it.dilovodId ?? null,
-                  quantity: Number(it.quantity || 0),
-                  orderedQuantity: Number(it.quantity || it.orderedQuantity || it.qty || 0),
-                  portionsPerBox: it.portionsPerBox ?? 1,
-                  firmId: record.firmId ?? returns.shipFirmId ?? returns.receiveFirmId ?? null,
-                  availableBatches: null,
-                  selectedBatchId: it.batchId ?? null,
-                  selectedBatchKey: null,
-                  price: it.price ?? 0,
-                }));
-                returns.setItems(prepared);
-                // set other return details
-                returns.setSelectedOrderId?.(record.orderId ?? null);
-                setSelectedOrderExternalId(record.orderNumber ?? record.orderExternalId ?? null);
-                returns.setReturnDate?.(record.writeOffDate ? String(record.writeOffDate) : null);
-                returns.setShipFirmId?.(record.shipFirmId ?? null);
-                returns.setReceiveFirmId?.(record.firmId ?? null);
-                // switch to main tab so user can edit
-                setPageTab('main');
-                setActiveTab(record.orderId ? 'byOrder' : 'byProduct');
-              } catch (err) {
-                console.error('Error loading history record into form', err);
+        <WriteOffHistoryTab
+          records={writeoff.history || []}
+          loading={historyLoading}
+          onRefresh={async () => {
+            setHistoryLoading(true);
+            try { await writeoff.loadHistory?.(); } catch (e) { /* ignore */ } finally { setHistoryLoading(false); }
+          }}
+          onLoadRecord={async (record: any) => {
+            try {
+              // Populate returns state with selected history record
+              const items = Array.isArray(record.items) ? record.items : JSON.parse(record.items || '[]');
+              const prepared = (items || []).map((it: any) => ({
+                id: crypto.randomUUID?.() ?? `${it.sku}-${Date.now()}-${Math.random()}`,
+                sku: it.sku,
+                name: it.name || it.sku,
+                dilovodId: it.dilovodId ?? null,
+                quantity: Number(it.quantity || 0),
+                orderedQuantity: Number(it.quantity || it.orderedQuantity || it.qty || 0),
+                portionsPerBox: it.portionsPerBox ?? 1,
+                firmId: record.firmId ?? returns.shipFirmId ?? returns.receiveFirmId ?? null,
+                availableBatches: null,
+                selectedBatchId: it.batchId ?? null,
+                selectedBatchKey: null,
+                price: it.price ?? 0,
+              }));
+              returns.setItems(prepared);
+              // set other return details
+              returns.setSelectedOrderId?.(record.orderId ?? null);
+              setSelectedOrderExternalId(record.orderNumber ?? record.orderExternalId ?? null);
+              returns.setReturnDate?.(record.writeOffDate ? String(record.writeOffDate) : null);
+              returns.setShipFirmId?.(record.shipFirmId ?? null);
+              returns.setReceiveFirmId?.(record.firmId ?? null);
+              // switch to main tab so user can edit
+              setPageTab('main');
+              setActiveTab(record.orderId ? 'byOrder' : 'byProduct');
+            } catch (err) {
+              console.error('Error loading history record into form', err);
+            }
+          }}
+          onDeleteRecord={async (recordId: string) => {
+            try {
+              const resp = await fetch(`/api/warehouse/writeoff/history/${encodeURIComponent(String(recordId))}`, { method: 'DELETE', credentials: 'include' });
+              const json = await resp.json().catch(() => ({}));
+              if (resp.ok && json.success) {
+                ToastService.show({ title: 'Запис видалено', color: 'success' });
+                await writeoff.loadHistory?.();
+                return;
               }
-            }}
-            onDeleteRecord={async (recordId: string) => {
-              try {
-                const resp = await fetch(`/api/warehouse/writeoff/history/${encodeURIComponent(String(recordId))}`, { method: 'DELETE', credentials: 'include' });
-                const json = await resp.json().catch(() => ({}));
-                if (resp.ok && json.success) {
-                  ToastService.show({ title: 'Запис видалено', color: 'success' });
-                  await writeoff.loadHistory?.();
-                  return;
-                }
 
-                // If Dilovod reports object not found, offer to delete local record only
-                if (json?.canDeleteLocal) {
-                  setPendingForceDeleteId(String(recordId));
-                  return;
-                }
-
-                throw new Error(json?.error || `Delete failed ${resp.status}`);
-              } catch (e:any) {
-                ToastService.show({ title: 'Помилка видалення', description: e?.message || String(e), color: 'danger' });
-                throw e;
+              // If Dilovod reports object not found, offer to delete local record only
+              if (json?.canDeleteLocal) {
+                setPendingForceDeleteId(String(recordId));
+                return;
               }
-            }}
-          />
-        </Card>
+
+              throw new Error(json?.error || `Delete failed ${resp.status}`);
+            } catch (e:any) {
+              ToastService.show({ title: 'Помилка видалення', description: e?.message || String(e), color: 'danger' });
+              throw e;
+            }
+          }}
+        />
       )}
 
       <ConfirmModal
@@ -359,32 +384,6 @@ export default function WarehouseWriteOff() {
           }
         }}
         onCancel={() => setPendingForceDeleteId(null)}
-      />
-			
-			{/* Рядки замовлення */}
-      {activeTab === 'byOrder' && orderDetails && Array.isArray(orderDetails.items) && (
-        <OrderLinesList orderDetails={orderDetails} disabledSkus={disabledSkus} onAddLine={handleAddOrderLine} />
-      )}
-			{orderDetails && !Array.isArray(orderDetails.items) && (
-				<div className="text-sm text-gray-500">Немає доступних рядків замовлення для списання.</div>
-			)}
-
-      {/* Параметри списання */}
-      <WriteOffDetails returns={returns} storages={storages && storages.length > 0 ? storages : writeoff.storages} selectedStorage={selectedStorage} setSelectedStorage={setSelectedStorage} />
-
-			{/* Товари для списання */}
-      {returns.items && returns.items.length > 0 && (
-        <>
-          <WriteOffItemsPanel returns={returns} setDisabledSkus={setDisabledSkus} />
-          <ReasonSelector reason={reason} setReason={setReason} customReason={customReason} setCustomReason={setCustomReason} comment={comment} setComment={setComment} />
-        </>
-      )}
-			
-      <ActionsBar
-        onPreview={isDebugMode && isAdmin() ? handleSendPreview : undefined}
-        onSend={() => setShowSendConfirm(true)}
-        onCancel={() => setShowClearConfirm(true)}
-        disabled={returns.items.length===0}
       />
 
       <ConfirmModal

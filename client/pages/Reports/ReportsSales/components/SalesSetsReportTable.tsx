@@ -148,7 +148,14 @@ export default function SalesSetsReportTable({ className }: SalesSetsReportTable
           onSortChange={(descriptor) => handleSortChange(descriptor as SalesSortDescriptor)}
           classNames={{
             wrapper: "min-h-80 p-0 pb-1 shadow-none bg-transparent rounded-none",
-            th: ["first:rounded-s-md", "last:rounded-e-md"],
+            th: "bg-default-200/60 first:rounded-s-sm last:rounded-e-sm",
+            td: [
+              "py-2 text-default-700",
+              "[&>*]:z-1 [&>*]:relative",
+              "before:pointer-events-none before:content-[''] before:absolute before:z-0 before:inset-0 before:opacity-0 before:bg-default/40",
+              "group-hover/tr:before:opacity-40",
+              "first:before:rounded-s-sm last:before:rounded-e-sm",
+            ],
           }}
         >
           <TableHeader>
@@ -172,7 +179,7 @@ export default function SalesSetsReportTable({ className }: SalesSetsReportTable
               const ordersCountColor = colored ? getValueColor(setItem.ordersCount, ordersCountValues) : null;
 
               return (
-                <TableRow key={setItem.sku} className="hover:bg-default-100/70 group/tr transition-colors duration-200">
+                <TableRow key={setItem.sku}>
                   <TableCell className="font-medium text-[15px]">{setItem.name}</TableCell>
                   <TableCell className="font-mono text-sm">{setItem.sku}</TableCell>
                   <TableCell className="text-center text-sm font-medium">

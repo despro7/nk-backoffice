@@ -1,13 +1,13 @@
 import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { ReturnsHistoryTable } from './ReturnsHistoryTable';
-import type { ReturnHistoryRecord } from './WarehouseReturnsTypes';
+import HistoryAccordionTable from '../../shared/HistoryAccordionTable';
+import type { ReturnHistoryRecord } from '../../WarehouseReturns/WarehouseReturnsTypes';
 
 // ---------------------------------------------------------------------------
-// ReturnsHistoryTab — вміст вкладки "Історія"
+// WriteOffHistoryTab — вміст вкладки "Історія списань"
 // ---------------------------------------------------------------------------
 
-interface ReturnsHistoryTabProps {
+interface WriteOffHistoryTabProps {
   records: ReturnHistoryRecord[];
   loading: boolean;
   onRefresh: () => void;
@@ -15,14 +15,15 @@ interface ReturnsHistoryTabProps {
   onDeleteRecord?: (recordId: string) => Promise<void>;
 }
 
-export const ReturnsHistoryTab = ({ records, loading, onRefresh, onLoadRecord, onDeleteRecord }: ReturnsHistoryTabProps) => (
+export const WriteOffHistoryTab = ({ records, loading, onRefresh, onLoadRecord, onDeleteRecord }: WriteOffHistoryTabProps) => (
   <>
-    <div className="flex items-start justify-between mb-4">
-      <h2 className="text-base font-semibold text-gray-800">Попередні повернення</h2>
+    <div className="flex items-end justify-between mb-4">
+      <h2 className="text-base font-semibold text-gray-800">Минулі списання</h2>
       <Button
         size="sm"
         variant="flat"
-        color="default"
+        color="secondary"
+        className="bg-blue-200 text-blue-900 hover:opacity-90"
         onPress={onRefresh}
         isLoading={loading}
         startContent={!loading ? <DynamicIcon name="refresh-cw" className="w-3.5 h-3.5" /> : undefined}
@@ -39,14 +40,15 @@ export const ReturnsHistoryTab = ({ records, loading, onRefresh, onLoadRecord, o
     ) : records.length === 0 ? (
       <div className="text-center py-8 text-gray-400">
         <DynamicIcon name="clipboard-x" className="w-8 h-8 mx-auto mb-2 opacity-40" />
-        <p className="text-sm">Немає завершених повернень</p>
+        <p className="text-sm">Немає завершених списань</p>
         <Button size="sm" variant="flat" className="mt-3" onPress={onRefresh}>
           Завантажити
         </Button>
       </div>
     ) : (
-      <ReturnsHistoryTable
+      <HistoryAccordionTable
         records={records}
+        recordType="writeOff"
         onLoadRecord={onLoadRecord}
         onDeleteRecord={onDeleteRecord}
       />

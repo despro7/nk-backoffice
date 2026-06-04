@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
-import { Tabs, Tab } from '@heroui/react';
+import { Tab } from '@heroui/react';
+import PageTabs from '@/components/PageTabs';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
@@ -343,26 +344,14 @@ export default function WarehouseMovement() {
       <div className="flex flex-col gap-8 pb-12 w-full">
         {/* Таби: Поточні переміщення / Чернетки / Історія */}
         <div className="flex items-center gap-4 justify-between">
-          <Tabs
-            selectedKey={activeTab}
-            onSelectionChange={(key) => {
-              const tab = key as 'current' | 'drafts' | 'history';
-              setActiveTab(tab);
-            }}
-            variant="solid"
-            color="default"
-            size="lg"
-            classNames={{
-              tabList: "gap-2 p-[6px] bg-gray-100 rounded-lg",
-              cursor: "bg-secondary text-white shadow-sm rounded-md",
-              tab: "px-3 py-1.5 text-sm font-normal data-[hover-unselected=true]:opacity-100 text-neutral-500",
-              tabContent: "group-data-[selected=true]:text-white text-neutral-400",
-            }}
-          >
+          <PageTabs selectedKey={activeTab} onSelectionChange={(key) => {
+            const tab = key as 'current' | 'drafts' | 'history';
+            setActiveTab(tab);
+          }}>
             <Tab key="current" title="Поточні переміщення" />
             <Tab key="drafts" title="Чернетки" />
             <Tab key="history" title="Історія" />
-          </Tabs>
+          </PageTabs>
 
           {/* Верхня панель дій */}
           {activeTab === 'current' && (

@@ -80,6 +80,12 @@ export function useDilovodSettings({ loadDirectories = true }: { loadDirectories
         setDirectories(data.data);
         setLastApiKey(settings?.apiKey || null);
         console.log('Directories loaded successfully:', data.data);
+        try {
+          const { setDilovodDirectories } = await import('@shared/utils/firmUtils');
+          setDilovodDirectories(data.data || null);
+        } catch {
+          // ignore if import fails (e.g., SSR environments)
+        }
       } else {
         throw new Error(data.message || 'Помилка отримання довідників');
       }

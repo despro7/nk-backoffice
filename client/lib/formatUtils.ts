@@ -375,6 +375,18 @@ export const pluralize = (count: number, one: string, few: string, many: string,
 };
 
 
+/**
+ * Обрізає текст до вказаної довжини і додає "..." в кінці, якщо текст перевищує довжину
+ * @param text - текст для обрізання
+ * @param length - максимальна довжина тексту
+ * @returns обрізаний текст або null, якщо текст відсутній
+ */
+export const truncateText = (text: any, length: number): import("react").ReactNode => {
+  if (!text) return null;
+  if (text.length <= length) return text;
+  return `${text.substring(0, length)}...`;
+}
+
 
 /**
  * Возвращает CSS классы для цвета статуса заказа

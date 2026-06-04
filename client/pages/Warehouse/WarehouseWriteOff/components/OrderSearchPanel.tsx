@@ -1,4 +1,4 @@
-import { OrderSearchInput } from '../WarehouseReturns/OrderSearchInput';
+import { OrderSearchInput } from '../../WarehouseReturns/components/OrderSearchInput';
 import { expandProductSets } from '@/lib/orderAssemblyUtils';
 import { useApi } from '@/hooks/useApi';
 

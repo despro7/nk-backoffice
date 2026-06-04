@@ -1,4 +1,5 @@
-import { Button, Tabs, Tab } from '@heroui/react';
+import { Button, Tab } from '@heroui/react';
+import PageTabs from '@/components/PageTabs';
 import { useState } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate } from '@/lib/formatUtils';
@@ -98,28 +99,16 @@ export default function WarehouseInventory() {
 
         {/* Рядок табів */}
         <div className="flex items-center justify-between gap-4">
-          <Tabs
-            selectedKey={inv.activeTab}
-            onSelectionChange={(key) => {
-              const tab = key as 'current' | 'history';
-              inv.setActiveTab(tab);
-              if (tab === 'history' && inv.historySessions.length === 0) {
-                inv.loadHistory();
-              }
-            }}
-            variant="solid"
-            color="default"
-            size="lg"
-            classNames={{
-              tabList: "gap-2 p-[6px] bg-gray-100 rounded-lg",
-              cursor: "bg-secondary text-white shadow-sm rounded-md",
-              tab: "px-3 py-1.5 text-sm font-normal data-[hover-unselected=true]:opacity-100 text-neutral-500",
-              tabContent: "group-data-[selected=true]:text-white text-neutral-400",
-            }}
-          >
+          <PageTabs selectedKey={inv.activeTab} onSelectionChange={(key) => {
+            const tab = key as 'current' | 'history';
+            inv.setActiveTab(tab);
+            if (tab === 'history' && inv.historySessions.length === 0) {
+              inv.loadHistory();
+            }
+          }}>
             <Tab key="current" title="Поточна інвентаризація" />
             <Tab key="history" title="Історія" />
-          </Tabs>
+          </PageTabs>
 
           <InventorySessionMeta
             sessionStatus={inv.sessionStatus}

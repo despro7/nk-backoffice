@@ -35,4 +35,8 @@ export interface ProductHistoryEntry {
   systemBalance: number | null;
   actual: number | null;
   deviation: number | null;
+  // Нові поля для аналізу руху залишків
+  shipped?: number | null; // Відвантаження
+  returned?: number | null; // Повернення
+  writtenOff?: number | null; // Списання
 }

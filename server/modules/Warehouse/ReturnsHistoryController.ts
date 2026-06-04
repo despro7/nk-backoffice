@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
-import { resolveAuthorNames } from '../../lib/utils.js';
+import { resolveAuthorNames, getFirmDisplayNameServer } from '../../lib/utils.js';
 import { salesDriveService } from '../../services/salesDriveService.js';
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
@@ -331,12 +331,15 @@ router.get('/history', authenticateToken, async (req, res) => {
     });
 
     // Розшифрувати імена авторів
-    const enrichedHistory = await resolveAuthorNames(history);
+    const withAuthors = await resolveAuthorNames(history as any[]);
 
-    res.json({
-      success: true,
-      data: enrichedHistory,
-    });
+    // Додати дружню назву фірми, якщо можливо
+    const enrichedHistory = await Promise.all(withAuthors.map(async (rec: any) => ({
+      ...rec,
+      firmDisplayName: await getFirmDisplayNameServer(rec.firmId, rec.firmName),
+    })));
+
+    res.json({ success: true, data: enrichedHistory });
   } catch (error) {
     console.log('Error fetching return history:', error);
     res.status(500).json({ error: 'Internal server error' });

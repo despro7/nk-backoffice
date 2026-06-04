@@ -1076,7 +1076,7 @@ const ProductSets: React.FC = () => {
                                   {col.map((item, i) => {
                                     const targetSku = String(item.id).trim().toLowerCase();
                                     const componentProduct = productsBySku.get(targetSku) || allProducts.find(p => p.id?.toString() === String(item.id));
-                                    const componentName = componentProduct?.name || item.id;
+                                    const componentName = componentProduct?.name || item.name || item.id;
                                     return (
                                       <li key={colIdx * COL_SIZE + i} title={`SKU: ${item.id}`} className="whitespace-nowrap">
                                         {componentName} ({item.id})×{item.quantity}
