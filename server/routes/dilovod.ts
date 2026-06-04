@@ -1673,7 +1673,7 @@ router.get('/cache/firms/:id', authenticateToken, requireMinRole(ROLES.STOREKEEP
   try {
     const { id } = req.params;
     const utils = await import('../lib/utils.js');
-    const name = await utils.getFirmNameById(id);
+    const name = await utils.getFirmDisplayNameServer(id);
 
     res.json({ success: true, data: name });
   } catch (error) {
