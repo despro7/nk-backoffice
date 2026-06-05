@@ -24,13 +24,15 @@ export interface ProductRowProps {
   autoFocus?: boolean;
   /** Автофокус для тач-пристроїв (за замовчуванням false, щоб не відкривати клавіатуру) */
   autoFocusTouch?: boolean;
+  /** Обнулити значення (boxCount, actualCount) для цієї позиції */
+  onReset?: (id: string) => void;
 }
 
 /** Повертає true, якщо пристрій є тач-пристроєм */
 const isTouchDevice = (): boolean =>
   typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
-export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck, onEnterPress, autoFocus = true, autoFocusTouch = false }: ProductRowProps) => {
+export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck, onEnterPress, autoFocus = true, autoFocusTouch = false, onReset }: ProductRowProps) => {
   const { isDebugMode } = useDebug();
   const total = totalPortions(product);
   const deviation = total !== null ? total - product.systemBalance : null;
@@ -47,6 +49,8 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
     deviation === null ? '—'
     : deviation > 0 ? `+${deviation}`
     : `${deviation}`;
+
+  const hasUnconfirmedCounts = !product.checked && (product.actualCount !== null || product.boxCount !== null);
 
   // Ref для першого StepperInput — для автофокусу при відкритті
   const firstInputRef = useRef<HTMLInputElement>(null);
@@ -90,7 +94,26 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
 
         {/* Назва */}
         <div className="flex flex-col flex-1 pl-1">
-          <span className="text-lg font-semibold text-neutral-800">{product.name}</span>
+          <span className="text-lg font-semibold text-neutral-800 flex items-center gap-2">
+            {product.name}
+            {hasUnconfirmedCounts && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-black ml-2 bg-yellow-300/30 border-0 border-yellow-200 px-2 py-1 rounded">⚠️ Не підтверджено</span>
+                {/** Кнопка обнулення значень — зупиняємо propagation, щоб не тригерити toggle */}
+                <Button
+                  size="sm"
+                  variant="light"
+                  color="danger"
+                  className="ml-1 h-7 rounded"
+                    onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
+                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                    onPress={() => onReset?.(product.id)}
+                >
+                  Очистити
+                </Button>
+              </div>
+            )}
+          </span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400">sku <span className="font-medium">{product.sku}</span></span>
             <span className="text-xs text-gray-400 pl-2 border-l-1">в коробці: <span className="font-medium">{product.portionsPerBox}</span></span>

@@ -30,20 +30,25 @@ export const InventorySessionMeta = ({ sessionStatus, sessionDate, onSessionDate
     )}
 
     {/* Статус */}
-    <div className="flex items-center gap-1.5 shrink-0 bg-neutral-50 px-4 py-2 h-12 rounded-lg">
-      <span>Статус:</span>
+    <div className="flex items-center gap-1.5 shrink-0">
+      <span className="text-[13px]">Статус</span>
       {sessionStatus === null && (
-        <Chip size="sm" color="default" variant="flat" startContent={<DynamicIcon name="file" className="w-3 h-3 ml-1" />}>
+        <Chip size="sm" color="default" variant="flat" className="bg-gray-300 px-1.5 h-7" startContent={<DynamicIcon name="file" className="w-3 h-3 ml-1 mr-0.5" />}>
           Чернетка
         </Chip>
       )}
       {sessionStatus === 'in_progress' && (
-        <Chip size="sm" color="warning" variant="flat" startContent={<DynamicIcon name="loader-2" className="w-3 h-3 ml-1 animate-spin" />}>
+        <Chip size="sm" color="warning" variant="flat" className="bg-orange-100 px-1.5 h-7" startContent={<DynamicIcon name="loader-2" className="w-3 h-3 ml-1 mr-0.5 animate-spin" />}>
           В процесі
         </Chip>
       )}
+      {sessionStatus === 'revising' && (
+        <Chip size="sm" color="secondary" variant="flat" className="bg-violet-200 px-1.5 h-7" startContent={<DynamicIcon name="loader" className="w-3 h-3 ml-1 mr-0.5 animate-[spin_2s_linear_infinite]" />}>
+          На доопрацюванні
+        </Chip>
+      )}
       {sessionStatus === 'completed' && (
-        <Chip size="sm" color="success" variant="flat" startContent={<DynamicIcon name="circle-check" className="w-3 h-3 ml-1" />}>
+        <Chip size="sm" color="success" variant="flat" className="bg-green-500/30 text-green-800/90 px-1.5 h-7" startContent={<DynamicIcon name="circle-check" className="w-3 h-3 ml-1 mr-0.5" />}>
           Завершена
         </Chip>
       )}

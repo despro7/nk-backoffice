@@ -1116,7 +1116,7 @@ router.get('/inventory/draft', authenticateToken, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
 
     const draft = await prisma.warehouseInventory.findFirst({
-      where: { createdBy: userId, status: { in: ['draft', 'in_progress'] } },
+      where: { createdBy: userId, status: { in: ['draft', 'in_progress', 'revising'] } },
       orderBy: { updatedAt: 'desc' },
     });
 
@@ -1315,12 +1315,37 @@ router.delete('/inventory/draft/:id', authenticateToken, async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Session not found' });
     if (!isAdmin && existing.status === 'completed') return res.status(400).json({ error: 'Cannot delete completed session' });
 
-    await prisma.warehouseInventory.delete({ where: { id: sessionId } });
+    const updated = await prisma.warehouseInventory.update({ where: { id: sessionId }, data: { status: 'removed' } });
 
-    console.log(`✅ [Inventory] Видалено чернетку #${sessionId} для userId=${userId}`);
-    res.json({ message: 'Draft deleted' });
+    console.log(`✅ [Inventory] Помічено як видалену інвентаризацію #${sessionId} для userId=${userId}`);
+    res.json({ message: 'Draft marked removed', session: { ...updated, inventoryDate: updated.inventoryDate?.toISOString() ?? null } });
   } catch (error) {
     console.error('🚨 [Inventory] Error deleting draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/warehouse/inventory/:id/revision
+// Позначити сесію як таку, що редагується (revising) — використовується адміном
+router.post('/inventory/:id/revision', authenticateToken, async (req, res) => {
+  try {
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+    if (!isAdmin) return res.status(403).json({ error: 'Only admins can mark sessions as revising' });
+
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const existing = await prisma.warehouseInventory.findUnique({ where: { id: sessionId } });
+    if (!existing) return res.status(404).json({ error: 'Session not found' });
+    if (existing.status === 'removed') return res.status(400).json({ error: 'Cannot revise removed session' });
+
+    const updated = await prisma.warehouseInventory.update({ where: { id: sessionId }, data: { status: 'revising' } });
+
+    console.log(`✅ [Inventory] Позначено інвентаризацію #${sessionId} як revising`);
+    res.json({ session: { ...updated, inventoryDate: updated.inventoryDate?.toISOString() ?? null } });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error marking session revising:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1331,7 +1356,8 @@ router.get('/inventory/history', authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
-    const historyStatuses = { in: ['completed', 'in_progress'] };
+    // Include 'revising' so admin-edited sessions appear in history; exclude 'removed'
+    const historyStatuses = { in: ['completed', 'in_progress', 'revising'] };
 
     const [rawSessions, total] = await Promise.all([
       prisma.warehouseInventory.findMany({
@@ -1356,6 +1382,93 @@ router.get('/inventory/history', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('🚨 [Inventory] Error fetching history:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/warehouse/inventory/archive
+// Повертає інвентаризації зі статусом 'removed' — доступно лише адмінам
+router.get('/inventory/archive', authenticateToken, async (req, res) => {
+  try {
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+    if (!isAdmin) return res.status(403).json({ error: 'Only admins can view archive' });
+
+    const { page = 1, limit = 50 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [rawSessions, total] = await Promise.all([
+      prisma.warehouseInventory.findMany({
+        where: { status: 'removed' },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: Number(limit),
+      }),
+      prisma.warehouseInventory.count({ where: { status: 'removed' } }),
+    ]);
+
+    const sessions = await resolveAuthorNames(rawSessions);
+
+    res.json({
+      sessions,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        pages: Math.ceil(total / Number(limit)),
+      },
+    });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error fetching archive:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/warehouse/inventory/:id/restore
+// Відновлює помічену як 'removed' інвентаризацію назад у статус 'completed' (admin only)
+router.post('/inventory/:id/restore', authenticateToken, async (req, res) => {
+  try {
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+    if (!isAdmin) return res.status(403).json({ error: 'Only admins can restore sessions' });
+
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const existing = await prisma.warehouseInventory.findUnique({ where: { id: sessionId } });
+    if (!existing) return res.status(404).json({ error: 'Session not found' });
+    if (existing.status !== 'removed') return res.status(400).json({ error: 'Session is not removed' });
+
+    const restored = await prisma.warehouseInventory.update({ where: { id: sessionId }, data: { status: 'completed' } });
+
+    console.log(`✅ [Inventory] Відновлено інвентаризацію #${sessionId}`);
+    res.json({ session: { ...restored, inventoryDate: restored.inventoryDate?.toISOString() ?? null } });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error restoring session:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/warehouse/inventory/:id/permanent
+// Видаляє запис інвентаризації з БД (остаточно) — доступно лише адмінам
+router.delete('/inventory/:id/permanent', authenticateToken, async (req, res) => {
+  try {
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+    if (!isAdmin) return res.status(403).json({ error: 'Only admins can permanently delete sessions' });
+
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const existing = await prisma.warehouseInventory.findUnique({ where: { id: sessionId } });
+    if (!existing) return res.status(404).json({ error: 'Session not found' });
+
+    await prisma.warehouseInventory.delete({ where: { id: sessionId } });
+
+    console.log(`✅ [Inventory] Permanently deleted inventory #${sessionId}`);
+    res.json({ message: 'Session permanently deleted' });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error permanently deleting session:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

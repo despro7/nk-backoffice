@@ -49,14 +49,14 @@ After answering, if relevant, ask:
 > Would you like me to apply these changes?
 
 **Expected workflow:**
-1. Answer question 💡  
+1. Answer question 💡
 2. Offer to apply changes (if relevant)
 
 ### Response Style
-- Keep responses concise and structured  
-- Avoid unnecessary verbosity  
-- Use emoji **sparingly** to make responses slightly more readable and friendly  
-- Do not overuse emoji (typically 1–3 emoji per response is enough)
+- Keep responses concise and structured
+- Avoid unnecessary verbosity
+- Use emoji to make responses slightly more readable and friendly
+- Do not overuse emoji (typically 3-5 emoji per response is enough)
 
 ### Documentation & Changelog
 After completing any non-trivial task, **always ask the user**:

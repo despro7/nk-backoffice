@@ -4,22 +4,31 @@ import HistoryTable from './InventoryHistoryTable';
 import type { InventorySession } from '../WarehouseInventoryTypes';
 
 // ---------------------------------------------------------------------------
-// InventoryHistoryTab — вміст вкладки "Історія"
+// InventoryArchiveTab — вміст вкладки "Архів" (видалені записи)
 // ---------------------------------------------------------------------------
 
-interface InventoryHistoryTabProps {
+interface InventoryArchiveTabProps {
   sessions: InventorySession[];
   loading: boolean;
   onRefresh: () => void;
   onLoadSession?: (session: InventorySession) => Promise<void>;
-  onDeleteSession?: (sessionId: string) => Promise<void>;
+  onRestoreSession?: (sessionId: string) => Promise<void>;
+  onDeletePermanently?: (sessionId: string) => Promise<void>;
   onRefreshSessionBalances?: (sessionId: string) => Promise<{ items?: Array<any> } | null>;
 }
 
-export const InventoryHistoryTab = ({ sessions, loading, onRefresh, onLoadSession, onDeleteSession, onRefreshSessionBalances }: InventoryHistoryTabProps) => (
+export const InventoryArchiveTab = ({
+  sessions,
+  loading,
+  onRefresh,
+  onLoadSession,
+  onRestoreSession,
+  onDeletePermanently,
+  onRefreshSessionBalances,
+}: InventoryArchiveTabProps) => (
   <>
     <div className="flex items-end justify-between">
-      <h2 className="text-base font-semibold text-gray-800">Минулі інвентаризації</h2>
+      <h2 className="text-base font-semibold text-gray-800">Архівні інвентаризації</h2>
       <Button
         size="sm"
         variant="flat"
@@ -39,14 +48,23 @@ export const InventoryHistoryTab = ({ sessions, loading, onRefresh, onLoadSessio
       </div>
     ) : sessions.length === 0 ? (
       <div className="text-center py-8 text-gray-400">
-        <DynamicIcon name="clipboard-x" className="w-8 h-8 mx-auto mb-2 opacity-40" />
-        <p className="text-sm">Немає завершених інвентаризацій</p>
+        <DynamicIcon name="archive" className="w-8 h-8 mx-auto mb-2 opacity-40" />
+        <p className="text-sm">Немає архівних інвентаризацій</p>
         <Button size="sm" variant="flat" className="mt-3" onPress={onRefresh}>
           Завантажити
         </Button>
       </div>
     ) : (
-      <HistoryTable sessions={sessions} onLoadSession={onLoadSession} onDeleteSession={onDeleteSession} onRefreshSessionBalances={onRefreshSessionBalances} onRefresh={onRefresh} />
+      <HistoryTable
+        sessions={sessions}
+        onLoadSession={onLoadSession}
+        onDeleteSession={onDeletePermanently}
+        onRestoreSession={onRestoreSession}
+        onRefreshSessionBalances={onRefreshSessionBalances}
+        onRefresh={onRefresh}
+      />
     )}
   </>
 );
+
+export default InventoryArchiveTab;

@@ -2,7 +2,7 @@
 // Types for WarehouseInventory feature
 // ---------------------------------------------------------------------------
 
-export type InventoryStatus = 'draft' | 'in_progress' | 'completed';
+export type InventoryStatus = 'draft' | 'in_progress' | 'completed' | 'revising' | 'removed';
 
 export interface InventoryProduct {
   id: string;

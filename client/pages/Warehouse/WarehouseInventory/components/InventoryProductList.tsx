@@ -18,11 +18,12 @@ interface InventoryProductListProps {
   loading: boolean;
   error: string | null;
   searchQuery: string;
-  openItemId: string | null;
+  openItemIds: Set<string>;
   onToggle: (id: string) => void;
   onChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
   onCheck: (id: string) => void;
   onEnterPress?: (id: string) => void;
+  onReset: (id: string) => void;
   onRetry: () => void;
 }
 
@@ -30,7 +31,8 @@ export const InventoryProductList = ({
   title, icon, headerColorClass, headerTextClass,
   checkedCount, totalCount,
   items, loading, error, searchQuery,
-  openItemId, onToggle, onChange, onCheck, onEnterPress, onRetry,
+  openItemIds, onToggle, onChange, onCheck, onEnterPress, onRetry,
+  onReset,
 }: InventoryProductListProps) => (
   <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
     {/* Header */}
@@ -66,13 +68,15 @@ export const InventoryProductList = ({
           key={item.id}
           product={item}
           index={index}
-          isOpen={openItemId === item.id}
+          isOpen={openItemIds.has(item.id)}
           onToggle={onToggle}
           onChange={onChange}
           onCheck={onCheck}
           onEnterPress={onEnterPress}
+          onReset={onReset}
         />
       ))
     )}
   </div>
 );
+

@@ -9,9 +9,10 @@ import type { InventoryProduct, InventorySession, InventoryStatus } from './Ware
 
 export interface UseWarehouseInventoryReturn {
   // Стан сесії
-  activeTab: 'current' | 'history';
-  setActiveTab: (tab: 'current' | 'history') => void;
+  activeTab: 'current' | 'history' | 'archive';
+  setActiveTab: (tab: 'current' | 'history' | 'archive') => void;
   sessionStatus: InventoryStatus | null;
+  sessionOriginalStatus: InventoryStatus | null;
   sessionId: number | null;
   sessionDate: string | null; // ISO-дата створення активної сесії
   setSessionDate: (date: string | null) => void;
@@ -27,6 +28,7 @@ export interface UseWarehouseInventoryReturn {
   productsError: string | null;
   filteredProducts: InventoryProduct[];
   openProductId: string | null;
+  openProductIds: Set<string>;
 
   // Матеріали
   materials: InventoryProduct[];
@@ -34,6 +36,7 @@ export interface UseWarehouseInventoryReturn {
   materialsError: string | null;
   filteredMaterials: InventoryProduct[];
   openMaterialId: string | null;
+  openMaterialIds: Set<string>;
 
   // Пошук і сортування
   searchQuery: string;
@@ -66,15 +69,24 @@ export interface UseWarehouseInventoryReturn {
   setShowConfirmCancel: (v: boolean) => void;
   showCommentModal: boolean;
   setShowCommentModal: (v: boolean) => void;
+  /** Підтвердження при збереженні чернетки, якщо є непідтверджені позиції */
+  showConfirmSaveUnconfirmed: boolean;
+  setShowConfirmSaveUnconfirmed: (v: boolean) => void;
+  /** Викликати підтвердження (save/finish) — користувач погодився продовжити незважаючи на непідтверджені позиції */
+  handleConfirmUnconfirmedAction: () => Promise<void>;
 
   // Історія
   historySessions: InventorySession[];
   historyLoading: boolean;
+  // Архів (видалені записи) — доступно лише адміну
+  archiveSessions: InventorySession[];
+  archiveLoading: boolean;
 
   // Handlers
   loadProducts: () => Promise<InventoryProduct[]>;
   loadMaterials: () => Promise<InventoryProduct[]>;
   loadHistory: () => Promise<void>;
+  loadArchive: () => Promise<void>;
   handleStartSession: () => Promise<void>;
   handleToggleProduct: (id: string) => void;
   handleToggleMaterial: (id: string) => void;
@@ -84,14 +96,23 @@ export interface UseWarehouseInventoryReturn {
   handleCheckProduct: (id: string) => void;
   handleMaterialChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
   handleCheckMaterial: (id: string) => void;
+  /** Скинути введені значення (boxCount, actualCount) для позиції — використовує для кнопки "обнулити" */
+  handleResetItemValues: (id: string) => void;
   handleFinish: () => Promise<void>;
   handleReset: () => Promise<void>;
-  handleSaveDraft: () => Promise<void>;
+  handleCloseView: () => Promise<void>;
+  handleSaveDraft: (force?: boolean) => Promise<void>;
+  /** Викликати, коли користувач підтвердив збереження незавершених позицій */
+  handleConfirmSaveDraft: () => Promise<void>;
   handleSaveComment: () => void;
   /** Оновлює залишки "За обліком" з Dilovod на вказану дату + встановлює isDirty */
   handleSessionDateChange: (date: Date) => void;
   /** Адмін: завантажує чужу сесію в поточний перегляд для редагування */
   handleAdminLoadSession: (session: InventorySession) => Promise<void>;
+  /** Адмін: відновити архівну сесію */
+  handleAdminRestoreSession: (sessionId: string) => Promise<void>;
+  /** Адмін: остаточно видалити сесію з БД */
+  handleAdminDeletePermanently: (sessionId: string) => Promise<void>;
   /** true поки виконується запит на оновлення залишків */
   isRefreshingBalances: boolean;
   /** true — є незбережені зміни відносно останнього збереження/завантаження */
@@ -101,8 +122,9 @@ export interface UseWarehouseInventoryReturn {
 }
 
 export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInventoryReturn => {
-  const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
+  const [activeTab, setActiveTab] = useState<'current' | 'history' | 'archive'>('current');
   const [sessionStatus, setSessionStatus] = useState<InventoryStatus | null>(null);
+  const [sessionOriginalStatus, setSessionOriginalStatus] = useState<InventoryStatus | null>(null);
   /** ID поточної сесії в БД (null = ще не збережена) */
   const [sessionId, setSessionId] = useState<number | null>(null);
   /** Дата створення активної сесії (ISO-рядок) */
@@ -118,18 +140,27 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   const [materialsError, setMaterialsError] = useState<string | null>(null);
   const [openProductId, setOpenProductId] = useState<string | null>(null);
   const [openMaterialId, setOpenMaterialId] = useState<string | null>(null);
+  // Нові множини відкритих елементів, щоб дозволити розкривати багато рядків одночасно
+  const [openProductIds, setOpenProductIds] = useState<Set<string>>(new Set());
+  const [openMaterialIds, setOpenMaterialIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [comment, setComment] = useState('');
   const [showConfirmFinish, setShowConfirmFinish] = useState(false);
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
   const [showCommentModal, setShowCommentModal] = useState(false);
+  const [showConfirmSaveUnconfirmed, setShowConfirmSaveUnconfirmed] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [historySessions, setHistorySessions] = useState<InventorySession[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [archiveSessions, setArchiveSessions] = useState<InventorySession[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
   /** Debounce-таймер для оновлення залишків після зміни дати (1 сек) */
   const balancesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Якщо користувач підтвердив продовжити збереження незавершених позицій — в цій змінній зберігаємо, що саме підтверджено
+  // 'save' | 'finish' | null
+  const pendingUnconfirmedActionRef = useRef<'save' | 'finish' | null>(null);
   /**
    * Ref для refreshSystemBalances — щоб loadDraft/handleAdminLoadSession могли викликати функцію,
    * яка оголошується пізніше (уникнення TDZ для const useCallback).
@@ -245,8 +276,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
 
       setProducts(mergedProducts);
       setMaterials(mergedMaterials);
+      // Відкриваємо всі непідтверджені позиції після завантаження чернетки
+      const unconfirmedProductIds = mergedProducts.filter((p) => !p.checked && (p.actualCount !== null || p.boxCount !== null)).map(p => p.id);
+      const unconfirmedMaterialIds = mergedMaterials.filter((m) => !m.checked && (m.actualCount !== null || m.boxCount !== null)).map(m => m.id);
+      setOpenProductIds(new Set(unconfirmedProductIds));
+      setOpenMaterialIds(new Set(unconfirmedMaterialIds));
       setSessionId(draft.id);
-      setSessionStatus('in_progress');
+      setSessionStatus(draft.status !== 'revising' ? 'in_progress' : draft.status); // Якщо чернетка була в статусі "редагується", вважаємо її "в процесі" для поточного перегляду
+      setSessionOriginalStatus(null);
       // Пріоритет: inventoryDate (обрана користувачем) > createdAt (технічна дата)
       setSessionDate(draft.inventoryDate ?? draft.createdAt ?? null);
       setComment(draft.comment ?? '');
@@ -293,6 +330,35 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       // Тихо ігноруємо
     } finally {
       setHistoryLoading(false);
+    }
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // API: завантаження архівних (removed) сесій — адмін only
+  // ---------------------------------------------------------------------------
+
+  const loadArchive = useCallback(async () => {
+    setArchiveLoading(true);
+    try {
+      const res = await fetch('/api/warehouse/inventory/archive', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const sessions: InventorySession[] = (data.sessions ?? []).map((s: any) => ({
+        id: String(s.id),
+        inventoryDate: s.inventoryDate ?? s.createdAt,
+        createdAt: s.createdAt,
+        createdBy: String(s.createdBy ?? ''),
+        createdByName: s.createdByName ?? null,
+        status: s.status as InventoryStatus,
+        completedAt: s.completedAt ?? null,
+        comment: s.comment ?? '',
+        items: JSON.parse(s.items ?? '[]'),
+      }));
+      setArchiveSessions(sessions);
+    } catch {
+      // Ігноруємо помилки — покажемо пустий список
+    } finally {
+      setArchiveLoading(false);
     }
   }, []);
 
@@ -384,7 +450,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
 
   // Дозвіл редагування: звичайна активна сесія або завершена сесія, яка редагується адміном
   const isEditable = useMemo(() => {
-    return sessionStatus === 'in_progress' || (sessionStatus === 'completed' && isAdmin);
+    return sessionStatus === 'in_progress' || sessionStatus === 'revising' || (sessionStatus === 'completed' && isAdmin);
   }, [sessionStatus, isAdmin]);
 
   const isDirty = useMemo(() => {
@@ -399,6 +465,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
 
   const handleStartSession = async () => {
     setSessionStatus('in_progress');
+    setSessionOriginalStatus(null);
     try {
       // Завантажуємо товари та матеріали паралельно зі створенням чернетки
       const [loadedProducts, loadedMaterials, res] = await Promise.all([
@@ -424,25 +491,74 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     }
   };
 
+  const handleConfirmSaveDraft = async (): Promise<void> => {
+    // Закриваємо модал і зберігаємо, ігноруючи попередження про непідтверджені позиції
+    setShowConfirmSaveUnconfirmed(false);
+    await handleSaveDraft(true);
+  };
+
+  // Виконати завершення (core logic) — винесено тут, щоб ми могли викликати його і з confirm-path
+  const finishProceed = async () => {
+    try {
+      if (sessionId) {
+        await fetch(`/api/warehouse/inventory/draft/${sessionId}/complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ comment, items: serializeItems(products, materials), inventoryDate: sessionDate }),
+        });
+      }
+    } catch {
+      // Не блокуємо UI — завершуємо локально
+    }
+    // Сесія завершена — більше не відстежуємо зміни
+    // setLastSavedSnapshot(null);
+    // setSessionStatus('completed');
+    // setSessionOriginalStatus(null);
+    await loadHistory();
+    await handleCloseView();
+  };
+
   const handleToggleProduct = (id: string) => {
+    const unconfirmedIds = products.filter((p) => !p.checked && (p.actualCount !== null || p.boxCount !== null)).map(p => p.id);
+    setOpenProductIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      // Завжди додаємо всі непідтверджені позиції до відкритих
+      for (const uid of unconfirmedIds) next.add(uid);
+      return next;
+    });
     setOpenProductId((prev) => (prev === id ? null : id));
   };
 
   const handleToggleMaterial = (id: string) => {
+    const unconfirmedIds = materials.filter((m) => !m.checked && (m.actualCount !== null || m.boxCount !== null)).map(m => m.id);
+    setOpenMaterialIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      for (const uid of unconfirmedIds) next.add(uid);
+      return next;
+    });
     setOpenMaterialId((prev) => (prev === id ? null : id));
   };
 
   const handleEnterPressProduct = (currentProductId: string) => {
     const currentIndex = filteredProducts.findIndex((p) => p.id === currentProductId);
     if (currentIndex !== -1 && currentIndex < filteredProducts.length - 1) {
-      setOpenProductId(filteredProducts[currentIndex + 1].id);
+      const nextId = filteredProducts[currentIndex + 1].id;
+      setOpenProductIds(new Set([nextId]));
+      setOpenProductId(nextId);
     }
   };
 
   const handleEnterPressMaterial = (currentMaterialId: string) => {
     const currentIndex = filteredMaterials.findIndex((m) => m.id === currentMaterialId);
     if (currentIndex !== -1 && currentIndex < filteredMaterials.length - 1) {
-      setOpenMaterialId(filteredMaterials[currentIndex + 1].id);
+      const nextId = filteredMaterials[currentIndex + 1].id;
+      setOpenMaterialIds(new Set([nextId]));
+      setOpenMaterialId(nextId);
     }
   };
 
@@ -462,25 +578,50 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setMaterials((prev) => prev.map((m) => (m.id === id ? { ...m, checked: !m.checked } : m)));
   };
 
-  const handleFinish = async () => {
-    setShowConfirmFinish(false);
-    try {
-      if (sessionId) {
-        await fetch(`/api/warehouse/inventory/draft/${sessionId}/complete`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ comment, items: serializeItems(products, materials), inventoryDate: sessionDate }),
-        });
+  const handleResetItemValues = (id: string) => {
+    let found = false;
+    setProducts(prev => prev.map(p => {
+      if (p.id === id) {
+        found = true;
+        return { ...p, actualCount: null, boxCount: null };
       }
-    } catch {
-      // Не блокуємо UI — завершуємо локально
-    }
-    // Сесія завершена — більше не відстежуємо зміни
-    setLastSavedSnapshot(null);
-    setSessionStatus('completed');
+      return p;
+    }));
+    if (found) return;
+    setMaterials(prev => prev.map(m => (m.id === id ? { ...m, actualCount: null, boxCount: null } : m)));
   };
 
+  // Завершити інвентаризацію: відправляємо дані на бек, але навіть при помилці локально вважаємо сесію завершеною, щоб не блокувати UI
+  const handleFinish = async () => {
+    setShowConfirmFinish(false);
+    // Якщо це ревізована (admin) сесія і є непідтверджені позиції — спершу просимо підтвердження
+    const unconfirmed = [...products, ...materials].filter((it) => !it.checked && (it.actualCount !== null || it.boxCount !== null));
+    if (unconfirmed.length > 0 && sessionStatus === 'revising') {
+      pendingUnconfirmedActionRef.current = 'finish';
+      setShowConfirmSaveUnconfirmed(true);
+      return;
+    }
+    await finishProceed();
+  };
+
+  // Виклик після того, як користувач підтвердив, що хоче продовжити незважаючи на непідтверджені позиції
+  const handleConfirmUnconfirmedAction = async (): Promise<void> => {
+    const action = pendingUnconfirmedActionRef.current;
+    pendingUnconfirmedActionRef.current = null;
+    setShowConfirmSaveUnconfirmed(false);
+    if (action === 'save') {
+      await handleSaveDraft(true);
+      return;
+    }
+    if (action === 'finish') {
+      await finishProceed();
+      return;
+    }
+    // Якщо нічого не стояло в pending — за замовчуванням збережемо чернетку
+    await handleSaveDraft(true);
+  };
+
+  // Скасувати інвентаризацію: видаляємо чернетку на бекенді (якщо вона була збережена) і скидаємо весь локальний стан
   const handleReset = async () => {
     setShowConfirmCancel(false);
     if (sessionId) {
@@ -495,18 +636,36 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setLastSavedSnapshot(null);
     setSessionId(null);
     setSessionStatus(null);
+    setSessionOriginalStatus(null);
     setComment('');
     setOpenProductId(null);
+    setOpenProductIds(new Set());
     setOpenMaterialId(null);
+    setOpenMaterialIds(new Set());
     setSearchQuery('');
     loadProducts();
     loadMaterials();
   };
 
-  const handleSaveDraft = async () => {
+  // Зберегти чернетку (створити або оновити)
+  const handleSaveDraft = async (force: boolean = false) => {
     setIsSavingDraft(true);
     try {
-      const items = serializeItems(products, materials);
+      // Перевіряємо, чи є позиції з введеними значеннями, але без підтвердження
+      const unconfirmed = [...products, ...materials].filter((it) => !it.checked && (it.actualCount !== null || it.boxCount !== null));
+      if (unconfirmed.length > 0 && !force) {
+        // Показуємо модальне підтвердження — користувач вирішує, чи продовжувати збереження
+        pendingUnconfirmedActionRef.current = 'save';
+        setShowConfirmSaveUnconfirmed(true);
+        setIsSavingDraft(false);
+        return;
+      }
+
+      // Видаляємо непідтверджені позиції перед збереженням (вони не повинні потрапляти в масив чернетки)
+      const filterUnconfirmed = (arr: InventoryProduct[]) => arr.filter((it) => !( !it.checked && (it.actualCount !== null || it.boxCount !== null) ));
+      const productsToSave = filterUnconfirmed(products);
+      const materialsToSave = filterUnconfirmed(materials);
+      const items = serializeItems(productsToSave, materialsToSave);
       if (sessionId) {
         const res = await fetch(`/api/warehouse/inventory/draft/${sessionId}`, {
           method: 'PUT',
@@ -531,10 +690,15 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         description: 'Ви можете повернутись до інвентаризації пізніше',
         color: 'success',
       });
-      // Оновлюємо snapshot лише user-editable полів — поточний стан тепер вважається "чистим"
+      // Оновлюємо локальний стан так, щоб він відповідав тому, що зберегли (видаляємо непідтверджені позиції)
+      setProducts(productsToSave);
+      setMaterials(materialsToSave);
+      // Оновлюємо snapshot лише user-editable полів — записано чистий стан (без непідтверджених)
       setLastSavedSnapshot(JSON.stringify(
-        [...products, ...materials].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+        [...productsToSave, ...materialsToSave].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
       ));
+      // Закриваємо модальне вікно попередження, якщо воно було відкрито
+      setShowConfirmSaveUnconfirmed(false);
     } catch {
       ToastService.show({ title: 'Помилка збереження чернетки', color: 'danger' });
     } finally {
@@ -547,6 +711,27 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setShowCommentModal(false);
     ToastService.show({ title: 'Коментар додано', color: 'success' });
   };
+
+  // Закрити локальний перегляд сесії без видалення запису в БД (не робить DELETE)
+  const handleCloseView = useCallback(async (): Promise<void> => {
+    // Скидаємо локальний стан сесії — повний unmount поточного перегляду
+    setLastSavedSnapshot(null);
+    setSessionId(null);
+    setSessionStatus(null);
+    setSessionOriginalStatus(null);
+    setComment('');
+    setOpenProductId(null);
+    setOpenProductIds(new Set());
+    setOpenMaterialId(null);
+    setOpenMaterialIds(new Set());
+    setSearchQuery('');
+    // Поновлюємо каталоги товарів/матеріалів для чистого стану
+    try {
+      await Promise.all([loadProducts(), loadMaterials()]);
+    } catch {
+      // ігноруємо помилки при оновленні списків
+    }
+  }, [loadProducts, loadMaterials]);
 
   // ---------------------------------------------------------------------------
   // Оновлення залишків "За обліком" з Dilovod на вказану дату
@@ -656,13 +841,30 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setProducts(mergedProducts);
     setMaterials(mergedMaterials);
     setSessionId(Number(session.id));
-    setSessionStatus(session.status);
+    // Remember original status (to know if we're editing a completed session)
+    setSessionOriginalStatus(session.status);
+    // If admin is loading a historical session for revision, notify server to mark it as revising
+    if (isAdmin) {
+      try {
+        await fetch(`/api/warehouse/inventory/${session.id}/revision`, { method: 'POST', credentials: 'include' });
+      } catch {
+        // Ignore server failure — client will still allow editing locally
+      }
+    }
+    // When an admin loads a historical session for editing, mark it as 'revising'
+    // so client UI treats it similarly to a draft and enables edit flows.
+    setSessionStatus('revising');
     setSessionDate(session.inventoryDate ?? session.createdAt ?? null);
     setComment(session.comment ?? '');
     setLastSavedSnapshot(JSON.stringify(
       [...mergedProducts, ...mergedMaterials].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
     ));
     setActiveTab('current');
+    // Відкриваємо всі непідтверджені позиції після завантаження сесії адміністратором
+    const unconfirmedProductIds = mergedProducts.filter((p) => !p.checked && (p.actualCount !== null || p.boxCount !== null)).map(p => p.id);
+    const unconfirmedMaterialIds = mergedMaterials.filter((m) => !m.checked && (m.actualCount !== null || m.boxCount !== null)).map(m => m.id);
+    setOpenProductIds(new Set(unconfirmedProductIds));
+    setOpenMaterialIds(new Set(unconfirmedMaterialIds));
     // Завантажуємо залишки за обліком на дату сесії (через ref, щоб уникнути TDZ)
     const dateToUse = new Date(session.inventoryDate ?? session.createdAt);
     if (!isNaN(dateToUse.getTime())) {
@@ -670,16 +872,43 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     }
   }, [loadProducts, loadMaterials]);
 
+  // ---------------------------------------------------------------------------
+  // Адмін: відновити архівну (removed) сесію або видалити остаточно
+  // ---------------------------------------------------------------------------
+
+  const handleAdminRestoreSession = useCallback(async (sessionId: string): Promise<void> => {
+    try {
+      const res = await fetch(`/api/warehouse/inventory/${sessionId}/restore`, { method: 'POST', credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      ToastService.show({ title: 'Сесію відновлено', color: 'success' });
+      await loadArchive();
+      await loadHistory();
+    } catch {
+      ToastService.show({ title: 'Помилка відновлення сесії', color: 'danger' });
+    }
+  }, [loadArchive, loadHistory]);
+
+  const handleAdminDeletePermanently = useCallback(async (sessionId: string): Promise<void> => {
+    try {
+      const res = await fetch(`/api/warehouse/inventory/${sessionId}/permanent`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      ToastService.show({ title: 'Сесію видалено назавжди', color: 'success' });
+      await loadArchive();
+    } catch {
+      ToastService.show({ title: 'Помилка остаточного видалення', color: 'danger' });
+    }
+  }, [loadArchive]);
+
   return {
     activeTab, setActiveTab,
-    sessionStatus, sessionId, sessionDate, setSessionDate,
+    sessionStatus, sessionOriginalStatus, sessionId, sessionDate, setSessionDate,
     comment, setComment,
     commentDraft, setCommentDraft,
     isSavingDraft,
-    products, productsLoading, productsError, filteredProducts, openProductId,
+    products, productsLoading, productsError, filteredProducts, openProductId, openProductIds,
     selectedCategory, setSelectedCategory, categoryOptions,
     sortBy, setSortBy, sortDirection, setSortDirection,
-    materials, materialsLoading, materialsError, filteredMaterials, openMaterialId,
+    materials, materialsLoading, materialsError, filteredMaterials, openMaterialId, openMaterialIds,
     searchQuery, setSearchQuery,
     checkedCount, totalCount, progressPercent,
     checkedMaterialsCount, totalMaterialsCount, materialsProgressPercent,
@@ -688,16 +917,23 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     showConfirmFinish, setShowConfirmFinish,
     showConfirmCancel, setShowConfirmCancel,
     showCommentModal, setShowCommentModal,
+    showConfirmSaveUnconfirmed, setShowConfirmSaveUnconfirmed,
     historySessions, historyLoading,
+    archiveSessions, archiveLoading,
     loadProducts, loadMaterials, loadHistory,
+    loadArchive,
     handleStartSession,
     handleToggleProduct, handleToggleMaterial,
     handleEnterPressProduct, handleEnterPressMaterial,
     handleProductChange, handleCheckProduct,
     handleMaterialChange, handleCheckMaterial,
-    handleFinish, handleReset, handleSaveDraft, handleSaveComment,
+    handleFinish, handleReset, handleSaveDraft, handleConfirmSaveDraft, handleConfirmUnconfirmedAction, handleSaveComment,
+    handleResetItemValues,
     handleSessionDateChange, handleAdminLoadSession, isRefreshingBalances,
     isDirty,
+    handleCloseView,
     isEditable,
+    handleAdminRestoreSession,
+    handleAdminDeletePermanently,
   };
 };

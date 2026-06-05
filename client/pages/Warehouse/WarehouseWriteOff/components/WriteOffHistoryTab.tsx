@@ -25,8 +25,7 @@ export const WriteOffHistoryTab = ({ records, loading, onRefresh, onLoadRecord, 
         color="secondary"
         className="bg-blue-200 text-blue-900 hover:opacity-90"
         onPress={onRefresh}
-        isLoading={loading}
-        startContent={!loading ? <DynamicIcon name="refresh-cw" className="w-3.5 h-3.5" /> : undefined}
+        startContent={<DynamicIcon name="refresh-cw" className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
       >
         Оновити
       </Button>

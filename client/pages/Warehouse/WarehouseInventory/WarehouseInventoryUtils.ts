@@ -25,6 +25,25 @@ export const formatBalanceBreakdown = (total: number, portionsPerBox: number): s
 };
 
 // ---------------------------------------------------------------------------
+// Форматує кількість (total) у компактний вигляд з кількістю коробок/залишком
+// Використовується у таблицях інвентаризацій для відображення як "N (boxes/rest)"
+// ---------------------------------------------------------------------------
+export const formatCompact = (total: number | null | undefined, portionsPerBox: number | null | undefined, sessionItem?: any): any => {
+  if (total === null || total === undefined) return '–';
+  if (!portionsPerBox || portionsPerBox <= 0) return String(total);
+  if (sessionItem && sessionItem.boxCount !== undefined && sessionItem.boxCount !== null) {
+    const bc = sessionItem.boxCount ?? 0;
+    const ac = sessionItem.actualCount ?? 0;
+    return (
+      `${total} (${bc}/${ac})`
+    );
+  }
+  const boxes = Math.floor(Number(total) / portionsPerBox);
+  const rest = Number(total) % portionsPerBox;
+  return `${total} (${boxes}/${rest})`;
+};
+
+// ---------------------------------------------------------------------------
 // Сортує товари за обраним критерієм та напрямком
 // ---------------------------------------------------------------------------
 
@@ -64,12 +83,20 @@ export const statusLabel: Record<InventoryStatus, string> = {
   draft: 'Чернетка',
   in_progress: 'В процесі',
   completed: 'Завершена',
+  revising: 'Редагується',
+  removed: 'Видалена',
 };
 
-export const statusColor: Record<InventoryStatus, 'default' | 'warning' | 'success'> = {
+export const statusColor: Record<InventoryStatus, 'default' | 'warning' | 'success' | 'danger' | 'secondary'> = {
   draft: 'default',
   in_progress: 'warning',
   completed: 'success',
+  revising: 'secondary',
+  removed: 'danger',
+};
+
+export const statusClass: Partial<Record<InventoryStatus, string>> = {
+  revising: 'bg-violet-200 text-violet-800/80',
 };
 
 // ---------------------------------------------------------------------------

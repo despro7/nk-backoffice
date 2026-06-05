@@ -1,8 +1,6 @@
-import { Button, Tab } from '@heroui/react';
+import { Tab } from '@heroui/react';
 import PageTabs from '@/components/PageTabs';
 import { useState } from 'react';
-import { DynamicIcon } from 'lucide-react/dynamic';
-import { formatDate } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROLES } from '@shared/constants/roles';
 import { ToastService } from '@/services/ToastService';
@@ -18,6 +16,7 @@ import { InventorySummaryTable } from './components/InventorySummaryTable';
 import { InventoryActionBar } from './components/InventoryActionBar';
 import { InventorySessionMeta } from './components/InventorySessionMeta';
 import { InventoryHistoryTab } from './components/InventoryHistoryTab';
+import InventoryArchiveTab from './components/InventoryArchiveTab';
 import { InventoryCommentModal } from './components/InventoryCommentModal';
 
 // ---------------------------------------------------------------------------
@@ -37,12 +36,15 @@ export default function WarehouseInventory() {
     : null;
   const canAuthorEditLoadedCompleted = !isAdmin
     && currentUserId !== null
-    && inv.sessionStatus === 'completed'
+    && (inv.sessionStatus === 'completed' || (inv.sessionStatus === 'revising' && inv.sessionOriginalStatus === 'completed'))
     && inv.sessionId !== null
     && latestOwnHistorySessionId !== null
     && String(inv.sessionId) === String(latestOwnHistorySessionId);
   const canEditCompletedSession = isAdmin || canAuthorEditLoadedCompleted;
   const canEditCurrentSession = inv.sessionStatus === 'in_progress' || (inv.sessionStatus === 'completed' && canEditCompletedSession);
+  // Treat 'revising' as an editable state similar to 'in_progress'
+  const isRevisingEditable = inv.sessionStatus === 'revising';
+  const canEditCurrent = isRevisingEditable || canEditCurrentSession;
 
   const totalDeviations = inv.deviationCount + inv.deviationMaterialsCount;
 
@@ -94,28 +96,37 @@ export default function WarehouseInventory() {
 
         {/* Підзаголовок сторінки */}
         <p className="text-sm text-gray-500">
-          Підрахунок фактичних залишків малого складу на {formatDate(inv.sessionDate ? new Date(inv.sessionDate).toISOString() : new Date().toISOString())}
+          Підрахунок фактичних залишків малого складу для виявлення відхилень від облікових даних. 
+          Створюйте інвентаризацію, перевіряйте позиції та фіксуйте результати. 
+          Усі незбережені зміни зберігаються як чернетка, щоб ви могли повернутися пізніше та продовжити роботу. 
+          Завершуйте інвентаризацію, щоб зафіксувати результати та побачити відхилення.
         </p>
 
         {/* Рядок табів */}
         <div className="flex items-center justify-between gap-4">
           <PageTabs selectedKey={inv.activeTab} onSelectionChange={(key) => {
-            const tab = key as 'current' | 'history';
+            const tab = key as 'current' | 'history' | 'archive';
             inv.setActiveTab(tab);
             if (tab === 'history' && inv.historySessions.length === 0) {
               inv.loadHistory();
             }
+            if (tab === 'archive' && inv.archiveSessions.length === 0) {
+              inv.loadArchive();
+            }
           }}>
             <Tab key="current" title="Поточна інвентаризація" />
             <Tab key="history" title="Історія" />
+            {isAdmin && <Tab key="archive" title="Архів" />}
           </PageTabs>
 
-          <InventorySessionMeta
-            sessionStatus={inv.sessionStatus}
-            sessionDate={inv.sessionDate}
-            onSessionDateChange={inv.handleSessionDateChange}
-            isEditable={inv.sessionStatus === 'completed' && canEditCompletedSession}
-          />
+          {inv.activeTab === 'current' && (
+            <InventorySessionMeta
+              sessionStatus={inv.sessionStatus}
+              sessionDate={inv.sessionDate}
+              onSessionDateChange={inv.handleSessionDateChange}
+              isEditable={inv.sessionStatus === 'completed' && canEditCompletedSession}
+            />
+          )}
         </div>
 
         {/* ── Вкладка: Поточна інвентаризація ── */}
@@ -131,7 +142,7 @@ export default function WarehouseInventory() {
             )}
 
             {/* Активна або завершена сесія */}
-            {(inv.sessionStatus === 'in_progress' || inv.sessionStatus === 'completed') && (
+            {(inv.sessionStatus === 'in_progress' || inv.sessionStatus === 'completed' || inv.sessionStatus === 'revising') && (
               <>
                 <InventoryProgressBar
                   totalCheckedAll={inv.totalCheckedAll}
@@ -162,12 +173,13 @@ export default function WarehouseInventory() {
                     loading={inv.productsLoading}
                     error={inv.productsError}
                     searchQuery={inv.searchQuery}
-                    openItemId={inv.openProductId}
+                    openItemIds={inv.openProductIds}
                     onToggle={inv.handleToggleProduct}
                     onChange={inv.handleProductChange}
                     onCheck={inv.handleCheckProduct}
                     onEnterPress={inv.handleEnterPressProduct}
                     onRetry={inv.loadProducts}
+                    onReset={inv.handleResetItemValues}
                   />
                 )}
 
@@ -183,12 +195,13 @@ export default function WarehouseInventory() {
                   loading={inv.materialsLoading}
                   error={inv.materialsError}
                   searchQuery={inv.searchQuery}
-                  openItemId={inv.openMaterialId}
+                  openItemIds={inv.openMaterialIds}
                   onToggle={inv.handleToggleMaterial}
                   onChange={inv.handleMaterialChange}
                   onCheck={inv.handleCheckMaterial}
                   onEnterPress={inv.handleEnterPressMaterial}
                   onRetry={inv.loadMaterials}
+                  onReset={inv.handleResetItemValues}
                 />
 
                 {/* Підсумкова таблиця */}
@@ -198,7 +211,7 @@ export default function WarehouseInventory() {
                 />
 
                 {/* Панель дій: для редагованої сесії (in_progress) або для адміна, що редагує completed */}
-                {canEditCurrentSession && (
+                {canEditCurrent && (
                   <InventoryActionBar
                     deviationCount={totalDeviations}
                     totalCheckedAll={inv.totalCheckedAll}
@@ -208,23 +221,25 @@ export default function WarehouseInventory() {
                     onOpenComment={() => { inv.setCommentDraft(inv.comment); inv.setShowCommentModal(true); }}
                     onSaveDraft={inv.handleSaveDraft}
                     onFinish={() => inv.setShowConfirmFinish(true)}
-                    isEditingCompleted={inv.sessionStatus === 'completed' && canEditCompletedSession}
+                    isEditingCompleted={(inv.sessionStatus === 'completed' || inv.sessionStatus === 'revising') && canEditCompletedSession}
                   />
                 )}
-
-                {/* Кнопка нової інвентаризації після завершення */}
-                {inv.sessionStatus === 'completed' && (
-                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex justify-end">
-                    <Button
-                      color="primary"
-                      variant="flat"
-                      onPress={inv.handleReset}
-                      startContent={<DynamicIcon name="plus" className="w-4 h-4" />}
-                    >
-                      Нова інвентаризація
-                    </Button>
-                  </div>
-                )}
+                  <table className="bg-white shadow-lg inline-block rounded-sm fixed bottom-6 left-4 border-1 border-separate border-spacing-0 [&>tbody>tr>td]:px-2 [&>tbody>tr>td]:py-0.5 p-1 text-sm">
+                    <tbody>
+                      <tr>
+                        <td className="font-semibold">sessionStatus:</td>
+                        <td>{inv.sessionStatus}</td>
+                      </tr>
+                      <tr>
+                        <td className="font-semibold">sessionOriginalStatus:</td>
+                        <td>{inv.sessionOriginalStatus}</td>
+                      </tr>
+                      <tr>
+                        <td className="font-semibold">isDirty:</td>
+                        <td>{String(inv.isDirty)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
               </>
             )}
           </>
@@ -238,6 +253,17 @@ export default function WarehouseInventory() {
             onRefresh={inv.loadHistory}
             onLoadSession={inv.handleAdminLoadSession}
             onDeleteSession={handleAdminDeleteSession}
+            onRefreshSessionBalances={handleRefreshSessionBalances}
+          />
+        )}
+        {inv.activeTab === 'archive' && isAdmin && (
+          <InventoryArchiveTab
+            sessions={inv.archiveSessions}
+            loading={inv.archiveLoading}
+            onRefresh={inv.loadArchive}
+            onLoadSession={inv.handleAdminLoadSession}
+            onRestoreSession={inv.handleAdminRestoreSession}
+            onDeletePermanently={inv.handleAdminDeletePermanently}
             onRefreshSessionBalances={handleRefreshSessionBalances}
           />
         )}
@@ -305,6 +331,17 @@ export default function WarehouseInventory() {
       <UnsavedChangesModal
         {...guard.modalProps}
         message="У вас є незбережені зміни інвентаризації. Збережіть чернетку, щоб повернутися пізніше та продовжити, інакше всі зміни буде втрачено."
+      />
+      {/* Модалка: є непідтверджені позиції при збереженні чернетки */}
+      <ConfirmModal
+        isOpen={inv.showConfirmSaveUnconfirmed}
+        title="Є непідтверджені позиції"
+        message="Деякі позиції мають введені значення, але не підтверджені. При збереженні ці непідтверджені позиції буде вилучено з документу. Ви можете повернутися та підтвердити їх, або продовжити, тоді вони будуть видалені."
+        confirmText="Зберегти і вилучити непідтверджені"
+        cancelText="Повернутись"
+        confirmColor="danger"
+        onConfirm={inv.handleConfirmUnconfirmedAction}
+        onCancel={() => inv.setShowConfirmSaveUnconfirmed(false)}
       />
     </div>
   );

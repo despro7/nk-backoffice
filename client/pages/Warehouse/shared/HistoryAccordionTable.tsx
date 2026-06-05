@@ -331,11 +331,11 @@ export const HistoryAccordionTable = ({
                       })}
                     </div>
                   ) : (
-                    <div>
+                    <>
                       <div className="flex items-center gap-2 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200 bg-gray-200">
                         <h4 className="text-md font-medium text-gray-700">Товари</h4>
                       </div>
-                      <div className="overflow-x-auto px-1 pb-1 bg-gray-200 rounded-b-md"> 
+                      <div className="overflow-x-auto px-1 pb-1 bg-gray-200 rounded-b-md">
                         <table className="w-full border-separate border-spacing-0 overflow-hidden rounded-md text-sm bg-white border-1 border-gray-200">
                           <thead>
 														<tr className="border-b border-gray-200 bg-gray-100 [&>th]:text-left [&>th]:py-2 [&>th]:px-3 [&>th]:font-semibold [&>th]:text-gray-600">
@@ -367,7 +367,7 @@ export const HistoryAccordionTable = ({
                           </tbody>
                         </table>
                       </div>
-                    </div>
+                    </>
                   )}
                 </div>
               </div>
