@@ -1,7 +1,5 @@
-import qz from 'qz-tray';
-import type { PrintData } from 'qz-tray';
 import { addToast } from '@heroui/toast';
-import { initializeQzTray } from '../lib/qzConfig';
+import * as QzWrapper from './QzWrapper';
 import { ToastService } from './ToastService';
 
 interface Printer {
@@ -40,7 +38,8 @@ class PrinterService {
    */
   private initialize(): void {
     if (!this.isInitialized) {
-      initializeQzTray();
+      // Запускаємо ініціалізацію асинхронно — не блокуємо конструктор
+      QzWrapper.ensureInitialized().catch(e => console.warn('PrinterService.init failed', e));
       this.isInitialized = true;
     }
   }
@@ -57,7 +56,7 @@ class PrinterService {
       if (!(await this.connect())) {
         throw new Error("Немає з'єднання з QZ Tray");
       }
-      const printers = await qz.printers.find();
+      const printers = await QzWrapper.findPrinters();
       // The result can be an array of strings or an array of objects
       if (Array.isArray(printers) && printers.length > 0) {
         if (typeof printers[0] === 'string') {
@@ -85,7 +84,7 @@ class PrinterService {
         throw new Error("Немає з'єднання з QZ Tray");
       }
 
-      const config = qz.configs.create(printerName, {
+      const config = await QzWrapper.configsCreate(printerName, {
         encoding: "UTF-8",
         language: "zpl",
       } as any);
@@ -98,7 +97,7 @@ class PrinterService {
         },
       ];
 
-      await qz.print(config, data);
+      await QzWrapper.print(config, data);
 
       ToastService.show({
         title: "Друк",
@@ -210,14 +209,14 @@ class PrinterService {
       // через системне кодування Windows (CP1251) і ламають CP866 кирилицю.
       const hexData = bytes.map(b => b.toString(16).padStart(2, '0')).join('');
 
-      const config = qz.configs.create(printerName) as any;
+      const config = await QzWrapper.configsCreate(printerName) as any;
       const printData: any[] = [{
         type: 'raw',
         format: 'hex',
         data: hexData,
       }];
 
-      await qz.print(config, printData);
+      await QzWrapper.print(config, printData);
 
       ToastService.show({
         title: 'Друк чека',
@@ -245,14 +244,14 @@ class PrinterService {
         throw new Error("Немає з'єднання з QZ Tray");
       }
 
-      const config = qz.configs.create(printerName) as any;
+      const config = await QzWrapper.configsCreate(printerName) as any;
       const printData: any[] = [{
         type: 'html',
         format: 'plain',
         data: html,
       }];
 
-      await qz.print(config, printData);
+      await QzWrapper.print(config, printData);
 
       ToastService.show({
         title: 'Друк чек-листа',
@@ -285,7 +284,7 @@ class PrinterService {
       }
 
       // Параметри для 58мм термопринтера: масштабування під ширину рулону
-      const config = qz.configs.create(printerName, {
+      const config = await QzWrapper.configsCreate(printerName, {
         size: { width: 58, height: null },
         units: 'mm',
         scaleContent: true,
@@ -299,7 +298,7 @@ class PrinterService {
         data: base64Pdf
       }];
 
-      await qz.print(config, data as any); // Используем as any для обхода неполных определений типов
+      await QzWrapper.print(config, data as any); // Используем as any для обхода неполных определений типов
 
       ToastService.show({
         title: 'Друк PDF',
@@ -321,14 +320,14 @@ class PrinterService {
   }
 
   private async connect(): Promise<boolean> {
-    if (qz.websocket.isActive()) {
+    if (await QzWrapper.isActive()) {
       return true;
     }
     if (this.connectionAttempts >= this.maxConnectionAttempts) {
       throw new Error("Перевищено максимальну кількість спроб з'єднання з QZ Tray.");
     }
     try {
-      await qz.websocket.connect();
+      await QzWrapper.connect();
       this.connectionAttempts = 0;
       return true;
     } catch (error) {

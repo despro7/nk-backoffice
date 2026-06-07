@@ -254,7 +254,6 @@ model WarehouseReturnHistory {
   returnNumber  String?     @db.VarChar(255)  // Номер повернення з API Dilovod
   ttn           String?     @db.VarChar(255)
   firmId        String?     @db.VarChar(255)
-  firmName      String?     @db.VarChar(255)
   returnDate    DateTime?
   items         String      @db.LongText        // JSON: ReturnHistoryItem[]
   returnReason  String
@@ -262,7 +261,6 @@ model WarehouseReturnHistory {
   comment       String?     @db.Text
   payload       String      @db.LongText        // JSON: повний payload відправки
   createdBy     Int
-  createdByName String?     @db.VarChar(255)
   createdAt     DateTime    @default(now())
 
   @@index([orderId])
@@ -276,7 +274,6 @@ model WarehouseWriteOffHistory {
   id             Int         @id @default(autoincrement())
   writeOffNumber String?     @db.VarChar(255)  // ID документа в Dilovod (якщо є)
   firmId         String?     @db.VarChar(255)
-  firmName       String?     @db.VarChar(255)
   storageId      String?     @db.VarChar(255)
   writeOffDate   DateTime?
   items          String      @db.LongText        // JSON: WriteOffItem[]
@@ -285,7 +282,6 @@ model WarehouseWriteOffHistory {
   comment        String?     @db.Text
   payload        String      @db.LongText        // JSON: повний payload відправки
   createdBy      Int
-  createdByName  String?     @db.VarChar(255)
   createdAt      DateTime    @default(now())
 
   @@index([writeOffNumber])
@@ -304,7 +300,6 @@ model WarehouseReleaseSet {
   comment       String?  @db.Text
   status        String   @default("created")
   createdBy     Int?
-  createdByName String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

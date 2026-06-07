@@ -200,18 +200,13 @@ const port = process.env.PORT || 3001;
 app.listen(port, () => {
   console.log(`\n🚀 Server is running on http://localhost:${port}`);
   console.log(`\n📋 Available API endpoints:`);
-  console.log(`   GET   /api/health`);
-  console.log(`   GET   /api/orders`);
-  console.log(`   GET   /api/orders/test`);
-  console.log(`   POST  /api/orders/sync`);
-  console.log(`   GET   /api/orders/stats/summary (from local DB)`);
-  console.log(`   GET   /api/orders/raw/all`);
-  console.log(`   POST  /api/webhooks/salesdrive/order-update`);
-  console.log(`   POST  /api/webhooks/salesdrive/test`);
-  console.log(`   GET   /api/webhooks/salesdrive/health`);
+  console.log(`   GET   /api/health (перевірка стану сервера)`);
+  console.log(`   GET   /api/orders (отримати останні 100 замовлень з локальної БД)`);
+  console.log(`   GET   /api/orders/test (перевірка API налаштувань SalesDrive)`);
+  console.log(`   GET   /api/webhooks/salesdrive/health (перевірка стану вебхуків SalesDrive)`);
   
   // Start cron jobs after ensuring any old ones are stopped.
-  console.log('🚀 Starting cron tasks...');
+  console.log('\n🚀 Starting cron tasks...');
   forceStopAllCronJobs(); // Clean up any orphaned jobs from previous runs
   cronService.startAll(); // Start new jobs
 });

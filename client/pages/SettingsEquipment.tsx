@@ -14,6 +14,7 @@ import PrinterService from "../services/printerService";
 import { EQUIPMENT_DEFAULTS } from "../../shared/constants/equipmentDefaults.js";
 import { Spinner } from "@heroui/react";
 import { useRoleAccess } from '@/hooks/useRoleAccess';
+import QzWrapper from '../services/QzWrapper';
 
 
 export const SettingsEquipment = () => {
@@ -620,12 +621,10 @@ export const SettingsEquipment = () => {
     const printerName = localConfig?.receiptPrinter?.name;
 
     try {
-      // Підключення до QZ Tray
-      const qz = (await import('qz-tray')).default;
-      if (!qz.websocket.isActive()) {
-        const { initializeQzTray } = await import('../lib/qzConfig');
-        initializeQzTray();
-        await qz.websocket.connect();
+      // Підключення до QZ Tray через wrapper
+      await QzWrapper.ensureInitialized();
+      if (!await QzWrapper.isActive()) {
+        await QzWrapper.connect();
       }
 
       let config: any;
@@ -637,7 +636,7 @@ export const SettingsEquipment = () => {
           // Тест 1: Plain string до реального принтера
           if (!printerName) { addToast({ title: "Помилка", description: "Вкажіть ім'я принтера", color: "danger", timeout: 3000 }); return; }
           description = `Plain string → "${printerName}"`;
-          config = qz.configs.create(printerName);
+          config = await QzWrapper.configsCreate(printerName);
           data = ['Hello from QZ Tray!\n\n\n'];
           break;
         }
@@ -645,7 +644,7 @@ export const SettingsEquipment = () => {
           // Тест 2: raw/plain до реального принтера
           if (!printerName) { addToast({ title: "Помилка", description: "Вкажіть ім'я принтера", color: "danger", timeout: 3000 }); return; }
           description = `raw/plain → "${printerName}"`;
-          config = qz.configs.create(printerName);
+          config = await QzWrapper.configsCreate(printerName);
           data = [{ type: 'raw', format: 'plain', data: 'Test 2: raw/plain object\n\n\n' }];
           break;
         }
@@ -653,7 +652,7 @@ export const SettingsEquipment = () => {
           // Тест 3: raw/base64 до реального принтера
           if (!printerName) { addToast({ title: "Помилка", description: "Вкажіть ім'я принтера", color: "danger", timeout: 3000 }); return; }
           description = `raw/base64 → "${printerName}"`;
-          config = qz.configs.create(printerName);
+          config = await QzWrapper.configsCreate(printerName);
           data = [{ type: 'raw', format: 'base64', data: btoa('Test 3: base64 data\n\n\n') }];
           break;
         }
@@ -661,7 +660,7 @@ export const SettingsEquipment = () => {
           // Тест 4: raw/hex до реального принтера
           if (!printerName) { addToast({ title: "Помилка", description: "Вкажіть ім'я принтера", color: "danger", timeout: 3000 }); return; }
           description = `raw/hex → "${printerName}"`;
-          config = qz.configs.create(printerName);
+          config = await QzWrapper.configsCreate(printerName);
           const text = 'Test 4: hex data\n\n\n';
           const hex = Array.from(text).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
           data = [{ type: 'raw', format: 'hex', data: hex }];
@@ -671,7 +670,7 @@ export const SettingsEquipment = () => {
           // Тест 5: Зберегти ESC/POS у файл (не потрібен фізичний принтер!)
           // QZ Tray вміє писати прямо у файл — вказуємо тип 'file'
           description = 'ESC/POS → файл C:\\escpos_test.bin';
-          config = qz.configs.create(null);
+          config = await QzWrapper.configsCreate(null);
           data = [{
             type: 'raw',
             format: 'base64',
@@ -683,7 +682,7 @@ export const SettingsEquipment = () => {
         case 6: {
           // Тест 6: format:'hex' через TCP — байти мають бути точно CP866 (92 a5 e1 e2 для "Тест")
           description = 'ESC/POS hex → TCP 127.0.0.1:9100';
-          config = qz.configs.create({ host: '127.0.0.1', port: 9100 } as any);
+          config = await QzWrapper.configsCreate({ host: '127.0.0.1', port: 9100 } as any);
           // Ручна CP866 конвертація: "Тест кирилиця" → CP866 байти → hex
           // Т=0x92, е=0xa5, с=0xe1, т=0xe2 (CP866)
           const escPosText =
@@ -725,7 +724,8 @@ export const SettingsEquipment = () => {
       }
 
       console.log(`🧪 Тест ${testNumber} (${description}):`, JSON.stringify(data));
-      await qz.print(config, data);
+      // @ts-ignore: qz UMD global types can trigger module diagnostics; wrapper handles dynamic import
+      await QzWrapper.print(config, data);
 
       addToast({
         title: `✅ Тест ${testNumber} відправлено`,

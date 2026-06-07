@@ -55,7 +55,7 @@ After answering, if relevant, ask:
 ### Response Style
 - Keep responses concise and structured
 - Avoid unnecessary verbosity
-- Use emoji to make responses slightly more readable and friendly
+- **Use emoji to make responses slightly more readable and friendly**
 - Do not overuse emoji (typically 3-5 emoji per response is enough)
 
 ### Documentation & Changelog
@@ -143,6 +143,8 @@ Scheduled tasks: Orders sync (every 5 min), cache cleanup, reporting data aggreg
 npm run dev              # Start Vite dev server (port 8080, serves client + API)
 npm run dev:server       # Watch mode for server-only development
 npm run build            # Build both client and server
+npm run build:client     # Build frontend only
+npm run build:server     # Build backend only
 npm run start            # Run production build
 ```
 
@@ -151,7 +153,6 @@ npm run start            # Run production build
 ### Database Operations
 ```bash
 npm run db:generate      # Generate Prisma client (auto-runs on postinstall)
-npm run db:migrate       # Create/apply dev migrations
 npm run db:migrate:prod  # Deploy migrations (production)
 npm run db:studio        # Open Prisma Studio GUI
 ```
@@ -164,15 +165,6 @@ npm run db:studio        # Open Prisma Studio GUI
 3. Run `api:logout` to clear session
 
 Tasks use PowerShell's `Invoke-WebRequest` with `-WebSession` for cookie-based auth.
-
-### Server Management (Production)
-```bash
-npm run server:stop:win      # Stop server via PowerShell script
-npm run server:status:win    # Check running processes
-npm run deploy:prepare       # Build + migrate for production
-npm run deploy:start         # Start with PM2
-```
-PM2 config in `ecosystem.config.cjs` (single instance, auto-restart, 1G memory limit).
 
 ### QZ Tray Integration (Label Printing)
 ```bash

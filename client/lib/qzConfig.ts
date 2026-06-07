@@ -1,4 +1,4 @@
-import qz from 'qz-tray';
+// qz-tray will be imported dynamically to allow deferred loading
 
 /**
  * QZ Tray Certificate Configuration
@@ -42,19 +42,17 @@ ROHbpM7hl7L2MXFPSkNgJmGVqQ==
  * 1. Без сертифікатів - працює з ручним підтвердженням (для розробки)
  * 2. З сертифікатами - працює без підтверджень (для продакшену)
  */
-export function initializeQzTray(): void {
+export async function initializeQzTray(): Promise<void> {
+  const qz = (await import('qz-tray')).default;
   const useServerSigning = import.meta.env.VITE_QZ_USE_SERVER_SIGNING === 'true';
-  
+
   if (!useServerSigning) {
-    // РЕЖИМ БЕЗ СЕРТИФІКАТІВ (з ручним підтвердженням)
     console.log('QZ Tray: UNSIGNED mode (manual confirmation required)');
     return;
   }
 
-  // РЕЖИМ З СЕРТИФІКАТАМИ (без підтверджень)
   try {
     qz.security.setCertificatePromise(function(resolve: any, reject: any) {
-      // Отримати сертифікат з сервера
       fetch('/api/qz-tray/certificate')
         .then(response => {
           if (!response.ok) {
@@ -79,7 +77,6 @@ export function initializeQzTray(): void {
 
     qz.security.setSignaturePromise(function(toSign: string) {
       return function(resolve: any, reject: any) {
-        // Підписати на сервері
         fetch('/api/qz-tray/sign', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -113,9 +110,8 @@ export function initializeQzTray(): void {
  */
 export async function checkQzConnection(): Promise<boolean> {
   try {
-    if (qz.websocket.isActive()) {
-      return true;
-    }
+    const qz = (await import('qz-tray')).default;
+    if (qz.websocket.isActive()) return true;
     await qz.websocket.connect();
     return true;
   } catch (error) {
@@ -129,6 +125,7 @@ export async function checkQzConnection(): Promise<boolean> {
  */
 export async function getQzVersion(): Promise<string> {
   try {
+    const qz = (await import('qz-tray')).default;
     const version = await qz.api.getVersion();
     return version;
   } catch (error) {

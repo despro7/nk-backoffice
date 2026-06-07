@@ -581,14 +581,14 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/orders/raw/all
- * Отримати всі замовлення у сирому вигляді для налагодження
+ * Отримати всі замовлення за останні 7 днів у сирому вигляді для налагодження
  */
 router.get('/raw/all', authenticateToken, async (req, res) => {
   try {
-    // Використовуємо паралельне завантаження за останній місяць
+    // Використовуємо паралельне завантаження за останній тиждень
     const endDate = new Date().toISOString().split('T')[0];
     const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 1);
+    startDate.setDate(startDate.getDate() - 1); // За останній тиждень
     const startDateStr = startDate.toISOString().split('T')[0];
 
     const allOrders = await salesDriveService.fetchOrdersFromDateRangeParallel(startDateStr, endDate);
