@@ -28,6 +28,7 @@ export function useDilovodSettings({ loadDirectories = true }: { loadDirectories
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingDirectories, setLoadingDirectories] = useState(false);
+  // Keep a local fallback `lastApiKey` for when provider is not present.
   const [lastApiKey, setLastApiKey] = useState<string | null>(null);
 
   const fetchSettings = async () => {
@@ -64,16 +65,59 @@ export function useDilovodSettings({ loadDirectories = true }: { loadDirectories
     }
 
     // Якщо довідники вже є і API ключ не змінився - пропускаємо
-    if (!force && (dirsCtx?.directories || directories) && lastApiKey === settings?.apiKey) {
+    const providerLastApiKey = dirsCtx?.lastApiKey ?? lastApiKey;
+    if (!force && (dirsCtx?.directories || directories) && providerLastApiKey === settings?.apiKey) {
       console.log('Directories already loaded for current API key, skipping...');
       return;
+    }
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('lastApiKey: ', providerLastApiKey);
+      console.log('currentApiKey: ', settings?.apiKey);
     }
 
     try {
       setLoadingDirectories(true);
       setError(null);
-      
-      console.log('Fetching directories from API...');
+
+      // If a provider exists, delegate loading to it (centralized cache)
+      if (dirsCtx && typeof dirsCtx.loadDirectories === 'function') {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Delegating directories load to DilovodDirectoriesProvider...');
+        }
+        // Optimistically set lastApiKey so other hook instances won't repeatedly trigger reloads.
+        const prevApiKey = dirsCtx?.lastApiKey ?? lastApiKey;
+        try {
+          if (dirsCtx?.setLastApiKey) {
+            dirsCtx.setLastApiKey(settings?.apiKey || null);
+          } else {
+            setLastApiKey(settings?.apiKey || null);
+          }
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Delegated load: lastApiKey set to', settings?.apiKey || null);
+          }
+          await dirsCtx.loadDirectories(force);
+          // sync local view with provider state
+          setDirectories(dirsCtx.directories || null);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Directories loaded via provider');
+          }
+          return;
+        } catch (err) {
+          // If provider fails, revert lastApiKey and fall through to direct fetch as a safe fallback
+          try {
+            if (dirsCtx?.setLastApiKey) {
+              dirsCtx.setLastApiKey(prevApiKey ?? null);
+            } else {
+              setLastApiKey(prevApiKey ?? null);
+            }
+          } catch {}
+          console.error('Provider loadDirectories failed, falling back to direct fetch:', err);
+        }
+      }
+
+      // Fallback: direct fetch from API (used when provider is absent)
+      console.log('Fetching directories from API (fallback)...');
       const response = await fetch('/api/dilovod/directories', {
         method: 'GET',
         credentials: 'include',
@@ -87,7 +131,9 @@ export function useDilovodSettings({ loadDirectories = true }: { loadDirectories
       if (data.success) {
         setDirectories(data.data);
         setLastApiKey(settings?.apiKey || null);
-        console.log('Directories loaded successfully:', data.data);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Directories loaded successfully (fallback):', data.data);
+        }
         // Update context if available
         try {
           dirsCtx?.setDirectories(data.data || null);
@@ -162,7 +208,10 @@ export function useDilovodSettings({ loadDirectories = true }: { loadDirectories
     }
 
     if (settings?.apiKey && settings.apiKey !== lastApiKey) {
-      console.log('API key changed, loading directories...');
+      // If a centralized provider exists, it will log and handle loading; avoid duplicate logs from each hook instance
+      if (!dirsCtx) {
+        console.log('API key changed, loading directories...');
+      }
       fetchDirectories();
     }
   }, [settings?.apiKey, loadDirectories]);

@@ -162,12 +162,33 @@ export const DilovodCacheManager: React.FC = () => {
   // Завантажити дані довідника для перегляду
   const viewDirectory = async (type: keyof CacheStatus) => {
     try {
+      // Prefer provider if available
+      if (dirsCtx) {
+        await dirsCtx.loadDirectories();
+        const result = dirsCtx.directories || {} as any;
+        const apiKeyMap: Record<keyof CacheStatus, string> = {
+          firms: 'firms',
+          accounts: 'cashAccounts',
+          storages: 'storages',
+          paymentForms: 'paymentForms',
+          tradeChanels: 'tradeChanels',
+          deliveryMethods: 'deliveryMethods',
+          goods: 'goods'
+        };
+        const apiKey = apiKeyMap[type];
+        const data = result[apiKey] || [];
+        console.log(`Loading ${type} from provider key ${apiKey}:`, data);
+        setViewingDirectory({ type, data });
+        // provider already holds directories state
+        return;
+      }
+
+      // fallback: direct fetch
       const response = await fetch(`/api/dilovod/directories`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch directory data');
 
       const result = await response.json();
       if (result.success) {
-        // Маппінг ключів: API повертає cashAccounts, але в CacheStatus використовується accounts
         const apiKeyMap: Record<keyof CacheStatus, string> = {
           firms: 'firms',
           accounts: 'cashAccounts',

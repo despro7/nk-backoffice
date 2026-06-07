@@ -268,6 +268,8 @@ export class CashInExportBuilder {
     mappingJson: string | undefined,
     account: string,
   ): Promise<{ id?: string; name?: string; cashAccount?: string } | undefined> {
+    // Cache firms within this method to avoid multiple dilovodService.getFirms() calls
+    let firmsCache: any[] | null = null;
     // 1) Спроба знайти у channelPaymentMapping (якщо там зберігають firm)
     if (mappingJson && account) {
       try {
@@ -283,8 +285,8 @@ export class CashInExportBuilder {
             if (candidate) {
               // Спробуємо дізнатись людинозрозумілу назву фірми з довідників
               try {
-                const firms = await dilovodService.getFirms();
-                const firmObj = (firms || []).find((f: any) => f.id === candidate);
+                if (!firmsCache) firmsCache = await dilovodService.getFirms();
+                const firmObj = (firmsCache || []).find((f: any) => f.id === candidate);
                 const name = firmObj?.name ?? undefined;
                 return { id: candidate, name, cashAccount: matchedCashAccount };
               } catch (e) {
@@ -303,10 +305,11 @@ export class CashInExportBuilder {
     }
 
     // 2) Якщо не знайшли — звертаємося до Dilovod довідників: знаходимо рахунок за назвою (IBAN) або за id
-    try {
-      logServer(`🔍 [CashIn] Шукаємо рахунок у довідниках Dilovod за значенням: ${account}`);
-      const cashAccounts = await dilovodService.getCashAccounts();
-      const firms = await dilovodService.getFirms();
+      try {
+        logServer(`🔍 [CashIn] Шукаємо рахунок у довідниках Dilovod за значенням: ${account}`);
+        const cashAccounts = await dilovodService.getCashAccounts();
+        if (!firmsCache) firmsCache = await dilovodService.getFirms();
+        const firms = firmsCache;
 
       const normalized = String(account).replace(/\s+/g, '');
       // Пошук по id або по назві що містить IBAN

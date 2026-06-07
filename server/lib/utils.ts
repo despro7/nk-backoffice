@@ -160,6 +160,11 @@ export const logServer = (message: string, data?: any) => {
   console.log(`[${formatTimeOnly(timestamp)}] [${timeFromStart.toFixed(2)}s] ${message}`, data || '');
 };
 
+// Short-lived in-memory cache for firms lookup to avoid repeated calls per-request
+let _firmsCache: any[] | null = null;
+let _firmsCacheAt = 0;
+const FIRMS_CACHE_TTL = 30 * 1000; // 30 seconds
+
 /**
  * Отримує час початку звітного дня з налаштувань
  * @returns час початку звітного дня (0-23), за замовчуванням 0 (північ)
@@ -308,9 +313,19 @@ export async function getFirmDisplayNameServer(firmId: any, firmName?: any): Pro
   if (!idStr) return null;
 
   try {
-    // Use dilovodService to read cached firms (will fetch from cache or API)
-    const { dilovodService } = await import('./../services/dilovod/DilovodService.js');
-    const firms = await dilovodService.getFirms(false);
+    const now = Date.now();
+    if (!_firmsCache || (now - _firmsCacheAt) > FIRMS_CACHE_TTL) {
+      const { dilovodService } = await import('./../services/dilovod/DilovodService.js');
+      try {
+        _firmsCache = await dilovodService.getFirms(false);
+      } catch (e) {
+        _firmsCache = null;
+        console.warn('[getFirmDisplayNameServer] failed to refresh firms cache:', e);
+      }
+      _firmsCacheAt = Date.now();
+    }
+
+    const firms = _firmsCache;
     const f = Array.isArray(firms) ? firms.find((x: any) => String(x.id) === idStr || (x.id && String(x.id).trim() === idStr)) : null;
     if (f) return f.name || String(f.id);
   } catch (e) {

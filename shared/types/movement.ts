@@ -150,7 +150,7 @@ export interface MovementDraft {
   sentToDilovodAt: string | null;
   lastSentToDilovodAt: string | null;
   createdBy: number;
-  createdByName?: string | null;
+  
 }
 
 /**

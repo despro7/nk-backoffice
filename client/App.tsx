@@ -12,6 +12,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { DilovodDirectoriesProvider } from './contexts/DilovodDirectoriesContext';
+import { useDilovodDirectories } from './contexts/DilovodDirectoriesContext';
 import { DebugProvider } from "./contexts/DebugContext";
 import { ServerStatusProvider } from "./hooks/ServerStatusContext";
 import { useEquipmentFromAuth } from "./contexts/AuthContext";
@@ -101,6 +102,8 @@ const AppRoutes = () => {
 const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isReady, setIsReady] = React.useState(false);
   const { user, isLoading: authLoading } = useAuth();
+  // Preload Dilovod directories once after auth resolved to avoid multiple components triggering fetches
+  const dirsCtx = (() => { try { return useDilovodDirectories(); } catch { return null as any; } })();
 
   // Ініціалізація AudioContext під час першої користувацької взаємодії
   React.useEffect(() => {
@@ -143,6 +146,14 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
       }
 
       setIsReady(true);
+      // Trigger directories load once (non-blocking)
+      try {
+        if (dirsCtx && typeof dirsCtx.loadDirectories === 'function') {
+          void dirsCtx.loadDirectories();
+        }
+      } catch (e) {
+        // ignore
+      }
     })();
   }, [authLoading, user]);
 

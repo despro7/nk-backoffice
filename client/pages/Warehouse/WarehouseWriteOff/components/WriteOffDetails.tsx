@@ -3,6 +3,7 @@ import { useDebug } from '@/contexts/DebugContext';
 import { DateTimePicker } from '@/components/DateTimePicker';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useEffect, useState } from 'react';
+import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 
 interface Props {
   returns: any;
@@ -14,12 +15,13 @@ interface Props {
 
 export default function WriteOffDetails({ returns, storages, selectedStorage, setSelectedStorage }: Props) {
   const { isDebugMode } = useDebug();
+  // useDilovodDirectories на верхньому рівні компонента (правило хуків)
+  const dirsCtx = useDilovodDirectories();
   const [localFirms, setLocalFirms] = useState<Array<{ id: string; name: string }>>(returns.availableFirms || []);
   const [localStorages, setLocalStorages] = useState<any[]>(storages || []);
-  const [directoriesError, setDirectoriesError] = useState<string | null>(null);
+  const [directoriesError] = useState<string | null>(null);
 
   useEffect(() => {
-    // keep in sync with props/state if available
     if (returns.availableFirms && returns.availableFirms.length > 0) setLocalFirms(returns.availableFirms);
   }, [returns.availableFirms]);
 
@@ -27,36 +29,18 @@ export default function WriteOffDetails({ returns, storages, selectedStorage, se
     if (Array.isArray(storages) && storages.length > 0) setLocalStorages(storages);
   }, [storages]);
 
-  useEffect(() => {
-    // If either firms or storages are empty, try fetching directories directly (works for worker accounts that have access)
-    const needFirms = !localFirms || localFirms.length === 0;
-    const needStorages = !localStorages || localStorages.length === 0;
-    if (!needFirms && !needStorages) return;
+  // Ініціює завантаження при монтуванні через централізований провайдер
+  useEffect(() => { void dirsCtx.loadDirectories(); }, []);
 
-    let mounted = true;
-    (async () => {
-      try {
-        const res = await fetch('/api/dilovod/directories', { credentials: 'include' });
-        const json = await res.json().catch(() => ({}));
-        if (!mounted) return;
-        if (res.ok && json?.success && json.data) {
-          if (needStorages && Array.isArray(json.data.storages)) setLocalStorages(json.data.storages || []);
-          if (needFirms && Array.isArray(json.data.firms)) setLocalFirms((json.data.firms || []).map((f: any) => ({ id: f.id, name: f.name })));
-          setDirectoriesError(null);
-        } else {
-          // Capture specific permission error message if present
-          const errMsg = json?.error || `Failed to load directories (${res.status})`;
-          setDirectoriesError(errMsg);
-          console.warn('WriteOffDetails: directories fetch non-ok', errMsg);
-        }
-      } catch (e:any) {
-        const msg = e?.message || String(e);
-        setDirectoriesError(msg);
-        console.warn('WriteOffDetails: failed to load directories', e);
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
+  // Синхронізує локальні firms/storages щоразу, коли провайдер оновлює дані
+  useEffect(() => {
+    const d = dirsCtx.directories;
+    if (!d) return;
+    if (Array.isArray(d.storages) && d.storages.length > 0) setLocalStorages(d.storages);
+    if (Array.isArray(d.firms) && d.firms.length > 0) {
+      setLocalFirms(d.firms.map((f: any) => ({ id: f.id, name: f.name })));
+    }
+  }, [dirsCtx.directories]);
   return (
     <>
 		<h2 className="font-medium mb-2 mt-2">Параметри списання</h2>

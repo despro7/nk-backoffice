@@ -234,7 +234,6 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
         data: {
           writeOffNumber: writeOffNumber,
           firmId: firmId ?? null,
-          firmName: firmNameToSave ?? null,
           storageId: header.storage ?? null,
           writeOffDate: writeOffDateObj,
           items: JSON.stringify(enrichedItems),
@@ -243,7 +242,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
           comment: comment || null,
           payload: JSON.stringify(payload),
           createdBy: userId || 0,
-          createdByName: userName || null,
+          
         }
       });
     } catch (historyErr) {
@@ -263,16 +262,29 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
 router.get('/history', authenticateToken, async (req, res) => {
   try {
     const history = await prisma.warehouseWriteOffHistory.findMany({ orderBy: { createdAt: 'desc' } });
+    // Preload firms once to avoid calling into DilovodService.getFirms for each record
+    let firmsMap: Map<string, string> = new Map();
+    try {
+      const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
+      const firms = await dilovodService.getFirms(false);
+      if (Array.isArray(firms)) {
+        firmsMap = new Map(firms.map((f: any) => [String(f.id), f.name || String(f.id)]));
+      }
+    } catch (e) {
+      console.warn('[WriteOff] Failed to preload firms for display names:', e);
+    }
 
-    const enriched = await Promise.all(history.map(async (rec: any) => {
+    const enriched = history.map((rec: any) => {
       const parsed = safeParseItems(rec.items);
       const itemsNormalized = normalizeItemsArray(parsed);
+      const idStr = rec.firmId != null ? String(rec.firmId) : null;
+      const firmDisplay = idStr ? (firmsMap.get(idStr) ?? idStr) : null;
       return {
         ...rec,
-        firmDisplayName: await getFirmDisplayNameServer(rec.firmId, rec.firmName),
+        firmDisplayName: firmDisplay,
         itemsNormalized,
       };
-    }));
+    });
 
     res.json({ success: true, data: enriched });
   } catch (error) {
@@ -343,7 +355,6 @@ router.post('/history', authenticateToken, async (req, res) => {
         record = await prisma.warehouseWriteOffHistory.update({ where: { id: existing.id }, data: {
           writeOffNumber: writeOffNumber || existing.writeOffNumber,
           firmId: firmId || existing.firmId,
-          firmName: firmName || existing.firmName,
           storageId: storageId || existing.storageId,
           writeOffDate: writeOffDate ? new Date(writeOffDate) : existing.writeOffDate,
           items: JSON.stringify(enrichedItems),
@@ -352,13 +363,12 @@ router.post('/history', authenticateToken, async (req, res) => {
           comment: comment || existing.comment,
           payload: payload ? JSON.stringify(payload) : existing.payload,
           createdBy: userId || existing.createdBy,
-          createdByName: userName || existing.createdByName,
+          
         } });
       } else {
         record = await prisma.warehouseWriteOffHistory.create({ data: {
           writeOffNumber: writeOffNumber || null,
           firmId: firmId || null,
-          firmName: firmName || null,
           storageId: storageId || null,
           writeOffDate: writeOffDate ? new Date(writeOffDate) : null,
           items: JSON.stringify(enrichedItems),
@@ -367,7 +377,7 @@ router.post('/history', authenticateToken, async (req, res) => {
           comment: comment || null,
           payload: payload ? JSON.stringify(payload) : null,
           createdBy: userId || 0,
-          createdByName: userName || null,
+          
         } });
       }
 

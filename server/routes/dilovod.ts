@@ -15,6 +15,10 @@ import type {
 const router = Router();
 const prisma = new PrismaClient();
 
+// In-flight coalescing: when multiple requests ask for directories at the same time,
+// reuse the same promise so we only hit Dilovod once per process.
+let directoriesInFlight: Promise<any> | null = null;
+
 // Допоміжні функції для роботи з налаштуваннями Dilovod в settings_base
 
 /**
@@ -369,103 +373,87 @@ router.post('/settings', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAG
  * Отримання довідників з Dilovod (склади, рахунки, форми оплати, фірми)
  */
 router.get('/directories', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+  // If another request is already fetching directories, reuse its promise
+  if (directoriesInFlight) {
+    try {
+      const cached = await directoriesInFlight;
+      return res.json(cached);
+    } catch (err) {
+      // fall through to attempt fresh fetch below
+    }
+  }
+
+  // Start a single in-flight fetch for concurrent callers
+  directoriesInFlight = (async () => {
+    try {
+      console.log('=== API: Отримання довідників Dilovod ===');
+
+      const dilovodService = new DilovodService();
+
+      // Dilovod API блокує паралельні запити ('multithreadApiSession multithread api request blocked')
+      // Тому робимо запити послідовно з обробкою помилок
+      let storagesResult: any[] = [];
+      let accountsResult: any[] = [];
+      let paymentFormsResult: any[] = [];
+      let firmsResult: any[] = [];
+      let tradeChanelsResult: any[] = [];
+      let deliveryMethodsResult: any[] = [];
+
+      try { storagesResult = await dilovodService.getStorages(); } catch (error) { console.log('API: ❌ Помилка отримання складів:', error); }
+      try { accountsResult = await dilovodService.getCashAccounts(); } catch (error) { console.log('API: ❌ Помилка отримання рахунків:', error); }
+      try { paymentFormsResult = await dilovodService.getPaymentForms(); } catch (error) { console.log('API: ❌ Помилка отримання форм оплати:', error); }
+      try { firmsResult = await dilovodService.getFirms(); } catch (error) { console.log('API: ❌ Помилка отримання фірм:', error); }
+      try { tradeChanelsResult = await dilovodService.getTradeChanels(); } catch (error) { console.log('API: ❌ Помилка отримання каналів продажів:', error); }
+      try { deliveryMethodsResult = await dilovodService.getDeliveryMethods(); } catch (error) { console.log('API: ❌ Помилка отримання способів доставки:', error); }
+
+      // Отримуємо товари з products (будемо використовувати поле products.dilovodId)
+      let goodsResult: any[] = [];
+      try {
+        const { PrismaClient } = await import('@prisma/client');
+        const prismaLocal = new PrismaClient();
+        const products = await prismaLocal.product.findMany({
+          where: ({ dilovodId: { not: null } } as any),
+          orderBy: { sku: 'asc' }
+        });
+
+        goodsResult = products.map(p => ({
+          id: p.id,
+          good_id: (p as any).dilovodId,
+          productNum: p.sku,
+          name: p.name || null,
+          parent: null
+        }));
+
+        await prismaLocal.$disconnect();
+      } catch (error) {
+        console.log('API: ❌ Помилка отримання товарів з кешу:', error);
+      }
+
+      const directories: DilovodDirectories = {
+        storages: storagesResult,
+        cashAccounts: accountsResult,
+        paymentForms: paymentFormsResult,
+        firms: firmsResult,
+        tradeChanels: tradeChanelsResult,
+        deliveryMethods: deliveryMethodsResult,
+        goods: goodsResult
+      };
+
+      return { success: true, data: directories };
+    } catch (error) {
+      console.log('API: ❌ Помилка отримання довідників Dilovod:', error);
+      throw error;
+    }
+  })();
+
   try {
-    const { user } = req as any;
-
-    console.log('=== API: Отримання довідників Dilovod ===');
-
-    const dilovodService = new DilovodService();
-
-    // Dilovod API блокує паралельні запити ('multithreadApiSession multithread api request blocked')
-    // Тому робимо запити послідовно з обробкою помилок
-    let storagesResult: any[] = [];
-    let accountsResult: any[] = [];
-    let paymentFormsResult: any[] = [];
-    let firmsResult: any[] = [];
-    let tradeChanelsResult: any[] = [];
-    let deliveryMethodsResult: any[] = [];
-
-    try {
-      storagesResult = await dilovodService.getStorages();
-    } catch (error) {
-      console.log('API: ❌ Помилка отримання складів:', error);
-    }
-
-    try {
-      accountsResult = await dilovodService.getCashAccounts();
-    } catch (error) {
-      console.log('API: ❌ Помилка отримання рахунків:', error);
-    }
-
-    try {
-      paymentFormsResult = await dilovodService.getPaymentForms();
-    } catch (error) {
-      console.log('API: ❌ Помилка отримання форм оплати:', error);
-    }
-
-    try {
-      firmsResult = await dilovodService.getFirms();
-    } catch (error) {
-      console.log('API: ❌ Помилка отримання фірм:', error);
-    }
-
-    try {
-      tradeChanelsResult = await dilovodService.getTradeChanels();
-    } catch (error) {
-      console.log('API: ❌ Помилка отримання каналів продажів:', error);
-    }
-
-    try {
-      deliveryMethodsResult = await dilovodService.getDeliveryMethods();
-    } catch (error) {
-      console.log('API: ❌ Помилка отримання способів доставки:', error);
-    }
-
-    // Отримуємо товари з products (будемо використовувати поле products.dilovodId)
-    let goodsResult: any[] = [];
-    try {
-      const { PrismaClient } = await import('@prisma/client');
-      const prisma = new PrismaClient();
-      const products = await prisma.product.findMany({
-        where: ({ dilovodId: { not: null } } as any),
-        orderBy: { sku: 'asc' }
-      });
-
-      // Map to expected shape for directories endpoint
-      goodsResult = products.map(p => ({
-        id: p.id,
-        good_id: (p as any).dilovodId,
-        productNum: p.sku,
-        name: p.name || null,
-        parent: null
-      }));
-
-      await prisma.$disconnect();
-    } catch (error) {
-      console.log('API: ❌ Помилка отримання товарів з кешу:', error);
-    }
-
-    const directories: DilovodDirectories = {
-      storages: storagesResult,
-      cashAccounts: accountsResult,
-      paymentForms: paymentFormsResult,
-      firms: firmsResult,
-      tradeChanels: tradeChanelsResult,
-      deliveryMethods: deliveryMethodsResult,
-      goods: goodsResult
-    };
-
-    res.json({
-      success: true,
-      data: directories
-    });
+    const result = await directoriesInFlight;
+    return res.json(result);
   } catch (error) {
-    console.log('API: Помилка отримання довідників Dilovod:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Невідома помилка'
-    });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  } finally {
+    // Clear the in-flight marker so future requests will refetch when necessary
+    directoriesInFlight = null;
   }
 });
 

@@ -31,7 +31,7 @@ export class ReturnsHistoryService {
   /**
    * Зберегти запис про повернення
    */
-  static async saveRecord(record: Omit<ReturnHistoryRecord, 'id' | 'createdAt' | 'createdBy' | 'createdByName'>): Promise<ReturnHistoryRecord> {
+  static async saveRecord(record: Omit<ReturnHistoryRecord, 'id' | 'createdAt' | 'createdBy'>): Promise<ReturnHistoryRecord> {
     try {
       const response = await fetch('/api/warehouse/returns/history', {
         method: 'POST',

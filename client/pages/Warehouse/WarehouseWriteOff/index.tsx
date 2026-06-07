@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { useWarehouseReturns } from '../WarehouseReturns/useWarehouseReturns';
 import useWarehouseWriteOff from './useWarehouseWriteOff';
 import { Tabs, Tab, Card } from '@heroui/react';
@@ -21,6 +22,8 @@ import { pluralize } from '@/lib';
 export default function WarehouseWriteOff() {
   const returns = useWarehouseReturns();
   const writeoff = useWarehouseWriteOff();
+  // useDilovodDirectories на верхньому рівні компонента (правило хуків)
+  const dirsCtx = useDilovodDirectories();
   // selectedQuantities removed — add button will always add 1 unit from order lines
   const [disabledSkus, setDisabledSkus] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState<'byOrder'|'byProduct'>('byOrder');
@@ -58,33 +61,23 @@ export default function WarehouseWriteOff() {
       }
     };
     void load();
-    // load dilovod directories for storages
-    (async () => {
-      try {
-        const res = await fetch('/api/dilovod/directories', { credentials: 'include' });
-        const json = await res.json().catch(() => ({}));
-          if (res.ok && json?.success && json.data) {
-            const s = Array.isArray(json.data.storages) ? json.data.storages : [];
-            setStorages(s);
-            // Try to fetch dilovod settings to find configured smallStorageId and preselect it
-            try {
-              const setRes = await fetch('/api/dilovod/settings', { credentials: 'include' });
-              const setJson = await setRes.json().catch(() => ({}));
-              const smallId = setJson?.data?.smallStorageId || setJson?.data?.smallStorageId || null;
-              if (smallId) {
-                const found = s.find(st => String(st.id) === String(smallId) || String(st.good_id) === String(smallId));
-                if (found) setSelectedStorage(String(found.id ?? found.good_id ?? smallId));
-              }
-            } catch (e) {
-              // ignore
-            }
-          }
-      } catch (e) {
-        // ignore
-      }
-    })();
     return () => { mounted = false; };
   }, [selectedOrderExternalId]);
+
+  // Ініціює завантаження довідників один раз при монтуванні
+  useEffect(() => { void dirsCtx.loadDirectories(); }, []);
+
+  // Синхронізує storages зі стану провайдера щоразу, як дані оновлюються
+  useEffect(() => {
+    const s = dirsCtx.directories?.storages || [];
+    if (s.length === 0) return;
+    setStorages(s);
+    const smallId: string | null = (dirsCtx.directories as any)?.smallStorageId || null;
+    if (smallId) {
+      const found = s.find((st: any) => String(st.id) === String(smallId) || String(st.good_id) === String(smallId));
+      if (found) setSelectedStorage(String(found.id ?? found.good_id ?? smallId));
+    }
+  }, [dirsCtx.directories]);
 
   // load firms list for selects
   useEffect(() => {

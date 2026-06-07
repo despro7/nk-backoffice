@@ -22,7 +22,7 @@ export interface InventorySession {
   inventoryDate: string;
   createdAt: string;
   createdBy: string;
-  createdByName: string | null;
+  
   status: InventoryStatus;
   completedAt: string | null;
   comment: string;

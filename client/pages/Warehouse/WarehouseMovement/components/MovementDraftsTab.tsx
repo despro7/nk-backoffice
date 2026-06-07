@@ -152,7 +152,7 @@ export const MovementDraftsTab = ({
 
                     {/* Автор */}
                     <td className="py-3 px-3 text-gray-700">
-                      {draft.createdByName ?? namesMap[Number(draft.createdBy ?? -1)] ?? '—'}
+                      {namesMap[Number(draft.createdBy ?? -1)] ?? '—'}
                     </td>
 
                     {/* Дії */}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { expandProductSets } from '@/lib/orderAssemblyUtils';
 import { useApi } from '@/hooks/useApi';
 import { ToastService } from '@/services/ToastService';
@@ -114,6 +115,25 @@ export function useWarehouseReturns() {
 
   const loadFirmName = useCallback(async (fid: string) => {
     try {
+      const dirsCtx = (() => { try { return useDilovodDirectories(); } catch { return null as any; } })();
+      if (dirsCtx && dirsCtx.directories) {
+        const firms = Array.isArray(dirsCtx.directories.firms) ? dirsCtx.directories.firms : [];
+        const firm = firms.find((item: any) => item.id === fid);
+        setShipFirmName((prev) => (prev || firm?.name) ?? '');
+        setReceiveFirmName((prev) => (prev || firm?.name) ?? '');
+        return firm?.name ?? null;
+      }
+
+      if (dirsCtx && typeof dirsCtx.loadDirectories === 'function') {
+        await dirsCtx.loadDirectories();
+        const firms = Array.isArray(dirsCtx.directories?.firms) ? dirsCtx.directories?.firms : [];
+        const firm = firms.find((item: any) => item.id === fid);
+        setShipFirmName((prev) => (prev || firm?.name) ?? '');
+        setReceiveFirmName((prev) => (prev || firm?.name) ?? '');
+        return firm?.name ?? null;
+      }
+
+      // Fallback to apiCall if provider not available
       const response = await apiCall('/api/dilovod/directories');
       const data = await response.json();
       if (!response.ok || !data.success) {
@@ -121,7 +141,6 @@ export function useWarehouseReturns() {
       }
       const firms = Array.isArray(data.data?.firms) ? data.data.firms : [];
       const firm = firms.find((item: any) => item.id === fid);
-      // set both names if caller expects different contexts
       setShipFirmName((prev) => (prev || firm?.name) ?? '');
       setReceiveFirmName((prev) => (prev || firm?.name) ?? '');
       return firm?.name ?? null;
@@ -134,10 +153,20 @@ export function useWarehouseReturns() {
 
   const loadAvailableFirms = useCallback(async () => {
     try {
-      const response = await apiCall('/api/dilovod/directories');
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data?.error || 'Failed to load directories');
-      const firms = Array.isArray(data.data?.firms) ? data.data.firms : [];
+      const dirsCtx = (() => { try { return useDilovodDirectories(); } catch { return null as any; } })();
+      let firms: any[] = [];
+      if (dirsCtx && dirsCtx.directories) {
+        firms = Array.isArray(dirsCtx.directories.firms) ? dirsCtx.directories.firms : [];
+      } else if (dirsCtx && typeof dirsCtx.loadDirectories === 'function') {
+        await dirsCtx.loadDirectories();
+        firms = Array.isArray(dirsCtx.directories?.firms) ? dirsCtx.directories?.firms : [];
+      } else {
+        const response = await apiCall('/api/dilovod/directories');
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data?.error || 'Failed to load directories');
+        firms = Array.isArray(data.data?.firms) ? data.data.firms : [];
+      }
+
       setAvailableFirms(firms.map((f: any) => ({ id: f.id, name: f.name })));
       // Also attempt to load dilovod settings to get default firm id
       try {

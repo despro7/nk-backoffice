@@ -257,8 +257,8 @@ export const HistoryAccordionItem = ({
                   </div>
 
                   <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
-                    <span>Автор: <b>{record.createdByName ?? namesMap[Number(record.createdBy ?? record.created_by ?? -1)] ?? record.createdBy ?? record.created_by ?? '—'}</b></span>
-                    <span className="border-l border-gray-300 pl-3">Фірма: <b>{(getFirmDisplayName(record.firmId, record.firmName, directories) || 'Не визначено')}</b></span>
+                    <span>Автор: <b>{namesMap[Number(record.createdBy ?? record.created_by ?? -1)] ?? record.createdBy ?? record.created_by ?? '—'}</b></span>
+                    <span className="border-l border-gray-300 pl-3">Фірма: <b>{(getFirmDisplayName(record.firmId, undefined, directories) || 'Не визначено')}</b></span>
                     <span className="border-l border-gray-300 pl-3">Склад: <b>{(getStorageDisplayName(record.storageId || record.payload?.storage, record.storageName, directories) || '—')}</b></span>
                     <span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(record.createdAt || record.created_at)}</b></span>
                     {cfg.dateField && formatDate(record.createdAt || record.created_at) !== formatDate(record[cfg.dateField]) && (

@@ -274,7 +274,6 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
           orderNumber: orderDetails?.orderNumber || `order_${orderId}`,
           ttn: orderDetails?.ttn || null,
           firmId: null,
-          firmName: null,
           // Use requestedDate (from DateTimePicker) when provided, otherwise fallback to original orderDate
           returnDate: requestedDate ? new Date(requestedDate).toISOString() : (orderDetails?.orderDate || null),
           items: JSON.stringify(items),
@@ -284,7 +283,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
           payload: JSON.stringify(payload),
           returnNumber: dilovodDocId, // Зберігаємо ID документа Dilovod
           createdBy: userId,
-          createdByName: userName || null,
+          
         },
       });
       
@@ -335,12 +334,27 @@ router.get('/history', authenticateToken, async (req, res) => {
     const withAuthors = await resolveAuthorNames(history as any[]);
 
     // Додати дружню назву фірми та нормалізовані items
+    // Щоб уникнути повторних викликів до DilovodService.getFirms (який логує при читанні кешу),
+    // завантажуємо всі фірми один раз через singleton (з TTL-кешем) і використовуємо локальну мапу.
+    let firmsMap: Map<string, string> = new Map();
+    try {
+      const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
+      const firms = await dilovodService.getFirms(false);
+      if (Array.isArray(firms)) {
+        firmsMap = new Map(firms.map((f: any) => [String(f.id), f.name || String(f.id)]));
+      }
+    } catch (e) {
+      console.warn('[ReturnsHistory] Failed to preload firms for display names:', e);
+    }
+
     const enrichedHistory = await Promise.all(withAuthors.map(async (rec: any) => {
       const parsed = safeParseItems(rec.items);
       const itemsNormalized = normalizeItemsArray(parsed);
+      const idStr = rec.firmId != null ? String(rec.firmId) : null;
+      const firmDisplay = idStr ? (firmsMap.get(idStr) ?? idStr) : null;
       return {
         ...rec,
-        firmDisplayName: await getFirmDisplayNameServer(rec.firmId, rec.firmName),
+        firmDisplayName: firmDisplay,
         itemsNormalized,
       };
     }));
@@ -400,7 +414,6 @@ router.post('/history', authenticateToken, async (req, res) => {
           orderNumber,
           ttn: ttn || null,
           firmId: firmId || null,
-          firmName: firmName || null,
           returnDate: returnDate ? new Date(returnDate) : null,
           items: JSON.stringify(items),
           returnReason,
@@ -409,7 +422,7 @@ router.post('/history', authenticateToken, async (req, res) => {
           payload: JSON.stringify(payload),
           returnNumber: returnNumber || existingRecord.returnNumber, // Зберігаємо ID документа з Dilovod
           createdBy: userId,
-          createdByName: userName || null,
+          
         },
       });
       console.log(`✅ [Returns] Updated history record ${record.id} with returnNumber: ${returnNumber}`);
@@ -421,7 +434,6 @@ router.post('/history', authenticateToken, async (req, res) => {
           orderNumber,
           ttn: ttn || null,
           firmId: firmId || null,
-          firmName: firmName || null,
           returnDate: returnDate ? new Date(returnDate) : null,
           items: JSON.stringify(items),
           returnReason,
@@ -430,7 +442,7 @@ router.post('/history', authenticateToken, async (req, res) => {
           payload: JSON.stringify(payload),
           returnNumber: returnNumber || null,
           createdBy: userId,
-          createdByName: userName || null,
+          
         },
       });
       console.log(`✅ [Returns] Created new history record ${record.id} with returnNumber: ${returnNumber}`);

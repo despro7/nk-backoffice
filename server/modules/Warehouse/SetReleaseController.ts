@@ -47,7 +47,7 @@ router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (re
       comment: comment ?? null,
       status: status ?? 'created',
       createdBy: Number(userId) || 0,
-      createdByName: userName || null,
+      
     } });
 
     res.json({ success: true, data: record });

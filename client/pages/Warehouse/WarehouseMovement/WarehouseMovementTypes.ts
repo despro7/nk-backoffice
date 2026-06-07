@@ -58,7 +58,7 @@ export interface MovementDraft {
   dilovodDocId?: string;        // ID документа в Діловоді (для редагування документів з історії)
   docNumber?: string;           // Номер документа від Діловода (після відправки)
   createdBy?: string;           // Автор чернетки (ID користувача)
-  createdByName?: string;       // Автор чернетки (ім'я користувача)
+  
   dilovodPayload?: {
     header: any;
     tableParts: any;

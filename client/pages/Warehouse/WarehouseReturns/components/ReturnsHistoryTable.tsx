@@ -9,6 +9,7 @@ import { formatTrackingNumberWithIcon, pluralize } from '@/lib';
 import { HistoryItemsTable } from '../../shared/HistoryItemsTable';
 import type { ReturnHistoryRecord, ReturnHistoryItem } from '../WarehouseReturnsTypes';
 import useUserNames from '@/hooks/useUserNames';
+import { getFirmDisplayName } from '@shared/utils/directoryUtils';
 
 // ---------------------------------------------------------------------------
 // ReturnsHistoryTable — список повернень як акордеон
@@ -197,8 +198,8 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
                     )}
                   </div>
                   <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
-                    <span>Автор: <b>{record.createdByName ?? namesMap[Number(record.createdBy ?? -1)] ?? record.createdBy ?? '—'}</b></span>
-                    <span className="border-l border-gray-300 pl-3">Фірма оприбуткування: <b>{record.firmName || record.firmId || 'Не визначено'}</b>{record.shipFirmName || record.shipFirmId ? <span className="ml-2">(відвантаження: <b>{record.shipFirmName || record.shipFirmId}</b>)</span> : null}</span>
+                    <span>Автор: <b>{namesMap[Number(record.createdBy ?? -1)] ?? record.createdBy ?? '—'}</b></span>
+                    <span className="border-l border-gray-300 pl-3">Фірма оприбуткування: <b>{record.firmDisplayName || getFirmDisplayName(record.firmId) || record.firmId || 'Не визначено'}</b>{record.shipFirmName || record.shipFirmId ? <span className="ml-2">(відвантаження: <b>{record.shipFirmName || record.shipFirmId}</b>)</span> : null}</span>
                     <span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(record.createdAt)}</b></span>
                     {formatDate(record.createdAt) !== formatDate(record.returnDate) && record.returnDate && (
                       <span className="bg-amber-100 text-gray-700 px-1.5 py-0.5 rounded">Дата оприбуткування: <span className="font-semibold">{record.returnDate ? formatDate(record.returnDate) : '—'}</span></span>

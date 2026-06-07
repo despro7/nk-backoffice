@@ -55,7 +55,7 @@ export interface ReturnHistoryRecord {
   orderNumber: string;
   ttn?: string | null;
   firmId: string | null;
-  firmName?: string;
+  firmDisplayName?: string | null; // Назва фірми, збагачена сервером
   // Optional fields added to track both shipping and receiving firms
   shipFirmId?: string | null;
   shipFirmName?: string | null;
@@ -70,5 +70,5 @@ export interface ReturnHistoryRecord {
   payload: Record<string, any>;
   createdAt: string;
   createdBy: string;
-  createdByName?: string | null;
+  
 }

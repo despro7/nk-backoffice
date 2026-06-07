@@ -185,9 +185,9 @@ export default function WarehouseReturns() {
       // restore selected firm from history record
       // legacy: record.firmId was payload firm (receiving). New records may contain shipFirmId/shipFirmName
       returns.setShipFirmId?.(record.shipFirmId ?? record.firmId ?? null);
-      returns.setShipFirmName?.(record.shipFirmName ?? record.firmName ?? '');
+      returns.setShipFirmName?.(record.shipFirmName ?? '');
       returns.setReceiveFirmId?.(record.receiveFirmId ?? record.firmId ?? null);
-      returns.setReceiveFirmName?.(record.receiveFirmName ?? record.firmName ?? '');
+      returns.setReceiveFirmName?.(record.receiveFirmName ?? '');
 
       // Завантажити замовлення
       await returns.handleSearch();

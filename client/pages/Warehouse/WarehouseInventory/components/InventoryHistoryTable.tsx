@@ -194,7 +194,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap"><span>Автор: <b>{session.createdByName ?? namesMap[Number(session.createdBy ?? -1)] ?? 'N/A'}</b></span><span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(session.createdAt)}</b></span><span className="border-l border-gray-300 pl-3">Кількість позицій: <b>{(products.length + materials.length)}</b></span>{session.comment && <span className="border-l border-gray-300 pl-3">Коментар: {session.comment}</span>}</div>
+                  <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap"><span>Автор: <b>{namesMap[Number(session.createdBy ?? -1)] ?? 'N/A'}</b></span><span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(session.createdAt)}</b></span><span className="border-l border-gray-300 pl-3">Кількість позицій: <b>{(products.length + materials.length)}</b></span>{session.comment && <span className="border-l border-gray-300 pl-3">Коментар: {session.comment}</span>}</div>
                 </div>
 
                 {products.length > 0 && (

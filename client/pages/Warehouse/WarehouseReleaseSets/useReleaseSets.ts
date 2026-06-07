@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { useWarehouseReturns } from '../WarehouseReturns/useWarehouseReturns';
 
 export default function useReleaseSets() {
   const returns = useWarehouseReturns();
+  // useDilovodDirectories на верхньому рівні хука (правило хуків)
+  const dirsCtx = useDilovodDirectories();
+
   const [items, setItems] = useState<any[]>([]);
   const [storages, setStorages] = useState<any[]>([]);
   const [selectedStorage, setSelectedStorage] = useState<string | null>(null);
@@ -16,38 +20,26 @@ export default function useReleaseSets() {
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Ініціює завантаження довідників і фірм один раз при монтуванні
   useEffect(() => {
-    (async () => {
-      try {
-        // Load available firms for this screen (initialize default firm)
-        try { await returns.loadAvailableFirms?.(); } catch (e) { /* ignore */ }
-
-        const res = await fetch('/api/dilovod/directories', { credentials: 'include' });
-        const json = await res.json().catch(() => ({}));
-        if (res.ok && json?.success && json.data) {
-          const s = Array.isArray(json.data.storages) ? json.data.storages : [];
-          setStorages(s);
-          // Try to find smallStorageId from directories payload first
-          let smallId = json?.data?.smallStorageId || null;
-          // If not present, try fetching dilovod settings (same approach as WarehouseWriteOff)
-          if (!smallId) {
-            try {
-              const setRes = await fetch('/api/dilovod/settings', { credentials: 'include' });
-              const setJson = await setRes.json().catch(() => ({}));
-              smallId = setJson?.data?.smallStorageId || null;
-            } catch (e) {
-              // ignore settings load error
-            }
-          }
-          if (smallId) {
-            const found = s.find((st: any) => String(st.id) === String(smallId) || String(st.good_id) === String(smallId));
-            if (found) setSelectedStorage(String(found.id ?? found.good_id ?? smallId));
-            else setSelectedStorage(String(smallId));
-          }
-        }
-      } catch (e) { /* ignore */ }
-    })();
+    void dirsCtx.loadDirectories();
+    returns.loadAvailableFirms?.().catch(() => { /* ignore */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Синхронізує локальний стан складів щоразу, коли провайдер оновлює дані
+  useEffect(() => {
+    const s = dirsCtx.directories?.storages || [];
+    if (s.length === 0) return;
+    setStorages(s);
+    // smallStorageId зберігається у Settings, а не в Directories —
+    // якщо провайдер не містить його, просто обираємо перший склад як дефолт
+    const smallId: string | null = (dirsCtx.directories as any)?.smallStorageId || null;
+    if (smallId) {
+      const found = s.find((st: any) => String(st.id) === String(smallId) || String(st.good_id) === String(smallId));
+      setSelectedStorage(found ? String(found.id ?? found.good_id ?? smallId) : String(smallId));
+    }
+  }, [dirsCtx.directories]);
 
   const addSet = async (setItem: any) => {
     const id = crypto.randomUUID?.() ?? `${setItem.sku}-${Date.now()}`;

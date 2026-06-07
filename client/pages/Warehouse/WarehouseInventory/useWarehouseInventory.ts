@@ -319,7 +319,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         inventoryDate: s.inventoryDate ?? s.createdAt,
         createdAt: s.createdAt,
         createdBy: String(s.createdBy ?? ''),
-        createdByName: s.createdByName ?? null,
+        
         status: s.status as InventoryStatus,
         completedAt: s.completedAt ?? null,
         comment: s.comment ?? '',
@@ -348,7 +348,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         inventoryDate: s.inventoryDate ?? s.createdAt,
         createdAt: s.createdAt,
         createdBy: String(s.createdBy ?? ''),
-        createdByName: s.createdByName ?? null,
+        
         status: s.status as InventoryStatus,
         completedAt: s.completedAt ?? null,
         comment: s.comment ?? '',

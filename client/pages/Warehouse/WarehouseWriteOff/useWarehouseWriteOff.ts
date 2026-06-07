@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 
 export default function useWarehouseWriteOff() {
+  // useDilovodDirectories на верхньому рівні хука (правило хуків)
+  const dirsCtx = useDilovodDirectories();
+
   const [storages, setStorages] = useState<any[]>([]);
   const [selectedStorage, setSelectedStorage] = useState<string | null>(null);
   const [items, setItems] = useState<Array<any>>([]);
@@ -11,20 +15,17 @@ export default function useWarehouseWriteOff() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
 
-  const loadDirectories = async () => {
-    try {
-      const res = await fetch('/api/dilovod/directories', { credentials: 'include' });
-      const json = await res.json();
-      if (json?.success && json.data) {
-        setStorages(json.data.storages || []);
-        if (json.data.storages && json.data.storages.length > 0) setSelectedStorage(json.data.storages[0].id || json.data.storages[0].good_id || null);
-      }
-    } catch (e) {
-      console.error('loadDirectories error', e);
-    }
-  };
+  // Ініціює завантаження один раз при монтуванні через централізований провайдер
+  useEffect(() => { void dirsCtx.loadDirectories(); }, []);
 
-  useEffect(() => { loadDirectories(); }, []);
+  // Синхронізує локальний стан складів щоразу, коли провайдер отримує дані
+  useEffect(() => {
+    const s = dirsCtx.directories?.storages || [];
+    if (s.length > 0) {
+      setStorages(s);
+      setSelectedStorage((prev) => prev ?? String(s[0].id ?? s[0].good_id ?? null));
+    }
+  }, [dirsCtx.directories]);
 
   const addItem = (item: any) => {
     setItems((s) => [...s, { id: crypto.randomUUID?.() ?? Date.now().toString(), ...item }]);
