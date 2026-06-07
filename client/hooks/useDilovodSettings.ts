@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { DilovodSettings, DilovodDirectories } from '../../shared/types/dilovod.js';
+import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 
 interface UseDilovodSettingsResult {
   settings: DilovodSettings | null;
@@ -15,6 +16,13 @@ interface UseDilovodSettingsResult {
 
 export function useDilovodSettings({ loadDirectories = true }: { loadDirectories?: boolean } = {}): UseDilovodSettingsResult {
   const [settings, setSettings] = useState<DilovodSettings | null>(null);
+  const dirsCtx = (() => {
+    try {
+      return useDilovodDirectories();
+    } catch {
+      return null as unknown as ReturnType<typeof useDilovodDirectories> | null;
+    }
+  })();
   const [directories, setDirectories] = useState<DilovodDirectories | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -56,7 +64,7 @@ export function useDilovodSettings({ loadDirectories = true }: { loadDirectories
     }
 
     // Якщо довідники вже є і API ключ не змінився - пропускаємо
-    if (!force && directories && lastApiKey === settings?.apiKey) {
+    if (!force && (dirsCtx?.directories || directories) && lastApiKey === settings?.apiKey) {
       console.log('Directories already loaded for current API key, skipping...');
       return;
     }
@@ -80,11 +88,11 @@ export function useDilovodSettings({ loadDirectories = true }: { loadDirectories
         setDirectories(data.data);
         setLastApiKey(settings?.apiKey || null);
         console.log('Directories loaded successfully:', data.data);
+        // Update context if available
         try {
-          const { setDilovodDirectories } = await import('@shared/utils/firmUtils');
-          setDilovodDirectories(data.data || null);
+          dirsCtx?.setDirectories(data.data || null);
         } catch {
-          // ignore if import fails (e.g., SSR environments)
+          // ignore
         }
       } else {
         throw new Error(data.message || 'Помилка отримання довідників');
@@ -161,7 +169,7 @@ export function useDilovodSettings({ loadDirectories = true }: { loadDirectories
 
   return {
     settings,
-    directories,
+    directories: dirsCtx?.directories || directories,
     loading,
     saving,
     loadingDirectories,

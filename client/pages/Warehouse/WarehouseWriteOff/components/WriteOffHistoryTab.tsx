@@ -1,6 +1,6 @@
 import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import HistoryAccordionTable from '../../shared/HistoryAccordionTable';
+import HistoryAccordionItem from '../../shared/HistoryAccordionItem';
 import type { ReturnHistoryRecord } from '../../WarehouseReturns/WarehouseReturnsTypes';
 
 // ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ export const WriteOffHistoryTab = ({ records, loading, onRefresh, onLoadRecord, 
         </Button>
       </div>
     ) : (
-      <HistoryAccordionTable
+      <HistoryAccordionItem
         records={records}
         recordType="writeOff"
         onLoadRecord={onLoadRecord}

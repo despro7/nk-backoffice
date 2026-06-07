@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
+import { normalizeSetsArray } from './historyNormalize.js';
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
 
@@ -138,7 +139,12 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     if (process.env.NODE_ENV === 'development') console.log('[SetRelease][get] user:', (req as any).user, 'query:', req.query);
     const rows = await prisma.warehouseReleaseSet.findMany({ orderBy: { createdAt: 'desc' } });
-    res.json({ success: true, data: rows });
+    // Attach normalized sets (components normalized) while preserving original data
+    const withNormalized = rows.map((r: any) => ({
+      ...r,
+      setsNormalized: normalizeSetsArray(r.items),
+    }));
+    res.json({ success: true, data: withNormalized });
   } catch (error) {
     console.error('[SetRelease] Error fetching releases:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });

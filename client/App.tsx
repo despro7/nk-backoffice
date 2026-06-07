@@ -11,6 +11,7 @@ import { ScrollToTop } from "./components/ScrollToTop";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { DilovodDirectoriesProvider } from './contexts/DilovodDirectoriesContext';
 import { DebugProvider } from "./contexts/DebugContext";
 import { ServerStatusProvider } from "./hooks/ServerStatusContext";
 import { useEquipmentFromAuth } from "./contexts/AuthContext";
@@ -164,18 +165,20 @@ const App = () => (
     <ToastProvider toastProps={{ radius: "md", shadow: "md", classNames: { icon: "fill-none" } }} placement="bottom-right" toastOffset={30} />
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <AuthProvider>
-          <DebugProvider>
+        <DilovodDirectoriesProvider>
+          <AuthProvider>
+            <DebugProvider>
             <ServerStatusProvider>
               <AppInitializer>
                 <ScrollToTop />
-                <ErrorBoundary>
-                  <AppRoutes />
-                </ErrorBoundary>
-              </AppInitializer>
-            </ServerStatusProvider>
-          </DebugProvider>
-        </AuthProvider>
+                  <ErrorBoundary>
+                    <AppRoutes />
+                  </ErrorBoundary>
+                </AppInitializer>
+              </ServerStatusProvider>
+            </DebugProvider>
+          </AuthProvider>
+        </DilovodDirectoriesProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </HeroUIProvider>

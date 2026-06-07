@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
 import { resolveAuthorNames, getFirmDisplayNameServer } from '../../lib/utils.js';
+import { safeParseItems, normalizeItemsArray } from './historyNormalize.js';
 import { salesDriveService } from '../../services/salesDriveService.js';
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
@@ -333,11 +334,16 @@ router.get('/history', authenticateToken, async (req, res) => {
     // Розшифрувати імена авторів
     const withAuthors = await resolveAuthorNames(history as any[]);
 
-    // Додати дружню назву фірми, якщо можливо
-    const enrichedHistory = await Promise.all(withAuthors.map(async (rec: any) => ({
-      ...rec,
-      firmDisplayName: await getFirmDisplayNameServer(rec.firmId, rec.firmName),
-    })));
+    // Додати дружню назву фірми та нормалізовані items
+    const enrichedHistory = await Promise.all(withAuthors.map(async (rec: any) => {
+      const parsed = safeParseItems(rec.items);
+      const itemsNormalized = normalizeItemsArray(parsed);
+      return {
+        ...rec,
+        firmDisplayName: await getFirmDisplayNameServer(rec.firmId, rec.firmName),
+        itemsNormalized,
+      };
+    }));
 
     res.json({ success: true, data: enrichedHistory });
   } catch (error) {

@@ -1,4 +1,5 @@
 import InventoryHistoryRow from './InventoryHistoryRow';
+import { Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { ProductHistoryEntry } from '../WarehouseInventoryTypes';
 
@@ -32,7 +33,7 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200 bg-gray-200">
-        <h4 className="text-md font-medium text-gray-700">{title}</h4>
+        <h4 className="text-md font-medium text-gray-700">{title} <Tooltip content="всього / підтверджених" placement="right"><span className="text-gray-500 text-sm font-normal">({rows.length}/{rows.filter(row => row.dev !== null).length})</span></Tooltip></h4>
       </div>
       <div className="overflow-x-auto px-1 pb-1 bg-gray-200 rounded-b-md">
         <table className="w-full border-separate border-spacing-0 overflow-hidden rounded-md text-sm bg-white border-1 border-gray-200">

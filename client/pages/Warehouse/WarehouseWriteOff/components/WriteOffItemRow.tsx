@@ -57,18 +57,27 @@ export function WriteOffItemRow({ item, onQuantityChange, onBatchChange, editabl
         <div className="text-sm text-gray-500">SKU: {item.sku}</div>
       </div>
 
-      <StepperInput
-				label="Кількість"
-        value={Number(item.quantity ?? 0)}
-        onChange={(v:number) => onQuantityChange(item.id, v)}
-        onIncrement={() => onQuantityChange(item.id, Math.min(Number(item.quantity ?? 0) + 1, Number(item.orderedQuantity ?? Infinity)))}
-        onDecrement={() => onQuantityChange(item.id, Math.max(Number(item.quantity ?? 0) - 1, 0))}
-        disabled={!editableQuantity}
-        max={Number(item.orderedQuantity ?? undefined) as any}
-        size="sm"
-        className="w-28"
-        labelClassName="text-xs font-medium self-start"
-      />
+      {(() => {
+        const current = Number(item.quantity ?? 0);
+        const ordered = item.orderedQuantity == null ? undefined : Number(item.orderedQuantity);
+        const selectedBatch = (item.availableBatches ?? []).find((b) => b.id === item.selectedBatchKey) as ReturnBatch | undefined;
+        const maxAllowed = selectedBatch ? selectedBatch.quantity : ordered;
+
+        return (
+          <StepperInput
+            label="Кількість"
+            value={current}
+            onChange={(v: number) => onQuantityChange(item.id, v)}
+            onIncrement={() => onQuantityChange(item.id, Math.min(current + 1, maxAllowed ?? Infinity))}
+            onDecrement={() => onQuantityChange(item.id, Math.max(current - 1, 0))}
+            disabled={!editableQuantity}
+            max={maxAllowed}
+            size="sm"
+            className="w-28"
+            labelClassName="text-xs font-medium self-start"
+          />
+        );
+      })()}
 
       <div className="w-56">
 				<div className="text-xs font-medium text-gray-500 mb-2">Партія</div>

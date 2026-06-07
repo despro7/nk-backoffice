@@ -4,10 +4,14 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROLES } from '@shared/constants/roles';
-import { formatDate, formatRelativeDate, truncateText } from '@/lib';
-import getFirmDisplayName from '@shared/utils/firmUtils';
+import { formatDate, formatRelativeDate, truncateText, pluralize } from '@/lib';
+import { HistoryItemsTable } from './HistoryItemsTable';
+import { normalizeSetsArray } from './historyNormalize';
+import { getFirmDisplayName, getStorageDisplayName } from '@shared/utils/directoryUtils';
+import { useDilovodSettings } from '@/hooks/useDilovodSettings';
+import useUserNames from '@/hooks/useUserNames';
 
-interface HistoryAccordionTableProps {
+interface HistoryAccordionItemProps {
   records: any[];
   emptyMessage?: string;
   showDelete?: boolean;
@@ -17,20 +21,18 @@ interface HistoryAccordionTableProps {
   onLoadRecord?: (record: any) => Promise<void>;
   onDeleteRecord?: (recordId: string) => Promise<void>;
   onEditRecord?: (record: any) => Promise<void>;
-  recordType?: 'inventory' | 'return' | 'writeOff' | 'releaseSet';
+  recordType?: 'return' | 'writeOff' | 'releaseSet';
 }
 
-export const HistoryAccordionTable = ({
+export const HistoryAccordionItem = ({
   records,
   emptyMessage = 'Немає записів',
   showDelete = true,
   showEdit = false,
-  // onRefresh,
-  // onLoadRecord,
   onDeleteRecord,
   onEditRecord,
   recordType,
-}: HistoryAccordionTableProps) => {
+}: HistoryAccordionItemProps) => {
   const { user } = useAuth();
   const isAdmin = user?.role === ROLES.ADMIN;
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
@@ -65,20 +67,6 @@ export const HistoryAccordionTable = ({
     }
   }, [expandedRecordId]);
 
-  // const handleLoadRecord = async (recordId: string) => {
-  //   if (!onLoadRecord) return;
-  //   setLoadingLoadId(recordId);
-  //   try {
-  //     await onLoadRecord(records.find((r) => String(r.id) === String(recordId))!);
-  //   } catch (error) {
-  //     // swallow; parent handles errors
-  //     // eslint-disable-next-line no-console
-  //     console.error('[HistoryAccordionTable] Error loading record:', error);
-  //   } finally {
-  //     setLoadingLoadId(null);
-  //   }
-  // };
-
   const handleEditRecord = async (recordId: string) => {
     if (!onEditRecord) return;
     setLoadingEditId(recordId);
@@ -86,7 +74,7 @@ export const HistoryAccordionTable = ({
       await onEditRecord(records.find((r) => String(r.id) === String(recordId))!);
     } catch (error) {
       // eslint-disable-next-line no-console
-      console.error('[HistoryAccordionTable] Error editing record:', error);
+      console.error('[HistoryAccordionItem] Error editing record:', error);
     } finally {
       setLoadingEditId(null);
     }
@@ -104,7 +92,7 @@ export const HistoryAccordionTable = ({
       await onDeleteRecord(confirmDeleteId);
     } catch (error) {
       // eslint-disable-next-line no-console
-      console.error('[HistoryAccordionTable] Error deleting record:', error);
+      console.error('[HistoryAccordionItem] Error deleting record:', error);
     } finally {
       setLoadingDeleteId(null);
       setConfirmDeleteId(null);
@@ -131,36 +119,24 @@ export const HistoryAccordionTable = ({
 		return RECORD_TYPE_CONFIG[type] || { label: type, genitive: type, dateField: 'createdAt' };
 	}
 
+  const { directories } = useDilovodSettings();
+  const userIds = records.map(r => Number(r.createdBy ?? r.created_by ?? null));
+  const namesMap = useUserNames(userIds);
+
   return (
     <div className="space-y-2">
       {records.map((record) => {
 				const cfg = getRecordTypeConfig(recordType); // recordType передається в компонент, напр. 'writeOff'
 				const recordName = `${cfg.label} №${record.id}`;
-				// Safely parse `record.items` which may be already an array, a JSON string,
-				// or a double-encoded JSON string stored in DB.
-				const safeParseItems = (raw: any) => {
-					if (!raw) return [];
-					if (Array.isArray(raw)) return raw;
-					let v = raw;
-					try {
-						// If it's a string, try parsing repeatedly until we get a non-string
-						while (typeof v === 'string') {
-							v = JSON.parse(v);
-						}
-					} catch (e) {
-						// fallback: return empty
-						return [];
-					}
-					if (Array.isArray(v)) return v;
-					// If it's an object representing a single set, wrap into array
-					if (v && typeof v === 'object') return [v];
-					return [];
-				};
-
-				const items = safeParseItems(record.items);
+        const items = safeParseItems(record.items);
         const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantity ?? item.qty ?? 0), 0);
         const isExpanded = expandedRecordId === String(record.id);
 				const reason = record.reason || record.writeOffReason || record.write_off_reason; // TODO: змінити типи після впровадження компоненту
+        
+        const setsForCount = recordType === 'releaseSet' ? (record.setsNormalized ?? normalizeSetsArray(record.items ?? items)) : [];
+        const uniqueSetTypes = recordType === 'releaseSet' ? setsForCount.length : 0;
+        const totalSets = recordType === 'releaseSet' ? setsForCount.reduce((sum: number, set: any) => sum + (Number(set.setQty ?? 0)), 0) : 0;
+        const totalPortions = recordType === 'releaseSet' ? setsForCount.reduce((sum: number, set: any) => sum + (Number(set.componentsTotal ?? 0) * Number(set.setQty ?? 0)), 0) : 0;
 
         return (
           <div key={record.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -189,17 +165,34 @@ export const HistoryAccordionTable = ({
 								</div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <div className="grid grid-cols-2 gap-12 ml-2 text-xs text-gray-500">
-                  <div className="text-right">
-                    <span className="text-medium font-semibold leading-none">{items.length}</span>
-                    <p className="leading-none">позицій</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-medium font-semibold leading-none">{totalQuantity}</span>
-                    <p className="leading-none">кількість</p>
-                  </div>
-                </div>
+              <div className="flex items-center gap-12 ml-20 text-xs text-gray-500">
+                {recordType === 'releaseSet' ? (
+                  <>
+                    <div className="text-right">
+                      <span className="text-medium font-semibold leading-none">{uniqueSetTypes}</span>
+                      <p className="leading-none">{pluralize(uniqueSetTypes, 'позиція', 'позиції', 'позицій')}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-medium font-semibold leading-none">{totalSets}</span>
+                      <p className="leading-none">{pluralize(totalSets, 'набір', 'набори', 'наборів')}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-medium font-semibold leading-none">{totalPortions}</span>
+                      <p className="leading-none">{pluralize(totalPortions, 'порція', 'порції', 'порцій')}</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-right">
+                      <span className="text-medium font-semibold leading-none">{items.length}</span>
+                      <p className="leading-none">{pluralize(items.length, 'позиція', 'позиції', 'позицій')}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-medium font-semibold leading-none">{totalQuantity}</span>
+                      <p className="leading-none">{pluralize(totalQuantity, 'порція', 'порції', 'порцій')}</p>
+                    </div>
+                  </>
+                )}
               </div>
             </button>
 
@@ -264,8 +257,9 @@ export const HistoryAccordionTable = ({
                   </div>
 
                   <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
-                    <span>Автор: <b>{record.createdByName || record.createdBy || record.created_by || '—'}</b></span>
-                    <span className="border-l border-gray-300 pl-3">Фірма: <b>{(getFirmDisplayName(record.firmId) || 'Не визначено')}</b></span>
+                    <span>Автор: <b>{record.createdByName ?? namesMap[Number(record.createdBy ?? record.created_by ?? -1)] ?? record.createdBy ?? record.created_by ?? '—'}</b></span>
+                    <span className="border-l border-gray-300 pl-3">Фірма: <b>{(getFirmDisplayName(record.firmId, record.firmName, directories) || 'Не визначено')}</b></span>
+                    <span className="border-l border-gray-300 pl-3">Склад: <b>{(getStorageDisplayName(record.storageId || record.payload?.storage, record.storageName, directories) || '—')}</b></span>
                     <span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(record.createdAt || record.created_at)}</b></span>
                     {cfg.dateField && formatDate(record.createdAt || record.created_at) !== formatDate(record[cfg.dateField]) && (
                       <span className="bg-amber-100 text-gray-700 px-1.5 py-0.5 rounded">Дата {cfg.dateField ? cfg.storageOperation || cfg.label.toLowerCase() : ''}: <span className="font-semibold">{record[cfg.dateField] ? formatDate(record[cfg.dateField]) : '—'}</span></span>
@@ -274,100 +268,11 @@ export const HistoryAccordionTable = ({
                   {record.comment && <p className="text-[13px] text-gray-500 mt-1">Коментар: <b>{record.comment}</b></p>}
                 </div>
 
-                {/* Items: for releaseSet render separate table per set, otherwise single table */}
-                <div className="mb-6">
+                <div className="mb-2">
                   {recordType === 'releaseSet' ? (
-                    <div className="space-y-4">
-                      {items.map((setItem: any, setIdx: number) => {
-                        const setSku = setItem.set_sku || '';
-                        const setName = setItem.name || `Набір ${setSku}`;
-                        const setQty = Number(setItem.quantity ?? setItem.qty ?? 0);
-                        const comps = Array.isArray(setItem.components_snapshot) ? setItem.components_snapshot : (Array.isArray(setItem.componentsSnapshot) ? setItem.componentsSnapshot : []);
-                        const compsTotal = comps.reduce((s: number, c: any) => s + (Number(c.quantity ?? c.qty ?? 0)), 0);
-                        return (
-                          <div key={`set-table-${setIdx}`} className="rounded-md overflow-hidden border border-gray-200">
-                            <div className="flex items-center gap-2 px-2 py-2 bg-gray-200">
-															<span className="text-sm bg-amber-200/80 ring-1 ring-amber-100 px-1 py-0 rounded">{setSku}</span>
-                              <h4 className="text-md font-medium text-gray-700">{setName}
-																<span className="text-xs mx-2">✕</span>
-																<span>{setQty} шт.</span>
-															</h4>
-                            </div>
-                            <div className="overflow-x-auto px-1 pb-1 bg-gray-200">
-                              <table className="w-full border-separate border-spacing-0 overflow-hidden rounded-md text-sm bg-white">
-                                <thead>
-                                  <tr className="border-b border-gray-200 bg-gray-100 [&>th]:text-left [&>th]:py-2 [&>th]:px-3 [&>th]:font-semibold [&>th]:text-gray-600">
-                                    <th>SKU</th>
-                                    <th>Позиція</th>
-                                    <th>Партія</th>
-                                    <th className="text-center!">Кількість</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {comps.map((c: any, compIdx: number) => {
-                                    const compSku = c.sku || c.id || c.set_sku || '';
-                                    const compName = c.name || c.title || '';
-                                    const totalPerSet = Number(c.quantity ?? c.qty ?? 1);
-                                    return (
-                                      <tr key={`set-${setIdx}-comp-${compIdx}`} className="[&>td]:py-2 [&>td]:px-3 [&>td]:border-b [&>td]:border-b-gray-100 text-gray-700">
-                                        <td className="font-mono">{compSku}</td>
-                                        <td>{compName}</td>
-                                        <td>{c.batchNumber || c.batchId || '–'}</td>
-                                        <td className="text-center font-semibold">{totalPerSet}</td>
-                                      </tr>
-                                    );
-                                  })}
-                                  <tr className="bg-gray-50 [&>td]:font-semibold [&>td]:py-2 [&>td]:px-3">
-                                    <td></td>
-                                    <td></td>
-                                    <td className="text-right">Всього:</td>
-                                    <td className="text-center">{compsTotal}</td>
-                                  </tr>
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <HistoryItemsTable mode="sets" sets={record.setsNormalized ?? items} />
                   ) : (
-                    <>
-                      <div className="flex items-center gap-2 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200 bg-gray-200">
-                        <h4 className="text-md font-medium text-gray-700">Товари</h4>
-                      </div>
-                      <div className="overflow-x-auto px-1 pb-1 bg-gray-200 rounded-b-md">
-                        <table className="w-full border-separate border-spacing-0 overflow-hidden rounded-md text-sm bg-white border-1 border-gray-200">
-                          <thead>
-														<tr className="border-b border-gray-200 bg-gray-100 [&>th]:text-left [&>th]:py-2 [&>th]:px-3 [&>th]:font-semibold [&>th]:text-gray-600">
-															<th>SKU</th>
-															<th>Позиція</th>
-															<th>Партія</th>
-															<th className="text-center!">Кількість</th>
-														</tr>
-													</thead>
-                          <tbody>
-                            {items.map((item: any, idx: number) => {
-                              const name = item.name || item.productName || item.title || item.sku || '';
-                              const qty = Number(item.quantity ?? item.qty ?? 0);
-                              return (
-                                <tr key={idx} className="[&>td]:py-2 [&>td]:px-3 [&>td]:border-b [&>td]:border-b-gray-100 text-gray-700">
-                                  <td className="font-mono">{item.sku}</td>
-                                  <td>{name}</td>
-                                  <td>{item.batchNumber || item.batchId || '–'}</td>
-                                  <td className="text-center font-semibold">{qty}</td>
-                                </tr>
-                              );
-                            })}
-                            <tr className="bg-gray-50 [&>td]:font-semibold [&>td]:py-2 [&>td]:px-3">
-                              <td></td>
-                              <td></td>
-                              <td className="text-right">Всього:</td>
-                              <td className="text-center">{items.reduce((s: number, it: any) => s + Number(it.quantity ?? it.qty ?? 0), 0)}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
+                    <HistoryItemsTable mode="normal" items={record.itemsNormalized ?? items} />
                   )}
                 </div>
               </div>
@@ -379,4 +284,4 @@ export const HistoryAccordionTable = ({
   );
 };
 
-export default HistoryAccordionTable;
+export default HistoryAccordionItem;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '../services/ToastService';
+import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { DirectoryModal } from './modals/DirectoryModal';
 import type { IconName } from 'lucide-react/dynamic';
 import { formatRelativeDate } from '../lib/formatUtils';
@@ -25,6 +26,14 @@ interface CacheStatus {
 export const DilovodCacheManager: React.FC = () => {
   // Стан для оновлення довідника товарів
   const [updatingGoodsCache, setUpdatingGoodsCache] = useState(false);
+  // Доступ до контексту довідників (опціонально, провайдер може бути відсутній під час міграції)
+  const dirsCtx = (() => {
+    try {
+      return useDilovodDirectories();
+    } catch {
+      return null as ReturnType<typeof useDilovodDirectories> | null;
+    }
+  })();
 
   // Окрема функція для оновлення довідника товарів
   const handleRefreshGoodsCache = async () => {
@@ -175,11 +184,9 @@ export const DilovodCacheManager: React.FC = () => {
         console.log(`Loading ${type} from API key ${apiKey}:`, data);
         setViewingDirectory({ type, data });
 
-        try {
-          const { setDilovodDirectories } = await import('@shared/utils/firmUtils');
-          setDilovodDirectories(result.data || null);
-        } catch {
-          // ignore if dynamic import fails
+        // Update context if available (provider may be absent during migration)
+        if (dirsCtx && dirsCtx.setDirectories) {
+          dirsCtx.setDirectories(result.data || null);
         }
       } else {
         throw new Error(result.error || 'Unknown error');

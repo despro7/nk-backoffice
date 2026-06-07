@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { UserType, LoginRequest, RegisterRequest } from '../../server/types/auth';
 import { useEquipment, EquipmentState, EquipmentActions } from '../hooks/useEquipment';
+import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { LoggingService } from '../services/LoggingService';
 import { formatDuration } from '@/lib/formatUtils';
 import { ToastService } from '@/services/ToastService';
@@ -59,6 +60,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Глобальний стан обладнання — передаємо !!user щоб уникнути запитів до авторизації
   const [equipmentState, equipmentActions] = useEquipment(!!user);
+  // Доступ до контексту довідників (опціонально)
+  const dirsCtx = (() => {
+    try {
+      return useDilovodDirectories();
+    } catch {
+      return null as ReturnType<typeof useDilovodDirectories> | null;
+    }
+  })();
   
   // Перевіряємо, що стан обладнання ініціалізовано
   const isEquipmentReady = equipmentState && equipmentActions;
@@ -288,6 +297,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         await ToastService.initialize();
         await loadAuthSettings();
 
+              // Підвантажуємо довідники Dilovod після авторизації, якщо є провайдер
+              try {
+                if (dirsCtx?.loadDirectories) {
+                  dirsCtx.loadDirectories();
+                }
+              } catch {
+                // ignore if provider not mounted
+              }
+
         // Токен валідний, useEffect автоматично перепланує оновлення під час setUser
         setUser(userWithExpiry);
         
@@ -411,6 +429,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (equipmentActions?.refreshConfig) {
           LoggingService.authLog('🔄 [AuthContext]: Оновлюємо конфігурацію обладнання після входу');
           await equipmentActions.refreshConfig();
+        }
+
+        // Підвантажуємо довідники Dilovod після входу, якщо є провайдер
+        try {
+          if (dirsCtx?.loadDirectories) {
+            dirsCtx.loadDirectories();
+          }
+        } catch {
+          // ignore if provider not mounted
         }
 
         // Показуємо Toast повідомлення

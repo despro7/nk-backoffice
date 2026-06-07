@@ -1,12 +1,14 @@
 import { Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useState, useRef, useEffect } from 'react';
-import { formatDate } from '@/lib/formatUtils';
+import { formatDate, truncateText } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROLES } from '@shared/constants/roles';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
+import { formatTrackingNumberWithIcon, pluralize } from '@/lib';
+import { HistoryItemsTable } from '../../shared/HistoryItemsTable';
 import type { ReturnHistoryRecord, ReturnHistoryItem } from '../WarehouseReturnsTypes';
-import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
+import useUserNames from '@/hooks/useUserNames';
 
 // ---------------------------------------------------------------------------
 // ReturnsHistoryTable — список повернень як акордеон
@@ -28,6 +30,9 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
   const [contentHeights, setContentHeights] = useState<Record<string, number>>({});
   const contentRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  const userIds = records.map(r => Number(r.createdBy ?? null));
+  const namesMap = useUserNames(userIds);
+
   if (records.length === 0) {
     return (
       <div className="text-center py-8 text-gray-400">
@@ -44,17 +49,17 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
     return reason;
   };
 
-  const handleLoadRecord = async (recordId: string) => {
-    if (!onLoadRecord) return;
-    setLoadingLoadId(recordId);
-    try {
-      await onLoadRecord(records.find((r) => r.id === recordId)!);
-    } catch (error) {
-      console.error('[ReturnsHistoryTable] Error loading record:', error);
-    } finally {
-      setLoadingLoadId(null);
-    }
-  };
+  // const handleLoadRecord = async (recordId: string) => {
+  //   if (!onLoadRecord) return;
+  //   setLoadingLoadId(recordId);
+  //   try {
+  //     await onLoadRecord(records.find((r) => r.id === recordId)!);
+  //   } catch (error) {
+  //     console.error('[ReturnsHistoryTable] Error loading record:', error);
+  //   } finally {
+  //     setLoadingLoadId(null);
+  //   }
+  // };
 
   const handleDeleteRecord = async (recordId: string) => {
     if (!onDeleteRecord) return;
@@ -111,9 +116,12 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
                   </p>
                   <span className="flex gap-0.5 items-center text-xs text-gray-400" title="Дата оприбутковання"><DynamicIcon name="undo-2" className="w-3 h-3 mb-0.5" /> {record.returnDate ? formatDate(record.returnDate) : formatDate(record.createdAt)}</span>
                 </div>
-                <Chip size="sm" color="default" variant="flat" className="max-w-sm min-w-0 *:[span]:truncate" title={getReturnReasonLabel(record.returnReason, record.customReason)}>
-                  {getReturnReasonLabel(record.returnReason, record.customReason)}
-                </Chip>
+                <div className="flex gap-2">
+                  <Chip size="sm" color="default" variant="flat" className="bg-gray-200 text-gray-700 max-w-sm min-w-0 *:[span]:truncate">{getReturnReasonLabel(record.returnReason, record.customReason)}</Chip>
+                  {record.comment && (
+                    <Chip size="sm" color="warning" variant="flat" className="text-sm text-amber-700 ml-0.5 text-[13px]" startContent={<DynamicIcon name="message-circle-more" className="w-3 h-3 ml-1 mr-0.5" />}>{truncateText(record.comment, 25)}</Chip>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-4">
@@ -129,11 +137,11 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
                   </div>
                   <div className="text-right">
                     <span className="text-medium font-semibold leading-none">{items.length}</span>
-                    <p className="leading-none">позицій</p>
+                    <p className="leading-none">{pluralize(items.length, 'позиція', 'позиції', 'позицій')}</p>
                   </div>
                   <div className="text-right">
                     <span className="text-medium font-semibold leading-none">{totalQuantity}</span>
-                    <p className="leading-none">кількість</p>
+                    <p className="leading-none">{pluralize(totalQuantity, 'порція', 'порції', 'порцій')}</p>
                   </div>
                 </div>
               </div>
@@ -189,48 +197,18 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
                     )}
                   </div>
                   <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
-                    <span>Автор: <b>{record.createdByName || record.createdBy}</b></span>
-                    <span className="border-l border-gray-300 pl-3">Створено: {formatDate(record.createdAt)}</span>
-                    <span className="border-l border-gray-300 pl-3">Фірма (оприбуткування): <b>{record.firmName || record.firmId || 'Не визначено'}</b>{record.shipFirmName || record.shipFirmId ? <span className="ml-2">(відвантаження: <b>{record.shipFirmName || record.shipFirmId}</b>)</span> : null}</span>
-                    <span className="border-l border-gray-300 pl-3">Дата оприбуткування: <b>{record.returnDate ? formatDate(record.returnDate) : formatDate(record.createdAt)}</b></span>
-                    {record.comment && <span className="border-l border-gray-300 pl-3">Коментар: {record.comment}</span>}
+                    <span>Автор: <b>{record.createdByName ?? namesMap[Number(record.createdBy ?? -1)] ?? record.createdBy ?? '—'}</b></span>
+                    <span className="border-l border-gray-300 pl-3">Фірма оприбуткування: <b>{record.firmName || record.firmId || 'Не визначено'}</b>{record.shipFirmName || record.shipFirmId ? <span className="ml-2">(відвантаження: <b>{record.shipFirmName || record.shipFirmId}</b>)</span> : null}</span>
+                    <span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(record.createdAt)}</b></span>
+                    {formatDate(record.createdAt) !== formatDate(record.returnDate) && record.returnDate && (
+                      <span className="bg-amber-100 text-gray-700 px-1.5 py-0.5 rounded">Дата оприбуткування: <span className="font-semibold">{record.returnDate ? formatDate(record.returnDate) : '—'}</span></span>
+                    )}
                   </div>
+                  {record.comment && <p className="text-[13px] text-gray-500 mt-1">Коментар: <b>{record.comment}</b></p>}
                 </div>
 
                 {/* Items table */}
-                <div className="mb-6">
-                  <div className="flex items-center gap-2 bg-gray-50 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200">
-                    <h4 className="text-md font-medium text-gray-700">Товари для повернення</h4>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm bg-white border-1 border-gray-200">
-                      <thead>
-                        <tr className="border-b border-gray-200 bg-gray-100">
-                          <th className="text-left py-2 px-3 font-semibold text-gray-600">SKU</th>
-                          <th className="text-left py-2 px-3 font-semibold text-gray-600">Позиція</th>
-                          <th className="text-left py-2 px-3 font-semibold text-gray-600">Партія</th>
-                          <th className="text-center py-2 px-3 font-semibold text-gray-600">Кількість</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {items.map((item, idx) => (
-                          <tr key={idx} className="border-b not-last:border-b-gray-100 hover:bg-white text-gray-700 transition-colors">
-                            <td className="py-2 px-3 font-mono">{item.sku}</td>
-                            <td className="py-2 px-3">{item.name}</td>
-                            <td className="py-2 px-3">{item.batchNumber || '–'}</td>
-                            <td className="py-2 px-3 text-center font-semibold">{item.quantity}</td>
-                          </tr>
-                        ))}
-                        <tr className="bg-gray-100/60">
-                          <td></td>
-                          <td></td>
-                          <td className="text-right font-semibold py-2 px-3">Всього:</td>
-                          <td className="text-center font-semibold py-2">{totalQuantity}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                <HistoryItemsTable title="Товари на повернення" mode="normal" items={record.itemsNormalized ?? items} />
               </div>
             </div>
           </div>

@@ -4,6 +4,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { formatDate } from '@/lib/formatUtils';
 import type { MovementDraft, MovementStatus } from '../WarehouseMovementTypes';
+import useUserNames from '@/hooks/useUserNames';
 
 // ---------------------------------------------------------------------------
 // MovementDraftsTab — вміст вкладки "Чернетки"
@@ -46,6 +47,8 @@ export const MovementDraftsTab = ({
 }: MovementDraftsTabProps) => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [loadingId, setLoadingId] = useState<number | null>(null);
+  const userIds = drafts.map(d => Number(d.createdBy ?? null));
+  const namesMap = useUserNames(userIds);
 
   const handleLoad = async (draft: MovementDraft) => {
     setLoadingId(draft.id);
@@ -149,7 +152,7 @@ export const MovementDraftsTab = ({
 
                     {/* Автор */}
                     <td className="py-3 px-3 text-gray-700">
-                      {draft.createdByName ?? '—'}
+                      {draft.createdByName ?? namesMap[Number(draft.createdBy ?? -1)] ?? '—'}
                     </td>
 
                     {/* Дії */}

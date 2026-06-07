@@ -24,6 +24,7 @@ import { salesdriveRouter } from './routes/salesdrive.js';
 import metaLogsRouter from './routes/meta-logs.js';
 import wordpressReceiptRoutes from './routes/wordpress-receipt.js';
 import notificationsRouter from './routes/notifications.js';
+import usersRoutes from './routes/users.js';
 import materialsRouter from './routes/materials.js';
 import statRouter from './routes/stat.js';
 
@@ -110,6 +111,9 @@ export function createServer() {
   // Auth routes
   app.use("/api/auth", authRoutes);
   app.use("/api/auth", authSettingsRoutes);
+
+  // Users (batch lookup)
+  app.use('/api/users', usersRoutes);
 
   // Protected routes
   app.use("/api/protected", protectedRoutes);

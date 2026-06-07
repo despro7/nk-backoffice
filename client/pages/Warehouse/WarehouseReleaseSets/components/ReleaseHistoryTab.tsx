@@ -1,27 +1,22 @@
 import { Button, Card } from '@heroui/react';
-import HistoryAccordionTable from '../../shared/HistoryAccordionTable';
+import HistoryAccordionItem from '../../shared/HistoryAccordionItem';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface Props { records: any[]; loading?: boolean; onRefresh?: () => void; onDelete?: (id: number) => void }
 
-// Reuse `WriteOffHistoryTable` (accordion UI) to avoid duplicating accordion/expand logic.
 export default function ReleaseHistoryTab({ records = [], loading, onRefresh, onDelete }: Props) {
   // Map release records to the shape expected by WriteOffHistoryTable.
   const mapped = records.map((r: any) => {
     const items = Array.isArray(r.items) && r.items.length > 0
       ? r.items
-      : [{ sku: r.setSku || r.set_sku || '', name: r.setName || r.set_name || '', quantity: Number(r.quantity ?? r.qty ?? 0) }];
+      : [{ sku: r.setSku || '', quantity: Number(r.quantity ?? r.qty ?? 0) }];
 
     return {
       id: String(r.id),
       createdAt: r.createdAt || r.created_at || r.created_at,
-      createdBy: r.createdBy || r.created_by || r.createdByName || r.created_by_name,
-      createdByName: r.createdByName || r.created_by_name,
+      createdBy: r.createdBy || r.created_by,
       firmId: r.firmId || r.firm_id,
-      firmName: r.firmName || r.firm_name,
-      shipFirmId: r.shipFirmId || r.ship_firm_id,
-      shipFirmName: r.shipFirmName || r.ship_firm_name,
-      writeOffDate: r.writeOffDate || r.write_off_date || r.createdAt || r.created_at,
+      storageId: r.storageId || r.payload?.storage,
       comment: r.comment,
       items,
     };
@@ -56,7 +51,7 @@ export default function ReleaseHistoryTab({ records = [], loading, onRefresh, on
       ) : mapped.length === 0 ? (
         <div className="text-sm text-gray-500">Немає записів</div>
       ) : (
-        <HistoryAccordionTable
+        <HistoryAccordionItem
           records={mapped}
           recordType="releaseSet"
           onDeleteRecord={handleDeleteRecord}

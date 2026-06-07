@@ -1,3 +1,5 @@
+import { HistoryItemNormalized } from "../shared/historyNormalize";
+
 export interface ReturnBatch {
   id: string;       // унікальний id для UI-рендерингу
   batchId: string;  // ID партії в Dilovod (goodPart)
@@ -61,6 +63,7 @@ export interface ReturnHistoryRecord {
   receiveFirmName?: string | null;
   returnDate?: string | null;
   items: ReturnHistoryItem[];
+  itemsNormalized?: HistoryItemNormalized[];
   returnReason: string;
   customReason?: string;
   comment: string;

@@ -19,7 +19,7 @@ import type { ReturnHistoryRecord } from './WarehouseReturnsTypes';
 
 const RETURN_REASONS: string[] = [
   '😩 Брак товару',
-  '📦 Не забрали замовлення з пошти',
+  '📦 Не забрали з пошти',
   '📵 Не було зв\'язку з клієнтом',
   '😡 Совісті немає у людини!',
   '📝 Інше',

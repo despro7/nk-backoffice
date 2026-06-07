@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
 import { getFirmDisplayNameServer } from '../../lib/utils.js';
+import { safeParseItems, normalizeItemsArray } from './historyNormalize.js';
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
 
@@ -263,10 +264,15 @@ router.get('/history', authenticateToken, async (req, res) => {
   try {
     const history = await prisma.warehouseWriteOffHistory.findMany({ orderBy: { createdAt: 'desc' } });
 
-    const enriched = await Promise.all(history.map(async (rec: any) => ({
-      ...rec,
-      firmDisplayName: await getFirmDisplayNameServer(rec.firmId, rec.firmName),
-    })));
+    const enriched = await Promise.all(history.map(async (rec: any) => {
+      const parsed = safeParseItems(rec.items);
+      const itemsNormalized = normalizeItemsArray(parsed);
+      return {
+        ...rec,
+        firmDisplayName: await getFirmDisplayNameServer(rec.firmId, rec.firmName),
+        itemsNormalized,
+      };
+    }));
 
     res.json({ success: true, data: enriched });
   } catch (error) {
