@@ -10,8 +10,8 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { dilovodService } from './DilovodService.js';
-import { isDilovodExportError, getDilovodExportErrorMessage, getDilovodUserId } from './DilovodUtils.js';
+import { dilovodExportFlowService, dilovodService } from './index.js';
+import { getDilovodUserId } from './DilovodUtils.js';
 import { logServer } from '../../lib/utils.js';
 import type { CashInConfirmedRow, CashInExportResponse } from '../../../shared/types/cashIn.js';
 
@@ -97,14 +97,14 @@ export class CashInExportBuilder {
     for (const item of payloads) {
       try {
         logServer(`  📤 [CashIn] Відправляємо рядок ${item.rowIndex}, замовлення №${item.orderNumber}...`);
-        const result = await dilovodService.exportToDilovod(item.payload);
+        const exportResult = await dilovodExportFlowService.send({ payload: item.payload, dryRun: false, label: '[CashIn]' });
 
-        if (isDilovodExportError(result)) {
-          const errMsg = getDilovodExportErrorMessage(result);
+        if (!exportResult.success) {
+          const errMsg = exportResult.error || exportResult.translatedError?.message || 'Невідома помилка від Dilovod';
           logServer(`  ❌ [CashIn] Рядок ${item.rowIndex}: ${errMsg}`);
           errors.push({ rowIndex: item.rowIndex, orderNumber: item.orderNumber, error: errMsg });
         } else {
-          logServer(`  ✅ [CashIn] Рядок ${item.rowIndex}: документ створено (id: ${result?.id})`);
+          logServer(`  ✅ [CashIn] Рядок ${item.rowIndex}: документ створено (id: ${exportResult.dilovodDocId ?? exportResult.dilovodResponse?.id})`);
           exportedCount++;
 
           // Оновлюємо дату cashIn в БД
@@ -378,9 +378,9 @@ export class CashInExportBuilder {
         state: CASH_IN_CONSTANTS.STATE_DONE,
       },
     };
-    const result = await dilovodService.exportToDilovod(payload);
-    if (isDilovodExportError(result)) {
-      throw new Error(getDilovodExportErrorMessage(result));
+    const exportResult = await dilovodExportFlowService.send({ payload, dryRun: false, label: '[CashIn]' });
+    if (!exportResult.success) {
+      throw new Error(exportResult.error || exportResult.translatedError?.message || 'Невідома помилка від Dilovod');
     }
     logServer(`  ✅ [CashIn] Статус замовлення №${orderNumber} (${dilovodDocId}) → "Виконано"`);
   }

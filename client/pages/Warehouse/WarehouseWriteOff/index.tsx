@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
+import useWarehouseParams from '../shared/useWarehouseParams';
 import { useWarehouseReturns } from '../WarehouseReturns/useWarehouseReturns';
 import useWarehouseWriteOff from './useWarehouseWriteOff';
 import { Tabs, Tab, Card } from '@heroui/react';
@@ -10,7 +10,7 @@ import OrderLinesList from './components/OrderLinesList';
 import WriteOffItemsPanel from './components/WriteOffItemsPanel';
 import ReasonSelector from './components/ReasonSelector';
 import ActionsBar from './components/ActionsBar';
-import WriteOffDetails from '../shared/WarehouseDetails';
+import WarehouseDetails from '../shared/WarehouseDetails';
 import { WriteOffHistoryTab } from './components/WriteOffHistoryTab';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
@@ -21,63 +21,17 @@ import { pluralize } from '@/lib';
 
 export default function WarehouseWriteOff() {
   const returns = useWarehouseReturns();
-  const writeoff = useWarehouseWriteOff();
-  // useDilovodDirectories на верхньому рівні компонента (правило хуків)
-  const dirsCtx = useDilovodDirectories();
-  // selectedQuantities removed — add button will always add 1 unit from order lines
+  const writeoff = useWarehouseWriteOff({ returns });
   const [disabledSkus, setDisabledSkus] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState<'byOrder'|'byProduct'>('byOrder');
   const [pageTab, setPageTab] = useState<'main'|'history'>('main');
   const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedOrderIdState, setSelectedOrderIdState] = useState<number | null>(null);
   const [selectedOrderExternalId, setSelectedOrderExternalId] = useState<string | null>(null);
-  const [orderDetails, setOrderDetails] = useState<any | null>(null);
-  const [storages, setStorages] = useState<any[]>([]);
-  const [selectedStorage, setSelectedStorage] = useState<string | null>(null);
+  // orderDetails now managed by `writeoff.orderDetails`
+  const { storages, selectedStorage, setSelectedStorage, selectedStorageName } = useWarehouseParams({ returns, externalStorages: writeoff.storages });
 
-  // Показувати читабельну назву обраного складу (якщо selectedStorage зберігає id)
-  const selectedStorageName = (() => {
-    if (!selectedStorage) return 'не вибрано';
-    const found = storages.find(st => String(st.id) === String(selectedStorage) || String(st.good_id) === String(selectedStorage));
-    if (!found) return String(selectedStorage);
-    // Випробовуємо кілька полів які можуть містити назву
-    return found.name || found.title || found.storageDisplayName || found.storage_display_name || found.good_name || String(found.id);
-  })();
-
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      if (!selectedOrderExternalId) { setOrderDetails(null); return; }
-      try {
-        const res = await fetch(`/api/orders/${selectedOrderExternalId}`, { credentials: 'include', headers: { Accept: 'application/json' } });
-        if (!res.ok) { console.error('order details fetch not ok', res.status); setOrderDetails(null); return; }
-        const body = await res.json();
-        let order = body?.data || body;
-        if (Array.isArray(order) && order.length > 0) order = order[0];
-        if (mounted) setOrderDetails(order);
-      } catch (e) {
-        console.error('load order details', e);
-        if (mounted) setOrderDetails(null);
-      }
-    };
-    void load();
-    return () => { mounted = false; };
-  }, [selectedOrderExternalId]);
-
-  // Ініціює завантаження довідників один раз при монтуванні
-  useEffect(() => { void dirsCtx.loadDirectories(); }, []);
-
-  // Синхронізує storages зі стану провайдера щоразу, як дані оновлюються
-  useEffect(() => {
-    const s = dirsCtx.directories?.storages || [];
-    if (s.length === 0) return;
-    setStorages(s);
-    const smallId: string | null = (dirsCtx.directories as any)?.smallStorageId || null;
-    if (smallId) {
-      const found = s.find((st: any) => String(st.id) === String(smallId) || String(st.good_id) === String(smallId));
-      if (found) setSelectedStorage(String(found.id ?? found.good_id ?? smallId));
-    }
-  }, [dirsCtx.directories]);
+  useEffect(() => { void writeoff.loadOrderDetails(selectedOrderExternalId); }, [selectedOrderExternalId]);
 
   // load firms list for selects
   useEffect(() => {
@@ -93,16 +47,7 @@ export default function WarehouseWriteOff() {
   const handleSendPreview = async () => {
     setIsLoadingPayload(true);
     try {
-      const dateValue = new Date().toISOString().replace('T', ' ').substring(0, 19);
-      const resp = await writeoff.buildPreview({
-        orderId: selectedOrderIdState ?? undefined,
-        date: dateValue,
-        firmId: returns.receiveFirmId ?? undefined,
-        storageId: selectedStorage ?? undefined,
-        items: (returns.items || []).map((item: any) => ({ sku: item.sku, batchId: item.selectedBatchId, quantity: item.quantity, price: item.price })),
-        comment,
-        reason: reason === 'Інше' ? (customReason || reason) : reason,
-      });
+      const resp = await writeoff.previewWriteOff({ returns, orderId: selectedOrderIdState, comment, reason: reason === 'Інше' ? (customReason || reason) : reason, storageId: selectedStorage });
       if (resp?.success && resp.payload) {
         setPayloadPreview(resp.payload);
         setShowPayloadPreview(true);
@@ -130,7 +75,7 @@ export default function WarehouseWriteOff() {
   const clearAllInputs = () => {
     returns.resetAllState?.();
     writeoff.setProductSearchResults?.([]);
-    setOrderDetails(null);
+    writeoff.setOrderDetails?.(null);
     setDisabledSkus({});
     setProductSearchReset((c) => c + 1);
   };
@@ -147,56 +92,8 @@ export default function WarehouseWriteOff() {
 
   // Винесена логіка додавання рядка замовлення у товари для списання
   const handleAddOrderLine = async (sku: string, line: any, maxQty: number, qtyArg?: number) => {
-    const qty = typeof qtyArg === 'number' ? qtyArg : 1;
-    if (!qty || qty <= 0) return;
-    const id = crypto.randomUUID?.() ?? `${sku}-${Date.now()}-${Math.random()}`;
-    const newItem = {
-      id,
-      sku,
-      name: line.productName || line.text || line.title || line.name || sku,
-      dilovodId: line.dilovodId ?? null,
-      quantity: qty,
-      orderedQuantity: maxQty,
-      portionsPerBox: line.portionsPerItem ?? 1,
-      firmId: orderDetails?.firmId ?? returns.shipFirmId ?? returns.receiveFirmId ?? null,
-      availableBatches: null,
-      selectedBatchId: null,
-      selectedBatchKey: null,
-      price: 0,
-    };
-    // append item
-    returns.setItems([...(returns.items || []), newItem]);
-    // disable this sku in order lines
     setDisabledSkus((s)=>({ ...s, [sku]: true }));
-    // fetch batches for added item and update it
-    try {
-      const firmId = newItem.firmId || undefined;
-      const url = new URL(`/api/warehouse/batch-numbers/${encodeURIComponent(sku)}`, window.location.origin);
-      if (firmId) url.searchParams.set('firmId', String(firmId));
-      url.searchParams.set('onlySmallStorage', 'true');
-      const resp = await fetch(url.toString(), { credentials: 'include' });
-      if (resp.ok) {
-        const data = await resp.json();
-        const batches = Array.isArray(data.batches) ? data.batches : [];
-        const normalized = batches.map((batch:any, index:number) => {
-          const normalizedBatchId = batch.batchId || batch.id || '';
-          const normalizedStorage = batch.storage || batch.storageDisplayName || '';
-          const uniqueId = normalizedBatchId ? `${normalizedBatchId}-${normalizedStorage || index}` : `${sku}-${batch.batchNumber || 'unknown'}-${normalizedStorage || index}`;
-          return {
-            id: uniqueId,
-            batchId: normalizedBatchId,
-            batchNumber: batch.batchNumber || batch.goodPart__pr || batch.name || 'Невідома партія',
-            quantity: Number(batch.quantity ?? batch.qty ?? 0),
-            storage: normalizedStorage || undefined,
-            storageDisplayName: batch.storageDisplayName || batch.storage__pr || undefined,
-          };
-        });
-        // update item in returns.items with batches and adjust orderedQuantity to batch size when available
-        returns.setItems((prev:any[]) => (prev || []).map(it => it.id === id ? { ...it, availableBatches: normalized, selectedBatchKey: normalized[0]?.id ?? null, selectedBatchId: normalized[0]?.batchId ?? null, orderedQuantity: normalized[0]?.quantity ?? it.orderedQuantity } : it));
-      }
-    } catch (err) {
-      console.error('batch fetch error', err);
-    }
+    await writeoff.addOrderLineFromOrder(sku, line, maxQty, qtyArg, returns);
   };
 
   return (
@@ -238,7 +135,7 @@ export default function WarehouseWriteOff() {
             {activeTab === 'byOrder' && (
               <OrderSearchPanel
               returns={returns}
-              setOrderDetails={setOrderDetails}
+              setOrderDetails={writeoff.setOrderDetails}
               setSelectedOrderExternalId={setSelectedOrderExternalId}
               setSelectedOrderIdState={setSelectedOrderIdState}
               />
@@ -249,15 +146,15 @@ export default function WarehouseWriteOff() {
           </Card>
 
           {/* Рядки замовлення */}
-          {activeTab === 'byOrder' && orderDetails && Array.isArray(orderDetails.items) && (
-            <OrderLinesList orderDetails={orderDetails} disabledSkus={disabledSkus} onAddLine={handleAddOrderLine} />
+          {activeTab === 'byOrder' && writeoff.orderDetails && Array.isArray(writeoff.orderDetails.items) && (
+            <OrderLinesList orderDetails={writeoff.orderDetails} disabledSkus={disabledSkus} onAddLine={handleAddOrderLine} />
           )}
-          {orderDetails && !Array.isArray(orderDetails.items) && (
+          {writeoff.orderDetails && !Array.isArray(writeoff.orderDetails.items) && (
             <div className="text-sm text-gray-500">Немає доступних рядків замовлення для списання.</div>
           )}
 
           {/* Параметри списання */}
-          <WriteOffDetails returns={returns} storages={storages && storages.length > 0 ? storages : writeoff.storages} selectedStorage={selectedStorage} setSelectedStorage={setSelectedStorage} />
+          <WarehouseDetails returns={returns} storages={storages && storages.length > 0 ? storages : writeoff.storages} selectedStorage={selectedStorage} setSelectedStorage={setSelectedStorage} />
 
           {/* Товари для списання */}
           {returns.items && returns.items.length > 0 && (
@@ -390,8 +287,8 @@ export default function WarehouseWriteOff() {
           setSendConfirmLoading(true);
           try {
             const body = {
-              orderId: selectedOrderIdState ?? undefined,
-              date: new Date().toISOString().replace('T', ' ').substring(0, 19),
+                orderId: selectedOrderIdState ?? undefined,
+                date: (returns.returnDate && String(returns.returnDate).trim()) ? String(returns.returnDate).trim() : new Date().toISOString().replace('T', ' ').substring(0, 19),
               firmId: returns.receiveFirmId ?? undefined,
               storageId: selectedStorage ?? undefined,
               items: (returns.items || []).map((item: any) => ({ sku: item.sku, batchId: item.selectedBatchId, quantity: item.quantity, price: item.price })),

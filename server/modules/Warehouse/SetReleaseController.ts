@@ -3,8 +3,39 @@ import { prisma } from '../../lib/utils.js';
 import { normalizeSetsArray } from './historyNormalize.js';
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
+import { dilovodExportFlowService } from '../../services/dilovod/index.js';
+import { getDilovodUserId, getDilovodExportErrorMessage, translateDilovodError } from '../../services/dilovod/DilovodUtils.js';
 
 const router = Router();
+
+const SET_RELEASE_DOC_ID = 'documents.goodWriteOff';
+const SET_RELEASE_DOC_MODE = '1004000000000305';
+const SET_RELEASE_ACC_COSTS = '1119000000001079';
+const SET_RELEASE_ACC_GOOD = '1119000000001076';
+
+function formatLocalDate(date: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+async function resolveKitGoodId(setSku: string | number | undefined, kitGood: string | number | undefined): Promise<string | null> {
+  const explicitKitGood = kitGood != null && String(kitGood).trim() !== '' ? String(kitGood).trim() : '';
+  if (explicitKitGood) {
+    return explicitKitGood;
+  }
+
+  const normalizedSku = setSku != null ? String(setSku).trim() : '';
+  if (!normalizedSku) {
+    return null;
+  }
+
+  const product = await prisma.product.findUnique({
+    where: { sku: normalizedSku },
+    select: { dilovodId: true },
+  });
+
+  return product?.dilovodId?.trim() || null;
+}
 
 /**
  * POST /api/warehouse/releases
@@ -13,7 +44,6 @@ const router = Router();
 router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
     const userId = (req as any).user?.userId || (req as any).user?.id || 0;
-    const userName = (req as any).user?.name || null;
     const { items, storageId, firmId, comment, status } = req.body;
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ success: false, error: 'items required' });
 
@@ -47,7 +77,6 @@ router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (re
       comment: comment ?? null,
       status: status ?? 'created',
       createdBy: Number(userId) || 0,
-      
     } });
 
     res.json({ success: true, data: record });
@@ -131,6 +160,179 @@ router.post('/preview', authenticateToken, requireMinRole(ROLES.STOREKEEPER), as
   } catch (error) {
     console.error('[SetRelease][preview] error:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/warehouse/releases/send
+ * Формування payload та відправка документа випуску набору в Діловод
+ */
+router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+  try {
+    const { kitGood, kitQty, setSku, quantity, storageId, firmId, comment, date, dryRun } = req.body;
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+
+    const firstItem = items[0] ?? {};
+    const resolvedSetSku = typeof setSku === 'string' && setSku.trim() !== ''
+      ? setSku.trim()
+      : typeof firstItem.set_sku === 'string'
+        ? firstItem.set_sku.trim()
+        : typeof firstItem.setSku === 'string'
+          ? firstItem.setSku.trim()
+          : typeof firstItem.sku === 'string'
+            ? firstItem.sku.trim()
+            : '';
+
+    const resolvedKitQty = Number(kitQty ?? quantity ?? firstItem.quantity ?? 0);
+    if (!resolvedSetSku && kitGood == null) {
+      return res.status(400).json({ success: false, error: 'setSku або kitGood обовʼязкові' });
+    }
+    if (!Number.isFinite(resolvedKitQty) || resolvedKitQty <= 0) {
+      return res.status(400).json({ success: false, error: 'kitQty має бути додатнім числом' });
+    }
+
+    const resolvedKitGood = await resolveKitGoodId(resolvedSetSku, kitGood as string | number | undefined);
+    if (!resolvedKitGood) {
+      return res.status(422).json({ success: false, error: 'Не вдалося визначити ID набору в Dilovod (kitGood)' });
+    }
+
+    const currentUserId = (req as any).user?.userId || (req as any).user?.id;
+    const formattedDate = formatLocalDate(date ? new Date(date) : new Date());
+    const author = await getDilovodUserId(currentUserId, { logPrefix: '[SetRelease] ' }).catch(() => '');
+
+    const payload: any = {
+      saveType: 1,
+      header: {
+        id: SET_RELEASE_DOC_ID,
+        date: formattedDate,
+        firm: firmId ?? null,
+        storage: storageId ?? null,
+        posted: 1,
+        accCosts: SET_RELEASE_ACC_COSTS,
+        docMode: SET_RELEASE_DOC_MODE,
+        kitGood: resolvedKitGood,
+        kitQty: resolvedKitQty,
+        ...(author ? { author } : {}),
+        ...(comment ? { remark: String(comment).trim() } : {}),
+      },
+    };
+
+    // Build tableParts.tpGoods by expanding set components (reuse preview logic)
+    try {
+      // Expand sets into component SKUs and aggregate quantities
+      const expandedComponents: Record<string, { sku: string; name?: string | null; quantity: number }> = {};
+      const MAX_DEPTH = 10;
+
+      const expandSkuRecursively = async (sku: string, qty: number, visited: Set<string> = new Set(), depth: number = 0) => {
+        if (depth > MAX_DEPTH) {
+          console.warn(`[SetRelease][send] max depth reached for SKU=${sku}`);
+          return;
+        }
+        const normSku = String(sku).trim();
+        if (!normSku) return;
+        if (visited.has(normSku)) return;
+
+        const product = await prisma.product.findUnique({ where: { sku: normSku } });
+        if (!product) {
+          if (!expandedComponents[normSku]) expandedComponents[normSku] = { sku: normSku, name: null, quantity: 0 };
+          expandedComponents[normSku].quantity += qty;
+          return;
+        }
+
+        let setData: any[] | null = null;
+        try {
+          setData = product.set ? (typeof product.set === 'string' ? JSON.parse(product.set) : product.set) : null;
+        } catch (e) {
+          console.warn(`[SetRelease][send] failed to parse set for SKU=${normSku}`, e);
+          setData = null;
+        }
+
+        if (!Array.isArray(setData) || setData.length === 0) {
+          const name = product.name || null;
+          if (!expandedComponents[normSku]) expandedComponents[normSku] = { sku: normSku, name, quantity: 0 };
+          expandedComponents[normSku].quantity += qty;
+          return;
+        }
+
+        visited.add(normSku);
+        for (const si of setData) {
+          if (!si || !si.id) continue;
+          const childSku = String(si.id).trim();
+          const childQty = Number(si.quantity || 0) * qty;
+          if (childQty <= 0) continue;
+          await expandSkuRecursively(childSku, childQty, new Set(visited), depth + 1);
+        }
+        visited.delete(normSku);
+      };
+
+      for (const it of items) {
+        const sku = it.set_sku || it.sku || it.setSku;
+        const qty = Number(it.quantity || 0);
+        if (!sku || qty <= 0) continue;
+        await expandSkuRecursively(String(sku), qty, new Set(), 0);
+      }
+
+      // Map expanded skus to products to get dilovodId
+      const expandedList = Object.values(expandedComponents);
+      const skus = expandedList.map(c => c.sku).filter(Boolean);
+      const products = skus.length ? await prisma.product.findMany({ where: { sku: { in: skus } }, select: { sku: true, dilovodId: true } }) : [];
+      const skuToProduct = new Map(products.map((p: any) => [p.sku, p]));
+
+      const tpGoods: any[] = [];
+      let row = 1;
+      for (const comp of expandedList) {
+        const prod = skuToProduct.get(comp.sku);
+        if (!prod || !prod.dilovodId) continue; // skip items without dilovodId
+        tpGoods.push({
+          rowNum: row,
+          good: prod.dilovodId,
+          unit: '1103600000000001',
+          qty: Number(comp.quantity) || 0,
+          accGood: SET_RELEASE_ACC_GOOD,
+        });
+        row++;
+      }
+
+      if (!payload.tableParts) payload.tableParts = {};
+      payload.tableParts.tpGoods = tpGoods;
+    } catch (e) {
+      console.warn('[SetRelease] Failed to build tpGoods tablePart:', e);
+    }
+
+    const exportResult = await dilovodExportFlowService.send({
+      payload,
+      dryRun: dryRun === true || dryRun === 'true',
+      warnings: [],
+      label: '[SetRelease]',
+    });
+
+    if (exportResult.dryRun) {
+      return res.json(exportResult);
+    }
+
+    if (!exportResult.success) {
+      const rawError = exportResult.error || exportResult.dilovodResponse?.error || exportResult.dilovodResponse?.message || 'Dilovod error';
+      const translated = exportResult.translatedError ?? translateDilovodError(String(rawError));
+      const message = exportResult.dilovodResponse ? getDilovodExportErrorMessage(exportResult.dilovodResponse) : String(rawError);
+
+      return res.status(422).json({
+        success: false,
+        error: message,
+        errorTitle: translated.title,
+        errorFallback: translated.message,
+        dilovodResponse: exportResult.dilovodResponse,
+      });
+    }
+
+    return res.json({
+      success: true,
+      payload,
+      dilovodResponse: exportResult.dilovodResponse,
+      dilovodDocId: exportResult.dilovodDocId,
+    });
+  } catch (error) {
+    console.error('[SetRelease] Error sending set release:', error);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' });
   }
 });
 

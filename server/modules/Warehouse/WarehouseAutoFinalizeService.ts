@@ -151,14 +151,21 @@ export class WarehouseAutoFinalizeService {
         }
 
         // Відправляємо в Діловод
-        const dilovodResult = await dilovodService.exportToDilovod({
-          saveType: payload.saveType,
-          header: payload.header,
-          tableParts: payload.tableParts,
+        const { dilovodExportFlowService, dilovodService } = await import('../../services/dilovod/index.js');
+        const exportResult = await dilovodExportFlowService.send({
+          payload: {
+            saveType: payload.saveType,
+            header: payload.header,
+            tableParts: payload.tableParts,
+          },
+          dryRun: false,
+          warnings: validation.warnings,
+          label: TAG,
         });
+        const dilovodResult = exportResult.dilovodResponse;
 
-        if (dilovodResult?.error || dilovodResult?.errorMessage || !dilovodResult?.id) {
-          const rawErr = dilovodResult?.error ?? dilovodResult?.errorMessage ?? 'Немає id у відповіді';
+        if (!exportResult.success) {
+          const rawErr = exportResult.error ?? dilovodResult?.error ?? dilovodResult?.errorMessage ?? 'Немає id у відповіді';
           logServer(`${TAG} ❌ Рух #${movement.id}: Діловод повернув помилку — ${rawErr}`);
           await this.writeLog(
             'error',
@@ -173,7 +180,7 @@ export class WarehouseAutoFinalizeService {
 
         // Отримуємо dilovodDocId і docNumber
         const dilovodDocId: string | undefined =
-          dilovodResult?.id ?? dilovodResult?.header?.id ?? movement.dilovodDocId ?? undefined;
+          exportResult.dilovodDocId ?? dilovodResult?.id ?? dilovodResult?.header?.id ?? movement.dilovodDocId ?? undefined;
 
         let docNumber = movement.docNumber
           ?? dilovodResult?.number

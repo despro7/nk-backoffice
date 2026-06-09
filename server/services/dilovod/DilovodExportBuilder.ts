@@ -730,7 +730,7 @@ export class DilovodExportBuilder {
         // Використовуємо good для передачі ID товару з products.dilovodId
         tpGoods.push({
           rowNum,
-          good: (product as any).dilovodId, // ID товару в Dilovod для SKU
+          good: product.dilovodId, // ID товару в Dilovod для SKU
           unit: DILOVOD_CONSTANTS.UNIT_PIECE,
           qty,
           baseQty: qty,
@@ -739,10 +739,10 @@ export class DilovodExportBuilder {
           amountCur: amount
         });
 
-        console.log(`    ✅ Товар #${rowNum}: SKU "${sku}" → good_id "${(product as any).dilovodId}", к-ть: ${qty}, ціна: ${price}`);
+        console.log(`    ✅ Товар #${rowNum}: SKU "${sku}" → good_id "${product.dilovodId}", к-ть: ${qty}, ціна: ${price}`);
         rowNum++;
       } catch (error) {
-        warnings.push(`Помилка обробки товару "${item.productName}": ${error instanceof Error ? error.message : String(error)}`);
+        warnings.push(`Помилка обробки товару "${item.productName || 'Невідомий товар'}": ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 

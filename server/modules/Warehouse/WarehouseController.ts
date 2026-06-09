@@ -812,8 +812,19 @@ router.post('/send', authenticateToken, async (req, res) => {
       });
     }
 
-    // Dry-run — повертаємо payload без відправки
-    if (dryRun) {
+    const { dilovodExportFlowService, dilovodService } = await import('../../services/dilovod/index.js');
+    const exportResult = await dilovodExportFlowService.send({
+      payload: {
+        ...(payload.saveType !== undefined && { saveType: payload.saveType }),
+        header: payload.header,
+        tableParts: payload.tableParts,
+      },
+      dryRun,
+      warnings: validation.warnings,
+      label: '[Warehouse]',
+    });
+
+    if (exportResult.dryRun) {
       return res.json({
         success: true,
         dryRun: true,
@@ -822,34 +833,19 @@ router.post('/send', authenticateToken, async (req, res) => {
       });
     }
 
-    // Фактична відправка до Діловода
-    const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
-    const dilovodService = new DilovodService();
+    if (!exportResult.success) {
+      const rawErrMsg = exportResult.error ?? 'Невідома помилка від Діловода';
+      const { cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull, translateDilovodError } = await import('../../services/dilovod/DilovodUtils.js');
+      const translated = exportResult.translatedError ?? translateDilovodError(rawErrMsg);
+      const detailedMessage = cleanDilovodErrorMessageShort(rawErrMsg) || translated.message;
 
-    const dilovodResult = await dilovodService.exportToDilovod({
-      ...(payload.saveType !== undefined && { saveType: payload.saveType }),
-      header: payload.header,
-      tableParts: payload.tableParts,
-    });
-
-    console.log(`📬 [Warehouse] Відповідь Діловода:`, JSON.stringify(dilovodResult, null, 2));
-
-    // Діловод може повернути 200 OK, але з помилкою в тілі
-    if (dilovodResult?.error || dilovodResult?.errorMessage) {
-      const rawErrMsg = dilovodResult.error ?? dilovodResult.errorMessage ?? 'Невідома помилка від Діловода';
-      const { translateDilovodError, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } = await import('../../services/dilovod/DilovodUtils.js');
-      const { title: errorTitle, message: errorMessage } = translateDilovodError(rawErrMsg);
-      // Детальне повідомлення для Toast: очищаємо HTML, витягуємо назви товарів, артикули, залишки
-      const detailedMessage = cleanDilovodErrorMessageShort(rawErrMsg);
       console.error(`🚨 [Warehouse] Діловод повернув помилку:`, rawErrMsg);
 
-      // Логуємо помилку в meta_logs (аналогічно до DilovodAutoExportService)
       try {
-        const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
         await dilovodService.logMetaDilovodExport({
-          title: errorTitle,
+          title: translated.title,
           status: 'error',
-          message: `[Мануал] Помилка відправки переміщення #${draft.internalDocNumber ?? draftId}: ${detailedMessage || errorMessage}`,
+          message: `[Мануал] Помилка відправки переміщення #${draft.internalDocNumber ?? draftId}: ${detailedMessage}`,
           initiatedBy: String(userId),
           data: {
             draftId,
@@ -857,7 +853,7 @@ router.post('/send', authenticateToken, async (req, res) => {
             dilovodDocId: draft.dilovodDocId,
             isFinal,
             error: cleanDilovodErrorMessageFull(rawErrMsg),
-            dilovodResponse: dilovodResult,
+            dilovodResponse: exportResult.dilovodResponse,
           },
         });
       } catch (logErr) {
@@ -866,15 +862,19 @@ router.post('/send', authenticateToken, async (req, res) => {
 
       return res.status(422).json({
         success: false,
-        errorTitle,
-        error: detailedMessage || errorMessage,
-        errorFallback: errorMessage,
-        dilovodResponse: dilovodResult,
+        errorTitle: translated.title,
+        error: detailedMessage,
+        errorFallback: translated.message,
+        dilovodResponse: exportResult.dilovodResponse,
       });
     }
 
+    const dilovodResult = exportResult.dilovodResponse;
+    console.log(`📬 [Warehouse] Відповідь Діловода:`, JSON.stringify(dilovodResult, null, 2));
+
     // Отримуємо ID документа з відповіді Діловода
     const dilovodDocId: string | undefined =
+      exportResult.dilovodDocId ??
       dilovodResult?.id ??
       dilovodResult?.header?.id ??
       dilovodResult?.header?.id?.id ??

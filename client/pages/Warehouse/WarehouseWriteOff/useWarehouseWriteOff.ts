@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 
-export default function useWarehouseWriteOff() {
+interface Opts {
+  returns?: any;
+}
+
+export default function useWarehouseWriteOff(opts: Opts = {}) {
+  const { returns: returnsOpt } = opts;
   // useDilovodDirectories на верхньому рівні хука (правило хуків)
   const dirsCtx = useDilovodDirectories();
 
@@ -14,6 +19,7 @@ export default function useWarehouseWriteOff() {
   const [batchesError, setBatchesError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
+  const [orderDetails, setOrderDetails] = useState<any | null>(null);
 
   // Ініціює завантаження один раз при монтуванні через централізований провайдер
   useEffect(() => { void dirsCtx.loadDirectories(); }, []);
@@ -23,9 +29,27 @@ export default function useWarehouseWriteOff() {
     const s = dirsCtx.directories?.storages || [];
     if (s.length > 0) {
       setStorages(s);
-      setSelectedStorage((prev) => prev ?? String(s[0].id ?? s[0].good_id ?? null));
+      setSelectedStorage((prev) => prev ?? String(s[0].id ?? null));
     }
   }, [dirsCtx.directories]);
+
+  // Load order details by externalId (used by UI)
+  const loadOrderDetails = async (externalId: string | null) => {
+    if (!externalId) { setOrderDetails(null); return null; }
+    try {
+      const res = await fetch(`/api/orders/${externalId}`, { credentials: 'include', headers: { Accept: 'application/json' } });
+      if (!res.ok) { console.error('order details fetch not ok', res.status); setOrderDetails(null); return null; }
+      const body = await res.json();
+      let order = body?.data || body;
+      if (Array.isArray(order) && order.length > 0) order = order[0];
+      setOrderDetails(order);
+      return order;
+    } catch (e) {
+      console.error('load order details', e);
+      setOrderDetails(null);
+      return null;
+    }
+  };
 
   const addItem = (item: any) => {
     setItems((s) => [...s, { id: crypto.randomUUID?.() ?? Date.now().toString(), ...item }]);
@@ -40,6 +64,71 @@ export default function useWarehouseWriteOff() {
       productId: product.id || null,
     };
     addItem(item);
+  };
+
+  // Add order line into returns (preferred) or local items if returns not provided
+  const addOrderLineFromOrder = async (sku: string, line: any, maxQty: number, qtyArg?: number, returnsParam?: any) => {
+    const qty = typeof qtyArg === 'number' ? qtyArg : 1;
+    if (!qty || qty <= 0) return;
+    const id = crypto.randomUUID?.() ?? `${sku}-${Date.now()}-${Math.random()}`;
+    const newItem = {
+      id,
+      sku,
+      name: line.productName || line.text || line.title || line.name || sku,
+      dilovodId: line.dilovodId ?? null,
+      quantity: qty,
+      orderedQuantity: maxQty,
+      portionsPerBox: line.portionsPerItem ?? 1,
+      firmId: line.firmId ?? (returnsParam?.shipFirmId ?? returnsParam?.receiveFirmId) ?? null,
+      availableBatches: null,
+      selectedBatchId: null,
+      selectedBatchKey: null,
+      price: 0,
+    };
+
+    // If returns provided, add into returns and fetch batches for it
+    const targetReturns = returnsParam ?? returnsOpt ?? null;
+    if (targetReturns && typeof targetReturns.setItems === 'function') {
+      targetReturns.setItems([...(targetReturns.items || []), newItem]);
+      try {
+        const firmId = newItem.firmId || undefined;
+        const url = new URL(`/api/warehouse/batch-numbers/${encodeURIComponent(sku)}`, window.location.origin);
+        if (firmId) url.searchParams.set('firmId', String(firmId));
+        url.searchParams.set('onlySmallStorage', 'true');
+        const resp = await fetch(url.toString(), { credentials: 'include' });
+        if (resp.ok) {
+          const data = await resp.json();
+          const batches = Array.isArray(data.batches) ? data.batches : [];
+          const normalized = batches.map((batch:any, index:number) => {
+            const normalizedBatchId = batch.batchId || batch.id || '';
+            const normalizedStorage = batch.storage || batch.storageDisplayName || '';
+            const uniqueId = normalizedBatchId ? `${normalizedBatchId}-${normalizedStorage || index}` : `${sku}-${batch.batchNumber || 'unknown'}-${normalizedStorage || index}`;
+            return {
+              id: uniqueId,
+              batchId: normalizedBatchId,
+              batchNumber: batch.batchNumber || batch.goodPart__pr || batch.name || 'Невідома партія',
+              quantity: Number(batch.quantity ?? batch.qty ?? 0),
+              storage: normalizedStorage || undefined,
+              storageDisplayName: batch.storageDisplayName || batch.storage__pr || undefined,
+            };
+          });
+          // update returns items
+          targetReturns.setItems((prev:any[]) => (prev || []).map(it => it.id === id ? { ...it, availableBatches: normalized, selectedBatchKey: normalized[0]?.id ?? null, selectedBatchId: normalized[0]?.batchId ?? null, orderedQuantity: normalized[0]?.quantity ?? it.orderedQuantity } : it));
+        }
+      } catch (err) {
+        console.error('batch fetch error', err);
+      }
+      return;
+    }
+
+    // Fallback: add to local items and fetch batches into local map
+    addItem(newItem);
+    try {
+      const batches = await getBatchesForSku(sku, newItem.firmId || undefined);
+      setBatchesBySku((prev) => ({ ...prev, [sku]: batches }));
+    } catch (e) {
+      // ignore
+    }
   };
 
   const searchProducts = async (query: string) => {
@@ -126,6 +215,23 @@ export default function useWarehouseWriteOff() {
     return await sendWriteOff({ items: payloadItems || items, comment, reason, customReason, firmId, storageId: storageId ?? selectedStorage, date, dryRun: true });
   };
 
+  // Preview wrapper that uses returns when provided
+  const previewWriteOff = async ({ returns: returnsParam, orderId, date, firmId, storageId, items: payloadItems, comment, reason, customReason }: any) => {
+    const effectiveDate = date ?? (returnsParam?.returnDate ?? new Date().toISOString().replace('T',' ').substring(0,19));
+    const effectiveFirm = firmId ?? (returnsParam?.receiveFirmId ?? undefined);
+    const effectiveStorage = storageId ?? selectedStorage ?? (returnsParam?.selectedStorage ?? undefined);
+    const effectiveItems = payloadItems ?? (returnsParam?.items || items);
+    return await buildPreview({ items: effectiveItems, comment, reason, customReason, firmId: effectiveFirm, storageId: effectiveStorage, date: effectiveDate });
+  };
+
+  const sendConfirmWriteOff = async ({ returns: returnsParam, orderId, date, firmId, storageId, items: payloadItems, comment, reason, customReason, dryRun }: any) => {
+    const effectiveDate = date ?? (returnsParam?.returnDate ?? new Date().toISOString().replace('T',' ').substring(0,19));
+    const effectiveFirm = firmId ?? (returnsParam?.receiveFirmId ?? undefined);
+    const effectiveStorage = storageId ?? selectedStorage ?? (returnsParam?.selectedStorage ?? undefined);
+    const effectiveItems = payloadItems ?? (returnsParam?.items || items);
+    return await sendWriteOffWithClientValidation({ items: effectiveItems, comment, reason, customReason, firmId: effectiveFirm, storageId: effectiveStorage, date: effectiveDate, dryRun: dryRun ?? false });
+  };
+
   // High-level send helper with minimal validation for write-offs (used by UI)
   const sendWriteOffWithClientValidation = async ({ items: payloadItems, comment, reason, customReason, firmId, storageId, date, dryRun }: any) => {
     const effectiveItems = payloadItems || items;
@@ -177,5 +283,12 @@ export default function useWarehouseWriteOff() {
     requestSend,
     history,
     loadHistory,
+    // new helpers
+    orderDetails,
+    setOrderDetails,
+    loadOrderDetails,
+    addOrderLineFromOrder,
+    previewWriteOff,
+    sendConfirmWriteOff,
   };
 }

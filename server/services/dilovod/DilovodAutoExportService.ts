@@ -10,7 +10,8 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { isDilovodExportError, getDilovodExportErrorMessage, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from './DilovodUtils.js';
+import { dilovodService } from './index.js';
+import { cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from './DilovodUtils.js';
 import type { DilovodSettings } from '../../../shared/types/dilovod.js';
 
 const prisma = new PrismaClient();
@@ -282,32 +283,32 @@ export class DilovodAutoExportService {
       console.log(`✅ [AutoExport/saleOrder] Payload для ${orderNum} сформовано`);
 
       // Крок 3: Відправляємо в Dilovod
-      const { dilovodService } = await import('./DilovodService.js');
-      const exportResult = await dilovodService.exportToDilovod(payload);
+      const { dilovodExportFlowService } = await import('./index.js');
+      const exportResult = await dilovodExportFlowService.send({ payload, dryRun: false, label: '[AutoExport/saleOrder]' });
 
-      const isError = isDilovodExportError(exportResult);
-      const errorMessage = isError ? getDilovodExportErrorMessage(exportResult) : '';
+      const isError = !exportResult.success;
+      const errorMessage = isError ? (exportResult.error || exportResult.translatedError?.message || 'Невідома помилка від Dilovod') : '';
 
       // Крок 4: Зберігаємо в БД при успіху
-      if (!isError && exportResult?.id) {
+      if (!isError && exportResult?.dilovodDocId) {
         console.log(
-          `📝 [AutoExport/saleOrder] ПЕРЕД записом дати: orderId=${internalOrderId}, orderNum=${orderNum}, isError=${isError}, exportResult.id=${exportResult?.id}`
+          `📝 [AutoExport/saleOrder] ПЕРЕД записом дати: orderId=${internalOrderId}, orderNum=${orderNum}, isError=${isError}, exportResult.id=${exportResult?.dilovodDocId}`
         );
 
         await prisma.order.update({
           where: { id: internalOrderId },
           data: {
-            dilovodDocId: exportResult.id,
+            dilovodDocId: exportResult.dilovodDocId,
             dilovodExportDate: new Date().toISOString()
           }
         });
 
         console.log(
-          `✅ [AutoExport/saleOrder] ПІСЛЯ запису дати успішно: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodDocId=${exportResult.id}`
+          `✅ [AutoExport/saleOrder] ПІСЛЯ запису дати успішно: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodDocId=${exportResult.dilovodDocId}`
         );
       } else {
         console.log(
-          `❌ [AutoExport/saleOrder] ПОМИЛКА export замовлення ${orderNum}: isError=${isError}, exportResult?.id=${exportResult?.id}, errorMessage=${errorMessage}`
+          `❌ [AutoExport/saleOrder] ПОМИЛКА export замовлення ${orderNum}: isError=${isError}, exportResult?.id=${exportResult?.dilovodDocId}, errorMessage=${errorMessage}`
         );
       }
 
@@ -330,7 +331,7 @@ export class DilovodAutoExportService {
         exportResult,
         warnings: warnings.length > 0 ? warnings : undefined,
         // Додаємо індикатор: чи була дата записана в БД при помилці?
-        dbUpdateAttempted: !isError && exportResult?.id,
+        dbUpdateAttempted: !isError && !!exportResult?.dilovodDocId,
         isError: isError
       };
 
@@ -481,20 +482,20 @@ export class DilovodAutoExportService {
       console.log(`✅ [AutoExport/sale] Payload відвантаження для ${orderNum} сформовано`);
 
       // Крок 3: Відправляємо в Dilovod
-      const { dilovodService } = await import('./DilovodService.js');
-      const exportResult = await dilovodService.exportToDilovod(salePayload);
+      const { dilovodExportFlowService } = await import('./index.js');
+      const exportResult = await dilovodExportFlowService.send({ payload: salePayload, dryRun: false, label: '[AutoExport/sale]' });
 
-      const isError = isDilovodExportError(exportResult);
-      const errorMessage = isError ? getDilovodExportErrorMessage(exportResult) : '';
+      const isError = !exportResult.success;
+      const errorMessage = isError ? (exportResult.error || exportResult.translatedError?.message || 'Невідома помилка від Dilovod') : '';
 
       // Крок 4: Зберігаємо в БД при успіху — ТІЛЬКИ якщо немає жодної помилки
-      if (!isError && exportResult?.id) {
+      if (!isError && exportResult?.dilovodDocId) {
         const shipmentDate = order.readyToShipAt
           ? new Date(order.readyToShipAt).toISOString()
           : new Date().toISOString();
 
         console.log(
-          `📝 [AutoExport/sale] ПЕРЕД записом дати: orderId=${internalOrderId}, orderNum=${orderNum}, isError=${isError}, exportResult.id=${exportResult?.id}, dateToWrite=${shipmentDate}`
+          `📝 [AutoExport/sale] ПЕРЕД записом дати: orderId=${internalOrderId}, orderNum=${orderNum}, isError=${isError}, exportResult.id=${exportResult?.dilovodDocId}, dateToWrite=${shipmentDate}`
         );
 
         await prisma.order.update({
@@ -512,7 +513,7 @@ export class DilovodAutoExportService {
         );
       } else {
         console.log(
-          `❌ [AutoExport/sale] ПОМИЛКА відвантаження замовлення ${orderNum}: isError=${isError}, exportResult?.id=${exportResult?.id}, errorMessage=${errorMessage}`
+          `❌ [AutoExport/sale] ПОМИЛКА відвантаження замовлення ${orderNum}: isError=${isError}, exportResult?.id=${exportResult?.dilovodDocId}, errorMessage=${errorMessage}`
         );
       }
 
@@ -536,7 +537,7 @@ export class DilovodAutoExportService {
         exportResult,
         warnings: warnings.length > 0 ? warnings : undefined,
         // Додаємо індикатор: чи була дата записана в БД при помилці?
-        dbUpdateAttempted: !isError && exportResult?.id,
+        dbUpdateAttempted: !isError && !!exportResult?.dilovodDocId,
         isError: isError
       };
 

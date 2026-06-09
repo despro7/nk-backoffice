@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
 import { authenticateToken, requireRole, requireMinRole, ROLES } from '../middleware/auth.js';
-import { DilovodService } from '../services/dilovod/index.js';
-import { handleDilovodApiError, clearConfigCache, isDilovodExportError, getDilovodExportErrorMessage, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from '../services/dilovod/DilovodUtils.js';
+import { DilovodService, dilovodExportFlowService } from '../services/dilovod/index.js';
+import { handleDilovodApiError, clearConfigCache, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { cronService } from '../services/cronService.js';
@@ -1224,24 +1224,24 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
     // Відправляємо payload в Dilovod через DilovodService
     try {
       // Використовуємо коректний singleton import
-      const { dilovodService } = await import('../services/dilovod/DilovodService.js');
-      const exportResult = await dilovodService.exportToDilovod(payload);
+      const exportResult = await dilovodExportFlowService.send({ payload, dryRun: false, warnings, label: '[Dilovod/export]' });
 
       // Визначаємо статус відповіді
-      const isExportError = isDilovodExportError(exportResult);
-      const exportErrorMessage = isExportError ? getDilovodExportErrorMessage(exportResult) : '';
+      const isExportError = !exportResult.success;
+      const exportErrorMessage = isExportError ? (exportResult.error || exportResult.translatedError?.message || '') : '';
+      const exportResponse = exportResult.dilovodResponse;
 
       // Якщо експорт успішний і є baseDoc ID - зберігаємо в БД
-      if (!isExportError && exportResult?.id) {
+      if (!isExportError && exportResult?.dilovodDocId) {
         try {
           await prisma.order.updateMany({
             where: { id: parseInt(orderId) },
             data: {
-              dilovodDocId: exportResult.id,
+              dilovodDocId: exportResult.dilovodDocId,
               dilovodExportDate: new Date().toISOString()
             }
           });
-          console.log(`✅ baseDoc ID (${exportResult.id}) збережено для замовлення ${orderNum} (id: ${orderId})`);
+          console.log(`✅ baseDoc ID (${exportResult.dilovodDocId}) збережено для замовлення ${orderNum} (id: ${orderId})`);
         } catch (dbError) {
           console.log(`❌ Помилка збереження baseDoc ID в БД:`, dbError);
         }
@@ -1250,15 +1250,15 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
       // Після успішного експорту зберігаємо короткочасний токен для документа sale
       // в payloadCacheService щоб unique sale flow міг використати baseDoc та personId без повторного побудування
       let saleToken: string | undefined;
-      if (!isExportError && exportResult?.id) {
+      if (!isExportError && exportResult?.dilovodDocId) {
         try {
           const { payloadCacheService } = await import('../services/dilovod/PayloadCacheService.js');
           const saleData = {
-            baseDocId: exportResult.id,
+            baseDocId: exportResult.dilovodDocId,
             personId: payload?.header?.person?.id
           };
           saleToken = payloadCacheService.save(saleData, 600); // same default TTL
-          console.log(`🔐 Згенеровано sale token ${saleToken} для замовлення ${orderNum} (orderId: ${orderId}, baseDoc: ${exportResult.id})`);
+          console.log(`🔐 Згенеровано sale token ${saleToken} для замовлення ${orderNum} (orderId: ${orderId}, baseDoc: ${exportResult.dilovodDocId})`);
           console.log('🔒 sale token data:', saleData);
         } catch (err) {
           console.log('❌ Помилка при створенні sale token:', err);
@@ -1276,7 +1276,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
         orderId,
         orderNumber: orderNum,
         payload,
-        exportResult,
+        exportResult: exportResponse,
         warnings: warnings.length > 0 ? warnings : undefined
       };
 
@@ -1285,6 +1285,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
         metaLogData.error = cleanDilovodErrorMessageFull(String(exportResult.error));
       }
 
+      const { dilovodService } = await import('../services/dilovod/index.js');
       await dilovodService.logMetaDilovodExport({
         title: 'Dilovod export result',
         status: isExportError ? 'error' : 'success',
@@ -1301,11 +1302,11 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
         success: !isExportError,
         message: mainMessage,
         exported: !isExportError,
-        dilovodId: exportResult?.id,
+        dilovodId: exportResult?.dilovodDocId,
         dilovodExportDate: !isExportError ? new Date().toISOString() : undefined,
         data: {
           orderId,
-          exportResult,
+          exportResult: exportResponse,
           warnings: warnings.length > 0 ? warnings : undefined
         },
         metadata: {
@@ -1493,15 +1494,14 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
 
     // Відправляємо payload в Dilovod через DilovodService
     try {
-      const { dilovodService } = await import('../services/dilovod/DilovodService.js');
-      const exportResult = await dilovodService.exportToDilovod(salePayload);
-
-      const isExportError = isDilovodExportError(exportResult);
-      const exportErrorMessage = isExportError ? getDilovodExportErrorMessage(exportResult) : '';
+      const exportResult = await dilovodExportFlowService.send({ payload: salePayload, dryRun: false, warnings, label: '[Dilovod/shipment]' });
+      const isExportError = !exportResult.success;
+      const exportErrorMessage = isExportError ? (exportResult.error || exportResult.translatedError?.message || '') : '';
+      const exportResponse = exportResult.dilovodResponse;
       const orderNumber = orderNum || orderId;
 
       // Якщо експорт успішний - оновлюємо дату відвантаження — ТІЛЬКИ якщо немає жодної помилки
-      if (!isExportError && exportResult?.id) {
+      if (!isExportError && exportResult?.dilovodDocId) {
         try {
           // Використовуємо readyToShipAt, якщо воно встановлено, інакше поточну дату
           const shipmentDate = order.readyToShipAt 
@@ -1536,7 +1536,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
         orderNumber,
         baseDoc: order.dilovodDocId,
         payload: salePayload,
-        exportResult,
+        exportResult: exportResponse,
         warnings: warnings.length > 0 ? warnings : undefined
       };
 
@@ -1545,7 +1545,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
         metaLogData.error = cleanDilovodErrorMessageFull(String(exportResult.error));
       }
 
-      await dilovodService.logMetaDilovodExport({
+      await (await import('../services/dilovod/DilovodService.js')).dilovodService.logMetaDilovodExport({
         title: 'Dilovod shipment export result',
         status: isExportError ? 'error' : 'success',
         message: metaLogMessage,
@@ -1565,7 +1565,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
         data: {
           orderId,
           baseDoc: order.dilovodDocId,
-          exportResult,
+          exportResult: exportResponse,
           warnings: warnings.length > 0 ? warnings : undefined
         },
         metadata: {

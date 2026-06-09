@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
-import { getFirmDisplayNameServer } from '../../lib/utils.js';
 import { safeParseItems, normalizeItemsArray } from './historyNormalize.js';
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
@@ -119,49 +118,48 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
       tableParts: { tpGoods },
     };
 
-    if (dryRun === true) {
-      return res.json({ success: true, payload, warnings: [] });
+    const { dilovodExportFlowService, dilovodService } = await import('../../services/dilovod/index.js');
+    const exportResult = await dilovodExportFlowService.send({
+      payload,
+      dryRun,
+      warnings: [],
+      label: '[WriteOff]',
+    });
+
+    if (exportResult.dryRun) {
+      return res.json(await dilovodExportFlowService.preview({ payload, warnings: [], label: '[WriteOff]' }));
     }
 
-    // Send to Dilovod
-    const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
-    const dilovodService = new DilovodService();
-    const result = await dilovodService.exportToDilovod(payload);
+    if (!exportResult.success) {
+      const { getDilovodExportErrorMessage, translateDilovodError } = await import('../../services/dilovod/DilovodUtils.js');
+      const result = exportResult.dilovodResponse;
+      const rawError = exportResult.error || result?.error || result?.message || 'Dilovod error';
+      const shortMsg = getDilovodExportErrorMessage(result || rawError);
+      const translated = exportResult.translatedError ?? translateDilovodError(String(rawError));
 
-    if (result?.error) {
       try {
-        const { getDilovodExportErrorMessage, translateDilovodError } = await import('../../services/dilovod/DilovodUtils.js');
-        const shortMsg = getDilovodExportErrorMessage(result.error || result?.message || '');
-        const translated = translateDilovodError(String(result.error || result?.message || ''));
-        // Log meta for easier debugging
-        try {
-          const { prisma } = await import('../../lib/utils.js');
-          await prisma.meta_logs.create({ data: {
-            category: 'dilovod', title: 'WriteOff export failed', status: 'error', message: shortMsg, data: { payload, result }, initiatedBy: (req as any).user?.userId ? String((req as any).user.userId) : 'unknown'
-          } });
-        } catch (metaErr) {
-          console.warn('[WriteOff] Failed to write meta log:', metaErr);
-        }
-
-        // If error mentions access restriction, give a clearer actionable message
-        const lower = String(result.error || '').toLowerCase();
-        if (lower.includes('access') || lower.includes('access for object') || lower.includes('access denied')) {
-          return res.status(422).json({ success: false, error: `Доступ заборонено в Dilovod для типу документа. ${translated.message} Перевірте права користувача/API-ключа або налаштування документів в Dilovod.`, dilovodResponse: result });
-        }
-
-        return res.status(422).json({ success: false, error: shortMsg || String(result.error || result.message || 'Dilovod error'), dilovodResponse: result });
-      } catch (utilErr) {
-        console.error('[WriteOff] Error processing Dilovod error message:', utilErr);
-        return res.status(422).json({ success: false, error: result.error || 'Dilovod error', dilovodResponse: result });
+        const { prisma } = await import('../../lib/utils.js');
+        await prisma.meta_logs.create({ data: {
+          category: 'dilovod', title: 'WriteOff export failed', status: 'error', message: shortMsg, data: { payload, result }, initiatedBy: (req as any).user?.userId ? String((req as any).user.userId) : 'unknown'
+        } });
+      } catch (metaErr) {
+        console.warn('[WriteOff] Failed to write meta log:', metaErr);
       }
+
+      const lower = String(rawError).toLowerCase();
+      if (lower.includes('access') || lower.includes('access for object') || lower.includes('access denied')) {
+        return res.status(422).json({ success: false, error: `Доступ заборонено в Dilovod для типу документа. ${translated.message} Перевірте права користувача/API-ключа або налаштування документів в Dilovod.`, dilovodResponse: result });
+      }
+
+      return res.status(422).json({ success: false, error: shortMsg || String(rawError), dilovodResponse: result });
     }
 
-    const writeOffNumber = result?.id ?? null;
+    const result = exportResult.dilovodResponse;
+    const writeOffNumber = result?.id ?? exportResult.dilovodDocId ?? null;
 
     // Save history record (store firmName if possible)
     try {
       const userId = (req as any).user?.userId || (req as any).user?.id;
-      const userName = (req as any).user?.name;
       // Prisma expects a Date object / ISO date for DateTime fields — convert formattedDate
       const writeOffDateObj = formattedDate ? new Date(formattedDate.replace(' ', 'T')) : null;
 
@@ -407,12 +405,12 @@ router.delete('/history/:id', authenticateToken, requireMinRole(ROLES.ADMIN), as
 
     if (record.writeOffNumber && dryRun !== 'true') {
       try {
-        const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
-        const dilovodService = new DilovodService();
         const payload: any = { saveType: 2, header: { id: record.writeOffNumber, delMark: 1 } };
-        const result = await dilovodService.exportToDilovod(payload);
-        if (result?.error) {
-          const msg = String(result.error || result.message || 'Unknown error');
+        const { dilovodExportFlowService } = await import('../../services/dilovod/index.js');
+        const exportResult = await dilovodExportFlowService.send({ payload, dryRun: false, warnings: [], label: '[WriteOff]' });
+        const result = exportResult.dilovodResponse;
+        if (!exportResult.success) {
+          const msg = String(exportResult.error || result?.error || result?.message || 'Unknown error');
           // If Dilovod reports object not found, offer local-only deletion
           if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('object with id') || msg.toLowerCase().includes('не знайдено') || msg.toLowerCase().includes('не знайден')) {
             return res.status(422).json({ success: false, error: msg, canDeleteLocal: true });

@@ -164,8 +164,10 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
       console.warn('[Returns] Failed to apply ship/receive firm contract rule:', e);
     }
 
+    const { dilovodExportFlowService, dilovodService } = await import('../../services/dilovod/index.js');
+
     if (dryRun === true) {
-      return res.json({ success: true, payload, warnings });
+      return res.json(await dilovodExportFlowService.preview({ payload, warnings, label: '[Returns]' }));
     }
 
     // Перевірка в Dilovod API: чи вже існує documents.saleReturn (захист від дублів)
@@ -204,21 +206,21 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
       console.log(`⚠️ [Returns] Не вдалося перевірити наявність documents.saleReturn для замовлення ${orderId} в Dilovod API: ${checkError instanceof Error ? checkError.message : checkError}. Продовжуємо оприбуткування.`);
     }
 
-    const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
-    const dilovodService = new DilovodService();
-    const result = await dilovodService.exportToDilovod(payload);
+    const exportResult = await dilovodExportFlowService.send({ payload, dryRun: false, warnings, label: '[Returns]' });
 
+    if (!exportResult.success) {
+      const errorMessage = exportResult.error || exportResult.translatedError?.message || 'Dilovod error';
+      console.log(`❌ [Returns] Помилка відправки в Dilovod: ${errorMessage}`);
+      return res.status(422).json({ success: false, error: errorMessage, warnings, dilovodResponse: exportResult.dilovodResponse });
+    }
+
+    const result = exportResult.dilovodResponse;
     if (result) {
       console.log(`✅ [Returns] Dilovod API response:`, JSON.stringify(result).substring(0, 500));
     }
 
-    if (result?.error) {
-      console.log(`❌ [Returns] Помилка відправки в Dilovod: ${result.error}`);
-      return res.status(422).json({ success: false, error: result.error, warnings });
-    }
-
     // Витягуємо ID документа з відповіді Dilovod
-    const dilovodDocId = result?.id || null;
+    const dilovodDocId = exportResult.dilovodDocId || result?.id || null;
     if (dilovodDocId) {
       console.log(`✅ [Returns] Dilovod document ID: ${dilovodDocId}`);
     }
@@ -529,13 +531,13 @@ router.delete('/history/:id', authenticateToken, requireMinRole(ROLES.ADMIN), as
     // Попередження для користувача перед видаленням
     const warnings = [`This will attempt to delete the return document with ID ${returnRecord.returnNumber} in Dilovod`];
 
+    const { dilovodExportFlowService } = await import('../../services/dilovod/index.js');
+
     // Якщо dryRun — повертаємо payload без відправки
     if (dryRun === 'true') {
+      const preview = await dilovodExportFlowService.preview({ payload, warnings, label: '[Returns]' });
       return res.json({
-        success: true,
-        dryRun: true,
-        payload,
-        warnings,
+        ...preview,
         meta: {
           returnRecordId: returnId,
           orderId: returnRecord.orderId,
@@ -549,15 +551,15 @@ router.delete('/history/:id', authenticateToken, requireMinRole(ROLES.ADMIN), as
     let dilovodResult: any = null;
     if (!forceLocal) {
       // Відправити payload в Dilovod (цей запит не блокується механізмом дублювання)
-      const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
-      const dilovodService = new DilovodService();
-      const dilovodResult = await dilovodService.exportToDilovod(payload);
+      const exportResult = await dilovodExportFlowService.send({ payload, dryRun: false, warnings, label: '[Returns]' });
+      dilovodResult = exportResult.dilovodResponse;
 
-      if (dilovodResult?.error) {
-        console.log(`❌ [Returns] Error sending delMark request to Dilovod: ${dilovodResult.error}`);
+      if (!exportResult.success) {
+        const errorMessage = exportResult.error || exportResult.translatedError?.message || 'Failed to send request to Dilovod';
+        console.log(`❌ [Returns] Error sending delMark request to Dilovod: ${errorMessage}`);
 
         // Detect Dilovod 'object not found' error to provide clearer message and allow force-delete
-        const errMsg = String(dilovodResult.error || '').toLowerCase();
+        const errMsg = String(errorMessage || '').toLowerCase();
         const objectNotFound = /object with id .* not found/.test(errMsg) || errMsg.includes('not found');
 
         if (objectNotFound) {
@@ -573,7 +575,7 @@ router.delete('/history/:id', authenticateToken, requireMinRole(ROLES.ADMIN), as
 
         return res.status(422).json({
           success: false,
-          error: `Failed to send request to Dilovod: ${dilovodResult.error}`,
+          error: `Failed to send request to Dilovod: ${errorMessage}`,
           warnings,
         });
       }

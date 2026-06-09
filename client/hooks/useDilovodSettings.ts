@@ -67,7 +67,7 @@ export function useDilovodSettings({ loadDirectories = true }: { loadDirectories
     // Якщо довідники вже є і API ключ не змінився - пропускаємо
     const providerLastApiKey = dirsCtx?.lastApiKey ?? lastApiKey;
     if (!force && (dirsCtx?.directories || directories) && providerLastApiKey === settings?.apiKey) {
-      console.log('Directories already loaded for current API key, skipping...');
+      // console.log('Directories already loaded for current API key, skipping...');
       return;
     }
 
@@ -93,15 +93,9 @@ export function useDilovodSettings({ loadDirectories = true }: { loadDirectories
           } else {
             setLastApiKey(settings?.apiKey || null);
           }
-          if (process.env.NODE_ENV === 'development') {
-            console.log('Delegated load: lastApiKey set to', settings?.apiKey || null);
-          }
           await dirsCtx.loadDirectories(force);
           // sync local view with provider state
           setDirectories(dirsCtx.directories || null);
-          if (process.env.NODE_ENV === 'development') {
-            console.log('Directories loaded via provider');
-          }
           return;
         } catch (err) {
           // If provider fails, revert lastApiKey and fall through to direct fetch as a safe fallback
