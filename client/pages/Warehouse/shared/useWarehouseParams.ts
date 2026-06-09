@@ -43,12 +43,12 @@ export default function useWarehouseParams(opts: UseWarehouseParamsOpts = {}) {
     return (src || []).map((f: any) => ({ id: String(f.id), name: f.name }));
   }, [dirsCtx.directories, returns?.availableFirms]);
 
-  // default small storage id: settings.smallStorageId preferred, otherwise fallback to first storage id
+  // default small storage id: prefer settings.smallStorageId only.
+  // Do not fallback to the first storage automatically to avoid surprising defaults (e.g., incognito sessions).
   const defaultSmallStorageId = useMemo(() => {
     if (settings?.smallStorageId) return String(settings.smallStorageId);
-    if (storages && storages.length > 0) return String(storages[0].id);
     return null;
-  }, [settings?.smallStorageId, storages]);
+  }, [settings?.smallStorageId]);
 
   // Controlled vs uncontrolled selectedStorage
   const selectedStorage = selectedStorageProp !== undefined ? selectedStorageProp : localSelectedStorage;
