@@ -448,13 +448,14 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
             className="flex-1 cursor-pointer"
             onClick={() => onActiveBoxChange?.(index)}
           >
-            <Card className={`transition-shadow duration-200 ease-in-out select-none ${isActive ? 'text-lime-700/80 ring-2 ring-lime-600/80' : ''} ${getBoxValidationStatus(box) === 'danger' ? 'ring-red-600/80! text-red-700' : ''}`}>
+            <Card className={`transition-shadow duration-200 ease-in-out select-none ${isActive ? 'text-lime-700/95 ring-2 ring-lime-600/90' : ''} ${getBoxValidationStatus(box) === 'danger' ? 'ring-red-600/80! text-red-700' : ''}`}>
               <CardBody className="flex overflow-hidden">
                 <div className="flex flex-col gap-1">
                   <span className={`font-semibold duration-200 flex items-center whitespace-nowrap gap-2`}>Коробка #{ index + 1 }</span>
-                  <span className={`text-xs opacity-70`}>{box.width}×{box.height}×{box.length} см</span>
+                  {/* <span className={`text-xs opacity-70`}>{box.width}×{box.height}×{box.length} см</span> */}
+                  <span className={`text-xs opacity-70`}>{`${box.marking} (${box.qntFrom}-${box.qntTo} порцій)`}</span>
                 </div>
-                <DynamicIcon name="package" size={46} strokeWidth={1.5} className={`absolute -right-2 top-1/2 -translate-y-1/2 ${isActive ? 'opacity-25' : 'opacity-5'}`} /> 
+                <DynamicIcon name="package" size={46} strokeWidth={1.5} className={`absolute -right-3 top-1/2 -translate-y-1/2 transition duration-500 ${isActive ? 'opacity-25 text-lime-600' : 'opacity-5'}`} /> 
                 {/* <Select
                   aria-label="Коробка"
                   labelPlacement='outside'

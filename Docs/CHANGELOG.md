@@ -18,6 +18,17 @@
 
 ---
 
+## 2026-06-11 — Серверне `calc` для batch-розгортання та UI propagation
+**Files:** `server/routes/expand.ts`, `client/lib/orderAssemblyUtils.ts`, `client/components/OrderChecklistItem.tsx`, `Docs/features/expand-flatten-calc.md`
+
+- `POST /api/expand/flatten` повертає `products[].calc` (precomputed `sumPortionsOne`, `weightKgOne`), щоб зменшити кількість індивідуальних GET `/api/products/:sku` під час розгортання наборів.
+- `client/lib/orderAssemblyUtils.ts`: batch-підвантаження наповнює пер-запитний кеш `prod:SKU` і `calc:SKU`; `computeFlattenedComponent()` використовує `calc` якщо він доступний; `addOrUpdateExpandedItem()` тепер проксіює `product.calc` і `product.unitRatio` в `expandedItems`.
+- `client/components/OrderChecklistItem.tsx`: UI тепер віддає пріоритет `item.calc.sumPortionsOne` при візуалізації `displayRatio` для звичайних товарів.
+
+---
+
+---
+
 ## 2026-05-30 — Рефакторинг домену Reports і дедуплікація shared-логіки
 **Files:** `client/pages/Reports/**`, `client/lib/dateReportingUtils.ts`, `client/hooks/useApi.ts`, `Docs/features/reports-domain-refactor.md`
 

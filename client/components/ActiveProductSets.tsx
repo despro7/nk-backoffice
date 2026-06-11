@@ -45,7 +45,7 @@ export function ActiveProductSets({ orderItems }: ActiveProductSetsProps) {
    * @param depth - Поточна глибина рекурсії
    * @param parentName - Назва батьківського комплекту (для вкладених)
    */
-  const collectSetsRecursively = async (
+  const collectSetsFromMap = async (
     sku: string,
     quantity: number,
     sets: ProductSetInfo[],
@@ -53,48 +53,39 @@ export function ActiveProductSets({ orderItems }: ActiveProductSetsProps) {
     depth: number = 0,
     parentName: string = ''
   ): Promise<void> => {
-    // Захист від нескінченної рекурсії
+    // Використовуємо productsMap (отримаємо його в замиканні) — ця функція
+    // буде викликана тільки після batch-fetch; тут реалізовано локальну рекурсію
     const MAX_DEPTH = 10;
-    if (depth > MAX_DEPTH || visitedSets.has(sku)) {
-      return;
-    }
+    if (depth > MAX_DEPTH || visitedSets.has(sku)) return;
 
     try {
-      const response = await apiCall(`/api/products/${sku}`);
-      if (!response.ok) return;
+      // productsMap буде доступний через зовнішню змінну в useEffect
+      // Але у випадку відсутності запису — робимо мінімальний fallback
+      // (не кілька фетчів підряд)
+      // @ts-ignore
+      const productsMap: Record<string, Product> = (collectSetsFromMap as any).productsMap || {};
 
-      const product: Product = await response.json();
+      let product = productsMap[sku];
+      if (!product) {
+        // Лише один мінімальний fallback GET якщо батч не повернув SKU
+        try {
+          const r = await apiCall(`/api/products/${sku}`);
+          if (r && r.ok) product = await r.json();
+        } catch (e) {
+          // ignore
+        }
+      }
 
-      // Якщо товар має set і він не порожній - це комплект
+      if (!product) return;
+
       if (product.set && Array.isArray(product.set) && product.set.length > 0) {
-        // Додаємо цей комплект до списку
-        // const displayName = parentName ? product.name : product.name;
-        
-        sets.push({
-          name: product.name,
-          hasParents: !!parentName,
-          quantity: quantity,
-          sku: sku,
-        });
-
-        // Додаємо до відвіданих
+        sets.push({ name: product.name, hasParents: !!parentName, quantity, sku });
         visitedSets.add(sku);
 
-        // Рекурсивно обробляємо компоненти комплекту
         for (const setItem of product.set) {
           if (!setItem.id) continue;
-
           const componentQuantity = quantity * setItem.quantity;
-
-          // 🔄 РЕКУРСИВНИЙ ВИКЛИК - шукаємо вкладені комплекти
-          await collectSetsRecursively(
-            setItem.id,
-            componentQuantity,
-            sets,
-            new Set(visitedSets), // Копія Set для кожної гілки
-            depth + 1,
-            product.name // Передаємо назву батьківського комплекту
-          );
+          await collectSetsFromMap(setItem.id, componentQuantity, sets, new Set(visitedSets), depth + 1, product.name);
         }
 
         visitedSets.delete(sku);
@@ -112,19 +103,22 @@ export function ActiveProductSets({ orderItems }: ActiveProductSetsProps) {
       }
 
       try {
-        const sets: ProductSetInfo[] = [];
+        // Batch-fetch initial SKUs and their closure using server endpoint
+        const initialSkus = orderItems.map(i => i.sku).filter(Boolean);
+        const res = await apiCall('/api/expand/flatten', { method: 'POST', body: JSON.stringify({ skus: initialSkus }), headers: { 'Content-Type': 'application/json' } });
+        let productsMap: Record<string, Product> = {};
+        if (res && res.ok) {
+          const json = await res.json();
+          productsMap = (json && json.products) ? json.products : {};
+        }
 
+        // Прив'язуємо productsMap до функції для локального доступу в рекурсії
+        (collectSetsFromMap as any).productsMap = productsMap;
+
+        const sets: ProductSetInfo[] = [];
         for (const item of orderItems) {
           try {
-            // Рекурсивно збираємо всі комплекти (включаючи вкладені)
-            await collectSetsRecursively(
-              item.sku, 
-              item.quantity, 
-              sets, 
-              new Set(), 
-              0,
-              '' // Початково немає батьківського комплекту
-            );
+            await collectSetsFromMap(item.sku, item.quantity, sets, new Set(), 0, '');
           } catch (error) {
             console.warn(`⚠️ Помилка при обробці товару ${item.sku}:`, error);
           }
@@ -141,14 +135,26 @@ export function ActiveProductSets({ orderItems }: ActiveProductSetsProps) {
     fetchProductSets();
   }, [orderItems]); // Removed apiCall from dependencies
 
-  // Не показуємо компонент, якщо немає комплектів
-  if (loading || productSets.length === 0) {
-    return null;
+  // Показуємо стан завантаження; якщо немає комплектів після завантаження — не рендеримо
+  if (loading) {
+    return (
+      <Card classNames={{ base: 'w-full shadow-none bg-danger rounded-lg p-1', header: 'text-sm text-white font-medium py-2', body: 'bg-white gap-2 rounded-[14px] shadow' }}>
+        <CardHeader>Активні комплекти</CardHeader>
+        <CardBody className="gap-3">
+          <div className="text-sm text-neutral-500 flex items-center gap-2"> 
+            <DynamicIcon name="loader" size={16} />
+            Завантаження комплектів...
+          </div>
+        </CardBody>
+      </Card>
+    );
   }
+
+  if (!loading && productSets.length === 0) return null;
 
   return (
     <Card classNames={{ 
-      base: 'w-full bg-transparent shadow-none bg-danger rounded-lg p-1',
+      base: 'w-full shadow-none bg-danger rounded-lg p-1',
       header: 'text-sm text-white font-medium py-2',
       body: 'bg-white gap-2 rounded-[14px] shadow',
     }}>

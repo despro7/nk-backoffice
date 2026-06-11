@@ -58,8 +58,6 @@ export function OrderAssemblyRightPanel({
   order,
   externalId,
   onOrderRefresh,
-  onPrintReceipt,
-  onViewReceipt,
   onBarcodeScan,
 }: OrderAssemblyRightPanelProps) {
   const [showPrintConfirmModal, setShowPrintConfirmModal] = useState(false);

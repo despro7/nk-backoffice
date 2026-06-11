@@ -1,4 +1,3 @@
-import { Check, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useDebug } from '@/contexts/DebugContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
@@ -46,10 +45,16 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
   // `unitRatio` — застосовується до звичайних товарів/наборів.
   // `weightRatio` — застосовується для монолітних наборів (мають `portionsPerItem`).
   const weightRatio = (item as any).weightRatio;
-  const unitRatio = (item as any).unitRatio ?? (item as any).portionsPerItem ?? 1;
+  const unitRatio = (item as any).unitRatio ?? 1;
 
-  // Для верхнього індикатора: якщо це монолітний набір — показуємо `weightRatio`, інакше `unitRatio`.
-  const displayRatio = item.portionsPerItem ? (typeof weightRatio === 'number' ? weightRatio : unitRatio) : unitRatio;
+  // Для монолітних наборів: effective = portionsPerItem * weightRatio
+  // Для звичайних товарів: пріоритет — server `.calc.sumPortionsOne`, потім `unitRatio`, потім `weightRatio`, інакше 1
+  const displayRatio = item.portionsPerItem
+    ? (typeof weightRatio === 'number' ? (Number(item.portionsPerItem) * weightRatio) : Number(item.portionsPerItem))
+    : (typeof (item as any).calc?.sumPortionsOne === 'number'
+        ? (item as any).calc.sumPortionsOne
+        : (typeof unitRatio === 'number' ? unitRatio : (typeof weightRatio === 'number' ? weightRatio : 1))
+      );
 
   const { isDebugMode } = useDebug();
 
@@ -105,7 +110,7 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
           "bg-success-600": status === 'success',
           "border-danger-foreground": status === 'error',
         })}>
-          {(isDone || status === 'success') && <Check size={18} className="text-white" />}
+          {(isDone || status === 'success') && <DynamicIcon name="check" size={18} className="text-white" />}
         </div>
         <div className="flex flex-col gap-0.5 overflow-hidden">
           <div className="flex items-center gap-2">
@@ -173,7 +178,7 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
       
       <div className="flex items-center gap-4">
         {/* Індикатор помилки */}
-        {status === 'error' && <X size={24} />}
+        {status === 'error' && <DynamicIcon name="x" size={24} />}
         
         {/* Лічильник одиниць порцій */}
         <span className={`text-[18px] tabular-nums rounded-sm bg-gray-950/6 px-2 py-0.5`}>{isByQuantityProduct ? `${scannedCount}/${quantity}` : quantity}</span>

@@ -13,8 +13,11 @@ const GRADATIONS = [
 
 const deriveUnitRatioFromWeight = (weightGrams?: number): number => {
   if (!weightGrams || typeof weightGrams !== 'number') return 1;
+  // Normalize: if weight looks like kilograms (e.g. 0.42 or <= 10), convert to grams
+  let grams = weightGrams;
+  if (grams > 0 && grams <= 10) grams = grams * 1000;
   for (const g of GRADATIONS) {
-    if (weightGrams >= g.min) return g.value;
+    if (grams >= g.min) return g.value;
   }
   return 1;
 };
@@ -57,7 +60,8 @@ const computeFlattenedComponent = async (
   sku: string,
   apiCall: any,
   visitedSets: Set<string> = new Set(),
-  depth: number = 0
+  depth: number = 0,
+  cache?: Map<string, any>
 ): Promise<{ sumPortionsOne: number; weightKgOne: number }> => {
   const MAX_DEPTH = 10;
   if (depth > MAX_DEPTH) {
@@ -72,13 +76,50 @@ const computeFlattenedComponent = async (
 
   visitedSets.add(sku);
 
-  try {
-    const res = await apiCall(`/api/products/${sku}`);
-    if (!res.ok) {
-      return { sumPortionsOne: 1, weightKgOne: 0 };
-    }
+  // Per-request cache: повертаємо з кешу, якщо є (calculated results under `calc:`)
+  if (cache && cache.has(`calc:${sku}`)) {
+    const instr = cache?.get('__orderAssemblyInstrumentation');
+    if (instr) instr.cacheHitCalcCount = (instr.cacheHitCalcCount || 0) + 1;
+    return cache.get(`calc:${sku}`)!;
+  }
 
-    const prod: Product & { unitRatio?: number } = await res.json();
+  try {
+    // Try to use cached product payload if available (batch endpoint populates `prod:SKU` with server-side `calc`)
+    const cachedProd = cache?.get(`prod:${sku}`);
+    let prod: Product & { unitRatio?: number } | undefined = undefined;
+    if (cachedProd) {
+      const instr = cache?.get('__orderAssemblyInstrumentation');
+      if (instr) instr.cacheHitProdCount = (instr.cacheHitProdCount || 0) + 1;
+      prod = cachedProd as Product & { unitRatio?: number };
+      // If batch returned server-side aggregates under `calc`, use them immediately
+      if (prod && (prod as any).calc) {
+        const serverCalc = (prod as any).calc;
+        const result = { sumPortionsOne: serverCalc.sumPortionsOne ?? 1, weightKgOne: serverCalc.weightKgOne ?? 0 };
+        cache?.set(`calc:${sku}`, result);
+        return result;
+      }
+    } else {
+      const instr = cache?.get('__orderAssemblyInstrumentation');
+      if (instr) instr.cacheMissProdCount = (instr.cacheMissProdCount || 0) + 1;
+      const res = await apiCall(`/api/products/${sku}`);
+      if (!res.ok) {
+        return { sumPortionsOne: 1, weightKgOne: 0 };
+      }
+      prod = await res.json();
+      cache?.set(`prod:${sku}`, prod);
+      if (instr) {
+        instr.cacheIndividualCachedCount = (instr.cacheIndividualCachedCount || 0) + 1;
+        instr.cacheLastFillAt = new Date().toISOString();
+        if (!instr.cacheFirstFillAt) instr.cacheFirstFillAt = instr.cacheLastFillAt;
+      }
+      // If fetched product contains server calc, cache and return it
+      if (prod && (prod as any).calc) {
+        const serverCalc = (prod as any).calc;
+        const result = { sumPortionsOne: serverCalc.sumPortionsOne ?? 1, weightKgOne: serverCalc.weightKgOne ?? 0 };
+        cache?.set(`calc:${sku}`, result);
+        return result;
+      }
+    }
 
     // Якщо компонент також є набором — рекурсивно підраховуємо його внутрішні компоненти
     if (prod.set && Array.isArray(prod.set) && prod.set.length > 0) {
@@ -87,7 +128,7 @@ const computeFlattenedComponent = async (
       for (const si of prod.set) {
         if (!si.id) continue;
         try {
-          const agg = await computeFlattenedComponent(si.id, apiCall, new Set(visitedSets), depth + 1);
+          const agg = await computeFlattenedComponent(si.id, apiCall, new Set(visitedSets), depth + 1, cache);
           sumP += agg.sumPortionsOne * (si.quantity || 0);
           weightKg += agg.weightKgOne * (si.quantity || 0);
         } catch (err) {
@@ -95,13 +136,17 @@ const computeFlattenedComponent = async (
           sumP += (si.quantity || 0) * 1;
         }
       }
-      return { sumPortionsOne: sumP || 1, weightKgOne: weightKg || 0 };
+      const result = { sumPortionsOne: sumP || 1, weightKgOne: weightKg || 0 };
+      cache?.set(`calc:${sku}`, result);
+      return result;
     }
 
     // Простий товар — unitRatio або градація по вазі
     const unitRatio = typeof prod['unitRatio'] === 'number' ? prod['unitRatio'] : deriveUnitRatioFromWeight(prod.weight);
     const weightKgOne = calculateExpectedWeight(prod, 1);
-    return { sumPortionsOne: unitRatio || 1, weightKgOne };
+    const simpleResult = { sumPortionsOne: unitRatio || 1, weightKgOne };
+    cache?.set(`calc:${sku}`, simpleResult);
+    return simpleResult;
   } catch (err) {
     console.warn(`Помилка при отриманні продукту ${sku} у computeFlattenedComponent:`, err);
     return { sumPortionsOne: 1, weightKgOne: 0 };
@@ -150,7 +195,8 @@ const expandProductRecursively = async (
   expandedItems: { [key: string]: OrderChecklistItem },
   visitedSets: Set<string> = new Set(),
   depth: number = 0,
-  monolithicCategories: string[] = []
+  monolithicCategories: string[] = [],
+  cache?: Map<string, any>
 ): Promise<void> => {
   // Захист від нескінченної рекурсії
   const MAX_DEPTH = 10;
@@ -166,14 +212,24 @@ const expandProductRecursively = async (
   }
 
   try {
-    const response = await apiCall(`/api/products/${sku}`);
-    if (!response.ok) {
-      const errorMessage = `Не вдалося завантажити товар: "${sku}". Можливо товар видалено або синхронізація товарів ще не виконана.`;
-      console.error(`❌ ${errorMessage}`);
-      throw new Error(errorMessage);
-    }
+    // Try to reuse per-request cache populated by batchFetchProducts
+    let product: Product | undefined = cache?.get(`prod:${sku}`);
+    if (product) {
+      const instr = cache?.get('__orderAssemblyInstrumentation');
+      if (instr) instr.cacheHitProdCount = (instr.cacheHitProdCount || 0) + 1;
+    } else {
+      const instr = cache?.get('__orderAssemblyInstrumentation');
+      if (instr) instr.cacheMissProdCount = (instr.cacheMissProdCount || 0) + 1;
+      const response = await apiCall(`/api/products/${sku}`);
+      if (!response.ok) {
+        const errorMessage = `Не вдалося завантажити товар: "${sku}". Можливо товар видалено або синхронізація товарів ще не виконана.`;
+        console.error(`❌ ${errorMessage}`);
+        throw new Error(errorMessage);
+      }
 
-    const product: Product = await response.json();
+      product = await response.json();
+      cache?.set(`prod:${sku}`, product);
+    }
 
     // Перевіряємо, чи це комплект
     if (product.set && Array.isArray(product.set) && product.set.length > 0) {
@@ -193,10 +249,16 @@ const expandProductRecursively = async (
             let name = si.name;
             try {
               if (!name) {
-                const componentResponse = await apiCall(`/api/products/${si.id}`);
-                if (componentResponse.ok) {
-                  const componentData = await componentResponse.json();
-                  name = componentData.name || `Товар ${si.id}`;
+                const cachedComp = cache?.get(`prod:${si.id}`);
+                if (cachedComp) {
+                  name = cachedComp.name || name;
+                } else {
+                  const componentResponse = await apiCall(`/api/products/${si.id}`);
+                  if (componentResponse.ok) {
+                    const componentData = await componentResponse.json();
+                    name = componentData.name || `Товар ${si.id}`;
+                    cache?.set(`prod:${si.id}`, componentData);
+                  }
                 }
               }
             } catch (error) {
@@ -206,7 +268,7 @@ const expandProductRecursively = async (
             // Обчислюємо агреговану 'unitRatio' для ОДНІЄЇ одиниці цього компоненту
             let unitRatioForComp = 1;
             try {
-              const agg = await computeFlattenedComponent(si.id, apiCall, new Set(visitedSets), depth + 1);
+              const agg = await computeFlattenedComponent(si.id, apiCall, new Set(visitedSets), depth + 1, cache);
               unitRatioForComp = agg.sumPortionsOne || 1;
             } catch (err) {
               console.warn(`Не вдалося обчислити unitRatio для компоненту ${si.id}:`, err);
@@ -237,7 +299,7 @@ const expandProductRecursively = async (
             if (!si.id) continue;
             try {
               // Використовуємо рекурсивний агрегатор, щоб коректно працювати з вкладеними наборами
-              const agg = await computeFlattenedComponent(si.id, apiCall, new Set(visitedSets), depth + 1);
+              const agg = await computeFlattenedComponent(si.id, apiCall, new Set(visitedSets), depth + 1, cache);
               // agg дає значення для ОДНІЄЇ одиниці компоненту — множимо на кількість у наборі
               totalSetWeightKg += agg.weightKgOne * (si.quantity || 0);
               sumComponentPortions += agg.sumPortionsOne * (si.quantity || 0);
@@ -299,7 +361,8 @@ const expandProductRecursively = async (
           expandedItems,
           new Set(visitedSets), // Створюємо копію Set для кожної гілки рекурсії
           depth + 1,
-          monolithicCategories
+          monolithicCategories,
+          cache
         );
       }
 
@@ -359,6 +422,13 @@ const addOrUpdateExpandedItem = (
     if (typeof weightRatio === 'number') {
       (expandedItems[key] as any).weightRatio = weightRatio;
     }
+    // Проксіюємо server-side calc, якщо є
+    if ((product as any) && (product as any).calc) {
+      (expandedItems[key] as any).calc = (product as any).calc;
+    }
+    if ((product as any) && typeof (product as any).unitRatio === 'number') {
+      (expandedItems[key] as any).unitRatio = (product as any).unitRatio;
+    }
   } else {
     // Додаємо новий товар
     expandedItems[key] = {
@@ -377,6 +447,13 @@ const addOrUpdateExpandedItem = (
     if (typeof weightRatio === 'number') {
       (expandedItems[key] as any).weightRatio = weightRatio;
     }
+    // Зберігаємо server-side calc та unitRatio для UI
+    if ((product as any) && (product as any).calc) {
+      (expandedItems[key] as any).calc = (product as any).calc;
+    }
+    if ((product as any) && typeof (product as any).unitRatio === 'number') {
+      (expandedItems[key] as any).unitRatio = (product as any).unitRatio;
+    }
   }
 
   LoggingService.orderAssemblyLog(`  ✅ Додано: ${itemName} × ${quantity} (SKU: ${sku})${composition ? ' [M]' : ''}${portionsPerItem ? ` [portionsPerItem=${portionsPerItem}]` : ''}`);
@@ -394,9 +471,142 @@ export const expandProductSets = async (
   monolithicCategoryIds: number[] = []
 ): Promise<OrderChecklistItem[]> => {
   const expandedItems: { [key: string]: OrderChecklistItem } = {};
+  // Per-request cache to avoid duplicate API calls during one expand operation
+  const perRequestCache: Map<string, any> = new Map();
+
+  // --- Instrumentation for diagnostics ---
+  const instrumentation: any = {
+    fallbackGetCount: 0, // direct /api/products/:sku calls
+    individualFetchCount: 0, // individual fetches performed inside batch fallback
+    batchCalls: 0, // number of POST /api/expand/flatten calls
+    batchFoundCount: 0,
+    batchNotFoundCount: 0,
+    totalNetworkMs: 0
+  };
+
+    // expose instrumentation to helper functions via cache special key
+    // will be attached to perRequestCache after it's created
+
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const cpuStart = now();
+
+  // Wrap apiCall to count fallback GETs and batch calls
+  const instrumentedApiCall = async (url: string, opts?: any) => {
+    try {
+      const isProductsGet = typeof url === 'string' && url.startsWith('/api/products/');
+      const isFlattenPost = typeof url === 'string' && url === '/api/expand/flatten' && (opts?.method ?? 'POST') === 'POST';
+      if (isProductsGet) instrumentation.fallbackGetCount++;
+      if (isFlattenPost) instrumentation.batchCalls++;
+
+      const before = now();
+      const res = await apiCall(url, opts);
+      const after = now();
+      instrumentation.totalNetworkMs = (instrumentation.totalNetworkMs || 0) + (after - before);
+
+      // Try to read batch metadata without consuming original body (use clone if available)
+      if (isFlattenPost && res && (res as any).clone) {
+        try {
+          const clone = await (res as any).clone().json().catch(() => null);
+          if (clone) {
+            if (typeof clone.foundCount === 'number') instrumentation.batchFoundCount += clone.foundCount;
+            if (Array.isArray(clone.notFound)) instrumentation.batchNotFoundCount += clone.notFound.length;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      return res;
+    } catch (err) {
+      throw err;
+    }
+  };
 
   LoggingService.orderAssemblyLog(`🚀 Початок розгортання ${orderItems.length} товарів замовлення... (Монолітні категорії ID: [${monolithicCategoryIds.join(', ') || 'немає'}])`);
   LoggingService.orderAssemblyLog(`📋 Вхідні товари: ${JSON.stringify(orderItems.map(item => ({ name: item.productName, sku: item.sku, quantity: item.quantity })))}`);
+
+  // --- Batch fetch products (iterative) to populate perRequestCache ---
+  const batchFetchProducts = async (initialSkus: string[]) => {
+    const toFetch = new Set(initialSkus.filter(s => !!s));
+    const fetched = new Set<string>();
+    const MAX_ROUNDS = 5;
+
+    for (let round = 0; round < MAX_ROUNDS && toFetch.size > 0; round++) {
+      const skusBatch = Array.from(toFetch).filter(s => !fetched.has(s));
+      if (skusBatch.length === 0) break;
+
+      try {
+        // Try batch endpoint first — increment round counter
+        instrumentation.batchRounds = (instrumentation.batchRounds || 0) + 1;
+        const res = await instrumentedApiCall('/api/expand/flatten', { method: 'POST', body: JSON.stringify({ skus: skusBatch }), headers: { 'Content-Type': 'application/json' } });
+        if (res && res.ok) {
+          const json = await res.json();
+          const productsObj = (json && json.products) ? json.products : json;
+          if (json) {
+            instrumentation.batchLastDurationMs = json.durationMs;
+            instrumentation.batchLastFound = json.foundCount || 0;
+            instrumentation.batchLastNotFound = Array.isArray(json.notFound) ? json.notFound.length : 0;
+          }
+          for (const sku of Object.keys(productsObj || {})) {
+            if (productsObj[sku]) {
+              perRequestCache.set(`prod:${sku}`, productsObj[sku]);
+                // increment aggregated counters instead of noisy per-SKU debug
+                instrumentation.cacheBatchCachedCount = (instrumentation.cacheBatchCachedCount || 0) + 1;
+                instrumentation.cacheLastFillAt = new Date().toISOString();
+                if (!instrumentation.cacheFirstFillAt) instrumentation.cacheFirstFillAt = instrumentation.cacheLastFillAt;
+              fetched.add(sku);
+              // enqueue inner components if present
+              if (productsObj[sku].set && Array.isArray(productsObj[sku].set)) {
+                for (const s of productsObj[sku].set) {
+                  if (s && s.id && !perRequestCache.has(`prod:${s.id}`)) toFetch.add(s.id);
+                }
+              }
+            }
+          }
+          // remove processed
+          skusBatch.forEach(s => toFetch.delete(s));
+          continue;
+        }
+      } catch (e) {
+        instrumentation.batchFailures = (instrumentation.batchFailures || 0) + 1;
+        LoggingService.orderAssemblyLog(`[orderAssembly] batch endpoint failed, falling back to individual fetch (round ${instrumentation.batchRounds || 0})`);
+        // fallthrough to individual fetch
+      }
+
+      // Fallback: fetch individually
+      for (const sku of skusBatch) {
+        try {
+            const r = await instrumentedApiCall(`/api/products/${sku}`);
+          instrumentation.individualFetchCount++;
+          if (r && r.ok) {
+            const p = await r.json();
+            perRequestCache.set(`prod:${sku}`, p);
+            instrumentation.cacheIndividualCachedCount = (instrumentation.cacheIndividualCachedCount || 0) + 1;
+            instrumentation.cacheLastFillAt = new Date().toISOString();
+            if (!instrumentation.cacheFirstFillAt) instrumentation.cacheFirstFillAt = instrumentation.cacheLastFillAt;
+            fetched.add(sku);
+            if (p.set && Array.isArray(p.set)) {
+              for (const s of p.set) {
+                if (s && s.id && !perRequestCache.has(`prod:${s.id}`)) toFetch.add(s.id);
+              }
+            }
+          }
+        } catch (err) {
+          // ignore single fetch errors; compute will fallback later
+        } finally {
+          toFetch.delete(sku);
+        }
+      }
+    }
+  };
+
+  // Collect initial SKUs from order items
+  const initialSkus: string[] = [];
+  for (const item of orderItems) if (item && item.sku) initialSkus.push(item.sku);
+  // Run batch fetch in background (await it to ensure cache warm)
+    // attach instrumentation to cache so nested helpers can update counters
+    perRequestCache.set('__orderAssemblyInstrumentation', instrumentation);
+    await batchFetchProducts(initialSkus);
 
   for (const item of orderItems) {
     LoggingService.orderAssemblyLog(`\n📦 Обробка: ${item.productName} (SKU: ${item.sku}) × ${item.quantity}`);
@@ -410,7 +620,8 @@ export const expandProductSets = async (
       expandedItems,
       new Set(), // Новий Set для кожного товару замовлення
       0, // Починаємо з глибини 0
-      monolithicCategoryIds.map(id => id.toString()) // Конвертуємо ID категорій в строки для порівняння
+      monolithicCategoryIds.map(id => id.toString()), // Конвертуємо ID категорій в строки для порівняння
+      perRequestCache
     );
   }
 
@@ -426,6 +637,27 @@ export const expandProductSets = async (
     const portions = item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity;
     LoggingService.orderAssemblyLog(`  ${i+1}. ${item.name} × ${item.quantity}${item.portionsPerItem ? ` (portionsPerItem=${item.portionsPerItem}, всього=${portions})` : ` (всього=${portions})`}`);
   });
+
+    // Aggregated instrumentation summary (replace noisy per-SKU debug lines)
+    try {
+      const instr = instrumentation;
+      const summaryLines: string[] = [];
+      summaryLines.push(`🔍 Instrumentation summary:`);
+      summaryLines.push(`  - batchCalls: ${instr.batchCalls || 0}`);
+      summaryLines.push(`  - fallbackGetCount: ${instr.fallbackGetCount || 0}`);
+      summaryLines.push(`  - individualFetchCount: ${instr.individualFetchCount || 0}`);
+      summaryLines.push(`  - cacheBatchCachedCount: ${instr.cacheBatchCachedCount || 0}`);
+      summaryLines.push(`  - cacheIndividualCachedCount: ${instr.cacheIndividualCachedCount || 0}`);
+      summaryLines.push(`  - batchFoundCount: ${instr.batchFoundCount || 0}`);
+      summaryLines.push(`  - batchNotFoundCount: ${instr.batchNotFoundCount || 0}`);
+      summaryLines.push(`  - totalNetworkMs: ${Math.round(instr.totalNetworkMs || 0)} ms`);
+      if (instr.cacheFirstFillAt) summaryLines.push(`  - cacheFirstFillAt: ${instr.cacheFirstFillAt}`);
+      if (instr.cacheLastFillAt) summaryLines.push(`  - cacheLastFillAt: ${instr.cacheLastFillAt}`);
+      // Force output of instrumentation summary regardless of user logging settings
+      LoggingService.orderAssemblyLog(summaryLines.join('\n'), undefined, true);
+    } catch (e) {
+      // ignore
+    }
   
   return result;
 };

@@ -27,6 +27,7 @@ import notificationsRouter from './routes/notifications.js';
 import usersRoutes from './routes/users.js';
 import materialsRouter from './routes/materials.js';
 import statRouter from './routes/stat.js';
+import expandRoutes from './routes/expand.js';
 
 // Збільшуємо ліміт слухачів для обробки подій, щоб уникнути попереджень про витік пам'яті при великій кількості одночасних cron задач або вебхуків.
 process.setMaxListeners(20);
@@ -189,6 +190,9 @@ export function createServer() {
       version: process.version
     });
   });
+
+  // Expand batch helper used by frontend pre-warm (POST /api/expand/flatten)
+  app.use('/api/expand', expandRoutes);
 
   return app;
 }
