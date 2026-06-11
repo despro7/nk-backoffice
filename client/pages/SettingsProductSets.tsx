@@ -86,7 +86,7 @@ const ProductSets: React.FC = () => {
         return stockBalanceByStock as Record<string, number>;
       }
 
-      // Якщо це рядок, намагаємось розпарити (для зворотної сумісності)
+      // Якщо це рядок, намагаємось розпарсити (для зворотної сумісності)
       if (typeof stockBalanceByStock === 'string') {
         const parsed = JSON.parse(stockBalanceByStock);
         return parsed || {};
@@ -470,6 +470,11 @@ const ProductSets: React.FC = () => {
       allowsSorting: true,
     },
     {
+      key: 'unitRatio',
+      label: 'Коефіцієнт',
+      allowsSorting: true,
+    },
+    {
       key: 'stock1',
       label: 'Залишки ГП',
       allowsSorting: true,
@@ -513,6 +518,8 @@ const ProductSets: React.FC = () => {
   // Тут залишається лише локальний фільтр "показати застарілі".
   // Колонки, які сервер вміє сортувати
   const serverSortableColumns = useMemo(() => ['lastSyncAt', 'name', 'categoryName', 'weight', 'manualOrder'], []);
+  // Додаємо unitRatio як серверно-сортуване поле
+  serverSortableColumns.push('unitRatio');
 
   // Колонки, які будемо сортувати на клієнті (дані похідні або в JSON-полі)
   const clientSortableColumns = useMemo(() => ['stock1', 'stock2', 'portionsPerBox', 'portions', 'set'], []);
@@ -691,6 +698,98 @@ const ProductSets: React.FC = () => {
                 title={canEditProducts() ? "Натисніть для редагування" : "Немає прав для редагування"}
               >
                 {currentManualOrder}
+              </div>
+            )}
+          </div>
+        );
+      }
+      case 'unitRatio': {
+        const productIdStr = product.id.toString();
+        const isEditing = editingWeight[`unitRatio-${productIdStr}`] !== undefined;
+        const isSaving = savingWeight === `unitRatio-${productIdStr}`;
+        const currentValue = (product as any).unitRatio ?? 1;
+
+        const startEditing = () => {
+          setEditingWeight(prev => ({ ...prev, [`unitRatio-${productIdStr}`]: String(currentValue) }));
+          setForceUpdate(v => v + 1);
+        };
+        const cancelEditing = () => {
+          setEditingWeight(prev => {
+            const next = { ...prev };
+            delete next[`unitRatio-${productIdStr}`];
+            return next;
+          });
+        };
+        const finishEditing = async () => {
+          const value = inputRefs.current[`unitRatio-${productIdStr}` as any]?.value ?? editingWeight[`unitRatio-${productIdStr}`];
+          if (value === undefined || value === '') {
+            cancelEditing();
+            return;
+          }
+          const newVal = parseFloat(String(value));
+          if (isNaN(newVal) || newVal <= 0) {
+            ToastService.show({ title: 'Некоректне значення', description: 'Вкажіть число > 0', color: 'warning' });
+            cancelEditing();
+            return;
+          }
+          try {
+            setSavingWeight(`unitRatio-${productIdStr}`);
+            const response = await fetch(`/api/products/${productIdStr}/unit-ratio`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ unitRatio: newVal }),
+              credentials: 'include'
+            });
+            if (!response.ok) {
+              const err = await response.json().catch(() => ({}));
+              ToastService.show({ title: 'Помилка', description: `Не вдалося оновити: ${err.error || response.statusText}`, color: 'danger' });
+            } else {
+              setProducts(prev => prev.map(p => p.id === product.id ? ({ ...p, ...(p as any), unitRatio: newVal } as any) : p));
+              ToastService.show({ title: 'Оновлено', description: `Коефіцієнт встановлено: ${newVal}`, color: 'success' });
+            }
+          } finally {
+            setSavingWeight(null);
+            cancelEditing();
+          }
+        };
+
+        return (
+          <div className="flex items-center gap-1">
+            {isEditing ? (
+              <>
+                <input
+                  ref={(el) => { (inputRefs.current as any)[`unitRatio-${productIdStr}`] = el; }}
+                  key={`unitRatio-input-${productIdStr}-${forceUpdate}`}
+                  type="number"
+                  defaultValue={editingWeight[`unitRatio-${productIdStr}`] ?? ''}
+                  onChange={(e) => setEditingWeight(prev => ({ ...prev, [`unitRatio-${productIdStr}`]: e.target.value }))}
+                  className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  min="0.5"
+                  step="0.05"
+                  disabled={isSaving}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') finishEditing();
+                    else if (e.key === 'Escape') cancelEditing();
+                  }}
+                  onWheel={e => e.currentTarget.blur()}
+                  autoFocus
+                  placeholder="1.00"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <Button size="sm" color="success" variant="flat" onPress={() => finishEditing()} disabled={isSaving} className="min-w-0 p-1">
+                  {isSaving ? <DynamicIcon name="loader-2" className="animate-spin" size={12} /> : <DynamicIcon name="check" size={12} />}
+                </Button>
+                <Button size="sm" color="danger" variant="flat" onPress={() => cancelEditing()} disabled={isSaving} className="min-w-0 p-1">
+                  <DynamicIcon name="x" size={12} />
+                </Button>
+              </>
+            ) : (
+              <div
+                className={`text-sm text-gray-900 ${canEditProducts() ? 'cursor-pointer hover:bg-gray-100' : 'cursor-not-allowed opacity-60'} px-2 py-1 rounded min-w-[56px] text-center`}
+                onClick={() => canEditProducts() && startEditing()}
+                title={canEditProducts() ? "Натисніть для редагування" : "Немає прав для редагування"}
+              >
+                {Number(currentValue).toFixed(2)}
               </div>
             )}
           </div>
@@ -1044,7 +1143,7 @@ const ProductSets: React.FC = () => {
       case 'set':
         if (product.set) {
           try {
-            // Данные уже приходят в виде объекта с сервера
+            // Use raw `set` for display (do not render server-expanded `setItems` here)
             const setData = product.set;
             if (setData && Array.isArray(setData) && setData.length > 0) {
               return (
@@ -1077,9 +1176,17 @@ const ProductSets: React.FC = () => {
                                     const targetSku = String(item.id).trim().toLowerCase();
                                     const componentProduct = productsBySku.get(targetSku) || allProducts.find(p => p.id?.toString() === String(item.id));
                                     const componentName = componentProduct?.name || item.name || item.id;
+                                    // Simple flag: only respect explicit `item.isSet` provided by server
+                                    const isComponentSet = !!(item && (item as any).isSet);
                                     return (
-                                      <li key={colIdx * COL_SIZE + i} title={`SKU: ${item.id}`} className="whitespace-nowrap">
-                                        {componentName} ({item.id})×{item.quantity}
+                                      <li key={colIdx * COL_SIZE + i} title={`SKU: ${item.id}`} className="whitespace-nowrap flex items-center gap-2">
+                                        {isComponentSet && (
+                                          <span className="inline-flex items-center justify-center text-white bg-purple-600 rounded-full px-1.5 py-0.5 text-[11px] font-medium">
+                                            K
+                                          </span>
+                                        )}
+                                        <span className="truncate">{componentName} ({item.id})</span>
+                                        <span className="font-medium">× {item.quantity}</span>
                                       </li>
                                     );
                                   })}
@@ -1088,6 +1195,13 @@ const ProductSets: React.FC = () => {
                             </div>
                           );
                         })()}
+
+                        {/* Show expanded portions summary at bottom of popover if available */}
+                        {((product as any).expandedPortions || 0) > 0 && (
+                          <div className="w-full mt-3 text-sm text-gray-700 border-t pt-2">
+                            <strong>Разом:</strong> {(product as any).expandedPortions} порц.
+                          </div>
+                        )}
                       </PopoverContent>
                     </Popover>
                 </div>
@@ -1155,6 +1269,37 @@ const ProductSets: React.FC = () => {
         const data: ProductsResponse = await response.json();
         setProducts(data.products);
         setPagination(data.pagination);
+
+        // Завантажимо розширені дані (setItems, expandedPortions) через /api/products/batch
+        try {
+          const skusList = data.products.map(p => p.sku).filter(Boolean).join(',');
+          if (skusList.length > 0) {
+            const batchRes = await fetch(`/api/products/batch?skus=${encodeURIComponent(skusList)}&fields=setItems,expandedPortions`, { credentials: 'include' });
+            if (batchRes.ok) {
+              const batchData: any = await batchRes.json();
+              if (Array.isArray(batchData.products)) {
+                const bySku: Map<string, any> = new Map((batchData.products as any[]).map((bp: any) => [String(bp.sku).trim().toLowerCase(), bp]));
+                setProducts(prev => prev.map(p => {
+                  const key = String(p.sku).trim().toLowerCase();
+                  const bp = bySku.get(key);
+                  if (bp) {
+                    return { ...p, ...(bp.setItems ? { setItems: bp.setItems } : {}), ...(bp.expandedPortions !== undefined ? { expandedPortions: bp.expandedPortions } : {}) } as any;
+                  }
+                  return p;
+                }));
+                // Також оновимо allProducts кешем, щоб lookup по іменам працював
+                setAllProducts(prev => prev.map(p => {
+                  const key = String(p.sku).trim().toLowerCase();
+                  const bp = bySku.get(key);
+                  if (bp) return { ...p, ...(bp.setItems ? { setItems: bp.setItems } : {}), ...(bp.expandedPortions !== undefined ? { expandedPortions: bp.expandedPortions } : {}) } as any;
+                  return p;
+                }));
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to fetch batch expanded set info:', err);
+        }
 
         // Отладочная информация для первого товара
         if (data.products.length > 0) {
@@ -2248,7 +2393,7 @@ const ProductSets: React.FC = () => {
           selectedKeys={selectedKeys}
           onSelectionChange={setSelectedKeys}
           classNames={{
-            wrapper: "min-h-[400px]",
+            wrapper: "min-h-[200px]",
           }}
           topContent={
             <div className="flex flex-col gap-4 p-2">

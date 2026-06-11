@@ -112,6 +112,7 @@ model Product {
   updatedAt           DateTime @updatedAt
   weight              Int?
   manualOrder         Int?     @default(0)
+  unitRatio           Float?   @default(1)
   barcode             String?
   dilovodDataHash     String?  @db.VarChar(64)
   isOutdated          Boolean  @default(false)

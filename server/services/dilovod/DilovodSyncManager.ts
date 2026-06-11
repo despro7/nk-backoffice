@@ -264,6 +264,28 @@ export class DilovodSyncManager {
       const manualOrder = this.determineManualOrderByCategory(product.category.id);
       data.manualOrder = manualOrder;
       console.log(`📋 Встановлюємо порядок сортування: ${manualOrder}`);
+      // Встановлюємо дефолтний unitRatio на сервері для нових товарів (за вагою)
+      try {
+        const derive = (w?: number) => {
+          if (!w || typeof w !== 'number') return 1;
+          let grams = w;
+          if (grams > 0 && grams <= 10) grams = grams * 1000;
+          const gradations = [
+            { min: 525, value: 1.5 },
+            { min: 420, value: 1.25 },
+            { min: 280, value: 1.0 },
+            { min: 185, value: 0.75 },
+            { min: 90, value: 0.5 },
+            { min: 0, value: 0.25 }
+          ];
+          for (const g of gradations) if (grams >= g.min) return g.value;
+          return 1;
+        };
+        data.unitRatio = derive(weight);
+        console.log(`ℹ️ Встановлюємо unitRatio для нового товару: ${data.unitRatio}`);
+      } catch (err) {
+        // Не критично — пропускаємо
+      }
     } else {
       console.log(`🔒 Вага і порядок сортування не оновлюються (захист локальних змін)`);
     }

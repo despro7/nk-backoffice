@@ -56,7 +56,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const sortOrder = (req.query.sortOrder as string) === 'asc' ? 'asc' : 'desc';
 
     const orderBy: any = {};
-    if (['lastSyncAt', 'name', 'categoryName', 'weight', 'manualOrder'].includes(sortBy)) {
+    if (['lastSyncAt', 'name', 'categoryName', 'weight', 'manualOrder', 'unitRatio'].includes(sortBy)) {
       orderBy[sortBy] = sortOrder;
     } else {
       orderBy['lastSyncAt'] = 'desc';
@@ -159,16 +159,21 @@ router.get('/batch', authenticateToken, async (req, res) => {
   try {
     const skusParam = req.query.skus as string || '';
     const fieldsParam = req.query.fields as string || '';
+    const requestedFields = fieldsParam.split(',').map(s => s.trim()).filter(Boolean);
     const skus = skusParam.split(',').map(s => s.trim()).filter(s => s.length > 0);
 
     if (skus.length === 0) return res.status(400).json({ error: 'skus query parameter required' });
 
     // Build select projection based on requested fields, always include sku
     const select: any = { sku: true };
-    for (const f of fieldsParam.split(',').map(s => s.trim()).filter(Boolean)) {
+    for (const f of requestedFields) {
       if (['costPerItem', 'additionalPrices', 'set', 'name', 'id'].includes(f)) {
         select[f] = true;
       }
+    }
+    // If client requests computed set details, ensure we fetch raw `set` from DB
+    if (requestedFields.includes('setItems') || requestedFields.includes('expandedPortions')) {
+      select['set'] = true;
     }
 
     const products = await prisma.product.findMany({
@@ -177,7 +182,7 @@ router.get('/batch', authenticateToken, async (req, res) => {
     });
 
     // Parse JSON fields if present
-    const parsed = products.map(p => ({
+    const parsed: any = products.map(p => ({
       ...p,
       additionalPrices: (p as any).additionalPrices ? (() => {
         try { return JSON.parse((p as any).additionalPrices); } catch { return null; }
@@ -223,6 +228,45 @@ router.get('/batch', authenticateToken, async (req, res) => {
       } catch (e) {
         console.warn('Failed to enrich batch set items with names:', e);
       }
+
+    // Optionally compute expanded set details if requested via `fields` parameter
+    try {
+      const requestedFields = fieldsParam.split(',').map(s => s.trim()).filter(Boolean);
+      const wantExpanded = requestedFields.includes('expandedPortions');
+      const wantSetItems = requestedFields.includes('setItems');
+
+      if (wantExpanded || wantSetItems) {
+        for (const p of parsed) {
+          if (p.set && Array.isArray(p.set) && p.set.length > 0) {
+            const expandedComponents: { [sku: string]: { component: any; quantity: number } } = {};
+            try {
+              await expandProductSetRecursively(p, expandedComponents, new Set(), 0, 1);
+            } catch (err) {
+              console.warn(`Failed to expand set for ${p.sku}:`, err);
+            }
+
+            const items = Object.keys(expandedComponents).map((sku) => {
+              const rec = expandedComponents[sku];
+              const comp = rec.component || {};
+              return {
+                id: sku,
+                quantity: rec.quantity,
+                name: comp.name || undefined,
+                isSet: !!(comp.set && ((Array.isArray(comp.set) && comp.set.length > 0) || (typeof comp.set === 'string' && comp.set.trim().startsWith('['))))
+              };
+            });
+
+            if (wantSetItems) p.setItems = items;
+            if (wantExpanded) p.expandedPortions = items.reduce((s, it) => s + Number(it.quantity || 0), 0);
+          } else {
+            if (wantSetItems) p.setItems = [];
+            if (wantExpanded) p.expandedPortions = 0;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Error computing expanded sets in batch:', err);
+    }
 
     res.json({ products: parsed });
   } catch (error) {
@@ -664,6 +708,35 @@ router.put('/:id/manual-order', authenticateToken, requireMinRole(ROLES.STOREKEE
 
     res.json({ success: true, product: updatedProduct });
   } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Оновити коефіцієнт unitRatio товару за ID
+// PUT /api/products/:id/unit-ratio
+router.put('/:id/unit-ratio', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { unitRatio } = req.body;
+
+    if (typeof unitRatio !== 'number' || !isFinite(unitRatio) || unitRatio <= 0) {
+      return res.status(400).json({ error: 'unitRatio must be a positive number' });
+    }
+
+    const productId = parseInt(id);
+    const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
+    if (!existingProduct) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const updatedProduct = await prisma.product.update({
+      where: { id: productId },
+      data: { unitRatio }
+    });
+
+    res.json({ success: true, product: updatedProduct });
+  } catch (error) {
+    console.log('Error updating unitRatio:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
