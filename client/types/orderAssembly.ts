@@ -15,7 +15,7 @@ export interface OrderChecklistItem {
   sku?: string; // SKU товару для пошуку по штрих-коду
   barcode?: string; // Штрих-код товару
   manualOrder?: number; // Ручне сортування
-  composition?: string[]; // Склад монолітного комплекту (назви компонентів)
+  composition?: Array<string | { name: string; quantity?: number; unitRatio?: number; sku?: string }>; // Склад монолітного комплекту (може містити об'єкти з додатковими полями)
   portionsPerItem?: number; // Для монолітних комплектів: кількість порцій в одному комплекті
   scannedCount?: number; // Для режиму by_quantity: скільки одиниць вже відскановано
 }

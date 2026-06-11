@@ -1,6 +1,24 @@
 import { LoggingService } from '@/services/LoggingService';
 import type { OrderChecklistItem } from '../types/orderAssembly';
 
+// Градації для визначення дефолтного `unitRatio` за вагою в грамах
+const GRADATIONS = [
+  { min: 525, value: 1.5 },
+  { min: 420, value: 1.25 },
+  { min: 280, value: 1.0 },
+  { min: 185, value: 0.75 },
+  { min: 90,  value: 0.5 },
+  { min: 0,   value: 0.25 }
+];
+
+const deriveUnitRatioFromWeight = (weightGrams?: number): number => {
+  if (!weightGrams || typeof weightGrams !== 'number') return 1;
+  for (const g of GRADATIONS) {
+    if (weightGrams >= g.min) return g.value;
+  }
+  return 1;
+};
+
 // Інтерфейс для товару з бази даних
 export interface Product {
   id: number;
@@ -28,6 +46,68 @@ export const calculateExpectedWeight = (product: Product, quantity: number): num
   // categoryId === 1 - перші страви (420г), решта - другі страви (330г)
   const defaultWeight = product.categoryId === 1 ? 420 : 330;
   return (defaultWeight * quantity) / 1000;
+};
+
+/**
+ * Рекурсивно обчислює для компонента (однієї одиниці) сумарні "порції" та вагу.
+ * Повертає значення для ОДНІЄЇ одиниці товару (тобто не множить на зовнішню quantity).
+ * Це дозволяє коректно обробляти вкладені набори.
+ */
+const computeFlattenedComponent = async (
+  sku: string,
+  apiCall: any,
+  visitedSets: Set<string> = new Set(),
+  depth: number = 0
+): Promise<{ sumPortionsOne: number; weightKgOne: number }> => {
+  const MAX_DEPTH = 10;
+  if (depth > MAX_DEPTH) {
+    console.warn(`⚠️ computeFlattenedComponent: max depth reached for ${sku}`);
+    return { sumPortionsOne: 1, weightKgOne: 0 };
+  }
+
+  if (visitedSets.has(sku)) {
+    console.warn(`🔄 computeFlattenedComponent: cyclic reference detected for ${sku}`);
+    return { sumPortionsOne: 1, weightKgOne: 0 };
+  }
+
+  visitedSets.add(sku);
+
+  try {
+    const res = await apiCall(`/api/products/${sku}`);
+    if (!res.ok) {
+      return { sumPortionsOne: 1, weightKgOne: 0 };
+    }
+
+    const prod: Product & { unitRatio?: number } = await res.json();
+
+    // Якщо компонент також є набором — рекурсивно підраховуємо його внутрішні компоненти
+    if (prod.set && Array.isArray(prod.set) && prod.set.length > 0) {
+      let sumP = 0;
+      let weightKg = 0;
+      for (const si of prod.set) {
+        if (!si.id) continue;
+        try {
+          const agg = await computeFlattenedComponent(si.id, apiCall, new Set(visitedSets), depth + 1);
+          sumP += agg.sumPortionsOne * (si.quantity || 0);
+          weightKg += agg.weightKgOne * (si.quantity || 0);
+        } catch (err) {
+          console.warn(`Не вдалося обчислити компонент ${si.id} всередині ${sku}:`, err);
+          sumP += (si.quantity || 0) * 1;
+        }
+      }
+      return { sumPortionsOne: sumP || 1, weightKgOne: weightKg || 0 };
+    }
+
+    // Простий товар — unitRatio або градація по вазі
+    const unitRatio = typeof prod['unitRatio'] === 'number' ? prod['unitRatio'] : deriveUnitRatioFromWeight(prod.weight);
+    const weightKgOne = calculateExpectedWeight(prod, 1);
+    return { sumPortionsOne: unitRatio || 1, weightKgOne };
+  } catch (err) {
+    console.warn(`Помилка при отриманні продукту ${sku} у computeFlattenedComponent:`, err);
+    return { sumPortionsOne: 1, weightKgOne: 0 };
+  } finally {
+    visitedSets.delete(sku);
+  }
 };
 
 /**
@@ -109,23 +189,35 @@ const expandProductRecursively = async (
         const compositionPromises = product.set
           .filter(si => si.id)
           .map(async si => {
-            const componentLabel = si.quantity > 0 ? `x${si.quantity}` : '';
-            if (si.name) {
-              return componentLabel ? `${si.name} ${componentLabel}` : si.name;
-            } else {
-              // Спробуємо отримати назву компонента через API
-              try {
+            // Отримаємо назву (якщо є) та обчислимо unitRatio для компонента
+            let name = si.name;
+            try {
+              if (!name) {
                 const componentResponse = await apiCall(`/api/products/${si.id}`);
                 if (componentResponse.ok) {
                   const componentData = await componentResponse.json();
-                  const name = componentData.name || `Товар ${si.id}`;
-                  return componentLabel ? `${name} ${componentLabel}` : name;
+                  name = componentData.name || `Товар ${si.id}`;
                 }
-              } catch (error) {
-                console.warn(`Не вдалося отримати назву компонента ${si.id}:`, error);
               }
-              return `Товар ${si.id} ${componentLabel}`;
+            } catch (error) {
+              console.warn(`Не вдалося отримати назву компонента ${si.id}:`, error);
             }
+
+            // Обчислюємо агреговану 'unitRatio' для ОДНІЄЇ одиниці цього компоненту
+            let unitRatioForComp = 1;
+            try {
+              const agg = await computeFlattenedComponent(si.id, apiCall, new Set(visitedSets), depth + 1);
+              unitRatioForComp = agg.sumPortionsOne || 1;
+            } catch (err) {
+              console.warn(`Не вдалося обчислити unitRatio для компоненту ${si.id}:`, err);
+            }
+
+            return {
+              name: name || `Товар ${si.id}`,
+              quantity: si.quantity || 1,
+              unitRatio: unitRatioForComp,
+              sku: si.id
+            };
           });
 
         const composition = await Promise.all(compositionPromises);
@@ -133,11 +225,43 @@ const expandProductRecursively = async (
         // 🔑 Рахуємо порції для всіх монолітних комплектів (depth == 0 або depth > 0)
         // Порції = кількість компонентів у комплекті (по одному кожного)
         const portionsPerSet = product.set.reduce((sum, si) => sum + (si.quantity || 0), 0);
-        
         const totalPortions = portionsPerSet * quantity;
         LoggingService.orderAssemblyLog(`📊 Монолітний комплект "${product.name}" (depth=${depth}): ${quantity} × ${portionsPerSet} = ${totalPortions} порцій`);
 
-        addOrUpdateExpandedItem(expandedItems, product, quantity, sku, composition, portionsPerSet);
+        // Спробуємо обчислити реальну вагу комплекту як суму ваг компонентів (у кг)
+        // та обчислити сумарні 'ефективні порції' на основі unitRatio компонентів
+        let totalSetWeightKg = 0;
+        let sumComponentPortions = 0;
+        try {
+          for (const si of product.set) {
+            if (!si.id) continue;
+            try {
+              // Використовуємо рекурсивний агрегатор, щоб коректно працювати з вкладеними наборами
+              const agg = await computeFlattenedComponent(si.id, apiCall, new Set(visitedSets), depth + 1);
+              // agg дає значення для ОДНІЄЇ одиниці компоненту — множимо на кількість у наборі
+              totalSetWeightKg += agg.weightKgOne * (si.quantity || 0);
+              sumComponentPortions += agg.sumPortionsOne * (si.quantity || 0);
+            } catch (err) {
+              console.warn(`Не вдалося обчислити агрегат для компоненту ${si.id}:`, err);
+              sumComponentPortions += (si.quantity || 0) * 1;
+            }
+          }
+        } catch (err) {
+          console.warn('Помилка під час обчислення ваги комплекту:', err);
+        }
+
+        // Якщо не вдалося визначити складну вагу (==0), використаємо fallback через calculateExpectedWeight на батьківському продукті
+        if (totalSetWeightKg === 0) {
+          totalSetWeightKg = calculateExpectedWeight(product, 1);
+        }
+
+        // Очікувана вага для всіх quantity комплектів
+        const expectedWeightForQuantityKg = totalSetWeightKg * quantity;
+
+        // Обчислюємо weightRatio = sumComponentPortions / nominal portionsPerSet
+        const weightRatio = portionsPerSet > 0 ? (sumComponentPortions / portionsPerSet) : 1;
+
+        addOrUpdateExpandedItem(expandedItems, product, quantity, sku, composition, portionsPerSet, expectedWeightForQuantityKg, weightRatio);
         return;
       }
 
@@ -203,8 +327,10 @@ const addOrUpdateExpandedItem = (
   product: Product,
   quantity: number,
   sku: string,
-  composition?: string[],
-  portionsPerItem?: number
+  composition?: Array<string | { name: string; quantity?: number; unitRatio?: number; sku?: string }>,
+  portionsPerItem?: number,
+  expectedWeightKg?: number,
+  weightRatio?: number
 ): void => {
   const itemName = product.name;
 
@@ -216,11 +342,22 @@ const addOrUpdateExpandedItem = (
   if (expandedItems[key]) {
     // Товар вже є - збільшуємо кількість
     expandedItems[key].quantity += quantity;
-    expandedItems[key].expectedWeight = calculateExpectedWeight(product, expandedItems[key].quantity);
+
+    // Якщо передано expectedWeightKg — додаємо його до існуючої ваги,
+    // інакше перераховуємо вагу через calculateExpectedWeight
+    if (expectedWeightKg !== undefined) {
+      expandedItems[key].expectedWeight = (expandedItems[key].expectedWeight || 0) + expectedWeightKg;
+    } else {
+      expandedItems[key].expectedWeight = calculateExpectedWeight(product, expandedItems[key].quantity);
+    }
 
     // Оновлюємо склад, якщо він ще не був доданий
     if (composition && (!expandedItems[key].composition || expandedItems[key].composition!.length === 0)) {
       expandedItems[key].composition = composition;
+    }
+    // Оновлюємо weightRatio, якщо передано
+    if (typeof weightRatio === 'number') {
+      (expandedItems[key] as any).weightRatio = weightRatio;
     }
   } else {
     // Додаємо новий товар
@@ -228,7 +365,7 @@ const addOrUpdateExpandedItem = (
       id: sku,
       name: itemName,
       quantity: quantity,
-      expectedWeight: calculateExpectedWeight(product, quantity),
+      expectedWeight: expectedWeightKg !== undefined ? expectedWeightKg : calculateExpectedWeight(product, quantity),
       status: 'default' as const,
       type: 'product',
       sku: sku,
@@ -236,8 +373,10 @@ const addOrUpdateExpandedItem = (
       manualOrder: product.manualOrder,
       composition: composition,
       portionsPerItem: portionsPerItem
-
     };
+    if (typeof weightRatio === 'number') {
+      (expandedItems[key] as any).weightRatio = weightRatio;
+    }
   }
 
   LoggingService.orderAssemblyLog(`  ✅ Додано: ${itemName} × ${quantity} (SKU: ${sku})${composition ? ' [M]' : ''}${portionsPerItem ? ` [portionsPerItem=${portionsPerItem}]` : ''}`);
@@ -304,7 +443,7 @@ export const combineBoxesWithItems = (
   items: OrderChecklistItem[], 
   isReadyToShip: boolean = false,
   boxInitialStatus: 'default' | 'pending' | 'awaiting_confirmation' | 'done' = 'default'
-): { checklistItems: OrderChecklistItem[]; unallocatedPortions: number; unallocatedItems: Array<{ name: string; quantity: number }> } => {
+): { checklistItems: OrderChecklistItem[]; unallocatedPortions: number; unallocatedItems: Array<{ name: string; quantity: number }>; boxStates?: any[] } => {
   // Перевіряємо, що у нас є валідні коробки
   if (!boxes || boxes.length === 0) {
     return {
@@ -367,14 +506,25 @@ export const combineBoxesWithItems = (
     // 1. Весь товар — в одну коробку (не дробити)
     // 2. Обираємо коробку з найменшою поточною вагою (балансування по вазі)
     for (const item of sortedItems) {
-      // Для монолітних комплектів використовуємо portionsPerItem для розподілу
-      // але display quantity залишається незміненим
-      const quantityForDistribution = item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity;
-      const itemWeightPerUnit = item.expectedWeight / quantityForDistribution;
+      // Для монолітних комплектів використовуємо `portionsPerItem` разом із `weightRatio`.
+      // Для звичайних одиниць або звичайних наборів (включно з тими, що всередині монолітних наборів)
+      // застосовуємо `unitRatio` (коли воно присутнє) як кількість порцій на одиницю.
+      const rawPortionsPerItem = item.portionsPerItem;
+      const weightRatio = (item as any).weightRatio ?? 1;
+      const unitRatio = (item as any).unitRatio ?? 1;
+
+      // Якщо це монолітний набір (має portionsPerItem) — використовуємо weightRatio,
+      // інакше вважаємо, що одна одиниця відповідає `unitRatio` порціям.
+      const effectivePortionsPerItem = rawPortionsPerItem
+        ? rawPortionsPerItem * weightRatio
+        : unitRatio;
+
+      const quantityForDistribution = effectivePortionsPerItem ? item.quantity * effectivePortionsPerItem : item.quantity;
+      const itemWeightPerUnit = (item.expectedWeight / quantityForDistribution);
       let remaining = quantityForDistribution;
       let partIndex = 0;
       let itemUnallocated = 0;
-      
+          
       while (remaining > 0) {
         // Шукаємо коробку, куди поміститься весь залишок товару цілком
         // Спочатку намагаємось в межах softLimit (рекомендований розподіл)
@@ -401,7 +551,14 @@ export const combineBoxesWithItems = (
           // Для монолітних комплектів: розподіл робиться по порціях (remaining),
           // але в productItems зберігаємо оригінальну кількість з portionsPerItem
           // щоб при підрахунку portions не множити подвійно
-          const displayQuantity = item.portionsPerItem ? Math.floor(remaining / (item.portionsPerItem || 1)) : remaining;
+          let displayQuantity: number;
+          if (item.portionsPerItem) {
+            const perEffective = effectivePortionsPerItem || item.portionsPerItem || 1;
+            const setsCount = Math.floor(remaining / perEffective);
+            displayQuantity = setsCount;
+          } else {
+            displayQuantity = remaining;
+          }
           
           productItems.push({
             ...item,
@@ -461,8 +618,9 @@ export const combineBoxesWithItems = (
           // Якщо товар монолітний (portionsPerItem) — округлюємо додані порції до кратного кількості порцій в одному комплекті
           let toAddAdjusted = toAdd;
           if (item.portionsPerItem) {
-            const per = item.portionsPerItem || 1;
-            toAddAdjusted = Math.floor(toAdd / per) * per;
+            const perEffective = effectivePortionsPerItem || item.portionsPerItem || 1;
+            const fullSets = Math.floor(toAdd / perEffective);
+            toAddAdjusted = fullSets * perEffective;
             if (toAddAdjusted <= 0) {
               console.warn(`⚠️ Не вдалося розподілити ${remaining} порцій товару "${item.name}" - недостатньо місця для повного комплекту`);
               itemUnallocated = remaining;
@@ -471,7 +629,8 @@ export const combineBoxesWithItems = (
             }
           }
 
-          const displayQuantity = item.portionsPerItem ? Math.floor(toAddAdjusted / (item.portionsPerItem || 1)) : toAddAdjusted;
+          const perEffectiveForDisplay = effectivePortionsPerItem || item.portionsPerItem || 1;
+          const displayQuantity = item.portionsPerItem ? Math.floor(toAddAdjusted / perEffectiveForDisplay) : toAddAdjusted;
           
           productItems.push({
             ...item,
@@ -499,19 +658,31 @@ export const combineBoxesWithItems = (
     }
     
     const result = [...boxItems, ...productItems];
-    
+
+    // Normalize boxStates for external consumption: integer portionsCount and fixed weight
+    const normalizedBoxStates = boxStates.map(b => ({
+      ...b,
+      portionsCount: Math.round(b.portionsCount),
+      currentWeight: Number((b.currentWeight || 0).toFixed(2)),
+      softLimit: Math.round(b.softLimit || 0),
+      hardLimit: Math.round(b.hardLimit || 0)
+    }));
+
     // Якщо є нерозподілені порції, виводимо детальне попередження
     if (totalUnallocated > 0) {
       console.error('❌ КРИТИЧНА ПОМИЛКА: Не всі товари поміщаються в коробки!');
       console.error(`Всього нерозподілених порцій: ${totalUnallocated}`);
       console.error('Деталі:', unallocatedItems);
-      console.error('Стан коробок:', boxStates);
+      console.error('Стан коробок:', normalizedBoxStates);
+    } else {
+      console.log('Стан коробок:', normalizedBoxStates);
     }
     
     return {
       checklistItems: result,
       unallocatedPortions: totalUnallocated,
-      unallocatedItems
+      unallocatedItems,
+      boxStates: normalizedBoxStates
     };
   }
 
@@ -536,10 +707,17 @@ export const combineBoxesWithItems = (
 
   const result = [...boxItems, ...mergedProductItems];
   
-  return {
+    return {
     checklistItems: result,
     unallocatedPortions: 0,
-    unallocatedItems: []
+    unallocatedItems: [],
+    boxStates: boxes.map((box, index) => ({
+      index,
+      portionsCount: 0,
+      currentWeight: Number(box.self_weight || box.weight || 0),
+      softLimit: Math.round(box.portionsPerBox || 0),
+      hardLimit: Math.round(box.qntTo || box.portionsPerBox || 0)
+    }))
   };
 };
 

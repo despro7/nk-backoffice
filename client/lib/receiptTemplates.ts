@@ -469,19 +469,29 @@ export function generateWarehouseChecklistEscPos(
       // Доступна ширина після відступу "    - " (6 символів)
       const compWidth = LINE_WIDTH - 6;
       item.composition.forEach((comp) => {
-        // Розбиваємо "Назва продукту x1" на назву і кількість
-        const compMatch = comp.match(/^(.+?)\s+(x\d+)$/);
-        if (compMatch) {
-          const [, cName, cQty] = compMatch;
-          // Залишаємо мінімум 1 пробіл між назвою і кількістю
+        // Підтримуємо два формати: старий string-формат або об'єкт { name, quantity }
+        let cName = '';
+        let cQty = '';
+        if (typeof comp === 'string') {
+          const compMatch = comp.match(/^(.+?)\s+(x\d+)$/);
+          if (compMatch) {
+            cName = compMatch[1];
+            cQty = compMatch[2];
+          } else {
+            cName = comp;
+            cQty = '';
+          }
+        } else if (comp && typeof comp === 'object') {
+          cName = comp.name || `Товар ${comp.sku || ''}`;
+          cQty = comp.quantity ? `x${comp.quantity}` : '';
+        }
+
+        if (cQty) {
           const maxNameLen = compWidth - cQty.length - 1;
-          const truncName = cName.length > maxNameLen
-            ? cName.substring(0, maxNameLen - 1) + '.'
-            : cName;
+          const truncName = cName.length > maxNameLen ? cName.substring(0, maxNameLen - 1) + '.' : cName;
           out += `    - ${rowSpaceBetween(truncName, cQty, compWidth)}` + LINE_FEED;
         } else {
-          // Якщо формат нестандартний — просто обрізаємо
-          const truncComp = comp.length > compWidth ? comp.substring(0, compWidth - 1) + '.' : comp;
+          const truncComp = cName.length > compWidth ? cName.substring(0, compWidth - 1) + '.' : cName;
           out += `    - ${truncComp}` + LINE_FEED;
         }
       });
@@ -520,7 +530,12 @@ export function generateWarehouseChecklistHTML(
         ${
           item.composition && item.composition.length > 0
             ? `<ul style="list-style-type: none; margin:4px 0 0 14px; padding:0; font-size:11px; color:#333;">
-                ${item.composition.map((c) => `<li>${c}</li>`).join('')}
+                ${item.composition
+                  .map((c) => {
+                    if (typeof c === 'string') return `<li>${c}</li>`;
+                    return `<li>${(c as any).name}${(c as any).quantity ? ` x${(c as any).quantity}` : ''}</li>`;
+                  })
+                  .join('')}
                </ul>`
             : ''
         }

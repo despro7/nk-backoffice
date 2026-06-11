@@ -17,7 +17,10 @@ interface OrderItem {
   manualOrder?: number;
   sku?: string;
   barcode?: string;
-  composition?: string[];
+  composition?: Array<string | { name: string; quantity?: number; unitRatio?: number; sku?: string }>;
+  portionsPerItem?: number;
+  unitRatio?: number;
+  weightRatio?: number;
 }
 
 interface OrderChecklistItemProps {
@@ -38,6 +41,15 @@ interface OrderChecklistItemProps {
 
 const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick, assemblyMode = 'standard', productScanMode = 'single_per_item', allowManualSelect = false }: OrderChecklistItemProps) => {
   const { name, quantity, status, expectedWeight, type, boxSettings, sku, barcode } = item;
+
+  // Показувати у відлагоджувальному режимі коефіцієнти.
+  // `unitRatio` — застосовується до звичайних товарів/наборів.
+  // `weightRatio` — застосовується для монолітних наборів (мають `portionsPerItem`).
+  const weightRatio = (item as any).weightRatio;
+  const unitRatio = (item as any).unitRatio ?? (item as any).portionsPerItem ?? 1;
+
+  // Для верхнього індикатора: якщо це монолітний набір — показуємо `weightRatio`, інакше `unitRatio`.
+  const displayRatio = item.portionsPerItem ? (typeof weightRatio === 'number' ? weightRatio : unitRatio) : unitRatio;
 
   const { isDebugMode } = useDebug();
 
@@ -118,28 +130,42 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
             )}
 
             {/* Кількість одиниць × Вага позиції */}
-            <span className="text-sm text-gray-400 tabular-nums text-nowrap">{type === 'product' && `× ${quantity}`} ≈ {expectedWeight.toFixed(3)} кг</span>
+            <span className="text-sm text-gray-400 tabular-nums text-nowrap">{type === 'product' && `× ${quantity}`} ≈ {expectedWeight.toFixed(2)} кг</span>
             
             {isDebugMode && (
-              <span
-                className="flex items-center gap-1 ml-4 text-[12px] text-neutral-400 tabular-nums cursor-pointer hover:text-neutral-600 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const code = sku || (type === 'box' ? boxSettings.barcode : barcode);
-                  navigator.clipboard.writeText(code || '');
-                }}
-                title="Click to copy"
-              >
-                <DynamicIcon name="scan-barcode" size={14} /> {sku || (type === 'box' ? boxSettings.barcode : barcode)}
-              </span>
+              <div className="flex">
+                <span className="text-[12px] text-neutral-400 tabular-nums">
+                   <span className="font-semibold ml-2 text-red-600">({Number(displayRatio).toFixed(2)})</span>
+                </span>
+                <span
+                  className="flex items-center gap-1 ml-4 text-[12px] text-neutral-400 tabular-nums cursor-pointer hover:text-neutral-600 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const code = sku || (type === 'box' ? boxSettings.barcode : barcode);
+                    navigator.clipboard.writeText(code || '');
+                  }}
+                  title="Click to copy"
+                >
+                  <DynamicIcon name="scan-barcode" size={14} /> {sku || (type === 'box' ? boxSettings.barcode : barcode)}
+                </span>
+              </div>
             )}
           </div>
           {/* Відображення складу монолітного набору */}
           {item.composition && item.composition.length > 0 && (
             <ul className="text-[13px] text-blue-500 mt-1">
-              {item.composition.map((component, index) => (
-                <li className="before:content-['•'] before:mr-1.5 before:text-blue-500" key={index}>{component}</li>
-              ))}
+              {item.composition.map((component, index) => {
+                const isObj = typeof component !== 'string' && component !== null && typeof component === 'object';
+                const compName = isObj ? (component as any).name : (component as string);
+                const compQty = isObj && (component as any).quantity ? ` x${(component as any).quantity}` : '';
+                const compUnitRatio = isObj ? ((component as any).unitRatio as number | undefined) : undefined;
+                const ratioToShow = typeof compUnitRatio === 'number' ? compUnitRatio : unitRatio;
+                return (
+                  <li className="before:content-['•'] before:mr-1.5 before:text-blue-500" key={index}>
+                    {compName}{compQty}{isDebugMode && <span className="font-semibold ml-2 text-red-600 text-[12px]"> ({Number(ratioToShow).toFixed(2)})</span>}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

@@ -434,12 +434,12 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
   }
 
   return (
-    <div className="w-full flex flex-col gap-2">
+    <div className={`w-full gap-3 ${selectedBoxes.length < 2 ? 'grid grid-cols-1' : 'grid grid-cols-2'} `}>
       {/* Список обраних коробок */}
       {selectedBoxes.map((box, index) => {
         const portionsPerBox = Math.ceil(totalPortions / selectedBoxes.length);
-        const start = index * portionsPerBox + 1;
-        const end = Math.min((index + 1) * portionsPerBox, totalPortions);
+        // const start = index * portionsPerBox + 1;
+        // const end = Math.min((index + 1) * portionsPerBox, totalPortions);
         const isActive = index === activeBoxIndex;
         
         return (
@@ -448,14 +448,14 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
             className="flex-1 cursor-pointer"
             onClick={() => onActiveBoxChange?.(index)}
           >
-            <Card className={`transition-shadow duration-200 ease-in-out ${isActive && 'ring-2 ring-lime-600/80'}`}>
-              <CardBody className="flex flex-row items-center gap-4">
-                <DynamicIcon name="package" size={20} strokeWidth={1.5} className={`absolute left-20 top-1/2 -translate-y-1/2 scale-[3] opacity-5 ${isActive && "text-lime-700"}`} /> 
+            <Card className={`transition-shadow duration-200 ease-in-out select-none ${isActive ? 'text-lime-700/80 ring-2 ring-lime-600/80' : ''} ${getBoxValidationStatus(box) === 'danger' ? 'ring-red-600/80! text-red-700' : ''}`}>
+              <CardBody className="flex overflow-hidden">
                 <div className="flex flex-col gap-1">
-                  <span className={`text-base font-semibold py-0 duration-200 flex items-center whitespace-nowrap gap-2 ${isActive && "text-lime-700"}`}>Коробка #{ index + 1 }</span>
-                  <span className={`text-xs text-gray-600 ${isActive && "text-lime-700"}`}>{box.width}×{box.height}×{box.length} см</span>
+                  <span className={`font-semibold duration-200 flex items-center whitespace-nowrap gap-2`}>Коробка #{ index + 1 }</span>
+                  <span className={`text-xs opacity-70`}>{box.width}×{box.height}×{box.length} см</span>
                 </div>
-                <Select
+                <DynamicIcon name="package" size={46} strokeWidth={1.5} className={`absolute -right-2 top-1/2 -translate-y-1/2 ${isActive ? 'opacity-25' : 'opacity-5'}`} /> 
+                {/* <Select
                   aria-label="Коробка"
                   labelPlacement='outside'
                   variant='flat'
@@ -491,7 +491,7 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
                         </SelectItem>
                       );
                     })}
-                </Select>
+                </Select> */}
               </CardBody>
             </Card>
           </div>

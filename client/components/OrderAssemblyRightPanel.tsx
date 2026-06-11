@@ -12,7 +12,6 @@ import { ConfirmModal } from './modals/ConfirmModal';
 import { shippingClientService } from '../services/ShippingService';
 import type { OrderForAssembly } from '../types/orderAssembly';
 import type { ReceiptType } from '@/hooks/useReceiptPrinting';
-import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface OrderAssemblyRightPanelProps {
@@ -80,8 +79,7 @@ export function OrderAssemblyRightPanel({
         <RightPanel>
           {/* OrderTrackingNumber */}
           <div className="w-full">
-            <div
-              className="bg-neutral-50 p-4 rounded-lg cursor-pointer hover:bg-neutral-100 transition-colors active:scale-[0.98] transform"
+            <div className="bg-neutral-50 p-4 rounded-lg cursor-pointer hover:bg-neutral-100 transition-colors active:scale-[0.98] transform"
               title="Натисніть для друку ТТН"
               // onClick={() => setShowPrintConfirmModal(true)}
               onClick={async () => {
@@ -92,7 +90,7 @@ export function OrderAssemblyRightPanel({
                 });
               }}
             >
-              <div className="flex items-center gap-2.5 text-2xl font-mono tracking-wider text-primary">
+              <div className="flex items-center justify-center gap-2.5 text-2xl font-mono text-primary">
                 {formatTrackingNumberWithIcon(orderForAssembly.shipping.trackingId, {
                   provider: orderForAssembly.shipping.provider,
                   autoDetectProvider: !orderForAssembly.shipping.provider, // Автовизначення якщо provider не вказаний
@@ -126,83 +124,6 @@ export function OrderAssemblyRightPanel({
               className="bg-white p-6 rounded-lg shadow"
             />
           )}
-
-          {/* Автоматичний друк */}
-          {/* <div className="flex w-full gap-3 mt-4">
-            <Switch
-              isSelected={!!autoPrint}
-              onValueChange={async (checked) => {
-                setAutoPrintTransition(true);
-                try {
-                  const current = equipmentState.config;
-                  if (!current) return;
-
-                  const updatedPrinter = {
-                    ...(current.printer || { enabled: false, name: '' }),
-                    autoPrintOnComplete: checked,
-                  };
-                  const updatedConfig = {
-                    ...current,
-                    printer: updatedPrinter,
-                  };
-                  // Миттєво оновлюємо локальний стан
-                  equipmentActions.updateConfig({ printer: updatedPrinter });
-                  // Персистимо на бекенд
-                  await equipmentActions.saveConfig(updatedConfig as any);
-                  // Підтягнути свіжу конфігурацію для всіх споживачів (в т.ч. сторінки налаштувань)
-                  await equipmentActions.refreshConfig();
-
-                  ToastService.show({
-                    title: 'Налаштування збережено',
-                    description: `Автоматичний друк ${checked ? 'увімкнено' : 'вимкнено'}`,
-                    color: 'success',
-                    timeout: 3000,
-                    hideIcon: false,
-                    icon: <DynamicIcon name="printer" strokeWidth={2} />,
-                    settingKey: 'equipmentStatus'
-                  });
-                } catch (error) {
-                  ToastService.show({
-                    title: 'Помилка збереження',
-                    description: 'Не вдалося зберегти налаштування автодруку',
-                    color: 'danger',
-                    timeout: 3000,
-                    hideIcon: false,
-                    icon: <DynamicIcon name="printer" strokeWidth={2} />,
-                    settingKey: 'equipmentStatus'
-                  });
-                } finally {
-                  setTimeout(() => setAutoPrintTransition(false), 150);
-                }
-              }}
-              color="danger"
-              classNames={{
-                base: cn(
-                  "inline-flex flex-row-reverse w-full bg-white items-center max-w-full",
-                  "justify-between cursor-pointer rounded-large gap-3 px-2 py-4 pr-5",
-                  "data-[selected=true]:ring-danger data-[selected=true]:ring-2",
-                  "transition-transform duration-200 ease-in-out",
-                  `${autoPrintTransition ? "opacity-75 scale-[0.98]" : "opacity-100 scale-100"}`
-                ),
-                wrapper: "p-0 h-4 overflow-visible",
-                thumb: cn(
-                  "w-6 h-6 border-2 shadow-lg",
-                  "group-data-[hover=true]:border-danger",
-                  // обраний
-                  "group-data-[selected=true]:ms-6",
-                  "group-data-[selected=true]:border-danger",
-                  // натиснутий
-                  "group-data-[pressed=true]:w-7",
-                  "group-data-pressed:group-data-selected:ms-4",
-                ),
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <p className="text-medium font-semibold leading-[1.1]">Автодрук ТТН</p>
-                <span className={`${autoPrint ? 'bg-danger text-white' : 'bg-grey-200'} rounded px-1 py-0.5 text-[10px] font-normal leading-normal self-start`}>{autoPrint ? 'ON' : 'OFF'}</span>
-              </div>
-            </Switch>
-          </div> */}
 
           {/* Емулятор сканера (Debug) */}
           {isDebugMode && onBarcodeScan && (

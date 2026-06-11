@@ -3,6 +3,18 @@
 Всі значущі зміни в проєкті фіксуються тут.
 Формат: одна секція на задачу, нові записи **додаються зверху**.
 
+---
+
+## 2026-06-11 — Поліпшено алокацію ваги: `unitRatio` / `weightRatio` та рекурсивне розгортання наборів
+**Files:** `client/lib/orderAssemblyUtils.ts`, `client/components/OrderChecklistItem.tsx`, `client/lib/receiptTemplates.ts`, `client/types/orderAssembly.ts`, `client/lib/__tests__/orderAssemblyUtils.order17601.spec.ts`
+
+- Додано рекурсивний агрегатор `computeFlattenedComponent()` для коректного обчислення `unitRatio` у вкладених наборах (включно з монолітними наборами і набор-пакетами).
+- `composition` тепер містить об'єкти з `unitRatio` / `weightRatio` замість простих рядків — це спрощує алокацію і друк чеків.
+- Алгоритм розподілу оновлено, щоб використовувати `weightRatio`/`unitRatio` при підрахунку `effectivePortionsPerItem` і `itemWeightPerUnit`.
+- UI: у debug-панелі `OrderChecklistItem` додано відображення `unitRatio` для зручного дебагу; числові поля округлено до 2 знаків (`toFixed(2)`).
+- Оновлено шаблони чеків (`client/lib/receiptTemplates.ts`) для підтримки нового формату `composition`.
+- Тести: оновлено і запущено `client/lib/__tests__/orderAssemblyUtils.order17601.spec.ts` — пройшов локальний тест.
+- Додано документацію про градації (GRADATIONS) в `Docs/features/order-assembly/gradations.md`.
 
 ---
 

@@ -490,8 +490,10 @@ export default function OrderView() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      <div className="flex flex-col items-center justify-center h-100">
+        <div className="animate-spin rounded-full h-26 w-26 border-b-2 border-neutral-400 mb-8"></div>
+        <p className="text-gray-600">Розгортаємо набори товарів...</p>
+        <p className="text-sm text-gray-500 mt-1">Це може зайняти декілька секунд</p>
       </div>
     );
   }
@@ -551,7 +553,7 @@ export default function OrderView() {
             </div>
           ) : expandingSets ? (
             <div className="bg-white p-8 rounded-lg shadow text-center">
-              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-neutral-400 mx-auto mb-4"></div>
               <p className="text-gray-600">Розгортаємо набори товарів...</p>
               <p className="text-sm text-gray-500 mt-2">Це може зайняти кілька секунд</p>
             </div>
