@@ -17,6 +17,7 @@ export interface OrderChecklistItem {
   manualOrder?: number; // Ручне сортування
   composition?: Array<string | { name: string; quantity?: number; unitRatio?: number; sku?: string }>; // Склад монолітного комплекту (може містити об'єкти з додатковими полями)
   portionsPerItem?: number; // Для монолітних комплектів: кількість порцій в одному комплекті
+  dynamicMonolithic?: boolean; // Динамічно-монолітний комплект із залишками
   scannedCount?: number; // Для режиму by_quantity: скільки одиниць вже відскановано
 }
 

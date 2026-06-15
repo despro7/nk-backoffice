@@ -37,6 +37,15 @@ async function resolveKitGoodId(setSku: string | number | undefined, kitGood: st
   return product?.dilovodId?.trim() || null;
 }
 
+function buildReleaseHistoryComment(remark: unknown, comment: unknown): string | null {
+  const values = [remark, comment]
+    .map((value) => String(value ?? '').trim())
+    .filter((value) => value.length > 0);
+
+  const uniqueValues = Array.from(new Set(values));
+  return uniqueValues.length > 0 ? uniqueValues.join(' | ') : null;
+}
+
 /**
  * POST /api/warehouse/releases
  * Create a new set release record (snapshot)
@@ -44,7 +53,7 @@ async function resolveKitGoodId(setSku: string | number | undefined, kitGood: st
 router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
     const userId = (req as any).user?.userId || (req as any).user?.id || 0;
-    const { items, storageId, firmId, comment, status } = req.body;
+    const { items, storageId, firmId, comment, remark, status, dilovodDocId } = req.body;
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ success: false, error: 'items required' });
 
     // Each item expected: { set_sku, quantity, components_snapshot }
@@ -66,6 +75,7 @@ router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (re
     });
 
     const totalQuantity = Number(itemsWithNames.reduce((acc:any, it:any) => acc + (Number(it.quantity) || 0), 0)) || 0;
+    const historyComment = buildReleaseHistoryComment(remark, comment);
 
     const record = await prisma.warehouseReleaseSet.create({ data: {
       setSku: itemsWithNames[0]?.set_sku ?? null,
@@ -74,7 +84,8 @@ router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (re
       items: itemsWithNames,
       storageId: storageId ?? null,
       firmId: stringFirmId,
-      comment: comment ?? null,
+      dilovodDocId: dilovodDocId != null && String(dilovodDocId).trim() !== '' ? String(dilovodDocId).trim() : null,
+      comment: historyComment,
       status: status ?? 'created',
       createdBy: Number(userId) || 0,
     } });
@@ -169,7 +180,7 @@ router.post('/preview', authenticateToken, requireMinRole(ROLES.STOREKEEPER), as
  */
 router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-    const { kitGood, kitQty, setSku, quantity, storageId, firmId, comment, date, dryRun } = req.body;
+    const { kitGood, kitQty, setSku, quantity, storageId, firmId, comment, remark, date, dryRun } = req.body;
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
 
     const firstItem = items[0] ?? {};
@@ -213,7 +224,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
         kitGood: resolvedKitGood,
         kitQty: resolvedKitQty,
         ...(author ? { author } : {}),
-        ...(comment ? { remark: String(comment).trim() } : {}),
+        ...((remark || comment) ? { remark: String(remark || comment).trim() } : {}),
       },
     };
 
@@ -324,11 +335,33 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
       });
     }
 
+    const stockSyncTriggered = true;
+
+    void (async () => {
+      try {
+        const { syncSettingsService } = await import('../../services/syncSettingsService.js');
+        const isEnabled = await syncSettingsService.isSyncEnabled('stocks');
+        if (!isEnabled) {
+          console.log('⏭️ [SetRelease] Stock sync після випуску пропущено — синхронізація залишків вимкнена');
+          return;
+        }
+
+        console.log('🔄 [SetRelease] Запускаємо оновлення залишків після випуску набору...');
+        const { DilovodService: DilovodServiceCls } = await import('../../services/dilovod/DilovodService.js');
+        const stockService = new DilovodServiceCls();
+        const result = await stockService.updateStockBalancesInDatabase();
+        console.log('✅ [SetRelease] Залишки оновлено після випуску набору:', result?.message ?? 'OK');
+      } catch (error) {
+        console.warn('⚠️ [SetRelease] Не вдалось оновити залишки після випуску набору:', error);
+      }
+    })();
+
     return res.json({
       success: true,
       payload,
       dilovodResponse: exportResult.dilovodResponse,
       dilovodDocId: exportResult.dilovodDocId,
+      stockSyncTriggered,
     });
   } catch (error) {
     console.error('[SetRelease] Error sending set release:', error);
@@ -359,7 +392,34 @@ router.delete('/:id', authenticateToken, requireMinRole(ROLES.ADMIN), async (req
     const id = Number(req.params.id);
     const existing = await prisma.warehouseReleaseSet.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
-    await prisma.warehouseReleaseSet.delete({ where: { id } });
+
+    const { forceLocal } = req.query;
+    if (String(forceLocal) === 'true') {
+      await prisma.warehouseReleaseSet.update({ where: { id }, data: { status: 'deleted' } });
+      return res.json({ success: true });
+    }
+
+    const releaseDocId = existing.dilovodDocId != null ? String(existing.dilovodDocId).trim() : '';
+    if (releaseDocId) {
+      try {
+        const payload: any = { saveType: 2, header: { id: releaseDocId, delMark: 1 } };
+        const exportResult = await dilovodExportFlowService.send({ payload, dryRun: false, warnings: [], label: '[SetRelease]' });
+        const result = exportResult.dilovodResponse;
+
+        if (!exportResult.success) {
+          const msg = String(exportResult.error || result?.error || result?.message || 'Unknown error');
+          if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('object with id') || msg.toLowerCase().includes('не знайдено') || msg.toLowerCase().includes('не знайден')) {
+            return res.status(422).json({ success: false, error: msg, canDeleteLocal: true });
+          }
+          return res.status(422).json({ success: false, error: msg });
+        }
+      } catch (err) {
+        console.warn('[SetRelease] Error deleting in Dilovod:', err);
+        return res.status(500).json({ success: false, error: 'Error deleting in Dilovod', details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
+    await prisma.warehouseReleaseSet.update({ where: { id }, data: { status: 'deleted' } });
     res.json({ success: true });
   } catch (error) {
     console.error('[SetRelease] Error deleting release:', error);

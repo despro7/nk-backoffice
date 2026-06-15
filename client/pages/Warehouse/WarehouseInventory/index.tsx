@@ -47,6 +47,8 @@ export default function WarehouseInventory() {
   const canEditCurrent = isRevisingEditable || canEditCurrentSession;
 
   const totalDeviations = inv.deviationCount + inv.deviationMaterialsCount;
+  // Include deviations from sets
+  const totalDeviationsAll = totalDeviations + (inv.deviationSetsCount ?? 0);
 
   const guard = useUnsavedGuard({
     isDirty: inv.isDirty,
@@ -148,7 +150,7 @@ export default function WarehouseInventory() {
                   totalCheckedAll={inv.totalCheckedAll}
                   totalAll={inv.totalAll}
                   totalProgressPercent={inv.totalProgressPercent}
-                  deviationCount={totalDeviations}
+                  deviationCount={totalDeviationsAll}
                   searchQuery={inv.searchQuery}
                   onSearchChange={inv.setSearchQuery}
                   categoryOptions={inv.categoryOptions}
@@ -158,6 +160,27 @@ export default function WarehouseInventory() {
                   onSortByChange={inv.setSortBy}
                   sortDirection={inv.sortDirection}
                   onSortDirectionChange={inv.setSortDirection}
+                />
+
+                {/* Список готових комплектів */}
+                <InventoryProductList
+                  title="Комплекти"
+                  icon="boxes"
+                  headerColorClass="bg-emerald-50"
+                  headerTextClass="text-emerald-900"
+                  checkedCount={inv.checkedSetsCount}
+                  totalCount={inv.totalSetsCount}
+                  items={inv.filteredSets}
+                  loading={inv.setsLoading}
+                  error={inv.setsError}
+                  searchQuery={inv.searchQuery}
+                  openItemIds={inv.openSetIds}
+                  onToggle={inv.handleToggleSet}
+                  onChange={inv.handleSetChange}
+                  onCheck={inv.handleCheckSet}
+                  onEnterPress={inv.handleEnterPressSet}
+                  onRetry={inv.loadSets}
+                  onReset={inv.handleResetItemValues}
                 />
 
                 {/* Список страв */}
@@ -206,6 +229,7 @@ export default function WarehouseInventory() {
 
                 {/* Підсумкова таблиця */}
                 <InventorySummaryTable
+                  sets={inv.sets}
                   products={inv.products}
                   materials={inv.materials}
                 />
@@ -213,7 +237,7 @@ export default function WarehouseInventory() {
                 {/* Панель дій: для редагованої сесії (in_progress) або для адміна, що редагує completed */}
                 {canEditCurrent && (
                   <InventoryActionBar
-                    deviationCount={totalDeviations}
+                    deviationCount={totalDeviationsAll}
                     totalCheckedAll={inv.totalCheckedAll}
                     isSavingDraft={inv.isSavingDraft}
                     comment={inv.comment}
@@ -224,22 +248,6 @@ export default function WarehouseInventory() {
                     isEditingCompleted={(inv.sessionStatus === 'completed' || inv.sessionStatus === 'revising') && canEditCompletedSession}
                   />
                 )}
-                  <table className="bg-white shadow-lg inline-block rounded-sm fixed bottom-6 left-4 border-1 border-separate border-spacing-0 [&>tbody>tr>td]:px-2 [&>tbody>tr>td]:py-0.5 p-1 text-sm">
-                    <tbody>
-                      <tr>
-                        <td className="font-semibold">sessionStatus:</td>
-                        <td>{inv.sessionStatus}</td>
-                      </tr>
-                      <tr>
-                        <td className="font-semibold">sessionOriginalStatus:</td>
-                        <td>{inv.sessionOriginalStatus}</td>
-                      </tr>
-                      <tr>
-                        <td className="font-semibold">isDirty:</td>
-                        <td>{String(inv.isDirty)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
               </>
             )}
           </>
@@ -274,22 +282,22 @@ export default function WarehouseInventory() {
         isOpen={inv.showConfirmFinish}
         title={
           inv.sessionStatus === 'completed' && canEditCompletedSession
-            ? (totalDeviations > 0 ? 'Перезавершити і зафіксувати відхилення?' : 'Перезавершити інвентаризацію?')
-            : (totalDeviations > 0 ? 'Зафіксувати відхилення?' : 'Завершити інвентаризацію?')
+            ? (totalDeviationsAll > 0 ? 'Перезавершити і зафіксувати відхилення?' : 'Перезавершити інвентаризацію?')
+            : (totalDeviationsAll > 0 ? 'Зафіксувати відхилення?' : 'Завершити інвентаризацію?')
         }
         message={
           inv.sessionStatus === 'completed' && canEditCompletedSession
-            ? (totalDeviations > 0
-                ? `Ви перезаписуєте завершену сесію. Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій. Знайдено ${totalDeviations} відхилень.`
+            ? (totalDeviationsAll > 0
+                ? `Ви перезаписуєте завершену сесію. Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій. Знайдено ${totalDeviationsAll} відхилень.`
                 : `Ви перезаписуєте завершену сесію. Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій.`)
-            : (totalDeviations > 0
-                ? `Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій. Знайдено ${totalDeviations} відхилень від системних залишків.`
+            : (totalDeviationsAll > 0
+                ? `Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій. Знайдено ${totalDeviationsAll} відхилень від системних залишків.`
                 : `Перевірено ${inv.totalCheckedAll} з ${inv.totalAll} позицій.`)
         }
         confirmText={
           inv.sessionStatus === 'completed' && canEditCompletedSession
-            ? (totalDeviations > 0 ? 'Перезавершити і зафіксувати' : 'Перезавершити')
-            : (totalDeviations > 0 ? 'Зафіксувати і завершити' : 'Завершити')
+            ? (totalDeviationsAll > 0 ? 'Перезавершити і зафіксувати' : 'Перезавершити')
+            : (totalDeviationsAll > 0 ? 'Зафіксувати і завершити' : 'Завершити')
         }
         cancelText="Назад"
         onConfirm={inv.handleFinish}

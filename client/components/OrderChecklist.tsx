@@ -144,7 +144,7 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     
     const packed = currentBoxItems.reduce((acc, item) => {
       if (item.status === 'done') {
-        return acc + item.quantity;
+        return acc + (item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity);
       }
       return acc;
     }, 0);
@@ -202,8 +202,6 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     );
     
     const total = currentBoxItems.reduce((acc, item) => {
-      // Якщо товар є монолітним комплектом (portionsPerItem зазначено),
-      // кількість порцій = quantity * portionsPerItem
       const portions = item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity;
       return acc + portions;
     }, 0);
@@ -227,8 +225,17 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
       item.type === 'box' && (item.boxIndex || 0) === activeBoxIndex
     );
 
+    const currentBoxProducts = items.filter(item =>
+      item.type === 'product' && (item.boxIndex || 0) === activeBoxIndex
+    );
+
+    const isMonolithicOnlyBox = currentBoxProducts.length > 0
+      && currentBoxProducts.every(item => typeof item.portionsPerItem === 'number' && item.portionsPerItem > 16);
+
     // У режимі 'no_scales' без коробок вважаємо автоматично підтвердженим
     if (assemblyMode === 'no_scales' && !currentBox) return true;
+
+    if (!currentBox && isMonolithicOnlyBox) return true;
 
     // Коробка вважається зваженою, якщо вона має статус 'done'
     // У режимі 'no_scales' також вважаємо коробку підтвердженою коли її статус 'pending'
@@ -240,7 +247,6 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
     return items
       .filter(item => item.type === 'product' && item.status === 'done')
       .reduce((acc, item) => {
-        // Для монолітних комплектів множимо quantity на portionsPerItem
         const portions = item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity;
         return acc + portions;
       }, 0);
@@ -340,8 +346,11 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
 
   // Перевіряємо, чи є наступна коробка
   const hasNextBox = useMemo(() => {
-    const totalBoxes = items.filter(item => item.type === 'box').length;
-    return activeBoxIndex < totalBoxes - 1;
+    const maxBoxIndex = items.reduce((max, item) => {
+      const itemBoxIndex = item.boxIndex || 0;
+      return itemBoxIndex > max ? itemBoxIndex : max;
+    }, 0);
+    return activeBoxIndex < maxBoxIndex;
   }, [items, activeBoxIndex]);
 
   // Перевіряємо, чи є попередня коробка
@@ -399,7 +408,9 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
         LoggingService.orderAssemblyLog('[OrderChecklist] product click ignored: box not confirmed', { id: clickedItem.id });
         return;
       }
-      if (!allowManualSelect) {
+      const requiresConfirmation = productScanMode === 'single_per_item' && clickedItem.quantity > 1;
+
+      if (!allowManualSelect && !requiresConfirmation) {
         // У Debug-режимі емулюємо сканування ШК замість ручного вибору
         if (isDebugMode && onBarcodeScan) {
           const code = clickedItem.barcode || clickedItem.sku;

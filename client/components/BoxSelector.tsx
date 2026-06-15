@@ -12,6 +12,7 @@ interface BoxSelectorProps {
   onBoxesChange: (boxes: SettingsBoxes[], totalWeight: number, boxesInfo?: any) => void;
   onActiveBoxChange?: (activeBoxIndex: number) => void;
   activeBoxIndex: number; // Додаємо activeBoxIndex як prop
+  isSingleLargeMonolithicOrder?: boolean;
   className?: string;
 }
 
@@ -21,6 +22,7 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
   onBoxesChange,
   onActiveBoxChange,
   activeBoxIndex,
+  isSingleLargeMonolithicOrder = false,
   className = ''
 }) => {
   const { apiCall } = useApi();
@@ -40,6 +42,18 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
 
   // Мемоізуємо функцію onBoxesChange щоб уникнути нескінченного циклу
   const memoizedOnBoxesChange = useCallback(onBoxesChange, []);
+
+  const shouldHideBoxes = isSingleLargeMonolithicOrder;
+
+  useEffect(() => {
+    if (shouldHideBoxes) {
+      setLoading(false);
+      setBoxes([]);
+      setSelectedBoxes([]);
+      setRecommendations(null);
+      setError(null);
+    }
+  }, [shouldHideBoxes]);
 
   // Розумний розподіл порцій по коробках з урахуванням лімітів qntFrom/qntTo та ваги
   const distributePortionsAcrossBoxes = useCallback((
@@ -310,12 +324,14 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
 
   // Завантажуємо коробки при монтуванні
   useEffect(() => {
+    if (shouldHideBoxes) return;
     if (boxes.length > 0) return;
     fetchBoxes();
-  }, [fetchBoxes, boxes.length]);
+  }, [fetchBoxes, boxes.length, shouldHideBoxes]);
 
   // Синхронізуємо режим з кукі при монтуванні
   useEffect(() => {
+    if (shouldHideBoxes) return;
     // LoggingService.orderAssemblyLog('📦 Ініціалізація режиму коробок з cookies...');
     
     const savedMode = getCookie(BOX_MODE_COOKIE);
@@ -323,10 +339,11 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
       LoggingService.orderAssemblyLog('📦 Встановлено режим з cookie:', savedMode);
       setRecommendationMode(savedMode);
     }
-  }, [BOX_MODE_COOKIE]);
+  }, [BOX_MODE_COOKIE, shouldHideBoxes]);
 
   // Завантажуємо рекомендації при зміні порцій або режиму
   useEffect(() => {
+    if (shouldHideBoxes) return;
     if (boxes.length === 0 || totalPortions <= 0 || loading) {
       return;
     }
@@ -345,7 +362,7 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
       setLastTotalPortions(totalPortions);
       fetchRecommendations(totalPortions);
     }
-  }, [totalPortions, recommendationMode, fetchRecommendations, boxes.length, lastTotalPortions, loading, recommendations]);
+  }, [totalPortions, recommendationMode, fetchRecommendations, boxes.length, lastTotalPortions, loading, recommendations, shouldHideBoxes]);
 
   // Прибираємо окремий useEffect для режиму, оскільки він тепер обробляється вище
 
@@ -431,6 +448,10 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
         {error}
       </div>
     );
+  }
+
+  if (shouldHideBoxes) {
+    return null;
   }
 
   return (

@@ -46,6 +46,7 @@ model Order {
   sajt            String?
   pricinaZnizki   String?
   rawData         String          @db.LongText
+  payloadData     Json?
   deliveryAddress String?
   lastSynced      DateTime        @default(now())
   orderNumber     String
@@ -57,6 +58,8 @@ model Order {
   dilovodDocId       String?
   dilovodSaleExportDate  DateTime?       // Дата відвантаження в Діловод (documents.sale)
   dilovodSaleDocsCount   Int?            // Кількість документів відвантаження в Діловоді (> 1 = помилка дублікату)
+  dilovodSaleExportLockUntil DateTime?    // TTL-lock для атомарного створення documents.sale
+  dilovodSaleExportLockToken String?      @db.VarChar(64) // Токен власника lock-а
   dilovodExportDate      DateTime?       // Дата вивантаження в Dilovod
   dilovodCashInDate      DateTime?       // Дата додавання документу (documents.cashIn)
   dilovodCashInLastChecked DateTime?     // Дата останньої перевірки cashIn (для уникнення частих запитів)
@@ -72,6 +75,7 @@ model Order {
   @@index([orderDate])
   @@index([orderNumber])
   @@index([status, createdAt])
+  @@index([dilovodSaleExportLockUntil])
   @@map("orders")
 }
 
@@ -298,6 +302,7 @@ model WarehouseReleaseSet {
   items         Json
   storageId     String?  @db.VarChar(191)
   firmId        String?  @db.VarChar(255)
+  dilovodDocId  String?  @db.VarChar(255)
   comment       String?  @db.Text
   status        String   @default("created")
   createdBy     Int?

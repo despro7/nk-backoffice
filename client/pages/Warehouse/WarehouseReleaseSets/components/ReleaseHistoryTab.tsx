@@ -2,9 +2,9 @@ import { Button, Card } from '@heroui/react';
 import HistoryAccordionItem from '../../shared/HistoryAccordionItem';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
-interface Props { records: any[]; loading?: boolean; onRefresh?: () => void; onDelete?: (id: number) => void }
+interface Props { records: any[]; loading?: boolean; onRefresh?: () => void; onDelete?: (id: number) => void; title?: string; emptyMessage?: string }
 
-export default function ReleaseHistoryTab({ records = [], loading, onRefresh, onDelete }: Props) {
+export default function ReleaseHistoryTab({ records = [], loading, onRefresh, onDelete, title = 'Минулі випуски', emptyMessage = 'Немає записів' }: Props) {
   // Map release records to the shape expected by WriteOffHistoryTable.
   const mapped = records.map((r: any) => {
     const items = Array.isArray(r.items) && r.items.length > 0
@@ -33,7 +33,7 @@ export default function ReleaseHistoryTab({ records = [], loading, onRefresh, on
   return (
     <>
       <div className="flex items-end justify-between mb-4">
-        <h2 className="text-base font-semibold text-gray-800">Минулі випуски</h2>
+        <h2 className="text-base font-semibold text-gray-800">{title}</h2>
         <Button
           size="sm"
           variant="flat"
@@ -49,7 +49,7 @@ export default function ReleaseHistoryTab({ records = [], loading, onRefresh, on
       {loading ? (
         <div className="text-center py-8 text-gray-400">Завантаження...</div>
       ) : mapped.length === 0 ? (
-        <div className="text-sm text-gray-500">Немає записів</div>
+        <div className="text-sm text-gray-500">{emptyMessage}</div>
       ) : (
         <HistoryAccordionItem
           records={mapped}

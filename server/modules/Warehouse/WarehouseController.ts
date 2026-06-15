@@ -1104,6 +1104,50 @@ router.get('/inventory/materials', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/warehouse/inventory/sets
+// Повертає всі активні комплекти (set != null) з їх залишком на малому складі ("2").
+router.get('/inventory/sets', authenticateToken, async (req, res) => {
+  try {
+    console.log('📦 [Inventory] GET /inventory/sets — завантаження комплектів малого складу...');
+
+    const sets = await prisma.product.findMany({
+      where: { AND: [{ isOutdated: false, NOT: { set: null } }] },
+      select: { id: true, sku: true, name: true, portionsPerBox: true, categoryName: true, stockBalanceByStock: true },
+      orderBy: [{ manualOrder: 'asc' }, { name: 'asc' }],
+    });
+
+    const result = sets
+      .map((product) => {
+        try {
+          const stock: Record<string, number> = product.stockBalanceByStock
+            ? JSON.parse(product.stockBalanceByStock)
+            : {};
+          const systemBalance = stock['2'] ?? 0;
+
+          return {
+            id: String(product.id),
+            sku: product.sku,
+            name: product.name,
+            categoryName: product.categoryName ?? null,
+            systemBalance,
+            unit: product.portionsPerBox > 1 ? 'portions' : 'pcs',
+            portionsPerBox: product.portionsPerBox,
+          };
+        } catch {
+          console.warn(`⚠️ [Inventory] Не вдалось розпарсити stockBalanceByStock для ${product.sku}`);
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    console.log(`✅ [Inventory] Знайдено ${result.length} комплектів для інвентаризації`);
+    res.json({ sets: result, total: result.length });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error fetching inventory sets:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ============================================================================
 // ІНВЕНТАРИЗАЦІЯ — СЕСІЇ (CRUD)
 // ============================================================================

@@ -10,6 +10,9 @@ export default function SetSearchPanel({ onSelect, existingItems = [], resetSign
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const selectedSet = existingItems[0] ?? null;
+  const hasSelectedSet = Boolean(selectedSet);
+  const selectedSetName = selectedSet?.name || selectedSet?.title || selectedSet?.sku || '';
 
   useEffect(() => {
     if (typeof resetSignal !== 'undefined') {
@@ -25,6 +28,13 @@ export default function SetSearchPanel({ onSelect, existingItems = [], resetSign
   }, [resetSignal]);
 
   useEffect(() => {
+    if (hasSelectedSet) {
+      setResults([]);
+      setHasSearched(false);
+      setLoading(false);
+      return;
+    }
+
     if (!query || query.trim().length < 3) {
       setResults([]);
       setHasSearched(false);
@@ -52,7 +62,7 @@ export default function SetSearchPanel({ onSelect, existingItems = [], resetSign
     }, 300);
 
     return () => { clearTimeout(handle); };
-  }, [query]);
+  }, [query, hasSelectedSet]);
 
   const addedSkus = (existingItems || []).map((it:any) => it.setSku || it.sku);
   const addedSet = new Set(addedSkus);
@@ -67,9 +77,15 @@ export default function SetSearchPanel({ onSelect, existingItems = [], resetSign
         size="lg"
         className="w-full"
         isClearable={true}
+        isDisabled={hasSelectedSet}
         startContent={<DynamicIcon name="search" className="text-gray-400" size={18} />}
         classNames={{ inputWrapper: 'rounded-lg border border-gray-200 bg-white' }}
         onKeyDown={(event) => {
+          if (hasSelectedSet) {
+            event.preventDefault();
+            return;
+          }
+
           if (event.key === 'Enter') {
             event.preventDefault();
             void (async () => {
@@ -97,22 +113,27 @@ export default function SetSearchPanel({ onSelect, existingItems = [], resetSign
       {results.length > 0 && (
         <div className="space-y-3">
           {results.map((p: any) => (
-            <div key={p.id || p.sku} className={`flex items-center justify-between gap-3 py-2 px-3 rounded-lg border border-gray-200 ${isAdded(p.sku) ? 'bg-gray-100' : 'bg-white'}`}>
-              <div className={`flex-1 text-left ${isAdded(p.sku) ? 'opacity-40' : ''}`}>
-                <div className="text-md font-semibold text-gray-900">{p.name || p.title || p.displayName} <span className="text-sm font-normal text-gray-400 bg-gray-200/50 px-1 py-0.5 rounded ml-1">SKU: {p.sku || p.code || p.id}</span></div>
-                <div className="text-sm text-gray-600">Компонентів: {Array.isArray(p.set) ? p.set.length : 0}</div>
+            <Button
+              key={p.id || p.sku}
+              type="button"
+              size="lg"
+              color="primary"
+              variant={isAdded(p.sku) || hasSelectedSet ? 'flat' : 'solid'}
+              onPress={() => onSelect({ sku: p.sku, name: p.name || p.title || p.displayName || p.sku, quantity: 1, componentsSnapshot: p.set })}
+              isDisabled={isAdded(p.sku) || hasSelectedSet}
+              className={`h-auto w-full items-stretch justify-start rounded-lg border border-gray-200 px-4 py-3 text-left ${(isAdded(p.sku) || hasSelectedSet) ? 'bg-gray-100 opacity-40' : 'bg-white'}`}
+            >
+              <div className="flex w-full items-center justify-between gap-3">
+                <div className="flex-1 text-left">
+                  <div className="text-md font-semibold text-gray-900">
+                    {p.name || p.title || p.displayName}
+                    <span className="ml-1 rounded bg-gray-200/50 px-1 py-0.5 text-sm font-normal text-gray-400">SKU: {p.sku || p.code || p.id}</span>
+                  </div>
+                  <div className="text-sm text-gray-600">Компонентів: {Array.isArray(p.set) ? p.set.length : 0}</div>
+                </div>
+                <div className="shrink-0 text-sm font-semibold">{isAdded(p.sku) ? 'Додано' : 'Додати'}</div>
               </div>
-              <div className="flex items-center gap-3">
-                <Button
-                  size="md"
-                  color="primary"
-                  onPress={() => onSelect({ sku: p.sku, name: p.name || p.title || p.sku, quantity: 1, componentsSnapshot: p.set })}
-                  isDisabled={isAdded(p.sku)}
-                >
-                  {isAdded(p.sku) ? 'Додано' : 'Додати'}
-                </Button>
-              </div>
-            </div>
+            </Button>
           ))}
         </div>
       )}

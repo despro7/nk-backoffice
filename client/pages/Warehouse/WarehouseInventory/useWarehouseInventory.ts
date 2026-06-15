@@ -37,6 +37,13 @@ export interface UseWarehouseInventoryReturn {
   filteredMaterials: InventoryProduct[];
   openMaterialId: string | null;
   openMaterialIds: Set<string>;
+  // Комплекти (sets)
+  sets: InventoryProduct[];
+  setsLoading: boolean;
+  setsError: string | null;
+  filteredSets: InventoryProduct[];
+  openSetId: string | null;
+  openSetIds: Set<string>;
 
   // Пошук і сортування
   searchQuery: string;
@@ -53,6 +60,9 @@ export interface UseWarehouseInventoryReturn {
   checkedCount: number;
   totalCount: number;
   progressPercent: number;
+  checkedSetsCount: number;
+  totalSetsCount: number;
+  setsProgressPercent: number;
   checkedMaterialsCount: number;
   totalMaterialsCount: number;
   materialsProgressPercent: number;
@@ -61,6 +71,7 @@ export interface UseWarehouseInventoryReturn {
   totalProgressPercent: number;
   deviationCount: number;
   deviationMaterialsCount: number;
+  deviationSetsCount: number;
 
   // Модалки
   showConfirmFinish: boolean;
@@ -85,16 +96,21 @@ export interface UseWarehouseInventoryReturn {
   // Handlers
   loadProducts: () => Promise<InventoryProduct[]>;
   loadMaterials: () => Promise<InventoryProduct[]>;
+  loadSets: () => Promise<InventoryProduct[]>;
   loadHistory: () => Promise<void>;
   loadArchive: () => Promise<void>;
   handleStartSession: () => Promise<void>;
   handleToggleProduct: (id: string) => void;
   handleToggleMaterial: (id: string) => void;
+  handleToggleSet: (id: string) => void;
   handleEnterPressProduct: (currentProductId: string) => void;
   handleEnterPressMaterial: (currentMaterialId: string) => void;
+  handleEnterPressSet: (currentSetId: string) => void;
   handleProductChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
-  handleCheckProduct: (id: string) => void;
+  handleSetChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
   handleMaterialChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
+  handleCheckProduct: (id: string) => void;
+  handleCheckSet: (id: string) => void;
   handleCheckMaterial: (id: string) => void;
   /** Скинути введені значення (boxCount, actualCount) для позиції — використовує для кнопки "обнулити" */
   handleResetItemValues: (id: string) => void;
@@ -143,6 +159,12 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   // Нові множини відкритих елементів, щоб дозволити розкривати багато рядків одночасно
   const [openProductIds, setOpenProductIds] = useState<Set<string>>(new Set());
   const [openMaterialIds, setOpenMaterialIds] = useState<Set<string>>(new Set());
+  // Sets (готові комплекти)
+  const [sets, setSets] = useState<InventoryProduct[]>([]);
+  const [setsLoading, setSetsLoading] = useState(false);
+  const [setsError, setSetsError] = useState<string | null>(null);
+  const [openSetId, setOpenSetId] = useState<string | null>(null);
+  const [openSetIds, setOpenSetIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [comment, setComment] = useState('');
   const [showConfirmFinish, setShowConfirmFinish] = useState(false);
@@ -241,6 +263,44 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   }, []);
 
   // ---------------------------------------------------------------------------
+  // API: завантаження комплектів (sets)
+  // ---------------------------------------------------------------------------
+
+  const loadSets = useCallback(async (): Promise<InventoryProduct[]> => {
+    setSetsLoading(true);
+    setSetsError(null);
+    try {
+      const res = await fetch('/api/warehouse/inventory/sets', { credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let data: any;
+      try {
+        data = await res.json();
+      } catch (err) {
+        const text = await res.text();
+        throw new Error(`Non-JSON response from /api/warehouse/inventory/sets: ${text.slice(0,200)}`);
+      }
+      const loaded: InventoryProduct[] = (data.sets ?? []).map((s: any) => ({
+        id: s.id,
+        sku: s.sku,
+        name: s.name,
+        systemBalance: s.systemBalance,
+        unit: s.unit as 'portions' | 'pcs',
+        portionsPerBox: s.portionsPerBox,
+        actualCount: null,
+        boxCount: null,
+        checked: false,
+      }));
+      setSets(loaded);
+      return loaded;
+    } catch (err: any) {
+      setSetsError(err.message ?? 'Помилка завантаження комплектів');
+      return [];
+    } finally {
+      setSetsLoading(false);
+    }
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // API: завантаження незавершеної чернетки при mount
   // ---------------------------------------------------------------------------
 
@@ -253,14 +313,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
 
       const draft = data.draft;
       // Завантажуємо актуальні залишки з API
-      const freshProducts = await loadProducts();
-      const freshMaterials = await loadMaterials();
+      const [freshProducts, freshMaterials, freshSets] = await Promise.all([loadProducts(), loadMaterials(), loadSets()]);
 
       // Відновлюємо введені дані з чернетки
       // ВАЖЛИВО: savedProductsMap і savedMaterialsMap — окремо, бо id товарів і матеріалів можуть збігатися
       const savedItems: Array<{ type?: string; id: string; actualCount: number | null; boxCount: number | null; checked: boolean }> = JSON.parse(draft.items ?? '[]');
       const savedProductsMap = new Map(savedItems.filter((i) => i.type === 'product' || i.type === undefined).map((i) => [i.id, i]));
       const savedMaterialsMap = new Map(savedItems.filter((i) => i.type === 'material').map((i) => [i.id, i]));
+      const savedSetsMap = new Map(savedItems.filter((i) => i.type === 'set').map((i) => [i.id, i]));
 
       const mergedProducts = freshProducts.map((p) => {
         const saved = savedProductsMap.get(p.id);
@@ -276,11 +336,19 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
 
       setProducts(mergedProducts);
       setMaterials(mergedMaterials);
+      const mergedSets = freshSets.map((s) => {
+        const saved = savedSetsMap.get(s.id);
+        if (!saved) return s;
+        return { ...s, actualCount: saved.actualCount, boxCount: saved.boxCount, checked: saved.checked };
+      });
+      setSets(mergedSets);
       // Відкриваємо всі непідтверджені позиції після завантаження чернетки
       const unconfirmedProductIds = mergedProducts.filter((p) => !p.checked && (p.actualCount !== null || p.boxCount !== null)).map(p => p.id);
       const unconfirmedMaterialIds = mergedMaterials.filter((m) => !m.checked && (m.actualCount !== null || m.boxCount !== null)).map(m => m.id);
       setOpenProductIds(new Set(unconfirmedProductIds));
       setOpenMaterialIds(new Set(unconfirmedMaterialIds));
+      const unconfirmedSetIds = mergedSets.filter((s) => !s.checked && (s.actualCount !== null || s.boxCount !== null)).map(s => s.id);
+      setOpenSetIds(new Set(unconfirmedSetIds));
       setSessionId(draft.id);
       setSessionStatus(draft.status !== 'revising' ? 'in_progress' : draft.status); // Якщо чернетка була в статусі "редагується", вважаємо її "в процесі" для поточного перегляду
       setSessionOriginalStatus(null);
@@ -289,7 +357,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       setComment(draft.comment ?? '');
       // Фіксуємо snapshot лише user-editable полів — щоб оновлення systemBalance не тригерило isDirty
       setLastSavedSnapshot(JSON.stringify(
-        [...mergedProducts, ...mergedMaterials].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+        [...mergedProducts, ...mergedMaterials, ...mergedSets].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
       ));
       // Завантажуємо залишки за обліком на дату чернетки (через ref, щоб уникнути TDZ)
       const dateToUse = new Date(draft.inventoryDate ?? draft.createdAt);
@@ -298,7 +366,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       }
     } catch {
       // Тихо ігноруємо — просто не відновлюємо чернетку
-    }  }, [loadProducts, loadMaterials]);
+    }  }, [loadProducts, loadMaterials, loadSets]);
 
   useEffect(() => {
     loadDraft();
@@ -374,8 +442,12 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   const totalMaterialsCount = materials.length;
   const materialsProgressPercent = totalMaterialsCount > 0 ? Math.round((checkedMaterialsCount / totalMaterialsCount) * 100) : 0;
 
-  const totalCheckedAll = checkedCount + checkedMaterialsCount;
-  const totalAll = totalCount + totalMaterialsCount;
+  const checkedSetsCount = useMemo(() => sets.filter((s) => s.checked).length, [sets]);
+  const totalSetsCount = sets.length;
+  const setsProgressPercent = totalSetsCount > 0 ? Math.round((checkedSetsCount / totalSetsCount) * 100) : 0;
+
+  const totalCheckedAll = checkedCount + checkedMaterialsCount + checkedSetsCount;
+  const totalAll = totalCount + totalMaterialsCount + totalSetsCount;
   const totalProgressPercent = totalAll > 0 ? Math.round((totalCheckedAll / totalAll) * 100) : 0;
 
   const deviationCount = useMemo(
@@ -392,6 +464,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       return total !== null && total !== m.systemBalance;
     }).length,
     [materials]
+  );
+
+  const deviationSetsCount = useMemo(
+    () => sets.filter((s) => {
+      const total = totalPortions(s);
+      return total !== null && total !== s.systemBalance;
+    }).length,
+    [sets]
   );
 
   const categoryOptions = useMemo(() => {
@@ -436,6 +516,18 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     [materials, searchQuery, sortBy, sortDirection]
   );
 
+  const filteredSets = useMemo(
+    () => {
+      const result = sets.filter(
+        (s) =>
+          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          s.sku.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      return sortItems(result, sortBy, sortDirection);
+    },
+    [sets, searchQuery, sortBy, sortDirection]
+  );
+
   /**
    * true — є незбережені зміни відносно lastSavedSnapshot.
    * Активний лише під час сесії (sessionStatus === 'in_progress').
@@ -468,14 +560,15 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setSessionOriginalStatus(null);
     try {
       // Завантажуємо товари та матеріали паралельно зі створенням чернетки
-      const [loadedProducts, loadedMaterials, res] = await Promise.all([
+      const [loadedProducts, loadedMaterials, loadedSets, res] = await Promise.all([
         loadProducts(),
         loadMaterials(),
+        loadSets(),
         fetch('/api/warehouse/inventory/draft', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ comment, items: serializeItems(products, materials), inventoryDate: sessionDate }),
+          body: JSON.stringify({ comment, items: serializeItems(products, materials, sets), inventoryDate: sessionDate }),
         }),
       ]);
       if (!res.ok) return;
@@ -484,7 +577,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       setSessionDate(data.session.createdAt ?? new Date().toISOString());
       // Фіксуємо snapshot лише user-editable полів
       setLastSavedSnapshot(JSON.stringify(
-        [...loadedProducts, ...loadedMaterials].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+        [...loadedProducts, ...loadedMaterials, ...loadedSets].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
       ));
     } catch {
       // Не критично — ID збережеться при першому збереженні чернетки
@@ -544,6 +637,18 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setOpenMaterialId((prev) => (prev === id ? null : id));
   };
 
+  const handleToggleSet = (id: string) => {
+    const unconfirmedIds = sets.filter((s) => !s.checked && (s.actualCount !== null || s.boxCount !== null)).map(s => s.id);
+    setOpenSetIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      for (const uid of unconfirmedIds) next.add(uid);
+      return next;
+    });
+    setOpenSetId((prev) => (prev === id ? null : id));
+  };
+
   const handleEnterPressProduct = (currentProductId: string) => {
     const currentIndex = filteredProducts.findIndex((p) => p.id === currentProductId);
     if (currentIndex !== -1 && currentIndex < filteredProducts.length - 1) {
@@ -559,6 +664,15 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       const nextId = filteredMaterials[currentIndex + 1].id;
       setOpenMaterialIds(new Set([nextId]));
       setOpenMaterialId(nextId);
+    }
+  };
+
+  const handleEnterPressSet = (currentSetId: string) => {
+    const currentIndex = filteredSets.findIndex((s) => s.id === currentSetId);
+    if (currentIndex !== -1 && currentIndex < filteredSets.length - 1) {
+      const nextId = filteredSets[currentIndex + 1].id;
+      setOpenSetIds(new Set([nextId]));
+      setOpenSetId(nextId);
     }
   };
 
@@ -578,6 +692,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setMaterials((prev) => prev.map((m) => (m.id === id ? { ...m, checked: !m.checked } : m)));
   };
 
+  const handleSetChange = (id: string, field: 'boxCount' | 'actualCount', value: number) => {
+    setSets((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
+  };
+
+  const handleCheckSet = (id: string) => {
+    setSets((prev) => prev.map((s) => (s.id === id ? { ...s, checked: !s.checked } : s)));
+  };
+
   const handleResetItemValues = (id: string) => {
     let found = false;
     setProducts(prev => prev.map(p => {
@@ -589,13 +711,15 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     }));
     if (found) return;
     setMaterials(prev => prev.map(m => (m.id === id ? { ...m, actualCount: null, boxCount: null } : m)));
+    // Also reset for sets
+    setSets(prev => prev.map(s => (s.id === id ? { ...s, actualCount: null, boxCount: null } : s)));
   };
 
   // Завершити інвентаризацію: відправляємо дані на бек, але навіть при помилці локально вважаємо сесію завершеною, щоб не блокувати UI
   const handleFinish = async () => {
     setShowConfirmFinish(false);
     // Якщо це ревізована (admin) сесія і є непідтверджені позиції — спершу просимо підтвердження
-    const unconfirmed = [...products, ...materials].filter((it) => !it.checked && (it.actualCount !== null || it.boxCount !== null));
+    const unconfirmed = [...products, ...materials, ...sets].filter((it) => !it.checked && (it.actualCount !== null || it.boxCount !== null));
     if (unconfirmed.length > 0 && sessionStatus === 'revising') {
       pendingUnconfirmedActionRef.current = 'finish';
       setShowConfirmSaveUnconfirmed(true);
@@ -665,7 +789,8 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       const filterUnconfirmed = (arr: InventoryProduct[]) => arr.filter((it) => !( !it.checked && (it.actualCount !== null || it.boxCount !== null) ));
       const productsToSave = filterUnconfirmed(products);
       const materialsToSave = filterUnconfirmed(materials);
-      const items = serializeItems(productsToSave, materialsToSave);
+      const setsToSave = filterUnconfirmed(sets);
+      const items = serializeItems(productsToSave, materialsToSave, setsToSave);
       if (sessionId) {
         const res = await fetch(`/api/warehouse/inventory/draft/${sessionId}`, {
           method: 'PUT',
@@ -693,9 +818,10 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       // Оновлюємо локальний стан так, щоб він відповідав тому, що зберегли (видаляємо непідтверджені позиції)
       setProducts(productsToSave);
       setMaterials(materialsToSave);
+      setSets(setsToSave);
       // Оновлюємо snapshot лише user-editable полів — записано чистий стан (без непідтверджених)
       setLastSavedSnapshot(JSON.stringify(
-        [...productsToSave, ...materialsToSave].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+        [...productsToSave, ...materialsToSave, ...setsToSave].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
       ));
       // Закриваємо модальне вікно попередження, якщо воно було відкрито
       setShowConfirmSaveUnconfirmed(false);
@@ -727,11 +853,11 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setSearchQuery('');
     // Поновлюємо каталоги товарів/матеріалів для чистого стану
     try {
-      await Promise.all([loadProducts(), loadMaterials()]);
+      await Promise.all([loadProducts(), loadMaterials(), loadSets()]);
     } catch {
       // ігноруємо помилки при оновленні списків
     }
-  }, [loadProducts, loadMaterials]);
+  }, [loadProducts, loadMaterials, loadSets]);
 
   // ---------------------------------------------------------------------------
   // Оновлення залишків "За обліком" з Dilovod на вказану дату
@@ -749,10 +875,12 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
 
     setIsRefreshingBalances(true);
     try {
+      const allSets = sets.length > 0 ? sets : [];
       const skus = [
         ...allProducts.map(p => p.sku),
         ...allMaterials.map(m => m.sku),
-      ].join(',');
+        ...allSets.map(s => s.sku),
+      ].filter(Boolean).join(',');
 
       const url = new URL('/api/warehouse/stock-snapshot', window.location.origin);
       url.searchParams.set('skus', skus);
@@ -815,8 +943,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   // ---------------------------------------------------------------------------
 
   const handleAdminLoadSession = useCallback(async (session: InventorySession): Promise<void> => {
-    const freshProducts = await loadProducts();
-    const freshMaterials = await loadMaterials();
+    const [freshProducts, freshMaterials, freshSets] = await Promise.all([loadProducts(), loadMaterials(), loadSets()]);
 
     const savedItems: Array<{ type?: string; id: string; actualCount: number | null; boxCount: number | null; checked: boolean }>
       = session.items as any;
@@ -825,6 +952,9 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     );
     const savedMaterialsMap = new Map(
       savedItems.filter((i) => i.type === 'material').map((i) => [i.id, i]),
+    );
+    const savedSetsMap = new Map(
+      savedItems.filter((i) => i.type === 'set').map((i) => [i.id, i]),
     );
 
     const mergedProducts = freshProducts.map((p) => {
@@ -838,8 +968,15 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       return { ...m, actualCount: saved.actualCount, boxCount: saved.boxCount, checked: saved.checked };
     });
 
+    const mergedSets = freshSets.map((s) => {
+      const saved = savedSetsMap.get(s.id);
+      if (!saved) return s;
+      return { ...s, actualCount: saved.actualCount, boxCount: saved.boxCount, checked: saved.checked };
+    });
+
     setProducts(mergedProducts);
     setMaterials(mergedMaterials);
+    setSets(mergedSets);
     setSessionId(Number(session.id));
     // Remember original status (to know if we're editing a completed session)
     setSessionOriginalStatus(session.status);
@@ -857,7 +994,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setSessionDate(session.inventoryDate ?? session.createdAt ?? null);
     setComment(session.comment ?? '');
     setLastSavedSnapshot(JSON.stringify(
-      [...mergedProducts, ...mergedMaterials].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+      [...mergedProducts, ...mergedMaterials, ...mergedSets].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
     ));
     setActiveTab('current');
     // Відкриваємо всі непідтверджені позиції після завантаження сесії адміністратором
@@ -865,12 +1002,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     const unconfirmedMaterialIds = mergedMaterials.filter((m) => !m.checked && (m.actualCount !== null || m.boxCount !== null)).map(m => m.id);
     setOpenProductIds(new Set(unconfirmedProductIds));
     setOpenMaterialIds(new Set(unconfirmedMaterialIds));
+    const unconfirmedSetIds = mergedSets.filter((s) => !s.checked && (s.actualCount !== null || s.boxCount !== null)).map(s => s.id);
+    setOpenSetIds(new Set(unconfirmedSetIds));
     // Завантажуємо залишки за обліком на дату сесії (через ref, щоб уникнути TDZ)
     const dateToUse = new Date(session.inventoryDate ?? session.createdAt);
     if (!isNaN(dateToUse.getTime())) {
       await refreshSystemBalancesRef.current(dateToUse, mergedProducts, mergedMaterials);
     }
-  }, [loadProducts, loadMaterials]);
+  }, [loadProducts, loadMaterials, loadSets]);
 
   // ---------------------------------------------------------------------------
   // Адмін: відновити архівну (removed) сесію або видалити остаточно
@@ -909,11 +1048,13 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     selectedCategory, setSelectedCategory, categoryOptions,
     sortBy, setSortBy, sortDirection, setSortDirection,
     materials, materialsLoading, materialsError, filteredMaterials, openMaterialId, openMaterialIds,
+    sets, setsLoading, setsError, filteredSets, openSetId, openSetIds,
     searchQuery, setSearchQuery,
     checkedCount, totalCount, progressPercent,
     checkedMaterialsCount, totalMaterialsCount, materialsProgressPercent,
+    checkedSetsCount, totalSetsCount, setsProgressPercent,
     totalCheckedAll, totalAll, totalProgressPercent,
-    deviationCount, deviationMaterialsCount,
+    deviationCount, deviationMaterialsCount, deviationSetsCount,
     showConfirmFinish, setShowConfirmFinish,
     showConfirmCancel, setShowConfirmCancel,
     showCommentModal, setShowCommentModal,
@@ -923,9 +1064,12 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     loadProducts, loadMaterials, loadHistory,
     loadArchive,
     handleStartSession,
+    loadSets,
     handleToggleProduct, handleToggleMaterial,
-    handleEnterPressProduct, handleEnterPressMaterial,
+    handleToggleSet,
+    handleEnterPressProduct, handleEnterPressMaterial, handleEnterPressSet,
     handleProductChange, handleCheckProduct,
+    handleSetChange, handleCheckSet,
     handleMaterialChange, handleCheckMaterial,
     handleFinish, handleReset, handleSaveDraft, handleConfirmSaveDraft, handleConfirmUnconfirmedAction, handleSaveComment,
     handleResetItemValues,

@@ -4,10 +4,14 @@ import useWarehouseParams from '../shared/useWarehouseParams';
 
 export default function useReleaseSets() {
   const returns = useWarehouseReturns();
-  const { storages, selectedStorage, setSelectedStorage, selectedStorageName } = useWarehouseParams({ returns });
+  const { storages, selectedStorage, setSelectedStorage, selectedStorageName, defaultSmallStorageId } = useWarehouseParams({ returns });
   const [items, setItems] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [archiveSessions, setArchiveSessions] = useState<any[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+
+  const isDeletedRelease = (record: any): boolean => String(record?.status ?? '').toLowerCase() === 'deleted';
 
   // useWarehouseParams handles directories loading and selected storage initialization
   useEffect(() => {
@@ -16,6 +20,10 @@ export default function useReleaseSets() {
   }, []);
 
   const addSet = async (setItem: any) => {
+    if (items.length > 0) {
+      return;
+    }
+
     const id = crypto.randomUUID?.() ?? `${setItem.sku}-${Date.now()}`;
     const newItem = {
       id,
@@ -25,6 +33,22 @@ export default function useReleaseSets() {
       componentsSnapshot: setItem.componentsSnapshot ?? setItem.set ?? [],
     };
     setItems((s) => [...s, newItem]);
+  };
+
+  const buildSetRemark = (item: any): string | null => {
+    if (!item) {
+      return null;
+    }
+
+    const quantity = Number(item.quantity ?? 0);
+    const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    const setName = String(item.name || item.title || item.setSku || item.sku || '').trim();
+
+    if (!setName) {
+      return null;
+    }
+
+    return `${safeQuantity} х ${setName}`;
   };
 
   const updateItem = (id: string, patch: Partial<any>) => {
@@ -50,6 +74,7 @@ export default function useReleaseSets() {
       date: returns.returnDate ?? null,
       firmId: safeFirmId(returns.receiveFirmId),
       comment: returns.comment ?? null,
+      remark: buildSetRemark(items[0]),
       dryRun: true,
     };
     const resp = await fetch('/api/warehouse/releases/send', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -58,25 +83,56 @@ export default function useReleaseSets() {
 
   const requestSend = async () => {
     try {
+      const currentItems = items.map((it) => ({
+        set_sku: it.setSku,
+        quantity: it.quantity,
+        components_snapshot: it.componentsSnapshot,
+      }));
+      const currentRemark = buildSetRemark(items[0]);
       const safeFirmId = (id: any) => {
         if (id == null) return undefined;
         return id;
       };
       const body = {
-        items: items.map((it) => ({ set_sku: it.setSku, quantity: it.quantity, components_snapshot: it.componentsSnapshot })),
+        items: currentItems,
         storageId: selectedStorage,
         date: returns.returnDate ?? null,
         firmId: safeFirmId(returns.receiveFirmId),
         comment: returns.comment ?? null,
+        remark: currentRemark,
         dryRun: false,
         status: 'created',
       };
       const resp = await fetch('/api/warehouse/releases/send', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const json = await resp.json().catch(() => ({}));
       if (resp.ok && json.success) {
+        const historyComment = [currentRemark, returns.comment ? String(returns.comment).trim() : ''].filter(Boolean).join(' | ') || null;
+        const historyResp = await fetch('/api/warehouse/releases', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: currentItems,
+            storageId: selectedStorage,
+            firmId: safeFirmId(returns.receiveFirmId),
+            comment: historyComment,
+            remark: currentRemark,
+            status: 'created',
+            dilovodDocId: json.dilovodDocId ?? null,
+          }),
+        });
+        const historyJson = await historyResp.json().catch(() => ({}));
+
         setItems([]);
-        await loadHistory();
-        return json;
+        if (historyResp.ok && historyJson.success) {
+          await loadHistory();
+        }
+
+        return {
+          ...json,
+          historySaved: Boolean(historyResp.ok && historyJson.success),
+          historyResponse: historyJson,
+        };
       }
       return json;
     } catch (e) {
@@ -89,7 +145,11 @@ export default function useReleaseSets() {
     try {
       const resp = await fetch('/api/warehouse/releases', { credentials: 'include' });
       const json = await resp.json().catch(() => ({}));
-      if (resp.ok && json.success) setHistory(Array.isArray(json.data) ? json.data : []);
+      if (resp.ok && json.success) {
+        const records = Array.isArray(json.data) ? json.data : [];
+        setHistory(records.filter((record: any) => !isDeletedRelease(record)));
+        setArchiveSessions(records.filter((record: any) => isDeletedRelease(record)));
+      }
     } catch (e) {
       // ignore
     } finally {
@@ -97,9 +157,27 @@ export default function useReleaseSets() {
     }
   };
 
-  const deleteRecord = async (id: number) => {
-    const resp = await fetch(`/api/warehouse/releases/${encodeURIComponent(String(id))}`, { method: 'DELETE', credentials: 'include' });
-    if (resp.ok) await loadHistory();
+  const loadArchive = async () => {
+    setArchiveLoading(true);
+    try {
+      const resp = await fetch('/api/warehouse/releases', { credentials: 'include' });
+      const json = await resp.json().catch(() => ({}));
+      if (resp.ok && json.success) {
+        const records = Array.isArray(json.data) ? json.data : [];
+        setArchiveSessions(records.filter((record: any) => isDeletedRelease(record)));
+      }
+    } catch (e) {
+      // ignore
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
+  const deleteRecord = async (id: number, forceLocal = false) => {
+    const url = forceLocal ? `/api/warehouse/releases/${encodeURIComponent(String(id))}?forceLocal=true` : `/api/warehouse/releases/${encodeURIComponent(String(id))}`;
+    const resp = await fetch(url, { method: 'DELETE', credentials: 'include' });
+    const json = await resp.json().catch(() => ({}));
+    return { ok: resp.ok, status: resp.status, json };
   };
 
   useEffect(() => { void loadHistory(); }, []);
@@ -108,18 +186,23 @@ export default function useReleaseSets() {
     returns,
     items,
     addSet,
+    buildSetRemark,
     updateItem,
     removeItem,
     clearAll,
     storages,
     selectedStorage,
     selectedStorageName,
+    defaultSmallStorageId,
     setSelectedStorage,
     buildPreview,
     requestSend,
     history,
     historyLoading,
+    archiveSessions,
+    archiveLoading,
     loadHistory,
+    loadArchive,
     deleteRecord,
   };
 }

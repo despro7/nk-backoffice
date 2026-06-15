@@ -175,13 +175,15 @@ const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: 
 interface InventorySummaryTableProps {
   products: InventoryProduct[];
   materials: InventoryProduct[];
+  sets?: InventoryProduct[];
 }
 
-export const InventorySummaryTable = ({ products, materials }: InventorySummaryTableProps) => {
+export const InventorySummaryTable = ({ products, materials, sets = [] }: InventorySummaryTableProps) => {
   const hasProducts = products.some((p) => p.checked || totalPortions(p) !== null);
   const hasMaterials = materials.some((m) => m.checked || totalPortions(m) !== null);
+  const hasSets = Array.isArray(sets) && sets.some((s) => s.checked || totalPortions(s) !== null);
 
-  if (!hasProducts && !hasMaterials) return null;
+  if (!hasProducts && !hasMaterials && !hasSets) return null;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-6">
@@ -196,6 +198,14 @@ export const InventorySummaryTable = ({ products, materials }: InventorySummaryT
         headerColorClass="bg-blue-50 text-blue-900"
         items={products}
         rowKeyPrefix="product"
+      />
+
+      <SummarySection
+        title="Комплекти"
+        icon="layers"
+        headerColorClass="bg-violet-50 text-violet-900"
+        items={sets}
+        rowKeyPrefix="set"
       />
 
       <SummarySection

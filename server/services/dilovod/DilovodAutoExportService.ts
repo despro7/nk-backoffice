@@ -12,6 +12,7 @@
 import { PrismaClient } from '@prisma/client';
 import { dilovodService } from './index.js';
 import { cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from './DilovodUtils.js';
+import { acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock } from './DilovodShipmentLockService.js';
 import type { DilovodSettings } from '../../../shared/types/dilovod.js';
 
 const prisma = new PrismaClient();
@@ -203,6 +204,7 @@ export class DilovodAutoExportService {
     initiatedBy: string
   ): Promise<AutoExportResult> {
     const orderId = String(internalOrderId);
+    let shipmentLockToken: string | null = null;
 
     // Отримуємо orderNumber заздалегідь — щоб він був доступний і в catch-блоці
     const orderNumberPrefetch = await prisma.order.findUnique({
@@ -433,6 +435,16 @@ export class DilovodAutoExportService {
         return { triggered: false, success: false, error: 'No baseDoc' };
       }
 
+      const lockResult = await acquireSaleShipmentLock(internalOrderId);
+      if (lockResult.status !== 'acquired' || !lockResult.lockToken) {
+        console.log(
+          `⏭️ [AutoExport/sale] Shipment lock для ${orderNum} не отримано (${lockResult.status}), пропускаємо`
+        );
+        return { triggered: false, success: true };
+      }
+
+      shipmentLockToken = lockResult.lockToken;
+
       // Early-exit 3: перевірка в Dilovod API (захист від дублів)
       try {
         const { dilovodService } = await import('./DilovodService.js');
@@ -448,13 +460,7 @@ export class DilovodAutoExportService {
             `📝 [AutoExport/sale] EARLY-EXIT 3: ПЕРЕД записом дати від Dilovod API: orderId=${internalOrderId}, orderNum=${orderNum}, saleDoc.date=${saleDoc.date}, saleCount=${saleCount}`
           );
 
-          await prisma.order.update({
-            where: { id: internalOrderId },
-            data: {
-              dilovodSaleExportDate: new Date(saleDoc.date || new Date()).toISOString(),
-              dilovodSaleDocsCount: saleCount
-            }
-          });
+          await completeSaleShipmentLock(internalOrderId, shipmentLockToken, new Date(saleDoc.date || new Date()).toISOString(), saleCount);
 
           console.log(
             `✅ [AutoExport/sale] EARLY-EXIT 3: ПІСЛЯ запису дати від Dilovod API: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodSaleExportDate=${new Date(saleDoc.date || new Date()).toISOString()}`
@@ -498,10 +504,10 @@ export class DilovodAutoExportService {
           `📝 [AutoExport/sale] ПЕРЕД записом дати: orderId=${internalOrderId}, orderNum=${orderNum}, isError=${isError}, exportResult.id=${exportResult?.dilovodDocId}, dateToWrite=${shipmentDate}`
         );
 
-        await prisma.order.update({
-          where: { id: internalOrderId },
-          data: { dilovodSaleExportDate: shipmentDate }
-        });
+        const completed = await completeSaleShipmentLock(internalOrderId, shipmentLockToken, shipmentDate);
+        if (!completed) {
+          console.warn(`⚠️ [AutoExport/sale] Не вдалося зафіксувати shipment lock для orderId=${internalOrderId} після успішного export`);
+        }
 
         console.log(
           `✅ [AutoExport/sale] ПІСЛЯ запису дати успішно: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodSaleExportDate=${shipmentDate}`
@@ -512,6 +518,9 @@ export class DilovodAutoExportService {
           `✅ [AutoExport/sale] Відвантаження для замовлення ${orderNum} успішно створено (дата: ${dateSource})`
         );
       } else {
+        if (shipmentLockToken) {
+          await releaseSaleShipmentLock(internalOrderId, shipmentLockToken);
+        }
         console.log(
           `❌ [AutoExport/sale] ПОМИЛКА відвантаження замовлення ${orderNum}: isError=${isError}, exportResult?.id=${exportResult?.dilovodDocId}, errorMessage=${errorMessage}`
         );
@@ -560,6 +569,10 @@ export class DilovodAutoExportService {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
       console.log(`❌ [AutoExport/sale] Помилка для замовлення ${orderNumForLog}: ${errorMessage}`);
+
+      if (shipmentLockToken) {
+        await releaseSaleShipmentLock(internalOrderId, shipmentLockToken);
+      }
 
       try {
         const { dilovodService } = await import('./DilovodService.js');

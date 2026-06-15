@@ -104,7 +104,7 @@ export const statusClass: Partial<Record<InventoryStatus, string>> = {
 // ---------------------------------------------------------------------------
 
 export type SerializedInventoryItem = {
-  type: 'product' | 'material';
+  type: 'product' | 'material' | 'set';
   id: string;
   sku: string;
   name: string;
@@ -117,11 +117,18 @@ export type SerializedInventoryItem = {
   categoryName?: string;
 };
 
-export const serializeItems = (prods: InventoryProduct[], mats: InventoryProduct[]): SerializedInventoryItem[] => [
+export const serializeItems = (
+  prods: InventoryProduct[],
+  mats: InventoryProduct[],
+  sets?: InventoryProduct[],
+): SerializedInventoryItem[] => [
   ...prods.map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
     type: 'product' as const, id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
   })),
   ...mats.map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
     type: 'material' as const, id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
+  })),
+  ...(sets ?? []).map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
+    type: 'set' as const, id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
   })),
 ];

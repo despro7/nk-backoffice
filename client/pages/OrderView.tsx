@@ -36,9 +36,11 @@ export default function OrderView() {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [expandedItems, setExpandedItems] = useState<OrderChecklistItem[]>([]);
+  const [monolithicDisplayControlItems, setMonolithicDisplayControlItems] = useState<OrderChecklistItem[]>([]);
   const [expandingSets, setExpandingSets] = useState(false);
   const [checklistItems, setChecklistItems] = useState<OrderChecklistItem[]>([]);
   const [monolithicCategoryIds, setMonolithicCategoryIds] = useState<number[]>([]);
+  const [monolithicDisplayOverridesByOrder, setMonolithicDisplayOverridesByOrder] = useState<Record<string, Record<string, boolean>>>({});
 
   // Стан коробок
   const [selectedBoxes, setSelectedBoxes] = useState<any[]>([]);
@@ -70,6 +72,108 @@ export default function OrderView() {
   const effectiveBoxInitialStatus = (assemblySettings.mode === 'no_scales' && boxInitialStatus === 'pending')
     ? 'done' as const
     : boxInitialStatus;
+
+  const orderAssemblyKey = externalId || '';
+  const currentMonolithicDisplayOverrides = monolithicDisplayOverridesByOrder[orderAssemblyKey] || {};
+
+  const isOverrideEligibleMonolithic = useCallback((item: OrderChecklistItem): boolean => {
+    return item.type === 'product' && typeof item.portionsPerItem === 'number' && item.portionsPerItem > 16;
+  }, []);
+
+  const getAssemblyItemKey = useCallback((item: OrderChecklistItem): string => {
+    return item.sku || item.id;
+  }, []);
+
+  const getForcedRegularSetSkus = useCallback((overrides: Record<string, boolean> = currentMonolithicDisplayOverrides): string[] => {
+    return Object.entries(overrides)
+      .filter(([, enabled]) => enabled === false)
+      .map(([sku]) => sku);
+  }, [currentMonolithicDisplayOverrides]);
+
+  const shipmentPayloadData = useMemo(() => {
+    const bySku = expandedItems.reduce<Record<string, { accGood: string; quantity: number }>>((accumulator, item) => {
+      if (item.type !== 'product' || !item.sku || !item.dynamicMonolithic) {
+        return accumulator;
+      }
+
+      const quantity = Number(item.quantity) || 0;
+      if (quantity <= 0) {
+        return accumulator;
+      }
+
+      const existing = accumulator[item.sku] ?? { accGood: '1119000000001079', quantity: 0 };
+      accumulator[item.sku] = {
+        accGood: '1119000000001079',
+        quantity: existing.quantity + quantity,
+      };
+      return accumulator;
+    }, {});
+
+    return Object.keys(bySku).length > 0 ? { shipment: { bySku } } : null;
+  }, [expandedItems]);
+
+  const rebuildChecklistItems = useCallback((baseItems: OrderChecklistItem[], boxes: any[] = selectedBoxes, readyToShip: boolean = isReadyToShip) => {
+    const itemsWithoutBoxes = baseItems.filter(item => item.type !== 'box');
+
+    if (boxes.length > 0) {
+      const combined = combineBoxesWithItems(boxes, itemsWithoutBoxes, readyToShip, effectiveBoxInitialStatus);
+      setChecklistItems(combined.checklistItems);
+      setUnallocatedPortions(combined.unallocatedPortions);
+      setUnallocatedItems(combined.unallocatedItems);
+      return combined.checklistItems;
+    }
+
+    setChecklistItems(baseItems);
+    setUnallocatedPortions(0);
+    setUnallocatedItems([]);
+    return baseItems;
+  }, [effectiveBoxInitialStatus, isReadyToShip, selectedBoxes]);
+
+  const applyExpandedAssembly = useCallback((expanded: OrderChecklistItem[], orderStatus: any, boxes: any[] = selectedBoxes) => {
+    const orderIsReadyToShip = orderStatus >= '3';
+    setExpandedItems(expanded);
+    setIsReadyToShip(orderIsReadyToShip);
+
+    let processedItems = expanded;
+    if (orderIsReadyToShip) {
+      LoggingService.orderAssemblyLog('📦 Замовлення має статус "На відправку" або "Відправлено" - автоматично відзначаємо як зібране');
+      processedItems = expanded.map(item => ({
+        ...item,
+        status: 'done' as const
+      }));
+    }
+
+    const hasOnlyMonolithicProducts = processedItems.some(item => item.type === 'product')
+      && processedItems.filter(item => item.type === 'product').every(item => typeof item.portionsPerItem === 'number' && item.portionsPerItem > 16);
+
+    if (hasOnlyMonolithicProducts) {
+      setSelectedBoxes([]);
+      setChecklistItems(processedItems.filter(item => item.type !== 'box'));
+      setUnallocatedPortions(0);
+      setUnallocatedItems([]);
+      return;
+    }
+
+    if (boxes.length > 0) {
+      const itemsWithoutBoxes = processedItems.filter(item => item.type !== 'box');
+      const combined = combineBoxesWithItems(boxes, itemsWithoutBoxes, orderIsReadyToShip, effectiveBoxInitialStatus);
+
+      if (combined && combined.checklistItems.length > 0) {
+        setChecklistItems(combined.checklistItems);
+        setUnallocatedPortions(combined.unallocatedPortions);
+        setUnallocatedItems(combined.unallocatedItems);
+      } else {
+        setChecklistItems(processedItems);
+        setUnallocatedPortions(0);
+        setUnallocatedItems([]);
+      }
+      return;
+    }
+
+    setChecklistItems(processedItems);
+    setUnallocatedPortions(0);
+    setUnallocatedItems([]);
+  }, [effectiveBoxInitialStatus, selectedBoxes]);
 
   const {
     handlePrintReceipt,
@@ -127,6 +231,7 @@ export default function OrderView() {
     nextOrderExternalId: order?.nextOrderExternalId,
     checklistItems,
     orderStatus: order?.status,
+    shipmentPayloadData,
     onUpdateOrderStatus: (status, statusText) => {
       // Оновлюємо локальний стан замовлення без очікування відповіді від сервера
       setOrder(prev => prev ? { ...prev, status, statusText } : null);
@@ -241,15 +346,30 @@ export default function OrderView() {
     setBoxesTotalWeight(totalWeight);
     setActiveBoxIndex(0);
 
-    // Використовуємо checklistItems якщо вони є (зі збереженням статусів), інакше expandedItems
     const currentItems = checklistItems.length > 0 ? checklistItems : expandedItems;
-    const itemsWithoutBoxes = currentItems.filter(item => item.type !== 'box');
-    const combined = combineBoxesWithItems(updatedBoxes, itemsWithoutBoxes, isReadyToShip, effectiveBoxInitialStatus);
+    rebuildChecklistItems(currentItems, updatedBoxes, isReadyToShip);
+  }, [expandedItems, checklistItems, isReadyToShip, rebuildChecklistItems]);
 
-    setChecklistItems(combined.checklistItems);
-    setUnallocatedPortions(combined.unallocatedPortions);
-    setUnallocatedItems(combined.unallocatedItems);
-  }, [expandedItems, checklistItems, isReadyToShip]);
+  const handleMonolithicDisplayChange = useCallback((itemKey: string, enabled: boolean) => {
+    if (!orderAssemblyKey) return;
+
+    setMonolithicDisplayOverridesByOrder(prev => {
+      const orderOverrides = prev[orderAssemblyKey] || {};
+      const nextOrderOverrides = {
+        ...orderOverrides,
+        [itemKey]: enabled,
+      };
+
+      const nextOverridesByOrder = {
+        ...prev,
+        [orderAssemblyKey]: nextOrderOverrides,
+      };
+
+      void fetchOrderDetails(externalId || '', monolithicCategoryIds, nextOrderOverrides, false);
+
+      return nextOverridesByOrder;
+    });
+  }, [externalId, monolithicCategoryIds, orderAssemblyKey]);
 
   // Функція для встановлення статусу awaiting_confirmation для коробки
   const setBoxAwaitingConfirmation = useCallback((boxId: string) => {
@@ -297,7 +417,7 @@ export default function OrderView() {
   }, [apiCall, externalId, monolithicCategoryIds]);
 
   // Завантажуємо деталі замовлення
-  const fetchOrderDetails = async (id: string, monolithicIds?: number[]) => {
+  const fetchOrderDetails = async (id: string, monolithicIds?: number[], setModeOverrides: Record<string, boolean> = currentMonolithicDisplayOverrides, updateControlItems: boolean = true) => {
     try {
       setLoading(true);
       setChecklistItems([]);
@@ -310,38 +430,21 @@ export default function OrderView() {
 
         setExpandingSets(true);
         try {
-          const expanded = await expandProductSets(data.data.items, apiCall, monolithicIds || monolithicCategoryIds);
+          const forcedRegularSetSkus = getForcedRegularSetSkus(setModeOverrides);
+          const expanded = await expandProductSets(
+            data.data.items,
+            apiCall,
+            monolithicIds || monolithicCategoryIds,
+            forcedRegularSetSkus,
+          );
           setExpandedItems(expanded);
-
-          const orderIsReadyToShip = data.data.status >= '3';
-          setIsReadyToShip(orderIsReadyToShip);
-          let processedItems = expanded;
-
-          if (orderIsReadyToShip) {
-            LoggingService.orderAssemblyLog('📦 Замовлення має статус "На відправку" або "Відправлено" - автоматично відзначаємо як зібране');
-            processedItems = expanded.map(item => ({
-              ...item,
-              status: 'done' as const  // Всі елементи (і коробки, і товари) мають статус 'done'
-            }));
-            setShowPrintTTN(true);
-            setWasOpenedAsReady(true); // Позначаємо, що замовлення було відкрите вже зібраним
+          if (updateControlItems) {
+            setMonolithicDisplayControlItems(expanded.filter(item => item.type === 'product' && typeof item.portionsPerItem === 'number' && item.portionsPerItem > 16));
           }
-
-          if (selectedBoxes.length > 0) {
-            const itemsWithoutBoxes = processedItems.filter(item => item.type !== 'box');
-            const combined = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, orderIsReadyToShip, effectiveBoxInitialStatus);
-
-            if (combined && combined.checklistItems.length > 0) {
-              setChecklistItems(combined.checklistItems);
-              setUnallocatedPortions(combined.unallocatedPortions);
-              setUnallocatedItems(combined.unallocatedItems);
-            } else {
-              setChecklistItems(processedItems);
-              setUnallocatedPortions(0);
-              setUnallocatedItems([]);
-            }
-          } else {
-            setChecklistItems(processedItems);
+          applyExpandedAssembly(expanded, data.data.status, selectedBoxes);
+          if (data.data.status >= '3') {
+            setShowPrintTTN(true);
+            setWasOpenedAsReady(true);
           }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Невідома помилка при завантаженні товарів';
@@ -363,25 +466,10 @@ export default function OrderView() {
           }));
 
           setExpandedItems(fallbackItems);
-
-          if (selectedBoxes.length > 0) {
-            const itemsWithoutBoxes = fallbackItems.filter(item => item.type !== 'box');
-            const combined = combineBoxesWithItems(selectedBoxes, itemsWithoutBoxes, isReadyToShipFallback, effectiveBoxInitialStatus);
-
-            if (combined && combined.checklistItems.length > 0) {
-              setChecklistItems(combined.checklistItems);
-              setUnallocatedPortions(combined.unallocatedPortions);
-              setUnallocatedItems(combined.unallocatedItems);
-            } else {
-              setChecklistItems(fallbackItems);
-              setUnallocatedPortions(0);
-              setUnallocatedItems([]);
-            }
-          } else {
-            setChecklistItems(fallbackItems);
-            setUnallocatedPortions(0);
-            setUnallocatedItems([]);
+          if (updateControlItems) {
+            setMonolithicDisplayControlItems(fallbackItems.filter(item => item.type === 'product' && typeof item.portionsPerItem === 'number' && item.portionsPerItem > 16));
           }
+          applyExpandedAssembly(fallbackItems, isReadyToShipFallback ? '3' : '0', selectedBoxes);
 
           if (isReadyToShipFallback) {
             setShowPrintTTN(true);
@@ -458,22 +546,26 @@ export default function OrderView() {
   }, [order, externalId]);
 
   // Підготовлюємо дані для комплектації
+  const getItemPortions = (item: OrderChecklistItem): number => {
+    if (item.portionsPerItem) {
+      return item.quantity * item.portionsPerItem;
+    }
+
+    return item.quantity;
+  };
+
+  const assemblyItems = useMemo(() => expandedItems, [expandedItems]);
+
   const totalPortions = useMemo(() => {
-    const result = expandedItems.reduce((sum, item) => {
-      // Для монолітних комплектів множимо quantity на portionsPerItem
-      const portions = item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity;
-      return sum + portions;
-    }, 0);
-    
-    return result;
-  }, [expandedItems]);
+    return assemblyItems.reduce((sum, item) => sum + getItemPortions(item), 0);
+  }, [assemblyItems]);
   
   // Обчислюємо середню вагу порції для більш точного розподілу по коробках
   const averagePortionWeight = useMemo(() => {
-    if (expandedItems.length === 0 || totalPortions === 0) return 0.33;
-    const totalWeight = expandedItems.reduce((sum, item) => sum + item.expectedWeight, 0);
+    if (assemblyItems.length === 0 || totalPortions === 0) return 0.33;
+    const totalWeight = assemblyItems.reduce((sum, item) => sum + item.expectedWeight, 0);
     return totalWeight / totalPortions;
-  }, [expandedItems, totalPortions]);
+  }, [assemblyItems, totalPortions]);
 
   const orderForAssembly = {
     id: externalId,
@@ -482,7 +574,7 @@ export default function OrderView() {
       trackingId: order?.ttn || 'Не вказано',
       provider: order?.provider || 'novaposhta',
     },
-    items: expandedItems,
+    items: assemblyItems,
     totalPortions: totalPortions,
   };
 
@@ -648,6 +740,7 @@ export default function OrderView() {
           isWeightWidgetPaused={isWeightWidgetPaused}
           pollingMode={pollingMode}
           handlePollingModeChange={handlePollingModeChange}
+          assemblyMode={assemblySettings.mode ?? 'standard'}
           handleBoxesChange={handleBoxesChange}
           activeBoxIndex={activeBoxIndex}
           setActiveBoxIndex={setActiveBoxIndex}
@@ -655,11 +748,13 @@ export default function OrderView() {
           expandingSets={expandingSets}
           onPrintTTN={handlePrintTTNCallback}
           order={order}
-          externalId={externalId || ''}
           onOrderRefresh={handleOrderRefresh}
           onPrintReceipt={handlePrintReceipt}
           onViewReceipt={handleViewReceipt}
           onBarcodeScan={handleBarcodeScan}
+          onMonolithicDisplayChange={handleMonolithicDisplayChange}
+          monolithicDisplayItems={monolithicDisplayControlItems}
+          monolithicDisplayStates={currentMonolithicDisplayOverrides}
         />
       </div>
 

@@ -21,6 +21,7 @@ export interface OrderBaseData {
   provider?: string;
   pricinaZnizki?: string;
   sajt?: string;
+  payloadData?: any;
   source?: string; // Додаткове поле для відстеження джерела імпорту
 }
 
@@ -178,6 +179,7 @@ export class OrderDatabaseService {
           totalPrice: data.totalPrice,
           pricinaZnizki: data.pricinaZnizki,
           sajt: data.sajt,
+          payloadData: data.payloadData,
           updatedAt: data.rawData?.updateAt ? new Date(data.rawData.updateAt) : new Date()
         }
       });
@@ -230,6 +232,7 @@ export class OrderDatabaseService {
       if (data.paymentMethod !== undefined) updateData.paymentMethod = data.paymentMethod;
       if (data.pricinaZnizki !== undefined && data.pricinaZnizki !== null) updateData.pricinaZnizki = data.pricinaZnizki;
       if (data.sajt !== undefined && data.sajt !== null) updateData.sajt = data.sajt;
+      if (data.payloadData !== undefined) updateData.payloadData = data.payloadData;
 
       // Оновлюємо items якщо вони передані
       if (data.items) {

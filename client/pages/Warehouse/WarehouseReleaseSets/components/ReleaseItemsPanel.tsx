@@ -2,14 +2,23 @@ import { useMemo, useEffect, useState } from 'react';
 import { Button, Card, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { StepperInput } from '../../shared/StepperInput';
+import { HistoryItemsTable, type HistoryItemsTableColumn } from '../../shared/HistoryItemsTable';
 
-interface Props { items: any[]; onChange: (id: string, patch: Partial<any>) => void; onRemove: (id: string) => void; selectedStorage?: string | null; returns?: any }
+interface Props {
+  items: any[];
+  onChange: (id: string, patch: Partial<any>) => void;
+  onRemove: (id: string) => void;
+  selectedStorage?: string | null;
+  smallStorageId?: string | null;
+  returns?: any;
+}
 
-export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedStorage, returns }: Props) {
+export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedStorage, smallStorageId, returns }: Props) {
   const [namesMap, setNamesMap] = useState<Record<string, string>>({});
   const [isSetMap, setIsSetMap] = useState<Record<string, boolean>>({});
   const [setItemsMap, setSetItemsMap] = useState<Record<string, any[]>>({});
   const [aggregatedServer, setAggregatedServer] = useState<Record<string, { name?: string; sku: string; total: number }> | null>(null);
+  const [smallStorageQtyMap, setSmallStorageQtyMap] = useState<Record<string, number | null>>({});
   const [aggLoading, setAggLoading] = useState(false);
 
   if (!items || items.length === 0) return null;
@@ -115,6 +124,128 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
     }
     return map;
   }, [items, /* include namesMap to update aggregates when names are fetched */ namesMap, aggregatedServer]);
+
+  const aggregatedRows = useMemo(() => {
+    return Object.values(aggregated)
+      .map((row) => ({
+        ...row,
+        smallStorageQty: smallStorageQtyMap[row.sku] ?? null,
+      }))
+      .sort((a, b) => String(a.name || namesMap[a.sku] || a.sku).localeCompare(String(b.name || namesMap[b.sku] || b.sku), 'uk'));
+  }, [aggregated, namesMap, smallStorageQtyMap]);
+
+  const aggregatedSkuSignature = useMemo(() => {
+    return Object.keys(aggregated).sort().join('|');
+  }, [aggregated]);
+
+  const totalToRelease = useMemo(() => {
+    return aggregatedRows.reduce((sum, row) => sum + Number(row.total ?? 0), 0);
+  }, [aggregatedRows]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const skus = Object.keys(aggregated).sort();
+    if (skus.length === 0) {
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const skusParam = skus.join(',');
+        const firmId = returns?.receiveFirmId ?? undefined;
+        const encodedLen =
+          encodeURIComponent(skusParam).length +
+          (firmId ? encodeURIComponent(String(firmId)).length : 0);
+
+        let response: Response;
+        if (encodedLen > 2000) {
+          response = await fetch('/api/warehouse/stock-snapshot', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ skus, firmId }),
+          });
+        } else {
+          const url = new URL('/api/warehouse/stock-snapshot', window.location.origin);
+          url.searchParams.set('skus', skusParam);
+          if (firmId) url.searchParams.set('firmId', String(firmId));
+          response = await fetch(url.toString(), { credentials: 'include' });
+        }
+
+        if (!response.ok) return;
+
+        const json = await response.json().catch(() => null);
+        if (!json || !json.success || typeof json.stocks !== 'object' || json.stocks == null) return;
+
+        const freshMap: Record<string, number> = {};
+        for (const sku of skus) {
+          if (Object.prototype.hasOwnProperty.call(json.stocks, sku)) {
+            const stock = json.stocks[sku];
+            freshMap[sku] = Number(stock?.smallStock ?? 0);
+          }
+        }
+
+        if (!cancelled) setSmallStorageQtyMap(freshMap);
+      } catch {
+        // Keep the previous values on transient errors to avoid flicker during HMR/re-renders.
+      }
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [aggregatedSkuSignature, smallStorageId]);
+
+  const summaryColumns: HistoryItemsTableColumn[] = [
+    {
+      key: 'sku',
+      label: 'SKU',
+      render: (item) => <span className="font-mono">{item.sku}</span>,
+      sortValue: (item) => item.sku,
+      sortType: 'text',
+    },
+    {
+      key: 'name',
+      label: 'Позиція',
+      render: (item) => item.name || namesMap[item.sku] || item.sku,
+      sortValue: (item) => item.name || namesMap[item.sku] || item.sku,
+      sortType: 'text',
+    },
+    {
+      key: 'smallStorageQty',
+      label: 'Залишки МС',
+      render: (item: any) => {
+        const currentQty = item.smallStorageQty;
+        const afterReleaseQty = currentQty == null ? null : Math.max(0, Number(currentQty) - Number(item.total ?? 0));
+
+        return (
+          <span className="inline-flex items-center gap-1 font-semibold">
+            <span>{currentQty == null ? '—' : currentQty}</span>
+            <span className="text-gray-400">-&gt;</span>
+            <span className={afterReleaseQty != null && currentQty != null && afterReleaseQty < currentQty ? 'text-indigo-700' : 'text-gray-700'}>
+              {afterReleaseQty == null ? '—' : afterReleaseQty}
+            </span>
+          </span>
+        );
+      },
+      sortValue: (item: any) => Number(item.smallStorageQty ?? -1),
+      sortType: 'number',
+      className: 'text-center font-semibold',
+      headerClassName: 'text-center',
+      align: 'center',
+    },
+    {
+      key: 'total',
+      label: 'До списання',
+      render: (item: any) => Number(item.total ?? 0),
+      sortValue: (item: any) => Number(item.total ?? 0),
+      sortType: 'number',
+      className: 'text-center font-semibold text-gray-900',
+      headerClassName: 'text-center',
+      align: 'center',
+    },
+  ];
 
   // Fetch server-side aggregated preview (recursive) when items change
   useEffect(() => {
@@ -237,20 +368,20 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
     </Card>
 
     {/* Aggregated totals across all sets */}
-    <h3 className="text-lg font-medium mb-2">Сумарно до списання зі складу {selectedStorage || 'не вказано'} – {Object.values(aggregated).reduce((sum, a) => sum + a.total, 0)} шт.</h3>
+    <h3 className="text-lg font-medium mb-2">
+      Сумарно до списання зі складу {selectedStorage || 'не вказано'} – {totalToRelease} шт.
+      {aggLoading && <span className="text-sm font-normal text-gray-500"> • оновлюємо залишки МС...</span>}
+    </h3>
     <Card className="rounded-xl border border-gray-200 bg-white p-4 mb-6">
-      <div className="space-y-2">
-        {Object.keys(aggregated).length === 0 && <div className="text-sm text-gray-500">Немає компонентів для списання</div>}
-        {Object.values(aggregated).map((a) => (
-          <div key={a.sku} className="flex items-center justify-between gap-4 py-2 px-3 rounded-md border border-gray-100 bg-white">
-            <div>
-              <div className="font-medium text-gray-800">{a.name || namesMap[a.sku] || a.sku}</div>
-              <div className="text-xs text-gray-500">SKU: {a.sku}</div>
-            </div>
-            <div className="text-sm font-semibold text-gray-900">{a.total}</div>
-          </div>
-        ))}
-      </div>
+      {aggregatedRows.length === 0 ? (
+        <div className="text-sm text-gray-500">Немає компонентів для списання</div>
+      ) : (
+        <HistoryItemsTable
+          items={aggregatedRows}
+          columns={summaryColumns}
+          footerTotals={{ total: totalToRelease }}
+        />
+      )}
     </Card>
 		</>
   );

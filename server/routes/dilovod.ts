@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
 import { authenticateToken, requireRole, requireMinRole, ROLES } from '../middleware/auth.js';
-import { DilovodService, dilovodExportFlowService } from '../services/dilovod/index.js';
+import { DilovodService, dilovodExportFlowService, acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
@@ -1391,6 +1391,8 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
  * Створити документ відвантаження в Dilovod на основі baseDoc
  */
 router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
+  let saleShipmentLockToken: string | null = null;
+
   try {
     const { orderId } = req.params;
     const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
@@ -1439,8 +1441,28 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
       });
     }
 
+    const lockResult = await acquireSaleShipmentLock(Number(orderId));
+    if (lockResult.status === 'already_shipped') {
+      return res.status(409).json({
+        success: false,
+        error: 'Already shipped',
+        message: `Документ відвантаження для замовлення ${orderNum} (id: ${orderId}) вже створений або зафіксований`,
+      });
+    }
+
+    if (lockResult.status !== 'acquired' || !lockResult.lockToken) {
+      return res.status(409).json({
+        success: false,
+        error: 'Shipment in progress',
+        message: `Відвантаження для замовлення ${orderNum} (id: ${orderId}) уже обробляється іншим процесом`,
+      });
+    }
+
+    saleShipmentLockToken = lockResult.lockToken;
+
     // Перевіряємо, чи вже створений документ відвантаження (локальна БД)
     if (order.dilovodSaleExportDate) {
+      await releaseSaleShipmentLock(Number(orderId), lockResult.lockToken);
       return res.status(409).json({
         success: false,
         error: 'Already shipped',
@@ -1461,13 +1483,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
         const saleCount = existingSaleDocs.length;
         console.log(`⚠️ В Dilovod вже існує ${saleCount} документ(ів) відвантаження для замовлення ${orderNum} (sale id: ${saleDoc.id}) — синхронізуємо та блокуємо`);
         // Синхронізуємо локальну БД
-        await prisma.order.update({
-          where: { id: parseInt(orderId) },
-          data: {
-            dilovodSaleExportDate: new Date(saleDoc.date || new Date()).toISOString(),
-            dilovodSaleDocsCount: saleCount
-          }
-        });
+        await completeSaleShipmentLock(Number(orderId), lockResult.lockToken, new Date(saleDoc.date || new Date()).toISOString(), saleCount);
         return res.status(409).json({
           success: false,
           error: 'already_shipped_in_dilovod',
@@ -1507,13 +1523,11 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
           const shipmentDate = order.readyToShipAt 
             ? new Date(order.readyToShipAt).toISOString()
             : new Date().toISOString();
-          
-          await prisma.order.updateMany({
-            where: { id: parseInt(orderId) },
-            data: {
-              dilovodSaleExportDate: shipmentDate
-            }
-          });
+
+          const completed = await completeSaleShipmentLock(Number(orderId), lockResult.lockToken, shipmentDate);
+          if (!completed) {
+            console.warn(`⚠️ Не вдалося зафіксувати shipment lock для замовлення ${orderNumber}`);
+          }
           
           const dateSource = order.readyToShipAt ? 'з readyToShipAt' : 'поточна дата';
           console.log(`✅ Дату відвантаження (${dateSource}) збережено для замовлення #${orderNumber} (id: ${orderId})`);
@@ -1521,6 +1535,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
           console.log(`❌ Помилка збереження дати відвантаження в БД:`, dbError);
         }
       } else if (isExportError) {
+        await releaseSaleShipmentLock(Number(orderId), lockResult.lockToken);
         console.log(`❌ Відвантаження для замовлення #${orderNumber} НЕ збережено в БД: ${exportErrorMessage}`);
       }
 
@@ -1578,6 +1593,9 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
 
     } catch (exportError) {
       console.log('Помилка створення відвантаження в Dilovod:', exportError);
+      if (saleShipmentLockToken) {
+        await releaseSaleShipmentLock(Number(orderId), saleShipmentLockToken);
+      }
       res.status(500).json({
         success: false,
         error: 'Dilovod export error',
@@ -1593,6 +1611,10 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
 
   } catch (error) {
     console.log('Error creating shipment in Dilovod:', error);
+
+    if (saleShipmentLockToken) {
+      await releaseSaleShipmentLock(Number(req.params.orderId), saleShipmentLockToken);
+    }
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 

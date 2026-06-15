@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useEquipmentFromAuth } from '@/contexts/AuthContext';
+import { useState, useMemo } from 'react';
+import { Card, CardBody, CardHeader, Switch, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
 import { useDebug } from '@/contexts/DebugContext';
 import { RightPanel } from './RightPanel';
 import { WeightDisplayWidget } from './WeightDisplayWidget';
@@ -16,6 +16,8 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface OrderAssemblyRightPanelProps {
   orderForAssembly: OrderForAssembly;
+  monolithicDisplayItems?: OrderForAssembly['items'];
+  monolithicDisplayStates?: Record<string, boolean>;
   averagePortionWeight?: number; // Середня вага порції для розподілу по коробках
   getWeightData: () => { expectedWeight: number | null; cumulativeTolerance: number };
   handleWeightChange: (weight: number | null) => void;
@@ -23,6 +25,7 @@ interface OrderAssemblyRightPanelProps {
   isWeightWidgetPaused: boolean;
   pollingMode: 'active' | 'reserve' | 'auto';
   handlePollingModeChange: (mode: 'active' | 'reserve') => void;
+  assemblyMode?: 'standard' | 'no_scales';
   handleBoxesChange: (boxes: any[], totalWeight: number, boxesInfo?: any) => void;
   activeBoxIndex: number;
   setActiveBoxIndex: (index: number) => void;
@@ -30,8 +33,8 @@ interface OrderAssemblyRightPanelProps {
   expandingSets: boolean;
   onPrintTTN: () => void;
   order: any;
-  externalId: string;
   onOrderRefresh?: (updatedOrder: any) => void;
+  onMonolithicDisplayChange?: (itemKey: string, enabled: boolean) => void;
   /** Друк чека через QZ Tray */
   onPrintReceipt?: (type?: ReceiptType) => Promise<void>;
   /** Перегляд чека у браузері */
@@ -42,6 +45,8 @@ interface OrderAssemblyRightPanelProps {
 
 export function OrderAssemblyRightPanel({
   orderForAssembly,
+  monolithicDisplayItems,
+  monolithicDisplayStates,
   averagePortionWeight = 0.33,
   getWeightData,
   handleWeightChange,
@@ -49,6 +54,7 @@ export function OrderAssemblyRightPanel({
   isWeightWidgetPaused,
   pollingMode,
   handlePollingModeChange,
+  assemblyMode,
   handleBoxesChange,
   activeBoxIndex,
   setActiveBoxIndex,
@@ -56,20 +62,24 @@ export function OrderAssemblyRightPanel({
   expandingSets,
   onPrintTTN,
   order,
-  externalId,
   onOrderRefresh,
+  onMonolithicDisplayChange,
   onBarcodeScan,
 }: OrderAssemblyRightPanelProps) {
   const [showPrintConfirmModal, setShowPrintConfirmModal] = useState(false);
   const { expectedWeight, cumulativeTolerance } = getWeightData();
-  const [equipmentState, equipmentActions] = useEquipmentFromAuth();
   const { isDebugMode } = useDebug();
   const [debugScanCode, setDebugScanCode] = useState('');
-  // Анімація перемикання
-  const [autoPrintTransition, setAutoPrintTransition] = useState(false);
-  const autoPrint = !!equipmentState.config?.printer?.autoPrintOnComplete;
-
-  const receiptConfig = equipmentState.config?.receiptPrinter;
+  const monolithicDisplayControlItems = useMemo(() => {
+    const sourceItems = monolithicDisplayItems || orderForAssembly.items;
+    return sourceItems.filter((item) => {
+      return item.type === 'product' && typeof item.portionsPerItem === 'number' && item.portionsPerItem > 16;
+    });
+  }, [monolithicDisplayItems, orderForAssembly.items]);
+  const isMonolithicOnlyOrder = useMemo(() => {
+    const productItems = orderForAssembly.items.filter((item) => item.type === 'product');
+    return productItems.length > 0 && productItems.every((item) => typeof item.portionsPerItem === 'number' && item.portionsPerItem > 16);
+  }, [orderForAssembly.items]);
 
   return (
     <>
@@ -100,16 +110,18 @@ export function OrderAssemblyRightPanel({
           </div>
 
           {/* Віджет поточної ваги */}
-          <WeightDisplayWidget
-            onWeightChange={handleWeightChange}
-            expectedWeight={expectedWeight}
-            cumulativeTolerance={cumulativeTolerance}
-            className="w-full"
-            isActive={isWeightWidgetActive}
-            isPaused={isWeightWidgetPaused}
-            pollingMode={pollingMode}
-            onPollingModeChange={handlePollingModeChange}
-          />
+          {assemblyMode !== 'no_scales' && (
+            <WeightDisplayWidget
+              onWeightChange={handleWeightChange}
+              expectedWeight={expectedWeight}
+              cumulativeTolerance={cumulativeTolerance}
+              className="w-full"
+              isActive={isWeightWidgetActive}
+              isPaused={isWeightWidgetPaused}
+              pollingMode={pollingMode}
+              onPollingModeChange={handlePollingModeChange}
+            />
+          )}
 
           {/* Селектор коробок */}
           {hasItems && !expandingSets && (
@@ -119,6 +131,7 @@ export function OrderAssemblyRightPanel({
               onBoxesChange={handleBoxesChange}
               onActiveBoxChange={setActiveBoxIndex}
               activeBoxIndex={activeBoxIndex}
+              isSingleLargeMonolithicOrder={isMonolithicOnlyOrder}
               className="bg-white p-6 rounded-lg shadow"
             />
           )}
@@ -152,6 +165,51 @@ export function OrderAssemblyRightPanel({
             <ActiveProductSets orderItems={order.items} />
           )}
 
+          {/* Перемикач монолітних комплектів */}
+          {monolithicDisplayControlItems.length > 0 && (
+            <Card classNames={{
+              base: 'w-full shadow-none bg-lime-600/80 rounded-[18px] p-1 border',
+              header: 'text-sm text-lime-950 font-medium pt-1.5 pb-2 px-2 text-white flex items-center gap-1.5',
+              body: 'bg-white gap-2 rounded-[14px] shadow',
+            }}>
+              <CardHeader>
+                <DynamicIcon name="package-open" size={16} strokeWidth={1.5} className="text-white shrink-0" />
+                Готовий комплект
+                <Popover showArrow offset={20} placement="top" classNames={{ base: 'before:bg-neutral-600', trigger: 'focus:outline-none cursor-pointer', content: 'bg-neutral-600 text-white max-w-2xs p-3' }}>
+                  <PopoverTrigger>
+                    <DynamicIcon name="info" size={16} className="shrink-0" />
+                  </PopoverTrigger>
+                  <PopoverContent>
+                    Зібрані набори можна провести як монолітні комплекти, або як звичайні набори. Використовуйте цей перемикач для відображення/приховування таких товарів у списку.
+                  </PopoverContent>
+                </Popover>
+              </CardHeader>
+              <CardBody className="gap-3">
+                {monolithicDisplayControlItems.map((item) => {
+                  const itemKey = item.sku || item.id;
+                  const isSelected = monolithicDisplayStates?.[itemKey] ?? true;
+
+                  return (
+                    <div key={itemKey} className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 flex-1 min-w-0 text-sm font-medium text-neutral-800">
+                        <span className="truncate">{item.name}</span>
+                      </div>
+                      <Switch
+                        size="sm"
+                        isSelected={isSelected}
+                        onValueChange={(enabled) => onMonolithicDisplayChange?.(itemKey, enabled)}
+                        classNames={{
+                          wrapper: 'group-data-[selected=true]:bg-lime-600',
+                          base: 'transition-all',
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </CardBody>
+            </Card>
+          )}
+
           {/* Кнопка для позначення відхилень */}
           <DeviationButton />
 
@@ -168,7 +226,7 @@ export function OrderAssemblyRightPanel({
       <ConfirmModal
         isOpen={showPrintConfirmModal}
         title="Підтвердження друку ТТН"
-        message={`Ви дійсно хочете роздрукувати ТТН ${order?.ttn || ''} для замовлення №${order?.orderNumber || externalId}?`}
+        message={`Ви дійсно хочете роздрукувати ТТН ${order?.ttn || ''} для замовлення №${order?.orderNumber || orderForAssembly.id}?`}
         confirmText="Так, друкувати"
         cancelText="Скасувати"
         onConfirm={() => {

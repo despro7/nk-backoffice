@@ -45,6 +45,15 @@ type RawOrderItem = {
   quantity?: number | string;
 };
 
+type ShipmentPayloadData = {
+  shipment?: {
+    bySku?: Record<string, {
+      accGood?: string;
+      quantity?: number | string;
+    }>;
+  };
+};
+
 function parseJsonArray(value: string | null | undefined): unknown[] {
   if (!value) {
     return [];
@@ -71,6 +80,71 @@ function parseStockBalances(value: string | null | undefined): Record<string, nu
   } catch {
     return {};
   }
+}
+
+function normalizeDeductionQuantity(value: unknown): number {
+  const quantity = typeof value === 'string' ? Number(value.replace(',', '.')) : Number(value);
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(quantity));
+}
+
+async function buildMonolithicSetStockUpdates(payloadData: unknown): Promise<Array<ReturnType<typeof prisma.product.update>>> {
+  const shipmentBySku = (payloadData as ShipmentPayloadData | null | undefined)?.shipment?.bySku;
+  if (!shipmentBySku || typeof shipmentBySku !== 'object') {
+    return [];
+  }
+
+  const deductionMap = new Map<string, number>();
+
+  for (const [sku, shipmentItem] of Object.entries(shipmentBySku)) {
+    const normalizedSku = typeof sku === 'string' ? sku.trim() : '';
+    const quantity = normalizeDeductionQuantity(shipmentItem?.quantity);
+
+    if (!normalizedSku || quantity <= 0) {
+      continue;
+    }
+
+    deductionMap.set(normalizedSku, (deductionMap.get(normalizedSku) ?? 0) + quantity);
+  }
+
+  if (deductionMap.size === 0) {
+    return [];
+  }
+
+  const products = await prisma.product.findMany({
+    where: { sku: { in: Array.from(deductionMap.keys()) } },
+    select: { id: true, sku: true, stockBalanceByStock: true }
+  });
+
+  const updates = products.flatMap((product) => {
+    const deduction = deductionMap.get(product.sku) ?? 0;
+    if (deduction <= 0) {
+      return [];
+    }
+
+    const stockBalances = parseStockBalances(product.stockBalanceByStock);
+    const currentBalance = Number(stockBalances['2']) || 0;
+    const nextBalance = Math.max(0, currentBalance - deduction);
+
+    if (nextBalance === currentBalance) {
+      return [];
+    }
+
+    return prisma.product.update({
+      where: { id: product.id },
+      data: {
+        stockBalanceByStock: JSON.stringify({
+          ...stockBalances,
+          '2': nextBalance,
+        })
+      }
+    });
+  });
+
+  return updates;
 }
 
 function normalizeCategoryKey(categoryId: number | null, categoryName: string | null): string | null {
@@ -1039,7 +1113,8 @@ router.get('/:id/fiscal-receipts/list', authenticateToken, async (req, res) => {
 router.put('/:id/status', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, payloadData } = req.body;
+    const orderId = parseInt(id, 10);
 
     if (!status) {
       return res.status(400).json({
@@ -1048,16 +1123,53 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       });
     }
 
+    const currentOrder = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        status: true,
+        readyToShipAt: true,
+        payloadData: true,
+      }
+    });
+
+    if (!currentOrder) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found',
+      });
+    }
+
+    const shouldDeductMonolithicStock = status === '3' && currentOrder.status === '2' && !currentOrder.readyToShipAt;
+    const shipmentPayloadSource = payloadData !== undefined ? payloadData : currentOrder.payloadData;
+
     // Якщо статус змінився на "3" (На відправку), записуємо дату в readyToShipAt
     if (status === '3') {
       try {
-        await prisma.order.update({
-          where: { id: parseInt(id) },
-          data: { readyToShipAt: new Date() }
-        });
-        console.log(`✅ [Orders API] Order ${id} readyToShipAt set to current time`);
+        const stockUpdates = shouldDeductMonolithicStock
+          ? await buildMonolithicSetStockUpdates(shipmentPayloadSource)
+          : [];
+
+        await prisma.$transaction([
+          prisma.order.update({
+            where: { id: orderId },
+            data: {
+              ...(currentOrder.readyToShipAt ? {} : { readyToShipAt: new Date() }),
+              ...(payloadData !== undefined ? { payloadData } : {})
+            }
+          }),
+          ...stockUpdates
+        ]);
+
+        if (shouldDeductMonolithicStock && stockUpdates.length > 0) {
+          console.log(`✅ [Orders API] Optimistic monolithic stock deduction applied for order ${orderId} (${stockUpdates.length} product(s))`);
+        }
+
+        if (!currentOrder.readyToShipAt) {
+          console.log(`✅ [Orders API] Order ${id} readyToShipAt set to current time`);
+        }
+
       } catch (dbError) {
-        console.error(`⚠️ [Orders API] Failed to update readyToShipAt for order ${id}:`, dbError);
+        console.error(`⚠️ [Orders API] Failed to update readyToShipAt / deduct stock for order ${id}:`, dbError);
         // Не блокуємо відповідь, якщо не вдалося оновити дату
       }
     
@@ -1065,7 +1177,7 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       import('../services/dilovod/DilovodAutoExportService.js')
         .then(({ dilovodAutoExportService }) =>
           dilovodAutoExportService.processOrderStatusChange(
-            parseInt(id),
+            orderId,
             status,
             'manual:status_change'
           )

@@ -138,8 +138,11 @@ export function ActiveProductSets({ orderItems }: ActiveProductSetsProps) {
   // Показуємо стан завантаження; якщо немає комплектів після завантаження — не рендеримо
   if (loading) {
     return (
-      <Card classNames={{ base: 'w-full shadow-none bg-danger rounded-lg p-1', header: 'text-sm text-white font-medium py-2', body: 'bg-white gap-2 rounded-[14px] shadow' }}>
-        <CardHeader>Активні комплекти</CardHeader>
+      <Card classNames={{ base: 'w-full shadow-none bg-danger rounded-lg p-1', header: 'text-sm text-white font-medium py-2 px-2 flex items-center gap-1.5', body: 'bg-white gap-2 rounded-[14px] shadow' }}>
+        <CardHeader>
+          <DynamicIcon name="package-2" size={16} strokeWidth={1.5} className="text-white shrink-0" />
+          Активні комплекти
+        </CardHeader>
         <CardBody className="gap-3">
           <div className="text-sm text-neutral-500 flex items-center gap-2"> 
             <DynamicIcon name="loader" size={16} />
@@ -154,11 +157,14 @@ export function ActiveProductSets({ orderItems }: ActiveProductSetsProps) {
 
   return (
     <Card classNames={{ 
-      base: 'w-full shadow-none bg-danger rounded-lg p-1',
-      header: 'text-sm text-white font-medium py-2',
+      base: 'w-full shadow-none bg-danger rounded-[18px] p-1',
+      header: 'text-sm text-white font-medium pt-1.5 pb-2 px-2 flex items-center gap-1.5',
       body: 'bg-white gap-2 rounded-[14px] shadow',
     }}>
-      <CardHeader>Активні комплекти</CardHeader>
+      <CardHeader>
+        <DynamicIcon name="package-2" size={16} strokeWidth={1.5} className="text-white shrink-0" />
+        Активні комплекти
+      </CardHeader>
       <CardBody className="gap-3">
         {/* Список комплектів */}
         {/* <div className={`flex flex-col gap-2 ${productSets.some(set => set.hasParents) ? '[&>div+div]:border-t [&>div+div]:border-gray-200 [&>div+div]:pt-2' : ''}`}> */}

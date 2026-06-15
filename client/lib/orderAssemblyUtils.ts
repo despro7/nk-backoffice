@@ -156,6 +156,61 @@ const computeFlattenedComponent = async (
 };
 
 /**
+ * Рекурсивно рахує фактичну кількість порцій у наборі.
+ * На відміну від computeFlattenedComponent, тут не беремо unitRatio/weightRatio,
+ * а лише структуру набору та кількості компонентів.
+ */
+const computeActualSetPortions = async (
+  sku: string,
+  apiCall: any,
+  visitedSets: Set<string> = new Set(),
+  depth: number = 0,
+  cache?: Map<string, any>
+): Promise<number> => {
+  const MAX_DEPTH = 10;
+  if (depth > MAX_DEPTH) {
+    console.warn(`⚠️ computeActualSetPortions: max depth reached for ${sku}`);
+    return 1;
+  }
+
+  if (visitedSets.has(sku)) {
+    console.warn(`🔄 computeActualSetPortions: cyclic reference detected for ${sku}`);
+    return 1;
+  }
+
+  visitedSets.add(sku);
+
+  try {
+    let product: Product | undefined = cache?.get(`prod:${sku}`);
+    if (!product) {
+      const res = await apiCall(`/api/products/${sku}`);
+      if (!res.ok) {
+        return 1;
+      }
+      product = await res.json();
+      cache?.set(`prod:${sku}`, product);
+    }
+
+    if (product.set && Array.isArray(product.set) && product.set.length > 0) {
+      let total = 0;
+      for (const si of product.set) {
+        if (!si.id) continue;
+        const nestedPortions = await computeActualSetPortions(si.id, apiCall, new Set(visitedSets), depth + 1, cache);
+        total += nestedPortions * (si.quantity || 0);
+      }
+      return total || 1;
+    }
+
+    return 1;
+  } catch (err) {
+    console.warn(`Помилка при обчисленні фактичних порцій для ${sku}:`, err);
+    return 1;
+  } finally {
+    visitedSets.delete(sku);
+  }
+};
+
+/**
  * Сортує елементи чек-листа по manualOrder -> type -> name
  */
 export const sortChecklistItems = (items: OrderChecklistItem[]): OrderChecklistItem[] => {
@@ -196,6 +251,7 @@ const expandProductRecursively = async (
   visitedSets: Set<string> = new Set(),
   depth: number = 0,
   monolithicCategories: string[] = [],
+  forcedRegularSetSkus: string[] = [],
   cache?: Map<string, any>
 ): Promise<void> => {
   // Захист від нескінченної рекурсії
@@ -233,11 +289,36 @@ const expandProductRecursively = async (
 
     // Перевіряємо, чи це комплект
     if (product.set && Array.isArray(product.set) && product.set.length > 0) {
+      const isForcedRegularSet = forcedRegularSetSkus.includes(sku);
       // 🚀 НОВА ЛОГІКА: Якщо це монолітна категорія, не розгортаємо його далі
       const categoryIdStr = product.categoryId?.toString();
       LoggingService.orderAssemblyLog(`📦 Перевірка комплекту: "${product.name}" (SKU: ${sku}), categoryId: ${product.categoryId}, categoryName: "${product.categoryName}", monolithicCategories: [${monolithicCategories.join(', ')}], depth=${depth}`);
       
-      if (categoryIdStr && Array.isArray(monolithicCategories) && monolithicCategories.includes(categoryIdStr)) {
+      // DYNAMIC-MONOLITHIC: if product has positive authoritative stock (minus optimistic local decrements), treat as monolithic
+      let effectiveStockTotal = 0;
+      try {
+        const rawStock = (product as any).stockBalanceByStock;
+        if (rawStock) {
+          if (typeof rawStock === 'string') {
+            try { const parsed = JSON.parse(rawStock); Object.values(parsed).forEach((v: any) => effectiveStockTotal += Number(v) || 0); } catch { /* ignore */ }
+          } else if (typeof rawStock === 'object') {
+            Object.values(rawStock).forEach((v: any) => effectiveStockTotal += Number(v) || 0);
+          }
+        }
+      } catch (e) {
+        // ignore parsing errors
+      }
+      const effectiveRemaining = Math.max(0, effectiveStockTotal);
+      const isDynamicMonolithic = effectiveRemaining > 0;
+
+      if (isDynamicMonolithic) {
+        LoggingService.orderAssemblyLog(`📦 DYNAMIC-MONOLITH detected for "${product.name}" (SKU: ${sku}) — effectiveRemaining=${effectiveRemaining} — treating as monolithic`, undefined, true);
+        // treat as monolithic (do not expand)
+        LoggingService.orderAssemblyLog(`📦 Перевірка комплекту: "${product.name}" (SKU: ${sku}), categoryId: ${product.categoryId}, categoryName: "${product.categoryName}", monolithicCategories: [${monolithicCategories.join(', ')}], depth=${depth}`);
+      }
+
+      if (!isForcedRegularSet && (effectiveRemaining > 0 || (categoryIdStr && Array.isArray(monolithicCategories) && monolithicCategories.includes(categoryIdStr)))) {
+        // If either dynamic detection OR configured monolithic category -> don't expand
         LoggingService.orderAssemblyLog(`📦 Монолітний комплект: "${product.name}" (SKU: ${sku}). Рекурсія зупинена. depth=${depth}`);
 
         // Збираємо склад комплекту для відображення комірнику
@@ -284,9 +365,19 @@ const expandProductRecursively = async (
 
         const composition = await Promise.all(compositionPromises);
 
-        // 🔑 Рахуємо порції для всіх монолітних комплектів (depth == 0 або depth > 0)
-        // Порції = кількість компонентів у комплекті (по одному кожного)
-        const portionsPerSet = product.set.reduce((sum, si) => sum + (si.quantity || 0), 0);
+        // 🔑 Рахуємо фактичні порції для всіх монолітних комплектів (depth == 0 або depth > 0)
+        // Це рекурсивна сума всіх вкладених компонентів, без unitRatio/weightRatio.
+        let portionsPerSet = 0;
+        for (const si of product.set) {
+          if (!si.id) continue;
+          try {
+            const nestedPortions = await computeActualSetPortions(si.id, apiCall, new Set(visitedSets), depth + 1, cache);
+            portionsPerSet += nestedPortions * (si.quantity || 0);
+          } catch (err) {
+            console.warn(`Не вдалося обчислити фактичні порції для компоненту ${si.id}:`, err);
+            portionsPerSet += (si.quantity || 0);
+          }
+        }
         const totalPortions = portionsPerSet * quantity;
         LoggingService.orderAssemblyLog(`📊 Монолітний комплект "${product.name}" (depth=${depth}): ${quantity} × ${portionsPerSet} = ${totalPortions} порцій`);
 
@@ -323,7 +414,7 @@ const expandProductRecursively = async (
         // Обчислюємо weightRatio = sumComponentPortions / nominal portionsPerSet
         const weightRatio = portionsPerSet > 0 ? (sumComponentPortions / portionsPerSet) : 1;
 
-        addOrUpdateExpandedItem(expandedItems, product, quantity, sku, composition, portionsPerSet, expectedWeightForQuantityKg, weightRatio);
+        addOrUpdateExpandedItem(expandedItems, product, quantity, sku, composition, portionsPerSet, expectedWeightForQuantityKg, weightRatio, isDynamicMonolithic);
         return;
       }
 
@@ -362,6 +453,7 @@ const expandProductRecursively = async (
           new Set(visitedSets), // Створюємо копію Set для кожної гілки рекурсії
           depth + 1,
           monolithicCategories,
+          forcedRegularSetSkus,
           cache
         );
       }
@@ -393,7 +485,8 @@ const addOrUpdateExpandedItem = (
   composition?: Array<string | { name: string; quantity?: number; unitRatio?: number; sku?: string }>,
   portionsPerItem?: number,
   expectedWeightKg?: number,
-  weightRatio?: number
+  weightRatio?: number,
+  dynamicMonolithic: boolean = false
 ): void => {
   const itemName = product.name;
 
@@ -429,6 +522,9 @@ const addOrUpdateExpandedItem = (
     if ((product as any) && typeof (product as any).unitRatio === 'number') {
       (expandedItems[key] as any).unitRatio = (product as any).unitRatio;
     }
+    if (dynamicMonolithic) {
+      (expandedItems[key] as any).dynamicMonolithic = true;
+    }
   } else {
     // Додаємо новий товар
     expandedItems[key] = {
@@ -442,7 +538,8 @@ const addOrUpdateExpandedItem = (
       barcode: product.barcode || sku,
       manualOrder: product.manualOrder,
       composition: composition,
-      portionsPerItem: portionsPerItem
+      portionsPerItem: portionsPerItem,
+      dynamicMonolithic: dynamicMonolithic || undefined
     };
     if (typeof weightRatio === 'number') {
       (expandedItems[key] as any).weightRatio = weightRatio;
@@ -453,6 +550,9 @@ const addOrUpdateExpandedItem = (
     }
     if ((product as any) && typeof (product as any).unitRatio === 'number') {
       (expandedItems[key] as any).unitRatio = (product as any).unitRatio;
+    }
+    if (dynamicMonolithic) {
+      (expandedItems[key] as any).dynamicMonolithic = true;
     }
   }
 
@@ -468,7 +568,8 @@ const addOrUpdateExpandedItem = (
 export const expandProductSets = async (
   orderItems: any[],
   apiCall: any,
-  monolithicCategoryIds: number[] = []
+  monolithicCategoryIds: number[] = [],
+  forcedRegularSetSkus: string[] = []
 ): Promise<OrderChecklistItem[]> => {
   const expandedItems: { [key: string]: OrderChecklistItem } = {};
   // Per-request cache to avoid duplicate API calls during one expand operation
@@ -621,6 +722,7 @@ export const expandProductSets = async (
       new Set(), // Новий Set для кожного товару замовлення
       0, // Починаємо з глибини 0
       monolithicCategoryIds.map(id => id.toString()), // Конвертуємо ID категорій в строки для порівняння
+      forcedRegularSetSkus,
       perRequestCache
     );
   }
@@ -738,6 +840,8 @@ export const combineBoxesWithItems = (
     // Розподіляємо кожен товар по коробках з двома пріоритетами:
     // 1. Весь товар — в одну коробку (не дробити)
     // 2. Обираємо коробку з найменшою поточною вагою (балансування по вазі)
+    const maxBoxHardLimit = Math.max(...boxStates.map(box => Number(box.hardLimit || 0)), 0);
+
     for (const item of sortedItems) {
       // Для монолітних комплектів використовуємо `portionsPerItem` разом із `weightRatio`.
       // Для звичайних одиниць або звичайних наборів (включно з тими, що всередині монолітних наборів)

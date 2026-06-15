@@ -12,6 +12,7 @@ interface UseOrderNavigationProps {
   nextOrderExternalId?: string | null;
   checklistItems?: any[];
   orderStatus?: string;
+  shipmentPayloadData?: any;
   onUpdateOrderStatus?: (status: string, statusText: string) => void; // Callback для локального оновлення статусу
 }
 
@@ -24,6 +25,7 @@ export function useOrderNavigation({
   nextOrderExternalId,
   checklistItems = [],
   orderStatus,
+  shipmentPayloadData,
   onUpdateOrderStatus
 }: UseOrderNavigationProps) {
   const navigate = useNavigate();
@@ -137,7 +139,11 @@ export function useOrderNavigation({
     if (!id) return;
 
     const statusUrl = `/api/orders/${id}/status`;
-    const statusPayload = { status: '3' };
+    const statusPayload: Record<string, unknown> = { status: '3' };
+
+    if (shipmentPayloadData) {
+      statusPayload.payloadData = shipmentPayloadData;
+    }
 
     try {
       // 1️⃣ СПОЧАТКУ: Отримуємо поточний статус з сервера (без PUT)
@@ -181,6 +187,7 @@ export function useOrderNavigation({
       const statusData = await statusResponse.json();
       if (statusData.success) {
         console.log('✅ [useOrderNavigation] Статус замовлення оновлено в SalesDrive на "3" (Готове до відправлення)');
+
       } else {
         console.warn('⚠️ [useOrderNavigation] Помилка при оновленні статусу:', statusData.error);
       }

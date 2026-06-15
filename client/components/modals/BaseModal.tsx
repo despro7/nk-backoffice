@@ -4,9 +4,10 @@ import { ReactNode } from "react";
 interface BaseModalProps {
   isOpen: boolean;
   title: string;
-  message: string;
+  message: ReactNode;
   icon?: ReactNode;
   confirmText?: string;
+  confirmStartContent?: ReactNode;
   cancelText?: string;
   confirmColor?: "primary" | "danger" | "success" | "warning";
   onConfirm?: () => void;
@@ -20,6 +21,7 @@ export function BaseModal({
   message,
   icon,
   confirmText,
+  confirmStartContent,
   cancelText,
   confirmColor = "primary",
   onConfirm,
@@ -27,7 +29,12 @@ export function BaseModal({
   confirmLoading = false,
 }: BaseModalProps) {
   return (
-    <Modal isOpen={isOpen} onClose={onCancel}>
+    <Modal isOpen={isOpen} onClose={onCancel} classNames={{
+      base: "max-w-md rounded-xl shadow-lg",
+      header: "pl-4 pb-2 pr-8",
+      body: "px-4 py-3",
+      footer: "px-4 justify-start gap-3",
+    }}>
       <ModalContent>
         <ModalHeader className="flex items-center gap-2 text-lg font-semibold">
           {icon}
@@ -36,7 +43,7 @@ export function BaseModal({
         <ModalBody>{message}</ModalBody>
         <ModalFooter>
           {confirmText && (
-            <Button color={confirmColor} onPress={onConfirm} isLoading={confirmLoading}>
+            <Button color={confirmColor} onPress={onConfirm} isLoading={confirmLoading} startContent={confirmStartContent}>
               {confirmText}
             </Button>
           )}

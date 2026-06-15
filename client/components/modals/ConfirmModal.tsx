@@ -1,10 +1,12 @@
 import { BaseModal } from "./BaseModal";
+import { ReactNode } from "react";
 
 interface ConfirmModalProps {
   isOpen: boolean;
   title: string;
-  message: string;
+  message: ReactNode;
   confirmText?: string;
+  confirmStartContent?: ReactNode;
   cancelText?: string;
   confirmColor?: "primary" | "danger" | "success" | "warning";
   onConfirm: () => void;
@@ -17,6 +19,7 @@ export function ConfirmModal({
   title,
   message,
   confirmText = "Так",
+  confirmStartContent,
   cancelText = "Ні",
   confirmColor = "danger",
   onConfirm,
@@ -29,6 +32,7 @@ export function ConfirmModal({
       title={title}
       message={message}
       confirmText={confirmText}
+      confirmStartContent={confirmStartContent}
       cancelText={cancelText}
       confirmColor={confirmColor}
       onConfirm={onConfirm}

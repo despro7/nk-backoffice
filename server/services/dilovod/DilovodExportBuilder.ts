@@ -726,6 +726,7 @@ export class DilovodExportBuilder {
         const qty = item.quantity || 1;
         const price = item.price || 0;
         const amount = qty * price;
+        const accGoodOverride = this.getShipmentAccGoodOverride(order.payloadData, sku);
 
         // Використовуємо good для передачі ID товару з products.dilovodId
         tpGoods.push({
@@ -736,7 +737,8 @@ export class DilovodExportBuilder {
           baseQty: qty,
           priceAmount: amount,
           price,
-          amountCur: amount
+          amountCur: amount,
+          ...(accGoodOverride ? { accGood: Number(accGoodOverride) } : {})
         });
 
         console.log(`    ✅ Товар #${rowNum}: SKU "${sku}" → good_id "${product.dilovodId}", к-ть: ${qty}, ціна: ${price}`);
@@ -787,7 +789,8 @@ export class DilovodExportBuilder {
     const parsedOrder = {
       ...order,
       items: order.items ? JSON.parse(order.items) : [],
-      rawData: order.rawData ? JSON.parse(order.rawData) : {}
+      rawData: order.rawData ? JSON.parse(order.rawData) : {},
+      payloadData: order.payloadData ?? null
     };
 
     console.log(`  ✅ Замовлення завантажено: ${parsedOrder.orderNumber}, товарів: ${parsedOrder.items.length}, канал: ${parsedOrder.sajt}`);
@@ -1020,6 +1023,20 @@ export class DilovodExportBuilder {
     }
 
     return { isValid, criticalErrors };
+  }
+  
+  private getShipmentAccGoodOverride(payloadData: any, sku: string): string | null {
+    const accGood = payloadData?.shipment?.bySku?.[sku]?.accGood;
+
+    if (typeof accGood === 'number' && Number.isFinite(accGood)) {
+      return String(accGood);
+    }
+
+    if (typeof accGood === 'string' && accGood.trim()) {
+      return accGood.trim();
+    }
+
+    return null;
   }
 
   /**
