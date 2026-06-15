@@ -390,6 +390,7 @@ export class DilovodAutoExportService {
     initiatedBy: string
   ): Promise<AutoExportResult> {
     const orderId = String(internalOrderId);
+    let shipmentLockToken: string | null = null;
 
     // Отримуємо orderNumber заздалегідь — щоб він був доступний і в catch-блоці
     const orderNumberPrefetch = await prisma.order.findUnique({
