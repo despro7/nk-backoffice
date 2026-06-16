@@ -198,9 +198,14 @@ export async function buildExportPayload(
         }
       }
 
-      // Розгортаємо комплекти якщо потрібно
+      // Якщо комплект має власний залишок на складі "2", експортуємо його як звичайний товар
+      const hasOwnStockOnWarehouse2 = Number(stockBalanceByStock['2']) > 0;
+
+      // Розгортаємо комплекти лише коли це справді потрібно
       let finalSet = set;
-      if (expandSets && Array.isArray(set) && set.length > 0) {
+      if (hasOwnStockOnWarehouse2) {
+        finalSet = [];
+      } else if (expandSets && Array.isArray(set) && set.length > 0) {
         const expandedComponents: Record<string, { component: any; quantity: number }> = {};
         await expandSetRecursively(product, expandedComponents, new Set(), 0);
         if (Object.keys(expandedComponents).length > 0) {

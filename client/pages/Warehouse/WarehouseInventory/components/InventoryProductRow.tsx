@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Button } from '@heroui/react';
+import { Button, Spinner } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { AnimatePresence, motion } from 'framer-motion';
 import { StepperInput } from '../../shared/StepperInput';
@@ -51,6 +51,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
     : `${deviation}`;
 
   const hasUnconfirmedCounts = !product.checked && (product.actualCount !== null || product.boxCount !== null);
+  const isBalanceRefreshing = Boolean(product.isBalanceRefreshing);
 
   // Ref для першого StepperInput — для автофокусу при відкритті
   const firstInputRef = useRef<HTMLInputElement>(null);
@@ -148,7 +149,10 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
         {/* За обліком */}
         <div className="hidden sm:flex flex-col items-end mr-2">
           <span className="text-xs text-gray-400">За обліком</span>
-          <span className="text-base font-bold text-gray-600">{product.systemBalance}</span>
+          <span className="text-base font-bold text-gray-600 flex items-center gap-1">
+            {isBalanceRefreshing && <Spinner size="sm" color="default" />}
+            {product.systemBalance}
+          </span>
         </div>
 
         {/* Іконка розкриття */}
@@ -225,11 +229,11 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
                 <span className="mx-1 text-gray-300">|</span>
                 {product.unit === 'portions' ? (
                   <span className="font-mono">
-                    За обліком: <strong>{formatBalanceBreakdown(product.systemBalance, product.portionsPerBox)}</strong>
+                    За обліком: <strong className="inline-flex items-center gap-1">{formatBalanceBreakdown(product.systemBalance, product.portionsPerBox)}{isBalanceRefreshing && <Spinner size="sm" color="default" />}</strong>
                     <span className="text-gray-300 ml-1">(загалом {product.systemBalance} порцій)</span>
                   </span>
                 ) : (
-                  <span className="font-mono">За обліком: <strong>{product.systemBalance}</strong></span>
+                  <span className="font-mono">За обліком: <strong className="inline-flex items-center gap-1">{product.systemBalance}{isBalanceRefreshing && <Spinner size="sm" color="default" />}</strong></span>
                 )}
               </div>
             </div>

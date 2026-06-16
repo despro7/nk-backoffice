@@ -96,7 +96,7 @@ export interface UseWarehouseInventoryReturn {
   // Handlers
   loadProducts: () => Promise<InventoryProduct[]>;
   loadMaterials: () => Promise<InventoryProduct[]>;
-  loadSets: () => Promise<InventoryProduct[]>;
+  loadSets: (asOfDate?: Date) => Promise<InventoryProduct[]>;
   loadHistory: () => Promise<void>;
   loadArchive: () => Promise<void>;
   handleStartSession: () => Promise<void>;
@@ -214,6 +214,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         name: p.name,
         categoryName: p.categoryName ?? 'Без категорії',
         systemBalance: p.systemBalance,
+        isBalanceRefreshing: false,
         unit: p.unit as 'portions' | 'pcs',
         portionsPerBox: p.portionsPerBox,
         actualCount: null,
@@ -246,6 +247,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         sku: m.sku,
         name: m.name,
         systemBalance: m.systemBalance,
+        isBalanceRefreshing: false,
         unit: m.unit as 'portions' | 'pcs',
         portionsPerBox: m.portionsPerBox,
         actualCount: null,
@@ -266,7 +268,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   // API: завантаження комплектів (sets)
   // ---------------------------------------------------------------------------
 
-  const loadSets = useCallback(async (): Promise<InventoryProduct[]> => {
+  const loadSets = useCallback(async (asOfDate?: Date): Promise<InventoryProduct[]> => {
     setSetsLoading(true);
     setSetsError(null);
     try {
@@ -279,17 +281,39 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         const text = await res.text();
         throw new Error(`Non-JSON response from /api/warehouse/inventory/sets: ${text.slice(0,200)}`);
       }
-      const loaded: InventoryProduct[] = (data.sets ?? []).map((s: any) => ({
+      let loaded: InventoryProduct[] = (data.sets ?? []).map((s: any) => ({
         id: s.id,
         sku: s.sku,
         name: s.name,
         systemBalance: s.systemBalance,
+        isBalanceRefreshing: false,
         unit: s.unit as 'portions' | 'pcs',
         portionsPerBox: s.portionsPerBox,
         actualCount: null,
         boxCount: null,
         checked: false,
       }));
+
+      const effectiveDate = asOfDate ?? (sessionDate ? new Date(sessionDate) : null);
+      if (effectiveDate && !isNaN(effectiveDate.getTime()) && loaded.length > 0) {
+        const skus = loaded.map((set) => set.sku).filter(Boolean).join(',');
+        if (skus) {
+          const snapshotUrl = new URL('/api/warehouse/stock-snapshot', window.location.origin);
+          snapshotUrl.searchParams.set('skus', skus);
+          snapshotUrl.searchParams.set('asOfDate', effectiveDate.toISOString());
+
+          const snapshotRes = await fetch(snapshotUrl.toString(), { credentials: 'include' });
+          if (snapshotRes.ok) {
+            const snapshotData = await snapshotRes.json();
+            const stocks: Record<string, { mainStock: number; smallStock: number }> = snapshotData.stocks ?? {};
+            loaded = loaded.map((set) => {
+              const stock = stocks[set.sku];
+              return stock ? { ...set, systemBalance: stock.smallStock } : set;
+            });
+          }
+        }
+      }
+
       setSets(loaded);
       return loaded;
     } catch (err: any) {
@@ -312,8 +336,11 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       if (!data.draft) return;
 
       const draft = data.draft;
+      const draftDateRaw = draft.inventoryDate ?? draft.createdAt ?? null;
+      const draftDate = draftDateRaw ? new Date(draftDateRaw) : null;
+      const effectiveDate = draftDate && !isNaN(draftDate.getTime()) ? draftDate : undefined;
       // Завантажуємо актуальні залишки з API
-      const [freshProducts, freshMaterials, freshSets] = await Promise.all([loadProducts(), loadMaterials(), loadSets()]);
+      const [freshProducts, freshMaterials, freshSets] = await Promise.all([loadProducts(), loadMaterials(), loadSets(effectiveDate)]);
 
       // Відновлюємо введені дані з чернетки
       // ВАЖЛИВО: savedProductsMap і savedMaterialsMap — окремо, бо id товарів і матеріалів можуть збігатися
@@ -360,9 +387,8 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         [...mergedProducts, ...mergedMaterials, ...mergedSets].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
       ));
       // Завантажуємо залишки за обліком на дату чернетки (через ref, щоб уникнути TDZ)
-      const dateToUse = new Date(draft.inventoryDate ?? draft.createdAt);
-      if (!isNaN(dateToUse.getTime())) {
-        await refreshSystemBalancesRef.current(dateToUse, mergedProducts, mergedMaterials);
+      if (effectiveDate) {
+        await refreshSystemBalancesRef.current(effectiveDate, mergedProducts, mergedMaterials);
       }
     } catch {
       // Тихо ігноруємо — просто не відновлюємо чернетку
@@ -874,6 +900,8 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     if (allProducts.length === 0 && allMaterials.length === 0) return;
 
     setIsRefreshingBalances(true);
+    setProducts((prev) => prev.map((product) => ({ ...product, isBalanceRefreshing: true })));
+    setMaterials((prev) => prev.map((material) => ({ ...material, isBalanceRefreshing: true })));
     try {
       const allSets = sets.length > 0 ? sets : [];
       const skus = [
@@ -895,13 +923,13 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       // Оновлюємо systemBalance для товарів (використовуємо smallStock = склад "2")
       setProducts(prev => prev.map(p => {
         const s = stocks[p.sku];
-        return s ? { ...p, systemBalance: s.smallStock } : p;
+        return s ? { ...p, systemBalance: s.smallStock, isBalanceRefreshing: false } : { ...p, isBalanceRefreshing: false };
       }));
 
       // Оновлюємо systemBalance для матеріалів
       setMaterials(prev => prev.map(m => {
         const s = stocks[m.sku];
-        return s ? { ...m, systemBalance: s.smallStock } : m;
+        return s ? { ...m, systemBalance: s.smallStock, isBalanceRefreshing: false } : { ...m, isBalanceRefreshing: false };
       }));
     } catch (err: any) {
       ToastService.show({
@@ -910,9 +938,46 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         color: 'danger',
       });
     } finally {
+      setProducts((prev) => prev.map((product) => ({ ...product, isBalanceRefreshing: false })));
+      setMaterials((prev) => prev.map((material) => ({ ...material, isBalanceRefreshing: false })));
       setIsRefreshingBalances(false);
     }
   }, [products, materials]);
+
+  const refreshSetBalances = useCallback(async (asOfDate: Date): Promise<void> => {
+    const currentSets = sets.length > 0 ? sets : [];
+    if (currentSets.length === 0) return;
+
+    setSets((prev) => prev.map((set) => ({ ...set, isBalanceRefreshing: true })));
+
+    try {
+      const skus = currentSets.map((set) => set.sku).filter(Boolean).join(',');
+      if (!skus) return;
+
+      const url = new URL('/api/warehouse/stock-snapshot', window.location.origin);
+      url.searchParams.set('skus', skus);
+      url.searchParams.set('asOfDate', asOfDate.toISOString());
+
+      const res = await fetch(url.toString(), { credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const stocks: Record<string, { mainStock: number; smallStock: number }> = data.stocks ?? {};
+
+      setSets((prev) => prev.map((set) => {
+        const stock = stocks[set.sku];
+        return stock
+          ? { ...set, systemBalance: stock.smallStock, isBalanceRefreshing: false }
+          : { ...set, isBalanceRefreshing: false };
+      }));
+    } catch (err: any) {
+      ToastService.show({
+        title: 'Не вдалось оновити залишки комплектів на дату',
+        description: err.message ?? 'Невідома помилка',
+        color: 'danger',
+      });
+      setSets((prev) => prev.map((set) => ({ ...set, isBalanceRefreshing: false })));
+    }
+  }, [sets]);
 
   // Оновлюємо ref при кожній зміні refreshSystemBalances
   // (щоб loadDraft та handleAdminLoadSession завжди мали актуальну версію)
@@ -935,15 +1000,20 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     balancesDebounceRef.current = setTimeout(() => {
       balancesDebounceRef.current = null;
       refreshSystemBalances(date);
+      void refreshSetBalances(date);
     }, 1000);
-  }, [refreshSystemBalances]);
+  }, [refreshSystemBalances, refreshSetBalances]);
 
   // ---------------------------------------------------------------------------
   // Адмін: завантажити чужу сесію (in_progress) у поточний перегляд
   // ---------------------------------------------------------------------------
 
   const handleAdminLoadSession = useCallback(async (session: InventorySession): Promise<void> => {
-    const [freshProducts, freshMaterials, freshSets] = await Promise.all([loadProducts(), loadMaterials(), loadSets()]);
+    const sessionDateRaw = session.inventoryDate ?? session.createdAt ?? null;
+    const sessionDateValue = sessionDateRaw ? new Date(sessionDateRaw) : null;
+    const effectiveDate = sessionDateValue && !isNaN(sessionDateValue.getTime()) ? sessionDateValue : undefined;
+
+    const [freshProducts, freshMaterials, freshSets] = await Promise.all([loadProducts(), loadMaterials(), loadSets(effectiveDate)]);
 
     const savedItems: Array<{ type?: string; id: string; actualCount: number | null; boxCount: number | null; checked: boolean }>
       = session.items as any;
@@ -1005,9 +1075,8 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     const unconfirmedSetIds = mergedSets.filter((s) => !s.checked && (s.actualCount !== null || s.boxCount !== null)).map(s => s.id);
     setOpenSetIds(new Set(unconfirmedSetIds));
     // Завантажуємо залишки за обліком на дату сесії (через ref, щоб уникнути TDZ)
-    const dateToUse = new Date(session.inventoryDate ?? session.createdAt);
-    if (!isNaN(dateToUse.getTime())) {
-      await refreshSystemBalancesRef.current(dateToUse, mergedProducts, mergedMaterials);
+    if (effectiveDate) {
+      await refreshSystemBalancesRef.current(effectiveDate, mergedProducts, mergedMaterials);
     }
   }, [loadProducts, loadMaterials, loadSets]);
 

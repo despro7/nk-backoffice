@@ -10,6 +10,7 @@ export interface InventoryProduct {
   name: string;
   categoryName?: string;
   systemBalance: number; // Залишок за системою (порції або штуки)
+  isBalanceRefreshing?: boolean; // Локальний loader для оновлення залишку на дату
   actualCount: number | null; // Фактична кількість (порції або штуки)
   boxCount: number | null; // Кількість повних коробок (тільки для порційних товарів)
   unit: 'portions' | 'pcs'; // Визначає, як інтерпретувати systemBalance та actualCount

@@ -2154,6 +2154,7 @@ const ProductSets: React.FC = () => {
   // Refs для пропуску першого рендеру у фільтрових ефектах
   const categoryMountedRef = useRef(false);
   const searchMountedRef = useRef(false);
+  const showOutdatedMountedRef = useRef(false);
   const sortMountedRef = useRef(false);
   const pageSizeLoadedRef = useRef(false);
   const pageEffectSkipRef = useRef(false);
@@ -2180,6 +2181,16 @@ const ProductSets: React.FC = () => {
     }, 500);
     return () => clearTimeout(timer);
   }, [searchTerm]);
+
+  // Зміна перемикача застарілих товарів → оновлюємо дані з сервера
+  useEffect(() => {
+    if (!showOutdatedMountedRef.current) { showOutdatedMountedRef.current = true; return; }
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    } else {
+      fetchProducts(1, searchTerm, selectedCategories, pageSize);
+    }
+  }, [showOutdated]);
 
   // Зміна сортування → скидаємо на сторінку 1 та запитуємо
   useEffect(() => {

@@ -3,6 +3,7 @@ export type GroupBy = "day" | "calendarWeek" | "week4";
 export interface SalesDynamicsColumn {
   key: string;
   label: string;
+  tooltip?: string;
   allowsSorting: boolean;
 }
 
@@ -20,6 +21,7 @@ export interface SalesDynamicsRow {
 
 export type DisplayRow = SalesDynamicsRow & {
   _stock: number | null | undefined;
+  _currentStock: number | null | undefined;
 };
 
 export interface SalesDynamicsResponse {

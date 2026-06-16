@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { ReactNode } from "react";
 import { Chip, Spinner } from "@heroui/react";
 import type { SortDescriptor } from "@heroui/react";
@@ -41,6 +41,8 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
   const { apiCall } = useApi();
   const { isLoading: isAuthLoading } = useAuth();
   const dilovodSettings = useDilovodSettings();
+  const selectedFirmSourceRef = useRef<"auto" | "user" | null>(null);
+  const apiCallRef = useRef(apiCall);
   const [selectedFirmId, setSelectedFirmId] = useState<string | undefined>(undefined);
   const [selectedMonth, setSelectedMonth] = useState<Date>(() => {
     const now = new Date();
@@ -49,6 +51,7 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
   const [groupBy, setGroupBy] = useState<GroupBy>("week4");
   const [salesData, setSalesData] = useState<SalesDynamicsResponse | null>(null);
   const [stockData, setStockData] = useState<StockSnapshotResponse | null>(null);
+  const [currentStockData, setCurrentStockData] = useState<StockSnapshotResponse | null>(null);
   const [isSalesLoading, setIsSalesLoading] = useState(false);
   const [isStockLoading, setIsStockLoading] = useState(false);
   const [salesError, setSalesError] = useState<string | null>(null);
@@ -57,18 +60,29 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
     direction: "descending",
   });
 
+  const handleSelectedFirmChange = useCallback((value: string | undefined) => {
+    selectedFirmSourceRef.current = "user";
+    setSelectedFirmId(value);
+  }, []);
+
   useEffect(() => {
-    if (selectedFirmId) {
+    apiCallRef.current = apiCall;
+  }, [apiCall]);
+
+  useEffect(() => {
+    if (selectedFirmSourceRef.current === "user") {
       return;
     }
 
+    const firms = dilovodSettings?.directories?.firms ?? [];
     const defaultFirm = dilovodSettings?.settings?.defaultFirmId;
-    const firstFirm = dilovodSettings?.directories?.firms?.[0]?.id;
+    const firstFirm = firms[0]?.id;
+    const isDefaultFirmAvailable = defaultFirm ? firms.some((firm) => firm.id === defaultFirm) : false;
+    const nextFirmId = isDefaultFirmAvailable ? defaultFirm : firstFirm;
 
-    if (defaultFirm) {
-      setSelectedFirmId(defaultFirm);
-    } else if (firstFirm) {
-      setSelectedFirmId(firstFirm);
+    if (nextFirmId && selectedFirmId !== nextFirmId) {
+      selectedFirmSourceRef.current = "auto";
+      setSelectedFirmId(nextFirmId);
     }
   }, [selectedFirmId, dilovodSettings?.settings?.defaultFirmId, dilovodSettings?.directories]);
 
@@ -86,7 +100,7 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
     setStockData(null);
     setSalesData(null);
 
-    apiCall(`/api/stat/sales-dynamics?year=${year}&month=${month}&groupBy=${groupBy}`)
+    apiCallRef.current(`/api/stat/sales-dynamics?year=${year}&month=${month}&groupBy=${groupBy}`)
       .then((response) => response.json())
       .then((data: SalesDynamicsResponse) => {
         if (cancelled) {
@@ -115,7 +129,7 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
     return () => {
       cancelled = true;
     };
-  }, [selectedMonth, groupBy, isAuthLoading, apiCall]);
+  }, [selectedMonth, groupBy, isAuthLoading]);
 
   useEffect(() => {
     const skus = salesData?.data?.rows?.map((row) => row.sku).filter(Boolean) ?? [];
@@ -131,34 +145,57 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
     let cancelled = false;
 
     setIsStockLoading(true);
+    setStockData(null);
+    setCurrentStockData(null);
 
     const firmId = selectedFirmId ?? dilovodSettings?.settings?.defaultFirmId ?? undefined;
-    const encodedLen =
+    const encodedOpeningLen =
       encodeURIComponent(skusParam).length +
       encodeURIComponent(asOfDate).length +
       (firmId ? encodeURIComponent(firmId).length : 0);
-    const usePost = encodedLen > 2000;
+    const encodedCurrentLen =
+      encodeURIComponent(skusParam).length +
+      (firmId ? encodeURIComponent(firmId).length : 0);
+    const usePostOpening = encodedOpeningLen > 2000;
+    const usePostCurrent = encodedCurrentLen > 2000;
+
+    const fetchSnapshot = async (snapshotAsOfDate: string | undefined): Promise<StockSnapshotResponse> => {
+      const isCurrent = snapshotAsOfDate === undefined;
+      const shouldUsePost = isCurrent ? usePostCurrent : usePostOpening;
+
+      if (shouldUsePost) {
+        const body: { skus: string[]; firmId?: string; asOfDate?: string } = { skus, firmId };
+
+        if (snapshotAsOfDate) {
+          body.asOfDate = snapshotAsOfDate;
+        }
+
+        const response = await apiCallRef.current("/api/warehouse/stock-snapshot", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+
+        return response.json();
+      }
+
+      const url =
+        `/api/warehouse/stock-snapshot?skus=${encodeURIComponent(skusParam)}` +
+        (snapshotAsOfDate ? `&asOfDate=${snapshotAsOfDate}` : "") +
+        (firmId ? `&firmId=${encodeURIComponent(firmId)}` : "");
+      const response = await apiCallRef.current(url);
+      return response.json();
+    };
 
     (async () => {
       try {
-        let response: Response;
-
-        if (usePost) {
-          response = await apiCall("/api/warehouse/stock-snapshot", {
-            method: "POST",
-            body: JSON.stringify({ skus, asOfDate, firmId }),
-          });
-        } else {
-          const url =
-            `/api/warehouse/stock-snapshot?skus=${encodeURIComponent(skusParam)}&asOfDate=${asOfDate}` +
-            (firmId ? `&firmId=${encodeURIComponent(firmId)}` : "");
-          response = await apiCall(url);
-        }
-
-        const data: StockSnapshotResponse = await response.json();
+        const [openingResult, currentResult] = await Promise.all([
+          fetchSnapshot(asOfDate),
+          fetchSnapshot(undefined),
+        ]);
 
         if (!cancelled) {
-          setStockData(data);
+          setStockData(openingResult);
+          setCurrentStockData(currentResult);
         }
       } catch (error) {
         console.error("[SalesDynamics] Помилка завантаження залишків:", error);
@@ -172,7 +209,7 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
     return () => {
       cancelled = true;
     };
-  }, [salesData, selectedMonth, selectedFirmId, dilovodSettings?.settings?.defaultFirmId, apiCall]);
+  }, [salesData, selectedMonth, selectedFirmId, dilovodSettings?.settings?.defaultFirmId]);
 
   const periods = useMemo<PeriodMeta[]>(() => salesData?.data?.periods ?? [], [salesData]);
   const rows = useMemo<SalesDynamicsRow[]>(() => salesData?.data?.rows ?? [], [salesData]);
@@ -190,6 +227,20 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
 
     return map;
   }, [stockData]);
+
+  const currentStockMap = useMemo<Record<string, number>>(() => {
+    if (!currentStockData?.stocks) {
+      return {};
+    }
+
+    const map: Record<string, number> = {};
+
+    for (const [sku, stock] of Object.entries(currentStockData.stocks)) {
+      map[sku] = (stock.mainStock ?? 0) + (stock.smallStock ?? 0);
+    }
+
+    return map;
+  }, [currentStockData]);
 
   const zeroStocksCount = useMemo(() => {
     if (!stockData?.stocks || rows.length === 0) {
@@ -227,6 +278,12 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
         return (leftStock - rightStock) * direction;
       }
 
+      if (column === "currentStock") {
+        const leftStock = currentStockMap[left.sku] ?? 0;
+        const rightStock = currentStockMap[right.sku] ?? 0;
+        return (leftStock - rightStock) * direction;
+      }
+
       if (column === "totalSold") {
         return (left.totalSold - right.totalSold) * direction;
       }
@@ -254,36 +311,44 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
       const rightQuantity = right.periods[column] ?? 0;
       return (leftQuantity - rightQuantity) * direction;
     });
-  }, [rows, sortDescriptor, stockMap]);
+  }, [rows, sortDescriptor, stockMap, currentStockMap]);
 
   const displayRows = useMemo<DisplayRow[]>(
     () =>
       sortedRows.map((row) => ({
         ...row,
         _stock: isStockLoading ? undefined : stockMap[row.sku] !== undefined ? stockMap[row.sku] : null,
+        _currentStock: isStockLoading
+          ? undefined
+          : currentStockMap[row.sku] !== undefined
+            ? currentStockMap[row.sku]
+            : null,
       })),
-    [sortedRows, stockMap, isStockLoading],
+    [sortedRows, stockMap, currentStockMap, isStockLoading],
   );
 
   const columns = useMemo<SalesDynamicsColumn[]>(() => {
     const base = [
       { key: "productName", label: "Товар", allowsSorting: true },
-      { key: "openingStock", label: "Початок місяця", allowsSorting: true },
+      { key: "openingStock", label: "Початок місяця", tooltip: "Залишок на початок місяця", allowsSorting: true },
+      { key: "currentStock", label: "Поточний залишок", allowsSorting: false },
     ];
     const periodColumns = periods.map((period) => ({
       key: period.key,
       label: period.label,
+      tooltip: `Продажі за період ${period.label}`,
       allowsSorting: true,
     }));
     const end = [
-      { key: "totalSold", label: "Всього", allowsSorting: true },
-      { key: "salePercent", label: "Продаж %", allowsSorting: true },
+      { key: "totalSold", label: "Всього продано", tooltip: "Всього продано за обраний місяць", allowsSorting: true },
+      { key: "salePercent", label: "% продажів", tooltip: "Відсоток продажів відносно залишку на початок місяця", allowsSorting: true },
     ];
 
     return [...base, ...periodColumns, ...end];
   }, [periods]);
 
   const allOpeningStocks = useMemo<number[]>(() => displayRows.map((row) => row._stock ?? 0), [displayRows]);
+  const allCurrentStocks = useMemo<number[]>(() => displayRows.map((row) => row._currentStock ?? 0), [displayRows]);
   const allTotalSolds = useMemo<number[]>(() => displayRows.map((row) => row.totalSold), [displayRows]);
 
   const renderCell = useCallback(
@@ -309,6 +374,23 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
         );
       }
 
+      if (columnKey === "currentStock") {
+        if (row._currentStock === undefined) {
+          return <Spinner size="sm" />;
+        }
+
+        if (row._currentStock === null) {
+          return <span className="text-default-400">—</span>;
+        }
+
+        const colors = getValueColor(row._currentStock, allCurrentStocks);
+        return (
+          <Chip size="sm" variant="flat" classNames={{ base: colors.base, content: colors.content }}>
+            {row._currentStock.toLocaleString("uk-UA")}
+          </Chip>
+        );
+      }
+
       if (columnKey === "totalSold") {
         const colors = getValueColor(row.totalSold, allTotalSolds);
         return (
@@ -330,7 +412,7 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
         </span>
       );
     },
-    [allOpeningStocks, allTotalSolds],
+    [allOpeningStocks, allCurrentStocks, allTotalSolds],
   );
 
   return {
@@ -346,7 +428,7 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
     selectedFirmId,
     selectedMonth,
     setGroupBy,
-    setSelectedFirmId,
+    setSelectedFirmId: handleSelectedFirmChange,
     setSelectedMonth,
     setSortDescriptor,
     showFirmInfoAlert,
