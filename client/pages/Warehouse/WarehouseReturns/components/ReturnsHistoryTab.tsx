@@ -18,7 +18,7 @@ interface ReturnsHistoryTabProps {
 export const ReturnsHistoryTab = ({ records, loading, onRefresh, onLoadRecord, onDeleteRecord }: ReturnsHistoryTabProps) => (
   <>
     <div className="flex items-end justify-between mb-4">
-      <h2 className="text-base font-semibold text-gray-800">Минулі повернення</h2>
+      <h2 className="text-base font-semibold text-gray-800">Минулі повернення {records.length > 0 && ` (${records.length})`}</h2>
       <Button
         size="sm"
         variant="flat"

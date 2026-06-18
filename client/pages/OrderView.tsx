@@ -509,6 +509,7 @@ export default function OrderView() {
       setChecklistItems([]);
       setExpandedItems([]);
       setSelectedBoxes([]);
+      setActiveBoxIndex(0);
       setIsReadyToShip(false);
 
       // Спершу завантажуємо налаштування монолітних категорій

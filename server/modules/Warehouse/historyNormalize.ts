@@ -17,6 +17,7 @@ export interface HistorySetNormalized {
   setQty: number;
   components: HistoryItemNormalized[];
   componentsTotal: number;
+  componentsQuantityMode?: 'per_set' | 'total';
   raw?: any;
 }
 
@@ -63,6 +64,7 @@ export function normalizeSet(setItem: any): HistorySetNormalized {
   const setSku = String(setItem?.set_sku ?? setItem?.setSku ?? setItem?.sku ?? '') || '';
   const setName = setItem?.name ?? setItem?.title ?? null;
   const setQty = Number(setItem?.quantity ?? setItem?.qty ?? 0) || 0;
+  const componentsQuantityMode = String(setItem?.components_quantity_mode ?? '').toLowerCase() === 'total' ? 'total' : 'per_set';
   const compsRaw = Array.isArray(setItem?.components_snapshot)
     ? setItem.components_snapshot
     : (Array.isArray(setItem?.componentsSnapshot) ? setItem.componentsSnapshot : []);
@@ -74,6 +76,7 @@ export function normalizeSet(setItem: any): HistorySetNormalized {
     setQty,
     components,
     componentsTotal,
+    componentsQuantityMode,
     raw: setItem,
   };
 }
@@ -86,4 +89,47 @@ export function normalizeItemsArray(raw: any): HistoryItemNormalized[] {
 export function normalizeSetsArray(raw: any): HistorySetNormalized[] {
   const arr = safeParseItems(raw);
   return arr.map(normalizeSet);
+}
+
+// Normalize items array as used by SetReleaseController before saving
+export function normalizeReleaseHistoryItems(items: any[]): any[] {
+  if (!Array.isArray(items)) return [];
+  return items.map((it: any) => {
+    const setQty = Number(it?.quantity ?? 0);
+    const safeSetQty = Number.isFinite(setQty) && setQty > 0 ? setQty : 0;
+    const quantityMode = String(it?.components_quantity_mode ?? '').toLowerCase() === 'total' ? 'total' : 'per_set';
+
+    const rawComponents = Array.isArray(it?.components_snapshot)
+      ? it.components_snapshot
+      : (Array.isArray(it?.componentsSnapshot) ? it.componentsSnapshot : []);
+
+    const componentsSnapshot = rawComponents.map((component: any) => {
+      const rawQty = Number(component?.quantity ?? component?.qty ?? 0);
+      const safeRawQty = Number.isFinite(rawQty) ? rawQty : 0;
+
+      const totalQty = quantityMode === 'total'
+        ? safeRawQty
+        : safeRawQty * safeSetQty;
+
+      const perSetQtyRaw = component?.quantity_per_set ?? component?.quantityPerSet;
+      const parsedPerSetQty = Number(perSetQtyRaw);
+      const perSetQty = Number.isFinite(parsedPerSetQty)
+        ? parsedPerSetQty
+        : (quantityMode === 'total'
+          ? (safeSetQty > 0 ? totalQty / safeSetQty : totalQty)
+          : safeRawQty);
+
+      return {
+        ...component,
+        quantity: totalQty,
+        quantity_per_set: perSetQty,
+      };
+    });
+
+    return {
+      ...it,
+      components_snapshot: componentsSnapshot,
+      components_quantity_mode: 'total',
+    };
+  });
 }

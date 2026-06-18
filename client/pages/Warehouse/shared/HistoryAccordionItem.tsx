@@ -136,7 +136,17 @@ export const HistoryAccordionItem = ({
         const setsForCount = recordType === 'releaseSet' ? (record.setsNormalized ?? normalizeSetsArray(record.items ?? items)) : [];
         const uniqueSetTypes = recordType === 'releaseSet' ? setsForCount.length : 0;
         const totalSets = recordType === 'releaseSet' ? setsForCount.reduce((sum: number, set: any) => sum + (Number(set.setQty ?? 0)), 0) : 0;
-        const totalPortions = recordType === 'releaseSet' ? setsForCount.reduce((sum: number, set: any) => sum + (Number(set.componentsTotal ?? 0) * Number(set.setQty ?? 0)), 0) : 0;
+        const totalPortions = recordType === 'releaseSet' ? setsForCount.reduce((sum: number, set: any) => {
+          const componentsTotal = Number(set.componentsTotal ?? 0);
+          const setQty = Number(set.setQty ?? 0);
+          const mode = String(set.componentsQuantityMode ?? '').toLowerCase();
+
+          if (mode === 'total') {
+            return sum + componentsTotal;
+          }
+
+          return sum + (componentsTotal * setQty);
+        }, 0) : 0;
 
         return (
           <div key={record.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -168,10 +178,6 @@ export const HistoryAccordionItem = ({
               <div className="flex items-center gap-12 ml-20 text-xs text-gray-500">
                 {recordType === 'releaseSet' ? (
                   <>
-                    <div className="text-right">
-                      <span className="text-medium font-semibold leading-none">{uniqueSetTypes}</span>
-                      <p className="leading-none">{pluralize(uniqueSetTypes, 'позиція', 'позиції', 'позицій')}</p>
-                    </div>
                     <div className="text-right">
                       <span className="text-medium font-semibold leading-none">{totalSets}</span>
                       <p className="leading-none">{pluralize(totalSets, 'набір', 'набори', 'наборів')}</p>

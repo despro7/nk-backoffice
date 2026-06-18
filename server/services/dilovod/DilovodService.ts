@@ -80,6 +80,74 @@ export class DilovodService {
     await this.apiClient.ensureReady();
     return this.apiClient.getObject(dilovodDocId);
   }
+
+  /**
+   * Batch fetch movement documents by Dilovod IDs using a single request per chunk.
+   * Returns an array of document objects (may be empty if none found).
+   */
+  async getMovementDocumentsBatch(ids: string[], signal?: AbortSignal): Promise<any[]> {
+    try {
+      await this.apiClient.ensureReady();
+      if (!Array.isArray(ids) || ids.length === 0) return [];
+
+      const chunkSize = 50;
+      const chunks: string[][] = [];
+      for (let i = 0; i < ids.length; i += chunkSize) chunks.push(ids.slice(i, i + chunkSize));
+
+      const allResults: any[] = [];
+
+      for (const chunk of chunks) {
+        const request = {
+          version: '0.25',
+          key: this.apiClient.getApiKey(),
+          action: 'request',
+          params: {
+            from: 'documents.goodWriteOff',
+            fields: {
+              id: 'id',
+              date: 'date',
+              number: 'number',
+              remark: 'remark',
+              delMark: 'delMark'
+            },
+            filters: [
+              {
+                alias: 'id',
+                operator: 'IL',
+                value: chunk
+              }
+            ]
+          }
+        };
+
+        try {
+          const resp = await this.apiClient.makeRequest<any>(request, signal);
+          // Normalize response similar to apiClient.normalizeToArray
+          let rows: any[] = [];
+          if (Array.isArray(resp)) rows = resp;
+          else if (resp == null) rows = [];
+          else if (Array.isArray(resp.data)) rows = resp.data;
+          else if (Array.isArray(resp.rows)) rows = resp.rows;
+          else if (Array.isArray(resp.result)) rows = resp.result;
+          else if (Array.isArray(resp.items)) rows = resp.items;
+          else if (typeof resp === 'object' && Object.keys(resp).length === 0) rows = [];
+          else if (typeof resp === 'object') rows = [resp];
+
+          allResults.push(...rows);
+        } catch (e) {
+          console.warn('[DilovodService][getMovementDocumentsBatch] chunk request failed', e);
+        }
+
+        // small delay between chunks
+        if (chunks.length > 1) await new Promise(r => setTimeout(r, 150));
+      }
+
+      return allResults;
+    } catch (error) {
+      console.error('[DilovodService][getMovementDocumentsBatch] error:', error);
+      return [];
+    }
+  }
   private apiClient: DilovodApiClient;
   private cacheManager: DilovodCacheManager;
   private dataProcessor: DilovodDataProcessor;

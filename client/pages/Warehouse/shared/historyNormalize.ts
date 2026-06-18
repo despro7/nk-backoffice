@@ -16,6 +16,7 @@ export interface HistorySetNormalized {
   setQty: number;
   components: HistoryItemNormalized[];
   componentsTotal: number;
+  componentsQuantityMode?: 'per_set' | 'total';
   raw?: any;
 }
 
@@ -49,12 +50,13 @@ export function normalizeSet(setItem: any): HistorySetNormalized {
   const setSku = String(setItem?.set_sku ?? setItem?.setSku ?? setItem?.sku ?? '') || '';
   const setName = setItem?.name ?? setItem?.title ?? null;
   const setQty = Number(setItem?.quantity ?? setItem?.qty ?? 0) || 0;
+  const componentsQuantityMode = String(setItem?.components_quantity_mode ?? '').toLowerCase() === 'total' ? 'total' : 'per_set';
   const compsRaw = Array.isArray(setItem?.components_snapshot)
     ? setItem.components_snapshot
     : (Array.isArray(setItem?.componentsSnapshot) ? setItem.componentsSnapshot : []);
   const components = compsRaw.map(normalizeItem);
   const componentsTotal = components.reduce((s, c) => s + (Number(c.qty) || 0), 0);
-  return { setSku, setName, setQty, components, componentsTotal, raw: setItem };
+  return { setSku, setName, setQty, components, componentsTotal, componentsQuantityMode, raw: setItem };
 }
 
 export function normalizeItemsArray(raw: any): HistoryItemNormalized[] {

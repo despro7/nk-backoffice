@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
-import { normalizeSetsArray } from './historyNormalize.js';
+import { normalizeSetsArray, normalizeReleaseHistoryItems } from './historyNormalize.js';
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
 import { dilovodExportFlowService } from '../../services/dilovod/index.js';
@@ -69,7 +69,8 @@ router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (re
       }
     }
 
-    const itemsWithNames = items.map((it: any) => {
+    const normalizedItems = normalizeReleaseHistoryItems(items);
+    const itemsWithNames = normalizedItems.map((it: any) => {
       const sku = String(it.set_sku || it.setSku || it.sku || '').trim();
       return { ...it, name: it.name ?? nameMap[sku] ?? null };
     });
@@ -171,6 +172,117 @@ router.post('/preview', authenticateToken, requireMinRole(ROLES.STOREKEEPER), as
   } catch (error) {
     console.error('[SetRelease][preview] error:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// NOTE: single-item `/check-dilovod` removed — use `/check-dilovod-batch` for batch operations
+
+/** POST /api/warehouse/releases/check-dilovod-batch - batch check dilovod documents */
+router.post('/check-dilovod-batch', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+
+    if (items.length === 0) return res.status(400).json({ success: false, error: 'items required' });
+
+    const results: Array<any> = [];
+    const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
+
+    // Build list of docIds to fetch in batch
+    const requestedDocIds = items.map((it: any) => String(it?.dilovodDocId ?? '').trim()).filter((d: string) => d);
+
+    // Fetch documents in chunks via Dilovod batch API
+    const docs = await dilovodService.getMovementDocumentsBatch(requestedDocIds).catch((e) => {
+      console.warn('[SetRelease][check-dilovod-batch] batch fetch failed', e);
+      return [] as any[];
+    });
+
+    const docsById: Record<string, any> = {};
+    for (const d of Array.isArray(docs) ? docs : []) {
+      const id = d?.id != null ? String(d.id) : (d?.ID != null ? String(d.ID) : null);
+      if (id) docsById[String(id)] = d;
+    }
+
+    for (const it of items) {
+      const id = it?.id != null ? Number(it.id) : null;
+      const docId = String(it?.dilovodDocId ?? '').trim();
+      if (!docId) {
+        results.push({ id, dilovodDocId: docId, success: false, error: 'missing dilovodDocId' });
+        continue;
+      }
+
+      const doc = docsById[docId] || null;
+
+      // If Dilovod did not return data for this id -> consider deleted per user instruction
+      const missingInResponse = !doc;
+
+      let delMark = false;
+      let success = true;
+      let updated = false;
+
+      let remark: string | null = null;
+      if (missingInResponse) {
+        delMark = true;
+      } else {
+        const headerDel = doc?.header?.delMark ?? doc?.delMark ?? undefined;
+        delMark = headerDel === true || headerDel === 1 || String(headerDel) === '1';
+        remark = doc?.remark ?? doc?.header?.remark ?? null;
+      }
+
+      if (delMark) {
+        // try find by id or dilovodDocId
+        try {
+          if (id != null) {
+            const existing = await prisma.warehouseReleaseSet.findUnique({ where: { id } });
+            if (existing) {
+              await prisma.warehouseReleaseSet.update({ where: { id }, data: { status: 'deleted' } });
+              updated = true;
+            } else {
+              const created = await prisma.warehouseReleaseSet.create({ data: {
+                setSku: null,
+                quantity: 0,
+                items: [],
+                storageId: null,
+                firmId: null,
+                dilovodDocId: docId,
+                comment: null,
+                status: 'deleted',
+                createdBy: 0,
+              } });
+              if (created) updated = true;
+            }
+          } else {
+            const existing = await prisma.warehouseReleaseSet.findFirst({ where: { dilovodDocId: docId } });
+            if (existing) {
+              await prisma.warehouseReleaseSet.update({ where: { id: existing.id }, data: { status: 'deleted' } });
+              updated = true;
+            } else {
+              const created = await prisma.warehouseReleaseSet.create({ data: {
+                setSku: null,
+                quantity: 0,
+                items: [],
+                storageId: null,
+                firmId: null,
+                dilovodDocId: docId,
+                comment: null,
+                status: 'deleted',
+                createdBy: 0,
+              } });
+              if (created) updated = true;
+            }
+          }
+        } catch (e) {
+          console.warn('[SetRelease][check-dilovod-batch] failed to mark/create tombstone', e);
+          success = false;
+        }
+      }
+
+      results.push({ id, dilovodDocId: docId, success, delMark, updated, remark });
+    }
+
+    return res.json({ success: true, results });
+  } catch (error) {
+    console.error('[SetRelease][check-dilovod-batch] Error:', error);
+    return res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' });
   }
 });
 

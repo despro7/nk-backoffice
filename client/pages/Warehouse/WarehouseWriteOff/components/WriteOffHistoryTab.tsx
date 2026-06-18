@@ -18,7 +18,7 @@ interface WriteOffHistoryTabProps {
 export const WriteOffHistoryTab = ({ records, loading, onRefresh, onLoadRecord, onDeleteRecord }: WriteOffHistoryTabProps) => (
   <>
     <div className="flex items-end justify-between mb-4">
-      <h2 className="text-base font-semibold text-gray-800">Минулі списання</h2>
+      <h2 className="text-base font-semibold text-gray-800">Минулі списання {records.length > 0 && ` (${records.length})`}</h2>
       <Button
         size="sm"
         variant="flat"
