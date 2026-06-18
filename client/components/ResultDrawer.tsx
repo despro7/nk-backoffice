@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	Drawer,
 	DrawerContent,
@@ -11,6 +11,7 @@ import {
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate, formatRelativeDate } from "../lib/formatUtils";
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
+import { useApi } from '@/hooks/useApi';
 
 interface ResultDrawerProps {
 	isOpen: boolean;
@@ -27,10 +28,85 @@ interface ResultDrawerProps {
  */
 export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Результат операції', type = 'result', getChannelName }: ResultDrawerProps) {
 	if (!result) return null;
+	const { apiCall } = useApi();
 
 	// Для логів - це масив
 	const isLogsMode = type === 'logs' && Array.isArray(result);
 	const [selectedLogIdx, setSelectedLogIdx] = useState(0);
+	const [productLookup, setProductLookup] = useState<Record<string, { name: string; isSet: boolean }>>({});
+
+	const normalizedSkuList = useMemo(() => {
+		if (type !== 'orderDetails') {
+			return [];
+		}
+
+		const orderedSkus = Array.isArray(result.items)
+			? result.items.map((item: any) => String(item?.sku ?? '').trim()).filter(Boolean)
+			: [];
+		const shippedSkus = result.payloadData?.shipment?.bySku && typeof result.payloadData.shipment.bySku === 'object'
+			? Object.keys(result.payloadData.shipment.bySku).map((sku) => String(sku).trim()).filter(Boolean)
+			: [];
+
+		return Array.from(new Set([...orderedSkus, ...shippedSkus]));
+	}, [result, type]);
+
+	useEffect(() => {
+		if (type !== 'orderDetails' || normalizedSkuList.length === 0) {
+			setProductLookup({});
+			return;
+		}
+
+		let isCancelled = false;
+
+		const loadProductLookup = async () => {
+			try {
+				const params = new URLSearchParams({
+					skus: normalizedSkuList.join(','),
+					fields: 'name,set'
+				});
+
+				const response = await apiCall(`/api/products/batch?${params.toString()}`);
+				if (!response.ok) {
+					return;
+				}
+
+				const data = await response.json();
+				const products = Array.isArray(data?.products) ? data.products : [];
+
+				const lookup = products.reduce((accumulator: Record<string, { name: string; isSet: boolean }>, product: any) => {
+					const sku = String(product?.sku ?? '').trim();
+					if (!sku) {
+						return accumulator;
+					}
+
+					accumulator[sku] = {
+						name: product?.name || '',
+						isSet: Array.isArray(product?.set) && product.set.length > 0,
+					};
+					return accumulator;
+				}, {});
+
+				if (!isCancelled) {
+					setProductLookup(lookup);
+				}
+			} catch {
+				if (!isCancelled) {
+					setProductLookup({});
+				}
+			}
+		};
+
+		void loadProductLookup();
+
+		return () => {
+			isCancelled = true;
+		};
+	}, [apiCall, normalizedSkuList, type]);
+
+	const getProductMeta = useCallback((sku: string): { name: string; isSet: boolean } | null => {
+		const normalizedSku = String(sku ?? '').trim();
+		return normalizedSku ? (productLookup[normalizedSku] ?? null) : null;
+	}, [productLookup]);
 
 	// Визначаємо тип результату
 	const isValidationError = result.type === 'critical_validation_error';
@@ -39,7 +115,7 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 
 
 	// Визначення стилів для інформаційних блоків
-	const infoBox = "flex flex-col gap-1 min-h-[90px] justify-between border-1 rounded-md p-3 bg-gray-50";
+	const infoBox = "flex flex-col gap-1 min-h-[90px] justify-between border-1 rounded-md p-3";
 	const infoBoxLabel = "text-gray-400 text-xs";
 	const infoBoxText = "text-sm font-medium leading-tight";
 
@@ -199,21 +275,81 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 														</div>
 													)}
 												</div>
-												<div className="bg-gray-50 p-4 rounded-lg border overflow-auto mb-10">
+												<div className="p-3.5 pt-2 rounded-lg border overflow-auto mb-4">
 													<span className={infoBoxLabel}>Замовлені товари:</span>
 													{/* Тут можна додати таблицю або список товарів з result.items */}
 													{result.items && result.items.length > 0 ? (
 														<ul className="mt-2">
 															{result.items.map((item, idx) => (
+																(() => {
+																	const productMeta = getProductMeta(item.sku);
+																	const displayName = productMeta?.name || item.productName || item.name || 'Невідомий товар';
+																	return (
 																<li key={idx} className="text-sm mb-1">
-																	<span className="text-tiny bg-grey-100 px-1 py-0.5 rounded tabular-nums">{item.sku}</span> {item.productName} - {item.quantity} шт.
+																	<span className="text-tiny bg-amber-200/60 px-1 py-0.5 rounded tabular-nums">{item.sku}</span> <span className={productMeta?.isSet ? 'font-semibold' : ''}>{item.productName} - {item.quantity} шт.</span>
+																	{productMeta?.isSet && (
+																		<Chip size="sm" variant="flat" className="bg-purple-100 text-purple-700 ml-2 h-5">
+																			набір
+																		</Chip>
+																	)}
 																</li>
+																);
+																})()
 															))}
 														</ul>
 													) : (
 														<div className="text-sm text-gray-500">Немає замовлених товарів</div>
 													)}
 												</div>
+												{(() => {
+													const shipmentBySku = result.payloadData?.shipment?.bySku;
+													if (!shipmentBySku || typeof shipmentBySku !== 'object') {
+														return null;
+													}
+
+													const orderedItems = Array.isArray(result.items) ? result.items : [];
+													const shippedItems = Object.entries(shipmentBySku)
+														.map(([sku, shipmentItem]: [string, any]) => {
+															const quantity = Number(shipmentItem?.quantity) || 0;
+															if (quantity <= 0) {
+																return null;
+															}
+
+															const sourceItem = orderedItems.find((item: any) => item?.sku === sku);
+															return {
+																sku,
+																productName: sourceItem?.productName || sourceItem?.name || 'Невідомий товар',
+																quantity,
+																accGood: shipmentItem?.accGood ? String(shipmentItem.accGood) : null,
+															};
+														})
+														.filter(Boolean) as Array<{ sku: string; productName: string; quantity: number; accGood: string | null }>;
+
+													if (shippedItems.length === 0) {
+														return null;
+													}
+
+													return (
+														<div className="p-3.5 pt-2 rounded-lg border overflow-auto mb-10">
+															<span className={infoBoxLabel}>Відвантажені набори:</span>
+															<div className="mt-2 space-y-1">
+																{shippedItems.map((item) => (
+																	(() => {
+																		const productMeta = getProductMeta(item.sku);
+																		const displayName = productMeta?.name || item.productName;
+																		return (
+																	<div key={`${item.sku}-${item.accGood || 'default'}`} className="text-sm flex flex-wrap items-center gap-2">
+																		<span className="text-tiny bg-lime-200 px-1 py-0.5 rounded tabular-nums">{item.sku}</span>
+																			<span>{displayName}</span>
+																		<span className="text-gray-500">- {item.quantity} шт.</span>
+																	</div>
+																	);
+																	})()
+																))}
+															</div>
+														</div>
+													);
+												})()}
 											</>
 										) : (
 											<>
@@ -453,11 +589,11 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 
 										{/* Raw JSON (згорнутий за замовчуванням) */}
 										<details className="group">
-											<summary className="cursor-pointer font-semibold text-sm mb-3 list-none flex items-center gap-2">
+											<summary className="cursor-pointer font-semibold text-sm mb-3 list-none items-center gap-2 inline-flex">
 												<DynamicIcon name="chevron-right" size={16} className="group-open:rotate-90 transition-transform" />
 												Raw JSON
 											</summary>
-											<div className="bg-gray-50 p-3 rounded-lg border-1 border-gray-200 overflow-auto">
+											<div className="bg-neutral-100 p-3 rounded-lg border-1 border-gray-200 overflow-auto">
 												<pre className="text-xs font-mono whitespace-pre-wrap break-words">
 													{JSON.stringify(result, null, 2)}
 												</pre>

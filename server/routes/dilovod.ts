@@ -765,7 +765,8 @@ router.get('/salesdrive/orders', authenticateToken, requireMinRole(ROLES.WAREHOU
           totalPrice: true,
           quantity: true,
           items: true,
-          rawData: true
+          rawData: true,
+          payloadData: true
         }
       }),
       prisma.order.count({ where: whereCondition }),

@@ -1284,6 +1284,41 @@ router.put('/inventory/draft/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/warehouse/inventory/complete
+// Створює та одразу завершує нову інвентаризацію без проміжної чернетки
+router.post('/inventory/complete', authenticateToken, async (req, res) => {
+  try {
+    const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const { comment, items, inventoryDate } = req.body as {
+      comment?: string;
+      items?: unknown[];
+      inventoryDate?: string;
+    };
+
+    const parsedInventoryDate = inventoryDate ? new Date(inventoryDate) : null;
+
+    const completed = await prisma.warehouseInventory.create({
+      data: {
+        createdBy: userId,
+        warehouse: 'small',
+        status: 'completed',
+        completedAt: new Date(),
+        comment: comment ?? null,
+        items: items !== undefined ? JSON.stringify(items) : '[]',
+        inventoryDate: parsedInventoryDate,
+      },
+    });
+
+    console.log(`✅ [Inventory] Створено та завершено інвентаризацію #${completed.id} для userId=${userId}`);
+    res.status(201).json({ session: { ...completed, inventoryDate: completed.inventoryDate?.toISOString() ?? null } });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error completing inventory without draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/warehouse/inventory/draft/:id/complete
 // Завершує сесію інвентаризації
 router.post('/inventory/draft/:id/complete', authenticateToken, async (req, res) => {

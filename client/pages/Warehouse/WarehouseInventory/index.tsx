@@ -186,7 +186,7 @@ export default function WarehouseInventory() {
                 {/* Список страв */}
                 {inv.selectedCategory !== 'Коробки' && (
                   <InventoryProductList
-                    title="Страви"
+                    title="Товари"
                     icon="utensils"
                     headerColorClass="bg-blue-50"
                     headerTextClass="text-blue-900"

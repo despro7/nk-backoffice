@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-06-15 — Dynamic monolithic support, `payloadData` для замовлень і lock для shipment export
+**Files:** `client/components/OrderAssemblyRightPanel.tsx`, `client/components/OrderChecklist.tsx`, `client/components/OrderChecklistItem.tsx`, `client/lib/orderAssemblyUtils.ts`, `client/pages/OrderView.tsx`, `client/types/orderAssembly.ts`, `server/routes/orders.ts`, `server/modules/Warehouse/SetReleaseController.ts`, `server/modules/Warehouse/WarehouseController.ts`, `server/services/dilovod/DilovodAutoExportService.ts`, `server/services/dilovod/DilovodExportBuilder.ts`, `server/services/dilovod/DilovodShipmentLockService.ts`, `server/services/orderDatabaseService.ts`, `prisma/schema.prisma`
+
+- Додано `dynamicMonolithic` до `OrderChecklistItem` та оновлено збірку монолітних наборів: UI тепер може окремо керувати відображенням/проведенням таких наборів.
+- У `Order` додано `payloadData` для збереження додаткових даних по замовленню; `PUT /api/orders/:id/status` тепер може зберігати цей payload і на його основі списувати залишки для монолітних комплектів.
+- Додано shipment lock для Dilovod sale export: нові поля lock у схемі БД і сервіс для атомарного захисту від дублювання відвантажень.
+- Розширено `SetReleaseController`: нові поля релізу, покращене списання залишків, підтримка `dilovodDocId`, а також окремий флоу видалення/позначення документів.
+- Додано endpoint для активних наборів із інвентарю та оновлено сторінки/таблиці складу для роботи з новими полями й історією випуску наборів.
+
+---
+
 ## 2026-06-11 — Поліпшено алокацію ваги: `unitRatio` / `weightRatio` та рекурсивне розгортання наборів
 **Files:** `client/lib/orderAssemblyUtils.ts`, `client/components/OrderChecklistItem.tsx`, `client/lib/receiptTemplates.ts`, `client/types/orderAssembly.ts`, `client/lib/__tests__/orderAssemblyUtils.order17601.spec.ts`
 

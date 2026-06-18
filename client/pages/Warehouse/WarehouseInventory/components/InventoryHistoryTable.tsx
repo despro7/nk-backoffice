@@ -125,24 +125,36 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
     } finally { setIsApplying(false); }
   };
 
+  const getSessionItems = (sessionItems: any[]) => {
+    const materials = sessionItems.filter((item) => item.type === 'material');
+    const sets = sessionItems.filter((item) => item.type === 'set');
+    const products = sessionItems.filter((item) => item.type === 'product' || item.type === undefined);
+
+    return { materials, sets, products };
+  };
+
   return (
     <div className="space-y-2">
       {sessions.map((session) => {
         const canAuthorEditThisSession = !isAdmin && currentUserId !== null && String(session.createdBy) === currentUserId && latestOwnSessionId !== null && String(session.id) === String(latestOwnSessionId);
         const items: any[] = session.items as any[];
-        const materials = items.filter((it) => it.type === 'material');
-        const products = items.filter((it) => it.type !== 'material');
+        const { materials, sets, products } = getSessionItems(items);
 
         const productSystem = products.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
         const materialSystem = materials.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
+        const setSystem = sets.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
         const productActualSum = products.reduce((s, it) => s + ((totalPortions(it) ?? 0)), 0);
         const materialActualSum = materials.reduce((s, it) => s + ((totalPortions(it) ?? 0)), 0);
+        const setActualSum = sets.reduce((s, it) => s + ((totalPortions(it) ?? 0)), 0);
         const productDevShortfall = products.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total < system ? system - total : 0); }, 0);
         const productDevSurplus = products.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total > system ? total - system : 0); }, 0);
         const materialDevShortfall = materials.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total < system ? system - total : 0); }, 0);
         const materialDevSurplus = materials.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total > system ? total - system : 0); }, 0);
+        const setDevShortfall = sets.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total < system ? system - total : 0); }, 0);
+        const setDevSurplus = sets.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total > system ? total - system : 0); }, 0);
         const productHasActual = products.some((it) => totalPortions(it) !== null);
         const materialHasActual = materials.some((it) => totalPortions(it) !== null);
+        const setHasActual = sets.some((it) => totalPortions(it) !== null);
 
         return (
           <div key={session.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -154,7 +166,13 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
               </div>
 
               <div className="flex items-center gap-4">
-                <div className="grid grid-cols-2 w-90 gap-8 ml-2 text-xs text-gray-500">
+                <div className="grid grid-cols-3 gap-8 ml-2 text-xs text-gray-500">
+                  <div className="text-right">
+                    {setHasActual ? (
+                      <div className="text-medium font-semibold leading-none"><span className="text-red-500">{setDevShortfall > 0 ? `-${setDevShortfall}` : '0'}</span><span> / </span><span className="text-blue-600">{setDevSurplus > 0 ? `+${setDevSurplus}` : '+0'}</span></div>
+                    ) : '–'}
+                    <p className="leading-none">відхилення наборів</p>
+                  </div>
                   <div className="text-right">
                     {productHasActual ? (
                       <div className="text-medium font-semibold leading-none"><span className="text-red-500">{productDevShortfall > 0 ? `-${productDevShortfall}` : '0'}</span><span> / </span><span className="text-blue-600">{productDevSurplus > 0 ? `+${productDevSurplus}` : '+0'}</span></div>
@@ -194,8 +212,12 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap"><span>Автор: <b>{namesMap[Number(session.createdBy ?? -1)] ?? 'N/A'}</b></span><span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(session.createdAt)}</b></span><span className="border-l border-gray-300 pl-3">Кількість позицій: <b>{(products.length + materials.length)}</b></span>{session.comment && <span className="border-l border-gray-300 pl-3">Коментар: {session.comment}</span>}</div>
+                  <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap"><span>Автор: <b>{namesMap[Number(session.createdBy ?? -1)] ?? 'N/A'}</b></span><span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(session.createdAt)}</b></span><span className="border-l border-gray-300 pl-3">Кількість позицій: <b>{(products.length + materials.length + sets.length)}</b></span>{session.comment && <span className="border-l border-gray-300 pl-3">Коментар: {session.comment}</span>}</div>
                 </div>
+
+                {sets.length > 0 && (
+                  <InventoryTableSection title="Комплекти" sessionId={session.id} rows={sortItems(sets, sortColumnProd, sortDirectionProd)} sortColumn={sortColumnProd} sortDirection={sortDirectionProd} onSort={(col) => handleSort(col, false)} expandedRowKey={expandedRowKey} onRowClick={handleRowClick} rowHistoryCache={rowHistoryCache} rowHistoryLoading={loadingSku} summary={{ systemTotal: setSystem, actualSum: setHasActual ? setActualSum : null, hasActual: setHasActual, devShortfall: setDevShortfall, devSurplus: setDevSurplus }} />
+                )}
 
                 {products.length > 0 && (
                   <InventoryTableSection title="Товари" sessionId={session.id} rows={sortItems(products, sortColumnProd, sortDirectionProd)} sortColumn={sortColumnProd} sortDirection={sortDirectionProd} onSort={(col) => handleSort(col, false)} expandedRowKey={expandedRowKey} onRowClick={handleRowClick} rowHistoryCache={rowHistoryCache} rowHistoryLoading={loadingSku} summary={{ systemTotal: productSystem, actualSum: productHasActual ? productActualSum : null, hasActual: productHasActual, devShortfall: productDevShortfall, devSurplus: productDevSurplus }} />

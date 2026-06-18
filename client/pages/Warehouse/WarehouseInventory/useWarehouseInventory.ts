@@ -560,10 +560,11 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
    * ВАЖЛИВО: порівнюємо лише поля, що редагує користувач (actualCount, boxCount, checked).
    * systemBalance виключено — воно оновлюється системою при завантаженні і не повинно впливати на dirty-flag.
    */
-  const serializeForDirtyCheck = (prods: InventoryProduct[], mats: InventoryProduct[]) =>
+  const serializeForDirtyCheck = (prods: InventoryProduct[], mats: InventoryProduct[], setsList: InventoryProduct[]) =>
     JSON.stringify([
       ...prods.map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
       ...mats.map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+      ...setsList.map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
     ]);
 
   // Дозвіл редагування: звичайна активна сесія або завершена сесія, яка редагується адміном
@@ -574,8 +575,8 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   const isDirty = useMemo(() => {
     if (!isEditable) return false;
     if (lastSavedSnapshot === null) return false;
-    return serializeForDirtyCheck(products, materials) !== lastSavedSnapshot;
-  }, [isEditable, products, materials, lastSavedSnapshot]);
+    return serializeForDirtyCheck(products, materials, sets) !== lastSavedSnapshot;
+  }, [isEditable, products, materials, sets, lastSavedSnapshot]);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -585,28 +586,18 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setSessionStatus('in_progress');
     setSessionOriginalStatus(null);
     try {
-      // Завантажуємо товари та матеріали паралельно зі створенням чернетки
-      const [loadedProducts, loadedMaterials, loadedSets, res] = await Promise.all([
+      // Завантажуємо каталоги без створення запису в БД.
+      const [loadedProducts, loadedMaterials, loadedSets] = await Promise.all([
         loadProducts(),
         loadMaterials(),
         loadSets(),
-        fetch('/api/warehouse/inventory/draft', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ comment, items: serializeItems(products, materials, sets), inventoryDate: sessionDate }),
-        }),
       ]);
-      if (!res.ok) return;
-      const data = await res.json();
-      setSessionId(data.session.id);
-      setSessionDate(data.session.createdAt ?? new Date().toISOString());
-      // Фіксуємо snapshot лише user-editable полів
+      // Фіксуємо snapshot лише user-editable полів, щоб dirty-state працював до першого save/finish.
       setLastSavedSnapshot(JSON.stringify(
         [...loadedProducts, ...loadedMaterials, ...loadedSets].map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
       ));
     } catch {
-      // Не критично — ID збережеться при першому збереженні чернетки
+      // Не критично — запис буде створено при першому збереженні або завершенні
     }
   };
 
@@ -624,7 +615,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ comment, items: serializeItems(products, materials), inventoryDate: sessionDate }),
+          body: JSON.stringify({ comment, items: serializeItems(products, materials, sets), inventoryDate: sessionDate }),
+        });
+      } else {
+        await fetch('/api/warehouse/inventory/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ comment, items: serializeItems(products, materials, sets), inventoryDate: sessionDate }),
         });
       }
     } catch {

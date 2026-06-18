@@ -40,7 +40,8 @@ const InventoryRefreshReportModal = ({ isOpen, onClose, items, sessionItems, inv
     return sortDirectionProd === 'ascending' ? 'arrow-up' : 'arrow-down';
   };
 
-  const products = items.filter((it) => it.type !== 'material');
+  const products = items.filter((it) => it.type === 'product' || it.type === undefined);
+  const sets = items.filter((it) => it.type === 'set');
   const materials = items.filter((it) => it.type === 'material');
 
   const sortList = (list: any[], column: 'sku' | 'name' | 'systemBalance', dir: 'ascending' | 'descending') => {
@@ -168,6 +169,47 @@ const InventoryRefreshReportModal = ({ isOpen, onClose, items, sessionItems, inv
                             })()}
                           </tr>
                         ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {sets.length > 0 && (
+                <div>
+                  <h4 className="text-md font-medium text-gray-700 mb-2">Комплекти</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm bg-white border-1 border-gray-200">
+                      <thead>
+                        <tr className="bg-gray-100 border-b">
+                          <th className="text-left py-2 px-3 font-semibold text-gray-600">SKU</th>
+                          <th className="text-left py-2 px-3 font-semibold text-gray-600">Позиція</th>
+                          <th className="text-center py-2 px-3 font-semibold text-gray-600">Було</th>
+                          <th className="text-center py-2 px-3 font-semibold text-gray-600">Стало</th>
+                          <th className="text-center py-2 px-3 font-semibold text-gray-600">Δ</th>
+                          <th className="text-center py-2 px-3 font-semibold text-gray-600">Факт</th>
+                          <th className="text-center py-2 px-3 font-semibold text-gray-600">Відх.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortList(sets, 'sku', 'ascending').map((it, idx) => {
+                          const sessionItem = sessionItems.find((si) => si.sku === it.sku);
+                          const fact = sessionItem ? totalPortions(sessionItem) : null;
+                          const deltaFact = fact === null ? null : (fact - (it.after ?? 0));
+                          return (
+                            <tr key={idx} className="border-b hover:bg-gray-100/80">
+                              <td className="py-2 px-3 font-mono">{it.sku}</td>
+                              <td className="py-2 px-3">{it.name || ''}</td>
+                              <td className="py-2 px-3 text-center">{it.before ?? '–'}</td>
+                              <td className="py-2 px-3 text-center">{it.after ?? '–'}</td>
+                              <td className={`py-2 px-3 text-center font-semibold ${((it.after ?? 0) - (it.before ?? 0)) === 0 ? 'text-gray-600' : ((it.after ?? 0) - (it.before ?? 0)) > 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                                {(it.after ?? 0) - (it.before ?? 0) > 0 ? `+${(it.after ?? 0) - (it.before ?? 0)}` : `${(it.after ?? 0) - (it.before ?? 0)}`}
+                              </td>
+                              <td className={`py-2 px-3 text-center ${fact === null ? 'text-gray-300' : ''}`}>{fact === null ? '–' : String(fact)}</td>
+                              <td className={`py-2 px-3 text-center font-semibold ${deltaFact === null || deltaFact === 0 ? 'text-gray-600' : deltaFact > 0 ? 'text-blue-600' : 'text-red-500'}`}>{deltaFact === null ? '–' : (deltaFact > 0 ? `+${deltaFact}` : `${deltaFact}`)}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

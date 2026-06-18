@@ -727,7 +727,8 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
     const orderData = {
       ...order,
       items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items,
-      rawData: typeof order.rawData === 'string' ? JSON.parse(order.rawData) : order.rawData
+      rawData: typeof order.rawData === 'string' ? JSON.parse(order.rawData) : order.rawData,
+      payloadData: typeof order.payloadData === 'string' ? JSON.parse(order.payloadData) : order.payloadData
     };
 
     setDrawerResult(orderData);

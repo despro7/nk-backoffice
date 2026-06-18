@@ -31,6 +31,7 @@ export interface SalesDriveOrderForExport {
   quantity: number;
   items: any; // JSON string or parsed object
   rawData: any; // JSON string or parsed object
+  payloadData?: any; // JSON object/string with shipment breakdown and monolithic overrides
   logsCount?: number;
 }
 
