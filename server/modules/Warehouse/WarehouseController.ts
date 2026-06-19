@@ -1018,14 +1018,14 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 // ============================================================================
 
 // GET /api/warehouse/inventory/products
-// Повертає всі активні товари (isOutdated=false) з їх залишком на малому складі ("2").
+// Повертає всі товари з їх залишком на малому складі ("2").
 router.get('/inventory/products', authenticateToken, async (req, res) => {
   try {
     console.log('📦 [Inventory] GET /inventory/products — завантаження товарів малого складу...');
 
     const products = await prisma.product.findMany({
-      where: { AND: [{ isOutdated: false, set: null }] },
-      select: { id: true, sku: true, name: true, portionsPerBox: true, categoryName: true, stockBalanceByStock: true },
+      where: { set: null },
+      select: { id: true, sku: true, name: true, portionsPerBox: true, categoryName: true, isOutdated: true, stockBalanceByStock: true },
       orderBy: [{ manualOrder: 'asc' }, { name: 'asc' }],
     });
 
@@ -1042,6 +1042,7 @@ router.get('/inventory/products', authenticateToken, async (req, res) => {
             sku: product.sku,
             name: product.name,
             categoryName: product.categoryName ?? null,
+            isOutdated: product.isOutdated,
             systemBalance,
             unit: product.portionsPerBox > 1 ? 'portions' : 'pcs',
             portionsPerBox: product.portionsPerBox,
@@ -1053,7 +1054,7 @@ router.get('/inventory/products', authenticateToken, async (req, res) => {
       })
       .filter(Boolean);
 
-    console.log(`✅ [Inventory] Знайдено ${result.length} активних товарів для інвентаризації`);
+    console.log(`✅ [Inventory] Знайдено ${result.length} товарів для інвентаризації`);
     res.json({ products: result, total: result.length });
   } catch (error) {
     console.error('🚨 [Inventory] Error fetching inventory products:', error);
@@ -1105,14 +1106,14 @@ router.get('/inventory/materials', authenticateToken, async (req, res) => {
 });
 
 // GET /api/warehouse/inventory/sets
-// Повертає всі активні комплекти (set != null) з їх залишком на малому складі ("2").
+// Повертає всі комплекти (set != null) з їх залишком на малому складі ("2").
 router.get('/inventory/sets', authenticateToken, async (req, res) => {
   try {
     console.log('📦 [Inventory] GET /inventory/sets — завантаження комплектів малого складу...');
 
     const sets = await prisma.product.findMany({
-      where: { AND: [{ isOutdated: false, NOT: { set: null } }] },
-      select: { id: true, sku: true, name: true, portionsPerBox: true, categoryName: true, stockBalanceByStock: true },
+      where: { NOT: { set: null } },
+      select: { id: true, sku: true, name: true, portionsPerBox: true, categoryName: true, isOutdated: true, stockBalanceByStock: true },
       orderBy: [{ manualOrder: 'asc' }, { name: 'asc' }],
     });
 
@@ -1129,6 +1130,7 @@ router.get('/inventory/sets', authenticateToken, async (req, res) => {
             sku: product.sku,
             name: product.name,
             categoryName: product.categoryName ?? null,
+            isOutdated: product.isOutdated,
             systemBalance,
             unit: product.portionsPerBox > 1 ? 'portions' : 'pcs',
             portionsPerBox: product.portionsPerBox,

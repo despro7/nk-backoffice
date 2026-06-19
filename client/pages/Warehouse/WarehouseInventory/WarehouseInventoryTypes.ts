@@ -9,6 +9,7 @@ export interface InventoryProduct {
   sku: string;
   name: string;
   categoryName?: string;
+  isOutdated?: boolean;
   systemBalance: number; // Залишок за системою (порції або штуки)
   isBalanceRefreshing?: boolean; // Локальний loader для оновлення залишку на дату
   actualCount: number | null; // Фактична кількість (порції або штуки)

@@ -1,4 +1,4 @@
-import { Chip, Input, Progress, Select, SelectItem } from '@heroui/react';
+import { Chip, Input, Progress, Select, SelectItem, Switch } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { SortSelect } from '../../shared/SortSelect';
 import type { SortOption } from '../../shared/SortSelect';
@@ -14,6 +14,8 @@ interface InventoryProgressBarProps {
   deviationCount: number;
   searchQuery: string;
   onSearchChange: (value: string) => void;
+  showOutdated: boolean;
+  onShowOutdatedChange: (value: boolean) => void;
   categoryOptions: string[];
   selectedCategory: string;
   onCategoryChange: (value: string) => void;
@@ -26,6 +28,7 @@ interface InventoryProgressBarProps {
 export const InventoryProgressBar = ({
   totalCheckedAll, totalAll, totalProgressPercent, deviationCount,
   searchQuery, onSearchChange,
+  showOutdated, onShowOutdatedChange,
   categoryOptions, selectedCategory, onCategoryChange,
   sortBy, onSortByChange, sortDirection, onSortDirectionChange,
 }: InventoryProgressBarProps) => {
@@ -99,6 +102,14 @@ export const InventoryProgressBar = ({
           isClearable
           onClear={() => onSearchChange('')}
         />
+
+        <div className="flex items-center gap-2 mr-4">
+          <Switch
+            isSelected={showOutdated}
+            onValueChange={onShowOutdatedChange}
+          />
+          <span className="text-sm text-gray-700 leading-4">Показати<br />застарілі</span>
+        </div>
 
         <SortSelect
             sortBy={sortBy}

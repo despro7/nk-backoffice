@@ -337,7 +337,17 @@ export function NotificationBell({ onNavigate: _onNavigate }: NotificationBellPr
             )}
           </div>
           <div className="flex items-center gap-1">
-            {unreadCount > 0 && (
+            <Button
+              size="sm"
+              variant="flat"
+              color="default"
+              className="text-xs text-gray-800 bg-amber-200 border-1 border-amber-600/15 h-7 px-2 min-w-0 gap-1"
+              startContent={<DynamicIcon name="file-text" className="w-3 h-3" />}
+              onPress={() => { setIsOpen(false); _onNavigate?.('/reports/meta-logs'); }}
+            >
+              Детальний звіт
+            </Button>
+            {/* {unreadCount > 0 && (
               <Button
                 size="sm"
                 variant="light"
@@ -356,7 +366,7 @@ export function NotificationBell({ onNavigate: _onNavigate }: NotificationBellPr
               >
                 Очистити
               </Button>
-            )}
+            )} */}
           </div>
         </div>
 

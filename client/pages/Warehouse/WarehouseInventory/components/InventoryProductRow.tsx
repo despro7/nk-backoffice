@@ -52,6 +52,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
 
   const hasUnconfirmedCounts = !product.checked && (product.actualCount !== null || product.boxCount !== null);
   const isBalanceRefreshing = Boolean(product.isBalanceRefreshing);
+  const isOutdated = Boolean(product.isOutdated);
 
   // Ref для першого StepperInput — для автофокусу при відкритті
   const firstInputRef = useRef<HTMLInputElement>(null);
@@ -77,7 +78,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
   };
 
   return (
-    <div className={`border-b border-gray-200 transition-colors ${product.checked ? 'bg-neutral-50' : ''}`}>
+    <div className={`border-b border-gray-200 transition-colors ${product.checked ? 'bg-neutral-50' : ''} ${isOutdated ? 'bg-red-50/70 grayscale-[0.15]' : ''}`}>
       {/* Accordion header */}
       <div
         className="flex items-center gap-3 px-4 py-4 cursor-pointer hover:bg-gray-50 transition-colors"
@@ -97,6 +98,11 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
         <div className="flex flex-col flex-1 pl-1">
           <span className="text-lg font-semibold text-neutral-800 flex items-center gap-2">
             {product.name}
+            {isOutdated && (
+              <span className="text-xs font-medium px-2 py-0.5 rounded bg-red-500 text-white">
+                Застарілий
+              </span>
+            )}
             {hasUnconfirmedCounts && (
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-black ml-2 bg-yellow-300/30 border-0 border-yellow-200 px-2 py-1 rounded">⚠️ Не підтверджено</span>

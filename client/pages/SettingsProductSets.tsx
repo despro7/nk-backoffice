@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { formatPrice, formatRelativeDate, getCategoryColors } from '../lib/formatUtils';
+import { formatDate, formatPrice, formatRelativeDate, getCategoryColors } from '../lib/formatUtils';
 import { Input, addToast, Textarea, Switch, Tooltip, Select, SelectItem, ButtonGroup, toast } from '@heroui/react';
 import { ToastService } from '@/services/ToastService';
 import ProductsStatsSummary, { type ProductsStats } from '@/components/ProductsStatsSummary';
@@ -52,6 +52,7 @@ interface Product {
   additionalPrices: any; // Вже розпарсений об'єкт або null
   stockBalanceByStock: any; // Вже розпарсений об'єкт або null
   lastSyncAt: string;
+  updatedAt: string;
   isOutdated?: boolean; // Чи застарілий товар (немає в WordPress)
   dilovodId?: string; // ID товару в Діловоді
 }
@@ -143,6 +144,8 @@ const ProductSets: React.FC = () => {
     column: 'manualOrder',
     direction: 'ascending'
   } as any);
+
+  const productsFetchSeqRef = useRef(0);
 
   // Стан для редагування ваги
   const [editingWeight, setEditingWeight] = useState<{ [key: string]: string }>({});
@@ -1216,7 +1219,7 @@ const ProductSets: React.FC = () => {
       case 'lastSyncAt':
         return (
           <span className="block text-sm text-gray-500 max-w-[80px]">
-            <Tooltip color="secondary" content={formatRelativeDate(product.lastSyncAt, { maxRelativeHours: 0 })}>{formatRelativeDate(product.lastSyncAt)}</Tooltip>
+            <Tooltip color="secondary" content={formatRelativeDate(product.lastSyncAt, { maxRelativeHours: 0 })}>{formatRelativeDate(product.lastSyncAt, { maxRelativeDays: 1 })}</Tooltip>
           </span>
         );
 
@@ -1226,6 +1229,7 @@ const ProductSets: React.FC = () => {
   };
 
   const fetchProducts = async (pageParam?: number, searchParam?: string, categoryParam?: string | string[], limitParam?: number) => {
+    const fetchSeq = ++productsFetchSeqRef.current;
     setLoading(true);
     try {
       const requestedSortBy = (sortDescriptor?.column as string) || 'manualOrder';
@@ -1260,7 +1264,9 @@ const ProductSets: React.FC = () => {
         params.append('showOutdated', 'true');
       }
 
-      const response = await fetch(`/api/products?${params}`, {
+      const requestUrl = `/api/products?${params}`;
+
+      const response = await fetch(requestUrl, {
         credentials: 'include',
         cache: 'no-store'
       });
@@ -1270,36 +1276,38 @@ const ProductSets: React.FC = () => {
         setProducts(data.products);
         setPagination(data.pagination);
 
-        // Завантажимо розширені дані (setItems, expandedPortions) через /api/products/batch
-        try {
-          const skusList = data.products.map(p => p.sku).filter(Boolean).join(',');
-          if (skusList.length > 0) {
+        // Завантажимо розширені дані фоном, щоб не блокувати інпут та основний рендер.
+        void (async () => {
+          try {
+            const skusList = data.products.map(p => p.sku).filter(Boolean).join(',');
+            if (skusList.length === 0) return;
+
             const batchRes = await fetch(`/api/products/batch?skus=${encodeURIComponent(skusList)}&fields=setItems,expandedPortions`, { credentials: 'include' });
-            if (batchRes.ok) {
-              const batchData: any = await batchRes.json();
-              if (Array.isArray(batchData.products)) {
-                const bySku: Map<string, any> = new Map((batchData.products as any[]).map((bp: any) => [String(bp.sku).trim().toLowerCase(), bp]));
-                setProducts(prev => prev.map(p => {
-                  const key = String(p.sku).trim().toLowerCase();
-                  const bp = bySku.get(key);
-                  if (bp) {
-                    return { ...p, ...(bp.setItems ? { setItems: bp.setItems } : {}), ...(bp.expandedPortions !== undefined ? { expandedPortions: bp.expandedPortions } : {}) } as any;
-                  }
-                  return p;
-                }));
-                // Також оновимо allProducts кешем, щоб lookup по іменам працював
-                setAllProducts(prev => prev.map(p => {
-                  const key = String(p.sku).trim().toLowerCase();
-                  const bp = bySku.get(key);
-                  if (bp) return { ...p, ...(bp.setItems ? { setItems: bp.setItems } : {}), ...(bp.expandedPortions !== undefined ? { expandedPortions: bp.expandedPortions } : {}) } as any;
-                  return p;
-                }));
+            if (!batchRes.ok) return;
+
+            const batchData: any = await batchRes.json();
+            if (fetchSeq !== productsFetchSeqRef.current || !Array.isArray(batchData.products)) return;
+
+            const bySku: Map<string, any> = new Map((batchData.products as any[]).map((bp: any) => [String(bp.sku).trim().toLowerCase(), bp]));
+            setProducts(prev => prev.map(p => {
+              const key = String(p.sku).trim().toLowerCase();
+              const bp = bySku.get(key);
+              if (bp) {
+                return { ...p, ...(bp.setItems ? { setItems: bp.setItems } : {}), ...(bp.expandedPortions !== undefined ? { expandedPortions: bp.expandedPortions } : {}) } as any;
               }
-            }
+              return p;
+            }));
+
+            setAllProducts(prev => prev.map(p => {
+              const key = String(p.sku).trim().toLowerCase();
+              const bp = bySku.get(key);
+              if (bp) return { ...p, ...(bp.setItems ? { setItems: bp.setItems } : {}), ...(bp.expandedPortions !== undefined ? { expandedPortions: bp.expandedPortions } : {}) } as any;
+              return p;
+            }));
+          } catch (err) {
+            console.warn('Failed to fetch batch expanded set info:', err);
           }
-        } catch (err) {
-          console.warn('Failed to fetch batch expanded set info:', err);
-        }
+        })();
 
         // Отладочная информация для первого товара
         if (data.products.length > 0) {
@@ -1366,7 +1374,6 @@ const ProductSets: React.FC = () => {
 
       const p = (async () => {
         try {
-          console.debug('[SettingsProductSets] fetchAllProducts: fetching full products list (limit=1000)', { force });
           const response = await fetch('/api/products?limit=1000', {
             credentials: 'include',
             cache: 'no-store'

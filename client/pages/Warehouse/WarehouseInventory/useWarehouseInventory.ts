@@ -55,6 +55,8 @@ export interface UseWarehouseInventoryReturn {
   setSortBy: (v: 'name' | 'sku' | 'balance' | 'deviation') => void;
   sortDirection: 'asc' | 'desc';
   setSortDirection: (v: 'asc' | 'desc') => void;
+  showOutdated: boolean;
+  setShowOutdated: (v: boolean) => void;
 
   // Прогрес
   checkedCount: number;
@@ -149,6 +151,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   const [selectedCategory, setSelectedCategory] = useState('Усі категорії');
   const [sortBy, setSortBy] = useState<'name' | 'sku' | 'balance' | 'deviation'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [showOutdated, setShowOutdated] = useState(false);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState<string | null>(null);
   const [materials, setMaterials] = useState<InventoryProduct[]>([]);
@@ -213,6 +216,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         sku: p.sku,
         name: p.name,
         categoryName: p.categoryName ?? 'Без категорії',
+        isOutdated: !!p.isOutdated,
         systemBalance: p.systemBalance,
         isBalanceRefreshing: false,
         unit: p.unit as 'portions' | 'pcs',
@@ -285,6 +289,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         id: s.id,
         sku: s.sku,
         name: s.name,
+        isOutdated: !!s.isOutdated,
         systemBalance: s.systemBalance,
         isBalanceRefreshing: false,
         unit: s.unit as 'portions' | 'pcs',
@@ -460,16 +465,24 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   // Computed
   // ---------------------------------------------------------------------------
 
-  const checkedCount = useMemo(() => products.filter((p) => p.checked).length, [products]);
-  const totalCount = products.length;
+  const visibleProducts = useMemo(
+    () => products.filter((p) => showOutdated || !p.isOutdated),
+    [products, showOutdated]
+  );
+  const checkedCount = useMemo(() => visibleProducts.filter((p) => p.checked).length, [visibleProducts]);
+  const totalCount = visibleProducts.length;
   const progressPercent = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 0;
 
   const checkedMaterialsCount = useMemo(() => materials.filter((m) => m.checked).length, [materials]);
   const totalMaterialsCount = materials.length;
   const materialsProgressPercent = totalMaterialsCount > 0 ? Math.round((checkedMaterialsCount / totalMaterialsCount) * 100) : 0;
 
-  const checkedSetsCount = useMemo(() => sets.filter((s) => s.checked).length, [sets]);
-  const totalSetsCount = sets.length;
+  const visibleSets = useMemo(
+    () => sets.filter((s) => showOutdated || !s.isOutdated),
+    [sets, showOutdated]
+  );
+  const checkedSetsCount = useMemo(() => visibleSets.filter((s) => s.checked).length, [visibleSets]);
+  const totalSetsCount = visibleSets.length;
   const setsProgressPercent = totalSetsCount > 0 ? Math.round((checkedSetsCount / totalSetsCount) * 100) : 0;
 
   const totalCheckedAll = checkedCount + checkedMaterialsCount + checkedSetsCount;
@@ -477,11 +490,11 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   const totalProgressPercent = totalAll > 0 ? Math.round((totalCheckedAll / totalAll) * 100) : 0;
 
   const deviationCount = useMemo(
-    () => products.filter((p) => {
+    () => visibleProducts.filter((p) => {
       const total = totalPortions(p);
       return total !== null && total !== p.systemBalance;
     }).length,
-    [products]
+    [visibleProducts]
   );
 
   const deviationMaterialsCount = useMemo(
@@ -504,17 +517,17 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     const categories = new Set<string>();
     categories.add('Усі категорії');
     categories.add('Коробки');
-    products.forEach((p) => {
+    visibleProducts.forEach((p) => {
       if (p.categoryName && p.categoryName.trim()) {
         categories.add(p.categoryName);
       }
     });
     return Array.from(categories);
-  }, [products]);
+  }, [visibleProducts]);
 
   const filteredProducts = useMemo(
     () => {
-      let result = products.filter((p) => {
+      let result = visibleProducts.filter((p) => {
         if (selectedCategory === 'Коробки') {
           return false;
         }
@@ -527,7 +540,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       });
       return sortItems(result, sortBy, sortDirection);
     },
-    [products, searchQuery, selectedCategory, sortBy, sortDirection]
+    [visibleProducts, searchQuery, selectedCategory, sortBy, sortDirection]
   );
 
   const filteredMaterials = useMemo(
@@ -544,14 +557,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
 
   const filteredSets = useMemo(
     () => {
-      const result = sets.filter(
+      const result = visibleSets.filter(
         (s) =>
           s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           s.sku.toLowerCase().includes(searchQuery.toLowerCase())
       );
       return sortItems(result, sortBy, sortDirection);
     },
-    [sets, searchQuery, sortBy, sortDirection]
+    [visibleSets, searchQuery, sortBy, sortDirection]
   );
 
   /**
@@ -1117,6 +1130,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     materials, materialsLoading, materialsError, filteredMaterials, openMaterialId, openMaterialIds,
     sets, setsLoading, setsError, filteredSets, openSetId, openSetIds,
     searchQuery, setSearchQuery,
+    showOutdated, setShowOutdated,
     checkedCount, totalCount, progressPercent,
     checkedMaterialsCount, totalMaterialsCount, materialsProgressPercent,
     checkedSetsCount, totalSetsCount, setsProgressPercent,

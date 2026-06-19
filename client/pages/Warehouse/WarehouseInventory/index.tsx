@@ -153,6 +153,8 @@ export default function WarehouseInventory() {
                   deviationCount={totalDeviationsAll}
                   searchQuery={inv.searchQuery}
                   onSearchChange={inv.setSearchQuery}
+                  showOutdated={inv.showOutdated}
+                  onShowOutdatedChange={inv.setShowOutdated}
                   categoryOptions={inv.categoryOptions}
                   selectedCategory={inv.selectedCategory}
                   onCategoryChange={inv.setSelectedCategory}
