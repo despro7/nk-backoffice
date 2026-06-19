@@ -21,6 +21,39 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
   const [smallStorageQtyMap, setSmallStorageQtyMap] = useState<Record<string, number | null>>({});
   const [aggLoading, setAggLoading] = useState(false);
 
+  const formatLocalDate = (date: Date): string => {
+    const pad = (value: number): string => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  };
+
+  const parseLocalDate = (value: unknown): Date | null => {
+    if (typeof value !== 'string' || value.trim() === '') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+    if (localMatch) {
+      const [, year, month, day, hours, minutes, seconds] = localMatch;
+      return new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hours),
+        Number(minutes),
+        Number(seconds ?? '0'),
+      );
+    }
+
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const getPayloadDate = (): string | null => {
+    const parsed = parseLocalDate(returns?.returnDate);
+    return parsed ? formatLocalDate(parsed) : null;
+  };
+
   if (!items || items.length === 0) return null;
 
   // Fetch missing component names from server when needed
@@ -153,9 +186,12 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
       try {
         const skusParam = skus.join(',');
         const firmId = returns?.receiveFirmId ?? undefined;
+        const parsedAsOfDate = parseLocalDate(returns?.returnDate);
+        const asOfDate = parsedAsOfDate ? parsedAsOfDate.toISOString() : undefined;
         const encodedLen =
           encodeURIComponent(skusParam).length +
-          (firmId ? encodeURIComponent(String(firmId)).length : 0);
+          (firmId ? encodeURIComponent(String(firmId)).length : 0) +
+          (asOfDate ? encodeURIComponent(asOfDate).length : 0);
 
         let response: Response;
         if (encodedLen > 2000) {
@@ -163,12 +199,13 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ skus, firmId }),
+            body: JSON.stringify({ skus, firmId, asOfDate }),
           });
         } else {
           const url = new URL('/api/warehouse/stock-snapshot', window.location.origin);
           url.searchParams.set('skus', skusParam);
           if (firmId) url.searchParams.set('firmId', String(firmId));
+          if (asOfDate) url.searchParams.set('asOfDate', asOfDate);
           response = await fetch(url.toString(), { credentials: 'include' });
         }
 
@@ -195,7 +232,7 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [aggregatedSkuSignature, smallStorageId]);
+  }, [aggregatedSkuSignature, smallStorageId, returns?.receiveFirmId, returns?.returnDate]);
 
   const summaryColumns: HistoryItemsTableColumn[] = [
     {

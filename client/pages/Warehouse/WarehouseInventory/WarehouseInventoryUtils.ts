@@ -108,6 +108,7 @@ export type SerializedInventoryItem = {
   id: string;
   sku: string;
   name: string;
+  isOutdated?: boolean;
   systemBalance: number;
   unit: 'portions' | 'pcs';
   portionsPerBox: number;
@@ -122,13 +123,13 @@ export const serializeItems = (
   mats: InventoryProduct[],
   sets?: InventoryProduct[],
 ): SerializedInventoryItem[] => [
-  ...prods.map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
-    type: 'product' as const, id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
+  ...prods.map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
+    type: 'product' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
   })),
-  ...mats.map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
-    type: 'material' as const, id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
+  ...mats.map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
+    type: 'material' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
   })),
-  ...(sets ?? []).map(({ id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
-    type: 'set' as const, id, sku, name, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
+  ...(sets ?? []).map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
+    type: 'set' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
   })),
 ];

@@ -6,6 +6,22 @@ import { salesDriveService } from '../../services/salesDriveService.js';
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
 
+const parseLocalDate = (value: any): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value !== 'string') return null;
+
+  const trimmed = value.trim();
+  const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+  if (localMatch) {
+    const [, year, month, day, hours, minutes, seconds] = localMatch;
+    return new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), Number(seconds ?? '0'));
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const router = Router();
 
 // ============================================================================
@@ -185,7 +201,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
         await prisma.order.update({
           where: { id: Number(orderId) },
           data: {
-            dilovodReturnDate: new Date(returnDoc.date || new Date()).toISOString(),
+            dilovodReturnDate: (parseLocalDate(returnDoc.date) ?? new Date()).toISOString(),
             dilovodReturnDocsCount: returnCount,
           },
         });
@@ -229,7 +245,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
     const updateResult = await prisma.order.update({
       where: { id: Number(orderId) },
       data: {
-        dilovodReturnDate: requestedDate ? new Date(requestedDate).toISOString() : new Date().toISOString(),
+        dilovodReturnDate: requestedDate ? (parseLocalDate(requestedDate) ?? new Date()).toISOString() : new Date().toISOString(),
         dilovodReturnDocsCount: { increment: 1 },
       },
     });
@@ -277,7 +293,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
           ttn: orderDetails?.ttn || null,
           firmId: null,
           // Use requestedDate (from DateTimePicker) when provided, otherwise fallback to original orderDate
-          returnDate: requestedDate ? new Date(requestedDate).toISOString() : (orderDetails?.orderDate || null),
+          returnDate: requestedDate ? (parseLocalDate(requestedDate) ?? new Date()).toISOString() : (orderDetails?.orderDate || null),
           items: JSON.stringify(items),
           returnReason: reason || '',
           customReason: null,
@@ -416,7 +432,7 @@ router.post('/history', authenticateToken, async (req, res) => {
           orderNumber,
           ttn: ttn || null,
           firmId: firmId || null,
-          returnDate: returnDate ? new Date(returnDate) : null,
+          returnDate: returnDate ? parseLocalDate(returnDate) : null,
           items: JSON.stringify(items),
           returnReason,
           customReason: customReason || null,
@@ -436,7 +452,7 @@ router.post('/history', authenticateToken, async (req, res) => {
           orderNumber,
           ttn: ttn || null,
           firmId: firmId || null,
-          returnDate: returnDate ? new Date(returnDate) : null,
+          returnDate: returnDate ? parseLocalDate(returnDate) : null,
           items: JSON.stringify(items),
           returnReason,
           customReason: customReason || null,

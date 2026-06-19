@@ -126,9 +126,16 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
   };
 
   const getSessionItems = (sessionItems: any[]) => {
-    const materials = sessionItems.filter((item) => item.type === 'material');
-    const sets = sessionItems.filter((item) => item.type === 'set');
-    const products = sessionItems.filter((item) => item.type === 'product' || item.type === undefined);
+    const shouldKeepItem = (item: any): boolean => {
+      if (!item?.isOutdated) return true;
+      const fact = totalPortions(item);
+      const actualOrSystem = Math.max(fact ?? 0, item.systemBalance ?? 0);
+      return actualOrSystem > 0;
+    };
+
+    const materials = sessionItems.filter((item) => item.type === 'material' && shouldKeepItem(item));
+    const sets = sessionItems.filter((item) => item.type === 'set' && shouldKeepItem(item));
+    const products = sessionItems.filter((item) => (item.type === 'product' || item.type === undefined) && shouldKeepItem(item));
 
     return { materials, sets, products };
   };

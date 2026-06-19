@@ -11,6 +11,39 @@ export default function useReleaseSets() {
   const [archiveSessions, setArchiveSessions] = useState<any[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
 
+  const formatLocalDate = (date: Date): string => {
+    const pad = (value: number): string => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  };
+
+  const parseLocalDate = (value: unknown): Date | null => {
+    if (typeof value !== 'string' || value.trim() === '') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+    if (localMatch) {
+      const [, year, month, day, hours, minutes, seconds] = localMatch;
+      return new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hours),
+        Number(minutes),
+        Number(seconds ?? '0'),
+      );
+    }
+
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const getPayloadDate = (): string | null => {
+    const parsed = parseLocalDate(returns.returnDate);
+    return parsed ? formatLocalDate(parsed) : null;
+  };
+
   const isDeletedRelease = (record: any): boolean => String(record?.status ?? '').toLowerCase() === 'deleted';
 
   // useWarehouseParams handles directories loading and selected storage initialization
@@ -71,7 +104,7 @@ export default function useReleaseSets() {
     const body = {
       items: items.map((it) => ({ set_sku: it.setSku, quantity: it.quantity, components_snapshot: it.componentsSnapshot })),
       storageId: selectedStorage,
-      date: returns.returnDate ?? null,
+      date: getPayloadDate(),
       firmId: safeFirmId(returns.receiveFirmId),
       comment: returns.comment ?? null,
       remark: buildSetRemark(items[0]),
@@ -96,7 +129,7 @@ export default function useReleaseSets() {
       const body = {
         items: currentItems,
         storageId: selectedStorage,
-        date: returns.returnDate ?? null,
+        date: getPayloadDate(),
         firmId: safeFirmId(returns.receiveFirmId),
         comment: returns.comment ?? null,
         remark: currentRemark,

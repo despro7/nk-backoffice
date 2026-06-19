@@ -131,19 +131,39 @@ export default function useWarehouseParams(opts: UseWarehouseParamsOpts = {}) {
     return found.name || found.code || String(found.id);
   }, [storages, selectedStorage]);
 
-  // Date handling: use returns.returnDate when provided; store as UTC 'YYYY-MM-DD HH:mm:ss'
+  const formatLocalDate = (date: Date): string => {
+    const pad = (value: number): string => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  };
+
+  const parseLocalDate = (value: string): Date | null => {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+    if (localMatch) {
+      const [, year, month, day, hours, minutes, seconds] = localMatch;
+      return new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hours),
+        Number(minutes),
+        Number(seconds ?? '0'),
+      );
+    }
+
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  // Date handling: keep local time round-trip as 'YYYY-MM-DD HH:mm:ss'
   const dateForPicker = useMemo(() => {
     const s = returns?.returnDate;
     if (!s) return new Date();
     try {
-      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
-        const [datePart, timePart] = s.split(' ');
-        const [y, m, d] = datePart.split('-').map(Number);
-        const [hh, mm, ss] = timePart.split(':').map(Number);
-        return new Date(Date.UTC(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, ss || 0));
-      }
-      const parsed = new Date(s);
-      if (!Number.isNaN(parsed.getTime())) return parsed;
+      const parsed = parseLocalDate(s);
+      if (parsed) return parsed;
     } catch (e) {
       // ignore
     }
@@ -151,7 +171,7 @@ export default function useWarehouseParams(opts: UseWarehouseParamsOpts = {}) {
   }, [returns?.returnDate]);
 
   const onDateChange = (d: Date) => {
-    const formatted = new Date(d.getTime()).toISOString().replace('T', ' ').substring(0, 19);
+    const formatted = formatLocalDate(d);
     returns?.setReturnDate?.(formatted);
   };
 

@@ -18,6 +18,30 @@ function formatLocalDate(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
+function parseLocalDate(value: unknown): Date | null {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+  if (localMatch) {
+    const [, year, month, day, hours, minutes, seconds] = localMatch;
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hours),
+      Number(minutes),
+      Number(seconds ?? '0'),
+    );
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 async function resolveKitGoodId(setSku: string | number | undefined, kitGood: string | number | undefined): Promise<string | null> {
   const explicitKitGood = kitGood != null && String(kitGood).trim() !== '' ? String(kitGood).trim() : '';
   if (explicitKitGood) {
@@ -320,7 +344,8 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
     }
 
     const currentUserId = (req as any).user?.userId || (req as any).user?.id;
-    const formattedDate = formatLocalDate(date ? new Date(date) : new Date());
+    const parsedDate = parseLocalDate(date) ?? new Date();
+    const formattedDate = formatLocalDate(parsedDate);
     const author = await getDilovodUserId(currentUserId, { logPrefix: '[SetRelease] ' }).catch(() => '');
 
     const payload: any = {

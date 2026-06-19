@@ -4,6 +4,22 @@ import { safeParseItems, normalizeItemsArray } from './historyNormalize.js';
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
 
+const parseLocalDate = (dt: any): Date | null => {
+  if (!dt) return null;
+  if (dt instanceof Date) return dt;
+  if (typeof dt !== 'string') return null;
+
+  const trimmed = dt.trim();
+  const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+  if (localMatch) {
+    const [, year, month, day, hours, minutes, seconds] = localMatch;
+    return new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), Number(seconds ?? '0'));
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const router = Router();
 
 /**
@@ -34,17 +50,8 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
       if (!dt) return null;
       if (dt instanceof Date) return dt;
       if (typeof dt !== 'string') return null;
-      const isoLike = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
       try {
-        if (isoLike.test(dt)) {
-          // incoming like 'YYYY-MM-DD HH:mm:ss' — interpret as UTC (client often sends toISOString replaced T->space)
-          const asUtc = dt.replace(' ', 'T') + 'Z';
-          const parsed = new Date(asUtc);
-          return isNaN(parsed.getTime()) ? null : parsed;
-        }
-        // Otherwise try general Date parsing (handles ISO with timezone)
-        const parsed = new Date(dt);
-        return isNaN(parsed.getTime()) ? null : parsed;
+        return parseLocalDate(dt);
       } catch (e) {
         return null;
       }
@@ -161,7 +168,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
     try {
       const userId = (req as any).user?.userId || (req as any).user?.id;
       // Prisma expects a Date object / ISO date for DateTime fields — convert formattedDate
-      const writeOffDateObj = formattedDate ? new Date(formattedDate.replace(' ', 'T')) : null;
+      const writeOffDateObj = formattedDate ? parseLocalDate(formattedDate) : null;
 
       // Try to resolve firmName from Dilovod directories if possible
       let firmNameToSave: string | null = null;
@@ -318,7 +325,7 @@ router.post('/history', authenticateToken, async (req, res) => {
           for (const s of skusNeedingLookup) {
             const skuKey = String(s);
             try {
-              const batches = await dilovodService.getBatchNumbersBySku(skuKey, firmId ?? undefined, writeOffDate ? new Date(writeOffDate) : undefined);
+              const batches = await dilovodService.getBatchNumbersBySku(skuKey, firmId ?? undefined, writeOffDate ? parseLocalDate(writeOffDate) ?? undefined : undefined);
               batchMap.set(skuKey, Array.isArray(batches) ? batches : []);
             } catch (e) {
               batchMap.set(skuKey, []);
@@ -354,7 +361,7 @@ router.post('/history', authenticateToken, async (req, res) => {
           writeOffNumber: writeOffNumber || existing.writeOffNumber,
           firmId: firmId || existing.firmId,
           storageId: storageId || existing.storageId,
-          writeOffDate: writeOffDate ? new Date(writeOffDate) : existing.writeOffDate,
+          writeOffDate: writeOffDate ? (parseLocalDate(writeOffDate) ?? existing.writeOffDate) : existing.writeOffDate,
           items: JSON.stringify(enrichedItems),
           writeOffReason: sanitizedWriteOffReason,
           customReason: customReason || existing.customReason,
@@ -368,7 +375,7 @@ router.post('/history', authenticateToken, async (req, res) => {
           writeOffNumber: writeOffNumber || null,
           firmId: firmId || null,
           storageId: storageId || null,
-          writeOffDate: writeOffDate ? new Date(writeOffDate) : null,
+          writeOffDate: writeOffDate ? parseLocalDate(writeOffDate) : null,
           items: JSON.stringify(enrichedItems),
           writeOffReason: sanitizedWriteOffReason,
           customReason: customReason || null,

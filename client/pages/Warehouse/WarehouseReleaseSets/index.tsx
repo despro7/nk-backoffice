@@ -32,6 +32,7 @@ export default function ReleaseSetsPage() {
   const selectedSetRemark = selectedSet ? (rs.buildSetRemark?.(selectedSet) ?? null) : null;
   const selectedSetQuantity = Number(selectedSet?.quantity ?? 0);
   const selectedSetComponentCount = Array.isArray(selectedSet?.componentsSnapshot) ? selectedSet.componentsSnapshot.length : 0;
+  const selectedReleaseDate = rs.returns?.returnDate ?? null;
 
   const handleOpenSendConfirm = () => {
     if (rs.items.length === 0) {
@@ -244,6 +245,10 @@ export default function ReleaseSetsPage() {
                     <div className="flex justify-between gap-4">
                       <span className="text-gray-500">Склад</span>
                       <span className="font-semibold text-gray-900 text-right">{rs.selectedStorageName ?? rs.selectedStorage ?? '—'}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-500">Дата випуску</span>
+                      <span className="font-semibold text-gray-900 text-right">{selectedReleaseDate ?? '—'}</span>
                     </div>
                     <div className="flex justify-between gap-4">
                       <span className="text-gray-500">Примітка</span>
