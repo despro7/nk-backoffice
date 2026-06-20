@@ -10,6 +10,11 @@ export default function useWarehouseWriteOff(opts: Opts = {}) {
   // useDilovodDirectories на верхньому рівні хука (правило хуків)
   const dirsCtx = useDilovodDirectories();
 
+  const formatLocalDate = (date: Date): string => {
+    const pad = (value: number): string => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  };
+
   const [storages, setStorages] = useState<any[]>([]);
   const [selectedStorage, setSelectedStorage] = useState<string | null>(null);
   const [items, setItems] = useState<Array<any>>([]);
@@ -217,7 +222,7 @@ export default function useWarehouseWriteOff(opts: Opts = {}) {
 
   // Preview wrapper that uses returns when provided
   const previewWriteOff = async ({ returns: returnsParam, orderId, date, firmId, storageId, items: payloadItems, comment, reason, customReason }: any) => {
-    const effectiveDate = date ?? (returnsParam?.returnDate ?? new Date().toISOString().replace('T',' ').substring(0,19));
+    const effectiveDate = date ?? (returnsParam?.returnDate ?? formatLocalDate(new Date()));
     const effectiveFirm = firmId ?? (returnsParam?.receiveFirmId ?? undefined);
     const effectiveStorage = storageId ?? selectedStorage ?? (returnsParam?.selectedStorage ?? undefined);
     const effectiveItems = payloadItems ?? (returnsParam?.items || items);
@@ -225,7 +230,7 @@ export default function useWarehouseWriteOff(opts: Opts = {}) {
   };
 
   const sendConfirmWriteOff = async ({ returns: returnsParam, orderId, date, firmId, storageId, items: payloadItems, comment, reason, customReason, dryRun }: any) => {
-    const effectiveDate = date ?? (returnsParam?.returnDate ?? new Date().toISOString().replace('T',' ').substring(0,19));
+    const effectiveDate = date ?? (returnsParam?.returnDate ?? formatLocalDate(new Date()));
     const effectiveFirm = firmId ?? (returnsParam?.receiveFirmId ?? undefined);
     const effectiveStorage = storageId ?? selectedStorage ?? (returnsParam?.selectedStorage ?? undefined);
     const effectiveItems = payloadItems ?? (returnsParam?.items || items);

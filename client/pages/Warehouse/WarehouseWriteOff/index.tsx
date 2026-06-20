@@ -90,6 +90,11 @@ export default function WarehouseWriteOff() {
   const [isLoadingPayload, setIsLoadingPayload] = useState(false);
   const [pendingForceDeleteId, setPendingForceDeleteId] = useState<string | null>(null);
 
+  const formatLocalDate = (date: Date): string => {
+    const pad = (value: number): string => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  };
+
   // Винесена логіка додавання рядка замовлення у товари для списання
   const handleAddOrderLine = async (sku: string, line: any, maxQty: number, qtyArg?: number) => {
     setDisabledSkus((s)=>({ ...s, [sku]: true }));
@@ -288,7 +293,7 @@ export default function WarehouseWriteOff() {
           try {
             const body = {
                 orderId: selectedOrderIdState ?? undefined,
-                date: (returns.returnDate && String(returns.returnDate).trim()) ? String(returns.returnDate).trim() : new Date().toISOString().replace('T', ' ').substring(0, 19),
+                date: (returns.returnDate && String(returns.returnDate).trim()) ? String(returns.returnDate).trim() : formatLocalDate(new Date()),
               firmId: returns.receiveFirmId ?? undefined,
               storageId: selectedStorage ?? undefined,
               items: (returns.items || []).map((item: any) => ({ sku: item.sku, batchId: item.selectedBatchId, quantity: item.quantity, price: item.price })),
