@@ -6,9 +6,10 @@ import { useServerStatus } from "@/hooks/useServerStatus";
 import { cn } from "@/lib/utils";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, User, Switch } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";
-import CountdownTimer from "./CountdownTimer";
+import NumberFlow, { NumberFlowGroup } from '@number-flow/react';
+// import CountdownTimer from "./CountdownTimer";
 import { useEquipmentFromAuth } from "../contexts/AuthContext";
-import { addToast } from "@heroui/toast";
+import { formatDateLong, formatWeekdayOnly } from "@/lib/formatUtils";
 import { DebugModeSwitch } from "./DebugModeSwitch";
 import { useDebug } from "../contexts/DebugContext";
 import { NotificationBell } from "./NotificationBell";
@@ -23,6 +24,7 @@ export function Header({ className, onDebugModeChange }: HeaderProps) {
   const navigate = useNavigate();
   const api = useApi();
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const [equipmentState, equipmentActions] = useEquipmentFromAuth();
   const { isOnline, isLoading } = useServerStatus();
   const { setDebugMode } = useDebug();
@@ -58,6 +60,18 @@ export function Header({ className, onDebugModeChange }: HeaderProps) {
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
     };
   }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const hours = currentTime.getHours();
+  const minutes = currentTime.getMinutes();
+  const seconds = currentTime.getSeconds();
   
   const handleLogout = () => {
     logout();
@@ -72,11 +86,34 @@ export function Header({ className, onDebugModeChange }: HeaderProps) {
       {/* Timer Section */}
       <div className="flex items-center gap-2.5 w-full sm:w-auto justify-center sm:justify-start text-neutral-500">
         <div className="flex items-center gap-1.5 wrap-break-word px-2.5 py-1 rounded-sm bg-neutral-100">
-          {/* <DynamicIcon name="hourglass" size={18} color="currentColor" className="flex-shrink-0" /> */}
-          <CountdownTimer />
+          {/* <CountdownTimer /> */}
+          <NumberFlowGroup>
+            <div className="flex flex-col items-start gap-0.5">
+              <div
+                className="font-inter text-[22px] font-medium leading-[100%] flex items-baseline"
+                style={{ fontVariantNumeric: 'tabular-nums' }}
+              >
+                <NumberFlow trend={-1} value={hours} format={{ minimumIntegerDigits: 2 }} />
+                <NumberFlow
+                  prefix=":"
+                  value={minutes}
+                  digits={{ 1: { max: 5 } }}
+                  format={{ minimumIntegerDigits: 2 }}
+                />
+                <NumberFlow
+                  prefix=":"
+                  value={seconds}
+                  digits={{ 1: { max: 5 } }}
+                  format={{ minimumIntegerDigits: 2 }}
+                  animated={false}
+                />
+              </div>
+            </div>
+          </NumberFlowGroup>
         </div>
-        <div className="w-[100px] text-[13px] leading-[110%] text-neutral-400">
-          до наступного відправлення
+        <div className="text-[13px] leading-[110%] text-neutral-400">
+          <div>{formatDateLong(currentTime)}</div>
+          <div>{formatWeekdayOnly(currentTime)}</div>
         </div>
       </div>
 

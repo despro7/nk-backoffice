@@ -254,6 +254,38 @@ export const formatTimeOnly = (dateString: string): string => {
 };
 
 /**
+ * Форматує дату з назвою місяця українською мовою
+ * @param dateString - рядок із датою або Date
+ * @returns відформатований рядок
+ *
+ * @example
+ * formatDateLong('2026-06-25T10:30:00Z') // "25 червня 2026"
+ */
+export const formatDateLong = (dateString: string | Date): string => {
+  if (!dateString) return "-";
+  return new Date(dateString).toLocaleDateString('uk-UA', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+};
+
+/**
+ * Форматує назву дня тижня українською мовою
+ * @param dateString - рядок із датою або Date
+ * @returns відформатований рядок
+ *
+ * @example
+ * formatWeekdayOnly('2026-06-25T10:30:00Z') // "четвер"
+ */
+export const formatWeekdayOnly = (dateString: string | Date): string => {
+  if (!dateString) return "-";
+  return new Date(dateString).toLocaleDateString('uk-UA', {
+    weekday: 'long',
+  });
+};
+
+/**
  * Форматирует цену в украинской валюте
  * @param price - цена в числах
  * @returns отформатированная строка

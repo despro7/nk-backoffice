@@ -31,7 +31,7 @@ export const InventorySessionMeta = ({ sessionStatus, sessionDate, onSessionDate
 
     {/* Статус */}
     <div className="flex items-center gap-1.5 shrink-0">
-      <span className="text-[13px]">Статус</span>
+      {/* <span className="text-[13px]">Статус</span> */}
       {sessionStatus === null && (
         <Chip size="sm" color="default" variant="flat" className="bg-gray-300 px-1.5 h-7" startContent={<DynamicIcon name="file" className="w-3 h-3 ml-1 mr-0.5" />}>
           Чернетка
