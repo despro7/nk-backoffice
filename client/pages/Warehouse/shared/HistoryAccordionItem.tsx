@@ -167,9 +167,11 @@ export const HistoryAccordionItem = ({
                   className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}
                 />
 								<div className="flex items-center gap-4">
-                  <span className={`p-2 rounded-full ${operationCfg && operationType === 'kit' ? 'text-blue-500 bg-blue-100' : 'text-red-500 bg-red-100'}`}>
-                    {operationCfg && <DynamicIcon name={operationCfg.icon as any} size={16} strokeWidth={1.5} />}
-                  </span>
+                  {operationCfg && (
+                    <span className={`p-2 rounded-full ${operationCfg && operationType === 'kit' ? 'text-blue-500 bg-blue-100' : 'text-red-500 bg-red-100'}`}>
+                      <DynamicIcon name={operationCfg.icon as any} size={16} strokeWidth={1.5} />
+                    </span>
+                  )}
 									<div className="flex flex-col">
                     <span className="text-sm font-medium text-gray-700 tabular-nums">{operationCfg ? operationCfg?.label : recordName}</span>
 										<span className="text-xs text-gray-400">{formatRelativeDate(record[cfg.dateField || 'createdAt'], { maxRelativeDays: 1 })}</span>
