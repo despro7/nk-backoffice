@@ -1193,6 +1193,7 @@ router.post('/inventory/draft', authenticateToken, async (req, res) => {
     };
 
     const parsedInventoryDate = inventoryDate ? new Date(inventoryDate) : null;
+    const effectiveInventoryDate = parsedInventoryDate ?? new Date();
 
     // Якщо є незавершена сесія — оновлюємо її замість створення нової
     const existing = await prisma.warehouseInventory.findFirst({
@@ -1207,7 +1208,7 @@ router.post('/inventory/draft', authenticateToken, async (req, res) => {
           status: 'in_progress',
           comment: comment !== undefined ? comment : existing.comment,
           items: items !== undefined ? JSON.stringify(items) : existing.items,
-          ...(parsedInventoryDate !== null && { inventoryDate: parsedInventoryDate }),
+          inventoryDate: parsedInventoryDate ?? existing.inventoryDate ?? existing.createdAt,
         },
       });
       console.log(`✅ [Inventory] Відновлено існуючу сесію #${updated.id} для userId=${userId}`);
@@ -1221,7 +1222,7 @@ router.post('/inventory/draft', authenticateToken, async (req, res) => {
         status: 'in_progress',
         comment: comment ?? null,
         items: items !== undefined ? JSON.stringify(items) : '[]',
-        inventoryDate: parsedInventoryDate,
+        inventoryDate: effectiveInventoryDate,
       },
     });
     console.log(`✅ [Inventory] Створено нову сесію #${session.id} для userId=${userId}`);
@@ -1300,6 +1301,7 @@ router.post('/inventory/complete', authenticateToken, async (req, res) => {
     };
 
     const parsedInventoryDate = inventoryDate ? new Date(inventoryDate) : null;
+    const effectiveInventoryDate = parsedInventoryDate ?? new Date();
 
     const completed = await prisma.warehouseInventory.create({
       data: {
@@ -1309,7 +1311,7 @@ router.post('/inventory/complete', authenticateToken, async (req, res) => {
         completedAt: new Date(),
         comment: comment ?? null,
         items: items !== undefined ? JSON.stringify(items) : '[]',
-        inventoryDate: parsedInventoryDate,
+        inventoryDate: effectiveInventoryDate,
       },
     });
 
@@ -1365,7 +1367,9 @@ router.post('/inventory/draft/:id/complete', authenticateToken, async (req, res)
         completedAt: new Date(),
         comment: comment !== undefined ? comment : existing.comment,
         items: items !== undefined ? JSON.stringify(items) : existing.items,
-        ...(inventoryDate !== undefined && { inventoryDate: new Date(inventoryDate) }),
+        inventoryDate: inventoryDate !== undefined
+          ? new Date(inventoryDate)
+          : existing.inventoryDate ?? existing.createdAt,
       },
     });
 

@@ -110,7 +110,7 @@ function DebugDilovodCheck({ mapped, onRefresh }: { mapped: any[]; onRefresh?: (
 
 interface Props { records: any[]; loading?: boolean; onRefresh?: () => void; onDelete?: (id: number) => void; title?: string; emptyMessage?: string }
 
-export default function ReleaseHistoryTab({ records = [], loading, onRefresh, onDelete, title = 'Минулі випуски', emptyMessage = 'Немає записів' }: Props) {
+export default function ReleaseHistoryTab({ records = [], loading, onRefresh, onDelete, title = 'Минулі операції', emptyMessage = 'Немає записів' }: Props) {
   const { isDebugMode } = useDebug();
   // Map release records to the shape expected by WriteOffHistoryTable.
   const mapped = records.map((r: any) => {
@@ -126,6 +126,7 @@ export default function ReleaseHistoryTab({ records = [], loading, onRefresh, on
       storageId: r.storageId || r.payload?.storage,
       comment: r.comment,
       dilovodDocId: r.dilovodDocId || r.dilovod_doc_id || null,
+      operationType: r.operationType || r.operation_type || null,
       items,
     };
   });

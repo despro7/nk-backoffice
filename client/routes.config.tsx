@@ -152,9 +152,9 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/warehouse/releases',
     component: WarehouseReleaseSets,
-    title: 'Випуск готових наборів',
-    pageTitle: 'Випуск наборів | NK Backoffice',
-    navLabel: 'Випуск наборів',
+    title: 'Комплектація та розукомплектування наборів',
+    pageTitle: 'Випуск наборів + Розкомплектація | NK Backoffice',
+    navLabel: 'Випуск наборів + Розкомплектація',
     icon: <DynamicIcon name="box" size={16} />,
     inNav: true,
     order: 6,

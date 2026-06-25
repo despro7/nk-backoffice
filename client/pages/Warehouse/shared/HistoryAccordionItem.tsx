@@ -113,6 +113,11 @@ export const HistoryAccordionItem = ({
 		releaseSet: { label: 'Випуск', genitive: 'випуску' },
 	};
 
+  const RELEASE_OPERATION_CONFIG: Record<string, { label: string; icon: string }> = {
+    kit: { label: 'Комплектування', icon: 'package' },
+    unkit: { label: 'Розукомплектування', icon: 'package-open' },
+  };
+
 	// утиліта для отримання конфігурації по типу запису, з дефолтами
 	function getRecordTypeConfig(type?: string) {
 		if (!type) return { label: 'Запис', genitive: 'операції', dateField: 'createdAt' };
@@ -127,7 +132,9 @@ export const HistoryAccordionItem = ({
     <div className="space-y-2">
       {records.map((record) => {
 				const cfg = getRecordTypeConfig(recordType); // recordType передається в компонент, напр. 'writeOff'
-				const recordName = `${cfg.label} №${record.id}`;
+        const recordName = `${cfg.label} №${record.id}`;
+        const operationType = String(record.operationType ?? '').toLowerCase();
+        const operationCfg = RELEASE_OPERATION_CONFIG[operationType];
         const items = safeParseItems(record.items);
         const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantity ?? item.qty ?? 0), 0);
         const isExpanded = expandedRecordId === String(record.id);
@@ -160,8 +167,11 @@ export const HistoryAccordionItem = ({
                   className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}
                 />
 								<div className="flex items-center gap-4">
+                  <span className={`p-2 rounded-full ${operationCfg && operationType === 'kit' ? 'text-blue-500 bg-blue-100' : 'text-red-500 bg-red-100'}`}>
+                    {operationCfg && <DynamicIcon name={operationCfg.icon as any} size={16} strokeWidth={1.5} />}
+                  </span>
 									<div className="flex flex-col">
-										<span className="text-sm font-medium text-gray-700 tabular-nums">{recordName}</span>
+                    <span className="text-sm font-medium text-gray-700 tabular-nums">{operationCfg ? operationCfg?.label : recordName}</span>
 										<span className="text-xs text-gray-400">{formatRelativeDate(record[cfg.dateField || 'createdAt'], { maxRelativeDays: 1 })}</span>
 									</div>
 									<div className="flex gap-2">

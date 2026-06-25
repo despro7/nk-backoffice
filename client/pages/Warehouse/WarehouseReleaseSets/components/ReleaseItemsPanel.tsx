@@ -3,6 +3,7 @@ import { Button, Card, Popover, PopoverTrigger, PopoverContent } from '@heroui/r
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { StepperInput } from '../../shared/StepperInput';
 import { HistoryItemsTable, type HistoryItemsTableColumn } from '../../shared/HistoryItemsTable';
+import type { ReleaseSetsOperationKey } from '../useReleaseSets';
 
 interface Props {
   items: any[];
@@ -11,9 +12,14 @@ interface Props {
   selectedStorage?: string | null;
   smallStorageId?: string | null;
   returns?: any;
+  title?: string;
+  summaryLabel?: string;
+  emptyMessage?: string;
+  showAvailableQuantity?: boolean;
+  operationKey?: ReleaseSetsOperationKey;
 }
 
-export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedStorage, smallStorageId, returns }: Props) {
+export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedStorage, smallStorageId, returns, title = 'Набори для випуску', summaryLabel = 'до списання зі складу', emptyMessage = 'Немає компонентів для списання', showAvailableQuantity = false, operationKey = 'goodKit' }: Props) {
   const [namesMap, setNamesMap] = useState<Record<string, string>>({});
   const [isSetMap, setIsSetMap] = useState<Record<string, boolean>>({});
   const [setItemsMap, setSetItemsMap] = useState<Record<string, any[]>>({});
@@ -254,15 +260,32 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
       label: 'Залишки МС',
       render: (item: any) => {
         const currentQty = item.smallStorageQty;
-        const afterReleaseQty = currentQty == null ? null : Math.max(0, Number(currentQty) - Number(item.total ?? 0));
+        const movementQty = Number(item.total ?? 0);
+        const afterReleaseQty = currentQty == null
+          ? null
+          : operationKey === 'goodUnKit'
+            ? Number(currentQty) + movementQty
+            : Math.max(0, Number(currentQty) - movementQty);
+        const shortageQty = operationKey === 'goodKit' && currentQty != null
+          ? Math.max(0, movementQty - Number(currentQty))
+          : 0;
 
         return (
           <span className="inline-flex items-center gap-1 font-semibold">
             <span>{currentQty == null ? '—' : currentQty}</span>
             <span className="text-gray-400">-&gt;</span>
-            <span className={afterReleaseQty != null && currentQty != null && afterReleaseQty < currentQty ? 'text-indigo-700' : 'text-gray-700'}>
+            <span className={
+              afterReleaseQty != null && currentQty != null
+                ? (afterReleaseQty > currentQty ? 'text-green-700' : afterReleaseQty < currentQty ? 'text-red-700' : 'text-gray-700')
+                : 'text-gray-700'
+            }>
               {afterReleaseQty == null ? '—' : afterReleaseQty}
             </span>
+            {shortageQty > 0 && (
+              <span className="ml-2 rounded-full bg-red-600 px-2 py-1 text-[11px] font-semibold text-white">
+                Не вистачає {shortageQty} шт.
+              </span>
+            )}
           </span>
         );
       },
@@ -319,7 +342,7 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
 
   return (
     <>
-		<h3 className="font-medium mb-2">Набори для випуску</h3>
+		<h3 className="font-medium mb-2">{title}</h3>
     <Card className="rounded-xl border border-gray-200 bg-white p-4 mb-6">
       {items.map((it) => (
         <div key={it.id} className="border-b border-gray-100 pb-6 mb-4 last:border-b-0 last:mb-0 last:pb-2">
@@ -327,7 +350,14 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
             <div className="flex-1">
               <span className="text-xs font-medium text-gray-500 mb-1">Товар</span>
               <div className="flex flex-col items-start">
-                <span className="font-semibold text-gray-900">{it.name}</span>
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-gray-900">{it.name}</span>
+                  {showAvailableQuantity && (
+                    <span className="text-[11px] font-semibold bg-lime-200 text-emerald-800 px-2 py-1 rounded-full">
+                      Залишок {Number(it.availableQuantity ?? 0)} компл.
+                    </span>
+                  )}
+                </span>
                 <span className="text-xs font-normal text-gray-600 bg-amber-200/50 px-1 py-0.5 rounded">SKU: {it.setSku}</span>
               </div>
             </div>
@@ -338,7 +368,8 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
                 value={Number(it.quantity ?? 0)}
                 onChange={(v:number) => onChange(it.id, { quantity: v })}
                 onIncrement={() => onChange(it.id, { quantity: Number(it.quantity ?? 0) + 1 })}
-                onDecrement={() => onChange(it.id, { quantity: Math.max(0, Number(it.quantity ?? 0) - 1) })}
+                onDecrement={() => onChange(it.id, { quantity: Math.max(1, Number(it.quantity ?? 0) - 1) })}
+                max={showAvailableQuantity ? Number(it.availableQuantity ?? 0) : undefined}
                 size="sm"
                 className="w-32"
                 labelClassName="text-xs font-medium self-start"
@@ -406,12 +437,12 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
 
     {/* Aggregated totals across all sets */}
     <h3 className="text-lg font-medium mb-2">
-      Сумарно до списання зі складу {selectedStorage || 'не вказано'} – {totalToRelease} шт.
+      Сумарно {summaryLabel} {selectedStorage || 'не вказано'} – {totalToRelease} шт.
       {aggLoading && <span className="text-sm font-normal text-gray-500"> • оновлюємо залишки МС...</span>}
     </h3>
     <Card className="rounded-xl border border-gray-200 bg-white p-4 mb-6">
       {aggregatedRows.length === 0 ? (
-        <div className="text-sm text-gray-500">Немає компонентів для списання</div>
+        <div className="text-sm text-gray-500">{emptyMessage}</div>
       ) : (
         <HistoryItemsTable
           items={aggregatedRows}

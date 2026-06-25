@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tab, Card, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from '@heroui/react';
+import { Tabs, Tab, Card, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from '@heroui/react';
 import PageTabs from '@/components/PageTabs';
 import useReleaseSets from './useReleaseSets';
 import SetSearchPanel from './components/SetSearchPanel';
@@ -7,11 +7,13 @@ import ReleaseItemsPanel from './components/ReleaseItemsPanel';
 import ReleaseHistoryTab from './components/ReleaseHistoryTab';
 import WarehouseDetails from '../shared/WarehouseDetails';
 import ActionsBar from './components/ActionsBar';
+import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useDebug } from '@/contexts/DebugContext';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { ToastService } from '@/services/ToastService';
+
 
 export default function ReleaseSetsPage() {
   const { isDebugMode } = useDebug();
@@ -27,6 +29,34 @@ export default function ReleaseSetsPage() {
   const [sendSnapshot, setSendSnapshot] = React.useState<any | null>(null);
   const [pendingForceDeleteId, setPendingForceDeleteId] = React.useState<string | null>(null);
   const [isForceDeleting, setIsForceDeleting] = React.useState(false);
+  const [showClearConfirm, setShowClearConfirm] = React.useState(false);
+
+  const isUnKitOperation = rs.operationKey === 'goodUnKit';
+  const operationItemsLabel = isUnKitOperation ? 'Набори для розукомплектування' : 'Набори для комплектування';
+  const operationTotalLabel = isUnKitOperation ? 'до повернення на склад' : 'до списання зі складу';
+  const operationEmptyLabel = isUnKitOperation ? 'Немає компонентів для повернення' : 'Немає компонентів для списання';
+  const sendButtonLabel = isUnKitOperation ? 'Створити розукомплектування' : 'Створити комплектування';
+  const confirmTitle = isUnKitOperation ? 'Підтвердження розукомплектування' : 'Підтвердження комплектування';
+  const confirmSubtitle = isUnKitOperation ? 'Перевірте короткий підсумок перед поверненням компонентів на склад.' : 'Перевірте короткий підсумок перед відправкою.';
+  const payloadPreviewTitle = isUnKitOperation ? 'Перегляд Payload розукомплектування' : 'Перегляд Payload комплектування';
+
+  const handleOperationChange = (key: string) => {
+    const nextKey = key === 'goodUnKit' ? 'goodUnKit' : 'goodKit';
+    if (nextKey === rs.operationKey) {
+      return;
+    }
+
+    rs.setOperationKey(nextKey);
+    rs.clearAll();
+    setShowPayloadPreview(false);
+    setPayloadPreview(null);
+    setIsLoadingPayload(false);
+    setShowSendConfirm(false);
+    setSendResult(null);
+    setSendSnapshot(null);
+    setPendingForceDeleteId(null);
+    setIsForceDeleting(false);
+  };
 
   const selectedSet = sendSnapshot ?? rs.items[0] ?? null;
   const selectedSetRemark = selectedSet ? (rs.buildSetRemark?.(selectedSet) ?? null) : null;
@@ -80,10 +110,21 @@ export default function ReleaseSetsPage() {
     }
   };
 
+  const handleConfirmClearAll = () => {
+    setShowClearConfirm(false);
+    rs.clearAll();
+    setShowPayloadPreview(false);
+    setPayloadPreview(null);
+    setIsLoadingPayload(false);
+    setShowSendConfirm(false);
+    setSendResult(null);
+    setSendSnapshot(null);
+  };
+
   return (
     <div className="container">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-gray-500">Інтерфейс для випуску наборів (фіксує snapshot компонентів).</p>
+        <p className="text-sm text-gray-500">Інтерфейс для комплектування готових наборів та їх розукомплектування. При комплектуванні наборів зі складу списується відповідна кількість компонентів набору. При розукомплектуванні наборів компоненти повертаються на склад.</p>
       </div>
 
       <PageTabs selectedKey={pageTab} onSelectionChange={(k) => {
@@ -96,16 +137,27 @@ export default function ReleaseSetsPage() {
           void rs.loadArchive();
         }
       }}>
-        <Tab key="main" title="Випуск" />
+        <Tab key="main" title="Комплектація" />
         <Tab key="history" title="Історія" />
         {isAdmin() && <Tab key="archive" title="Архів" />}
       </PageTabs>
 
       {pageTab === 'main' && (
         <>
-          <div className="text-base font-semibold text-gray-700 mt-1 mb-2">Пошук наборів</div>
+          <div className="text-base font-semibold text-gray-700 mt-1 mb-2">{operationItemsLabel}</div>
           <Card className="p-4 bg-white rounded-xl mb-6">
-            <SetSearchPanel onSelect={(s) => rs.addSet(s)} existingItems={rs.items} />
+            <Tabs
+              aria-label="Тип операції"
+              size="lg"
+              fullWidth
+              selectedKey={rs.operationKey}
+              onSelectionChange={handleOperationChange}
+              classNames={{ base: "mb-6", cursor: "bg-white", tab: "h-12 font-medium [&>div]:flex [&>div]:items-center [&>div]:gap-1" }}
+            >
+              <Tab key="goodKit" title={<><DynamicIcon name="package" size={20} strokeWidth={1.5} />Комплектування</>} />
+              <Tab key="goodUnKit" title={<><DynamicIcon name="package-open" size={20} strokeWidth={1.5} />Розукомплектування</>} />
+            </Tabs>
+            <SetSearchPanel onSelect={(s) => rs.addSet(s)} existingItems={rs.items} operationKey={rs.operationKey} />
           </Card>
         
           <WarehouseDetails returns={rs.returns} storages={rs.storages} selectedStorage={rs.selectedStorage} setSelectedStorage={rs.setSelectedStorage} />
@@ -118,13 +170,19 @@ export default function ReleaseSetsPage() {
               selectedStorage={rs.selectedStorageName ?? rs.selectedStorage}
               smallStorageId={rs.defaultSmallStorageId}
               returns={rs.returns}
+              title={operationItemsLabel}
+              summaryLabel={operationTotalLabel}
+              emptyMessage={operationEmptyLabel}
+              showAvailableQuantity={isUnKitOperation}
+              operationKey={rs.operationKey}
             />
           )}
 
           <ActionsBar
             onPreview={isDebugMode && isAdmin() ? handleShowPayloadPreview : undefined}
             onSend={handleOpenSendConfirm}
-            onCancel={rs.clearAll}
+            onCancel={rs.items.length > 0 ? () => setShowClearConfirm(true) : undefined}
+            sendLabel={sendButtonLabel}
             disabled={rs.items.length === 0}
           />
         </>
@@ -197,11 +255,24 @@ export default function ReleaseSetsPage() {
         onCancel={() => setPendingForceDeleteId(null)}
       />
 
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        title="Скасувати поточний випуск?"
+        message={isUnKitOperation
+          ? 'Усі вибрані набори та введені дані для розукомплектування буде очищено.'
+          : 'Усі вибрані набори та введені дані для комплектування буде очищено.'}
+        confirmText="Скасувати випуск"
+        cancelText="Залишити"
+        confirmColor="danger"
+        onConfirm={handleConfirmClearAll}
+        onCancel={() => setShowClearConfirm(false)}
+      />
+
       <PayloadPreviewModal
         isOpen={showPayloadPreview}
         onClose={() => setShowPayloadPreview(false)}
         payload={payloadPreview}
-        title="Перегляд Payload випуску"
+        title={payloadPreviewTitle}
         isLoading={isLoadingPayload}
       />
 
@@ -223,8 +294,8 @@ export default function ReleaseSetsPage() {
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <div className="text-xl font-semibold">Підтвердження випуску</div>
-                <div className="text-sm font-normal text-gray-500">Перевірте короткий підсумок перед відправкою.</div>
+                <div className="text-xl font-semibold">{confirmTitle}</div>
+                <div className="text-sm font-normal text-gray-500">{confirmSubtitle}</div>
               </ModalHeader>
 
               <ModalBody className="gap-4">
@@ -300,7 +371,7 @@ export default function ReleaseSetsPage() {
                     isLoading={isSendingRelease}
                     isDisabled={isSendingRelease || !selectedSet}
                   >
-                    Відправити
+                    {sendButtonLabel}
                   </Button>
                 )}
               </ModalFooter>

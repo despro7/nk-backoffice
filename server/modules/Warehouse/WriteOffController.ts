@@ -20,6 +20,27 @@ const parseLocalDate = (dt: any): Date | null => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const DEFAULT_ACC_GOOD = '1119000000001076';
+const OWN_STOCK_ACC_GOOD = '1119000000001079';
+
+const parseStockBalanceByStock = (value: any): Record<string, number> => {
+  if (!value) return {};
+  if (typeof value === 'object') return value as Record<string, number>;
+  if (typeof value !== 'string') return {};
+
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const hasOwnStockInWarehouse = (stockBalanceByStock: any): boolean => {
+  const stock = parseStockBalanceByStock(stockBalanceByStock);
+  return Number(stock['2'] ?? 0) > 0;
+};
+
 const router = Router();
 
 /**
@@ -37,7 +58,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
     // Build payload
     // Map SKU -> dilovodId
     const skus = items.map((it: any) => it.sku).filter(Boolean);
-    const products = await prisma.product.findMany({ where: { sku: { in: skus } }, select: { id: true, sku: true, dilovodId: true, name: true } });
+    const products = await prisma.product.findMany({ where: { sku: { in: skus } }, select: { id: true, sku: true, dilovodId: true, name: true, set: true, stockBalanceByStock: true } });
     const skuToProduct = new Map(products.map((p: any) => [p.sku, p]));
 
     const { getDilovodConfigFromDB } = await import('../../services/dilovod/DilovodUtils.js');
@@ -108,13 +129,16 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
         // skip or push warning
         continue;
       }
+      const accGood = prod.set && hasOwnStockInWarehouse(prod.stockBalanceByStock)
+        ? OWN_STOCK_ACC_GOOD
+        : DEFAULT_ACC_GOOD;
       tpGoods.push({
         rowNum: row,
         good: prod.dilovodId,
         goodPart: it.batchId || null,
         unit: '1103600000000001', // piece
         qty: Number(it.quantity) || 0,
-        accGood: '1119000000001076',
+        accGood,
       });
       row++;
     }

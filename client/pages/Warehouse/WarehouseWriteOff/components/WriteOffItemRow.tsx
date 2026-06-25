@@ -9,22 +9,23 @@ interface WriteOffItemRowProps {
   onBatchChange: (itemId: string, batchId: string | null) => void;
   editableQuantity?: boolean;
   onDelete?: (itemId: string) => void;
+  inactive?: boolean;
 }
 
-export function WriteOffItemRow({ item, onQuantityChange, onBatchChange, editableQuantity = true, onDelete }: WriteOffItemRowProps) {
+export function WriteOffItemRow({ item, onQuantityChange, onBatchChange, editableQuantity = true, onDelete, inactive = false }: WriteOffItemRowProps) {
   const batchControl = (() => {
     if (item.availableBatches === null) {
       return <div className="text-xs px-3 py-[11px] text-gray-500 border border-gray-200 rounded-md">Завантаження партій...</div>;
     }
     if ((item.availableBatches ?? []).length === 0) {
-      return <div className="text-xs px-3 py-[11px] text-red-500 border border-red-500/50 rounded-md">Партії не знайдено</div>;
+      return <div className="text-xs px-3 py-[11px] text-red-500 border border-red-500/50 rounded-md">Партії не знайдено (виключено зі списання)</div>;
     }
     if ((item.availableBatches ?? []).length === 1) {
       const b = item.availableBatches[0];
       return (
-        <div className="flex items-center gap-2 justify-between text-sm text-green-700 bg-green-700/3 px-3 py-2 border border-green-700/20 rounded-md">
+        <div className="flex items-center gap-2 justify-between text-sm px-3 py-2 h-10 border border-gray-200 rounded-md">
           <span className="font-medium">{`${b.batchNumber} (${b.quantity} шт.)`}</span>
-          <DynamicIcon name="check-circle" className="w-3 h-3 text-green-500" />
+          <DynamicIcon name="check-circle" className="w-3 h-3 text-green-500 shrink-0" />
         </div>
       );
     }
@@ -37,7 +38,7 @@ export function WriteOffItemRow({ item, onQuantityChange, onBatchChange, editabl
           const next = Array.from(keys)[0] as string | undefined;
           onBatchChange(item.id, next || null);
         }}
-        classNames={{ label: 'text-xs font-medium text-gray-500', trigger: 'border border-gray-200 bg-white' }}
+        classNames={{ label: 'text-xs font-medium text-gray-500', trigger: 'border border-gray-200 bg-white', value: 'font-medium' }}
       >
         {(item.availableBatches ?? []).map((batch: ReturnBatch) => {
           const label = `${batch.batchNumber} (${batch.quantity} шт.)`;
@@ -50,7 +51,7 @@ export function WriteOffItemRow({ item, onQuantityChange, onBatchChange, editabl
   })();
 
   return (
-    <div className="flex items-end gap-4 w-full">
+    <div className={`flex items-end gap-4 w-full ${inactive ? 'opacity-50' : ''}`} aria-disabled={inactive}>
       <div className="flex-1">
 				<div className="text-xs font-medium text-gray-500 mb-1">Товар</div>
         <div className="font-semibold text-gray-900">{item.name}</div>
@@ -70,7 +71,7 @@ export function WriteOffItemRow({ item, onQuantityChange, onBatchChange, editabl
             onChange={(v: number) => onQuantityChange(item.id, v)}
             onIncrement={() => onQuantityChange(item.id, Math.min(current + 1, maxAllowed ?? Infinity))}
             onDecrement={() => onQuantityChange(item.id, Math.max(current - 1, 0))}
-            disabled={!editableQuantity}
+            disabled={!editableQuantity || inactive}
             max={maxAllowed}
             size="sm"
             className="w-28"
@@ -79,7 +80,7 @@ export function WriteOffItemRow({ item, onQuantityChange, onBatchChange, editabl
         );
       })()}
 
-      <div className="w-56">
+      <div className="w-100">
 				<div className="text-xs font-medium text-gray-500 mb-2">Партія</div>
 				{batchControl}
 			</div>

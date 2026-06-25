@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import useWarehouseParams from '../shared/useWarehouseParams';
 import { useWarehouseReturns } from '../WarehouseReturns/useWarehouseReturns';
+import useWarehouseParams from '../shared/useWarehouseParams';
 import useWarehouseWriteOff from './useWarehouseWriteOff';
 import { Tabs, Tab, Card } from '@heroui/react';
+import { DynamicIcon } from 'lucide-react/dynamic';
 import PageTabs from '@/components/PageTabs';
 import OrderSearchPanel from './components/OrderSearchPanel';
 import ProductSearchPanel from './components/ProductSearchPanel';
@@ -45,9 +46,13 @@ export default function WarehouseWriteOff() {
   // manual add removed — use product/order search flows to add items
 
   const handleSendPreview = async () => {
+    if (!hasActiveWriteOffItems) {
+      ToastService.show({ title: 'Немає активних товарів для перегляду payload', color: 'warning' });
+      return;
+    }
     setIsLoadingPayload(true);
     try {
-      const resp = await writeoff.previewWriteOff({ returns, orderId: selectedOrderIdState, comment, reason: reason === 'Інше' ? (customReason || reason) : reason, storageId: selectedStorage });
+      const resp = await writeoff.previewWriteOff({ returns, orderId: selectedOrderIdState, comment, reason: reason === 'Інше' ? (customReason || reason) : reason, storageId: selectedStorage, items: activeWriteOffItems });
       if (resp?.success && resp.payload) {
         setPayloadPreview(resp.payload);
         setShowPayloadPreview(true);
@@ -89,6 +94,9 @@ export default function WarehouseWriteOff() {
   const [payloadPreview, setPayloadPreview] = useState<Record<string, any> | null>(null);
   const [isLoadingPayload, setIsLoadingPayload] = useState(false);
   const [pendingForceDeleteId, setPendingForceDeleteId] = useState<string | null>(null);
+
+  const activeWriteOffItems = (returns.items || []).filter((item: any) => !(Array.isArray(item.availableBatches) && item.availableBatches.length === 0));
+  const hasActiveWriteOffItems = activeWriteOffItems.length > 0;
 
   const formatLocalDate = (date: Date): string => {
     const pad = (value: number): string => String(value).padStart(2, '0');
@@ -132,10 +140,10 @@ export default function WarehouseWriteOff() {
               fullWidth
               selectedKey={activeTab}
               onSelectionChange={(k:any)=>setActiveTab(k)}
-              classNames={{ base: "mb-6", cursor: "bg-white", tab: "h-12" }}
+              classNames={{ base: "mb-6", cursor: "bg-white", tab: "h-12 font-medium [&>div]:flex [&>div]:items-center [&>div]:gap-1" }}
             >
-              <Tab key="byOrder" title="Пошук по замовленню" />
-              <Tab key="byProduct" title="Пошук по товару" />
+              <Tab key="byOrder" title={<><DynamicIcon name="file-search" size={20} strokeWidth={1.5} />Пошук по замовленню</>} />
+              <Tab key="byProduct" title={<><DynamicIcon name="package-search" size={20} strokeWidth={1.5} />Пошук по товару</>} />
             </Tabs>
             {activeTab === 'byOrder' && (
               <OrderSearchPanel
@@ -173,6 +181,10 @@ export default function WarehouseWriteOff() {
           <ActionsBar
             onPreview={isDebugMode && isAdmin() ? handleSendPreview : undefined}
             onSend={async () => {
+              if (!hasActiveWriteOffItems) {
+                ToastService.show({ title: 'Немає активних товарів для списання', color: 'warning' });
+                return;
+              }
               // Validate reason selection before opening confirm modal for sending to Dilovod
               const selectedReason = reason;
               const selectedCustom = customReason;
@@ -187,7 +199,7 @@ export default function WarehouseWriteOff() {
               setShowSendConfirm(true);
             }}
             onCancel={() => setShowClearConfirm(true)}
-            disabled={returns.items.length===0}
+            disabled={!hasActiveWriteOffItems}
           />
         </>
       )}
@@ -284,7 +296,7 @@ export default function WarehouseWriteOff() {
       <ConfirmModal
         isOpen={showSendConfirm}
         title="Підтвердіть відправку"
-        message={`Ви впевнені, що хочете зробити списання (${returns.items.length} ${pluralize(returns.items.length, 'товар', 'товари', 'товарів')})? Склад: ${selectedStorageName}. Причина: ${reason}`}
+        message={`Ви впевнені, що хочете зробити списання (${activeWriteOffItems.length} ${pluralize(activeWriteOffItems.length, 'товар', 'товари', 'товарів')})? Склад: ${selectedStorageName}. Причина: ${reason}`}
         confirmText="Відправити"
         cancelText="Скасувати"
         confirmColor="danger"
@@ -296,7 +308,7 @@ export default function WarehouseWriteOff() {
                 date: (returns.returnDate && String(returns.returnDate).trim()) ? String(returns.returnDate).trim() : formatLocalDate(new Date()),
               firmId: returns.receiveFirmId ?? undefined,
               storageId: selectedStorage ?? undefined,
-              items: (returns.items || []).map((item: any) => ({ sku: item.sku, batchId: item.selectedBatchId, quantity: item.quantity, price: item.price })),
+                items: activeWriteOffItems.map((item: any) => ({ sku: item.sku, batchId: item.selectedBatchId, quantity: item.quantity, price: item.price })),
               comment,
               reason: reason === 'Інше' ? (customReason || reason) : reason,
               dryRun: false,

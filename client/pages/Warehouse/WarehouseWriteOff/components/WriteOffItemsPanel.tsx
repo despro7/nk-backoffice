@@ -9,14 +9,17 @@ interface Props {
 export default function WriteOffItemsPanel({ returns, setDisabledSkus }: Props) {
   if (!returns.items || returns.items.length === 0) return null;
 
+  const isInactiveItem = (item: any): boolean => Array.isArray(item.availableBatches) && item.availableBatches.length === 0;
+
   return (
     <div>
       <h2 className="font-medium mb-2 mt-6">Товари для списання</h2>
       <div className="px-4 py-1 mb-4 bg-white rounded-xl border-2 border-red-400">
         {returns.items.map((it: any) => (
-          <div key={it.id} className="flex items-end gap-4 w-full py-4 border-b last:border-b-0">
+          <div key={it.id} className={`flex items-end gap-4 w-full py-4 border-b last:border-b-0`}>
             <WriteOffItemRow
               item={it}
+              inactive={isInactiveItem(it)}
               editableQuantity={true}
               onQuantityChange={(itemId: string, qty: number) => {
                 returns.setItems((prev: any[]) => (prev || []).map(i => i.id === itemId ? { ...i, quantity: qty } : i));

@@ -1,4 +1,4 @@
-import { useState, useRef, useImperativeHandle, useCallback, forwardRef } from 'react';
+import { useState, useRef, useImperativeHandle, useCallback, useEffect, forwardRef } from 'react';
 import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
@@ -34,9 +34,29 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
     const inputRef = useRef<HTMLInputElement>(null);
     const [isFocused, setIsFocused] = useState(false);
 
+    const isAtMax = max !== undefined && value >= max;
+    const isAtMin = value <= 0;
+
     const focusInput = () => {
       if (!disabled) inputRef.current?.focus();
     };
+
+    const handleIncrement = useCallback(() => {
+      if (disabled || isAtMax) return;
+      onIncrement();
+    }, [disabled, isAtMax, onIncrement]);
+
+    const handleDecrement = useCallback(() => {
+      if (disabled || isAtMin) return;
+      onDecrement();
+    }, [disabled, isAtMin, onDecrement]);
+
+    useEffect(() => {
+      if (disabled) return;
+      if (max !== undefined && Number.isFinite(max) && value > max) {
+        onChange(max);
+      }
+    }, [disabled, max, onChange, value]);
 
     // Перенаправляємо ref якщо був переданий
     useImperativeHandle(ref, () => inputRef.current!);
@@ -77,14 +97,28 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
               onChange(clamped);
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && onEnter && !disabled) {
+              if (disabled) return;
+
+              if (e.key === 'Enter' && onEnter) {
                 e.preventDefault();
                 onEnter();
+                return;
+              }
+
+              if (e.key === '+' || e.key === '=' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                handleIncrement();
+                return;
+              }
+
+              if (e.key === '-' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                handleDecrement();
               }
             }}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            className="absolute inset-0 opacity-0 w-full h-full cursor-text"
+            className="absolute inset-0 opacity-0 w-full h-full cursor-text [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             aria-label={label}
           />
 
@@ -98,26 +132,26 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
               size === 'lg' ? 'h-14 w-10 left-2' :
               'h-10 min-w-8 w-8 left-1'
             } ${buttonClassName}`}
-            onPress={onDecrement}
+            onPress={handleDecrement}
             tabIndex={-1}
             aria-label="Зменшити"
           >
-            <DynamicIcon name="minus" className={`flex-shrink-0 ${size === 'sm' ? 'h-4 w-4' : size === 'md' ? 'h-5 w-5' : 'h-6 w-6'}`} />
+            <DynamicIcon name="minus" className={`pointer-events-none flex-shrink-0 ${size === 'sm' ? 'h-4 w-4' : size === 'md' ? 'h-5 w-5' : 'h-6 w-6'}`} />
           </Button>
           <Button
             isIconOnly
             variant="light"
-            isDisabled={disabled || (max !== undefined && value >= max)}
+            isDisabled={disabled || isAtMax}
             className={`absolute top-1/2 -translate-y-1/2 z-10 bg-gray-100 rounded-sm ${
               size === 'sm' ? 'h-8 min-w-7 w-7 right-1' : 
               size === 'lg' ? 'h-14 w-10 right-2' :
               'h-10 min-w-8 w-8 right-1'
             } ${buttonClassName}`}
-            onPress={onIncrement}
+            onPress={handleIncrement}
             tabIndex={-1}
             aria-label="Збільшити"
           >
-            <DynamicIcon name="plus" className={`flex-shrink-0 ${size === 'sm' ? 'h-4 w-4' : size === 'md' ? 'h-5 w-5' : 'h-6 w-6'}`} />
+            <DynamicIcon name="plus" className={`pointer-events-none flex-shrink-0 ${size === 'sm' ? 'h-4 w-4' : size === 'md' ? 'h-5 w-5' : 'h-6 w-6'}`} />
           </Button>
         </div>
       </div>

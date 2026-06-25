@@ -9,7 +9,8 @@ import { getDilovodUserId, getDilovodExportErrorMessage, translateDilovodError }
 const router = Router();
 
 const SET_RELEASE_DOC_ID = 'documents.goodWriteOff';
-const SET_RELEASE_DOC_MODE = '1004000000000305';
+const SET_RELEASE_DOC_MODE_KIT = '1004000000000305';
+const SET_RELEASE_DOC_MODE_UNKIT = '1004000000000306';
 const SET_RELEASE_ACC_COSTS = '1119000000001079';
 const SET_RELEASE_ACC_GOOD = '1119000000001076';
 
@@ -77,7 +78,7 @@ function buildReleaseHistoryComment(remark: unknown, comment: unknown): string |
 router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
     const userId = (req as any).user?.userId || (req as any).user?.id || 0;
-    const { items, storageId, firmId, comment, remark, status, dilovodDocId } = req.body;
+    const { items, storageId, firmId, comment, remark, status, dilovodDocId, operationType } = req.body;
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ success: false, error: 'items required' });
 
     // Each item expected: { set_sku, quantity, components_snapshot }
@@ -101,6 +102,7 @@ router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (re
 
     const totalQuantity = Number(itemsWithNames.reduce((acc:any, it:any) => acc + (Number(it.quantity) || 0), 0)) || 0;
     const historyComment = buildReleaseHistoryComment(remark, comment);
+    const resolvedOperationType = String(operationType ?? 'kit').trim() === 'unkit' ? 'unkit' : 'kit';
 
     const record = await prisma.warehouseReleaseSet.create({ data: {
       setSku: itemsWithNames[0]?.set_sku ?? null,
@@ -110,6 +112,7 @@ router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (re
       storageId: storageId ?? null,
       firmId: stringFirmId,
       dilovodDocId: dilovodDocId != null && String(dilovodDocId).trim() !== '' ? String(dilovodDocId).trim() : null,
+      operationType: resolvedOperationType,
       comment: historyComment,
       status: status ?? 'created',
       createdBy: Number(userId) || 0,
@@ -316,8 +319,11 @@ router.post('/check-dilovod-batch', authenticateToken, requireMinRole(ROLES.STOR
  */
 router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-    const { kitGood, kitQty, setSku, quantity, storageId, firmId, comment, remark, date, dryRun } = req.body;
+    const { kitGood, kitQty, setSku, quantity, storageId, firmId, comment, remark, date, dryRun, docMode } = req.body;
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    const resolvedDocMode = String(docMode ?? SET_RELEASE_DOC_MODE_KIT).trim() === SET_RELEASE_DOC_MODE_UNKIT
+      ? SET_RELEASE_DOC_MODE_UNKIT
+      : SET_RELEASE_DOC_MODE_KIT;
 
     const firstItem = items[0] ?? {};
     const resolvedSetSku = typeof setSku === 'string' && setSku.trim() !== ''
@@ -357,7 +363,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
         storage: storageId ?? null,
         posted: 1,
         accCosts: SET_RELEASE_ACC_COSTS,
-        docMode: SET_RELEASE_DOC_MODE,
+        docMode: resolvedDocMode,
         kitGood: resolvedKitGood,
         kitQty: resolvedKitQty,
         ...(author ? { author } : {}),

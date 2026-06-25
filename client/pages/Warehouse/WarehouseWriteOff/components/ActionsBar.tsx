@@ -18,12 +18,12 @@ export default function ActionsBar({ onPreview, onSend, onCancel, disabled }: Pr
         </Button>
       )}
       {onPreview && (
-        <Button color="secondary" size="lg" onPress={onPreview} disabled={disabled}>
+        <Button color="secondary" size="lg" onPress={onPreview} isDisabled={disabled}>
           <DynamicIcon name="code-2" className="w-4 h-4" />
           Payload
         </Button>
       )}
-      <Button color="primary" size="lg" onPress={onSend}>
+      <Button color="primary" size="lg" onPress={onSend} isDisabled={disabled}>
         <DynamicIcon name="send" className="w-4 h-4" />
         Відправити
       </Button>

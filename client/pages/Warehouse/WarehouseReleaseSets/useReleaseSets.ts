@@ -2,10 +2,18 @@ import { useState, useEffect } from 'react';
 import { useWarehouseReturns } from '../WarehouseReturns/useWarehouseReturns';
 import useWarehouseParams from '../shared/useWarehouseParams';
 
+export type ReleaseSetsOperationKey = 'goodKit' | 'goodUnKit';
+
+const RELEASE_DOC_MODE_BY_OPERATION: Record<ReleaseSetsOperationKey, string> = {
+  goodKit: '1004000000000305',
+  goodUnKit: '1004000000000306',
+};
+
 export default function useReleaseSets() {
   const returns = useWarehouseReturns();
   const { storages, selectedStorage, setSelectedStorage, selectedStorageName, defaultSmallStorageId } = useWarehouseParams({ returns });
   const [items, setItems] = useState<any[]>([]);
+  const [operationKey, setOperationKey] = useState<ReleaseSetsOperationKey>('goodKit');
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [archiveSessions, setArchiveSessions] = useState<any[]>([]);
@@ -57,6 +65,7 @@ export default function useReleaseSets() {
       return;
     }
 
+    const availableQuantity = Number(setItem.availableQuantity ?? setItem.stockQuantity ?? setItem.stock ?? 0);
     const id = crypto.randomUUID?.() ?? `${setItem.sku}-${Date.now()}`;
     const newItem = {
       id,
@@ -64,6 +73,7 @@ export default function useReleaseSets() {
       name: setItem.name || setItem.title || setItem.sku,
       quantity: setItem.quantity ?? 1,
       componentsSnapshot: setItem.componentsSnapshot ?? setItem.set ?? [],
+      availableQuantity: Number.isFinite(availableQuantity) && availableQuantity > 0 ? availableQuantity : null,
     };
     setItems((s) => [...s, newItem]);
   };
@@ -108,6 +118,7 @@ export default function useReleaseSets() {
       firmId: safeFirmId(returns.receiveFirmId),
       comment: returns.comment ?? null,
       remark: buildSetRemark(items[0]),
+      docMode: RELEASE_DOC_MODE_BY_OPERATION[operationKey],
       dryRun: true,
     };
     const resp = await fetch('/api/warehouse/releases/send', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -133,6 +144,7 @@ export default function useReleaseSets() {
         firmId: safeFirmId(returns.receiveFirmId),
         comment: returns.comment ?? null,
         remark: currentRemark,
+        docMode: RELEASE_DOC_MODE_BY_OPERATION[operationKey],
         dryRun: false,
         status: 'created',
       };
@@ -151,6 +163,7 @@ export default function useReleaseSets() {
             comment: historyComment,
             remark: currentRemark,
             status: 'created',
+            operationType: operationKey === 'goodUnKit' ? 'unkit' : 'kit',
             dilovodDocId: json.dilovodDocId ?? null,
           }),
         });
@@ -218,6 +231,8 @@ export default function useReleaseSets() {
   return {
     returns,
     items,
+    operationKey,
+    setOperationKey,
     addSet,
     buildSetRemark,
     updateItem,

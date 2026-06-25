@@ -1,10 +1,34 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Input, Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import type { ReleaseSetsOperationKey } from '../useReleaseSets';
 
-interface Props { onSelect: (s: any) => void; existingItems?: any[]; resetSignal?: number }
+const extractStockTotal = (rawStock: unknown): number => {
+  let total = 0;
 
-export default function SetSearchPanel({ onSelect, existingItems = [], resetSignal }: Props) {
+  if (rawStock) {
+    if (typeof rawStock === 'string') {
+      try {
+        const parsed = JSON.parse(rawStock);
+        Object.values(parsed).forEach((value: any) => {
+          total += Number(value) || 0;
+        });
+      } catch {
+        // ignore malformed stock payloads
+      }
+    } else if (typeof rawStock === 'object') {
+      Object.values(rawStock as Record<string, unknown>).forEach((value: unknown) => {
+        total += Number(value) || 0;
+      });
+    }
+  }
+
+  return total;
+};
+
+interface Props { onSelect: (s: any) => void; existingItems?: any[]; resetSignal?: number; operationKey?: ReleaseSetsOperationKey }
+
+export default function SetSearchPanel({ onSelect, existingItems = [], resetSignal, operationKey = 'goodKit' }: Props) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,7 +76,13 @@ export default function SetSearchPanel({ onSelect, existingItems = [], resetSign
         const json = await res.json();
         const list = json?.products || [];
         // filter for product sets (store parsed set array)
-        const sets = list.map((p:any) => ({ ...p, set: p.set ? (typeof p.set === 'string' ? (() => { try { return JSON.parse(p.set); } catch { return null; } })() : p.set) : null })).filter((p:any) => Array.isArray(p.set) && p.set.length > 0);
+        const sets = list
+          .map((p:any) => ({
+            ...p,
+            set: p.set ? (typeof p.set === 'string' ? (() => { try { return JSON.parse(p.set); } catch { return null; } })() : p.set) : null,
+            availableQuantity: extractStockTotal(p.stockBalanceByStock),
+          }))
+          .filter((p:any) => Array.isArray(p.set) && p.set.length > 0);
         setResults(sets);
       } catch (e) {
         setResults([]);
@@ -94,7 +124,13 @@ export default function SetSearchPanel({ onSelect, existingItems = [], resetSign
                 const res = await fetch(`/api/products?search=${encodeURIComponent(query)}&limit=20`, { credentials: 'include' });
                 const json = await res.json();
                 const list = json?.products || [];
-                const sets = list.map((p:any) => ({ ...p, set: p.set ? (typeof p.set === 'string' ? (() => { try { return JSON.parse(p.set); } catch { return null; } })() : p.set) : null })).filter((p:any) => Array.isArray(p.set) && p.set.length > 0);
+                const sets = list
+                  .map((p:any) => ({
+                    ...p,
+                    set: p.set ? (typeof p.set === 'string' ? (() => { try { return JSON.parse(p.set); } catch { return null; } })() : p.set) : null,
+                    availableQuantity: extractStockTotal(p.stockBalanceByStock),
+                  }))
+                  .filter((p:any) => Array.isArray(p.set) && p.set.length > 0);
                 setResults(sets);
               } catch (e) {
                 setResults([]);
@@ -119,7 +155,7 @@ export default function SetSearchPanel({ onSelect, existingItems = [], resetSign
               size="lg"
               color="primary"
               variant={isAdded(p.sku) || hasSelectedSet ? 'flat' : 'solid'}
-              onPress={() => onSelect({ sku: p.sku, name: p.name || p.title || p.displayName || p.sku, quantity: 1, componentsSnapshot: p.set })}
+              onPress={() => onSelect({ sku: p.sku, name: p.name || p.title || p.displayName || p.sku, quantity: 1, componentsSnapshot: p.set, availableQuantity: p.availableQuantity })}
               isDisabled={isAdded(p.sku) || hasSelectedSet}
               className={`h-auto w-full items-stretch justify-start rounded-lg border border-gray-200 px-4 py-3 text-left ${(isAdded(p.sku) || hasSelectedSet) ? 'bg-gray-100 opacity-40' : 'bg-white'}`}
             >
@@ -131,7 +167,12 @@ export default function SetSearchPanel({ onSelect, existingItems = [], resetSign
                   </div>
                   <div className="text-sm text-gray-600">Компонентів: {Array.isArray(p.set) ? p.set.length : 0}</div>
                 </div>
-                <div className="shrink-0 text-sm font-semibold">{isAdded(p.sku) ? 'Додано' : 'Додати'}</div>
+                {operationKey === 'goodUnKit' && Number(p.availableQuantity ?? 0) > 0 && (
+                  <span className="text-xs font-semibold bg-lime-200 text-emerald-800 px-4 py-2 rounded-sm">
+                    В наявності {Number(p.availableQuantity ?? 0)} компл.
+                  </span>
+                )}
+                {/* <div className="shrink-0 text-sm font-semibold">{isAdded(p.sku) ? 'Додано' : 'Додати'}</div> */}
               </div>
             </Button>
           ))}

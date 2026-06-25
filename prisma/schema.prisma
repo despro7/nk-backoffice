@@ -303,6 +303,7 @@ model WarehouseReleaseSet {
   storageId     String?  @db.VarChar(191)
   firmId        String?  @db.VarChar(255)
   dilovodDocId  String?  @db.VarChar(255)
+  operationType String   @default("kit") @db.VarChar(20)
   comment       String?  @db.Text
   status        String   @default("created")
   createdBy     Int?
