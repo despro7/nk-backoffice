@@ -18,6 +18,7 @@ interface OrderAssemblyRightPanelProps {
   orderForAssembly: OrderForAssembly;
   monolithicDisplayItems?: OrderForAssembly['items'];
   monolithicDisplayStates?: Record<string, boolean>;
+  showMonolithicAvailabilityBadge?: boolean;
   averagePortionWeight?: number; // Середня вага порції для розподілу по коробках
   getWeightData: () => { expectedWeight: number | null; cumulativeTolerance: number };
   handleWeightChange: (weight: number | null) => void;

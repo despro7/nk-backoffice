@@ -17,6 +17,7 @@ export interface InventoryProduct {
   unit: 'portions' | 'pcs'; // Визначає, як інтерпретувати systemBalance та actualCount
   portionsPerBox: number; // Кількість порцій в коробці (тільки для порційних товарів)
   checked: boolean; // Чи перевірено позицію (підтверджено фактичну кількість)
+  componentsSnapshot?: any[]; // Склад набору, якщо це комплект
 }
 
 export interface InventorySession {

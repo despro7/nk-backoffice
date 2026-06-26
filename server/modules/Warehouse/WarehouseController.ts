@@ -1113,7 +1113,7 @@ router.get('/inventory/sets', authenticateToken, async (req, res) => {
 
     const sets = await prisma.product.findMany({
       where: { NOT: { set: null } },
-      select: { id: true, sku: true, name: true, portionsPerBox: true, categoryName: true, isOutdated: true, stockBalanceByStock: true },
+      select: { id: true, sku: true, name: true, portionsPerBox: true, categoryName: true, isOutdated: true, stockBalanceByStock: true, set: true },
       orderBy: [{ manualOrder: 'asc' }, { name: 'asc' }],
     });
 
@@ -1124,6 +1124,9 @@ router.get('/inventory/sets', authenticateToken, async (req, res) => {
             ? JSON.parse(product.stockBalanceByStock)
             : {};
           const systemBalance = stock['2'] ?? 0;
+          const componentsSnapshot = product.set
+            ? (typeof product.set === 'string' ? JSON.parse(product.set) : product.set)
+            : [];
 
           return {
             id: String(product.id),
@@ -1134,6 +1137,7 @@ router.get('/inventory/sets', authenticateToken, async (req, res) => {
             systemBalance,
             unit: product.portionsPerBox > 1 ? 'portions' : 'pcs',
             portionsPerBox: product.portionsPerBox,
+            componentsSnapshot,
           };
         } catch {
           console.warn(`⚠️ [Inventory] Не вдалось розпарсити stockBalanceByStock для ${product.sku}`);
@@ -1141,6 +1145,46 @@ router.get('/inventory/sets', authenticateToken, async (req, res) => {
         }
       })
       .filter(Boolean);
+
+    try {
+      const componentSkus = new Set<string>();
+      for (const setItem of result as Array<{ componentsSnapshot?: any[] }>) {
+        const components = Array.isArray(setItem?.componentsSnapshot) ? setItem.componentsSnapshot : [];
+        for (const component of components) {
+          const componentSku = String(component?.sku ?? component?.id ?? '').trim();
+          if (componentSku) componentSkus.add(componentSku.toLowerCase());
+        }
+      }
+
+      if (componentSkus.size > 0) {
+        const components = await prisma.product.findMany({
+          where: { sku: { in: Array.from(componentSkus) } },
+          select: { sku: true, name: true },
+        });
+
+        const nameBySku = new Map<string, string>();
+        for (const component of components) {
+          if (component.sku) {
+            nameBySku.set(String(component.sku).trim().toLowerCase(), component.name ?? '');
+          }
+        }
+
+        for (const setItem of result as Array<{ componentsSnapshot?: any[] }>) {
+          const components = Array.isArray(setItem?.componentsSnapshot) ? setItem.componentsSnapshot : [];
+          for (const component of components) {
+            const componentSku = String(component?.sku ?? component?.id ?? '').trim().toLowerCase();
+            if (componentSku && !component.name) {
+              const componentName = nameBySku.get(componentSku);
+              if (componentName) {
+                component.name = componentName;
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ [Inventory] Не вдалось підтягнути назви компонентів наборів:', error);
+    }
 
     console.log(`✅ [Inventory] Знайдено ${result.length} комплектів для інвентаризації`);
     res.json({ sets: result, total: result.length });

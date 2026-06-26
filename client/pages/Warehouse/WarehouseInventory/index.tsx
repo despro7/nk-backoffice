@@ -264,6 +264,7 @@ export default function WarehouseInventory() {
             onLoadSession={inv.handleAdminLoadSession}
             onDeleteSession={handleAdminDeleteSession}
             onRefreshSessionBalances={handleRefreshSessionBalances}
+            setCompositionBySku={inv.setCompositionBySku}
           />
         )}
         {inv.activeTab === 'archive' && isAdmin && (

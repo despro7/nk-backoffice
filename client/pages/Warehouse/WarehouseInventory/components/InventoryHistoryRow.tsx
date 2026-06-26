@@ -3,6 +3,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import type { ProductHistoryEntry } from '../WarehouseInventoryTypes';
 import { formatRelativeDate } from '@/lib/formatUtils';
 import CompactBalance from './CompactBalance';
+import { Popover, PopoverContent, PopoverTrigger } from '@heroui/react';
 
 interface InventoryHistoryRowProps {
   sessionId: string;
@@ -13,6 +14,7 @@ interface InventoryHistoryRowProps {
   expandedRowKey: string | null;
   rowHistoryCache: Record<string, ProductHistoryEntry[]>;
   rowHistoryLoading: string | null;
+  setCompositionBySku: Record<string, any[]>;
   onRowClick: (sessionId: string, sku: string) => void;
 }
 
@@ -25,12 +27,14 @@ export const InventoryHistoryRow = ({
   expandedRowKey,
   rowHistoryCache,
   rowHistoryLoading,
+  setCompositionBySku,
   onRowClick,
-  
 }: InventoryHistoryRowProps) => {
   const isRowExpanded = expandedRowKey === rowKey;
   const historyEntries = rowHistoryCache[item.sku];
   const isRowLoading = rowHistoryLoading === item.sku;
+  const setComposition = setCompositionBySku[item.sku] ?? [];
+  const isSetItem = Array.isArray(setComposition) && setComposition.length > 0;
 
   return (
     <Fragment>
@@ -47,7 +51,33 @@ export const InventoryHistoryRow = ({
             {item.sku}
           </div>
         </td>
-        <td className="py-2 px-3">{item.name}</td>
+        <td className="py-2 px-3 ">
+          {item.name}
+          {isSetItem && (
+            <Popover showArrow offset={20} placement="right" classNames={{ content: 'bg-amber-100' }}>
+              <PopoverTrigger>
+                <div className="inline-flex w-fit ml-2 font-bold text-[10px] bg-amber-400/5 text-amber-800/50 border border-amber-800/30 rounded-[6px] uppercase px-1.5 py-0.5">
+                  Склад
+                </div>
+              </PopoverTrigger>
+              <PopoverContent>
+                <div className="px-1 py-1.5">
+                  {setComposition.length > 0 ? (
+                    <ul className="space-y-1">
+                      {setComposition.map((component, index) => (
+                        <li key={`${component.sku}-${index}`} className="flex items-start">
+                          {component.quantity ?? '–'} × {component.name ?? 'Без назви'}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-xs text-gray-500">Склад набору недоступний у цьому записі.</p>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+        </td>
         <td className="py-2 px-3 text-center">{item.portionsPerBox ?? '–'}</td>
         <td className="py-2 px-3 text-center">{item.unit === 'portions' ? <CompactBalance total={item.systemBalance} portionsPerBox={item.portionsPerBox} /> : item.systemBalance}</td>
         <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{total === null ? '–' : (item.unit === 'portions' ? <CompactBalance total={total} portionsPerBox={item.portionsPerBox} sessionItem={item} /> : String(total))}</td>
@@ -67,7 +97,7 @@ export const InventoryHistoryRow = ({
               ) : (
                 <table className="w-[91%] text-xs ml-auto">
                   <thead>
-                    <tr className="text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold [&>th]:w-[13.8%]">
+                    <tr className="text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold [&>th]:w-1/7">
                       <th className="text-left! w-auto!">Дата</th>
                       <th>Відвантаження</th>
                       <th>Повернення</th>

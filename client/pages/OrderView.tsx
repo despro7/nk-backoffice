@@ -76,6 +76,41 @@ export default function OrderView() {
   const orderAssemblyKey = externalId || '';
   const currentMonolithicDisplayOverrides = monolithicDisplayOverridesByOrder[orderAssemblyKey] || {};
 
+  const normalizePayloadData = useCallback((payloadData: unknown): any | null => {
+    if (!payloadData) {
+      LoggingService.orderAssemblyLog('🧩 [OrderView] payloadData відсутній або порожній');
+      return null;
+    }
+
+    if (typeof payloadData === 'string') {
+      try {
+        const parsed = JSON.parse(payloadData);
+        LoggingService.orderAssemblyLog('🧩 [OrderView] payloadData успішно розпарсено зі string', {
+          rootKeys: parsed && typeof parsed === 'object' ? Object.keys(parsed) : [],
+          hasShipment: Boolean(parsed?.shipment),
+          hasBySku: Boolean(parsed?.shipment?.bySku),
+        });
+        return parsed;
+      } catch {
+        LoggingService.orderAssemblyLog('⚠️ [OrderView] не вдалося розпарсити payloadData string', undefined, true);
+        return null;
+      }
+    }
+
+    if (typeof payloadData === 'object') {
+      LoggingService.orderAssemblyLog('🧩 [OrderView] payloadData вже є object', {
+        rootKeys: Object.keys(payloadData as Record<string, unknown>),
+        hasShipment: Boolean((payloadData as any)?.shipment),
+        hasBySku: Boolean((payloadData as any)?.shipment?.bySku),
+      });
+      return payloadData;
+    }
+
+    return null;
+  }, []);
+
+  const isFinalizedOrder = Number(order?.status) > 2;
+
   const isOverrideEligibleMonolithic = useCallback((item: OrderChecklistItem): boolean => {
     return item.type === 'product' && typeof item.portionsPerItem === 'number' && item.portionsPerItem > 16;
   }, []);
@@ -85,10 +120,14 @@ export default function OrderView() {
   }, []);
 
   const getForcedRegularSetSkus = useCallback((overrides: Record<string, boolean> = currentMonolithicDisplayOverrides): string[] => {
+    if (isFinalizedOrder) {
+      return [];
+    }
+
     return Object.entries(overrides)
       .filter(([, enabled]) => enabled === false)
       .map(([sku]) => sku);
-  }, [currentMonolithicDisplayOverrides]);
+  }, [currentMonolithicDisplayOverrides, isFinalizedOrder]);
 
   const shipmentPayloadData = useMemo(() => {
     const bySku = expandedItems.reduce<Record<string, { accGood: string; quantity: number }>>((accumulator, item) => {
@@ -428,21 +467,46 @@ export default function OrderView() {
       if (data.success) {
         setOrder(data.data);
 
+        const resolvedPayloadData = normalizePayloadData(data.data.payloadData);
+        const orderIsFinalized = Number(data.data.status) > 2;
+        const payloadShipmentBySku = orderIsFinalized
+          ? (resolvedPayloadData?.shipment?.bySku && typeof resolvedPayloadData.shipment.bySku === 'object'
+              ? resolvedPayloadData.shipment.bySku
+              : {})
+          : null;
+
+        LoggingService.orderAssemblyLog('🧩 [OrderView] payload summary', {
+          orderId: data.data.id,
+          status: data.data.status,
+          orderIsFinalized,
+          hasPayloadData: Boolean(data.data.payloadData),
+          hasShipment: Boolean(resolvedPayloadData?.shipment),
+          hasBySku: Boolean(resolvedPayloadData?.shipment?.bySku),
+          shipmentSkuCount: payloadShipmentBySku ? Object.keys(payloadShipmentBySku).length : 0,
+        });
+
         setExpandingSets(true);
         try {
           const forcedRegularSetSkus = getForcedRegularSetSkus(setModeOverrides);
+          LoggingService.orderAssemblyLog('🧩 [OrderView] expandProductSets mode', {
+            orderIsFinalized,
+            forcedRegularCount: forcedRegularSetSkus.length,
+            payloadShipmentSkuCount: payloadShipmentBySku ? Object.keys(payloadShipmentBySku).length : 0,
+          });
           const expanded = await expandProductSets(
             data.data.items,
             apiCall,
             monolithicIds || monolithicCategoryIds,
             forcedRegularSetSkus,
+            payloadShipmentBySku,
+            orderIsFinalized,
           );
           setExpandedItems(expanded);
           if (updateControlItems) {
             setMonolithicDisplayControlItems(expanded.filter(item => item.type === 'product' && typeof item.portionsPerItem === 'number' && item.portionsPerItem > 16));
           }
           applyExpandedAssembly(expanded, data.data.status, selectedBoxes);
-          if (data.data.status >= '3') {
+          if (orderIsFinalized) {
             setShowPrintTTN(true);
             setWasOpenedAsReady(true);
           }
@@ -725,6 +789,8 @@ export default function OrderView() {
                 nextOrderNumber={nextOrderNumber}
                 nextOrderDate={nextOrderDate}
                 showNoMoreOrders={showNoMoreOrders}
+                showMonolithicAvailabilityBadge
+                monolithicBadgeLabel={isFinalizedOrder ? 'Готовий комплект' : undefined}
               />
             </ErrorBoundary>
             </>
@@ -756,6 +822,7 @@ export default function OrderView() {
           onMonolithicDisplayChange={handleMonolithicDisplayChange}
           monolithicDisplayItems={monolithicDisplayControlItems}
           monolithicDisplayStates={currentMonolithicDisplayOverrides}
+          showMonolithicAvailabilityBadge={!isFinalizedOrder}
         />
       </div>
 

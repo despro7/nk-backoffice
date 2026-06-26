@@ -6,10 +6,10 @@ const appStartTime = Date.now();
 
 // Дефолтні налаштування логування
 const defaultSettings: LoggingSettingsTypes = {
-  authContextLogs: true,
+  authContextLogs: false,
   apiCallLogs: false,
   routingLogs: false,
-  equipmentLogs: true,
+  equipmentLogs: false,
   debugLogs: false,
   performanceLogs: false,
   loggingSettingsLogs: false,

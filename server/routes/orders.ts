@@ -928,6 +928,7 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
         provider: orderDetails.provider,
         lastSynced: orderDetails.lastSynced,
         rawData: orderDetails.rawData,
+        payloadData: orderDetails.payloadData,
         previousOrderExternalId: orderDetails.previousOrderExternalId,
         previousOrderNumber: orderDetails.previousOrderNumber,
         nextOrderExternalId: orderDetails.nextOrderExternalId,

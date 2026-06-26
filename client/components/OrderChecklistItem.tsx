@@ -244,11 +244,11 @@ const MonolithicIndicator = ({ sku, quantity = 0, status }: { sku?: string; quan
   if (effective > 0) {
     return (
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] font-semibold bg-lime-200 text-emerald-800 px-2 py-1 rounded-full">
+        <span className="text-[11px] font-semibold bg-lime-200 text-emerald-800 px-2.5 py-1 rounded-full border-b-1 border-b-lime-600/15 border-t-1 border-t-white shadow-md shadow-lime-700/10">
           В наявності {effective} компл.
         </span>
         {shortage > 0 && (
-          <span className="text-[11px] font-semibold bg-red-200 text-red-700 px-2 py-1 rounded-full">
+          <span className="text-[11px] font-semibold bg-red-200 text-red-700 px-2.5 py-1 rounded-full border-b-1 border-b-red-600/15 border-t-1 border-t-white shadow-md shadow-red-700/10">
             Не вистачає {shortage} компл.
           </span>
         )}
@@ -299,9 +299,11 @@ interface OrderChecklistItemProps {
   assemblyMode?: 'standard' | 'no_scales';
   productScanMode?: 'single_per_item' | 'by_quantity';
   allowManualSelect?: boolean;
+  showMonolithicAvailabilityBadge?: boolean;
+  monolithicBadgeLabel?: string;
 }
 
-const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick, assemblyMode = 'standard', productScanMode = 'single_per_item', allowManualSelect = false }: OrderChecklistItemProps) => {
+const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, currentBoxTotalWeight, onClick, assemblyMode = 'standard', productScanMode = 'single_per_item', allowManualSelect = false, showMonolithicAvailabilityBadge = true, monolithicBadgeLabel }: OrderChecklistItemProps) => {
   const navigate = useNavigate();
   const { name, quantity, status, expectedWeight, type, boxSettings, sku, barcode } = item;
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -530,14 +532,20 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
             <span className="text-sm text-gray-400 tabular-nums text-nowrap">{type === 'product' && `× ${quantity}`} ≈ {expectedWeight.toFixed(2)} кг</span>
 
             {/* Динамічно-монолітний індикатор: відображається коли є portionsPerItem */}
-            {item.portionsPerItem && (item.sku || (type === 'box' && boxSettings?.barcode)) && (
-              <div className="flex items-center gap-2">
-                <MonolithicIndicator
-                  sku={(item.sku as string) || (type === 'box' ? boxSettings?.barcode : undefined)}
-                  quantity={quantity}
-                  status={status}
-                />
-              </div>
+            {showMonolithicAvailabilityBadge && item.portionsPerItem && (
+              monolithicBadgeLabel ? (
+                <span className="text-[11px] font-semibold bg-lime-300/65 text-emerald-800 px-2.5 py-1 rounded-full border-b-1 border-b-lime-700/25 border-t-1 border-t-white/60">
+                  {monolithicBadgeLabel}
+                </span>
+              ) : ((item.sku || (type === 'box' && boxSettings?.barcode)) && (
+                <div className="flex items-center gap-2">
+                  <MonolithicIndicator
+                    sku={(item.sku as string) || (type === 'box' ? boxSettings?.barcode : undefined)}
+                    quantity={quantity}
+                    status={status}
+                  />
+                </div>
+              ))
             )}
             
             {isDebugMode && (

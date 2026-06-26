@@ -14,9 +14,10 @@ interface InventoryHistoryTabProps {
   onLoadSession?: (session: InventorySession) => Promise<void>;
   onDeleteSession?: (sessionId: string) => Promise<void>;
   onRefreshSessionBalances?: (sessionId: string) => Promise<{ items?: Array<any> } | null>;
+  setCompositionBySku: Record<string, any[]>;
 }
 
-export const InventoryHistoryTab = ({ sessions, loading, onRefresh, onLoadSession, onDeleteSession, onRefreshSessionBalances }: InventoryHistoryTabProps) => (
+export const InventoryHistoryTab = ({ sessions, loading, onRefresh, onLoadSession, onDeleteSession, onRefreshSessionBalances, setCompositionBySku }: InventoryHistoryTabProps) => (
   <>
     <div className="flex items-end justify-between">
       <h2 className="text-base font-semibold text-gray-800">Минулі інвентаризації {sessions.length > 0 && ` (${sessions.length})`}</h2>
@@ -46,7 +47,7 @@ export const InventoryHistoryTab = ({ sessions, loading, onRefresh, onLoadSessio
         </Button>
       </div>
     ) : (
-      <HistoryTable sessions={sessions} onLoadSession={onLoadSession} onDeleteSession={onDeleteSession} onRefreshSessionBalances={onRefreshSessionBalances} onRefresh={onRefresh} />
+      <HistoryTable sessions={sessions} onLoadSession={onLoadSession} onDeleteSession={onDeleteSession} onRefreshSessionBalances={onRefreshSessionBalances} onRefresh={onRefresh} setCompositionBySku={setCompositionBySku} />
     )}
   </>
 );

@@ -25,11 +25,12 @@ interface Props {
   onRowClick: (sessionId: string, sku: string) => void;
   rowHistoryCache: Record<string, ProductHistoryEntry[]>;
   rowHistoryLoading: string | null;
+  setCompositionBySku: Record<string, any[]>;
   summary: Summary;
   isMaterial?: boolean;
 }
 
-const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirection, onSort, expandedRowKey, onRowClick, rowHistoryCache, rowHistoryLoading, summary, isMaterial }: Props) => {
+const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirection, onSort, expandedRowKey, onRowClick, rowHistoryCache, rowHistoryLoading, setCompositionBySku, summary, isMaterial }: Props) => {
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200 bg-gray-200">
@@ -38,11 +39,11 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
       <div className="overflow-x-auto px-1 pb-1 bg-gray-200 rounded-b-md">
         <table className="w-full border-separate border-spacing-0 overflow-hidden rounded-md text-sm bg-white border-1 border-gray-200">
           <thead>
-            <tr className="border-b border-gray-200  bg-gray-100">
-              <th className="text-left py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('sku')}>
+            <tr className="[&>th]:w-[13.2%] border-b border-gray-200 bg-gray-100">
+              <th className="w-[9.2%]! text-left py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('sku')}>
                 <div className="flex items-center gap-1">SKU <DynamicIcon name={sortColumn !== 'sku' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
-              <th className="text-left py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('name')}>
+              <th className="w-auto! text-left py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('name')}>
                 <div className="flex items-center gap-1">Позиція <DynamicIcon name={sortColumn !== 'name' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100">
@@ -73,6 +74,7 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
                   expandedRowKey={expandedRowKey}
                   rowHistoryCache={rowHistoryCache}
                   rowHistoryLoading={rowHistoryLoading}
+                  setCompositionBySku={setCompositionBySku}
                   onRowClick={onRowClick}
                 />
               );

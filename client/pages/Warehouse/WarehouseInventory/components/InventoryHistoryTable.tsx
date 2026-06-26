@@ -22,10 +22,10 @@ interface HistoryTableProps {
   onRestoreSession?: (sessionId: string) => Promise<void>;
   onRefreshSessionBalances?: (sessionId: string) => Promise<{ items?: Array<any> } | null>;
   onRefresh?: (() => Promise<void>) | (() => void);
+  setCompositionBySku: Record<string, any[]>;
 }
-// Accept both sync and async callbacks for onRefresh
 
-const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSession, onRefreshSessionBalances, onRefresh }: HistoryTableProps) => {
+const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSession, onRefreshSessionBalances, onRefresh, setCompositionBySku }: HistoryTableProps) => {
   const { user } = useAuth();
   const isAdmin = user?.role === ROLES.ADMIN;
   const currentUserId = user?.id ? String(user.id) : null;
@@ -42,7 +42,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
   const [contentHeights, setContentHeights] = useState<Record<string, number>>({});
   const contentRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  const userIds = sessions.map(s => Number(s.createdBy ?? null));
+  const userIds = sessions.map((s) => Number(s.createdBy ?? null));
   const namesMap = useUserNames(userIds);
 
   const [isRefreshModalOpen, setIsRefreshModalOpen] = useState(false);
@@ -67,10 +67,16 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
   const handleSort = (column: SortColumn, forMaterials = false) => {
     if (forMaterials) {
       if (sortColumnMat === column) setSortDirectionMat(sortDirectionMat === 'ascending' ? 'descending' : 'ascending');
-      else { setSortColumnMat(column); setSortDirectionMat('ascending'); }
+      else {
+        setSortColumnMat(column);
+        setSortDirectionMat('ascending');
+      }
     } else {
       if (sortColumnProd === column) setSortDirectionProd(sortDirectionProd === 'ascending' ? 'descending' : 'ascending');
-      else { setSortColumnProd(column); setSortDirectionProd('ascending'); }
+      else {
+        setSortColumnProd(column);
+        setSortDirectionProd('ascending');
+      }
     }
   };
 
@@ -92,10 +98,17 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
 
   const handleRowClick = async (sessionId: string, sku: string) => {
     const key = `${sessionId}-${sku}`;
-    if (expandedRowKey === key) { setExpandedRowKey(null); return; }
+    if (expandedRowKey === key) {
+      setExpandedRowKey(null);
+      return;
+    }
     setExpandedRowKey(key);
     if (!rowHistoryCache[sku]) {
-      try { await fetchHistory(sku); } catch (e) { /* swallow */ }
+      try {
+        await fetchHistory(sku);
+      } catch {
+        // swallow
+      }
     }
   };
 
@@ -117,12 +130,19 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
         ToastService.show({ title: 'Оновлення запущено', description: 'Оновлення облікових залишків запущено у фоновому режимі', color: 'success' });
       } else {
         ToastService.show({ title: 'Оновлення застосовано', color: 'success' });
-        try { const maybe: any = onRefresh?.(); if (maybe && typeof maybe.then === 'function') await maybe; } catch (e) { }
+        try {
+          const maybe: any = onRefresh?.();
+          if (maybe && typeof maybe.then === 'function') await maybe;
+        } catch {
+          // swallow
+        }
       }
       setIsRefreshModalOpen(false);
     } catch (err) {
       ToastService.show({ title: 'Помилка застосування', description: err instanceof Error ? err.message : 'Не вдалося застосувати оновлення', color: 'danger' });
-    } finally { setIsApplying(false); }
+    } finally {
+      setIsApplying(false);
+    }
   };
 
   const getSessionItems = (sessionItems: any[]) => {
@@ -150,15 +170,39 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
         const productSystem = products.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
         const materialSystem = materials.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
         const setSystem = sets.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
-        const productActualSum = products.reduce((s, it) => s + ((totalPortions(it) ?? 0)), 0);
-        const materialActualSum = materials.reduce((s, it) => s + ((totalPortions(it) ?? 0)), 0);
-        const setActualSum = sets.reduce((s, it) => s + ((totalPortions(it) ?? 0)), 0);
-        const productDevShortfall = products.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total < system ? system - total : 0); }, 0);
-        const productDevSurplus = products.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total > system ? total - system : 0); }, 0);
-        const materialDevShortfall = materials.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total < system ? system - total : 0); }, 0);
-        const materialDevSurplus = materials.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total > system ? total - system : 0); }, 0);
-        const setDevShortfall = sets.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total < system ? system - total : 0); }, 0);
-        const setDevSurplus = sets.reduce((s, it) => { const total = totalPortions(it); const system = it.systemBalance ?? 0; return s + (total !== null && total > system ? total - system : 0); }, 0);
+        const productActualSum = products.reduce((s, it) => s + (totalPortions(it) ?? 0), 0);
+        const materialActualSum = materials.reduce((s, it) => s + (totalPortions(it) ?? 0), 0);
+        const setActualSum = sets.reduce((s, it) => s + (totalPortions(it) ?? 0), 0);
+        const productDevShortfall = products.reduce((s, it) => {
+          const total = totalPortions(it);
+          const system = it.systemBalance ?? 0;
+          return s + (total !== null && total < system ? system - total : 0);
+        }, 0);
+        const productDevSurplus = products.reduce((s, it) => {
+          const total = totalPortions(it);
+          const system = it.systemBalance ?? 0;
+          return s + (total !== null && total > system ? total - system : 0);
+        }, 0);
+        const materialDevShortfall = materials.reduce((s, it) => {
+          const total = totalPortions(it);
+          const system = it.systemBalance ?? 0;
+          return s + (total !== null && total < system ? system - total : 0);
+        }, 0);
+        const materialDevSurplus = materials.reduce((s, it) => {
+          const total = totalPortions(it);
+          const system = it.systemBalance ?? 0;
+          return s + (total !== null && total > system ? total - system : 0);
+        }, 0);
+        const setDevShortfall = sets.reduce((s, it) => {
+          const total = totalPortions(it);
+          const system = it.systemBalance ?? 0;
+          return s + (total !== null && total < system ? system - total : 0);
+        }, 0);
+        const setDevSurplus = sets.reduce((s, it) => {
+          const total = totalPortions(it);
+          const system = it.systemBalance ?? 0;
+          return s + (total !== null && total > system ? total - system : 0);
+        }, 0);
         const productHasActual = products.some((it) => totalPortions(it) !== null);
         const materialHasActual = materials.some((it) => totalPortions(it) !== null);
         const setHasActual = sets.some((it) => totalPortions(it) !== null);
@@ -223,15 +267,55 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                 </div>
 
                 {sets.length > 0 && (
-                  <InventoryTableSection title="Комплекти" sessionId={session.id} rows={sortItems(sets, sortColumnProd, sortDirectionProd)} sortColumn={sortColumnProd} sortDirection={sortDirectionProd} onSort={(col) => handleSort(col, false)} expandedRowKey={expandedRowKey} onRowClick={handleRowClick} rowHistoryCache={rowHistoryCache} rowHistoryLoading={loadingSku} summary={{ systemTotal: setSystem, actualSum: setHasActual ? setActualSum : null, hasActual: setHasActual, devShortfall: setDevShortfall, devSurplus: setDevSurplus }} />
+                  <InventoryTableSection
+                    title="Комплекти"
+                    sessionId={session.id}
+                    rows={sortItems(sets, sortColumnProd, sortDirectionProd)}
+                    sortColumn={sortColumnProd}
+                    sortDirection={sortDirectionProd}
+                    onSort={(col) => handleSort(col, false)}
+                    expandedRowKey={expandedRowKey}
+                    onRowClick={handleRowClick}
+                    rowHistoryCache={rowHistoryCache}
+                    rowHistoryLoading={loadingSku}
+                    setCompositionBySku={setCompositionBySku}
+                    summary={{ systemTotal: setSystem, actualSum: setHasActual ? setActualSum : null, hasActual: setHasActual, devShortfall: setDevShortfall, devSurplus: setDevSurplus }}
+                  />
                 )}
 
                 {products.length > 0 && (
-                  <InventoryTableSection title="Товари" sessionId={session.id} rows={sortItems(products, sortColumnProd, sortDirectionProd)} sortColumn={sortColumnProd} sortDirection={sortDirectionProd} onSort={(col) => handleSort(col, false)} expandedRowKey={expandedRowKey} onRowClick={handleRowClick} rowHistoryCache={rowHistoryCache} rowHistoryLoading={loadingSku} summary={{ systemTotal: productSystem, actualSum: productHasActual ? productActualSum : null, hasActual: productHasActual, devShortfall: productDevShortfall, devSurplus: productDevSurplus }} />
+                  <InventoryTableSection
+                    title="Товари"
+                    sessionId={session.id}
+                    rows={sortItems(products, sortColumnProd, sortDirectionProd)}
+                    sortColumn={sortColumnProd}
+                    sortDirection={sortDirectionProd}
+                    onSort={(col) => handleSort(col, false)}
+                    expandedRowKey={expandedRowKey}
+                    onRowClick={handleRowClick}
+                    rowHistoryCache={rowHistoryCache}
+                    rowHistoryLoading={loadingSku}
+                    setCompositionBySku={setCompositionBySku}
+                    summary={{ systemTotal: productSystem, actualSum: productHasActual ? productActualSum : null, hasActual: productHasActual, devShortfall: productDevShortfall, devSurplus: productDevSurplus }}
+                  />
                 )}
 
                 {materials.length > 0 && (
-                  <InventoryTableSection title="Матеріали" sessionId={session.id} rows={sortItems(materials, sortColumnMat, sortDirectionMat)} sortColumn={sortColumnMat} sortDirection={sortDirectionMat} onSort={(col) => handleSort(col, true)} expandedRowKey={expandedRowKey} onRowClick={handleRowClick} rowHistoryCache={rowHistoryCache} rowHistoryLoading={loadingSku} summary={{ systemTotal: materialSystem, actualSum: materialHasActual ? materialActualSum : null, hasActual: materialHasActual, devShortfall: materialDevShortfall, devSurplus: materialDevSurplus }} isMaterial />
+                  <InventoryTableSection
+                    title="Матеріали"
+                    sessionId={session.id}
+                    rows={sortItems(materials, sortColumnMat, sortDirectionMat)}
+                    sortColumn={sortColumnMat}
+                    sortDirection={sortDirectionMat}
+                    onSort={(col) => handleSort(col, true)}
+                    expandedRowKey={expandedRowKey}
+                    onRowClick={handleRowClick}
+                    rowHistoryCache={rowHistoryCache}
+                    rowHistoryLoading={loadingSku}
+                    setCompositionBySku={setCompositionBySku}
+                    summary={{ systemTotal: materialSystem, actualSum: materialHasActual ? materialActualSum : null, hasActual: materialHasActual, devShortfall: materialDevShortfall, devSurplus: materialDevSurplus }}
+                    isMaterial
+                  />
                 )}
               </div>
             </div>

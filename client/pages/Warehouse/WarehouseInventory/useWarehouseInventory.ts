@@ -44,6 +44,7 @@ export interface UseWarehouseInventoryReturn {
   filteredSets: InventoryProduct[];
   openSetId: string | null;
   openSetIds: Set<string>;
+  setCompositionBySku: Record<string, any[]>;
 
   // Пошук і сортування
   searchQuery: string;
@@ -200,6 +201,15 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
    */
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
 
+  const setCompositionBySku = useMemo(() => {
+    return sets.reduce<Record<string, any[]>>((accumulator, setItem) => {
+      if (setItem.sku) {
+        accumulator[setItem.sku] = Array.isArray(setItem.componentsSnapshot) ? setItem.componentsSnapshot : [];
+      }
+      return accumulator;
+    }, {});
+  }, [sets]);
+
   // ---------------------------------------------------------------------------
   // API: завантаження товарів
   // ---------------------------------------------------------------------------
@@ -297,6 +307,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         actualCount: null,
         boxCount: null,
         checked: false,
+        componentsSnapshot: Array.isArray(s.componentsSnapshot) ? s.componentsSnapshot : [],
       }));
 
       const effectiveDate = asOfDate ?? (sessionDate ? new Date(sessionDate) : null);
@@ -402,6 +413,10 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   useEffect(() => {
     loadDraft();
   }, [loadDraft]);
+
+  useEffect(() => {
+    void loadSets();
+  }, [loadSets]);
 
   // ---------------------------------------------------------------------------
   // API: завантаження історії
@@ -1129,6 +1144,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     sortBy, setSortBy, sortDirection, setSortDirection,
     materials, materialsLoading, materialsError, filteredMaterials, openMaterialId, openMaterialIds,
     sets, setsLoading, setsError, filteredSets, openSetId, openSetIds,
+    setCompositionBySku,
     searchQuery, setSearchQuery,
     showOutdated, setShowOutdated,
     checkedCount, totalCount, progressPercent,

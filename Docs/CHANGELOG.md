@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-06-26 — Документація `shipmentPayloadData` з `OrderView` і повторного використання
+**Files:** `Docs/features/order-assembly/dynamic-monolithic-order-payload.md`
+
+- Додано окремий опис `shipmentPayloadData` з `OrderView`: як він збирається з `expandedItems` у форматі `{ shipment: { bySku } }`.
+- Зафіксовано, як цей payload передається далі в `useOrderNavigation` і `PUT /api/orders/:id/status`.
+- Додано рекомендацію винести логіку в окремий helper/hook, якщо її треба перевикористати в інших місцях.
+
+---
+
+## 2026-06-26 — Документація агрегації реально відвантажених наборів у inventory history
+**Files:** `Docs/features/warehouse-inventory-shipped-activity.md`
+
+- Описано, як `GET /api/warehouse/inventory/product-history` рахує `shipped`, `returned` і `writtenOff` для кожного SKU в межах одного інвентаризаційного дня.
+- Зафіксовано джерела даних для `shipped`: `orders.dilovodSaleExportDate`, `ordersCache.processedItems` з fallback на `order.items`.
+- Додано примітку про повторне використання: логіку краще винести в окремий helper/service, якщо її треба застосувати в інших ендпоінтах або звітах.
+
+---
+
 ## 2026-06-15 — Dynamic monolithic support, `payloadData` для замовлень і lock для shipment export
 **Files:** `client/components/OrderAssemblyRightPanel.tsx`, `client/components/OrderChecklist.tsx`, `client/components/OrderChecklistItem.tsx`, `client/lib/orderAssemblyUtils.ts`, `client/pages/OrderView.tsx`, `client/types/orderAssembly.ts`, `server/routes/orders.ts`, `server/modules/Warehouse/SetReleaseController.ts`, `server/modules/Warehouse/WarehouseController.ts`, `server/services/dilovod/DilovodAutoExportService.ts`, `server/services/dilovod/DilovodExportBuilder.ts`, `server/services/dilovod/DilovodShipmentLockService.ts`, `server/services/orderDatabaseService.ts`, `prisma/schema.prisma`
 

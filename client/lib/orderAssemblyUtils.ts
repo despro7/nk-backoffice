@@ -252,6 +252,8 @@ const expandProductRecursively = async (
   depth: number = 0,
   monolithicCategories: string[] = [],
   forcedRegularSetSkus: string[] = [],
+  shipmentPayloadSkuSet: Set<string> | null = null,
+  useShipmentPayloadMode: boolean = false,
   cache?: Map<string, any>
 ): Promise<void> => {
   // Захист від нескінченної рекурсії
@@ -290,6 +292,7 @@ const expandProductRecursively = async (
     // Перевіряємо, чи це комплект
     if (product.set && Array.isArray(product.set) && product.set.length > 0) {
       const isForcedRegularSet = forcedRegularSetSkus.includes(sku);
+      const shipmentSaysMonolithic = useShipmentPayloadMode && shipmentPayloadSkuSet?.has(sku) === true;
       // 🚀 НОВА ЛОГІКА: Якщо це монолітна категорія, не розгортаємо його далі
       const categoryIdStr = product.categoryId?.toString();
       LoggingService.orderAssemblyLog(`📦 Перевірка комплекту: "${product.name}" (SKU: ${sku}), categoryId: ${product.categoryId}, categoryName: "${product.categoryName}", monolithicCategories: [${monolithicCategories.join(', ')}], depth=${depth}`);
@@ -317,7 +320,11 @@ const expandProductRecursively = async (
         LoggingService.orderAssemblyLog(`📦 Перевірка комплекту: "${product.name}" (SKU: ${sku}), categoryId: ${product.categoryId}, categoryName: "${product.categoryName}", monolithicCategories: [${monolithicCategories.join(', ')}], depth=${depth}`);
       }
 
-      if (!isForcedRegularSet && (effectiveRemaining > 0 || (categoryIdStr && Array.isArray(monolithicCategories) && monolithicCategories.includes(categoryIdStr)))) {
+      const shouldTreatAsMonolithic = useShipmentPayloadMode
+        ? shipmentSaysMonolithic
+        : (!isForcedRegularSet && (effectiveRemaining > 0 || (categoryIdStr && Array.isArray(monolithicCategories) && monolithicCategories.includes(categoryIdStr))));
+
+      if (shouldTreatAsMonolithic) {
         // If either dynamic detection OR configured monolithic category -> don't expand
         LoggingService.orderAssemblyLog(`📦 Монолітний комплект: "${product.name}" (SKU: ${sku}). Рекурсія зупинена. depth=${depth}`);
 
@@ -454,6 +461,8 @@ const expandProductRecursively = async (
           depth + 1,
           monolithicCategories,
           forcedRegularSetSkus,
+          shipmentPayloadSkuSet,
+          useShipmentPayloadMode,
           cache
         );
       }
@@ -569,11 +578,16 @@ export const expandProductSets = async (
   orderItems: any[],
   apiCall: any,
   monolithicCategoryIds: number[] = [],
-  forcedRegularSetSkus: string[] = []
+  forcedRegularSetSkus: string[] = [],
+  shipmentPayloadBySku: Record<string, { accGood: string; quantity: number }> | null = null,
+  useShipmentPayloadMode: boolean = false
 ): Promise<OrderChecklistItem[]> => {
   const expandedItems: { [key: string]: OrderChecklistItem } = {};
   // Per-request cache to avoid duplicate API calls during one expand operation
   const perRequestCache: Map<string, any> = new Map();
+  const shipmentPayloadSkuSet = useShipmentPayloadMode && shipmentPayloadBySku
+    ? new Set(Object.keys(shipmentPayloadBySku).map((sku) => String(sku).trim()).filter(Boolean))
+    : null;
 
   // --- Instrumentation for diagnostics ---
   const instrumentation: any = {
@@ -723,6 +737,8 @@ export const expandProductSets = async (
       0, // Починаємо з глибини 0
       monolithicCategoryIds.map(id => id.toString()), // Конвертуємо ID категорій в строки для порівняння
       forcedRegularSetSkus,
+      shipmentPayloadSkuSet,
+      useShipmentPayloadMode,
       perRequestCache
     );
   }
@@ -756,7 +772,7 @@ export const expandProductSets = async (
       if (instr.cacheFirstFillAt) summaryLines.push(`  - cacheFirstFillAt: ${instr.cacheFirstFillAt}`);
       if (instr.cacheLastFillAt) summaryLines.push(`  - cacheLastFillAt: ${instr.cacheLastFillAt}`);
       // Force output of instrumentation summary regardless of user logging settings
-      LoggingService.orderAssemblyLog(summaryLines.join('\n'), undefined, true);
+      LoggingService.orderAssemblyLog(summaryLines.join('\n'), undefined);
     } catch (e) {
       // ignore
     }
@@ -843,17 +859,21 @@ export const combineBoxesWithItems = (
     const maxBoxHardLimit = Math.max(...boxStates.map(box => Number(box.hardLimit || 0)), 0);
 
     for (const item of sortedItems) {
-      // Для монолітних комплектів використовуємо `portionsPerItem` разом із `weightRatio`.
+      const isMonolithicItem = typeof item.portionsPerItem === 'number' && item.portionsPerItem > 0;
+
+      // Для монолітних комплектів рахуємо місткість по фізичних порціях у комплекті.
+      // `weightRatio` лишаємо для балансування та відображення, але не даємо йому блокувати
+      // розміщення цілісного монолітного набору в коробці.
       // Для звичайних одиниць або звичайних наборів (включно з тими, що всередині монолітних наборів)
       // застосовуємо `unitRatio` (коли воно присутнє) як кількість порцій на одиницю.
       const rawPortionsPerItem = item.portionsPerItem;
       const weightRatio = (item as any).weightRatio ?? 1;
       const unitRatio = (item as any).unitRatio ?? 1;
 
-      // Якщо це монолітний набір (має portionsPerItem) — використовуємо weightRatio,
-      // інакше вважаємо, що одна одиниця відповідає `unitRatio` порціям.
-      const effectivePortionsPerItem = rawPortionsPerItem
-        ? rawPortionsPerItem * weightRatio
+      // Якщо це монолітний набір — беремо raw portionsPerItem.
+      // Для звичайних товарів залишаємо розрахунок через unitRatio.
+      const effectivePortionsPerItem = isMonolithicItem
+        ? Number(rawPortionsPerItem || 1)
         : unitRatio;
 
       // Distribute by physical units (sets or items). We'll track two measures on boxes:
@@ -869,8 +889,8 @@ export const combineBoxesWithItems = (
         // Шукаємо коробку, куди поміститься весь залишок товару цілком
         // Спочатку намагаємось в межах softLimit (рекомендований розподіл)
         // Compute required capacity in "portions" terms for the remaining units
-        const capacityNeededForRemaining = remainingUnits * (item.portionsPerItem ? item.portionsPerItem : 1);
-        const calcNeededForRemaining = remainingUnits * (effectivePortionsPerItem || (item.portionsPerItem || 1));
+        const capacityNeededForRemaining = remainingUnits * (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1);
+        const calcNeededForRemaining = remainingUnits * (effectivePortionsPerItem || (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1));
         const boxesWithEnoughRoom = boxStates.filter(box =>
           (box.softLimit - (box.portionsCount || 0)) >= capacityNeededForRemaining &&
           (MAX_BOX_WEIGHT - box.currentWeight) >= weightPerUnit * remainingUnits &&
@@ -908,8 +928,8 @@ export const combineBoxesWithItems = (
           });
 
           // Update box capacity: portionsCount uses physical portions (sets*portionsPerItem or units)
-          const capacityAdded = unitsToPlace * (item.portionsPerItem ? item.portionsPerItem : 1);
-          // portionsCalc accumulates computed portions using effectivePortionsPerItem (may be fractional)
+          const capacityAdded = unitsToPlace * (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1);
+          // portionsCalc accumulates computed portions; for monolithic items we keep raw portions
           const calcAdded = unitsToPlace * (effectivePortionsPerItem || (item.portionsPerItem || 1));
 
           targetBox.portionsCount = (targetBox.portionsCount || 0) + capacityAdded;
@@ -950,13 +970,13 @@ export const combineBoxesWithItems = (
           const maxByUnitsWeight = weightPerUnit > 0 ? Math.floor(availableWeight / weightPerUnit) : freeSpace;
           // toAdd is capacity in portions; convert freeSpace (portions) to possible units to add based on item type
           // For monolithic sets, 1 unit consumes item.portionsPerItem portions; for ordinary item 1 unit consumes 1 portion.
-          const maxUnitsBySpace = item.portionsPerItem ? Math.floor(freeSpace / item.portionsPerItem) : freeSpace;
+          const maxUnitsBySpace = isMonolithicItem ? Math.floor(freeSpace / Number(item.portionsPerItem || 1)) : freeSpace;
           // also cap by remaining *computed portions* vs remaining calc capacity
           const calcAvailable = Math.max(0, (targetBox.hardLimit - (targetBox.portionsCalc || 0)));
           const maxUnitsByCalc = (effectivePortionsPerItem > 0) ? Math.floor(calcAvailable / effectivePortionsPerItem) : maxUnitsBySpace;
           const toAddUnits = Math.min(remainingUnits, maxUnitsBySpace, maxByUnitsWeight, maxUnitsByCalc);
 
-          const toAdd = toAddUnits * (item.portionsPerItem ? item.portionsPerItem : 1);
+          const toAdd = toAddUnits * (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1);
           
           if (toAdd <= 0) {
             console.warn(`⚠️ Не вдалося розподілити ${remainingUnits} одиниць товару "${item.name}" - ліміти вичерпані`);
@@ -980,7 +1000,7 @@ export const combineBoxesWithItems = (
 
           const perEffectiveForDisplay = effectivePortionsPerItem || item.portionsPerItem || 1;
           const displayQuantityUnits = unitsToPlace;
-          const capacityAddedUnits = unitsToPlace * (item.portionsPerItem ? item.portionsPerItem : 1);
+          const capacityAddedUnits = unitsToPlace * (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1);
           const calcAdded = unitsToPlace * (effectivePortionsPerItem || (item.portionsPerItem || 1));
 
           productItems.push({

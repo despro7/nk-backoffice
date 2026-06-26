@@ -15,15 +15,82 @@
 
 У `OrderView` і `orderAssemblyUtils` набір може бути відображений як монолітний або розгорнутий у звичайний список компонентів. Для цього використовується окремий стан управління відображенням, а `OrderChecklistItem` отримує `dynamicMonolithic` як ознаку для логіки зборки.
 
-### 2. Payload замовлення
+### 2. `payloadData` в `OrderView`
+
+У `OrderView` payload не береться напряму з інпуту, а збирається як похідний стан `shipmentPayloadData`:
+
+```ts
+const shipmentPayloadData = useMemo(() => {
+	const bySku = expandedItems.reduce<Record<string, { accGood: string; quantity: number }>>((accumulator, item) => {
+		if (item.type !== 'product' || !item.sku || !item.dynamicMonolithic) {
+			return accumulator;
+		}
+
+		const quantity = Number(item.quantity) || 0;
+		if (quantity <= 0) {
+			return accumulator;
+		}
+
+		const existing = accumulator[item.sku] ?? { accGood: '1119000000001079', quantity: 0 };
+		accumulator[item.sku] = {
+			accGood: '1119000000001079',
+			quantity: existing.quantity + quantity,
+		};
+		return accumulator;
+	}, {});
+
+	return Object.keys(bySku).length > 0 ? { shipment: { bySku } } : null;
+}, [expandedItems]);
+```
+
+Фактична форма payload така:
+
+```json
+{
+	"shipment": {
+		"bySku": {
+			"SKU-001": {
+				"accGood": "1119000000001079",
+				"quantity": 2
+			}
+		}
+	}
+}
+```
+
+Цей payload потім передається в `useOrderNavigation`, а на сервері може бути збережений через `PUT /api/orders/:id/status`.
+
+### 3. Payload замовлення
 
 `PUT /api/orders/:id/status` тепер може приймати `payloadData` і зберігати його в БД. Це дозволяє передавати додаткові shipment-дані, зокрема мапінг за SKU, який використовується для списання залишків по монолітних наборах.
 
-### 3. Списання залишків
+### 4. Списання залишків
 
 Коли замовлення переходить у готовність до відправки, сервер читає `payloadData.shipment.bySku` і формує атомарні оновлення залишків. Це потрібно для сценаріїв, де комплект складається з фактично зібраних позицій, а не лише з абстрактної кількості комплектів.
 
-### 4. Shipment lock
+### 5. Як перевикористати в інших місцях
+
+Так, цей підхід можна застосовувати і в інших місцях, але краще не копіювати його вручну, а винести в спільний хелпер або hook.
+
+Що вже є добрим кандидатом на reuse:
+
+- фільтр `item.type === 'product' && item.dynamicMonolithic`;
+- агрегація `bySku` з підсумовуванням `quantity`;
+- структура `{ shipment: { bySku } }`;
+- fallback на `null`, якщо payload порожній.
+
+Практично це можна винести у щось на кшталт:
+
+- `buildShipmentPayloadFromExpandedItems(expandedItems)`;
+- або `useShipmentPayloadData(expandedItems)`.
+
+Тоді його можна буде використовувати не лише в `OrderView`, а й у:
+
+- окремих action-центрах або панелях;
+- ручних статусних переходах;
+- інших флоу, де потрібно віддати той самий shipment payload у `PUT /api/orders/:id/status`.
+
+### 6. Shipment lock
 
 Для експорту продажів у Dilovod додано lock-механізм, щоб один і той самий shipment не створювався двічі паралельними процесами. Лок зберігається в `Order` з TTL і токеном власника.
 

@@ -49,9 +49,11 @@ interface OrderChecklistProps {
   showNoMoreOrders?: boolean; // Показувати повідомлення про відсутність замовлень
   isDebugMode?: boolean; // Флаг дебаг-режима
   onBarcodeScan?: (code: string) => void; // Емуляція сканування ШК (Debug)
+  showMonolithicAvailabilityBadge?: boolean;
+  monolithicBadgeLabel?: string;
 }
 
-const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders, allowManualSelect = false, assemblyMode = 'standard', productScanMode = 'single_per_item', onBarcodeScan }: OrderChecklistProps) => {
+const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders, allowManualSelect = false, assemblyMode = 'standard', productScanMode = 'single_per_item', onBarcodeScan, showMonolithicAvailabilityBadge = true, monolithicBadgeLabel }: OrderChecklistProps) => {
   const navigate = useNavigate();
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [equipmentState] = useEquipmentFromAuth(); // <-- Використовуємо глобальний стан обладнання
@@ -493,6 +495,8 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
               assemblyMode={assemblyMode}
               productScanMode={productScanMode}
               allowManualSelect={allowManualSelect}
+              showMonolithicAvailabilityBadge={showMonolithicAvailabilityBadge}
+              monolithicBadgeLabel={monolithicBadgeLabel}
               onClick={() => handleItemClick(item.id)}
             />
           </div>
