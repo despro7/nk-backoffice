@@ -81,7 +81,7 @@ type ReleaseSetSourceItem = {
 
 type DirectSetComponent = {
   sku: string;
-  name?: string | null;
+  name: string | null;
   quantity: number;
 };
 
