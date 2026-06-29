@@ -10,13 +10,15 @@ interface Props {
   storages: any[];
   selectedStorage: string | null;
   setSelectedStorage: (v: string | null) => void;
+  dateStateKey?: 'returnDate' | 'operDate';
+  dateLabel?: React.ReactNode;
 }
 
 
-export default function WarehouseDetails({ returns, storages, selectedStorage, setSelectedStorage }: Props) {
+export default function WarehouseDetails({ returns, storages, selectedStorage, setSelectedStorage, dateStateKey, dateLabel }: Props) {
   const { isDebugMode } = useDebug();
   // useDilovodDirectories на верхньому рівні компонента (правило хуків)
-  const params = useWarehouseParams({ returns, externalStorages: storages, selectedStorageProp: selectedStorage, setSelectedStorageProp: setSelectedStorage });
+  const params = useWarehouseParams({ returns, externalStorages: storages, selectedStorageProp: selectedStorage, setSelectedStorageProp: setSelectedStorage, dateStateKey });
   const { storages: localStorages, firms: localFirms, dateForPicker, onDateChange, selectedStorageName } = params;
   // Ensure we only pass selectedKeys that actually exist in the rendered collection
   const storageSelectedKey = selectedStorage != null && localStorages?.some((ss: any) => String(ss.id) === String(selectedStorage)) ? String(selectedStorage) : '';
@@ -103,7 +105,7 @@ export default function WarehouseDetails({ returns, storages, selectedStorage, s
           value={dateForPicker}
           onChange={onDateChange}
           labelPlacement="outside"
-          label={<span className="flex gap-1">Дата списання <Tooltip content="Уважно оберіть дату та час списання, це вплине на облік товарів на складі" color="primary" className="max-w-80"><DynamicIcon name="info" size={14} className="text-red-500" /></Tooltip></span>}
+          label={dateLabel ?? <span className="flex gap-1">Дата списання <Tooltip content="Уважно оберіть дату та час списання, це вплине на облік товарів на складі" color="primary" className="max-w-80"><DynamicIcon name="info" size={14} className="text-red-500" /></Tooltip></span>}
           size="md"
           labelStyle="text-xs font-medium text-gray-500"
           inputStyle="border border-gray-200 bg-white hover:bg-gray-100 focus-within:bg-gray-100"

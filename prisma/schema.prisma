@@ -308,7 +308,7 @@ model WarehouseReleaseSet {
   status        String   @default("created")
   createdBy     Int?
   createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  operDate      DateTime @default(now())
 
   @@index([setSku])
   @@index([status])

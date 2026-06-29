@@ -71,7 +71,8 @@ type StatsResponse = ProductsStats;
 
 const ProductSets: React.FC = () => {
   const { isDebugMode } = useDebug();
-  const { isAdmin, canEditProducts } = useRoleAccess();
+  const { isAdmin, canEditProducts, canAccess, ROLES } = useRoleAccess();
+  const canSyncProducts = () => canAccess([], ROLES.STOREKEEPER);
   const [products, setProducts] = useState<Product[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]); // Все товары для поиска названий в комплектах
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -1454,7 +1455,7 @@ const ProductSets: React.FC = () => {
       return;
     }
 
-    if (!isAdmin()) {
+    if (!canSyncProducts()) {
       setSyncStatus({
         isRunning: false,
         message: 'У вас немає прав для виконання синхронізації',
@@ -1741,7 +1742,7 @@ const ProductSets: React.FC = () => {
       return;
     }
 
-    if (!isAdmin()) {
+    if (!canSyncProducts()) {
       ToastService.show({
         title: 'Помилка',
         description: 'У вас немає прав для виконання синхронізації',
@@ -2407,7 +2408,7 @@ const ProductSets: React.FC = () => {
           aria-label="Таблиця товарів та комплектів"
           sortDescriptor={sortDescriptor}
           onSortChange={setSortDescriptor}
-          selectionMode={isAdmin() && manualSyncEnabled ? "multiple" : undefined}
+          selectionMode={canSyncProducts() && manualSyncEnabled ? "multiple" : undefined}
           selectedKeys={selectedKeys}
           onSelectionChange={setSelectedKeys}
           classNames={{
@@ -2604,7 +2605,15 @@ const ProductSets: React.FC = () => {
                         aria-label="Дії експорту"
                         // closeOnSelect={false}
                         onAction={async (key) => {
-                          // if (!isAdmin()) return ToastService.show({ title: 'Недостатньо прав', description: 'Лише адміністратори можуть виконувати цю дію', color: 'warning' });
+                          if (['fullSync', 'manual', 'syncStock', 'wpSync'].includes(String(key)) && !canSyncProducts()) {
+                            ToastService.show({
+                              title: 'Недостатньо прав',
+                              description: 'Синхронізація доступна для ролі комірника і вище',
+                              color: 'warning'
+                            });
+                            return;
+                          }
+
                           if (key === 'wpSync') {
                             try {
                               setWpSyncing(true);
@@ -2634,7 +2643,7 @@ const ProductSets: React.FC = () => {
                           }
                         }}
                       >
-                        <DropdownSection title="Синхронізація" showDivider dividerProps={{ className: 'mt-1 bg-neutral-200' }}>
+                        <DropdownSection title="Синхронізація" showDivider dividerProps={{ className: 'mt-1 bg-neutral-200' }} className={!canSyncProducts() ? 'hidden' : ''}>
                           <DropdownItem key="fullSync" startContent={<DynamicIcon name="refresh-cw" size={16} className="shrink-0" />}>Синхронізувати всі товари</DropdownItem>
                           <DropdownItem key="manual" startContent={<DynamicIcon name="list-filter" size={16} className="shrink-0" />}>
                             <div className="flex items-center justify-between gap-2 w-full">

@@ -4,6 +4,7 @@
 
 Ендпоінт `GET /api/warehouse/inventory/product-history` показує не лише системний та фактичний залишок SKU, а й зведення рухів за той самий інвентаризаційний день:
 
+- `kit` — скільки одиниць SKU було зкомплектовано;
 - `shipped` — скільки одиниць SKU реально відвантажили;
 - `returned` — скільки повернули;
 - `writtenOff` — скільки списали.
@@ -24,12 +25,26 @@
 Далі пошук відвантажених SKU іде так:
 
 1. `prisma.order.findMany()` відбирає замовлення, у яких `dilovodSaleExportDate` потрапляє в це денне вікно.
-2. Із цих замовлень беруться `externalId`.
-3. Для кожного `externalId` спочатку читається `prisma.ordersCache.findMany()`.
-4. Якщо в кеші є `processedItems`, сума береться звідти.
-5. Якщо кешу немає або він не розпарсився, робиться fallback на `prisma.order.findUnique()` і парсинг `order.items`.
+2. Для кожного замовлення читається `ordersCache.processedItems`, а якщо кешу немає або його не вдається розпарсити, використовується `order.items`.
+3. Якщо в замовленні є `payloadData.shipment.bySku`, воно підключається тим самим шляхом, що і в shipment-звітах.
+4. Підрахунок SKU робиться через спільний helper `server/services/orderShipmentMetricsService.ts`, щоб warehouse history і звіти не роз'їжджалися.
 
 Тобто `shipped` рахується не по абстрактному стану замовлення, а по факту наявності `dilovodSaleExportDate` у базі та по збережених позиціях замовлення.
+
+### 1.2. Комплектування (`kit`)
+
+Для `kit` беруться записи з `warehouseReleaseSet`, де `setSku` збігається з поточним SKU, а `operationType` визначає знак руху:
+
+- `kit` додає кількість;
+- `unkit` віднімає кількість.
+
+Підсумовується поле `quantity`, а в колонці показується нетто-значення комплектування за цей інвентаризаційний день.
+
+### 1.1. Монолітні набори
+
+Для монолітних наборів більше не потрібна окрема перевірка на `accGood = 1119000000001079` у warehouse history. Якщо shipment-пayload або cache вже містить SKU, метрика буде взята з того самого загального report-flow, що використовується в [server/routes/orders.ts](../../../server/routes/orders.ts).
+
+Це означає, що warehouse history тепер підписується на той самий шлях, що й shipment-звіти, а не дублює власну специфічну логіку для монолітів.
 
 ### 2. Повернення і списання
 
@@ -64,6 +79,7 @@ endOfDay.setDate(endOfDay.getDate() + 1);
 
 Кожен запис у відповіді `GET /api/warehouse/inventory/product-history` доповнюється полями:
 
+- `kit`
 - `shipped`
 - `returned`
 - `writtenOff`
@@ -77,6 +93,7 @@ endOfDay.setDate(endOfDay.getDate() + 1);
   "systemBalance": 48,
   "actual": 45,
   "deviation": -3,
+  "kit": 2,
   "shipped": 12,
   "returned": 1,
   "writtenOff": 0
@@ -94,7 +111,14 @@ endOfDay.setDate(endOfDay.getDate() + 1);
 - підхід із денним вікном `startOfDay/endOfDay`;
 - пріоритет кешу `ordersCache.processedItems` над парсингом `order.items`;
 - fallback-логіку для замовлень без кешу;
+- агрегацію `kit` через `warehouseReleaseSet`;
 - агрегацію `returned` і `writtenOff` через спільний хелпер по SKU.
+
+### Що вже перевикористовується фактично
+
+- `server/services/orderShipmentMetricsService.ts` — спільний reader для shipment payload і report items;
+- `server/routes/orders.ts` — звіти по shipped-метриках;
+- `server/modules/Warehouse/WarehouseController.ts` — inventory history для SKU.
 
 ### Що краще винести окремо, якщо треба застосувати в іншому ендпоінті
 

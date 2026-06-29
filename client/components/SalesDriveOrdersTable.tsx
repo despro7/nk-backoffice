@@ -33,6 +33,7 @@ import { useDebug } from "../contexts/DebugContext";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate, getStatusLabel, getStatusColor, getChannelClass, ORDER_STATUSES } from "../lib/formatUtils";
 import { ToastService } from "@/services/ToastService";
+import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import ResultDrawer from './ResultDrawer';
 import type { SalesDriveOrderForExport, SalesDriveOrdersResponse, } from "@shared/types/salesdrive";
 import type { SalesChannel } from "@shared/types/dilovod";
@@ -73,6 +74,9 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
   const [drawerResult, setDrawerResult] = useState<any>(null);
   const [drawerTitle, setDrawerTitle] = useState<string>('Результат операції');
   const [drawerType, setDrawerType] = useState<'result' | 'logs' | 'orderDetails'>('result');
+  const [showShipmentPayloadPreview, setShowShipmentPayloadPreview] = useState(false);
+  const [shipmentPayloadPreview, setShipmentPayloadPreview] = useState<Record<string, any> | null>(null);
+  const [isLoadingShipmentPayload, setIsLoadingShipmentPayload] = useState(false);
 
   // State для вибраних замовлень (чекбокси)
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
@@ -930,6 +934,40 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
         hideIcon: false,
         icon: "x-circle",
       });
+    }
+  };
+
+  const handlePreviewShipmentPayload = async (order: SalesDriveOrderForExport) => {
+    try {
+      setIsLoadingShipmentPayload(true);
+
+      const token = saleTokens?.[order.id];
+      const body = token ? JSON.stringify({ token, dryRun: true }) : JSON.stringify({ dryRun: true });
+
+      const response = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/shipment?dryRun=true`, {
+        method: 'POST',
+        body
+      });
+      const result = await response.json();
+
+      if (result.success && result.payload) {
+        setShipmentPayloadPreview(result.payload);
+        setShowShipmentPayloadPreview(true);
+        return;
+      }
+
+      throw new Error(result.message || result.error || 'Не вдалося сформувати preview payload');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Невідома помилка';
+      ToastService.show({
+        title: 'Помилка preview',
+        description: message,
+        color: 'danger',
+        hideIcon: false,
+        icon: "x-circle",
+      });
+    } finally {
+      setIsLoadingShipmentPayload(false);
     }
   };
 
@@ -2100,18 +2138,19 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                         className="max-w-[300px]"
                         disabledKeys={
                           order.dilovodSaleExportDate
-                            ? ['exportOrder', 'createShipment']
+                            ? ['exportOrder', 'createShipment', 'previewShipment']
                             : (order.dilovodExportDate)
                               ? (Number(order.status) < 3
-                                  ? ['exportOrder', 'createShipment']
+                                  ? ['exportOrder', 'createShipment', 'previewShipment']
                                   : ['exportOrder'])
-                              : ['createShipment']
+                              : ['createShipment', 'previewShipment']
                         }
                         onAction={(key) => {
                           if (key === "checkDilovod") handleCheckInDilovod(order);
                           if (key === "forceRecheck") handleForceRecheck(order);
                           if (key === "exportOrder") handleExportOrder(order);
                           if (key === "createShipment") handleCreateShipment(order);
+                          if (key === "previewShipment") handlePreviewShipmentPayload(order);
                           if (key === "viewLogs") handleViewOrderLogs(order);
                           if (key === "resetDuplicateError") handleResetDuplicateError(order);
                         }}
@@ -2120,6 +2159,9 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                           <DropdownItem textValue="Перевірити в Діловоді" key="checkDilovod" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="refresh-ccw" size={16} />}>Перевірити в Діловоді</DropdownItem>
                           <DropdownItem textValue="Примусова перевірка (скинути і перечитати)" key="forceRecheck" className="px-3 py-2 text-danger-500!" startContent={<DynamicIcon className="text-xl text-danger-500 pointer-events-none shrink-0" name="refresh-ccw-dot" size={16} />}>Примусова перевірка</DropdownItem>
                           <DropdownItem textValue="Експортувати замовлення" key="exportOrder" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="upload" size={16} />}>Експортувати замовлення</DropdownItem>
+                          {isDebugMode && (
+                            <DropdownItem textValue="Preview payload відвантаження" key="previewShipment" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="file-json" size={16} />}>Preview payload відвантаження</DropdownItem>
+                          )}
                           <DropdownItem textValue="Відвантажити замовлення" key="createShipment" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="truck" size={16} />}>Відвантажити замовлення</DropdownItem>
                           {!!order.logsCount && (
                             <DropdownItem textValue="Логи експорту" key="viewLogs" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="braces" size={16} />}>
@@ -2214,6 +2256,14 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
         title={drawerTitle}
         type={drawerType}
         getChannelName={getChannelName}
+      />
+
+      <PayloadPreviewModal
+        isOpen={showShipmentPayloadPreview}
+        onClose={() => setShowShipmentPayloadPreview(false)}
+        payload={shipmentPayloadPreview}
+        title="Payload відвантаження"
+        isLoading={isLoadingShipmentPayload}
       />
 
     </div>

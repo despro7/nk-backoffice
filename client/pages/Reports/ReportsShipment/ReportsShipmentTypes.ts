@@ -11,6 +11,9 @@ export interface ProductStats {
 	name: string;
 	sku: string;
 	orderedQuantity: number;
+	isSet?: boolean;
+	isMonolithicSet?: boolean;
+	setPortions?: number;
 }
 
 export interface ProductDateStats {

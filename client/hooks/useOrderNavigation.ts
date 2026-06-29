@@ -325,7 +325,7 @@ export function useOrderNavigation({
     }
     
     return checklistItems.some(item => 
-      item.status === 'done' || item.status === 'success'
+      item.type === 'product' && (item.status === 'done' || item.status === 'success')
     );
   }, [checklistItems, orderStatus]);
 

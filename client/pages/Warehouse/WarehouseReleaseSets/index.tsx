@@ -19,6 +19,7 @@ export default function ReleaseSetsPage() {
   const { isDebugMode } = useDebug();
   const { isAdmin } = useRoleAccess();
   const rs = useReleaseSets();
+  const [operDate, setOperDate] = React.useState<string | null>(null);
   const [pageTab, setPageTab] = React.useState<'main'|'history'|'archive'>('main');
   const [showPayloadPreview, setShowPayloadPreview] = React.useState(false);
   const [payloadPreview, setPayloadPreview] = React.useState<Record<string, any> | null>(null);
@@ -31,6 +32,15 @@ export default function ReleaseSetsPage() {
   const [isForceDeleting, setIsForceDeleting] = React.useState(false);
   const [showClearConfirm, setShowClearConfirm] = React.useState(false);
 
+  const releaseReturns = React.useMemo(() => ({
+    ...rs.returns,
+    operDate,
+    setOperDate: (value: string | null) => {
+      setOperDate(value);
+      rs.returns?.setReturnDate?.(value);
+    },
+  }), [rs.returns, operDate]);
+
   const isUnKitOperation = rs.operationKey === 'goodUnKit';
   const operationItemsLabel = isUnKitOperation ? 'Набори для розукомплектування' : 'Набори для комплектування';
   const operationTotalLabel = isUnKitOperation ? 'до повернення на склад' : 'до списання зі складу';
@@ -39,6 +49,7 @@ export default function ReleaseSetsPage() {
   const confirmTitle = isUnKitOperation ? 'Підтвердження розукомплектування' : 'Підтвердження комплектування';
   const confirmSubtitle = isUnKitOperation ? 'Перевірте короткий підсумок перед поверненням компонентів на склад.' : 'Перевірте короткий підсумок перед відправкою.';
   const payloadPreviewTitle = isUnKitOperation ? 'Перегляд Payload розукомплектування' : 'Перегляд Payload комплектування';
+  const releaseDateLabel = isUnKitOperation ? 'Дата розукомплектування' : 'Дата комплектування';
 
   const handleOperationChange = (key: string) => {
     const nextKey = key === 'goodUnKit' ? 'goodUnKit' : 'goodKit';
@@ -48,6 +59,7 @@ export default function ReleaseSetsPage() {
 
     rs.setOperationKey(nextKey);
     rs.clearAll();
+    setOperDate(null);
     setShowPayloadPreview(false);
     setPayloadPreview(null);
     setIsLoadingPayload(false);
@@ -62,7 +74,7 @@ export default function ReleaseSetsPage() {
   const selectedSetRemark = selectedSet ? (rs.buildSetRemark?.(selectedSet) ?? null) : null;
   const selectedSetQuantity = Number(selectedSet?.quantity ?? 0);
   const selectedSetComponentCount = Array.isArray(selectedSet?.componentsSnapshot) ? selectedSet.componentsSnapshot.length : 0;
-  const selectedReleaseDate = rs.returns?.returnDate ?? null;
+  const selectedReleaseDate = operDate ?? rs.returns?.returnDate ?? null;
 
   const handleOpenSendConfirm = () => {
     if (rs.items.length === 0) {
@@ -113,6 +125,7 @@ export default function ReleaseSetsPage() {
   const handleConfirmClearAll = () => {
     setShowClearConfirm(false);
     rs.clearAll();
+    setOperDate(null);
     setShowPayloadPreview(false);
     setPayloadPreview(null);
     setIsLoadingPayload(false);
@@ -160,7 +173,14 @@ export default function ReleaseSetsPage() {
             <SetSearchPanel onSelect={(s) => rs.addSet(s)} existingItems={rs.items} operationKey={rs.operationKey} />
           </Card>
         
-          <WarehouseDetails returns={rs.returns} storages={rs.storages} selectedStorage={rs.selectedStorage} setSelectedStorage={rs.setSelectedStorage} />
+          <WarehouseDetails
+            returns={releaseReturns}
+            storages={rs.storages}
+            selectedStorage={rs.selectedStorage}
+            setSelectedStorage={rs.setSelectedStorage}
+            dateStateKey="operDate"
+            dateLabel={releaseDateLabel}
+          />
 
           {rs.items.length > 0 && (
             <ReleaseItemsPanel

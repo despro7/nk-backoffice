@@ -22,6 +22,7 @@ import { OrderViewHeader } from '@/components/OrderViewHeader';
 import { OrderAssemblyRightPanel } from '@/components/OrderAssemblyRightPanel';
 import { OrderDetailsAdmin } from '@/components/OrderDetailsAdmin';
 import OrderChecklist from '@/components/OrderChecklist';
+import { MonolithicSetAvailabilityQuizModal } from '@/components/modals/MonolithicSetAvailabilityQuizModal/index';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 export default function OrderView() {
@@ -39,6 +40,8 @@ export default function OrderView() {
   const [monolithicDisplayControlItems, setMonolithicDisplayControlItems] = useState<OrderChecklistItem[]>([]);
   const [expandingSets, setExpandingSets] = useState(false);
   const [checklistItems, setChecklistItems] = useState<OrderChecklistItem[]>([]);
+  const [monolithicQuizItem, setMonolithicQuizItem] = useState<OrderChecklistItem | null>(null);
+  const [monolithicQuizSeenForOrder, setMonolithicQuizSeenForOrder] = useState<string | null>(null);
   const [monolithicCategoryIds, setMonolithicCategoryIds] = useState<number[]>([]);
   const [monolithicDisplayOverridesByOrder, setMonolithicDisplayOverridesByOrder] = useState<Record<string, Record<string, boolean>>>({});
 
@@ -107,6 +110,29 @@ export default function OrderView() {
     }
 
     return null;
+  }, []);
+
+  const extractStockTotal = useCallback((rawStock: unknown): number => {
+    let total = 0;
+
+    if (rawStock) {
+      if (typeof rawStock === 'string') {
+        try {
+          const parsed = JSON.parse(rawStock);
+          Object.values(parsed).forEach((value: any) => {
+            total += Number(value) || 0;
+          });
+        } catch {
+          // ignore malformed stock payloads
+        }
+      } else if (typeof rawStock === 'object') {
+        Object.values(rawStock as Record<string, unknown>).forEach((value: unknown) => {
+          total += Number(value) || 0;
+        });
+      }
+    }
+
+    return total;
   }, []);
 
   const isFinalizedOrder = Number(order?.status) > 2;
@@ -213,6 +239,64 @@ export default function OrderView() {
     setUnallocatedPortions(0);
     setUnallocatedItems([]);
   }, [effectiveBoxInitialStatus, selectedBoxes]);
+
+  useEffect(() => {
+    if (!order || loading || expandingSets || monolithicQuizItem || monolithicQuizSeenForOrder === order.id) {
+      return;
+    }
+
+    const monolithicCategorySet = new Set(monolithicCategoryIds.map((categoryId) => String(categoryId)));
+    const monolithicItems = expandedItems.filter((item) => (
+      item.type === 'product'
+      && Boolean(item.sku)
+      && !item.dynamicMonolithic
+    ));
+
+    if (monolithicItems.length === 0 || monolithicCategorySet.size === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const detectUnavailableMonolithicSet = async () => {
+      for (const item of monolithicItems) {
+        try {
+          const response = await apiCall(`/api/products/${item.sku}`);
+          if (!response.ok) {
+            continue;
+          }
+
+          const product = await response.json();
+          const productCategoryId = product?.categoryId != null ? String(product.categoryId) : null;
+          const isConfiguredMonolithicCategory = productCategoryId !== null && monolithicCategorySet.has(productCategoryId);
+          if (!isConfiguredMonolithicCategory) {
+            continue;
+          }
+
+          const stock = extractStockTotal(product?.stockBalanceByStock);
+
+          if (stock === 0) {
+            if (!cancelled) {
+              setMonolithicQuizItem(item);
+            }
+            return;
+          }
+        } catch {
+          // ignore product lookup issues here
+        }
+      }
+
+      if (!cancelled) {
+        setMonolithicQuizSeenForOrder(order.id);
+      }
+    };
+
+    void detectUnavailableMonolithicSet();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiCall, expandingSets, expandedItems, extractStockTotal, loading, monolithicCategoryIds, monolithicQuizItem, monolithicQuizSeenForOrder, order]);
 
   const {
     handlePrintReceipt,
@@ -575,6 +659,8 @@ export default function OrderView() {
       setSelectedBoxes([]);
       setActiveBoxIndex(0);
       setIsReadyToShip(false);
+      setMonolithicQuizItem(null);
+      setMonolithicQuizSeenForOrder(null);
 
       // Спершу завантажуємо налаштування монолітних категорій
       apiCall('/api/settings/monolithic_assembly_categories')
@@ -683,6 +769,22 @@ export default function OrderView() {
         title="Помилка оновлення статусу в SalesDrive"
         message={errorModalText || 'Невідома помилка'}
         onClose={() => setShowErrorModal(false)}
+      />
+      <MonolithicSetAvailabilityQuizModal
+        isOpen={Boolean(monolithicQuizItem)}
+        setName={monolithicQuizItem?.name || 'Монолітний набір'}
+        onClose={() => {
+          if (order?.id) {
+            setMonolithicQuizSeenForOrder(order.id);
+          }
+          setMonolithicQuizItem(null);
+        }}
+        onProceedAsPortions={() => {
+          if (order?.id) {
+            setMonolithicQuizSeenForOrder(order.id);
+          }
+          setMonolithicQuizItem(null);
+        }}
       />
       <OrderViewHeader
         order={order}
@@ -816,6 +918,7 @@ export default function OrderView() {
           onPrintTTN={handlePrintTTNCallback}
           order={order}
           onOrderRefresh={handleOrderRefresh}
+          shipmentPayloadData={shipmentPayloadData}
           onPrintReceipt={handlePrintReceipt}
           onViewReceipt={handleViewReceipt}
           onBarcodeScan={handleBarcodeScan}

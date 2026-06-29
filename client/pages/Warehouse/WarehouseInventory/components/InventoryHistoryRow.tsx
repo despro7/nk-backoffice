@@ -10,6 +10,7 @@ interface InventoryHistoryRowProps {
   item: any;
   total: number | null;
   dev: number | null; // deviation (відхилення від обліку)
+  showKitColumn?: boolean;
   rowKey: string;
   expandedRowKey: string | null;
   rowHistoryCache: Record<string, ProductHistoryEntry[]>;
@@ -23,6 +24,7 @@ export const InventoryHistoryRow = ({
   item,
   total,
   dev,
+  showKitColumn = false,
   rowKey,
   expandedRowKey,
   rowHistoryCache,
@@ -86,7 +88,7 @@ export const InventoryHistoryRow = ({
       {isRowExpanded && (
         <tr>
           <td colSpan={6} className="p-0 bg-gray-100 border-b border-gray-200/40 shadow-[inset_0_6px_10px_rgba(0,0,0,0.05)]">
-            <div className="px-2 py-2">
+            <div className="px-2 py-4">
               {isRowLoading ? (
                 <div className="flex items-center justify-center gap-2 py-4 text-xs text-gray-500">
                   <DynamicIcon name="loader-2" className="w-3 h-3 animate-spin" />
@@ -95,11 +97,12 @@ export const InventoryHistoryRow = ({
               ) : !historyEntries || historyEntries.length === 0 ? (
                 <p className="text-xs text-gray-400 py-1">Немає даних інвентаризацій за останні 30 днів</p>
               ) : (
-                <table className="w-[91%] text-xs ml-auto">
+                <table className={`text-xs ${showKitColumn ? 'w-full' : 'w-[91%] ml-auto'}`}>
                   <thead>
-                    <tr className="text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold [&>th]:w-1/7">
+                    <tr className={`text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold ${showKitColumn ? '[&>th]:w-1/8' : '[&>th]:w-1/7'}`}>
                       <th className="text-left! w-auto!">Дата</th>
                       <th>Відвантаження</th>
+                      {showKitColumn && <th>Комплектування</th>}
                       <th>Повернення</th>
                       <th>Списання</th>
                       <th>За обліком</th>
@@ -110,12 +113,21 @@ export const InventoryHistoryRow = ({
                   <tbody className="divide-y divide-blue-50">
                     {historyEntries.map((entry) => (
                       <tr key={entry.sessionId} className='tabular-nums text-gray-600 hover:bg-white/40'>
-                        <td className="py-0.5 px-2">{formatRelativeDate(entry.date, { showTime: false, maxRelativeDays: 30, maxRelativeHours: 24, includeWeekdays: true, shortWeekday: true })}</td>
+                        <td className="py-0.5 px-2">{formatRelativeDate(entry.date, { showTime: true, maxRelativeDays:21, maxRelativeHours: 3, includeWeekdays: true, shortWeekday: true })}</td>
                         <td className="py-0.5 px-2 text-center text-gray-400">
                           {entry.shipped == null || entry.shipped === 0 ? '–' : (
                             <span className="text-red-600 font-medium">-{Math.abs(entry.shipped)}</span>
                           )}
                         </td>
+                        {showKitColumn && (
+                          <td className="py-0.5 px-2 text-center text-gray-400">
+                            {entry.kit == null || entry.kit === 0 ? '–' : (
+                              <span className={`font-medium ${entry.kit > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                                {entry.kit > 0 ? '+' : '-'}{Math.abs(entry.kit)}
+                              </span>
+                            )}
+                          </td>
+                        )}
                         <td className="py-0.5 px-2 text-center text-gray-400">
                           {entry.returned == null || entry.returned === 0 ? '–' : (
                             <span className="text-green-600 font-medium">+{Math.abs(entry.returned)}</span>
@@ -123,7 +135,7 @@ export const InventoryHistoryRow = ({
                         </td>
                         <td className="py-0.5 px-2 text-center text-gray-400">
                           {entry.writtenOff == null || entry.writtenOff === 0 ? '–' : (
-                            <span className="text-red-500 font-medium">-{Math.abs(entry.writtenOff)}</span>
+                            <span className="text-red-600 font-medium">-{Math.abs(entry.writtenOff)}</span>
                           )}
                         </td>
                         <td className="py-0.5 px-2 text-center">{entry.systemBalance ?? '–'}</td>

@@ -661,6 +661,7 @@ export class OrderDatabaseService {
         sajt: true,
         dilovodSaleExportDate: true,
         dilovodReturnDate: true,
+        payloadData: true,
         dilovodReturnDocsCount: true
       };
 

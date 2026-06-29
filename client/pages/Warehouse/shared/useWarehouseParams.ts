@@ -7,10 +7,11 @@ interface UseWarehouseParamsOpts {
   externalStorages?: any[]; // optional list passed from parent (writeoff.storages)
   selectedStorageProp?: string | null;
   setSelectedStorageProp?: (v: string | null) => void;
+  dateStateKey?: 'returnDate' | 'operDate';
 }
 
 export default function useWarehouseParams(opts: UseWarehouseParamsOpts = {}) {
-  const { returns, externalStorages, selectedStorageProp, setSelectedStorageProp } = opts;
+  const { returns, externalStorages, selectedStorageProp, setSelectedStorageProp, dateStateKey = 'returnDate' } = opts;
   const dirsCtx = useDilovodDirectories();
   const { settings } = useDilovodSettings();
 
@@ -159,7 +160,7 @@ export default function useWarehouseParams(opts: UseWarehouseParamsOpts = {}) {
 
   // Date handling: keep local time round-trip as 'YYYY-MM-DD HH:mm:ss'
   const dateForPicker = useMemo(() => {
-    const s = returns?.returnDate;
+    const s = returns?.[dateStateKey] ?? returns?.returnDate;
     if (!s) return new Date();
     try {
       const parsed = parseLocalDate(s);
@@ -172,7 +173,11 @@ export default function useWarehouseParams(opts: UseWarehouseParamsOpts = {}) {
 
   const onDateChange = (d: Date) => {
     const formatted = formatLocalDate(d);
-    returns?.setReturnDate?.(formatted);
+    if (dateStateKey === 'operDate') {
+      returns?.setOperDate?.(formatted);
+    } else {
+      returns?.setReturnDate?.(formatted);
+    }
   };
 
   return {

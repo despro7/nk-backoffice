@@ -5,6 +5,41 @@
 
 ---
 
+## 2026-06-27 — `Комплектування` у inventory history стало net по `kit` / `unkit`
+**Files:** `server/modules/Warehouse/WarehouseController.ts`, `Docs/features/warehouse-inventory-shipped-activity.md`
+
+- `GET /api/warehouse/inventory/product-history` тепер рахує `kit` як нетто по `warehouseReleaseSet`: `kit - unkit`.
+- Описано, як розрізняються `kit` і `unkit` через `operationType`, щоб колонка показувала коректний знак.
+
+---
+
+## 2026-06-27 — Додано колонку `Комплектування` в inventory history SKU
+**Files:** `client/pages/Warehouse/WarehouseInventory/components/InventoryHistoryRow.tsx`, `client/pages/Warehouse/WarehouseInventory/WarehouseInventoryTypes.ts`, `server/modules/Warehouse/WarehouseController.ts`, `Docs/features/warehouse-inventory-shipped-activity.md`
+
+- У таблицю історії SKU додано колонку `Комплектування` з відображенням денного агрегату `kit`.
+- `GET /api/warehouse/inventory/product-history` тепер повертає `kit`, який рахується з `warehouseReleaseSet` для `operationType='kit'`.
+- Оновлено документацію по inventory history, щоб новий рух був описаний разом із `shipped`, `returned` і `writtenOff`.
+
+---
+
+## 2026-06-27 — Додано проміжний шар `Комплектування` у модель shipment payload
+**Files:** `Docs/plans/shipment-payload-refactor.md`
+
+- У плані рефакторингу зафіксовано окремий операційний шар `packing` / `Комплектування` між `shipmentSummary` і `packingManifest`.
+- Описано його роль: зберігати рішення про monolithic / legacy / regular без прив'язки до коробок і без роздування summary.
+- Оновлено бізнес-правила, щоб шар `Комплектування` був видимий як окрема стадія в audit trail.
+
+---
+
+## 2026-06-27 — Спільний shipment metrics helper для warehouse history і звітів
+**Files:** `server/services/orderShipmentMetricsService.ts`, `server/routes/orders.ts`, `server/modules/Warehouse/WarehouseController.ts`, `Docs/features/warehouse-inventory-shipped-activity.md`
+
+- Винесено спільний helper для читання shipment payload і побудови report items з `ordersCache.processedItems` / `order.payloadData`.
+- `GET /api/warehouse/inventory/product-history` більше не має окремого підрахунку монолітів через `accGood`; він використовує той самий шлях метрик, що і shipment-звіти.
+- Звітні ендпоінти по shipped-метриках тепер спираються на один helper, щоб уникнути розбіжностей між reports і warehouse history.
+
+---
+
 ## 2026-06-26 — Документація `shipmentPayloadData` з `OrderView` і повторного використання
 **Files:** `Docs/features/order-assembly/dynamic-monolithic-order-payload.md`
 

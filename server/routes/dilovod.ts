@@ -1394,11 +1394,23 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requireMinR
 router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
   let saleShipmentLockToken: string | null = null;
 
+  const hasShipmentPayload = (value: unknown): boolean => {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const shipment = (value as { shipment?: { bySku?: Record<string, unknown> } }).shipment;
+    const bySku = shipment?.bySku;
+    return Boolean(bySku && typeof bySku === 'object' && Object.keys(bySku).length > 0);
+  };
+
   try {
     const { orderId } = req.params;
+    const { token, dryRun: bodyDryRun, payloadData } = req.body || {};
+    const isDryRun = req.query.dryRun === 'true' || bodyDryRun === true || bodyDryRun === 'true';
     const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
 
-    console.log(`=== API: Створення документа відвантаження для замовлення ${orderNum} (id: ${orderId}) в Dilovod ===`, undefined, true);
+    console.log(`=== API: ${isDryRun ? 'Preview payload' : 'Створення документа відвантаження'} для замовлення ${orderNum} (id: ${orderId}) в Dilovod ===`, undefined, true);
 
     // Отримуємо замовлення з БД
     const order = await prisma.order.findUnique({
@@ -1413,12 +1425,10 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
       });
     }
 
-    // Дозволяємо передавати token щоб повторно використати baseDoc/person з export
-    const { token } = req.body || {};
     let cached: any = null;
     if (token) {
       const { payloadCacheService } = await import('../services/dilovod/PayloadCacheService.js');
-      cached = payloadCacheService.get(token, true);
+      cached = payloadCacheService.get(token, !isDryRun);
       if (cached && cached.baseDocId) {
         // Використовуємо baseDoc з кеша (single-use)
         order.dilovodDocId = cached.baseDocId;
@@ -1439,6 +1449,40 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
         error: 'No baseDoc ID',
         message: `Замовлення ${orderNum} (id: ${orderId}) ще не експортоване в Діловод (відсутній baseDoc ID)`,
         action_required: 'Спочатку експортуйте замовлення в Діловод'
+      });
+    }
+
+    if (isDryRun) {
+      const { dilovodExportBuilder } = await import('../services/dilovod/DilovodExportBuilder.js');
+      const shipmentPayloadSource = hasShipmentPayload(order.payloadData)
+        ? order.payloadData
+        : hasShipmentPayload(payloadData)
+          ? payloadData
+          : undefined;
+
+      const { payload: salePayload, warnings } = await dilovodExportBuilder.buildSalePayload(orderId, order.dilovodDocId, {
+        personId: cached?.personId,
+        dryRun: true,
+        payloadDataOverride: shipmentPayloadSource,
+      });
+
+      const preview = await dilovodExportFlowService.preview({
+        payload: salePayload,
+        warnings,
+        label: '[Dilovod/shipment]',
+      });
+
+      return res.json({
+        ...preview,
+        message: `Preview payload для замовлення ${orderNum} сформовано`,
+        metadata: {
+          orderId,
+          orderNumber: orderNum,
+          baseDoc: order.dilovodDocId,
+          documentType: 'documents.sale',
+          dryRun: true,
+          warningsCount: warnings.length,
+        },
       });
     }
 
@@ -1505,7 +1549,16 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requireMi
     const { dilovodExportBuilder } = await import('../services/dilovod/DilovodExportBuilder.js');
 
     // Формуємо payload для документа відвантаження (documents.sale)
-    const { payload: salePayload, warnings } = await dilovodExportBuilder.buildSalePayload(orderId, order.dilovodDocId, { personId: cached?.personId });
+    const shipmentPayloadSource = hasShipmentPayload(order.payloadData)
+      ? order.payloadData
+      : hasShipmentPayload(payloadData)
+        ? payloadData
+        : undefined;
+
+    const { payload: salePayload, warnings } = await dilovodExportBuilder.buildSalePayload(orderId, order.dilovodDocId, {
+      personId: cached?.personId,
+      payloadDataOverride: shipmentPayloadSource,
+    });
 
     console.log(`✅ Payload для документа відвантаження ${orderNum} (id: ${orderId}) успішно сформовано`);
 

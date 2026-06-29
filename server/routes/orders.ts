@@ -6,6 +6,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { prisma, getOrderSourceDetailed, getOrderSourceMaps, getReportingDayStartHour, getReportingDate, getReportingDateRange, logServer } from '../lib/utils.js';
 import { dilovodService } from '../services/dilovod/index.js';
 import { getStatusText } from '../services/salesdrive/statusMapper.js';
+import { extractShipmentPayloadItems, getOrderReportItems } from '../services/orderShipmentMetricsService.js';
 
 const router = Router();
 
@@ -21,6 +22,7 @@ type ReportProductDescriptor = {
   categoryKey: string | null;
   categoryLabel: string | null;
   isSet: boolean;
+  setPortions: number;
   stockBalances: Record<string, number>;
 };
 
@@ -50,6 +52,7 @@ type ShipmentPayloadData = {
     bySku?: Record<string, {
       accGood?: string;
       quantity?: number | string;
+      orderedQuantity?: number | string;
     }>;
   };
 };
@@ -80,6 +83,20 @@ function parseStockBalances(value: string | null | undefined): Record<string, nu
   } catch {
     return {};
   }
+}
+
+function getSetPortions(value: string | null | undefined): number {
+  const components = parseJsonArray(value);
+
+  return components.reduce<number>((total: number, component: unknown) => {
+    const componentItem = component as { quantity?: unknown; qty?: unknown } | null | undefined;
+    const quantity = Number(componentItem?.quantity ?? componentItem?.qty ?? 0);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return total;
+    }
+
+    return total + quantity;
+  }, 0);
 }
 
 function normalizeDeductionQuantity(value: unknown): number {
@@ -231,6 +248,7 @@ async function getReportProductDescriptors(skus: Iterable<string>): Promise<Map<
           categoryKey,
           categoryLabel,
           isSet: parseJsonArray(product.set).length > 0,
+          setPortions: getSetPortions(product.set),
           stockBalances: parseStockBalances(product.stockBalanceByStock),
         },
       ];
@@ -1900,6 +1918,8 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
         categoryName: string | null;
         categoryKey: string | null;
         isSet: boolean;
+        isMonolithicSet: boolean;
+        setPortions: number;
       };
     } = {};
 
@@ -1932,6 +1952,14 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
         }
       }
 
+      if (shippedOnly === 'true' && order.payloadData) {
+        for (const item of extractShipmentPayloadItems(order.payloadData)) {
+          if (item.sku) {
+            allSkus.add(item.sku);
+          }
+        }
+      }
+
       for (const item of normalizeOrderItems(order.items)) {
         if (item.sku) {
           allSkus.add(item.sku);
@@ -1955,25 +1983,36 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       try {
         // Перевіряємо, чи є кешовані дані
         const cachedStats = processedItemsByOrder.get(order.externalId);
-        if (cachedStats) {
+        const shipmentItems = shippedOnly === 'true' ? extractShipmentPayloadItems(order.payloadData) : [];
+        const shipmentSkuSet = new Set(shipmentItems.map((item) => item.sku));
+        if (cachedStats || shipmentItems.length > 0) {
             cacheHits++;
 
             // Додаємо кешовані дані до загальної статистики
-            for (const item of cachedStats) {
+            for (const item of [...(cachedStats ?? []), ...shipmentItems]) {
               if (item && item.sku) {
+                const isMonolithicSet = shipmentSkuSet.has(item.sku);
                 const descriptor = productDescriptors.get(item.sku);
+                const orderedQuantity = getOrderedQuantity((item as RawOrderItem).orderedQuantity ?? (item as RawOrderItem).quantity);
+
                 if (productStats[item.sku]) {
-                  productStats[item.sku].orderedQuantity += item.orderedQuantity || 0;
+                  if (descriptor?.name && (!productStats[item.sku].name || productStats[item.sku].name === item.sku)) {
+                    productStats[item.sku].name = descriptor.name;
+                  }
+                  productStats[item.sku].orderedQuantity += orderedQuantity;
+                  productStats[item.sku].isMonolithicSet = productStats[item.sku].isMonolithicSet || isMonolithicSet;
                 } else {
                   productStats[item.sku] = {
                     name: descriptor?.name || item.name || item.sku,
                     sku: item.sku,
-                    orderedQuantity: item.orderedQuantity || 0,
+                    orderedQuantity,
                     stockBalances: descriptor?.stockBalances ?? {},
                     categoryId: descriptor?.categoryId ?? null,
                     categoryName: descriptor?.categoryLabel ?? null,
                     categoryKey: descriptor?.categoryKey ?? null,
                     isSet: descriptor?.isSet ?? false,
+                    isMonolithicSet,
+                    setPortions: descriptor?.setPortions ?? 0,
                   };
                 }
               }
@@ -2107,32 +2146,25 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
     const filteredOrders = orders.filter(order => {
       // Спочатку намагаємося використати кеш з розгорнутими комплектами
       const cacheData = orderCaches.get(order.externalId);
+      let cachedStats: Array<{ sku: string; name?: string; orderedQuantity?: number }> | null = null;
       if (cacheData && cacheData.processedItems) {
         try {
-          const cachedStats = JSON.parse(cacheData.processedItems);
-          if (Array.isArray(cachedStats)) {
-            const item = cachedStats.find((i: any) => i.sku === sku);
-            if (item) {
-              (order as any).productQuantity = item.orderedQuantity || 0;
-              return true;
-            }
+          const parsedCache = JSON.parse(cacheData.processedItems);
+          if (Array.isArray(parsedCache)) {
+            cachedStats = parsedCache as Array<{ sku: string; name?: string; orderedQuantity?: number }>;
           }
         } catch (e) {
           console.warn(`Error parsing cached data for order ${order.externalId}:`, e);
         }
       }
-      
-      // Якщо кешу немає, використовуємо стандартні items (без розгортання комплектів)
-      let items = [];
-      if (typeof order.items === 'string') {
-        try { items = JSON.parse(order.items); } catch (e) { return false; }
-      } else if (Array.isArray(order.items)) {
-        items = order.items;
-      }
-      
-      const item = items.find((i: any) => i.sku === sku);
-      if (item) {
-        (order as any).productQuantity = item.orderedQuantity || item.quantity || 0;
+
+      const reportItems = getOrderReportItems(order, cachedStats, shippedOnly === 'true');
+      const itemQuantity = reportItems
+        .filter((item) => item && String(item.sku) === String(sku))
+        .reduce((sum, item) => sum + Number(item.orderedQuantity ?? item.quantity ?? 0), 0);
+
+      if (itemQuantity > 0) {
+        (order as any).productQuantity = itemQuantity;
         return true;
       }
       return false;
@@ -2229,30 +2261,36 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
     for (const order of filteredOrders) {
       try {
         const cacheData = orderCaches.get(order.externalId);
+        let cachedStats: Array<{ sku: string; name?: string; orderedQuantity?: number }> | null = null;
         if (cacheData && cacheData.processedItems) {
-          const cachedStats = JSON.parse(cacheData.processedItems);
-          if (Array.isArray(cachedStats)) {
-            // Шукаємо товар з вказаним SKU
-            const productItem = cachedStats.find(item => item && item.sku === sku);
-            if (productItem) {
-              // Використовуємо звітну дату замість простої дати
-              // Якщо shippedOnly=true, використовуємо dilovodSaleExportDate для визначення звітної дати
-              const dateToUse = (shippedOnly === 'true' && order.dilovodSaleExportDate)
-                ? new Date(order.dilovodSaleExportDate)
-                : order.orderDate;
+          const parsedCache = JSON.parse(cacheData.processedItems);
+          if (Array.isArray(parsedCache)) {
+            cachedStats = parsedCache as Array<{ sku: string; name?: string; orderedQuantity?: number }>;
+          }
+        }
 
-              const reportingDate = getReportingDate(dateToUse, effectiveDayStartHour);
+        const reportItems = getOrderReportItems(order, cachedStats, shippedOnly === 'true');
+        const orderedQuantity = reportItems
+          .filter((item) => item && String(item.sku) === String(sku))
+          .reduce((sum, item) => sum + Number(item.orderedQuantity ?? item.quantity ?? 0), 0);
 
-              if (dateStats[reportingDate]) {
-                dateStats[reportingDate].orderedQuantity += productItem.orderedQuantity || 0;
-              } else {
-                dateStats[reportingDate] = {
-                  date: reportingDate,
-                  orderedQuantity: productItem.orderedQuantity || 0,
-                  stockBalances: {} // Буде наповнено актуальними даними нижче
-                };
-              }
-            }
+        if (orderedQuantity > 0) {
+          // Використовуємо звітну дату замість простої дати
+          // Якщо shippedOnly=true, використовуємо dilovodSaleExportDate для визначення звітної дати
+          const dateToUse = (shippedOnly === 'true' && order.dilovodSaleExportDate)
+            ? new Date(order.dilovodSaleExportDate)
+            : order.orderDate;
+
+          const reportingDate = getReportingDate(dateToUse, effectiveDayStartHour);
+
+          if (dateStats[reportingDate]) {
+            dateStats[reportingDate].orderedQuantity += orderedQuantity;
+          } else {
+            dateStats[reportingDate] = {
+              date: reportingDate,
+              orderedQuantity,
+              stockBalances: {} // Буде наповнено актуальними даними нижче
+            };
           }
         }
       } catch (error) {

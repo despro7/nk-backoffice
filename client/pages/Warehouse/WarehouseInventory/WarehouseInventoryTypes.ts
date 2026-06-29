@@ -39,6 +39,7 @@ export interface ProductHistoryEntry {
   actual: number | null;
   deviation: number | null;
   // Нові поля для аналізу руху залишків
+  kit?: number | null; // Комплектування
   shipped?: number | null; // Відвантаження
   returned?: number | null; // Повернення
   writtenOff?: number | null; // Списання

@@ -31,6 +31,8 @@ interface Props {
 }
 
 const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirection, onSort, expandedRowKey, onRowClick, rowHistoryCache, rowHistoryLoading, setCompositionBySku, summary, isMaterial }: Props) => {
+  const showKitColumn = title === 'Комплекти';
+
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200 bg-gray-200">
@@ -70,6 +72,7 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
                   item={item}
                   total={total}
                   dev={dev}
+                  showKitColumn={showKitColumn}
                   rowKey={rowKey}
                   expandedRowKey={expandedRowKey}
                   rowHistoryCache={rowHistoryCache}

@@ -37,6 +37,7 @@ const DILOVOD_CONSTANTS = {
   STATE_POSTED: '1111500000000006',              // Статус замовлення "Виконано"
   BUSINESS_PROCESS: '1115000000000001',          // ID виду бізнесу
   DOC_MODE_WHOLESALE: '1004000000000350',        // Операція "Відвантаження покупцеві"
+  SHIPMENT_MONOLITHIC_ACC_GOOD: '1119000000001079', // Монолітний комплект у shipment
 } as const;
 
 export interface ExportBuildContext {
@@ -153,7 +154,7 @@ export class DilovodExportBuilder {
   /**
    * Побудувати payload для документа відвантаження (documents.sale) на основі baseDoc
    */
-  async buildSalePayload(orderId: string, baseDocId: string, options?: { personId?: string }): Promise<{
+  async buildSalePayload(orderId: string, baseDocId: string, options?: { personId?: string; dryRun?: boolean; payloadDataOverride?: unknown }): Promise<{
     payload: DilovodExportPayload;
     warnings: string[];
   }> {
@@ -172,6 +173,13 @@ export class DilovodExportBuilder {
         throw new Error(`Замовлення з ID ${orderId} не знайдено`);
       }
 
+      if (options?.payloadDataOverride !== undefined) {
+        context.order = {
+          ...context.order,
+          payloadData: options.payloadDataOverride,
+        };
+      }
+
       // 2. Завантажити налаштування Dilovod
       context.settings = await this.loadSettings();
 
@@ -182,7 +190,7 @@ export class DilovodExportBuilder {
       this.validateSettings(context);
 
       // 5. Побудувати заголовок для документа відвантаження
-      const { header: baseHeader, channelMapping } = await this.buildHeaderWithMapping(context, { personId: options?.personId });
+      const { header: baseHeader, channelMapping } = await this.buildHeaderWithMapping(context, { personId: options?.personId, dryRun: options?.dryRun });
 
       // NOTE: Для documents.sale деякі поля можуть бути недопустимі в Dilovod API.
       // Видаляємо перелічені поля у компактний спосіб перед відправкою.
@@ -654,39 +662,14 @@ export class DilovodExportBuilder {
       return { isValid: false, criticalErrors };
     }
 
-    // 2. Перевірка що всі товари були успішно оброблені
-    const expectedGoodsCount = order.items.length;
-    const processedGoodsCount = tableParts.tpGoods.length;
-
-    if (processedGoodsCount === 0) {
+    // Для shipment-потоку кількість рядків може відрізнятися через розгортання наборів.
+    if (tableParts.tpGoods.length === 0) {
       criticalErrors.push(`Жодного товару не вдалося обробити для експорту в Dilovod. Причина: товари не знайдені в локальній базі даних або не мають SKU. Перевірте синхронізацію товарів.`);
-      console.log(`  ❌ Жодного товару не обробено (0/${expectedGoodsCount})`);
+      console.log(`  ❌ Жодного товару не обробено`);
       return { isValid: false, criticalErrors };
     }
 
-    if (processedGoodsCount < expectedGoodsCount) {
-      const skippedCount = expectedGoodsCount - processedGoodsCount;
-      
-      // Знаходимо товари, котрі були пропущені (немає в tableParts)
-      const processedSkus = tableParts.tpGoods.map((good: any) => good.good);
-      const skippedItems = order.items
-        .filter((item: any) => !processedSkus.includes((item as any).sku))
-        .map((item: any) => `"${item.productName || 'Unknown'}" (SKU: ${item.sku || 'None'})`)
-        .slice(0, 5) // Показуємо максимум 5 товарів
-        .join(', ');
-
-      const moreText = skippedCount > 5 ? ` та ще ${skippedCount - 5} інших` : '';
-
-      criticalErrors.push(
-        `Експорт заблоковано: ${skippedCount} з ${expectedGoodsCount} товарів не вдалося обробити. ` +
-        `Пропущено: ${skippedItems}${moreText}. ` +
-        `Можливі причини: товари не знайдені в локальній БД, немають SKU або немають dilovodId у Dilovod.`
-      );
-      console.log(`  ❌ Частково обробено: ${processedGoodsCount}/${expectedGoodsCount} товарів`);
-      return { isValid: false, criticalErrors };
-    }
-
-    console.log(`  ✅ Валідація товарів пройдена: ${processedGoodsCount}/${expectedGoodsCount} обробено успішно`);
+    console.log(`  ✅ Валідація товарів пройдена: ${tableParts.tpGoods.length} рядків сформовано успішно`);
     return { isValid: true, criticalErrors: [] };
   }
 
@@ -694,7 +677,7 @@ export class DilovodExportBuilder {
   * Побудувати табличні частини (товари) - використовуємо прив'язку до Dilovod (products.dilovodId)
    */
   private async buildTableParts(context: ExportBuildContext): Promise<DilovodExportTableParts> {
-    console.log(`  📦 Формування табличних частин (товари)...`);
+    console.log(`  📦 Формування shipment табличних частин (розгортання наборів)...`);
 
     const { order, warnings } = context;
     const tpGoods: DilovodTablePartGood[] = [];
@@ -705,51 +688,159 @@ export class DilovodExportBuilder {
     }
 
     let rowNum = 1;
+
+    const normalizeQuantity = (value: unknown): number => {
+      const quantity = Number(value);
+      return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    };
+
+    const parseSet = (setValue: unknown): Array<{ id: string; quantity: number }> => {
+      if (!setValue) return [];
+
+      const parsed = typeof setValue === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(setValue);
+            } catch {
+              return null;
+            }
+          })()
+        : setValue;
+
+      if (!Array.isArray(parsed)) return [];
+
+      return parsed
+        .map((component: any) => {
+          const id = String(component?.id || component?.sku || component?.productId || '').trim();
+          if (!id) return null;
+
+          return {
+            id,
+            quantity: normalizeQuantity(component?.quantity ?? component?.qty ?? 1),
+          };
+        })
+        .filter((component): component is { id: string; quantity: number } => Boolean(component));
+    };
+
+    const loadProduct = async (sku: string): Promise<any | null> => {
+      const normalizedSku = String(sku || '').trim();
+      if (!normalizedSku) return null;
+
+      const product = await prisma.product.findFirst({
+        where: { sku: normalizedSku },
+        select: { id: true, sku: true, name: true, dilovodId: true, set: true, costPerItem: true }
+      });
+
+      if (!product) return null;
+
+      return {
+        ...product,
+        set: parseSet(product.set),
+      };
+    };
+
+    const expandSku = async (sku: string, quantity: number, depth: number, visited: Set<string>, fallbackUnitPrice: number | null): Promise<Array<{ good: string; quantity: number; unitPrice: number; accGood?: string }>> => {
+      const normalizedSku = String(sku || '').trim();
+      const normalizedQuantity = normalizeQuantity(quantity);
+
+      if (!normalizedSku) return [];
+      if (depth > 2) {
+        warnings.push(`Досягнуто максимальної глибини вкладення для SKU "${normalizedSku}"`);
+        return [];
+      }
+
+      const visitKey = `${normalizedSku}:${depth}`;
+      if (visited.has(visitKey)) {
+        warnings.push(`Виявлено циклічне посилання для SKU "${normalizedSku}"`);
+        return [];
+      }
+
+      visited.add(visitKey);
+      try {
+        const product = await loadProduct(normalizedSku);
+        if (!product) {
+          warnings.push(`Товар "${normalizedSku}" не знайдено в локальній БД`);
+          return [];
+        }
+
+        if (!product.dilovodId) {
+          warnings.push(`Товар "${product.name || normalizedSku}" (SKU: ${normalizedSku}) не має dilovodId`);
+          return [];
+        }
+
+        const setItems = Array.isArray(product.set) ? product.set : [];
+        const isSet = setItems.length > 0;
+        const isMonolithic = this.getShipmentAccGoodOverride(context.order.payloadData, normalizedSku) === DILOVOD_CONSTANTS.SHIPMENT_MONOLITHIC_ACC_GOOD;
+
+        if (!isSet || isMonolithic || depth >= 2) {
+          const productUnitPrice = Number(product.costPerItem || 0);
+          const unitPrice = Number.isFinite(productUnitPrice) && productUnitPrice > 0
+            ? productUnitPrice
+            : (Number.isFinite(Number(fallbackUnitPrice)) && Number(fallbackUnitPrice) > 0 ? Number(fallbackUnitPrice) : 0);
+
+          return [{
+            good: product.dilovodId,
+            quantity: normalizedQuantity,
+            unitPrice,
+            ...(isMonolithic ? { accGood: DILOVOD_CONSTANTS.SHIPMENT_MONOLITHIC_ACC_GOOD } : {}),
+          }];
+        }
+
+        const lines: Array<{ good: string; quantity: number; unitPrice: number; accGood?: string }> = [];
+        for (const component of setItems) {
+          const childSku = String(component?.id || '').trim();
+          if (!childSku) continue;
+
+          const childQuantity = normalizedQuantity * normalizeQuantity(component.quantity);
+          const childLines = await expandSku(childSku, childQuantity, depth + 1, new Set(visited), fallbackUnitPrice);
+          lines.push(...childLines);
+        }
+
+        return lines;
+      } finally {
+        visited.delete(visitKey);
+      }
+    };
+
     for (const item of order.items) {
       try {
-        const sku = item.sku;
+        const sku = String(item?.sku || '').trim();
         if (!sku) {
-          warnings.push(`Товар "${item.productName || 'Невідомий товар'}" не має SKU`);
+          warnings.push(`Товар "${item?.productName || 'Невідомий товар'}" не має SKU`);
           continue;
         }
 
-        // Шукаємо прив'язку Dilovod good в таблиці products за SKU
-        const product = await prisma.product.findFirst({
-          where: { sku: sku }
-        });
+        const quantity = normalizeQuantity(item?.quantity);
+        const fallbackUnitPrice = quantity > 0 ? Number(item?.price || 0) / quantity : Number(item?.price || 0);
+        const expandedLines = await expandSku(sku, quantity, 0, new Set<string>(), fallbackUnitPrice);
 
-        if (!product || !(product as any).dilovodId) {
-          warnings.push(`Товар "${item.productName || sku}" (SKU: ${sku}) не знайдено у відповідності Dilovod (products.dilovodId не встановлено). Синхронізуйте товари з Dilovod.`);
+        if (expandedLines.length === 0) {
+          warnings.push(`Товар "${item?.productName || sku}" (SKU: ${sku}) не вдалося розгорнути для shipment payload`);
           continue;
         }
 
-        const qty = item.quantity || 1;
-        const price = item.price || 0;
-        const amount = qty * price;
-        const accGoodOverride = this.getShipmentAccGoodOverride(order.payloadData, sku);
-
-        // Використовуємо good для передачі ID товару з products.dilovodId
-        tpGoods.push({
-          rowNum,
-          good: product.dilovodId, // ID товару в Dilovod для SKU
-          unit: DILOVOD_CONSTANTS.UNIT_PIECE,
-          qty,
-          baseQty: qty,
-          priceAmount: amount,
-          price,
-          amountCur: amount,
-          ...(accGoodOverride ? { accGood: Number(accGoodOverride) } : {})
-        });
-
-        console.log(`    ✅ Товар #${rowNum}: SKU "${sku}" → good_id "${product.dilovodId}", к-ть: ${qty}, ціна: ${price}`);
-        rowNum++;
+        for (const line of expandedLines) {
+          const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
+          const amount = unitPrice * line.quantity;
+          tpGoods.push({
+            rowNum,
+            good: line.good,
+            unit: DILOVOD_CONSTANTS.UNIT_PIECE,
+            qty: line.quantity,
+            baseQty: line.quantity,
+            priceAmount: amount,
+            price: unitPrice,
+            amountCur: amount,
+            ...(line.accGood ? { accGood: Number(line.accGood) } : {}),
+          });
+          rowNum++;
+        }
       } catch (error) {
-        warnings.push(`Помилка обробки товару "${item.productName || 'Невідомий товар'}": ${error instanceof Error ? error.message : String(error)}`);
+        warnings.push(`Помилка обробки товару "${item?.productName || 'Невідомий товар'}": ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
-    console.log(`  ✅ Оброблено ${tpGoods.length} з ${order.items.length} товарів`);
-
+    console.log(`  ✅ Shipment табличні частини сформовано: ${tpGoods.length} рядків`);
     return { tpGoods };
   }
 

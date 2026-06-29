@@ -53,6 +53,36 @@ const extractStockTotal = (rawStock: unknown): number => {
   return total;
 };
 
+const getStockTotalForSku = async (sku: string): Promise<number | null> => {
+  if (stockCache.has(sku)) {
+    return stockCache.get(sku) ?? null;
+  }
+
+  const existingRequest = stockRequestsInFlight.get(sku);
+  if (existingRequest) {
+    return existingRequest;
+  }
+
+  const request = (async () => {
+    const res = await fetch(`/api/products/${sku}`);
+    if (!res.ok) return null;
+    const prod = await res.json();
+    return extractStockTotal(prod?.stockBalanceByStock);
+  })();
+
+  stockRequestsInFlight.set(sku, request);
+
+  try {
+    const stock = await request;
+    if (typeof stock === 'number') {
+      stockCache.set(sku, stock);
+    }
+    return stock;
+  } finally {
+    stockRequestsInFlight.delete(sku);
+  }
+};
+
 const fetchProductBySku = async (sku: string): Promise<any | null> => {
   if (productCache.has(sku)) {
     return productCache.get(sku);
@@ -198,39 +228,10 @@ const MonolithicIndicator = ({ sku, quantity = 0, status }: { sku?: string; quan
     let mounted = true;
     const load = async () => {
       if (!sku) return;
-
-      if (stockCache.has(sku)) {
-        if (mounted) setRemoteStock(stockCache.get(sku) ?? null);
-        return;
-      }
-
-      const existingRequest = stockRequestsInFlight.get(sku);
-      if (existingRequest) {
-        const cachedStock = await existingRequest;
-        if (mounted && typeof cachedStock === 'number') {
-          setRemoteStock(cachedStock);
-        }
-        return;
-      }
-
       try {
-        const request = (async () => {
-          const res = await fetch(`/api/products/${sku}`);
-          if (!res.ok) return null;
-          const prod = await res.json();
-          return extractStockTotal(prod?.stockBalanceByStock);
-        })();
-
-        stockRequestsInFlight.set(sku, request);
-        const stock = await request;
-        stockRequestsInFlight.delete(sku);
-
-        if (typeof stock === 'number') {
-          stockCache.set(sku, stock);
-          if (mounted) setRemoteStock(stock);
-        }
+        const stock = await getStockTotalForSku(sku);
+        if (mounted) setRemoteStock(stock);
       } catch (e) {
-        stockRequestsInFlight.delete(sku);
         // ignore
       }
     };
@@ -257,7 +258,7 @@ const MonolithicIndicator = ({ sku, quantity = 0, status }: { sku?: string; quan
   }
   if (quantity > 0) {
     return (
-      <span className={`text-[11px] font-semibold ${status === 'done' ? 'bg-gray-300/50 text-gray-500' : 'bg-gray-200/75 text-gray-500/80'} px-2 py-1 rounded-full`}>
+      <span className={`text-[11px] font-semibold ${status === 'done' ? 'bg-gray-300/50 text-gray-500' : 'bg-gray-200 text-gray-700/75'} px-2 py-1 rounded-full`}>
         Не вистачає {quantity} компл.
       </span>
     );
@@ -361,7 +362,17 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
   const shouldConfirmClick = type === 'product' && ((productScanMode === 'single_per_item' && quantity > 1) || allowManualSelect);
   const setSku = (sku as string) || (type === 'box' ? boxSettings?.barcode : undefined);
   const itemKey = sku || item.id;
-  const handleClick = () => {
+  const handleClick = async () => {
+    if (item.composition?.length > 0 && setSku) {
+      const stock = await getStockTotalForSku(setSku);
+      setAvailableSetStock(stock);
+
+      if (stock !== null && stock > 0 && stock < quantity) {
+        setShowConfirmModal(true);
+        return;
+      }
+    }
+
     if (shouldConfirmClick) {
       setShowConfirmModal(true);
       return;
@@ -375,7 +386,7 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
   const compositionRef = useRef<HTMLUListElement | null>(null);
   const restContentRef = useRef<HTMLDivElement | null>(null);
   const hasPartialSetShortage = item.composition && item.composition.length > 0 && availableSetStock !== null && availableSetStock > 0 && availableSetStock < quantity;
-
+  
   useEffect(() => {
     const el = restContentRef.current;
     if (!el) return;
@@ -456,36 +467,6 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
       cancelled = true;
     };
   }, [item.composition, item.sku]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadAvailableStock = async () => {
-      if (!showConfirmModal || !item.composition?.length || !setSku) {
-        setAvailableSetStock(null);
-        return;
-      }
-
-      try {
-        const res = await fetch(`/api/products/${setSku}`);
-        if (!res.ok) return;
-        const prod = await res.json();
-        if (mounted) {
-          setAvailableSetStock(extractStockTotal(prod?.stockBalanceByStock));
-        }
-      } catch {
-        if (mounted) {
-          setAvailableSetStock(null);
-        }
-      }
-    };
-
-    loadAvailableStock();
-
-    return () => {
-      mounted = false;
-    };
-  }, [item.composition, setSku, showConfirmModal]);
 
   return (
     <>
@@ -631,17 +612,6 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
       message={
         <div>
           {!hasPartialSetShortage ? <span>Підтверджую додавання <span className="bg-amber-200/80 text-amber-950 px-1.5 py-0.5 rounded font-semibold tabular-nums">{quantity} {item.composition && item.composition.length > 0 ? pluralize(quantity, 'комплекту', 'комплектів', 'комплектів') : pluralize(quantity, 'порції', 'порцій', 'порцій')}</span></span> : null}
-          {availableSetStock === 0 && (
-            <div className="mt-3 rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-              <div className="flex items-start gap-2">
-                <DynamicIcon name="info" size={16} className="mt-0.5 text-amber-400 shrink-0" />
-                <div>
-                  <p>Наразі по обліку немає жодного зібраного комплекту, тому списання відвантаження буде відбуватися за складом цього комплекту.</p>
-                  <p className="mt-2">Але якщо ви використовуєте в цьому замовленні <span className="font-semibold text-amber-800">фактично зібрані комплекти</span>, спочатку зробіть випуск через <span className="font-semibold text-amber-800">Склад → Випуск наборів</span>, щоб уникнути можливих помилок при інвентаризації.</p>
-                </div>
-              </div>
-            </div>
-          )}
           {hasPartialSetShortage && (
             <div className="mt-3 rounded-sm border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-950">
               <div className="flex items-start gap-2">

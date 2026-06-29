@@ -121,6 +121,7 @@ export default function ReleaseHistoryTab({ records = [], loading, onRefresh, on
     return {
       id: String(r.id),
       createdAt: r.createdAt || r.created_at || r.created_at,
+      operDate: r.operDate || r.oper_date || r.createdAt || r.created_at,
       createdBy: r.createdBy || r.created_by,
       firmId: r.firmId || r.firm_id,
       storageId: r.storageId || r.payload?.storage,

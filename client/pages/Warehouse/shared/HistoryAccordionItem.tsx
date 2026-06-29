@@ -110,13 +110,15 @@ export const HistoryAccordionItem = ({
 	// константа мапи типів
 	const RECORD_TYPE_CONFIG: Record<string, { label: string; genitive?: string; dateField?: string; storageOperation?: string }> = {
 		writeOff: 	{ label: 'Списання', dateField: 'writeOffDate' },
-		releaseSet: { label: 'Випуск', genitive: 'випуску' },
+    releaseSet: { label: 'Випуск', genitive: 'випуску', dateField: 'operDate' },
 	};
 
   const RELEASE_OPERATION_CONFIG: Record<string, { label: string; icon: string }> = {
     kit: { label: 'Комплектування', icon: 'package' },
     unkit: { label: 'Розукомплектування', icon: 'package-open' },
   };
+
+	const isReleaseSetRecord = recordType === 'releaseSet';
 
 	// утиліта для отримання конфігурації по типу запису, з дефолтами
 	function getRecordTypeConfig(type?: string) {
@@ -278,9 +280,14 @@ export const HistoryAccordionItem = ({
                     <span>Автор: <b>{namesMap[Number(record.createdBy ?? record.created_by ?? -1)] ?? record.createdBy ?? record.created_by ?? '—'}</b></span>
                     <span className="border-l border-gray-300 pl-3">Фірма: <b>{(getFirmDisplayName(record.firmId, undefined, directories) || 'Не визначено')}</b></span>
                     <span className="border-l border-gray-300 pl-3">Склад: <b>{(getStorageDisplayName(record.storageId || record.payload?.storage, record.storageName, directories) || '—')}</b></span>
-                    <span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(record.createdAt || record.created_at)}</b></span>
-                    {cfg.dateField && formatDate(record.createdAt || record.created_at) !== formatDate(record[cfg.dateField]) && (
-                      <span className="bg-amber-100 text-gray-700 px-1.5 py-0.5 rounded">Дата {cfg.dateField ? cfg.storageOperation || cfg.label.toLowerCase() : ''}: <span className="font-semibold">{record[cfg.dateField] ? formatDate(record[cfg.dateField]) : '—'}</span></span>
+                    <span className="border-l border-gray-300 pl-3">
+                      {isReleaseSetRecord ? 'Дата операції' : 'Дата створення'}: <b>{formatDate((isReleaseSetRecord ? record.operDate : record.createdAt) || record.created_at)}</b>
+                    </span>
+                    {isReleaseSetRecord && record.operDate && formatDate(record.createdAt || record.created_at) !== formatDate(record.operDate) && (
+                      <span className="bg-amber-100 text-gray-700 px-1.5 py-0.5 rounded">
+                        Дата {recordType === 'releaseSet' ? (operationCfg?.label || 'операції').toLowerCase() : cfg.storageOperation || cfg.label.toLowerCase()}:
+                        <span className="font-semibold"> {record[cfg.dateField] ? formatDate(record[cfg.dateField]) : '—'}</span>
+                      </span>
                     )}
                   </div>
                   {record.comment && <p className="text-[13px] text-gray-500 mt-1">Коментар: <b>{record.comment}</b></p>}

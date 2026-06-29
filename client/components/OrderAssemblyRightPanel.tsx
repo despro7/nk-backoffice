@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Card, CardBody, CardHeader, Switch, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
+import { Card, CardBody, CardHeader, Switch, Popover, PopoverTrigger, PopoverContent, Button, useDisclosure } from '@heroui/react';
 import { useDebug } from '@/contexts/DebugContext';
 import { RightPanel } from './RightPanel';
 import { WeightDisplayWidget } from './WeightDisplayWidget';
@@ -7,8 +7,10 @@ import { BoxSelector } from './BoxSelector';
 import { DeviationButton } from './DeviationButton';
 import { OrderRefreshButton } from './OrderRefreshButton';
 import { ActiveProductSets } from './ActiveProductSets';
+import ResultDrawer from './ResultDrawer';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { ConfirmModal } from './modals/ConfirmModal';
+import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { shippingClientService } from '../services/ShippingService';
 import type { OrderForAssembly } from '../types/orderAssembly';
 import type { ReceiptType } from '@/hooks/useReceiptPrinting';
@@ -18,6 +20,7 @@ interface OrderAssemblyRightPanelProps {
   orderForAssembly: OrderForAssembly;
   monolithicDisplayItems?: OrderForAssembly['items'];
   monolithicDisplayStates?: Record<string, boolean>;
+  shipmentPayloadData?: unknown;
   showMonolithicAvailabilityBadge?: boolean;
   averagePortionWeight?: number; // Середня вага порції для розподілу по коробках
   getWeightData: () => { expectedWeight: number | null; cumulativeTolerance: number };
@@ -48,6 +51,7 @@ export function OrderAssemblyRightPanel({
   orderForAssembly,
   monolithicDisplayItems,
   monolithicDisplayStates,
+  shipmentPayloadData,
   averagePortionWeight = 0.33,
   getWeightData,
   handleWeightChange,
@@ -68,6 +72,12 @@ export function OrderAssemblyRightPanel({
   onBarcodeScan,
 }: OrderAssemblyRightPanelProps) {
   const [showPrintConfirmModal, setShowPrintConfirmModal] = useState(false);
+  const [showShipmentPayloadPreview, setShowShipmentPayloadPreview] = useState(false);
+  const [isLoadingShipmentPayload, setIsLoadingShipmentPayload] = useState(false);
+  const [shipmentPayloadPreview, setShipmentPayloadPreview] = useState<Record<string, any> | null>(null);
+  const { isOpen: isLogsDrawerOpen, onOpen: onLogsDrawerOpen, onOpenChange: onLogsDrawerOpenChange } = useDisclosure();
+  const [logsDrawerResult, setLogsDrawerResult] = useState<any>(null);
+  const [logsDrawerTitle, setLogsDrawerTitle] = useState<string>('Логи експорту');
   const { expectedWeight, cumulativeTolerance } = getWeightData();
   const { isDebugMode } = useDebug();
   const [debugScanCode, setDebugScanCode] = useState('');
@@ -81,6 +91,68 @@ export function OrderAssemblyRightPanel({
     const productItems = orderForAssembly.items.filter((item) => item.type === 'product');
     return productItems.length > 0 && productItems.every((item) => typeof item.portionsPerItem === 'number' && item.portionsPerItem > 16);
   }, [orderForAssembly.items]);
+
+  const handlePreviewShipmentPayload = async () => {
+    const orderId = order?.id ?? orderForAssembly.id;
+    if (!orderId) {
+      return;
+    }
+
+    try {
+      setIsLoadingShipmentPayload(true);
+      const response = await fetch(`/api/dilovod/salesdrive/orders/${orderId}/shipment?dryRun=true`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          dryRun: true,
+          payloadData: shipmentPayloadData,
+        }),
+        credentials: 'include',
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success || !result.payload) {
+        throw new Error(result.message || result.error || 'Не вдалося сформувати preview payload');
+      }
+
+      setShipmentPayloadPreview(result.payload);
+      setShowShipmentPayloadPreview(true);
+    } catch (error) {
+      console.error('Failed to load shipment payload preview:', error);
+    } finally {
+      setIsLoadingShipmentPayload(false);
+    }
+  };
+
+  const handleViewOrderLogs = async () => {
+    const orderNumber = order?.orderNumber || orderForAssembly.id;
+    if (!orderNumber) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/meta-logs?orderNumber=${encodeURIComponent(String(orderNumber))}`, {
+        credentials: 'include',
+      });
+      const data = await res.json();
+
+      if (Array.isArray(data) && data.length > 0) {
+        setLogsDrawerResult(data);
+        setLogsDrawerTitle(`Логи експорту замовлення ${orderNumber}`);
+        onLogsDrawerOpen();
+        return;
+      }
+
+      setLogsDrawerResult(data);
+      setLogsDrawerTitle(`Логи експорту замовлення ${orderNumber}`);
+      onLogsDrawerOpen();
+    } catch (error) {
+      console.error('Failed to load order logs:', error);
+    }
+  };
 
   return (
     <>
@@ -167,7 +239,7 @@ export function OrderAssemblyRightPanel({
           )}
 
           {/* Перемикач монолітних комплектів */}
-          {monolithicDisplayControlItems.length > 0 && (
+          {monolithicDisplayControlItems.length > 0 && order.status < 3 && (
             <Card classNames={{
               base: 'w-full shadow-none bg-lime-600/80 rounded-[18px] p-1 border',
               header: 'text-sm text-lime-950 font-medium pt-1.5 pb-2 px-2 text-white flex items-center gap-1.5',
@@ -211,6 +283,34 @@ export function OrderAssemblyRightPanel({
             </Card>
           )}
 
+          {/* Payload відвантаження замовлення */}
+          {isDebugMode && (
+            <div className="mx-auto flex gap-2 flex-wrap justify-center">
+              <Button
+                size="md"
+                variant="solid"
+                color="secondary"
+                className="gap-2"
+                startContent={isLoadingShipmentPayload ? null : <DynamicIcon name="file-json" size={16} />}
+                onPress={handlePreviewShipmentPayload}
+                isLoading={isLoadingShipmentPayload}
+              >
+                Ship Payload
+              </Button>
+              <Button
+                size="md"
+                variant="solid"
+                color="secondary"
+                className="gap-2"
+                startContent={<DynamicIcon name="file-search" size={16} />}
+                onPress={handleViewOrderLogs}
+                isDisabled={order.status < 3}
+              >
+                Export Logs
+              </Button>
+            </div>
+          )}
+
           {/* Кнопка для позначення відхилень */}
           <DeviationButton />
 
@@ -235,6 +335,22 @@ export function OrderAssemblyRightPanel({
           onPrintTTN();
         }}
         onCancel={() => setShowPrintConfirmModal(false)}
+      />
+
+      <PayloadPreviewModal
+        isOpen={showShipmentPayloadPreview}
+        onClose={() => setShowShipmentPayloadPreview(false)}
+        payload={shipmentPayloadPreview}
+        title="Payload відвантаження замовлення"
+        isLoading={isLoadingShipmentPayload}
+      />
+
+      <ResultDrawer
+        isOpen={isLogsDrawerOpen}
+        onOpenChange={onLogsDrawerOpenChange}
+        result={logsDrawerResult}
+        title={logsDrawerTitle}
+        type="logs"
       />
     </>
   );

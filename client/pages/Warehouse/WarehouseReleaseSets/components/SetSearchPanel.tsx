@@ -167,7 +167,7 @@ export default function SetSearchPanel({ onSelect, existingItems = [], resetSign
                   </div>
                   <div className="text-sm text-gray-600">Компонентів: {Array.isArray(p.set) ? p.set.length : 0}</div>
                 </div>
-                {operationKey === 'goodUnKit' && Number(p.availableQuantity ?? 0) > 0 && (
+                {Number(p.availableQuantity ?? 0) > 0 && (
                   <span className="text-xs font-semibold bg-lime-200 text-emerald-800 px-4 py-2 rounded-sm">
                     В наявності {Number(p.availableQuantity ?? 0)} компл.
                   </span>

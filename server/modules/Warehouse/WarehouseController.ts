@@ -6,6 +6,7 @@ import { ROLES } from '../../../shared/constants/roles.js';
 import { WarehouseService } from './WarehouseService.js';
 import { MovementHistoryService } from './MovementHistoryService.js';
 import { WarehousePayloadBuilder } from './WarehousePayloadBuilder.js';
+import { getOrderReportItems, sumQuantityForSku } from '../../services/orderShipmentMetricsService.js';
 
 const router = Router();
 
@@ -1717,6 +1718,8 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
       return res.status(400).json({ error: 'sku is required' });
     }
 
+    const normalizedSku = String(sku).trim();
+
     const daysNum = Math.min(Math.max(parseInt(String(days), 10) || 21, 1), 365);
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - daysNum);
@@ -1746,7 +1749,7 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
         continue;
       }
 
-      const item = items.find((it: any) => it && String(it.sku).trim() === String(sku).trim());
+      const item = items.find((it: any) => it && String(it.sku).trim() === normalizedSku);
       if (!item) continue;
 
       const systemBalance: number | null = typeof item.systemBalance === 'number' ? item.systemBalance : null;
@@ -1774,7 +1777,8 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
       });
     }
 
-    // For each entry, compute movement totals (shipped / returned / writtenOff) within the same inventory day
+    // For each entry, compute movement totals (kit / shipped / returned / writtenOff) within the same inventory day.
+    // Monolithic sets may be present only in payloadData.shipment.bySku, so we keep that as a fallback source.
     const enrichedEntries = await Promise.all(entries.map(async (e) => {
       try {
         const asOf = new Date(e.date);
@@ -1784,33 +1788,12 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
         const endOfDay = new Date(startOfDay);
         endOfDay.setDate(endOfDay.getDate() + 1);
 
-        // Helper to sum quantities for a given list of DB rows (items stored as JSON)
-        const sumQtyForSku = (rows: any[] | null, skuToMatch: string) => {
-          if (!rows || rows.length === 0) return 0;
-          let sum = 0;
-          for (const r of rows) {
-            try {
-              const raw = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
-              if (!Array.isArray(raw)) continue;
-              for (const it of raw) {
-                if (!it || !it.sku) continue;
-                if (String(it.sku) !== String(skuToMatch)) continue;
-                const q = Number(it.portionQuantity ?? it.qty ?? it.quantity ?? it.boxQuantity ?? 0) || 0;
-                sum += q;
-              }
-            } catch (parseErr) {
-              // ignore malformed rows
-            }
-          }
-          return sum;
-        };
-
         // Shipments: aggregate from orders with dilovodSaleExportDate in the same day.
         // We prefer cached processedItems in orders_cache (contains orderedQuantity per SKU),
         // fallback to parsing order.items when cache missing.
         const orders = await prisma.order.findMany({
           where: { dilovodSaleExportDate: { gte: startOfDay, lt: endOfDay } },
-          select: { externalId: true },
+          select: { externalId: true, payloadData: true, items: true },
         });
 
         const orderExternalIds = orders.map(o => o.externalId).filter(Boolean);
@@ -1823,43 +1806,48 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
 
           const cacheByExternal = new Map(caches.map(c => [c.externalId, c.processedItems]));
 
-          // Sum from cache when available
-          for (const externalId of orderExternalIds) {
-            const processed = cacheByExternal.get(externalId);
+          for (const order of orders) {
+            const processed = cacheByExternal.get(order.externalId);
+            let cachedItems: Array<{ sku?: string; name?: string; orderedQuantity?: number; quantity?: number }> | null = null;
+
             if (processed) {
               try {
                 const parsed = JSON.parse(processed);
                 if (Array.isArray(parsed)) {
-                  for (const it of parsed) {
-                    if (it && (it.sku === sku)) {
-                      shipped += Number(it.orderedQuantity ?? it.quantity ?? 0) || 0;
-                    }
-                  }
-                  continue; // processedItems handled
+                  cachedItems = parsed;
                 }
               } catch {
-                // fallthrough to order.items
+                cachedItems = null;
               }
             }
 
-            // Fallback: load order and parse raw items
-            try {
-              const ord = await prisma.order.findUnique({ where: { externalId }, select: { items: true } });
-              if (ord && ord.items) {
-                const raw = typeof ord.items === 'string' ? JSON.parse(ord.items) : ord.items;
-                if (Array.isArray(raw)) {
-                  for (const it of raw) {
-                    if (!it || !it.sku) continue;
-                    if (String(it.sku) !== String(sku)) continue;
-                    shipped += Number(it.quantity ?? it.qty ?? it.orderedQuantity ?? 0) || 0;
-                  }
-                }
-              }
-            } catch (e) {
-              // ignore parse errors
-            }
+            const reportItems = getOrderReportItems(order, cachedItems, true);
+            shipped += reportItems
+              .filter((item) => item && String(item.sku).trim() === normalizedSku)
+              .reduce((sum, item) => sum + (Number(item.orderedQuantity ?? item.quantity ?? 0) || 0), 0);
           }
         }
+
+        const kitReleases = await prisma.warehouseReleaseSet.findMany({
+          where: {
+            status: { not: 'deleted' },
+            operationType: { in: ['kit', 'unkit'] },
+            setSku: normalizedSku,
+          },
+          select: { quantity: true, operationType: true, createdAt: true, operDate: true, items: true },
+        });
+
+        const normalizedReleases = kitReleases.filter((release: any) => {
+          const items = Array.isArray(release.items) ? release.items : [];
+          const operationDateRaw = release.operDate || items[0]?.operationDate || items[0]?.operation_date || null;
+          const operationDate = operationDateRaw ? new Date(operationDateRaw) : release.createdAt;
+          return operationDate >= startOfDay && operationDate < endOfDay;
+        });
+
+        const kit = normalizedReleases.reduce((sum, release) => {
+          const quantity = Number(release.quantity) || 0;
+          return sum + (release.operationType === 'unkit' ? -quantity : quantity);
+        }, 0);
 
         // Fetch return records
         const returns = await prisma.warehouseReturnHistory.findMany({
@@ -1873,12 +1861,12 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
           select: { items: true },
         });
 
-        const returned = sumQtyForSku(returns, sku);
-        const writtenOff = sumQtyForSku(writeoffs, sku);
+        const returned = sumQuantityForSku(returns, sku);
+        const writtenOff = sumQuantityForSku(writeoffs, sku);
 
-        return { ...e, shipped, returned, writtenOff };
+        return { ...e, kit, shipped, returned, writtenOff };
       } catch (err) {
-        return { ...e, shipped: 0, returned: 0, writtenOff: 0 };
+        return { ...e, kit: 0, shipped: 0, returned: 0, writtenOff: 0 };
       }
     }));
 

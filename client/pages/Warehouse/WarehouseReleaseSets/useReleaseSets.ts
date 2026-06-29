@@ -152,18 +152,24 @@ export default function useReleaseSets() {
       const json = await resp.json().catch(() => ({}));
       if (resp.ok && json.success) {
         const historyComment = [currentRemark, returns.comment ? String(returns.comment).trim() : ''].filter(Boolean).join(' | ') || null;
+        const operationDate = getPayloadDate();
+        const historyItems = currentItems.map((item) => ({
+          ...item,
+          operationDate,
+        }));
         const historyResp = await fetch('/api/warehouse/releases', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            items: currentItems,
+            items: historyItems,
             storageId: selectedStorage,
             firmId: safeFirmId(returns.receiveFirmId),
             comment: historyComment,
             remark: currentRemark,
             status: 'created',
             operationType: operationKey === 'goodUnKit' ? 'unkit' : 'kit',
+            operDate: operationDate,
             dilovodDocId: json.dilovodDocId ?? null,
           }),
         });

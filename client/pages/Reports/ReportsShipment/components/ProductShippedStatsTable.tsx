@@ -69,10 +69,18 @@ function getDefaultShipmentDateRange() {
   return preset ? preset.getRange() : null;
 }
 
+function getItemPortions(item: ProductStats): number {
+  if (!item.isMonolithicSet) {
+    return item.orderedQuantity;
+  }
+
+  return item.orderedQuantity * (item.setPortions ?? 0);
+}
+
 function buildShipmentSummary(productItems: ProductStats[], totalOrders: number): ShipmentSummary {
   return {
     totalOrders,
-    totalPortions: productItems.reduce((sum, item) => sum + item.orderedQuantity, 0),
+    totalPortions: productItems.reduce((sum, item) => sum + getItemPortions(item), 0),
     uniqueProducts: productItems.length,
   };
 }
@@ -407,6 +415,56 @@ export default function ProductShippedStatsTable({
     });
   }, [productStats, dateStats, sortDescriptor, viewMode]);
 
+  const monolithicSetStats = useMemo(
+    () => productStats.filter((item) => item.isMonolithicSet),
+    [productStats],
+  );
+
+  const regularProductStats = useMemo(
+    () => productStats.filter((item) => !item.isMonolithicSet),
+    [productStats],
+  );
+
+  const sortedMonolithicSetStats = useMemo(
+    () => sortReportItems({
+      dateItems: dateStats,
+      productItems: monolithicSetStats,
+      sortDescriptor,
+      viewMode: "products",
+    }) as ProductStats[],
+    [dateStats, monolithicSetStats, sortDescriptor],
+  );
+
+  const sortedRegularProductStats = useMemo(
+    () => sortReportItems({
+      dateItems: dateStats,
+      productItems: regularProductStats,
+      sortDescriptor,
+      viewMode: "products",
+    }) as ProductStats[],
+    [dateStats, regularProductStats, sortDescriptor],
+  );
+
+  const monolithicSetQuantities = useMemo(
+    () => sortedMonolithicSetStats.map((item) => item.orderedQuantity),
+    [sortedMonolithicSetStats],
+  );
+
+  const regularProductQuantities = useMemo(
+    () => sortedRegularProductStats.map((item) => item.orderedQuantity),
+    [sortedRegularProductStats],
+  );
+
+  const monolithicSetPortionsTotal = useMemo(
+    () => monolithicSetStats.reduce((sum, item) => sum + getItemPortions(item), 0),
+    [monolithicSetStats],
+  );
+
+  const regularProductTotal = useMemo(
+    () => regularProductStats.reduce((sum, item) => sum + item.orderedQuantity, 0),
+    [regularProductStats],
+  );
+
   // Отримання всіх значень для кожного стовпця
   const getAllOrderedQuantities = useMemo(
     () => getOrderedQuantityValues(viewMode, dateStats, productStats),
@@ -425,6 +483,120 @@ export default function ProductShippedStatsTable({
       };
     }
   }, [productStats, dateStats, viewMode]);
+
+  const renderProductStatsTable = useCallback((
+    items: ProductStats[],
+    orderedQuantities: number[],
+    emptyMessage: string,
+    title: string,
+    itemLabel: string,
+    quantityLabel: string,
+    totalPortions?: number,
+  ) => {
+    const totalOrderedQuantity = items.reduce((sum, item) => sum + item.orderedQuantity, 0);
+
+    return (
+      <div className="relative mt-10">
+        <div className="mb-0 flex items-center justify-between">
+          <div className="text-sm font-semibold uppercase tracking-wide text-default-500">
+            {title}
+          </div>
+          <div className="text-sm text-default-500">
+            {items.length} {itemLabel} • {totalOrderedQuantity} {quantityLabel}
+            {totalPortions !== undefined ? ` • ${totalPortions} порцій` : ''}
+          </div>
+        </div>
+        <Table
+          aria-label={title}
+          sortDescriptor={sortDescriptor}
+          onSortChange={(descriptor) => handleSortChange(descriptor as ShipmentSortDescriptor)}
+          classNames={{
+            wrapper: "min-h-72 px-0 shadow-none",
+            th: "bg-default-200/60 first:rounded-s-sm last:rounded-e-sm",
+            td: [
+              "py-2 text-default-700 cursor-pointer",
+              "[&>*]:z-1 [&>*]:relative",
+              "before:pointer-events-none before:content-[''] before:absolute before:z-0 before:inset-0 before:opacity-0 before:bg-default/40",
+              "group-hover/tr:before:opacity-40",
+              "first:before:rounded-s-sm last:before:rounded-e-sm",
+            ],
+          }}
+        >
+          <TableHeader>
+            {columns.map((column) => (
+              <TableColumn
+                key={column.key}
+                allowsSorting={column.sortable}
+                className={`${column.className} text-sm`}
+              >
+                {column.label}
+              </TableColumn>
+            ))}
+          </TableHeader>
+          <TableBody
+            items={items as any}
+            emptyContent={
+              <ReportTableEmptyState
+                loading={loading}
+                emptyMessage={emptyMessage}
+              />
+            }
+            isLoading={loading}
+          >
+            {(item) => {
+              const productItem = item as ProductStats;
+              return (
+                <TableRow
+                  key={productItem.sku}
+                  onClick={() => fetchOrdersForProduct(productItem.sku, productItem.name)}
+                >
+                  <TableCell className="font-medium text-base">
+                    <div className="flex items-center gap-2">
+                      {productItem.name}
+                      {productItem.isMonolithicSet ? (
+                        <Chip size="sm" variant="flat" color="warning" className="shrink-0">
+                          Монолітний набір
+                        </Chip>
+                      ) : productItem.isSet ? (
+                        <Chip size="sm" variant="flat" color="default" className="shrink-0">
+                          Набір
+                        </Chip>
+                      ) : null}
+                      <DynamicIcon name="external-link" size={14} className="text-neutral-300" />
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-mono text-base">
+                    <Button
+                      size="sm"
+                      variant="light"
+                      className="font-mono text-base h-auto p-1 min-w-0 text-blue-600 hover:bg-blue-50"
+                      onPress={() => {
+                        handleProductChange(productItem.sku);
+                      }}
+                    >
+                      {productItem.sku}
+                    </Button>
+                  </TableCell>
+                  <TableCell className="text-center text-base">
+                    <Chip
+                      size="md"
+                      variant="flat"
+                      classNames={{
+                        base: getValueColor(productItem.orderedQuantity, orderedQuantities).base,
+                        content: getValueColor(productItem.orderedQuantity, orderedQuantities).content,
+                      }}
+                    >
+                      {productItem.orderedQuantity}
+                    </Chip>
+                  </TableCell>
+                </TableRow>
+              );
+            }}
+          </TableBody>
+        </Table>
+      </div>
+    );
+  }, [columns, fetchOrdersForProduct, handleProductChange, handleSortChange, loading, sortDescriptor]);
 
   useEffect(() => {
     if (viewMode !== "products") {
@@ -537,51 +709,47 @@ export default function ProductShippedStatsTable({
 
       {/* Таблиця */}
       <div className="relative">
-        <Table
-          aria-label="Статистика відвантажених товарів"
-          sortDescriptor={sortDescriptor}
-          onSortChange={(descriptor) =>
-            handleSortChange(descriptor as ShipmentSortDescriptor)
-          }
-          classNames={{
-            wrapper: "min-h-128 px-0 shadow-none",
-            th: "bg-default-200/60 first:rounded-s-sm last:rounded-e-sm",
-            td: [
-              "py-2 text-default-700 cursor-pointer",
-              "[&>*]:z-1 [&>*]:relative",
-              "before:pointer-events-none before:content-[''] before:absolute before:z-0 before:inset-0 before:opacity-0 before:bg-default/40",
-              "group-hover/tr:before:opacity-40",
-              "first:before:rounded-s-sm last:before:rounded-e-sm",
-            ],
-          }}
-        >
-          <TableHeader>
-            {columns.map((column) => (
-              <TableColumn
-                key={column.key}
-                allowsSorting={column.sortable}
-                className={`${column.className} text-sm`}
-              >
-                {column.label}
-              </TableColumn>
-            ))}
-          </TableHeader>
-          <TableBody
-            items={sortedItems as any}
-            emptyContent={
-              <ReportTableEmptyState
-                loading={loading}
-                emptyMessage={
-                  viewMode === "dates"
-                    ? "Немає даних по датах для цього товару"
-                    : "Немає даних для відображення"
-                }
-              />
+        {viewMode === "dates" ? (
+          <Table
+            aria-label="Статистика відвантажених товарів"
+            sortDescriptor={sortDescriptor}
+            onSortChange={(descriptor) =>
+              handleSortChange(descriptor as ShipmentSortDescriptor)
             }
-            isLoading={loading}
+            classNames={{
+              wrapper: "min-h-128 px-0 shadow-none",
+              th: "bg-default-200/60 first:rounded-s-sm last:rounded-e-sm",
+              td: [
+                "py-2 text-default-700 cursor-pointer",
+                "[&>*]:z-1 [&>*]:relative",
+                "before:pointer-events-none before:content-[''] before:absolute before:z-0 before:inset-0 before:opacity-0 before:bg-default/40",
+                "group-hover/tr:before:opacity-40",
+                "first:before:rounded-s-sm last:before:rounded-e-sm",
+              ],
+            }}
           >
-            {(item) => {
-              if (viewMode === "dates") {
+            <TableHeader>
+              {columns.map((column) => (
+                <TableColumn
+                  key={column.key}
+                  allowsSorting={column.sortable}
+                  className={`${column.className} text-sm`}
+                >
+                  {column.label}
+                </TableColumn>
+              ))}
+            </TableHeader>
+            <TableBody
+              items={sortedItems as any}
+              emptyContent={
+                <ReportTableEmptyState
+                  loading={loading}
+                  emptyMessage="Немає даних по датах для цього товару"
+                />
+              }
+              isLoading={loading}
+            >
+              {(item) => {
                 const dateItem = item as ProductDateStats;
                 return (
                   <TableRow 
@@ -610,49 +778,31 @@ export default function ProductShippedStatsTable({
                     </TableCell>
                   </TableRow>
                 );
-              } else {
-                const productItem = item as any;
-                return (
-                  <TableRow 
-                    key={productItem.sku} 
-                    onClick={() => fetchOrdersForProduct(productItem.sku, productItem.name)}
-                  >
-                    <TableCell className="font-medium text-base">
-                      <div className="flex items-center gap-2">
-                        {productItem.name}
-                        <DynamicIcon name="external-link" size={14} className="text-neutral-300" />
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-base">
-                      <Button 
-                        size="sm" 
-                        variant="light" 
-                        className="font-mono text-base h-auto p-1 min-w-0 text-blue-600 hover:bg-blue-50"
-                        onPress={() => {
-                          handleProductChange(productItem.sku);
-                        }}
-                      >
-                        {productItem.sku}
-                      </Button>
-                    </TableCell>
-                    <TableCell className="text-center text-base">
-                      <Chip
-                        size="md"
-                        variant="flat"
-                        classNames={{
-                          base: getValueColor(productItem.orderedQuantity, getAllOrderedQuantities).base,
-                          content: getValueColor(productItem.orderedQuantity, getAllOrderedQuantities).content,
-                        }}
-                      >
-                        {productItem.orderedQuantity}
-                      </Chip>
-                    </TableCell>
-                  </TableRow>
-                );
-              }
-            }}
-          </TableBody>
-        </Table>
+              }}
+            </TableBody>
+          </Table>
+        ) : (
+          <div className="flex flex-col gap-6">
+            {monolithicSetStats.length > 0 ? renderProductStatsTable(
+              sortedMonolithicSetStats,
+              monolithicSetQuantities,
+              "Немає монолітних наборів у вибірці",
+              "Монолітні набори",
+              "позицій",
+              "наборів",
+              monolithicSetPortionsTotal,
+            ) : null}
+
+            {renderProductStatsTable(
+              sortedRegularProductStats,
+              regularProductQuantities,
+              "Немає звичайних порцій у вибірці",
+              "Звичайні порції",
+              "позицій",
+              "порцій",
+            )}
+          </div>
+        )}
 
         {/* Підсумковий рядок */}
         {((viewMode === "products" && productStats.length > 0) || (viewMode === "dates" && dateStats.length > 0)) && (

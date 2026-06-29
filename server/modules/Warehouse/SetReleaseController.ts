@@ -71,6 +71,117 @@ function buildReleaseHistoryComment(remark: unknown, comment: unknown): string |
   return uniqueValues.length > 0 ? uniqueValues.join(' | ') : null;
 }
 
+type ReleaseSetSourceItem = {
+  set_sku?: string | number | null;
+  setSku?: string | number | null;
+  sku?: string | number | null;
+  quantity?: number | string | null;
+  components_snapshot?: unknown;
+};
+
+type DirectSetComponent = {
+  sku: string;
+  name?: string | null;
+  quantity: number;
+};
+
+function parseSetComponents(rawSet: unknown): Array<{ id?: string | number | null; sku?: string | number | null; quantity?: number | string | null; name?: string | null }> {
+  if (Array.isArray(rawSet)) {
+    return rawSet;
+  }
+
+  if (typeof rawSet === 'string') {
+    try {
+      const parsed = JSON.parse(rawSet);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.warn('[SetRelease] Failed to parse set JSON:', error);
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function normalizeDirectComponentsFromSnapshot(snapshot: unknown, parentQty: number): DirectSetComponent[] {
+  if (!Array.isArray(snapshot) || parentQty <= 0) {
+    return [];
+  }
+
+  const components: DirectSetComponent[] = [];
+  for (const component of snapshot) {
+    if (!component) continue;
+    const rawSku = component.id ?? component.sku ?? component.code ?? null;
+    const sku = String(rawSku ?? '').trim();
+    if (!sku) continue;
+
+    const quantity = Number(component.quantity ?? component.qty ?? 1);
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+
+    components.push({
+      sku,
+      name: component.name ?? component.title ?? null,
+      quantity: quantity * parentQty,
+    });
+  }
+
+  return components;
+}
+
+async function collectFirstLevelComponents(items: ReleaseSetSourceItem[]): Promise<Record<string, DirectSetComponent>> {
+  const aggregated: Record<string, DirectSetComponent> = {};
+
+  for (const item of items) {
+    const sku = String(item.set_sku ?? item.setSku ?? item.sku ?? '').trim();
+    const quantity = Number(item.quantity ?? 0);
+    if (!sku || !Number.isFinite(quantity) || quantity <= 0) {
+      continue;
+    }
+
+    let directComponents = normalizeDirectComponentsFromSnapshot(item.components_snapshot, quantity);
+
+    if (directComponents.length === 0) {
+      const product = await prisma.product.findUnique({ where: { sku } });
+      const setData = parseSetComponents(product?.set);
+      if (setData.length === 0) {
+        if (product?.dilovodId) {
+          if (!aggregated[sku]) {
+            aggregated[sku] = { sku, name: product?.name ?? null, quantity: 0 };
+          }
+          aggregated[sku].quantity += quantity;
+        }
+        continue;
+      }
+
+      directComponents = setData
+        .map((component) => {
+          const componentSku = String(component.id ?? component.sku ?? '').trim();
+          if (!componentSku) return null;
+          const componentQty = Number(component.quantity ?? 1);
+          if (!Number.isFinite(componentQty) || componentQty <= 0) return null;
+          return {
+            sku: componentSku,
+            name: component.name ?? null,
+            quantity: componentQty * quantity,
+          };
+        })
+        .filter((component): component is DirectSetComponent => component !== null);
+    }
+
+    for (const component of directComponents) {
+      if (!aggregated[component.sku]) {
+        aggregated[component.sku] = { sku: component.sku, name: component.name ?? null, quantity: 0 };
+      }
+      if (!aggregated[component.sku].name && component.name) {
+        aggregated[component.sku].name = component.name;
+      }
+      aggregated[component.sku].quantity += component.quantity;
+    }
+  }
+
+  return aggregated;
+}
+
 /**
  * POST /api/warehouse/releases
  * Create a new set release record (snapshot)
@@ -78,7 +189,7 @@ function buildReleaseHistoryComment(remark: unknown, comment: unknown): string |
 router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
     const userId = (req as any).user?.userId || (req as any).user?.id || 0;
-    const { items, storageId, firmId, comment, remark, status, dilovodDocId, operationType } = req.body;
+    const { items, storageId, firmId, comment, remark, status, dilovodDocId, operationType, operDate, date } = req.body;
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ success: false, error: 'items required' });
 
     // Each item expected: { set_sku, quantity, components_snapshot }
@@ -103,6 +214,7 @@ router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (re
     const totalQuantity = Number(itemsWithNames.reduce((acc:any, it:any) => acc + (Number(it.quantity) || 0), 0)) || 0;
     const historyComment = buildReleaseHistoryComment(remark, comment);
     const resolvedOperationType = String(operationType ?? 'kit').trim() === 'unkit' ? 'unkit' : 'kit';
+    const resolvedOperDate = parseLocalDate(operDate ?? date) ?? new Date();
 
     const record = await prisma.warehouseReleaseSet.create({ data: {
       setSku: itemsWithNames[0]?.set_sku ?? null,
@@ -116,6 +228,7 @@ router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (re
       comment: historyComment,
       status: status ?? 'created',
       createdBy: Number(userId) || 0,
+      operDate: resolvedOperDate,
     } });
 
     res.json({ success: true, data: record });
@@ -132,66 +245,7 @@ router.post('/preview', authenticateToken, requireMinRole(ROLES.STOREKEEPER), as
     if (process.env.NODE_ENV === 'development') console.log('[SetRelease][preview] incoming items:', Array.isArray(items) ? items.length : typeof items);
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ success: false, error: 'items required' });
 
-    // expandedComponents: sku -> { sku, name, quantity }
-    const expandedComponents: Record<string, { sku: string; name?: string | null; quantity: number }> = {};
-
-    const MAX_DEPTH = 10;
-
-    const expandSkuRecursively = async (sku: string, qty: number, visited: Set<string> = new Set(), depth: number = 0) => {
-      if (depth > MAX_DEPTH) {
-        console.warn(`[SetRelease][preview] max depth reached for SKU=${sku}`);
-        return;
-      }
-      const normSku = String(sku).trim();
-      if (visited.has(normSku)) {
-        console.warn(`[SetRelease][preview] cyclic reference detected for SKU=${normSku}`);
-        return;
-      }
-
-      // Fetch product by SKU
-      const product = await prisma.product.findUnique({ where: { sku: normSku } });
-      if (!product) {
-        // treat missing product as leaf with unknown name
-        if (!expandedComponents[normSku]) expandedComponents[normSku] = { sku: normSku, name: null, quantity: 0 };
-        expandedComponents[normSku].quantity += qty;
-        return;
-      }
-
-      // Parse set if present
-      let setData: any[] | null = null;
-      try {
-        setData = product.set ? (typeof product.set === 'string' ? JSON.parse(product.set) : product.set) : null;
-      } catch (e) {
-        console.warn(`[SetRelease][preview] failed to parse set for SKU=${normSku}`, e);
-        setData = null;
-      }
-
-      // If no set -> leaf product
-      if (!Array.isArray(setData) || setData.length === 0) {
-        const name = product.name || null;
-        if (!expandedComponents[normSku]) expandedComponents[normSku] = { sku: normSku, name, quantity: 0 };
-        expandedComponents[normSku].quantity += qty;
-        return;
-      }
-
-      // It's a set -> expand components recursively
-      visited.add(normSku);
-      for (const si of setData) {
-        if (!si || !si.id) continue;
-        const childSku = String(si.id).trim();
-        const childQty = Number(si.quantity || 0) * qty;
-        if (childQty <= 0) continue;
-        await expandSkuRecursively(childSku, childQty, new Set(visited), depth + 1);
-      }
-      visited.delete(normSku);
-    };
-
-    for (const it of items) {
-      const sku = it.set_sku || it.sku || it.setSku;
-      const qty = Number(it.quantity || 0);
-      if (!sku || qty <= 0) continue;
-      await expandSkuRecursively(String(sku), qty, new Set(), 0);
-    }
+    const expandedComponents = await collectFirstLevelComponents(items as ReleaseSetSourceItem[]);
 
     // Prepare array result
     const result = Object.values(expandedComponents).map(c => ({ sku: c.sku, name: c.name, quantity: c.quantity }));
@@ -371,65 +425,14 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
       },
     };
 
-    // Build tableParts.tpGoods by expanding set components (reuse preview logic)
+    // Build tableParts.tpGoods from first-level components only
     try {
-      // Expand sets into component SKUs and aggregate quantities
-      const expandedComponents: Record<string, { sku: string; name?: string | null; quantity: number }> = {};
-      const MAX_DEPTH = 10;
-
-      const expandSkuRecursively = async (sku: string, qty: number, visited: Set<string> = new Set(), depth: number = 0) => {
-        if (depth > MAX_DEPTH) {
-          console.warn(`[SetRelease][send] max depth reached for SKU=${sku}`);
-          return;
-        }
-        const normSku = String(sku).trim();
-        if (!normSku) return;
-        if (visited.has(normSku)) return;
-
-        const product = await prisma.product.findUnique({ where: { sku: normSku } });
-        if (!product) {
-          if (!expandedComponents[normSku]) expandedComponents[normSku] = { sku: normSku, name: null, quantity: 0 };
-          expandedComponents[normSku].quantity += qty;
-          return;
-        }
-
-        let setData: any[] | null = null;
-        try {
-          setData = product.set ? (typeof product.set === 'string' ? JSON.parse(product.set) : product.set) : null;
-        } catch (e) {
-          console.warn(`[SetRelease][send] failed to parse set for SKU=${normSku}`, e);
-          setData = null;
-        }
-
-        if (!Array.isArray(setData) || setData.length === 0) {
-          const name = product.name || null;
-          if (!expandedComponents[normSku]) expandedComponents[normSku] = { sku: normSku, name, quantity: 0 };
-          expandedComponents[normSku].quantity += qty;
-          return;
-        }
-
-        visited.add(normSku);
-        for (const si of setData) {
-          if (!si || !si.id) continue;
-          const childSku = String(si.id).trim();
-          const childQty = Number(si.quantity || 0) * qty;
-          if (childQty <= 0) continue;
-          await expandSkuRecursively(childSku, childQty, new Set(visited), depth + 1);
-        }
-        visited.delete(normSku);
-      };
-
-      for (const it of items) {
-        const sku = it.set_sku || it.sku || it.setSku;
-        const qty = Number(it.quantity || 0);
-        if (!sku || qty <= 0) continue;
-        await expandSkuRecursively(String(sku), qty, new Set(), 0);
-      }
+      const expandedComponents = await collectFirstLevelComponents(items as ReleaseSetSourceItem[]);
 
       // Map expanded skus to products to get dilovodId
       const expandedList = Object.values(expandedComponents);
       const skus = expandedList.map(c => c.sku).filter(Boolean);
-      const products = skus.length ? await prisma.product.findMany({ where: { sku: { in: skus } }, select: { sku: true, dilovodId: true } }) : [];
+      const products = skus.length ? await prisma.product.findMany({ where: { sku: { in: skus } }, select: { sku: true, dilovodId: true, set: true } }) : [];
       const skuToProduct = new Map(products.map((p: any) => [p.sku, p]));
 
       const tpGoods: any[] = [];
@@ -437,12 +440,17 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
       for (const comp of expandedList) {
         const prod = skuToProduct.get(comp.sku);
         if (!prod || !prod.dilovodId) continue; // skip items without dilovodId
+        const hasNestedSet = Array.isArray(prod.set)
+          ? prod.set.length > 0
+          : typeof prod.set === 'string'
+            ? String(prod.set).trim().length > 0
+            : Boolean(prod.set);
         tpGoods.push({
           rowNum: row,
           good: prod.dilovodId,
           unit: '1103600000000001',
           qty: Number(comp.quantity) || 0,
-          accGood: SET_RELEASE_ACC_GOOD,
+          accGood: hasNestedSet ? SET_RELEASE_ACC_COSTS : SET_RELEASE_ACC_GOOD,
         });
         row++;
       }
