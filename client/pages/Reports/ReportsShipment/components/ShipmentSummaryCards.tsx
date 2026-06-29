@@ -42,7 +42,7 @@ export default function ShipmentSummaryCards({ summary, loading, className }: Sh
     <div className={`flex flex-wrap gap-5 ${className ?? ''}`}>
       <StatCard
         label="Замовлення"
-        iconName="package"
+        iconName="receipt-text"
         iconColor="#4083e1"
         value={summary?.totalOrders ?? 0}
         subLabel="Загальна кількість замовлень"
@@ -52,12 +52,20 @@ export default function ShipmentSummaryCards({ summary, loading, className }: Sh
         label="Відвантажені порції"
         iconName="utensils"
         iconColor="#38b351"
-        value={summary?.totalPortions ?? 0}
-        subLabel="Загальна кількість порцій"
+        value={`${summary?.regularPortions ?? 0} / ${summary?.totalPortions ?? 0}`}
+        subLabel="Звичайні порції / усі порції"
         loading={loading}
       />
       <StatCard
-        label="Унікальні товари"
+        label="Відвантажені набори"
+        iconName="boxes"
+        iconColor="#8b5cf6"
+        value={`${summary?.shippedSetsCount ?? 0} / ${summary?.shippedSetPortions ?? 0}`}
+        subLabel="Кількість наборів / порцій у наборах"
+        loading={loading}
+      />
+      <StatCard
+        label="Унікальні товари і набори"
         iconName="shopping-basket"
         iconColor="#f64c15"
         value={summary?.uniqueProducts ?? 0}

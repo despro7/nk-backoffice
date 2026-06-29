@@ -481,7 +481,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   // ---------------------------------------------------------------------------
 
   const visibleProducts = useMemo(
-    () => products.filter((p) => showOutdated || !p.isOutdated),
+    () => products.filter((p) => showOutdated || !p.isOutdated || p.checked),
     [products, showOutdated]
   );
   const checkedCount = useMemo(() => visibleProducts.filter((p) => p.checked).length, [visibleProducts]);
@@ -493,7 +493,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   const materialsProgressPercent = totalMaterialsCount > 0 ? Math.round((checkedMaterialsCount / totalMaterialsCount) * 100) : 0;
 
   const visibleSets = useMemo(
-    () => sets.filter((s) => showOutdated || !s.isOutdated),
+    () => sets.filter((s) => showOutdated || !s.isOutdated || s.checked),
     [sets, showOutdated]
   );
   const checkedSetsCount = useMemo(() => visibleSets.filter((s) => s.checked).length, [visibleSets]);

@@ -10,7 +10,11 @@ export interface UseReportsShipmentReturn {
 export default function useReportsShipment(): UseReportsShipmentReturn {
   const [summary, setSummary] = useState<ShipmentSummary>({
     totalOrders: 0,
+    regularOrders: 0,
     totalPortions: 0,
+    regularPortions: 0,
+    shippedSetsCount: 0,
+    shippedSetPortions: 0,
     uniqueProducts: 0,
   });
 

@@ -23,6 +23,7 @@ type ReportProductDescriptor = {
   categoryLabel: string | null;
   isSet: boolean;
   setPortions: number;
+  setComponents: Array<{ sku: string; quantity: number }>;
   stockBalances: Record<string, number>;
 };
 
@@ -83,6 +84,88 @@ function parseStockBalances(value: string | null | undefined): Record<string, nu
   } catch {
     return {};
   }
+}
+
+function parseSetComponents(value: string | null | undefined): Array<{ sku: string; quantity: number }> {
+  const components = parseJsonArray(value);
+  return components
+    .map((component) => {
+      const item = component as { id?: string; sku?: string; quantity?: unknown; qty?: unknown } | null;
+      const sku = item?.id ?? item?.sku ?? '';
+      const quantity = Number(item?.quantity ?? item?.qty ?? 0);
+      return { sku: typeof sku === 'string' ? sku.trim() : String(sku).trim(), quantity };
+    })
+    .filter((c) => c.sku && c.quantity > 0);
+}
+
+/**
+ * Перераховує setPortions для всіх наборів у descriptors рекурсивно.
+ * Потрібно викликати після побудови descriptors map, щоб врахувати вкладені набори.
+ */
+function recomputeSetPortions(descriptors: Map<string, ReportProductDescriptor>): void {
+  const cache = new Map<string, number>();
+
+  function computePortions(sku: string, visited: Set<string>): number {
+    if (cache.has(sku)) return cache.get(sku)!;
+    if (visited.has(sku)) return 0; // циклічне посилання
+
+    const descriptor = descriptors.get(sku);
+    if (!descriptor || descriptor.setComponents.length === 0) {
+      // Листовий товар — 1 порція за одиницю
+      cache.set(sku, 1);
+      return 1;
+    }
+
+    const nextVisited = new Set(visited).add(sku);
+    let total = 0;
+    for (const component of descriptor.setComponents) {
+      total += component.quantity * computePortions(component.sku, nextVisited);
+    }
+
+    cache.set(sku, total);
+    return total;
+  }
+
+  for (const [sku, descriptor] of descriptors) {
+    if (descriptor.setComponents.length > 0) {
+      descriptor.setPortions = computePortions(sku, new Set());
+    }
+  }
+}
+
+/**
+ * Рекурсивно розгортає набір до листових SKU, враховуючи вкладені набори.
+ * Використовує вже завантажений productDescriptors (без додаткових запитів до БД).
+ */
+function expandSetToLeaves(
+  sku: string,
+  quantity: number,
+  descriptors: Map<string, ReportProductDescriptor>,
+  visited: Set<string> = new Set(),
+): Map<string, number> {
+  const result = new Map<string, number>();
+
+  if (visited.has(sku)) {
+    return result; // захист від циклічних посилань
+  }
+
+  const descriptor = descriptors.get(sku);
+  if (!descriptor || descriptor.setComponents.length === 0) {
+    // Листовий товар або невідомий SKU — повертаємо як є
+    result.set(sku, quantity);
+    return result;
+  }
+
+  // Це набір — рекурсивно розгортаємо компоненти
+  const nextVisited = new Set(visited).add(sku);
+  for (const component of descriptor.setComponents) {
+    const subResult = expandSetToLeaves(component.sku, quantity * component.quantity, descriptors, nextVisited);
+    for (const [leafSku, leafQty] of subResult) {
+      result.set(leafSku, (result.get(leafSku) ?? 0) + leafQty);
+    }
+  }
+
+  return result;
 }
 
 function getSetPortions(value: string | null | undefined): number {
@@ -249,6 +332,7 @@ async function getReportProductDescriptors(skus: Iterable<string>): Promise<Map<
           categoryLabel,
           isSet: parseJsonArray(product.set).length > 0,
           setPortions: getSetPortions(product.set),
+          setComponents: parseSetComponents(product.set),
           stockBalances: parseStockBalances(product.stockBalanceByStock),
         },
       ];
@@ -1920,6 +2004,8 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
         isSet: boolean;
         isMonolithicSet: boolean;
         setPortions: number;
+        /** Кількість порцій цього товару, що були використані як компоненти монолітних наборів */
+        monolithicComponentQuantity: number;
       };
     } = {};
 
@@ -1968,10 +2054,13 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
     }
 
     const productDescriptors = await getReportProductDescriptors(allSkus);
+    // Перераховуємо setPortions рекурсивно, щоб врахувати вкладені набори
+    recomputeSetPortions(productDescriptors);
 
     let processedOrders = 0;
     let cacheHits = 0;
     let cacheMisses = 0;
+    let ordersWithMonolithicSetsCount = 0;
 
     // Проходимо по всіх замовленнях і збираємо статистику з кешу
     for (const order of filteredOrders) {
@@ -1985,6 +2074,9 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
         const cachedStats = processedItemsByOrder.get(order.externalId);
         const shipmentItems = shippedOnly === 'true' ? extractShipmentPayloadItems(order.payloadData) : [];
         const shipmentSkuSet = new Set(shipmentItems.map((item) => item.sku));
+        if (shipmentItems.length > 0) {
+          ordersWithMonolithicSetsCount++;
+        }
         if (cachedStats || shipmentItems.length > 0) {
             cacheHits++;
 
@@ -2013,10 +2105,26 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
                     isSet: descriptor?.isSet ?? false,
                     isMonolithicSet,
                     setPortions: descriptor?.setPortions ?? 0,
+                    monolithicComponentQuantity: 0,
                   };
                 }
               }
             }
+          // Відстежуємо кількість порцій компонентів, що входять до монолітних наборів,
+          // щоб коректно розрахувати totalPortions у звіті (без подвійного рахунку).
+          // expandSetToLeaves рекурсивно розгортає вкладені набори до листових SKU.
+          if (shippedOnly === 'true') {
+            for (const monoItem of shipmentItems) {
+              const monoQty = getOrderedQuantity(monoItem.orderedQuantity ?? monoItem.quantity);
+              if (monoQty <= 0) continue;
+
+              const leaves = expandSetToLeaves(monoItem.sku ?? '', monoQty, productDescriptors);
+              for (const [leafSku, leafQty] of leaves) {
+                if (!productStats[leafSku]) continue;
+                productStats[leafSku].monolithicComponentQuantity += leafQty;
+              }
+            }
+          }
         } else {
           // Кеша немає - пропускаємо це замовлення
           console.log(`No cached data for order ${order.externalId}, skipping...`);
@@ -2031,8 +2139,22 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
 
     console.log(`✅ Cache processing completed: ${cacheHits} hits, ${cacheMisses} misses`);
 
-    // Конвертуємо в масив для відповіді
-    const productStatsArray = Object.values(productStats);
+    // Фінальна корекція для звіту відвантажень:
+    // Зменшуємо orderedQuantity звичайних товарів на ту кількість, що пішла в монолітні набори,
+    // щоб уникнути подвійного рахунку (компоненти вже враховані через монолітний набір × setPortions).
+    if (shippedOnly === 'true') {
+      for (const stat of Object.values(productStats)) {
+        if (!stat.isMonolithicSet) {
+          stat.orderedQuantity = Math.max(0, stat.orderedQuantity - stat.monolithicComponentQuantity);
+        }
+      }
+    }
+
+    // Конвертуємо в масив для відповіді; виключаємо звичайні товари з нульовою кількістю
+    // (весь обсяг яких увійшов до монолітних наборів)
+    const productStatsArray = Object.values(productStats).filter(
+      (stat) => stat.isMonolithicSet || stat.orderedQuantity > 0,
+    );
     const categoryOptions = buildCategorySeriesOptions(productStatsArray);
     const setOptions = buildSetSeriesOptions(filteredOrders, productDescriptors);
 
@@ -2059,6 +2181,7 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
         },
         totalProducts: productStatsArray.length,
         totalOrders: filteredOrders.length,
+          ordersWithMonolithicSetsCount,
         availableSeries: {
           default: {
             key: 'all_products',

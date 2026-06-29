@@ -1,8 +1,16 @@
 export interface ShipmentSummary {
 	/** Загальна кількість відправлених замовлень за обраний період */
 	totalOrders: number;
+	/** Кількість звичайних замовлень без монолітних наборів */
+	regularOrders: number;
 	/** Загальна кількість відправлених порцій за обраний період */
 	totalPortions: number;
+	/** Кількість звичайних порцій без порцій, використаних у монолітних наборах */
+	regularPortions: number;
+	/** Кількість відвантажених монолітних наборів */
+	shippedSetsCount: number;
+	/** Сумарна кількість порцій у відвантажених монолітних наборах */
+	shippedSetPortions: number;
 	/** Кількість унікальних товарів у відправленнях */
 	uniqueProducts: number;
 }
@@ -14,6 +22,8 @@ export interface ProductStats {
 	isSet?: boolean;
 	isMonolithicSet?: boolean;
 	setPortions?: number;
+	/** Кількість порцій цього товару, що були використані як компоненти монолітних наборів */
+	monolithicComponentQuantity?: number;
 }
 
 export interface ProductDateStats {
@@ -52,6 +62,7 @@ export interface ProductStatsResponse {
 		};
 		totalProducts: number;
 		totalOrders: number;
+		ordersWithMonolithicSetsCount: number;
 		fetchedAt: string;
 	};
 }

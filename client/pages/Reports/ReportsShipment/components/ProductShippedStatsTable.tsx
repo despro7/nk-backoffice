@@ -77,10 +77,26 @@ function getItemPortions(item: ProductStats): number {
   return item.orderedQuantity * (item.setPortions ?? 0);
 }
 
-function buildShipmentSummary(productItems: ProductStats[], totalOrders: number): ShipmentSummary {
+function buildShipmentSummary(
+  productItems: ProductStats[],
+  totalOrders: number,
+  ordersWithMonolithicSetsCount: number,
+): ShipmentSummary {
+  const monolithicSetItems = productItems.filter((item) => item.isMonolithicSet);
+  const regularItems = productItems.filter((item) => !item.isMonolithicSet);
+
+  const regularPortions = regularItems.reduce((sum, item) => sum + item.orderedQuantity, 0);
+  const shippedSetsCount = monolithicSetItems.reduce((sum, item) => sum + item.orderedQuantity, 0);
+  const shippedSetPortions = monolithicSetItems.reduce((sum, item) => sum + getItemPortions(item), 0);
+  const regularOrders = Math.max(0, totalOrders - ordersWithMonolithicSetsCount);
+
   return {
     totalOrders,
-    totalPortions: productItems.reduce((sum, item) => sum + getItemPortions(item), 0),
+    regularOrders,
+    totalPortions: regularPortions + shippedSetPortions,
+    regularPortions,
+    shippedSetsCount,
+    shippedSetPortions,
     uniqueProducts: productItems.length,
   };
 }
@@ -93,15 +109,24 @@ export default function ProductShippedStatsTable({
   const { isAdmin } = useRoleAccess();
   const [productStats, setProductStats] = useState<ProductStats[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
+  const [ordersWithMonolithicSetsCount, setOrdersWithMonolithicSetsCount] = useState(0);
   const [dateStats, setDateStats] = useState<ProductDateStats[]>([]);
   const [selectedProductInfo, setSelectedProductInfo] = useState<ShipmentModalProduct | null>(null);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedProduct, setSelectedProduct] = useState("");
   const [viewMode, setViewMode] = useState<"products" | "dates">("products");
-  const [sortDescriptor, setSortDescriptor] = useState<ShipmentSortDescriptor>({
+  const [dateSortDescriptor, setDateSortDescriptor] = useState<ShipmentSortDescriptor>({
     column: "orderedQuantity",
     direction: "descending",
+  });
+  const [monolithicSortDescriptor, setMonolithicSortDescriptor] = useState<ShipmentSortDescriptor>({
+    column: "name",
+    direction: "ascending",
+  });
+  const [regularSortDescriptor, setRegularSortDescriptor] = useState<ShipmentSortDescriptor>({
+    column: "name",
+    direction: "ascending",
   });
   const [dateRange, setDateRange] = useState<DateRange | null>(() => getDefaultShipmentDateRange());
   const [datePresetKey, setDatePresetKey] = useState<string | null>(SHIPMENT_DEFAULT_PRESET_KEY);
@@ -136,6 +161,7 @@ export default function ProductShippedStatsTable({
   const { cache, clearCache, invalidateCacheKey, setCacheEntry } = useReportClientCache<{
     data: ProductStats[];
     totalOrders: number;
+    ordersWithMonolithicSetsCount: number;
     timestamp: number;
   }>();
   const CACHE_DURATION = 30000; // 30 секунд кешування на клієнті
@@ -187,12 +213,12 @@ export default function ProductShippedStatsTable({
     return `/api/orders/products/stats/dates?${params.toString()}`;
   }, []);
 
-  const syncSummary = useCallback((nextProductStats: ProductStats[], nextTotalOrders: number) => {
+  const syncSummary = useCallback((nextProductStats: ProductStats[], nextTotalOrders: number, nextOrdersWithMonolithicSetsCount: number) => {
     if (!onSummaryChange) {
       return;
     }
 
-    onSummaryChange(buildShipmentSummary(nextProductStats, nextTotalOrders));
+    onSummaryChange(buildShipmentSummary(nextProductStats, nextTotalOrders, nextOrdersWithMonolithicSetsCount));
   }, [onSummaryChange]);
 
   const handleDateStatsSuccess = useCallback((validatedData: ProductDateStats[], product: ShipmentModalProduct) => {
@@ -201,17 +227,59 @@ export default function ProductShippedStatsTable({
     setViewMode("dates");
   }, []);
 
-  const handleProductStatsCacheHit = useCallback((entry: { data: ProductStats[]; totalOrders: number; timestamp: number }) => {
+  const handleProductStatsCacheHit = useCallback((entry: { data: ProductStats[]; totalOrders: number; ordersWithMonolithicSetsCount: number; timestamp: number }) => {
     const cachedData = entry.data;
     const nextTotalOrders = entry.totalOrders ?? 0;
+    const nextOrdersWithMonolithicSetsCount = entry.ordersWithMonolithicSetsCount ?? 0;
 
     setProductStats(cachedData);
     setTotalOrders(nextTotalOrders);
+    setOrdersWithMonolithicSetsCount(nextOrdersWithMonolithicSetsCount);
   }, []);
 
   const handleProductStatsNetworkSuccess = useCallback((validatedData: ProductStats[], metadata: ProductStatsResponse["metadata"]) => {
     setProductStats(validatedData);
     setTotalOrders(metadata.totalOrders);
+    setOrdersWithMonolithicSetsCount(metadata.ordersWithMonolithicSetsCount);
+  }, []);
+
+  const handleDateSortChange = useCallback((descriptor: ShipmentSortDescriptor) => {
+    setDateSortDescriptor((current) => {
+      if (
+        current.column === descriptor.column
+        && current.direction === descriptor.direction
+      ) {
+        return current;
+      }
+
+      return descriptor;
+    });
+  }, []);
+
+  const handleMonolithicSortChange = useCallback((descriptor: ShipmentSortDescriptor) => {
+    setMonolithicSortDescriptor((current) => {
+      if (
+        current.column === descriptor.column
+        && current.direction === descriptor.direction
+      ) {
+        return current;
+      }
+
+      return descriptor;
+    });
+  }, []);
+
+  const handleRegularSortChange = useCallback((descriptor: ShipmentSortDescriptor) => {
+    setRegularSortDescriptor((current) => {
+      if (
+        current.column === descriptor.column
+        && current.direction === descriptor.direction
+      ) {
+        return current;
+      }
+
+      return descriptor;
+    });
   }, []);
 
   const { fetchProductDateStats, fetchProductStats } = useReportProductStatsFetchers<
@@ -219,7 +287,7 @@ export default function ProductShippedStatsTable({
     ProductDateStats,
     ProductStatsResponse["metadata"],
     ProductDateStatsResponse["product"],
-    { data: ProductStats[]; totalOrders: number; timestamp: number }
+    { data: ProductStats[]; totalOrders: number; ordersWithMonolithicSetsCount: number; timestamp: number }
   >({
     apiCall,
     buildProductStatsUrl,
@@ -241,6 +309,7 @@ export default function ProductShippedStatsTable({
     toCacheEntry: (validatedData, metadata, timestamp) => ({
       data: validatedData,
       totalOrders: metadata.totalOrders,
+      ordersWithMonolithicSetsCount: metadata.ordersWithMonolithicSetsCount,
       timestamp,
     }),
   });
@@ -387,13 +456,17 @@ export default function ProductShippedStatsTable({
   }, [viewMode, selectedProduct, statusFilter, dateRange?.start, dateRange?.end]);
 
   useEffect(() => {
-    if (sortableColumnKeys.includes(sortDescriptor.column)) {
+    if (viewMode !== "dates") {
       return;
     }
 
-    const fallbackColumn = viewMode === "dates" ? "orderedQuantity" : "orderedQuantity";
+    if (sortableColumnKeys.includes(dateSortDescriptor.column)) {
+      return;
+    }
 
-    setSortDescriptor((current) => {
+    const fallbackColumn = "orderedQuantity";
+
+    setDateSortDescriptor((current) => {
       if (current.column === fallbackColumn) {
         return current;
       }
@@ -403,17 +476,17 @@ export default function ProductShippedStatsTable({
         direction: current.direction,
       };
     });
-  }, [sortableColumnKeys, sortDescriptor.column, viewMode]);
+  }, [sortableColumnKeys, dateSortDescriptor.column, viewMode]);
 
   // Сортування даних
   const sortedItems = useMemo(() => {
     return sortReportItems({
       dateItems: dateStats,
       productItems: productStats,
-      sortDescriptor,
+      sortDescriptor: dateSortDescriptor,
       viewMode,
     });
-  }, [productStats, dateStats, sortDescriptor, viewMode]);
+  }, [productStats, dateStats, dateSortDescriptor, viewMode]);
 
   const monolithicSetStats = useMemo(
     () => productStats.filter((item) => item.isMonolithicSet),
@@ -429,20 +502,20 @@ export default function ProductShippedStatsTable({
     () => sortReportItems({
       dateItems: dateStats,
       productItems: monolithicSetStats,
-      sortDescriptor,
+      sortDescriptor: monolithicSortDescriptor,
       viewMode: "products",
     }) as ProductStats[],
-    [dateStats, monolithicSetStats, sortDescriptor],
+    [dateStats, monolithicSetStats, monolithicSortDescriptor],
   );
 
   const sortedRegularProductStats = useMemo(
     () => sortReportItems({
       dateItems: dateStats,
       productItems: regularProductStats,
-      sortDescriptor,
+      sortDescriptor: regularSortDescriptor,
       viewMode: "products",
     }) as ProductStats[],
-    [dateStats, regularProductStats, sortDescriptor],
+    [dateStats, regularProductStats, regularSortDescriptor],
   );
 
   const monolithicSetQuantities = useMemo(
@@ -491,7 +564,10 @@ export default function ProductShippedStatsTable({
     title: string,
     itemLabel: string,
     quantityLabel: string,
+    footerLabel: string,
     totalPortions?: number,
+    sortDescriptor?: ShipmentSortDescriptor,
+    onSortChange?: (descriptor: ShipmentSortDescriptor) => void,
   ) => {
     const totalOrderedQuantity = items.reduce((sum, item) => sum + item.orderedQuantity, 0);
 
@@ -509,7 +585,7 @@ export default function ProductShippedStatsTable({
         <Table
           aria-label={title}
           sortDescriptor={sortDescriptor}
-          onSortChange={(descriptor) => handleSortChange(descriptor as ShipmentSortDescriptor)}
+          onSortChange={onSortChange ? (descriptor) => onSortChange(descriptor as ShipmentSortDescriptor) : undefined}
           classNames={{
             wrapper: "min-h-72 px-0 shadow-none",
             th: "bg-default-200/60 first:rounded-s-sm last:rounded-e-sm",
@@ -594,17 +670,27 @@ export default function ProductShippedStatsTable({
             }}
           </TableBody>
         </Table>
+        <div className="border-t-1 border-gray-200 py-2">
+          <div className="flex items-center justify-between">
+            <div className="font-bold text-gray-800 pl-3">
+              {footerLabel}
+            </div>
+            <div className="text-center font-bold text-gray-800 min-w-[100px] w-3/16">
+              {totalOrderedQuantity}
+            </div>
+          </div>
+        </div>
       </div>
     );
-  }, [columns, fetchOrdersForProduct, handleProductChange, handleSortChange, loading, sortDescriptor]);
+  }, [columns, fetchOrdersForProduct, handleProductChange, loading]);
 
   useEffect(() => {
     if (viewMode !== "products") {
       return;
     }
 
-    syncSummary(productStats, totalOrders);
-  }, [productStats, totalOrders, syncSummary, viewMode]);
+    syncSummary(productStats, totalOrders, ordersWithMonolithicSetsCount);
+  }, [productStats, totalOrders, ordersWithMonolithicSetsCount, syncSummary, viewMode]);
 
   const filters = useMemo<ReportFilterConfig[]>(() => {
     const extraFilters: ReportFilterConfig[] = [];
@@ -790,7 +876,10 @@ export default function ProductShippedStatsTable({
               "Монолітні набори",
               "позицій",
               "наборів",
+              `Знайдено ${sortedMonolithicSetStats.length} унікальних наборів`,
               monolithicSetPortionsTotal,
+              monolithicSortDescriptor,
+              handleMonolithicSortChange,
             ) : null}
 
             {renderProductStatsTable(
@@ -800,18 +889,22 @@ export default function ProductShippedStatsTable({
               "Звичайні порції",
               "позицій",
               "порцій",
+              `Знайдено ${sortedRegularProductStats.length} унікальних товарів`,
+              undefined,
+              regularSortDescriptor,
+              handleRegularSortChange,
             )}
           </div>
         )}
 
         {/* Підсумковий рядок */}
-        {((viewMode === "products" && productStats.length > 0) || (viewMode === "dates" && dateStats.length > 0)) && (
+        {viewMode === "dates" && dateStats.length > 0 && (
           <div className="border-t-1 border-gray-200 py-2">
             <div className="flex items-center justify-between">
               <div className={`font-bold text-gray-800 ${viewMode === "dates" ? "w-12/16" : "w-13/16"} pl-3`}>
                 {viewMode === "dates"
                   ? `Знайдено ${dateStats.length} днів для товару ${selectedProductInfo?.name || selectedProduct}`
-                  : `Знайдено ${productStats.length} товарів`
+                  : `Знайдено ${productStats.length} унікальних товарів`
                 }
               </div>
               <div className={`text-center font-bold text-gray-800 min-w-[100px] ${viewMode === "dates" ? "w-4/16" : "w-3/16"}`}>

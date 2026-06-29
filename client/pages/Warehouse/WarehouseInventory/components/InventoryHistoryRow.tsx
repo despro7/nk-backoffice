@@ -54,7 +54,14 @@ export const InventoryHistoryRow = ({
           </div>
         </td>
         <td className="py-2 px-3 ">
-          {item.name}
+          <span className={`inline-flex items-center gap-1.5 flex-wrap ${item.isOutdated ? 'text-gray-400/75' : ''}`}>
+            {item.name}
+            {item.isOutdated && (
+              <span className="text-xs font-medium px-1.5 py-1 rounded bg-red-600 text-white leading-none">
+                Застарілий
+              </span>
+            )}
+          </span>
           {isSetItem && (
             <Popover showArrow offset={20} placement="right" classNames={{ content: 'bg-amber-100' }}>
               <PopoverTrigger>
