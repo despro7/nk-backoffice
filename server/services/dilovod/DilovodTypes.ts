@@ -29,6 +29,7 @@ export interface DilovodStockBalance {
   mainStorage: number;    // Склад 1 (головний склад)
   smallStorage: number;   // Склад 2 (малий склад для відвантажень)
   total: number;          // Загальна сума по складах
+  storages?: Record<string, number>;
 }
 
 export interface DilovodApiResponse<T = any> {

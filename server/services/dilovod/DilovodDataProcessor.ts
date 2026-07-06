@@ -507,14 +507,23 @@ export class DilovodDataProcessor {
 
         const mainStorage = stockData[mainStorageId] || 0;
         const smallStorage = stockData[smallStorageId] || 0;
-        const total = mainStorage + smallStorage;
+        const total = Object.keys(stockData)
+          .filter((key) => key !== '_name')
+          .reduce((sum, key) => sum + (stockData[key] || 0), 0);
         
+        const storages: Record<string, number> = {};
+        Object.keys(stockData).forEach((key) => {
+          if (key === '_name') return;
+          storages[key] = stockData[key] || 0;
+        });
+
         result.push({
           sku,
           name: stockData._name,
-          mainStorage,    // Склад готової продукції
-          smallStorage,   // Малий склад для відвантажень
-          total
+          mainStorage,
+          smallStorage,
+          total,
+          storages,
         });
       });
       

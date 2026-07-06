@@ -49,9 +49,19 @@ export class DilovodService {
     return await this.goodsCacheManager.getStatus();
   }
 
-  // Публичный метод для получения конфигурации API (для использования в контроллерах)
+  // Публичный метод для получения конфигурації API (для використання в контролерах)
   getDilovodConfig() {
     return this.apiClient.getConfig();
+  }
+
+  getSelectedStockByStorageId(
+    balance: { mainStorage: number; smallStorage: number; storages?: Record<string, number> },
+    storageId: string,
+  ): number {
+    const config = this.getDilovodConfig();
+    if (storageId === config.mainStorageId) return balance.mainStorage;
+    if (storageId === config.smallStorageId) return balance.smallStorage;
+    return Number(balance.storages?.[storageId] ?? 0);
   }
 
   async refreshGoodsCache(skuList?: string[]) {
@@ -712,7 +722,7 @@ export class DilovodService {
     skus: string[],
     asOfDate?: Date,
     firmId?: string,
-  ): Promise<Array<{ sku: string; mainStorage: number; smallStorage: number; total: number }>> {
+  ): Promise<Array<{ sku: string; mainStorage: number; smallStorage: number; total: number; storages?: Record<string, number> }>> {
     try {
       const finalFirmId = firmId ?? this.apiClient.getConfig().defaultFirmId;
       const label = asOfDate ? asOfDate.toLocaleString('uk-UA') : 'поточна';
@@ -730,6 +740,7 @@ export class DilovodService {
           mainStorage: item?.mainStorage ?? 0,
           smallStorage: item?.smallStorage ?? 0,
           total: item?.total ?? 0,
+          storages: item?.storages,
         };
       });
     } catch (error) {

@@ -187,7 +187,8 @@ export default function ReleaseSetsPage() {
               items={rs.items}
               onChange={rs.updateItem}
               onRemove={rs.removeItem}
-              selectedStorage={rs.selectedStorageName ?? rs.selectedStorage}
+              selectedStorage={rs.selectedStorage}
+              selectedStorageName={rs.selectedStorageName}
               smallStorageId={rs.defaultSmallStorageId}
               returns={rs.returns}
               title={operationItemsLabel}

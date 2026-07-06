@@ -78,6 +78,7 @@ export function useWarehouseReturns() {
   const [isDirty, setIsDirty] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [monolithicCategoryIds, setMonolithicCategoryIds] = useState<number[]>([]);
 
   const resetReturnDetails = useCallback(() => {
     setSelectedOrderId(null);
@@ -262,6 +263,26 @@ export function useWarehouseReturns() {
     }));
   }, []);
 
+  // Load monolithic categories settings on mount
+  useEffect(() => {
+    apiCall('/api/settings/monolithic_assembly_categories')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.value) {
+          try {
+            const parsed = JSON.parse(data.value);
+            const ids = Array.isArray(parsed) ? parsed.map(Number) : [];
+            setMonolithicCategoryIds(ids);
+          } catch (e) {
+            console.error('[WarehouseReturns] Error parsing monolithic categories:', e);
+          }
+        }
+      })
+      .catch(err => {
+        console.error('[WarehouseReturns] Error fetching monolithic categories:', err);
+      });
+  }, [apiCall]);
+
   // When shipping firm changes, reload batches for current items
   useEffect(() => {
     if (items.length === 0) return;
@@ -309,7 +330,7 @@ export function useWarehouseReturns() {
       if (payload.firmId) void loadFirmName(payload.firmId);
 
       const priceBySku = new Map(payload.items.map((item) => [item.sku, Number(item.price ?? 0)]));
-      const expanded = await expandProductSets(payload.items, apiCall, []);
+      const expanded = await expandProductSets(payload.items, apiCall, monolithicCategoryIds);
       const preparedItems = expanded.map((item) => ({
         id: crypto.randomUUID?.() ?? `${item.sku}-${Date.now()}-${Math.random()}`,
         sku: item.sku,
@@ -358,7 +379,7 @@ export function useWarehouseReturns() {
     } finally {
       setIsLoading(false);
     }
-  }, [apiCall, loadBatchNumbersForItems, loadFirmName]);
+  }, [apiCall, loadBatchNumbersForItems, loadFirmName, monolithicCategoryIds]);
 
   const handleSearch = useCallback(async () => {
     resetReturnDetails();

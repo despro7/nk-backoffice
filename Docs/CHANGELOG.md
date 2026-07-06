@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-07-06 — Підтримка обраного складу для `Warehouse` stock snapshot
+**Files:** `server/modules/Warehouse/WarehouseController.ts`, `server/services/dilovod/DilovodService.ts`, `server/services/dilovod/DilovodDataProcessor.ts`, `server/services/dilovod/DilovodTypes.ts`
+
+- Додано збереження залишків по довільному `storageId` у Dilovod-процесі.
+- `GET`/`POST /api/warehouse/stock-snapshot` тепер повертають `selectedStock` для обраного складу.
+- Забезпечено коректне відображення цих даних у запитах складу без прямого доступу до приватного `apiClient`.
+
+## 2026-07-01 — Повернення зберігають монолітні набори цілісними
+**Files:** `client/pages/Warehouse/WarehouseReturns/useWarehouseReturns.ts`
+
+- `useWarehouseReturns` тепер завантажує налаштування монолітних категорій (`/api/settings/monolithic_assembly_categories`) при mount.
+- `expandProductSets` викликається з реальним списком `monolithicCategoryIds` замість порожнього масиву.
+- Якщо набір був відвантажений як монолітний (напр. "Вінегрет"), він повертається цілісним, а не розкладається на компоненти.
+
+---
+
 ## 2026-06-27 — `Комплектування` у inventory history стало net по `kit` / `unkit`
 **Files:** `server/modules/Warehouse/WarehouseController.ts`, `Docs/features/warehouse-inventory-shipped-activity.md`
 

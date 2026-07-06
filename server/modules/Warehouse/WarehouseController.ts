@@ -262,7 +262,7 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
 // GET /api/warehouse/stock-snapshot?skus=sku1,sku2,...&asOfDate=2026-04-14T09:00:00Z
 router.get('/stock-snapshot', authenticateToken, async (req, res) => {
   try {
-    const { skus: skusRaw, asOfDate: asOfDateRaw, firmId: firmIdRaw } = req.query;
+    const { skus: skusRaw, asOfDate: asOfDateRaw, firmId: firmIdRaw, storageId: storageIdRaw } = req.query;
 
     if (!skusRaw || typeof skusRaw !== 'string') {
       return res.status(400).json({ error: 'Parameter "skus" is required (comma-separated list)' });
@@ -282,6 +282,7 @@ router.get('/stock-snapshot', authenticateToken, async (req, res) => {
     }
 
     const firmId = typeof firmIdRaw === 'string' ? firmIdRaw : undefined;
+    const storageId = typeof storageIdRaw === 'string' && storageIdRaw.trim() ? storageIdRaw.trim() : undefined;
 
     const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
 
@@ -290,12 +291,16 @@ router.get('/stock-snapshot', authenticateToken, async (req, res) => {
 
     const balances = await dilovodService.getStockBalanceForSkus(skus, parsedDate, firmId);
 
-    // Перетворюємо на словник { [sku]: { mainStock, smallStock } } для зручності на клієнті
-    const result: Record<string, { mainStock: number; smallStock: number }> = {};
+    const result: Record<string, { mainStock: number; smallStock: number; selectedStock?: number }> = {};
     for (const item of balances) {
+      const selectedStock = storageId
+        ? dilovodService.getSelectedStockByStorageId(item, storageId)
+        : undefined;
+
       result[item.sku] = {
         mainStock: item.mainStorage,
         smallStock: item.smallStorage,
+        ...(selectedStock !== undefined ? { selectedStock } : {}),
       };
     }
 
@@ -314,7 +319,7 @@ router.get('/stock-snapshot', authenticateToken, async (req, res) => {
 // Body: { skus: string[] | string, asOfDate?: string, firmId?: string }
 router.post('/stock-snapshot', authenticateToken, async (req, res) => {
   try {
-    const { skus: skusBody, asOfDate, firmId } = req.body as any;
+    const { skus: skusBody, asOfDate, firmId, storageId } = req.body as any;
     let skus: string[] = [];
 
     if (Array.isArray(skusBody)) {
@@ -335,17 +340,23 @@ router.post('/stock-snapshot', authenticateToken, async (req, res) => {
       }
     }
 
+    const storageIdClean = typeof storageId === 'string' && storageId.trim() ? storageId.trim() : undefined;
     const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
 
-    console.log(`📊 [Warehouse] POST /stock-snapshot — ${skus.length} SKU${firmId ? ` (firmId=${firmId})` : ''}`);
+    console.log(`📊 [Warehouse] POST /stock-snapshot — ${skus.length} SKU${firmId ? ` (firmId=${firmId})` : ''}${storageIdClean ? ` (storageId=${storageIdClean})` : ''}`);
 
     const balances = await dilovodService.getStockBalanceForSkus(skus, parsedDate, firmId);
 
-    const result: Record<string, { mainStock: number; smallStock: number }> = {};
+    const result: Record<string, { mainStock: number; smallStock: number; selectedStock?: number }> = {};
     for (const item of balances) {
+      const selectedStock = storageIdClean
+        ? dilovodService.getSelectedStockByStorageId(item, storageIdClean)
+        : undefined;
+
       result[item.sku] = {
         mainStock: item.mainStorage,
         smallStock: item.smallStorage,
+        ...(selectedStock !== undefined ? { selectedStock } : {}),
       };
     }
 

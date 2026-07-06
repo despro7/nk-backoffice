@@ -393,7 +393,7 @@ export default function ProductShippedStatsTable({
   }, [fetchProductStats, fetchProductDateStats, statusFilter, dateRange, viewMode, selectedProduct, invalidateCacheKey]);
 
   const handleSortChange = useCallback((descriptor: ShipmentSortDescriptor) => {
-    setSortDescriptor((current) => {
+    setDateSortDescriptor((current) => {
       if (
         current.column === descriptor.column
         && current.direction === descriptor.direction
@@ -571,6 +571,15 @@ export default function ProductShippedStatsTable({
   ) => {
     const totalOrderedQuantity = items.reduce((sum, item) => sum + item.orderedQuantity, 0);
 
+    // Для таблиці "Монолітні набори" колонку "Порції" показуємо як "Кіл-ть наборів"
+    const renderedColumns = title === "Монолітні набори"
+      ? columns.map((column) =>
+          column.key === "orderedQuantity"
+            ? { ...column, label: "Кіл-ть наборів" }
+            : column,
+        )
+      : columns;
+
     return (
       <div className="relative mt-10">
         <div className="mb-0 flex items-center justify-between">
@@ -599,7 +608,7 @@ export default function ProductShippedStatsTable({
           }}
         >
           <TableHeader>
-            {columns.map((column) => (
+            {renderedColumns.map((column) => (
               <TableColumn
                 key={column.key}
                 allowsSorting={column.sortable}
@@ -798,7 +807,7 @@ export default function ProductShippedStatsTable({
         {viewMode === "dates" ? (
           <Table
             aria-label="Статистика відвантажених товарів"
-            sortDescriptor={sortDescriptor}
+            sortDescriptor={dateSortDescriptor}
             onSortChange={(descriptor) =>
               handleSortChange(descriptor as ShipmentSortDescriptor)
             }
