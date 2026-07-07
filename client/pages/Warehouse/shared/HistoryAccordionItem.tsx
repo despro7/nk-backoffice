@@ -108,9 +108,9 @@ export const HistoryAccordionItem = ({
   }
 
 	// константа мапи типів
-	const RECORD_TYPE_CONFIG: Record<string, { label: string; genitive?: string; dateField?: string; storageOperation?: string }> = {
+	const RECORD_TYPE_CONFIG: Record<string, { label: string; genitive?: string; dateField?: string; secondaryDateField?: string; storageOperation?: string }> = {
 		writeOff: 	{ label: 'Списання', dateField: 'writeOffDate' },
-    releaseSet: { label: 'Випуск', genitive: 'випуску', dateField: 'operDate' },
+    releaseSet: { label: 'Випуск', genitive: 'випуску', dateField: 'operDate', secondaryDateField: 'createdAt' },
 	};
 
   const RELEASE_OPERATION_CONFIG: Record<string, { label: string; icon: string }> = {
@@ -145,6 +145,10 @@ export const HistoryAccordionItem = ({
         const setsForCount = recordType === 'releaseSet' ? (record.setsNormalized ?? normalizeSetsArray(record.items ?? items)) : [];
         const uniqueSetTypes = recordType === 'releaseSet' ? setsForCount.length : 0;
         const totalSets = recordType === 'releaseSet' ? setsForCount.reduce((sum: number, set: any) => sum + (Number(set.setQty ?? 0)), 0) : 0;
+        // Primary should be the creation timestamp; if operation date differs, show it as secondary
+        const primaryDateValue = record.createdAt || record.created_at || (isReleaseSetRecord ? (record.operDate || record.oper_date) : null);
+        const secondaryDateValue = isReleaseSetRecord ? (record.operDate || record.oper_date || null) : null;
+        const shouldShowSecondaryDate = isReleaseSetRecord && secondaryDateValue && formatDate(primaryDateValue) !== formatDate(secondaryDateValue);
         const totalPortions = recordType === 'releaseSet' ? setsForCount.reduce((sum: number, set: any) => {
           const componentsTotal = Number(set.componentsTotal ?? 0);
           const setQty = Number(set.setQty ?? 0);
@@ -281,12 +285,12 @@ export const HistoryAccordionItem = ({
                     <span className="border-l border-gray-300 pl-3">Фірма: <b>{(getFirmDisplayName(record.firmId, undefined, directories) || 'Не визначено')}</b></span>
                     <span className="border-l border-gray-300 pl-3">Склад: <b>{(getStorageDisplayName(record.storageId || record.payload?.storage, record.storageName, directories) || '—')}</b></span>
                     <span className="border-l border-gray-300 pl-3">
-                      {isReleaseSetRecord ? 'Дата операції' : 'Дата створення'}: <b>{formatDate((isReleaseSetRecord ? record.operDate : record.createdAt) || record.created_at)}</b>
+                      Дата створення: <b>{formatDate(primaryDateValue)}</b>
                     </span>
-                    {isReleaseSetRecord && record.operDate && formatDate(record.createdAt || record.created_at) !== formatDate(record.operDate) && (
+                    {shouldShowSecondaryDate && (
                       <span className="bg-amber-100 text-gray-700 px-1.5 py-0.5 rounded">
-                        Дата {recordType === 'releaseSet' ? (operationCfg?.label || 'операції').toLowerCase() : cfg.storageOperation || cfg.label.toLowerCase()}:
-                        <span className="font-semibold"> {record[cfg.dateField] ? formatDate(record[cfg.dateField]) : '—'}</span>
+                        Дата операції:
+                        <span className="font-semibold"> {formatDate(secondaryDateValue)}</span>
                       </span>
                     )}
                   </div>

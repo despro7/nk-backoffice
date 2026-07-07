@@ -34,7 +34,8 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
     const inputRef = useRef<HTMLInputElement>(null);
     const [isFocused, setIsFocused] = useState(false);
 
-    const isAtMax = max !== undefined && value >= max;
+    const resolvedMax = typeof max === 'number' && Number.isFinite(max) && max >= 0 ? max : undefined;
+    const isAtMax = resolvedMax !== undefined && value >= resolvedMax;
     const isAtMin = value <= 0;
 
     const focusInput = () => {
@@ -52,11 +53,11 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
     }, [disabled, isAtMin, onDecrement]);
 
     useEffect(() => {
-      if (disabled) return;
-      if (max !== undefined && Number.isFinite(max) && value > max) {
-        onChange(max);
+      if (disabled || resolvedMax === undefined) return;
+      if (value > resolvedMax) {
+        onChange(resolvedMax);
       }
-    }, [disabled, max, onChange, value]);
+    }, [disabled, resolvedMax, onChange, value]);
 
     // Перенаправляємо ref якщо був переданий
     useImperativeHandle(ref, () => inputRef.current!);
@@ -88,12 +89,12 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
             inputMode="numeric"
             value={value}
             min={0}
-            max={max}
+            max={resolvedMax}
             disabled={disabled}
             onChange={(e) => {
               if (disabled) return;
               const v = parseInt(e.target.value, 10);
-              const clamped = isNaN(v) ? 0 : Math.max(0, max !== undefined ? Math.min(v, max) : v);
+              const clamped = isNaN(v) ? 0 : Math.max(0, resolvedMax !== undefined ? Math.min(v, resolvedMax) : v);
               onChange(clamped);
             }}
             onKeyDown={(e) => {

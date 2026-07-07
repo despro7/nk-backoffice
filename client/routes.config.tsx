@@ -99,9 +99,9 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/warehouse/movement',
     component: WarehouseMovement,
-    title: 'Переміщення порцій',
-    pageTitle: 'Переміщення порцій | NK Backoffice',
-    navLabel: 'Переміщення порцій',
+    title: 'Переміщення між складами',
+    pageTitle: 'Переміщення між складами | NK Backoffice',
+    navLabel: 'Переміщення між складами',
     icon: <DynamicIcon name="combine" size={16} />,
     inNav: true,
     order: 3,

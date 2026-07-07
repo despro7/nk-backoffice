@@ -97,8 +97,8 @@ export default function WarehouseMovement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mov.sessionStatus]);
 
-  const sortedFilteredProducts = useMemo(() => {
-    const items = [...mov.filteredProducts];
+  const sortedFilteredSets = useMemo(() => {
+    const items = [...mov.filteredProducts].filter((p) => p.isSet);
     const dir = sortDirection === 'asc' ? 1 : -1;
     return items.sort((a, b) => {
       if (sortBy === 'name') return a.name.localeCompare(b.name, 'uk') * dir;
@@ -111,6 +111,31 @@ export default function WarehouseMovement() {
       return 0;
     });
   }, [mov.filteredProducts, sortBy, sortDirection]);
+
+  const sortedFilteredProducts = useMemo(() => {
+    const items = [...mov.filteredProducts].filter((p) => !p.isSet);
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    return items.sort((a, b) => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name, 'uk') * dir;
+      if (sortBy === 'sku')  return a.sku.localeCompare(b.sku, 'uk') * dir;
+      if (sortBy === 'stock') {
+        const stockA = a.stockData.mainStock + a.stockData.smallStock;
+        const stockB = b.stockData.mainStock + b.stockData.smallStock;
+        return (stockA - stockB) * dir;
+      }
+      return 0;
+    });
+  }, [mov.filteredProducts, sortBy, sortDirection]);
+
+  const selectedSetsCount = useMemo(
+    () => sortedFilteredSets.filter((p) => mov.selectedProductIds.has(p.id)).length,
+    [sortedFilteredSets, mov.selectedProductIds],
+  );
+
+  const selectedProductsCount = useMemo(
+    () => sortedFilteredProducts.filter((p) => mov.selectedProductIds.has(p.id)).length,
+    [sortedFilteredProducts, mov.selectedProductIds],
+  );
 
   // Хук для історії переміщень
   const history = useMovementHistory();
@@ -450,33 +475,77 @@ export default function WarehouseMovement() {
           />
         )}
 
-        {/* Список товарів */}
+        {/* Списки комплектів та товарів */}
         {mov.products.length > 0 && activeTab === 'current' && (
-          <MovementProductList
-            items={sortedFilteredProducts}
-            loading={mov.productsLoading}
-            error={mov.productsError}
-            onRetry={mov.loadProducts}
-            hasSearch={mov.searchQuery.length > 0}
-          >
-            <div ref={accordionRef}>
-              {sortedFilteredProducts.map(p => (
-                <MovementProductRow
-                  key={p.id}
-                  product={p}
-                  isOpen={mov.selectedProductIds.has(p.id)}
-                  onToggle={mov.handleToggleProduct}
-                  onChange={mov.handleProductChange}
-                  activeField={
-                    mov.activeField?.productId === p.id
-                      ? mov.activeField.field
-                      : null
-                  }
-                  selectedDateTime={mov.selectedDateTime}
-                />
-              ))}
-            </div>
-          </MovementProductList>
+          <div ref={accordionRef} className="flex flex-col gap-4">
+            {sortedFilteredSets.length > 0 && (
+              <MovementProductList
+                title="Комплекти"
+                icon="boxes"
+                headerColorClass="bg-emerald-50"
+                headerTextClass="text-emerald-900"
+                checkedCount={selectedSetsCount}
+                totalCount={sortedFilteredSets.length}
+                items={sortedFilteredSets}
+                loading={mov.productsLoading}
+                error={mov.productsError}
+                onRetry={mov.loadProducts}
+                hasSearch={mov.searchQuery.length > 0}
+              >
+                <div>
+                  {sortedFilteredSets.map((p) => (
+                    <MovementProductRow
+                      key={p.id}
+                      product={p}
+                      isOpen={mov.selectedProductIds.has(p.id)}
+                      onToggle={mov.handleToggleProduct}
+                      onChange={mov.handleProductChange}
+                      activeField={
+                        mov.activeField?.productId === p.id
+                          ? mov.activeField.field
+                          : null
+                      }
+                      selectedDateTime={mov.selectedDateTime}
+                    />
+                  ))}
+                </div>
+              </MovementProductList>
+            )}
+
+            {sortedFilteredProducts.length > 0 && (
+              <MovementProductList
+                title="Товари"
+                icon="utensils"
+                headerColorClass="bg-blue-50"
+                headerTextClass="text-blue-900"
+                checkedCount={selectedProductsCount}
+                totalCount={sortedFilteredProducts.length}
+                items={sortedFilteredProducts}
+                loading={mov.productsLoading}
+                error={mov.productsError}
+                onRetry={mov.loadProducts}
+                hasSearch={mov.searchQuery.length > 0}
+              >
+                <div>
+                  {sortedFilteredProducts.map((p) => (
+                    <MovementProductRow
+                      key={p.id}
+                      product={p}
+                      isOpen={mov.selectedProductIds.has(p.id)}
+                      onToggle={mov.handleToggleProduct}
+                      onChange={mov.handleProductChange}
+                      activeField={
+                        mov.activeField?.productId === p.id
+                          ? mov.activeField.field
+                          : null
+                      }
+                      selectedDateTime={mov.selectedDateTime}
+                    />
+                  ))}
+                </div>
+              </MovementProductList>
+            )}
+          </div>
         )}
 
         {/* Підсумкова таблиця */}

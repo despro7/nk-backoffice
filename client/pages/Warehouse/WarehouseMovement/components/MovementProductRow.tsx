@@ -41,9 +41,18 @@ export const MovementProductRow = ({
   const isDrawerJustClosed = useRef(false);
   const { batches, loading, fetchBatches } = useBatchNumbers();
 
+  // Для комплектів (isSet=true) portionsPerBox може бути 0 або 1.
+  // Комплекти не мають "коробок" — тільки кількість комплектів (порцій).
+  const isSetProduct = Boolean(product.isSet);
+  const effectivePortionsPerBox = Number.isFinite(Number(product.portionsPerBox)) && Number(product.portionsPerBox) > 0
+    ? Number(product.portionsPerBox)
+    : 1;
+
   // Обчислюємо загальну кількість порцій по всіх партіях
+  // Для комплектів: qty = portions (бо boxes=0)
+  // Для звичайних товарів: qty = boxes * portionsPerBox + portions
   const totalPortions = product.details.batches.reduce(
-    (sum, batch) => sum + batch.boxes * product.portionsPerBox + batch.portions,
+    (sum, batch) => sum + (isSetProduct ? batch.portions : batch.boxes * effectivePortionsPerBox + batch.portions),
     0
   );
 
@@ -191,22 +200,40 @@ export const MovementProductRow = ({
 
   const handleMaxBatch = (index: number) => {
     const batch = product.details.batches[index];
-    const maxBoxes = Math.floor(batch.quantity / product.portionsPerBox);
-    const maxPortions = batch.quantity - maxBoxes * product.portionsPerBox;
 
-    const newBatches = [...product.details.batches];
-    newBatches[index].boxes = maxBoxes;
-    newBatches[index].portions = maxPortions;
-    onChange(product.id, newBatches);
+    if (isSetProduct) {
+      // Для комплектів: MAX = всі доступні порції/комплекти
+      const newBatches = [...product.details.batches];
+      newBatches[index].portions = batch.quantity;
+      onChange(product.id, newBatches);
 
-    ToastService.show({
-      title: 'Додано все що на залишку',
-      description: `Партія ${batch.batchNumber}: ${maxBoxes} коробок + ${maxPortions} порцій`,
-      color: 'default',
-      icon: 'check-circle-2',
-      hideIcon: false,
-      timeout: 3000
-    });
+      ToastService.show({
+        title: 'Додано все що на залишку',
+        description: `Партія ${batch.batchNumber}: ${batch.quantity} комплектів`,
+        color: 'default',
+        icon: 'check-circle-2',
+        hideIcon: false,
+        timeout: 3000
+      });
+    } else {
+      // Для звичайних товарів: розраховуємо коробки та порції
+      const maxBoxes = Math.floor(batch.quantity / effectivePortionsPerBox);
+      const maxPortions = Math.max(0, batch.quantity - maxBoxes * effectivePortionsPerBox);
+
+      const newBatches = [...product.details.batches];
+      newBatches[index].boxes = maxBoxes;
+      newBatches[index].portions = maxPortions;
+      onChange(product.id, newBatches);
+
+      ToastService.show({
+        title: 'Додано все що на залишку',
+        description: `Партія ${batch.batchNumber}: ${maxBoxes} коробок + ${maxPortions} порцій`,
+        color: 'default',
+        icon: 'check-circle-2',
+        hideIcon: false,
+        timeout: 3000
+      });
+    }
   };
 
   return (
@@ -228,7 +255,7 @@ export const MovementProductRow = ({
             <div className="flex gap-3 text-gray-400 text-xs">
               <span>артикул: {product.sku}</span>
               {product.barcode && <span className="relative pl-4 before:content-[''] before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-1 before:bg-neutral-300 before:rounded-full">штрих-код: {product.barcode}</span>}
-              <span className="relative pl-4 before:content-[''] before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-1 before:bg-neutral-300 before:rounded-full">в коробці: {product.portionsPerBox} пор.</span>
+              <span className="relative pl-4 before:content-[''] before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-1 before:bg-neutral-300 before:rounded-full">в коробці: {effectivePortionsPerBox} пор.</span>
             </div>
           </div>
         </div>
@@ -267,9 +294,10 @@ export const MovementProductRow = ({
               {product.details.batches.length > 0 && (
                 <div className="space-y-3 mb-6">
                   {product.details.batches.map((batch, index) => {
-                    const batchTotal = batch.boxes * product.portionsPerBox + batch.portions;
-                    const maxBoxes = Math.floor(batch.quantity / product.portionsPerBox);
-                    const maxPortions = Math.max(0, batch.quantity - batch.boxes * product.portionsPerBox);
+                    // Для комплектів: qty = portions, для звичайних: qty = boxes * ppb + portions
+                    const batchTotal = isSetProduct ? batch.portions : (batch.boxes * effectivePortionsPerBox + batch.portions);
+                    const maxBoxes = Math.floor(batch.quantity / effectivePortionsPerBox);
+                    const maxPortions = Math.max(0, batch.quantity - batch.boxes * effectivePortionsPerBox);
 
                     return (
                       <div key={batch.id} className="border-b-1 border-gray-300 pb-4 flex flex-col gap-3">
@@ -283,32 +311,51 @@ export const MovementProductRow = ({
 
                         {/* Вхідні поля для коробок/порцій */}
                         <div className="grid grid-cols-[1fr_1fr_1fr_320px] items-end gap-3 pb-3">
-                          <StepperInput
-                            label={`коробок × ${product.portionsPerBox}`}
-                            size="lg"
-                            value={batch.boxes}
-                            max={maxBoxes}
-                            onChange={(val) => handleUpdateBatchQuantity(index, 'boxes', val)}
-                            onIncrement={() =>
-                              handleUpdateBatchQuantity(index, 'boxes', Math.min(batch.boxes + 1, maxBoxes))
-                            }
-                            onDecrement={() =>
-                              handleUpdateBatchQuantity(index, 'boxes', Math.max(0, batch.boxes - 1))
-                            }
-                          />
-                          <StepperInput
-                            label="порцій"
-                            size="lg"
-                            value={batch.portions}
-                            max={maxPortions}
-                            onChange={(val) => handleUpdateBatchQuantity(index, 'portions', val)}
-                            onIncrement={() =>
-                              handleUpdateBatchQuantity(index, 'portions', Math.min(batch.portions + 1, maxPortions))
-                            }
-                            onDecrement={() =>
-                              handleUpdateBatchQuantity(index, 'portions', Math.max(0, batch.portions - 1))
-                            }
-                          />
+                          {/* Для комплектів показуємо лише stepper "комплектів" */}
+                          {isSetProduct ? (
+                            <StepperInput
+                              label="комплектів"
+                              size="lg"
+                              value={batch.portions}
+                              max={batch.quantity}
+                              onChange={(val) => handleUpdateBatchQuantity(index, 'portions', val)}
+                              onIncrement={() =>
+                                handleUpdateBatchQuantity(index, 'portions', Math.min(batch.portions + 1, batch.quantity))
+                              }
+                              onDecrement={() =>
+                                handleUpdateBatchQuantity(index, 'portions', Math.max(0, batch.portions - 1))
+                              }
+                            />
+                          ) : (
+                            <>
+                              <StepperInput
+                                label={`коробок × ${effectivePortionsPerBox}`}
+                                size="lg"
+                                value={batch.boxes}
+                                max={maxBoxes}
+                                onChange={(val) => handleUpdateBatchQuantity(index, 'boxes', val)}
+                                onIncrement={() =>
+                                  handleUpdateBatchQuantity(index, 'boxes', Math.min(batch.boxes + 1, maxBoxes))
+                                }
+                                onDecrement={() =>
+                                  handleUpdateBatchQuantity(index, 'boxes', Math.max(0, batch.boxes - 1))
+                                }
+                              />
+                              <StepperInput
+                                label="порцій"
+                                size="lg"
+                                value={batch.portions}
+                                max={maxPortions}
+                                onChange={(val) => handleUpdateBatchQuantity(index, 'portions', val)}
+                                onIncrement={() =>
+                                  handleUpdateBatchQuantity(index, 'portions', Math.min(batch.portions + 1, maxPortions))
+                                }
+                                onDecrement={() =>
+                                  handleUpdateBatchQuantity(index, 'portions', Math.max(0, batch.portions - 1))
+                                }
+                              />
+                            </>
+                          )}
                           <div className="flex flex-col items-center gap-2">
                             <span className="text-sm text-gray-500">всього</span>
                             <div className="w-full h-[74px] flex items-center justify-center text-2xl font-medium text-neutral-800 border-2 rounded-xl">

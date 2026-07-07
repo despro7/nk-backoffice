@@ -22,6 +22,8 @@ export interface MovementProduct {
   barcode: string;
   dilovodId: string | null; // ID товару в Діловоді (для payload)
   portionsPerBox: number; // Кількість порцій в коробці (для розрахунку загальної суми)
+  isSet?: boolean;
+  componentsSnapshot?: unknown[];
   details: {
     batches: MovementBatch[]; // Масив партій для цього товару
     forecast: number; // Прогноз (довідково)

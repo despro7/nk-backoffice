@@ -11,6 +11,12 @@ interface MovementProductListProps {
   error: string | null;
   onRetry: () => void;
   hasSearch?: boolean;
+  title?: string;
+  icon?: string;
+  headerColorClass?: string;
+  headerTextClass?: string;
+  checkedCount?: number;
+  totalCount?: number;
   children?: React.ReactNode;
 }
 
@@ -20,6 +26,12 @@ export const MovementProductList = ({
   error,
   onRetry,
   hasSearch,
+  title,
+  icon,
+  headerColorClass = 'bg-gray-50',
+  headerTextClass = 'text-gray-900',
+  checkedCount = 0,
+  totalCount = 0,
   children,
 }: MovementProductListProps) => {
   if (loading) {
@@ -71,7 +83,15 @@ export const MovementProductList = ({
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      {title && (
+        <div className={`px-4 py-3 border-b border-gray-100 ${headerColorClass}`}>
+          <h3 className={`text-sm font-semibold flex items-center gap-2 ${headerTextClass}`}>
+            <DynamicIcon name={icon as any} className="w-4 h-4" />
+            {title} ({checkedCount}/{totalCount})
+          </h3>
+        </div>
+      )}
       {children}
     </div>
   );

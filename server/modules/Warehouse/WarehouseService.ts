@@ -187,11 +187,8 @@ export class WarehouseService {
     try {
       console.log('🏭 [WarehouseService] Отримання товарів для переміщення...');
 
-      // Отримуємо товари з бази даних (всі — не фільтруємо за isOutdated тут)
+      // Отримуємо товари та комплекти з бази даних
       const products = await prisma.product.findMany({
-        where: {
-          AND: [{ set: null }]
-        },
         select: {
           sku: true,
           name: true,
@@ -199,7 +196,8 @@ export class WarehouseService {
           stockBalanceByStock: true,
           barcode: true,
           dilovodId: true,
-          isOutdated: true
+          isOutdated: true,
+          set: true,
         },
         orderBy: { name: 'asc' }
       });
@@ -241,6 +239,22 @@ export class WarehouseService {
               smallStockPortions = stockBalance['2'] || 0; // Порції на малому складі
             }
 
+            const parseSetPayload = (raw: unknown): any[] => {
+              if (Array.isArray(raw)) return raw;
+              if (typeof raw === 'string') {
+                try {
+                  const parsed = JSON.parse(raw);
+                  return Array.isArray(parsed) ? parsed : [];
+                } catch {
+                  return [];
+                }
+              }
+              return [];
+            };
+
+            const componentsSnapshot = parseSetPayload(product.set);
+            const isSet = componentsSnapshot.length > 0;
+
             // Кількість порцій в коробці — береться з БД для кожного товару окремо
             const portionsPerBox = product.portionsPerBox;
             const mainStockBoxes = Math.floor(mainStockPortions / portionsPerBox);
@@ -260,6 +274,8 @@ export class WarehouseService {
               barcode: product.barcode || '',
               dilovodId: product.dilovodId || null,
               portionsPerBox: product.portionsPerBox,
+              isSet,
+              componentsSnapshot,
               details: {
                 batches: [], // Масив партій — порожній при завантаженні
                 forecast: 125, // Заглушка

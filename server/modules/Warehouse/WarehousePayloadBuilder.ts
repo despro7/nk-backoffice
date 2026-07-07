@@ -6,8 +6,9 @@ import type {
   DilovodMovementGoodItem,
 } from '../../../shared/types/movement.js';
 
-// Статичні константи (не плануються до зміни)
-const STATIC_ACC_GOOD = '1119000000001076'; // Рахунок обліку всіх товарів
+// Статичні константи для рахунків обліку
+const DEFAULT_ACC_GOOD = '1119000000001076'; // Рахунок обліку звичайних товарів
+const SET_ACC_GOOD = '1119000000001079'; // Рахунок обліку комплектів
 
 // Мінімальний тип товару для побудови payload (сумісний з MovementProduct на клієнті)
 export interface PayloadMovementProduct {
@@ -16,6 +17,7 @@ export interface PayloadMovementProduct {
   name: string;
   dilovodId: string | null;
   portionsPerBox: number;
+  isSet?: boolean;
   details: {
     batches: Array<{
       batchNumber: string;
@@ -200,8 +202,16 @@ export class WarehousePayloadBuilder {
     let rowNum = 1;
 
     for (const item of summaryItems) {
+      const itemAccGood = item.isSet ? SET_ACC_GOOD : DEFAULT_ACC_GOOD;
+
       for (const batch of item.details.batches) {
-        const qty = batch.boxes * item.portionsPerBox + batch.portions;
+        // Для комплектів (isSet=true) portionsPerBox може бути 0 або 1.
+        // Якщо це комплект — кількість = порції (batch.portions), бо "коробки" не мають сенсу.
+        // Якщо це звичайний товар — кількість = коробки * portionsPerBox + порції.
+        const qty = item.isSet
+          ? batch.portions
+          : (batch.boxes * item.portionsPerBox + batch.portions);
+
         if (qty <= 0) continue; // Пропускаємо нульові рядки
         if (!batch.batchId) continue; // Пропускаємо партії без ID в Діловоді (валідація підхопить помилку через validatePayload)
 
@@ -211,7 +221,7 @@ export class WarehousePayloadBuilder {
           qty,
           unit: Number(settings.unitId),
           goodPart: Number(batch.batchId), // Діловод очікує число
-          accGood: Number(STATIC_ACC_GOOD),
+          accGood: Number(itemAccGood),
         });
         rowNum++;
       }
