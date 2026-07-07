@@ -891,10 +891,12 @@ export const combineBoxesWithItems = (
         // Compute required capacity in "portions" terms for the remaining units
         const capacityNeededForRemaining = remainingUnits * (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1);
         const calcNeededForRemaining = remainingUnits * (effectivePortionsPerItem || (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1));
+        // Перевіряємо, чи коробка має достатньо місця
+        // Math.ceil для вільного простору у portionsCalc — стандартні математичні правила округлення
         const boxesWithEnoughRoom = boxStates.filter(box =>
           (box.softLimit - (box.portionsCount || 0)) >= capacityNeededForRemaining &&
           (MAX_BOX_WEIGHT - box.currentWeight) >= weightPerUnit * remainingUnits &&
-          ((box.hardLimit - (box.portionsCalc || 0)) >= calcNeededForRemaining)
+          (Math.ceil(box.hardLimit - (box.portionsCalc || 0)) >= calcNeededForRemaining)
         );
         
         // Якщо по softLimit не знайшли — пробуємо hardLimit (фізичний максимум qntTo)
@@ -902,7 +904,7 @@ export const combineBoxesWithItems = (
           ? boxStates.filter(box =>
               (box.hardLimit - (box.portionsCount || 0)) >= capacityNeededForRemaining &&
               (MAX_BOX_WEIGHT - box.currentWeight) >= weightPerUnit * remainingUnits &&
-              ((box.hardLimit - (box.portionsCalc || 0)) >= calcNeededForRemaining)
+              (Math.ceil(box.hardLimit - (box.portionsCalc || 0)) >= calcNeededForRemaining)
             )
           : [];
         
@@ -972,7 +974,8 @@ export const combineBoxesWithItems = (
           // For monolithic sets, 1 unit consumes item.portionsPerItem portions; for ordinary item 1 unit consumes 1 portion.
           const maxUnitsBySpace = isMonolithicItem ? Math.floor(freeSpace / Number(item.portionsPerItem || 1)) : freeSpace;
           // also cap by remaining *computed portions* vs remaining calc capacity
-          const calcAvailable = Math.max(0, (targetBox.hardLimit - (targetBox.portionsCalc || 0)));
+          // Math.ceil для вільного простору у portionsCalc — стандартні математичні правила округлення
+          const calcAvailable = Math.max(0, Math.ceil(targetBox.hardLimit - (targetBox.portionsCalc || 0)));
           const maxUnitsByCalc = (effectivePortionsPerItem > 0) ? Math.floor(calcAvailable / effectivePortionsPerItem) : maxUnitsBySpace;
           const toAddUnits = Math.min(remainingUnits, maxUnitsBySpace, maxByUnitsWeight, maxUnitsByCalc);
 
