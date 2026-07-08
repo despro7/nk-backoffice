@@ -301,6 +301,7 @@ export interface DilovodTablePartGood {
   priceAmount: number;   // Сума (qty * price)
   price: number;         // Ціна за одиницю
   amountCur: number;     // Сума у валюті (зазвичай = priceAmount)
+  accGood?: number;      // ID рахунку обліку (для монолітних товарів: 1119000000001079)
 }
 
 /**

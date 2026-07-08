@@ -350,6 +350,9 @@ export class DilovodExportBuilder {
           continue;
         }
 
+        // Перевіряємо, чи є товар монолітним (accGood = 1119000000001079)
+        const isMonolithic = this.getShipmentAccGoodOverride(context.order.payloadData, item.sku) === DILOVOD_CONSTANTS.SHIPMENT_MONOLITHIC_ACC_GOOD;
+
         tpGoods.push({
           rowNum,
           good: product.dilovodId,
@@ -360,6 +363,7 @@ export class DilovodExportBuilder {
           priceAmount: item.quantity * item.price,
           price: item.price,
           amountCur: item.quantity * item.price,
+          ...(isMonolithic ? { accGood: Number(DILOVOD_CONSTANTS.SHIPMENT_MONOLITHIC_ACC_GOOD) } : {}),
         });
         rowNum++;
       }
@@ -739,7 +743,7 @@ export class DilovodExportBuilder {
       };
     };
 
-    const expandSku = async (sku: string, quantity: number, depth: number, visited: Set<string>, fallbackUnitPrice: number | null): Promise<Array<{ good: string; quantity: number; unitPrice: number; accGood?: string }>> => {
+    const expandSku = async (sku: string, quantity: number, depth: number, visited: Set<string>, fallbackUnitPrice: number | null): Promise<Array<{ good: string; quantity: number; unitPrice: number; accGood?: number }>> => {
       const normalizedSku = String(sku || '').trim();
       const normalizedQuantity = normalizeQuantity(quantity);
 
@@ -782,11 +786,11 @@ export class DilovodExportBuilder {
             good: product.dilovodId,
             quantity: normalizedQuantity,
             unitPrice,
-            ...(isMonolithic ? { accGood: DILOVOD_CONSTANTS.SHIPMENT_MONOLITHIC_ACC_GOOD } : {}),
+            ...(isMonolithic ? { accGood: Number(DILOVOD_CONSTANTS.SHIPMENT_MONOLITHIC_ACC_GOOD) } : {}),
           }];
         }
 
-        const lines: Array<{ good: string; quantity: number; unitPrice: number; accGood?: string }> = [];
+        const lines: Array<{ good: string; quantity: number; unitPrice: number; accGood?: number }> = [];
         for (const component of setItems) {
           const childSku = String(component?.id || '').trim();
           if (!childSku) continue;
