@@ -46,8 +46,15 @@ export interface ShipmentProductOrder {
 	status: string;
 	statusText: string;
 	productQuantity?: number | null;
+	/** Кількість звичайних порцій цього товару у замовленні */
+	regularQuantity?: number | null;
+	/** Кількість порцій товару, що увійшли до монолітних наборів у цьому замовленні */
+	monolithicComponentQuantity?: number | null;
 	totalPrice?: number | string | null;
 }
+
+/** Тип активного табу в модалці замовлень товару */
+export type ShipmentOrdersTabKey = "regular" | "monolithic";
 
 export interface ProductStatsResponse {
 	success: boolean;

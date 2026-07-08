@@ -2261,13 +2261,46 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
 
     // Отримуємо всі externalId для bulk-запиту до кешу
     const orderExternalIds = orders.map(order => order.externalId);
-    
+
     // Отримуємо всі кеші одним запитом (з розгорнутими комплектами)
     const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
 
-    // Фільтруємо замовлення, що містять SKU (використовуємо розгорнуті дані з кешу)
-    const filteredOrders = orders.filter(order => {
-      // Спочатку намагаємося використати кеш з розгорнутими комплектами
+    // Для режиму відвантажень: завантажуємо дескриптори продуктів, щоб розгортати
+    // монолітні набори до листових SKU через expandSetToLeaves.
+    const allSkus = new Set<string>();
+    for (const order of orders) {
+      const cacheData = orderCaches.get(order.externalId);
+      if (cacheData?.processedItems) {
+        try {
+          const parsedItems = JSON.parse(cacheData.processedItems);
+          if (Array.isArray(parsedItems)) {
+            for (const item of parsedItems) {
+              if (item?.sku) allSkus.add(item.sku);
+            }
+          }
+        } catch { /* ігноруємо пошкоджений кеш */ }
+      }
+      if (shippedOnly === 'true') {
+        for (const item of extractShipmentPayloadItems(order.payloadData)) {
+          if (item.sku) allSkus.add(item.sku);
+        }
+      }
+      for (const item of normalizeOrderItems(order.items)) {
+        if (item.sku) allSkus.add(item.sku);
+      }
+    }
+    const productDescriptors = await getReportProductDescriptors(allSkus);
+    recomputeSetPortions(productDescriptors);
+
+    // Розділяємо замовлення на два списки:
+    //  - regularOrders: замовлення, де SKU відвантажено як звичайну порцію (з cachedStats)
+    //  - monolithicOrders: замовлення, де SKU є компонентом монолітного набору
+    //    (визначається через expandSetToLeaves з shipmentItems з payloadData)
+    // Замовлення може потрапити в обидва списки, якщо частина — звичайна, частина — у наборі.
+    const regularOrders: typeof orders = [];
+    const monolithicOrders: typeof orders = [];
+
+    for (const order of orders) {
       const cacheData = orderCaches.get(order.externalId);
       let cachedStats: Array<{ sku: string; name?: string; orderedQuantity?: number }> | null = null;
       if (cacheData && cacheData.processedItems) {
@@ -2281,23 +2314,66 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
         }
       }
 
-      const reportItems = getOrderReportItems(order, cachedStats, shippedOnly === 'true');
-      const itemQuantity = reportItems
-        .filter((item) => item && String(item.sku) === String(sku))
-        .reduce((sum, item) => sum + Number(item.orderedQuantity ?? item.quantity ?? 0), 0);
-
-      if (itemQuantity > 0) {
-        (order as any).productQuantity = itemQuantity;
-        return true;
+      // 1) Монолітний набір сам по собі (SKU з'являється в shipmentItems як набір)
+      let monolithicSetQuantity = 0;
+      const shipmentItems = shippedOnly === 'true' ? extractShipmentPayloadItems(order.payloadData) : [];
+      for (const monoItem of shipmentItems) {
+        if (String(monoItem.sku) === String(sku)) {
+          monolithicSetQuantity += getOrderedQuantity(monoItem.orderedQuantity ?? monoItem.quantity);
+        }
       }
-      return false;
-    });
+
+      // 2) Компоненти монолітних наборів — розгортаємо shipmentItems до листових SKU
+      let monolithicComponentQuantity = 0;
+      if (shippedOnly === 'true') {
+        for (const monoItem of shipmentItems) {
+          const monoQty = getOrderedQuantity(monoItem.orderedQuantity ?? monoItem.quantity);
+          if (monoQty <= 0) continue;
+
+          const leaves = expandSetToLeaves(monoItem.sku ?? '', monoQty, productDescriptors);
+          const leafQty = leaves.get(String(sku)) ?? 0;
+          if (leafQty > 0) {
+            monolithicComponentQuantity += leafQty;
+          }
+        }
+      }
+
+      // 3) Звичайні порції — з кешованих processedItems (розгорнуті комплекти),
+      //    за вирахуванням кількості, що пішла в монолітні набори (щоб уникнути подвійного рахунку)
+      const cacheQuantity = cachedStats
+        ? cachedStats
+            .filter((item) => item && String(item.sku) === String(sku))
+            .reduce((sum, item) => sum + getOrderedQuantity((item as RawOrderItem).orderedQuantity ?? (item as RawOrderItem).quantity), 0)
+        : 0;
+      const regularQuantity = Math.max(0, cacheQuantity - monolithicComponentQuantity - monolithicSetQuantity);
+
+      if (regularQuantity > 0) {
+        (order as any).productQuantity = regularQuantity;
+        (order as any).regularQuantity = regularQuantity;
+        regularOrders.push(order);
+      }
+
+      // Монолітні набори: і сам набір, і його компоненти
+      const monolithicTotal = monolithicSetQuantity + monolithicComponentQuantity;
+      if (monolithicTotal > 0) {
+        // Для монолітного списку використовуємо окремий екземпляр об'єкта,
+        // щоб productQuantity не конфліктував між списками.
+        const monolithicOrder: typeof order = { ...order };
+        (monolithicOrder as any).productQuantity = monolithicTotal;
+        (monolithicOrder as any).monolithicComponentQuantity = monolithicTotal;
+        (monolithicOrder as any).monolithicSetQuantity = monolithicSetQuantity;
+        monolithicOrders.push(monolithicOrder);
+      }
+    }
 
     res.json({
       success: true,
-      data: filteredOrders,
+      data: regularOrders,
+      monolithicOrders,
       metadata: {
-        totalOrders: filteredOrders.length,
+        totalOrders: regularOrders.length + monolithicOrders.length,
+        regularOrdersCount: regularOrders.length,
+        monolithicOrdersCount: monolithicOrders.length,
         sku
       }
     });

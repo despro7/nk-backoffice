@@ -55,6 +55,7 @@ import type {
   ShipmentSummary,
   ShipmentModalProduct,
   ShipmentProductOrder,
+  ShipmentOrdersTabKey,
   ShipmentSortDescriptor,
 } from "../ReportsShipmentTypes";
 import {
@@ -133,6 +134,8 @@ export default function ProductShippedStatsTable({
   const [isOrdersModalOpen, setIsOrdersModalOpen] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalOrders, setModalOrders] = useState<ShipmentProductOrder[]>([]);
+  const [modalMonolithicOrders, setModalMonolithicOrders] = useState<ShipmentProductOrder[]>([]);
+  const [modalDefaultTab, setModalDefaultTab] = useState<ShipmentOrdersTabKey>("regular");
   const [selectedProductForModal, setSelectedProductForModal] = useState<ShipmentModalProduct | null>(null);
 
   const statusOptions = ORDER_STATUSES;
@@ -329,11 +332,21 @@ export default function ProductShippedStatsTable({
   });
 
   // Функція для завантаження замовлень конкретного товару
-  const fetchOrdersForProduct = useCallback(async (sku: string, name: string, date?: string) => {
+  // source визначає, з якої таблиці відбувся клік, щоб встановити дефолтний таб:
+  //   "regular"    — клік з «Звичайні порції» або з режиму дат
+  //   "monolithic" — клік з «Монолітні набори»
+  const fetchOrdersForProduct = useCallback(async (
+    sku: string,
+    name: string,
+    date?: string,
+    source: ShipmentOrdersTabKey = "regular",
+  ) => {
     setSelectedProductForModal({ name, sku });
+    setModalDefaultTab(source);
     setIsOrdersModalOpen(true);
     setModalLoading(true);
     setModalOrders([]);
+    setModalMonolithicOrders([]);
 
     try {
       const params = new URLSearchParams();
@@ -364,7 +377,10 @@ export default function ProductShippedStatsTable({
       const data = await response.json();
 
       if (data.success) {
-        setModalOrders(data.data);
+        // regularOrders — звичайні порції (data.data)
+        setModalOrders(data.data ?? []);
+        // monolithicOrders — замовлення, де товар був компонентом монолітного набору
+        setModalMonolithicOrders(data.monolithicOrders ?? []);
       }
     } catch (error) {
       console.error('Помилка завантаження замовлень для товару:', error);
@@ -568,6 +584,7 @@ export default function ProductShippedStatsTable({
     totalPortions?: number,
     sortDescriptor?: ShipmentSortDescriptor,
     onSortChange?: (descriptor: ShipmentSortDescriptor) => void,
+    source: ShipmentOrdersTabKey = "regular",
   ) => {
     const totalOrderedQuantity = items.reduce((sum, item) => sum + item.orderedQuantity, 0);
 
@@ -633,7 +650,7 @@ export default function ProductShippedStatsTable({
               return (
                 <TableRow
                   key={productItem.sku}
-                  onClick={() => fetchOrdersForProduct(productItem.sku, productItem.name)}
+                  onClick={() => fetchOrdersForProduct(productItem.sku, productItem.name, undefined, source)}
                 >
                   <TableCell className="font-medium text-base">
                     <div className="flex items-center gap-2">
@@ -889,6 +906,7 @@ export default function ProductShippedStatsTable({
               monolithicSetPortionsTotal,
               monolithicSortDescriptor,
               handleMonolithicSortChange,
+              "monolithic",
             ) : null}
 
             {renderProductStatsTable(
@@ -958,6 +976,9 @@ export default function ProductShippedStatsTable({
         onOpenChange={setIsOrdersModalOpen}
         isLoading={modalLoading}
         orders={modalOrders}
+        monolithicOrders={modalMonolithicOrders}
+        defaultTab={modalDefaultTab}
+        useMonolithicModal={modalDefaultTab === "monolithic"}
         product={selectedProductForModal}
       />
     </div>
