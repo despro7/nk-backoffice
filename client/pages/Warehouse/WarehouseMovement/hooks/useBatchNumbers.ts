@@ -14,7 +14,7 @@ interface UseBatchNumbersResult {
   batches: BatchNumber[];
   loading: boolean;
   error: string | null;
-  fetchBatches: (sku: string, asOfDate?: Date, firmId?: string, force?: boolean) => Promise<void>;
+  fetchBatches: (sku: string, asOfDate?: Date, firmId?: string, force?: boolean, storageId?: string) => Promise<void>;
 }
 
 /**
@@ -28,7 +28,7 @@ export function useBatchNumbers(): UseBatchNumbersResult {
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const fetchBatches = useCallback(async (sku: string, asOfDate?: Date, firmId?: string, force?: boolean) => {
+  const fetchBatches = useCallback(async (sku: string, asOfDate?: Date, firmId?: string, force?: boolean, storageId?: string) => {
     if (!sku || sku.trim() === '') {
       setBatches([]);
       setError(null);
@@ -55,6 +55,9 @@ export function useBatchNumbers(): UseBatchNumbersResult {
       }
       if (firmId) {
         url.searchParams.set('firmId', firmId);
+      }
+      if (storageId) {
+        url.searchParams.set('storageId', storageId);
       }
       if (force) {
         url.searchParams.set('force', 'true');

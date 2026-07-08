@@ -37,14 +37,15 @@ const BATCH_CACHE_OLD_THRESHOLD_MS = 30 * 60 * 1000;
  */
 type BatchStorageMode = 'all' | 'exclude-small' | 'small-only';
 
-function buildBatchCacheKey(sku: string, firmId: string | undefined, asOfDate: Date | undefined, storageMode: BatchStorageMode): string {
+function buildBatchCacheKey(sku: string, firmId: string | undefined, asOfDate: Date | undefined, storageMode: BatchStorageMode, storageId?: string): string {
   const firmPart = firmId ?? 'default';
+  const storagePart = storageId ?? 'any';
   if (!asOfDate) {
-    return `${sku}:${firmPart}:${storageMode}:now`;
+    return `${sku}:${firmPart}:${storageMode}:${storagePart}:now`;
   }
   const pad = (n: number) => n.toString().padStart(2, '0');
   const datePart = `${asOfDate.getFullYear()}-${pad(asOfDate.getMonth() + 1)}-${pad(asOfDate.getDate())}_${pad(asOfDate.getHours())}:${pad(asOfDate.getMinutes())}`;
-  return `${sku}:${firmPart}:${storageMode}:${datePart}`;
+  return `${sku}:${firmPart}:${storageMode}:${storagePart}:${datePart}`;
 }
 
 /**
@@ -152,10 +153,12 @@ router.get('/products-for-movement', authenticateToken, async (req, res) => {
 router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
   try {
     const { sku } = req.params;
-    const { firmId, asOfDate, force, includeSmallStorage, onlySmallStorage } = req.query;
+    const { firmId, asOfDate, force, includeSmallStorage, onlySmallStorage, storageId } = req.query;
     const forceRefresh = force === 'true';
     const shouldIncludeSmallStorage = includeSmallStorage === 'true';
     const shouldOnlySmallStorage = onlySmallStorage === 'true';
+    // Якщо передано storageId — фільтруємо партії лише по цьому складу (склад-джерело переміщення)
+    const targetStorageId = typeof storageId === 'string' && storageId.trim() ? storageId.trim() : undefined;
 
     if (!sku || sku.trim() === '') {
       return res.status(400).json({ error: 'SKU is required' });
@@ -194,7 +197,7 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
       : shouldIncludeSmallStorage
         ? 'all'
         : 'exclude-small';
-    const cacheKey = buildBatchCacheKey(sku, finalFirmId, parsedDate, storageMode);
+    const cacheKey = buildBatchCacheKey(sku, finalFirmId, parsedDate, storageMode, targetStorageId);
     const ttl = resolveBatchCacheTtl(parsedDate);
     const ttlLabel = ttl === BATCH_CACHE_TTL_LONG ? '12 год' : '5 хв';
 
@@ -223,17 +226,21 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
 
     const batches = await dilovodService.getBatchNumbersBySku(sku, finalFirmId, parsedDate);
 
-    const filteredBatches = shouldOnlySmallStorage
-      ? batches.filter(b => b.storage === dilovodConfig.smallStorageId)
-      : shouldIncludeSmallStorage
-        ? batches
-        : batches.filter(b => b.storage !== dilovodConfig.smallStorageId);
+    const filteredBatches = targetStorageId
+      ? batches.filter(b => b.storage === targetStorageId)
+      : shouldOnlySmallStorage
+        ? batches.filter(b => b.storage === dilovodConfig.smallStorageId)
+        : shouldIncludeSmallStorage
+          ? batches
+          : batches.filter(b => b.storage !== dilovodConfig.smallStorageId);
 
-    const filterLabel = shouldOnlySmallStorage
-      ? 'лише малий склад'
-      : shouldIncludeSmallStorage
-        ? 'усі склади'
-        : 'без малого складу';
+    const filterLabel = targetStorageId
+      ? `лише склад ${targetStorageId}`
+      : shouldOnlySmallStorage
+        ? 'лише малий склад'
+        : shouldIncludeSmallStorage
+          ? 'усі склади'
+          : 'без малого складу';
 
     console.log(`✅ [Warehouse] Отримано ${batches.length} партій для SKU: ${sku}, після фільтрації (${filterLabel}): ${filteredBatches.length}. Кешуємо на ${ttlLabel}`);
 
@@ -805,6 +812,8 @@ router.post('/send', authenticateToken, async (req, res) => {
         dilovodDocId: draft.dilovodDocId,
         docNumber: draft.docNumber,
         notes: draft.notes,
+        sourceWarehouse: draft.sourceWarehouse,
+        destinationWarehouse: draft.destinationWarehouse,
       },
       summaryItems,
       settings,

@@ -104,7 +104,7 @@ export const MovementFilterBar = ({
               trigger: "hover:bg-white! transition-colors duration-200 rounded-[14px]",
             }}
           >
-            <SelectItem key="now">На поточну дату</SelectItem>
+            <SelectItem key="now">На поточну дату/час</SelectItem>
             <SelectItem key="movement">На дату переміщення</SelectItem>
           </Select>
           {/* Індикатор завантаження залишків */}

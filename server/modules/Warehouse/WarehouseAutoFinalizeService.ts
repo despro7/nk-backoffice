@@ -134,6 +134,8 @@ export class WarehouseAutoFinalizeService {
             dilovodDocId: movement.dilovodDocId,
             docNumber: movement.docNumber,
             notes: movement.notes,
+            sourceWarehouse: movement.sourceWarehouse,
+            destinationWarehouse: movement.destinationWarehouse,
           },
           summaryItems,
           settings,

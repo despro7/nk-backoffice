@@ -22,7 +22,9 @@ import { MovementHistoryTab } from './components/MovementHistoryTab';
 import { MovementDraftsTab } from './components/MovementDraftsTab';
 import { PayloadPreviewModal } from './components/PayloadPreviewModal';
 import { EmptyBatchesWarningModal, type EmptyBatchInfo } from './components/EmptyBatchesWarningModal';
+import MovementDirectionSelector from './components/MovementDirectionSelector';
 import { useDebug } from '@/contexts/DebugContext';
+import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import type { DilovodMovementPayload } from '@shared/types/movement';
 
 // ---------------------------------------------------------------------------
@@ -37,6 +39,13 @@ export default function WarehouseMovement() {
   const { user } = useAuth();
   const { isDebugMode } = useDebug();
   const isAdmin = user?.role ? hasAccess(user.role, undefined, ROLES.ADMIN) : false;
+
+  const dirsCtx = useDilovodDirectories();
+  // Нормалізуємо список складів для селектів напрямку
+  const movementStorages = useMemo(() => {
+    const src = Array.isArray(dirsCtx.directories?.storages) ? dirsCtx.directories!.storages : [];
+    return (src || []).map((s: any) => ({ id: String(s.id), code: s.code ?? '', name: s.name ?? '' }));
+  }, [dirsCtx.directories]);
 
   const accordionRef = useRef<HTMLDivElement>(null);
 
@@ -454,6 +463,18 @@ export default function WarehouseMovement() {
           </div>
         )}
 
+        {/* Напрямок переміщення (склад-донор → склад-реципієнт) */}
+        {mov.products.length > 0 && activeTab === 'current' && (
+          <MovementDirectionSelector
+            storages={movementStorages}
+            storage={mov.storage}
+            storageTo={mov.storageTo}
+            onStorageChange={mov.setStorage}
+            onStorageToChange={mov.setStorageTo}
+            isDisabled={mov.savedDraft?.status === 'finalized'}
+          />
+        )}
+
         {/* Фільтр і пошук */}
         {mov.products.length > 0 && activeTab === 'current' && (
           <MovementFilterBar
@@ -506,6 +527,7 @@ export default function WarehouseMovement() {
                           : null
                       }
                       selectedDateTime={mov.selectedDateTime}
+                      sourceStorage={mov.storage}
                     />
                   ))}
                 </div>
@@ -540,6 +562,7 @@ export default function WarehouseMovement() {
                           : null
                       }
                       selectedDateTime={mov.selectedDateTime}
+                      sourceStorage={mov.storage}
                     />
                   ))}
                 </div>

@@ -10,6 +10,10 @@ interface BatchNumbersAutocompleteProps {
   selectedBatch: string;
   selectedStorage: string;
   selectedDateTime?: Date;
+  /** ID складу-джерела (напрямок переміщення) — для підказки у заголовку */
+  sourceStorage?: string;
+  /** Назва складу-джерела для відображення у заголовку (опціонально) */
+  sourceStorageName?: string;
   /** Ключі вже доданих партій у форматі "batchId:storage" (крім поточної редагованої) */
   addedBatchKeys?: Set<string>;
   onSelect: (batch: BatchNumber) => void;
@@ -30,6 +34,8 @@ export const BatchNumbersAutocomplete = ({
   selectedBatch,
   selectedStorage,
   selectedDateTime,
+  sourceStorage,
+  sourceStorageName,
   addedBatchKeys,
   onSelect,
   onClose,
@@ -63,7 +69,7 @@ export const BatchNumbersAutocomplete = ({
 
             <DrawerBody className="overflow-y-auto">
 							<p className="text-sm font-normal text-gray-600 mb-3">
-                Партії з залишками на складі <b>Готової продукції</b> доступні на <b>{dateStr}, {timeStr}</b>
+                Партії з залишками на складі <b>{sourceStorageName || sourceStorage || 'Готової продукції'}</b> доступні на <b>{dateStr}, {timeStr}</b>
               </p>
               {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-12 gap-3">

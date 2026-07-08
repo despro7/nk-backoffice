@@ -39,7 +39,11 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
     const isAtMin = value <= 0;
 
     const focusInput = () => {
-      if (!disabled) inputRef.current?.focus();
+      if (disabled) return;
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.select(); // Виділяємо весь вміст інпуту при фокусі
     };
 
     const handleIncrement = useCallback(() => {
@@ -119,7 +123,7 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
             }}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            className="absolute inset-0 opacity-0 w-full h-full cursor-text [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            className="absolute inset-0 opacity-0 w-1 cursor-text [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             aria-label={label}
           />
 

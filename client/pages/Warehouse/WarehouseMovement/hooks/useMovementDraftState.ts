@@ -84,6 +84,7 @@ export interface UseMovementDraftStateReturn {
   handleSaveDraft: (
     summaryItems: MovementProduct[],
     lastSavedSnapshotRef: React.MutableRefObject<string>,
+    direction?: { storage: string; storageTo: string },
   ) => Promise<MovementDraft | null>;
   handleReset: () => Promise<void>;
   loadDraftObject: (
@@ -109,6 +110,7 @@ export const useMovementDraftState = (
   createMovement: (data: any) => Promise<any>,
   updateDraft: (id: number, data: any) => Promise<any>,
   warehouseConfigRef: React.MutableRefObject<{ storageFrom: string; storageTo: string } | null>,
+  direction: { storage: string; storageTo: string },
 ): UseMovementDraftStateReturn => {
   const [savedDraft, setSavedDraft] = useState<MovementDraft | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -128,6 +130,7 @@ export const useMovementDraftState = (
     async (
       summaryItems: MovementProduct[],
       lastSavedSnapshotRef: React.MutableRefObject<string>,
+      directionArg?: { storage: string; storageTo: string },
     ): Promise<MovementDraft | null> => {
       if (summaryItems.length === 0) {
         ToastService.show({
@@ -158,9 +161,15 @@ export const useMovementDraftState = (
           LoggingService.warehouseMovementLog('🏪 Створюємо нову чернетку');
           const isAdd = !isHistoryDocRef.current;
           const effectiveNotes = buildEffectiveNotes(notes, isAdd);
-          // Використовуємо ID складів з налаштувань (завантажені разом з товарами)
-          const storageFrom = warehouseConfigRef.current?.storageFrom ?? savedDraft?.sourceWarehouse ?? '';
-          const storageTo   = warehouseConfigRef.current?.storageTo   ?? savedDraft?.destinationWarehouse ?? '';
+          // Пріоритет: явний напрямок з UI > серверний warehouseConfig > збережена чернетка
+          const storageFrom = directionArg?.storage
+            ?? warehouseConfigRef.current?.storageFrom
+            ?? savedDraft?.sourceWarehouse
+            ?? '';
+          const storageTo = directionArg?.storageTo
+            ?? warehouseConfigRef.current?.storageTo
+            ?? savedDraft?.destinationWarehouse
+            ?? '';
           result = await createMovement({
             sourceWarehouse: storageFrom,
             destinationWarehouse: storageTo,

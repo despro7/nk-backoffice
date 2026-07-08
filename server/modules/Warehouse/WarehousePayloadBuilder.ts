@@ -177,10 +177,13 @@ export class WarehousePayloadBuilder {
   }): Promise<DilovodMovementPayload> {
     const { draft, summaryItems, settings, movementDate, authorDilovodId, overrides } = params;
 
-    // Зливаємо override-значення поверх налаштувань
+    // Зливаємо override-значення поверх налаштувань.
+    // Пріоритет складів: напрямок з чернетки (draft) > overrides > settings.
+    // Це гарантує, що обраний користувачем напрямок переміщення (збережений у БД)
+    // потрапляє в payload, навіть якщо серверні налаштування відрізняються.
     const firmId = overrides?.firmId || settings.firmId;
-    const storageFrom = overrides?.storageFrom || settings.storageFrom;
-    const storageTo = overrides?.storageTo || settings.storageTo;
+    const storageFrom = draft.sourceWarehouse || overrides?.storageFrom || settings.storageFrom;
+    const storageTo = draft.destinationWarehouse || overrides?.storageTo || settings.storageTo;
     const docMode = overrides?.docMode || settings.docMode;
 
     // Форматуємо дату у локальному часі (без UTC-конвертації)

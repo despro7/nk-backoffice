@@ -98,6 +98,12 @@ export interface UseWarehouseMovementReturn {
   // Статусні флаги
   isDirty: boolean;
 
+  // Напрямок переміщення (склад-донор → склад-реципієнт)
+  storage: string;
+  setStorage: (v: string) => void;
+  storageTo: string;
+  setStorageTo: (v: string) => void;
+
   // API-функції для дочірніх хуків (useMovementDrafts)
   getDrafts: () => Promise<any>;
   deleteDraft: (id: number) => Promise<any>;
@@ -184,8 +190,16 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   // ID складів, завантажені разом з товарами (/products-for-movement)
   const warehouseConfigRef = useRef<{ storageFrom: string; storageTo: string } | null>(null);
 
+  // ─── Напрямок переміщення (склад-донор → склад-реципієнт) ────────────
+  // Дефолт беремо з серверного warehouseConfig (налаштування Dilovod),
+  // якщо він ще не завантажився — фолбек на відомі ID основного/малого складів.
+  const DEFAULT_STORAGE_FROM = '1100700000001005';
+  const DEFAULT_STORAGE_TO = '1100700000001019';
+  const [storage, setStorage] = useState<string>(warehouseConfigRef.current?.storageFrom || DEFAULT_STORAGE_FROM);
+  const [storageTo, setStorageTo] = useState<string>(warehouseConfigRef.current?.storageTo || DEFAULT_STORAGE_TO);
+
   const products$ = useMovementProducts(getProductsForMovement);
-  const draft$ = useMovementDraftState(createMovement, updateDraft, warehouseConfigRef);
+  const draft$ = useMovementDraftState(createMovement, updateDraft, warehouseConfigRef, { storage, storageTo });
   const sync$ = useMovementSync(syncStockFromDilovod);
 
   // Оновлюємо реф при зміні дати в draft$
@@ -210,6 +224,16 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
   const [completedMovements, setCompletedMovements] = useState<MovementDraft[]>([]);
   const [loadingCompleted, setLoadingCompleted] = useState(false);
+
+  // Синхронізуємо дефолтний напрямок із серверним warehouseConfig, коли той підвантажиться.
+  // Застосовуємо лише якщо юзер ще не змінив напрямок вручну (порівнюємо з поточним дефолтом).
+  useEffect(() => {
+    const cfg = warehouseConfigRef.current;
+    if (!cfg?.storageFrom || !cfg?.storageTo) return;
+    setStorage((prev) => (prev === DEFAULT_STORAGE_FROM ? cfg!.storageFrom : prev));
+    setStorageTo((prev) => (prev === DEFAULT_STORAGE_TO ? cfg!.storageTo : prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warehouseConfigRef.current?.storageFrom, warehouseConfigRef.current?.storageTo]);
 
   // ─── Похідні значення ────────────────────────────────────────────────
 
@@ -305,7 +329,7 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   // ─── Публічні обгортки ────────────────────────────────────────────────
 
   const handleSaveDraft = (): Promise<MovementDraft | null> =>
-    draft$.handleSaveDraft(products$.summaryItems, products$.lastSavedSnapshotRef);
+    draft$.handleSaveDraft(products$.summaryItems, products$.lastSavedSnapshotRef, { storage, storageTo });
 
   const handleReset = async (): Promise<void> => {
     products$.setSelectedProductIds(new Set());
@@ -447,6 +471,12 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
 
     completedMovements,
     loadingCompleted,
+
+    // Напрямок переміщення (склад-донор → склад-реципієнт)
+    storage,
+    setStorage,
+    storageTo,
+    setStorageTo,
 
     isDirty,
 

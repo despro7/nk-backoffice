@@ -22,6 +22,7 @@ interface MovementProductRowProps {
   activeField?: string | null;
   selectedDateTime?: Date;
   firmId?: string; // ID фірми для запиту партій
+  sourceStorage?: string; // ID складу-джерела (напрямок переміщення) для фільтрації партій
 }
 
 export const MovementProductRow = ({
@@ -32,6 +33,7 @@ export const MovementProductRow = ({
   activeField = null,
   selectedDateTime = new Date(),
   firmId,
+  sourceStorage,
 }: MovementProductRowProps) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingBatchIndex, setEditingBatchIndex] = useState<number | null>(null);
@@ -74,18 +76,18 @@ export const MovementProductRow = ({
   const handleAddBatchClick = () => {
     setEditingBatchIndex(-1); // -1 означає "додавання нової партії"
     setIsDrawerOpen(true);
-    fetchBatches(product.sku, selectedDateTime, firmId);
+    fetchBatches(product.sku, selectedDateTime, firmId, false, sourceStorage);
   };
 
   const handleEditBatchClick = (index: number) => {
     setEditingBatchIndex(index);
     setIsDrawerOpen(true);
-    fetchBatches(product.sku, selectedDateTime, firmId);
+    fetchBatches(product.sku, selectedDateTime, firmId, false, sourceStorage);
   };
 
   /** Примусово оновлює партії з Dilovod (скидає серверний кеш) */
   const handleRefreshBatches = () => {
-    fetchBatches(product.sku, selectedDateTime, firmId, true);
+    fetchBatches(product.sku, selectedDateTime, firmId, true, sourceStorage);
   };
 
   const handleDrawerClose = () => {
@@ -434,6 +436,7 @@ export const MovementProductRow = ({
                   selectedBatch={editingBatchIndex !== null && editingBatchIndex !== -1 ? product.details.batches[editingBatchIndex]?.batchNumber : ''}
                   selectedStorage={editingBatchIndex !== null && editingBatchIndex !== -1 ? product.details.batches[editingBatchIndex]?.storage : ''}
                   selectedDateTime={selectedDateTime}
+                  sourceStorage={sourceStorage}
                   addedBatchKeys={new Set(
                     product.details.batches
                       .filter((_, i) => i !== editingBatchIndex)
