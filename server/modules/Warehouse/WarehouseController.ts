@@ -7,6 +7,7 @@ import { WarehouseService } from './WarehouseService.js';
 import { MovementHistoryService } from './MovementHistoryService.js';
 import { WarehousePayloadBuilder } from './WarehousePayloadBuilder.js';
 import { getOrderReportItems, sumQuantityForSku } from '../../services/orderShipmentMetricsService.js';
+import { safeParseItems } from './historyNormalize.js';
 
 const router = Router();
 
@@ -1869,24 +1870,113 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
           return sum + (release.operationType === 'unkit' ? -quantity : quantity);
         }, 0);
 
-        // Fetch return records
+        // Fetch return records.
+        // Фолбек на createdAt, якщо returnDate === null (історичні записи без дати повернення).
         const returns = await prisma.warehouseReturnHistory.findMany({
-          where: { returnDate: { gte: startOfDay, lt: endOfDay } },
+          where: {
+            OR: [
+              { returnDate: { gte: startOfDay, lt: endOfDay } },
+              { AND: [{ returnDate: null }, { createdAt: { gte: startOfDay, lt: endOfDay } }] },
+            ],
+          },
           select: { items: true },
         });
 
-        // Fetch write-off records
+        // Fetch write-off records.
+        // Фолбек на createdAt, якщо writeOffDate === null.
         const writeoffs = await prisma.warehouseWriteOffHistory.findMany({
-          where: { writeOffDate: { gte: startOfDay, lt: endOfDay } },
+          where: {
+            OR: [
+              { writeOffDate: { gte: startOfDay, lt: endOfDay } },
+              { AND: [{ writeOffDate: null }, { createdAt: { gte: startOfDay, lt: endOfDay } }] },
+            ],
+          },
           select: { items: true },
         });
 
         const returned = sumQuantityForSku(returns, sku);
         const writtenOff = sumQuantityForSku(writeoffs, sku);
 
-        return { ...e, kit, shipped, returned, writtenOff };
+        // Переміщення: агрегуємо документи warehouse_movement у вікні дня.
+        // + якщо товар прийшов НА малий склад (destinationWarehouse === smallStorageId),
+        // - якщо пішов З малого складу (sourceWarehouse === smallStorageId).
+        let moved = 0;
+        try {
+          const smallStorageSetting = await prisma.settingsBase.findUnique({
+            where: { key: 'dilovod_small_storage_id' },
+          });
+          const smallStorageId = smallStorageSetting?.value || '1100700000001019';
+
+          const movements = await prisma.warehouseMovement.findMany({
+            where: {
+              status: { not: 'deleted' },
+              movementDate: { gte: startOfDay, lt: endOfDay },
+              OR: [
+                { sourceWarehouse: smallStorageId },
+                { destinationWarehouse: smallStorageId },
+              ],
+            },
+            select: { sourceWarehouse: true, destinationWarehouse: true, items: true },
+          });
+
+          // Збираємо всі SKU з переміщень, щоб одним запитом підтягнути portionsPerBox
+          const movementSkus = new Set<string>();
+          for (const movement of movements) {
+            const items = safeParseItems(movement.items);
+            for (const it of items) {
+              const s = String((it as any)?.sku ?? '').trim();
+              if (s) movementSkus.add(s);
+            }
+          }
+          let portionsPerBoxBySku = new Map<string, number>();
+          if (movementSkus.size > 0) {
+            const products = await prisma.product.findMany({
+              where: { sku: { in: [...movementSkus] } },
+              select: { sku: true, portionsPerBox: true },
+            });
+            portionsPerBoxBySku = new Map(
+              products.map((p) => [p.sku, Number(p.portionsPerBox) || 1]),
+            );
+          }
+
+          // Обчислює кількість позиції переміщення у порціях.
+          // Пріоритет: totalPortions (готове поле) → portionQuantity + boxQuantity * portionsPerBox.
+          // Враховуємо, що portionQuantity може бути 0 (коли товар йде лише коробками).
+          const calcMovementQty = (item: any): number => {
+            if (item == null || typeof item !== 'object') return 0;
+            const itemSku = String(item.sku ?? '').trim();
+            if (itemSku !== normalizedSku) return 0;
+            if (typeof item.totalPortions === 'number' && item.totalPortions !== 0) {
+              return item.totalPortions;
+            }
+            const ppb = portionsPerBoxBySku.get(itemSku) ?? 1;
+            const portions = Number(item.portionQuantity) || 0;
+            const boxes = Number(item.boxQuantity) || 0;
+            return portions + boxes * ppb;
+          };
+
+          for (const movement of movements) {
+            const isToSmall = movement.destinationWarehouse === smallStorageId;
+            const isFromSmall = movement.sourceWarehouse === smallStorageId;
+            if (!isToSmall && !isFromSmall) continue;
+
+            const items = safeParseItems(movement.items);
+            let qty = 0;
+            for (const it of items) {
+              qty += calcMovementQty(it);
+            }
+            if (qty === 0) continue;
+
+            // + на малий склад, - з малого складу
+            moved += isToSmall ? qty : -qty;
+          }
+        } catch {
+          // ігноруємо помилки переміщень — не ламаємо решту історії
+        }
+
+        return { ...e, kit, shipped, moved, returned, writtenOff };
       } catch (err) {
-        return { ...e, kit: 0, shipped: 0, returned: 0, writtenOff: 0 };
+        return { ...e, kit: 0, shipped: 0, moved: 0, returned: 0, writtenOff: 0 };
       }
     }));
 

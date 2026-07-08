@@ -104,10 +104,11 @@ export const InventoryHistoryRow = ({
               ) : !historyEntries || historyEntries.length === 0 ? (
                 <p className="text-xs text-gray-400 py-1">Немає даних інвентаризацій за останні 30 днів</p>
               ) : (
-                <table className={`text-xs ${showKitColumn ? 'w-full' : 'w-[91%] ml-auto'}`}>
+                <table className={`text-xs w-full`}>
                   <thead>
-                    <tr className={`text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold ${showKitColumn ? '[&>th]:w-1/8' : '[&>th]:w-1/7'}`}>
+                    <tr className={`text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold ${showKitColumn ? '[&>th]:w-1/9' : '[&>th]:w-1/8'}`}>
                       <th className="text-left! w-auto!">Дата</th>
+                      <th>Переміщення</th>
                       <th>Відвантаження</th>
                       {showKitColumn && <th>Комплектування</th>}
                       <th>Повернення</th>
@@ -121,6 +122,13 @@ export const InventoryHistoryRow = ({
                     {historyEntries.map((entry) => (
                       <tr key={entry.sessionId} className='tabular-nums text-gray-600 hover:bg-white/40'>
                         <td className="py-0.5 px-2">{formatRelativeDate(entry.date, { showTime: true, maxRelativeDays:21, maxRelativeHours: 3, includeWeekdays: true, shortWeekday: true })}</td>
+                        <td className="py-0.5 px-2 text-center text-gray-400">
+                          {entry.moved == null || entry.moved === 0 ? '–' : (
+                            <span className={`font-medium ${entry.moved > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                              {entry.moved > 0 ? '+' : '-'}{Math.abs(entry.moved)}
+                            </span>
+                          )}
+                        </td>
                         <td className="py-0.5 px-2 text-center text-gray-400">
                           {entry.shipped == null || entry.shipped === 0 ? '–' : (
                             <span className="text-red-600 font-medium">-{Math.abs(entry.shipped)}</span>

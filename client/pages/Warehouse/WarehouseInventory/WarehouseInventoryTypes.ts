@@ -41,6 +41,7 @@ export interface ProductHistoryEntry {
   // Нові поля для аналізу руху залишків
   kit?: number | null; // Комплектування
   shipped?: number | null; // Відвантаження
+  moved?: number | null; // Переміщення (відносно малого складу: + на малий, - з малого)
   returned?: number | null; // Повернення
   writtenOff?: number | null; // Списання
 }
