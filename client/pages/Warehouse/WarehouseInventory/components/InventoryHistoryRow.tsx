@@ -10,6 +10,8 @@ interface InventoryHistoryRowProps {
   item: any;
   total: number | null;
   dev: number | null; // deviation (відхилення від обліку)
+  totalGp?: number | null;
+  devGp?: number | null;
   showKitColumn?: boolean;
   rowKey: string;
   expandedRowKey: string | null;
@@ -24,6 +26,8 @@ export const InventoryHistoryRow = ({
   item,
   total,
   dev,
+  totalGp,
+  devGp,
   showKitColumn = false,
   rowKey,
   expandedRowKey,
@@ -87,14 +91,16 @@ export const InventoryHistoryRow = ({
             </Popover>
           )}
         </td>
-        <td className="py-2 px-3 text-center">{item.portionsPerBox ?? '–'}</td>
         <td className="py-2 px-3 text-center">{item.unit === 'portions' ? <CompactBalance total={item.systemBalance} portionsPerBox={item.portionsPerBox} /> : item.systemBalance}</td>
         <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{total === null ? '–' : (item.unit === 'portions' ? <CompactBalance total={total} portionsPerBox={item.portionsPerBox} sessionItem={item} /> : String(total))}</td>
         <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{dev === null ? '–' : (<span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>{dev > 0 ? '+' : ''} {dev}</span>)}</td>
+        <td className="py-2 px-3 text-center">{item.systemBalanceGp ?? '–'}</td>
+        <td className={`py-2 px-3 text-center ${totalGp === null ? 'text-gray-300' : ''}`}>{totalGp === null ? '–' : (item.unit === 'portions' ? <CompactBalance total={totalGp} portionsPerBox={item.portionsPerBox} sessionItem={item} /> : String(totalGp))}</td>
+        <td className={`py-2 px-3 text-center ${devGp === null ? 'text-gray-300' : ''}`}>{devGp === null ? '–' : (<span className={`font-semibold ${devGp === 0 ? 'text-green-600' : devGp < 0 ? 'text-red-500' : 'text-blue-600'}`}>{devGp > 0 ? '+' : ''} {devGp}</span>)}</td>
       </tr>
       {isRowExpanded && (
         <tr>
-          <td colSpan={6} className="p-0 bg-gray-100 border-b border-gray-200/40 shadow-[inset_0_6px_10px_rgba(0,0,0,0.05)]">
+          <td colSpan={9} className="p-0 bg-gray-100 border-b border-gray-200/40 shadow-[inset_0_6px_10px_rgba(0,0,0,0.05)]">
             <div className="px-2 py-4">
               {isRowLoading ? (
                 <div className="flex items-center justify-center gap-2 py-4 text-xs text-gray-500">
@@ -106,16 +112,16 @@ export const InventoryHistoryRow = ({
               ) : (
                 <table className={`text-xs w-full`}>
                   <thead>
-                    <tr className={`text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold ${showKitColumn ? '[&>th]:w-1/9' : '[&>th]:w-1/8'}`}>
+                    <tr className={`text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold ${showKitColumn ? '[&>th]:w-1/11' : '[&>th]:w-1/9'}`}>
                       <th className="text-left! w-auto!">Дата</th>
                       <th>Переміщення</th>
                       <th>Відвантаження</th>
                       {showKitColumn && <th>Комплектування</th>}
                       <th>Повернення</th>
                       <th>Списання</th>
-                      <th>За обліком</th>
-                      <th>Факт</th>
-                      <th>Відхилення</th>
+                      <th className="relative" title="За обліком / Факт / Відхилення (МС / ГП)">За обліком</th>
+                      <th className="relative" title="Факт / Відхилення (МС / ГП)">Факт</th>
+                      <th className="relative" title="Відхилення (МС / ГП)">Відхилення</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-blue-50">
@@ -153,16 +159,32 @@ export const InventoryHistoryRow = ({
                             <span className="text-red-600 font-medium">-{Math.abs(entry.writtenOff)}</span>
                           )}
                         </td>
-                        <td className="py-0.5 px-2 text-center">{entry.systemBalance ?? '–'}</td>
-                        <td className="py-0.5 px-2 text-center">{entry.actual ?? '–'}</td>
                         <td className="py-0.5 px-2 text-center">
-                          {entry.deviation === null ? (
-                            <span className="text-gray-300">–</span>
-                          ) : (
-                            <span className={`font-semibold ${entry.deviation === 0 ? 'text-green-600' : entry.deviation < 0 ? 'text-red-500' : 'text-blue-600'}`}>
-                              {entry.deviation > 0 ? '+' : ''}{entry.deviation}
-                            </span>
-                          )}
+                          <span className="text-gray-500">{entry.systemBalance ?? '–'}</span>
+                          <br />
+                          <span className="text-gray-400">({entry.systemBalanceGp ?? '–'})</span>
+                        </td>
+                        <td className="py-0.5 px-2 text-center">
+                          <span className="text-gray-500">{entry.actual ?? '–'}</span>
+                          <br />
+                          <span className="text-gray-400">({entry.actualGp ?? '–'})</span>
+                        </td>
+                        <td className="py-0.5 px-2 text-center">
+                          <span className="text-gray-500">
+                            {entry.deviation === null ? '–' : (
+                              <span className={`font-semibold ${entry.deviation === 0 ? 'text-green-600' : entry.deviation < 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                                {entry.deviation > 0 ? '+' : ''}{entry.deviation}
+                              </span>
+                            )}
+                          </span>
+                          <br />
+                          <span className="text-gray-400">
+                            {entry.deviationGp === null ? '–' : (
+                              <span className={`font-semibold ${entry.deviationGp === 0 ? 'text-green-600' : entry.deviationGp < 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                                {entry.deviationGp > 0 ? '+' : ''}{entry.deviationGp}
+                              </span>
+                            )}
+                          </span>
                         </td>
                       </tr>
                     ))}

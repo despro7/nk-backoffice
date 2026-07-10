@@ -116,7 +116,7 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/warehouse/inventory',
     component: WarehouseInventory,
-    title: 'Інвентаризація малого складу',
+    title: 'Інвентаризація залишків на складах',
     pageTitle: 'Інвентаризація залишків | NK Backoffice',
     navLabel: 'Інвентаризація залишків',
     icon: <DynamicIcon name="clipboard-list" size={16} />,

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from '@heroui/react';
-import { totalPortions } from '../WarehouseInventoryUtils';
+import { totalPortions, totalPortionsGp } from '../WarehouseInventoryUtils';
 import type { InventoryProduct } from '../WarehouseInventoryTypes';
 
 // ---------------------------------------------------------------------------
@@ -34,6 +34,8 @@ const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: 
       item,
       total: totalPortions(item),
       dev: totalPortions(item) !== null ? totalPortions(item)! - item.systemBalance : null,
+      totalGp: totalPortionsGp(item),
+      devGp: totalPortionsGp(item) !== null ? totalPortionsGp(item)! - item.systemBalanceGp : null,
     }));
 
     mapped.sort((a, b) => {
@@ -57,6 +59,10 @@ const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: 
     let actualTotal = 0;
     let negDev = 0;
     let posDev = 0;
+    let systemGpTotal = 0;
+    let actualGpTotal = 0;
+    let negDevGp = 0;
+    let posDevGp = 0;
     for (const item of visibleItems) {
       const actual = totalPortions(item);
       systemTotal += item.systemBalance;
@@ -66,8 +72,16 @@ const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: 
         if (dev < 0) negDev += dev;
         else if (dev > 0) posDev += dev;
       }
+      const actualGp = totalPortionsGp(item);
+      systemGpTotal += item.systemBalanceGp;
+      if (actualGp !== null) {
+        actualGpTotal += actualGp;
+        const devGp = actualGp - item.systemBalanceGp;
+        if (devGp < 0) negDevGp += devGp;
+        else if (devGp > 0) posDevGp += devGp;
+      }
     }
-    return { systemTotal, actualTotal, negDev, posDev };
+    return { systemTotal, actualTotal, negDev, posDev, systemGpTotal, actualGpTotal, negDevGp, posDevGp };
   }, [visibleItems]);
 
   if (visibleItems.length === 0) return null;
@@ -114,24 +128,39 @@ const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: 
                 {title}<DynamicIcon name={getSortIcon('name')} className="w-4 h-4 text-gray-400" />
               </div>
             </TableColumn>
-            <TableColumn key="systemBalance" align="center" className="cursor-pointer w-[13%]" onClick={() => handleSort('systemBalance')}>
+            <TableColumn key="systemBalance" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('systemBalance')}>
               <div className="flex items-center justify-center gap-2">
-                За обліком <DynamicIcon name={getSortIcon('systemBalance')} className="w-4 h-4 text-gray-400" />
+                Облік (мал.) <DynamicIcon name={getSortIcon('systemBalance')} className="w-4 h-4 text-gray-400" />
               </div>
             </TableColumn>
-            <TableColumn key="actual" align="center" className="cursor-pointer w-[13%]" onClick={() => handleSort('actual')}>
+            <TableColumn key="actual" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('actual')}>
               <div className="flex items-center justify-center gap-2">
-                Факт <DynamicIcon name={getSortIcon('actual')} className="w-4 h-4 text-gray-400" />
+                Факт (мал.) <DynamicIcon name={getSortIcon('actual')} className="w-4 h-4 text-gray-400" />
               </div>
             </TableColumn>
-            <TableColumn key="deviation" align="center" className="cursor-pointer w-[13%]" onClick={() => handleSort('deviation')}>
+            <TableColumn key="deviation" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('deviation')}>
               <div className="flex items-center justify-center gap-2">
-                Відхилення <DynamicIcon name={getSortIcon('deviation')} className="w-4 h-4 text-gray-400" />
+                Відх. (мал.) <DynamicIcon name={getSortIcon('deviation')} className="w-4 h-4 text-gray-400" />
+              </div>
+            </TableColumn>
+            <TableColumn key="systemBalanceGp" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('systemBalance')}>
+              <div className="flex items-center justify-center gap-2">
+                Облік (ГП) <DynamicIcon name={getSortIcon('systemBalance')} className="w-4 h-4 text-gray-400" />
+              </div>
+            </TableColumn>
+            <TableColumn key="actualGp" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('actual')}>
+              <div className="flex items-center justify-center gap-2">
+                Факт (ГП) <DynamicIcon name={getSortIcon('actual')} className="w-4 h-4 text-gray-400" />
+              </div>
+            </TableColumn>
+            <TableColumn key="deviationGp" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('deviation')}>
+              <div className="flex items-center justify-center gap-2">
+                Відх. (ГП) <DynamicIcon name={getSortIcon('deviation')} className="w-4 h-4 text-gray-400" />
               </div>
             </TableColumn>
           </TableHeader>
           <TableBody>
-            {sortedItems.map(({ rowKey, item, total, dev }) => (
+            {sortedItems.map(({ rowKey, item, total, dev, totalGp, devGp }) => (
               <TableRow key={rowKey}>
                 <TableCell className="text-gray-600 font-mono">{item.sku}</TableCell>
                 <TableCell className="text-gray-700">{item.name}</TableCell>
@@ -144,13 +173,22 @@ const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: 
                     </span>
                   )}
                 </TableCell>
+                <TableCell className="text-center text-gray-600">{item.systemBalanceGp}</TableCell>
+                <TableCell className="text-center font-medium">{totalGp ?? '—'}</TableCell>
+                <TableCell className="text-center">
+                  {devGp === null ? '—' : (
+                    <span className={`font-semibold ${devGp === 0 ? 'text-green-600' : devGp < 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                      {devGp > 0 ? '+' : ''}{devGp}
+                    </span>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
 
         {/* Рядок підсумків — поза HeroUI Table (не підтримує змішані children) */}
-        <div className="grid grid-cols-[108px_1fr_13%_13%_13%] items-center border-t-1 border-gray-200 bg-gray-50 rounded-b-md py-2 text-sm font-semibold mt-0.5">
+        <div className="grid grid-cols-[108px_1fr_10%_10%_10%_10%_10%_10%] items-center border-t-1 border-gray-200 bg-gray-50 rounded-b-md py-2 text-sm font-semibold mt-0.5">
           <span />
           <span className="text-gray-500 text-xs uppercase tracking-wide">Разом</span>
           <span className="text-center text-gray-700">{totalsRow.systemTotal}</span>
@@ -163,6 +201,19 @@ const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: 
                 {totalsRow.negDev !== 0 && <span className="text-red-500">{totalsRow.negDev}</span>}
                 {totalsRow.negDev !== 0 && totalsRow.posDev !== 0 && <span className="text-gray-300">/</span>}
                 {totalsRow.posDev !== 0 && <span className="text-blue-600">+{totalsRow.posDev}</span>}
+              </span>
+            )}
+          </span>
+          <span className="text-center text-gray-700">{totalsRow.systemGpTotal}</span>
+          <span className="text-center text-gray-700">{totalsRow.actualGpTotal}</span>
+          <span className="text-center">
+            {totalsRow.negDevGp === 0 && totalsRow.posDevGp === 0 ? (
+              <span className="text-green-600">0</span>
+            ) : (
+              <span className="inline-flex items-center justify-center gap-1">
+                {totalsRow.negDevGp !== 0 && <span className="text-red-500">{totalsRow.negDevGp}</span>}
+                {totalsRow.negDevGp !== 0 && totalsRow.posDevGp !== 0 && <span className="text-gray-300">/</span>}
+                {totalsRow.posDevGp !== 0 && <span className="text-blue-600">+{totalsRow.posDevGp}</span>}
               </span>
             )}
           </span>

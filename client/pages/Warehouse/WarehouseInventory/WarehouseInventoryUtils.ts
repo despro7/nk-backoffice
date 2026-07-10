@@ -11,6 +11,16 @@ export const totalPortions = (p: InventoryProduct): number | null => {
 };
 
 // ---------------------------------------------------------------------------
+// Обчислює загальну кількість порцій для продукту по складу ГП (готова продукція)
+// ---------------------------------------------------------------------------
+
+export const totalPortionsGp = (p: InventoryProduct): number | null => {
+  if (p.unit !== 'portions') return p.actualCountGp;
+  if (p.boxCountGp === null && p.actualCountGp === null) return null;
+  return ((p.boxCountGp ?? 0) * p.portionsPerBox) + (p.actualCountGp ?? 0);
+};
+
+// ---------------------------------------------------------------------------
 // Форматує довільну кількість порцій у вигляді "N кор. + M пор.".
 // Використовується як для фактичного підрахунку, так і для системного залишку.
 // ---------------------------------------------------------------------------
@@ -116,6 +126,10 @@ export type SerializedInventoryItem = {
   boxCount: number | null;
   checked: boolean;
   categoryName?: string;
+  // Склад готової продукції (ГП)
+  systemBalanceGp: number;
+  actualCountGp: number | null;
+  boxCountGp: number | null;
 };
 
 export const serializeItems = (
@@ -123,13 +137,13 @@ export const serializeItems = (
   mats: InventoryProduct[],
   sets?: InventoryProduct[],
 ): SerializedInventoryItem[] => [
-  ...prods.map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
-    type: 'product' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
+  ...prods.map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp }) => ({
+    type: 'product' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp,
   })),
-  ...mats.map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
-    type: 'material' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
+  ...mats.map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp }) => ({
+    type: 'material' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp,
   })),
-  ...(sets ?? []).map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName }) => ({
-    type: 'set' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName,
+  ...(sets ?? []).map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp }) => ({
+    type: 'set' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp,
   })),
 ];

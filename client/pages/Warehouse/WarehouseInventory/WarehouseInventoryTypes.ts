@@ -18,6 +18,12 @@ export interface InventoryProduct {
   portionsPerBox: number; // Кількість порцій в коробці (тільки для порційних товарів)
   checked: boolean; // Чи перевірено позицію (підтверджено фактичну кількість)
   componentsSnapshot?: any[]; // Склад набору, якщо це комплект
+
+  // --- Склад готової продукції (ГП / основний склад) ---
+  systemBalanceGp: number; // Залишок за системою по складу ГП (порції або штуки)
+  isBalanceGpRefreshing?: boolean; // Локальний loader для оновлення залишку ГП на дату
+  actualCountGp: number | null; // Фактична кількість по складу ГП (порції або штуки)
+  boxCountGp: number | null; // Кількість повних коробок по складу ГП (тільки для порційних товарів)
 }
 
 export interface InventorySession {
@@ -44,4 +50,8 @@ export interface ProductHistoryEntry {
   moved?: number | null; // Переміщення (відносно малого складу: + на малий, - з малого)
   returned?: number | null; // Повернення
   writtenOff?: number | null; // Списання
+  // GP (склад готової продукції) поля
+  systemBalanceGp?: number | null;
+  actualGp?: number | null;
+  deviationGp?: number | null;
 }

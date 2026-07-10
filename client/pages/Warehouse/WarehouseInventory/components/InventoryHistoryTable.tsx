@@ -5,14 +5,14 @@ import { formatDate } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROLES } from '@shared/constants/roles';
 import type { InventorySession } from '../WarehouseInventoryTypes';
-import { statusLabel, statusColor, statusClass, totalPortions } from '../WarehouseInventoryUtils';
+import { statusLabel, statusColor, statusClass, totalPortions, totalPortionsGp } from '../WarehouseInventoryUtils';
 import useRowHistory from '../useRowHistory';
 import { ToastService } from '@/services/ToastService';
 import InventoryRefreshReportModal from './InventoryRefreshReportModal';
 import InventoryTableSection from './InventoryTableSection';
 import useUserNames from '@/hooks/useUserNames';
 
-type SortColumn = 'sku' | 'name' | 'systemBalance' | 'actual' | 'deviation';
+type SortColumn = 'sku' | 'name' | 'systemBalance' | 'actual' | 'deviation' | 'systemBalanceGp' | 'actualGp' | 'deviationGp';
 type SortDirection = 'ascending' | 'descending';
 
 interface HistoryTableProps {
@@ -81,7 +81,13 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
   };
 
   const sortItems = (items: any[], column: SortColumn, dir: SortDirection) => {
-    const list = [...items].map((item) => ({ item, total: totalPortions(item), dev: totalPortions(item) !== null ? totalPortions(item)! - item.systemBalance : null }));
+    const list = [...items].map((item) => ({
+      item,
+      total: totalPortions(item),
+      dev: totalPortions(item) !== null ? totalPortions(item)! - item.systemBalance : null,
+      totalGp: totalPortionsGp(item),
+      devGp: totalPortionsGp(item) !== null ? totalPortionsGp(item)! - item.systemBalanceGp : null,
+    }));
     list.sort((a, b) => {
       let cmp = 0;
       switch (column) {
@@ -90,6 +96,9 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
         case 'systemBalance': cmp = (a.item.systemBalance ?? 0) - (b.item.systemBalance ?? 0); break;
         case 'actual': cmp = (a.total ?? 0) - (b.total ?? 0); break;
         case 'deviation': cmp = (a.dev ?? 0) - (b.dev ?? 0); break;
+        case 'systemBalanceGp': cmp = (a.item.systemBalanceGp ?? 0) - (b.item.systemBalanceGp ?? 0); break;
+        case 'actualGp': cmp = (a.totalGp ?? 0) - (b.totalGp ?? 0); break;
+        case 'deviationGp': cmp = (a.devGp ?? 0) - (b.devGp ?? 0); break;
       }
       return dir === 'ascending' ? cmp : -cmp;
     });
@@ -149,8 +158,10 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
     const shouldKeepItem = (item: any): boolean => {
       if (!item?.isOutdated) return true;
       const fact = totalPortions(item);
+      const factGp = totalPortionsGp(item);
       const actualOrSystem = Math.max(fact ?? 0, item.systemBalance ?? 0);
-      return actualOrSystem > 0;
+      const actualOrSystemGp = Math.max(factGp ?? 0, item.systemBalanceGp ?? 0);
+      return actualOrSystem > 0 || actualOrSystemGp > 0;
     };
 
     const materials = sessionItems.filter((item) => item.type === 'material' && shouldKeepItem(item));
@@ -206,6 +217,47 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
         const productHasActual = products.some((it) => totalPortions(it) !== null);
         const materialHasActual = materials.some((it) => totalPortions(it) !== null);
         const setHasActual = sets.some((it) => totalPortions(it) !== null);
+
+        // GP (готова продукція) підрахунки
+        const productSystemGp = products.reduce((s, it) => s + (it.systemBalanceGp ?? 0), 0);
+        const materialSystemGp = materials.reduce((s, it) => s + (it.systemBalanceGp ?? 0), 0);
+        const setSystemGp = sets.reduce((s, it) => s + (it.systemBalanceGp ?? 0), 0);
+        const productActualSumGp = products.reduce((s, it) => s + (totalPortionsGp(it) ?? 0), 0);
+        const materialActualSumGp = materials.reduce((s, it) => s + (totalPortionsGp(it) ?? 0), 0);
+        const setActualSumGp = sets.reduce((s, it) => s + (totalPortionsGp(it) ?? 0), 0);
+        const productDevShortfallGp = products.reduce((s, it) => {
+          const total = totalPortionsGp(it);
+          const system = it.systemBalanceGp ?? 0;
+          return s + (total !== null && total < system ? system - total : 0);
+        }, 0);
+        const productDevSurplusGp = products.reduce((s, it) => {
+          const total = totalPortionsGp(it);
+          const system = it.systemBalanceGp ?? 0;
+          return s + (total !== null && total > system ? total - system : 0);
+        }, 0);
+        const materialDevShortfallGp = materials.reduce((s, it) => {
+          const total = totalPortionsGp(it);
+          const system = it.systemBalanceGp ?? 0;
+          return s + (total !== null && total < system ? system - total : 0);
+        }, 0);
+        const materialDevSurplusGp = materials.reduce((s, it) => {
+          const total = totalPortionsGp(it);
+          const system = it.systemBalanceGp ?? 0;
+          return s + (total !== null && total > system ? total - system : 0);
+        }, 0);
+        const setDevShortfallGp = sets.reduce((s, it) => {
+          const total = totalPortionsGp(it);
+          const system = it.systemBalanceGp ?? 0;
+          return s + (total !== null && total < system ? system - total : 0);
+        }, 0);
+        const setDevSurplusGp = sets.reduce((s, it) => {
+          const total = totalPortionsGp(it);
+          const system = it.systemBalanceGp ?? 0;
+          return s + (total !== null && total > system ? total - system : 0);
+        }, 0);
+        const productHasActualGp = products.some((it) => totalPortionsGp(it) !== null);
+        const materialHasActualGp = materials.some((it) => totalPortionsGp(it) !== null);
+        const setHasActualGp = sets.some((it) => totalPortionsGp(it) !== null);
 
         return (
           <div key={session.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -279,7 +331,12 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                     rowHistoryCache={rowHistoryCache}
                     rowHistoryLoading={loadingSku}
                     setCompositionBySku={setCompositionBySku}
-                    summary={{ systemTotal: setSystem, actualSum: setHasActual ? setActualSum : null, hasActual: setHasActual, devShortfall: setDevShortfall, devSurplus: setDevSurplus }}
+                    summary={{
+                      systemTotal: setSystem, actualSum: setHasActual ? setActualSum : null, hasActual: setHasActual,
+                      devShortfall: setDevShortfall, devSurplus: setDevSurplus,
+                      systemTotalGp: setSystemGp, actualSumGp: setHasActualGp ? setActualSumGp : null, hasActualGp: setHasActualGp,
+                      devShortfallGp: setDevShortfallGp, devSurplusGp: setDevSurplusGp
+                    }}
                   />
                 )}
 
@@ -296,7 +353,12 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                     rowHistoryCache={rowHistoryCache}
                     rowHistoryLoading={loadingSku}
                     setCompositionBySku={setCompositionBySku}
-                    summary={{ systemTotal: productSystem, actualSum: productHasActual ? productActualSum : null, hasActual: productHasActual, devShortfall: productDevShortfall, devSurplus: productDevSurplus }}
+                    summary={{
+                      systemTotal: productSystem, actualSum: productHasActual ? productActualSum : null, hasActual: productHasActual,
+                      devShortfall: productDevShortfall, devSurplus: productDevSurplus,
+                      systemTotalGp: productSystemGp, actualSumGp: productHasActualGp ? productActualSumGp : null, hasActualGp: productHasActualGp,
+                      devShortfallGp: productDevShortfallGp, devSurplusGp: productDevSurplusGp
+                    }}
                   />
                 )}
 
@@ -313,7 +375,12 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                     rowHistoryCache={rowHistoryCache}
                     rowHistoryLoading={loadingSku}
                     setCompositionBySku={setCompositionBySku}
-                    summary={{ systemTotal: materialSystem, actualSum: materialHasActual ? materialActualSum : null, hasActual: materialHasActual, devShortfall: materialDevShortfall, devSurplus: materialDevSurplus }}
+                    summary={{
+                      systemTotal: materialSystem, actualSum: materialHasActual ? materialActualSum : null, hasActual: materialHasActual,
+                      devShortfall: materialDevShortfall, devSurplus: materialDevSurplus,
+                      systemTotalGp: materialSystemGp, actualSumGp: materialHasActualGp ? materialActualSumGp : null, hasActualGp: materialHasActualGp,
+                      devShortfallGp: materialDevShortfallGp, devSurplusGp: materialDevSurplusGp
+                    }}
                     isMaterial
                   />
                 )}

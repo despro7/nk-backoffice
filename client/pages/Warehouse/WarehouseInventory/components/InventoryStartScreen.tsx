@@ -21,7 +21,7 @@ export const InventoryStartScreen = ({ comment, onCommentChange, onStart }: Inve
         Немає активної інвентаризації
       </h2>
       <p className="text-sm text-gray-500 mb-6 max-w-sm mx-auto">
-        Розпочніть нову інвентаризацію, щоб зафіксувати фактичні залишки малого складу
+        Розпочніть нову інвентаризацію, щоб зафіксувати фактичні залишки малого складу та складу готової продукції (ГП)
       </p>
       <div className="flex flex-col sm:flex-row gap-3 justify-center items-center max-w-md mx-auto">
         <Input

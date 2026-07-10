@@ -15,6 +15,7 @@ interface InventoryArchiveTabProps {
   onRestoreSession?: (sessionId: string) => Promise<void>;
   onDeletePermanently?: (sessionId: string) => Promise<void>;
   onRefreshSessionBalances?: (sessionId: string) => Promise<{ items?: Array<any> } | null>;
+  setCompositionBySku: Record<string, any[]>;
 }
 
 export const InventoryArchiveTab = ({
@@ -25,6 +26,7 @@ export const InventoryArchiveTab = ({
   onRestoreSession,
   onDeletePermanently,
   onRefreshSessionBalances,
+  setCompositionBySku,
 }: InventoryArchiveTabProps) => (
   <>
     <div className="flex items-end justify-between">
@@ -62,6 +64,7 @@ export const InventoryArchiveTab = ({
         onRestoreSession={onRestoreSession}
         onRefreshSessionBalances={onRefreshSessionBalances}
         onRefresh={onRefresh}
+        setCompositionBySku={setCompositionBySku}
       />
     )}
   </>

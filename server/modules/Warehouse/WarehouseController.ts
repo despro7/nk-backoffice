@@ -1058,6 +1058,7 @@ router.get('/inventory/products', authenticateToken, async (req, res) => {
             ? JSON.parse(product.stockBalanceByStock)
             : {};
           const systemBalance = stock['2'] ?? 0;
+          const systemBalanceGp = stock['1'] ?? 0;
 
           return {
             id: String(product.id),
@@ -1066,6 +1067,7 @@ router.get('/inventory/products', authenticateToken, async (req, res) => {
             categoryName: product.categoryName ?? null,
             isOutdated: product.isOutdated,
             systemBalance,
+            systemBalanceGp,
             unit: product.portionsPerBox > 1 ? 'portions' : 'pcs',
             portionsPerBox: product.portionsPerBox,
           };
@@ -1103,12 +1105,14 @@ router.get('/inventory/materials', authenticateToken, async (req, res) => {
             ? JSON.parse(material.stockBalanceByStock)
             : {};
           const systemBalance = stock['2'] ?? 0;
+          const systemBalanceGp = stock['1'] ?? 0;
 
           return {
             id: String(material.id),
             sku: material.sku,
             name: material.name,
             systemBalance,
+            systemBalanceGp,
             unit: 'pcs' as const,
             portionsPerBox: 1,
           };
@@ -1146,6 +1150,7 @@ router.get('/inventory/sets', authenticateToken, async (req, res) => {
             ? JSON.parse(product.stockBalanceByStock)
             : {};
           const systemBalance = stock['2'] ?? 0;
+          const systemBalanceGp = stock['1'] ?? 0;
           const componentsSnapshot = product.set
             ? (typeof product.set === 'string' ? JSON.parse(product.set) : product.set)
             : [];
@@ -1157,6 +1162,7 @@ router.get('/inventory/sets', authenticateToken, async (req, res) => {
             categoryName: product.categoryName ?? null,
             isOutdated: product.isOutdated,
             systemBalance,
+            systemBalanceGp,
             unit: product.portionsPerBox > 1 ? 'portions' : 'pcs',
             portionsPerBox: product.portionsPerBox,
             componentsSnapshot,

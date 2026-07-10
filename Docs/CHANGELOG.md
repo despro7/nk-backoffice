@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-07-10 — Додано GP-колонки (склад готової продукції) у warehouse inventory history
+**Files:** `client/pages/Warehouse/WarehouseInventory/components/InventoryTableSection.tsx`, `client/pages/Warehouse/WarehouseInventory/components/InventoryHistoryRow.tsx`, `client/pages/Warehouse/WarehouseInventory/components/InventoryHistoryTable.tsx`, `client/pages/Warehouse/WarehouseInventory/WarehouseInventoryTypes.ts`
+
+- Додано 3 GP-колонки у таблицю: `За обліком (ГП)`, `Факт (ГП)`, `Відхилення (ГП)`.
+- Оновлено тип `ProductHistoryEntry` з полями `systemBalanceGp`, `actualGp`, `deviationGp`.
+- Оновлено `sortItems` для сортування за GP-колонками.
+- Оновлено `getSessionItems` для фільтрації застарілих позицій з урахуванням GP-балансів.
+- Додано GP-підрахунки у `InventoryHistoryTable` для підсумкових рядків сесій.
+- Виправлено помилку `require is not defined` у `InventoryTableSection` (замінено на ES6-імпорт).
+
 ## 2026-07-06 — Підтримка обраного складу для `Warehouse` stock snapshot
 **Files:** `server/modules/Warehouse/WarehouseController.ts`, `server/services/dilovod/DilovodService.ts`, `server/services/dilovod/DilovodDataProcessor.ts`, `server/services/dilovod/DilovodTypes.ts`
 

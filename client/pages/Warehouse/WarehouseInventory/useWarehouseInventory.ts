@@ -109,9 +109,9 @@ export interface UseWarehouseInventoryReturn {
   handleEnterPressProduct: (currentProductId: string) => void;
   handleEnterPressMaterial: (currentMaterialId: string) => void;
   handleEnterPressSet: (currentSetId: string) => void;
-  handleProductChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
-  handleSetChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
-  handleMaterialChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
+  handleProductChange: (id: string, field: 'boxCount' | 'actualCount' | 'boxCountGp' | 'actualCountGp', value: number) => void;
+  handleSetChange: (id: string, field: 'boxCount' | 'actualCount' | 'boxCountGp' | 'actualCountGp', value: number) => void;
+  handleMaterialChange: (id: string, field: 'boxCount' | 'actualCount' | 'boxCountGp' | 'actualCountGp', value: number) => void;
   handleCheckProduct: (id: string) => void;
   handleCheckSet: (id: string) => void;
   handleCheckMaterial: (id: string) => void;
@@ -228,11 +228,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         categoryName: p.categoryName ?? 'Без категорії',
         isOutdated: !!p.isOutdated,
         systemBalance: p.systemBalance,
+        systemBalanceGp: p.systemBalanceGp ?? 0,
         isBalanceRefreshing: false,
         unit: p.unit as 'portions' | 'pcs',
         portionsPerBox: p.portionsPerBox,
         actualCount: null,
         boxCount: null,
+        actualCountGp: null,
+        boxCountGp: null,
         checked: false,
       }));
       setProducts(loaded);
@@ -261,11 +264,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         sku: m.sku,
         name: m.name,
         systemBalance: m.systemBalance,
+        systemBalanceGp: m.systemBalanceGp ?? 0,
         isBalanceRefreshing: false,
         unit: m.unit as 'portions' | 'pcs',
         portionsPerBox: m.portionsPerBox,
         actualCount: null,
         boxCount: null,
+        actualCountGp: null,
+        boxCountGp: null,
         checked: false,
       }));
       setMaterials(loaded);
@@ -301,11 +307,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         name: s.name,
         isOutdated: !!s.isOutdated,
         systemBalance: s.systemBalance,
+        systemBalanceGp: s.systemBalanceGp ?? 0,
         isBalanceRefreshing: false,
         unit: s.unit as 'portions' | 'pcs',
         portionsPerBox: s.portionsPerBox,
         actualCount: null,
         boxCount: null,
+        actualCountGp: null,
+        boxCountGp: null,
         checked: false,
         componentsSnapshot: Array.isArray(s.componentsSnapshot) ? s.componentsSnapshot : [],
       }));
@@ -360,7 +369,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
 
       // Відновлюємо введені дані з чернетки
       // ВАЖЛИВО: savedProductsMap і savedMaterialsMap — окремо, бо id товарів і матеріалів можуть збігатися
-      const savedItems: Array<{ type?: string; id: string; actualCount: number | null; boxCount: number | null; checked: boolean }> = JSON.parse(draft.items ?? '[]');
+      const savedItems: Array<{ type?: string; id: string; actualCount: number | null; boxCount: number | null; actualCountGp?: number | null; boxCountGp?: number | null; checked: boolean }> = JSON.parse(draft.items ?? '[]');
       const savedProductsMap = new Map(savedItems.filter((i) => i.type === 'product' || i.type === undefined).map((i) => [i.id, i]));
       const savedMaterialsMap = new Map(savedItems.filter((i) => i.type === 'material').map((i) => [i.id, i]));
       const savedSetsMap = new Map(savedItems.filter((i) => i.type === 'set').map((i) => [i.id, i]));
@@ -368,13 +377,13 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       const mergedProducts = freshProducts.map((p) => {
         const saved = savedProductsMap.get(p.id);
         if (!saved) return p;
-        return { ...p, actualCount: saved.actualCount, boxCount: saved.boxCount, checked: saved.checked };
+        return { ...p, actualCount: saved.actualCount, boxCount: saved.boxCount, actualCountGp: saved.actualCountGp ?? null, boxCountGp: saved.boxCountGp ?? null, checked: saved.checked };
       });
 
       const mergedMaterials = freshMaterials.map((m) => {
         const saved = savedMaterialsMap.get(m.id);
         if (!saved) return m;
-        return { ...m, actualCount: saved.actualCount, boxCount: saved.boxCount, checked: saved.checked };
+        return { ...m, actualCount: saved.actualCount, boxCount: saved.boxCount, actualCountGp: saved.actualCountGp ?? null, boxCountGp: saved.boxCountGp ?? null, checked: saved.checked };
       });
 
       setProducts(mergedProducts);
@@ -382,7 +391,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       const mergedSets = freshSets.map((s) => {
         const saved = savedSetsMap.get(s.id);
         if (!saved) return s;
-        return { ...s, actualCount: saved.actualCount, boxCount: saved.boxCount, checked: saved.checked };
+        return { ...s, actualCount: saved.actualCount, boxCount: saved.boxCount, actualCountGp: saved.actualCountGp ?? null, boxCountGp: saved.boxCountGp ?? null, checked: saved.checked };
       });
       setSets(mergedSets);
       // Відкриваємо всі непідтверджені позиції після завантаження чернетки
@@ -480,8 +489,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   // Computed
   // ---------------------------------------------------------------------------
 
+  // За замовчуванням (showOutdated=false) показуємо застарілі позиції, у яких є залишок
+  // за обліком хоча б на одному складі (малий або ГП). Повністю приховані лише ті
+  // застарілі, у яких залишків немає на жодному складі.
+  const hasStockSomewhere = (item: InventoryProduct): boolean =>
+    (item.systemBalance ?? 0) > 0 || (item.systemBalanceGp ?? 0) > 0;
+
   const visibleProducts = useMemo(
-    () => products.filter((p) => showOutdated || !p.isOutdated || p.checked),
+    () => products.filter((p) => showOutdated || !p.isOutdated || p.checked || hasStockSomewhere(p)),
     [products, showOutdated]
   );
   const checkedCount = useMemo(() => visibleProducts.filter((p) => p.checked).length, [visibleProducts]);
@@ -493,7 +508,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   const materialsProgressPercent = totalMaterialsCount > 0 ? Math.round((checkedMaterialsCount / totalMaterialsCount) * 100) : 0;
 
   const visibleSets = useMemo(
-    () => sets.filter((s) => showOutdated || !s.isOutdated || s.checked),
+    () => sets.filter((s) => showOutdated || !s.isOutdated || s.checked || hasStockSomewhere(s)),
     [sets, showOutdated]
   );
   const checkedSetsCount = useMemo(() => visibleSets.filter((s) => s.checked).length, [visibleSets]);
@@ -562,12 +577,13 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     () => {
       const result = materials.filter(
         (m) =>
-          m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.sku.toLowerCase().includes(searchQuery.toLowerCase())
+          (showOutdated || !m.isOutdated || m.checked || hasStockSomewhere(m)) &&
+          (m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            m.sku.toLowerCase().includes(searchQuery.toLowerCase()))
       );
       return sortItems(result, sortBy, sortDirection);
     },
-    [materials, searchQuery, sortBy, sortDirection]
+    [materials, searchQuery, sortBy, sortDirection, showOutdated]
   );
 
   const filteredSets = useMemo(
@@ -590,9 +606,9 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
    */
   const serializeForDirtyCheck = (prods: InventoryProduct[], mats: InventoryProduct[], setsList: InventoryProduct[]) =>
     JSON.stringify([
-      ...prods.map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
-      ...mats.map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
-      ...setsList.map(({ id, actualCount, boxCount, checked }) => ({ id, actualCount, boxCount, checked })),
+      ...prods.map(({ id, actualCount, boxCount, actualCountGp, boxCountGp, checked }) => ({ id, actualCount, boxCount, actualCountGp, boxCountGp, checked })),
+      ...mats.map(({ id, actualCount, boxCount, actualCountGp, boxCountGp, checked }) => ({ id, actualCount, boxCount, actualCountGp, boxCountGp, checked })),
+      ...setsList.map(({ id, actualCount, boxCount, actualCountGp, boxCountGp, checked }) => ({ id, actualCount, boxCount, actualCountGp, boxCountGp, checked })),
     ]);
 
   // Дозвіл редагування: звичайна активна сесія або завершена сесія, яка редагується адміном
@@ -728,7 +744,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     }
   };
 
-  const handleProductChange = (id: string, field: 'boxCount' | 'actualCount', value: number) => {
+  const handleProductChange = (id: string, field: 'boxCount' | 'actualCount' | 'boxCountGp' | 'actualCountGp', value: number) => {
     setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
   };
 
@@ -736,7 +752,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, checked: !p.checked } : p)));
   };
 
-  const handleMaterialChange = (id: string, field: 'boxCount' | 'actualCount', value: number) => {
+  const handleMaterialChange = (id: string, field: 'boxCount' | 'actualCount' | 'boxCountGp' | 'actualCountGp', value: number) => {
     setMaterials((prev) => prev.map((m) => (m.id === id ? { ...m, [field]: value } : m)));
   };
 
@@ -744,7 +760,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setMaterials((prev) => prev.map((m) => (m.id === id ? { ...m, checked: !m.checked } : m)));
   };
 
-  const handleSetChange = (id: string, field: 'boxCount' | 'actualCount', value: number) => {
+  const handleSetChange = (id: string, field: 'boxCount' | 'actualCount' | 'boxCountGp' | 'actualCountGp', value: number) => {
     setSets((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
   };
 
@@ -757,14 +773,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     setProducts(prev => prev.map(p => {
       if (p.id === id) {
         found = true;
-        return { ...p, actualCount: null, boxCount: null };
+        return { ...p, actualCount: null, boxCount: null, actualCountGp: null, boxCountGp: null };
       }
       return p;
     }));
     if (found) return;
-    setMaterials(prev => prev.map(m => (m.id === id ? { ...m, actualCount: null, boxCount: null } : m)));
+    setMaterials(prev => prev.map(m => (m.id === id ? { ...m, actualCount: null, boxCount: null, actualCountGp: null, boxCountGp: null } : m)));
     // Also reset for sets
-    setSets(prev => prev.map(s => (s.id === id ? { ...s, actualCount: null, boxCount: null } : s)));
+    setSets(prev => prev.map(s => (s.id === id ? { ...s, actualCount: null, boxCount: null, actualCountGp: null, boxCountGp: null } : s)));
   };
 
   // Завершити інвентаризацію: відправляємо дані на бек, але навіть при помилці локально вважаємо сесію завершеною, щоб не блокувати UI
@@ -946,16 +962,16 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
 
       const stocks: Record<string, { mainStock: number; smallStock: number }> = data.stocks ?? {};
 
-      // Оновлюємо systemBalance для товарів (використовуємо smallStock = склад "2")
+      // Оновлюємо systemBalance для товарів (smallStock = малий склад "2", mainStock = склад ГП "1")
       setProducts(prev => prev.map(p => {
         const s = stocks[p.sku];
-        return s ? { ...p, systemBalance: s.smallStock, isBalanceRefreshing: false } : { ...p, isBalanceRefreshing: false };
+        return s ? { ...p, systemBalance: s.smallStock, systemBalanceGp: s.mainStock, isBalanceRefreshing: false } : { ...p, isBalanceRefreshing: false };
       }));
 
       // Оновлюємо systemBalance для матеріалів
       setMaterials(prev => prev.map(m => {
         const s = stocks[m.sku];
-        return s ? { ...m, systemBalance: s.smallStock, isBalanceRefreshing: false } : { ...m, isBalanceRefreshing: false };
+        return s ? { ...m, systemBalance: s.smallStock, systemBalanceGp: s.mainStock, isBalanceRefreshing: false } : { ...m, isBalanceRefreshing: false };
       }));
     } catch (err: any) {
       ToastService.show({
@@ -992,7 +1008,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       setSets((prev) => prev.map((set) => {
         const stock = stocks[set.sku];
         return stock
-          ? { ...set, systemBalance: stock.smallStock, isBalanceRefreshing: false }
+          ? { ...set, systemBalance: stock.smallStock, systemBalanceGp: stock.mainStock, isBalanceRefreshing: false }
           : { ...set, isBalanceRefreshing: false };
       }));
     } catch (err: any) {
@@ -1041,7 +1057,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
 
     const [freshProducts, freshMaterials, freshSets] = await Promise.all([loadProducts(), loadMaterials(), loadSets(effectiveDate)]);
 
-    const savedItems: Array<{ type?: string; id: string; actualCount: number | null; boxCount: number | null; checked: boolean }>
+    const savedItems: Array<{ type?: string; id: string; actualCount: number | null; boxCount: number | null; actualCountGp?: number | null; boxCountGp?: number | null; checked: boolean }>
       = session.items as any;
     const savedProductsMap = new Map(
       savedItems.filter((i) => i.type === 'product' || i.type === undefined).map((i) => [i.id, i]),
@@ -1056,18 +1072,18 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     const mergedProducts = freshProducts.map((p) => {
       const saved = savedProductsMap.get(p.id);
       if (!saved) return p;
-      return { ...p, actualCount: saved.actualCount, boxCount: saved.boxCount, checked: saved.checked };
+      return { ...p, actualCount: saved.actualCount, boxCount: saved.boxCount, actualCountGp: saved.actualCountGp ?? null, boxCountGp: saved.boxCountGp ?? null, checked: saved.checked };
     });
     const mergedMaterials = freshMaterials.map((m) => {
       const saved = savedMaterialsMap.get(m.id);
       if (!saved) return m;
-      return { ...m, actualCount: saved.actualCount, boxCount: saved.boxCount, checked: saved.checked };
+      return { ...m, actualCount: saved.actualCount, boxCount: saved.boxCount, actualCountGp: saved.actualCountGp ?? null, boxCountGp: saved.boxCountGp ?? null, checked: saved.checked };
     });
 
     const mergedSets = freshSets.map((s) => {
       const saved = savedSetsMap.get(s.id);
       if (!saved) return s;
-      return { ...s, actualCount: saved.actualCount, boxCount: saved.boxCount, checked: saved.checked };
+      return { ...s, actualCount: saved.actualCount, boxCount: saved.boxCount, actualCountGp: saved.actualCountGp ?? null, boxCountGp: saved.boxCountGp ?? null, checked: saved.checked };
     });
 
     setProducts(mergedProducts);

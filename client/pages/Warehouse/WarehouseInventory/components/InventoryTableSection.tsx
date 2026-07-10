@@ -2,8 +2,9 @@ import InventoryHistoryRow from './InventoryHistoryRow';
 import { Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { ProductHistoryEntry } from '../WarehouseInventoryTypes';
+import { totalPortionsGp } from '../WarehouseInventoryUtils';
 
-type SortColumn = 'sku' | 'name' | 'systemBalance' | 'actual' | 'deviation';
+type SortColumn = 'sku' | 'name' | 'systemBalance' | 'actual' | 'deviation' | 'systemBalanceGp' | 'actualGp' | 'deviationGp';
 type SortDirection = 'ascending' | 'descending';
 
 interface Summary {
@@ -12,12 +13,17 @@ interface Summary {
   hasActual: boolean;
   devShortfall: number;
   devSurplus: number;
+  systemTotalGp?: number;
+  actualSumGp?: number | null;
+  hasActualGp?: boolean;
+  devShortfallGp?: number;
+  devSurplusGp?: number;
 }
 
 interface Props {
   title: string;
   sessionId: string;
-  rows: Array<{ item: any; total: number | null; dev: number | null }>;
+  rows: Array<{ item: any; total: number | null; dev: number | null; totalGp: number | null; devGp: number | null }>;
   sortColumn: SortColumn;
   sortDirection: SortDirection;
   onSort: (col: SortColumn) => void;
@@ -41,15 +47,12 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
       <div className="overflow-x-auto px-1 pb-1 bg-gray-200 rounded-b-md">
         <table className="w-full border-separate border-spacing-0 overflow-hidden rounded-md text-sm bg-white border-1 border-gray-200">
           <thead>
-            <tr className="[&>th]:w-[13.2%] border-b border-gray-200 bg-gray-100">
+            <tr className="[&>th]:w-[10.9%] border-b border-gray-200 bg-gray-100">
               <th className="w-[9.2%]! text-left py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('sku')}>
                 <div className="flex items-center gap-1">SKU <DynamicIcon name={sortColumn !== 'sku' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="w-auto! text-left py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('name')}>
                 <div className="flex items-center gap-1">Позиція <DynamicIcon name={sortColumn !== 'name' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
-              </th>
-              <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100">
-                <div className="flex items-center justify-center gap-1">Порцій в коробці</div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('systemBalance')}>
                 <div className="flex items-center justify-center gap-1">За обліком <DynamicIcon name={sortColumn !== 'systemBalance' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
@@ -60,10 +63,19 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('deviation')}>
                 <div className="flex items-center justify-center gap-1">Відхилення <DynamicIcon name={sortColumn !== 'deviation' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
+              <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('systemBalanceGp')}>
+                <div className="flex items-center justify-center gap-1">За обліком (ГП) <DynamicIcon name={sortColumn !== 'systemBalanceGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+              </th>
+              <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('actualGp')}>
+                <div className="flex items-center justify-center gap-1">Факт (ГП) <DynamicIcon name={sortColumn !== 'actualGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+              </th>
+              <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('deviationGp')}>
+                <div className="flex items-center justify-center gap-1">Відхилення (ГП) <DynamicIcon name={sortColumn !== 'deviationGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ item, total, dev }, idx) => {
+            {rows.map(({ item, total, dev, totalGp, devGp }, idx) => {
               const rowKey = `${sessionId}-${item.sku}`;
               return (
                 <InventoryHistoryRow
@@ -72,6 +84,8 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
                   item={item}
                   total={total}
                   dev={dev}
+                  totalGp={totalGp}
+                  devGp={devGp}
                   showKitColumn={showKitColumn}
                   rowKey={rowKey}
                   expandedRowKey={expandedRowKey}
@@ -86,7 +100,6 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
             <tr className="bg-gray-100/60">
               <td></td>
               <td></td>
-              <td className="text-center font-semibold py-2">-</td>
               <td className="text-center font-semibold py-2">{summary.systemTotal}</td>
               <td className="text-center font-semibold py-2">{summary.hasActual ? summary.actualSum : '–'}</td>
               <td className="text-center font-semibold py-2">
@@ -95,6 +108,17 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
                     <span className="text-red-500">{summary.devShortfall > 0 ? `-${summary.devShortfall}` : '0'}</span>
                     <span> / </span>
                     <span className="text-blue-600">{summary.devSurplus > 0 ? `+${summary.devSurplus}` : '+0'}</span>
+                  </>
+                ) : '–'}
+              </td>
+              <td className="text-center font-semibold py-2">{summary.systemTotalGp ?? '–'}</td>
+              <td className="text-center font-semibold py-2">{summary.hasActualGp ? summary.actualSumGp : '–'}</td>
+              <td className="text-center font-semibold py-2">
+                {summary.hasActualGp ? (
+                  <>
+                    <span className="text-red-500">{summary.devShortfallGp > 0 ? `-${summary.devShortfallGp}` : '0'}</span>
+                    <span> / </span>
+                    <span className="text-blue-600">{summary.devSurplusGp > 0 ? `+${summary.devSurplusGp}` : '+0'}</span>
                   </>
                 ) : '–'}
               </td>

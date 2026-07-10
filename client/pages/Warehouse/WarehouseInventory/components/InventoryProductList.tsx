@@ -20,7 +20,7 @@ interface InventoryProductListProps {
   searchQuery: string;
   openItemIds: Set<string>;
   onToggle: (id: string) => void;
-  onChange: (id: string, field: 'boxCount' | 'actualCount', value: number) => void;
+  onChange: (id: string, field: 'boxCount' | 'actualCount' | 'boxCountGp' | 'actualCountGp', value: number) => void;
   onCheck: (id: string) => void;
   onEnterPress?: (id: string) => void;
   onReset: (id: string) => void;

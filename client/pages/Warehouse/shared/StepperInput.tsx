@@ -1,4 +1,4 @@
-import { useState, useRef, useImperativeHandle, useCallback, useEffect, forwardRef } from 'react';
+import { useState, useRef, useImperativeHandle, useCallback, useEffect, forwardRef, useId } from 'react';
 import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
@@ -8,7 +8,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 
 export interface StepperInputProps {
   label?: string;
-  value: number;
+  value?: number | null; // null = порожнє поле (не заповнено), відображається як 0
   onChange: (value: number) => void;
   onIncrement: () => void;
   onDecrement: () => void;
@@ -34,9 +34,12 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
     const inputRef = useRef<HTMLInputElement>(null);
     const [isFocused, setIsFocused] = useState(false);
 
+    // null → порожнє поле, відображаємо як 0
+    const displayValue = value ?? 0;
+
     const resolvedMax = typeof max === 'number' && Number.isFinite(max) && max >= 0 ? max : undefined;
-    const isAtMax = resolvedMax !== undefined && value >= resolvedMax;
-    const isAtMin = value <= 0;
+    const isAtMax = resolvedMax !== undefined && displayValue >= resolvedMax;
+    const isAtMin = displayValue <= 0;
 
     const focusInput = () => {
       if (disabled) return;
@@ -58,7 +61,7 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
 
     useEffect(() => {
       if (disabled || resolvedMax === undefined) return;
-      if (value > resolvedMax) {
+      if (displayValue > resolvedMax) {
         onChange(resolvedMax);
       }
     }, [disabled, resolvedMax, onChange, value]);
@@ -67,7 +70,7 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
     useImperativeHandle(ref, () => inputRef.current!);
 
     return (
-      <div className={`flex flex-col items-center gap-2 ${className}`}>
+      <div className={`flex flex-col items-center ${className ? `${className}` : 'gap-2'}`}>
         {label && <span className={`text-sm text-gray-500 ${labelClassName}`}>{label}</span>}
         <div className="relative w-full">
           {/* Видима область — клік відкриває OSK */}
@@ -83,15 +86,16 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
             } ${inputClassName}`}
             onClick={focusInput}
           >
-            {value}
+            {displayValue}
           </div>
 
           {/* Прихований нативний input — отримує фокус → Windows OSK */}
           <input
             ref={inputRef}
+            id={useId()}
             type="number"
             inputMode="numeric"
-            value={value}
+            value={displayValue}
             min={0}
             max={resolvedMax}
             disabled={disabled}

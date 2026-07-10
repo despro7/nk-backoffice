@@ -20,7 +20,7 @@ import InventoryArchiveTab from './components/InventoryArchiveTab';
 import { InventoryCommentModal } from './components/InventoryCommentModal';
 
 // ---------------------------------------------------------------------------
-// WarehouseInventory — головна сторінка інвентаризації малого складу
+// WarehouseInventory — головна сторінка інвентаризації малого складу та складу готової продукції (ГП)
 // ---------------------------------------------------------------------------
 
 export default function WarehouseInventory() {
@@ -98,9 +98,9 @@ export default function WarehouseInventory() {
 
         {/* Підзаголовок сторінки */}
         <p className="text-sm text-gray-500">
-          Підрахунок фактичних залишків малого складу для виявлення відхилень від облікових даних. 
-          Створюйте інвентаризацію, перевіряйте позиції та фіксуйте результати. 
-          Усі незбережені зміни зберігаються як чернетка, щоб ви могли повернутися пізніше та продовжити роботу. 
+          Підрахунок фактичних залишків малого складу та складу готової продукції (ГП) для виявлення відхилень від облікових даних.
+          Створюйте інвентаризацію, перевіряйте позиції та фіксуйте результати окремо для кожного складу.
+          Усі незбережені зміни зберігаються як чернетка, щоб ви могли повернутися пізніше та продовжити роботу.
           Завершуйте інвентаризацію, щоб зафіксувати результати та побачити відхилення.
         </p>
 
@@ -276,6 +276,7 @@ export default function WarehouseInventory() {
             onRestoreSession={inv.handleAdminRestoreSession}
             onDeletePermanently={inv.handleAdminDeletePermanently}
             onRefreshSessionBalances={handleRefreshSessionBalances}
+            setCompositionBySku={inv.setCompositionBySku}
           />
         )}
       </div>
