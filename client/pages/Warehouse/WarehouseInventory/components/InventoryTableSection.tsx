@@ -2,7 +2,6 @@ import InventoryHistoryRow from './InventoryHistoryRow';
 import { Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { ProductHistoryEntry } from '../WarehouseInventoryTypes';
-import { totalPortionsGp } from '../WarehouseInventoryUtils';
 
 type SortColumn = 'sku' | 'name' | 'systemBalance' | 'actual' | 'deviation' | 'systemBalanceGp' | 'actualGp' | 'deviationGp';
 type SortDirection = 'ascending' | 'descending';
@@ -42,7 +41,7 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200 bg-gray-200">
-        <h4 className="text-md font-medium text-gray-700">{title} <Tooltip content="всього / підтверджених" placement="right"><span className="text-gray-500 text-sm font-normal">({rows.length}/{rows.filter(row => row.dev !== null).length})</span></Tooltip></h4>
+        <h4 className="text-md font-medium text-gray-700">{title} <Tooltip content="всього / підтверджених" showArrow placement="right"><span className="text-gray-500 text-sm font-normal">({rows.length}/{rows.filter(row => row.dev !== null).length})</span></Tooltip></h4>
       </div>
       <div className="overflow-x-auto px-1 pb-1 bg-gray-200 rounded-b-md">
         <table className="w-full border-separate border-spacing-0 overflow-hidden rounded-md text-sm bg-white border-1 border-gray-200">
@@ -52,25 +51,30 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
                 <div className="flex items-center gap-1">SKU <DynamicIcon name={sortColumn !== 'sku' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="w-auto! text-left py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('name')}>
-                <div className="flex items-center gap-1">Позиція <DynamicIcon name={sortColumn !== 'name' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center gap-1">
+                  <Tooltip content="Кількість порцій в коробці" showArrow placement="top" classNames={{ base: 'before:bg-white before:rounded-[3px] before:z-10', content: 'bg-white border-1 text-gray-700 text-xs' }}>
+                    <span className="text-[10px] text-white text-shadow-sm shadow-inner bg-gray-500/20 px-2 py-[1px] mr-0.5 rounded">N</span>
+                  </Tooltip>
+                  Позиція
+                  <DynamicIcon name={sortColumn !== 'name' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('systemBalance')}>
-                <div className="flex items-center justify-center gap-1">За обліком <DynamicIcon name={sortColumn !== 'systemBalance' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> Облік <DynamicIcon name={sortColumn !== 'systemBalance' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('actual')}>
-                <div className="flex items-center justify-center gap-1">Факт <DynamicIcon name={sortColumn !== 'actual' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> Факт <DynamicIcon name={sortColumn !== 'actual' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('deviation')}>
-                <div className="flex items-center justify-center gap-1">Відхилення <DynamicIcon name={sortColumn !== 'deviation' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> Відхилення <DynamicIcon name={sortColumn !== 'deviation' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('systemBalanceGp')}>
-                <div className="flex items-center justify-center gap-1">За обліком (ГП) <DynamicIcon name={sortColumn !== 'systemBalanceGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-blue-800/50 bg-blue-500/10 px-1 py-[1px] rounded ring-1">ГП</span> Облік <DynamicIcon name={sortColumn !== 'systemBalanceGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('actualGp')}>
-                <div className="flex items-center justify-center gap-1">Факт (ГП) <DynamicIcon name={sortColumn !== 'actualGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-blue-800/50 bg-blue-500/10 px-1 py-[1px] rounded ring-1">ГП</span> Факт <DynamicIcon name={sortColumn !== 'actualGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('deviationGp')}>
-                <div className="flex items-center justify-center gap-1">Відхилення (ГП) <DynamicIcon name={sortColumn !== 'deviationGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-blue-800/50 bg-blue-500/10 px-1 py-[1px] rounded ring-1">ГП</span> Відхилення <DynamicIcon name={sortColumn !== 'deviationGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
             </tr>
           </thead>

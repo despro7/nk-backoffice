@@ -29,9 +29,11 @@ export interface MovementProduct {
     forecast: number; // Прогноз (довідково)
   };
   stockData: {
-    mainStock: number; // Залишок на основному складі (порції)
-    smallStock: number; // Залишок на малому складі (порції)
-  };
+    mainStock: number | null; // Залишок на основному складі (порції)
+    smallStock: number | null; // Залишок на малому складі (порції)
+    sourceStock: number | null; // Залишок на складі-джерелі (обраний напрям переміщення)
+    destStock: number | null; // Залишок на складі-призначенні (обраний напрям переміщення)
+  } | null; // null означає, що дані ще не завантажені
 }
 
 export interface MovementItem {

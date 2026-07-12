@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button } from '@heroui/react';
+import { Button, Spinner } from '@heroui/react';
 import { StepperInput } from '../../shared/StepperInput';
 import { BatchNumbersAutocomplete } from './BatchNumbersAutocomplete';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
@@ -9,6 +9,7 @@ import { useBatchNumbers, type BatchNumber } from '../hooks/useBatchNumbers';
 import { ToastService } from '@/services/ToastService';
 import { pluralize } from '@/lib/formatUtils';
 import type { MovementProduct, MovementBatch } from '../WarehouseMovementTypes';
+import { resolveStorageDisplay } from '../storageDisplay';
 
 // ---------------------------------------------------------------------------
 // MovementProductRow — рядок товару з акордіоном для редагування багатьох партій
@@ -23,6 +24,10 @@ interface MovementProductRowProps {
   selectedDateTime?: Date;
   firmId?: string; // ID фірми для запиту партій
   sourceStorage?: string; // ID складу-джерела (напрямок переміщення) для фільтрації партій
+  sourceStorageName?: string; // Назва складу-джерела для відображення у заголовку Drawer
+  destStorage?: string; // ID складу-призначення (напрямок переміщення)
+  destStorageName?: string; // Назва складу-призначення для віджета залишків
+  isRefreshingStock?: boolean; // Чи оновлюється зараз stock data
 }
 
 export const MovementProductRow = ({
@@ -34,6 +39,10 @@ export const MovementProductRow = ({
   selectedDateTime = new Date(),
   firmId,
   sourceStorage,
+  sourceStorageName,
+  destStorage,
+  destStorageName,
+  isRefreshingStock = false,
 }: MovementProductRowProps) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingBatchIndex, setEditingBatchIndex] = useState<number | null>(null);
@@ -42,6 +51,10 @@ export const MovementProductRow = ({
   const batchInputRef = useRef<HTMLInputElement>(null);
   const isDrawerJustClosed = useRef(false);
   const { batches, loading, fetchBatches } = useBatchNumbers();
+
+  // Відображення складів (коротка назва + колір) згідно з мапінгом storageDisplay
+  const sourceDisplay = resolveStorageDisplay(sourceStorage, sourceStorageName);
+  const destDisplay = resolveStorageDisplay(destStorage, destStorageName);
 
   // Для комплектів (isSet=true) portionsPerBox може бути 0 або 1.
   // Комплекти не мають "коробок" — тільки кількість комплектів (порцій).
@@ -175,6 +188,37 @@ export const MovementProductRow = ({
     onChange(product.id, newBatches);
   };
 
+  /**
+   * Конвертує зайві порції в коробки при втрати фокуса поля "порцій".
+   * Формула: totalPortions = boxes * portionsPerBox + portions
+   *          newBoxes = Math.floor(totalPortions / portionsPerBox)
+   *          newPortions = totalPortions % portionsPerBox
+   */
+  const handlePortionsBlur = (index: number) => {
+    if (isSetProduct) return; // Комплекти не конвертуються
+
+    const batch = product.details.batches[index];
+    const totalPortions = batch.boxes * effectivePortionsPerBox + batch.portions;
+    const newBoxes = Math.floor(totalPortions / effectivePortionsPerBox);
+    const newPortions = totalPortions % effectivePortionsPerBox;
+
+    if (newBoxes !== batch.boxes || newPortions !== batch.portions) {
+      const newBatches = [...product.details.batches];
+      newBatches[index].boxes = newBoxes;
+      newBatches[index].portions = newPortions;
+      onChange(product.id, newBatches);
+
+      ToastService.show({
+        title: 'Конвертація порцій в коробки',
+        description: `Партія ${batch.batchNumber}: ${newBoxes} коробок + ${newPortions} порцій`,
+        color: 'secondary',
+        icon: 'package-check',
+        hideIcon: false,
+        timeout: 5000
+      });
+    }
+  };
+
   const handleRemoveBatch = (index: number) => {
     const newBatches = product.details.batches.filter((_, i) => i !== index);
     onChange(product.id, newBatches);
@@ -261,17 +305,43 @@ export const MovementProductRow = ({
             </div>
           </div>
         </div>
-        <div className="flex flex-col items-end">
-          <div className="flex items-center gap-2">
-            <DynamicIcon name="box" className="w-5 h-5 text-neutral-300" />
-            <div className="flex items-center gap-2 font-semibold text-lg text-neutral-800">
-              <span className={`${product.stockData.mainStock == 0 && 'text-danger-400'}`}>{product.stockData.mainStock}</span> {totalPortions > 0 && <span className="text-danger-400">{"->"} {product.stockData.mainStock - totalPortions}</span>}
-              /
-              <span className={`${product.stockData.smallStock == 0 && 'text-danger-400'}`}>{product.stockData.smallStock} {totalPortions > 0 && <span className="text-green-600">{"->"} {product.stockData.smallStock + totalPortions}</span>}</span>
-            </div>
+        <div className="flex items-center gap-2">
+          <div className="flex flex-col items-start">
+            {isRefreshingStock ? (
+              <div className="flex items-center gap-2">
+                <Spinner size="sm" />
+                <span className="text-xs text-gray-500">Оновлення...</span>
+              </div>
+            ) : (
+              <>
+                <span className={`font-semibold text-lg text-neutral-800 ${product.stockData?.sourceStock == 0 && 'text-danger-400'}`}>
+                  {product.stockData?.sourceStock ?? 0}
+                  {totalPortions > 0 && <sup className="text-xs text-danger-400 ml-0.5">-{totalPortions}</sup>}
+                </span>
+                <span className={`text-[9px] px-1 py-[1px] rounded ring-1 ${sourceDisplay.className}`}>
+                  {sourceDisplay.shortName}
+                </span>
+              </>
+            )}
           </div>
-          <div className="text-xs text-gray-400/60">
-            Склад ГП / Склад М
+          <DynamicIcon name="arrow-right" size={18} className="text-gray-400" />
+          <div className="flex flex-col items-start">
+            {isRefreshingStock ? (
+              <div className="flex items-center gap-2">
+                <Spinner size="sm" />
+                <span className="text-xs text-gray-500">Оновлення...</span>
+              </div>
+            ) : (
+              <>
+                <span className={`font-semibold text-lg text-neutral-800 ${product.stockData?.destStock == 0 && 'text-danger-400'}`}>
+                  {product.stockData?.destStock ?? 0}
+                  {totalPortions > 0 && <sup className="text-xs text-green-600 ml-0.5">+{totalPortions}</sup>}
+                </span>
+                <span className={`text-[9px] px-1 py-[1px] rounded ring-1 ${destDisplay.className}`}>
+                  {destDisplay.shortName}
+                </span>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -305,9 +375,12 @@ export const MovementProductRow = ({
                       <div key={batch.id} className="border-b-1 border-gray-300 pb-4 flex flex-col gap-3">
                         {/* Заголовок партії */}
                         <div className="flex items-center justify-between">
-                          <h3 className="flex items-center gap-2">
+                          <h3 className="flex items-center gap-3">
                             <span className="font-semibold text-neutral-800">Партія: {batch.batchNumber}</span>
-                            <span className="font-normal text-neutral-800 text-xs uppercase border-1 border-gray-400 rounded-sm px-1.5 py-1">Залишок: {batch.quantity} {batchTotal > 0 && <span className="text-purple-600">{"->"} {batch.quantity - batchTotal}</span>} {pluralize(batchTotal > 0 ? batch.quantity - batchTotal : batch.quantity, 'порція', 'порції', 'порцій')}</span>
+                            <span className="font-normal text-neutral-800 text-[11px] uppercase border-1 border-gray-400 rounded-full px-2 py-1.5 leading-none">
+                              Залишок: {batch.quantity} 
+                              {batchTotal > 0 && <span className="text-purple-600">{"->"} {batch.quantity - batchTotal} {pluralize(batch.quantity - batchTotal, 'порція', 'порції', 'порцій')}</span>}
+                            </span>
                           </h3>
                         </div>
 
@@ -349,12 +422,15 @@ export const MovementProductRow = ({
                                 value={batch.portions}
                                 max={maxPortions}
                                 onChange={(val) => handleUpdateBatchQuantity(index, 'portions', val)}
-                                onIncrement={() =>
-                                  handleUpdateBatchQuantity(index, 'portions', Math.min(batch.portions + 1, maxPortions))
-                                }
-                                onDecrement={() =>
-                                  handleUpdateBatchQuantity(index, 'portions', Math.max(0, batch.portions - 1))
-                                }
+                                onIncrement={() => {
+                                  handleUpdateBatchQuantity(index, 'portions', Math.min(batch.portions + 1, maxPortions));
+                                  handlePortionsBlur(index);
+                                }}
+                                onDecrement={() => {
+                                  handleUpdateBatchQuantity(index, 'portions', Math.max(0, batch.portions - 1));
+                                  handlePortionsBlur(index);
+                                }}
+                                onBlur={() => handlePortionsBlur(index)}
                               />
                             </>
                           )}
@@ -436,6 +512,7 @@ export const MovementProductRow = ({
                   selectedBatch={editingBatchIndex !== null && editingBatchIndex !== -1 ? product.details.batches[editingBatchIndex]?.batchNumber : ''}
                   selectedStorage={editingBatchIndex !== null && editingBatchIndex !== -1 ? product.details.batches[editingBatchIndex]?.storage : ''}
                   selectedDateTime={selectedDateTime}
+                  sourceStorageName={sourceStorageName}
                   sourceStorage={sourceStorage}
                   addedBatchKeys={new Set(
                     product.details.batches

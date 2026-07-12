@@ -48,6 +48,9 @@ export interface UseWarehouseMovementReturn {
   // Дата документа
   selectedDateTime: Date;
   setSelectedDateTime: (date: Date) => void;
+
+  // Флаг завантаження даних при ініціалізації
+  isLoading: boolean;
   isRefreshingBatches: boolean;
   handleDateChange: (date: Date, stockDateMode?: 'movement' | 'now') => void;
 
@@ -64,7 +67,12 @@ export interface UseWarehouseMovementReturn {
   // Handlers
   loadProducts: () => Promise<MovementProduct[]>;
   refreshBatchQuantities: (prods: MovementProduct[], selectedIds: Set<string>, asOfDate?: Date) => Promise<void>;
-  refreshStockData: (allProds: MovementProduct[], asOfDate?: Date) => Promise<void>;
+  refreshStockData: (
+    allProds: MovementProduct[],
+    asOfDate?: Date,
+    sourceStorageId?: string,
+    destStorageId?: string,
+  ) => Promise<void>;
   isRefreshingStock: boolean;
   loadHistory: () => Promise<void>;
   loadMovementFromHistory: (doc: any) => Promise<void>;
@@ -74,7 +82,7 @@ export interface UseWarehouseMovementReturn {
   handleSaveDraft: () => Promise<MovementDraft | null>;
   handleSyncBalances: (stockDateMode?: 'movement' | 'now', selectedDateTime?: Date) => Promise<void>;
   handleSyncStockFromDilovod: () => Promise<void>;
-  loadDraftObject: (draft: MovementDraft) => Promise<void>;
+  loadDraftObject: (draft: MovementDraft, direction?: { storage: string; storageTo: string }, preloadedProducts?: MovementProduct[]) => Promise<void>;
 
   // Обрані товари (розгорнуті в акордіоні) + їх повні дані для таблиці
   selectedProductIds: Set<string>;
@@ -198,6 +206,9 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   const [storage, setStorage] = useState<string>(warehouseConfigRef.current?.storageFrom || DEFAULT_STORAGE_FROM);
   const [storageTo, setStorageTo] = useState<string>(warehouseConfigRef.current?.storageTo || DEFAULT_STORAGE_TO);
 
+  // Флаг завантаження даних при ініціалізації
+  const [isLoading, setIsLoading] = useState(true);
+
   const products$ = useMovementProducts(getProductsForMovement);
   const draft$ = useMovementDraftState(createMovement, updateDraft, warehouseConfigRef, { storage, storageTo });
   const sync$ = useMovementSync(syncStockFromDilovod);
@@ -290,19 +301,76 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
 
         await loadHistory();
 
-        if (!wasDismissed && draftsData?.drafts?.length > 0) {
-          // Є збережені чернетки — не присвоюємо їх автоматично до поточної сесії.
-          // Адмін може їх відкрити явно через вкладку "Чернетки" або кнопку "Редагувати".
-          // Якщо потрібно — draftsData.drafts доступні для відображення у списку.
+        // ─── Пріоритет авто-завантаження: чернетка → останній запис → стартова сторінка ───
+        // 1. Спочатку шукаємо активну чернетку користувача (status === 'active')
+        // 2. Якщо немає активної чернетки — шукаємо останній завершений запис (status === 'finalized')
+        // 3. Якщо немає нічого — залишаємо нову сесію (стартова сторінка)
+        if (!wasDismissed) {
+          // Шукаємо активну чернетку
+          const activeDraft = draftsData?.drafts?.find((d: any) => d.status === 'active');
+          if (activeDraft) {
+            LoggingService.warehouseMovementLog(`🔄 Авто-завантаження активної чернетки #${activeDraft.id}`);
+            // Автоматично обираємо склади з чернетки ЩЕ ДО оновлення залишків,
+            // щоб уникнути гонки: спочатку дефолтні склади, потім перемикання
+            const draftStorage = activeDraft.sourceWarehouse;
+            const draftStorageTo = activeDraft.destinationWarehouse;
+            if (draftStorage && draftStorageTo) {
+              setStorage(draftStorage);
+              setStorageTo(draftStorageTo);
+            }
+            // Оновлюємо залишки одразу для правильного напряму (без повторного loadProducts)
+            if (productsData && productsData.length > 0) {
+              await products$.refreshStockData(productsData, undefined, draftStorage || storage, draftStorageTo || storageTo);
+            }
+            // Завантажуємо партії з чернетки, передаючи вже завантажені товари
+            await loadDraftObject(
+              activeDraft,
+              { storage: draftStorage || storage, storageTo: draftStorageTo || storageTo },
+              productsData ?? undefined,
+            );
+          } else if (completedMovements.length > 0) {
+            // Немає активної чернетки, але є завершені записи — беремо останній
+            const lastCompleted = completedMovements[completedMovements.length - 1];
+            LoggingService.warehouseMovementLog(`🔄 Авто-завантаження останнього завершеного запису #${lastCompleted.id}`);
+            // Автоматично обираємо склади з запису
+            if (lastCompleted.sourceWarehouse && lastCompleted.destinationWarehouse) {
+              setStorage(lastCompleted.sourceWarehouse);
+              setStorageTo(lastCompleted.destinationWarehouse);
+            }
+            // Оновлюємо залишки для правильного напряму
+            if (productsData && productsData.length > 0) {
+              await products$.refreshStockData(
+                productsData,
+                undefined,
+                lastCompleted.sourceWarehouse || storage,
+                lastCompleted.destinationWarehouse || storageTo,
+              );
+            }
+          } else {
+            // Немає жодної чернетки/запису — оновлюємо залишки для дефолтного напряму
+            if (productsData && productsData.length > 0) {
+              await products$.refreshStockData(productsData, undefined, storage, storageTo);
+            }
+          }
         }
       } catch (err: any) {
         LoggingService.warehouseMovementLog(`Помилка ініціалізації: ${err?.message}`);
+      } finally {
+        setIsLoading(false);
       }
     };
 
     initData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Оновлюємо sourceStock/destStock при зміні напряму переміщення (синхронно з MovementDirectionSelector)
+  useEffect(() => {
+    if (products$.products.length > 0) {
+      products$.refreshStockData(products$.products, undefined, storage, storageTo);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storage, storageTo]);
 
   // ─── Авто-згортання порожніх акордіонів при refresh сторінки ────────
   // Якщо товар відкритий, але жодної партії не додано — при оновленні
@@ -346,6 +414,8 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
       products$.refreshStockData,
       stockDateMode,
       selectedDateTime,
+      storage,
+      storageTo,
     );
 
   const handleSyncStockFromDilovod = (): Promise<void> =>
@@ -378,6 +448,8 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
             draft$.setSelectedDateTime,
             stockDateMode,
             products$.refreshStockData,
+            storage,
+            storageTo,
           );
         });
       }, 1000);
@@ -392,6 +464,8 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
       draft$.setSelectedDateTime,
       stockDateMode,
       products$.refreshStockData,
+      storage,
+      storageTo,
     );
   };
 
@@ -405,11 +479,15 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
       products$.refreshBatchQuantities,
     );
 
-  const loadDraftObject = (draft: MovementDraft): Promise<void> =>
+  const loadDraftObject = (draft: MovementDraft, direction?: { storage: string; storageTo: string }, preloadedProducts?: MovementProduct[]): Promise<void> =>
     draft$.loadDraftObject(
       draft,
       products$.loadProducts,
       products$.loadDraftIntoProducts,
+      (prods, sourceStorageId, destStorageId) =>
+        products$.refreshStockData(prods, undefined, sourceStorageId, destStorageId),
+      direction,
+      preloadedProducts,
     );
 
   // ─── Публічне API ─────────────────────────────────────────────────────
@@ -446,7 +524,8 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
 
     loadProducts: products$.loadProducts,
     refreshBatchQuantities: products$.refreshBatchQuantities,
-    refreshStockData: products$.refreshStockData,
+    refreshStockData: (prods, asOfDate, sourceStorageId, destStorageId) =>
+      products$.refreshStockData(prods, asOfDate, sourceStorageId, destStorageId),
     isRefreshingStock: products$.isRefreshingStock,
     loadHistory,
     loadMovementFromHistory,
@@ -479,6 +558,8 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
     setStorageTo,
 
     isDirty,
+
+    isLoading,
 
     getDrafts,
     deleteDraft,

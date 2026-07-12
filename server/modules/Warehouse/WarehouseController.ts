@@ -744,7 +744,7 @@ router.post('/', authenticateToken, async (req, res) => {
 // isFinal=true — фінальна відправка, статус → 'finalized', документ заблоковано
 router.post('/send', authenticateToken, async (req, res) => {
   try {
-    const { draftId, summaryItems, movementDate, overrides, dryRun = true, isFinal = false } = req.body;
+    const { draftId, summaryItems, movementDate, overrides, dryRun = true, isFinal = false, sourceWarehouse, destinationWarehouse } = req.body;
     const userId = (req as any).user?.userId || (req as any).user?.id;
 
     if (!draftId || !Array.isArray(summaryItems) || summaryItems.length === 0) {
@@ -766,6 +766,11 @@ router.post('/send', authenticateToken, async (req, res) => {
     if (!draft) {
       return res.status(404).json({ success: false, error: 'Чернетку не знайдено' });
     }
+
+    // Використовуємо sourceWarehouse/destinationWarehouse з запиту, якщо передано
+    // Інакше беремо з бази даних (для зворотної сумісності)
+    const effectiveSourceWarehouse = sourceWarehouse ?? draft.sourceWarehouse;
+    const effectiveDestinationWarehouse = destinationWarehouse ?? draft.destinationWarehouse;
 
     // Валідуємо що всі товари мають dilovodId
     const idValidation = WarehousePayloadBuilder.validateDilovodIds(summaryItems);
@@ -813,8 +818,8 @@ router.post('/send', authenticateToken, async (req, res) => {
         dilovodDocId: draft.dilovodDocId,
         docNumber: draft.docNumber,
         notes: draft.notes,
-        sourceWarehouse: draft.sourceWarehouse,
-        destinationWarehouse: draft.destinationWarehouse,
+        sourceWarehouse: effectiveSourceWarehouse,
+        destinationWarehouse: effectiveDestinationWarehouse,
       },
       summaryItems,
       settings,
@@ -1766,6 +1771,14 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
       systemBalance: number | null;
       actual: number | null;
       deviation: number | null;
+      systemBalanceGp: number | null;
+      actualGp: number | null;
+      deviationGp: number | null;
+      // Додаткові поля для Tooltip
+      systemBalanceGpBoxCount: number | null;
+      systemBalanceGpActualCount: number | null;
+      actualGpBoxCount: number | null;
+      actualGpActualCount: number | null;
     }> = [];
 
     for (const session of sessions) {
@@ -1795,12 +1808,43 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
 
       const deviation = actual !== null && systemBalance !== null ? actual - systemBalance : null;
 
+      // === ГП (склад готової продукції) обчислення ===
+      const systemBalanceGp: number | null = typeof item.systemBalanceGp === 'number' ? item.systemBalanceGp : null;
+
+      let actualGp: number | null = null;
+      let boxCountGp: number | null = null;
+      let actualCountGp: number | null = null;
+
+      if (item.unit === 'portions' && item.portionsPerBox != null && Number(item.portionsPerBox) > 0) {
+        const bcGp = typeof item.boxCountGp === 'number' ? item.boxCountGp : null;
+        const acGp = typeof item.actualCountGp === 'number' ? item.actualCountGp : null;
+        if (bcGp !== null || acGp !== null) {
+          boxCountGp = bcGp;
+          actualCountGp = acGp;
+          actualGp = (bcGp ?? 0) * Number(item.portionsPerBox) + (acGp ?? 0);
+        }
+      } else if (typeof item.actualCountGp === 'number') {
+        actualGp = item.actualCountGp;
+      }
+
+      const deviationGp = actualGp !== null && systemBalanceGp !== null ? actualGp - systemBalanceGp : null;
+      // === кінець ГП обчислення ===
+
       entries.push({
         sessionId: session.id,
         date: (session.inventoryDate ?? session.createdAt).toISOString(),
         systemBalance,
         actual,
         deviation,
+        systemBalanceGp,
+        actualGp,
+        deviationGp,
+        // Tooltip дані: для системного балансу ГП
+        systemBalanceGpBoxCount: boxCountGp,
+        systemBalanceGpActualCount: actualCountGp,
+        // Tooltip дані: для фактичного залишку ГП
+        actualGpBoxCount: boxCountGp,
+        actualGpActualCount: actualCountGp,
       });
     }
 

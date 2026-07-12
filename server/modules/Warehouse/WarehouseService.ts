@@ -283,6 +283,8 @@ export class WarehouseService {
               stockData: {
                 mainStock: mainStockPortions, // Порції на основному складі
                 smallStock: smallStockPortions, // Порції на малому складі
+                sourceStock: 0, // Залишок на складі-джерелі — оновлюється через refreshStockData
+                destStock: 0, // Залишок на складі-призначенні — оновлюється через refreshStockData
                 displayFormat: {
                   main: `${mainStockBoxes} / ${mainStockRemainder}`,
                   small: `${smallStockBoxes} / ${smallStockRemainder}`,

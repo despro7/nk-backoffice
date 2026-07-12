@@ -391,11 +391,9 @@ export const formatPhone = (phone: string): string => {
   * pluralize(2, 'порція', 'порції', 'порцій') // "порції"
   * pluralize(5, 'порція', 'порції', 'порцій') // "порцій"
  */
-export const pluralize = (count: number, one: string, few: string, many: string, fallback: string = "-"): string => {
+export const pluralize = (count: number, one: string, few: string, many: string): string => {
   const mod10 = count % 10;
   const mod100 = count % 100;
-  
-  if (count === 0) return fallback;
   
   if (mod10 === 1 && mod100 !== 11) {
     return one;

@@ -120,12 +120,16 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
         {/* Назва */}
         <div className="flex flex-1 gap-5 pl-1">
           <div className="flex flex-col">
-            <span className="text-lg leading-tight font-semibold text-neutral-800">
+            <span className="inline text-lg leading-tight font-semibold text-neutral-800">
               {product.name}
               {isOutdated && (
-                <span className="text-xs font-medium px-1.5 py-0.5 ml-2 relative -top-0.5 rounded bg-red-500 text-white">
-                  Застарілий
-                </span>
+                  <>
+                    &nbsp;&nbsp;<span className="inline-block relative -top-0.5 text-[10px] font-medium px-1.5 py-1 mr-1 rounded-full bg-red-600 border-1 border-red-600 text-white leading-none">
+                      <Tooltip content="Товар відключений в магазині" placement="top" offset={10} showArrow classNames={{ base: 'before:bg-danger before:rounded-[3px]', content: 'bg-danger border-0 text-white text-xs' }}>
+                      OFF
+                      </Tooltip>
+                    </span>
+                  </>
               )}
             </span>
             <div className="flex items-center gap-2">

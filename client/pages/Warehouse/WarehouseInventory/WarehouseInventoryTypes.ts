@@ -54,4 +54,9 @@ export interface ProductHistoryEntry {
   systemBalanceGp?: number | null;
   actualGp?: number | null;
   deviationGp?: number | null;
+  // Tooltip дані для ГП
+  systemBalanceGpBoxCount?: number | null;
+  systemBalanceGpActualCount?: number | null;
+  actualGpBoxCount?: number | null;
+  actualGpActualCount?: number | null;
 }

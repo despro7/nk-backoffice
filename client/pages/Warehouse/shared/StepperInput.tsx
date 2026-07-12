@@ -14,6 +14,7 @@ export interface StepperInputProps {
   onDecrement: () => void;
   forwardRef?: React.RefObject<HTMLInputElement>;
   onEnter?: () => void;
+  onBlur?: () => void; // Викликається при втраті фокуса
   disabled?: boolean;
   max?: number; // Максимально допустиме значення (для обмеження по залишкам партії)
   size?: 'sm' | 'md' | 'lg'; // Візуальні налаштування розміру
@@ -30,7 +31,7 @@ export interface StepperInputProps {
  * Кнопки ± дозволяють коригувати значення без клавіатури.
  */
 export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
-  ({ label, value, onChange, onIncrement, onDecrement, onEnter, disabled, max, size = 'md', className = '', labelClassName = '', inputClassName = '', buttonClassName = '' }, ref) => {
+  ({ label, value, onChange, onIncrement, onDecrement, onEnter, onBlur, disabled, max, size = 'md', className = '', labelClassName = '', inputClassName = '', buttonClassName = '' }, ref) => {
     const inputRef = useRef<HTMLInputElement>(null);
     const [isFocused, setIsFocused] = useState(false);
 
@@ -126,7 +127,10 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
               }
             }}
             onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
+            onBlur={() => {
+              setIsFocused(false);
+              if (onBlur) onBlur();
+            }}
             className="absolute inset-0 opacity-0 w-1 cursor-text [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             aria-label={label}
           />

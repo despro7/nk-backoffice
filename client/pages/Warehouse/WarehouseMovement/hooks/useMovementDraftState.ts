@@ -91,6 +91,9 @@ export interface UseMovementDraftStateReturn {
     draft: MovementDraft,
     loadProducts: () => Promise<MovementProduct[]>,
     loadDraftIntoProducts: (prods: MovementProduct[], items: any[], asOfDate?: Date) => Promise<void>,
+    refreshStockData?: (prods: MovementProduct[], sourceStorageId?: string, destStorageId?: string) => Promise<void>,
+    direction?: { storage: string; storageTo: string },
+    preloadedProducts?: MovementProduct[],
   ) => Promise<void>;
   loadMovementFromHistory: (
     doc: any,
@@ -245,6 +248,9 @@ export const useMovementDraftState = (
       draft: MovementDraft,
       loadProducts: () => Promise<MovementProduct[]>,
       loadDraftIntoProducts: (prods: MovementProduct[], items: any[], asOfDate?: Date) => Promise<void>,
+      refreshStockData?: (prods: MovementProduct[], sourceStorageId?: string, destStorageId?: string) => Promise<void>,
+      direction?: { storage: string; storageTo: string },
+      preloadedProducts?: MovementProduct[],
     ): Promise<void> => {
       try {
         LoggingService.warehouseMovementLog(`📂 Завантажуємо чернетку #${draft.id}`);
@@ -258,7 +264,11 @@ export const useMovementDraftState = (
           setSelectedDateTime(new Date(draft.movementDate));
         }
 
-        const prods = await loadProducts();
+        // Використовуємо вже завантажені товари (щоб не скидати stockData в нулі повторним loadProducts),
+        // інакше завантажуємо заново
+        const prods = preloadedProducts && preloadedProducts.length > 0
+          ? preloadedProducts
+          : await loadProducts();
 
         let draftItems: any[] = [];
         if (typeof draft.items === 'string') {
@@ -271,6 +281,18 @@ export const useMovementDraftState = (
         if (draft.notes) setNotes(draft.notes);
         const draftDate = draft.movementDate ? new Date(draft.movementDate) : undefined;
         await loadDraftIntoProducts(prods, draftItems, draftDate);
+
+        // Після завантаження чернетки продовжуємо роботу зі стоками
+        // Якщо direction передано — використовуємо його, інакше беремо з warehouseConfigRef
+        const sourceStorageId = direction?.storage ?? warehouseConfigRef.current?.storageFrom;
+        const destStorageId = direction?.storageTo ?? warehouseConfigRef.current?.storageTo;
+
+        if (refreshStockData && prods.length > 0 && sourceStorageId && destStorageId) {
+          LoggingService.warehouseMovementLog(
+            `📊 Оновлюємо stock data для чернетки #${draft.id}: source=${sourceStorageId}, dest=${destStorageId}`,
+          );
+          await refreshStockData(prods, sourceStorageId, destStorageId);
+        }
       } catch (err: any) {
         ToastService.show({
           title: 'Помилка завантаження чернетки',

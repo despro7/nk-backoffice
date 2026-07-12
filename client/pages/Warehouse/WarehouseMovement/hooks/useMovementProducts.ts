@@ -34,8 +34,13 @@ export interface UseMovementProductsReturn {
     asOfDate?: Date,
   ) => Promise<void>;
   loadDraftIntoProducts: (prods: MovementProduct[], draftItems: any[], asOfDate?: Date) => Promise<void>;
-  /** Оновлює stockData (mainStock/smallStock) для всіх товарів на задану дату */
-  refreshStockData: (allProds: MovementProduct[], asOfDate?: Date) => Promise<void>;
+  /** Оновлює stockData (mainStock/smallStock + sourceStock/destStock) для всіх товарів на задану дату */
+  refreshStockData: (
+    allProds: MovementProduct[],
+    asOfDate?: Date,
+    sourceStorageId?: string,
+    destStorageId?: string,
+  ) => Promise<void>;
   /** true поки виконується refreshStockData */
   isRefreshingStock: boolean;
   /** Згортає акордіони товарів без партій (не впливають на isDirty) */
@@ -210,9 +215,15 @@ export const useMovementProducts = (
         }
       }
 
-      // Проставляємо оновлені quantity та batchId у products state
-      setProducts(prev =>
-        prev.map(product => {
+      // Проставляємо оновлені quantity та batchId у products state.
+      // ВАЖЛИВО: беремо за основу `prods` (аргумент), а не `prev`!
+      // Бо loadDraftIntoProducts викликає setProducts(updated) і одразу ж
+      // refreshBatchQuantities(updated). Якщо брати prev — це старий стан
+      // (часто з порожніми batches після loadProducts), і умова
+      // `batches.length === 0` перезапише щойно встановлений updated
+      // з правильними boxes/portions на порожній. Беремо prods як джерело істини.
+      setProducts(() =>
+        prods.map(product => {
           const batchMap = quantityMap.get(product.sku);
           if (!batchMap || product.details.batches.length === 0) return product;
 
@@ -317,45 +328,79 @@ export const useMovementProducts = (
   // ─────────────────────────────────────────────────────────────────────
 
   const refreshStockData = useCallback(
-    async (allProds: MovementProduct[], asOfDate?: Date): Promise<void> => {
+    async (
+      allProds: MovementProduct[],
+      asOfDate?: Date,
+      sourceStorageId?: string,
+      destStorageId?: string,
+    ): Promise<void> => {
       if (allProds.length === 0) return;
 
       LoggingService.warehouseMovementLog(
-        `📊 Оновлення stockData для ${allProds.length} товарів${asOfDate ? ` на дату ${asOfDate.toLocaleString('uk-UA')}` : ' (поточні залишки)'}...`,
+        `📊 Оновлення stockData для ${allProds.length} товарів${asOfDate ? ` на дату ${asOfDate.toLocaleString('uk-UA')}` : ' (поточні залишки)'}${sourceStorageId ? ` (напрям: ${sourceStorageId} → ${destStorageId})` : ''}...`,
       );
 
       setIsRefreshingStock(true);
       try {
         const skus = allProds.map(p => p.sku).join(',');
-        const url = new URL('/api/warehouse/stock-snapshot', window.location.origin);
-        url.searchParams.set('skus', skus);
+
+        // Базовий запит — завжди повертає mainStock/smallStock
+        const baseUrl = new URL('/api/warehouse/stock-snapshot', window.location.origin);
+        baseUrl.searchParams.set('skus', skus);
         if (asOfDate) {
-          url.searchParams.set('asOfDate', asOfDate.toISOString());
+          baseUrl.searchParams.set('asOfDate', asOfDate.toISOString());
         }
 
-        const response = await fetch(url.toString(), {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
+        // Додаткові запити для залишків обраних складів (source/dest) — якщо задано напрям
+        const fetchSelected = async (storageId: string): Promise<Record<string, number>> => {
+          const u = new URL('/api/warehouse/stock-snapshot', window.location.origin);
+          u.searchParams.set('skus', skus);
+          if (asOfDate) u.searchParams.set('asOfDate', asOfDate.toISOString());
+          u.searchParams.set('storageId', storageId);
+          const r = await fetch(u.toString(), {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+          });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const d = await r.json();
+          const stocks: Record<string, { selectedStock?: number }> = d.stocks ?? {};
+          const out: Record<string, number> = {};
+          for (const [sku, s] of Object.entries(stocks)) {
+            out[sku] = s.selectedStock ?? 0;
+          }
+          return out;
+        };
 
-        const stocks: Record<string, { mainStock: number; smallStock: number }> = data.stocks ?? {};
+        const [baseData, sourceData, destData] = await Promise.all([
+          (async () => {
+            const r = await fetch(baseUrl.toString(), {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+            });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+          })(),
+          sourceStorageId ? fetchSelected(sourceStorageId) : Promise.resolve<Record<string, number>>({}),
+          destStorageId ? fetchSelected(destStorageId) : Promise.resolve<Record<string, number>>({}),
+        ]);
+
+        const stocks: Record<string, { mainStock: number; smallStock: number }> = baseData.stocks ?? {};
 
         setProducts(prev =>
           prev.map(p => {
             const s = stocks[p.sku];
             if (!s) return p;
-            const { portionsPerBox } = p;
             return {
               ...p,
               stockData: {
                 mainStock: s.mainStock,
                 smallStock: s.smallStock,
+                sourceStock: sourceData[p.sku] ?? 0,
+                destStock: destData[p.sku] ?? 0,
               },
             };
-            void portionsPerBox; // portionsPerBox не змінюється
           }),
         );
 

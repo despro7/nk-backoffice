@@ -47,6 +47,18 @@ export default function WarehouseMovement() {
     return (src || []).map((s: any) => ({ id: String(s.id), code: s.code ?? '', name: s.name ?? '' }));
   }, [dirsCtx.directories]);
 
+  // Назва складу-джерела (для підказки у Drawer вибору партії)
+  const sourceStorageName = useMemo(() => {
+    const s = movementStorages.find((st) => String(st.id) === String(mov.storage));
+    return s ? s.name : '';
+  }, [movementStorages, mov.storage]);
+
+  // Назва складу-призначення (для віджета залишків у рядку товару)
+  const destStorageName = useMemo(() => {
+    const s = movementStorages.find((st) => String(st.id) === String(mov.storageTo));
+    return s ? s.name : '';
+  }, [movementStorages, mov.storageTo]);
+
   const accordionRef = useRef<HTMLDivElement>(null);
 
   const guard = useUnsavedGuard({
@@ -87,7 +99,7 @@ export default function WarehouseMovement() {
     setStockDateMode(mode);
     // Оновлюємо stockData (стовпець залишків у списку) з відповідною датою
     const asOfDate = mode === 'movement' ? mov.selectedDateTime : undefined;
-    mov.refreshStockData(mov.products, asOfDate);
+    mov.refreshStockData(mov.products, asOfDate, mov.storage, mov.storageTo);
     // Також оновлюємо залишки партій для вже відкритих товарів
     if (mov.selectedProductIds.size > 0) {
       mov.refreshBatchQuantities(mov.products, mov.selectedProductIds, asOfDate);
@@ -205,6 +217,8 @@ export default function WarehouseMovement() {
           movementDate: mov.selectedDateTime.toISOString(),
           dryRun: false,
           isFinal,
+          sourceWarehouse: mov.storage,
+          destinationWarehouse: mov.storageTo,
         }),
       });
       const data = await response.json();
@@ -342,6 +356,8 @@ export default function WarehouseMovement() {
           summaryItems: mov.summaryItems,
           movementDate: mov.selectedDateTime.toISOString(),
           dryRun: true,
+          sourceWarehouse: mov.storage,
+          destinationWarehouse: mov.storageTo,
         }),
       });
       const data = await response.json();
@@ -412,7 +428,7 @@ export default function WarehouseMovement() {
         </div>
 
         {/* Початковий екран */}
-        {activeTab === 'current' && !mov.savedDraft && mov.products.length === 0 && !mov.productsLoading && (
+        {activeTab === 'current' && !mov.savedDraft && mov.products.length === 0 && !mov.isLoading && (
           <MovementStartScreen
             onLoadProducts={mov.loadProducts}
             isLoadingProducts={mov.productsLoading}
@@ -528,6 +544,10 @@ export default function WarehouseMovement() {
                       }
                       selectedDateTime={mov.selectedDateTime}
                       sourceStorage={mov.storage}
+                      sourceStorageName={sourceStorageName}
+                      destStorage={mov.storageTo}
+                      destStorageName={destStorageName}
+                      isRefreshingStock={mov.isRefreshingStock}
                     />
                   ))}
                 </div>
@@ -563,6 +583,10 @@ export default function WarehouseMovement() {
                       }
                       selectedDateTime={mov.selectedDateTime}
                       sourceStorage={mov.storage}
+                      sourceStorageName={sourceStorageName}
+                      destStorage={mov.storageTo}
+                      destStorageName={destStorageName}
+                      isRefreshingStock={mov.isRefreshingStock}
                     />
                   ))}
                 </div>
@@ -609,7 +633,7 @@ export default function WarehouseMovement() {
             loading={draftsManager.loading}
             onRefresh={draftsManager.loadDrafts}
             onLoadDraft={async (draft) => {
-              await mov.loadDraftObject(draft);
+              await mov.loadDraftObject(draft, { storage: mov.storage, storageTo: mov.storageTo }, mov.products);
               setStockDateMode('movement');
               setActiveTab('current');
             }}

@@ -1,4 +1,3 @@
-import { DynamicIcon } from "lucide-react/dynamic";
 import { Tooltip } from "@heroui/react";
 import { pluralize } from "@/lib/formatUtils";
 
@@ -15,14 +14,18 @@ const CompactBalance = ({ total, portionsPerBox, sessionItem }: Props) => {
   if (sessionItem && sessionItem.boxCount !== undefined && sessionItem.boxCount !== null) {
     const bc = sessionItem.boxCount ?? 0;
     const ac = sessionItem.actualCount ?? 0;
+    // Якщо обидва значення нуля, не показуємо Tooltip
+    if (bc === 0 && ac === 0) {
+      return <>{total}</>;
+    }
     return <span className="inline-flex">
             <Tooltip
               showArrow
               placement="left"
               content={`${bc ? `${bc} ${pluralize(bc, 'коробка', 'коробки', 'коробок')}` : ''}${bc && ac ? ` + ${ac} ${pluralize(ac, 'порція', 'порції', 'порцій')}` : ac ? `${ac} ${pluralize(ac, 'порція', 'порції', 'порцій')}` : ''}`}
               classNames={{ 
-                base: 'before:bg-gray-200 before:rounded-[3px]',
-                content: 'bg-gray-200 border-1 text-gray-700 text-xs'
+                base: 'before:bg-gray-800 before:rounded-[3px]',
+                content: 'bg-gray-800 border-1 border-gray-800 text-gray-100 text-xs'
               }}
             >
               {total}
@@ -32,14 +35,18 @@ const CompactBalance = ({ total, portionsPerBox, sessionItem }: Props) => {
 
   const boxes = Math.floor(Number(total) / portionsPerBox);
   const rest = Number(total) % portionsPerBox;
+  // Якщо обидва значення нуля, не показуємо Tooltip
+  if (boxes === 0 && rest === 0) {
+    return <>{total}</>;
+  }
   return <span className="inline-flex">
           <Tooltip
             showArrow
             placement="left"
             content={`${boxes ? `${boxes} ${pluralize(boxes, 'коробка', 'коробки', 'коробок')}` : ''}${boxes && rest ? ` + ${rest} ${pluralize(rest, 'порція', 'порції', 'порцій')}` : rest ? `${rest} ${pluralize(rest, 'порція', 'порції', 'порцій')}` : ''}`}
             classNames={{ 
-              base: 'before:bg-gray-200 before:rounded-[3px]',
-              content: 'bg-gray-200 border-1 text-gray-700 text-xs'
+              base: 'before:bg-gray-800 before:rounded-[3px]',
+              content: 'bg-gray-800 border-1 border-gray-800 text-gray-100 text-xs'
             }}
           >
             {total}

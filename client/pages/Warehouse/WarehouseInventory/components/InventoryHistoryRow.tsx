@@ -1,9 +1,10 @@
 import { Fragment } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import type { ProductHistoryEntry } from '../WarehouseInventoryTypes';
+import { Tooltip } from '@heroui/react';
 import { formatRelativeDate } from '@/lib/formatUtils';
-import CompactBalance from './CompactBalance';
 import { Popover, PopoverContent, PopoverTrigger } from '@heroui/react';
+import CompactBalance from './CompactBalance';
+import type { ProductHistoryEntry } from '../WarehouseInventoryTypes';
 
 interface InventoryHistoryRowProps {
   sessionId: string;
@@ -45,7 +46,7 @@ export const InventoryHistoryRow = ({
   return (
     <Fragment>
       <tr
-        className="[&>td]:border-b [&>td]:border-b-gray-100 [&>td]:text-gray-700 [&>td]:transition-colors hover:bg-gray-100/30 cursor-pointer select-none"
+        className="[&>td]:border-b [&>td]:border-b-gray-100 [&>td]:text-gray-700 [&>td]:transition-colors hover:bg-gray-100/80 cursor-pointer select-none"
         onClick={() => onRowClick(sessionId, item.sku)}
       >
         <td className="py-2 px-3 font-mono">
@@ -58,23 +59,32 @@ export const InventoryHistoryRow = ({
           </div>
         </td>
         <td className="py-2 px-3 ">
-          <span className={`inline-flex items-center gap-1.5 flex-wrap ${item.isOutdated ? 'text-gray-400/75' : ''}`}>
-            {item.name}
-            {item.isOutdated && (
-              <span className="text-xs font-medium px-1.5 py-1 rounded bg-red-600 text-white leading-none">
-                Застарілий
+          <span className={`inline ${item.isOutdated ? 'text-gray-400/75' : ''}`}>
+            {item.unit === 'portions' && (
+              <span className="inline items-center gap-0.5 text-xs px-1 py-0.5 mr-1.5 rounded-[6px] bg-neutral-300 text-white text-shadow-sm shadow-inner">
+                {item.portionsPerBox}
               </span>
             )}
-          </span>
-          {isSetItem && (
-            <Popover showArrow offset={20} placement="right" classNames={{ content: 'bg-amber-100' }}>
-              <PopoverTrigger>
-                <div className="inline-flex w-fit ml-2 font-bold text-[10px] bg-amber-400/5 text-amber-800/50 border border-amber-800/30 rounded-[6px] uppercase px-1.5 py-0.5">
-                  Склад
-                </div>
-              </PopoverTrigger>
-              <PopoverContent>
-                <div className="px-1 py-1.5">
+            <span className="pr-1.5">{item.name}</span>
+            {item.isOutdated && (
+              <Tooltip content="Товар відключений в магазині" placement="top" showArrow classNames={{ base: 'before:bg-danger before:rounded-[3px]', content: 'bg-danger border-0 text-white text-xs' }}>
+                <span className="inline-block text-[10px] font-medium px-1.5 py-1 mr-1 rounded-full bg-red-600 border-1 border-red-600 text-white leading-none">
+                  OFF
+                </span>
+              </Tooltip>
+            )}
+            {isSetItem && (
+              <Popover 
+                showArrow
+                placement="right"
+                classNames={{ 
+                  trigger: 'inline-block w-fit font-bold text-[10px] bg-amber-400/5 text-amber-800/50 border border-amber-800/30 rounded-full uppercase px-1.5 py-1 leading-none',
+                  content: 'px-4 py-3 bg-amber-100',
+                  base: 'before:bg-amber-100 before:rounded-[2px] before:z-10',
+                }}
+              >
+                <PopoverTrigger>Склад</PopoverTrigger>
+                <PopoverContent>
                   {setComposition.length > 0 ? (
                     <ul className="space-y-1">
                       {setComposition.map((component, index) => (
@@ -86,16 +96,16 @@ export const InventoryHistoryRow = ({
                   ) : (
                     <p className="mt-2 text-xs text-gray-500">Склад набору недоступний у цьому записі.</p>
                   )}
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
+                </PopoverContent>
+              </Popover>
+            )}
+          </span>
         </td>
         <td className="py-2 px-3 text-center">{item.unit === 'portions' ? <CompactBalance total={item.systemBalance} portionsPerBox={item.portionsPerBox} /> : item.systemBalance}</td>
         <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{total === null ? '–' : (item.unit === 'portions' ? <CompactBalance total={total} portionsPerBox={item.portionsPerBox} sessionItem={item} /> : String(total))}</td>
         <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{dev === null ? '–' : (<span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>{dev > 0 ? '+' : ''} {dev}</span>)}</td>
-        <td className="py-2 px-3 text-center">{item.systemBalanceGp ?? '–'}</td>
-        <td className={`py-2 px-3 text-center ${totalGp === null ? 'text-gray-300' : ''}`}>{totalGp === null ? '–' : (item.unit === 'portions' ? <CompactBalance total={totalGp} portionsPerBox={item.portionsPerBox} sessionItem={item} /> : String(totalGp))}</td>
+        <td className="py-2 px-3 text-center">{item.unit === 'portions' ? <CompactBalance total={item.systemBalanceGp} portionsPerBox={item.portionsPerBox} /> : (item.systemBalanceGp ?? '–')}</td>
+        <td className={`py-2 px-3 text-center ${totalGp === null ? 'text-gray-300' : ''}`}>{totalGp === null ? '–' : (item.unit === 'portions' ? <CompactBalance total={totalGp} portionsPerBox={item.portionsPerBox} sessionItem={{ boxCount: item.boxCountGp, actualCount: item.actualCountGp }} /> : String(totalGp))}</td>
         <td className={`py-2 px-3 text-center ${devGp === null ? 'text-gray-300' : ''}`}>{devGp === null ? '–' : (<span className={`font-semibold ${devGp === 0 ? 'text-green-600' : devGp < 0 ? 'text-red-500' : 'text-blue-600'}`}>{devGp > 0 ? '+' : ''} {devGp}</span>)}</td>
       </tr>
       {isRowExpanded && (
@@ -113,15 +123,15 @@ export const InventoryHistoryRow = ({
                 <table className={`text-xs w-full`}>
                   <thead>
                     <tr className={`text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold ${showKitColumn ? '[&>th]:w-1/11' : '[&>th]:w-1/9'}`}>
-                      <th className="text-left! w-auto!">Дата</th>
+                      <th className="text-left! w-auto! min-w-[160px]">Дата</th>
                       <th>Переміщення</th>
                       <th>Відвантаження</th>
                       {showKitColumn && <th>Комплектування</th>}
                       <th>Повернення</th>
                       <th>Списання</th>
-                      <th className="relative" title="За обліком / Факт / Відхилення (МС / ГП)">За обліком</th>
-                      <th className="relative" title="Факт / Відхилення (МС / ГП)">Факт</th>
-                      <th className="relative" title="Відхилення (МС / ГП)">Відхилення</th>
+                      <th>Облік <br/><span className="text-gray-900/65 text-[9px] font-medium px-1 py-0.5 whitespace-nowrap rounded bg-gradient-to-r from-lime-100 to-blue-100 border shadow-accent">МС / ГП</span></th>
+                      <th>Факт <br/><span className="text-gray-900/65 text-[9px] font-medium px-1 py-0.5 whitespace-nowrap rounded bg-gradient-to-r from-lime-100 to-blue-100 border shadow-accent">МС / ГП</span></th>
+                      <th>Відхилення <br/><span className="text-gray-900/65 text-[9px] font-medium px-1 py-0.5 whitespace-nowrap rounded bg-gradient-to-r from-lime-100 to-blue-100 border shadow-accent">МС / ГП</span></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-blue-50">
@@ -160,14 +170,10 @@ export const InventoryHistoryRow = ({
                           )}
                         </td>
                         <td className="py-0.5 px-2 text-center">
-                          <span className="text-gray-500">{entry.systemBalance ?? '–'}</span>
-                          <br />
-                          <span className="text-gray-400">({entry.systemBalanceGp ?? '–'})</span>
+                          <span className="text-gray-500">{entry.systemBalance ?? '–'} / {entry.systemBalanceGp ?? '–'}</span>
                         </td>
                         <td className="py-0.5 px-2 text-center">
-                          <span className="text-gray-500">{entry.actual ?? '–'}</span>
-                          <br />
-                          <span className="text-gray-400">({entry.actualGp ?? '–'})</span>
+                          <span className="text-gray-500">{entry.actual ?? '–'} / {entry.actualGp ?? '–'}</span>
                         </td>
                         <td className="py-0.5 px-2 text-center">
                           <span className="text-gray-500">
@@ -175,11 +181,7 @@ export const InventoryHistoryRow = ({
                               <span className={`font-semibold ${entry.deviation === 0 ? 'text-green-600' : entry.deviation < 0 ? 'text-red-500' : 'text-blue-600'}`}>
                                 {entry.deviation > 0 ? '+' : ''}{entry.deviation}
                               </span>
-                            )}
-                          </span>
-                          <br />
-                          <span className="text-gray-400">
-                            {entry.deviationGp === null ? '–' : (
+                            )} / {entry.deviationGp === null ? '–' : (
                               <span className={`font-semibold ${entry.deviationGp === 0 ? 'text-green-600' : entry.deviationGp < 0 ? 'text-red-500' : 'text-blue-600'}`}>
                                 {entry.deviationGp > 0 ? '+' : ''}{entry.deviationGp}
                               </span>

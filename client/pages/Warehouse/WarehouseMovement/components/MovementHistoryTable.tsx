@@ -132,7 +132,7 @@ export const MovementHistoryTable = ({
                 <p className="text-sm text-gray-900 max-w-full" title={doc.details ? `${getGoodsFromDetails(doc.id).length} товарів` : 'Завантажити деталі для перегляду товарів'}>
                   {doc.details ? <span className="font-mono">{getGoodsFromDetails(doc.id).length}</span> : <span className="text-neutral-300">Завантажити...</span>}
                 </p>
-                <p className="text-xs text-gray-400">{pluralize(getGoodsFromDetails(doc.id).length, 'Товар', 'Товари', 'Товарів', 'Товари')}</p>
+                <p className="text-xs text-gray-400">{pluralize(getGoodsFromDetails(doc.id).length, 'Товар', 'Товари', 'Товарів')}</p>
               </div>
 
               {/* Порції */}
@@ -140,7 +140,7 @@ export const MovementHistoryTable = ({
                 <p className="text-sm text-gray-900 max-w-full" title={doc.details ? `${getGoodsFromDetails(doc.id).reduce((sum, item) => sum + parseFloat(item.qty), 0)} порцій` : 'Завантажити деталі для перегляду кількості порцій'}>
                   {doc.details ? <span className="font-mono">{getGoodsFromDetails(doc.id).reduce((sum, item) => sum + parseFloat(item.qty), 0)}</span> : <span className="text-neutral-300">Завантажити...</span>}
                 </p>
-                <p className="text-xs text-gray-400">{pluralize(getGoodsFromDetails(doc.id).reduce((sum, item) => sum + parseFloat(item.qty), 0), 'Порція', 'Порції', 'Порцій', 'Порції')}</p>
+                <p className="text-xs text-gray-400">{pluralize(getGoodsFromDetails(doc.id).reduce((sum, item) => sum + parseFloat(item.qty), 0), 'Порція', 'Порції', 'Порцій')}</p>
               </div>
 
             </div>

@@ -19,9 +19,16 @@ export interface UseMovementSyncReturn {
     loadProducts: () => Promise<MovementProduct[]>,
     savedDraft: MovementDraft | null,
     loadDraftIntoProducts: (prods: MovementProduct[], items: any[], asOfDate?: Date) => Promise<void>,
-    refreshStockData?: (prods: MovementProduct[], asOfDate?: Date) => Promise<void>,
+    refreshStockData?: (
+      prods: MovementProduct[],
+      asOfDate?: Date,
+      sourceStorageId?: string,
+      destStorageId?: string,
+    ) => Promise<void>,
     stockDateMode?: 'movement' | 'now',
     selectedDateTime?: Date,
+    sourceStorageId?: string,
+    destStorageId?: string,
   ) => Promise<void>;
   handleSyncStockFromDilovod: (
     loadProducts: () => Promise<MovementProduct[]>,
@@ -40,7 +47,14 @@ export interface UseMovementSyncReturn {
     setSelectedDateTime: (date: Date) => void,
     /** Якщо 'movement' — перераховує залишки на нову дату; якщо 'now' — не змінює дату залишків */
     stockDateMode?: 'movement' | 'now',
-    refreshStockData?: (prods: MovementProduct[], asOfDate?: Date) => Promise<void>,
+    refreshStockData?: (
+      prods: MovementProduct[],
+      asOfDate?: Date,
+      sourceStorageId?: string,
+      destStorageId?: string,
+    ) => Promise<void>,
+    sourceStorageId?: string,
+    destStorageId?: string,
   ) => void;
 }
 
@@ -81,9 +95,16 @@ export const useMovementSync = (
       loadProducts: () => Promise<MovementProduct[]>,
       savedDraft: MovementDraft | null,
       loadDraftIntoProducts: (prods: MovementProduct[], items: any[], asOfDate?: Date) => Promise<void>,
-      refreshStockData?: (prods: MovementProduct[], asOfDate?: Date) => Promise<void>,
+      refreshStockData?: (
+        prods: MovementProduct[],
+        asOfDate?: Date,
+        sourceStorageId?: string,
+        destStorageId?: string,
+      ) => Promise<void>,
       stockDateMode?: 'movement' | 'now',
       selectedDateTime?: Date,
+      sourceStorageId?: string,
+        destStorageId?: string,
     ): Promise<void> => {
       try {
         const prods = await loadProducts();
@@ -97,7 +118,7 @@ export const useMovementSync = (
 
         // Якщо залишки показуються на дату переміщення — перезавантажуємо stockData на ту ж дату
         if (stockDateMode === 'movement' && selectedDateTime && refreshStockData && prods.length > 0) {
-          await refreshStockData(prods, selectedDateTime);
+          await refreshStockData(prods, selectedDateTime, sourceStorageId, destStorageId);
         }
 
         ToastService.show({
@@ -195,7 +216,14 @@ export const useMovementSync = (
       ) => Promise<void>,
       setSelectedDateTime: (date: Date) => void,
       stockDateMode: 'movement' | 'now' = 'now',
-      refreshStockData?: (prods: MovementProduct[], asOfDate?: Date) => Promise<void>,
+      refreshStockData?: (
+        prods: MovementProduct[],
+        asOfDate?: Date,
+        sourceStorageId?: string,
+        destStorageId?: string,
+      ) => Promise<void>,
+      sourceStorageId?: string,
+      destStorageId?: string,
     ): void => {
       setSelectedDateTime(date);
 
@@ -214,7 +242,7 @@ export const useMovementSync = (
       if (refreshStockData) {
         stockDebounceRef.current = setTimeout(() => {
           stockDebounceRef.current = null;
-          refreshStockData(products, date);
+          refreshStockData(products, date, sourceStorageId, destStorageId);
         }, 1000);
       }
 
