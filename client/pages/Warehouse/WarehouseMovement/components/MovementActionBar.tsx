@@ -14,14 +14,8 @@ interface MovementActionBarProps {
   hasDraft: boolean;
   draftStatus: MovementStatus | null;
   onCancel: () => void;
-  onSaveDraft: () => void;
-  /** Проміжна відправка (isFinal=false) — статус → 'active', документ залишається редагованим */
-  onSendIntermediate: () => void;
-  /** Фінальна відправка (isFinal=true) — статус → 'finalized', документ блокується */
-  onSendFinal: () => void;
-  /** Завершити локально без відправки в Діловод */
-  onFinalizeLocally?: () => void;
-  isFinalizingLocally?: boolean;
+  /** Зберегти та відправити в Діловод — документ одразу закривається (статус 'finalized') */
+  onSaveAndSend: () => void;
   /** Тільки для адмінів — відображення кнопки "Показати payload" */
   onShowPayload?: () => void;
   isAdmin?: boolean;
@@ -37,11 +31,7 @@ export const MovementActionBar = ({
   hasDraft,
   draftStatus,
   onCancel,
-  onSaveDraft,
-  onSendIntermediate,
-  onSendFinal,
-  onFinalizeLocally,
-  isFinalizingLocally = false,
+  onSaveAndSend,
   onShowPayload,
   isAdmin = false,
   isDebugMode = false,
@@ -49,7 +39,7 @@ export const MovementActionBar = ({
 }: MovementActionBarProps) => {
   const isFinalized = draftStatus === 'finalized';
   const canEdit = !isFinalized;
-  // Кнопка "Відправити" активна якщо: є товари та або (є збережена чернетка) або (є незбережені зміни)
+  // Кнопка "Зберегти та відправити" активна якщо: є товари та або (є збережена чернетка) або (є незбережені зміни)
   const canSend = canEdit && !isSavingDraft && selectedCount > 0 && (hasDraft || isDirty);
 
   return (
@@ -67,54 +57,23 @@ export const MovementActionBar = ({
 
       {/* Права частина */}
       <div className="flex items-center gap-3">
-        {/* Зберегти чернетку — закоментовано: автозбереження відбувається перед відправкою */}
+        {/* Зберегти та відправити в Діловод — документ одразу закривається (статус 'finalized') */}
         {canEdit && (
-          <Button
-            variant="flat"
-            color="default"
-            className="bg-neutral-500 text-white"
-            size="lg"
-            onPress={onSaveDraft}
-            isLoading={isSavingDraft}
-            isDisabled={selectedCount === 0}
-            startContent={!isSavingDraft ? <DynamicIcon name="save" className="w-4 h-4" /> : undefined}
-          >
-            {isSavingDraft ? 'Збереження...' : 'Зберегти чернетку'}
-          </Button>
-        )}
-
-        {/* Відправити в Діловод — проміжна відправка, документ залишається активним */}
-        {canEdit && (
-          <Button
-            color="warning"
-            size="lg"
-            className="text-white"
-            isDisabled={!canSend || isSending}
-            onPress={onSendIntermediate}
-            isLoading={isSending}
-            startContent={!isSending ? <DynamicIcon name="send" className="w-4 h-4" /> : undefined}
-          >
-            {isSending ? 'Відправка...' : 'Відправити в Діловод'}
-          </Button>
-        )}
-
-        {/* Завершити переміщення — фінальна відправка, документ блокується */}
-        {isDebugMode && canEdit && draftStatus === 'active' && (
           <Button
             color="success"
             size="lg"
             className="text-white"
             isDisabled={!canSend || isSending}
-            onPress={onSendFinal}
+            onPress={onSaveAndSend}
             isLoading={isSending}
-            startContent={!isSending ? <DynamicIcon name="check-circle" className="w-4 h-4" /> : undefined}
+            startContent={!isSending ? <DynamicIcon name="send" className="w-4 h-4" /> : undefined}
           >
-            Завершити переміщення
+            {isSending ? 'Відправка...' : 'Зберегти та відправити'}
           </Button>
         )}
       </div>
       <div className="flex items-center gap-3 w-full justify-end">
-        {/* Кнопка "Показати payload" — тільки для адміністраторів */}
+        {/* Кнопка "Показати payload" — тільки для адміністраторів (debug-режим) */}
         { isDebugMode && isAdmin && onShowPayload && (
           <Button
             variant="flat"
@@ -127,21 +86,6 @@ export const MovementActionBar = ({
             startContent={!isLoadingPayload ? <DynamicIcon name="code-2" className="w-4 h-4" /> : undefined}
           >
             payload
-          </Button>
-        )}
-
-        {/* Завершити без Діловода — локальне завершення без відправки в ERP (лише debug-режим) */}
-        {isDebugMode && canEdit && draftStatus === 'active' && onFinalizeLocally && (
-          <Button
-            variant="solid"
-            color="danger"
-            size="lg"
-            isDisabled={isSending || isFinalizingLocally}
-            onPress={onFinalizeLocally}
-            isLoading={isFinalizingLocally}
-            startContent={!isFinalizingLocally ? <DynamicIcon name="check" className="w-4 h-4" /> : undefined}
-          >
-            Завершити без Діловода
           </Button>
         )}
       </div>

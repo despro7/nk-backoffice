@@ -61,10 +61,7 @@ export default function WarehouseMovement() {
 
   const accordionRef = useRef<HTMLDivElement>(null);
 
-  const guard = useUnsavedGuard({
-    isDirty: mov.isDirty,
-    onSaveDraft: mov.handleSaveDraft,
-  });
+  // guard оголошується після визначення sendAndFinalize (нижче)
 
   // Закрити поле при клику поза інтерфейсом
   useEffect(() => {
@@ -108,11 +105,19 @@ export default function WarehouseMovement() {
 
   // Коли документ отримує статус 'active' — автоматично перемикаємо на дату переміщення.
   // Це примусово показує залишки "на момент переміщення", а не поточні.
+  // ВАЖЛИВО: оновлюємо ТІЛЬКИ stockData (refreshStockData), бо партії (boxes/portions)
+  // вже коректно відновлені всередині loadDraftObject → loadDraftIntoProducts →
+  // refreshBatchQuantities(updated). Повторний refreshBatchQuantities тут із застарілим
+  // mov.products (під час синхронного initData) міг би скинути boxes/portions на порожні.
   const prevSessionStatusRef = useRef<string | null>(null);
   useEffect(() => {
     const status = mov.sessionStatus;
     if (status === 'active' && prevSessionStatusRef.current !== 'active') {
-      handleStockDateModeChange('movement');
+      // Перемикаємо режим відображення залишків на "дату переміщення"
+      setStockDateMode('movement');
+      const asOfDate = mov.selectedDateTime;
+      // Оновлюємо лише stockData (sourceStock/destStock) — НЕ чіпаємо партії
+      mov.refreshStockData(mov.products, asOfDate, mov.storage, mov.storageTo);
     }
     prevSessionStatusRef.current = status;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,16 +174,11 @@ export default function WarehouseMovement() {
   const [payloadPreview, setPayloadPreview] = useState<DilovodMovementPayload | null>(null);
   const [isLoadingPayload, setIsLoadingPayload] = useState(false);
   const [isSendingToDilovod, setIsSendingToDilovod] = useState(false);
-  const [isFinalizingLocally, setIsFinalizingLocally] = useState(false);
-  
-  // Модалка підтвердження відправки
-  const [showConfirmIntermediate, setShowConfirmIntermediate] = useState(false);
-  const [showConfirmFinalize, setShowConfirmFinalize] = useState(false);
 
   // Модалка попередження про пусті партії
   const [emptyBatchesModal, setEmptyBatchesModal] = useState<{
     items: EmptyBatchInfo[];
-    pendingAction: 'intermediate' | 'final';
+    pendingAction: 'final';
   } | null>(null);
 
   // --------------------------------------------------------------------------
@@ -196,12 +196,22 @@ export default function WarehouseMovement() {
   };
 
   // --------------------------------------------------------------------------
-  // Спільна логіка відправки до Діловода
+  // Зберегти та відправити до Діловода (чернетки більше не існує)
+  // Будь-яке збереження = створення/оновлення в БД → відправка в Діловод
+  // (проведено, saveType:1) → статус 'finalized' (документ закрито).
   // --------------------------------------------------------------------------
-  const sendToDilovod = async (isFinal: boolean) => {
+  const sendAndFinalize = async (skipEmptyCheck = false) => {
+    if (!skipEmptyCheck) {
+      const empty = findEmptyBatches();
+      if (empty.length > 0) {
+        setEmptyBatchesModal({ items: empty, pendingAction: 'final' });
+        return;
+      }
+    }
+
     let draft = mov.savedDraft;
     // Завжди зберігаємо актуальний стан перед відправкою
-    // (для нового документа — створює, для існуючого draft/active — оновлює items)
+    // (для нового документа — створює, для існуючого — оновлює items)
     draft = await mov.handleSaveDraft();
     if (!draft) return;
 
@@ -216,7 +226,7 @@ export default function WarehouseMovement() {
           summaryItems: mov.summaryItems,
           movementDate: mov.selectedDateTime.toISOString(),
           dryRun: false,
-          isFinal,
+          isFinal: true,
           sourceWarehouse: mov.storage,
           destinationWarehouse: mov.storageTo,
         }),
@@ -224,36 +234,16 @@ export default function WarehouseMovement() {
       const data = await response.json();
       if (data.success) {
         const docLabel = data.docNumber ?? data.dilovodDocId ?? '—';
-        if (isFinal) {
-          ToastService.show({ 
-            title: 'Переміщення завершено!',
-            description: `Документ ${docLabel} успішно завершено`,
-            color: 'success',
-            hideIcon: false
-          });
-          setShowPayloadPreview(false);
-          // Після фінальної — повністю скидаємо стан сторінки (як "Скасувати")
-          await mov.handleReset();
-          draftsManager.loadDrafts();
-        } else {
-          ToastService.show({ 
-            title: 'Відправлено в Діловод!',
-            color: 'success',
-            description: `Документ ${docLabel} залишається активним для редагування`,
-            hideIcon: false
-          });
-          setShowPayloadPreview(false);
-          // Після проміжної — лише оновлюємо статус і дату в savedDraft (без перезавантаження).
-          // Використовуємо локальну `draft` (результат handleSaveDraft), а не mov.savedDraft,
-          // бо React-стан ще не рефрешнувся всередині async-замикання.
-          mov.setSavedDraft({
-            ...draft,
-            status: 'active',
-            lastSentToDilovodAt: data.lastSentToDilovodAt ?? new Date().toISOString(),
-            ...(data.dilovodDocId && { dilovodDocId: data.dilovodDocId }),
-            ...(data.docNumber && { docNumber: data.docNumber }),
-          });
-        }
+        ToastService.show({
+          title: 'Переміщення завершено!',
+          description: `Документ ${docLabel} успішно відправлено та закрито`,
+          color: 'success',
+          hideIcon: false,
+        });
+        setShowPayloadPreview(false);
+        // Після відправки — повністю скидаємо стан сторінки (як "Скасувати")
+        await mov.handleReset();
+        draftsManager.loadDrafts();
       } else {
         // data.error містить деталізоване повідомлення (назви товарів, артикули).
         // Нормалізуємо для відображення в Toast: прибираємо "- " маркери, замінюємо \n на " | "
@@ -270,72 +260,32 @@ export default function WarehouseMovement() {
         LoggingService.log('[WarehouseMovement] Діловод відповів з помилкою:', data);
       }
     } catch (err) {
-      LoggingService.log('[WarehouseMovement] sendToDilovod error:', err);
+      LoggingService.log('[WarehouseMovement] sendAndFinalize error:', err);
       ToastService.show({ title: 'Помилка при відправці до Діловода', color: 'danger' });
     } finally {
       setIsSendingToDilovod(false);
     }
   };
 
-  /** Проміжна відправка (isFinal=false) — статус → 'active', документ залишається відкритим */
-  const handleSendIntermediate = () => {
-    const empty = findEmptyBatches();
-    if (empty.length > 0) {
-      setEmptyBatchesModal({ items: empty, pendingAction: 'intermediate' });
-      return;
-    }
-    setShowConfirmIntermediate(true);
-  };
-
-  /** Фінальна відправка (isFinal=true) — показуємо підтвердження перед відправкою */
-  const handleSendFinal = () => {
-    const empty = findEmptyBatches();
-    if (empty.length > 0) {
-      setEmptyBatchesModal({ items: empty, pendingAction: 'final' });
-      return;
-    }
-    setShowConfirmFinalize(true);
-  };
-
-  /** Автоматично видаляє пусті партії і продовжує відправку */
-  const handleAutoCleanAndSend = () => {
+  /** Автоматично видаляє пусті партії і відправляє документ */
+  const autoCleanAndSend = () => {
     if (!emptyBatchesModal) return;
     // Видаляємо пусті партії по всіх товарах
     emptyBatchesModal.items.forEach(({ product, emptyBatchIndices }) => {
       const cleaned = product.details.batches.filter((_, idx) => !emptyBatchIndices.includes(idx));
       mov.handleProductChange(product.id, cleaned);
     });
-    const action = emptyBatchesModal.pendingAction;
     setEmptyBatchesModal(null);
-    if (action === 'final') {
-      setShowConfirmFinalize(true);
-    } else {
-      setShowConfirmIntermediate(true);
-    }
+    // Повторна відправка з пропуском перевірки пустих партій (вони вже видалені)
+    void sendAndFinalize(true);
   };
 
-  /** Завершити локально без відправки в Діловод */
-  const handleFinalizeLocally = async () => {
-    if (!mov.savedDraft) return;
-    setIsFinalizingLocally(true);
-    try {
-      const res = await fetch(`/api/warehouse/${mov.savedDraft.id}/finalize-local`, {
-        method: 'PATCH',
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (data.success) {
-        ToastService.show({ title: 'Переміщення завершено локально', color: 'success' });
-        mov.setSavedDraft({ ...mov.savedDraft, status: 'finalized' });
-      } else {
-        ToastService.show({ title: data.error ?? 'Помилка при завершенні', color: 'danger' });
-      }
-    } catch {
-      ToastService.show({ title: 'Помилка мережі', color: 'danger' });
-    } finally {
-      setIsFinalizingLocally(false);
-    }
-  };
+  // Захист від незбережених змін: «зберегти» = відправити та закрити документ
+  const guard = useUnsavedGuard({
+    isDirty: mov.isDirty,
+    onSaveDraft: sendAndFinalize,
+  });
+
   /** Dry-run: завантажити payload із сервера та відкрити модалку (тільки адмін) */
   const handleShowPayload = async () => {
     // Якщо чернетки ще немає в БД (id=0 або відсутня) — спочатку зберегти
@@ -393,7 +343,7 @@ export default function WarehouseMovement() {
       {/* Основна колона */}
       <div className="flex flex-col gap-8 pb-12 w-full">
         {/* Таби: Поточні переміщення / Чернетки / Історія */}
-        <div className="flex items-center gap-4 justify-between">
+        <div className="flex items-center gap-4 justify-between mb-4">
           <PageTabs selectedKey={activeTab} onSelectionChange={(key) => {
             const tab = key as 'current' | 'drafts' | 'history';
             setActiveTab(tab);
@@ -441,7 +391,7 @@ export default function WarehouseMovement() {
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h2 className="text-2xl font-bold text-gray-800">
                 {!mov.savedDraft
-                  ? 'Накладна на переміщення (чернетка)'
+                  ? 'Накладна на переміщення'
                   : `Накладна на переміщення №${mov.savedDraft.docNumber || mov.savedDraft.internalDocNumber}`}
               </h2>
               {/* Бейдж статусу */}
@@ -449,32 +399,21 @@ export default function WarehouseMovement() {
                 <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${
                   mov.savedDraft.status === 'finalized'
                     ? 'bg-green-100 text-green-800'
-                    : mov.savedDraft.status === 'active'
-                    ? 'bg-amber-100 text-amber-800'
                     : 'bg-gray-100 text-gray-600'
                 }`}>
                   <span className={`w-2 h-2 rounded-full ${
-                    mov.savedDraft.status === 'finalized' ? 'bg-green-500'
-                    : mov.savedDraft.status === 'active' ? 'bg-amber-500'
-                    : 'bg-gray-400'
+                    mov.savedDraft.status === 'finalized' ? 'bg-green-500' : 'bg-gray-400'
                   }`} />
-                  {mov.savedDraft.status === 'finalized' ? 'Завершено'
-                    : mov.savedDraft.status === 'active'
-                    ? `Активна · ${mov.savedDraft.lastSentToDilovodAt
-                        ? new Date(mov.savedDraft.lastSentToDilovodAt).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
-                        : 'відправлено'}`
-                    : 'Чернетка'}
+                  {mov.savedDraft.status === 'finalized' ? 'Завершено' : 'Чернетка'}
                 </span>
               )}
             </div>
             <p className="text-gray-600">
               {!mov.savedDraft
-                ? 'Після збереження документ ще не буде відправлений. Відправте його коли буде готово.'
+                ? 'Заповніть товари з партіями та натисніть «Зберегти та відправити» — документ одразу відправиться в Діловод і закриється.'
                 : mov.savedDraft.status === 'finalized'
                 ? 'Переміщення завершено. Документ заблоковано для редагування.'
-                : mov.savedDraft.status === 'active'
-                ? 'Документ відправлено в Діловод. Можна додавати товари і відправляти повторно. На прикінці дня завершіть переміщення.'
-                : 'Чернетку збережено. Відправте в Діловод або завершіть переміщення.'}
+                : 'Чернетку збережено (попередній перегляд). Відправте в Діловод, щоб закрити документ.'}
             </p>
           </div>
         )}
@@ -614,11 +553,7 @@ export default function WarehouseMovement() {
             hasDraft={mov.savedDraft !== null}
             draftStatus={mov.savedDraft?.status ?? null}
             onCancel={() => mov.setShowConfirmCancel(true)}
-            onSaveDraft={mov.handleSaveDraft}
-            onSendIntermediate={handleSendIntermediate}
-            onSendFinal={handleSendFinal}
-            onFinalizeLocally={handleFinalizeLocally}
-            isFinalizingLocally={isFinalizingLocally}
+            onSaveAndSend={sendAndFinalize}
             isAdmin={isAdmin}
             isDebugMode={isDebugMode}
             onShowPayload={handleShowPayload}
@@ -672,36 +607,7 @@ export default function WarehouseMovement() {
         internalDocNumber={mov.savedDraft?.internalDocNumber}
         isLoading={isLoadingPayload}
         isSending={isSendingToDilovod}
-        onSend={handleSendIntermediate}
-      />
-
-      {/* Модалка підтвердження проміжної відправки */}
-      <ConfirmModal
-        isOpen={showConfirmIntermediate}
-        title="Відправити в Діловод?"
-        message="Документ буде відправлено в Діловод. Після відправки ви зможете продовжити редагування."
-        onConfirm={async () => {
-          setShowConfirmIntermediate(false);
-          await sendToDilovod(false);
-        }}
-        onCancel={() => setShowConfirmIntermediate(false)}
-        confirmText="Відправити"
-        confirmColor="primary"
-        cancelText="Скасувати"
-      />
-
-      {/* Модалка підтвердження фінальної відправки */}
-      <ConfirmModal
-        isOpen={showConfirmFinalize}
-        title="Завершити переміщення?"
-        message="Після завершення накладну не можна буде редагувати. Впевнені?"
-        onConfirm={async () => {
-          setShowConfirmFinalize(false);
-          await sendToDilovod(true);
-        }}
-        onCancel={() => setShowConfirmFinalize(false)}
-        confirmText="Завершити"
-        cancelText="Скасувати"
+        onSend={sendAndFinalize}
       />
 
       {/* Модалка підтвердження скасування */}
@@ -726,7 +632,7 @@ export default function WarehouseMovement() {
         isOpen={emptyBatchesModal !== null}
         items={emptyBatchesModal?.items ?? []}
         onReview={() => setEmptyBatchesModal(null)}
-        onAutoClean={handleAutoCleanAndSend}
+        onAutoClean={autoCleanAndSend}
         isPending={isSendingToDilovod}
       />
     </div>

@@ -261,33 +261,43 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
 
         return (
           <div key={session.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-            <button className="w-full px-4 py-3 flex items-center justify-between bg-neutral-100 transition-colors" onClick={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}>
+            <button className="w-full px-4 pt-3 pb-2.5 flex items-center justify-between bg-neutral-100 transition-colors" onClick={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}>
               <div className="flex items-center gap-2 flex-1">
                 <DynamicIcon name="chevron-right" className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${expandedSessionId === session.id ? 'rotate-90' : ''}`} />
                 <div className="text-left pr-2"><p className="text-sm font-medium text-gray-700 tabular-nums">{formatDate(session.inventoryDate)}</p></div>
                 <Chip size="sm" color={statusColor[session.status]} className={statusClass[session.status]} variant="flat">{statusLabel[session.status]}</Chip>
               </div>
 
-              <div className="flex items-center gap-4">
-                <div className="grid grid-cols-3 gap-8 ml-2 text-xs text-gray-500">
-                  <div className="text-right">
-                    {setHasActual ? (
-                      <div className="text-medium font-semibold leading-none"><span className="text-red-500">{setDevShortfall > 0 ? `-${setDevShortfall}` : '0'}</span><span> / </span><span className="text-blue-600">{setDevSurplus > 0 ? `+${setDevSurplus}` : '+0'}</span></div>
-                    ) : '–'}
-                    <p className="leading-none">відхилення наборів</p>
-                  </div>
-                  <div className="text-right">
-                    {productHasActual ? (
-                      <div className="text-medium font-semibold leading-none"><span className="text-red-500">{productDevShortfall > 0 ? `-${productDevShortfall}` : '0'}</span><span> / </span><span className="text-blue-600">{productDevSurplus > 0 ? `+${productDevSurplus}` : '+0'}</span></div>
-                    ) : '–'}
-                    <p className="leading-none">відхилення товарів</p>
-                  </div>
-                  <div className="text-right">
-                    {materialHasActual ? (
-                      <div className="text-medium font-semibold leading-none"><span className="text-red-500">{materialDevShortfall > 0 ? `-${materialDevShortfall}` : '0'}</span><span> / </span><span className="text-blue-600">{materialDevSurplus > 0 ? `+${materialDevSurplus}` : '+0'}</span></div>
-                    ) : '–'}
-                    <p className="leading-none">відхилення матеріалів</p>
-                  </div>
+              <div className="grid grid-cols-[120px_120px_120px_100px] gap-6 ml-2 text-xs text-gray-500">
+                <div className="text-right flex flex-col gap-1">
+                  {setHasActual ? (
+                    <div className="text-medium font-semibold leading-none"><span className="text-red-500">{setDevShortfall > 0 ? `-${setDevShortfall}` : '0'}</span><span> / </span><span className="text-blue-600">{setDevSurplus > 0 ? `+${setDevSurplus}` : '+0'}</span></div>
+                  ) : '–'}
+                  <p className="flex items-center justify-end gap-1 leading-tight"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> набори</p>
+                </div>
+                <div className="text-right flex flex-col gap-1">
+                  {productHasActual ? (
+                    <div className="text-medium font-semibold leading-none"><span className="text-red-500">{productDevShortfall > 0 ? `-${productDevShortfall}` : '0'}</span><span> / </span><span className="text-blue-600">{productDevSurplus > 0 ? `+${productDevSurplus}` : '+0'}</span></div>
+                  ) : '–'}
+                  <p className="flex items-center justify-end gap-1 leading-tight"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> товари</p>
+                </div>
+                <div className="text-right flex flex-col gap-1">
+                  {materialHasActual ? (
+                    <div className="text-medium font-semibold leading-none"><span className="text-red-500">{materialDevShortfall > 0 ? `-${materialDevShortfall}` : '0'}</span><span> / </span><span className="text-blue-600">{materialDevSurplus > 0 ? `+${materialDevSurplus}` : '+0'}</span></div>
+                  ) : '–'}
+                  <p className="flex items-center justify-end gap-1 leading-tight"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> матеріали</p>
+                </div>
+                {/* <div className="text-right flex flex-col gap-1">
+                  {setHasActualGp ? (
+                    <div className="text-medium font-semibold leading-none"><span className="text-red-500">{setDevShortfallGp > 0 ? `-${setDevShortfallGp}` : '0'}</span><span> / </span><span className="text-blue-600">{setDevSurplusGp > 0 ? `+${setDevSurplusGp}` : '+0'}</span></div>
+                  ) : '–'}
+                  <p className="flex items-center justify-end gap-1 leading-tight"><span className="text-[9px] text-blue-800/50 bg-blue-500/10 px-1 py-[1px] rounded ring-1">ГП</span> набори</p>
+                </div> */}
+                <div className="text-right flex flex-col gap-1">
+                  {productHasActualGp ? (
+                    <div className="text-medium font-semibold leading-none"><span className="text-red-500">{productDevShortfallGp > 0 ? `-${productDevShortfallGp}` : '0'}</span><span> / </span><span className="text-blue-600">{productDevSurplusGp > 0 ? `+${productDevSurplusGp}` : '+0'}</span></div>
+                  ) : '–'}
+                  <p className="flex items-center justify-end gap-1 leading-tight"><span className="text-[9px] text-blue-800/50 bg-blue-500/10 px-1 py-[1px] rounded ring-1">ГП</span> товари</p>
                 </div>
               </div>
             </button>

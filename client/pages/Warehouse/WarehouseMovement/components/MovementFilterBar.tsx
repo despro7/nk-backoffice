@@ -108,12 +108,12 @@ export const MovementFilterBar = ({
             <SelectItem key="movement">На дату переміщення</SelectItem>
           </Select>
           {/* Індикатор завантаження залишків */}
-          <div className="w-5 flex items-center justify-center">
+          {/* <div className="w-5 flex items-center justify-center">
             {isRefreshingStock
               ? <Spinner size="sm" color="primary" />
               : <DynamicIcon name="check" className="w-4 h-4 text-success-500 opacity-70" />
             }
-          </div>
+          </div> */}
         </div>
       )}
 

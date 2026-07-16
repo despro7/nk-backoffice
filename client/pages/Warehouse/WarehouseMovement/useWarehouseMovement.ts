@@ -74,6 +74,7 @@ export interface UseWarehouseMovementReturn {
     destStorageId?: string,
   ) => Promise<void>;
   isRefreshingStock: boolean;
+  setIsRefreshingStock: (v: boolean) => void;
   loadHistory: () => Promise<void>;
   loadMovementFromHistory: (doc: any) => Promise<void>;
   handleToggleProduct: (id: string) => void;
@@ -123,6 +124,9 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   // Реф для поточної обраної дати документа — використовується в getProductsForMovement
   const selectedDateTimeRef = useRef<Date | null>(null);
   const dateLoadDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // true під час початкової ініціалізації — щоб effect [storage, storageTo] не робив
+  // зайвий refreshStockData при програмній зміні складу з чернетки (loadDraftObject уже оновлює)
+  const initPhaseRef = useRef(true);
 
   // ─── API-функції (раніше були у useWarehouse.ts) ──────────────────────
 
@@ -197,6 +201,8 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
 
   // ID складів, завантажені разом з товарами (/products-for-movement)
   const warehouseConfigRef = useRef<{ storageFrom: string; storageTo: string } | null>(null);
+  // Прапор: напрямок уже застосовано з чернетки (блокує перезапис дефолтом із warehouseConfigRef)
+  const draftDirectionAppliedRef = useRef(false);
 
   // ─── Напрямок переміщення (склад-донор → склад-реципієнт) ────────────
   // Дефолт беремо з серверного warehouseConfig (налаштування Dilovod),
@@ -239,6 +245,8 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   // Синхронізуємо дефолтний напрямок із серверним warehouseConfig, коли той підвантажиться.
   // Застосовуємо лише якщо юзер ще не змінив напрямок вручну (порівнюємо з поточним дефолтом).
   useEffect(() => {
+    // Якщо напрямок уже застосовано з чернетки — не перезаписуємо дефолтом із warehouseConfig
+    if (draftDirectionAppliedRef.current) return;
     const cfg = warehouseConfigRef.current;
     if (!cfg?.storageFrom || !cfg?.storageTo) return;
     setStorage((prev) => (prev === DEFAULT_STORAGE_FROM ? cfg!.storageFrom : prev));
@@ -299,37 +307,57 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
           getDrafts(),
         ]);
 
+        // ТИМЧАСОВО (DIAG): сирі дані чернеток із БД — перевіряємо реальні поля напрямку
+        console.log('[DIAG] getDrafts raw:', JSON.stringify(
+          (draftsData as any)?.drafts?.map((d: any) => ({
+            id: d.id, status: d.status,
+            source: d.sourceWarehouse, dest: d.destinationWarehouse,
+          })),
+        ));
+
         await loadHistory();
 
         // ─── Пріоритет авто-завантаження: чернетка → останній запис → стартова сторінка ───
         // 1. Спочатку шукаємо активну чернетку користувача (status === 'active')
-        // 2. Якщо немає активної чернетки — шукаємо останній завершений запис (status === 'finalized')
-        // 3. Якщо немає нічого — залишаємо нову сесію (стартова сторінка)
+        // ─── АВТО-ЗАВАНТАЖЕННЯ ЧЕРНЕТКИ ─────────────────────────────────────
+        // Пріоритет: найновіша чернетка (status: 'active' або 'draft') → нова сесія
+        // ВАЖЛИВО: finalized записи НЕ завантажуються автоматично!
         if (!wasDismissed) {
-          // Шукаємо активну чернетку
-          const activeDraft = draftsData?.drafts?.find((d: any) => d.status === 'active');
-          if (activeDraft) {
-            LoggingService.warehouseMovementLog(`🔄 Авто-завантаження активної чернетки #${activeDraft.id}`);
-            // Автоматично обираємо склади з чернетки ЩЕ ДО оновлення залишків,
-            // щоб уникнути гонки: спочатку дефолтні склади, потім перемикання
-            const draftStorage = activeDraft.sourceWarehouse;
-            const draftStorageTo = activeDraft.destinationWarehouse;
+          // 1. Шукаємо найновішу активну/чернетку (status: 'active' або 'draft')
+          // Сортуємо за draftCreatedAt DESC, беремо перший
+          const allDrafts = draftsData?.drafts || [];
+          const sortedDrafts = [...allDrafts].sort((a: any, b: any) => 
+            new Date(b.draftCreatedAt).getTime() - new Date(a.draftCreatedAt).getTime()
+          );
+          const latestDraft = sortedDrafts.find((d: any) => d.status === 'active' || d.status === 'draft');
+          
+          if (latestDraft) {
+            LoggingService.warehouseMovementLog(`🔄 Авто-завантаження найновішої чернетки #${latestDraft.id} (status: ${latestDraft.status})`);
+            
+            const draftStorage = latestDraft.sourceWarehouse;
+            const draftStorageTo = latestDraft.destinationWarehouse;
+            
+            // ЛОГУВАННЯ: що ми отримали про напрямок
+            LoggingService.warehouseMovementLog(`📌 Напрямок з чернетки: ${draftStorage} → ${draftStorageTo}`);
+            
+            // Оновлюємо стани складів
             if (draftStorage && draftStorageTo) {
               setStorage(draftStorage);
               setStorageTo(draftStorageTo);
+              draftDirectionAppliedRef.current = true; // блокуємо перезапис дефолтом
             }
-            // Оновлюємо залишки одразу для правильного напряму (без повторного loadProducts)
-            if (productsData && productsData.length > 0) {
-              await products$.refreshStockData(productsData, undefined, draftStorage || storage, draftStorageTo || storageTo);
-            }
-            // Завантажуємо партії з чернетки, передаючи вже завантажені товари
+            
+            // ВАЖЛИВЕ: передаємо preloadedProducts, щоб не робити зайвий запит
             await loadDraftObject(
-              activeDraft,
+              latestDraft,
               { storage: draftStorage || storage, storageTo: draftStorageTo || storageTo },
               productsData ?? undefined,
             );
+            
+            // Додаткове логування для діагностики
+            LoggingService.warehouseMovementLog(`✅ Завантажена чернетка #${latestDraft.id}: ${products$.products.filter(p => products$.selectedProductIds.has(p.id)).length} вибраних товарів`);
           } else if (completedMovements.length > 0) {
-            // Немає активної чернетки, але є завершені записи — беремо останній
+            // Немає активних/чернеток, але є завершені записи — беремо останній
             const lastCompleted = completedMovements[completedMovements.length - 1];
             LoggingService.warehouseMovementLog(`🔄 Авто-завантаження останнього завершеного запису #${lastCompleted.id}`);
             // Автоматично обираємо склади з запису
@@ -356,6 +384,8 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
       } catch (err: any) {
         LoggingService.warehouseMovementLog(`Помилка ініціалізації: ${err?.message}`);
       } finally {
+        // Ініціалізація завершена — тепер effect [storage, storageTo] реагує на зміну користувача
+        initPhaseRef.current = false;
         setIsLoading(false);
       }
     };
@@ -364,8 +394,11 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Оновлюємо sourceStock/destStock при зміні напряму переміщення (синхронно з MovementDirectionSelector)
+  // Оновлюємо sourceStock/destStock при зміні напряму переміщення (синхронно з MovementDirectionSelector).
+  // Пропускаємо перший запуск та програмну зміну складу під час initData —
+  // там refreshStockData уже викликається через loadDraftObject / явний блок.
   useEffect(() => {
+    if (initPhaseRef.current) return;
     if (products$.products.length > 0) {
       products$.refreshStockData(products$.products, undefined, storage, storageTo);
     }
@@ -431,6 +464,9 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
     selectedDateTimeRef.current = date;
 
     if (stockDateMode === 'movement') {
+      // Показуємо індикатор завантаження одразу, ще до debounce,
+      // щоб уникнути візуального скидання залишків на 0.
+      products$.setIsRefreshingStock(true);
       // Debounce: чекаємо 1 секунду після останньої зміни дати, щоб не кидати одразу запит
       if (dateLoadDebounceRef.current) {
         clearTimeout(dateLoadDebounceRef.current as any);
@@ -451,6 +487,9 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
             storage,
             storageTo,
           );
+        }).catch(() => {
+          // Якщо loadProducts впав — гарантовано ховаємо спінер
+          products$.setIsRefreshingStock(false);
         });
       }, 1000);
       return;
@@ -490,6 +529,19 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
       preloadedProducts,
     );
 
+  // Обгортка loadProducts: після завантаження товарів одразу оновлюємо
+  // залишки (stockData) для поточного напрямку переміщення. Без цього кнопка
+  // «Розпочати переміщення» на стартовому екрані відкривала накладну з порожніми
+  // залишками (initData робить refreshStockData окремим викликом, а прямий виклик
+  // loadProducts — ні).
+  const loadProductsWithStock = useCallback(async (): Promise<MovementProduct[]> => {
+    const prods = await products$.loadProducts();
+    if (prods.length > 0) {
+      await products$.refreshStockData(prods, undefined, storage, storageTo);
+    }
+    return prods;
+  }, [products$, storage, storageTo]);
+
   // ─── Публічне API ─────────────────────────────────────────────────────
 
   return {
@@ -522,11 +574,12 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
     historySessions: [],
     historyLoading: false,
 
-    loadProducts: products$.loadProducts,
+    loadProducts: loadProductsWithStock,
     refreshBatchQuantities: products$.refreshBatchQuantities,
     refreshStockData: (prods, asOfDate, sourceStorageId, destStorageId) =>
       products$.refreshStockData(prods, asOfDate, sourceStorageId, destStorageId),
     isRefreshingStock: products$.isRefreshingStock,
+    setIsRefreshingStock: products$.setIsRefreshingStock,
     loadHistory,
     loadMovementFromHistory,
     handleToggleProduct: products$.handleToggleProduct,

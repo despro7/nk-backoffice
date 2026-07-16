@@ -34,14 +34,14 @@ export const MovementProductList = ({
   totalCount = 0,
   children,
 }: MovementProductListProps) => {
-  if (loading) {
-    return (
-      <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-        <DynamicIcon name="loader-2" className="w-8 h-8 animate-spin mx-auto mb-4 text-gray-400" />
-        <p className="text-gray-500">Завантаження товарів...</p>
-      </div>
-    );
-  }
+  // if (loading) {
+  //   return (
+  //     <div className="bg-white rounded-lg shadow-sm p-12 text-center">
+  //       <DynamicIcon name="loader-2" className="w-8 h-8 animate-spin mx-auto mb-4 text-gray-400" />
+  //       <p className="text-gray-500">Завантаження товарів...</p>
+  //     </div>
+  //   );
+  // }
 
   if (error) {
     return (

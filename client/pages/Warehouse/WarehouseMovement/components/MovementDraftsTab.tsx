@@ -5,6 +5,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { formatDate } from '@/lib/formatUtils';
 import type { MovementDraft, MovementStatus } from '../WarehouseMovementTypes';
 import useUserNames from '@/hooks/useUserNames';
+import { resolveMovementDirection } from '../storageDisplay';
 
 // ---------------------------------------------------------------------------
 // MovementDraftsTab — вміст вкладки "Чернетки"
@@ -109,6 +110,7 @@ export const MovementDraftsTab = ({
                 <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide w-1/6">Дата створення</th>
                 <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide w-1/6">Товарів</th>
                 <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide w-1/6">Автор</th>
+                <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide w-1/6">Напрямок</th>
                 <th className="text-right py-2 px-3 pr-5 text-xs font-medium text-gray-500 uppercase tracking-wide w-1/6">Дії</th>
               </tr>
             </thead>
@@ -153,6 +155,24 @@ export const MovementDraftsTab = ({
                     {/* Автор */}
                     <td className="py-3 px-3 text-gray-700">
                       {namesMap[Number(draft.createdBy ?? -1)] ?? '—'}
+                    </td>
+
+                    {/* Напрямок переміщення */}
+                    <td className="py-3 px-3">
+                      {(() => {
+                        const directionDisplay = resolveMovementDirection(
+                          undefined,
+                          draft.sourceWarehouse,
+                          draft.destinationWarehouse
+                        );
+                        return (
+                          <div className="flex items-center gap-1">
+                            <span className={`text-[9px] px-1 py-[1px] rounded ring-1 ${directionDisplay.sourceDisplay.className}`}>{directionDisplay.sourceDisplay.shortName}</span>
+                            <DynamicIcon name="arrow-right" size={16} className="text-gray-400" />
+                            <span className={`text-[9px] px-1 py-[1px] rounded ring-1 ${directionDisplay.destDisplay.className}`}>{directionDisplay.destDisplay.shortName}</span>
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Дії */}

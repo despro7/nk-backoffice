@@ -299,7 +299,7 @@ router.get('/stock-snapshot', authenticateToken, async (req, res) => {
 
     const balances = await dilovodService.getStockBalanceForSkus(skus, parsedDate, firmId);
 
-    const result: Record<string, { mainStock: number; smallStock: number; selectedStock?: number }> = {};
+    const result: Record<string, { mainStock: number; smallStock: number; selectedStock?: number; storages?: Record<string, number> }> = {};
     for (const item of balances) {
       const selectedStock = storageId
         ? dilovodService.getSelectedStockByStorageId(item, storageId)
@@ -309,6 +309,8 @@ router.get('/stock-snapshot', authenticateToken, async (req, res) => {
         mainStock: item.mainStorage,
         smallStock: item.smallStorage,
         ...(selectedStock !== undefined ? { selectedStock } : {}),
+        // Per-storage залишки — дозволяють клієнту обчислити source/dest без додаткових запитів
+        ...(item.storages ? { storages: item.storages } : {}),
       };
     }
 
@@ -932,9 +934,10 @@ router.post('/send', authenticateToken, async (req, res) => {
     }
 
     // Визначаємо новий статус:
-    // isFinal=true → 'finalized' (документ заблоковано)
-    // isFinal=false → 'active' (можна продовжувати редагувати)
-    const newStatus = isFinal ? 'finalized' : 'active';
+    // Після зміни логіки чернетки більше не існує — будь-яка відправка
+    // одразу закриває документ (статус 'finalized', документ проведено в Діловоді).
+    // Параметр isFinal більше не впливає на статус.
+    const newStatus = 'finalized';
     const now = new Date();
 
     // Оновлюємо запис у БД

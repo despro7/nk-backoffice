@@ -5,7 +5,31 @@
 
 ---
 
-## 2026-07-10 — Додано GP-колонки (склад готової продукції) у warehouse inventory history
+## 2026-07-16 — Видалено статус чернетки переміщень: збереження = відправка + закриття
+**Files:** `server/modules/Warehouse/WarehouseController.ts`, `client/pages/Warehouse/WarehouseMovement/components/MovementActionBar.tsx`, `client/pages/Warehouse/WarehouseMovement/index.tsx`, `client/pages/Warehouse/WarehouseMovement/useWarehouseMovement.ts`
+
+- Прибрано проміжний статус чернетки/active. Будь-яке збереження накладної тепер = створення/оновлення в БД → відправка в Діловод (проведено, `saveType:1`) → статус `finalized` (документ закрито, read-only).
+- `POST /api/warehouse/send` (сервер): статус завжди `'finalized'` (параметр `isFinal` більше не впливає).
+- `MovementActionBar`: замість трьох кнопок («Зберегти чернетку» / «Відправити в Діловод» / «Завершити переміщення») одна кнопка **«Зберегти та відправити»** (`onSaveAndSend`).
+- `index.tsx`: додано `sendAndFinalize` (збереження → відправка → закриття → скидання сторінки до StartScreen); видалено `sendToDilovod`/`handleSendIntermediate`/`handleSendFinal`/`handleFinalizeLocally` та модалки підтвердження проміжної/фінальної відправки; `guard.onSaveDraft` → `sendAndFinalize`.
+- Виправлено: кнопка «Розпочати переміщення» на стартовому екрані відкривала накладну з порожніми залишками (публічний `loadProducts` не оновлював `stockData`). Додано обгортку `loadProductsWithStock`, що після завантаження товарів одразу викликає `refreshStockData` для поточного напрямку.
+- Залишено без змін (за домовленістю): вкладка «Чернетки» (показуватиме порожній список), cron-автофіналізація 23:55, `finalize-local` (debug), типи `MovementStatus` (зворотна сумісність з існуючими `finalized`-записами).
+
+---
+
+## 2026-07-14 — Додано багатонапрямковий запит історії переміщень
+**Files:** `server/modules/Warehouse/MovementHistoryService.ts`, `shared/types/movement.ts`, `client/pages/Warehouse/WarehouseMovement/storageDisplay.ts`, `client/pages/Warehouse/WarehouseMovement/components/MovementHistoryTable.tsx`, `client/pages/Warehouse/WarehouseMovement/components/MovementDraftsTab.tsx`
+
+- Змінено `getMovementHistory()` — тепер робить паралельні запити до Dilovod для обох напрямків: `main→small` та `small→main`.
+- Додано поле `direction` до типу `GoodMovingDocument` (`'main-to-small' | 'small-to-main'`).
+- Оновлено відображення напрямку у `MovementHistoryTable` — тепер показує бейджі з назвами складів у форматі: `Склад ГП → Склад М`.
+- Додано функцію `resolveMovementDirection()` для уніфікованого відображення напрямків.
+- Спрощено код через функцію `normalizeDocument()` замість дублювання маппінгу.
+- Додано колонку "Напрямок" у `MovementDraftsTab` для відображення напрямку переміщення чернеток.
+- Змінено `persistDocumentsToDB()` на `upsert` — тепер синхронізує локальні дані з Діловодом (sourceWarehouse, destinationWarehouse, docNumber, movementDate, notes, items), уникнувши розсинхрону.
+- Додано фільтрацію документів за датою при збереженні.
+
+---
 **Files:** `client/pages/Warehouse/WarehouseInventory/components/InventoryTableSection.tsx`, `client/pages/Warehouse/WarehouseInventory/components/InventoryHistoryRow.tsx`, `client/pages/Warehouse/WarehouseInventory/components/InventoryHistoryTable.tsx`, `client/pages/Warehouse/WarehouseInventory/WarehouseInventoryTypes.ts`
 
 - Додано 3 GP-колонки у таблицю: `За обліком (ГП)`, `Факт (ГП)`, `Відхилення (ГП)`.

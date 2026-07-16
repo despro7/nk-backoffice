@@ -6,6 +6,7 @@ import { formatDate, pluralize } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROLES } from '@shared/constants/roles';
 import type { GoodMovingDocument, GoodMovingItem } from '@shared/types/movement';
+import { resolveMovementDirection } from '../storageDisplay';
 
 // ---------------------------------------------------------------------------
 // MovementHistoryTable — список переміщень як акордеон з плавною анімацією
@@ -103,7 +104,7 @@ export const MovementHistoryTable = ({
             className="w-full px-4 py-3 flex items-center justify-between bg-neutral-100 transition-colors"
             onClick={() => setExpandedDocId(expandedDocId === doc.id ? null : doc.id)}
           >
-            <div className="grid grid-cols-[36px_200px_200px_200px_180px_1fr] items-center flex-1 min-w-0">
+            <div className="grid grid-cols-[36px_200px_200px_200px_180px_180px_1fr] items-center flex-1 min-w-0">
               <DynamicIcon
                 name="chevron-right"
                 className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${expandedDocId === doc.id ? 'rotate-90' : ''}`}
@@ -117,19 +118,19 @@ export const MovementHistoryTable = ({
 
               {/* Автор */}
               <div className="flex flex-col items-start min-w-0 px-4">
-                <p className="text-sm text-gray-900 truncate max-w-full" title={doc.author__pr || doc.author}>{doc.author__pr || doc.author}</p>
+                <p className="text-sm text-gray-900 truncate max-w-full">{doc.author__pr || doc.author}</p>
                 <p className="text-xs text-gray-400 tracking-wide">Автор</p>
               </div>
 
               {/* Компанія / ФОП */}
               <div className="flex flex-col items-start min-w-0 px-4">
-                <p className="text-sm text-gray-900 truncate max-w-full" title={doc.firm__pr || doc.firm}>{doc.firm__pr || doc.firm}</p>
+                <p className="text-sm text-gray-900 truncate max-w-full">{doc.firm__pr || doc.firm}</p>
                 <p className="text-xs text-gray-400">Компанія</p>
               </div>
 
               {/* Товари */}
               <div className="flex flex-col items-start min-w-0 px-4">
-                <p className="text-sm text-gray-900 max-w-full" title={doc.details ? `${getGoodsFromDetails(doc.id).length} товарів` : 'Завантажити деталі для перегляду товарів'}>
+                <p className="text-sm text-gray-900 max-w-full">
                   {doc.details ? <span className="font-mono">{getGoodsFromDetails(doc.id).length}</span> : <span className="text-neutral-300">Завантажити...</span>}
                 </p>
                 <p className="text-xs text-gray-400">{pluralize(getGoodsFromDetails(doc.id).length, 'Товар', 'Товари', 'Товарів')}</p>
@@ -137,10 +138,33 @@ export const MovementHistoryTable = ({
 
               {/* Порції */}
               <div className="flex flex-col items-start min-w-0 px-4">
-                <p className="text-sm text-gray-900 max-w-full" title={doc.details ? `${getGoodsFromDetails(doc.id).reduce((sum, item) => sum + parseFloat(item.qty), 0)} порцій` : 'Завантажити деталі для перегляду кількості порцій'}>
+                <p className="text-sm text-gray-900 max-w-full">
                   {doc.details ? <span className="font-mono">{getGoodsFromDetails(doc.id).reduce((sum, item) => sum + parseFloat(item.qty), 0)}</span> : <span className="text-neutral-300">Завантажити...</span>}
                 </p>
                 <p className="text-xs text-gray-400">{pluralize(getGoodsFromDetails(doc.id).reduce((sum, item) => sum + parseFloat(item.qty), 0), 'Порція', 'Порції', 'Порцій')}</p>
+              </div>
+
+              {/* Напрямок переміщення */}
+              <div className="flex flex-col gap-1 items-end ml-auto min-w-0 px-4">
+                <p className="text-sm text-gray-900 max-w-full flex items-center gap-1">
+                  {(() => {
+                    const directionDisplay = resolveMovementDirection(
+                      doc.direction,
+                      doc.storage,
+                      doc.storageTo,
+                      doc.storage__pr,
+                      doc.storageTo__pr
+                    );
+                    return (
+                      <>
+                        <span className={`text-[9px] px-1 py-[1px] rounded ring-1 ${directionDisplay.sourceDisplay.className}`}>{directionDisplay.sourceDisplay.shortName}</span>
+                        <DynamicIcon name="arrow-right" size={18} className={directionDisplay.arrowClassName} />
+                        <span className={`text-[9px] px-1 py-[1px] rounded ring-1 ${directionDisplay.destDisplay.className}`}>{directionDisplay.destDisplay.shortName}</span>
+                      </>
+                    );
+                  })()}
+                </p>
+                <p className="text-xs text-gray-400">Напрямок переміщення</p>
               </div>
 
             </div>

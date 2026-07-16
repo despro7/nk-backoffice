@@ -4,7 +4,7 @@
 
 import { prisma } from '../../lib/utils.js';
 import { DilovodApiClient } from '../../services/dilovod/DilovodApiClient.js';
-import type { GoodMovingDocument, MovementHistoryResponse } from '../../../shared/types/movement.js';
+import type { GoodMovingDocument, GoodMovingDocumentDetails, MovementHistoryResponse } from '../../../shared/types/movement.js';
 import type { GetMovementHistoryParams } from './WarehouseTypes.js';
 
 export class MovementHistoryService {
@@ -116,34 +116,27 @@ export class MovementHistoryService {
   }
 
   /**
-   * Зберігає нові документи із Dilovod у таблицю warehouse_movement.
-   * Документи, що вже існують у БД (dilovodDocId), пропускаються повністю —
-   * щоб не затирати змінені items/deviations.
+   * Зберігає/оновлює документи переміщення із Діловода у таблицю warehouse_movement.
+   * Використовує upsert — нові документи створює, існуючі оновлює.
+   * При оновленні синхронізує: sourceWarehouse, destinationWarehouse, docNumber, movementDate, notes.
+   * items оновлюються тільки якщо вони порожні (для нових документів).
+   * Розбіжності між items та збереженими даними можна записати в deviations (за потребою).
    * Автора матчимо через dilovodUserId → User.id; якщо не знайдено — createdBy = 0 (система).
    */
   private static async persistDocumentsToDB(
     documents: GoodMovingDocument[],
-    sourceWarehouse: string,
-    destinationWarehouse: string,
+    fromDate?: string,
   ): Promise<void> {
     if (documents.length === 0) return;
 
     try {
-      // Збираємо всі dilovodDocId що прийшли
-      const incomingIds = documents.map(d => d.id).filter(Boolean);
+      // Фільтруємо документи за датою (за замовчуванням останні 7 днів)
+      const filteredDocs = fromDate
+        ? documents.filter(d => d.date && new Date(d.date) >= new Date(fromDate))
+        : documents;
 
-      // Знаходимо, які вже є в БД — одним запитом
-      const existing = await prisma.warehouseMovement.findMany({
-        where: { dilovodDocId: { in: incomingIds } },
-        select: { dilovodDocId: true },
-      });
-      const existingIds = new Set(existing.map(r => r.dilovodDocId as string));
-
-      // Фільтруємо: лише нові документи
-      const newDocuments = documents.filter(d => d.id && !existingIds.has(d.id));
-
-      if (newDocuments.length === 0) {
-        console.log(`💾 [MovementHistoryService] persistDocumentsToDB: 0 нових, ${existingIds.size} вже в БД — нічого не записуємо`);
+      if (filteredDocs.length === 0) {
+        console.log(`💾 [MovementHistoryService] persistDocumentsToDB: 0 документів у діапазоні дат`);
         return;
       }
 
@@ -157,15 +150,24 @@ export class MovementHistoryService {
       );
 
       let created = 0;
-      let skipped = 0;
 
-      for (const doc of newDocuments) {
+      for (const doc of filteredDocs) {
+        if (!doc.id) continue;
+
         const createdBy = userIdByDilovodId.get(doc.author) ?? 0;
         const movementDate = doc.date ? new Date(doc.date) : null;
 
+        // Визначаємо sourceWarehouse і destinationWarehouse залежно від напрямку
+        // doc.storage = склад-донор, doc.storageTo = склад-реципієнт
+        const sourceWarehouse = doc.storage;
+        const destinationWarehouse = doc.storageTo;
+
         try {
-          await prisma.warehouseMovement.create({
-            data: {
+          // Використовуємо upsert: створити новий або оновити існуючий
+          // При оновленні синхронізуємо метадані, items оновлюємо тільки якщо порожні
+          const result = await prisma.warehouseMovement.upsert({
+            where: { dilovodDocId: doc.id },
+            create: {
               dilovodDocId: doc.id,
               // internalDocNumber з префіксом "D-" щоб не конфліктувати з власними номерами
               internalDocNumber: `D-${doc.id}`,
@@ -180,16 +182,27 @@ export class MovementHistoryService {
               items: '[]', // деталі завантажуються окремо при розгортанні акордіону
               createdBy,
             },
+            update: {
+              // Оновлюємо метадані з Діловода
+              docNumber: doc.number ?? null,
+              movementDate,
+              lastSentToDilovodAt: movementDate,
+              notes: doc.remark ?? null,
+              sourceWarehouse,
+              destinationWarehouse,
+              // items НЕ оновлюємо автоматично — лише при ручному запиті користувача
+            },
           });
-          created++;
-        } catch (createErr) {
-          // Не ламаємо весь запит через один проблемний документ
-          console.warn(`⚠️ [MovementHistoryService] create для doc ${doc.id} не вдався:`, createErr);
-          skipped++;
+
+          if (result.id) {
+            created++;
+          }
+        } catch (upsertErr) {
+          console.warn(`⚠️ [MovementHistoryService] upsert для doc ${doc.id} не вдався:`, upsertErr);
         }
       }
 
-      console.log(`💾 [MovementHistoryService] persistDocumentsToDB: ${created} нових, ${existingIds.size} вже були в БД, ${skipped} помилок`);
+      console.log(`💾 [MovementHistoryService] persistDocumentsToDB: ${created} оброблених документів`);
     } catch (error) {
       // Помилка персистування не повинна ламати відповідь клієнту
       console.error('🚨 [MovementHistoryService] persistDocumentsToDB error:', error);
@@ -197,10 +210,105 @@ export class MovementHistoryService {
   }
 
   /**
+   * Зберігає деталі документа (tpGoods) у поле items запису warehouse_movement.
+   * Викликається при першому розгортанні акордіону — щоб не зберігати зайве при простому перегляді списку.
+   */
+  private static async persistDetailsToDB(
+    dilovodDocId: string,
+    details: { header: any; tableParts: any; misc: any },
+  ): Promise<void> {
+    try {
+      const goods: any[] = details.tableParts?.tpGoods
+        ? Object.values(details.tableParts.tpGoods)
+        : [];
+
+      if (goods.length === 0) return;
+
+      // Збираємо Dilovod ID товарів для маппінгу good → sku через таблицю products
+      const dilovodIds = goods.map((g: any) => g.good).filter(Boolean);
+      const productRows = dilovodIds.length > 0
+        ? await prisma.product.findMany({
+            where: { dilovodId: { in: dilovodIds } },
+            select: { dilovodId: true, sku: true },
+          })
+        : [];
+
+      // Мапа: dilovodId → sku
+      const dilovodIdToSku = new Map<string, string>(
+        productRows.map((p) => [p.dilovodId, p.sku]),
+      );
+
+      // Формуємо items: sku, dilovodId, productName, batchNumber, batchId, portionQuantity
+      const items = goods.map((g: any, idx: number) => ({
+        sku: dilovodIdToSku.get(g.good) ?? '',
+        productName: g.good__pr ?? '',
+        dilovodId: g.good ?? '',
+        batchNumber: g.batchNumber ?? '',
+        batchId: g.goodPart ?? '',
+        batchStorage: '',
+        boxQuantity: 0,
+        portionQuantity: parseFloat(g.qty) || 0,
+        forecast: 0,
+      }));
+
+      // Оновлюємо запис у БД
+      await prisma.warehouseMovement.updateMany({
+        where: { dilovodDocId },
+        data: { items: JSON.stringify(items) },
+      });
+
+      console.log(`💾 [MovementHistoryService] Збережено ${items.length} товарів для doc ${dilovodDocId}`);
+    } catch (error) {
+      console.error('🚨 [MovementHistoryService] persistDetailsToDB error:', error);
+    }
+  }
+
+  /**
+   * Отримує деталі конкретного документа переміщення з Діловода (getObject).
+   * Після отримання зберігає items у БД через persistDetailsToDB.
+   * Повертає деталі у форматі GoodMovingDocumentDetails.
+   */
+  static async getMovementDetails(dilovodDocId: string): Promise<GoodMovingDocumentDetails> {
+    const dilovodClient = MovementHistoryService.getDilovodClient();
+    await dilovodClient.ensureReady();
+    const apiKey = dilovodClient.getApiKey();
+
+    if (!apiKey) {
+      throw new Error('Dilovod API Key не налаштовано');
+    }
+
+    const request = {
+      version: '0.25',
+      key: apiKey,
+      action: 'getObject',
+      params: {
+        id: dilovodDocId,
+      },
+    };
+
+    const response = await dilovodClient.makeRequest(request);
+
+    if (!response || !response.tableParts?.tpGoods) {
+      throw new Error(`Деталі для документа ${dilovodDocId} не знайдено в Діловоді`);
+    }
+
+    const details = {
+      header: response.header ?? {},
+      tableParts: response.tableParts ?? { tpGoods: {} },
+      misc: response.misc ?? {},
+      fromCache: false,
+    };
+
+    // Зберігаємо items у БД (з коректним sku через маппінг products)
+    await MovementHistoryService.persistDetailsToDB(dilovodDocId, details);
+
+    return details as GoodMovingDocumentDetails;
+  }
+
+  /**
    * Отримує історію переміщень з Діловода
    */
   static async getMovementHistory(params: GetMovementHistoryParams): Promise<MovementHistoryResponse> {
-
     try {
       // Отримуємо налаштування складів
       const storageSettings = await MovementHistoryService.getStorageSettings();
@@ -226,8 +334,8 @@ export class MovementHistoryService {
       console.log(`   Склад (в): ${storageToId}`);
       console.log(`   Дата від: ${fromDate}${toDate ? ` по: ${toDate}` : ''}`);
 
-      // Будуємо запит до Діловода
-      const dilovodRequest = MovementHistoryService.buildDilovodRequest(
+      // Будуємо запити до Діловода для обох напрямків
+      const requestMainToSmall = MovementHistoryService.buildDilovodRequest(
         apiKey,
         storageId,
         storageToId,
@@ -235,18 +343,37 @@ export class MovementHistoryService {
         toDate,
       );
 
-      // Виконуємо запит до Діловода
-      const response = await dilovodClient.makeRequest(dilovodRequest);
+      const requestSmallToMain = MovementHistoryService.buildDilovodRequest(
+        apiKey,
+        storageToId,
+        storageId,
+        fromDate,
+        toDate,
+      );
 
-      // Нормалізуємо відповідь: Dilovod може повернути {}, null або одиночний об'єкт при 0 результатах
-      const responseArray: any[] = Array.isArray(response)
-        ? response
-        : (response == null ? [] : []);
+      // Виконуємо запити до Діловода
+      const [responseMainToSmall, responseSmallToMain] = await Promise.all([
+        dilovodClient.makeRequest(requestMainToSmall),
+        dilovodClient.makeRequest(requestSmallToMain),
+      ]);
 
-      console.log(`✅ [MovementHistoryService] Отримано документів від Діловода: ${responseArray.length}`);
+      // Обробляємо відповіді
+      const responseArrayMainToSmall = Array.isArray(responseMainToSmall)
+        ? responseMainToSmall
+        : responseMainToSmall?.tableParts?.tpGoods
+          ? [responseMainToSmall]
+          : [];
 
-      // Типізуємо відповідь
-      const documents: GoodMovingDocument[] = responseArray.map((doc: any) => ({
+      const responseArraySmallToMain = Array.isArray(responseSmallToMain)
+        ? responseSmallToMain
+        : responseSmallToMain?.tableParts?.tpGoods
+          ? [responseSmallToMain]
+          : [];
+
+      console.log(`📦 [MovementHistoryService] Отримано ${responseArrayMainToSmall.length} документів (main→small), ${responseArraySmallToMain.length} документів (small→main)`);
+
+      // Функція для нормалізації документа з напрямком
+      const normalizeDocument = (doc: any, direction: 'main-to-small' | 'small-to-main'): GoodMovingDocument => ({
         id: doc.id,
         number: doc.number,
         date: doc.date,
@@ -261,13 +388,24 @@ export class MovementHistoryService {
         storage__pr: doc.storage__pr,
         storageTo__pr: doc.storageTo__pr,
         firm__pr: doc.firm__pr,
-        author__pr: doc.author__pr
-      }));
+        author__pr: doc.author__pr,
+        direction,
+      });
 
-      // Зберігаємо тільки нові документи в БД (існуючі пропускаються)
-      await MovementHistoryService.persistDocumentsToDB(documents, storageId, storageToId);
+      // Об'єднуємо документи з обох напрямків
+      const documents: GoodMovingDocument[] = [
+        ...responseArrayMainToSmall.map(doc => normalizeDocument(doc, 'main-to-small')),
+        ...responseArraySmallToMain.map(doc => normalizeDocument(doc, 'small-to-main'))
+      ];
 
-      // Збагачуємо документи деталями з БД (items) — одним запитом для всіх
+      // Зберігаємо/оновлюємо документи в БД з фільтрацієми за датою
+      // Нові документи додаються, існуючі оновлюються метаданими (без items)
+      await MovementHistoryService.persistDocumentsToDB(documents, fromDate);
+
+      // Збагачуємо документи деталями (items) з локальної БД — одним запитом для всіх.
+      // Це дозволяє одразу показувати статистику (кількість товарів, порції) з кешу БД,
+      // не вимагаючи відкриття кожного запису. Деталі оновлюються примусово лише
+      // кнопкою "Оновити деталі" всередині запису (fetchDetails з force=true).
       const docIds = documents.map(d => d.id).filter(Boolean);
       if (docIds.length > 0) {
         const cachedItems = await prisma.warehouseMovement.findMany({
@@ -275,7 +413,7 @@ export class MovementHistoryService {
           select: { dilovodDocId: true, items: true },
         });
 
-        // Будуємо Map для швидкого пошуку
+        // Будуємо Map для швидкого пошуку items за dilovodDocId
         const itemsByDocId = new Map<string, string>(
           cachedItems.map(r => [r.dilovodDocId as string, r.items]),
         );
@@ -325,6 +463,8 @@ export class MovementHistoryService {
         }
       }
 
+      console.log(`📦 [MovementHistoryService] Отримано ${documents.length} документів (з деталями з БД)`);
+
       return {
         documents,
         total: documents.length,
@@ -338,122 +478,6 @@ export class MovementHistoryService {
     } catch (error) {
       console.error('🚨 [MovementHistoryService] Помилка при отриманні історії переміщень:', error);
       throw new Error(`Помилка при отриманні історії переміщень: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Зберігає деталі документа (tpGoods) у поле items запису warehouse_movement.
-   * Викликається при першому розгортанні акордіону — щоб не зберігати зайве при простому перегляді списку.
-   */
-  private static async persistDetailsToDB(
-    dilovodDocId: string,
-    details: { header: any; tableParts: any; misc: any },
-  ): Promise<void> {
-    try {
-      const goods: any[] = details.tableParts?.tpGoods
-        ? Object.values(details.tableParts.tpGoods)
-        : [];
-
-      if (goods.length === 0) return;
-
-      // Збираємо Dilovod ID товарів для маппінгу good → sku через таблицю products
-      const dilovodIds = goods.map((g: any) => g.good).filter(Boolean);
-      const productRows = dilovodIds.length > 0
-        ? await prisma.product.findMany({
-            where: { dilovodId: { in: dilovodIds } },
-            select: { dilovodId: true, sku: true },
-          })
-        : [];
-
-      // Map: dilovodId → sku
-      const dilovodIdToSku = new Map<string, string>(
-        productRows
-          .filter((p): p is { dilovodId: string; sku: string } => p.dilovodId !== null)
-          .map((p) => [p.dilovodId, p.sku]),
-      );
-
-      // Формат items — масив MovementItem-подібних об'єктів (достатньо для відображення)
-      const items = goods.map((g: any) => {
-        const sku = dilovodIdToSku.get(g.good) ?? null;
-        if (!sku) {
-          console.warn(`⚠️ [MovementHistoryService] SKU не знайдено для dilovodId=${g.good} (${g.good__pr})`);
-        }
-        return {
-          sku: sku ?? '',
-          productName: g.good__pr ?? '',
-          dilovodId: g.good ?? '',
-          batchNumber: g.goodPart__pr ?? '',
-          batchId: g.goodPart ?? '',
-          // batchStorage: у tpGoods Діловода немає поля "склад партії" — є лише unit (одиниця виміру).
-          // Склад партії відомий тільки при ручному виборі через BatchNumbersAutocomplete.
-          batchStorage: '',
-          boxQuantity: 0,
-          portionQuantity: parseFloat(g.qty) || 0,
-          forecast: 0,
-        };
-      });
-
-      await prisma.warehouseMovement.updateMany({
-        where: { dilovodDocId },
-        data: { items: JSON.stringify(items) },
-      });
-
-      console.log(`💾 [MovementHistoryService] persistDetailsToDB: збережено ${items.length} товарів для doc ${dilovodDocId}`);
-    } catch (error) {
-      console.error('🚨 [MovementHistoryService] persistDetailsToDB error:', error);
-    }
-  }
-
-  /**
-   * Отримує деталі переміщення за ID документа
-   */
-  static async getMovementDetails(documentId: string) {
-    try {
-      console.log(`📦 [MovementHistoryService] Запит деталей переміщення ID: ${documentId}`);
-
-      const dilovodClient = MovementHistoryService.getDilovodClient();
-
-      // Отримуємо API Key через клієнт (він вже завантажується під час ініціалізації)
-      const apiKey = dilovodClient.getApiKey();
-      if (!apiKey) {
-        throw new Error('DILOVOD_API_KEY не налаштований');
-      }
-
-      // Запит до Діловода для отримання деталей об'єкта
-      const request = {
-        version: '0.25',
-        key: apiKey,
-        action: 'getObject',
-        params: {
-          id: documentId
-        }
-      };
-
-      console.log(`🔗 [MovementHistoryService] Запит до Діловода: getObject ID=${documentId}`);
-
-      const response = await dilovodClient.makeRequest(request);
-
-      console.log(`✅ [MovementHistoryService] Отримані деталі переміщення ID: ${documentId}`);
-      console.log(`📋 [MovementHistoryService] Структура відповіді:`, {
-        hasHeader: !!response?.header,
-        hasTableParts: !!response?.tableParts,
-        hasMisc: !!response?.misc,
-        tablePartsKeys: response?.tableParts ? Object.keys(response.tableParts) : []
-      });
-
-      const details = {
-        header: response?.header || {},
-        tableParts: response?.tableParts || {},
-        misc: response?.misc || {}
-      };
-
-      // Зберігаємо товари (tpGoods) в items запису warehouse_movement
-      await MovementHistoryService.persistDetailsToDB(documentId, details);
-
-      return details;
-    } catch (error) {
-      console.error('🚨 [MovementHistoryService] Помилка при отриманні деталей переміщення:', error);
-      throw new Error(`Помилка при отриманні деталей переміщення: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }

@@ -82,7 +82,8 @@ export interface GoodMovingDocument {
   storageTo__pr?: string; // Приклад: "Малий склад"
   firm__pr?: string; // Приклад: "Бубнова М.В. ФОП"
   author__pr?: string; // Приклад: "Зав.виробництвом"
-
+  // Напрямок переміщення: 'main-to-small' або 'small-to-main'
+  direction?: 'main-to-small' | 'small-to-main';
   // Деталі (завантажуються окремо)
   details?: GoodMovingDocumentDetails;
 }

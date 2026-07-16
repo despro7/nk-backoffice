@@ -48,3 +48,43 @@ export function resolveStorageDisplay(
     className: DEFAULT_STORAGE_DISPLAY.className,
   };
 }
+
+/**
+ * Відображення напрямку переміщення
+ */
+export interface MovementDirectionDisplay {
+  /** Класи для контейнера */
+  containerClassName?: string;
+  /** Класи для стрілки */
+  arrowClassName?: string;
+  /** Відображення складу-донора */
+  sourceDisplay: StorageDisplay;
+  /** Відображення складу-реципієнта */
+  destDisplay: StorageDisplay;
+}
+
+/**
+ * Повертає відображення напрямку переміщення.
+ * @param direction - напрямок: 'main-to-small' або 'small-to-main'
+ * @param sourceStorageId - ID складу-донора
+ * @param destStorageId - ID складу-реципієнта
+ * @param sourceName - назва складу-донора (fallback)
+ * @param destName - назва складу-реципієнта (fallback)
+ */
+export function resolveMovementDirection(
+  direction?: 'main-to-small' | 'small-to-main',
+  sourceStorageId?: string,
+  destStorageId?: string,
+  sourceName?: string,
+  destName?: string,
+): MovementDirectionDisplay {
+  const sourceDisplay = resolveStorageDisplay(sourceStorageId, sourceName);
+  const destDisplay = resolveStorageDisplay(destStorageId, destName);
+
+  return {
+    containerClassName: 'flex items-center gap-1',
+    arrowClassName: 'text-gray-400',
+    sourceDisplay,
+    destDisplay,
+  };
+}

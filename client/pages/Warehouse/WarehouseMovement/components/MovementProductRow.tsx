@@ -307,41 +307,23 @@ export const MovementProductRow = ({
         </div>
         <div className="flex items-center gap-2">
           <div className="flex flex-col items-start">
-            {isRefreshingStock ? (
-              <div className="flex items-center gap-2">
-                <Spinner size="sm" />
-                <span className="text-xs text-gray-500">Оновлення...</span>
-              </div>
-            ) : (
-              <>
-                <span className={`font-semibold text-lg text-neutral-800 ${product.stockData?.sourceStock == 0 && 'text-danger-400'}`}>
-                  {product.stockData?.sourceStock ?? 0}
-                  {totalPortions > 0 && <sup className="text-xs text-danger-400 ml-0.5">-{totalPortions}</sup>}
-                </span>
-                <span className={`text-[9px] px-1 py-[1px] rounded ring-1 ${sourceDisplay.className}`}>
-                  {sourceDisplay.shortName}
-                </span>
-              </>
-            )}
+            <span className={`font-semibold text-lg text-neutral-800`}>
+              {isRefreshingStock ? <Spinner size="sm" color="secondary" /> : product.stockData?.sourceStock ?? 0}
+              {totalPortions > 0 && <sup className="text-xs text-danger-400 ml-0.5">-{totalPortions}</sup>}
+            </span>
+            <span className={`text-[9px] px-1 py-[1px] rounded ring-1 ${sourceDisplay.className}`}>
+              {sourceDisplay.shortName}
+            </span>
           </div>
           <DynamicIcon name="arrow-right" size={18} className="text-gray-400" />
           <div className="flex flex-col items-start">
-            {isRefreshingStock ? (
-              <div className="flex items-center gap-2">
-                <Spinner size="sm" />
-                <span className="text-xs text-gray-500">Оновлення...</span>
-              </div>
-            ) : (
-              <>
-                <span className={`font-semibold text-lg text-neutral-800 ${product.stockData?.destStock == 0 && 'text-danger-400'}`}>
-                  {product.stockData?.destStock ?? 0}
-                  {totalPortions > 0 && <sup className="text-xs text-green-600 ml-0.5">+{totalPortions}</sup>}
-                </span>
-                <span className={`text-[9px] px-1 py-[1px] rounded ring-1 ${destDisplay.className}`}>
-                  {destDisplay.shortName}
-                </span>
-              </>
-            )}
+            <span className={`font-semibold text-lg text-neutral-800`}>
+              {isRefreshingStock ? <Spinner size="sm" color="secondary" /> : product.stockData?.destStock ?? 0}
+              {totalPortions > 0 && <sup className="text-xs text-green-600 ml-0.5">+{totalPortions}</sup>}
+            </span>
+            <span className={`text-[9px] px-1 py-[1px] rounded ring-1 ${destDisplay.className}`}>
+              {destDisplay.shortName}
+            </span>
           </div>
         </div>
       </div>

@@ -95,6 +95,8 @@ export interface UseMovementDraftStateReturn {
     direction?: { storage: string; storageTo: string },
     preloadedProducts?: MovementProduct[],
   ) => Promise<void>;
+  // Публічна обгортка (використовується з useWarehouseMovement):
+  // loadDraftObject(draft, direction?, preloadedProducts?)
   loadMovementFromHistory: (
     doc: any,
     loadProducts: () => Promise<MovementProduct[]>,
@@ -264,11 +266,16 @@ export const useMovementDraftState = (
           setSelectedDateTime(new Date(draft.movementDate));
         }
 
+        // ДІАГНОСТИКА: чи є preloadedProducts?
+        LoggingService.warehouseMovementLog(`📌 preloadedProducts: ${preloadedProducts?.length ?? 0} товарів`);
+
         // Використовуємо вже завантажені товари (щоб не скидати stockData в нулі повторним loadProducts),
         // інакше завантажуємо заново
         const prods = preloadedProducts && preloadedProducts.length > 0
           ? preloadedProducts
           : await loadProducts();
+
+        LoggingService.warehouseMovementLog(`📌 Після loadProducts: ${prods.length} товарів, stockData прикріплено`);
 
         let draftItems: any[] = [];
         if (typeof draft.items === 'string') {
@@ -277,21 +284,37 @@ export const useMovementDraftState = (
           draftItems = draft.items;
         }
 
+        LoggingService.warehouseMovementLog(`📌 draftItems: ${draftItems.length} позицій`);
+        // ТИМЧАСОВО (DIAG): сира структура першої позиції чернетки
+        if (draftItems.length > 0) {
+          console.log('[DIAG] draftItem[0] raw:', JSON.stringify(draftItems[0]));
+        }
+
         setSavedDraft(draft);
         if (draft.notes) setNotes(draft.notes);
         const draftDate = draft.movementDate ? new Date(draft.movementDate) : undefined;
         await loadDraftIntoProducts(prods, draftItems, draftDate);
+
+        // ДІАГНОСТИКА: перевірка напрямку
+        LoggingService.warehouseMovementLog(`📌 direction: storage=${direction?.storage}, storageTo=${direction?.storageTo}`);
+        LoggingService.warehouseMovementLog(`📌 warehouseConfigRef: ${JSON.stringify(warehouseConfigRef.current)}`);
 
         // Після завантаження чернетки продовжуємо роботу зі стоками
         // Якщо direction передано — використовуємо його, інакше беремо з warehouseConfigRef
         const sourceStorageId = direction?.storage ?? warehouseConfigRef.current?.storageFrom;
         const destStorageId = direction?.storageTo ?? warehouseConfigRef.current?.storageTo;
 
+        LoggingService.warehouseMovementLog(`📌 НАПРЯМОК: sourceStorageId=${sourceStorageId}, destStorageId=${destStorageId}`);
+
         if (refreshStockData && prods.length > 0 && sourceStorageId && destStorageId) {
           LoggingService.warehouseMovementLog(
             `📊 Оновлюємо stock data для чернетки #${draft.id}: source=${sourceStorageId}, dest=${destStorageId}`,
           );
           await refreshStockData(prods, sourceStorageId, destStorageId);
+          
+          // ДІАГНОСТИКА: результат оновлення
+          const updatedProds = prods.filter(p => p.stockData?.sourceStock !== null || p.stockData?.destStock !== null);
+          LoggingService.warehouseMovementLog(`📌 Після refreshStockData: ${updatedProds.length} товарів з заповненими stockData`);
         }
       } catch (err: any) {
         ToastService.show({

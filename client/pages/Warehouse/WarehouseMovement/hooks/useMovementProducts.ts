@@ -43,6 +43,8 @@ export interface UseMovementProductsReturn {
   ) => Promise<void>;
   /** true поки виконується refreshStockData */
   isRefreshingStock: boolean;
+  /** Дозволяє оркестратору одразу показати індикатор завантаження (до debounce) */
+  setIsRefreshingStock: (v: boolean) => void;
   /** Згортає акордіони товарів без партій (не впливають на isDirty) */
   collapseEmptyAccordionsWithProducts: (prods: MovementProduct[]) => void;
 }
@@ -89,7 +91,16 @@ export const useMovementProducts = (
     try {
       const result = await getProductsForMovement();
       const prods: MovementProduct[] = result?.products || [];
-      setProducts(prods);
+      // Зберігаємо попередні залишки (stockData), щоб уникнути візуального скидання
+      // на 0 під час оновлення списку товарів. Сервер у /products-for-movement завжди
+      // повертає sourceStock/destStock = 0, тому беремо їх з поточного стану (за SKU).
+      setProducts(prev => {
+        const prevBySku = new Map(prev.map(p => [p.sku, p.stockData]));
+        return prods.map(p => ({
+          ...p,
+          stockData: prevBySku.get(p.sku) ?? p.stockData,
+        }));
+      });
       return prods;
     } catch (err: any) {
       const message = err?.message || 'Помилка завантаження товарів';
@@ -216,18 +227,27 @@ export const useMovementProducts = (
       }
 
       // Проставляємо оновлені quantity та batchId у products state.
-      // ВАЖЛИВО: беремо за основу `prods` (аргумент), а не `prev`!
-      // Бо loadDraftIntoProducts викликає setProducts(updated) і одразу ж
-      // refreshBatchQuantities(updated). Якщо брати prev — це старий стан
-      // (часто з порожніми batches після loadProducts), і умова
-      // `batches.length === 0` перезапише щойно встановлений updated
-      // з правильними boxes/portions на порожній. Беремо prods як джерело істини.
-      setProducts(() =>
-        prods.map(product => {
+      // Беремо за основу `prev` (найновіший стан React), щоб НЕ втратити
+      // щойно встановлені boxes/portions з чернетки, якщо аргумент `prods`
+      // виявився застарілим (наприклад, старий стан з порожніми batches
+      // під час синхронного initData, коли ефект [sessionStatus] викликає
+      // refreshBatchQuantities ще до оновлення mov.products).
+      // Мержимо: quantity/batchId — з API (batchMap), boxes/portions — з prev.
+      // Якщо prev не має партій для SKU, фолбек на prods.
+      setProducts(prev =>
+        prev.map(product => {
           const batchMap = quantityMap.get(product.sku);
-          if (!batchMap || product.details.batches.length === 0) return product;
+          if (!batchMap) return product;
 
-          const updatedBatches = product.details.batches.map(batch => {
+          // Базові партії: пріоритет у prev (зберігає boxes/portions з чернетки)
+          const baseBatches =
+            product.details.batches.length > 0
+              ? product.details.batches
+              : (prods.find(p => p.sku === product.sku)?.details.batches ?? []);
+
+          if (baseBatches.length === 0) return product;
+
+          const updatedBatches = baseBatches.map(batch => {
             const fromApi = batchMap.get(batch.batchNumber);
             return {
               ...batch,
@@ -277,6 +297,12 @@ export const useMovementProducts = (
           const total: number = item.totalPortions ?? (rawBoxes * product.portionsPerBox + rawPortions);
           const boxes = rawBoxes > 0 ? rawBoxes : Math.floor(total / (product.portionsPerBox || 1));
           const portions = rawBoxes > 0 ? rawPortions : total % (product.portionsPerBox || 1);
+
+          // ТИМЧАСОВО (DIAG): що мапиться для кожної партії
+          console.log('[DIAG] map batch', product.sku, JSON.stringify({
+            rawBoxes, rawPortions, total, boxes, portions,
+            batchId: item.batchId, batchNumber: item.batchNumber, batchStorage: item.batchStorage,
+          }));
 
           return {
             id: `batch-${product.sku}-${idx}`,
@@ -334,77 +360,72 @@ export const useMovementProducts = (
       sourceStorageId?: string,
       destStorageId?: string,
     ): Promise<void> => {
-      if (allProds.length === 0) return;
-
-      LoggingService.warehouseMovementLog(
-        `📊 Оновлення stockData для ${allProds.length} товарів${asOfDate ? ` на дату ${asOfDate.toLocaleString('uk-UA')}` : ' (поточні залишки)'}${sourceStorageId ? ` (напрям: ${sourceStorageId} → ${destStorageId})` : ''}...`,
-      );
-
+      // Показуємо індикатор завантаження одразу, навіть якщо список порожній
+      // (щоб уникнути "зависання" спінера, якщо виклик завершиться достроково).
       setIsRefreshingStock(true);
       try {
+        if (allProds.length === 0) {
+          LoggingService.warehouseMovementLog(`📊 refreshStockData: список товарів порожній`);
+          return;
+        }
+
+        LoggingService.warehouseMovementLog(
+          `📊 Оновлення stockData для ${allProds.length} товарів${asOfDate ? ` на дату ${asOfDate.toLocaleString('uk-UA')}` : ' (поточні залишки)'}${sourceStorageId ? ` (напрям: ${sourceStorageId} → ${destStorageId})` : ''}...`,
+        );
+
         const skus = allProds.map(p => p.sku).join(',');
 
-        // Базовий запит — завжди повертає mainStock/smallStock
+        // ДІАГНОСТИКА: що ми запитуємо
         const baseUrl = new URL('/api/warehouse/stock-snapshot', window.location.origin);
         baseUrl.searchParams.set('skus', skus);
         if (asOfDate) {
           baseUrl.searchParams.set('asOfDate', asOfDate.toISOString());
         }
+        LoggingService.warehouseMovementLog(`📌 Запит до: ${baseUrl.toString()}`);
 
-        // Додаткові запити для залишків обраних складів (source/dest) — якщо задано напрям
-        const fetchSelected = async (storageId: string): Promise<Record<string, number>> => {
-          const u = new URL('/api/warehouse/stock-snapshot', window.location.origin);
-          u.searchParams.set('skus', skus);
-          if (asOfDate) u.searchParams.set('asOfDate', asOfDate.toISOString());
-          u.searchParams.set('storageId', storageId);
-          const r = await fetch(u.toString(), {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-          });
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const d = await r.json();
-          const stocks: Record<string, { selectedStock?: number }> = d.stocks ?? {};
-          const out: Record<string, number> = {};
-          for (const [sku, s] of Object.entries(stocks)) {
-            out[sku] = s.selectedStock ?? 0;
-          }
-          return out;
-        };
+        const r = await fetch(baseUrl.toString(), {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const baseData = await r.json();
 
-        const [baseData, sourceData, destData] = await Promise.all([
-          (async () => {
-            const r = await fetch(baseUrl.toString(), {
-              method: 'GET',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-            });
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return r.json();
-          })(),
-          sourceStorageId ? fetchSelected(sourceStorageId) : Promise.resolve<Record<string, number>>({}),
-          destStorageId ? fetchSelected(destStorageId) : Promise.resolve<Record<string, number>>({}),
-        ]);
+        const stocks: Record<string, { mainStock: number; smallStock: number; storages?: Record<string, number> }> = baseData.stocks ?? {};
 
-        const stocks: Record<string, { mainStock: number; smallStock: number }> = baseData.stocks ?? {};
+        // ДІАГНОСТИКА: що отримали
+        LoggingService.warehouseMovementLog(`📌 Отримано stockSnapshot: ${Object.keys(stocks).length} SKU`);
 
-        setProducts(prev =>
-          prev.map(p => {
+        setProducts(prev => {
+          const updated = prev.map(p => {
             const s = stocks[p.sku];
-            if (!s) return p;
+            if (!s) {
+              LoggingService.warehouseMovementLog(`⚠️ SKU ${p.sku} не знайдено в stockSnapshot`);
+              return p;
+            }
+            const storages = s.storages ?? {};
+            const sourceStock = sourceStorageId ? (storages[sourceStorageId] ?? 0) : 0;
+            const destStock = destStorageId ? (storages[destStorageId] ?? 0) : 0;
+            
+            // ДІАГНОСТИКА: що саме підставляємо
+            if (sourceStock !== p.stockData?.sourceStock || destStock !== p.stockData?.destStock) {
+              LoggingService.warehouseMovementLog(`📌 SKU ${p.sku}: ${p.stockData?.sourceStock ?? 0} → ${sourceStock} (source), ${p.stockData?.destStock ?? 0} → ${destStock} (dest)`);
+            }
+            
             return {
               ...p,
               stockData: {
                 mainStock: s.mainStock,
                 smallStock: s.smallStock,
-                sourceStock: sourceData[p.sku] ?? 0,
-                destStock: destData[p.sku] ?? 0,
+                sourceStock,
+                destStock,
               },
             };
-          }),
-        );
+          });
+          return updated;
+        });
 
-        LoggingService.warehouseMovementLog(`✅ stockData оновлено для ${allProds.length} товарів`);
+        LoggingService.warehouseMovementLog(`✅ stockData оновлено для ${allProds.length} товарів (1 запит)`);
       } catch (err: any) {
         LoggingService.warehouseMovementLog(`🚨 Помилка оновлення stockData: ${err?.message}`);
         throw err;
@@ -433,6 +454,7 @@ export const useMovementProducts = (
     refreshBatchQuantities,
     refreshStockData,
     isRefreshingStock,
+    setIsRefreshingStock,
     loadDraftIntoProducts,
     collapseEmptyAccordionsWithProducts,
   };
