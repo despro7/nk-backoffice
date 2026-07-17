@@ -273,6 +273,7 @@ export class DilovodExportBuilder {
     overrideFirmId?: string | null,
     documentDate?: string | null, // optional date string (YYYY-MM-DD HH:mm:ss or ISO) to use for header.date
     documentId?: string, // ID документа в Dilovod (для видалення/оновлення)
+    shipment?: { bySku: Record<string, { accGood: string; quantity: number }> } | null, // для монолітних комплектів
   ): Promise<{ payload: DilovodExportPayload; warnings: string[] }> {
     console.log(`📦 Початок формування payload повернення для замовлення ${orderId} (baseDoc: ${baseDocId})`);
 
@@ -350,8 +351,12 @@ export class DilovodExportBuilder {
           continue;
         }
 
-        // Перевіряємо, чи є товар монолітним (accGood = 1119000000001079)
-        const isMonolithic = this.getShipmentAccGoodOverride(context.order.payloadData, item.sku) === DILOVOD_CONSTANTS.SHIPMENT_MONOLITHIC_ACC_GOOD;
+        // Перевіряємо, чи є товар монолітним:
+        // 1. Спочатку шукаємо в shipment.bySku (передається з фронтенду)
+        // 2. Якщо не знайдено - перевіряємо в payloadData.order.shipment (з бекенду)
+        const shipmentBySku = shipment?.bySku ?? context.order.payloadData?.shipment?.bySku;
+        const shipmentItem = shipmentBySku?.[item.sku];
+        const isMonolithic = shipmentItem?.accGood === '1119000000001079';
 
         tpGoods.push({
           rowNum,
@@ -392,6 +397,7 @@ export class DilovodExportBuilder {
     dilovodDocId: string;
     firmId: string | null;
     storageId: string | null;
+    payloadData?: any; // payloadData замовлення (містить shipment.bySku для монолітних наборів)
     items: Array<{ sku: string; productName?: string; quantity: number; dilovodId?: string | null }>;
   }> {
     console.log(`📦 Підготовка даних для повернення замовлення ${orderId}`);
@@ -425,6 +431,7 @@ export class DilovodExportBuilder {
       dilovodDocId: baseDoc,
       firmId: header.firm ?? null,
       storageId: context.settings.storageId ?? null,
+      payloadData: (context.order as any).payloadData ?? null,
       items: items.map((item: any) => ({
         sku: item.sku,
         productName: item.productName,

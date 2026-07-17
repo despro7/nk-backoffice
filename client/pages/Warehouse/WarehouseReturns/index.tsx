@@ -117,10 +117,22 @@ export default function WarehouseReturns() {
         } catch (e) {}
         return null;
       };
-      const dateValue = (() => {
+const dateValue = (() => {
         const parsed = parseStoredDate(returns.returnDate);
         return parsed ? formatDate(parsed) : formatDate(new Date());
       })();
+
+      // Build shipment.bySku for monolithic sets (accGood = 1119000000001079)
+      // — той самий логіки, що й у sendReturn, щоб прев'ю збігався з реальним payload
+      const monolithicItems = returns.items.filter((item) => item.dynamicMonolithic);
+      const shipmentBySku: Record<string, { accGood: string; quantity: number }> = {};
+      for (const item of monolithicItems) {
+        shipmentBySku[item.sku] = {
+          accGood: '1119000000001079',
+          quantity: item.quantity,
+        };
+      }
+
       const response = await fetch('/api/warehouse/returns/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -138,6 +150,8 @@ export default function WarehouseReturns() {
           })),
           comment: sanitizeText(returns.comment) || undefined,
           dryRun: isDebugMode,
+          // Include shipment payload for monolithic sets (як у sendReturn)
+          shipment: Object.keys(shipmentBySku).length > 0 ? { bySku: shipmentBySku } : undefined,
         }),
       });
       const data = await response.json();
@@ -335,7 +349,7 @@ export default function WarehouseReturns() {
         <p className="text-sm text-gray-500">Швидкий інтерфейс для оприбуткування повернень клієнтів у Dilovod.</p>
       </div>
 
-      <PageTabs selectedKey={activeTab} onSelectionChange={(key) => {
+      <PageTabs className="mb-4" selectedKey={activeTab} onSelectionChange={(key) => {
         const tab = key as 'main' | 'history';
         setActiveTab(tab);
         if (tab === 'history') {

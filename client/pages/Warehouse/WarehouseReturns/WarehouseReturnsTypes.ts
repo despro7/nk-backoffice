@@ -22,6 +22,8 @@ export interface ReturnItem {
   selectedBatchId: string | null; // actual Dilovod batchId
   selectedBatchKey: string | null; // unique key for UI option
   price: number;
+  dynamicMonolithic?: boolean; // Якщо true - це монолітний комплект, не розгортати
+  composition?: Array<string | { name?: string; quantity?: number; unitRatio?: number; sku?: string }>; // Склад монолітного комплекту (для Popover)
 }
 
 export interface ReturnDraft {

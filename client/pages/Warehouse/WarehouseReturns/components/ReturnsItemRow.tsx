@@ -1,4 +1,4 @@
-import { Input, Select, SelectItem } from '@heroui/react';
+import { Input, Select, SelectItem, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { ReturnBatch, ReturnItem } from '../WarehouseReturnsTypes';
 
@@ -18,7 +18,31 @@ export function ReturnsItemRow({
   return (
     <div className="grid gap-5 border-b border-gray-100 py-4 sm:grid-cols-[1fr_20%_25%]">
       <div className="space-y-2">
-        <div className="font-semibold text-gray-900">{item.name}</div>
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-gray-900">{item.name}</span>
+          {item.dynamicMonolithic && (
+            <Popover showArrow placement="right">
+              <PopoverTrigger>
+                <button type="button" className="text-xs text-indigo-700 bg-indigo-100 border border-indigo-200 px-1 rounded">Набір</button>
+              </PopoverTrigger>
+              <PopoverContent className="p-3 bg-white border border-gray-200 shadow-lg">
+                <div className="font-semibold mb-2 max-w-60 text-center leading-tight">Склад набору «{item.name}»</div>
+                <div className="max-h-80 overflow-auto text-[13px]">
+                  {(item.composition || []).map((c: any, idx: number) => {
+                    const compName = typeof c === 'string' ? c : (c?.name || c?.sku || 'Компонент');
+                    const compQty = typeof c === 'string' ? 1 : (c?.quantity ?? 1);
+                    return (
+                      <div key={c?.sku ?? idx} className="flex items-end justify-between gap-4">
+                        <div>{compName}</div>
+                        <div>{compQty} шт.</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+        </div>
         <div className="text-sm text-gray-500">SKU: {item.sku}</div>
       </div>
 

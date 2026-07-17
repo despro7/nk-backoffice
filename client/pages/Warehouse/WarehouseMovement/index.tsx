@@ -343,7 +343,7 @@ export default function WarehouseMovement() {
       {/* Основна колона */}
       <div className="flex flex-col gap-8 pb-12 w-full">
         {/* Таби: Поточні переміщення / Чернетки / Історія */}
-        <div className="flex items-center gap-4 justify-between mb-4">
+        <div className="flex items-center gap-4 justify-between">
           <PageTabs selectedKey={activeTab} onSelectionChange={(key) => {
             const tab = key as 'current' | 'drafts' | 'history';
             setActiveTab(tab);

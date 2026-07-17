@@ -115,7 +115,7 @@ export default function WarehouseWriteOff() {
         <p className="text-sm text-gray-500">Зручний інтерфейс для списання товарів у Dilovod.</p>
       </div>
 
-      <PageTabs selectedKey={pageTab} onSelectionChange={(key) => {
+      <PageTabs className="mb-4" selectedKey={pageTab} onSelectionChange={(key) => {
         const tab = key as 'main' | 'history';
         setPageTab(tab);
         if (tab === 'history') {

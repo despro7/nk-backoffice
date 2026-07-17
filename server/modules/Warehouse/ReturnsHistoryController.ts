@@ -75,7 +75,7 @@ router.get('/prepare', authenticateToken, requireMinRole(ROLES.STOREKEEPER), asy
       return res.status(400).json({ success: false, error: 'Замовлення ще не має повʼязаного документа в Dilovod' });
     }
 
-    const { dilovodExportBuilder } = await import('../../services/dilovod/DilovodExportBuilder.js');
+const { dilovodExportBuilder } = await import('../../services/dilovod/DilovodExportBuilder.js');
     const prepareData = await dilovodExportBuilder.prepareReturn(String(order.id));
 
     const orderDate = order.dilovodSaleExportDate ?? order.orderDate ?? null;
@@ -86,6 +86,8 @@ router.get('/prepare', authenticateToken, requireMinRole(ROLES.STOREKEEPER), asy
         ttn: order.ttn || null,
         orderDate: orderDate ? orderDate.toISOString() : null,
         dilovodSaleExportDate: order.dilovodSaleExportDate ? order.dilovodSaleExportDate.toISOString() : null,
+        // payloadData потрібен для визначення монолітних наборів (shipment.bySku) на фронтенді
+        payloadData: prepareData.payloadData ?? null,
       },
     });
   } catch (error) {
@@ -133,6 +135,7 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
     const { dilovodExportBuilder } = await import('../../services/dilovod/DilovodExportBuilder.js');
     const requestedDate = req.body?.date ?? null;
     const overrideFirmId = req.body?.firmId ?? null;
+    const shipment = req.body?.shipment ?? null;
     const { payload, warnings } = await dilovodExportBuilder.buildReturnPayload(
       userId,
       String(orderId),
@@ -145,8 +148,10 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
         quantity: Number(item.quantity),
         price: Number(item.price),
       })),
-      overrideFirmId,
+overrideFirmId,
       requestedDate,
+      undefined, // documentId (для оновлення/видалення) — не використовується при створенні
+      shipment,
     );
 
     // If shipping firm (shipFirmId) differs from receiving firm (overrideFirmId), remove `contract` from header

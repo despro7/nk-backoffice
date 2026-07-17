@@ -30,6 +30,7 @@ interface PrepareReturnResponse {
   dilovodDocId: string;
   firmId: string | null;
   storageId: string | null;
+  payloadData?: any; // payloadData замовлення (shipment.bySku для монолітних наборів)
   items: Array<{ sku: string; productName?: string; quantity: number; price?: number; dilovodId?: string | null }>;
 }
 
@@ -330,7 +331,20 @@ export function useWarehouseReturns() {
       if (payload.firmId) void loadFirmName(payload.firmId);
 
       const priceBySku = new Map(payload.items.map((item) => [item.sku, Number(item.price ?? 0)]));
-      const expanded = await expandProductSets(payload.items, apiCall, monolithicCategoryIds);
+      // Витягуємо shipment.bySku з payloadData замовлення (як у OrderView для фіналізованих)
+      // щоб expandProductSets розпізнав монолітні набори (dynamicMonolithic) і не розгортав їх.
+      const shipmentBySku = payload.payloadData?.shipment?.bySku
+        && typeof payload.payloadData.shipment.bySku === 'object'
+        ? payload.payloadData.shipment.bySku
+        : null;
+      const expanded = await expandProductSets(
+        payload.items,
+        apiCall,
+        monolithicCategoryIds,
+        [],
+        shipmentBySku,
+        Boolean(shipmentBySku),
+      );
       const preparedItems = expanded.map((item) => ({
         id: crypto.randomUUID?.() ?? `${item.sku}-${Date.now()}-${Math.random()}`,
         sku: item.sku,
@@ -344,7 +358,7 @@ export function useWarehouseReturns() {
         selectedBatchId: null,
         selectedBatchKey: null,
         price: priceBySku.get(item.sku) ?? 0,
-      } as ReturnItem));
+        dynamicMonolithic: (item as any).dynamicMonolithic ?? false,        composition: (item as any).composition ?? undefined,      } as ReturnItem));
 
       setItems(preparedItems);
       setReturnReason('');
@@ -496,6 +510,16 @@ export function useWarehouseReturns() {
       const sanitizedReason = sanitizeText(returnReason) ?? '';
       const sanitizedCustom = sanitizeText(customReason) ?? '';
 
+      // Build shipment.bySku for monolithic sets (accGood = 1119000000001079)
+      const monolithicItems = items.filter(item => item.dynamicMonolithic);
+      const shipmentBySku: Record<string, { accGood: string; quantity: number }> = {};
+      for (const item of monolithicItems) {
+        shipmentBySku[item.sku] = {
+          accGood: '1119000000001079',
+          quantity: item.quantity,
+        };
+      }
+
       const payload = {
         orderId: String(selectedOrderId),
         date: payloadDate,
@@ -506,6 +530,8 @@ export function useWarehouseReturns() {
         // Include shipping firm so server can decide whether to keep `contract` in header
         shipFirmId: shipFirmId || undefined,
         items: items.map((item) => ({ sku: item.sku, batchId: item.selectedBatchId, quantity: item.quantity, price: item.price })),
+        // Include shipment payload for monolithic sets
+        shipment: Object.keys(shipmentBySku).length > 0 ? { bySku: shipmentBySku } : undefined,
       };
 
       const response = await apiCall('/api/warehouse/returns/send', { method: 'POST', body: JSON.stringify(payload) });

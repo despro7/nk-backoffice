@@ -140,7 +140,7 @@ export default function ReleaseSetsPage() {
         <p className="text-sm text-gray-500">Інтерфейс для комплектування готових наборів та їх розукомплектування. При комплектуванні наборів зі складу списується відповідна кількість компонентів набору. При розукомплектуванні наборів компоненти повертаються на склад.</p>
       </div>
 
-      <PageTabs selectedKey={pageTab} onSelectionChange={(k) => {
+      <PageTabs className="mb-4" selectedKey={pageTab} onSelectionChange={(k) => {
         const tab = k as 'main' | 'history' | 'archive';
         setPageTab(tab);
         if (tab === 'history' && rs.history.length === 0) {
