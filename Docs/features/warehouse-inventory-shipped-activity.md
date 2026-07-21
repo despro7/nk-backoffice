@@ -40,11 +40,24 @@
 
 Підсумовується поле `quantity`, а в колонці показується нетто-значення комплектування за цей інвентаризаційний день.
 
-### 1.1. Монолітні набори
+### 1.1. Монолітні набори vs звичайні порції
 
-Для монолітних наборів більше не потрібна окрема перевірка на `accGood = 1119000000001079` у warehouse history. Якщо shipment-пayload або cache вже містить SKU, метрика буде взята з того самого загального report-flow, що використовується в [server/routes/orders.ts](../../../server/routes/orders.ts).
+`shipped` **не** є простою сумою `processedItems + shipment.bySku`. Підрахунок іде через `computeShippedQuantityForSku` у `server/services/orderShipmentMetricsService.ts` — той самий шлях, що й shipment-звіти:
 
-Це означає, що warehouse history тепер підписується на той самий шлях, що й shipment-звіти, а не дублює власну специфічну логіку для монолітів.
+1. З `payloadData.shipment.bySku` береться список монолітних наборів.
+2. Кожен набір розгортається до листових SKU через `expandSetToLeaves` → `monolithicComponentQuantity`.
+3. З `ordersCache.processedItems` береться `cacheQuantity` по цільовому SKU.
+
+Правила результату:
+
+| Тип SKU | Що потрапляє в `shipped` |
+|---------|--------------------------|
+| Leaf / звичайний товар | `max(0, cacheQuantity − monolithicComponentQuantity)` — без порцій, що пішли в монолітні комплекти |
+| Монолітний набір (є в `shipment.bySku`) | `monolithicSetQuantity` з payload (кількість наборів, не розгорнуті компоненти) |
+
+Це узгоджується з Reports → Shipment: колонка «Звичайні товари» і таблиця «Монолітні набори» розділені так само.
+
+Для монолітних наборів більше не потрібна окрема перевірка на `accGood = 1119000000001079` у warehouse history.
 
 ### 2. Повернення і списання
 
@@ -116,16 +129,16 @@ endOfDay.setDate(endOfDay.getDate() + 1);
 
 ### Що вже перевикористовується фактично
 
-- `server/services/orderShipmentMetricsService.ts` — спільний reader для shipment payload і report items;
-- `server/routes/orders.ts` — звіти по shipped-метриках;
+- `server/services/orderShipmentMetricsService.ts` — спільний reader для shipment payload, descriptors, `expandSetToLeaves` і `computeShippedQuantityForSku`;
+- `server/routes/orders.ts` — звіти по shipped-метриках (stats + product-orders);
 - `server/modules/Warehouse/WarehouseController.ts` — inventory history для SKU.
 
 ### Що краще винести окремо, якщо треба застосувати в іншому ендпоінті
 
-Зараз ця логіка живе всередині `WarehouseController`, тому напряму як окремий модуль її не імпортувати.
-Якщо потрібно використовувати її ще десь, краще винести в helper/service, наприклад у такому вигляді:
+Денна агрегація (`startOfDay/endOfDay` + запити orders/returns/writeoffs) живе всередині `WarehouseController`.
+Якщо потрібно використовувати її ще десь, краще винести в helper/service, наприклад:
 
-- `getShippedTotalsForSkuByDay(sku, date)`;
+- `getShippedTotalsForSkuByDay(sku, date)` — вже можна зібрати поверх `computeShippedQuantityForSku`;
 - `getMovementTotalsForSkuByDay(sku, date)`;
 - або окремий метод у `WarehouseService` / `WarehouseHistoryService`.
 

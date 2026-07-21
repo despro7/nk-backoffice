@@ -6,26 +6,22 @@ import { authenticateToken } from '../middleware/auth.js';
 import { prisma, getOrderSourceDetailed, getOrderSourceMaps, getReportingDayStartHour, getReportingDate, getReportingDateRange, logServer } from '../lib/utils.js';
 import { dilovodService } from '../services/dilovod/index.js';
 import { getStatusText } from '../services/salesdrive/statusMapper.js';
-import { extractShipmentPayloadItems, getOrderReportItems } from '../services/orderShipmentMetricsService.js';
+import {
+  computeShippedQuantityBreakdown,
+  expandSetToLeaves,
+  extractShipmentPayloadItems,
+  getOrderReportItems,
+  getOrderedQuantity,
+  getReportProductDescriptors,
+  recomputeSetPortions,
+  type ReportProductDescriptor,
+} from '../services/orderShipmentMetricsService.js';
 
 const router = Router();
 
 // Cache for aggregated statistics to improve performance on repeated requests
 const statsCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-type ReportProductDescriptor = {
-  sku: string;
-  name: string;
-  categoryId: number | null;
-  categoryName: string | null;
-  categoryKey: string | null;
-  categoryLabel: string | null;
-  isSet: boolean;
-  setPortions: number;
-  setComponents: Array<{ sku: string; quantity: number }>;
-  stockBalances: Record<string, number>;
-};
 
 type ReportCategorySeriesOption = {
   key: string;
@@ -58,19 +54,6 @@ type ShipmentPayloadData = {
   };
 };
 
-function parseJsonArray(value: string | null | undefined): unknown[] {
-  if (!value) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 function parseStockBalances(value: string | null | undefined): Record<string, number> {
   if (!value) {
     return {};
@@ -84,102 +67,6 @@ function parseStockBalances(value: string | null | undefined): Record<string, nu
   } catch {
     return {};
   }
-}
-
-function parseSetComponents(value: string | null | undefined): Array<{ sku: string; quantity: number }> {
-  const components = parseJsonArray(value);
-  return components
-    .map((component) => {
-      const item = component as { id?: string; sku?: string; quantity?: unknown; qty?: unknown } | null;
-      const sku = item?.id ?? item?.sku ?? '';
-      const quantity = Number(item?.quantity ?? item?.qty ?? 0);
-      return { sku: typeof sku === 'string' ? sku.trim() : String(sku).trim(), quantity };
-    })
-    .filter((c) => c.sku && c.quantity > 0);
-}
-
-/**
- * Перераховує setPortions для всіх наборів у descriptors рекурсивно.
- * Потрібно викликати після побудови descriptors map, щоб врахувати вкладені набори.
- */
-function recomputeSetPortions(descriptors: Map<string, ReportProductDescriptor>): void {
-  const cache = new Map<string, number>();
-
-  function computePortions(sku: string, visited: Set<string>): number {
-    if (cache.has(sku)) return cache.get(sku)!;
-    if (visited.has(sku)) return 0; // циклічне посилання
-
-    const descriptor = descriptors.get(sku);
-    if (!descriptor || descriptor.setComponents.length === 0) {
-      // Листовий товар — 1 порція за одиницю
-      cache.set(sku, 1);
-      return 1;
-    }
-
-    const nextVisited = new Set(visited).add(sku);
-    let total = 0;
-    for (const component of descriptor.setComponents) {
-      total += component.quantity * computePortions(component.sku, nextVisited);
-    }
-
-    cache.set(sku, total);
-    return total;
-  }
-
-  for (const [sku, descriptor] of descriptors) {
-    if (descriptor.setComponents.length > 0) {
-      descriptor.setPortions = computePortions(sku, new Set());
-    }
-  }
-}
-
-/**
- * Рекурсивно розгортає набір до листових SKU, враховуючи вкладені набори.
- * Використовує вже завантажений productDescriptors (без додаткових запитів до БД).
- */
-function expandSetToLeaves(
-  sku: string,
-  quantity: number,
-  descriptors: Map<string, ReportProductDescriptor>,
-  visited: Set<string> = new Set(),
-): Map<string, number> {
-  const result = new Map<string, number>();
-
-  if (visited.has(sku)) {
-    return result; // захист від циклічних посилань
-  }
-
-  const descriptor = descriptors.get(sku);
-  if (!descriptor || descriptor.setComponents.length === 0) {
-    // Листовий товар або невідомий SKU — повертаємо як є
-    result.set(sku, quantity);
-    return result;
-  }
-
-  // Це набір — рекурсивно розгортаємо компоненти
-  const nextVisited = new Set(visited).add(sku);
-  for (const component of descriptor.setComponents) {
-    const subResult = expandSetToLeaves(component.sku, quantity * component.quantity, descriptors, nextVisited);
-    for (const [leafSku, leafQty] of subResult) {
-      result.set(leafSku, (result.get(leafSku) ?? 0) + leafQty);
-    }
-  }
-
-  return result;
-}
-
-function getSetPortions(value: string | null | undefined): number {
-  const components = parseJsonArray(value);
-
-  return components.reduce<number>((total: number, component: unknown) => {
-    const componentItem = component as { quantity?: unknown; qty?: unknown } | null | undefined;
-    const quantity = Number(componentItem?.quantity ?? componentItem?.qty ?? 0);
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      return total;
-    }
-
-    return total + quantity;
-  }, 0);
 }
 
 function normalizeDeductionQuantity(value: unknown): number {
@@ -247,31 +134,6 @@ async function buildMonolithicSetStockUpdates(payloadData: unknown): Promise<Arr
   return updates;
 }
 
-function normalizeCategoryKey(categoryId: number | null, categoryName: string | null): string | null {
-  if (categoryId !== null) {
-    return `category_${categoryId}`;
-  }
-
-  if (categoryName && categoryName.trim()) {
-    return `category_${categoryName.trim().toLowerCase().replace(/\s+/g, '_')}`;
-  }
-
-  return null;
-}
-
-function normalizeCategoryLabel(categoryName: string | null): string | null {
-  if (categoryName && categoryName.trim()) {
-    return categoryName.trim();
-  }
-
-  return null;
-}
-
-function getOrderedQuantity(value: unknown): number {
-  const quantity = typeof value === 'string' ? Number(value.replace(',', '.')) : Number(value);
-  return Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
-}
-
 function normalizeOrderItems(items: unknown): RawOrderItem[] {
   if (Array.isArray(items)) {
     return items as RawOrderItem[];
@@ -291,53 +153,6 @@ function normalizeOrderItems(items: unknown): RawOrderItem[] {
   }
 
   return [];
-}
-
-async function getReportProductDescriptors(skus: Iterable<string>): Promise<Map<string, ReportProductDescriptor>> {
-  const uniqueSkus = Array.from(new Set(Array.from(skus).filter(Boolean)));
-
-  if (uniqueSkus.length === 0) {
-    return new Map();
-  }
-
-  const products = await prisma.product.findMany({
-    where: {
-      sku: {
-        in: uniqueSkus,
-      },
-    },
-    select: {
-      sku: true,
-      name: true,
-      categoryId: true,
-      categoryName: true,
-      set: true,
-      stockBalanceByStock: true,
-    },
-  });
-
-  return new Map(
-    products.map((product) => {
-      const categoryKey = normalizeCategoryKey(product.categoryId ?? null, product.categoryName ?? null);
-      const categoryLabel = normalizeCategoryLabel(product.categoryName ?? null);
-
-      return [
-        product.sku,
-        {
-          sku: product.sku,
-          name: product.name,
-          categoryId: product.categoryId ?? null,
-          categoryName: product.categoryName ?? null,
-          categoryKey,
-          categoryLabel,
-          isSet: parseJsonArray(product.set).length > 0,
-          setPortions: getSetPortions(product.set),
-          setComponents: parseSetComponents(product.set),
-          stockBalances: parseStockBalances(product.stockBalanceByStock),
-        },
-      ];
-    }),
-  );
 }
 
 function buildCategorySeriesOptions(products: Array<{ sku: string; categoryKey?: string | null; categoryId?: number | null; categoryName?: string | null }>): ReportCategorySeriesOption[] {
@@ -2314,38 +2129,18 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
         }
       }
 
-      // 1) Монолітний набір сам по собі (SKU з'являється в shipmentItems як набір)
-      let monolithicSetQuantity = 0;
-      const shipmentItems = shippedOnly === 'true' ? extractShipmentPayloadItems(order.payloadData) : [];
-      for (const monoItem of shipmentItems) {
-        if (String(monoItem.sku) === String(sku)) {
-          monolithicSetQuantity += getOrderedQuantity(monoItem.orderedQuantity ?? monoItem.quantity);
-        }
-      }
-
-      // 2) Компоненти монолітних наборів — розгортаємо shipmentItems до листових SKU
-      let monolithicComponentQuantity = 0;
-      if (shippedOnly === 'true') {
-        for (const monoItem of shipmentItems) {
-          const monoQty = getOrderedQuantity(monoItem.orderedQuantity ?? monoItem.quantity);
-          if (monoQty <= 0) continue;
-
-          const leaves = expandSetToLeaves(monoItem.sku ?? '', monoQty, productDescriptors);
-          const leafQty = leaves.get(String(sku)) ?? 0;
-          if (leafQty > 0) {
-            monolithicComponentQuantity += leafQty;
-          }
-        }
-      }
-
-      // 3) Звичайні порції — з кешованих processedItems (розгорнуті комплекти),
-      //    за вирахуванням кількості, що пішла в монолітні набори (щоб уникнути подвійного рахунку)
-      const cacheQuantity = cachedStats
-        ? cachedStats
-            .filter((item) => item && String(item.sku) === String(sku))
-            .reduce((sum, item) => sum + getOrderedQuantity((item as RawOrderItem).orderedQuantity ?? (item as RawOrderItem).quantity), 0)
-        : 0;
-      const regularQuantity = Math.max(0, cacheQuantity - monolithicComponentQuantity - monolithicSetQuantity);
+      // Без shippedOnly не враховуємо payloadData.shipment.bySku (як і раніше).
+      const orderForBreakdown = shippedOnly === 'true' ? order : { ...order, payloadData: undefined };
+      const breakdown = computeShippedQuantityBreakdown(
+        orderForBreakdown,
+        cachedStats,
+        String(sku),
+        productDescriptors,
+      );
+      const regularQuantity = Math.max(
+        0,
+        breakdown.cacheQuantity - breakdown.monolithicComponentQuantity - breakdown.monolithicSetQuantity,
+      );
 
       if (regularQuantity > 0) {
         (order as any).productQuantity = regularQuantity;
@@ -2354,14 +2149,14 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
       }
 
       // Монолітні набори: і сам набір, і його компоненти
-      const monolithicTotal = monolithicSetQuantity + monolithicComponentQuantity;
+      const monolithicTotal = breakdown.monolithicSetQuantity + breakdown.monolithicComponentQuantity;
       if (monolithicTotal > 0) {
         // Для монолітного списку використовуємо окремий екземпляр об'єкта,
         // щоб productQuantity не конфліктував між списками.
         const monolithicOrder: typeof order = { ...order };
         (monolithicOrder as any).productQuantity = monolithicTotal;
         (monolithicOrder as any).monolithicComponentQuantity = monolithicTotal;
-        (monolithicOrder as any).monolithicSetQuantity = monolithicSetQuantity;
+        (monolithicOrder as any).monolithicSetQuantity = breakdown.monolithicSetQuantity;
         monolithicOrders.push(monolithicOrder);
       }
     }

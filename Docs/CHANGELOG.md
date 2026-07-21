@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-07-21 — `entry.shipped` в inventory history без подвійного рахунку монолітів
+**Files:** `server/services/orderShipmentMetricsService.ts`, `server/modules/Warehouse/WarehouseController.ts`, `server/routes/orders.ts`, `Docs/features/warehouse-inventory-shipped-activity.md`
+
+- Додано спільні хелпери `computeShippedQuantityForSku` / `computeShippedQuantityBreakdown`, `expandSetToLeaves`, `getReportProductDescriptors` у `orderShipmentMetricsService`.
+- `GET /api/warehouse/inventory/product-history` тепер рахує `shipped` так само, як shipment-звіти: leaf SKU = cache − mono-компоненти; SKU-набір = кількість з `shipment.bySku`.
+- Product-orders endpoint у `orders.ts` переведено на той самий breakdown, щоб уникнути роз'їзду метрик.
+
+---
+
 ## 2026-07-16 — Видалено статус чернетки переміщень: збереження = відправка + закриття
 **Files:** `server/modules/Warehouse/WarehouseController.ts`, `client/pages/Warehouse/WarehouseMovement/components/MovementActionBar.tsx`, `client/pages/Warehouse/WarehouseMovement/index.tsx`, `client/pages/Warehouse/WarehouseMovement/useWarehouseMovement.ts`
 

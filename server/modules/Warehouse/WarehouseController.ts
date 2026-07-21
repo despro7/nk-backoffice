@@ -6,7 +6,13 @@ import { ROLES } from '../../../shared/constants/roles.js';
 import { WarehouseService } from './WarehouseService.js';
 import { MovementHistoryService } from './MovementHistoryService.js';
 import { WarehousePayloadBuilder } from './WarehousePayloadBuilder.js';
-import { getOrderReportItems, sumQuantityForSku } from '../../services/orderShipmentMetricsService.js';
+import {
+  collectSkusFromOrders,
+  computeShippedQuantityForSku,
+  getReportProductDescriptors,
+  recomputeSetPortions,
+  sumQuantityForSku,
+} from '../../services/orderShipmentMetricsService.js';
 import { safeParseItems } from './historyNormalize.js';
 
 const router = Router();
@@ -1878,27 +1884,27 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
             select: { externalId: true, processedItems: true },
           });
 
-          const cacheByExternal = new Map(caches.map(c => [c.externalId, c.processedItems]));
+          const cachedItemsByExternalId = new Map<string, Array<{ sku?: string; name?: string; orderedQuantity?: number; quantity?: number }>>();
+          for (const cache of caches) {
+            if (!cache.processedItems) continue;
+            try {
+              const parsed = JSON.parse(cache.processedItems);
+              if (Array.isArray(parsed)) {
+                cachedItemsByExternalId.set(cache.externalId, parsed);
+              }
+            } catch {
+              // ignore malformed cache
+            }
+          }
+
+          // Same mono/regular split as shipment reports: leaf SKUs exclude monolithic components.
+          const allSkus = collectSkusFromOrders(orders, cachedItemsByExternalId, true);
+          const productDescriptors = await getReportProductDescriptors(allSkus);
+          recomputeSetPortions(productDescriptors);
 
           for (const order of orders) {
-            const processed = cacheByExternal.get(order.externalId);
-            let cachedItems: Array<{ sku?: string; name?: string; orderedQuantity?: number; quantity?: number }> | null = null;
-
-            if (processed) {
-              try {
-                const parsed = JSON.parse(processed);
-                if (Array.isArray(parsed)) {
-                  cachedItems = parsed;
-                }
-              } catch {
-                cachedItems = null;
-              }
-            }
-
-            const reportItems = getOrderReportItems(order, cachedItems, true);
-            shipped += reportItems
-              .filter((item) => item && String(item.sku).trim() === normalizedSku)
-              .reduce((sum, item) => sum + (Number(item.orderedQuantity ?? item.quantity ?? 0) || 0), 0);
+            const cachedItems = cachedItemsByExternalId.get(order.externalId) ?? null;
+            shipped += computeShippedQuantityForSku(order, cachedItems, normalizedSku, productDescriptors);
           }
         }
 
