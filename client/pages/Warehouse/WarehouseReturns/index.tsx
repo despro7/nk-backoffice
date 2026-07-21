@@ -15,7 +15,7 @@ import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { ToastService } from '@/services/ToastService';
 import { ReturnsHistoryService } from '@/services/ReturnsHistoryService';
 import { DateTimePicker } from '@/components/DateTimePicker';
-import type { ReturnHistoryRecord } from './WarehouseReturnsTypes';
+import { isMonolithicForReturn, type ReturnHistoryRecord } from './WarehouseReturnsTypes';
 
 const RETURN_REASONS: string[] = [
   '😩 Брак товару',
@@ -124,7 +124,7 @@ const dateValue = (() => {
 
       // Build shipment.bySku for monolithic sets (accGood = 1119000000001079)
       // — той самий логіки, що й у sendReturn, щоб прев'ю збігався з реальним payload
-      const monolithicItems = returns.items.filter((item) => item.dynamicMonolithic);
+      const monolithicItems = returns.items.filter(isMonolithicForReturn);
       const shipmentBySku: Record<string, { accGood: string; quantity: number }> = {};
       for (const item of monolithicItems) {
         shipmentBySku[item.sku] = {

@@ -4,7 +4,7 @@ import { expandProductSets } from '@/lib/orderAssemblyUtils';
 import { useApi } from '@/hooks/useApi';
 import { ToastService } from '@/services/ToastService';
 import { ReturnsHistoryService } from '@/services/ReturnsHistoryService';
-import type { ReturnItem, ReturnBatch, ReturnHistoryRecord } from './WarehouseReturnsTypes';
+import { isMonolithicForReturn, type ReturnItem, type ReturnBatch, type ReturnHistoryRecord } from './WarehouseReturnsTypes';
 
 interface OrderSearchResult {
   id: number;
@@ -331,8 +331,8 @@ export function useWarehouseReturns() {
       if (payload.firmId) void loadFirmName(payload.firmId);
 
       const priceBySku = new Map(payload.items.map((item) => [item.sku, Number(item.price ?? 0)]));
-      // Витягуємо shipment.bySku з payloadData замовлення (як у OrderView для фіналізованих)
-      // щоб expandProductSets розпізнав монолітні набори (dynamicMonolithic) і не розгортав їх.
+      // Витягуємо shipment.bySku з payloadData замовлення (як у OrderView для фіналізованих),
+      // щоб expandProductSets позначив shippedAsMonolithic і не розгортав такі набори.
       const shipmentBySku = payload.payloadData?.shipment?.bySku
         && typeof payload.payloadData.shipment.bySku === 'object'
         ? payload.payloadData.shipment.bySku
@@ -358,7 +358,10 @@ export function useWarehouseReturns() {
         selectedBatchId: null,
         selectedBatchKey: null,
         price: priceBySku.get(item.sku) ?? 0,
-        dynamicMonolithic: (item as any).dynamicMonolithic ?? false,        composition: (item as any).composition ?? undefined,      } as ReturnItem));
+        dynamicMonolithic: item.dynamicMonolithic ?? false,
+        shippedAsMonolithic: item.shippedAsMonolithic ?? false,
+        composition: item.composition ?? undefined,
+      } as ReturnItem));
 
       setItems(preparedItems);
       setReturnReason('');
@@ -511,7 +514,8 @@ export function useWarehouseReturns() {
       const sanitizedCustom = sanitizeText(customReason) ?? '';
 
       // Build shipment.bySku for monolithic sets (accGood = 1119000000001079)
-      const monolithicItems = items.filter(item => item.dynamicMonolithic);
+      // shippedAsMonolithic — з історії відвантаження; dynamicMonolithic — fallback по stock
+      const monolithicItems = items.filter(isMonolithicForReturn);
       const shipmentBySku: Record<string, { accGood: string; quantity: number }> = {};
       for (const item of monolithicItems) {
         shipmentBySku[item.sku] = {

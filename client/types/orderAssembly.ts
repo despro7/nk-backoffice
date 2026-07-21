@@ -17,7 +17,9 @@ export interface OrderChecklistItem {
   manualOrder?: number; // Ручне сортування
   composition?: Array<string | { name: string; quantity?: number; unitRatio?: number; sku?: string }>; // Склад монолітного комплекту (може містити об'єкти з додатковими полями)
   portionsPerItem?: number; // Для монолітних комплектів: кількість порцій в одному комплекті
-  dynamicMonolithic?: boolean; // Динамічно-монолітний комплект із залишками
+  dynamicMonolithic?: boolean; // Динамічно-монолітний комплект із поточними залишками на складі
+  /** Історично відвантажений як моноліт (з payloadData.shipment.bySku), незалежно від поточного stock */
+  shippedAsMonolithic?: boolean;
   scannedCount?: number; // Для режиму by_quantity: скільки одиниць вже відскановано
   /** Умовне розділення oversized-моноліту по коробках (packing UI) */
   monolithicSplitGroupId?: string;

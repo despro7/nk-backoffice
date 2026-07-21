@@ -421,7 +421,19 @@ const expandProductRecursively = async (
         // Обчислюємо weightRatio = sumComponentPortions / nominal portionsPerSet
         const weightRatio = portionsPerSet > 0 ? (sumComponentPortions / portionsPerSet) : 1;
 
-        addOrUpdateExpandedItem(expandedItems, product, quantity, sku, composition, portionsPerSet, expectedWeightForQuantityKg, weightRatio, isDynamicMonolithic);
+        // dynamicMonolithic = поточний stock; shippedAsMonolithic = історичне відвантаження з payload
+        addOrUpdateExpandedItem(
+          expandedItems,
+          product,
+          quantity,
+          sku,
+          composition,
+          portionsPerSet,
+          expectedWeightForQuantityKg,
+          weightRatio,
+          isDynamicMonolithic,
+          shipmentSaysMonolithic,
+        );
         return;
       }
 
@@ -495,7 +507,8 @@ const addOrUpdateExpandedItem = (
   portionsPerItem?: number,
   expectedWeightKg?: number,
   weightRatio?: number,
-  dynamicMonolithic: boolean = false
+  dynamicMonolithic: boolean = false,
+  shippedAsMonolithic: boolean = false,
 ): void => {
   const itemName = product.name;
 
@@ -532,7 +545,10 @@ const addOrUpdateExpandedItem = (
       (expandedItems[key] as any).unitRatio = (product as any).unitRatio;
     }
     if (dynamicMonolithic) {
-      (expandedItems[key] as any).dynamicMonolithic = true;
+      expandedItems[key].dynamicMonolithic = true;
+    }
+    if (shippedAsMonolithic) {
+      expandedItems[key].shippedAsMonolithic = true;
     }
   } else {
     // Додаємо новий товар
@@ -548,7 +564,8 @@ const addOrUpdateExpandedItem = (
       manualOrder: product.manualOrder,
       composition: composition,
       portionsPerItem: portionsPerItem,
-      dynamicMonolithic: dynamicMonolithic || undefined
+      dynamicMonolithic: dynamicMonolithic || undefined,
+      shippedAsMonolithic: shippedAsMonolithic || undefined,
     };
     if (typeof weightRatio === 'number') {
       (expandedItems[key] as any).weightRatio = weightRatio;
@@ -561,11 +578,16 @@ const addOrUpdateExpandedItem = (
       (expandedItems[key] as any).unitRatio = (product as any).unitRatio;
     }
     if (dynamicMonolithic) {
-      (expandedItems[key] as any).dynamicMonolithic = true;
+      expandedItems[key].dynamicMonolithic = true;
+    }
+    if (shippedAsMonolithic) {
+      expandedItems[key].shippedAsMonolithic = true;
     }
   }
 
-  LoggingService.orderAssemblyLog(`  ✅ Додано: ${itemName} × ${quantity} (SKU: ${sku})${composition ? ' [M]' : ''}${portionsPerItem ? ` [portionsPerItem=${portionsPerItem}]` : ''}`);
+  LoggingService.orderAssemblyLog(
+    `  ✅ Додано: ${itemName} × ${quantity} (SKU: ${sku})${composition ? ' [M]' : ''}${portionsPerItem ? ` [portionsPerItem=${portionsPerItem}]` : ''}${shippedAsMonolithic ? ' [shipped]' : ''}`,
+  );
 };
 
 /**

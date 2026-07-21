@@ -1,6 +1,6 @@
 import { Input, Select, SelectItem, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import type { ReturnBatch, ReturnItem } from '../WarehouseReturnsTypes';
+import { isMonolithicForReturn, type ReturnBatch, type ReturnItem } from '../WarehouseReturnsTypes';
 
 interface ReturnsItemRowProps {
   item: ReturnItem;
@@ -20,7 +20,7 @@ export function ReturnsItemRow({
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-gray-900">{item.name}</span>
-          {item.dynamicMonolithic && (
+          {isMonolithicForReturn(item) && (
             <Popover showArrow placement="right">
               <PopoverTrigger>
                 <button type="button" className="text-xs text-indigo-700 bg-indigo-100 border border-indigo-200 px-1 rounded">Набір</button>

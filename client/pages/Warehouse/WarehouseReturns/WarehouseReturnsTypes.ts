@@ -22,8 +22,15 @@ export interface ReturnItem {
   selectedBatchId: string | null; // actual Dilovod batchId
   selectedBatchKey: string | null; // unique key for UI option
   price: number;
-  dynamicMonolithic?: boolean; // Якщо true - це монолітний комплект, не розгортати
+  dynamicMonolithic?: boolean; // Поточні залишки зібраного комплекту на складі
+  /** Був відвантажений як моноліт (з payloadData.shipment.bySku) — джерело істини для повернення */
+  shippedAsMonolithic?: boolean;
   composition?: Array<string | { name?: string; quantity?: number; unitRatio?: number; sku?: string }>; // Склад монолітного комплекту (для Popover)
+}
+
+/** Моноліт для повернення: історичне відвантаження або поточний stock-based dynamic */
+export function isMonolithicForReturn(item: Pick<ReturnItem, 'shippedAsMonolithic' | 'dynamicMonolithic'>): boolean {
+  return Boolean(item.shippedAsMonolithic || item.dynamicMonolithic);
 }
 
 export interface ReturnDraft {
