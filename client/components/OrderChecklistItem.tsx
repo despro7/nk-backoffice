@@ -284,6 +284,10 @@ interface OrderItem {
   portionsPerItem?: number;
   unitRatio?: number;
   weightRatio?: number;
+  monolithicSplitGroupId?: string;
+  monolithicSplitIndex?: number;
+  monolithicSplitTotal?: number;
+  monolithicFullPortionsPerItem?: number;
 }
 
 interface OrderChecklistItemProps {
@@ -494,6 +498,13 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold">
               {name}
+              {typeof item.monolithicSplitTotal === 'number' &&
+                item.monolithicSplitTotal > 1 &&
+                typeof item.monolithicSplitIndex === 'number' && (
+                <span className="font-medium text-gray-500 ml-1">
+                  ({item.monolithicSplitIndex + 1}/{item.monolithicSplitTotal})
+                </span>
+              )}
             </span>
             
             {type === 'box' && boxSettings && (

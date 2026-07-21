@@ -780,6 +780,156 @@ export const expandProductSets = async (
   return result;
 };
 
+type PackingBoxState = {
+  index: number;
+  portionsCount: number;
+  portionsCalc: number;
+  currentWeight: number;
+  softLimit: number;
+  hardLimit: number;
+};
+
+/** Чи вміщується цілий монолітний комплект у коробку (hardLimit + вага). */
+const canFitWholeMonolithicUnit = (
+  box: PackingBoxState,
+  portionsPerItem: number,
+  weightPerUnit: number,
+  maxBoxWeight: number
+): boolean => {
+  const freeHard = box.hardLimit - (box.portionsCount || 0);
+  const freeCalc = Math.ceil(box.hardLimit - (box.portionsCalc || 0));
+  const freeWeight = maxBoxWeight - box.currentWeight;
+  return freeHard >= portionsPerItem && freeCalc >= portionsPerItem && freeWeight >= weightPerUnit;
+};
+
+/**
+ * Умовне розділення одного oversized-монолітного комплекту по коробках за місткістю.
+ * Облік (bySku) не змінюється — лише packing UI: N рядків з частковим portionsPerItem.
+ */
+const splitMonolithicUnitAcrossBoxes = (
+  item: OrderChecklistItem,
+  unitIndex: number,
+  fullPortionsPerItem: number,
+  weightPerUnit: number,
+  boxStates: PackingBoxState[],
+  maxBoxWeight: number
+): { parts: OrderChecklistItem[]; unallocatedPortions: number } => {
+  let remainingPortions = fullPortionsPerItem;
+  let remainingWeight = weightPerUnit;
+  const weightPerPortion = fullPortionsPerItem > 0 ? weightPerUnit / fullPortionsPerItem : 0;
+  const draftParts: Array<{
+    boxIndex: number;
+    takePortions: number;
+    takeWeight: number;
+  }> = [];
+
+  const pickCandidates = (preferSoft: boolean): PackingBoxState[] => {
+    const filtered = boxStates.filter((box) => {
+      const limit = preferSoft ? box.softLimit : box.hardLimit;
+      const freeSpace = limit - (box.portionsCount || 0);
+      const freeWeight = maxBoxWeight - box.currentWeight;
+      return freeSpace > 0 && freeWeight > 0;
+    });
+    return filtered.sort((a, b) => a.currentWeight - b.currentWeight);
+  };
+
+  while (remainingPortions > 0) {
+    let preferSoft = true;
+    let candidates = pickCandidates(true);
+    if (candidates.length === 0) {
+      preferSoft = false;
+      candidates = pickCandidates(false);
+    }
+    if (candidates.length === 0) {
+      break;
+    }
+
+    const targetBox = candidates[0];
+    const limit = preferSoft ? targetBox.softLimit : targetBox.hardLimit;
+    const freeSpace = Math.max(0, limit - (targetBox.portionsCount || 0));
+    const availableWeight = Math.max(0, maxBoxWeight - targetBox.currentWeight);
+    const maxByWeight = weightPerPortion > 0
+      ? Math.floor(availableWeight / weightPerPortion + 1e-9)
+      : freeSpace;
+
+    let takePortions = Math.min(remainingPortions, freeSpace, maxByWeight);
+
+    // Фінальний залишок: якщо порції й вага вміщуються — кладемо все
+    if (
+      takePortions < remainingPortions &&
+      freeSpace >= remainingPortions &&
+      availableWeight + 1e-9 >= remainingWeight
+    ) {
+      takePortions = remainingPortions;
+    }
+
+    if (takePortions <= 0) {
+      if (!preferSoft) break;
+      const hardOnly = pickCandidates(false);
+      const alt = hardOnly.find((b) => {
+        const free = b.hardLimit - (b.portionsCount || 0);
+        const wFree = maxBoxWeight - b.currentWeight;
+        const maxW = weightPerPortion > 0 ? Math.floor(wFree / weightPerPortion + 1e-9) : free;
+        return Math.min(remainingPortions, free, maxW) > 0
+          || (free >= remainingPortions && wFree + 1e-9 >= remainingWeight);
+      });
+      if (!alt) break;
+      const free = alt.hardLimit - (alt.portionsCount || 0);
+      const wFree = maxBoxWeight - alt.currentWeight;
+      const maxW = weightPerPortion > 0 ? Math.floor(wFree / weightPerPortion + 1e-9) : free;
+      takePortions = Math.min(remainingPortions, free, maxW);
+      if (
+        takePortions < remainingPortions &&
+        free >= remainingPortions &&
+        wFree + 1e-9 >= remainingWeight
+      ) {
+        takePortions = remainingPortions;
+      }
+      if (takePortions <= 0) break;
+
+      const takeWeight = remainingPortions === takePortions
+        ? remainingWeight
+        : weightPerPortion * takePortions;
+      draftParts.push({ boxIndex: alt.index, takePortions, takeWeight });
+      alt.portionsCount = (alt.portionsCount || 0) + takePortions;
+      alt.portionsCalc = (alt.portionsCalc || 0) + takePortions;
+      alt.currentWeight += takeWeight;
+      remainingPortions -= takePortions;
+      remainingWeight = Math.max(0, remainingWeight - takeWeight);
+      continue;
+    }
+
+    const takeWeight = remainingPortions === takePortions
+      ? remainingWeight
+      : weightPerPortion * takePortions;
+
+    draftParts.push({ boxIndex: targetBox.index, takePortions, takeWeight });
+    targetBox.portionsCount = (targetBox.portionsCount || 0) + takePortions;
+    targetBox.portionsCalc = (targetBox.portionsCalc || 0) + takePortions;
+    targetBox.currentWeight += takeWeight;
+    remainingPortions -= takePortions;
+    remainingWeight = Math.max(0, remainingWeight - takeWeight);
+  }
+
+  const splitTotal = draftParts.length;
+  const groupId = `${item.sku || item.id}_unit${unitIndex}_${fullPortionsPerItem}`;
+  const parts: OrderChecklistItem[] = draftParts.map((part, splitIndex) => ({
+    ...item,
+    id: `product_${part.boxIndex}_${item.sku || item.id}_u${unitIndex}_split${splitIndex}`,
+    type: 'product' as const,
+    quantity: 1,
+    portionsPerItem: part.takePortions,
+    expectedWeight: Number(part.takeWeight.toFixed(3)),
+    boxIndex: part.boxIndex,
+    monolithicSplitGroupId: groupId,
+    monolithicSplitIndex: splitIndex,
+    monolithicSplitTotal: splitTotal,
+    monolithicFullPortionsPerItem: fullPortionsPerItem,
+  }));
+
+  return { parts, unallocatedPortions: Math.max(0, remainingPortions) };
+};
+
 /**
  * Об'єднує коробки з товарами в один чек-ліст
  * @param boxes - Масив коробок
@@ -884,6 +1034,46 @@ export const combineBoxesWithItems = (
       let remainingUnits = unitsTotal;
       let partIndex = 0;
       let itemUnallocated = 0;
+
+      // Oversized monolithic: жодна коробка не приймає цілий комплект → capacity-split по порціях
+      const fullPortionsPerItem = Number(item.portionsPerItem || 0);
+      if (
+        isMonolithicItem &&
+        unitsTotal >= 1 &&
+        fullPortionsPerItem > 0 &&
+        !boxStates.some((box) =>
+          canFitWholeMonolithicUnit(box, fullPortionsPerItem, weightPerUnit, MAX_BOX_WEIGHT)
+        )
+      ) {
+        LoggingService.orderAssemblyLog(
+          `📦 Capacity-split моноліту "${item.name}": ${fullPortionsPerItem} порцій / ${weightPerUnit.toFixed(3)} кг не вміщується цілком`
+        );
+        for (let unitIndex = 0; unitIndex < unitsTotal; unitIndex++) {
+          const { parts, unallocatedPortions } = splitMonolithicUnitAcrossBoxes(
+            item,
+            unitIndex,
+            fullPortionsPerItem,
+            weightPerUnit,
+            boxStates,
+            MAX_BOX_WEIGHT
+          );
+          productItems.push(...parts);
+          if (unallocatedPortions > 0) {
+            itemUnallocated += unallocatedPortions;
+            totalUnallocated += unallocatedPortions;
+            console.warn(
+              `⚠️ Capacity-split: не розміщено ${unallocatedPortions} порцій "${item.name}" (unit ${unitIndex + 1}/${unitsTotal})`
+            );
+          }
+        }
+        if (itemUnallocated > 0) {
+          unallocatedItems.push({
+            name: item.name,
+            quantity: itemUnallocated
+          });
+        }
+        continue;
+      }
           
       while (remainingUnits > 0) {
         // Шукаємо коробку, куди поміститься весь залишок товару цілком
@@ -1033,9 +1223,16 @@ export const combineBoxesWithItems = (
     }
     
     // Merge productItems that ended up in the same box and have the same name
+    // Не зливаємо capacity-split частини (різний groupId / portionsPerItem)
     const mergedInBoxes: OrderChecklistItem[] = [];
     for (const pi of productItems) {
-      const existing = mergedInBoxes.find(m => m.name === pi.name && m.boxIndex === pi.boxIndex);
+      const existing = mergedInBoxes.find((m) =>
+        m.name === pi.name &&
+        m.boxIndex === pi.boxIndex &&
+        m.portionsPerItem === pi.portionsPerItem &&
+        m.monolithicSplitGroupId === pi.monolithicSplitGroupId &&
+        m.monolithicSplitIndex === pi.monolithicSplitIndex
+      );
       if (existing) {
         existing.quantity += pi.quantity;
         existing.expectedWeight = Number((existing.expectedWeight + (pi.expectedWeight || 0)).toFixed(2));

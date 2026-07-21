@@ -19,6 +19,11 @@ export interface OrderChecklistItem {
   portionsPerItem?: number; // Для монолітних комплектів: кількість порцій в одному комплекті
   dynamicMonolithic?: boolean; // Динамічно-монолітний комплект із залишками
   scannedCount?: number; // Для режиму by_quantity: скільки одиниць вже відскановано
+  /** Умовне розділення oversized-моноліту по коробках (packing UI) */
+  monolithicSplitGroupId?: string;
+  monolithicSplitIndex?: number; // 0-based
+  monolithicSplitTotal?: number;
+  monolithicFullPortionsPerItem?: number; // повний розмір комплекту до split
 }
 
 export interface OrderForAssembly {
