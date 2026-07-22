@@ -1,6 +1,7 @@
 import InventoryHistoryRow from './InventoryHistoryRow';
 import { Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { StockBadge } from '@/components/StockBadge';
 import type { ProductHistoryEntry } from '../WarehouseInventoryTypes';
 
 type SortColumn = 'sku' | 'name' | 'systemBalance' | 'actual' | 'deviation' | 'systemBalanceGp' | 'actualGp' | 'deviationGp';
@@ -36,8 +37,6 @@ interface Props {
 }
 
 const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirection, onSort, expandedRowKey, onRowClick, rowHistoryCache, rowHistoryLoading, setCompositionBySku, summary, isMaterial }: Props) => {
-  const showKitColumn = title === 'Комплекти';
-
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200 bg-gray-200">
@@ -59,22 +58,22 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
                   <DynamicIcon name={sortColumn !== 'name' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('systemBalance')}>
-                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> Облік <DynamicIcon name={sortColumn !== 'systemBalance' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><StockBadge variant="ms" size="9px" /> Облік <DynamicIcon name={sortColumn !== 'systemBalance' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('actual')}>
-                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> Факт <DynamicIcon name={sortColumn !== 'actual' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><StockBadge variant="ms" size="9px" /> Факт <DynamicIcon name={sortColumn !== 'actual' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('deviation')}>
-                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> Відхилення <DynamicIcon name={sortColumn !== 'deviation' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><StockBadge variant="ms" size="9px" /> Відхилення <DynamicIcon name={sortColumn !== 'deviation' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('systemBalanceGp')}>
-                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-blue-800/50 bg-blue-500/10 px-1 py-[1px] rounded ring-1">ГП</span> Облік <DynamicIcon name={sortColumn !== 'systemBalanceGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><StockBadge variant="gp" size="9px" /> Облік <DynamicIcon name={sortColumn !== 'systemBalanceGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('actualGp')}>
-                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-blue-800/50 bg-blue-500/10 px-1 py-[1px] rounded ring-1">ГП</span> Факт <DynamicIcon name={sortColumn !== 'actualGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><StockBadge variant="gp" size="9px" /> Факт <DynamicIcon name={sortColumn !== 'actualGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer hover:bg-gray-100" onClick={() => onSort('deviationGp')}>
-                <div className="flex items-center justify-center gap-1"><span className="text-[9px] text-blue-800/50 bg-blue-500/10 px-1 py-[1px] rounded ring-1">ГП</span> Відхилення <DynamicIcon name={sortColumn !== 'deviationGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
+                <div className="flex items-center justify-center gap-1"><StockBadge variant="gp" size="9px" /> Відхилення <DynamicIcon name={sortColumn !== 'deviationGp' ? 'arrow-up-down' : (sortDirection === 'ascending' ? 'arrow-up' : 'arrow-down')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
             </tr>
           </thead>
@@ -90,7 +89,6 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
                   dev={dev}
                   totalGp={totalGp}
                   devGp={devGp}
-                  showKitColumn={showKitColumn}
                   rowKey={rowKey}
                   expandedRowKey={expandedRowKey}
                   rowHistoryCache={rowHistoryCache}

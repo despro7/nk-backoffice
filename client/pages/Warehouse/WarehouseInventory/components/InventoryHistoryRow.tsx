@@ -1,8 +1,9 @@
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Tooltip } from '@heroui/react';
 import { formatRelativeDate } from '@/lib/formatUtils';
 import { Popover, PopoverContent, PopoverTrigger } from '@heroui/react';
+import { StockBadge } from '@/components/StockBadge';
 import CompactBalance from './CompactBalance';
 import type { ProductHistoryEntry } from '../WarehouseInventoryTypes';
 
@@ -13,13 +14,105 @@ interface InventoryHistoryRowProps {
   dev: number | null; // deviation (відхилення від обліку)
   totalGp?: number | null;
   devGp?: number | null;
-  showKitColumn?: boolean;
   rowKey: string;
   expandedRowKey: string | null;
   rowHistoryCache: Record<string, ProductHistoryEntry[]>;
   rowHistoryLoading: string | null;
   setCompositionBySku: Record<string, any[]>;
   onRowClick: (sessionId: string, sku: string) => void;
+}
+
+/** Рендер підписаного значення руху (переміщення / комплектування). */
+function renderSignedValue(value: number | null | undefined): ReactNode {
+  if (value == null || value === 0) return '–';
+  return (
+    <span className={`font-medium ${value > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+      {value > 0 ? '+' : '-'}{Math.abs(value)}
+    </span>
+  );
+}
+
+/** Рендер позитивного приходу (повернення). */
+function renderPositiveValue(value: number | null | undefined): ReactNode {
+  if (value == null || value === 0) return '–';
+  return <span className="text-green-600 font-medium">+{Math.abs(value)}</span>;
+}
+
+/** Рендер списання (завжди зі знаком −). */
+function renderNegativeValue(value: number | null | undefined): ReactNode {
+  if (value == null || value === 0) return '–';
+  return <span className="text-red-600 font-medium">-{Math.abs(value)}</span>;
+}
+
+const historyTooltipClassNames = {
+  base: 'before:bg-white before:rounded-[3px] before:z-10',
+  content: 'bg-white border-1 text-gray-700 text-xs p-2 px-3 max-w-md',
+} as const;
+
+/** Табличний tooltip для комплектацій товару як компонента наборів. */
+function renderKitDetailsTooltip(
+  details: NonNullable<ProductHistoryEntry['kitDetails']>,
+): ReactNode {
+  return (
+    <table className="w-full border-collapse text-left tabular-nums">
+      <thead>
+        <tr className="text-gray-400 border-b border-gray-200">
+          <th className="py-1 pr-3 font-medium whitespace-nowrap">Операція</th>
+          <th className="py-1 pr-3 font-medium">Набір</th>
+          <th className="py-1 pr-3 font-medium text-right whitespace-nowrap">К-сть</th>
+          <th className="py-1 font-medium text-center whitespace-nowrap">Склад</th>
+        </tr>
+      </thead>
+      <tbody>
+        {details.map((detail, index) => {
+          const isKit = detail.operationType === 'kit';
+          const signed =
+            detail.signedQuantity > 0
+              ? `+${detail.signedQuantity}`
+              : String(detail.signedQuantity);
+          return (
+            <tr
+              key={`${detail.setSku}-${detail.operationType}-${detail.storage}-${index}`}
+              className="border-b border-gray-100 last:border-b-0"
+            >
+              <td className="py-1 pr-3 whitespace-nowrap text-gray-500">
+                {isKit ? 'Комплект.' : 'Розкомпл.'}
+              </td>
+              <td className="py-1 pr-3 max-w-[180px]">
+                <div className="truncate font-medium text-gray-800" title={detail.setName || detail.setSku}>
+                  {detail.setName || detail.setSku}
+                </div>
+                {detail.setName && (
+                  <div className="font-mono text-[10px] text-gray-400 leading-tight">{detail.setSku}</div>
+                )}
+              </td>
+              <td
+                className={`py-1 pr-3 text-right font-semibold whitespace-nowrap ${
+                  detail.signedQuantity > 0 ? 'text-blue-600' : 'text-red-600'
+                }`}
+              >
+                {signed}
+              </td>
+              <td className="py-1 text-center whitespace-nowrap">
+                <StockBadge variant={detail.storage} size="9px" />
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/** Дві половини колонки МС | ГП з роздільником. */
+function DualStockCell({ left, right }: { left: ReactNode; right: ReactNode }) {
+  return (
+    <div className="flex items-center justify-center gap-1.5">
+      <div className="flex-1 flex items-center justify-end text-gray-500 min-w-0">{left}</div>
+      <div className="w-px h-3 bg-gray-400" aria-hidden="true" />
+      <div className="flex-1 flex items-center justify-start text-gray-500 min-w-0">{right}</div>
+    </div>
+  );
 }
 
 export const InventoryHistoryRow = ({
@@ -29,7 +122,6 @@ export const InventoryHistoryRow = ({
   dev,
   totalGp,
   devGp,
-  showKitColumn = false,
   rowKey,
   expandedRowKey,
   rowHistoryCache,
@@ -74,10 +166,10 @@ export const InventoryHistoryRow = ({
               </Tooltip>
             )}
             {isSetItem && (
-              <Popover 
+              <Popover
                 showArrow
                 placement="right"
-                classNames={{ 
+                classNames={{
                   trigger: 'inline-block w-fit font-bold text-[10px] bg-amber-400/5 text-amber-800/50 border border-amber-800/30 rounded-full uppercase px-1.5 py-1 leading-none',
                   content: 'px-4 py-3 bg-amber-100',
                   base: 'before:bg-amber-100 before:rounded-[2px] before:z-10',
@@ -110,7 +202,7 @@ export const InventoryHistoryRow = ({
       </tr>
       {isRowExpanded && (
         <tr>
-          <td colSpan={9} className="p-0 bg-gray-100 border-b border-gray-200/40 shadow-[inset_0_6px_10px_rgba(0,0,0,0.05)]">
+          <td colSpan={8} className="p-0 bg-gray-100 border-b border-gray-200/40 shadow-[inset_0_6px_10px_rgba(0,0,0,0.05)]">
             <div className="px-2 py-4">
               {isRowLoading ? (
                 <div className="flex items-center justify-center gap-2 py-4 text-xs text-gray-500">
@@ -120,73 +212,140 @@ export const InventoryHistoryRow = ({
               ) : !historyEntries || historyEntries.length === 0 ? (
                 <p className="text-xs text-gray-400 py-1">Немає даних інвентаризацій за останні 30 днів</p>
               ) : (
-                <table className={`text-xs w-full`}>
+                <table className="text-xs w-full">
                   <thead>
-                    <tr className={`text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold ${showKitColumn ? '[&>th]:w-1/11' : '[&>th]:w-1/9'}`}>
+                    <tr className="text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold [&>th]:w-1/10">
                       <th className="text-left! w-auto! min-w-[160px]">Дата</th>
-                      <th>Переміщення</th>
-                      <th>Відвантаження</th>
-                      {showKitColumn && <th>Комплектування</th>}
-                      <th>Повернення</th>
-                      <th>Списання</th>
-                      <th>Облік <br/><span className="text-gray-900/65 text-[9px] font-medium px-1 py-0.5 whitespace-nowrap rounded bg-gradient-to-r from-lime-100 to-blue-100 border shadow-accent">МС / ГП</span></th>
-                      <th>Факт <br/><span className="text-gray-900/65 text-[9px] font-medium px-1 py-0.5 whitespace-nowrap rounded bg-gradient-to-r from-lime-100 to-blue-100 border shadow-accent">МС / ГП</span></th>
-                      <th>Відхилення <br/><span className="text-gray-900/65 text-[9px] font-medium px-1 py-0.5 whitespace-nowrap rounded bg-gradient-to-r from-lime-100 to-blue-100 border shadow-accent">МС / ГП</span></th>
+                      <th>Переміщення
+                        <div className="flex items-center justify-center gap-1">
+                          <StockBadge variant="ms" size="9px" />
+                          <span className="text-[9px] text-gray-400">|</span>
+                          <StockBadge variant="gp" size="9px" />
+                        </div>
+                      </th>
+                      <th>Відвантаження <br/><StockBadge variant="ms" size="9px" /></th>
+                      <th>Комплектування
+                        <div className="flex items-center justify-center gap-1">
+                          <StockBadge variant="ms" size="9px" />
+                          <span className="text-[9px] text-gray-400">|</span>
+                          <StockBadge variant="gp" size="9px" />
+                        </div>
+                      </th>
+                      <th>Повернення <br/><StockBadge variant="ms" size="9px" /></th>
+                      <th>Списання
+                        <div className="flex items-center justify-center gap-1">
+                          <StockBadge variant="ms" size="9px" />
+                          <span className="text-[9px] text-gray-400">|</span>
+                          <StockBadge variant="gp" size="9px" />
+                        </div>
+                      </th>
+                      <th>Облік
+                        <div className="flex items-center justify-center gap-1">
+                          <StockBadge variant="ms" size="9px" />
+                          <span className="text-[9px] text-gray-400">|</span>
+                          <StockBadge variant="gp" size="9px" />
+                        </div>
+                      </th>
+                      <th>Факт
+                        <div className="flex items-center justify-center gap-1">
+                          <StockBadge variant="ms" size="9px" />
+                          <span className="text-[9px] text-gray-400">|</span>
+                          <StockBadge variant="gp" size="9px" />
+                        </div>
+                      </th>
+                      <th>Відхилення
+                        <div className="flex items-center justify-center gap-1">
+                          <StockBadge variant="ms" size="9px" />
+                          <span className="text-[9px] text-gray-400">|</span>
+                          <StockBadge variant="gp" size="9px" />
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-blue-50">
                     {historyEntries.map((entry) => (
-                      <tr key={entry.sessionId} className='tabular-nums text-gray-600 hover:bg-white/40'>
+                      <tr key={entry.sessionId} className="tabular-nums text-gray-600 hover:bg-white/40">
+                        {/* Дата */}
                         <td className="py-0.5 px-2">{formatRelativeDate(entry.date, { showTime: true, maxRelativeDays:21, maxRelativeHours: 3, includeWeekdays: true, shortWeekday: true })}</td>
+                        {/* Переміщення МС / ГП */}
                         <td className="py-0.5 px-2 text-center text-gray-400">
-                          {entry.moved == null || entry.moved === 0 ? '–' : (
-                            <span className={`font-medium ${entry.moved > 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                              {entry.moved > 0 ? '+' : '-'}{Math.abs(entry.moved)}
-                            </span>
-                          )}
+                          <DualStockCell
+                            left={renderSignedValue(entry.moved)}
+                            right={renderSignedValue(entry.movedGp)}
+                          />
                         </td>
+                        {/* Відвантаження */}
                         <td className="py-0.5 px-2 text-center text-gray-400">
                           {entry.shipped == null || entry.shipped === 0 ? '–' : (
                             <span className="text-red-600 font-medium">-{Math.abs(entry.shipped)}</span>
                           )}
                         </td>
-                        {showKitColumn && (
-                          <td className="py-0.5 px-2 text-center text-gray-400">
-                            {entry.kit == null || entry.kit === 0 ? '–' : (
-                              <span className={`font-medium ${entry.kit > 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                                {entry.kit > 0 ? '+' : '-'}{Math.abs(entry.kit)}
-                              </span>
-                            )}
-                          </td>
-                        )}
+                        {/* Комплектування МС / ГП */}
                         <td className="py-0.5 px-2 text-center text-gray-400">
-                          {entry.returned == null || entry.returned === 0 ? '–' : (
-                            <span className="text-green-600 font-medium">+{Math.abs(entry.returned)}</span>
+                          {entry.kitDetails && entry.kitDetails.length > 0 ? (
+                            <Tooltip
+                              content={renderKitDetailsTooltip(entry.kitDetails)}
+                              showArrow
+                              placement="top"
+                              classNames={historyTooltipClassNames}
+                            >
+                              <span className="inline-flex cursor-help">
+                                <DualStockCell
+                                  left={renderSignedValue(entry.kit)}
+                                  right={renderSignedValue(entry.kitGp)}
+                                />
+                              </span>
+                            </Tooltip>
+                          ) : (
+                            <DualStockCell
+                              left={renderSignedValue(entry.kit)}
+                              right={renderSignedValue(entry.kitGp)}
+                            />
                           )}
                         </td>
+                        {/* Повернення — завжди МС */}
                         <td className="py-0.5 px-2 text-center text-gray-400">
-                          {entry.writtenOff == null || entry.writtenOff === 0 ? '–' : (
-                            <span className="text-red-600 font-medium">-{Math.abs(entry.writtenOff)}</span>
-                          )}
+                          {renderPositiveValue(entry.returned)}
                         </td>
-                        <td className="py-0.5 px-2 text-center">
-                          <span className="text-gray-500">{entry.systemBalance ?? '–'} / {entry.systemBalanceGp ?? '–'}</span>
+                        {/* Списання МС / ГП */}
+                        <td className="py-0.5 px-2 text-center text-gray-400">
+                          <DualStockCell
+                            left={renderNegativeValue(entry.writtenOff)}
+                            right={renderNegativeValue(entry.writtenOffGp)}
+                          />
                         </td>
+                        {/* Облік МС / ГП */}
                         <td className="py-0.5 px-2 text-center">
-                          <span className="text-gray-500">{entry.actual ?? '–'} / {entry.actualGp ?? '–'}</span>
+                          <DualStockCell
+                            left={entry.systemBalance ?? '–'}
+                            right={entry.systemBalanceGp ?? '–'}
+                          />
                         </td>
+                        {/* Факт МС / ГП */}
                         <td className="py-0.5 px-2 text-center">
-                          <span className="text-gray-500">
-                            {entry.deviation === null ? '–' : (
-                              <span className={`font-semibold ${entry.deviation === 0 ? 'text-green-600' : entry.deviation < 0 ? 'text-red-500' : 'text-blue-600'}`}>
-                                {entry.deviation > 0 ? '+' : ''}{entry.deviation}
-                              </span>
-                            )} / {entry.deviationGp === null ? '–' : (
-                              <span className={`font-semibold ${entry.deviationGp === 0 ? 'text-green-600' : entry.deviationGp < 0 ? 'text-red-500' : 'text-blue-600'}`}>
-                                {entry.deviationGp > 0 ? '+' : ''}{entry.deviationGp}
-                              </span>
-                            )}
-                          </span>
+                          <DualStockCell
+                            left={entry.actual ?? '–'}
+                            right={entry.actualGp ?? '–'}
+                          />
+                        </td>
+                        {/* Відхилення МС / ГП */}
+                        <td className="py-0.5 px-2 text-center">
+                          <DualStockCell
+                            left={
+                              entry.deviation === null ? '–' : (
+                                <span className={`font-semibold ${entry.deviation === 0 ? 'text-green-600' : entry.deviation < 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                                  {entry.deviation > 0 ? '+' : ''}{entry.deviation}
+                                </span>
+                              )
+                            }
+                            right={
+                              entry.deviationGp == null ? '–' : (
+                                <span className={`font-semibold ${entry.deviationGp === 0 ? 'text-green-600' : entry.deviationGp < 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                                  {entry.deviationGp > 0 ? '+' : ''}{entry.deviationGp}
+                                </span>
+                              )
+                            }
+                          />
                         </td>
                       </tr>
                     ))}

@@ -44,13 +44,25 @@ export interface ProductHistoryEntry {
   systemBalance: number | null;
   actual: number | null;
   deviation: number | null;
-  // Нові поля для аналізу руху залишків
-  kit?: number | null; // Комплектування
+  // Нові поля для аналізу руху залишків (МС)
+  kit?: number | null; // Комплектування / розкомплектація (малий склад)
   shipped?: number | null; // Відвантаження
-  moved?: number | null; // Переміщення (відносно малого складу: + на малий, - з малого)
-  returned?: number | null; // Повернення
-  writtenOff?: number | null; // Списання
+  moved?: number | null; // Переміщення відносно малого складу: + на малий, − з малого
+  returned?: number | null; // Повернення на малий склад
+  writtenOff?: number | null; // Списання з малого складу
   // GP (склад готової продукції) поля
+  kitGp?: number | null; // Комплектування / розкомплектація (ГП)
+  movedGp?: number | null; // Переміщення відносно складу ГП: + на ГП, − з ГП
+  writtenOffGp?: number | null; // Списання зі складу ГП
+  /** Деталі комплектацій для tooltip (коли SKU був компонентом наборів) */
+  kitDetails?: Array<{
+    setSku: string;
+    setName: string | null;
+    operationType: 'kit' | 'unkit';
+    quantity: number;
+    signedQuantity: number;
+    storage: 'ms' | 'gp';
+  }>;
   systemBalanceGp?: number | null;
   actualGp?: number | null;
   deviationGp?: number | null;

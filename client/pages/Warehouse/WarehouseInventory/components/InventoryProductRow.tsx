@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { StepperInput } from '../../shared/StepperInput';
 import { InfoDisplay } from '../../shared/InfoDisplay';
 import { pluralize } from '@/lib/formatUtils';
+import { StockBadge } from '@/components/StockBadge';
 import { totalPortions, totalPortionsGp, formatBalanceBreakdown } from '../WarehouseInventoryUtils';
 import { useDebug } from '@/contexts/DebugContext';
 import type { InventoryProduct } from '../WarehouseInventoryTypes';
@@ -147,7 +148,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
             <span className={`text-base font-semibold pr-0.5 ${deviation! < 0 ? 'text-red-500' : 'text-blue-500'}`}>
               {deviation! > 0 ? '+' : ''}{deviation}
             </span>
-            <span className="text-xs text-gray-400">{deviation! > 0 ? 'Надлишок' : 'Нестача'} <span className="text-[10px] text-lime-800/50 bg-lime-500/10 px-1 py-0.5 rounded">МС</span></span>
+            <span className="text-xs text-gray-400">{deviation! > 0 ? 'Надлишок' : 'Нестача'} <StockBadge variant="ms" size="10px" /></span>
           </div>
         )}
 
@@ -163,7 +164,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
               <DynamicIcon name="message-circle-question-mark" className="w-4 h-4 text-gray-400/60 inline-block" />
             )}
           </span>
-          <span className="text-xs text-gray-400">Факт <span className="text-[10px] text-lime-800/50 bg-lime-500/10 px-1 py-0.5 rounded">МС</span></span>
+          <span className="text-xs text-gray-400">Факт <StockBadge variant="ms" size="10px" /></span>
         </div>
 
         {/* За обліком – Малий склад */}
@@ -172,7 +173,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
             {isBalanceRefreshing && <Spinner size="sm" color="default" />}
             {product.systemBalance}
           </span>
-          <span className="text-xs text-gray-400">Облік <span className="text-[10px] text-lime-800/50 bg-lime-500/10 px-1 py-0.5 rounded">МС</span></span>
+          <span className="text-xs text-gray-400">Облік <StockBadge variant="ms" size="10px" /></span>
         </div>
 
         <Divider className="hidden sm:block h-6 w-[1px] bg-gray-200 mx-2" />
@@ -183,7 +184,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
             <span className={`text-base font-semibold pr-0.5 ${deviationGp! < 0 ? 'text-red-500' : 'text-blue-500'}`}>
               {deviationGp! > 0 ? '+' : ''}{deviationGp}
             </span>
-            <span className="text-xs text-gray-400">{deviationGp! > 0 ? 'Надлишок' : 'Нестача'} <span className="text-[10px] text-blue-800/50 bg-blue-500/10 px-1 py-0.5 rounded">ГП</span></span>
+            <span className="text-xs text-gray-400">{deviationGp! > 0 ? 'Надлишок' : 'Нестача'} <StockBadge variant="gp" size="10px" /></span>
           </div>
         )}
 
@@ -199,7 +200,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
               <DynamicIcon name="message-circle-question-mark" className="w-4 h-4 text-gray-400/60 inline-block" />
             )}
           </span>
-          <span className="text-xs text-gray-400">Факт <span className="text-[10px] text-blue-800/50 bg-blue-500/10 px-1 py-0.5 rounded">ГП</span></span>
+          <span className="text-xs text-gray-400">Факт <StockBadge variant="gp" size="10px" /></span>
         </div>
 
         {/* За обліком – склад ГП */}
@@ -208,7 +209,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
             {isBalanceRefreshing && <Spinner size="sm" color="default" />}
             {product.systemBalanceGp}
           </span>
-          <span className="text-xs text-gray-400">Облік <span className="text-[10px] text-blue-800/50 bg-blue-500/10 px-1 py-0.5 rounded">ГП</span></span>
+          <span className="text-xs text-gray-400">Облік <StockBadge variant="gp" size="10px" /></span>
         </div>
 
         {/* Іконка розкриття */}

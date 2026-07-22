@@ -8,6 +8,7 @@ import type { InventorySession } from '../WarehouseInventoryTypes';
 import { statusLabel, statusColor, statusClass, totalPortions, totalPortionsGp } from '../WarehouseInventoryUtils';
 import useRowHistory from '../useRowHistory';
 import { ToastService } from '@/services/ToastService';
+import { StockBadge } from '@/components/StockBadge';
 import InventoryRefreshReportModal from './InventoryRefreshReportModal';
 import InventoryTableSection from './InventoryTableSection';
 import useUserNames from '@/hooks/useUserNames';
@@ -273,31 +274,31 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                   {setHasActual ? (
                     <div className="text-medium font-semibold leading-none"><span className="text-red-500">{setDevShortfall > 0 ? `-${setDevShortfall}` : '0'}</span><span> / </span><span className="text-blue-600">{setDevSurplus > 0 ? `+${setDevSurplus}` : '+0'}</span></div>
                   ) : '–'}
-                  <p className="flex items-center justify-end gap-1 leading-tight"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> набори</p>
+                  <p className="flex items-center justify-end gap-1 leading-tight"><StockBadge variant="ms" size="9px" /> набори</p>
                 </div>
                 <div className="text-right flex flex-col gap-1">
                   {productHasActual ? (
                     <div className="text-medium font-semibold leading-none"><span className="text-red-500">{productDevShortfall > 0 ? `-${productDevShortfall}` : '0'}</span><span> / </span><span className="text-blue-600">{productDevSurplus > 0 ? `+${productDevSurplus}` : '+0'}</span></div>
                   ) : '–'}
-                  <p className="flex items-center justify-end gap-1 leading-tight"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> товари</p>
+                  <p className="flex items-center justify-end gap-1 leading-tight"><StockBadge variant="ms" size="9px" /> товари</p>
                 </div>
                 <div className="text-right flex flex-col gap-1">
                   {materialHasActual ? (
                     <div className="text-medium font-semibold leading-none"><span className="text-red-500">{materialDevShortfall > 0 ? `-${materialDevShortfall}` : '0'}</span><span> / </span><span className="text-blue-600">{materialDevSurplus > 0 ? `+${materialDevSurplus}` : '+0'}</span></div>
                   ) : '–'}
-                  <p className="flex items-center justify-end gap-1 leading-tight"><span className="text-[9px] text-lime-800/50 bg-lime-500/10 px-1 py-[1px] rounded ring-1">МС</span> матеріали</p>
+                  <p className="flex items-center justify-end gap-1 leading-tight"><StockBadge variant="ms" size="9px" /> матеріали</p>
                 </div>
                 {/* <div className="text-right flex flex-col gap-1">
                   {setHasActualGp ? (
                     <div className="text-medium font-semibold leading-none"><span className="text-red-500">{setDevShortfallGp > 0 ? `-${setDevShortfallGp}` : '0'}</span><span> / </span><span className="text-blue-600">{setDevSurplusGp > 0 ? `+${setDevSurplusGp}` : '+0'}</span></div>
                   ) : '–'}
-                  <p className="flex items-center justify-end gap-1 leading-tight"><span className="text-[9px] text-blue-800/50 bg-blue-500/10 px-1 py-[1px] rounded ring-1">ГП</span> набори</p>
+                  <p className="flex items-center justify-end gap-1 leading-tight"><StockBadge variant="gp" size="9px" /> набори</p>
                 </div> */}
                 <div className="text-right flex flex-col gap-1">
                   {productHasActualGp ? (
                     <div className="text-medium font-semibold leading-none"><span className="text-red-500">{productDevShortfallGp > 0 ? `-${productDevShortfallGp}` : '0'}</span><span> / </span><span className="text-blue-600">{productDevSurplusGp > 0 ? `+${productDevSurplusGp}` : '+0'}</span></div>
                   ) : '–'}
-                  <p className="flex items-center justify-end gap-1 leading-tight"><span className="text-[9px] text-blue-800/50 bg-blue-500/10 px-1 py-[1px] rounded ring-1">ГП</span> товари</p>
+                  <p className="flex items-center justify-end gap-1 leading-tight"><StockBadge variant="gp" size="9px" /> товари</p>
                 </div>
               </div>
             </button>

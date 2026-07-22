@@ -1908,28 +1908,147 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
           }
         }
 
+        const [smallStorageSetting, mainStorageSetting] = await Promise.all([
+          prisma.settingsBase.findUnique({ where: { key: 'dilovod_small_storage_id' } }),
+          prisma.settingsBase.findUnique({ where: { key: 'dilovod_main_storage_id' } }),
+        ]);
+        const smallStorageId = smallStorageSetting?.value || '1100700000001019';
+        const mainStorageId = mainStorageSetting?.value || '1100700000001005';
+
+        // Комплектування / розкомплектація:
+        // - для набору (setSku): +kit / -unkit
+        // - для компонента: -kit / +unkit (порції, що пішли в комплект або повернулись)
+        // Розподіл по складах через release.storageId (null → ГП).
         const kitReleases = await prisma.warehouseReleaseSet.findMany({
           where: {
             status: { not: 'deleted' },
             operationType: { in: ['kit', 'unkit'] },
-            setSku: normalizedSku,
+            OR: [
+              { operDate: { gte: startOfDay, lt: endOfDay } },
+              { createdAt: { gte: startOfDay, lt: endOfDay } },
+            ],
           },
-          select: { quantity: true, operationType: true, createdAt: true, operDate: true, items: true },
+          select: {
+            quantity: true,
+            operationType: true,
+            createdAt: true,
+            operDate: true,
+            items: true,
+            setSku: true,
+            storageId: true,
+          },
         });
 
-        const normalizedReleases = kitReleases.filter((release: any) => {
-          const items = Array.isArray(release.items) ? release.items : [];
-          const operationDateRaw = release.operDate || items[0]?.operationDate || items[0]?.operation_date || null;
-          const operationDate = operationDateRaw ? new Date(operationDateRaw) : release.createdAt;
-          return operationDate >= startOfDay && operationDate < endOfDay;
-        });
+        const getReleaseOperationDate = (release: {
+          operDate: Date | null;
+          createdAt: Date;
+          items: unknown;
+        }): Date => {
+          const items = Array.isArray(release.items) ? release.items : safeParseItems(release.items);
+          const first = items[0] as { operationDate?: string; operation_date?: string } | undefined;
+          const operationDateRaw = release.operDate || first?.operationDate || first?.operation_date || null;
+          return operationDateRaw ? new Date(operationDateRaw) : release.createdAt;
+        };
 
-        const kit = normalizedReleases.reduce((sum, release) => {
-          const quantity = Number(release.quantity) || 0;
-          return sum + (release.operationType === 'unkit' ? -quantity : quantity);
-        }, 0);
+        const getSetNameFromRelease = (releaseItems: unknown): string | null => {
+          const items = Array.isArray(releaseItems) ? releaseItems : safeParseItems(releaseItems);
+          const first = items[0] as { name?: string; title?: string; setName?: string } | undefined;
+          const name = first?.name ?? first?.title ?? first?.setName ?? null;
+          return name ? String(name).trim() || null : null;
+        };
+
+        const getComponentQtyFromRelease = (releaseItems: unknown, sku: string, setQuantity: number): number => {
+          const items = Array.isArray(releaseItems) ? releaseItems : safeParseItems(releaseItems);
+          let total = 0;
+          for (const setItem of items) {
+            if (!setItem || typeof setItem !== 'object') continue;
+            const quantityMode =
+              String((setItem as { components_quantity_mode?: unknown }).components_quantity_mode ?? '')
+                .toLowerCase() === 'total'
+                ? 'total'
+                : 'per_set';
+            const itemSetQty = Number((setItem as { quantity?: unknown }).quantity ?? setQuantity) || setQuantity || 0;
+            const compsRaw =
+              (setItem as { components_snapshot?: unknown; componentsSnapshot?: unknown }).components_snapshot ??
+              (setItem as { componentsSnapshot?: unknown }).componentsSnapshot ??
+              [];
+            if (!Array.isArray(compsRaw)) continue;
+            for (const component of compsRaw) {
+              if (!component || typeof component !== 'object') continue;
+              const componentSku = String(
+                (component as { sku?: unknown; id?: unknown }).sku ??
+                  (component as { id?: unknown }).id ??
+                  '',
+              ).trim();
+              if (componentSku !== sku) continue;
+              const rawQty = Number(
+                (component as { quantity?: unknown; qty?: unknown }).quantity ??
+                  (component as { qty?: unknown }).qty ??
+                  0,
+              );
+              if (!Number.isFinite(rawQty) || rawQty === 0) continue;
+              total += quantityMode === 'total' ? rawQty : rawQty * itemSetQty;
+            }
+          }
+          return total;
+        };
+
+        let kit = 0;
+        let kitGp = 0;
+        const kitDetails: Array<{
+          setSku: string;
+          setName: string | null;
+          operationType: 'kit' | 'unkit';
+          quantity: number;
+          signedQuantity: number;
+          storage: 'ms' | 'gp';
+        }> = [];
+
+        const resolveKitStorage = (storageId: string | null | undefined): 'ms' | 'gp' => {
+          const resolved = storageId || mainStorageId;
+          return resolved === smallStorageId ? 'ms' : 'gp';
+        };
+
+        const addKitToStorage = (storageId: string | null | undefined, signedQty: number) => {
+          if (!signedQty) return;
+          if (resolveKitStorage(storageId) === 'ms') kit += signedQty;
+          else kitGp += signedQty;
+        };
+
+        for (const release of kitReleases) {
+          const operationDate = getReleaseOperationDate(release);
+          if (operationDate < startOfDay || operationDate >= endOfDay) continue;
+
+          const isUnkit = release.operationType === 'unkit';
+          const releaseSetSku = String(release.setSku ?? '').trim();
+
+          if (releaseSetSku === normalizedSku) {
+            const quantity = Number(release.quantity) || 0;
+            addKitToStorage(release.storageId, isUnkit ? -quantity : quantity);
+            continue;
+          }
+
+          const componentQty = getComponentQtyFromRelease(
+            release.items,
+            normalizedSku,
+            Number(release.quantity) || 0,
+          );
+          if (componentQty === 0) continue;
+          // kit споживає компоненти (−), unkit повертає (+)
+          const signedQuantity = isUnkit ? componentQty : -componentQty;
+          addKitToStorage(release.storageId, signedQuantity);
+          kitDetails.push({
+            setSku: releaseSetSku || '—',
+            setName: getSetNameFromRelease(release.items),
+            operationType: isUnkit ? 'unkit' : 'kit',
+            quantity: componentQty,
+            signedQuantity,
+            storage: resolveKitStorage(release.storageId),
+          });
+        }
 
         // Fetch return records.
+        // Повернення завжди йдуть на малий склад (МС).
         // Фолбек на createdAt, якщо returnDate === null (історичні записи без дати повернення).
         const returns = await prisma.warehouseReturnHistory.findMany({
           where: {
@@ -1942,6 +2061,7 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
         });
 
         // Fetch write-off records.
+        // Списання можуть йти з МС або ГП — ділимо за storageId.
         // Фолбек на createdAt, якщо writeOffDate === null.
         const writeoffs = await prisma.warehouseWriteOffHistory.findMany({
           where: {
@@ -1950,29 +2070,33 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
               { AND: [{ writeOffDate: null }, { createdAt: { gte: startOfDay, lt: endOfDay } }] },
             ],
           },
-          select: { items: true },
+          select: { items: true, storageId: true },
         });
 
         const returned = sumQuantityForSku(returns, sku);
-        const writtenOff = sumQuantityForSku(writeoffs, sku);
 
-        // Переміщення: агрегуємо документи warehouse_movement у вікні дня.
-        // + якщо товар прийшов НА малий склад (destinationWarehouse === smallStorageId),
-        // - якщо пішов З малого складу (sourceWarehouse === smallStorageId).
+        let writtenOff = 0;
+        let writtenOffGp = 0;
+        for (const row of writeoffs) {
+          const qty = sumQuantityForSku([row], sku);
+          if (qty <= 0) continue;
+          const resolvedStorage = row.storageId || smallStorageId;
+          if (resolvedStorage === mainStorageId) writtenOffGp += qty;
+          else writtenOff += qty;
+        }
+
+        // Переміщення: окремо для МС і ГП.
+        // + якщо товар прийшов НА склад, − якщо пішов Зі складу.
         let moved = 0;
+        let movedGp = 0;
         try {
-          const smallStorageSetting = await prisma.settingsBase.findUnique({
-            where: { key: 'dilovod_small_storage_id' },
-          });
-          const smallStorageId = smallStorageSetting?.value || '1100700000001019';
-
           const movements = await prisma.warehouseMovement.findMany({
             where: {
               status: { not: 'deleted' },
               movementDate: { gte: startOfDay, lt: endOfDay },
               OR: [
-                { sourceWarehouse: smallStorageId },
-                { destinationWarehouse: smallStorageId },
+                { sourceWarehouse: { in: [smallStorageId, mainStorageId] } },
+                { destinationWarehouse: { in: [smallStorageId, mainStorageId] } },
               ],
             },
             select: { sourceWarehouse: true, destinationWarehouse: true, items: true },
@@ -2015,10 +2139,6 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
           };
 
           for (const movement of movements) {
-            const isToSmall = movement.destinationWarehouse === smallStorageId;
-            const isFromSmall = movement.sourceWarehouse === smallStorageId;
-            if (!isToSmall && !isFromSmall) continue;
-
             const items = safeParseItems(movement.items);
             let qty = 0;
             for (const it of items) {
@@ -2026,16 +2146,40 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
             }
             if (qty === 0) continue;
 
-            // + на малий склад, - з малого складу
-            moved += isToSmall ? qty : -qty;
+            if (movement.destinationWarehouse === smallStorageId) moved += qty;
+            if (movement.sourceWarehouse === smallStorageId) moved -= qty;
+            if (movement.destinationWarehouse === mainStorageId) movedGp += qty;
+            if (movement.sourceWarehouse === mainStorageId) movedGp -= qty;
           }
         } catch {
           // ігноруємо помилки переміщень — не ламаємо решту історії
         }
 
-        return { ...e, kit, shipped, moved, returned, writtenOff };
+        return {
+          ...e,
+          kit,
+          kitGp,
+          kitDetails,
+          shipped,
+          moved,
+          movedGp,
+          returned,
+          writtenOff,
+          writtenOffGp,
+        };
       } catch (err) {
-        return { ...e, kit: 0, shipped: 0, moved: 0, returned: 0, writtenOff: 0 };
+        return {
+          ...e,
+          kit: 0,
+          kitGp: 0,
+          kitDetails: [],
+          shipped: 0,
+          moved: 0,
+          movedGp: 0,
+          returned: 0,
+          writtenOff: 0,
+          writtenOffGp: 0,
+        };
       }
     }));
 
