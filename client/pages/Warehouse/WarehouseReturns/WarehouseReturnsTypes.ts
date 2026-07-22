@@ -28,9 +28,9 @@ export interface ReturnItem {
   composition?: Array<string | { name?: string; quantity?: number; unitRatio?: number; sku?: string }>; // Склад монолітного комплекту (для Popover)
 }
 
-/** Моноліт для повернення: історичне відвантаження або поточний stock-based dynamic */
-export function isMonolithicForReturn(item: Pick<ReturnItem, 'shippedAsMonolithic' | 'dynamicMonolithic'>): boolean {
-  return Boolean(item.shippedAsMonolithic || item.dynamicMonolithic);
+/** Моноліт для повернення — лише якщо був у payloadData.shipment.bySku при відвантаженні */
+export function isMonolithicForReturn(item: Pick<ReturnItem, 'shippedAsMonolithic'>): boolean {
+  return Boolean(item.shippedAsMonolithic);
 }
 
 export interface ReturnDraft {

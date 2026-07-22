@@ -331,8 +331,10 @@ export function useWarehouseReturns() {
       if (payload.firmId) void loadFirmName(payload.firmId);
 
       const priceBySku = new Map(payload.items.map((item) => [item.sku, Number(item.price ?? 0)]));
-      // Витягуємо shipment.bySku з payloadData замовлення (як у OrderView для фіналізованих),
-      // щоб expandProductSets позначив shippedAsMonolithic і не розгортав такі набори.
+      // Джерело істини для повернень: payloadData.shipment.bySku.
+      // Завжди вмикаємо useShipmentPayloadMode — навіть якщо bySku відсутній:
+      // тоді жоден набір не вважається монолітом (категорія/stock fallback не застосовується),
+      // і комплекти, відвантажені порціями, розгортаються на компоненти.
       const shipmentBySku = payload.payloadData?.shipment?.bySku
         && typeof payload.payloadData.shipment.bySku === 'object'
         ? payload.payloadData.shipment.bySku
@@ -343,7 +345,7 @@ export function useWarehouseReturns() {
         monolithicCategoryIds,
         [],
         shipmentBySku,
-        Boolean(shipmentBySku),
+        true,
       );
       const preparedItems = expanded.map((item) => ({
         id: crypto.randomUUID?.() ?? `${item.sku}-${Date.now()}-${Math.random()}`,
@@ -513,8 +515,7 @@ export function useWarehouseReturns() {
       const sanitizedReason = sanitizeText(returnReason) ?? '';
       const sanitizedCustom = sanitizeText(customReason) ?? '';
 
-      // Build shipment.bySku for monolithic sets (accGood = 1119000000001079)
-      // shippedAsMonolithic — з історії відвантаження; dynamicMonolithic — fallback по stock
+      // Build shipment.bySku лише для наборів, що реально були відвантажені як моноліт
       const monolithicItems = items.filter(isMonolithicForReturn);
       const shipmentBySku: Record<string, { accGood: string; quantity: number }> = {};
       for (const item of monolithicItems) {

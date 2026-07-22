@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-07-22 — Повернення: моноліт лише з `payloadData.shipment.bySku`
+**Files:** `client/pages/Warehouse/WarehouseReturns/useWarehouseReturns.ts`, `client/pages/Warehouse/WarehouseReturns/WarehouseReturnsTypes.ts`, `Docs/features/warehouse-returns-dry-run.md`
+
+- Для підготовки повернення `expandProductSets` завжди викликається з `useShipmentPayloadMode: true`.
+- Джерело істини: наявність SKU в `orders.payloadData.shipment.bySku` → повернення цілим набором; відсутність → розгортання на порції.
+- Виправлено регресію: без `bySku` раніше вимикався payload-режим і спрацьовував fallback по категорії/залишках (`dynamicMonolithic`), тож набори, відвантажені порціями, помилково лишались монолітами.
+- `isMonolithicForReturn` тепер дивиться лише на `shippedAsMonolithic` (без OR з `dynamicMonolithic`).
+
+---
+
 ## 2026-07-21 — `entry.shipped` в inventory history без подвійного рахунку монолітів
 **Files:** `server/services/orderShipmentMetricsService.ts`, `server/modules/Warehouse/WarehouseController.ts`, `server/routes/orders.ts`, `Docs/features/warehouse-inventory-shipped-activity.md`
 
