@@ -100,7 +100,11 @@ export function useMetaLogs(): UseMetaLogsResult {
         const isAuto = cat.includes('dilovod') || title.includes('відвантаж') || cat.includes('export');
         const isDocError = title.includes('документ не збережено') || msg.includes('документ не збережено');
         const isWarehouseIssue = cat.includes('warehouse') || title.includes('автофінал') || msg.includes('автофінал') || title.includes('автофіналіза');
-        return isAuto || isDocError || isWarehouseIssue;
+        const isProductSync = cat.includes('product_sync')
+          || title.includes('товар без')
+          || title.includes('штрих-код')
+          || title.includes('помилка синхронізації');
+        return isAuto || isDocError || isWarehouseIssue || isProductSync;
       });
       const fetchDetail = async (n: any) => {
         try {
@@ -140,6 +144,9 @@ export function useMetaLogs(): UseMetaLogsResult {
         const parsedRows: MetaLogRow[] = [];
         const isDocErrorLog = ((log.title || '').toLowerCase().includes('документ не збережено')) || ((log.message || '').toLowerCase().includes('документ не збережено'));
         const isWarehouseLog = ((log.category || '').toLowerCase().includes('warehouse')) || ((log.title || '').toLowerCase().includes('автофінал')) || ((log.message || '') || '').toLowerCase().includes('автофінал') || ((log.title || '').toLowerCase().includes('автофіналіза'));
+        const isProductSyncLog = ((log.category || '').toLowerCase().includes('product_sync'))
+          || ((log.title || '').toLowerCase().includes('товар без'))
+          || ((log.title || '').toLowerCase().includes('штрих-код'));
 
         if (Array.isArray(items) && items.length > 0) {
           items.forEach((it: any, idx: number) => {
@@ -168,10 +175,11 @@ export function useMetaLogs(): UseMetaLogsResult {
               attemptsList: [{ id: log.id, datetime: createdAt, initiator }],
             });
           });
-        } else if (log.data && (log.data.sku || log.data.product || log.data.quantity)) {
+        } else if (log.data && (log.data.sku || log.data.product || log.data.quantity || log.data.productData)) {
           const authorFromData = log.data?.authorName ?? (log.data?.author && (typeof log.data.author === 'string' ? log.data.author : log.data.author.name)) ?? null;
           const docNumber = log.data?.docNumber ?? log.data?.doc_number ?? log.data?.docId ?? null;
           const dilovodResp = log.data?.dilovodResponse ?? log.data?.dilovod_response ?? log.data?.dilovodResult ?? null;
+          const productData = log.data?.productData && typeof log.data.productData === 'object' ? log.data.productData : null;
           parsedRows.push({
             id,
             createdAt,
@@ -180,8 +188,8 @@ export function useMetaLogs(): UseMetaLogsResult {
             docNumber: docNumber ?? null,
             dilovodResponse: dilovodResp ?? null,
             orderNumber,
-            productName: log.data.productName ?? log.data.product ?? null,
-            sku: log.data.sku ?? null,
+            productName: log.data.productName ?? log.data.product ?? productData?.name ?? null,
+            sku: log.data.sku ?? productData?.sku ?? null,
             needed: toNumber(log.data.quantity ?? log.data.needed ?? log.data.qty ?? log.data.count ?? log.data.required ?? log.data['потрібно'] ?? log.data.need ?? log.data.need_qty ?? log.data.qtyRequested ?? log.data['кількість'] ?? log.data.amount) ?? (extractedFromError.needed ?? null),
             stock: toNumber(log.data.stock ?? log.data.available ?? log.data.balance ?? log.data.availableQty) ?? (extractedFromError.stock ?? null),
             missing: (log.data.missing != null) ? toNumber(log.data.missing) : (extractedFromError.missing != null ? toNumber(extractedFromError.missing) : ((toNumber(log.data.quantity ?? log.data.needed ?? log.data.qty ?? log.data.count) != null && toNumber(log.data.stock ?? log.data.available) != null) ? Math.max(0, (toNumber(log.data.quantity ?? log.data.needed ?? log.data.qty ?? log.data.count) as number - (toNumber(log.data.stock ?? log.data.available) as number))) : null)),
@@ -235,8 +243,18 @@ export function useMetaLogs(): UseMetaLogsResult {
             const s = toNumber(r.stock) ?? null;
             if (n != null && s != null) r.missing = Math.max(0, n - s);
           }
-          const key = `${r.orderNumber || ''}::${r.sku || ''}::${r.productName || ''}::${r.initiator || ''}`;
-          const targetMap = isDocErrorLog ? mapDoc : (isWarehouseLog ? mapOther : mapAuto);
+          // Для product_sync: якщо назва не витягнулась з data — беремо з message
+          if (!r.productName && typeof r.rawMessage === 'string') {
+            const nameFromMsg = r.rawMessage.match(/^(.+?)\s*\(SKU:/i);
+            if (nameFromMsg) r.productName = nameFromMsg[1].trim();
+          }
+          if (!r.sku && typeof r.rawMessage === 'string') {
+            const skuFromMsg = r.rawMessage.match(/\(SKU:\s*([^)]+)\)/i) || r.rawMessage.match(/SKU:\s*([A-Za-z0-9\-_.]+)/i);
+            if (skuFromMsg) r.sku = skuFromMsg[1].trim();
+          }
+
+          const key = `${r.orderNumber || ''}::${r.sku || ''}::${r.productName || ''}::${r.initiator || ''}::${r.title || ''}`;
+          const targetMap = isDocErrorLog ? mapDoc : ((isWarehouseLog || isProductSyncLog) ? mapOther : mapAuto);
           const existing = targetMap.get(key);
           if (existing) {
             existing.count += 1;
@@ -255,7 +273,7 @@ export function useMetaLogs(): UseMetaLogsResult {
         const merged = new Map<string, { row: MetaLogRow; count: number }>();
         for (const [, v] of m.entries()) {
           const r = v.row;
-          const key2 = `${r.orderNumber || ''}::${r.sku || ''}::${r.productName || ''}`;
+          const key2 = `${r.orderNumber || ''}::${r.sku || ''}::${r.productName || ''}::${r.title || ''}`;
           const existing = merged.get(key2);
           if (existing) {
             existing.count += v.count;

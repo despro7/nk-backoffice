@@ -12,6 +12,8 @@ export interface DilovodProduct {
   };
   weight?: number; // Вага товару в грамах
   portionsPerBox?: number; // Кількість порцій у коробці (mapping from Dilovod packageRatio)
+  /** Штрих-код з регістру barCodes Dilovod (null якщо відсутній) */
+  barcode?: string | null;
   set: Array<{
     id: string;
     quantity: number;
@@ -21,6 +23,15 @@ export interface DilovodProduct {
     priceValue: string;
   }>;
   parent?: string; // ID батьківської групи для визначення комплектів
+}
+
+/** Відповідь регістру barCodes Dilovod */
+export interface DilovodBarCodeResponse {
+  id: string;
+  object: string;
+  code: string;
+  /** "1" — активний, "0" — неактивний */
+  activity?: '1' | '0' | string;
 }
 
 export interface DilovodStockBalance {
@@ -119,6 +130,7 @@ export interface DatabaseProduct {
   categoryId: number | null;
   categoryName: string;
   weight?: number;        // Додаємо вагу
+  barcode?: string | null;
   set: Array<{ id: string; quantity: number }> | null;
   additionalPrices: Array<{ priceType: string; priceValue: string }> | null;
   stockBalanceByStock: {  // Додаємо залишки по складах

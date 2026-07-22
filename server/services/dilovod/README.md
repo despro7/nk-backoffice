@@ -41,6 +41,7 @@ dilovod/
 - `makeRequest()` - основной метод для запросов
 - `getGoodsWithPrices()` - получение товаров с ценами
 - `getGoodsFromCatalog()` - получение товаров из каталога
+- `getBarCodesByObjectIds()` - получение штрих-кодов из регистра barCodes
 - `getObject()` - получение детальной информации об объекте
 - `testConnection()` - тест подключения
 
@@ -60,7 +61,7 @@ dilovod/
 
 ### 6. DilovodSyncManager.ts
 Управление синхронизацией с базой данных:
-- `syncProductsToDatabase()` - синхронизация товаров с БД
+- `syncProductsToDatabase()` - синхронизация товаров с БД (хеш включает `barcode`)
 - `getSyncStats()` - статистика синхронизации
 - `getProducts()` - получение товаров по фильтрам
 - `cleanupOldProducts()` - очистка старых товаров
@@ -68,9 +69,12 @@ dilovod/
 ### 7. DilovodService.ts
 Основной класс-координатор, который использует все модули:
 - `syncProductsWithDilovod()` - полная синхронизация
-- `getGoodsInfoWithSetsOptimized()` - получение товаров с комплектами
+- `getGoodsInfoWithSetsOptimized()` - получение товаров с комплектами + штрих-коды из `barCodes`
+- `logSyncError()` - запись ошибок sync в `meta_logs` (в т.ч. `missing_barcode`)
 - `testSetsOnly()` - тест получения комплектов
 - Управление всеми аспектами работы с Dilovod
+
+Документация по синхронизации ШК: `Docs/features/dilovod-product-barcode-sync.md`.
 
 ## Использование
 

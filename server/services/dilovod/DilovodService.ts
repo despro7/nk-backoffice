@@ -15,6 +15,7 @@ import {
 import { syncSettingsService } from '../syncSettingsService.js';
 import { dilovodCacheService } from './DilovodCacheService.js';
 import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
+import { mapBarCodesByObjectId } from './DilovodUtils.js';
 import { pluralize } from '../../lib/utils.js';
 
 const prisma = new PrismaClient();
@@ -253,7 +254,7 @@ export class DilovodService {
     initiatedBy
   }: {
     sku: string;
-    errorType: 'missing_price' | 'invalid_data' | 'db_error' | 'validation_error' | 'sync_failed';
+    errorType: 'missing_price' | 'invalid_data' | 'db_error' | 'validation_error' | 'sync_failed' | 'missing_barcode';
     message: string;
     productData?: any;
     initiatedBy?: string;
@@ -261,6 +262,7 @@ export class DilovodService {
     try {
       const titleMap = {
         missing_price: 'Товар без ціни',
+        missing_barcode: 'Товар без штрих-коду',
         invalid_data: 'Невірні дані товару',
         db_error: 'Помилка бази даних',
         validation_error: 'Помилка валідації',
@@ -646,6 +648,55 @@ export class DilovodService {
 
       // Обробляємо дані через процесор
       const result = await this.dataProcessor.processGoodsWithSets(pricesResponse, goodsResponse);
+
+      // Окремий запит штрих-кодів з регістру barCodes (не повертаються з каталогу/цін)
+      if (signal?.aborted) {
+        const err: any = new Error('Запит скасовано');
+        err.name = 'AbortError';
+        throw err;
+      }
+
+      const objectIds = result.map((product) => product.id).filter(Boolean);
+      try {
+        const barCodesResponse = await this.apiClient.getBarCodesByObjectIds(objectIds, signal);
+        const barcodeByObjectId = mapBarCodesByObjectId(barCodesResponse);
+        console.log(
+          `Отримано ${barCodesResponse.length} записів ШК, активних для ${barcodeByObjectId.size} товарів`
+        );
+
+        for (const product of result) {
+          product.barcode = barcodeByObjectId.get(product.id) ?? null;
+        }
+
+        const productsWithoutBarcode = result.filter((product) => !product.barcode);
+        if (productsWithoutBarcode.length > 0) {
+          console.log(
+            `⚠️ Товари без активного штрих-коду (${productsWithoutBarcode.length}):`,
+            productsWithoutBarcode.map((p) => `${p.sku} (${p.name})`)
+          );
+
+          for (const product of productsWithoutBarcode) {
+            await this.logSyncError({
+              sku: product.sku,
+              errorType: 'missing_barcode',
+              message: 'відсутній активний штрих-код у Dilovod',
+              productData: {
+                dilovodId: product.id,
+                name: product.name,
+                sku: product.sku,
+              },
+              initiatedBy: 'system',
+            });
+          }
+        }
+      } catch (barcodeError) {
+        // Не валимо всю синхронізацію через ШК.
+        // barcode лишається undefined → SyncManager не чіпає поле і не змінює хеш через ШК.
+        if ((barcodeError as any)?.name === 'AbortError') {
+          throw barcodeError;
+        }
+        console.log('⚠️ Помилка отримання штрих-кодів з Dilovod:', barcodeError);
+      }
 
       return result;
 

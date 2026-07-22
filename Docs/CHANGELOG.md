@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-07-22 — Синхронізація штрих-кодів товарів з Dilovod
+**Files:** `server/services/dilovod/DilovodApiClient.ts`, `DilovodService.ts`, `DilovodSyncManager.ts`, `DilovodTypes.ts`, `DilovodUtils.ts`, `Dilovod README.md`, `client/components/NotificationBell.tsx`, `client/pages/MetaLogs/hooks/useMetaLogs.ts`, `client/pages/MetaLogs/components/OtherMetaLogTable.tsx`, `Docs/features/dilovod-product-barcode-sync.md`
+
+- Додано окремий запит до регістру Dilovod `barCodes` (`getBarCodesByObjectIds`) під час sync товарів; у БД пишеться `Product.barcode` з поля `code`.
+- У `dilovodDataHash` включено `barcode` — зміна ШК в Dilovod оновлює товар; відсутність у відповіді → `barcode = null`.
+- Активні лише записи з `activity === "1"`; `"0"` ігнорується.
+- Товари без активного ШК логуються в `meta_logs` (`product_sync` / «Товар без штрих-коду») → NotificationBell.
+- MetaLogs → вкладка «Інші помилки» показує `product_sync` у таблиці з колонками Помилка / Товар / Артикул (дизайн як у сусідніх звітах).
+
+---
+
 ## 2026-07-22 — Повернення: моноліт лише з `payloadData.shipment.bySku`
 **Files:** `client/pages/Warehouse/WarehouseReturns/useWarehouseReturns.ts`, `client/pages/Warehouse/WarehouseReturns/WarehouseReturnsTypes.ts`, `Docs/features/warehouse-returns-dry-run.md`
 

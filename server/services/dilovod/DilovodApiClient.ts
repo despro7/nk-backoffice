@@ -6,6 +6,7 @@ import {
   DilovodObjectResponse,
   DilovodGoodsResponse,
   DilovodPricesResponse,
+  DilovodBarCodeResponse,
   DilovodOrder,
   DilovodOrderResponse
 } from './DilovodTypes.js';
@@ -310,6 +311,63 @@ export class DilovodApiClient {
 
     const resp = await this.makeRequest<any>(request, signal);
     return this.normalizeToArray<DilovodGoodsResponse>(resp);
+  }
+
+  /**
+   * Отримання штрих-кодів з регістру barCodes за ID товарів Dilovod (`object`).
+   * Запити б'ємо чанками по 50, як і інші IL-фільтри.
+   */
+  async getBarCodesByObjectIds(
+    objectIds: string[],
+    signal?: AbortSignal
+  ): Promise<DilovodBarCodeResponse[]> {
+    await this.ensureReady();
+
+    const uniqueIds = [...new Set(objectIds.filter(Boolean))];
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    const chunks = this.chunkArray(uniqueIds, 50);
+    const results: DilovodBarCodeResponse[] = [];
+
+    for (const chunk of chunks) {
+      if (signal?.aborted) {
+        const err: any = new Error('Запит скасовано');
+        err.name = 'AbortError';
+        throw err;
+      }
+
+      const request: DilovodApiRequest = {
+        version: "0.25",
+        key: this.apiKey,
+        action: "request",
+        params: {
+          from: {
+            type: "sliceLast",
+            register: "barCodes"
+          },
+          fields: {
+            id: "id",
+            object: "object",
+            code: "code",
+            activity: "activity"
+          },
+          filters: [
+            {
+              alias: "object",
+              operator: "IL",
+              value: chunk
+            }
+          ]
+        }
+      };
+
+      const resp = await this.makeRequest<any>(request, signal);
+      results.push(...this.normalizeToArray<DilovodBarCodeResponse>(resp));
+    }
+
+    return results;
   }
 
   // Отримання детальної інформації про об'єкт (для комплектів)

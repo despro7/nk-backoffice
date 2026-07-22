@@ -654,6 +654,34 @@ export function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/** Чи активний штрих-код у відповіді Dilovod barCodes (`activity`: "1" | "0") */
+export function isDilovodBarcodeActive(activity: string | number | boolean | undefined | null): boolean {
+  return String(activity ?? '').trim() === '1';
+}
+
+/**
+ * Мапінг Dilovod object ID → barcode (`code`).
+ * Беремо лише активні записи (`activity === "1"`).
+ * Товари без активного ШК у відповіді просто відсутні в Map.
+ */
+export function mapBarCodesByObjectId(
+  barCodes: Array<{ object?: string; code?: string; activity?: string | number | boolean | null }>
+): Map<string, string> {
+  const activeMap = new Map<string, string>();
+
+  for (const row of barCodes) {
+    const objectId = String(row.object ?? '').trim();
+    const code = String(row.code ?? '').trim();
+    if (!objectId || !code) continue;
+    if (!isDilovodBarcodeActive(row.activity)) continue;
+    if (!activeMap.has(objectId)) {
+      activeMap.set(objectId, code);
+    }
+  }
+
+  return activeMap;
+}
+
 // Безпечне отримання значення з об'єкта
 export function safeGet<T>(obj: any, path: string, defaultValue: T): T {
   try {

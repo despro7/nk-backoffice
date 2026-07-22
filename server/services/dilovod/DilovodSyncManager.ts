@@ -14,7 +14,7 @@ export class DilovodSyncManager {
   private calculateDataHash(product: DilovodProduct): string {
     // Хешуємо тільки дані, які надходять з Dilovod 
     // НЕ включаємо weight і manualOrder - це локальні дані 
-    const dataToHash = {
+    const dataToHash: Record<string, unknown> = {
       name: product.name,
       costPerItem: product.costPerItem,
       currency: product.currency,
@@ -23,8 +23,13 @@ export class DilovodSyncManager {
       set: product.set,
       portionsPerBox: product.portionsPerBox ?? null,
       additionalPrices: product.additionalPrices,
-      dilovodId: product.id
+      dilovodId: product.id,
     };
+
+    // barcode у хеші лише коли його реально отримали з регістру barCodes
+    if (product.barcode !== undefined) {
+      dataToHash.barcode = product.barcode ?? null;
+    }
     
     const dataString = JSON.stringify(dataToHash);
     return crypto.createHash('sha256').update(dataString).digest('hex');
@@ -35,7 +40,7 @@ export class DilovodSyncManager {
     dilovodProducts: DilovodProduct[],
     logError?: (params: {
       sku: string;
-      errorType: 'missing_price' | 'invalid_data' | 'db_error' | 'validation_error' | 'sync_failed';
+      errorType: 'missing_price' | 'invalid_data' | 'db_error' | 'validation_error' | 'sync_failed' | 'missing_barcode';
       message: string;
       productData?: any;
       initiatedBy?: string;
@@ -246,6 +251,11 @@ export class DilovodSyncManager {
       dilovodDataHash: dilovodDataHash,
       lastSyncAt: new Date()
     };
+
+    // barcode оновлюємо лише коли його отримали з Dilovod (undefined = запит ШК не вдався)
+    if (product.barcode !== undefined) {
+      data.barcode = product.barcode?.trim() || null;
+    }
 
     // Портії в коробці (якщо прийшли з Dilovod) — зберігаємо в БД
     if (product.portionsPerBox !== undefined && product.portionsPerBox !== null) {
