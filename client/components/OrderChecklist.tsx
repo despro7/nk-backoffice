@@ -51,9 +51,10 @@ interface OrderChecklistProps {
   onBarcodeScan?: (code: string) => void; // Емуляція сканування ШК (Debug)
   showMonolithicAvailabilityBadge?: boolean;
   monolithicBadgeLabel?: string;
+  scrollTarget?: { itemId: string; ts: number } | null;
 }
 
-const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders, allowManualSelect = false, assemblyMode = 'standard', productScanMode = 'single_per_item', onBarcodeScan, showMonolithicAvailabilityBadge = true, monolithicBadgeLabel }: OrderChecklistProps) => {
+const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChange, onItemStatusChange, onPrintTTN, showPrintTTN, wasOpenedAsReady, onNextOrder, showNextOrder, nextOrderNumber, nextOrderDate, showNoMoreOrders, allowManualSelect = false, assemblyMode = 'standard', productScanMode = 'single_per_item', onBarcodeScan, showMonolithicAvailabilityBadge = true, monolithicBadgeLabel, scrollTarget }: OrderChecklistProps) => {
   const navigate = useNavigate();
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [equipmentState] = useEquipmentFromAuth(); // <-- Використовуємо глобальний стан обладнання
@@ -61,6 +62,21 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
   const { isDebugMode } = useDebug(); // <-- Використовуємо контекст дебагування
   const noMoreOrdersRef = useRef<HTMLDivElement>(null);
   const printTTNRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    if (!scrollTarget?.itemId) return;
+
+    const element = itemRefs.current[scrollTarget.itemId];
+    if (!element) return;
+
+    smoothScrollToElement(element, {
+      duration: 700,
+      delay: 80,
+      offset: 80,
+      position: 'center',
+    });
+  }, [scrollTarget?.itemId, scrollTarget?.ts]);
 
   // Фільтруємо елементи за поточною коробкою
   const currentBoxItems = items.filter((item) => {
@@ -485,7 +501,11 @@ const OrderChecklist = ({ items, totalPortions, activeBoxIndex, onActiveBoxChang
             return boxIndex === activeBoxIndex;
           })
         ).map((item) => (
-          <div key={item.id} className="relative">
+          <div
+            key={item.id}
+            ref={(el) => { itemRefs.current[item.id] = el; }}
+            className="relative"
+          >
             <OrderChecklistItem
               item={item}
               isActive={activeItemId === item.id}

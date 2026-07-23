@@ -316,13 +316,14 @@ export default function OrderView() {
     errorToastMs: assemblySettings.errorToastMs,
   });
 
-  const { handleBarcodeScan } = useBarcodeScanning({
+  const { handleBarcodeScan, scrollTarget } = useBarcodeScanning({
     checklistItems,
     activeBoxIndex,
     setChecklistItems,
     debugMode: isDebugMode,
     assemblyMode: assemblySettings.mode ?? 'standard',
     productScanMode: assemblySettings.productScanMode,
+    successIndicationMs: assemblySettings.successIndicationMs,
   });
 
   const {
@@ -869,9 +870,16 @@ export default function OrderView() {
                       return item;
                     });
 
-                    // Show success toast for products marked done
+                    // Success toast лише при переході в done (не при повторному скануванні)
+                    const prevItem = prevItems.find(i => i.id === itemId);
                     const changed = newItems.find(i => i.id === itemId);
-                    if (changed && changed.status === 'done' && changed.type === 'product') {
+                    if (
+                      changed &&
+                      changed.status === 'done' &&
+                      changed.type === 'product' &&
+                      prevItem?.status !== 'done' &&
+                      prevItem?.status !== 'success'
+                    ) {
                       ToastService.show({ title: 'Товар відмічено як зібраний', description: `${changed.name}`, color: 'success' });
                     }
 
@@ -893,6 +901,7 @@ export default function OrderView() {
                 showNoMoreOrders={showNoMoreOrders}
                 showMonolithicAvailabilityBadge
                 monolithicBadgeLabel={isFinalizedOrder ? 'Готовий комплект' : undefined}
+                scrollTarget={scrollTarget}
               />
             </ErrorBoundary>
             </>

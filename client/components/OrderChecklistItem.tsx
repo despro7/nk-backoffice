@@ -1,7 +1,6 @@
 import { cn } from '@/lib/utils';
 import { pluralize } from '@/lib/formatUtils';
 import { useDebug } from '@/contexts/DebugContext';
-import { Switch } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -366,6 +365,13 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
   const shouldConfirmClick = type === 'product' && ((productScanMode === 'single_per_item' && quantity > 1) || allowManualSelect);
   const setSku = (sku as string) || (type === 'box' ? boxSettings?.barcode : undefined);
   const itemKey = sku || item.id;
+  // Debug: пріоритет реального ШК з БД; fallback — SKU (червоним).
+  // Якщо barcode === sku (часто так у Dilovod/БД) — це не окремий ШК, показуємо як SKU.
+  const rawBarcode = String((type === 'box' ? boxSettings?.barcode : barcode) ?? '').trim();
+  const rawSku = String(sku ?? '').trim();
+  const hasRealBarcode = Boolean(rawBarcode) && rawBarcode !== rawSku;
+  const displayCode = hasRealBarcode ? rawBarcode : rawSku;
+  const isSkuFallback = Boolean(displayCode) && !hasRealBarcode;
   const handleClick = async () => {
     if (item.composition?.length > 0 && setSku) {
       const stock = await getStockTotalForSku(setSku);
@@ -477,13 +483,13 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
     <div className={itemStateClasses} onClick={isClickable ? handleClick : undefined}>
       {isByQuantityProduct && (
         <div
-          className={`absolute inset-y-0 left-0 pointer-events-none transition-all duration-600 ${fillPercent != 100 ? 'bg-gray-500/15' : ''}`}
+          className={`absolute inset-0 pointer-events-none transition-all duration-600 ${fillPercent != 100 ? 'bg-gray-500/15' : ''}`}
           style={{ width: `${fillPercent}%` }}
           aria-hidden="true"
         />
       )}
 
-      <div className="flex items-center gap-4 w-full">
+      <div className="flex items-center gap-4 min-w-0">
         {/* Індикатор статусу */}
         <div className={cn("w-6 h-6 shrink-0 rounded-sm flex items-center justify-center bg-transparent transition-colors duration-300", {
           "bg-gray-400": isDone,
@@ -494,10 +500,10 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
         })}>
           {(isDone || status === 'success') && <DynamicIcon name="check" size={18} className="text-white" />}
         </div>
-        <div className="flex flex-col gap-0.5 overflow-hidden">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold">
-              {name}
+        <div className="flex flex-col gap-0.5 overflow-hidden min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="flex items-center gap-1 max-w-fit">
+              <span className="inline-block truncate font-semibold">{name}</span>
               {typeof item.monolithicSplitTotal === 'number' &&
                 item.monolithicSplitTotal > 1 &&
                 typeof item.monolithicSplitIndex === 'number' && (
@@ -521,7 +527,7 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
             )}
 
             {/* Кількість одиниць × Вага позиції */}
-            <span className="text-sm text-gray-400 tabular-nums text-nowrap">{type === 'product' && `× ${quantity}`} ≈ {expectedWeight.toFixed(2)} кг</span>
+            <span className="inline-block text-sm text-gray-400 tabular-nums text-nowrap">{type === 'product' && `× ${quantity}`} ≈ {expectedWeight.toFixed(2)} кг</span>
 
             {/* Динамічно-монолітний індикатор: відображається коли є portionsPerItem */}
             {showMonolithicAvailabilityBadge && item.portionsPerItem && (
@@ -539,26 +545,8 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
                 </div>
               ))
             )}
-            
-            {isDebugMode && (
-              <div className="flex">
-                <span className="text-[12px] text-neutral-400 tabular-nums">
-                   <span className="font-semibold ml-2 text-red-600">({Number(displayRatio).toFixed(2)})</span>
-                </span>
-                <span
-                  className="flex items-center gap-1 ml-4 text-[12px] text-neutral-400 tabular-nums cursor-pointer hover:text-neutral-600 transition-colors"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const code = sku || (type === 'box' ? boxSettings.barcode : barcode);
-                    navigator.clipboard.writeText(code || '');
-                  }}
-                  title="Click to copy"
-                >
-                  <DynamicIcon name="scan-barcode" size={14} /> {sku || (type === 'box' ? boxSettings.barcode : barcode)}
-                </span>
-              </div>
-            )}
           </div>
+
           {/* Відображення складу монолітного набору */}
           {item.composition && item.composition.length > 0 && (
             (() => {
@@ -611,6 +599,34 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
       <div className="flex items-center gap-4">
         {/* Індикатор помилки */}
         {status === 'error' && <DynamicIcon name="x" size={24} />}
+
+        {/* Відображається тільки в режимі відладки */}
+        {isDebugMode && (
+          <div className="flex">
+            {/* Обʼємна вага порції */}
+            <span className="text-[12px] tabular-nums ml-2 text-red-600">{isByQuantityProduct && displayRatio}</span>
+
+            {/* Штрих-код товару (fallback — SKU червоним) */}
+            {displayCode && (
+              <span
+                className={cn(
+                  'flex items-center gap-0.5 ml-4 tabular-nums cursor-pointer transition-colors',
+                  isSkuFallback
+                    ? 'text-red-500 hover:text-red-700'
+                    : 'text-neutral-400 hover:text-neutral-600'
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigator.clipboard.writeText(displayCode);
+                }}
+                title={isSkuFallback ? 'SKU (штрих-код відсутній)' : 'Click to copy'}
+              >
+                <DynamicIcon name="scan-barcode" size={14} />
+                <span className="text-[12px] leading-tight pt-[1px]">{displayCode}</span>
+              </span>
+            )}
+          </div>
+        )}
         
         {/* Лічильник одиниць порцій */}
         <span className={`text-[18px] tabular-nums rounded-sm bg-gray-950/6 px-2 py-0.5`}>{isByQuantityProduct ? `${scannedCount}/${quantity}` : quantity}</span>

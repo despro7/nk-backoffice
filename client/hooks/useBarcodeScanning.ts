@@ -10,10 +10,25 @@ interface UseBarcodeScanningProps {
   debugMode?: boolean;
   assemblyMode?: 'standard' | 'no_scales';
   productScanMode?: 'single_per_item' | 'by_quantity';
+  successIndicationMs?: number;
 }
 
 const SCAN_COUNTDOWN = 2000; // 2 секунди між скануваннями
 const TOAST_COUNTDOWN = 3000; // 3 секунди між однаковими сповіщеннями
+const ALREADY_ASSEMBLED_ERROR_MS = 1500;
+
+/** Чи позиція вже повністю зібрана (done/success або вичерпано лічильник by_quantity). */
+function isProductFullyAssembled(
+  item: OrderChecklistItem,
+  scanMode: 'single_per_item' | 'by_quantity'
+): boolean {
+  if (item.type !== 'product') return false;
+  if (item.status === 'done' || item.status === 'success') return true;
+  if (scanMode === 'by_quantity') {
+    return (item.scannedCount ?? 0) >= item.quantity;
+  }
+  return false;
+}
 
 export function useBarcodeScanning({
   checklistItems,
@@ -21,10 +36,12 @@ export function useBarcodeScanning({
   setChecklistItems,
   debugMode = false,
   assemblyMode = 'standard',
-  productScanMode = 'single_per_item'
+  productScanMode = 'single_per_item',
+  successIndicationMs = 1500,
 }: UseBarcodeScanningProps) {
   const [lastScannedCode, setLastScannedCode] = useState<string>('');
   const [lastScanTimestamp, setLastScanTimestamp] = useState<number>(() => Date.now() - 3000);
+  const [scrollTarget, setScrollTarget] = useState<{ itemId: string; ts: number } | null>(null);
   
   // Ref для зберігання останнього обробленого коду (щоб уникнути повторної обробки)
   const lastProcessedCodeRef = useRef<string>('');
@@ -83,6 +100,55 @@ export function useBarcodeScanning({
       console.log(`🚫 Toast "${toastKey}" пропущений (залишилось ${TOAST_COUNTDOWN - timeSinceLastToast}мс)`);
     }
   }, [debugMode]);
+
+  const notifyItemScanned = useCallback((itemId: string) => {
+    setScrollTarget({ itemId, ts: Date.now() });
+  }, []);
+
+  /** Помилка при повторному скануванні вже зібраної позиції. */
+  const rejectAlreadyAssembledProduct = useCallback((item: OrderChecklistItem) => {
+    notifyItemScanned(item.id);
+    console.log('🚫 [useBarcodeScanning] Товар вже зібраний:', item.name);
+    ToastService.show({
+      title: "Товар вже зібраний",
+      description: `${item.name} — не кладіть зайвого`,
+      color: "danger",
+      icon: "alert-triangle",
+      hideIcon: false,
+      timeout: 3000
+    });
+
+    const previousStatus = item.status;
+    setChecklistItems(prevItems =>
+      prevItems.map(i => (i.id === item.id ? { ...i, status: 'error' as const } : i))
+    );
+    setTimeout(() => {
+      setChecklistItems(prevItems =>
+        prevItems.map(i =>
+          i.id === item.id ? { ...i, status: previousStatus as OrderChecklistItem['status'] } : i
+        )
+      );
+    }, ALREADY_ASSEMBLED_ERROR_MS);
+  }, [setChecklistItems, notifyItemScanned]);
+
+  /** no_scales: success → done, як при успішному зважуванні. */
+  const markNoScalesProductCompleted = useCallback((itemId: string, scannedCount: number) => {
+    setChecklistItems(prevItems =>
+      prevItems.map(item =>
+        item.id === itemId
+          ? { ...item, scannedCount, status: 'success' as const }
+          : item
+      )
+    );
+
+    setTimeout(() => {
+      setChecklistItems(prevItems =>
+        prevItems.map(item =>
+          item.id === itemId ? { ...item, status: 'done' as const } : item
+        )
+      );
+    }, successIndicationMs);
+  }, [setChecklistItems, successIndicationMs]);
 
   /**
    * Функція скидання стану сканування
@@ -179,6 +245,11 @@ export function useBarcodeScanning({
       );
 
       if (productFoundInNoScales) {
+        if (isProductFullyAssembled(productFoundInNoScales, productScanMode)) {
+          rejectAlreadyAssembledProduct(productFoundInNoScales);
+          return;
+        }
+
         if (productScanMode === 'by_quantity') {
           const scannedNow = Math.min((productFoundInNoScales.scannedCount ?? 0) + 1, productFoundInNoScales.quantity);
           const isCompleted = scannedNow >= productFoundInNoScales.quantity;
@@ -190,17 +261,17 @@ export function useBarcodeScanning({
             isCompleted,
           });
 
-          setChecklistItems(prevItems =>
-            prevItems.map(item =>
-              item.id === productFoundInNoScales.id
-                ? {
-                    ...item,
-                    scannedCount: scannedNow,
-                    status: (isCompleted ? 'done' : 'default') as OrderChecklistItem['status']
-                  }
-                : item
-            )
-          );
+          if (isCompleted) {
+            markNoScalesProductCompleted(productFoundInNoScales.id, scannedNow);
+          } else {
+            setChecklistItems(prevItems =>
+              prevItems.map(item =>
+                item.id === productFoundInNoScales.id
+                  ? { ...item, scannedCount: scannedNow, status: 'default' as const }
+                  : item
+              )
+            );
+          }
 
           ToastService.show({
             title: isCompleted ? "Товар відмічено як зібраний" : "Товар частково зібраний",
@@ -209,11 +280,10 @@ export function useBarcodeScanning({
             hideIcon: false,
             timeout: 2000
           });
+          notifyItemScanned(productFoundInNoScales.id);
         } else {
-          console.log('✅ [useBarcodeScanning] no_scales: знайдений товар по barcode/sku, ставимо done:', productFoundInNoScales.name);
-          setChecklistItems(prevItems =>
-            prevItems.map(item => item.id === productFoundInNoScales.id ? { ...item, status: 'done' as const, scannedCount: item.quantity } : item)
-          );
+          console.log('✅ [useBarcodeScanning] no_scales: знайдений товар по barcode/sku, ставимо success → done:', productFoundInNoScales.name);
+          markNoScalesProductCompleted(productFoundInNoScales.id, productFoundInNoScales.quantity);
           ToastService.show({
             title: "Товар відмічено як зібраний",
             description: productFoundInNoScales.name,
@@ -221,6 +291,7 @@ export function useBarcodeScanning({
             hideIcon: false,
             timeout: 2000
           });
+          notifyItemScanned(productFoundInNoScales.id);
         }
         return;
       }
@@ -258,17 +329,9 @@ export function useBarcodeScanning({
 
     if (foundItem) {
 
-      // Перевіряємо, чи не має товар вже статус 'done' - ЗАБОРОНЯЄМО сканування
-      if (foundItem.status === 'done') {
-        console.log('🚫 [useBarcodeScanning] Запрещено сканировать товар в статусе done:', foundItem.name);
-        ToastService.show({
-          title: "Сканування заборонено",
-          description: `${foundItem.name} вже завершено - сканування заборонено`,
-          color: "danger",
-          icon: "alert-triangle",
-          hideIcon: false,
-          timeout: 3000
-        });
+      // Забороняємо повторне сканування вже зібраної позиції
+      if (foundItem.type === 'product' && isProductFullyAssembled(foundItem, productScanMode)) {
+        rejectAlreadyAssembledProduct(foundItem);
         return;
       }
 
@@ -309,6 +372,7 @@ export function useBarcodeScanning({
           hideIcon: false,
           timeout: 2000
         });
+        notifyItemScanned(foundItem.id);
         return;
       }
 
@@ -339,18 +403,22 @@ export function useBarcodeScanning({
             isCompleted,
           });
 
-          setChecklistItems(prevItems =>
-            prevItems.map(item => {
-              if (item.id === foundItem.id) {
-                return {
-                  ...item,
-                  scannedCount: scannedNow,
-                  status: (isCompleted ? 'done' : 'default') as OrderChecklistItem['status']
-                };
-              }
-              return item;
-            })
-          );
+          if (isCompleted) {
+            markNoScalesProductCompleted(foundItem.id, scannedNow);
+          } else {
+            setChecklistItems(prevItems =>
+              prevItems.map(item => {
+                if (item.id === foundItem.id) {
+                  return {
+                    ...item,
+                    scannedCount: scannedNow,
+                    status: 'default' as const,
+                  };
+                }
+                return item;
+              })
+            );
+          }
 
           ToastService.show({
             title: isCompleted ? "Товар відмічено як зібраний" : "Товар частково зібраний",
@@ -359,16 +427,10 @@ export function useBarcodeScanning({
             hideIcon: false,
             timeout: 2000
           });
+          notifyItemScanned(foundItem.id);
         } else {
-          console.log('✅ [useBarcodeScanning] no_scales: товар відскановано → done:', foundItem.name);
-          setChecklistItems(prevItems =>
-            prevItems.map(item => {
-              if (item.id === foundItem.id) {
-                return { ...item, status: 'done' as const, scannedCount: item.quantity };
-              }
-              return item;
-            })
-          );
+          console.log('✅ [useBarcodeScanning] no_scales: товар відскановано → success → done:', foundItem.name);
+          markNoScalesProductCompleted(foundItem.id, foundItem.quantity);
           ToastService.show({
             title: "Товар відмічено як зібраний",
             description: foundItem.name,
@@ -376,6 +438,7 @@ export function useBarcodeScanning({
             hideIcon: false,
             timeout: 2000
           });
+          notifyItemScanned(foundItem.id);
         }
       } else {
         // Стандартний режим: встановлюємо 'pending' для зважування
@@ -399,6 +462,7 @@ export function useBarcodeScanning({
           hideIcon: false,
           timeout: 2000
         });
+        notifyItemScanned(foundItem.id);
       }
 
     } else {
@@ -431,13 +495,14 @@ export function useBarcodeScanning({
         }, `unknown-not-found-${scannedCode}`);
       }
     }
-  }, [debugMode, showToastWithCountdown, setChecklistItems, assemblyMode, productScanMode]);
+  }, [debugMode, showToastWithCountdown, setChecklistItems, assemblyMode, productScanMode, rejectAlreadyAssembledProduct, notifyItemScanned, markNoScalesProductCompleted]);
 
   return {
     handleBarcodeScan,
     resetScanState,
     lastScannedCode,
-    lastScanTimestamp
+    lastScanTimestamp,
+    scrollTarget,
   };
 }
 

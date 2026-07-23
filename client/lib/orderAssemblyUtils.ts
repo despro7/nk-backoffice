@@ -560,7 +560,8 @@ const addOrUpdateExpandedItem = (
       status: 'default' as const,
       type: 'product',
       sku: sku,
-      barcode: product.barcode || sku,
+      // Лише справжній ШК, відмінний від SKU (інакше UI/сканер плутають fallback із barcode)
+      barcode: (product.barcode && product.barcode !== sku) ? product.barcode : undefined,
       manualOrder: product.manualOrder,
       composition: composition,
       portionsPerItem: portionsPerItem,
