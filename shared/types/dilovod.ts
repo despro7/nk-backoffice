@@ -279,8 +279,8 @@ export interface DilovodExportHeader {
   number: string;                  // Номер замовлення
   remarkFromPerson?: string;       // Коментар до замовлення
   business: string;                // ID бізнес-процесу
-  deliveryMethod_forDel?: string;  // ID методу доставки (legacy поле)
-  deliveryRemark_forDel?: string;  // Адреса доставки (legacy поле)
+  deliveryMethod?: string;         // ID методу доставки
+  // deliveryRemark_forDel?: string;  // Адреса доставки (legacy поле)
   baseDoc?: string;                // ID базового документа (для documents.sale → documents.saleOrder)
   docMode?: string;                // Режим документа (операція)
   contract?: string;               // Договір (зазвичай такий самий як docMode)
@@ -294,7 +294,6 @@ export interface DilovodTablePartGood {
   rowNum: number;        // Номер рядка
   good: string;         // ID товару в Dilovod (recommended: use products.dilovodId)
   goodPart?: string;     // ID партії (goodPart)
-  // productNum?: string;   // Артикул товару (SKU) - застарілий спосіб
   unit: string;          // ID одиниці виміру (1103600000000001 - шт)
   qty: number;           // Кількість
   baseQty: number;       // Кількість в базових одиницях (зазвичай = qty)

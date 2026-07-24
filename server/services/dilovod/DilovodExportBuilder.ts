@@ -552,8 +552,8 @@ export class DilovodExportBuilder {
       number: orderNumber,                                  // Номер замовлення (з суфіксом/префіксом)
       remarkFromPerson: order.rawData?.comment || '',       // Коментар від клієнта
       business: DILOVOD_CONSTANTS.BUSINESS_PROCESS,         // Вид бізнесу
-      deliveryMethod_forDel: deliveryMethodId,              // Спосіб доставки
-      deliveryRemark_forDel: deliveryAddress,               // Адреса доставки
+      deliveryMethod: deliveryMethodId,                     // Спосіб доставки
+      // deliveryRemark_forDel: deliveryAddress,               // Адреса доставки
       author: authorDilovodId,                              // Автор документа
     };
 

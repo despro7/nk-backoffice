@@ -46,6 +46,7 @@
     "@react-stately/data": "^3.14.0",
     "@types/cookie-parser": "^1.4.9",
     "@types/file-saver": "^2.0.7",
+    "@uiw/react-json-view": "^2.0.0-alpha.43",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.1",

@@ -187,6 +187,34 @@ export function cleanDilovodErrorMessageFull(errorStr: string): string {
 }
 
 /**
+ * Прибирає з exportResult поля, що дублюються на верхньому рівні data (payload, warnings).
+ * Використовується перед записом у meta_logs.
+ */
+export function compactMetaLogData(data: any): any {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+
+  const record = data as Record<string, unknown>;
+  const exportResult = record.exportResult;
+  if (!exportResult || typeof exportResult !== 'object' || Array.isArray(exportResult)) {
+    return data;
+  }
+
+  const compactExportResult = { ...(exportResult as Record<string, unknown>) };
+  let changed = false;
+
+  if ('payload' in record && 'payload' in compactExportResult) {
+    delete compactExportResult.payload;
+    changed = true;
+  }
+  if ('warnings' in record && 'warnings' in compactExportResult) {
+    delete compactExportResult.warnings;
+    changed = true;
+  }
+
+  return changed ? { ...record, exportResult: compactExportResult } : data;
+}
+
+/**
  * Повертає рядок опису помилки з відповіді Dilovod для логування.
  */
 export function getDilovodExportErrorMessage(result: any): string {

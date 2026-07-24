@@ -3,8 +3,10 @@ import { formatRelativeDate } from "@/lib/formatUtils";
 import { Tooltip, Drawer, DrawerContent, DrawerHeader, DrawerBody } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import SalesDriveOrdersTable from '../../../components/SalesDriveOrdersTable';
+import MetaLogJsonView from '@/components/MetaLogJsonView';
 import type { MetaLogRow } from '@shared/types/metaLog';
 import { parseShipmentMessage as parseShipmentMessageUtil, dedupeAndNormalize, formatInitiator } from '@/lib/metaLogsParser';
+import { useMetaLogDetail } from '../hooks/useMetaLogDetail';
 
 export default function ShipmentMetaLogTable({ rows, title, isAdmin, onResolve, loading }: { rows: MetaLogRow[]; title?: string; isAdmin?: boolean; onResolve?: (sourceIds: Array<number | string>) => Promise<void>; loading?: boolean }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -23,19 +25,7 @@ export default function ShipmentMetaLogTable({ rows, title, isAdmin, onResolve, 
     setDrawerOrder(null);
   };
 
-  // log drawer state for full event log
-  const [logOpen, setLogOpen] = useState(false);
-  const [logRow, setLogRow] = useState<MetaLogRow | null>(null);
-
-  const openLogDrawer = (row: MetaLogRow) => {
-    setLogRow(row);
-    setLogOpen(true);
-  };
-
-  const closeLogDrawer = () => {
-    setLogOpen(false);
-    setLogRow(null);
-  };
+  const { logOpen, logRow, logDetail, logLoading, openLogDrawer, closeLogDrawer, setLogOpen } = useMetaLogDetail();
 
   const getCombinedAttempts = (row: MetaLogRow) => {
     const map = new Map<string, any>();
@@ -295,7 +285,7 @@ export default function ShipmentMetaLogTable({ rows, title, isAdmin, onResolve, 
                         <button
                           onClick={async () => {
                             try {
-                              const text = JSON.stringify(logRow, null, 2);
+                              const text = JSON.stringify(logDetail ?? logRow, null, 2);
                               await navigator.clipboard.writeText(text);
                             } catch (err) {
                               // ignore
@@ -339,8 +329,15 @@ export default function ShipmentMetaLogTable({ rows, title, isAdmin, onResolve, 
                     </div>
 
                     <div>
-                      <strong className="text-sm">Повідомлення (raw):</strong>
-                      <pre className="whitespace-pre-wrap text-xs bg-gray-50 p-3 rounded border mt-2">{String(logRow.rawMessage ?? logRow.dilovodResponse ?? '—')}</pre>
+                      <strong className="text-sm">Дані логу:</strong>
+                      {logLoading ? (
+                        <div className="mt-2 text-xs text-gray-500 flex items-center gap-2">
+                          <DynamicIcon name="loader" size={14} className="animate-spin" />
+                          Завантаження...
+                        </div>
+                      ) : (
+                        <MetaLogJsonView value={logDetail ?? logRow} className="mt-2 max-h-[50vh]" />
+                      )}
                     </div>
                   </div>
                 ) : (

@@ -15,7 +15,7 @@ import {
 import { syncSettingsService } from '../syncSettingsService.js';
 import { dilovodCacheService } from './DilovodCacheService.js';
 import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
-import { mapBarCodesByObjectId } from './DilovodUtils.js';
+import { compactMetaLogData, mapBarCodesByObjectId } from './DilovodUtils.js';
 import { pluralize } from '../../lib/utils.js';
 
 const prisma = new PrismaClient();
@@ -190,18 +190,19 @@ export class DilovodService {
     initiatedBy?: string
   }) {
     try {
+      const compactData = compactMetaLogData(data);
       await prisma.meta_logs.create({
         data: {
           category: 'dilovod',
           title,
           status,
           message,
-          data,
+          data: compactData,
           // If the caller provides orderNumber in the payload - save it into a separate column
           // This allows DB-side filtering/counting without complex JSON queries
           // Accepts both "orderNumber" and legacy "orderNum" keys
-          orderNumber: data && typeof data === 'object'
-            ? ((data as any).orderNumber ?? (data as any).orderNum ?? undefined)
+          orderNumber: compactData && typeof compactData === 'object'
+            ? ((compactData as any).orderNumber ?? (compactData as any).orderNum ?? undefined)
             : undefined,
           initiatedBy: initiatedBy ?? null
         }

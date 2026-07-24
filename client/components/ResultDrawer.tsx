@@ -12,6 +12,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate, formatRelativeDate } from "../lib/formatUtils";
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { useApi } from '@/hooks/useApi';
+import MetaLogJsonView from './MetaLogJsonView';
 
 interface ResultDrawerProps {
 	isOpen: boolean;
@@ -216,11 +217,7 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 										{/* Деталі лога */}
 										<div>
 											<h4 className="font-semibold text-sm mb-3">Деталі:</h4>
-											<div className="bg-gray-50 p-4 rounded-lg border h-full overflow-auto">
-												<pre className="text-xs whitespace-pre-wrap break-words">
-													{JSON.stringify(result[selectedLogIdx], null, 2)}
-												</pre>
-											</div>
+											<MetaLogJsonView value={result[selectedLogIdx]} className="max-h-[60vh]" />
 										</div>
 									</>
 								) : (
@@ -594,9 +591,7 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 												Raw JSON
 											</summary>
 											<div className="bg-neutral-100 p-3 rounded-lg border-1 border-gray-200 overflow-auto">
-												<pre className="text-xs font-mono whitespace-pre-wrap break-words">
-													{JSON.stringify(result, null, 2)}
-												</pre>
+												<MetaLogJsonView value={result} className="max-h-[50vh]" collapsed={3} />
 											</div>
 										</details>
 									</>
