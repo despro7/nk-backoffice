@@ -1,9 +1,9 @@
 import { Fragment, type ReactNode } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { Tooltip } from '@heroui/react';
+import { Tooltip, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Popover, PopoverContent, PopoverTrigger } from '@heroui/react';
 import { formatRelativeDate } from '@/lib/formatUtils';
-import { Popover, PopoverContent, PopoverTrigger } from '@heroui/react';
 import { StockBadge } from '@/components/StockBadge';
+import { ToastService } from '@/services/ToastService';
 import CompactBalance from './CompactBalance';
 import type { ProductHistoryEntry } from '../WarehouseInventoryTypes';
 
@@ -20,6 +20,47 @@ interface InventoryHistoryRowProps {
   rowHistoryLoading: string | null;
   setCompositionBySku: Record<string, any[]>;
   onRowClick: (sessionId: string, sku: string) => void;
+}
+
+/** Копіювання тексту в буфер з toast-підтвердженням. */
+function copyToClipboard(text: string, label: string): void {
+  void navigator.clipboard.writeText(text).then(() => {
+    ToastService.show({
+      title: 'Скопійовано',
+      description: label,
+      color: 'success',
+      timeout: 2000,
+    });
+  }).catch(() => {
+    ToastService.show({
+      title: 'Не вдалося скопіювати',
+      color: 'danger',
+      timeout: 3000,
+    });
+  });
+}
+
+function escapeTableCell(value: string): string {
+  return value.replace(/\t/g, ' ').replace(/\r?\n/g, ' ');
+}
+
+function formatDeviationCell(value: number | null | undefined): string {
+  if (value == null) return '–';
+  return value > 0 ? `+${value}` : String(value);
+}
+
+function buildProductCopyRowText(
+  sku: string,
+  name: string,
+  deviationMs: number | null,
+  deviationGp: number | null | undefined,
+): string {
+  return [
+    escapeTableCell(sku),
+    escapeTableCell(name),
+    formatDeviationCell(deviationMs),
+    formatDeviationCell(deviationGp ?? null),
+  ].join('\t');
 }
 
 /** Рендер підписаного значення руху (переміщення / комплектування). */
@@ -135,6 +176,13 @@ export const InventoryHistoryRow = ({
   const setComposition = setCompositionBySku[item.sku] ?? [];
   const isSetItem = Array.isArray(setComposition) && setComposition.length > 0;
 
+  const handleCopyProductRow = (): void => {
+    copyToClipboard(
+      buildProductCopyRowText(item.sku, item.name, dev, devGp),
+      'Рядок даних',
+    );
+  };
+
   return (
     <Fragment>
       <tr
@@ -147,7 +195,41 @@ export const InventoryHistoryRow = ({
               name="chevron-right"
               className={`w-3 h-3 text-gray-400 transition-transform duration-200 flex-shrink-0 ${isRowExpanded ? 'rotate-90' : ''}`}
             />
-            {item.sku}
+            <div onClick={(event) => event.stopPropagation()}>
+              <Dropdown placement="bottom-start">
+                <DropdownTrigger>
+                  <button
+                    type="button"
+                    className="font-mono text-left hover:text-blue-600 transition-colors cursor-pointer"
+                  >
+                    {item.sku}
+                  </button>
+                </DropdownTrigger>
+                <DropdownMenu aria-label="Копіювання даних товару">
+                  <DropdownItem
+                    key="sku"
+                    startContent={<DynamicIcon name="copy" size={16} />}
+                    onPress={() => copyToClipboard(item.sku, item.sku)}
+                  >
+                    SKU
+                  </DropdownItem>
+                  <DropdownItem
+                    key="name"
+                    startContent={<DynamicIcon name="copy" size={16} />}
+                    onPress={() => copyToClipboard(item.name, 'Назва товару')}
+                  >
+                    Назва товару
+                  </DropdownItem>
+                  <DropdownItem
+                    key="row"
+                    startContent={<DynamicIcon name="copy" size={16} />}
+                    onPress={handleCopyProductRow}
+                  >
+                    Рядок даних
+                  </DropdownItem>
+                </DropdownMenu>
+              </Dropdown>
+            </div>
           </div>
         </td>
         <td className="py-2 px-3 ">
