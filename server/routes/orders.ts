@@ -821,13 +821,9 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
       });
     }
 
-    // Хто комплектував (перший запис історії зі статусом 3 і userId)
-    const readyToShipHistory = await prisma.ordersHistory.findFirst({
-      where: {
-        orderId: orderDetails.id,
-        status: '3',
-        userId: { not: null },
-      },
+    // Історія змін статусів (orders_history); хто комплектував — перший запис зі статусом 3 і userId
+    const orderHistory = await prisma.ordersHistory.findMany({
+      where: { orderId: orderDetails.id },
       orderBy: { changedAt: 'asc' },
       include: {
         user: {
@@ -835,6 +831,20 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
         },
       },
     });
+
+    const readyToShipHistory = orderHistory.find(
+      (entry) => entry.status === '3' && entry.userId != null,
+    );
+
+    const history = orderHistory.map((entry) => ({
+      id: entry.id,
+      status: entry.status,
+      statusText: entry.statusText,
+      changedAt: entry.changedAt,
+      source: entry.source,
+      notes: entry.notes,
+      userName: entry.user?.name || entry.user?.email || null,
+    }));
 
     // Повертаємо повні дані замовлення
     res.json({
@@ -861,6 +871,7 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
         lastSynced: orderDetails.lastSynced,
         readyToShipAt: orderDetails.readyToShipAt,
         readyToShipByName: readyToShipHistory?.user?.name || readyToShipHistory?.user?.email || null,
+        history,
         rawData: orderDetails.rawData,
         payloadData: orderDetails.payloadData,
         previousOrderExternalId: orderDetails.previousOrderExternalId,

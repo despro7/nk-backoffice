@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Card, CardBody, CardHeader, Switch, Popover, PopoverTrigger, PopoverContent, Button, useDisclosure, Accordion, AccordionItem } from '@heroui/react';
+import { Card, CardBody, CardHeader, Switch, Popover, PopoverTrigger, PopoverContent, Button, Chip, useDisclosure, Accordion, AccordionItem } from '@heroui/react';
 import { useDebug } from '@/contexts/DebugContext';
 import { RightPanel } from './RightPanel';
 import { WeightDisplayWidget } from './WeightDisplayWidget';
@@ -9,7 +9,7 @@ import { OrderRefreshButton } from './OrderRefreshButton';
 import { ActiveProductSets } from './ActiveProductSets';
 import ResultDrawer from './ResultDrawer';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
-import { formatDate } from '@/lib/formatUtils';
+import { formatDate, getStatusLabel } from '@/lib/formatUtils';
 import { ConfirmModal } from './modals/ConfirmModal';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { shippingClientService } from '../services/ShippingService';
@@ -324,28 +324,55 @@ export function OrderAssemblyRightPanel({
           />
 
           {/* Інформер комплектації (статус > 2) */}
-          {Number(order?.status) > 2 && (
-            <Accordion
-              variant="bordered"
-              className="px-3 py-1.5 border-1 border-gray-300 bg-gray-100/5 transition-colors duration-500 has-[[data-open=true]]:bg-gray-100/85"
-              itemClasses={{ title: 'text-sm font-medium text-gray-400/80 font-light', trigger: 'py-1.5' }}
-            >
-              <AccordionItem key="1" title="Технічна інформація" startContent={order?.readyToShipAt ? undefined : <DynamicIcon name="alert-triangle" size={16} className="shrink-0 text-danger-500" />} indicator={<DynamicIcon name="chevron-down" size={16} className="shrink-0 text-gray-400/80" />}>
-                <div className="grid grid-cols-2 gap-x-2 gap-y-1 w-fit text-gray-700 text-[13px]">
-                  <span className="font-semibold">Статус замовлення:</span>
-                  <span>{order.statusText}</span>
+          <Accordion
+            variant="bordered"
+            className="px-3 py-1.5 border-1 border-gray-300 bg-gray-100/5 transition-colors duration-500 has-[[data-open=true]]:bg-gray-100/85"
+            itemClasses={{ title: 'text-sm font-medium text-gray-400/80 font-light', trigger: 'py-1.5' }}
+          >
+            <AccordionItem key="1" title="Технічна інформація" startContent={Number(order?.status) > 2 && !order?.readyToShipAt && <DynamicIcon name="alert-triangle" size={16} className="shrink-0 text-danger-500" />} indicator={<DynamicIcon name="chevron-down" size={16} className="shrink-0 text-gray-400/80" />}>
+              <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-gray-700 text-[13px]">
+                {Number(order?.status) > 2 && (
+                  <>
                   <span className="font-semibold">Дата комплектації:</span>
                   {order?.readyToShipAt ? (
                     <span>{formatDate(order.readyToShipAt)}</span>
                   ) : (
                     <span className="flex items-center gap-1 text-danger-500"><DynamicIcon name="alert-circle" size={12} className="shrink-0" /> Невідома</span>
                   )}
-                  <span className="font-semibold">Користувач:</span>
+                  <span className="font-semibold">Комплектувальник:</span>
                   <span>{order.readyToShipByName || <span className="flex items-center gap-1 text-danger-500"><DynamicIcon name="alert-circle" size={12} className="shrink-0" /> Невідомий</span>}</span>
+                  </>
+                )}
+                <span className="flex gap-1 items-center text-sm font-semibold pt-4 col-span-2 mb-1"> <DynamicIcon name="history" size={15} className="shrink-0" /> Історія змін в замовленні</span>
+                <div className="flex flex-col gap-1.5 min-w-0 col-span-2">
+                  {Array.isArray(order?.history) && order.history.length > 0 ? (
+                    order.history.map((item: {
+                      id: number;
+                      status: string;
+                      statusText: string;
+                      changedAt: string;
+                      source?: string;
+                      userName?: string | null;
+                      notes?: string | null;
+                    }) => (
+                      <div key={item.id} className="flex flex-col leading-snug gap-0.5 px-1.5 py-1 rounded bg-white">
+                        <div className="flex gap-1 justify-between text-gray-400/75 text-xs">
+                          {item.changedAt ? formatDate(item.changedAt) : '—'}
+                          {item.source ? <span className="text-gray-400/75 text-xs">{item.source}</span> : null}
+                        </div>
+                        <div className="font-semibold">Статус: <span className="font-normal">{item.statusText || getStatusLabel(item.status)}</span></div>
+                        {item.notes ? (
+                          <span className="font-normal text-gray-400/75">{item.notes}</span>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-gray-400">Немає записів</span>
+                  )}
                 </div>
-              </AccordionItem>
-            </Accordion>
-          )}
+              </div>
+            </AccordionItem>
+          </Accordion>
         </RightPanel>
       </div>
 
