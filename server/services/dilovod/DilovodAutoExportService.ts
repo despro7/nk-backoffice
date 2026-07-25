@@ -49,12 +49,12 @@ export class DilovodAutoExportService {
    * Тригер при зміні статусу одного замовлення (webhook)
    * @param internalOrderId - числовий id замовлення в нашій БД (order.id)
    * @param newStatus - новий статус рядком (напр. '3', '5')
-   * @param initiatedBy - ініціатор ('webhook:status_change' або 'cron:order_sync')
+   * @param initiatedBy - ініціатор ('salesdrive:webhook' або 'cron:order_sync')
    */
   async processOrderStatusChange(
     internalOrderId: number,
     newStatus: string,
-    initiatedBy: string = 'webhook:status_change'
+    initiatedBy: string = 'salesdrive:webhook'
   ): Promise<void> {
     // --- Dedup Guard 1: mutex — пропускаємо якщо вже обробляється ---
     if (this.inProgressLocks.has(internalOrderId)) {
@@ -70,11 +70,11 @@ export class DilovodAutoExportService {
     if (
       recentTrigger &&
       now - recentTrigger.at < this.DEDUP_COOLDOWN_MS &&
-      initiatedBy === 'webhook:status_change' &&
-      recentTrigger.initiatedBy === 'manual:status_change'
+      initiatedBy === 'salesdrive:webhook' &&
+      recentTrigger.initiatedBy === 'manual'
     ) {
       console.log(
-        `⏭️ [AutoExport] Пропускаємо webhook:status_change для orderId=${internalOrderId} — дублікат після manual:status_change (${Math.round((now - recentTrigger.at))}ms тому)`
+        `⏭️ [AutoExport] Пропускаємо salesdrive:webhook для orderId=${internalOrderId} — дублікат після manual (${Math.round((now - recentTrigger.at))}ms тому)`
       );
       return;
     }

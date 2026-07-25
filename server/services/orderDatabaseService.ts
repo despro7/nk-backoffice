@@ -208,6 +208,15 @@ export class OrderDatabaseService {
    */
   async updateOrder(externalId: string, data: OrderUpdateData) {
     try {
+      // Попередній статус потрібен до update — після update order.status уже новий
+      const existingOrder = data.status !== undefined
+        ? await prisma.order.findUnique({
+            where: { externalId },
+            select: { status: true },
+          })
+        : null;
+      const previousStatus = existingOrder?.status ?? null;
+
       const updateData: any = {
         lastSynced: new Date(),
         syncStatus: 'success',
@@ -265,7 +274,7 @@ export class OrderDatabaseService {
       });
 
       // Створюємо запис в історії, якщо змінився статус
-      if (data.status && data.status !== order.status) {
+      if (data.status && data.status !== previousStatus) {
         await this.createOrderHistory(order.id, data.status, data.statusText || '', data.source || 'salesdrive');
       }
 
@@ -775,17 +784,17 @@ export class OrderDatabaseService {
   }
 
   /**
-   * Очищає старі записи історії (старше 30 днів)
+   * Очищає старі записи історії (старше 90 днів / 3 місяці)
    */
   async cleanupOldHistory() {
     try {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
       const deleted = await prisma.ordersHistory.deleteMany({
         where: {
           changedAt: {
-            lt: thirtyDaysAgo
+            lt: ninetyDaysAgo
           }
         }
       });

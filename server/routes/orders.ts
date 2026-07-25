@@ -821,6 +821,21 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
       });
     }
 
+    // Хто комплектував (перший запис історії зі статусом 3 і userId)
+    const readyToShipHistory = await prisma.ordersHistory.findFirst({
+      where: {
+        orderId: orderDetails.id,
+        status: '3',
+        userId: { not: null },
+      },
+      orderBy: { changedAt: 'asc' },
+      include: {
+        user: {
+          select: { name: true, email: true },
+        },
+      },
+    });
+
     // Повертаємо повні дані замовлення
     res.json({
       success: true,
@@ -844,6 +859,8 @@ router.get('/:externalId', authenticateToken, async (req, res) => {
         cityName: orderDetails.cityName,
         provider: orderDetails.provider,
         lastSynced: orderDetails.lastSynced,
+        readyToShipAt: orderDetails.readyToShipAt,
+        readyToShipByName: readyToShipHistory?.user?.name || readyToShipHistory?.user?.email || null,
         rawData: orderDetails.rawData,
         payloadData: orderDetails.payloadData,
         previousOrderExternalId: orderDetails.previousOrderExternalId,
@@ -1033,6 +1050,7 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { status, payloadData } = req.body;
     const orderId = parseInt(id, 10);
+    const authUser = (req as any).user as { userId?: number; name?: string | null } | undefined;
 
     if (!status) {
       return res.status(400).json({
@@ -1084,6 +1102,17 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
 
         if (!currentOrder.readyToShipAt) {
           console.log(`✅ [Orders API] Order ${id} readyToShipAt set to current time`);
+
+          // Фіксуємо, хто комплектував (лише для реального користувача, не system cron)
+          const historyUserId = authUser?.userId && authUser.userId > 0 ? authUser.userId : undefined;
+          await orderDatabaseService.createOrderHistory(
+            orderId,
+            status,
+            getStatusText(String(status)),
+            'manual',
+            historyUserId,
+            authUser?.name ? `Комплектував: ${authUser.name}` : undefined,
+          );
         }
 
       } catch (dbError) {
@@ -1097,7 +1126,7 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
           dilovodAutoExportService.processOrderStatusChange(
             orderId,
             status,
-            'manual:status_change'
+            'manual'
           )
         )
         .catch(err =>

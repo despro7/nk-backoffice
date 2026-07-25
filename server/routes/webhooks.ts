@@ -57,7 +57,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             status: '8',
             statusText: getStatusText('8'),
             rawData: webhookData,
-            source: 'webhook:status_change'
+            source: 'salesdrive:webhook'
           };
           
           await orderDatabaseService.updateOrder(existingOrder.externalId, updateData);
@@ -126,7 +126,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             sajt: webhookData.sajt != null ? String(webhookData.sajt) : existingOrder.sajt,
             ttn: webhookData.ord_novaposhta?.EN || existingOrder.ttn,
             quantity: webhookData.kilTPorcij || existingOrder.quantity,
-            source: 'webhook:status_change'
+            source: 'salesdrive:webhook'
           };
 
           console.log(`🔄 Updating existing order ${existingOrder.externalId}`);
@@ -173,7 +173,21 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             }
           });
 
-          const updateData = changes;
+          // Якщо нічого не змінилося, пропускаємо оновлення
+          // (source не входить у changes — перевіряємо саме їх)
+          if (Object.keys(changes).length === 0) {
+            console.log(`ℹ️ No changes detected for order ${existingOrder.externalId}, skipping update`);
+            return res.json({
+              success: true,
+              message: `No changes for order ${externalId}`,
+              timestamp: new Date().toLocaleString('uk-UA')
+            });
+          }
+
+          const updateData = {
+            ...changes,
+            source: 'salesdrive:webhook',
+          };
 
           // Перевіряємо items перед передачею
           if (updateData.items) {
@@ -195,16 +209,6 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             }
           }
 
-          // Якщо нічого не змінилося, пропускаємо оновлення
-          if (Object.keys(updateData).length === 0) {
-            console.log(`ℹ️ No changes detected for order ${existingOrder.externalId}, skipping update`);
-            return res.json({
-              success: true,
-              message: `No changes for order ${externalId}`,
-              timestamp: new Date().toLocaleString('uk-UA')
-            });
-          }
-
           // Оновлюємо існуюче замовлення
           await orderDatabaseService.updateOrder(existingOrder.externalId, updateData);
 
@@ -220,7 +224,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
                 dilovodAutoExportService.processOrderStatusChange(
                   existingOrder.id,
                   updateData.status,
-                  'webhook:status_change'
+                  'salesdrive:webhook'
                 )
               )
               .catch(err =>
@@ -266,7 +270,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             sajt: webhookData.sajt != null ? String(webhookData.sajt) : '',
             ttn: webhookData.ord_novaposhta?.EN || '',
             quantity: webhookData.kilTPorcij || 1,
-            source: 'webhook:new_order'
+            source: 'salesdrive:webhook'
           };
           console.log(`📋 Created order details from webhook data: id=${orderDetails.id}, orderNumber=${orderDetails.orderNumber}`);
 
@@ -330,7 +334,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             provider: orderDetails.provider,
             pricinaZnizki: orderDetails.pricinaZnizki,
             sajt: orderDetails.sajt,
-            source: 'webhook:new_order'
+            source: 'salesdrive:webhook'
           };
 
           console.log(`📋 Create data:`, {
@@ -370,7 +374,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
                 dilovodAutoExportService.processOrderStatusChange(
                   createdOrder.id,
                   createData.status,
-                  'webhook:new_order'
+                  'salesdrive:webhook'
                 )
               )
               .catch(err =>

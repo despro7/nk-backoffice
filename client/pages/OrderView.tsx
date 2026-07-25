@@ -358,7 +358,15 @@ export default function OrderView() {
     shipmentPayloadData,
     onUpdateOrderStatus: (status, statusText) => {
       // Оновлюємо локальний стан замовлення без очікування відповіді від сервера
-      setOrder(prev => prev ? { ...prev, status, statusText } : null);
+      setOrder(prev => prev ? {
+        ...prev,
+        status,
+        statusText,
+        ...(status === '3' && !prev.readyToShipAt ? {
+          readyToShipAt: new Date().toISOString(),
+          readyToShipByName: user?.name || user?.email || null,
+        } : {}),
+      } : null);
     }
   });
 

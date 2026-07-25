@@ -507,7 +507,13 @@ const dateValue = (() => {
                           placeholder="Оберіть причину повернення"
                           labelPlacement="outside"
                           value={returns.returnReason}
-                          onChange={(event) => returns.handleReturnReasonChange(event.target.value)}
+                          onChange={(event) => {
+                            const cleanValue = (event.target.value || '')
+                              .replace(/[^а-яА-ЯёЁa-zA-ZіІїЇєЄґҐ0-9 \-.,'"]/g, '')
+                              .trim();
+                            returns.handleReturnReasonChange(cleanValue);
+                          }}
+                  
                           selectedKeys={returns.returnReason ? [returns.returnReason] : []}
                           disallowEmptySelection={true}
                           classNames={{

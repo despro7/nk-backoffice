@@ -1,6 +1,8 @@
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useState } from 'react';
+import JsonView from '@uiw/react-json-view';
+import { nordTheme } from '@uiw/react-json-view/nord';
 import { ToastService } from '@/services/ToastService';
 import type { MovementProduct } from '@/pages/Warehouse/WarehouseMovement/WarehouseMovementTypes';
 import type { DilovodMovementPayload } from '@shared/types/movement';
@@ -116,9 +118,19 @@ export const PayloadPreviewModal = ({
                     <div className="bg-gray-800 px-4 py-2 border-b border-gray-700">
                       <p className="text-xs font-mono text-gray-300">dry-run payload</p>
                     </div>
-                    <pre className="p-4 text-xs overflow-auto max-h-[350px] font-mono text-gray-200">
-                      {fullRequestJson}
-                    </pre>
+                    <div className="p-4 overflow-auto max-h-[350px] text-xs">
+                      <JsonView
+                        value={payload as object}
+                        style={{
+                          ...nordTheme,
+                          backgroundColor: 'transparent',
+                          fontSize: '12px',
+                        }}
+                        collapsed={false}
+                        displayObjectSize={false}
+                        displayDataTypes={false}
+                      />
+                    </div>
                   </div>
                 )}
 

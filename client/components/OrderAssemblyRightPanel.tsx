@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Card, CardBody, CardHeader, Switch, Popover, PopoverTrigger, PopoverContent, Button, useDisclosure } from '@heroui/react';
+import { Card, CardBody, CardHeader, Switch, Popover, PopoverTrigger, PopoverContent, Button, useDisclosure, Accordion, AccordionItem } from '@heroui/react';
 import { useDebug } from '@/contexts/DebugContext';
 import { RightPanel } from './RightPanel';
 import { WeightDisplayWidget } from './WeightDisplayWidget';
@@ -9,6 +9,7 @@ import { OrderRefreshButton } from './OrderRefreshButton';
 import { ActiveProductSets } from './ActiveProductSets';
 import ResultDrawer from './ResultDrawer';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
+import { formatDate } from '@/lib/formatUtils';
 import { ConfirmModal } from './modals/ConfirmModal';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { shippingClientService } from '../services/ShippingService';
@@ -81,6 +82,7 @@ export function OrderAssemblyRightPanel({
   const { expectedWeight, cumulativeTolerance } = getWeightData();
   const { isDebugMode } = useDebug();
   const [debugScanCode, setDebugScanCode] = useState('');
+  const [techInfoExpanded, setTechInfoExpanded] = useState(false);
   const monolithicDisplayControlItems = useMemo(() => {
     const sourceItems = monolithicDisplayItems || orderForAssembly.items;
     return sourceItems.filter((item) => {
@@ -320,6 +322,30 @@ export function OrderAssemblyRightPanel({
             lastSynced={order?.lastSynced}
             onRefreshComplete={onOrderRefresh}
           />
+
+          {/* Інформер комплектації (статус > 2) */}
+          {Number(order?.status) > 2 && (
+            <Accordion
+              variant="bordered"
+              className="px-3 py-1.5 border-1 border-gray-300 bg-gray-100/5 transition-colors duration-500 has-[[data-open=true]]:bg-gray-100/85"
+              itemClasses={{ title: 'text-sm font-medium text-gray-400/80 font-light', trigger: 'py-1.5' }}
+            >
+              <AccordionItem key="1" title="Технічна інформація" startContent={order?.readyToShipAt ? undefined : <DynamicIcon name="alert-triangle" size={16} className="shrink-0 text-danger-500" />} indicator={<DynamicIcon name="chevron-down" size={16} className="shrink-0 text-gray-400/80" />}>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1 w-fit text-gray-700 text-[13px]">
+                  <span className="font-semibold">Статус замовлення:</span>
+                  <span>{order.statusText}</span>
+                  <span className="font-semibold">Дата комплектації:</span>
+                  {order?.readyToShipAt ? (
+                    <span>{formatDate(order.readyToShipAt)}</span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-danger-500"><DynamicIcon name="alert-circle" size={12} className="shrink-0" /> Невідома</span>
+                  )}
+                  <span className="font-semibold">Користувач:</span>
+                  <span>{order.readyToShipByName || <span className="flex items-center gap-1 text-danger-500"><DynamicIcon name="alert-circle" size={12} className="shrink-0" /> Невідомий</span>}</span>
+                </div>
+              </AccordionItem>
+            </Accordion>
+          )}
         </RightPanel>
       </div>
 

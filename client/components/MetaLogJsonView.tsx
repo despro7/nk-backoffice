@@ -10,6 +10,7 @@ import {
 } from 'react';
 import JsonView, { ValueQuote } from '@uiw/react-json-view';
 import { lightTheme } from '@uiw/react-json-view/light';
+import { nordTheme } from '@uiw/react-json-view/nord';
 
 type MetaLogJsonViewProps = {
   value: unknown;
@@ -262,7 +263,7 @@ function SearchControls({
 export default function MetaLogJsonView({
   value,
   className = '',
-  collapsed = 2,
+  collapsed = false,
 }: MetaLogJsonViewProps) {
   const normalized = normalizeJsonValue(value);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -409,21 +410,21 @@ export default function MetaLogJsonView({
         activeMatchIndex={activeMatchIndex}
         showCollapseControls
         onExpandAll={() => applyCollapseMode(false)}
-        onCollapseAll={() => applyCollapseMode(true)}
+        onCollapseAll={() => applyCollapseMode(1)}
       />
 
       <div
         ref={scrollContainerRef}
-        className="overflow-auto rounded border border-gray-200 bg-white p-2 min-h-0 flex-1"
+        className="overflow-auto rounded border border-gray-800 bg-[#2e3440] p-2 min-h-0 flex-1"
       >
         <JsonView
           key={viewKey}
           value={normalized as object}
-          style={lightTheme}
+          style={nordTheme}
           collapsed={collapseMode}
           displayObjectSize={false}
           displayDataTypes={false}
-          shortenTextAfterLength={searchQuery.trim() ? 0 : 30}
+          shortenTextAfterLength={searchQuery.trim() ? 0 : 100}
         >
           <JsonView.KeyName render={highlightedKeyRenderer} />
           <JsonView.String render={highlightedStringRenderer} />
