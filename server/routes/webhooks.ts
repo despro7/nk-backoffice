@@ -184,10 +184,8 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             });
           }
 
-          const updateData = {
-            ...changes,
-            source: 'salesdrive:webhook',
-          };
+          changes.source = 'salesdrive:webhook';
+          const updateData = changes;
 
           // Перевіряємо items перед передачею
           if (updateData.items) {
