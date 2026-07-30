@@ -76,9 +76,9 @@ export default function useReportsSalesDynamics(): UseReportsSalesDynamicsReturn
 
     const firms = dilovodSettings?.directories?.firms ?? [];
     const defaultFirm = dilovodSettings?.settings?.defaultFirmId;
-    const firstFirm = firms[0]?.id;
     const isDefaultFirmAvailable = defaultFirm ? firms.some((firm) => firm.id === defaultFirm) : false;
-    const nextFirmId = isDefaultFirmAvailable ? defaultFirm : firstFirm;
+    // Єдина фірма за замовчуванням; без неї — не підставляємо першу з довідника
+    const nextFirmId = isDefaultFirmAvailable ? defaultFirm : undefined;
 
     if (nextFirmId && selectedFirmId !== nextFirmId) {
       selectedFirmSourceRef.current = "auto";

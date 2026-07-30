@@ -36,7 +36,7 @@ export class WarehousePayloadBuilder {
 
   // --------------------------------------------------------------------------
   // Завантажити налаштування з settings_base (category='warehouse_movement')
-  // + fallback на налаштування Dilovod для firm/storage
+  // firmId завжди з Dilovod (dilovod_default_firm_id); storage — з WM або Dilovod fallback
   // --------------------------------------------------------------------------
   static async loadSettings(): Promise<WarehouseMovementSettings> {
     const rows = await prisma.settingsBase.findMany({
@@ -48,27 +48,23 @@ export class WarehousePayloadBuilder {
       map[row.key] = row.value;
     }
 
-    // Якщо firmId/storageFrom/storageTo не задані — беремо з налаштувань Dilovod
-    let firmId = map['wm_firmId'] || '';
     let storageFrom = map['wm_storageFrom'] || '';
     let storageTo = map['wm_storageTo'] || '';
 
-    if (!firmId || !storageFrom || !storageTo) {
-      const dilovodRows = await prisma.settingsBase.findMany({
-        where: {
-          key: { in: ['dilovod_default_firm_id', 'dilovod_main_storage_id', 'dilovod_small_storage_id'] },
-          isActive: true,
-        },
-      });
-      const dilovodMap: Record<string, string> = {};
-      for (const row of dilovodRows) {
-        dilovodMap[row.key] = row.value;
-      }
-
-      if (!firmId) firmId = dilovodMap['dilovod_default_firm_id'] || '';
-      if (!storageFrom) storageFrom = dilovodMap['dilovod_main_storage_id'] || '';
-      if (!storageTo) storageTo = dilovodMap['dilovod_small_storage_id'] || '';
+    const dilovodRows = await prisma.settingsBase.findMany({
+      where: {
+        key: { in: ['dilovod_default_firm_id', 'dilovod_main_storage_id', 'dilovod_small_storage_id'] },
+        isActive: true,
+      },
+    });
+    const dilovodMap: Record<string, string> = {};
+    for (const row of dilovodRows) {
+      dilovodMap[row.key] = row.value;
     }
+
+    const firmId = dilovodMap['dilovod_default_firm_id'] || '';
+    if (!storageFrom) storageFrom = dilovodMap['dilovod_main_storage_id'] || '';
+    if (!storageTo) storageTo = dilovodMap['dilovod_small_storage_id'] || '';
 
     return {
       numberGeneration: (map['wm_numberGeneration'] === 'server' ? 'server' : 'dilovod') as 'server' | 'dilovod',

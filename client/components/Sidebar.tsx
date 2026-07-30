@@ -1,7 +1,13 @@
 import logo from "/logo.svg";
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "react-router-dom";
-import { getNavGroups, AppRoute, NavGroup } from "@/routes.config";
+import {
+  getNavGroups,
+  NavGroup,
+  NavBadge,
+  NavBadgeColor,
+  isNavBadgeVisible,
+} from "@/routes.config";
 import React, { useState } from "react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,6 +21,7 @@ interface NavItemProps {
   icon: React.ReactNode;
   label: string;
   isActive: boolean;
+  badge?: NavBadge | null;
 }
 
 interface SubmenuProps {
@@ -26,7 +33,31 @@ interface SubmenuProps {
   onToggle: () => void;
 }
 
-function NavItem({ to, icon, label, isActive }: NavItemProps) {
+const NAV_BADGE_COLOR_CLASS: Record<NavBadgeColor, string> = {
+  danger: 'bg-danger text-danger-foreground',
+  primary: 'bg-primary text-primary-foreground',
+  success: 'bg-success text-success-foreground',
+  warning: 'bg-warning text-warning-foreground',
+  secondary: 'bg-secondary text-secondary-foreground',
+  default: 'bg-default-500 text-white',
+};
+
+function NavBadgePill({ badge }: { badge: NavBadge }) {
+  if (!isNavBadgeVisible(badge)) return null;
+  const color = badge.color ?? 'danger';
+  return (
+    <span
+      className={cn(
+        'shrink-0 rounded-full px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide leading-none',
+        NAV_BADGE_COLOR_CLASS[color] ?? NAV_BADGE_COLOR_CLASS.danger
+      )}
+    >
+      {badge.label}
+    </span>
+  );
+}
+
+function NavItem({ to, icon, label, isActive, badge }: NavItemProps) {
   return (
     <Link
       to={to}
@@ -41,8 +72,9 @@ function NavItem({ to, icon, label, isActive }: NavItemProps) {
       <div className="w-5 h-5">
         {icon}
       </div>
-      <span className="flex-1 font-inter text-base font-medium leading-[125%]">
+      <span className="flex-1 font-inter text-base font-medium leading-[125%] flex items-center gap-1.5">
         {label}
+        {badge ? <NavBadgePill badge={badge} /> : null}
       </span>
     </Link>
   );
@@ -94,7 +126,7 @@ function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle
   );
 }
 
-function SubmenuItem({ to, icon, label, isActive }: NavItemProps) {
+function SubmenuItem({ to, icon, label, isActive, badge }: NavItemProps) {
   return (
     <Link
       to={to}
@@ -108,8 +140,9 @@ function SubmenuItem({ to, icon, label, isActive }: NavItemProps) {
       <div className="w-4 h-4 transition-colors duration-300 hidden">
         {icon}
       </div>
-      <span className="flex-1 font-inter text-sm font-medium leading-[125%]">
+      <span className="flex-1 font-inter text-sm font-medium leading-[125%] flex items-center gap-1.5">
         {label}
+        {badge ? <NavBadgePill badge={badge} /> : null}
       </span>
     </Link>
   );
@@ -175,6 +208,7 @@ export function Sidebar({ className }: SidebarProps) {
             icon={group.parentRoute.icon}
             label={group.parentRoute.navLabel}
             isActive={location.pathname === group.parentRoute.path}
+            badge={group.parentRoute.navBadge}
           />
         )}
         {group.children.map((child) => (
@@ -184,6 +218,7 @@ export function Sidebar({ className }: SidebarProps) {
             icon={child.icon}
             label={child.navLabel}
             isActive={location.pathname === child.path}
+            badge={child.navBadge}
           />
         ))}
       </Submenu>
@@ -219,6 +254,7 @@ export function Sidebar({ className }: SidebarProps) {
                   icon={item.route.icon}
                   label={item.route.navLabel}
                   isActive={location.pathname === item.route.path}
+                  badge={item.route.navBadge}
                 />
               );
             })

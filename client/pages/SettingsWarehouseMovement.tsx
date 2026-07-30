@@ -44,7 +44,8 @@ const SettingsWarehouseMovement: React.FC = () => {
   };
 
   const handleSave = async () => {
-    const ok = await saveSettings(formData);
+    const { firmId: _firmId, ...toSave } = formData;
+    const ok = await saveSettings(toSave);
     if (ok) {
       setHasChanges(false);
       setJustSaved(true);
@@ -112,77 +113,6 @@ const SettingsWarehouseMovement: React.FC = () => {
 					</CardBody>
 				</Card>
 
-				{/* Підприємство (Firm) */}
-				<Card>
-					<CardHeader className="border-b border-gray-200">
-						<DynamicIcon name="building-2" size={18} className="text-gray-600 mr-2" />
-						<h2 className="text-base font-semibold text-gray-900">Підприємство (Firm)</h2>
-					</CardHeader>
-					<CardBody className="p-6 space-y-4">
-						{loadingDirectories ? (
-							<div className="flex items-center gap-2 text-sm text-gray-500">
-								<DynamicIcon name="loader-2" size={14} className="animate-spin" />
-								Завантаження довідника фірм...
-							</div>
-						) : firms.length > 0 ? (
-							<Select
-								label="Підприємство"
-								labelPlacement="outside"
-								classNames={{
-									label: "font-semibold"
-								}}
-								selectedKeys={formData.firmId ? [formData.firmId] : []}
-								onSelectionChange={(keys) => {
-									const val = Array.from(keys)[0] as string;
-									handleChange('firmId', val ?? '');
-								}}
-								description="За замовченням береться з налаштувань Dilovod, якщо тут не обрано інше"
-							>
-								{firms.map((firm) => (
-									<SelectItem key={firm.id} textValue={firm.name}>
-										<div className="flex flex-col">
-											<span className="text-sm">{firm.name}</span>
-											<span className="text-xs text-gray-400 font-mono">{firm.id}</span>
-										</div>
-									</SelectItem>
-								))}
-							</Select>
-						) : (
-							<div className="space-y-3">
-								<Input
-									label="ID підприємства"
-									labelPlacement="outside"
-									classNames={{
-										label: "font-semibold"
-									}}
-									placeholder="Введіть ID з Діловода"
-									value={formData.firmId ?? ''}
-									onChange={(e) => handleChange('firmId', e.target.value)}
-									description="Довідник недоступний. Введіть ID вручну або перезавантажте довідники Dilovod."
-									startContent={<DynamicIcon name="building-2" size={14} className="text-gray-400" />}
-								/>
-								<Button
-									size="sm"
-									variant="solid"
-									color="primary"
-									onPress={refreshDirectories}
-									startContent={<DynamicIcon name="refresh-cw" size={13} />}
-								>
-									Завантажити довідники
-								</Button>
-							</div>
-						)}
-
-						{formData.firmId && firms.length > 0 && (
-							<div className="bg-gray-50 rounded-md px-3 py-2 text-sm">
-								<span className="text-gray-500">Обрано: </span>
-								<span className="font-medium">{getFirmName(formData.firmId)}</span>
-								<span className="text-gray-400 font-mono ml-2 text-xs">({formData.firmId})</span>
-							</div>
-						)}
-					</CardBody>
-				</Card>
-
 				{/* Напрям бізнесу (Business) */}
 				<Card>
 					<CardHeader className="border-b border-gray-200">
@@ -196,18 +126,12 @@ const SettingsWarehouseMovement: React.FC = () => {
 							classNames={{
 								label: "font-semibold"
 							}}
-							placeholder="Наприклад: 1115000000000001"
-							value={formData.businessId ?? ''}
+							placeholder="За замовчуванням: 1115000000000001"
+							value={formData.businessId ?? '1115000000000001'}
 							onChange={(e) => handleChange('businessId', e.target.value)}
-							description="Аналітичний вимір Діловода — поле business в документі переміщення. Якщо не вказано — поле не передається."
+							description="Аналітичний вимір Діловода — поле business в документі переміщення."
 							startContent={<DynamicIcon name="briefcase" size={14} className="text-gray-400" />}
 						/>
-						{formData.businessId && (
-							<div className="bg-gray-50 rounded-md px-3 py-2 text-sm">
-								<span className="text-gray-500">ID: </span>
-								<span className="font-mono text-xs text-gray-700">{formData.businessId}</span>
-							</div>
-						)}
 					</CardBody>
 				</Card>
 

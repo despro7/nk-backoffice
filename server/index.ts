@@ -7,6 +7,7 @@ import authSettingsRoutes from "./routes/auth-settings.js";
 import protectedRoutes from "./routes/protected.js";
 import ordersRoutes from "./routes/orders.js";
 import productsRoutes from "./routes/products.js";
+import catalogRoutes from "./routes/catalog.js";
 import boxesRoutes from "./routes/boxes.js";
 import settingsRoutes from "./routes/settings.js";
 import webhookRoutes from './routes/webhooks.js';
@@ -125,8 +126,11 @@ export function createServer() {
   // Orders sync routes (separate prefix to avoid conflicts)
   app.use("/api/orders-sync", ordersSyncRoutes);
 
-  // Products routes
+  // Products routes (legacy)
   app.use("/api/products", productsRoutes);
+
+  // Products 2.0 catalog
+  app.use("/api/catalog", catalogRoutes);
 
   // Boxes routes
   app.use("/api/boxes", boxesRoutes);

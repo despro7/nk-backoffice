@@ -160,7 +160,7 @@ export interface MovementDraft {
 export interface WarehouseMovementSettings {
   numberGeneration: 'server' | 'dilovod'; // wm_numberGeneration
   numberTemplate: string;                  // wm_numberTemplate
-  firmId: string;                          // wm_firmId
+  firmId: string;                          // з dilovod_default_firm_id (read-only у WM settings)
   businessId: string;                      // wm_businessId (Напрям бізнесу — аналітичний вимір Діловода)
   storageFrom: string;                     // wm_storageFrom
   storageTo: string;                       // wm_storageTo

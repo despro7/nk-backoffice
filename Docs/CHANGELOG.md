@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-07-30 — Products 2.0: UX дерева, breadcrumbs, DnD confirms, root `parentId=0`
+**Files:** `client/pages/Products/**`, `server/modules/Products/ProductsCatalogService.ts`, `server/modules/Products/ProductsDilovodGateway.ts`, `Docs/features/products-catalog-2.0.md`
+
+- Дерево: nested UI з видимим root «Каталог» (завжди відкритий, без drag); chevron лише для папок із дітьми; плавне expand; vertical lines на вкладених рівнях.
+- Кліки: неактивна папка — select + expand; згортання — лише активна папка або chevron; chevron не змінює selection / таблицю.
+- Breadcrumbs над таблицею (`CatalogBreadcrumbs` + `buildFolderBreadcrumbs`) з навігацією по шляху; у пошуку — крок «Пошук: …».
+- Confirm перед move (DnD), trash, duplicate; archive як і раніше через `ArchiveConfirmModal`.
+- Drag preview: `createCatalogDragPreview` / `setDragImage` — кастомний ghost, кілька елементів стовпчиком.
+- Fix root children: Dilovod `parent="0"` → `getFolderChildren` враховує `null`/`"0"`/`""`; mapper нормалізує `"0"` → `null`.
+
+---
+
+## 2026-07-29 — Products 2.0: домен каталогу Dilovod
+**Files:** `prisma/schema.prisma`, `prisma/migrations/20260727010000_add_catalog_tables/`, `shared/types/catalog.ts`, `server/modules/Products/*`, `server/routes/catalog.ts`, `client/pages/Products/**`, `client/routes.config.tsx`, `client/components/Sidebar.tsx`, `Docs/features/products-catalog-2.0.md`
+
+- Новий домен `/products` (мін. роль `WAREHOUSE_MANAGER`): дерево + таблиця + drawer для керування `catalogs.goods` (папки, товари, BOM, ціни, ШК).
+- Локальне дзеркало `catalog_goods` / `catalog_good_components` / `catalog_good_prices` / `catalog_good_barcodes`; SoT — Dilovod; hybrid sync після мутацій.
+- ШК підтримують кілька записів на товар з привʼязкою до партії (`goodPart` / `goodPartName`).
+- API `/api/catalog/*`: tree, CRUD, move, archive, trash, duplicate, units, refresh.
+- Legacy таблиця `products` **не** оновлюється Products 2.0 (залишки в картці — read-only join); `/product-sets` без змін.
+- Nav: опційний `navBadge` (`label`, `color`, `until`) — для «Товари 2.0» бейдж `NEW` (danger) до `2026-09-30`.
+
+---
+
 ## 2026-07-22 — Синхронізація штрих-кодів товарів з Dilovod
 **Files:** `server/services/dilovod/DilovodApiClient.ts`, `DilovodService.ts`, `DilovodSyncManager.ts`, `DilovodTypes.ts`, `DilovodUtils.ts`, `Dilovod README.md`, `client/components/NotificationBell.tsx`, `client/pages/MetaLogs/hooks/useMetaLogs.ts`, `client/pages/MetaLogs/components/OtherMetaLogTable.tsx`, `Docs/features/dilovod-product-barcode-sync.md`
 

@@ -19,6 +19,7 @@ import OrderView from './pages/OrderView';
 import SettingsTestAuth from "./pages/SettingsTestAuth";
 import SettingsProfile from "./pages/SettingsProfile";
 import SettingsProductSets from "./pages/SettingsProductSets";
+import ProductsPage from "./pages/Products";
 import SettingsOrderAssembly from "./pages/SettingsOrderAssembly";
 import SettingsEquipment from "./pages/SettingsEquipment";
 import SettingsOrders from "./pages/SettingsOrders";
@@ -41,6 +42,47 @@ export interface NavGroupMeta {
   order?: number;
 }
 
+/** Колір бейджа пункту меню (мапиться на Tailwind у Sidebar) */
+export type NavBadgeColor =
+  | 'danger'
+  | 'primary'
+  | 'success'
+  | 'warning'
+  | 'secondary'
+  | 'default';
+
+/** Опційний бейдж біля navLabel (напр. NEW) */
+export interface NavBadge {
+  label: string;
+  /** За замовчуванням `danger` (червоний) */
+  color?: NavBadgeColor;
+  /**
+   * Дата актуальності (ISO `YYYY-MM-DD` або повний ISO datetime).
+   * Після цієї дати бейдж не показується. Без `until` — показується завжди.
+   */
+  until?: string;
+}
+
+/** Чи показувати navBadge зараз (з урахуванням `until`) */
+export function isNavBadgeVisible(
+  badge: NavBadge | undefined | null,
+  now: Date = new Date()
+): boolean {
+  if (!badge?.label?.trim()) return false;
+  if (!badge.until) return true;
+
+  const untilRaw = String(badge.until).trim();
+  const until = new Date(untilRaw);
+  if (Number.isNaN(until.getTime())) return true;
+
+  // Для дати без часу — видимий до кінця локального дня `until` включно
+  if (/^\d{4}-\d{2}-\d{2}$/.test(untilRaw)) {
+    until.setHours(23, 59, 59, 999);
+  }
+
+  return now.getTime() <= until.getTime();
+}
+
 // Розширений інтерфейс для підтримки ролей
 export interface AppRoute {
   path: string;
@@ -55,6 +97,8 @@ export interface AppRoute {
   roles?: string[]; // Дозволені ролі для доступу
   minRole?: string; // Мінімальна роль для доступу
   hasOwnTitle?: boolean; // Флаг для сторінок з власним заголовком
+  /** Бейдж біля пункту меню (колір + опційна дата зникнення) */
+  navBadge?: NavBadge;
   /** Метадані групи-контейнера. Вказується на будь-якому маршруті з parent === ключ цієї групи.
    *  Потрібне лише для груп БЕЗ власного маршруту (наприклад parent: 'settings').
    *  Достатньо вказати один раз на будь-якому дочірньому елементі. */
@@ -349,6 +393,23 @@ export const appRoutes: AppRoute[] = [
     parent: 'settings',
     order: 25,
     roles: [ROLES.ADMIN] // Тільки admin
+  },
+  {
+    path: '/products',
+    component: ProductsPage,
+    title: 'Товари 2.0',
+    pageTitle: 'Товари 2.0 | NK Backoffice',
+    navLabel: 'Товари 2.0',
+    icon: <DynamicIcon name="package" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    order: 8,
+    //minRole: ROLES.WAREHOUSE_MANAGER,
+    roles: [ROLES.ADMIN], // тимчасово лише admin (приховати від інших до релізу)
+    navBadge: {
+      label: 'NEW',
+      color: 'danger',
+      until: '2026-08-10',
+    },
   },
   {
     path: '/product-sets',

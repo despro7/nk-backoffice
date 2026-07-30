@@ -30,6 +30,10 @@ export interface DilovodBarCodeResponse {
   id: string;
   object: string;
   code: string;
+  /** ID партії (goodPart); може бути відсутнім для товарного ШК */
+  goodPart?: string;
+  /** Назва/номер партії (goodPart__pr) */
+  goodPart__pr?: string;
   /** "1" — активний, "0" — неактивний */
   activity?: '1' | '0' | string;
 }

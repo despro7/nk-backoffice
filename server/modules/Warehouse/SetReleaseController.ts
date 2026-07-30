@@ -4,7 +4,7 @@ import { normalizeSetsArray, normalizeReleaseHistoryItems } from './historyNorma
 import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
 import { dilovodExportFlowService } from '../../services/dilovod/index.js';
-import { getDilovodUserId, getDilovodExportErrorMessage, translateDilovodError } from '../../services/dilovod/DilovodUtils.js';
+import { getDilovodUserId, getDilovodExportErrorMessage, translateDilovodError, getDilovodConfigFromDB } from '../../services/dilovod/DilovodUtils.js';
 
 const router = Router();
 
@@ -407,13 +407,17 @@ router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
     const parsedDate = parseLocalDate(date) ?? new Date();
     const formattedDate = formatLocalDate(parsedDate);
     const author = await getDilovodUserId(currentUserId, { logPrefix: '[SetRelease] ' }).catch(() => '');
+    const dilovodConfig = await getDilovodConfigFromDB();
+    const effectiveFirmId = (firmId != null && String(firmId).trim() !== '')
+      ? String(firmId).trim()
+      : (dilovodConfig.defaultFirmId ?? null);
 
     const payload: any = {
       saveType: 1,
       header: {
         id: SET_RELEASE_DOC_ID,
         date: formattedDate,
-        firm: firmId ?? null,
+        firm: effectiveFirmId,
         storage: storageId ?? null,
         posted: 1,
         accCosts: SET_RELEASE_ACC_COSTS,

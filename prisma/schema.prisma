@@ -454,3 +454,92 @@ model meta_logs {
 
 // NOTE: `goods_cache` was removed in a safe migration after backfill.
 // If you need to restore it, check the migration history.
+
+/// Локальне дзеркало Dilovod catalogs.goods (папки + товари)
+model CatalogGood {
+  id           String   @id @db.VarChar(32) // Dilovod id
+  parentId     String?  @db.VarChar(32)
+  isGroup      Boolean  @default(false)
+  delMark      Boolean  @default(false)
+  name         String   @db.VarChar(512) // uk only
+  sku          String?  @unique @db.VarChar(64) // Dilovod productNum; null для папок без артикула
+  mainUnitId   String?  @db.VarChar(32)
+  packageRatio Float?
+  weight       Float?
+  accPolicyId  String?  @db.VarChar(32)
+  printName    String?  @db.VarChar(512)
+  description  String?  @db.Text
+  syncedAt     DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+
+  components CatalogGoodComponent[] @relation("CatalogGoodComponents")
+  usedIn     CatalogGoodComponent[] @relation("CatalogComponentGoods")
+  prices     CatalogGoodPrice[]
+  barcodes   CatalogGoodBarcode[]
+
+  @@index([parentId])
+  @@index([isGroup])
+  @@index([delMark])
+  @@index([name])
+  @@map("catalog_goods")
+}
+
+/// BOM / tpGoods — склад комплекту
+model CatalogGoodComponent {
+  id              Int      @id @default(autoincrement())
+  parentGoodId    String   @db.VarChar(32)
+  componentGoodId String   @db.VarChar(32)
+  qty             Float    @default(1)
+  rowNum          Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  parentGood    CatalogGood @relation("CatalogGoodComponents", fields: [parentGoodId], references: [id], onDelete: Cascade)
+  componentGood CatalogGood @relation("CatalogComponentGoods", fields: [componentGoodId], references: [id], onDelete: Restrict)
+
+  @@unique([parentGoodId, componentGoodId])
+  @@index([parentGoodId])
+  @@index([componentGoodId])
+  @@map("catalog_good_components")
+}
+
+/// Snapshot informationRegisters.goodsPrices
+model CatalogGoodPrice {
+  id        Int      @id @default(autoincrement())
+  goodId    String   @db.VarChar(32)
+  priceType String   @db.VarChar(32)
+  price     Float    @default(0)
+  currency  String?  @db.VarChar(16)
+  syncedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  good CatalogGood @relation(fields: [goodId], references: [id], onDelete: Cascade)
+
+  @@unique([goodId, priceType])
+  @@index([goodId])
+  @@map("catalog_good_prices")
+}
+
+/// Snapshot informationRegisters.barCodes (ШК ↔ товар + партія goodPart)
+model CatalogGoodBarcode {
+  id                Int      @id @default(autoincrement())
+  goodId            String   @db.VarChar(32)
+  dilovodRegisterId String?  @db.VarChar(32) // id запису регістра barCodes
+  code              String   @db.VarChar(64)
+  /// Dilovod goodPart id; "" = ШК без привʼязки до партії
+  goodPart          String   @default("") @db.VarChar(32)
+  /// goodPart__pr (людська назва/номер партії) для UI
+  goodPartName      String?  @db.VarChar(255)
+  activity          Boolean  @default(true)
+  syncedAt          DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  good CatalogGood @relation(fields: [goodId], references: [id], onDelete: Cascade)
+
+  @@unique([goodId, code, goodPart])
+  @@index([goodId])
+  @@index([code])
+  @@index([goodPart])
+  @@map("catalog_good_barcodes")
+}

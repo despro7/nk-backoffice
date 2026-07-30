@@ -700,7 +700,7 @@ const DilovodSettingsManager: React.FC = () => {
 										const value = Array.from(keys)[0] as string;
 										handleFieldChange('defaultFirmId', value);
 									}}
-									description="Фірма буде визначатись автоматично за рахунком, або використовуватись ця за замовчуванням"
+									description="Єдина фірма для всіх операцій і рахунків Dilovod. На операційних екранах можна тимчасово обрати іншу."
 								>
 									{directories.firms.map((firm) => (
 										<SelectItem key={firm.id} textValue={firm.name}>

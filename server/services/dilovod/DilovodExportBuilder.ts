@@ -1255,17 +1255,16 @@ export class DilovodExportBuilder {
   /**
    * Визначити фірму для документа
    * Пріоритет:
-   * 1. Фірма-власник рахунку (якщо вказано cashAccount)
-   * 2. Фірма за замовчуванням з налаштувань
+   * 1. overrideFirmId з запиту (якщо валідний у довідниках)
+   * 2. Фірма за замовчуванням з налаштувань Dilovod (dilovod_default_firm_id)
    */
   private async determineFirmId(
     context: ExportBuildContext,
-    channelMapping: DilovodChannelMapping | null,
+    _channelMapping: DilovodChannelMapping | null,
     overrideFirmId?: string | null
   ): Promise<string> {
     const { settings, directories, warnings } = context;
 
-    // If caller provided overrideFirmId, prefer it (validate against directories)
     if (overrideFirmId) {
       console.log(`  🔁 Override firmId requested: ${overrideFirmId}`);
       if (directories?.firms && directories.firms.find(f => f.id === overrideFirmId)) {
@@ -1273,68 +1272,15 @@ export class DilovodExportBuilder {
         return overrideFirmId;
       }
       warnings.push(`Передана фірма (ID: ${overrideFirmId}) не знайдена в довідниках Dilovod. Ігноруємо override.`);
-      console.log(`  ⚠️  Override firmId ${overrideFirmId} не знайдено в довідниках, продовжуємо визначення`);
-    }
-    console.log(`  🔍 Визначення фірми: channelMapping=${JSON.stringify({
-      cashAccount: channelMapping?.cashAccount,
-      paymentForm: channelMapping?.paymentForm,
-      salesDrivePaymentMethod: channelMapping?.salesDrivePaymentMethod
-    })}`);
-
-    // Якщо є cashAccount - знаходимо його власника з довідників
-    if (channelMapping?.cashAccount && directories?.cashAccounts) {
-      console.log(`  📊 Шукаємо рахунок: ${channelMapping.cashAccount}`);
-      const account = directories.cashAccounts.find(acc => acc.id === channelMapping.cashAccount);
-
-      if (!account) {
-        const accountDisplayName = this.getAccountDisplayName(channelMapping.cashAccount, directories);
-        warnings.push(`Рахунок "${accountDisplayName}" не знайдено в довідниках Dilovod. Використовується фірма за замовчуванням.`);
-        console.log(`  ⚠️  Рахунок не знайдено в довідниках`);
-      } else {
-        console.log(`  ✅ Рахунок знайдено: ${account.name}, owner=${account.owner}`);
-      }
-
-      if (account?.owner) {
-        // Перевіряємо чи існує така фірма в довідниках
-        console.log(`  🔍 Шукаємо фірму-власника: ${account.owner}`);
-        console.log(`  📋 Всього фірм у довідниках: ${directories.firms?.length || 0}`);
-
-        if (directories.firms && directories.firms.length > 0) {
-          console.log(`  📋 Перші 3 фірми: ${directories.firms.slice(0, 3).map(f => `${f.name} (${f.id})`).join(', ')}`);
-        }
-
-        const firm = directories.firms?.find(f => f.id === account.owner);
-        if (firm) {
-          console.log(`  🏢 Фірма визначена за рахунком: ${firm.name} (${account.owner})`);
-          return account.owner;
-        } else {
-          const firmDisplayName = this.getFirmDisplayName(account.owner, directories);
-          console.log(`  ❌ Фірма ${account.owner} не знайдена в довідниках!`);
-          warnings.push(`Фірма "${firmDisplayName}" (власник рахунку) не знайдена в довідниках. Використовується фірма за замовчуванням.`);
-        }
-      } else {
-        const accountDisplayName = this.getAccountDisplayName(channelMapping.cashAccount, directories);
-        console.log(`  ⚠️  Рахунок не має власника (owner)`);
-        warnings.push(`Рахунок "${accountDisplayName}" не має власника (owner). Використовується фірма за замовчуванням.`);
-      }
-    } else {
-      if (!channelMapping?.cashAccount) {
-        console.log(`  ⚠️  cashAccount не вказано в мапінгу`);
-        warnings.push(`Рахунок не вказано в мапінгу каналу. Використовується фірма за замовчуванням.`);
-      }
-      if (!directories?.cashAccounts) {
-        console.log(`  ⚠️  Довідник cashAccounts не завантажено`);
-      }
+      console.log(`  ⚠️  Override firmId ${overrideFirmId} не знайдено в довідниках, використовуємо фірму за замовчуванням`);
     }
 
-    // Якщо не вдалося визначити за рахунком - використовуємо дефолтну
     if (settings.defaultFirmId) {
       const firmDisplayName = this.getFirmDisplayName(settings.defaultFirmId, directories);
       console.log(`  🏢 Використовується фірма за замовчуванням: "${firmDisplayName}" (ID: ${settings.defaultFirmId})`);
       return settings.defaultFirmId;
     }
 
-    // Якщо немає ні рахунку ні дефолтної фірми - помилка
     throw new Error('Не вдалося визначити фірму для документа. Вкажіть фірму за замовчуванням в налаштуваннях Dilovod.');
   }
 

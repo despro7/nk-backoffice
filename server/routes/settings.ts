@@ -219,26 +219,23 @@ router.get('/warehouse-movement', authenticateToken, async (req, res) => {
       map[row.key] = row.value;
     }
 
-    // Fallback для firm/storage — беремо з налаштувань Dilovod
-    let firmId = map['wm_firmId'] || '';
+    // firmId завжди з Dilovod; storage — з WM або Dilovod fallback
     let storageFrom = map['wm_storageFrom'] || '';
     let storageTo = map['wm_storageTo'] || '';
 
-    if (!firmId || !storageFrom || !storageTo) {
-      const dilovodRows = await prisma.settingsBase.findMany({
-        where: {
-          key: { in: ['dilovod_default_firm_id', 'dilovod_main_storage_id', 'dilovod_small_storage_id'] },
-          isActive: true,
-        },
-      });
-      const dilovodMap: Record<string, string> = {};
-      for (const row of dilovodRows) {
-        dilovodMap[row.key] = row.value;
-      }
-      if (!firmId) firmId = dilovodMap['dilovod_default_firm_id'] || '';
-      if (!storageFrom) storageFrom = dilovodMap['dilovod_main_storage_id'] || '';
-      if (!storageTo) storageTo = dilovodMap['dilovod_small_storage_id'] || '';
+    const dilovodRows = await prisma.settingsBase.findMany({
+      where: {
+        key: { in: ['dilovod_default_firm_id', 'dilovod_main_storage_id', 'dilovod_small_storage_id'] },
+        isActive: true,
+      },
+    });
+    const dilovodMap: Record<string, string> = {};
+    for (const row of dilovodRows) {
+      dilovodMap[row.key] = row.value;
     }
+    const firmId = dilovodMap['dilovod_default_firm_id'] || '';
+    if (!storageFrom) storageFrom = dilovodMap['dilovod_main_storage_id'] || '';
+    if (!storageTo) storageTo = dilovodMap['dilovod_small_storage_id'] || '';
 
     res.json({
       success: true,
@@ -266,7 +263,6 @@ router.put('/warehouse-movement', authenticateToken, async (req, res) => {
     const body = req.body as Partial<{
       numberGeneration: string;
       numberTemplate: string;
-      firmId: string;
       businessId: string;
       storageFrom: string;
       storageTo: string;
@@ -275,11 +271,10 @@ router.put('/warehouse-movement', authenticateToken, async (req, res) => {
       accountId: string;
     }>;
 
-    // Маппінг поле→ключ у БД
+    // Маппінг поле→ключ у БД (firmId більше не зберігаємо — лише dilovod_default_firm_id)
     const fieldToKey: Record<string, string> = {
       numberGeneration: 'wm_numberGeneration',
       numberTemplate: 'wm_numberTemplate',
-      firmId: 'wm_firmId',
       businessId: 'wm_businessId',
       storageFrom: 'wm_storageFrom',
       storageTo: 'wm_storageTo',

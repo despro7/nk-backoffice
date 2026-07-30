@@ -317,10 +317,13 @@ export function useWarehouseReturns() {
       if (!response.ok || !data.success) throw new Error(data?.error || `Помилка підготовки повернення (${response.status})`);
 
       const payload = data.data as PrepareReturnResponse;
-      // payload.firmId represents the firm used when the order was shipped.
-      // Use it to prefill shipping firm for batch selection.
-      setShipFirmId(payload.firmId);
+      // firmId з prepareReturn = dilovod_default_firm_id (єдина фірма; ручний override лишається в UI)
+      const preparedFirmId = payload.firmId || null;
+      setShipFirmId(preparedFirmId);
       setShipFirmName('');
+      if (preparedFirmId) {
+        setReceiveFirmId((prev) => prev ?? preparedFirmId);
+      }
       // Do not prefill `returnDate` with server orderDate — keep picker default as current date
       setReturnDate(null);
       setDilovodSaleExportDate(payload.dilovodSaleExportDate || null);
@@ -328,7 +331,7 @@ export function useWarehouseReturns() {
       setSelectedOrderNumber(payload.orderNumber || payload.externalId || String(payload.orderId));
       setSelectedOrderExternalId(payload.externalId || '');
       setDilovodDocId(payload.dilovodDocId || '');
-      if (payload.firmId) void loadFirmName(payload.firmId);
+      if (preparedFirmId) void loadFirmName(preparedFirmId);
 
       const priceBySku = new Map(payload.items.map((item) => [item.sku, Number(item.price ?? 0)]));
       // Джерело істини для повернень: payloadData.shipment.bySku.
