@@ -3,10 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ToastService } from '@/services/ToastService';
 import type {
   CatalogCreateGoodInput,
+  CatalogDictionariesDto,
   CatalogGoodDetailDto,
   CatalogGoodDto,
   CatalogTreeNodeDto,
-  CatalogUnitDto,
   CatalogUpdateGoodInput,
   DrawerMode,
 } from './ProductsTypes';
@@ -37,6 +37,7 @@ export function useProductsCatalog() {
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
   const [duplicateConfirmOpen, setDuplicateConfirmOpen] = useState(false);
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
   const [pendingMove, setPendingMove] = useState<{
     ids: string[];
     targetParentId: string;
@@ -71,16 +72,19 @@ export function useProductsCatalog() {
     enabled: trashOpen,
   });
 
-  const unitsQuery = useQuery({
-    queryKey: ['catalog', 'units'],
-    queryFn: () => catalogFetch<CatalogUnitDto[]>('/api/catalog/units'),
-    staleTime: 5 * 60_000,
+  const dictionariesQuery = useQuery({
+    queryKey: ['catalog', 'dictionaries'],
+    queryFn: () => catalogFetch<CatalogDictionariesDto>('/api/catalog/dictionaries'),
+    staleTime: 30 * 60_000,
   });
 
   const detailQuery = useQuery({
     queryKey: ['catalog', 'good', editingId],
     queryFn: () => catalogFetch<CatalogGoodDetailDto>(`/api/catalog/goods/${editingId}`),
     enabled: Boolean(editingId) && drawerMode === 'edit',
+    // Live-pull на сервері лише при відкритті картки — без фонового refetch
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const treeItems = useMemo(
@@ -88,23 +92,92 @@ export function useProductsCatalog() {
     [treeQuery.data]
   );
 
-  const invalidateCatalog = useCallback(async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['catalog'] }),
-    ]);
-  }, [queryClient]);
+  /** Повне дерево з архівами як окремими папками (picker / move). */
+  const treeItemsFull = useMemo(
+    () => buildTreeItems(treeQuery.data || [], { hideArchives: false }),
+    [treeQuery.data]
+  );
 
-  const refreshMutation = useMutation({
-    mutationFn: (ids?: string[]) =>
-      catalogFetch<{ upserted: number }>('/api/catalog/refresh', {
-        method: 'POST',
-        body: JSON.stringify(ids ? { ids } : {}),
-      }),
+  /**
+   * Інвалідація каталогу.
+   * `skipLiveDetail` — після create/update: не рефетчити картку з live-pull
+   * (локальне дзеркало вже оновлене відповіддю мутації).
+   */
+  const invalidateCatalog = useCallback(
+    async (opts?: { skipLiveDetail?: boolean }) => {
+      if (opts?.skipLiveDetail) {
+        await queryClient.cancelQueries({ queryKey: ['catalog', 'good'] });
+        queryClient.removeQueries({ queryKey: ['catalog', 'good'] });
+        await queryClient.invalidateQueries({
+          queryKey: ['catalog'],
+          predicate: (query) => query.queryKey[1] !== 'good',
+        });
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ['catalog'] });
+    },
+    [queryClient]
+  );
+
+  const refreshBranchMutation = useMutation({
+    mutationFn: (folderId: string | null) =>
+      catalogFetch<{ upserted: number; orphansResolved: number; capped: boolean }>(
+        '/api/catalog/refresh',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            folderId: folderId ?? 'root',
+            recursive: true,
+          }),
+        }
+      ),
     onSuccess: (data) => {
-      ToastService.show({ title: 'Оновлено з Dilovod', description: `Записів: ${data.upserted}`, color: 'success' });
+      const extra = data.capped ? ' (досягнуто ліміт глибини/вузлів)' : '';
+      ToastService.show({
+        title: 'Гілку оновлено',
+        description: `Записів: ${data.upserted}${extra}`,
+        color: data.capped ? 'warning' : 'success',
+      });
       void invalidateCatalog();
     },
-    onError: (err: Error) => ToastService.show({ title: 'Помилка оновлення', description: err.message, color: 'danger' }),
+    onError: (err: Error) =>
+      ToastService.show({ title: 'Помилка оновлення гілки', description: err.message, color: 'danger' }),
+  });
+
+  const syncSelectedMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      catalogFetch<{ upserted: number }>('/api/catalog/refresh', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      }),
+    onSuccess: (data) => {
+      ToastService.show({
+        title: 'Синхронізовано з Діловодом',
+        description: `Записів: ${data.upserted}`,
+        color: 'success',
+      });
+      void invalidateCatalog();
+    },
+    onError: (err: Error) =>
+      ToastService.show({ title: 'Помилка синхронізації', description: err.message, color: 'danger' }),
+  });
+
+  const refreshFullMutation = useMutation({
+    mutationFn: () =>
+      catalogFetch<{ upserted: number }>('/api/catalog/refresh', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    onSuccess: (data) => {
+      ToastService.show({
+        title: 'Повний refresh завершено',
+        description: `Записів: ${data.upserted}`,
+        color: 'success',
+      });
+      void invalidateCatalog();
+    },
+    onError: (err: Error) =>
+      ToastService.show({ title: 'Помилка повного refresh', description: err.message, color: 'danger' }),
   });
 
   const createMutation = useMutation({
@@ -113,10 +186,17 @@ export function useProductsCatalog() {
         method: 'POST',
         body: JSON.stringify(input),
       }),
-    onSuccess: () => {
-      ToastService.show({ title: 'Створено', color: 'success' });
+    onSuccess: (data) => {
+      const skuPart = data.sku ? ` · SKU ${data.sku}` : '';
+      ToastService.show({
+        title: 'Створено',
+        description: data.isGroup
+          ? `Група «${data.name}» збережена в Dilovod`
+          : `«${data.name}»${skuPart} збережено в Dilovod`,
+        color: 'success',
+      });
       setDrawerMode(null);
-      void invalidateCatalog();
+      void invalidateCatalog({ skipLiveDetail: true });
     },
     onError: (err: Error) => ToastService.show({ title: 'Помилка створення', description: err.message, color: 'danger' }),
   });
@@ -127,29 +207,74 @@ export function useProductsCatalog() {
         method: 'PUT',
         body: JSON.stringify(input),
       }),
-    onSuccess: () => {
-      ToastService.show({ title: 'Збережено', color: 'success' });
+    onSuccess: (data) => {
+      const skuPart = data.sku ? ` · SKU ${data.sku}` : '';
+      ToastService.show({
+        title: 'Збережено',
+        description: data.isGroup
+          ? `Група «${data.name}» оновлена в Dilovod`
+          : `«${data.name}»${skuPart} оновлено в Dilovod`,
+        color: 'success',
+      });
       setDrawerMode(null);
       setEditingId(null);
-      void invalidateCatalog();
+      void invalidateCatalog({ skipLiveDetail: true });
     },
     onError: (err: Error) => ToastService.show({ title: 'Помилка збереження', description: err.message, color: 'danger' }),
   });
 
   const moveMutation = useMutation({
     mutationFn: ({ ids, targetParentId }: { ids: string[]; targetParentId: string }) =>
-      catalogFetch<{ moved: number }>('/api/catalog/goods/move', {
+      catalogFetch<{ moved: number; deactivated?: number }>('/api/catalog/goods/move', {
         method: 'POST',
         body: JSON.stringify({ ids, targetParentId }),
       }),
     onSuccess: (data) => {
-      ToastService.show({ title: 'Переміщено', description: `Елементів: ${data.moved}`, color: 'success' });
+      const deactivated = data.deactivated ?? 0;
+      ToastService.show({
+        title: 'Переміщено',
+        description:
+          deactivated > 0
+            ? `Елементів: ${data.moved} (в архів: ${deactivated})`
+            : `Елементів: ${data.moved}`,
+        color: 'success',
+      });
       setSelectedIds([]);
       setPendingMove(null);
       void invalidateCatalog();
     },
     onError: (err: Error) => ToastService.show({ title: 'Помилка переміщення', description: err.message, color: 'danger' }),
   });
+
+  const reorderMutation = useMutation({
+    mutationFn: (input: {
+      parentId: string | null;
+      id: string;
+      beforeId?: string | null;
+      afterId?: string | null;
+    }) =>
+      catalogFetch<{ id: string; sortOrder: number }>('/api/catalog/reorder', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      void invalidateCatalog();
+    },
+    onError: (err: Error) =>
+      ToastService.show({ title: 'Помилка сортування', description: err.message, color: 'danger' }),
+  });
+
+  const requestReorder = useCallback(
+    (params: {
+      parentId: string | null;
+      id: string;
+      beforeId?: string | null;
+      afterId?: string | null;
+    }) => {
+      reorderMutation.mutate(params);
+    },
+    [reorderMutation]
+  );
 
   const archiveMutation = useMutation({
     mutationFn: (ids: string[]) =>
@@ -164,6 +289,26 @@ export function useProductsCatalog() {
       void invalidateCatalog();
     },
     onError: (err: Error) => ToastService.show({ title: 'Помилка архівування', description: err.message, color: 'danger' }),
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      catalogFetch<{ restored: number }>('/api/catalog/goods/restore', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      }),
+    onSuccess: (data) => {
+      ToastService.show({
+        title: 'Відновлено з архіву',
+        description: `Елементів: ${data.restored}`,
+        color: 'success',
+      });
+      setSelectedIds([]);
+      setRestoreConfirmOpen(false);
+      void invalidateCatalog();
+    },
+    onError: (err: Error) =>
+      ToastService.show({ title: 'Помилка відновлення', description: err.message, color: 'danger' }),
   });
 
   const trashMutation = useMutation({
@@ -236,10 +381,15 @@ export function useProductsCatalog() {
     setTrashConfirmOpen,
     duplicateConfirmOpen,
     setDuplicateConfirmOpen,
+    restoreConfirmOpen,
+    setRestoreConfirmOpen,
     pendingMove,
     setPendingMove,
     requestMove,
+    requestReorder,
     treeItems,
+    treeItemsFull,
+    treeNodes: treeQuery.data || [],
     treeLoading: treeQuery.isLoading,
     treeError: treeQuery.error as Error | null,
     tableRows,
@@ -247,17 +397,27 @@ export function useProductsCatalog() {
     isSearchMode: searchQueryEnabled,
     trashItems: trashQuery.data || [],
     trashLoading: trashQuery.isLoading,
-    units: unitsQuery.data || [],
+    dictionaries: dictionariesQuery.data || {
+      units: [],
+      priceTypes: [],
+      currencies: [],
+      accPolicies: [],
+    },
     detail: detailQuery.data || null,
-    detailLoading: detailQuery.isLoading,
+    // isFetching: і перше відкриття, і повторне (кеш є, але live-pull ще йде)
+    detailLoading: detailQuery.isFetching,
     openCreate,
     openEdit,
     closeDrawer,
-    refreshMutation,
+    refreshBranchMutation,
+    syncSelectedMutation,
+    refreshFullMutation,
     createMutation,
     updateMutation,
     moveMutation,
+    reorderMutation,
     archiveMutation,
+    restoreMutation,
     trashMutation,
     duplicateMutation,
     invalidateCatalog,

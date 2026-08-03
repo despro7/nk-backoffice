@@ -13,13 +13,18 @@ export interface StorageDisplay {
   className: string;
 }
 
+/** ID складу готової продукції (ГП) */
+const STORAGE_ID_GP = '1100700000001005';
+/** ID малого складу */
+const STORAGE_ID_SMALL = '1100700000001019';
+
 /** Мапінг storageId → відображення */
 export const STORAGE_DISPLAY_MAP: Record<string, StorageDisplay> = {
-  '1100700000001005': {
+  [STORAGE_ID_GP]: {
     shortName: 'Склад ГП',
     className: 'text-blue-800/50 bg-blue-500/10',
   },
-  '1100700000001019': {
+  [STORAGE_ID_SMALL]: {
     shortName: 'Склад М',
     className: 'text-lime-800/50 bg-lime-500/10',
   },
@@ -47,6 +52,20 @@ export function resolveStorageDisplay(
     shortName: fallbackName || DEFAULT_STORAGE_DISPLAY.shortName,
     className: DEFAULT_STORAGE_DISPLAY.className,
   };
+}
+
+/**
+ * Колір іконки складу: ГП — голубий, малий — світлозелений, інші — сірий.
+ */
+export function resolveStorageIconClass(storageId?: string): string {
+  switch (storageId) {
+    case STORAGE_ID_GP:
+      return 'text-sky-500';
+    case STORAGE_ID_SMALL:
+      return 'text-lime-500';
+    default:
+      return 'text-gray-400';
+  }
 }
 
 /**

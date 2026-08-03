@@ -35,7 +35,7 @@ export interface DilovodCatalogGoodRow {
 export interface DilovodUnitRow {
   id: string;
   name: string;
-  code: string | null;
+  code?: string | null;
 }
 
 export interface DilovodGoodHeaderPayload {
@@ -49,8 +49,15 @@ export interface DilovodGoodHeaderPayload {
   weight?: number | string;
   accPolicy?: string;
   printName?: string | { uk: string; ru: string };
-  description?: string;
+  description?: string | { uk: string; ru: string };
   [key: string]: unknown;
+}
+
+/** Універсальний рядок довідника Dilovod (локальний кеш). */
+export interface DilovodDictItem {
+  id: string;
+  name: string;
+  code?: string | null;
 }
 
 export interface DilovodTpGoodsRow {
@@ -58,6 +65,8 @@ export interface DilovodTpGoodsRow {
   good: string;
   qty: number | string;
   unit?: string;
+  /** Примітка рядка (Dilovod tpGoods.remark) */
+  remark?: string | null;
 }
 
 export interface DilovodSaveGoodParams {
@@ -87,7 +96,22 @@ export interface LocalSyncGoodPayload {
   accPolicyId: string | null;
   printName: string | null;
   description: string | null;
-  components?: Array<{ componentGoodId: string; qty: number; rowNum: number }>;
+  /**
+   * Лише локальне поле. Якщо undefined — при update не затираємо існуюче
+   * (Dilovod refresh не передає).
+   */
+  fullDescription?: string | null;
+  /** Локальні ops-поля; undefined = не затирати при Dilovod sync */
+  sortOrder?: number;
+  unitRatio?: number | null;
+  stockBalanceByStock?: string | null;
+  components?: Array<{
+    componentGoodId: string;
+    qty: number;
+    rowNum: number;
+    unitId?: string | null;
+    note?: string | null;
+  }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{
     code: string;
@@ -106,6 +130,11 @@ export type BarcodeInput = CatalogGoodBarcodeDto;
 
 export function isKitAccPolicy(accPolicyId: string | null | undefined): boolean {
   return accPolicyId === '1201200000001031';
+}
+
+/** Папка архіву Dilovod: «Архів – {parentName}». */
+export function isArchiveFolderName(name: string): boolean {
+  return /^Архів\s*[–-]/i.test(String(name || '').trim());
 }
 
 export function extractUkName(name: unknown): string {

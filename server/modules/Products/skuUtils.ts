@@ -36,6 +36,23 @@ export function incrementSku(sku: string): string {
   return `${prefix}${padded}`;
 }
 
+/** Порівняння SKU з урахуванням числового хвоста (для вибору «останнього» в папці). */
+export function compareSku(a: string, b: string): number {
+  const ma = String(a || '').trim().match(/^(.*?)(\d+)$/);
+  const mb = String(b || '').trim().match(/^(.*?)(\d+)$/);
+  if (ma && mb && ma[1] === mb[1]) {
+    return parseInt(ma[2], 10) - parseInt(mb[2], 10);
+  }
+  return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true });
+}
+
+/** Найбільший SKU у списку (або null). */
+export function pickLatestSku(skus: string[]): string | null {
+  const cleaned = skus.map((s) => String(s || '').trim()).filter(Boolean);
+  if (cleaned.length === 0) return null;
+  return cleaned.reduce((best, cur) => (compareSku(cur, best) > 0 ? cur : best));
+}
+
 /**
  * Find next free SKU starting from baseSku (first candidate = increment of base).
  * Uses in-process mutex + Dilovod existence check with retry limit.

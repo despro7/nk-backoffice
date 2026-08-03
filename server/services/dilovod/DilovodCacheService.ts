@@ -10,18 +10,28 @@
  * - dilovod.cache.storages - JSON масив складів
  * - dilovod.cache.paymentForms - JSON масив форм оплати
  * - dilovod.cache.tradeChanels - JSON масив каналів продажів
- * - dilovod.cache.firms.lastUpdate - дата останнього оновлення фірм (ISO string)
- * - dilovod.cache.accounts.lastUpdate - дата останнього оновлення рахунків
- * - dilovod.cache.storages.lastUpdate - дата останнього оновлення складів
- * - dilovod.cache.paymentForms.lastUpdate - дата останнього оновлення форм оплати
- * - dilovod.cache.tradeChanels.lastUpdate - дата останнього оновлення каналів продажів
+ * - dilovod.cache.units - одиниці виміру
+ * - dilovod.cache.priceTypes - типи цін
+ * - dilovod.cache.currency - валюти
+ * - dilovod.cache.accPolicies - політики обліку (тип обʼєкта каталогу)
+ * - dilovod.cache.{type}.lastUpdate - дата останнього оновлення (ISO string)
  */
 
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export type CacheType = 'firms' | 'accounts' | 'storages' | 'paymentForms' | 'tradeChanels' | 'deliveryMethods';
+export type CacheType =
+  | 'firms'
+  | 'accounts'
+  | 'storages'
+  | 'paymentForms'
+  | 'tradeChanels'
+  | 'deliveryMethods'
+  | 'units'
+  | 'priceTypes'
+  | 'currency'
+  | 'accPolicies';
 
 interface CacheMetadata {
   lastUpdate: Date | null;
@@ -240,7 +250,18 @@ export class DilovodCacheService {
    * Отримати статус всіх кешів
    */
   async getAllCacheStatus(): Promise<Record<CacheType | 'goods', CacheMetadata>> {
-    const types: CacheType[] = ['firms', 'accounts', 'storages', 'paymentForms', 'tradeChanels', 'deliveryMethods'];
+    const types: CacheType[] = [
+      'firms',
+      'accounts',
+      'storages',
+      'paymentForms',
+      'tradeChanels',
+      'deliveryMethods',
+      'units',
+      'priceTypes',
+      'currency',
+      'accPolicies',
+    ];
     const statuses: Record<string, CacheMetadata> = {};
 
     for (const type of types) {

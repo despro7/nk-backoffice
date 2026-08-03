@@ -403,12 +403,12 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="package" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     order: 8,
-    //minRole: ROLES.WAREHOUSE_MANAGER,
-    roles: [ROLES.ADMIN], // тимчасово лише admin (приховати від інших до релізу)
+    minRole: ROLES.WAREHOUSE_MANAGER,
+    // roles: [ROLES.ADMIN], // тимчасово лише admin (приховати від інших до релізу)
     navBadge: {
       label: 'NEW',
       color: 'danger',
-      until: '2026-08-10',
+      until: '2026-08-15',
     },
   },
   {

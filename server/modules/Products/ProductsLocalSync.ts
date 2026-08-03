@@ -6,6 +6,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { prisma, logServer } from '../../lib/utils.js';
 import { LocalSyncGoodPayload } from './ProductsTypes.js';
+import { nextSiblingSortOrder } from '../../../shared/utils/catalogSortOrder.js';
 
 type Tx = Prisma.TransactionClient | PrismaClient;
 
@@ -138,23 +139,92 @@ export class ProductsLocalSync {
       }
     }
 
+    const existing = await tx.catalogGood.findUnique({
+      where: { id: payload.id },
+      select: { id: true, sortOrder: true },
+    });
+
+    // sortOrder: на create — кінець siblings; на update з Dilovod — не затирати
+    let sortOrder = payload.sortOrder;
+    if (sortOrder === undefined) {
+      if (!existing) {
+        const maxRow = await tx.catalogGood.aggregate({
+          where: {
+            ...(payload.parentId
+              ? { parentId: payload.parentId }
+              : { OR: [{ parentId: null }, { parentId: '0' }, { parentId: '' }] }),
+          },
+          _max: { sortOrder: true },
+        });
+        const { nextSiblingSortOrder } = await import('../../../shared/utils/catalogSortOrder.js');
+        sortOrder = nextSiblingSortOrder(maxRow._max.sortOrder);
+      }
+    }
+
+    // fullDescription / unitRatio / stockBalanceByStock / sortOrder — локальні;
+    // Dilovod sync не передає → не затираємо на update
+    const createData = {
+      id: payload.id,
+      ...data,
+      fullDescription: payload.fullDescription ?? null,
+      unitRatio: payload.unitRatio ?? 1,
+      stockBalanceByStock: payload.stockBalanceByStock ?? null,
+      sortOrder: sortOrder ?? 10,
+    };
+
+    const updateData: Record<string, unknown> = { ...data };
+    if (payload.fullDescription !== undefined) {
+      updateData.fullDescription = payload.fullDescription;
+    }
+    if (payload.unitRatio !== undefined) {
+      updateData.unitRatio = payload.unitRatio;
+    }
+    if (payload.stockBalanceByStock !== undefined) {
+      updateData.stockBalanceByStock = payload.stockBalanceByStock;
+    }
+    if (sortOrder !== undefined) {
+      updateData.sortOrder = sortOrder;
+    }
+
     await tx.catalogGood.upsert({
       where: { id: payload.id },
-      create: { id: payload.id, ...data },
-      update: data,
+      create: createData,
+      update: updateData,
     });
   }
 
   private async replaceComponents(
     tx: Tx,
     parentGoodId: string,
-    components: Array<{ componentGoodId: string; qty: number; rowNum: number }>
+    components: Array<{
+      componentGoodId: string;
+      qty: number;
+      rowNum: number;
+      unitId?: string | null;
+      note?: string | null;
+    }>
   ): Promise<void> {
+    // Примітки: Dilovod SoT (remark). Якщо payload.note === undefined — зберігаємо попереднє
+    // (structure-only sync без BOM). Якщо null/рядок — пишемо з Dilovod / UI.
+    // Ключ по rowNum: один інгредієнт може бути в кількох рядках.
+    const existingNotes = await tx.catalogGoodComponent.findMany({
+      where: { parentGoodId },
+      select: { componentGoodId: true, rowNum: true, note: true },
+    });
+    const noteByRow = new Map(
+      existingNotes
+        .filter((r) => r.note != null && String(r.note).trim() !== '')
+        .map((r) => [`${r.rowNum}:${r.componentGoodId}`, r.note as string])
+    );
+
     await tx.catalogGoodComponent.deleteMany({ where: { parentGoodId } });
     if (components.length === 0) return;
 
     // Ensure component goods exist (minimal stub) to satisfy FK
+    const ensuredIds = new Set<string>();
     for (const c of components) {
+      if (ensuredIds.has(c.componentGoodId)) continue;
+      ensuredIds.add(c.componentGoodId);
       const exists = await tx.catalogGood.findUnique({
         where: { id: c.componentGoodId },
         select: { id: true },
@@ -171,13 +241,27 @@ export class ProductsLocalSync {
       }
     }
 
+    // Гарантуємо унікальний rowNum у межах parent (unique parentGoodId+rowNum)
     await tx.catalogGoodComponent.createMany({
-      data: components.map((c) => ({
-        parentGoodId,
-        componentGoodId: c.componentGoodId,
-        qty: c.qty,
-        rowNum: c.rowNum,
-      })),
+      data: components.map((c, idx) => {
+        const rowNum = idx + 1;
+        const noteFromPayload =
+          c.note !== undefined ? (c.note?.trim() || null) : undefined;
+        const note =
+          noteFromPayload !== undefined
+            ? noteFromPayload
+            : noteByRow.get(`${c.rowNum}:${c.componentGoodId}`) ??
+              noteByRow.get(`${rowNum}:${c.componentGoodId}`) ??
+              null;
+        return {
+          parentGoodId,
+          componentGoodId: c.componentGoodId,
+          qty: c.qty,
+          rowNum,
+          unitId: c.unitId ?? null,
+          note,
+        };
+      }),
     });
   }
 

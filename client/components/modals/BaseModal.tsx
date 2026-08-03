@@ -43,7 +43,16 @@ export function BaseModal({
         <ModalBody>{message}</ModalBody>
         <ModalFooter>
           {confirmText && (
-            <Button color={confirmColor} onPress={onConfirm} isLoading={confirmLoading} startContent={confirmStartContent}>
+            <Button 
+              color={confirmColor} 
+              className={`
+                ${confirmColor === 'warning' ? 'bg-amber-500 hover:bg-amber-600 text-white' : ''}
+                ${confirmColor === 'success' ? 'bg-green-500 hover:bg-green-600 text-white' : ''}
+              `} 
+              onPress={onConfirm} 
+              isLoading={confirmLoading} 
+              startContent={confirmStartContent}
+            >
               {confirmText}
             </Button>
           )}

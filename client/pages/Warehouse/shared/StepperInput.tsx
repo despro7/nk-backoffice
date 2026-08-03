@@ -17,7 +17,7 @@ export interface StepperInputProps {
   onBlur?: () => void; // Викликається при втраті фокуса
   disabled?: boolean;
   max?: number; // Максимально допустиме значення (для обмеження по залишкам партії)
-  size?: 'sm' | 'md' | 'lg'; // Візуальні налаштування розміру
+  size?: 'xs' | 'sm' | 'md' | 'lg'; // Візуальні налаштування розміру
   className?: string;
   labelClassName?: string;
   inputClassName?: string;
@@ -77,6 +77,7 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
           {/* Видима область — клік відкриває OSK */}
           <div
             className={`w-full flex items-center justify-center font-medium transition-colors select-none ${
+              size === 'xs' ? 'h-8 text-base rounded-sm border-1' : 
               size === 'sm' ? 'h-10 text-lg rounded-md border-1' : 
               size === 'lg' ? 'h-18 text-2xl rounded-lg border-2' : 
               'h-12 text-xl rounded-md border-1'
@@ -140,7 +141,8 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
             isIconOnly
             variant="light"
             isDisabled={disabled}
-            className={`absolute top-1/2 -translate-y-1/2 z-10 bg-gray-100 rounded-sm ${
+            className={`absolute top-1/2 -translate-y-1/2 z-10 bg-gray-100 ${size === 'xs' ? 'rounded-[6px]' : 'rounded-sm'} ${
+              size === 'xs' ? 'h-7 min-w-7 w-7 left-0.5 border-1 border-white' : 
               size === 'sm' ? 'h-8 min-w-7 w-7 left-1' : 
               size === 'lg' ? 'h-14 w-10 left-2' :
               'h-10 min-w-8 w-8 left-1'
@@ -149,13 +151,14 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
             tabIndex={-1}
             aria-label="Зменшити"
           >
-            <DynamicIcon name="minus" className={`pointer-events-none flex-shrink-0 ${size === 'sm' ? 'h-4 w-4' : size === 'md' ? 'h-5 w-5' : 'h-6 w-6'}`} />
+            <DynamicIcon name="minus" className={`pointer-events-none flex-shrink-0 ${size === 'xs' ? 'h-3 w-3' : size === 'sm' ? 'h-4 w-4' : size === 'md' ? 'h-5 w-5' : 'h-6 w-6'}`} />
           </Button>
           <Button
             isIconOnly
             variant="light"
             isDisabled={disabled || isAtMax}
-            className={`absolute top-1/2 -translate-y-1/2 z-10 bg-gray-100 rounded-sm ${
+            className={`absolute top-1/2 -translate-y-1/2 z-10 bg-gray-100 ${size === 'xs' ? 'rounded-[6px]' : 'rounded-sm'} ${
+              size === 'xs' ? 'h-7 min-w-7 w-7 right-0.5 border-1 border-white' : 
               size === 'sm' ? 'h-8 min-w-7 w-7 right-1' : 
               size === 'lg' ? 'h-14 w-10 right-2' :
               'h-10 min-w-8 w-8 right-1'
@@ -164,7 +167,7 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
             tabIndex={-1}
             aria-label="Збільшити"
           >
-            <DynamicIcon name="plus" className={`pointer-events-none flex-shrink-0 ${size === 'sm' ? 'h-4 w-4' : size === 'md' ? 'h-5 w-5' : 'h-6 w-6'}`} />
+            <DynamicIcon name="plus" className={`pointer-events-none flex-shrink-0 ${size === 'xs' ? 'h-3 w-3' : size === 'sm' ? 'h-4 w-4' : size === 'md' ? 'h-5 w-5' : 'h-6 w-6'}`} />
           </Button>
         </div>
       </div>

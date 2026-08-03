@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardBody, CardHeader, Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '../services/ToastService';
 import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
+import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 import { DirectoryModal } from './modals/DirectoryModal';
 import type { IconName } from 'lucide-react/dynamic';
 import { formatRelativeDate } from '../lib/formatUtils';
@@ -20,8 +21,17 @@ interface CacheStatus {
   paymentForms: CacheMetadata;
   tradeChanels: CacheMetadata;
   deliveryMethods: CacheMetadata;
+  units: CacheMetadata;
+  priceTypes: CacheMetadata;
+  currency: CacheMetadata;
+  accPolicies: CacheMetadata;
   goods: CacheMetadata;
 }
+
+const CACHE_TYPE_ORDER: Array<keyof CacheStatus> = [
+  'firms', 'accounts', 'storages', 'paymentForms', 'tradeChanels', 'deliveryMethods',
+  'units', 'priceTypes', 'currency', 'accPolicies', 'goods',
+];
 
 export const DilovodCacheManager: React.FC = () => {
   // Стан для оновлення довідника товарів
@@ -34,6 +44,57 @@ export const DilovodCacheManager: React.FC = () => {
       return null as ReturnType<typeof useDilovodDirectories> | null;
     }
   })();
+
+  const {
+    settings: dilovodSettings,
+    saveSettings: saveDilovodSettings,
+    saving: savingColorMap,
+  } = useDilovodSettings({ loadDirectories: false });
+
+  const [accPolicyColorMap, setAccPolicyColorMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setAccPolicyColorMap(dilovodSettings?.accPolicyColorMap || {});
+  }, [dilovodSettings?.accPolicyColorMap]);
+
+  const handleAccPolicyColorChange = useCallback(
+    async (id: string, hue: string | null) => {
+      const next = { ...accPolicyColorMap };
+      if (hue) next[id] = hue;
+      else delete next[id];
+
+      setAccPolicyColorMap(next);
+
+      if (!dilovodSettings) {
+        ToastService.show({
+          title: 'Не вдалося зберегти колір',
+          description: 'Налаштування Dilovod ще не завантажені',
+          color: 'warning',
+        });
+        return;
+      }
+
+      const ok = await saveDilovodSettings({
+        accPolicyColorMap: next,
+      });
+
+      if (ok) {
+        ToastService.show({
+          title: hue ? 'Колір закріплено' : 'Закріплення знято',
+          description: hue ? `${hue} → ${id}` : id,
+          color: 'success',
+        });
+      } else {
+        // rollback
+        setAccPolicyColorMap(dilovodSettings.accPolicyColorMap || {});
+        ToastService.show({
+          title: 'Помилка збереження кольору',
+          color: 'danger',
+        });
+      }
+    },
+    [accPolicyColorMap, dilovodSettings, saveDilovodSettings]
+  );
 
   // Окрема функція для оновлення довідника товарів
   const handleRefreshGoodsCache = async () => {
@@ -173,6 +234,10 @@ export const DilovodCacheManager: React.FC = () => {
           paymentForms: 'paymentForms',
           tradeChanels: 'tradeChanels',
           deliveryMethods: 'deliveryMethods',
+          units: 'units',
+          priceTypes: 'priceTypes',
+          currency: 'currencies',
+          accPolicies: 'accPolicies',
           goods: 'goods'
         };
         const apiKey = apiKeyMap[type];
@@ -196,6 +261,10 @@ export const DilovodCacheManager: React.FC = () => {
           paymentForms: 'paymentForms',
           tradeChanels: 'tradeChanels',
           deliveryMethods: 'deliveryMethods',
+          units: 'units',
+          priceTypes: 'priceTypes',
+          currency: 'currencies',
+          accPolicies: 'accPolicies',
           goods: 'goods'
         };
 
@@ -237,6 +306,14 @@ export const DilovodCacheManager: React.FC = () => {
         return 'radio';
       case 'deliveryMethods':
         return 'truck';
+      case 'units':
+        return 'ruler';
+      case 'priceTypes':
+        return 'tags';
+      case 'currency':
+        return 'banknote';
+      case 'accPolicies':
+        return 'book-open';
       case 'goods':
         return 'package-2';
     }
@@ -257,6 +334,14 @@ export const DilovodCacheManager: React.FC = () => {
         return 'Канали продажів';
       case 'deliveryMethods':
         return 'Способи доставки';
+      case 'units':
+        return 'Одиниці виміру';
+      case 'priceTypes':
+        return 'Типи цін';
+      case 'currency':
+        return 'Валюти';
+      case 'accPolicies':
+        return 'Облік (тип номенклатури)';
       case 'goods':
         return 'Товари';
     }
@@ -296,6 +381,15 @@ export const DilovodCacheManager: React.FC = () => {
         return [
           { key: 'id', label: 'ID' },
           { key: 'id__pr', label: 'Назва' },
+          { key: 'code', label: 'Код' }
+        ];
+      case 'units':
+      case 'priceTypes':
+      case 'currency':
+      case 'accPolicies':
+        return [
+          { key: 'id', label: 'ID' },
+          { key: 'name', label: 'Назва' },
           { key: 'code', label: 'Код' }
         ];
       case 'goods':
@@ -349,7 +443,7 @@ export const DilovodCacheManager: React.FC = () => {
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {(Object.keys(cacheStatus) as Array<keyof CacheStatus>).map((type) => {
+              {CACHE_TYPE_ORDER.filter((type) => cacheStatus[type]).map((type) => {
                 const metadata = cacheStatus[type];
                 return (
                   <div
@@ -416,6 +510,17 @@ export const DilovodCacheManager: React.FC = () => {
           records={viewingDirectory.data}
           columns={getColumns(viewingDirectory.type)}
           onClose={() => setViewingDirectory(null)}
+          colorPicker={
+            viewingDirectory.type === 'accPolicies'
+              ? {
+                  colorMap: accPolicyColorMap,
+                  onChange: handleAccPolicyColorChange,
+                  saving: savingColorMap,
+                  previewTheme: 'light',
+                  previewIntensity: 'soft',
+                }
+              : undefined
+          }
         />
       )}
     </Card>

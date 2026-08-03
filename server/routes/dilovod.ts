@@ -83,75 +83,90 @@ async function getDilovodSettings(): Promise<DilovodSettings> {
     channelPaymentMapping: parseJsonSafe(settingsMap.get('dilovod_channel_payment_mapping'), {}),
     deliveryMappings: parseJsonSafe(settingsMap.get('dilovod_delivery_mappings'), []),
     logSendOrder: parseBool(settingsMap.get('dilovod_log_send_order')),
-    liqpayCommission: parseBool(settingsMap.get('dilovod_liqpay_commission'))
+    liqpayCommission: parseBool(settingsMap.get('dilovod_liqpay_commission')),
+    accPolicyColorMap: parseJsonSafe(settingsMap.get('dilovod_acc_policy_color_map'), {}),
   };
 }
 
 /**
- * Збереження налаштувань Dilovod в settings_base
+ * Збереження налаштувань Dilovod в settings_base.
+ * Partial update: оновлюються лише поля, явно передані в `settings`.
  */
 async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<DilovodSettings> {
-  // Підготовуємо масив налаштувань для збереження
-  const settingsToSave = [
-    { key: 'dilovod_api_url', value: settings.apiUrl || '', description: 'API URL для Dilovod' },
-    { key: 'dilovod_api_key', value: settings.apiKey || '', description: 'API ключ для Dilovod' },
-    { key: 'dilovod_main_storage_id', value: settings.mainStorageId || '', description: 'ID головного складу' },
-    { key: 'dilovod_small_storage_id', value: settings.smallStorageId || '', description: 'ID малого складу' },
-    { key: 'dilovod_storage_id', value: settings.storageId || '', description: 'Основний склад для списання' },
-    { key: 'dilovod_products_interval', value: settings.productsInterval || 'none sync', description: 'Інтервал синхронізації товарів' },
-    { key: 'dilovod_products_hour', value: String(settings.productsHour ?? 6), description: 'Година запуску синхронізації товарів' },
-    { key: 'dilovod_products_minute', value: String(settings.productsMinute ?? 0), description: 'Хвилина запуску синхронізації товарів' },
-    { key: 'dilovod_synchronization_interval', value: settings.synchronizationInterval || 'daily', description: 'Інтервал синхронізації залишків' },
-    { key: 'dilovod_synchronization_hour', value: String(settings.synchronizationHour ?? 6), description: 'Година запуску синхронізації залишків' },
-    { key: 'dilovod_synchronization_minute', value: String(settings.synchronizationMinute ?? 0), description: 'Хвилина запуску синхронізації залишків' },
-    { key: 'dilovod_synchronization_regular_price', value: String(settings.synchronizationRegularPrice ?? false), description: 'Синхронізація звичайних цін' },
-    { key: 'dilovod_synchronization_sale_price', value: String(settings.synchronizationSalePrice ?? false), description: 'Синхронізація акційних цін' },
-    { key: 'dilovod_synchronization_stock_quantity', value: String(settings.synchronizationStockQuantity ?? false), description: 'Синхронізація залишків' },
-    { key: 'dilovod_orders_interval', value: settings.ordersInterval || 'hourly', description: 'Інтервал синхронізації замовлень' },
-    { key: 'dilovod_orders_hour', value: String(settings.ordersHour ?? 5), description: 'Година запуску синхронізації замовлень' },
-    { key: 'dilovod_orders_minute', value: String(settings.ordersMinute ?? 5), description: 'Хвилина запуску синхронізації замовлень' },
-    { key: 'dilovod_orders_batch_size', value: String(settings.ordersBatchSize ?? 50), description: 'Розмір пакета синхронізації замовлень' },
-    { key: 'dilovod_orders_retry_attempts', value: String(settings.ordersRetryAttempts ?? 3), description: 'Кількість повторних спроб синхронізації замовлень' },
-    { key: 'dilovod_auto_send_order', value: String(settings.autoSendOrder ?? false), description: 'Автоматичне відправлення замовлень (saleOrder)' },
-    { key: 'dilovod_auto_send_list_settings', value: JSON.stringify(settings.autoSendListSettings || []), description: 'Статуси для автовідправки saleOrder' },
-    { key: 'dilovod_auto_send_channel_settings', value: JSON.stringify(settings.autoSendChannelSettings || []), description: 'Канали для автовідправки saleOrder' },
-    { key: 'dilovod_auto_send_sale', value: String(settings.autoSendSale ?? false), description: 'Автоматичне відвантаження (sale)' },
-    { key: 'dilovod_auto_send_sale_list_settings', value: JSON.stringify(settings.autoSendSaleListSettings || []), description: 'Статуси для автовідправки sale' },
-    { key: 'dilovod_auto_send_sale_channel_settings', value: JSON.stringify(settings.autoSendSaleChannelSettings || []), description: 'Канали для автовідправки sale' },
-    { key: 'dilovod_get_person_by', value: settings.getPersonBy || 'end_user', description: 'Пошук контрагентів' },
-    { key: 'dilovod_default_firm_id', value: settings.defaultFirmId || '', description: 'Фірма за замовчуванням' },
-    { key: 'dilovod_channel_payment_mapping', value: JSON.stringify(settings.channelPaymentMapping || {}), description: 'Мапінг каналів продажів' },
-    { key: 'dilovod_delivery_mappings', value: JSON.stringify(settings.deliveryMappings || []), description: 'Мапінг способів доставки' },
-    { key: 'dilovod_log_send_order', value: String(settings.logSendOrder ?? false), description: 'Логування відправки замовлень' },
-    { key: 'dilovod_liqpay_commission', value: String(settings.liqpayCommission ?? false), description: 'Комісія LiqPay' }
-  ];
+  const settingsToSave: Array<{ key: string; value: string; description: string }> = [];
 
-  // Використовуємо транзакцію для атомарного збереження
-  await prisma.$transaction(async (tx) => {
-    for (const setting of settingsToSave) {
-      await tx.settingsBase.upsert({
-        where: { key: setting.key },
-        update: {
-          value: setting.value,
-          category: 'dilovod',
-          isActive: true,
-          updatedAt: new Date()
-        },
-        create: {
-          key: setting.key,
-          value: setting.value,
-          description: setting.description,
-          category: 'dilovod',
-          isActive: true
-        }
-      });
-    }
-  });
+  const add = (key: string, value: string, description: string) => {
+    settingsToSave.push({ key, value, description });
+  };
 
-  // Очищаємо кеш конфігурації після збереження
+  if (settings.apiUrl !== undefined) add('dilovod_api_url', settings.apiUrl || '', 'API URL для Dilovod');
+  if (settings.apiKey !== undefined) add('dilovod_api_key', settings.apiKey || '', 'API ключ для Dilovod');
+  if (settings.mainStorageId !== undefined) add('dilovod_main_storage_id', settings.mainStorageId || '', 'ID головного складу');
+  if (settings.smallStorageId !== undefined) add('dilovod_small_storage_id', settings.smallStorageId || '', 'ID малого складу');
+  if (settings.storageId !== undefined) add('dilovod_storage_id', settings.storageId || '', 'Основний склад для списання');
+  if (settings.productsInterval !== undefined) add('dilovod_products_interval', settings.productsInterval || 'none sync', 'Інтервал синхронізації товарів');
+  if (settings.productsHour !== undefined) add('dilovod_products_hour', String(settings.productsHour ?? 6), 'Година запуску синхронізації товарів');
+  if (settings.productsMinute !== undefined) add('dilovod_products_minute', String(settings.productsMinute ?? 0), 'Хвилина запуску синхронізації товарів');
+  if (settings.synchronizationInterval !== undefined) add('dilovod_synchronization_interval', settings.synchronizationInterval || 'daily', 'Інтервал синхронізації залишків');
+  if (settings.synchronizationHour !== undefined) add('dilovod_synchronization_hour', String(settings.synchronizationHour ?? 6), 'Година запуску синхронізації залишків');
+  if (settings.synchronizationMinute !== undefined) add('dilovod_synchronization_minute', String(settings.synchronizationMinute ?? 0), 'Хвилина запуску синхронізації залишків');
+  if (settings.synchronizationRegularPrice !== undefined) add('dilovod_synchronization_regular_price', String(settings.synchronizationRegularPrice ?? false), 'Синхронізація звичайних цін');
+  if (settings.synchronizationSalePrice !== undefined) add('dilovod_synchronization_sale_price', String(settings.synchronizationSalePrice ?? false), 'Синхронізація акційних цін');
+  if (settings.synchronizationStockQuantity !== undefined) add('dilovod_synchronization_stock_quantity', String(settings.synchronizationStockQuantity ?? false), 'Синхронізація залишків');
+  if (settings.ordersInterval !== undefined) add('dilovod_orders_interval', settings.ordersInterval || 'hourly', 'Інтервал синхронізації замовлень');
+  if (settings.ordersHour !== undefined) add('dilovod_orders_hour', String(settings.ordersHour ?? 5), 'Година запуску синхронізації замовлень');
+  if (settings.ordersMinute !== undefined) add('dilovod_orders_minute', String(settings.ordersMinute ?? 5), 'Хвилина запуску синхронізації замовлень');
+  if (settings.ordersBatchSize !== undefined) add('dilovod_orders_batch_size', String(settings.ordersBatchSize ?? 50), 'Розмір пакета синхронізації замовлень');
+  if (settings.ordersRetryAttempts !== undefined) add('dilovod_orders_retry_attempts', String(settings.ordersRetryAttempts ?? 3), 'Кількість повторних спроб синхронізації замовлень');
+  if (settings.autoSendOrder !== undefined) add('dilovod_auto_send_order', String(settings.autoSendOrder ?? false), 'Автоматичне відправлення замовлень (saleOrder)');
+  if (settings.autoSendListSettings !== undefined) add('dilovod_auto_send_list_settings', JSON.stringify(settings.autoSendListSettings || []), 'Статуси для автовідправки saleOrder');
+  if (settings.autoSendChannelSettings !== undefined) add('dilovod_auto_send_channel_settings', JSON.stringify(settings.autoSendChannelSettings || []), 'Канали для автовідправки saleOrder');
+  if (settings.autoSendSale !== undefined) add('dilovod_auto_send_sale', String(settings.autoSendSale ?? false), 'Автоматичне відвантаження (sale)');
+  if (settings.autoSendSaleListSettings !== undefined) add('dilovod_auto_send_sale_list_settings', JSON.stringify(settings.autoSendSaleListSettings || []), 'Статуси для автовідправки sale');
+  if (settings.autoSendSaleChannelSettings !== undefined) add('dilovod_auto_send_sale_channel_settings', JSON.stringify(settings.autoSendSaleChannelSettings || []), 'Канали для автовідправки sale');
+  if (settings.getPersonBy !== undefined) add('dilovod_get_person_by', settings.getPersonBy || 'end_user', 'Пошук контрагентів');
+  if (settings.defaultFirmId !== undefined) add('dilovod_default_firm_id', settings.defaultFirmId || '', 'Фірма за замовчуванням');
+  if (settings.channelPaymentMapping !== undefined) add('dilovod_channel_payment_mapping', JSON.stringify(settings.channelPaymentMapping || {}), 'Мапінг каналів продажів');
+  if (settings.deliveryMappings !== undefined) add('dilovod_delivery_mappings', JSON.stringify(settings.deliveryMappings || []), 'Мапінг способів доставки');
+  if (settings.logSendOrder !== undefined) add('dilovod_log_send_order', String(settings.logSendOrder ?? false), 'Логування відправки замовлень');
+  if (settings.liqpayCommission !== undefined) add('dilovod_liqpay_commission', String(settings.liqpayCommission ?? false), 'Комісія LiqPay');
+  if (settings.accPolicyColorMap !== undefined) {
+    add(
+      'dilovod_acc_policy_color_map',
+      JSON.stringify(settings.accPolicyColorMap || {}),
+      'Закріплені кольори типів номенклатури (accPolicies)'
+    );
+  }
+
+  if (settingsToSave.length === 0) {
+    return await getDilovodSettings();
+  }
+
+  await prisma.$transaction(
+    async (tx) => {
+      for (const setting of settingsToSave) {
+        await tx.settingsBase.upsert({
+          where: { key: setting.key },
+          update: {
+            value: setting.value,
+            category: 'dilovod',
+            isActive: true,
+            updatedAt: new Date(),
+          },
+          create: {
+            key: setting.key,
+            value: setting.value,
+            description: setting.description,
+            category: 'dilovod',
+            isActive: true,
+          },
+        });
+      }
+    },
+    { timeout: 20000 }
+  );
+
   clearConfigCache();
-
-  // Повертаємо оновлені налаштування
   return await getDilovodSettings();
 }
 
@@ -343,14 +358,17 @@ router.post('/settings', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAG
     // Зберігаємо налаштування через допоміжну функцію
     const savedSettings = await saveDilovodSettings(settingsData);
 
-    // Оновлюємо конфігурацію в DilovodService після збереження
-    const dilovodService = new DilovodService();
-    await dilovodService.reloadApiConfig();
+    const onlyColorMap =
+      Object.keys(settingsData).length === 1 && settingsData.accPolicyColorMap !== undefined;
 
-    // Перезапускаємо обидва cron job з новими налаштуваннями
-    void cronService.restartProductsSync();
-    void cronService.restartStockSync();
-    void cronService.restartOrderSync();
+    // Для зміни лише кольорів типів — без reload API / restart cron
+    if (!onlyColorMap) {
+      const dilovodService = new DilovodService();
+      await dilovodService.reloadApiConfig();
+      void cronService.restartProductsSync();
+      void cronService.restartStockSync();
+      void cronService.restartOrderSync();
+    }
 
     console.log('API: Налаштування Dilovod збережено і конфігурацію оновлено');
     res.json({
@@ -406,6 +424,21 @@ router.get('/directories', authenticateToken, requireMinRole(ROLES.STOREKEEPER),
       try { tradeChanelsResult = await dilovodService.getTradeChanels(); } catch (error) { console.log('API: ❌ Помилка отримання каналів продажів:', error); }
       try { deliveryMethodsResult = await dilovodService.getDeliveryMethods(); } catch (error) { console.log('API: ❌ Помилка отримання способів доставки:', error); }
 
+      // Products 2.0 catalog dictionaries (з кешу Dilovod)
+      let unitsResult: any[] = [];
+      let priceTypesResult: any[] = [];
+      let currenciesResult: any[] = [];
+      let accPoliciesResult: any[] = [];
+      try {
+        const { productsDilovodGateway } = await import('../modules/Products/ProductsDilovodGateway.js');
+        try { unitsResult = await productsDilovodGateway.fetchCachedDict('units'); } catch (e) { console.log('API: ❌ units:', e); }
+        try { priceTypesResult = await productsDilovodGateway.fetchCachedDict('priceTypes'); } catch (e) { console.log('API: ❌ priceTypes:', e); }
+        try { currenciesResult = await productsDilovodGateway.fetchCachedDict('currency'); } catch (e) { console.log('API: ❌ currency:', e); }
+        try { accPoliciesResult = await productsDilovodGateway.fetchCachedDict('accPolicies'); } catch (e) { console.log('API: ❌ accPolicies:', e); }
+      } catch (error) {
+        console.log('API: ❌ Помилка Products Dilovod gateway:', error);
+      }
+
       // Отримуємо товари з products (будемо використовувати поле products.dilovodId)
       let goodsResult: any[] = [];
       try {
@@ -436,7 +469,11 @@ router.get('/directories', authenticateToken, requireMinRole(ROLES.STOREKEEPER),
         firms: firmsResult,
         tradeChanels: tradeChanelsResult,
         deliveryMethods: deliveryMethodsResult,
-        goods: goodsResult
+        goods: goodsResult,
+        units: unitsResult,
+        priceTypes: priceTypesResult,
+        currencies: currenciesResult,
+        accPolicies: accPoliciesResult,
       };
 
       return { success: true, data: directories };

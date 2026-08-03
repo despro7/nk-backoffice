@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import path from "path";
 import authRoutes from "./routes/auth.js";
 import authSettingsRoutes from "./routes/auth-settings.js";
 import protectedRoutes from "./routes/protected.js";
@@ -92,6 +93,12 @@ export function createServer() {
     }
   }));
   app.use(express.urlencoded({ extended: true }));
+
+  // Локальні завантаження каталогу (зображення товарів)
+  app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads'), {
+    fallthrough: true,
+    maxAge: '1d',
+  }));
   
   // Глобальная диагностика всех PUT/POST запросов
   app.use((req, res, next) => {

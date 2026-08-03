@@ -457,32 +457,62 @@ model meta_logs {
 
 /// Локальне дзеркало Dilovod catalogs.goods (папки + товари)
 model CatalogGood {
-  id           String   @id @db.VarChar(32) // Dilovod id
-  parentId     String?  @db.VarChar(32)
-  isGroup      Boolean  @default(false)
-  delMark      Boolean  @default(false)
-  name         String   @db.VarChar(512) // uk only
-  sku          String?  @unique @db.VarChar(64) // Dilovod productNum; null для папок без артикула
-  mainUnitId   String?  @db.VarChar(32)
-  packageRatio Float?
-  weight       Float?
-  accPolicyId  String?  @db.VarChar(32)
-  printName    String?  @db.VarChar(512)
-  description  String?  @db.Text
-  syncedAt     DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  createdAt    DateTime @default(now())
+  id              String   @id @db.VarChar(32) // Dilovod id
+  parentId        String?  @db.VarChar(32)
+  isGroup         Boolean  @default(false)
+  delMark         Boolean  @default(false)
+  name            String   @db.VarChar(512) // uk only
+  sku             String?  @unique @db.VarChar(64) // Dilovod productNum; null для папок без артикула
+  mainUnitId      String?  @db.VarChar(32)
+  packageRatio    Float?
+  weight          Float?
+  accPolicyId     String?  @db.VarChar(32)
+  printName       String?  @db.VarChar(512)
+  description     String?  @db.Text // короткий опис → Dilovod
+  /// Повний опис лише локально (WP-експорт); Dilovod sync не затирає
+  fullDescription String?  @db.Text
+  /// Локальний порядок siblings (інтервал крок 10); не в Dilovod
+  sortOrder       Int      @default(0)
+  /// Локальний коеф. порцій; dual-write → products.unitRatio
+  unitRatio       Float?   @default(1)
+  /// Дзеркало products.stockBalanceByStock JSON {"1":GP,"2":МС}
+  stockBalanceByStock String? @db.LongText
+  syncedAt        DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
 
   components CatalogGoodComponent[] @relation("CatalogGoodComponents")
   usedIn     CatalogGoodComponent[] @relation("CatalogComponentGoods")
   prices     CatalogGoodPrice[]
   barcodes   CatalogGoodBarcode[]
+  images     CatalogGoodImage[]
 
   @@index([parentId])
+  @@index([parentId, sortOrder])
   @@index([isGroup])
   @@index([delMark])
   @@index([name])
   @@map("catalog_goods")
+}
+
+/// Локальні зображення товару (не в Dilovod; для WP-експорту)
+model CatalogGoodImage {
+  id           Int      @id @default(autoincrement())
+  goodId       String   @db.VarChar(32)
+  fileName     String   @db.VarChar(255)
+  originalName String   @db.VarChar(512)
+  mimeType     String   @db.VarChar(128)
+  size         Int
+  sortOrder    Int      @default(0)
+  isPrimary    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  good CatalogGood @relation(fields: [goodId], references: [id], onDelete: Cascade)
+
+  @@index([goodId])
+  @@index([goodId, sortOrder])
+  @@map("catalog_good_images")
 }
 
 /// BOM / tpGoods — склад комплекту
@@ -492,13 +522,17 @@ model CatalogGoodComponent {
   componentGoodId String   @db.VarChar(32)
   qty             Float    @default(1)
   rowNum          Int      @default(0)
+  unitId          String?  @db.VarChar(32)
+  /// Примітка рядка tpGoods → Dilovod `remark` (varchar 150)
+  note            String?  @db.VarChar(512)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   parentGood    CatalogGood @relation("CatalogGoodComponents", fields: [parentGoodId], references: [id], onDelete: Cascade)
   componentGood CatalogGood @relation("CatalogComponentGoods", fields: [componentGoodId], references: [id], onDelete: Restrict)
 
-  @@unique([parentGoodId, componentGoodId])
+  /// Як у Dilovod tpGoods: той самий інгредієнт може бути в кількох рядках; унікальність — по rowNum
+  @@unique([parentGoodId, rowNum])
   @@index([parentGoodId])
   @@index([componentGoodId])
   @@map("catalog_good_components")

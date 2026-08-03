@@ -252,7 +252,7 @@ export function getDilovodExportErrorMessage(result: any): string {
  * Ключі — підрядки, що можуть зустрічатися у полі `error` відповіді Dilovod API.
  */
 const DILOVOD_ERROR_TRANSLATIONS: Array<{ pattern: string | RegExp; title: string; message: string }> = [
-  { pattern: 'object locked',         title: 'Документ заблоковано',           message: 'Зараз його редагує інший користувач. Зверніться до зав. виробництва, щоб розблокувати документ.' },
+  { pattern: 'object locked',         title: 'Обʼєкт заблоковано в Dilovod',   message: 'Його зараз редагує інший користувач. Закрийте картку або документ у Dilovod і спробуйте ще раз.' },
   { pattern: 'multithreadApiSession', title: 'Паралельний запит заблоковано',  message: 'Зачекайте кілька секунд і спробуйте ще раз.' },
   { pattern: 'applicationLayerError', title: 'Документ не збережено',          message: 'Помилка даних у Діловоді. Перевірте позиції та спробуйте ще раз.' },
   { pattern: 'access denied',         title: 'Доступ заборонено',              message: 'Перевірте права користувача в Діловоді.' },

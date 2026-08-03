@@ -58,6 +58,12 @@ export interface DilovodSettings {
   
   // Комісія LiqPay
   liqpayCommission: boolean;
+
+  /**
+   * Закріплені кольори типів номенклатури (accPolicies):
+   * `accPolicyId` → hue name (`emerald`, `blue`, …).
+   */
+  accPolicyColorMap?: Record<string, string>;
 }
 
 // Константи для роботи з settings_base
@@ -97,6 +103,7 @@ export const DILOVOD_SETTINGS_KEYS = {
   DELIVERY_MAPPINGS: 'dilovod_delivery_mappings',
   LOG_SEND_ORDER: 'dilovod_log_send_order',
   LIQPAY_COMMISSION: 'dilovod_liqpay_commission',
+  ACC_POLICY_COLOR_MAP: 'dilovod_acc_policy_color_map',
 } as const;
 
 // Інтервали синхронізації
@@ -210,6 +217,11 @@ export interface DilovodDirectories {
   tradeChanels: DilovodTradeChanel[];
   deliveryMethods: DilovodDeliveryMethod[];
   goods: Array<{ id: number; good_id: string; productNum: string; name: string | null; parent: string | null }>;
+  /** Products 2.0 catalog dictionaries */
+  units?: Array<{ id: string; name: string; code?: string | null }>;
+  priceTypes?: Array<{ id: string; name: string; code?: string | null }>;
+  currencies?: Array<{ id: string; name: string; code?: string | null }>;
+  accPolicies?: Array<{ id: string; name: string; code?: string | null }>;
 }
 
 // Request/Response типи для API

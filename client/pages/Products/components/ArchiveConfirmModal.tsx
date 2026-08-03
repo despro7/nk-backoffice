@@ -1,11 +1,4 @@
-import {
-  Button,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-} from '@heroui/react';
+import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import type { CatalogItemLabel } from '../ProductsUtils';
 import { CatalogConfirmItemsList } from './CatalogConfirmItemsList';
 
@@ -27,25 +20,24 @@ export function ArchiveConfirmModal({
   onClose,
 }: ArchiveConfirmModalProps) {
   return (
-    <Modal isOpen={isOpen} onClose={onClose}>
-      <ModalContent>
-        <ModalHeader>Архівувати вибрані?</ModalHeader>
-        <ModalBody>
-          <p className="text-sm text-default-600">
-            Елементи ({items.length}) буде переміщено в папку «{archiveFolderName}»
-            (створиться, якщо ще немає) і позначено як видалені в Dilovod.
-          </p>
-          <CatalogConfirmItemsList items={items} />
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="light" onPress={onClose} isDisabled={loading}>
-            Скасувати
-          </Button>
-          <Button color="warning" onPress={onConfirm} isLoading={loading}>
-            В архів
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+
+    <ConfirmModal
+        isOpen={isOpen}
+        title="Архівувати вибрані?"
+        message={
+          <div className="space-y-1">
+            <p>
+              {items.length} елемент(ів) буде переміщено в папку «{archiveFolderName}».
+            </p>
+            <CatalogConfirmItemsList items={items} />
+          </div>
+        }
+        confirmText="В архів"
+        confirmColor="warning"
+        cancelText="Скасувати"
+        confirmLoading={loading}
+        onCancel={onClose}
+        onConfirm={onConfirm}
+      />
   );
 }

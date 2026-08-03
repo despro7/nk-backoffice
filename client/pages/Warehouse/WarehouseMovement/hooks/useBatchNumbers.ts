@@ -10,17 +10,32 @@ export interface BatchNumber {
   firmDisplayName: string;
 }
 
+export interface FetchBatchesOptions {
+  /** Включити партії з малого складу (разом із ГП / іншими) */
+  includeSmallStorage?: boolean;
+  /** Лише малий склад */
+  onlySmallStorage?: boolean;
+}
+
 interface UseBatchNumbersResult {
   batches: BatchNumber[];
   loading: boolean;
   error: string | null;
-  fetchBatches: (sku: string, asOfDate?: Date, firmId?: string, force?: boolean, storageId?: string) => Promise<void>;
+  fetchBatches: (
+    sku: string,
+    asOfDate?: Date,
+    firmId?: string,
+    force?: boolean,
+    storageId?: string,
+    options?: FetchBatchesOptions
+  ) => Promise<void>;
 }
 
 /**
  * Hook для отримання доступних партій по SKU.
  * Кешування відбувається на сервері (WarehouseController), тому клієнтський кеш не потрібен.
  * Параметр force=true примусово скидає серверний кеш і отримує свіжі дані.
+ * За замовчуванням малий склад виключено — передайте includeSmallStorage: true щоб включити.
  */
 export function useBatchNumbers(): UseBatchNumbersResult {
   const [batches, setBatches] = useState<BatchNumber[]>([]);
@@ -28,7 +43,14 @@ export function useBatchNumbers(): UseBatchNumbersResult {
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const fetchBatches = useCallback(async (sku: string, asOfDate?: Date, firmId?: string, force?: boolean, storageId?: string) => {
+  const fetchBatches = useCallback(async (
+    sku: string,
+    asOfDate?: Date,
+    firmId?: string,
+    force?: boolean,
+    storageId?: string,
+    options?: FetchBatchesOptions
+  ) => {
     if (!sku || sku.trim() === '') {
       setBatches([]);
       setError(null);
@@ -46,7 +68,16 @@ export function useBatchNumbers(): UseBatchNumbersResult {
     setError(null);
 
     try {
-      console.log(`📦 [useBatchNumbers] Запит партій для SKU: ${sku}${firmId ? ` (фірма: ${firmId})` : ''}${asOfDate ? ` на дату ${asOfDate.toLocaleDateString('uk-UA')}` : ''}${force ? ' [force]' : ''}`);
+      const includeSmall = Boolean(options?.includeSmallStorage);
+      const onlySmall = Boolean(options?.onlySmallStorage);
+      console.log(
+        `📦 [useBatchNumbers] Запит партій для SKU: ${sku}` +
+          `${firmId ? ` (фірма: ${firmId})` : ''}` +
+          `${asOfDate ? ` на дату ${asOfDate.toLocaleDateString('uk-UA')}` : ''}` +
+          `${force ? ' [force]' : ''}` +
+          `${includeSmall ? ' [+МС]' : ''}` +
+          `${onlySmall ? ' [лише МС]' : ''}`
+      );
 
       // Формуємо URL з параметрами
       const url = new URL(`/api/warehouse/batch-numbers/${encodeURIComponent(sku)}`, window.location.origin);
@@ -61,6 +92,12 @@ export function useBatchNumbers(): UseBatchNumbersResult {
       }
       if (force) {
         url.searchParams.set('force', 'true');
+      }
+      if (includeSmall) {
+        url.searchParams.set('includeSmallStorage', 'true');
+      }
+      if (onlySmall) {
+        url.searchParams.set('onlySmallStorage', 'true');
       }
 
       const response = await fetch(url.toString(), {

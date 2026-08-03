@@ -40,6 +40,9 @@ temp-payload.json
 logging-settings.json
 public/version.json
 
+# Локальні завантаження каталогу (зображення товарів)
+uploads/
+
 # QZ Tray certificates (never commit private keys!)
 certificates/
 *.pem

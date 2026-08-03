@@ -5,6 +5,74 @@
 
 ---
 
+## 2026-08-03 — Products 2.0: ops-поля, сортування DnD, примітки BOM, restore у пошуку
+**Files:** `prisma/schema.prisma`, `prisma/migrations/20260803090000_catalog_ops_fields_and_sort/`, `shared/types/catalog.ts`, `shared/utils/catalogSortOrder.ts`, `shared/utils/specColorPalette.ts`, `server/modules/Products/*`, `server/services/dilovod/*`, `client/pages/Products/**`, `Docs/features/products-catalog-2.0.md`
+
+### Дані / API
+- `catalog_goods`: `sortOrder` (інтервал 10), `unitRatio`, `stockBalanceByStock` (+ backfill з `products`); індекс `(parentId, sortOrder)`.
+- `catalog_good_components.note` ↔ Dilovod `tpGoods.remark` (до 150 символів у save).
+- `POST /api/catalog/reorder` — sibling reorder (папки в дереві / товари в таблиці); при нестачі щілини — rebalance `10,20,30…`.
+- Dual-write ops-полів у legacy `products` (`unitRatio`, `weight`, `portionsPerBox`←`packageRatio`, `manualOrder`←`sortOrder`, `stockBalanceByStock`) — **без** зміни `set` / hash.
+- Dilovod stock bulk також дзеркалить JSON у `catalog_goods.stockBalanceByStock`.
+- Sync з Dilovod зберігає локальні ops-поля; `note` мерджиться, якщо payload без `note`.
+
+### UI: таблиця / дерево / сортування
+- DnD reorder siblings у `CatalogTree` (папки) і `CatalogTable` (товари, grip); лінія вставки в дереві; grip не конфліктує з виділенням рядків.
+- Move (drop на папку) лишається окремо від reorder.
+- Колонки гілки «Готова продукція»: вага, `packageRatio`, `unitRatio` (лише Admin), ГП/МС, «В замовленнях» (завжди); `SortDescriptor` + кнопка «Ручний порядок» біля breadcrumbs.
+
+### UI: примітка BOM
+- У `ProductDrawer` (специфікація **продукції**, не товарних наборів): Chip/Popover біля назви компонента; мікро-конфірм видалення (іконка → «Видалити?» → clear).
+- Для `isKit` примітка прихована; у payload `note: null`.
+
+### UI: trash / archive / пошу
+- ПКМ / toolbar: для елементів зі смітника — «Відновити» (move picker) замість «Видалити»; для архіву — «Відновити з архіву».
+- Детекція за `parentId` обраних рядків (`resolveCatalogItemLocation`) — працює і в **глобальному пошуку**.
+- ПКМ у `TrashDrawer`; breadcrumbs у пошуку: лише `Каталог > Пошук: «…»`.
+
+---
+
+## 2026-08-02 — Products 2.0: партії ШК з ГП + малого складу
+**Files:** `useBatchNumbers.ts`, `BatchNumbersAutocomplete.tsx`, `ProductDrawer.tsx`, `Docs/features/products-catalog-2.0.md`
+
+- Picker «Номер партії» запитує `includeSmallStorage=true` (ГП + МС); у рядку — chip зі складом зберігання.
+- `useBatchNumbers` приймає `options.includeSmallStorage` / `onlySmallStorage`.
+
+---
+
+## 2026-08-01 — Products 2.0: генерація EAN-13 ШК + вибір партії в Drawer
+**Files:** `server/modules/Products/barcodeUtils.ts`, `ProductsDilovodGateway.ts`, `ProductsCatalogService.ts`, `ProductsController.ts`, `client/pages/Products/components/ProductDrawer.tsx`, `Docs/features/products-catalog-2.0.md`
+
+- `GET /api/catalog/barcode/next` — наступний вільний внутрішній EAN-13 серії **`22…`** (приклад `2200000000224`): max з Dilovod `barCodes` → body+1 → GS1 check digit; seed `220000000000`.
+- `barcodeUtils.ts`: check digit, `pickLatestEan13` (лише префікс `22`), mutex/`isBarcodeTaken` retry.
+- UI «Код»: кнопка генерації (жовтий active) + `ConfirmModal` при заміні існуючого ШК.
+- UI «Номер партії»: picker як у переміщенні (`useBatchNumbers` + `BatchNumbersAutocomplete`); `goodPart`/`goodPartName` з вибору; ID — debug-бейдж, без окремого Input.
+
+---
+
+## 2026-08-01 — Products 2.0: довідники Dilovod, TipTap description, BOM sync, Drawer Tabs + unsaved guard
+**Files:** `shared/types/catalog.ts`, `shared/types/dilovod.ts`, `server/services/dilovod/DilovodCacheService.ts`, `DilovodService.ts`, `server/routes/dilovod.ts`, `server/modules/Products/*`, `client/components/DilovodCacheManager.tsx`, `client/pages/Products/**`, `Docs/features/products-catalog-2.0.md`, `package.json` (TipTap)
+
+- Кешовані довідники в `settings_base` (`dilovod.cache.*`): `units`, `priceTypes`, `currency`, `accPolicies` (`catalogs.goodsAccPolicies`); TTL 24h; `GET /api/catalog/dictionaries`.
+- Settings Dilovod: нові картки кешу + «Оновити все» / `/api/dilovod/directories` включають ці довідники.
+- `description`: read через `extractUkName` (фікс `[object Object]`); save як multilang `{uk,ru}`; UI — TipTap (`DescriptionEditor`).
+- Live-pull картки пише BOM у `catalog_good_components` (`mapped.components` / `tpGoods`).
+- `ProductDrawer`: Tabs Товар/Комплект (`accPolicyId`), BOM лише для комплекту, Select з довідників, `useUnsavedGuard` + `UnsavedChangesModal`.
+- `goodTypeLabel` / колонка «Тип» у таблиці — назва з `accPolicies` (fallback: Продукція / Товарні набори).
+
+---
+
+## 2026-07-31 — Products 2.0: архіви в UI, move picker, restore + delMark
+**Files:** `client/pages/Products/**`, `server/modules/Products/ProductsCatalogService.ts`, `ProductsDilovodGateway.ts`, `ProductsController.ts`, `ProductsTypes.ts`, `server/routes/catalog.ts`, `Docs/features/products-catalog-2.0.md`
+
+- Sidebar-дерево: папки «Архів – …» приховані як вузли; на батькові — іконка + Tooltip → відкрити архів (`archiveChildId`). Таблиця також ховає рядки-архіви. Breadcrumbs без змін (повний шлях).
+- Context menu «Перемістити в…» → `MoveToFolderModal` з повним деревом (архіви видимі); blocked = обрані ids + нащадки.
+- Move **в** архів (DnD / picker) → `setDelMark` + локально `delMark=true`; move **з** архіву → `delMark: 0`.
+- Усередині архіву toolbar/context menu: «Відновити з архіву» замість «В архів» → `POST /api/catalog/goods/restore` (батько архіву + `saveObject` з `delMark: 0` через `clearDelMark`).
+- `buildTreeItems(nodes, { hideArchives })`, `treeItems` / `treeItemsFull`, `isArchiveFolderId`.
+
+---
+
 ## 2026-07-30 — Products 2.0: UX дерева, breadcrumbs, DnD confirms, root `parentId=0`
 **Files:** `client/pages/Products/**`, `server/modules/Products/ProductsCatalogService.ts`, `server/modules/Products/ProductsDilovodGateway.ts`, `Docs/features/products-catalog-2.0.md`
 

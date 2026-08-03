@@ -1,17 +1,28 @@
-import { Button, ButtonGroup, Input, Tooltip } from '@heroui/react';
+import { Button, Input, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { useDebug } from '@/contexts/DebugContext';
 
 interface CatalogToolbarProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
   selectedCount: number;
-  refreshing?: boolean;
-  onRefresh: () => void;
+  branchRefreshing?: boolean;
+  syncingSelected?: boolean;
+  fullRefreshing?: boolean;
+  onRefreshBranch: () => void;
+  onSyncSelected: () => void;
+  onFullRefresh?: () => void;
+  showFullRefresh?: boolean;
   onCreateGood: () => void;
-  onCreateFolder: () => void;
   onDuplicate: () => void;
+  /** true = всередині архіву / обрані архівні → «Відновити з архіву» */
+  isInsideArchive?: boolean;
   onArchive: () => void;
+  onRestore: () => void;
+  /** true = обрані зі смітника → «Відновити» замість «Видалити» */
+  isInsideTrash?: boolean;
   onTrash: () => void;
+  onRestoreFromTrash?: () => void;
   onOpenTrash: () => void;
   busy?: boolean;
 }
@@ -20,17 +31,27 @@ export function CatalogToolbar({
   searchQuery,
   onSearchChange,
   selectedCount,
-  refreshing,
-  onRefresh,
+  branchRefreshing,
+  syncingSelected,
+  fullRefreshing,
+  onRefreshBranch,
+  onSyncSelected,
+  onFullRefresh,
+  showFullRefresh,
   onCreateGood,
-  onCreateFolder,
   onDuplicate,
+  isInsideArchive,
   onArchive,
+  onRestore,
+  isInsideTrash,
   onTrash,
+  onRestoreFromTrash,
   onOpenTrash,
   busy,
 }: CatalogToolbarProps) {
   const hasSelection = selectedCount > 0;
+  const anyRefreshing = Boolean(branchRefreshing || syncingSelected || fullRefreshing);
+  const { isDebugMode } = useDebug();
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -38,86 +59,146 @@ export function CatalogToolbar({
         aria-label="Пошук у каталозі"
         placeholder="Пошук за назвою або SKU…"
         value={searchQuery}
+        isClearable
         onValueChange={onSearchChange}
         startContent={<DynamicIcon name="search" size={16} className="text-default-400" />}
-        isClearable
-        className="max-w-sm"
+        className="max-w-[280px] mr-3"
+        classNames={{ inputWrapper: 'bg-gray-50 data-[hover=true]:bg-white! group-data-[focus=true]:bg-white!', input: 'placeholder:text-default-400/85' }}
         size="sm"
       />
-
-      <ButtonGroup size="sm" variant="flat">
-        <Button
-          startContent={<DynamicIcon name="plus" size={14} />}
-          onPress={onCreateGood}
-          isDisabled={busy}
-        >
-          Товар
-        </Button>
-        <Button
-          startContent={<DynamicIcon name="folder-plus" size={14} />}
-          onPress={onCreateFolder}
-          isDisabled={busy}
-        >
-          Папка
-        </Button>
-      </ButtonGroup>
 
       <Button
         size="sm"
         variant="flat"
-        startContent={<DynamicIcon name="refresh-cw" size={14} className={refreshing ? 'animate-spin' : ''} />}
-        onPress={onRefresh}
-        isDisabled={busy || refreshing}
+        color="primary"
+        startContent={<DynamicIcon name="circle-plus" size={14} />}
+        className="bg-gradient-to-br from-cyan-500 to-blue-500 text-white hover:bg-cyan-500/90 font-medium"
+        onPress={onCreateGood}
+        isDisabled={busy}
       >
-        Refresh Dilovod
+        Додати обʼєкт
       </Button>
 
-      <Tooltip content="Смітник Dilovod">
+      <Tooltip content="Синхронізувати поточну папку та всі вкладені елементи">
         <Button
           size="sm"
-          variant="flat"
-          isIconOnly
-          aria-label="Смітник"
-          onPress={onOpenTrash}
+          color="primary"
+          className="bg-slate-500 text-white hover:bg-slate-500/90 font-medium"
+          startContent={
+            <DynamicIcon
+              name={branchRefreshing ? "refresh-cw" : "folder-sync"}
+              size={14}
+              className={branchRefreshing ? 'animate-spin' : ''}
+            />
+          }
+          onPress={onRefreshBranch}
+          isDisabled={busy || anyRefreshing}
         >
-          <DynamicIcon name="trash-2" size={16} />
+          Синхронізувати гілку
         </Button>
       </Tooltip>
+
+      {showFullRefresh && onFullRefresh && isDebugMode && (
+        <Tooltip content="Повний pull каталогу з Dilovod (ціни + ШК). Лише ADMIN.">
+          <Button
+            size="sm"
+            variant="flat"
+            onPress={onFullRefresh}
+            isDisabled={busy || anyRefreshing}
+            startContent={<DynamicIcon name="refresh-cw" size={14} className={fullRefreshing ? 'animate-spin' : ''}/>}
+            className="bg-danger-500 text-white font-medium"
+          >
+            Повний refresh
+          </Button>
+        </Tooltip>
+      )}
 
       {hasSelection && (
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <span className="text-xs text-default-500">Обрано: {selectedCount}</span>
+          {/* <Button
+            size="sm"
+            className="bg-slate-500 text-white hover:bg-slate-500/90 font-medium"
+            startContent={
+              <DynamicIcon
+                name={syncingSelected ? "refresh-cw" : "cloud-download"}
+                size={14}
+                className={syncingSelected ? 'animate-spin' : ''}
+              />
+            }
+            onPress={onSyncSelected}
+            isDisabled={busy || anyRefreshing}
+          >
+            Синхронізувати з Діловодом
+          </Button> */}
           <Button
             size="sm"
-            variant="flat"
+            className="bg-slate-500 text-white hover:bg-slate-500/90 font-medium"
             startContent={<DynamicIcon name="copy" size={14} />}
             onPress={onDuplicate}
             isDisabled={busy || selectedCount !== 1}
           >
             Дублювати
           </Button>
-          <Button
-            size="sm"
-            variant="flat"
-            color="warning"
-            startContent={<DynamicIcon name="archive" size={14} />}
-            onPress={onArchive}
-            isDisabled={busy}
-          >
-            В архів
-          </Button>
-          <Button
-            size="sm"
-            variant="flat"
-            color="danger"
-            startContent={<DynamicIcon name="trash" size={14} />}
-            onPress={onTrash}
-            isDisabled={busy}
-          >
-            У смітник
-          </Button>
+          {!isInsideTrash &&
+            (isInsideArchive ? (
+              <Button
+                size="sm"
+                className="bg-emerald-500 text-white hover:bg-emerald-500/90 font-medium"
+                startContent={<DynamicIcon name="archive-restore" size={14} />}
+                onPress={onRestore}
+                isDisabled={busy}
+              >
+                Відновити з архіву
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="bg-yellow-500 text-white hover:bg-yellow-500/90 font-medium"
+                startContent={<DynamicIcon name="archive" size={14} />}
+                onPress={onArchive}
+                isDisabled={busy}
+              >
+                В архів
+              </Button>
+            ))}
+          {isInsideTrash ? (
+            <Button
+              size="sm"
+              className="bg-emerald-500 text-white hover:bg-emerald-500/90 font-medium"
+              startContent={<DynamicIcon name="archive-restore" size={14} />}
+              onPress={onRestoreFromTrash}
+              isDisabled={busy || !onRestoreFromTrash}
+            >
+              Відновити
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className="bg-danger-500 text-white hover:bg-red-500/90 font-medium"
+              startContent={<DynamicIcon name="trash-2" size={14} />}
+              onPress={onTrash}
+              isDisabled={busy}
+            >
+              Видалити
+            </Button>
+          )}
         </div>
       )}
+      
+      <Tooltip content="Переглянути видалені елементи">
+        <Button
+          size="sm"
+          variant="flat"
+          color="danger"
+          aria-label="Смітник"
+          className={`font-medium ${!hasSelection && "ml-auto"}`}
+          onPress={onOpenTrash}
+        >
+          <DynamicIcon name="trash-2" size={14} />
+          Смітник
+        </Button>
+      </Tooltip>
     </div>
   );
 }

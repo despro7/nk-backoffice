@@ -6,24 +6,40 @@ export interface CatalogContextMenuState {
   x: number;
   y: number;
   ids: string[];
+  /** true = ПКМ по елементу зі смітника */
+  fromTrash?: boolean;
+  /** true = ПКМ по елементу з архіву (також у пошуку) */
+  fromArchive?: boolean;
 }
 
 interface CatalogContextMenuProps {
   state: CatalogContextMenuState | null;
   busy?: boolean;
+  /** Fallback: ПКМ зсередини архівної папки */
+  isInsideArchive?: boolean;
   onClose: () => void;
+  onSyncFromDilovod: (ids: string[]) => void;
+  onMoveTo: (ids: string[]) => void;
   onDuplicate: (ids: string[]) => void;
   onArchive: (ids: string[]) => void;
+  onRestore: (ids: string[]) => void;
   onTrash: (ids: string[]) => void;
+  /** Відновити зі смітника (вибір папки) */
+  onRestoreFromTrash: (ids: string[]) => void;
 }
 
 export function CatalogContextMenu({
   state,
   busy,
+  isInsideArchive,
   onClose,
+  onSyncFromDilovod,
+  onMoveTo,
   onDuplicate,
   onArchive,
+  onRestore,
   onTrash,
+  onRestoreFromTrash,
 }: CatalogContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: state?.x ?? 0, y: state?.y ?? 0 });
@@ -67,6 +83,8 @@ export function CatalogContextMenu({
 
   const canDuplicate = state.ids.length === 1 && !busy;
   const canBulk = state.ids.length > 0 && !busy;
+  const fromTrash = Boolean(state.fromTrash);
+  const fromArchive = Boolean(state.fromArchive) || (Boolean(isInsideArchive) && !fromTrash);
 
   const run = (action: (ids: string[]) => void) => {
     action(state.ids);
@@ -89,24 +107,55 @@ export function CatalogContextMenu({
       )}
 
       <MenuItem
+        icon="cloud-download"
+        label="Синхронізувати з Діловодом"
+        disabled={!canBulk}
+        onSelect={() => run(onSyncFromDilovod)}
+      />
+      <MenuItem
+        icon="folder-input"
+        label="Перемістити в…"
+        disabled={!canBulk}
+        onSelect={() => run(onMoveTo)}
+      />
+      <MenuItem
         icon="copy"
         label="Дублювати"
         disabled={!canDuplicate}
         onSelect={() => run(onDuplicate)}
       />
-      <MenuItem
-        icon="archive"
-        label="В архів"
-        disabled={!canBulk}
-        onSelect={() => run(onArchive)}
-      />
-      <MenuItem
-        icon="trash"
-        label="У смітник"
-        danger
-        disabled={!canBulk}
-        onSelect={() => run(onTrash)}
-      />
+      {!fromTrash &&
+        (fromArchive ? (
+          <MenuItem
+            icon="archive-restore"
+            label="Відновити з архіву"
+            disabled={!canBulk}
+            onSelect={() => run(onRestore)}
+          />
+        ) : (
+          <MenuItem
+            icon="archive"
+            label="В архів"
+            disabled={!canBulk}
+            onSelect={() => run(onArchive)}
+          />
+        ))}
+      {fromTrash ? (
+        <MenuItem
+          icon="archive-restore"
+          label="Відновити"
+          disabled={!canBulk}
+          onSelect={() => run(onRestoreFromTrash)}
+        />
+      ) : (
+        <MenuItem
+          icon="trash-2"
+          label="Видалити"
+          danger
+          disabled={!canBulk}
+          onSelect={() => run(onTrash)}
+        />
+      )}
     </div>,
     document.body
   );
@@ -119,7 +168,7 @@ function MenuItem({
   disabled,
   onSelect,
 }: {
-  icon: 'copy' | 'archive' | 'trash';
+  icon: 'copy' | 'archive' | 'trash-2' | 'folder-input' | 'archive-restore' | 'cloud-download';
   label: string;
   danger?: boolean;
   disabled?: boolean;

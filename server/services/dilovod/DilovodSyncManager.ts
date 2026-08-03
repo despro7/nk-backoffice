@@ -668,6 +668,31 @@ export class DilovodSyncManager {
           )
         );
 
+        // Дзеркало залишків у catalog_goods (за sku)
+        try {
+          const stockJson = (sku: string, main: number, small: number) =>
+            JSON.stringify({ "1": main, "2": small });
+          await prisma.$transaction(
+            chunk.map((item) =>
+              prisma.catalogGood.updateMany({
+                where: { sku: item.sku, isGroup: false },
+                data: {
+                  stockBalanceByStock: stockJson(
+                    item.sku,
+                    item.mainStorage,
+                    item.smallStorage
+                  ),
+                },
+              })
+            )
+          );
+        } catch (catalogStockErr) {
+          console.warn(
+            '[DilovodSyncManager] catalog_goods stock mirror failed:',
+            catalogStockErr instanceof Error ? catalogStockErr.message : catalogStockErr
+          );
+        }
+
         updated += chunk.length;
 
       } catch (chunkError) {
@@ -684,6 +709,15 @@ export class DilovodSyncManager {
                   "2": item.smallStorage
                 })
               }
+            });
+            await prisma.catalogGood.updateMany({
+              where: { sku: item.sku, isGroup: false },
+              data: {
+                stockBalanceByStock: JSON.stringify({
+                  "1": item.mainStorage,
+                  "2": item.smallStorage,
+                }),
+              },
             });
             updated++;
           } catch (err) {

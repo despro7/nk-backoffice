@@ -1325,6 +1325,10 @@ export class DilovodService {
     paymentForms: number;
     tradeChanels: number;
     deliveryMethods: number;
+    units: number;
+    priceTypes: number;
+    currency: number;
+    accPolicies: number;
   }> {
     console.log('🔄 Примусове оновлення всіх довідників Dilovod...');
 
@@ -1336,13 +1340,24 @@ export class DilovodService {
     const tradeChanels = await this.getTradeChanels(true);
     const deliveryMethods = await this.getDeliveryMethods(true);
 
+    // Каталожні довідники Products 2.0
+    const { productsDilovodGateway } = await import('../../modules/Products/ProductsDilovodGateway.js');
+    const units = await productsDilovodGateway.fetchCachedDict('units', true);
+    const priceTypes = await productsDilovodGateway.fetchCachedDict('priceTypes', true);
+    const currency = await productsDilovodGateway.fetchCachedDict('currency', true);
+    const accPolicies = await productsDilovodGateway.fetchCachedDict('accPolicies', true);
+
     const result = {
       firms: firms.length,
       accounts: accounts.length,
       storages: storages.length,
       paymentForms: paymentForms.length,
       tradeChanels: tradeChanels.length,
-      deliveryMethods: deliveryMethods.length
+      deliveryMethods: deliveryMethods.length,
+      units: units.length,
+      priceTypes: priceTypes.length,
+      currency: currency.length,
+      accPolicies: accPolicies.length,
     };
 
     console.log(`✅ [Dilovod] Кеш оновлено: ${JSON.stringify(result)}`);
