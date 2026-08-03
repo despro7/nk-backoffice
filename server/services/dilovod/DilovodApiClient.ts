@@ -350,8 +350,7 @@ export class DilovodApiClient {
           fields: {
             id: "id",
             object: "object",
-            code: "code",
-            activity: "activity"
+            code: "code"
           },
           filters: [
             {

@@ -662,7 +662,7 @@ export class DilovodService {
         const barCodesResponse = await this.apiClient.getBarCodesByObjectIds(objectIds, signal);
         const barcodeByObjectId = mapBarCodesByObjectId(barCodesResponse);
         console.log(
-          `Отримано ${barCodesResponse.length} записів ШК, активних для ${barcodeByObjectId.size} товарів`
+          `Отримано ${barCodesResponse.length} записів ШК для ${barcodeByObjectId.size} товарів`
         );
 
         for (const product of result) {
@@ -672,7 +672,7 @@ export class DilovodService {
         const productsWithoutBarcode = result.filter((product) => !product.barcode);
         if (productsWithoutBarcode.length > 0) {
           console.log(
-            `⚠️ Товари без активного штрих-коду (${productsWithoutBarcode.length}):`,
+            `⚠️ Товари без штрих-коду (${productsWithoutBarcode.length}):`,
             productsWithoutBarcode.map((p) => `${p.sku} (${p.name})`)
           );
 
@@ -680,7 +680,7 @@ export class DilovodService {
             await this.logSyncError({
               sku: product.sku,
               errorType: 'missing_barcode',
-              message: 'відсутній активний штрих-код у Dilovod',
+              message: 'відсутній штрих-код у Dilovod',
               productData: {
                 dilovodId: product.id,
                 name: product.name,
