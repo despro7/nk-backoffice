@@ -1,6 +1,7 @@
 import {
   Button,
   Chip,
+  Kbd,
   Modal,
   ModalBody,
   ModalContent,
@@ -38,6 +39,10 @@ interface ShipmentOrdersModalProps {
   /** Якщо true — відкриваємо старий формат (плоский список без табів) для монолітних наборів */
   useMonolithicModal?: boolean;
   product: ShipmentModalProduct | null;
+  /** Список товарів для навігації ↑/↓ (у порядку відображення в таблиці) */
+  productItems?: ShipmentModalProduct[];
+  /** Перейти до іншого товару (оновлює вміст модалки) */
+  onNavigate?: (product: ShipmentModalProduct) => void;
 }
 
 export function ShipmentOrdersModal({
@@ -49,13 +54,15 @@ export function ShipmentOrdersModal({
   defaultTab = "regular",
   useMonolithicModal = false,
   product,
+  productItems = [],
+  onNavigate,
 }: ShipmentOrdersModalProps) {
   const [selectedTab, setSelectedTab] = useState<ShipmentOrdersTabKey>(defaultTab);
 
-  // Скидаємо активний таб при зміні defaultTab (нове відкриття модалки)
+  // Скидаємо активний таб при зміні defaultTab або товару (нове відкриття / навігація)
   useEffect(() => {
     setSelectedTab(defaultTab);
-  }, [defaultTab]);
+  }, [defaultTab, product?.sku]);
 
   // Плавний fade-перехід контенту при перемиканні табів:
   // при зміні selectedTab спочатку ховаємо контент (fade-out),
@@ -79,6 +86,47 @@ export function ShipmentOrdersModal({
 
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  const currentProductIndex = useMemo(() => {
+    if (!product || productItems.length === 0) return -1;
+    return productItems.findIndex((item) => item.sku === product.sku);
+  }, [product, productItems]);
+
+  const prevProduct =
+    currentProductIndex > 0 ? productItems[currentProductIndex - 1] : null;
+  const nextProduct =
+    currentProductIndex >= 0 && currentProductIndex < productItems.length - 1
+      ? productItems[currentProductIndex + 1]
+      : null;
+
+  // Навігація ↑/↓ між товарами в списку звіту
+  useEffect(() => {
+    if (!isOpen || !onNavigate) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      if (event.key === "ArrowUp" && prevProduct) {
+        event.preventDefault();
+        onNavigate(prevProduct);
+      } else if (event.key === "ArrowDown" && nextProduct) {
+        event.preventDefault();
+        onNavigate(nextProduct);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, nextProduct, onNavigate, prevProduct]);
 
   const sortedOrders = useMemo(() => {
     if (!sortField) return orders;
@@ -308,6 +356,11 @@ export function ShipmentOrdersModal({
               </h2>
               <span className="text-sm font-normal text-neutral-500">
                 SKU: {product?.sku}
+                {currentProductIndex >= 0 && productItems.length > 0 && (
+                  <span className="ml-2 text-neutral-400">
+                    ({currentProductIndex + 1} / {productItems.length})
+                  </span>
+                )}
               </span>
             </ModalHeader>
             <ModalBody>
@@ -361,7 +414,16 @@ export function ShipmentOrdersModal({
                 </div>
               )}
             </ModalBody>
-            <ModalFooter>
+            <ModalFooter className="flex items-center justify-between gap-3">
+              {onNavigate ? (
+                <div className="flex items-center gap-1 text-xs text-neutral-400">
+                  <Kbd keys={["up"]} />
+                  <Kbd keys={["down"]} />
+                  <span>інший товар</span>
+                </div>
+              ) : (
+                <div />
+              )}
               <Button color="primary" variant="light" onPress={onClose}>
                 Закрити
               </Button>

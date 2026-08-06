@@ -21,6 +21,7 @@ export interface SalesData {
     source: string;
     createdAt: string;
     orderDate: string;
+    orderDateIso?: string | null;
     orderTime: string;
     externalId: string;
     status: string;
@@ -29,6 +30,11 @@ export interface SalesData {
     discountReasonCode?: string | null;
     vidskoduvanna?: number | null;
     vidskoduvannaGrn?: number | null;
+    statusHistory?: Array<{
+      status: string;
+      statusText: string;
+      changedAt: string;
+    }>;
   }>;
 }
 

@@ -11,7 +11,7 @@ import { ReturnsConfirmModal } from './components/ReturnsConfirmModal';
 import { ReturnsItemRow } from './components/ReturnsItemRow';
 import { ReturnsHistoryTab } from './components/ReturnsHistoryTab';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
+import { formatPrice } from '@/lib/formatUtils';
 import { ToastService } from '@/services/ToastService';
 import { ReturnsHistoryService } from '@/services/ReturnsHistoryService';
 import { DateTimePicker } from '@/components/DateTimePicker';
@@ -42,7 +42,8 @@ export default function WarehouseReturns() {
 
   const canSubmit = returns.orderSelected && returns.items.length > 0 && !returns.isSubmitting
     && itemsBatchesReady
-    && Boolean(returns.returnReason) && (!returns.returnReason.includes('Інше') || (returns.customReason && returns.customReason.trim() !== ''));
+    && Boolean(returns.returnReason) && (!returns.returnReason.includes('Інше') || (returns.customReason && returns.customReason.trim() !== ''))
+    && returns.returnAmount.trim() !== '' && !Number.isNaN(Number(String(returns.returnAmount).replace(',', '.'))) && Number(String(returns.returnAmount).replace(',', '.')) >= 0;
 
   const isOtherReason = Boolean(returns.returnReason && returns.returnReason.includes('Інше'));
   const missingReasonMessage = !returns.returnReason
@@ -50,6 +51,9 @@ export default function WarehouseReturns() {
     : (isOtherReason && (!returns.customReason || returns.customReason.trim() === ''))
       ? 'Вкажіть додаткову причину повернення.'
       : '';
+  const missingAmountMessage = returns.returnAmount.trim() === '' || Number.isNaN(Number(String(returns.returnAmount).replace(',', '.'))) || Number(String(returns.returnAmount).replace(',', '.')) < 0
+    ? 'Вкажіть коректну суму зворотньої доставки.'
+    : '';
 
   const itemCount = returns.items.length;
   const portionCount = returns.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -81,6 +85,7 @@ export default function WarehouseReturns() {
       returns.setComment('');
       returns.setReturnReason('');
       returns.setCustomReason('');
+      returns.setReturnAmount('');
       // Clear search state
       returns.setSearchQuery('');
       returns.setSearchResults([]);
@@ -477,13 +482,11 @@ const dateValue = (() => {
                         )}
                       </div>
                       <div className="space-y-1">
-                        <div className="text-xs font-medium">ТТН</div>
+                        <div className="text-xs font-medium">Доставка до клієнта</div>
                         <div className="text-gray-900 h-10 flex items-center">
-                          {returns.ttn && formatTrackingNumberWithIcon(returns.ttn, {
-                            showIcon: false,
-                            compactMode: false,
-                            boldLastGroup: true
-                          }) || 'Не визначено'}
+                          {returns.clientDeliveryCost > 0
+                            ? formatPrice(returns.clientDeliveryCost)
+                            : 'Не визначено'}
                         </div>
                       </div>
                       <div className="space-y-1">
@@ -556,7 +559,24 @@ const dateValue = (() => {
                           }}
                         />
                       </div>
-                      <div className="flex">
+                      <div className="flex items-center gap-4">
+                        <Input
+                          label={<span className="flex gap-1">Витрати на повернення <Tooltip content="В цьому полі вказуємо витрату саме зворотньої доставки, яка зазначена в ТТН повернення." color="primary" className="max-w-80"><DynamicIcon name="info" size={14} className="text-red-500" /></Tooltip></span>}
+                          labelPlacement="outside"
+                          value={returns.returnAmount}
+                          onValueChange={returns.setReturnAmount}
+                          onWheel={(e) => e.currentTarget.blur()}
+                          required={true}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          placeholder="Наприклад: 51,25"
+                          classNames={{
+                            label: 'text-xs font-medium text-gray-500',
+                            inputWrapper: 'w-full border border-gray-200 bg-white',
+                            input: 'placeholder:opacity-50!',
+                          }}
+                        />
                         <DateTimePicker
                           label={<span className="flex gap-1">Дата оприбуткування <Tooltip content="Уважно оберіть дату та час, це вплине на облік повернених товарів" color="primary" className="max-w-80"><DynamicIcon name="info" size={14} className="text-red-500" /></Tooltip></span>}
                           labelPlacement="outside"
@@ -614,10 +634,11 @@ const dateValue = (() => {
 
                 {(() => {
                   const itemsWithNoBatches = returns.items.filter((it) => Array.isArray(it.availableBatches) && it.availableBatches.length === 0);
-                  if (itemsWithNoBatches.length > 0 || missingReasonMessage) {
+                  if (itemsWithNoBatches.length > 0 || missingReasonMessage || missingAmountMessage) {
                     return (
                       <Alert color="danger" classNames={{ base: "text-sm" }}>
                         {missingReasonMessage && <div className="mb-1">{missingReasonMessage}</div>}
+                        {missingAmountMessage && <div className="mb-1">{missingAmountMessage}</div>}
                         {itemsWithNoBatches.length > 0 && <div>Не знайдено партій для товарів: {itemsWithNoBatches.map(i => i.sku).join(', ')} <br />Спробуйте обрати іншу фірму відвантаження в деталях повернення ↑</div>}
                       </Alert>
                     );

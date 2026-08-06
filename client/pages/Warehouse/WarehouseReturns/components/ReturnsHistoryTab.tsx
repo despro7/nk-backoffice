@@ -38,7 +38,7 @@ export const ReturnsHistoryTab = ({ records, loading, onRefresh, onLoadRecord, o
       </div>
     ) : records.length === 0 ? (
       <div className="text-center py-8 text-gray-400">
-        <DynamicIcon name="clipboard-x" className="w-8 h-8 mx-auto mb-2 opacity-40" />
+        <DynamicIcon name={loading ? "loader-2" : "clipboard-x"} className="w-8 h-8 mx-auto mb-2 opacity-40" />
         <p className="text-sm">Немає завершених повернень</p>
         <Button size="sm" variant="flat" className="mt-3" onPress={onRefresh}>
           Завантажити

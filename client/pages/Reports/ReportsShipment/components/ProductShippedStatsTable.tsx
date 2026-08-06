@@ -534,6 +534,37 @@ export default function ProductShippedStatsTable({
     [dateStats, regularProductStats, regularSortDescriptor],
   );
 
+  // Список товарів для навігації ↑/↓ у модалці (той самий порядок, що в таблиці)
+  const navigableModalProducts = useMemo((): ShipmentModalProduct[] => {
+    if (viewMode !== "products") return [];
+    const list =
+      modalDefaultTab === "monolithic"
+        ? sortedMonolithicSetStats
+        : sortedRegularProductStats;
+    return list.map(({ name, sku }) => ({ name, sku }));
+  }, [
+    viewMode,
+    modalDefaultTab,
+    sortedMonolithicSetStats,
+    sortedRegularProductStats,
+  ]);
+
+  const handleNavigateModalProduct = useCallback(
+    (next: ShipmentModalProduct) => {
+      fetchOrdersForProduct(next.sku, next.name, undefined, modalDefaultTab);
+    },
+    [fetchOrdersForProduct, modalDefaultTab],
+  );
+
+  // Прокручуємо поточний товар у видиму область фонової таблиці
+  useEffect(() => {
+    if (!isOrdersModalOpen || !selectedProductForModal?.sku) return;
+    const row = document.querySelector<HTMLElement>(
+      `[data-product-sku="${selectedProductForModal.sku}"]`,
+    );
+    row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [isOrdersModalOpen, selectedProductForModal?.sku]);
+
   const monolithicSetQuantities = useMemo(
     () => sortedMonolithicSetStats.map((item) => item.orderedQuantity),
     [sortedMonolithicSetStats],
@@ -612,6 +643,22 @@ export default function ProductShippedStatsTable({
           aria-label={title}
           sortDescriptor={sortDescriptor}
           onSortChange={onSortChange ? (descriptor) => onSortChange(descriptor as ShipmentSortDescriptor) : undefined}
+          selectionMode="single"
+          selectionBehavior="replace"
+          color="primary"
+          selectedKeys={
+            isOrdersModalOpen && selectedProductForModal?.sku
+              ? new Set([selectedProductForModal.sku])
+              : new Set()
+          }
+          onSelectionChange={(keys) => {
+            if (keys === "all") return;
+            const sku = Array.from(keys)[0];
+            if (typeof sku !== "string" || !sku) return;
+            const productItem = items.find((item) => item.sku === sku);
+            if (!productItem) return;
+            fetchOrdersForProduct(productItem.sku, productItem.name, undefined, source);
+          }}
           classNames={{
             wrapper: "min-h-72 px-0 shadow-none",
             th: "bg-default-200/60 first:rounded-s-sm last:rounded-e-sm",
@@ -619,6 +666,7 @@ export default function ProductShippedStatsTable({
               "py-2 text-default-700 cursor-pointer",
               "[&>*]:z-1 [&>*]:relative",
               "before:pointer-events-none before:content-[''] before:absolute before:z-0 before:inset-0 before:opacity-0 before:bg-default/40",
+              "data-[selected=true]:before:bg-slate-200/75",
               "group-hover/tr:before:opacity-40",
               "first:before:rounded-s-sm last:before:rounded-e-sm",
             ],
@@ -647,10 +695,11 @@ export default function ProductShippedStatsTable({
           >
             {(item) => {
               const productItem = item as ProductStats;
+
               return (
                 <TableRow
                   key={productItem.sku}
-                  onClick={() => fetchOrdersForProduct(productItem.sku, productItem.name, undefined, source)}
+                  data-product-sku={productItem.sku}
                 >
                   <TableCell className="font-medium text-base">
                     <div className="flex items-center gap-2">
@@ -672,6 +721,7 @@ export default function ProductShippedStatsTable({
                       size="sm"
                       variant="light"
                       className="font-mono text-base h-auto p-1 min-w-0 text-blue-600 hover:bg-blue-50"
+                      onClick={(event) => event.stopPropagation()}
                       onPress={() => {
                         handleProductChange(productItem.sku);
                       }}
@@ -708,7 +758,7 @@ export default function ProductShippedStatsTable({
         </div>
       </div>
     );
-  }, [columns, fetchOrdersForProduct, handleProductChange, loading]);
+  }, [columns, fetchOrdersForProduct, handleProductChange, isOrdersModalOpen, loading, selectedProductForModal?.sku]);
 
   useEffect(() => {
     if (viewMode !== "products") {
@@ -980,6 +1030,10 @@ export default function ProductShippedStatsTable({
         defaultTab={modalDefaultTab}
         useMonolithicModal={modalDefaultTab === "monolithic"}
         product={selectedProductForModal}
+        productItems={navigableModalProducts}
+        onNavigate={
+          navigableModalProducts.length > 1 ? handleNavigateModalProduct : undefined
+        }
       />
     </div>
   );

@@ -31,6 +31,7 @@ interface PrepareReturnResponse {
   firmId: string | null;
   storageId: string | null;
   payloadData?: any; // payloadData замовлення (shipment.bySku для монолітних наборів)
+  clientDeliveryCost?: number; // rawData.ord_novaposhta.cost
   items: Array<{ sku: string; productName?: string; quantity: number; price?: number; dilovodId?: string | null }>;
 }
 
@@ -67,11 +68,13 @@ export function useWarehouseReturns() {
   const [receiveFirmName, setReceiveFirmName] = useState<string>('');
   const [availableFirms, setAvailableFirms] = useState<Array<{ id: string; name: string }>>([]);
   const [ttn, setTtn] = useState<string>('');
+  const [clientDeliveryCost, setClientDeliveryCost] = useState<number>(0);
 
   const [items, setItems] = useState<ReturnItem[]>([]);
   const [comment, setComment] = useState('');
   const [returnReason, setReturnReason] = useState<string>('');
   const [customReason, setCustomReason] = useState('');
+  const [returnAmount, setReturnAmount] = useState('');
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -92,10 +95,12 @@ export function useWarehouseReturns() {
     setShipFirmName('');
     // keep receiveFirmId/receiveFirmName so system default remains selected
     setTtn('');
+    setClientDeliveryCost(0);
     setItems([]);
     setComment('');
     setReturnReason('');
     setCustomReason('');
+    setReturnAmount('');
     setError(null);
     setIsDirty(false);
     setConfirmOpen(false);
@@ -328,6 +333,7 @@ export function useWarehouseReturns() {
       setReturnDate(null);
       setDilovodSaleExportDate(payload.dilovodSaleExportDate || null);
       setTtn(payload.ttn || '');
+      setClientDeliveryCost(Number(payload.clientDeliveryCost) || 0);
       setSelectedOrderNumber(payload.orderNumber || payload.externalId || String(payload.orderId));
       setSelectedOrderExternalId(payload.externalId || '');
       setDilovodDocId(payload.dilovodDocId || '');
@@ -371,6 +377,7 @@ export function useWarehouseReturns() {
       setItems(preparedItems);
       setReturnReason('');
       setCustomReason('');
+      setReturnAmount('');
       const batchDate = payload.dilovodSaleExportDate ? new Date(payload.dilovodSaleExportDate) : payload.orderDate ? new Date(payload.orderDate) : undefined;
       void loadBatchNumbersForItems(payload.firmId, preparedItems, batchDate);
 
@@ -478,8 +485,12 @@ export function useWarehouseReturns() {
     }
     if (!returnReason) return 'Оберіть причину повернення.';
     if (returnReason === 'Інше' && !customReason?.trim()) return 'Вкажіть причину повернення.';
+    const amount = Number(String(returnAmount).replace(',', '.'));
+    if (returnAmount.trim() === '' || Number.isNaN(amount) || amount < 0) {
+      return 'Вкажіть суму витрат на доставку повернення.';
+    }
     return null;
-  }, [items, returnReason, customReason]);
+  }, [items, returnReason, customReason, returnAmount]);
 
   const handleSubmit = useCallback(() => {
     const validationError = validateItems();
@@ -528,6 +539,11 @@ export function useWarehouseReturns() {
         };
       }
 
+      const returnShippingCost = Number(String(returnAmount).replace(',', '.'));
+      const shippingCosts =
+        (Number.isFinite(returnShippingCost) ? returnShippingCost : 0) +
+        (Number.isFinite(clientDeliveryCost) ? clientDeliveryCost : 0);
+
       const payload = {
         orderId: String(selectedOrderId),
         date: payloadDate,
@@ -540,6 +556,8 @@ export function useWarehouseReturns() {
         items: items.map((item) => ({ sku: item.sku, batchId: item.selectedBatchId, quantity: item.quantity, price: item.price })),
         // Include shipment payload for monolithic sets
         shipment: Object.keys(shipmentBySku).length > 0 ? { bySku: shipmentBySku } : undefined,
+        // Сума витрат на доставку для SalesDrive: зворотна доставка + доставка до клієнта
+        shipping_costs: shippingCosts,
       };
 
       const response = await apiCall('/api/warehouse/returns/send', { method: 'POST', body: JSON.stringify(payload) });
@@ -583,7 +601,7 @@ export function useWarehouseReturns() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [apiCall, comment, customReason, receiveFirmId, receiveFirmName, shipFirmId, shipFirmName, items, returnDate, returnReason, selectedOrderId, selectedOrderNumber, ttn]);
+  }, [apiCall, clientDeliveryCost, comment, customReason, receiveFirmId, receiveFirmName, shipFirmId, shipFirmName, items, returnAmount, returnDate, returnReason, selectedOrderId, selectedOrderNumber, ttn]);
 
   const handleNewReturn = useCallback(() => {
     // reset everything like a fresh page
@@ -621,8 +639,11 @@ export function useWarehouseReturns() {
     comment,
     setComment,
     ttn,
+    clientDeliveryCost,
     returnReason,
     customReason,
+    returnAmount,
+    setReturnAmount,
     isLoading,
     isSubmitting,
     error,

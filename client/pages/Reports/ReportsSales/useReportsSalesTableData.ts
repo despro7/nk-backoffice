@@ -313,6 +313,7 @@ export default function useReportsSalesTableData() {
     datePresetKey,
     datePresets,
     dateRange,
+    dayStartHour,
     extraFilters,
     filteredSalesData,
     handleClearStatsCache,

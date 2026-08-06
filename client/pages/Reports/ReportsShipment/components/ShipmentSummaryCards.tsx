@@ -41,11 +41,11 @@ export default function ShipmentSummaryCards({ summary, loading, className }: Sh
   return (
     <div className={`flex flex-wrap gap-5 ${className ?? ''}`}>
       <StatCard
-        label="Замовлення"
+        label="Відвантажені замовлення"
         iconName="receipt-text"
         iconColor="#4083e1"
         value={summary?.totalOrders ?? 0}
-        subLabel="Загальна кількість замовлень"
+        subLabel="Кількість відвантажених замовлень"
         loading={loading}
       />
       <StatCard

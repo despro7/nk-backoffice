@@ -48,6 +48,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
     datePresetKey,
     datePresets,
     dateRange,
+    dayStartHour,
     extraFilters,
     filteredSalesData,
     handleClearStatsCache,
@@ -266,6 +267,9 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
           isOpen={isDetailsModalOpen}
           onOpenChange={setIsDetailsModalOpen}
           details={selectedDateDetails}
+          dayStartHour={dayStartHour}
+          dateItems={filteredSalesData}
+          onNavigate={setSelectedDateDetails}
         />
 
         {/* Модальне вікно підтвердження та вибору періоду для оновлення кеша */}

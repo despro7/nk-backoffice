@@ -1540,8 +1540,13 @@ export class SalesDriveService {
 
   /**
    * Обновляет статус заказа в SalesDrive API
+   * @param extraFields — додаткові поля для data (напр. shipping_costs)
    */
-  async updateSalesDriveOrderStatus(id: string, status: string): Promise<boolean> {
+  async updateSalesDriveOrderStatus(
+    id: string,
+    status: string,
+    extraFields?: Record<string, string | number | null | undefined>
+  ): Promise<boolean> {
     try {
       if (!this.apiUrl || !this.apiKey || !this.formKey) {
         throw new Error('SalesDrive API not fully configured');
@@ -1554,12 +1559,21 @@ export class SalesDriveService {
       console.log(`📡 [SalesDrive POST] Making API request to: ${updateUrl}`);
 
       // Формируем тело запроса
+      const data: Record<string, string | number | null> = {
+        statusId: status,
+      };
+      if (extraFields) {
+        for (const [key, value] of Object.entries(extraFields)) {
+          if (value !== undefined) {
+            data[key] = value;
+          }
+        }
+      }
+
       const requestBody = {
         form: this.formKey,
         id: id,
-        data: {
-          statusId: status
-        }
+        data,
       };
 
       const maskedFormKey = this.formKey.substring(0, 6) + '*'.repeat(Math.max(0, this.formKey.length - 10)) + this.formKey.slice(-4);

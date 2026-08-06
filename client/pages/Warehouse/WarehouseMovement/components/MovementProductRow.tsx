@@ -385,6 +385,7 @@ export const MovementProductRow = ({
                             />
                           ) : (
                             <>
+                              {effectivePortionsPerBox > 1 && (
                               <StepperInput
                                 label={`коробок × ${effectivePortionsPerBox}`}
                                 size="lg"
@@ -398,6 +399,7 @@ export const MovementProductRow = ({
                                   handleUpdateBatchQuantity(index, 'boxes', Math.max(0, batch.boxes - 1))
                                 }
                               />
+                              )}
                               <StepperInput
                                 label="порцій"
                                 size="lg"

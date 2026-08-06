@@ -112,9 +112,11 @@ export const formatRelativeDate = (
 
   // "Щойно", "хв тому", "год тому"
   const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-  if (diffInMinutes < 1) return 'Тільки що';
-  if (diffInMinutes < 60) return `${diffInMinutes} хв тому`;
-  if (diffInMinutes < 1440 && diffInMinutes < maxRelativeHours * 60) return `${Math.floor(diffInMinutes / 60)} год тому`;
+  if (!weekdayOnly) {
+    if (diffInMinutes < 1) return 'Тільки що';
+    if (diffInMinutes < 60) return `${diffInMinutes} хв тому`;
+    if (diffInMinutes < 1440 && diffInMinutes < maxRelativeHours * 60) return `${Math.floor(diffInMinutes / 60)} год тому`;
+  }
 
   // Сравниваем только даты (без времени) для "Вчора" и "Позавчора"
   const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -147,17 +149,17 @@ export const formatRelativeDate = (
     dayWord = "дні";
   }
 
+  // weekdayOnly - только день недели
+  if (weekdayOnly) {
+    return dayName;
+  }
+
   // Если разница в днях равна 0, то возвращаем "Сьогодні"
   if (diffInDays === 0) return `Сьогодні${timeStr}`;
   
   // Если разница в днях равна 1 или 2, то возвращаем "Вчора/Позавчора" (showTime? опционально)
   if (diffInDays === 1) return `Вчора${timeStr}`;
   if (diffInDays === 2 && include2DaysAgo) return `Позавчора${timeStr}`;
-
-  // weekdayOnly - только день недели
-  if (weekdayOnly) {
-    return dayName;
-  }
 
   // В остальных случаях возвращаем дату согласно логике
   if (diffInDays > maxRelativeDays) {

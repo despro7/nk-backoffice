@@ -102,7 +102,7 @@ const { dilovodExportBuilder } = await import('../../services/dilovod/DilovodExp
  */
 router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-    const { orderId, items, comment, reason, dryRun } = req.body;
+    const { orderId, items, comment, reason, dryRun, shipping_costs } = req.body;
 
     if (!orderId || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, error: 'orderId та items обовʼязкові' });
@@ -267,10 +267,16 @@ overrideFirmId,
     }
 
     try {
-      const sdResult = await salesDriveService.updateSalesDriveOrderStatus(String(orderId), '7');
+      const parsedShippingCosts = shipping_costs != null && shipping_costs !== ''
+        ? Number(String(shipping_costs).replace(',', '.'))
+        : undefined;
+      const sdExtraFields = parsedShippingCosts != null && Number.isFinite(parsedShippingCosts)
+        ? { shipping_costs: parsedShippingCosts }
+        : undefined;
+      const sdResult = await salesDriveService.updateSalesDriveOrderStatus(String(orderId), '7', sdExtraFields);
       if (sdResult) {
         statusUpdateInfo.salesDrive = true;
-        console.log(`✅ [Returns] SalesDrive status updated to 7 for order ${orderId}`);
+        console.log(`✅ [Returns] SalesDrive status updated to 7 for order ${orderId}${sdExtraFields ? ` (shipping_costs=${sdExtraFields.shipping_costs})` : ''}`);
       } else {
         console.warn(`⚠️ [Returns] Failed to update SalesDrive status for order ${orderId}`);
         warnings.push('Не вдалося оновити статус у SalesDrive');

@@ -2683,7 +2683,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
 
     const productsKey = Array.isArray(products) ? [...products].sort().join(',') : products || 'all';
     const singleDayKey = singleDay === 'true' ? 'single' : 'range';
-    const cacheKey = `stats-report-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${productsKey}-${dayStartHour}-${singleDayKey}`;
+    const cacheKey = `stats-report-v2-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${productsKey}-${dayStartHour}-${singleDayKey}`;
 
     if (sync !== 'true') {
       const cached = statsCache.get(cacheKey);
@@ -2800,6 +2800,37 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
 
     const sourceMaps = await getOrderSourceMaps();
 
+    // Історія статусів для всіх замовлень звіту (orders_history)
+    const orderIds = filteredOrders
+      .map((order) => order.id)
+      .filter((id): id is number => typeof id === 'number' && Number.isFinite(id));
+    const allStatusHistory = orderIds.length > 0
+      ? await prisma.ordersHistory.findMany({
+          where: { orderId: { in: orderIds } },
+          orderBy: { changedAt: 'asc' },
+          select: {
+            orderId: true,
+            status: true,
+            statusText: true,
+            changedAt: true,
+          },
+        })
+      : [];
+    const statusHistoryByOrderId = new Map<number, Array<{
+      status: string;
+      statusText: string;
+      changedAt: string;
+    }>>();
+    for (const entry of allStatusHistory) {
+      const list = statusHistoryByOrderId.get(entry.orderId) || [];
+      list.push({
+        status: entry.status,
+        statusText: entry.statusText,
+        changedAt: entry.changedAt.toISOString(),
+      });
+      statusHistoryByOrderId.set(entry.orderId, list);
+    }
+
     // Збираємо дані по днях (використовуючи звітні дати)
     const salesData: {
       [dateKey: string]: {
@@ -2822,6 +2853,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           orderNumber: string;
           portionsCount: number;
           orderDate: string;
+          orderDateIso: string | null;
           externalId: string;
           status: string;
           source: string;
@@ -2831,6 +2863,11 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           discountReasonCode?: string | null;
           vidskoduvanna?: number | null;    // кількість відшкодованих порцій із rawData
           vidskoduvannaGrn?: number | null; // сума відшкодування в грн із rawData
+          statusHistory: Array<{
+            status: string;
+            statusText: string;
+            changedAt: string;
+          }>;
         }>;
       }
     } = {};
@@ -2978,6 +3015,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
                 second: '2-digit'
               })
               : '',
+            orderDateIso: order.orderDate ? new Date(order.orderDate).toISOString() : null,
             externalId: order.externalId,
             status: order.status,
             source: getOrderSourceDetailed(order.sajt || '', sourceMaps.detailed),
@@ -2986,6 +3024,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
             discountReasonCode: order.pricinaZnizki ? String(order.pricinaZnizki) : null,
             vidskoduvanna,
             vidskoduvannaGrn,
+            statusHistory: statusHistoryByOrderId.get(order.id) || [],
           });
         }
 

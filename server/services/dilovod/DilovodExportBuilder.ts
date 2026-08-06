@@ -398,6 +398,7 @@ export class DilovodExportBuilder {
     firmId: string | null;
     storageId: string | null;
     payloadData?: any; // payloadData замовлення (містить shipment.bySku для монолітних наборів)
+    clientDeliveryCost?: number; // rawData.ord_novaposhta.cost — вартість доставки до клієнта
     items: Array<{ sku: string; productName?: string; quantity: number; dilovodId?: string | null }>;
   }> {
     console.log(`📦 Підготовка даних для повернення замовлення ${orderId}`);
@@ -423,6 +424,11 @@ export class DilovodExportBuilder {
       throw new Error('Не знайдено базового документа Dilovod для цього замовлення');
     }
 
+    const rawCost = context.order.rawData?.ord_novaposhta?.cost;
+    const clientDeliveryCost = rawCost != null && rawCost !== ''
+      ? Number(String(rawCost).replace(',', '.'))
+      : 0;
+
     const items = Array.isArray(context.order.items) ? context.order.items : [];
     return {
       orderId: String(context.order.id),
@@ -432,6 +438,7 @@ export class DilovodExportBuilder {
       firmId: header.firm ?? null,
       storageId: context.settings.storageId ?? null,
       payloadData: (context.order as any).payloadData ?? null,
+      clientDeliveryCost: Number.isFinite(clientDeliveryCost) ? clientDeliveryCost : 0,
       items: items.map((item: any) => ({
         sku: item.sku,
         productName: item.productName,
