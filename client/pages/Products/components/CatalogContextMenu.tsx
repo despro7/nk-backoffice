@@ -19,6 +19,7 @@ interface CatalogContextMenuProps {
   isInsideArchive?: boolean;
   onClose: () => void;
   onSyncFromDilovod: (ids: string[]) => void;
+  onLegacyUpdate: (ids: string[]) => void;
   onMoveTo: (ids: string[]) => void;
   onDuplicate: (ids: string[]) => void;
   onArchive: (ids: string[]) => void;
@@ -34,6 +35,7 @@ export function CatalogContextMenu({
   isInsideArchive,
   onClose,
   onSyncFromDilovod,
+  onLegacyUpdate,
   onMoveTo,
   onDuplicate,
   onArchive,
@@ -113,6 +115,12 @@ export function CatalogContextMenu({
         onSelect={() => run(onSyncFromDilovod)}
       />
       <MenuItem
+        icon="database"
+        label="Legacy Update"
+        disabled={!canBulk}
+        onSelect={() => run(onLegacyUpdate)}
+      />
+      <MenuItem
         icon="folder-input"
         label="Перемістити в…"
         disabled={!canBulk}
@@ -168,7 +176,7 @@ function MenuItem({
   disabled,
   onSelect,
 }: {
-  icon: 'copy' | 'archive' | 'trash-2' | 'folder-input' | 'archive-restore' | 'cloud-download';
+  icon: 'copy' | 'archive' | 'trash-2' | 'folder-input' | 'archive-restore' | 'cloud-download' | 'database';
   label: string;
   danger?: boolean;
   disabled?: boolean;

@@ -860,9 +860,10 @@ router.post('/sync', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
 
 // Ручна синхронізація товарів за списком SKU
 // POST /api/products/sync-manual
+// body: { skus: string[], force?: boolean } — force=true ігнорує dilovodDataHash
 router.post('/sync-manual', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
   try {
-    const { skus } = req.body;
+    const { skus, force } = req.body;
 
     // Валідація вхідних даних
     if (!skus || !Array.isArray(skus) || skus.length === 0) {
@@ -884,7 +885,10 @@ router.post('/sync-manual', authenticateToken, requireMinRole(ROLES.STOREKEEPER)
       });
     }
 
-    console.log(`API: Ручна синхронізація для ${cleanedSkus.length} SKU`);
+    const forceUpdate = force === true;
+    console.log(
+      `API: Ручна синхронізація для ${cleanedSkus.length} SKU${forceUpdate ? ' (force)' : ''}`
+    );
 
     const dilovodService = new DilovodService();
     // Реєструємо AbortController глобально — щоб POST /sync/cancel міг його скасувати
@@ -895,7 +899,12 @@ router.post('/sync-manual', authenticateToken, requireMinRole(ROLES.STOREKEEPER)
       abortController.abort();
     });
 
-    const result = await dilovodService.syncProductsWithDilovod('manual', cleanedSkus, abortController.signal);
+    const result = await dilovodService.syncProductsWithDilovod(
+      'manual',
+      cleanedSkus,
+      abortController.signal,
+      { force: forceUpdate }
+    );
 
     res.json(result);
   } catch (error) {

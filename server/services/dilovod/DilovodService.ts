@@ -330,7 +330,12 @@ export class DilovodService {
   // ===== ОСНОВНІ ФУНКЦІЇ СИНХРОНІЗАЦІЇ =====
 
   // Синхронізація товарів з Dilovod
-  async syncProductsWithDilovod(mode: 'full' | 'manual' = 'full', manualSkus?: string[], signal?: AbortSignal): Promise<DilovodSyncResult> {
+  async syncProductsWithDilovod(
+    mode: 'full' | 'manual' = 'full',
+    manualSkus?: string[],
+    signal?: AbortSignal,
+    options?: { force?: boolean }
+  ): Promise<DilovodSyncResult> {
     try {
       console.log(`\n🚀 === ПОЧАТОК ${mode === 'full' ? 'ПОВНОЇ' : 'РУЧНОЇ'} СИНХРОНІЗАЦІЇ ТОВАРІВ З DILOVOD ===`);
 
@@ -465,7 +470,12 @@ export class DilovodService {
       console.log('\n📋 Крок 3: Синхронізація з базою даних...');
       let syncResult: DilovodSyncResult;
       try {
-        syncResult = await this.syncManager.syncProductsToDatabase(dilovodProducts, this.logSyncError.bind(this), signal);
+        syncResult = await this.syncManager.syncProductsToDatabase(
+          dilovodProducts,
+          this.logSyncError.bind(this),
+          signal,
+          options
+        );
       } catch (error) {
         console.error('❌ Помилка при синхронізації з базою даних:', error);
 

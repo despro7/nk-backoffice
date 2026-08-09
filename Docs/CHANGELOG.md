@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-08-09 — Products 2.0: Legacy Update (force sync-manual + weight)
+**Files:** `client/pages/Products/index.tsx`, `useProductsCatalog.ts`, `CatalogToolbar.tsx`, `CatalogContextMenu.tsx`, `server/routes/products.ts`, `DilovodService.ts`, `DilovodSyncManager.ts`, `Docs/features/products-catalog-2.0.md`
+
+- UI **Legacy Update** у toolbar (поряд із «В архів») і context menu: обрані товари з SKU → confirm → `POST /api/products/sync-manual`.
+- Клієнт завжди шле `force: true` — ігнорує `dilovodDataHash`, завжди перезаписує рядок у `products`.
+- API `sync-manual` приймає `{ skus, force? }`; `syncProductsWithDilovod` / `syncProductsToDatabase` прокидають `{ force }`.
+- При force для існуючих товарів додатково оновлюється `weight` (`determineWeightByCategory`); `manualOrder` / `unitRatio` не чіпаються.
+- Відрізняється від «Синхронізувати з Діловодом» (те лише `catalog_*` refresh).
+
+---
+
 ## 2026-08-03 — Products 2.0: ops-поля, сортування DnD, примітки BOM, restore у пошуку
 **Files:** `prisma/schema.prisma`, `prisma/migrations/20260803090000_catalog_ops_fields_and_sort/`, `shared/types/catalog.ts`, `shared/utils/catalogSortOrder.ts`, `shared/utils/specColorPalette.ts`, `server/modules/Products/*`, `server/services/dilovod/*`, `client/pages/Products/**`, `Docs/features/products-catalog-2.0.md`
 

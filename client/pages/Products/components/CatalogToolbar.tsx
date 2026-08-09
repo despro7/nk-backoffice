@@ -11,6 +11,9 @@ interface CatalogToolbarProps {
   fullRefreshing?: boolean;
   onRefreshBranch: () => void;
   onSyncSelected: () => void;
+  /** Оновлення обраних SKU у legacy `products` через Dilovod sync-manual */
+  onLegacyUpdate: () => void;
+  legacyUpdating?: boolean;
   onFullRefresh?: () => void;
   showFullRefresh?: boolean;
   onCreateGood: () => void;
@@ -36,6 +39,8 @@ export function CatalogToolbar({
   fullRefreshing,
   onRefreshBranch,
   onSyncSelected,
+  onLegacyUpdate,
+  legacyUpdating,
   onFullRefresh,
   showFullRefresh,
   onCreateGood,
@@ -50,7 +55,9 @@ export function CatalogToolbar({
   busy,
 }: CatalogToolbarProps) {
   const hasSelection = selectedCount > 0;
-  const anyRefreshing = Boolean(branchRefreshing || syncingSelected || fullRefreshing);
+  const anyRefreshing = Boolean(
+    branchRefreshing || syncingSelected || fullRefreshing || legacyUpdating
+  );
   const { isDebugMode } = useDebug();
 
   return (
@@ -140,6 +147,23 @@ export function CatalogToolbar({
           >
             Дублювати
           </Button>
+          <Tooltip content="Оновити обрані товари в legacy таблиці products (Dilovod sync-manual за SKU)">
+            <Button
+              size="sm"
+              className="bg-violet-600 text-white hover:bg-violet-600/90 font-medium"
+              startContent={
+                <DynamicIcon
+                  name={legacyUpdating ? 'refresh-cw' : 'database'}
+                  size={14}
+                  className={legacyUpdating ? 'animate-spin' : ''}
+                />
+              }
+              onPress={onLegacyUpdate}
+              isDisabled={busy || anyRefreshing}
+            >
+              Legacy Update
+            </Button>
+          </Tooltip>
           {!isInsideTrash &&
             (isInsideArchive ? (
               <Button

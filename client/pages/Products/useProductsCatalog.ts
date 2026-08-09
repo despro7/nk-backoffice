@@ -162,6 +162,59 @@ export function useProductsCatalog() {
       ToastService.show({ title: 'Помилка синхронізації', description: err.message, color: 'danger' }),
   });
 
+  /** Legacy Dilovod sync → таблиця `products` (set/ціни/ШК/hash) по списку SKU. Force за замовчуванням. */
+  const legacySyncMutation = useMutation({
+    mutationFn: async (skus: string[]) => {
+      const res = await fetch('/api/products/sync-manual', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skus, force: true }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        message?: string;
+        error?: string;
+        syncedProducts?: number;
+        syncedSets?: number;
+        createdProducts?: number;
+        updatedProducts?: number;
+        skippedProducts?: number;
+        errors?: string[];
+      };
+      if (!res.ok || json.success === false) {
+        throw new Error(json.error || json.message || `HTTP ${res.status}`);
+      }
+      return json;
+    },
+    onSuccess: (data) => {
+      const parts = [
+        data.createdProducts ? `створено ${data.createdProducts}` : null,
+        data.updatedProducts ? `оновлено ${data.updatedProducts}` : null,
+        data.skippedProducts ? `без змін ${data.skippedProducts}` : null,
+        data.syncedSets ? `комплектів ${data.syncedSets}` : null,
+      ].filter(Boolean);
+      ToastService.show({
+        title: 'Legacy Update завершено',
+        description: parts.length > 0 ? parts.join(', ') : data.message || 'Готово',
+        color: (data.errors?.length ?? 0) > 0 ? 'warning' : 'success',
+      });
+      if (data.errors && data.errors.length > 0) {
+        ToastService.show({
+          title: 'Є помилки Legacy Update',
+          description: data.errors.slice(0, 3).join('; '),
+          color: 'danger',
+        });
+      }
+    },
+    onError: (err: Error) =>
+      ToastService.show({
+        title: 'Помилка Legacy Update',
+        description: err.message,
+        color: 'danger',
+      }),
+  });
+
   const refreshFullMutation = useMutation({
     mutationFn: () =>
       catalogFetch<{ upserted: number }>('/api/catalog/refresh', {
@@ -411,6 +464,7 @@ export function useProductsCatalog() {
     closeDrawer,
     refreshBranchMutation,
     syncSelectedMutation,
+    legacySyncMutation,
     refreshFullMutation,
     createMutation,
     updateMutation,

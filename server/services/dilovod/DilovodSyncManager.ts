@@ -45,11 +45,13 @@ export class DilovodSyncManager {
       productData?: any;
       initiatedBy?: string;
     }) => Promise<void>,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    options?: { force?: boolean }
   ): Promise<DilovodSyncResult> {
+    const force = options?.force === true;
     try {
       console.log('Починаємо синхронізацію товарів з базою даних...');
-      console.log(`Отримано ${dilovodProducts.length} товарів для синхронізації`);
+      console.log(`Отримано ${dilovodProducts.length} товарів для синхронізації${force ? ' (force)' : ''}`);
       
       const errors: string[] = [];
       let createdProducts = 0;
@@ -120,13 +122,17 @@ export class DilovodSyncManager {
           const newDataHash = this.calculateDataHash(product);
 
           if (existingProduct) {
-            // Перевіряємо, чи змінилися дані
-            const dataChanged = existingProduct.dilovodDataHash !== newDataHash;
+            // Перевіряємо, чи змінилися дані (force — завжди перезаписуємо)
+            const dataChanged = force || existingProduct.dilovodDataHash !== newDataHash;
             
             if (dataChanged) {
-              console.log(`🔄 Дані товару ${product.sku} змінилися, оновлюємо...`);
+              console.log(
+                force
+                  ? `🔄 Force-оновлення товару ${product.sku}...`
+                  : `🔄 Дані товару ${product.sku} змінилися, оновлюємо...`
+              );
               
-              const productData = this.prepareProductData(product, false); // false = існуючий товар
+              const productData = this.prepareProductData(product, false, { force }); // false = існуючий товар
               console.log(`Дані для оновлення:`, JSON.stringify(productData, null, 2));
               
               await prisma.product.update({
@@ -235,9 +241,14 @@ export class DilovodSyncManager {
   }
 
   // Підготовка даних товару для збереження
-  private prepareProductData(product: DilovodProduct, isNew: boolean): any {
+  private prepareProductData(
+    product: DilovodProduct,
+    isNew: boolean,
+    options?: { force?: boolean }
+  ): any {
     // Обчислюємо хеш даних з Dilovod
     const dilovodDataHash = this.calculateDataHash(product);
+    const force = options?.force === true;
     
     const data: any = {
       name: product.name,
@@ -264,13 +275,17 @@ export class DilovodSyncManager {
       console.log(`ℹ️  portionsPerBox з Dilovod: ${data.portionsPerBox}`);
     }
     
-    // Вага і manualOrder встановлюємо ТІЛЬКИ для нових товарів
-    // Для існуючих товарів НЕ перезаписуємо (захист локальних змін)
-    if (isNew) {
+    // Вага: завжди для нових; для існуючих — лише при force (Legacy Update)
+    // manualOrder / unitRatio — лише для нових (захист локальних змін)
+    if (isNew || force) {
       const weight = this.determineWeightByCategory(product.category.id);
       data.weight = weight;
-      console.log(`⚖️  Встановлюємо вагу для нового товару: ${weight ?? 'не визначено'} г`);
-      
+      console.log(
+        `⚖️  ${isNew ? 'Встановлюємо' : 'Force-оновлюємо'} вагу: ${weight ?? 'не визначено'} г`
+      );
+    }
+
+    if (isNew) {
       const manualOrder = this.determineManualOrderByCategory(product.category.id);
       data.manualOrder = manualOrder;
       console.log(`📋 Встановлюємо порядок сортування: ${manualOrder}`);
@@ -291,13 +306,15 @@ export class DilovodSyncManager {
           for (const g of gradations) if (grams >= g.min) return g.value;
           return 1;
         };
-        data.unitRatio = derive(weight);
+        data.unitRatio = derive(data.weight);
         console.log(`ℹ️ Встановлюємо unitRatio для нового товару: ${data.unitRatio}`);
       } catch (err) {
         // Не критично — пропускаємо
       }
-    } else {
+    } else if (!force) {
       console.log(`🔒 Вага і порядок сортування не оновлюються (захист локальних змін)`);
+    } else {
+      console.log(`🔒 manualOrder / unitRatio не оновлюються (force оновлює лише weight)`);
     }
     
     return data;

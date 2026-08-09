@@ -4,6 +4,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDilovodSettings } from '@/hooks/useDilovodSettings';
+import { ToastService } from '@/services/ToastService';
 import { ROLES } from '@shared/constants/roles';
 import { CatalogTree } from './components/CatalogTree';
 import { CatalogTable } from './components/CatalogTable';
@@ -44,6 +45,7 @@ export default function ProductsPage() {
   const [fullRefreshConfirmOpen, setFullRefreshConfirmOpen] = useState(false);
   const [branchRefreshConfirmOpen, setBranchRefreshConfirmOpen] = useState(false);
   const [syncConfirmIds, setSyncConfirmIds] = useState<string[] | null>(null);
+  const [legacyUpdateConfirmIds, setLegacyUpdateConfirmIds] = useState<string[] | null>(null);
   const [portionsBySku, setPortionsBySku] = useState<
     Map<string, { newQty: number; confirmedQty: number; holdQty: number }>
   >(new Map());
@@ -116,6 +118,7 @@ export default function ProductsPage() {
     catalog.duplicateMutation.isPending ||
     catalog.refreshBranchMutation.isPending ||
     catalog.syncSelectedMutation.isPending ||
+    catalog.legacySyncMutation.isPending ||
     catalog.refreshFullMutation.isPending;
 
   const selectedLabels = useMemo(
@@ -176,6 +179,38 @@ export default function ProductsPage() {
       }),
     [syncConfirmIds, catalog.tableRows, catalog.treeItemsFull]
   );
+
+  const legacyUpdateLabels = useMemo(
+    () =>
+      resolveCatalogItemLabels(legacyUpdateConfirmIds || [], {
+        tableRows: [
+          ...catalog.tableRows,
+          ...catalog.trashItems,
+          ...(catalog.detail ? [catalog.detail] : []),
+        ],
+        treeItems: catalog.treeItemsFull,
+      }),
+    [
+      legacyUpdateConfirmIds,
+      catalog.tableRows,
+      catalog.trashItems,
+      catalog.detail,
+      catalog.treeItemsFull,
+    ]
+  );
+
+  const legacyUpdateSkus = useMemo(() => {
+    const skus: string[] = [];
+    const seen = new Set<string>();
+    for (const item of legacyUpdateLabels) {
+      if (item.isGroup) continue;
+      const sku = item.sku?.trim();
+      if (!sku || seen.has(sku)) continue;
+      seen.add(sku);
+      skus.push(sku);
+    }
+    return skus;
+  }, [legacyUpdateLabels]);
 
   const fullRefreshEstimate = useMemo(() => {
     const folders = catalog.treeNodes.length;
@@ -337,6 +372,40 @@ export default function ProductsPage() {
     [catalog.setSelectedIds]
   );
 
+  const requestLegacyUpdate = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      catalog.setSelectedIds(ids);
+      const labels = resolveCatalogItemLabels(ids, {
+        tableRows: [
+          ...catalog.tableRows,
+          ...catalog.trashItems,
+          ...(catalog.detail ? [catalog.detail] : []),
+        ],
+        treeItems: catalog.treeItemsFull,
+      });
+      const skus = labels
+        .filter((l) => !l.isGroup && l.sku?.trim())
+        .map((l) => l.sku!.trim());
+      if (skus.length === 0) {
+        ToastService.show({
+          title: 'Немає SKU для Legacy Update',
+          description: 'Оберіть товари з артикулом (папки та елементи без SKU пропускаються).',
+          color: 'warning',
+        });
+        return;
+      }
+      setLegacyUpdateConfirmIds(ids);
+    },
+    [
+      catalog.setSelectedIds,
+      catalog.tableRows,
+      catalog.trashItems,
+      catalog.detail,
+      catalog.treeItemsFull,
+    ]
+  );
+
   const folderIdForBranch =
     catalog.selectedFolderId === CATALOG_ROOT_ID ? null : catalog.selectedFolderId;
 
@@ -385,6 +454,8 @@ export default function ProductsPage() {
         fullRefreshing={catalog.refreshFullMutation.isPending}
         onRefreshBranch={() => setBranchRefreshConfirmOpen(true)}
         onSyncSelected={() => requestSyncFromDilovod(catalog.selectedIds)}
+        onLegacyUpdate={() => requestLegacyUpdate(catalog.selectedIds)}
+        legacyUpdating={catalog.legacySyncMutation.isPending}
         showFullRefresh={isAdmin}
         onFullRefresh={() => setFullRefreshConfirmOpen(true)}
         onCreateGood={() => catalog.openCreate(false)}
@@ -483,6 +554,7 @@ export default function ProductsPage() {
         isInsideArchive={isInsideArchive}
         onClose={() => setContextMenu(null)}
         onSyncFromDilovod={requestSyncFromDilovod}
+        onLegacyUpdate={requestLegacyUpdate}
         onMoveTo={(ids) => {
           if (contextMenu?.fromTrash) requestRestoreFromTrash(ids);
           else requestMoveTo(ids);
@@ -607,6 +679,41 @@ export default function ProductsPage() {
           const ids = syncConfirmIds;
           setSyncConfirmIds(null);
           if (ids?.length) catalog.syncSelectedMutation.mutate(ids);
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(legacyUpdateConfirmIds?.length)}
+        title="Legacy Update?"
+        message={
+          <div className="space-y-1">
+            <p>
+              Обрані товари буде синхронізовано в legacy таблицю{' '}
+              <b>products</b> через Dilovod (<code>sync-manual</code>,{' '}
+              <b>force</b>): set, ціни, штрихкод, hash, вага (з категорії) —
+              навіть якщо хеш не змінився.
+            </p>
+            <p className="text-default-500 text-sm">
+              SKU до оновлення: {legacyUpdateSkus.length}
+              {legacyUpdateLabels.length > legacyUpdateSkus.length
+                ? ` (пропущено ${legacyUpdateLabels.length - legacyUpdateSkus.length} без SKU / папок)`
+                : ''}
+              .
+            </p>
+            <CatalogConfirmItemsList
+              items={legacyUpdateLabels.filter((l) => !l.isGroup && l.sku?.trim())}
+            />
+          </div>
+        }
+        confirmText="Legacy Update"
+        confirmColor="warning"
+        cancelText="Скасувати"
+        confirmLoading={catalog.legacySyncMutation.isPending}
+        onCancel={() => setLegacyUpdateConfirmIds(null)}
+        onConfirm={() => {
+          const skus = legacyUpdateSkus;
+          setLegacyUpdateConfirmIds(null);
+          if (skus.length) catalog.legacySyncMutation.mutate(skus);
         }}
       />
 
