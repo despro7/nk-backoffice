@@ -1,4 +1,5 @@
 import logo from "/logo.svg";
+import favicon from "/favicon.svg";
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "react-router-dom";
 import {
@@ -11,6 +12,8 @@ import {
 import React, { useState } from "react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSidebar } from "@/contexts/SidebarContext";
+import { DebugModeSwitch } from "@/components/DebugModeSwitch";
 
 interface SidebarProps {
   className?: string;
@@ -22,6 +25,7 @@ interface NavItemProps {
   label: string;
   isActive: boolean;
   badge?: NavBadge | null;
+  onNavigate?: () => void;
 }
 
 interface SubmenuProps {
@@ -57,10 +61,11 @@ function NavBadgePill({ badge }: { badge: NavBadge }) {
   );
 }
 
-function NavItem({ to, icon, label, isActive, badge }: NavItemProps) {
+function NavItem({ to, icon, label, isActive, badge, onNavigate }: NavItemProps) {
   return (
     <Link
       to={to}
+      onClick={onNavigate}
       className={cn(
         "flex items-center gap-2 px-2.5 py-3 w-full rounded-md cursor-pointer transition-all duration-300 ease-in-out",
         "hover:bg-neutral-100 text-neutral-600 hover:text-neutral-700",
@@ -88,7 +93,7 @@ function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle
         className={cn(
           "flex items-center gap-2 px-2.5 py-3 w-full rounded-md cursor-pointer transition-colors duration-300 ease-in-out relative z-10",
           "text-neutral-600 hover:text-neutral-700 hover:bg-neutral-100",
-          isChildrenActive ? "bg-neutral-100" : "border-transparent" //isChildrenActive ? "bg-neutral-100" : "hover:bg-neutral-100" 
+          isChildrenActive ? "bg-neutral-100" : "border-transparent"
         )}
       >
         <div className="w-5 h-5">
@@ -126,10 +131,11 @@ function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle
   );
 }
 
-function SubmenuItem({ to, icon, label, isActive, badge }: NavItemProps) {
+function SubmenuItem({ to, icon, label, isActive, badge, onNavigate }: NavItemProps) {
   return (
     <Link
       to={to}
+      onClick={onNavigate}
       className={cn(
         "flex items-center gap-2 px-2.5 py-2 w-full rounded-sm cursor-pointer transition-colors duration-300 ease-in-out",
         isActive 
@@ -151,8 +157,15 @@ function SubmenuItem({ to, icon, label, isActive, badge }: NavItemProps) {
 export function Sidebar({ className }: SidebarProps) {
   const location = useLocation();
   const { user } = useAuth();
+  const { open, isMobile, setOpen } = useSidebar();
   
   const { mainRoutes, subGroups } = getNavGroups(user?.role);
+
+  const handleNavigate = () => {
+    if (isMobile) {
+      setOpen(false);
+    }
+  };
 
   // Ініціалізуємо сет із ключами груп, де є активний дочірній маршрут
   const [expandedSubmenus, setExpandedSubmenus] = useState<Set<string>>(() => {
@@ -174,7 +187,6 @@ export function Sidebar({ className }: SidebarProps) {
     });
   };
 
-  // Розгорнуто лише якщо ключ є в сеті (toggle завжди працює)
   const isGroupExpanded = (group: NavGroup) => {
     return expandedSubmenus.has(group.key);
   };
@@ -183,12 +195,10 @@ export function Sidebar({ className }: SidebarProps) {
     return group.children.some(r => location.pathname === r.path);
   };
 
-  // Рендер підменю для групи
   const renderSubGroup = (group: NavGroup) => {
     const expanded = isGroupExpanded(group);
     const childActive = isGroupChildActive(group);
 
-    // Якщо є маршрут-батько — перший пункт підменю веде на нього
     const label = group.parentRoute?.navLabel ?? group.groupMeta?.label ?? group.key;
     const icon = group.parentRoute?.icon ?? group.groupMeta?.icon ?? null;
 
@@ -201,7 +211,6 @@ export function Sidebar({ className }: SidebarProps) {
         isChildrenActive={childActive}
         onToggle={() => toggleSubmenu(group.key)}
       >
-        {/* Якщо є власний маршрут-батько — додаємо його першим пунктом */}
         {group.parentRoute && (
           <SubmenuItem
             to={group.parentRoute.path}
@@ -209,6 +218,7 @@ export function Sidebar({ className }: SidebarProps) {
             label={group.parentRoute.navLabel}
             isActive={location.pathname === group.parentRoute.path}
             badge={group.parentRoute.navBadge}
+            onNavigate={handleNavigate}
           />
         )}
         {group.children.map((child) => (
@@ -219,48 +229,105 @@ export function Sidebar({ className }: SidebarProps) {
             label={child.navLabel}
             isActive={location.pathname === child.path}
             badge={child.navBadge}
+            onNavigate={handleNavigate}
           />
         ))}
       </Submenu>
     );
   };
 
-  return (
-    <div className={cn("hidden lg:flex w-[250px] flex-col bg-white border-r border-neutral-200 h-auto self-stretch", className)}>
-      <div className="sticky top-0 h-screen overflow-y-auto bg-white scrollbar-hide pb-4">
-        <img src={logo} alt="logo" className="p-5" />
-        <nav className="flex flex-col items-start gap-1 px-3 py-4 h-auto flex-1">
-          {/* Об'єднуємо mainRoutes та групи-контейнери в єдиний відсортований список */}
-          {[
-            ...mainRoutes.map(route => ({ type: 'route' as const, order: route.order ?? 0, route })),
-            ...Object.values(subGroups)
-              .filter(group => !group.parentRoute)
-              .map(group => ({ type: 'group' as const, order: group.order, group })),
-          ]
-            .sort((a, b) => a.order - b.order)
-            .map(item => {
-              if (item.type === 'group') {
-                return renderSubGroup(item.group);
-              }
-              // Якщо для маршруту є дочірня група — рендеримо як підменю
-              const group = subGroups[item.route.path.replace(/^\//, '')];
-              if (group) {
-                return renderSubGroup(group);
-              }
-              return (
-                <NavItem
-                  key={item.route.path}
-                  to={item.route.path}
-                  icon={item.route.icon}
-                  label={item.route.navLabel}
-                  isActive={location.pathname === item.route.path}
-                  badge={item.route.navBadge}
-                />
-              );
-            })
-          }
-        </nav>
+  const navContent = (
+    <>
+      <div className="flex items-center gap-1.5 px-4 py-4 select-none">
+        <img src={favicon} alt="favicon" className="w-8 h-8" />
+        <div className="flex items-end gap-1 font-[Nunito] text-2xl font-bold text-slate-600 leading-none">
+          <span>Backoffice</span>
+          <div className="text-sm text-slate-400/80 bg-gray-100 px-1.5 py-1 rounded leading-none">2.0</div>
+        </div>
       </div>
-    </div>
+      <nav className="flex flex-col items-start gap-1 px-3 py-4 h-auto flex-1">
+        {[
+          ...mainRoutes.map(route => ({ type: 'route' as const, order: route.order ?? 0, route })),
+          ...Object.values(subGroups)
+            .filter(group => !group.parentRoute)
+            .map(group => ({ type: 'group' as const, order: group.order, group })),
+        ]
+          .sort((a, b) => a.order - b.order)
+          .map(item => {
+            if (item.type === 'group') {
+              return renderSubGroup(item.group);
+            }
+            const group = subGroups[item.route.path.replace(/^\//, '')];
+            if (group) {
+              return renderSubGroup(group);
+            }
+            return (
+              <NavItem
+                key={item.route.path}
+                to={item.route.path}
+                icon={item.route.icon}
+                label={item.route.navLabel}
+                isActive={location.pathname === item.route.path}
+                badge={item.route.navBadge}
+                onNavigate={handleNavigate}
+              />
+            );
+          })
+        }
+      </nav>
+      <div className="px-5 pb-4 pt-8 mt-auto lg:hidden">
+        <DebugModeSwitch className="ml-0 w-full justify-start" />
+      </div>
+    </>
+  );
+
+  // Mobile: fixed overlay + backdrop
+  if (isMobile) {
+    return (
+      <>
+        <div
+          aria-hidden={!open}
+          className={cn(
+            'fixed inset-0 z-[70] bg-black/40 transition-opacity duration-300 lg:hidden',
+            open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          )}
+          onClick={() => setOpen(false)}
+        />
+        <aside
+          className={cn(
+            'fixed inset-y-0 left-0 z-[70] w-[280px] max-w-[85vw] flex flex-col bg-white border-r border-neutral-200',
+            'transition-transform duration-300 ease-in-out lg:hidden',
+            open ? 'translate-x-0' : '-translate-x-full',
+            className
+          )}
+        >
+          <div className="h-full overflow-y-auto bg-white scrollbar-hide flex flex-col pb-4">
+            {navContent}
+          </div>
+        </aside>
+      </>
+    );
+  }
+
+  // Desktop: width collapse in flex row
+  return (
+    <aside
+      className={cn(
+        'hidden lg:flex flex-col bg-white border-r border-neutral-200 self-stretch shrink-0',
+        'overflow-hidden transition-[width] duration-300 ease-in-out',
+        open ? 'w-[250px]' : 'w-0 border-r-0',
+        className
+      )}
+    >
+      <div
+        className={cn(
+          'sticky top-0 h-screen overflow-y-auto bg-white scrollbar-hide pb-4 flex flex-col',
+          'w-[250px] transition-opacity duration-300',
+          open ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        )}
+      >
+        {navContent}
+      </div>
+    </aside>
   );
 }

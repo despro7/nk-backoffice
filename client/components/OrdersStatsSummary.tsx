@@ -32,10 +32,7 @@ export default function OrdersStatsSummary({ stats }: OrdersStatsSummaryProps) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
       {statsConfig.map(({ key, label }) => (
-        <div
-          key={key}
-          className="flex flex-col justify-center p-6 bg-white rounded-xl shadow-sm"
-        >
+        <div key={key} className="flex flex-col justify-start p-4 lg:p-6 bg-white rounded-xl shadow-sm">
           <span className="text-3xl font-extrabold mb-1 tracking-tight text-neutral-700">
             {stats[key as keyof OrdersStats]}
           </span>

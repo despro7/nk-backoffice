@@ -41,7 +41,7 @@ export default function WeightStatsTable() {
 	const [error, setError] = useState<string | null>(null);
 
 	const Header = (
-		<h3 className="text-xl font-semibold">Статистика ваги замовлень</h3>
+		<h3 className="text-xl font-semibold">Вага замовлень</h3>
 	);
 
 	const fetchWeightStats = async () => {
@@ -130,9 +130,9 @@ export default function WeightStatsTable() {
 				</Button>
 			</div>
 
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+			<div className="grid grid-cols-3 md:grid-cols-3 gap-4">
 				{/* Підтверджені замовлення */}
-				<div className="flex flex-col justify-center p-6 bg-white rounded-xl shadow-sm">
+				<div className="flex flex-col justify-center p-4 lg:p-6 bg-white rounded-xl shadow-sm">
 					<div className="text-3xl font-extrabold mb-1 tracking-tight text-neutral-700">
 						{stats.confirmed.weightText}
 					</div>
@@ -145,7 +145,7 @@ export default function WeightStatsTable() {
 				</div>
 
 				{/* Готові до відправки */}
-				<div className="flex flex-col justify-center p-6 bg-white rounded-xl shadow-sm">
+				<div className="flex flex-col justify-center p-4 lg:p-6 bg-white rounded-xl shadow-sm">
 					<div className="text-3xl font-extrabold mb-1 tracking-tight text-neutral-700">
 						{stats.readyToShip.weightText}
 					</div>
@@ -158,7 +158,7 @@ export default function WeightStatsTable() {
 				</div>
 
 				{/* Загальна сума */}
-				<div className="flex flex-col justify-center p-6 bg-white rounded-xl shadow-sm">
+				<div className="flex flex-col justify-center p-4 lg:p-6 bg-white rounded-xl shadow-sm">
 					<div className="text-3xl font-extrabold mb-1 tracking-tight text-neutral-700">
 						{stats.total.weightText}
 					</div>

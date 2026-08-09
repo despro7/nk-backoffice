@@ -43,23 +43,16 @@ export const DebugModeSwitch: React.FC<DebugModeSwitchProps> = ({
         color="danger"
         size="sm"
         classNames={{
-          wrapper: "bg-grey-500/50 transition-all duration-300",
+          wrapper: "bg-slate-600/50 transition-all duration-300",
           thumbIcon: "bg-white/50",
           base: "transition-all duration-300",
         }}
       >
-        <div className="flex items-center gap-2 transition-opacity duration-200">
-          <span className={`text-sm font-medium text-neutral-600 transition-all duration-200 ${
-            transitionMode ? 'opacity-70' : 'opacity-100'
-          }`}>
-            {transitionMode ? 'Зберігається...' : 'Дебаг-режим'}
-          </span>
-          {isDebugMode && (
-            <span className="bg-danger rounded px-1 py-0.5 text-white text-[9px] tracking-wider">
-              УВІМКНЕНО
-            </span>
-          )}
-        </div>
+        <span className={`text-sm font-medium transition-color duration-300 
+          ${isDebugMode ? 'text-danger' : 'text-slate-600/80'}
+          ${transitionMode ? 'opacity-70' : 'opacity-100'}`}>
+          Debug mode
+        </span>
       </Switch>
     </div>
   );

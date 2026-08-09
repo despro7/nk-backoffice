@@ -214,6 +214,36 @@
     /* overflow-y: scroll; */
   }
 
+  /*
+   * Mobile visual-viewport lock (див. useVisualViewportLock).
+   * Без цього min-h-screen/100vh лишає TabBar під адресним рядком.
+   */
+  html.app-vv-locked,
+  html.app-vv-locked body {
+    overflow: hidden;
+    height: 100%;
+    overscroll-behavior: none;
+    touch-action: pan-x pan-y;
+  }
+
+  html.app-vv-locked #root {
+    height: 100%;
+  }
+
+  @media (max-width: 1023px) {
+    .app-shell--vv {
+      position: fixed;
+      left: 0;
+      right: 0;
+      top: var(--app-vv-top, 0px);
+      width: 100%;
+      height: var(--app-vvh, 100svh);
+      max-height: var(--app-vvh, 100svh);
+      min-height: 0;
+      overflow: hidden;
+    }
+  }
+
   button {
     cursor: pointer;
   }

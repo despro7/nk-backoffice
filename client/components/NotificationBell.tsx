@@ -255,9 +255,11 @@ function DebugFooter({ clearAll, markAllReadGlobal, hideAllGlobal }: DebugFooter
 
 interface NotificationBellProps {
   onNavigate?: (href: string) => void;
+  size?: 'default' | 'sm';
 }
 
-export function NotificationBell({ onNavigate: _onNavigate }: NotificationBellProps) {
+export function NotificationBell({ onNavigate: _onNavigate, size = 'default' }: NotificationBellProps) {
+  const iconSize = size === 'sm' ? 22 : 24;
   const [isOpen, setIsOpen] = useState(false);
   const [drawerNotification, setDrawerNotification] = useState<AppNotification | null>(null);
   const [drawerLog, setDrawerLog] = useState<any[] | null>(null);
@@ -315,9 +317,9 @@ export function NotificationBell({ onNavigate: _onNavigate }: NotificationBellPr
         <button
           type="button"
           aria-label={`Сповіщення${unreadCount > 0 ? `, ${unreadCount} непрочитаних` : ''}`}
-          className="relative flex items-center justify-center rounded-sm transition-all duration-200 bg-neutral-100 text-neutral-600 p-2"
-        >
-          <DynamicIcon name="bell" size={24} strokeWidth={2} />
+          className={`relative flex items-center justify-center rounded-sm transition-all duration-200 bg-neutral-100 text-neutral-600
+            ${size === 'sm' ? 'p-1.5' : 'p-2'}`}>
+          <DynamicIcon name="bell" size={iconSize} strokeWidth={2} />
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[10px] font-bold leading-[18px] text-center">
               {unreadCount > 99 ? '99+' : unreadCount}
@@ -349,26 +351,6 @@ export function NotificationBell({ onNavigate: _onNavigate }: NotificationBellPr
             >
               Детальний звіт
             </Button>
-            {/* {unreadCount > 0 && (
-              <Button
-                size="sm"
-                variant="light"
-                className="text-xs text-primary h-7 px-2 min-w-0"
-                onPress={handleMarkAllRead}
-              >
-                Прочитати все
-              </Button>
-            )}
-            {notifications.length > 0 && (
-              <Button
-                size="sm"
-                variant="light"
-                className="text-xs text-gray-400 h-7 px-2 min-w-0"
-                onPress={handleClearAll}
-              >
-                Очистити
-              </Button>
-            )} */}
           </div>
         </div>
 

@@ -95,13 +95,13 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="container">
+    <div className="container px-3 lg:px-0">
       
       {/* Статистика по заказам - для всех пользователей */}
       <div className="mt-6 mb-12">
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-3 mb-4">
           <h2 className="text-xl font-semibold">Статистика всіх замовлень</h2>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 justify-between lg:justify-start">
             {lastSynced && (
               <div className="text-sm text-gray-500">
                 Остання синхронізація: <strong>{formatRelativeDate(lastSynced)}</strong>
@@ -157,15 +157,13 @@ export default function Dashboard() {
         <div className="mb-16">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">Статистика товарів</h2>
-            {/* TODO Додати кнопку для переходу в деталі статистики товарів /settings/product-sets */}
-            <Button
+            {/* <Button
               color="default"
               onPress={() => navigate('/settings/product-sets')}
               className="bg-neutral-600 text-white h-8 px-3 rounded-sm"
-              endContent={<DynamicIcon name="arrow-right" size={16} />}
             >
               Деталі
-            </Button>
+            </Button> */}
           </div>
           <ProductsStatsSummary stats={productsStats} className="mb-8" />
         </div>

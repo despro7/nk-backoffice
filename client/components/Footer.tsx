@@ -1,7 +1,12 @@
 import { useServerStatusWithModal } from "@/hooks/useServerStatusWithModal";
 import { DynamicIcon } from "lucide-react/dynamic";
+import { cn } from "@/lib/utils";
 
-export function Footer() {
+interface FooterProps {
+  className?: string;
+}
+
+export function Footer({ className }: FooterProps) {
   const { isOnline, serverStartTime, uptime } = useServerStatusWithModal();
 
   const formatServerStartTime = (startTime: Date | null) => {
@@ -16,7 +21,7 @@ export function Footer() {
   };
 
   return (
-    <footer className="border-t border-grey-200 shadow-inner px-8 py-3">
+    <footer className={cn("border-t border-grey-200 shadow-inner px-8 py-3", className)}>
       <div className="flex items-center justify-between text-xs text-neutral-500">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">

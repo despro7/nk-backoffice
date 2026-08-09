@@ -48,30 +48,43 @@ export function createServer() {
     'https://localhost:8080'
   ];
 
+  /** У dev дозволяємо доступ з телефону/LAN в одній приватній мережі */
+  const isDevLanOrigin = (origin: string): boolean => {
+    if (process.env.NODE_ENV === 'production') return false;
+    try {
+      const { protocol, hostname } = new URL(origin);
+      if (protocol !== 'http:' && protocol !== 'https:') return false;
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') return true;
+      if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+      if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+      if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
   const loggedOrigins = new Set();
 
   app.use(cors({
     origin: (origin, callback) => {
-      // Логуємо тільки один раз для кожного origin
-      const key = origin || 'no-origin';
-      if (!loggedOrigins.has(key)) {
-        logServer(`✅ CORS: Allowed ${key}`);
-        loggedOrigins.add(key);
-      }
-
       // Дозволяємо запити без origin (для webhook від зовнішніх сервісів)
       if (!origin) {
         return callback(null, true);
       }
 
       // Спеціально дозволяємо webhook-запити від SalesDrive
-      if (key === 'no-origin' || key.includes('salesdrive') || key.includes('webhook')) {
-        logServer(`✅ CORS: Webhook allowed for ${key}`);
+      if (origin.includes('salesdrive') || origin.includes('webhook')) {
+        logServer(`✅ CORS: Webhook allowed for ${origin}`);
         return callback(null, true);
       }
 
-      // Перевіряємо, чи origin є в списку дозволених (для клієнтських запитів)
-      if (allowedOrigins.includes(origin)) {
+      // Перевіряємо allowlist + LAN-origin у dev (телефон в одній мережі)
+      if (allowedOrigins.includes(origin) || isDevLanOrigin(origin)) {
+        if (!loggedOrigins.has(origin)) {
+          logServer(`✅ CORS: Allowed ${origin}`);
+          loggedOrigins.add(origin);
+        }
         callback(null, true);
       } else {
         logServer(`🚫 CORS: Blocked origin ${origin}`);

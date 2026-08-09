@@ -182,10 +182,10 @@ export default function CashInImport() {
       {/* Заголовок секції */}
       <div>
         <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
-          <DynamicIcon name="file-input" size={18} className="text-primary" />
-          Імпорт реєстру переказів (Надходження грошей)
+          <DynamicIcon name="file-input" size={18} className="text-primary shrink-0 hidden lg:block" />
+          Імпорт реєстру переказів Нової Пошти (надходження грошей)
         </h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-gray-500 mt-1 lg:leading-relaxed">
           Завантажте Excel-файл реєстру переказів. Дані будуть перевірені та вивантажені в Діловод як документ «Надходження грошей».
         </p>
       </div>

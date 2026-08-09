@@ -1,18 +1,15 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { useApi } from "@/hooks/useApi";
-import { useServerStatus } from "@/hooks/useServerStatus";
 import { cn } from "@/lib/utils";
-import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, User, Switch } from "@heroui/react";
+import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, User } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";
-import NumberFlow, { NumberFlowGroup } from '@number-flow/react';
-// import CountdownTimer from "./CountdownTimer";
-import { useEquipmentFromAuth } from "../contexts/AuthContext";
 import { formatDateLong, formatWeekdayOnly } from "@/lib/formatUtils";
 import { DebugModeSwitch } from "./DebugModeSwitch";
-import { useDebug } from "../contexts/DebugContext";
 import { NotificationBell } from "./NotificationBell";
+import { SidebarTrigger } from "./SidebarTrigger";
+import NumberFlow, { NumberFlowGroup } from '@number-flow/react';
+// import CountdownTimer from "./CountdownTimer";
 
 interface HeaderProps {
   className?: string;
@@ -22,19 +19,14 @@ interface HeaderProps {
 export function Header({ className, onDebugModeChange }: HeaderProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const api = useApi();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [equipmentState, equipmentActions] = useEquipmentFromAuth();
-  const { isOnline, isLoading } = useServerStatus();
-  const { setDebugMode } = useDebug();
   
-  // Убираем лишние состояния - используем только equipmentState.isLoading
 
-  // Слушаем изменения полноэкранного режима
+  // Слухаємо зміни у повноекранному режимі
   useEffect(() => {
     const handleFullscreenChange = () => {
-      // Поддержка различных браузеров
+      // Підтримка різних браузерів
       const fullscreenElement = 
         document.fullscreenElement || 
         (document as any).webkitFullscreenElement ||
@@ -44,13 +36,13 @@ export function Header({ className, onDebugModeChange }: HeaderProps) {
       setIsFullscreen(!!fullscreenElement);
     };
 
-    // Слушаем события для различных браузеров
+    // Слухаємо події для різних браузерів
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
     document.addEventListener('mozfullscreenchange', handleFullscreenChange);
     document.addEventListener('MSFullscreenChange', handleFullscreenChange);
     
-    // Устанавливаем начальное состояние
+    // Встановлюємо початковий стан повноекранного режиму
     handleFullscreenChange();
 
     return () => {
@@ -75,7 +67,7 @@ export function Header({ className, onDebugModeChange }: HeaderProps) {
   
   const handleLogout = () => {
     logout();
-    // Перенаправляем на страницу авторизации после выхода
+    // Перенаправляємо на сторінку авторизації після виходу
     navigate('/auth');
   };
 
@@ -83,8 +75,9 @@ export function Header({ className, onDebugModeChange }: HeaderProps) {
 
   return (
     <header className={cn("flex flex-col sm:flex-row justify-between items-center px-8 py-4 sm:px-xl border-b border-grey-200 bg-background-paper gap-4 sm:gap-0", className)}>
-      {/* Timer Section */}
+      {/* Sidebar trigger + Timer Section */}
       <div className="flex items-center gap-2.5 w-full sm:w-auto justify-center sm:justify-start text-neutral-500">
+        <SidebarTrigger />
         <div className="flex items-center gap-1.5 wrap-break-word px-2.5 py-1 rounded-sm bg-neutral-100">
           {/* <CountdownTimer /> */}
           <NumberFlowGroup>
@@ -175,7 +168,7 @@ export function Header({ className, onDebugModeChange }: HeaderProps) {
                   className: "w-[36px] h-[36px] bg-linear-to-br from-[#e0d7f2] to-[#a3b8ff] from-20% to-80%",
                   showFallback: true,
                   fallback: <DynamicIcon name="user-round" size={18} color="white" />,
-                  // src: "https://api.dicebear.com/9.x/initials/svg?seed=" + user.name + "&backgroundColor=a3b8ff,7ca3d8,8fa3c6&backgroundType=gradientLinear&backgroundRotation=30&chars=1",
+                  src: "https://api.dicebear.com/9.x/initials/svg?seed=" + user.name + "&backgroundColor=a3b8ff,7ca3d8,8fa3c6&backgroundType=gradientLinear&backgroundRotation=30&chars=1"
                 }}
                 classNames={{
                   base: "cursor-pointer transition-transform",

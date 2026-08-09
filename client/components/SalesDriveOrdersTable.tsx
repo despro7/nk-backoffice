@@ -1486,9 +1486,8 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
     { key: "orderNumber", label: "№ замовлення", sortable: false },
     { key: "orderDate", label: "Дата оформлення", sortable: false },
     { key: "status", label: "Статус", sortable: false },
-    { key: "paymentMethod", label: "Оплата", sortable: false },
-    // { key: "shippingMethod", label: "Доставка", sortable: false },
-    { key: "sajt", label: "Канал", sortable: false },
+    { key: "paymentMethod", label: "Оплата", sortable: false, hideOnMobile: true },
+    { key: "sajt", label: "Канал", sortable: false, hideOnMobile: true },
     { key: "dilovodExportDate", label: "Додано в Діловод", sortable: false },
     { key: "actions", label: "Дії", sortable: false }
   ];
@@ -1496,9 +1495,9 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
   return (
     <div className={`space-y-4 ${className}`}>
       {!hideFilters ? (
-      <div className="flex gap-3 items-center justify-between">
+      <div className="flex flex-wrap gap-3 items-center justify-between">
         {/* Панель пошуку */}
-        <div className="flex items-center max-w-[320px] w-full">
+        <div className="flex items-center w-full md:max-w-[320px]">
           <Dropdown placement="bottom-start">
             <DropdownTrigger>
               <Button
@@ -1583,7 +1582,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
             <DropdownTrigger>
               <Button
                 color="primary"
-                className="font-medium px-4 py-2.5 h-auto rounded-md"
+                className="font-medium px-3 pr-2 md:px-4 py-2.5 h-auto rounded-md"
                 isDisabled={selectedOrderIds.length === 0}
               >
                 Масові дії <DynamicIcon name="chevron-down" size={16} />
@@ -1650,7 +1649,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
       </div>
       ) : null}
 
-      <div className="flex items-center justify-between w-full">
+      <div className="flex flex-wrap items-center gap-3 justify-between w-full">
         <div className="flex gap-3">
           {/* Фільтр каналів */}
           <Dropdown placement="bottom-start">
@@ -1995,7 +1994,8 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
             }
           }}
           classNames={{
-            wrapper: "min-h-30 p-0 pb-1 shadow-none bg-transparent rounded-none",
+            base: "-mx-4 md:mx-0 w-[calc(100%+32px)] md:w-full overflow-x-visible",
+            wrapper: "min-h-30 px-4 md:p-0 pb-1 shadow-none bg-transparent rounded-none",
             th: ["first:rounded-s-md", "last:rounded-e-md"],
           }}
         >
@@ -2004,7 +2004,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
               <TableColumn
                 key={column.key}
                 allowsSorting={column.sortable}
-                className="text-sm"
+                className={`text-sm${column.hideOnMobile ? " hidden md:table-cell" : ""}`}
               >
                 {column.label}
               </TableColumn>
@@ -2047,13 +2047,10 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                     </Chip>
                   </Tooltip>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   {order.paymentMethod || 'Не задано'}
                 </TableCell>
-                {/* <TableCell>
-                  {order.shippingMethod || 'Не задано'}
-                </TableCell> */}
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   <Tooltip 
                     placement="top-start" 
                     isDisabled={!!order.sajt}
@@ -2071,7 +2068,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Tooltip color="secondary" content={order.dilovodExportDate ? 'Оновлено: ' + new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не оновлено'}>
+                    <Tooltip color="secondary" content={order.dilovodExportDate ? 'Експортовано: ' + new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не оновлено'}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodExportDate ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="search-check" size={16} /></div>
                     </Tooltip>
                     <Tooltip color={
@@ -2215,24 +2212,6 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
             color="primary"
             className="cursor-pointer"
           />
-
-          {/* Легенда */}
-          <div className="flex gap-6 items-center border-1 py-2 px-3 rounded-sm">
-            <div className="flex gap-1 items-center">
-              <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-purple-100 text-purple-600"><DynamicIcon name="search-check" size={14} strokeWidth="1.5" /></div>
-              <span className="text-sm text-default-500">Додано в Діловод</span>
-            </div>
-
-            <div className="flex gap-1 items-center">
-              <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-green-100 text-green-600"><DynamicIcon name="truck" size={14} strokeWidth="1.5" /></div>
-              <span className="text-sm text-default-500">Відвантажено</span>
-            </div>
-
-            <div className="flex gap-1 items-center">
-              <div className="w-6 h-6 inline-flex items-center justify-center box-border select-none rounded bg-yellow-100 text-yellow-600"><DynamicIcon name="wallet" size={14} strokeWidth="1.5" /></div>
-              <span className="text-sm text-default-500">Оплачено</span>
-            </div>
-          </div>
         </div>
       )}
 

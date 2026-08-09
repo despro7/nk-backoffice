@@ -1,4 +1,4 @@
-import { defineConfig, Plugin, searchForWorkspaceRoot } from "vite";
+import { defineConfig, Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
@@ -10,7 +10,8 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     fs: {
-      allow: [searchForWorkspaceRoot(process.cwd()), "./client", "./shared"],
+      // Корінь проєкту потрібен для index.html; client/shared уже всередині нього
+      allow: [path.resolve(__dirname)],
       deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", "server/**"],
     },
   },

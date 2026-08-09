@@ -35,7 +35,7 @@ interface StatCardProps {
 
 function StatCard({ label, iconName, iconColor, activeCount, totalCount, outdatedCount }: StatCardProps) {
   return (
-    <div className="bg-white flex flex-col gap-2 p-4 rounded-xl shadow-sm min-w-[200px] flex-1">
+    <div className="bg-white flex flex-col gap-2 p-4 lg:p-6 rounded-xl shadow-sm flex-1">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-[#1e1b1b]">{label}</span>
         <DynamicIcon name={iconName as any} size={20} style={{ color: iconColor }} />
@@ -56,7 +56,7 @@ export default function ProductsStatsSummary({ stats, className }: ProductsStats
   const activeCategories = stats?.activeCategoriesCount ?? 0;
 
   return (
-    <div className={`flex flex-wrap gap-5 ${className ?? ''}`}>
+    <div className={`grid grid-cols-2 lg:grid-cols-4 gap-4 ${className ?? ''}`}>
       <StatCard
         label="Всі товари"
         iconName="shopping-basket"
