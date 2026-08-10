@@ -64,6 +64,16 @@ export function createServer() {
     }
   };
 
+  /**
+   * OpenLiteSpeed/Cloudflare інколи дублюють Origin через кому:
+   * "https://backoffice.nk-food.shop, https://backoffice.nk-food.shop"
+   * Беремо перший валідний URL для звірки з whitelist і для ACAO.
+   */
+  const normalizeOrigin = (origin: string): string => {
+    const first = origin.split(',')[0]?.trim();
+    return first || origin.trim();
+  };
+
   const loggedOrigins = new Set();
 
   app.use(cors({
@@ -73,19 +83,22 @@ export function createServer() {
         return callback(null, true);
       }
 
+      const normalizedOrigin = normalizeOrigin(origin);
+
       // Спеціально дозволяємо webhook-запити від SalesDrive
-      if (origin.includes('salesdrive') || origin.includes('webhook')) {
-        logServer(`✅ CORS: Webhook allowed for ${origin}`);
-        return callback(null, true);
+      if (normalizedOrigin.includes('salesdrive') || normalizedOrigin.includes('webhook')) {
+        logServer(`✅ CORS: Webhook allowed for ${normalizedOrigin}`);
+        return callback(null, normalizedOrigin);
       }
 
       // Перевіряємо allowlist + LAN-origin у dev (телефон в одній мережі)
-      if (allowedOrigins.includes(origin) || isDevLanOrigin(origin)) {
-        if (!loggedOrigins.has(origin)) {
-          logServer(`✅ CORS: Allowed ${origin}`);
-          loggedOrigins.add(origin);
+      if (allowedOrigins.includes(normalizedOrigin) || isDevLanOrigin(normalizedOrigin)) {
+        if (!loggedOrigins.has(normalizedOrigin)) {
+          logServer(`✅ CORS: Allowed ${normalizedOrigin}`);
+          loggedOrigins.add(normalizedOrigin);
         }
-        callback(null, true);
+        // Повертаємо нормалізований origin, щоб ACAO був одним URL, а не списком через кому
+        callback(null, normalizedOrigin);
       } else {
         logServer(`🚫 CORS: Blocked origin ${origin}`);
         callback(new Error('Not allowed by CORS'));
