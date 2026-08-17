@@ -19,6 +19,7 @@ import {
   formatDateForDilovod
 } from './DilovodUtils.js';
 import { delay } from './DilovodUtils.js';
+import { inspect } from 'node:util';
 
 export class DilovodApiClient {
   // Простий внутрішній черговий механізм для серіалізації запитів
@@ -174,11 +175,11 @@ export class DilovodApiClient {
       while (attempt < maxAttempts) {
         attempt++;
         try {
-          console.log('Відправляємо запит до Dilovod API (черга):', {
+          console.log('Відправляємо запит до Dilovod API (черга):', inspect({
             ...request,
             key: request.key ? `${String(request.key).substring(0, 6)}***` : undefined,
             attempt
-          });
+          }, { depth: null, colors: true, compact: false }));
 
           const resp = await fetch(this.apiUrl, {
             method: 'POST',
