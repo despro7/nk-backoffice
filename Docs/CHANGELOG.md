@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-08-17 — Products 2.0: пошук, модалка замовлень, Legacy на гілці
+**Files:** `client/pages/Products/**`, `client/components/modals/ProductOrdersModal.tsx`, `ProductShippedStatsTable.tsx`, `server/modules/Products/*`, `server/routes/products.ts`, `server/lib/utils.ts`, `DilovodService.ts`, `DilovodCacheService.ts`, `Docs/features/products-catalog-2.0.md`
+
+### Пошук і замовлення
+- У режимі пошуку таблиця показує **Категорію** (клік → папка) і **В замовленнях** (статистика new / confirmed / hold).
+- Клік по кількості відкриває спільну `ProductOrdersModal` (таби Всі | Нові | Підтверджені | На утриманні); звіт відвантажень використовує ті самі таби regular / monolithic.
+- Навігація між товарами — компактний контрол у хедері перед SKU (↑/↓ + лічильник); футер модалки прибрано.
+
+### Legacy `products` (тимчасово)
+- Кнопка **Оновити Legacy** у футері картки товару (той самий confirm / `sync-manual` force, що в меню).
+- **Синхронізувати гілку** після structure-refresh робить Legacy Update активних SKU гілки (`force` sync-manual).
+- Архівні SKU **не** йдуть у Dilovod: у `products` лише `isOutdated: true`. Те саме для вибіркового Legacy Update.
+- Прибрати цей крок гілки, коли відмовимось від таблиці `products`.
+
+### Prisma / Dilovod
+- Спільний `prisma` на `globalThis`, щоб Vite HMR не плодив пули (MySQL 1040 Too many connections).
+- `DilovodService` / `DilovodCacheService` використовують цей клієнт; Legacy гілки — singleton `dilovodService`.
+
+---
+
+## 2026-08-14 — OrderStatusChip: історія статусів у спільному чіпі
+**Files:** `client/components/OrderStatusChip.tsx`, `SalesDateDetailsModal.tsx`, `ProductOrdersModal.tsx`, `OrderViewHeader.tsx`, `Docs/features/order-status-chip.md`
+
+- Кольоровий чіп статусу замовлення + тултіп історії винесені в `OrderStatusChip` / `OrderStatusHistoryTooltip`.
+- Історія показується, якщо передати `statusHistory`; опційний `dayStartHour` підсвічує «На відправку» в інший звітний день.
+- Підключено в деталях дня звіту продажів, модалці замовлень товару та шапці картки замовлення.
+
+---
+
 ## 2026-08-09 — Products 2.0: Legacy Update (force sync-manual + weight)
 **Files:** `client/pages/Products/index.tsx`, `useProductsCatalog.ts`, `CatalogToolbar.tsx`, `CatalogContextMenu.tsx`, `server/routes/products.ts`, `DilovodService.ts`, `DilovodSyncManager.ts`, `Docs/features/products-catalog-2.0.md`
 

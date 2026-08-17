@@ -17,7 +17,7 @@ import { ArchiveConfirmModal } from './components/ArchiveConfirmModal';
 import { MoveToFolderModal } from './components/MoveToFolderModal';
 import { TrashDrawer } from './components/TrashDrawer';
 import { useProductsCatalog } from './useProductsCatalog';
-import { CATALOG_ROOT_ID } from './ProductsTypes';
+import { CATALOG_ROOT_ID, type CatalogGoodDto } from './ProductsTypes';
 import {
   estimateBranchRefreshCount,
   isArchiveFolderId,
@@ -26,6 +26,12 @@ import {
   resolveCatalogItemLabels,
   resolveCatalogItemLocation,
 } from './ProductsUtils';
+import {
+  ProductOrdersModal,
+  type ProductOrderRow,
+} from '@/components/modals/ProductOrdersModal';
+import type { CatalogOrdersTabKey } from './components/CatalogTable';
+import { pluralize } from '@/lib/formatUtils';
 
 const MANUAL_SORT: SortDescriptor = {
   column: 'sortOrder',
@@ -51,6 +57,14 @@ export default function ProductsPage() {
   >(new Map());
   const [portionsLoading, setPortionsLoading] = useState(false);
   const [tableSort, setTableSort] = useState<SortDescriptor>(MANUAL_SORT);
+  const [ordersModalProduct, setOrdersModalProduct] = useState<{
+    name: string;
+    sku: string;
+  } | null>(null);
+  const [ordersModalTab, setOrdersModalTab] = useState<CatalogOrdersTabKey>('all');
+  const [ordersModalOpen, setOrdersModalOpen] = useState(false);
+  const [ordersModalLoading, setOrdersModalLoading] = useState(false);
+  const [ordersModalOrders, setOrdersModalOrders] = useState<ProductOrderRow[]>([]);
   const isManualTableSort =
     !tableSort.column ||
     tableSort.column === 'sortOrder' ||
@@ -62,7 +76,7 @@ export default function ProductsPage() {
   );
 
   useEffect(() => {
-    if (!isFinishedProductsBranch) return;
+    if (!isFinishedProductsBranch && !catalog.isSearchMode) return;
     let cancelled = false;
     setPortionsLoading(true);
     void (async () => {
@@ -105,7 +119,46 @@ export default function ProductsPage() {
     return () => {
       cancelled = true;
     };
-  }, [isFinishedProductsBranch]);
+  }, [isFinishedProductsBranch, catalog.isSearchMode]);
+
+  useEffect(() => {
+    if (!ordersModalOpen || !ordersModalProduct?.sku) return;
+    let cancelled = false;
+    setOrdersModalLoading(true);
+    setOrdersModalOrders([]);
+    void (async () => {
+      try {
+        const params = new URLSearchParams({
+          sku: ordersModalProduct.sku,
+          status: '1,2,9',
+        });
+        const res = await fetch(`/api/orders/products/orders?${params.toString()}`, {
+          credentials: 'include',
+        });
+        const json = await res.json();
+        if (cancelled) return;
+        if (json?.success && Array.isArray(json.data)) {
+          setOrdersModalOrders(json.data as ProductOrderRow[]);
+        } else {
+          setOrdersModalOrders([]);
+        }
+      } catch (err) {
+        console.error('[Products] product orders failed', err);
+        if (!cancelled) {
+          ToastService.show({
+            title: 'Помилка',
+            description: 'Не вдалося завантажити список замовлень.',
+            color: 'danger',
+          });
+        }
+      } finally {
+        if (!cancelled) setOrdersModalLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ordersModalOpen, ordersModalProduct?.sku]);
 
   const busy =
     catalog.createMutation.isPending ||
@@ -389,7 +442,7 @@ export default function ProductsPage() {
         .map((l) => l.sku!.trim());
       if (skus.length === 0) {
         ToastService.show({
-          title: 'Немає SKU для Legacy Update',
+          title: 'Немає SKU для синхронізації товарів',
           description: 'Оберіть товари з артикулом (папки та елементи без SKU пропускаються).',
           color: 'warning',
         });
@@ -404,6 +457,71 @@ export default function ProductsPage() {
       catalog.detail,
       catalog.treeItemsFull,
     ]
+  );
+
+  const openProductOrders = useCallback(
+    (row: CatalogGoodDto, tab: CatalogOrdersTabKey) => {
+      const sku = row.sku?.trim();
+      if (!sku) return;
+      setOrdersModalProduct({ name: row.name, sku });
+      setOrdersModalTab(tab);
+      setOrdersModalOpen(true);
+    },
+    []
+  );
+
+  const navigableOrderProducts = useMemo(
+    () =>
+      catalog.tableRows
+        .filter((row) => !row.isGroup && row.sku?.trim())
+        .map((row) => ({ name: row.name, sku: row.sku!.trim() })),
+    [catalog.tableRows]
+  );
+
+  const ordersByStatus = useCallback(
+    (status: string) =>
+      ordersModalOrders.filter((order) => String(order.status) === status),
+    [ordersModalOrders]
+  );
+
+  const productOrdersTabs = useMemo(
+    () => [
+      {
+        key: 'all',
+        label: 'Всі',
+        icon: 'list' as const,
+        orders: ordersModalOrders,
+        quantityField: 'productQuantity' as const,
+      },
+      {
+        key: 'new',
+        label: 'Нові',
+        icon: 'sparkles' as const,
+        activeClassName: 'border-blue-600 text-blue-600',
+        badgeClassName: 'bg-blue-200/40 text-blue-900/75',
+        orders: ordersByStatus('1'),
+        quantityField: 'productQuantity' as const,
+      },
+      {
+        key: 'confirmed',
+        label: 'Підтверджені',
+        icon: 'check' as const,
+        activeClassName: 'border-green-600 text-green-600',
+        badgeClassName: 'bg-green-200/40 text-green-900/75',
+        orders: ordersByStatus('2'),
+        quantityField: 'productQuantity' as const,
+      },
+      {
+        key: 'hold',
+        label: 'На утриманні',
+        icon: 'pause' as const,
+        activeClassName: 'border-amber-600 text-amber-600',
+        badgeClassName: 'bg-amber-200/40 text-amber-800/80',
+        orders: ordersByStatus('9'),
+        quantityField: 'productQuantity' as const,
+      },
+    ],
+    [ordersModalOrders, ordersByStatus]
   );
 
   const folderIdForBranch =
@@ -528,6 +646,8 @@ export default function ProductsPage() {
             isAdmin={isAdmin}
             portionsBySku={portionsBySku}
             portionsLoading={portionsLoading}
+            folderLookup={catalog.treeItemsFull}
+            onOpenOrders={openProductOrders}
             sortDescriptor={tableSort}
             onSortChange={setTableSort}
             onReorderGood={
@@ -579,6 +699,8 @@ export default function ProductsPage() {
         onUpdate={(id, input) => catalog.updateMutation.mutateAsync({ id, input })}
         onRestore={(id) => requestRestoreFromTrash(id)}
         catalogSearch={catalogSearch}
+        onLegacyUpdate={(id) => requestLegacyUpdate([id])}
+        legacyUpdating={catalog.legacySyncMutation.isPending}
       />
 
       <TrashDrawer
@@ -629,6 +751,26 @@ export default function ProductsPage() {
         onConfirm={() => catalog.archiveMutation.mutate(catalog.selectedIds)}
       />
 
+      <ProductOrdersModal
+        isOpen={ordersModalOpen}
+        onOpenChange={(open) => {
+          setOrdersModalOpen(open);
+          if (!open) setOrdersModalProduct(null);
+        }}
+        isLoading={ordersModalLoading}
+        product={ordersModalProduct}
+        defaultTab={ordersModalTab}
+        tabs={productOrdersTabs}
+        productItems={navigableOrderProducts}
+        onNavigate={
+          navigableOrderProducts.length > 1
+            ? (next) => {
+                setOrdersModalProduct(next);
+              }
+            : undefined
+        }
+      />
+
       <ConfirmModal
         isOpen={branchRefreshConfirmOpen}
         title="Синхронізувати гілку з Dilovod?"
@@ -637,6 +779,11 @@ export default function ProductsPage() {
             <p>
               Буде синхронізовано структуру папки <b>«{branchEstimate.folderName}»</b> та всіх
               вкладених рівнів.
+            </p>
+            <p className="text-default-500 text-sm mt-2">
+              Після цього тимчасово виконається Legacy Update активних товарів гілки в таблицю{' '}
+              <b>products</b> (Dilovod <code>sync-manual</code>, force). Архівні лише
+              позначаються <code>isOutdated</code>, без запиту в Dilovod.
             </p>
             <p className="text-default-400 text-sm mt-2">
               За локальним дзеркалом: ≈{branchEstimate.approxRecords} записів у межах{' '}
@@ -684,7 +831,7 @@ export default function ProductsPage() {
 
       <ConfirmModal
         isOpen={Boolean(legacyUpdateConfirmIds?.length)}
-        title="Legacy Update?"
+        title={`Синхронізувати ${legacyUpdateSkus.length} ${pluralize(legacyUpdateSkus.length, 'товар', 'товари', 'товарів')} в старій таблиці товарів?`}
         message={
           <div className="space-y-1">
             <p>
@@ -705,8 +852,8 @@ export default function ProductsPage() {
             />
           </div>
         }
-        confirmText="Legacy Update"
-        confirmColor="warning"
+        confirmText="Синхронізувати"
+        confirmColor="primary"
         cancelText="Скасувати"
         confirmLoading={catalog.legacySyncMutation.isPending}
         onCancel={() => setLegacyUpdateConfirmIds(null)}

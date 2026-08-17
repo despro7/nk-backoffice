@@ -5,6 +5,8 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/Orders';
 import WarehouseMovement from './pages/Warehouse/WarehouseMovement';
+import WarehouseMovementMob from './pages/Warehouse/WarehouseMovementMob';
+import MovementMobDocumentPage from './pages/Warehouse/WarehouseMovementMob/MovementMobDocumentPage';
 import WarehouseInventory from './pages/Warehouse/WarehouseInventory';
 import WarehouseReturns from './pages/Warehouse/WarehouseReturns';
 import WarehouseWriteOff from './pages/Warehouse/WarehouseWriteOff';
@@ -156,6 +158,32 @@ export const appRoutes: AppRoute[] = [
       order: 3,
     },
     minRole: ROLES.STOREKEEPER, // storekeeper і вище
+  },
+  {
+    path: '/warehouse/movement-mob',
+    component: WarehouseMovementMob,
+    title: 'Переміщення між складами',
+    pageTitle: 'Переміщення | NK Backoffice',
+    navLabel: 'Переміщення',
+    icon: <DynamicIcon name="combine" size={16} />,
+    inNav: true,
+    order: 3.1,
+    parent: 'warehouse',
+    minRole: ROLES.STOREKEEPER,
+    navBadge: { label: 'NEW', color: 'danger' },
+    hasOwnTitle: true,
+  },
+  {
+    path: '/warehouse/movement-mob/:id',
+    component: MovementMobDocumentPage,
+    title: (params) => `Переміщення №${params.id}`,
+    pageTitle: (params) => `Переміщення №${params.id} | NK Backoffice`,
+    navLabel: 'Деталі переміщення',
+    icon: null,
+    inNav: false,
+    parent: 'warehouse',
+    minRole: ROLES.STOREKEEPER,
+    hasOwnTitle: true,
   },
   {
     path: '/warehouse/inventory',

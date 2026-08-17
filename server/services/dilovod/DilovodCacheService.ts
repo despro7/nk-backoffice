@@ -17,9 +17,7 @@
  * - dilovod.cache.{type}.lastUpdate - дата останнього оновлення (ISO string)
  */
 
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../../lib/utils.js';
 
 export type CacheType =
   | 'firms'

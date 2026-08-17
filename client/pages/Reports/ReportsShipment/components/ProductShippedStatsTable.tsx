@@ -45,7 +45,7 @@ import {
   createResetFilterConfig,
   createSingleDateFilterConfig,
 } from "../../shared/filters/ReportFilterPresets";
-import { ShipmentOrdersModal } from "./ShipmentOrdersModal";
+import { ProductOrdersModal } from "@/components/modals/ProductOrdersModal";
 import type {
   ProductDateStats,
   ProductDateStatsResponse,
@@ -1021,15 +1021,35 @@ export default function ProductShippedStatsTable({
         </div>
       </div>
 
-      <ShipmentOrdersModal
+      <ProductOrdersModal
         isOpen={isOrdersModalOpen}
         onOpenChange={setIsOrdersModalOpen}
         isLoading={modalLoading}
-        orders={modalOrders}
-        monolithicOrders={modalMonolithicOrders}
-        defaultTab={modalDefaultTab}
-        useMonolithicModal={modalDefaultTab === "monolithic"}
         product={selectedProductForModal}
+        defaultTab={modalDefaultTab}
+        hideTabs={modalDefaultTab === "monolithic"}
+        tabs={[
+          {
+            key: "regular",
+            label: "Звичайні порції",
+            icon: "package",
+            activeClassName: "border-blue-700/75 text-blue-700/75",
+            orders: modalOrders,
+            quantityField: "regularQuantity",
+          },
+          {
+            key: "monolithic",
+            label: "У складі монолітних наборів",
+            icon: "boxes",
+            activeClassName: "border-warning text-warning",
+            badgeClassName: "bg-warning/15 text-orange-400",
+            orders: modalMonolithicOrders,
+            quantityField: "monolithicComponentQuantity",
+            portionsSingular: "набір",
+            portionsFew: "набори",
+            portionsMany: "наборів",
+          },
+        ]}
         productItems={navigableModalProducts}
         onNavigate={
           navigableModalProducts.length > 1 ? handleNavigateModalProduct : undefined

@@ -76,13 +76,15 @@ function isBatchCacheValid(entry: BatchCacheEntry): boolean {
 // Отримати всі документи про переміщення
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { status, warehouse, page, limit } = req.query;
+    const { status, warehouse, page, limit, from, to } = req.query;
 
     const result = await WarehouseService.getMovements({
       status: status as string | undefined,
       warehouse: warehouse as string | undefined,
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 20,
+      from: typeof from === 'string' && from.trim() ? from.trim() : undefined,
+      to: typeof to === 'string' && to.trim() ? to.trim() : undefined,
     });
 
     res.json(result);
@@ -588,7 +590,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Movement not found' });
     }
 
-    res.json(movement);
+    const [withAuthor] = await resolveAuthorNames([movement as { createdBy: number | null }]);
+    res.json(withAuthor);
   } catch (error) {
     console.error('❌ [Warehouse] Error fetching warehouse movement:', error);
     res.status(500).json({ error: 'Internal server error' });

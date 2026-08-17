@@ -121,22 +121,55 @@ export function useProductsCatalog() {
 
   const refreshBranchMutation = useMutation({
     mutationFn: (folderId: string | null) =>
-      catalogFetch<{ upserted: number; orphansResolved: number; capped: boolean }>(
-        '/api/catalog/refresh',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            folderId: folderId ?? 'root',
-            recursive: true,
-          }),
-        }
-      ),
+      catalogFetch<{
+        upserted: number;
+        orphansResolved: number;
+        capped: boolean;
+        legacySkuCount?: number;
+        legacyOutdatedCount?: number;
+        legacyError?: string | null;
+        legacySync?: {
+          success?: boolean;
+          message?: string;
+          createdProducts?: number;
+          updatedProducts?: number;
+          skippedProducts?: number;
+          syncedSets?: number;
+          errors?: string[];
+        } | null;
+      }>('/api/catalog/refresh', {
+        method: 'POST',
+        body: JSON.stringify({
+          folderId: folderId ?? 'root',
+          recursive: true,
+        }),
+      }),
     onSuccess: (data) => {
       const extra = data.capped ? ' (досягнуто ліміт глибини/вузлів)' : '';
+      const legacy = data.legacySync;
+      const legacyParts = legacy
+        ? [
+            legacy.createdProducts ? `створено ${legacy.createdProducts}` : null,
+            legacy.updatedProducts ? `оновлено ${legacy.updatedProducts}` : null,
+            legacy.skippedProducts ? `без змін ${legacy.skippedProducts}` : null,
+          ].filter(Boolean)
+        : [];
+      const outdatedNote =
+        data.legacyOutdatedCount && data.legacyOutdatedCount > 0
+          ? `, архівних isOutdated: ${data.legacyOutdatedCount}`
+          : '';
+      const legacyNote =
+        data.legacyError
+          ? ` Legacy: помилка (${data.legacyError})`
+          : data.legacySkuCount
+            ? ` Legacy: ${data.legacySkuCount} SKU${legacyParts.length ? ` (${legacyParts.join(', ')})` : ''}${outdatedNote}`
+            : outdatedNote
+              ? ` Legacy${outdatedNote}`
+              : '';
       ToastService.show({
         title: 'Гілку оновлено',
-        description: `Записів: ${data.upserted}${extra}`,
-        color: data.capped ? 'warning' : 'success',
+        description: `Записів каталогу: ${data.upserted}${extra}.${legacyNote}`,
+        color: data.capped || data.legacyError || (legacy?.errors?.length ?? 0) > 0 ? 'warning' : 'success',
       });
       void invalidateCatalog();
     },
@@ -180,6 +213,7 @@ export function useProductsCatalog() {
         createdProducts?: number;
         updatedProducts?: number;
         skippedProducts?: number;
+        outdatedProducts?: number;
         errors?: string[];
       };
       if (!res.ok || json.success === false) {
@@ -192,16 +226,17 @@ export function useProductsCatalog() {
         data.createdProducts ? `створено ${data.createdProducts}` : null,
         data.updatedProducts ? `оновлено ${data.updatedProducts}` : null,
         data.skippedProducts ? `без змін ${data.skippedProducts}` : null,
+        data.outdatedProducts ? `архівних isOutdated ${data.outdatedProducts}` : null,
         data.syncedSets ? `комплектів ${data.syncedSets}` : null,
       ].filter(Boolean);
       ToastService.show({
-        title: 'Legacy Update завершено',
+        title: 'Синхронізація товарів завершена',
         description: parts.length > 0 ? parts.join(', ') : data.message || 'Готово',
         color: (data.errors?.length ?? 0) > 0 ? 'warning' : 'success',
       });
       if (data.errors && data.errors.length > 0) {
         ToastService.show({
-          title: 'Є помилки Legacy Update',
+          title: 'Є помилки синхронізації товарів',
           description: data.errors.slice(0, 3).join('; '),
           color: 'danger',
         });
@@ -209,7 +244,7 @@ export function useProductsCatalog() {
     },
     onError: (err: Error) =>
       ToastService.show({
-        title: 'Помилка Legacy Update',
+        title: 'Помилка синхронізації товарів',
         description: err.message,
         color: 'danger',
       }),

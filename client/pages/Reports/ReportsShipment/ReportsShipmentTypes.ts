@@ -31,27 +31,10 @@ export interface ProductDateStats {
 	orderedQuantity: number;
 }
 
-export interface ShipmentModalProduct {
-	name: string;
-	sku: string;
-}
-
-export interface ShipmentProductOrder {
-	externalId: string;
-	orderNumber: string;
-	ttn?: string | null;
-	orderDate?: string | null;
-	dilovodSaleExportDate?: string | null;
-	dilovodReturnDate?: string | null;
-	status: string;
-	statusText: string;
-	productQuantity?: number | null;
-	/** Кількість звичайних порцій цього товару у замовленні */
-	regularQuantity?: number | null;
-	/** Кількість порцій товару, що увійшли до монолітних наборів у цьому замовленні */
-	monolithicComponentQuantity?: number | null;
-	totalPrice?: number | string | null;
-}
+export type {
+	ProductOrdersModalProduct as ShipmentModalProduct,
+	ProductOrderRow as ShipmentProductOrder,
+} from "@/components/modals/ProductOrdersModal";
 
 /** Тип активного табу в модалці замовлень товару */
 export type ShipmentOrdersTabKey = "regular" | "monolithic";

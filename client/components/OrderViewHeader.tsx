@@ -1,6 +1,7 @@
-import { Button, Chip, ButtonGroup, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, DropdownSection } from '@heroui/react';
+import { Button, ButtonGroup, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, DropdownSection } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { formatDate, getStatusColor, getStatusLabel } from '../lib/formatUtils';
+import { formatDate } from '../lib/formatUtils';
+import { OrderStatusChip } from './OrderStatusChip';
 import { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
 import { ToastService } from '../services/ToastService';
@@ -113,16 +114,16 @@ export function OrderViewHeader({ order, externalId, onBackClick, onPrintReceipt
           {order.orderDate && (<span className="font-normal text-xl ml-2 text-gray-500">від {formatDate(order.orderDate)}</span>)}
         </div>
         {order.status && (
-          <Chip
+          <OrderStatusChip
+            status={order.status}
+            label={order.statusText}
+            statusHistory={order.statusHistory}
             size="md"
-            variant="flat"
-            classNames={{
-              base: getStatusColor(order.status) + " shadow-container",
+            chipClassNames={{
+              base: "shadow-container",
               content: "font-semibold",
             }}
-          >
-            {getStatusLabel(order.status)}
-          </Chip>
+          />
         )}
 
         {/* Кнопки чека */}

@@ -65,3 +65,5 @@ const endRange   = getReportingDateRange(endDate, dayStartHour);
 ## Frontend
 
 Компонент `ReportingDayStartHourSettings.tsx` вбудований у `SettingsAdmin.tsx`.
+
+У `OrderStatusChip` (`client/components/OrderStatusChip.tsx`) опційний `dayStartHour` використовується, щоб порівняти «Підтверджено» і «На відправку» зі звітною датою (з переносом вихідних на понеділок). Деталі: `Docs/features/order-status-chip.md`.

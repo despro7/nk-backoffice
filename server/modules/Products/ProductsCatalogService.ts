@@ -330,6 +330,118 @@ export class ProductsCatalogService {
     return [...folderIds];
   }
 
+  /**
+   * TEMP: SKU товарів у піддереві папки для dual-write в legacy `products`.
+   * Архівні — окремо, щоб лише позначити isOutdated без Dilovod sync-manual.
+   */
+  async listSkusInFolderSubtree(folderId: string | null): Promise<{
+    activeSkus: string[];
+    archivedSkus: string[];
+  }> {
+    const parentIds =
+      folderId == null
+        ? null
+        : await this.resolveFolderSubtreeIds({ underFolderId: folderId });
+    if (folderId != null && (!parentIds || parentIds.length === 0)) {
+      return { activeSkus: [], archivedSkus: [] };
+    }
+
+    const rows = await prisma.catalogGood.findMany({
+      where:
+        folderId == null
+          ? {
+              isGroup: false,
+              id: { not: CATALOG_TRASH_ID },
+              parentId: { not: CATALOG_TRASH_ID },
+            }
+          : {
+              isGroup: false,
+              parentId: { in: parentIds },
+            },
+      select: { sku: true, parentId: true },
+    });
+    return await this.splitSkusByArchiveParent(rows);
+  }
+
+  /**
+   * TEMP: архівні SKU лише isOutdated у `products`; решта йде в Dilovod sync-manual.
+   */
+  async partitionCatalogSkusByArchive(skus: string[]): Promise<{
+    activeSkus: string[];
+    archivedSkus: string[];
+  }> {
+    const unique = [...new Set(skus.map((s) => s.trim()).filter(Boolean))];
+    if (unique.length === 0) return { activeSkus: [], archivedSkus: [] };
+
+    const rows = await prisma.catalogGood.findMany({
+      where: { isGroup: false, sku: { in: unique } },
+      select: { sku: true, parentId: true },
+    });
+    const split = await this.splitSkusByArchiveParent(rows);
+    const known = new Set([...split.activeSkus, ...split.archivedSkus]);
+    const unknown = unique.filter((sku) => !known.has(sku));
+    return {
+      activeSkus: [...split.activeSkus, ...unknown],
+      archivedSkus: split.archivedSkus,
+    };
+  }
+
+  async markLegacyProductsOutdatedBySku(skus: string[]): Promise<number> {
+    if (skus.length === 0) return 0;
+    const result = await prisma.product.updateMany({
+      where: { sku: { in: skus } },
+      data: { isOutdated: true },
+    });
+    return result.count;
+  }
+
+  private async splitSkusByArchiveParent(
+    rows: Array<{ sku: string | null; parentId: string | null }>
+  ): Promise<{ activeSkus: string[]; archivedSkus: string[] }> {
+    const parentIds = [
+      ...new Set(rows.map((row) => row.parentId).filter((id): id is string => Boolean(id))),
+    ];
+    const parents =
+      parentIds.length > 0
+        ? await prisma.catalogGood.findMany({
+            where: { id: { in: parentIds } },
+            select: { id: true, name: true, isGroup: true },
+          })
+        : [];
+    const archiveParentIds = new Set(
+      parents
+        .filter((parent) => parent.isGroup && isArchiveFolderName(parent.name))
+        .map((parent) => parent.id)
+    );
+
+    const seenActive = new Set<string>();
+    const seenArchived = new Set<string>();
+    const activeSkus: string[] = [];
+    const archivedSkus: string[] = [];
+
+    for (const row of rows) {
+      const sku = row.sku?.trim();
+      if (!sku) continue;
+      const isArchived = Boolean(row.parentId && archiveParentIds.has(row.parentId));
+      if (isArchived) {
+        if (seenArchived.has(sku) || seenActive.has(sku)) continue;
+        seenArchived.add(sku);
+        archivedSkus.push(sku);
+      } else {
+        if (seenActive.has(sku)) continue;
+        seenActive.add(sku);
+        if (seenArchived.has(sku)) {
+          seenArchived.delete(sku);
+          const idx = archivedSkus.indexOf(sku);
+          if (idx >= 0) archivedSkus.splice(idx, 1);
+        }
+        activeSkus.push(sku);
+      }
+    }
+
+    return { activeSkus, archivedSkus };
+  }
+
   async search(
     q: string,
     limit = 50,
@@ -360,7 +472,20 @@ export class ProductsCatalogService {
       take: Math.min(limit, 200),
       orderBy: { name: 'asc' },
     });
-    return rows.map((row) => mapGoodDto(row));
+    const uniqueParentIds = [
+      ...new Set(rows.map((row) => row.parentId).filter((id): id is string => Boolean(id))),
+    ];
+    const parents =
+      uniqueParentIds.length > 0
+        ? await prisma.catalogGood.findMany({
+            where: { id: { in: uniqueParentIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const parentNameById = new Map(parents.map((parent) => [parent.id, parent.name]));
+    return rows.map((row) =>
+      mapGoodDto(row, row.parentId ? parentNameById.get(row.parentId) ?? null : null)
+    );
   }
 
   async getTrash(): Promise<CatalogGoodDto[]> {

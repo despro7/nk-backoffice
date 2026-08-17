@@ -116,8 +116,9 @@ export function CatalogContextMenu({
       />
       <MenuItem
         icon="database"
-        label="Legacy Update"
+        label="Синхронізувати товар(и)"
         disabled={!canBulk}
+        legacy
         onSelect={() => run(onLegacyUpdate)}
       />
       <MenuItem
@@ -173,12 +174,14 @@ function MenuItem({
   icon,
   label,
   danger,
+  legacy,
   disabled,
   onSelect,
 }: {
   icon: 'copy' | 'archive' | 'trash-2' | 'folder-input' | 'archive-restore' | 'cloud-download' | 'database';
   label: string;
   danger?: boolean;
+  legacy?: boolean;
   disabled?: boolean;
   onSelect: () => void;
 }) {
@@ -194,6 +197,7 @@ function MenuItem({
           : danger
             ? 'text-danger hover:bg-danger-50'
             : 'text-foreground hover:bg-default-100',
+        legacy ? 'text-lime-600 hover:bg-lime-100' : '',
       ].join(' ')}
       onClick={(e) => {
         e.preventDefault();

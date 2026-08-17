@@ -3,13 +3,37 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, User } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useAuth } from '@/contexts/AuthContext';
-import { SidebarTrigger } from '@/components/SidebarTrigger';
 import { NotificationBell } from '@/components/NotificationBell';
 import { resolveMobileNavLabel } from '@/components/mobile/resolveMobileNavLabel';
 import { cn } from '@/lib/utils';
+import { isNavBadgeVisible, type NavBadge, type NavBadgeColor } from '@/routes.config';
 
 interface MobileHeaderProps {
   className?: string;
+}
+
+const NAV_BADGE_COLOR_CLASS: Record<NavBadgeColor, string> = {
+  danger: 'bg-danger text-danger-foreground',
+  primary: 'bg-primary text-primary-foreground',
+  success: 'bg-success text-success-foreground',
+  warning: 'bg-warning text-warning-foreground',
+  secondary: 'bg-secondary text-secondary-foreground',
+  default: 'bg-default-500 text-white',
+};
+
+function NavBadgePill({ badge }: { badge: NavBadge }) {
+  if (!isNavBadgeVisible(badge)) return null;
+  const color = badge.color ?? 'danger';
+  return (
+    <span
+      className={cn(
+        'shrink-0 rounded-full px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide leading-none',
+        NAV_BADGE_COLOR_CLASS[color] ?? NAV_BADGE_COLOR_CLASS.danger
+      )}
+    >
+      {badge.label}
+    </span>
+  );
 }
 
 /**
@@ -36,16 +60,15 @@ export function MobileHeader({ className }: MobileHeaderProps) {
         className
       )}
     >
-      {/* <SidebarTrigger size="sm" /> */}
-
       <div className="flex items-center gap-2 min-w-0 flex-1">
         {navItem.icon && React.isValidElement(navItem.icon) &&
           React.cloneElement(navItem.icon as React.ReactElement<{ className?: string; size?: number }>, {
             className: 'w-5 h-5 shrink-0 text-neutral-600',
             size: 20,
           })}
-        <span className="truncate font-inter text-sm font-semibold text-neutral-700 leading-tight">
-          {navItem.label}
+        <span className="min-w-0 truncate font-inter text-sm font-semibold text-neutral-700 leading-tight flex items-center gap-1.5">
+          <span className="truncate">{navItem.label}</span>
+          {navItem.navBadge ? <NavBadgePill badge={navItem.navBadge} /> : null}
         </span>
       </div>
 

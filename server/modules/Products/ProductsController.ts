@@ -11,6 +11,8 @@ import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
 import { ROLES, hasAccess } from '../../../shared/constants/roles.js';
 import { logServer } from '../../lib/utils.js';
 import { productsCatalogService } from './ProductsCatalogService.js';
+import { DilovodService, dilovodService } from '../../services/dilovod/DilovodService.js';
+import type { DilovodSyncResult } from '../../services/dilovod/DilovodTypes.js';
 import {
   catalogMediaService,
   CATALOG_MEDIA_ACCEPT,
@@ -290,7 +292,41 @@ router.post('/refresh', ...guard, async (req, res) => {
       const data = await productsCatalogService.refreshFolderFromDilovod(folderId, {
         recursive,
       });
-      res.json({ success: true, data });
+
+      // TEMP: після refresh гілки — force Legacy Update в таблицю `products`.
+      // Прибрати, коли відмовимось від legacy products.
+      let legacySkuCount = 0;
+      let legacyOutdatedCount = 0;
+      let legacySync: DilovodSyncResult | null = null;
+      let legacyError: string | null = null;
+      try {
+        const { activeSkus, archivedSkus } =
+          await productsCatalogService.listSkusInFolderSubtree(folderId);
+        legacySkuCount = activeSkus.length + archivedSkus.length;
+        legacyOutdatedCount = await productsCatalogService.markLegacyProductsOutdatedBySku(
+          archivedSkus
+        );
+        if (activeSkus.length > 0) {
+          const abortController = new AbortController();
+          DilovodService.registerSyncAbortController(abortController);
+          req.on('close', () => abortController.abort());
+          legacySync = await dilovodService.syncProductsWithDilovod(
+            'manual',
+            activeSkus,
+            abortController.signal,
+            { force: true }
+          );
+        }
+      } catch (legacyErr) {
+        legacyError =
+          legacyErr instanceof Error ? legacyErr.message : String(legacyErr);
+        logServer('[ProductsCatalog] TEMP legacy sync after branch refresh failed', legacyErr);
+      }
+
+      res.json({
+        success: true,
+        data: { ...data, legacySkuCount, legacyOutdatedCount, legacySync, legacyError },
+      });
       return;
     }
 

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Checkbox,
   Chip,
-  Divider,
   Spinner,
   Table,
   TableBody,
@@ -22,7 +21,10 @@ import {
 } from '@shared/utils/specColorPalette';
 import { StockBadge } from '@/components/StockBadge';
 import type { CatalogGoodDto } from '../ProductsTypes';
+import { CATALOG_ROOT_ID } from '../ProductsTypes';
 import { goodTypeLabel, isArchiveFolderName, createCatalogDragPreview } from '../ProductsUtils';
+
+export type CatalogOrdersTabKey = 'all' | 'new' | 'confirmed' | 'hold';
 
 type PortionsStat = { newQty: number; confirmedQty: number; holdQty: number };
 
@@ -42,6 +44,9 @@ interface CatalogTableProps {
   isAdmin?: boolean;
   portionsBySku?: Map<string, PortionsStat>;
   portionsLoading?: boolean;
+  /** Lookup назв папок для колонки категорії в пошуку */
+  folderLookup?: Record<string, { name: string }>;
+  onOpenOrders?: (row: CatalogGoodDto, tab: CatalogOrdersTabKey) => void;
   /** Reorder товарів у межах папки (не в search mode) */
   onReorderGood?: (params: {
     id: string;
@@ -57,6 +62,7 @@ type PaintMode = 'replace' | 'add' | 'remove';
 
 type ColumnKey =
   | 'name'
+  | 'category'
   | 'sku'
   | 'type'
   | 'weight'
@@ -83,6 +89,20 @@ function rangeIds(ids: string[], from: number, to: number): string[] {
   return ids.slice(start, end + 1);
 }
 
+function resolveCategory(
+  row: CatalogGoodDto,
+  folderLookup?: Record<string, { name: string }>
+): { id: string; name: string } {
+  const parentId = row.parentId;
+  if (!parentId || parentId === '0') {
+    return { id: CATALOG_ROOT_ID, name: row.parentName || 'Каталог' };
+  }
+  return {
+    id: parentId,
+    name: row.parentName || folderLookup?.[parentId]?.name || '—',
+  };
+}
+
 function formatWeightKg(weight: number | null | undefined): string {
   if (weight == null || Number.isNaN(Number(weight))) return '—';
   return Number(weight).toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
@@ -103,6 +123,8 @@ export function CatalogTable({
   isAdmin = false,
   portionsBySku,
   portionsLoading,
+  folderLookup,
+  onOpenOrders,
   onReorderGood,
   sortDescriptor: sortDescriptorProp,
   onSortChange,
@@ -148,6 +170,8 @@ export function CatalogTable({
       switch (col) {
         case 'name':
           return row.name || '';
+        case 'category':
+          return resolveCategory(row, folderLookup).name;
         case 'sku':
           return row.sku || '';
         case 'packageRatio':
@@ -178,17 +202,22 @@ export function CatalogTable({
       }
       return String(va).localeCompare(String(vb), 'uk') * dir;
     });
-  }, [visibleRows, sortDescriptor, portionsBySku]);
+  }, [visibleRows, sortDescriptor, portionsBySku, folderLookup]);
 
   const displayIds = sortedRows.map((r) => r.id);
 
   const columns = useMemo(() => {
     const cols: Array<{ key: ColumnKey; label: React.ReactNode; sortable?: boolean; width?: number }> = [
       { key: 'name', label: 'Назва', sortable: true },
+    ];
+    if (isSearchMode) {
+      cols.push({ key: 'category', label: 'Категорія', sortable: true });
+    }
+    cols.push(
       { key: 'sku', label: 'SKU', sortable: true },
       { key: 'type', label: 'Тип' },
       { key: 'weight', label: 'Вага, кг', sortable: true },
-    ];
+    );
     if (isFinishedProductsBranch) {
       cols.push(
         { key: 'packageRatio', label: 'Порцій/кор.', sortable: true },
@@ -212,10 +241,11 @@ export function CatalogTable({
         ), sortable: true },
         { key: 'inOrders', label: 'В замовленнях', sortable: true }
       );
+    } else if (isSearchMode) {
+      cols.push({ key: 'inOrders', label: 'В замовленнях', sortable: true });
     }
-    // cols.push({ key: 'actions', label: ' ', width: 80 });
     return cols;
-  }, [isFinishedProductsBranch, isAdmin]);
+  }, [isFinishedProductsBranch, isAdmin, isSearchMode]);
 
   const specColors = buildSpecColorMap(accPolicies ?? [], {
     theme: 'light',
@@ -456,6 +486,28 @@ export function CatalogTable({
             </button>
           </div>
         );
+      case 'category': {
+        const category = resolveCategory(row, folderLookup);
+        if (category.name === '—') {
+          return <span className="text-default-300">—</span>;
+        }
+        return (
+          <Tooltip content="Перейти до категорії" placement="top" color="secondary">
+            <button
+              type="button"
+              data-selection-ignore
+              className="max-w-[180px] truncate text-left text-slate-500 font-semibold hover:underline flex items-center gap-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenFolder(category.id);
+              }}
+            >
+              {category.name} <DynamicIcon name="folder-symlink" size={14} />
+            </button>
+          </Tooltip>
+     
+        );
+      }
       case 'sku':
         return <span className="font-mono">{row.sku || '—'}</span>;
       case 'type': {
@@ -521,30 +573,59 @@ export function CatalogTable({
         const p = portionsBySku?.get(String(row.sku ?? '').trim().toLowerCase());
         const total = (p?.newQty ?? 0) + (p?.confirmedQty ?? 0) + (p?.holdQty ?? 0);
         if (total === 0) return <span className="text-default-300">—</span>;
+        const openOrders = (tab: CatalogOrdersTabKey) => {
+          if (!row.sku || !onOpenOrders) return;
+          onOpenOrders(row, tab);
+        };
         return (
-          <div className="flex items-center gap-1 text-sm leading-tight">
+          <div
+            data-selection-ignore
+            className={`flex items-center gap-1 text-sm leading-tight ${onOpenOrders ? 'cursor-pointer' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openOrders('all');
+            }}
+          >
             <span className="font-bold text-neutral-800 tabular-nums">{total}</span>
             <div className="flex gap-1.5 text-xs px-1 py-0.5 rounded items-center bg-gray-100">
               {(p?.newQty ?? 0) > 0 && (
                 <Tooltip color="secondary" content="Нові замовлення">
-                  <span className="text-blue-600 font-medium">{p!.newQty}</span>
+                  <span
+                    className="text-blue-600 font-medium"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openOrders('new');
+                    }}
+                  >
+                    {p!.newQty}
+                  </span>
                 </Tooltip>
               )}
               {(p?.confirmedQty ?? 0) > 0 && (
-                <>
-                {/* <Divider orientation="vertical" className="h-4 bg-gray-200" /> */}
                 <Tooltip color="secondary" content="Підтверджені">
-                  <span className="text-green-600 font-medium">{p!.confirmedQty}</span>
+                  <span
+                    className="text-green-600 font-medium"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openOrders('confirmed');
+                    }}
+                  >
+                    {p!.confirmedQty}
+                  </span>
                 </Tooltip>
-                </>
               )}
               {(p?.holdQty ?? 0) > 0 && (
-                <>
-                {/* <Divider orientation="vertical" className="h-4 bg-gray-200" /> */}
                 <Tooltip color="secondary" content="На утриманні">
-                  <span className="text-amber-600 font-medium">{p!.holdQty}</span>
+                  <span
+                    className="text-amber-600 font-medium"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openOrders('hold');
+                    }}
+                  >
+                    {p!.holdQty}
+                  </span>
                 </Tooltip>
-                </>
               )}
             </div>
           </div>

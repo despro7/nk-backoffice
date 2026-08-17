@@ -1,6 +1,6 @@
 # Products 2.0 — домен керування каталогом Dilovod
 
-**Дата:** 2026-07-30 (оновлено 2026-08-09)  
+**Дата:** 2026-07-30 (оновлено 2026-08-17)  
 **Маршрут:** `/products` (`minRole: WAREHOUSE_MANAGER`)  
 **API:** `/api/catalog/`*
 
@@ -15,7 +15,7 @@
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | Джерело правди (SoT) | Dilovod (`catalogs.goods` + регістри цін/ШК + `tpGoods`)                                                                        |
 | Локальне дзеркало    | Таблиці `catalog_*` (швидке дерево / UI)                                                                                        |
-| Legacy `products`    | Читається Orders / Warehouse / Reports; Products 2.0: **вузький dual-write** ops + явний **Legacy Update** (`sync-manual` force) |
+| Legacy `products`    | Читається Orders / Warehouse / Reports; Products 2.0: **вузький dual-write** ops + явний **Legacy Update** + **TEMP** Legacy після «Синхронізувати гілку» |
 | `/product-sets`      | Без змін, співіснує в меню                                                                                                      |
 
 
@@ -237,12 +237,12 @@ client/pages/Products/
   ProductsUtils.ts              # buildTreeItems, resolveCatalogItemLocation, goodTypeLabel, …
   components/
     CatalogTree.tsx             # DnD move + sibling reorder (лінія вставки)
-    CatalogTable.tsx            # GP-колонки, SortDescriptor, goods DnD grip
+    CatalogTable.tsx            # GP-колонки, пошук: категорія + «В замовленнях», SortDescriptor, goods DnD grip
     CatalogBreadcrumbs.tsx      # у пошуку: лише Каталог > Пошук
-    CatalogToolbar.tsx          # Legacy Update, archive/trash restore за selection location
+    CatalogToolbar.tsx          # Синхронізувати гілку (+ TEMP Legacy), вибірковий Legacy, archive/trash
     CatalogContextMenu.tsx      # Legacy Update, fromTrash / fromArchive (і в пошуку)
     MoveToFolderModal.tsx
-    ProductDrawer.tsx           # Tabs kind, BOM note (лише продукція), unitRatio Admin, …
+    ProductDrawer.tsx           # футер: Оновити Legacy; Tabs kind, BOM note, unitRatio Admin, …
     DescriptionEditor.tsx
     ArchiveConfirmModal.tsx
     TrashDrawer.tsx             # ПКМ → context menu «Відновити»
@@ -264,6 +264,7 @@ client/pages/Products/
 - ШК: генерація EAN-13 (`/barcode/next`) + вибір партії (reuse Movement `BatchNumbersAutocomplete`); див. секцію «Штрихкоди» вище.
 - Unsaved: snapshot form+BOM+prices+barcodes → `isDirty` → `useUnsavedGuard` + `UnsavedChangesModal` при закритті Drawer / навігації / beforeunload.
 - Смітник у картці: `parentId === CATALOG_TRASH_ID` → кнопка «Відновити» (move picker).
+- Футер (edit, є SKU): зліва **Оновити Legacy** → той самий confirm / `legacySyncMutation`, що в toolbar і context menu.
 
 ### UI: тип у таблиці
 
@@ -293,7 +294,8 @@ client/pages/Products/
 
 **Таблиця** — діти поточної папки; рядки-папки з іменем архіву **приховані** (доступ лише через іконку в дереві або breadcrumbs).
 
-- Гілка «Готова продукція»: колонки weight, packageRatio, unitRatio (Admin), ГП/МС, «В замовленнях» (завжди в цій гілці); portions з order-stats.
+- Гілка «Готова продукція»: колонки weight, packageRatio, unitRatio (Admin), ГП/МС, «В замовленнях»; portions з `/api/orders/products/stats` (статуси 1 / 2 / 9).
+- **Пошук** (`q` ≥ 2): колонки **Категорія** (`parentName`, клік → папка) і **В замовленнях** (навіть поза гілкою ГП). Клік по сумі або кольоровій цифрі відкриває модалку замовлень.
 - Column `SortDescriptor`; кнопка **«Ручний порядок»** біля breadcrumbs скидає на `sortOrder`.
 - **DnD товарів:** grip поза кнопкою назви; `stopPropagation` на pointerDown; reorder siblings через `/reorder` (у пошуку вимкнено).
 
@@ -312,7 +314,16 @@ client/pages/Products/
 - Confirm перед move (DnD) попереджає про деактивацію, якщо ціль — архів.
 - Restore з архіву → confirm → `POST /goods/restore`.
 
+### UI: ProductOrdersModal
 
+Спільна модалка: `client/components/modals/ProductOrdersModal.tsx` (таби конфігуруються пропом `tabs`).
+
+| Контекст | Таби |
+| --- | --- |
+| Каталог `/products` | Всі \| Нові \| Підтверджені \| На утриманні; `GET /api/orders/products/orders?sku=&status=1,2,9` |
+| Звіт відвантажень | Звичайні порції \| У складі монолітних наборів (`hideTabs` для плоского монолітного списку) |
+
+Навігація між товарами: контрол у хедері **перед SKU** (↑/↓ + `n / total`); стрілки клавіатури лишаються. Футера немає.
 
 ### UI: DnD і підтвердження
 
@@ -353,24 +364,25 @@ client/pages/Products/
 ⚠️ Автоматичний write-through усієї картки з Products 2.0 у `products` **заборонений** (раніше затирав `set` у комплектів). Дозволені лише:
 
 1. `syncCatalogOpsFieldsToProducts` (ops після create/update/reorder);
-2. явна дія користувача **Legacy Update** → `POST /api/products/sync-manual`.
+2. явна дія користувача **Legacy Update** → `POST /api/products/sync-manual`;
+3. **TEMP:** після «Синхронізувати гілку» (`POST /api/catalog/refresh` з `folderId`) — Legacy Update активних SKU гілки. Прибрати після відмови від `products`.
 
 ### Legacy Update (Products 2.0 → `products`)
 
-Явне вибіркове оновлення legacy через існуючий Dilovod product sync (не dual-write картки).
+Явне (або TEMP після refresh гілки) оновлення legacy через Dilovod product sync (не dual-write картки).
 
 | Що | Деталі |
 | --- | --- |
-| UI | Кнопка **Legacy Update** у `CatalogToolbar` (поряд із «В архів») і пункт у `CatalogContextMenu` |
+| UI вибірково | Toolbar (обрані з SKU), context menu, кнопка **Оновити Legacy** у футері `ProductDrawer` |
 | Confirm | Список обраних з SKU; папки / без SKU пропускаються |
-| Клієнт | `legacySyncMutation` → `POST /api/products/sync-manual` з `{ skus, force: true }` (force **за замовчуванням**) |
-| Сервер | `DilovodService.syncProductsWithDilovod('manual', skus, signal, { force })` → `DilovodSyncManager.syncProductsToDatabase(..., { force })` |
-| Force | Ігнорує порівняння `dilovodDataHash` — завжди `update` існуючого рядка (або `create`, якщо немає) |
-| Поля sync | Як у звичайному Dilovod product sync: name, ціни, category, `set`, `portionsPerBox`, barcode, hash, `lastSyncAt` |
-| Weight при force | Додатково оновлюється `weight` через `determineWeightByCategory(categoryId)` (не поле Dilovod `weight`). `manualOrder` / `unitRatio` для існуючих **не** чіпаються |
-| Без force | Поведінка Settings `/product-sets` manual sync без змін: skip, якщо hash збігається; weight лише для нових |
+| Клієнт | `legacySyncMutation` → `POST /api/products/sync-manual` з `{ skus, force: true }` |
+| Сервер (вибірково) | `partitionCatalogSkusByArchive` → архівні: `products.isOutdated = true`; активні: `dilovodService.syncProductsWithDilovod('manual', …, { force })` |
+| **TEMP гілка** | Після `refreshFolderFromDilovod`: `listSkusInFolderSubtree` → ті самі правила; відповідь містить `legacySkuCount`, `legacyOutdatedCount`, `legacySync` |
+| Force | Ігнорує `dilovodDataHash` — завжди `update` / `create` |
+| Поля sync | name, ціни, category, `set`, `portionsPerBox`, barcode, hash, `lastSyncAt`; weight при force через `determineWeightByCategory` |
+| Архів | **Без** Dilovod: лише `isOutdated`, щоб не ловити зайві помилки API |
 
-Відмінність від «Синхронізувати з Діловодом» у меню: те оновлює лише дзеркало `catalog_*` (`POST /api/catalog/refresh` з `ids`).
+«Синхронізувати з Діловодом» по `ids` як і раніше оновлює лише `catalog_*`. «Синхронізувати гілку» = structure-refresh `catalog_*` **плюс TEMP Legacy**.
 
 ---
 
@@ -385,7 +397,8 @@ client/pages/Products/
 5. Restore з архіву → батьківська папка архіву + `delMark: 0`; зі смітника → move picker.
 6. DnD: drop на папку = move; між siblings = `POST /reorder`.
 7. Навігація: дерево (іконка архіву), breadcrumbs або open папки з таблиці; у пошуку — restore за `parentId` рядка.
-8. **Legacy Update** → обрані SKU → `sync-manual` з `force: true` → оновлення `products` (вкл. weight з категорії).
+8. **Legacy Update** (вибірково або TEMP після sync гілки) → активні SKU → `sync-manual` force; архівні → `products.isOutdated`.
+9. Пошук → категорія / «В замовленнях» → модалка замовлень товару.
 
 ---
 
@@ -398,6 +411,6 @@ client/pages/Products/
 | --------- | -------------------------------------------------------------------------------------------------------------- |
 | Schema    | `prisma/schema.prisma`, migrations `20260727010000_*`, `20260803090000_catalog_ops_fields_and_sort`           |
 | Shared    | `shared/types/catalog.ts`, `shared/types/dilovod.ts`, `shared/utils/catalogSortOrder.ts`                       |
-| Server    | `server/modules/Products/*`, `server/routes/catalog.ts`, `server/routes/products.ts` (`sync-manual` + `force`), `server/routes/dilovod.ts`, `DilovodService` / `DilovodSyncManager` / `DilovodCacheService` |
-| Client    | `client/pages/Products/**` (`legacySyncMutation`, toolbar/context Legacy Update), `DilovodCacheManager.tsx`, `routes.config.tsx` |
+| Server    | `server/modules/Products/*` (`listSkusInFolderSubtree`, `partitionCatalogSkusByArchive`, TEMP legacy після refresh гілки), `server/routes/catalog.ts`, `server/routes/products.ts` (`sync-manual` + archive→`isOutdated`), `server/lib/utils.ts` (HMR-safe `prisma`), `DilovodService` / `DilovodSyncManager` / `DilovodCacheService` |
+| Client    | `client/pages/Products/**`, `client/components/modals/ProductOrdersModal.tsx`, `ReportsShipment` (спільна модалка), `DilovodCacheManager.tsx`, `routes.config.tsx` |
 | Nav badge | `NavBadge` / `isNavBadgeVisible` у `routes.config.tsx`, рендер у `Sidebar.tsx`                                 |

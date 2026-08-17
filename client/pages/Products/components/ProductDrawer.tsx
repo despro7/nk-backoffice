@@ -74,6 +74,8 @@ interface ProductDrawerProps {
     q: string,
     opts?: { underFolderName?: string }
   ) => Promise<Array<{ id: string; name: string; sku: string | null }>>;
+  onLegacyUpdate?: (id: string) => void;
+  legacyUpdating?: boolean;
 }
 
 interface BomRow {
@@ -276,6 +278,8 @@ export function ProductDrawer({
   onUpdate,
   onRestore,
   catalogSearch,
+  onLegacyUpdate,
+  legacyUpdating,
 }: ProductDrawerProps) {
   const open = mode != null;
   const isEdit = mode === 'edit';
@@ -1611,29 +1615,51 @@ export function ProductDrawer({
           </DrawerBody>
           {!detailLoading && (
             <DrawerFooter className="border-t border-default-200/60">
-              {/* Кнопка "Показати payload" — лише в debug-режимі */}
-              {isDebugMode && (
-                <Button
-                  variant="flat"
-                  color="primary"
-                  className="bg-blue-200 text-blue-800/75 hover:bg-blue-200/90 mr-auto"
-                  onPress={handleShowPayload}
-                  startContent={<DynamicIcon name="code-2" className="w-4 h-4" />}
-                >
-                  Payload
-                </Button>
-              )}
-              {isTrashed && detail && onRestore && (
-                <Button
-                  color="warning"
-                  variant="flat"
-                  onPress={() => onRestore(detail.id)}
-                  isDisabled={saving}
-                  startContent={<DynamicIcon name="archive-restore" size={14} />}
-                  className={`${isDebugMode ? '' : 'mr-auto '}bg-amber-200 text-amber-800/75 hover:bg-amber-200/90`}
-                >
-                  Відновити зі смітника
-                </Button>
+              {(isDebugMode ||
+                (isTrashed && detail && onRestore) ||
+                (isEdit && !isFolder && detail?.sku && onLegacyUpdate)) && (
+                <div className="mr-auto flex items-center gap-2">
+                  {isDebugMode && (
+                    <Button
+                      variant="flat"
+                      color="primary"
+                      className="bg-blue-200 text-blue-800/75 hover:bg-blue-200/90"
+                      onPress={handleShowPayload}
+                      startContent={<DynamicIcon name="code-2" className="w-4 h-4" />}
+                    >
+                      Payload
+                    </Button>
+                  )}
+                  {isTrashed && detail && onRestore && (
+                    <Button
+                      color="warning"
+                      variant="flat"
+                      onPress={() => onRestore(detail.id)}
+                      isDisabled={saving}
+                      startContent={<DynamicIcon name="archive-restore" size={14} />}
+                      className="bg-amber-200 text-amber-800/75 hover:bg-amber-200/90"
+                    >
+                      Відновити зі смітника
+                    </Button>
+                  )}
+                  {isEdit && !isFolder && detail?.sku && onLegacyUpdate && (
+                    <Button
+                      variant="flat"
+                      className="bg-lime-200 text-lime-800 hover:bg-lime-200"
+                      onPress={() => onLegacyUpdate(detail.id)}
+                      isDisabled={saving || legacyUpdating}
+                      startContent={
+                        <DynamicIcon
+                          name={legacyUpdating ? 'refresh-cw' : 'database'}
+                          size={14}
+                          className={legacyUpdating ? 'animate-spin' : ''}
+                        />
+                      }
+                    >
+                      Синхронізувати товар
+                    </Button>
+                  )}
+                </div>
               )}
               <Button variant="light" onPress={requestClose} isDisabled={saving}>
                 Скасувати

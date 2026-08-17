@@ -1,6 +1,7 @@
 // Основний сервіс Dilovod - координатор всіх модулів
 
 import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/utils.js';
 import {
   DilovodApiClient,
   DilovodCacheManager,
@@ -17,8 +18,6 @@ import { dilovodCacheService } from './DilovodCacheService.js';
 import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
 import { compactMetaLogData, mapBarCodesByObjectId } from './DilovodUtils.js';
 import { pluralize } from '../../lib/utils.js';
-
-const prisma = new PrismaClient();
 
 export class DilovodService {
   // Глобальний AbortController для поточної синхронізації товарів

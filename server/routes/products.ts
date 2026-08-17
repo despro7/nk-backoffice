@@ -5,6 +5,7 @@ import { DilovodService } from '../services/dilovod/index.js';
 import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 import { salesDriveService } from '../services/salesDriveService.js';
 import { buildExportPayload } from '../services/productExportHelper.js';
+import { productsCatalogService } from '../modules/Products/ProductsCatalogService.js';
 
 const router = express.Router();
 
@@ -167,7 +168,7 @@ router.get('/batch', authenticateToken, async (req, res) => {
     // Build select projection based on requested fields, always include sku
     const select: any = { sku: true };
     for (const f of requestedFields) {
-      if (['costPerItem', 'additionalPrices', 'set', 'name', 'id'].includes(f)) {
+      if (['costPerItem', 'additionalPrices', 'set', 'name', 'id', 'weight', 'portionsPerBox'].includes(f)) {
         select[f] = true;
       }
     }
@@ -885,9 +886,32 @@ router.post('/sync-manual', authenticateToken, requireMinRole(ROLES.STOREKEEPER)
       });
     }
 
+    const { activeSkus, archivedSkus } =
+      await productsCatalogService.partitionCatalogSkusByArchive(cleanedSkus);
+    const outdatedCount =
+      await productsCatalogService.markLegacyProductsOutdatedBySku(archivedSkus);
+
+    if (activeSkus.length === 0) {
+      return res.json({
+        success: true,
+        message:
+          outdatedCount > 0
+            ? `Архівні товари позначено як застарілі (${outdatedCount})`
+            : 'Немає активних SKU для Dilovod sync-manual',
+        syncedProducts: 0,
+        syncedSets: 0,
+        createdProducts: 0,
+        updatedProducts: 0,
+        skippedProducts: 0,
+        outdatedProducts: outdatedCount,
+        errors: [],
+      });
+    }
+
     const forceUpdate = force === true;
     console.log(
-      `API: Ручна синхронізація для ${cleanedSkus.length} SKU${forceUpdate ? ' (force)' : ''}`
+      `API: Ручна синхронізація для ${activeSkus.length} SKU${forceUpdate ? ' (force)' : ''}` +
+        (archivedSkus.length ? `, архівних isOutdated: ${archivedSkus.length}` : '')
     );
 
     const dilovodService = new DilovodService();
@@ -901,12 +925,12 @@ router.post('/sync-manual', authenticateToken, requireMinRole(ROLES.STOREKEEPER)
 
     const result = await dilovodService.syncProductsWithDilovod(
       'manual',
-      cleanedSkus,
+      activeSkus,
       abortController.signal,
       { force: forceUpdate }
     );
 
-    res.json(result);
+    res.json({ ...result, outdatedProducts: outdatedCount });
   } catch (error) {
     console.log('Error in manual sync:', error);
     res.status(500).json({ error: 'Internal server error' });

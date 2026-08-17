@@ -1,10 +1,11 @@
 import React from 'react';
-import { appRoutes, getNavGroups, type AppRoute, type NavGroup } from '@/routes.config';
+import { appRoutes, getNavGroups, type AppRoute, type NavBadge, type NavGroup } from '@/routes.config';
 
 export interface MobileNavItem {
   label: string;
   icon: React.ReactNode | null;
   path?: string;
+  navBadge?: NavBadge;
 }
 
 /** Знайти найкращий match маршруту за pathname (включно з динамічними :params). */
@@ -57,13 +58,19 @@ export function resolveMobileNavLabel(
     if (!route.inNav && pathname.startsWith('/orders')) {
       const orders = appRoutes.find((r) => r.path === '/orders');
       if (orders) {
-        return { label: orders.navLabel, icon: orders.icon, path: orders.path };
+        return {
+          label: orders.navLabel,
+          icon: orders.icon,
+          path: orders.path,
+          navBadge: orders.navBadge,
+        };
       }
     }
     return {
       label: route.navLabel || (typeof route.title === 'string' ? route.title : 'Сторінка'),
       icon: route.icon,
       path: route.path,
+      navBadge: route.navBadge,
     };
   }
 
@@ -76,6 +83,7 @@ export function resolveMobileNavLabel(
       return {
         label: group.parentRoute?.navLabel ?? group.groupMeta?.label ?? group.key,
         icon: group.parentRoute?.icon ?? group.groupMeta?.icon ?? null,
+        navBadge: group.parentRoute?.navBadge,
       };
     }
   }

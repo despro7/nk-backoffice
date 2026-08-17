@@ -1,6 +1,7 @@
 import { Button, Input, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useDebug } from '@/contexts/DebugContext';
+import { pluralize } from '@/lib/formatUtils';
 
 interface CatalogToolbarProps {
   searchQuery: string;
@@ -79,18 +80,18 @@ export function CatalogToolbar({
         variant="flat"
         color="primary"
         startContent={<DynamicIcon name="circle-plus" size={14} />}
-        className="bg-gradient-to-br from-cyan-500 to-blue-500 text-white hover:bg-cyan-500/90 font-medium"
+        className="bg-gradient-to-b from-sky-500 to-blue-600/75 text-white hover:bg-blue-600 font-medium"
         onPress={onCreateGood}
         isDisabled={busy}
       >
         Додати обʼєкт
       </Button>
 
-      <Tooltip content="Синхронізувати поточну папку та всі вкладені елементи">
+      <Tooltip content="Синхронізувати поточну папку та вкладені елементи, потім Legacy Update товарів гілки в таблицю products">
         <Button
           size="sm"
           color="primary"
-          className="bg-slate-500 text-white hover:bg-slate-500/90 font-medium"
+          className="bg-gradient-to-b from-lime-500 to-green-600 text-white hover:bg-green-600 font-medium"
           startContent={
             <DynamicIcon
               name={branchRefreshing ? "refresh-cw" : "folder-sync"}
@@ -104,6 +105,26 @@ export function CatalogToolbar({
           Синхронізувати гілку
         </Button>
       </Tooltip>
+
+      {hasSelection && (
+        <Tooltip content={`Синхронізувати ${selectedCount} ${pluralize(selectedCount, 'товар', 'товари', 'товарів')} в старій таблиці товарів (Dilovod sync-manual за SKU)`}>
+          <Button
+            size="sm"
+            className="bg-lime-600/70 text-white hover:bg-lime-600/65 font-medium"
+            startContent={
+              <DynamicIcon
+                name={legacyUpdating ? 'refresh-cw' : 'database'}
+                size={14}
+                className={legacyUpdating ? 'animate-spin' : ''}
+              />
+            }
+            onPress={onLegacyUpdate}
+            isDisabled={busy || anyRefreshing}
+          >
+            Синхронізувати {selectedCount} {pluralize(selectedCount, 'товар', 'товари', 'товарів')}
+          </Button>
+        </Tooltip>
+      )}
 
       {showFullRefresh && onFullRefresh && isDebugMode && (
         <Tooltip content="Повний pull каталогу з Dilovod (ціни + ШК). Лише ADMIN.">
@@ -122,7 +143,6 @@ export function CatalogToolbar({
 
       {hasSelection && (
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <span className="text-xs text-default-500">Обрано: {selectedCount}</span>
           {/* <Button
             size="sm"
             className="bg-slate-500 text-white hover:bg-slate-500/90 font-medium"
@@ -138,6 +158,7 @@ export function CatalogToolbar({
           >
             Синхронізувати з Діловодом
           </Button> */}
+          {selectedCount === 1 && (
           <Button
             size="sm"
             className="bg-slate-500 text-white hover:bg-slate-500/90 font-medium"
@@ -147,23 +168,7 @@ export function CatalogToolbar({
           >
             Дублювати
           </Button>
-          <Tooltip content="Оновити обрані товари в legacy таблиці products (Dilovod sync-manual за SKU)">
-            <Button
-              size="sm"
-              className="bg-violet-600 text-white hover:bg-violet-600/90 font-medium"
-              startContent={
-                <DynamicIcon
-                  name={legacyUpdating ? 'refresh-cw' : 'database'}
-                  size={14}
-                  className={legacyUpdating ? 'animate-spin' : ''}
-                />
-              }
-              onPress={onLegacyUpdate}
-              isDisabled={busy || anyRefreshing}
-            >
-              Legacy Update
-            </Button>
-          </Tooltip>
+          )}
           {!isInsideTrash &&
             (isInsideArchive ? (
               <Button
@@ -173,7 +178,7 @@ export function CatalogToolbar({
                 onPress={onRestore}
                 isDisabled={busy}
               >
-                Відновити з архіву
+                Відновити з архіву {selectedCount} {pluralize(selectedCount, 'товар', 'товари', 'товарів')}
               </Button>
             ) : (
               <Button
@@ -194,7 +199,7 @@ export function CatalogToolbar({
               onPress={onRestoreFromTrash}
               isDisabled={busy || !onRestoreFromTrash}
             >
-              Відновити
+              Відновити {selectedCount} {pluralize(selectedCount, 'товар', 'товари', 'товарів')}
             </Button>
           ) : (
             <Button
@@ -204,7 +209,7 @@ export function CatalogToolbar({
               onPress={onTrash}
               isDisabled={busy}
             >
-              Видалити
+              Видалити {selectedCount} {pluralize(selectedCount, 'товар', 'товари', 'товарів')}
             </Button>
           )}
         </div>
@@ -213,10 +218,10 @@ export function CatalogToolbar({
       <Tooltip content="Переглянути видалені елементи">
         <Button
           size="sm"
-          variant="flat"
-          color="danger"
+          variant="solid"
+          color="default"
           aria-label="Смітник"
-          className={`font-medium ${!hasSelection && "ml-auto"}`}
+          className={`font-medium text-gray-500 hover:text-danger-700 hover:bg-danger-100 hover:ring-1 ring-inset ring-danger-200 ${!hasSelection && "ml-auto"}`}
           onPress={onOpenTrash}
         >
           <DynamicIcon name="trash-2" size={14} />

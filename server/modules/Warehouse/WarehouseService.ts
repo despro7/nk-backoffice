@@ -132,8 +132,12 @@ export class WarehouseService {
     warehouse?: string;
     page?: number;
     limit?: number;
+    /** YYYY-MM-DD — нижня межа по COALESCE(movementDate, draftCreatedAt) */
+    from?: string;
+    /** YYYY-MM-DD — верхня межа по COALESCE(movementDate, draftCreatedAt) */
+    to?: string;
   }) {
-    const { status, warehouse, page = 1, limit = 20 } = params;
+    const { status, warehouse, page = 1, limit = 20, from, to } = params;
 
     const where: any = {};
     if (status) where.status = status;
@@ -141,6 +145,32 @@ export class WarehouseService {
       where.OR = [
         { sourceWarehouse: warehouse },
         { destinationWarehouse: warehouse }
+      ];
+    }
+
+    if (from || to) {
+      const dateFilter: { gte?: Date; lte?: Date } = {};
+      if (from) {
+        dateFilter.gte = new Date(`${from}T00:00:00`);
+      }
+      if (to) {
+        dateFilter.lte = new Date(`${to}T23:59:59.999`);
+      }
+
+      // COALESCE(movementDate, draftCreatedAt) у межах діапазону
+      where.AND = [
+        ...(where.AND ?? []),
+        {
+          OR: [
+            { movementDate: dateFilter },
+            {
+              AND: [
+                { movementDate: null },
+                { draftCreatedAt: dateFilter },
+              ],
+            },
+          ],
+        },
       ];
     }
 
