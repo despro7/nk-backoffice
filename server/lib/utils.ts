@@ -126,15 +126,24 @@ export function getOrderSourceByLevel(sajt: string, detailed: boolean = false): 
   return detailed ? getOrderSourceDetailed(sajt) : getOrderSourceCategory(sajt);
 }
 
-// Централізована ініціалізація Prisma клієнта з оптимізованими налаштуваннями
-export const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL,
+// Централізована ініціалізація Prisma клієнта.
+// globalThis — щоб Vite HMR не плодив нові пули зʼєднань (MySQL 1040 Too many connections).
+const globalForPrisma = globalThis as unknown as { __novaFieldPrisma?: PrismaClient };
+
+export const prisma =
+  globalForPrisma.__novaFieldPrisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
     },
-  },
-});
+  });
+
+if (!globalForPrisma.__novaFieldPrisma) {
+  globalForPrisma.__novaFieldPrisma = prisma;
+}
 
 /**
  * Форматує час у форматі HH:MM:SS

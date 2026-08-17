@@ -12,7 +12,10 @@
     ]
   },
   "scripts": {
-    "dev": "vite --config vite.config.dev.ts",
+    "tunnel": "ssh -N -L 0.0.0.0:3307:127.0.0.1:3306 despro7@159.195.214.116",
+    "dev:app": "vite --config vite.config.dev.ts",
+    "dev": "concurrently -k -s first \"npm:tunnel\" \"wait-on tcp:127.0.0.1:3307 && npm run dev:app\"",
+    "dev:host": "concurrently -k -s first \"npm:tunnel\" \"wait-on tcp:127.0.0.1:3307 && npm run dev:app -- --host\"",
     "dev:server": "tsx watch --tsconfig tsconfig.server.json server/index.ts",
     "build": "npm run build:client && npm run build:server",
     "build:client": "node scripts/generate-version.cjs && vite build",
@@ -95,6 +98,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "concurrently": "^10.0.4",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
@@ -124,7 +128,8 @@
     "typescript": "^5.9.2",
     "vaul": "^1.1.2",
     "vite": "^7.1.2",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wait-on": "^9.1.0"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
