@@ -16,6 +16,7 @@ import Reports from './pages/Reports/ReportsGeneral';
 import ReportsSales from './pages/Reports/ReportsSales';
 import ReportsShipment from './pages/Reports/ReportsShipment';
 import ReportsSalesDynamics from './pages/Reports/ReportsSalesDynamics';
+import LalAudiences from './pages/Reports/LalAudiences';
 import DesignSystem from './pages/DesignSystem';
 import OrderView from './pages/OrderView';
 import SettingsTestAuth from "./pages/SettingsTestAuth";
@@ -299,6 +300,23 @@ export const appRoutes: AppRoute[] = [
     minRole: ROLES.ADS_MANAGER // ads-manager і вище
   },
   {
+    path: '/reports/lal-audiences',
+    component: LalAudiences,
+    title: 'LAL Аудиторії',
+    pageTitle: 'LAL Аудиторії | NK Backoffice',
+    navLabel: 'LAL Аудиторії',
+    icon: <DynamicIcon name="users" size={16} />,
+    inNav: true,
+    parent: 'reports',
+    order: 4,
+    minRole: ROLES.ADS_MANAGER,
+    navBadge: {
+      label: 'NEW',
+      color: 'danger',
+      until: '2026-08-25',
+    },
+  },
+  {
     path: '/reports/meta-logs',
     component: MetaLogNotifications,
     title: 'Звіт по помилкам',
@@ -436,7 +454,7 @@ export const appRoutes: AppRoute[] = [
     navBadge: {
       label: 'NEW',
       color: 'danger',
-      until: '2026-08-15',
+      until: '2026-08-25',
     },
   },
   {

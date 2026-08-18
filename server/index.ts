@@ -30,6 +30,7 @@ import usersRoutes from './routes/users.js';
 import materialsRouter from './routes/materials.js';
 import statRouter from './routes/stat.js';
 import expandRoutes from './routes/expand.js';
+import lalAudiencesRoutes from './routes/lal-audiences.js';
 
 // Збільшуємо ліміт слухачів для обробки подій, щоб уникнути попереджень про витік пам'яті при великій кількості одночасних cron задач або вебхуків.
 process.setMaxListeners(20);
@@ -183,6 +184,9 @@ export function createServer() {
 
   // Stat routes (sales dynamics, etc.)
   app.use("/api/stat", statRouter);
+
+  // LAL audiences (ads lookalike exports)
+  app.use("/api/lal-audiences", lalAudiencesRoutes);
 
   // Webhook routes (должны быть до protected routes)
   app.use('/api/webhooks', webhookRoutes);

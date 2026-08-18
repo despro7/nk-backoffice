@@ -75,6 +75,7 @@ model Order {
   @@index([orderDate])
   @@index([orderNumber])
   @@index([status, createdAt])
+  @@index([customerPhone])
   @@index([dilovodSaleExportLockUntil])
   @@map("orders")
 }

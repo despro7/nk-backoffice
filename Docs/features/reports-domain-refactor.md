@@ -3,7 +3,7 @@
 Коротко: домен `client/pages/Reports` розбитий на окремі піддомени, а спільна логіка фільтрів, кешу, валідації та fetch-flow винесена в `shared`.
 
 Куди дивитись:
-- Сторінки домену: `client/pages/Reports/ReportsGeneral`, `client/pages/Reports/ReportsSales`, `client/pages/Reports/ReportsShipment`, `client/pages/Reports/ReportsSalesDynamics`
+- Сторінки домену: `client/pages/Reports/ReportsGeneral`, `client/pages/Reports/ReportsSales`, `client/pages/Reports/ReportsShipment`, `client/pages/Reports/ReportsSalesDynamics`, `client/pages/Reports/LalAudiences`
 - Shared-шар: `client/pages/Reports/shared`
 - Централізовані preset-и дат: `client/lib/dateReportingUtils.ts`
 - Стабілізація API helper: `client/hooks/useApi.ts`

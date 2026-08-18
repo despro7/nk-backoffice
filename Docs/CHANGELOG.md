@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-08-18 — LAL Аудиторії: вибірка клієнтів і експорт для Ads
+**Files:** `shared/types/lalAudiences.ts`, `server/services/LalAudiencesService.ts`, `server/routes/lal-audiences.ts`, `server/index.ts`, `prisma/schema.prisma`, `prisma/migrations/20260818120000_add_order_customer_phone_index/`, `client/pages/Reports/LalAudiences/**`, `client/routes.config.tsx`, `Docs/features/lal-audiences.md`
+
+- Новий розділ **Звіти → LAL Аудиторії** (`/reports/lal-audiences`, ads-manager+): пресети, період, слайдери count/LTV, логіка lifetime/strict, статуси, таблиця з пагінацією.
+- Клієнт = нормалізований телефон з `orders`; email/ПІБ з `rawData`. У вибірці лише рядки з валідним телефоном.
+- `GET /api/lal-audiences` (список + summary) і `POST /api/lal-audiences/export` (CSV UTF-8 BOM / XLSX). Колонки файлу обираються іконкою біля експорту; дефолт Ads: Phone, Email, First/Last Name, City, Country.
+- VIP / B2B: LTV > 10 000 ₴; B2B ще й ≥ 100 порцій в одному замовленні. Військові: `pricinaZnizki = 33`. Дефолтний період — 1 місяць.
+- Prisma: індекс `customerPhone` на `orders`.
+
+---
+
 ## 2026-08-17 — Products 2.0: пошук, модалка замовлень, Legacy на гілці
 **Files:** `client/pages/Products/**`, `client/components/modals/ProductOrdersModal.tsx`, `ProductShippedStatsTable.tsx`, `server/modules/Products/*`, `server/routes/products.ts`, `server/lib/utils.ts`, `DilovodService.ts`, `DilovodCacheService.ts`, `Docs/features/products-catalog-2.0.md`
 
