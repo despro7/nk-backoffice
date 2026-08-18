@@ -11,7 +11,7 @@ export default function LalPresetsPanel({ selected, onToggle }: LalPresetsPanelP
   return (
     <div className="bg-white rounded-xl p-4">
       <h2 className="text-sm font-semibold text-default-800 mb-3">Швидкі сегменти</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-2 gap-2">
         {LAL_PRESET_OPTIONS.map((preset) => {
           const isActive = selected === preset.id;
           return (
