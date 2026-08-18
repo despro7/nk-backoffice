@@ -20,9 +20,26 @@ import {
   SPEC_COLOR_FALLBACK,
 } from '@shared/utils/specColorPalette';
 import { StockBadge } from '@/components/StockBadge';
-import type { CatalogGoodDto } from '../ProductsTypes';
+import { ToastService } from '@/services/ToastService';
+import type { CatalogGoodDto, CatalogTreeItemData } from '../ProductsTypes';
 import { CATALOG_ROOT_ID } from '../ProductsTypes';
-import { goodTypeLabel, isArchiveFolderName, createCatalogDragPreview } from '../ProductsUtils';
+import {
+  goodTypeLabel,
+  isArchiveFolderName,
+  getBlockedMoveTargetIds,
+  createCatalogLiveDragPreview,
+  moveCatalogDragPreview,
+  removeCatalogDragPreview,
+  snapBackCatalogDragPreview,
+  dismissCatalogDragPreview,
+  catalogDragPreviewOffset,
+  setCatalogDndCursor,
+  collectCatalogHitRects,
+  hitCatalogRect,
+  applyCatalogDropAttrs,
+  clearCatalogDropAttrs,
+  markCatalogDndSources,
+} from '../ProductsUtils';
 
 export type CatalogOrdersTabKey = 'all' | 'new' | 'confirmed' | 'hold';
 
@@ -47,12 +64,16 @@ interface CatalogTableProps {
   /** Lookup назв папок для колонки категорії в пошуку */
   folderLookup?: Record<string, { name: string }>;
   onOpenOrders?: (row: CatalogGoodDto, tab: CatalogOrdersTabKey) => void;
-  /** Reorder товарів у межах папки (не в search mode) */
+  /** Reorder siblings у межах папки (папка↔папка / товар↔товар) */
   onReorderGood?: (params: {
     id: string;
     beforeId?: string | null;
     afterId?: string | null;
   }) => void;
+  /** Перемістити елементи в папку (drop на рядок-групу) */
+  onMove?: (ids: string[], targetParentId: string) => void;
+  /** Дерево для блокування drop у себе / нащадків */
+  treeItems?: Record<string, CatalogTreeItemData>;
   /** Controlled sort (для кнопки скидання на ручний порядок) */
   sortDescriptor?: SortDescriptor;
   onSortChange?: (desc: SortDescriptor) => void;
@@ -72,16 +93,6 @@ type ColumnKey =
   | 'stockMs'
   | 'inOrders'
   | 'actions';
-
-function isInteractiveTarget(target: EventTarget | null): boolean {
-  // SVG від Lucide — SVGElement, не HTMLElement
-  if (!(target instanceof Element)) return false;
-  return Boolean(
-    target.closest(
-      'button, a, input, label, [role="checkbox"], [data-selection-ignore], [data-drag-handle]'
-    )
-  );
-}
 
 function rangeIds(ids: string[], from: number, to: number): string[] {
   const start = Math.min(from, to);
@@ -108,6 +119,90 @@ function formatWeightKg(weight: number | null | undefined): string {
   return Number(weight).toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
 }
 
+const CATALOG_IDS_MIME = 'application/x-catalog-ids';
+const CATALOG_REORDER_MIME = 'application/x-catalog-reorder-id';
+const FOLDER_REORDER_EDGE = 0.28;
+
+type DropHint =
+  | { kind: 'reorder'; id: string; position: 'before' | 'after' }
+  | { kind: 'into'; id: string };
+
+type DragPayload = {
+  ids: string[];
+  hasGroup: boolean;
+  hasGood: boolean;
+};
+
+/** «after A» між A і B = той самий слот, що «before B» — лишаємо одну лінію. */
+function canonicalReorderHint(
+  sameTypeIds: string[],
+  targetId: string,
+  position: 'before' | 'after'
+): { id: string; position: 'before' | 'after' } | null {
+  const idx = sameTypeIds.indexOf(targetId);
+  if (idx < 0) return null;
+  if (position === 'after' && idx < sameTypeIds.length - 1) {
+    return { id: sameTypeIds[idx + 1], position: 'before' };
+  }
+  return { id: targetId, position };
+}
+
+function parseCatalogDragIds(dataTransfer: DataTransfer): string[] {
+  const reorderId = dataTransfer.getData(CATALOG_REORDER_MIME);
+  if (reorderId) return [reorderId];
+  try {
+    const ids = JSON.parse(dataTransfer.getData(CATALOG_IDS_MIME) || '[]') as string[];
+    return Array.isArray(ids) ? ids.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function copySkuToClipboard(sku: string): void {
+  void navigator.clipboard.writeText(sku).then(() => {
+    ToastService.show({
+      title: 'Скопійовано артикул' + (sku ? ` ${sku}` : ''),
+      color: 'success',
+      timeout: 2000,
+    });
+  }).catch(() => {
+    ToastService.show({
+      title: 'Не вдалося скопіювати',
+      color: 'danger',
+      timeout: 3000,
+    });
+  });
+}
+
+function SkuCopyCell({ sku }: { sku: string | null }) {
+  if (!sku) {
+    return <span className="text-default-300">—</span>;
+  }
+
+  return (
+    <button
+      type="button"
+      data-selection-ignore
+      aria-label={`Копіювати SKU ${sku}`}
+      title="Копіювати SKU"
+      className="group inline-flex items-center gap-1 rounded-md px-2 py-0.5 -mx-2 font-mono text-left transition-colors duration-200 hover:bg-default-200/80"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        copySkuToClipboard(sku);
+      }}
+    >
+      {sku}
+      <DynamicIcon
+        name="copy"
+        size={12}
+        className="pointer-events-none shrink-0 text-default-400 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+      />
+    </button>
+  );
+}
+
 export function CatalogTable({
   rows,
   loading,
@@ -126,6 +221,8 @@ export function CatalogTable({
   folderLookup,
   onOpenOrders,
   onReorderGood,
+  onMove,
+  treeItems,
   sortDescriptor: sortDescriptorProp,
   onSortChange,
 }: CatalogTableProps) {
@@ -142,9 +239,19 @@ export function CatalogTable({
   });
   const sortDescriptor = sortDescriptorProp ?? internalSort;
   const setSortDescriptor = onSortChange ?? setInternalSort;
-  const [dropIndicator, setDropIndicator] = useState<{
-    id: string;
-    position: 'before' | 'after';
+  const [dropHint, setDropHint] = useState<DropHint | null>(null);
+  const dropHintRef = useRef<DropHint | null>(null);
+  dropHintRef.current = dropHint;
+  const [draggingIds, setDraggingIds] = useState<string[]>([]);
+  const dragPayloadRef = useRef<DragPayload | null>(null);
+  const pointerDndRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    active: boolean;
+    sourceRowId: string;
+    pointerType: string;
+    captureEl: HTMLElement | null;
   } | null>(null);
 
   const isManualSort =
@@ -206,6 +313,8 @@ export function CatalogTable({
 
   const displayIds = sortedRows.map((r) => r.id);
 
+  const hasGoods = visibleRows.some((r) => !r.isGroup);
+
   const columns = useMemo(() => {
     const cols: Array<{ key: ColumnKey; label: React.ReactNode; sortable?: boolean; width?: number }> = [
       { key: 'name', label: 'Назва', sortable: true },
@@ -216,9 +325,11 @@ export function CatalogTable({
     cols.push(
       { key: 'sku', label: 'SKU', sortable: true },
       { key: 'type', label: 'Тип' },
-      { key: 'weight', label: 'Вага, кг', sortable: true },
     );
-    if (isFinishedProductsBranch) {
+    if (hasGoods) {
+      cols.push({ key: 'weight', label: 'Вага, кг', sortable: true });
+    }
+    if (hasGoods && isFinishedProductsBranch) {
       cols.push(
         { key: 'packageRatio', label: 'Порцій/кор.', sortable: true },
         ...(isAdmin ? [{ key: 'unitRatio' as const, label: 'Коефіцієнт', sortable: true }] : []),
@@ -241,11 +352,11 @@ export function CatalogTable({
         ), sortable: true },
         { key: 'inOrders', label: 'В замовленнях', sortable: true }
       );
-    } else if (isSearchMode) {
+    } else if (hasGoods && isSearchMode) {
       cols.push({ key: 'inOrders', label: 'В замовленнях', sortable: true });
     }
     return cols;
-  }, [isFinishedProductsBranch, isAdmin, isSearchMode]);
+  }, [hasGoods, isFinishedProductsBranch, isAdmin, isSearchMode]);
 
   const specColors = buildSpecColorMap(accPolicies ?? [], {
     theme: 'light',
@@ -257,21 +368,70 @@ export function CatalogTable({
   const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
   const [isDragSelecting, setIsDragSelecting] = useState(false);
   const dragSelectRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
     startIndex: number;
+    startId: string;
+    fromIndex: number;
     mode: PaintMode;
     baseIds: string[];
     moved: boolean;
+    lastIndex: number;
+    captureEl: HTMLElement | null;
+    shift: boolean;
+    pointerType: string;
+    rowRects?: ReturnType<typeof collectCatalogHitRects>;
   } | null>(null);
-  const suppressDragRef = useRef(false);
+  const suppressCheckboxToggleRef = useRef(false);
   const allIdsRef = useRef(displayIds);
   allIdsRef.current = displayIds;
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
   const onSelectionChangeRef = useRef(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
+  const onContextMenuRef = useRef(onContextMenu);
+  onContextMenuRef.current = onContextMenu;
+  const longPressRef = useRef<{
+    pointerId: number;
+    timer: number;
+    startX: number;
+    startY: number;
+    rowId: string;
+  } | null>(null);
+
+  const clearCatalogLongPress = () => {
+    const state = longPressRef.current;
+    if (!state) return;
+    window.clearTimeout(state.timer);
+    longPressRef.current = null;
+  };
+
+  const openRowContextMenu = (clientX: number, clientY: number, rowId: string) => {
+    const handler = onContextMenuRef.current;
+    if (!handler) return;
+    const selected = selectedIdsRef.current;
+    const selectedHas = selected.includes(rowId);
+    const ids = selectedHas && selected.length > 0 ? selected : [rowId];
+    if (!(selectedHas && selected.length > 1)) {
+      onSelectionChangeRef.current([rowId]);
+    }
+    handler(
+      {
+        preventDefault() {},
+        stopPropagation() {},
+        clientX,
+        clientY,
+      } as React.MouseEvent,
+      ids.length > 0 ? ids : [rowId]
+    );
+  };
 
   useEffect(() => {
     setAnchorIndex(null);
     dragSelectRef.current = null;
     setIsDragSelecting(false);
+    clearCatalogLongPress();
   }, [rows]);
 
   const toggleAll = () => {
@@ -280,10 +440,11 @@ export function CatalogTable({
   };
 
   const toggleOne = (id: string, index: number) => {
-    if (selectedSet.has(id)) {
-      onSelectionChange(selectedIds.filter((x) => x !== id));
+    const current = selectedIdsRef.current;
+    if (current.includes(id)) {
+      onSelectionChangeRef.current(current.filter((x) => x !== id));
     } else {
-      onSelectionChange([...selectedIds, id]);
+      onSelectionChangeRef.current([...current, id]);
     }
     setAnchorIndex(index);
   };
@@ -304,118 +465,486 @@ export function CatalogTable({
   };
 
   useEffect(() => {
+    const SWIPE_THRESHOLD = 8;
+
+    const releaseCapture = (state: { pointerId: number; captureEl: HTMLElement | null }) => {
+      if (!state.captureEl) return;
+      try {
+        if (state.captureEl.hasPointerCapture(state.pointerId)) {
+          state.captureEl.releasePointerCapture(state.pointerId);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const hitRowIndex = (clientX: number, clientY: number, rowRects: ReturnType<typeof collectCatalogHitRects>) => {
+      const hit = hitCatalogRect(rowRects, clientX, clientY, 'y');
+      if (!hit) return -1;
+      return allIdsRef.current.indexOf(hit.id);
+    };
+
     const onPointerMove = (e: PointerEvent) => {
       const state = dragSelectRef.current;
-      if (!state) return;
+      if (!state || e.pointerId !== state.pointerId) return;
 
-      const hit = document.elementFromPoint(e.clientX, e.clientY);
-      const rowEl = hit instanceof Element ? hit.closest('[data-catalog-row-id]') : null;
-      if (!rowEl) return;
-      const id = rowEl.getAttribute('data-catalog-row-id');
-      if (!id) return;
-      const index = allIdsRef.current.indexOf(id);
-      if (index < 0) return;
-
-      if (index !== state.startIndex) {
+      if (!state.moved) {
+        const dx = e.clientX - state.startX;
+        const dy = e.clientY - state.startY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < SWIPE_THRESHOLD) return;
+        if (Math.abs(dx) > Math.abs(dy) * 1.15) {
+          releaseCapture(state);
+          dragSelectRef.current = null;
+          window.setTimeout(() => {
+            suppressCheckboxToggleRef.current = false;
+          }, 0);
+          return;
+        }
         state.moved = true;
-        suppressDragRef.current = true;
+        state.rowRects = collectCatalogHitRects('[data-catalog-row-id]');
         setIsDragSelecting(true);
       }
-      if (!state.moved) return;
 
-      applyPaint(state.startIndex, index, state.mode, state.baseIds);
-      setAnchorIndex(state.startIndex);
+      const index = hitRowIndex(e.clientX, e.clientY, state.rowRects ?? []);
+      if (index < 0 || index === state.lastIndex) return;
+
+      state.lastIndex = index;
+      e.preventDefault();
+      applyPaint(state.fromIndex, index, state.mode, state.baseIds);
+      if (!state.shift) setAnchorIndex(state.startIndex);
     };
 
-    const onPointerUp = () => {
-      if (!dragSelectRef.current) return;
+    const onPointerUp = (e: PointerEvent) => {
+      const state = dragSelectRef.current;
+      if (!state || e.pointerId !== state.pointerId) return;
       dragSelectRef.current = null;
+      releaseCapture(state);
       setIsDragSelecting(false);
+
+      if (!state.moved && !state.shift) {
+        toggleOne(state.startId, state.startIndex);
+      }
+
+      // iOS шле click пізніше за pointerup — тримаємо suppress, щоб не було подвійного тоглу.
+      const delay =
+        state.pointerType === 'touch' || state.pointerType === 'pen' ? 400 : 0;
       window.setTimeout(() => {
-        suppressDragRef.current = false;
-      }, 0);
+        suppressCheckboxToggleRef.current = false;
+      }, delay);
     };
 
-    window.addEventListener('pointermove', onPointerMove);
+    const onTouchMove = (e: TouchEvent) => {
+      if (!dragSelectRef.current) return;
+      e.preventDefault();
+    };
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
     return () => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
+      window.removeEventListener('touchmove', onTouchMove);
     };
   }, []);
 
-  const resolvePaintMode = (id: string, additive: boolean): PaintMode => {
-    if (selectedSet.has(id)) return 'remove';
-    if (additive) return 'add';
-    return 'replace';
-  };
+  useEffect(() => {
+    const MOVE_PX = 10;
+    const onMove = (e: PointerEvent) => {
+      const state = longPressRef.current;
+      if (!state || e.pointerId !== state.pointerId) return;
+      if (Math.hypot(e.clientX - state.startX, e.clientY - state.startY) > MOVE_PX) {
+        clearCatalogLongPress();
+      }
+    };
+    const onEnd = (e: PointerEvent) => {
+      const state = longPressRef.current;
+      if (!state || e.pointerId !== state.pointerId) return;
+      clearCatalogLongPress();
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+    return () => {
+      clearCatalogLongPress();
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
+    };
+  }, []);
 
-  const handleRowPointerDown = (e: React.PointerEvent, index: number) => {
-    if (e.button !== 0) return;
-    if (isInteractiveTarget(e.target)) return;
-
+  const handleCheckboxPointerDown = (
+    e: React.PointerEvent<HTMLElement>,
+    index: number
+  ) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     const id = displayIds[index];
     if (!id) return;
-    const additive = e.ctrlKey || e.metaKey;
-
-    if (e.shiftKey) {
-      e.preventDefault();
-      const from = anchorIndex ?? index;
-      const mode = resolvePaintMode(id, additive);
-      const base = mode === 'replace' ? [] : selectedIds;
-      applyPaint(from, index, mode, base);
-      return;
-    }
-
-    const mode = resolvePaintMode(id, additive);
 
     e.preventDefault();
-    suppressDragRef.current = mode !== 'remove';
+    e.stopPropagation();
+    suppressCheckboxToggleRef.current = true;
+
+    const additive = e.ctrlKey || e.metaKey;
+    const shift = e.shiftKey;
+    const mode: PaintMode = selectedSet.has(id)
+      ? 'remove'
+      : additive
+        ? 'add'
+        : 'replace';
+    const fromIndex = shift ? (anchorIndex ?? index) : index;
+    const captureEl = e.currentTarget;
+
+    try {
+      captureEl.setPointerCapture(e.pointerId);
+    } catch {
+      // Safari / already captured
+    }
+
     dragSelectRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
       startIndex: index,
+      startId: id,
+      fromIndex,
       mode,
       baseIds: selectedIds,
       moved: false,
+      lastIndex: -1,
+      captureEl,
+      shift,
+      pointerType: e.pointerType,
     };
 
-    if (additive) {
-      if (mode === 'remove') {
-        onSelectionChange(selectedIds.filter((x) => x !== id));
-      } else {
-        onSelectionChange([...new Set([...selectedIds, id])]);
-      }
-      setAnchorIndex(index);
+    if (shift) {
+      applyPaint(fromIndex, index, mode, selectedIds);
     }
+  };
+
+  const handleRowPointerDown = (e: React.PointerEvent, rowId: string) => {
+    if (!onContextMenu) return;
+    if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('[data-catalog-checkbox], [data-drag-handle], [data-selection-ignore]')) {
+      return;
+    }
+
+    clearCatalogLongPress();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const pointerId = e.pointerId;
+    const timer = window.setTimeout(() => {
+      longPressRef.current = null;
+      const eatClick = (ev: MouseEvent) => {
+        if ((ev.target as HTMLElement | null)?.closest?.('[role="menu"]')) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+      };
+      window.addEventListener('click', eatClick, true);
+      window.setTimeout(() => {
+        window.removeEventListener('click', eatClick, true);
+      }, 600);
+      openRowContextMenu(startX, startY, rowId);
+    }, 520);
+    longPressRef.current = { pointerId, timer, startX, startY, rowId };
   };
 
   const goodsOnly = useMemo(
     () => sortedRows.filter((r) => !r.isGroup),
     [sortedRows]
   );
+  const foldersOnly = useMemo(
+    () => sortedRows.filter((r) => r.isGroup),
+    [sortedRows]
+  );
+  const canReorder = Boolean(onReorderGood && !isSearchMode && isManualSort);
+  const canMove = Boolean(onMove && !isSearchMode);
+  const showDragHandle = canReorder || canMove;
 
-  const handleGoodReorderDrop = (
+  const rememberDragPayload = (ids: string[]) => {
+    const unique = [...new Set(ids.filter(Boolean))];
+    dragPayloadRef.current = {
+      ids: unique,
+      hasGroup: unique.some((id) => sortedRows.find((r) => r.id === id)?.isGroup),
+      hasGood: unique.some((id) => {
+        const row = sortedRows.find((r) => r.id === id);
+        return Boolean(row && !row.isGroup);
+      }),
+    };
+  };
+
+  const clearDropUi = () => {
+    removeCatalogDragPreview();
+    dragPayloadRef.current = null;
+    dropHintRef.current = null;
+    setDropHint(null);
+    setDraggingIds([]);
+    clearCatalogDropAttrs();
+    markCatalogDndSources([]);
+    setCatalogDndCursor(false);
+  };
+
+  const handleReorderDrop = (
     draggedId: string,
     targetId: string,
     position: 'before' | 'after'
-  ) => {
-    if (!onReorderGood || isSearchMode || !isManualSort) return;
+  ): boolean => {
+    if (!onReorderGood || isSearchMode || !isManualSort) return false;
     const target = sortedRows.find((r) => r.id === targetId);
     const dragged = sortedRows.find((r) => r.id === draggedId);
-    if (!target || !dragged || target.isGroup || dragged.isGroup) return;
-    if (draggedId === targetId) return;
+    if (!target || !dragged || target.isGroup !== dragged.isGroup) return false;
+    if (draggedId === targetId) return false;
 
-    const goods = goodsOnly.map((g) => g.id);
-    const without = goods.filter((id) => id !== draggedId);
+    const siblings = (dragged.isGroup ? foldersOnly : goodsOnly).map((g) => g.id);
+    const without = siblings.filter((id) => id !== draggedId);
     const targetIdx = without.indexOf(targetId);
-    if (targetIdx < 0) return;
+    if (targetIdx < 0) return false;
     const insertAt = position === 'before' ? targetIdx : targetIdx + 1;
     const afterId = insertAt > 0 ? without[insertAt - 1] : null;
     const beforeId = insertAt < without.length ? without[insertAt] : null;
     onReorderGood({ id: draggedId, afterId, beforeId });
     setSortDescriptor({ column: 'sortOrder', direction: 'ascending' });
+    return true;
   };
+
+  const resolveDropHint = (
+    row: CatalogGoodDto,
+    clientY: number,
+    rowEl: HTMLElement
+  ): DropHint | null => {
+    const payload = dragPayloadRef.current;
+    if (!payload || payload.ids.length === 0 || isSearchMode) return null;
+
+    const folderOnly = payload.hasGroup && !payload.hasGood;
+    const goodOnly = payload.hasGood && !payload.hasGroup;
+    const mixed = payload.hasGroup && payload.hasGood;
+    const blocked = treeItems
+      ? getBlockedMoveTargetIds(payload.ids, treeItems)
+      : new Set(payload.ids);
+    const canDropInto =
+      row.isGroup &&
+      canMove &&
+      !blocked.has(row.id) &&
+      !payload.ids.includes(row.id);
+
+    if (canDropInto && (goodOnly || mixed)) {
+      return { kind: 'into', id: row.id };
+    }
+
+    if (canDropInto && folderOnly) {
+      if (!canReorder) return { kind: 'into', id: row.id };
+      const rect = rowEl.getBoundingClientRect();
+      const ratio = rect.height > 0 ? (clientY - rect.top) / rect.height : 0.5;
+      if (ratio > FOLDER_REORDER_EDGE && ratio < 1 - FOLDER_REORDER_EDGE) {
+        return { kind: 'into', id: row.id };
+      }
+    }
+
+    if (!canReorder || mixed) return null;
+    if (folderOnly !== row.isGroup) return null;
+    if (goodOnly === row.isGroup) return null;
+    if (payload.ids.includes(row.id)) return null;
+
+    const sameTypeIds = (row.isGroup ? foldersOnly : goodsOnly).map((r) => r.id);
+    const rect = rowEl.getBoundingClientRect();
+    const position: 'before' | 'after' =
+      clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+    const canonical = canonicalReorderHint(sameTypeIds, row.id, position);
+    return canonical ? { kind: 'reorder', ...canonical } : null;
+  };
+
+  const dndApiRef = useRef({
+    resolveDropHint,
+    handleReorderDrop,
+    onMove,
+    sortedRows,
+    clearDropUi,
+  });
+  dndApiRef.current = {
+    resolveDropHint,
+    handleReorderDrop,
+    onMove,
+    sortedRows,
+    clearDropUi,
+  };
+
+  useEffect(() => {
+    const POINTER_DND_THRESHOLD_MOUSE = 6;
+    const POINTER_DND_THRESHOLD_TOUCH = 10;
+
+    const previewPos = (e: PointerEvent, pointerType: string) => {
+      const offset = catalogDragPreviewOffset(pointerType);
+      return { x: e.clientX + offset.x, y: e.clientY + offset.y };
+    };
+
+    let rowRects = collectCatalogHitRects('[data-catalog-row-id]');
+    let folderRects = collectCatalogHitRects('[data-catalog-folder-id]');
+    let raf = 0;
+    let lastPtr: PointerEvent | null = null;
+
+    const refreshHits = () => {
+      rowRects = collectCatalogHitRects('[data-catalog-row-id]');
+      folderRects = collectCatalogHitRects('[data-catalog-folder-id]');
+    };
+
+    const applyHintFromPoint = (clientX: number, clientY: number) => {
+      const api = dndApiRef.current;
+      const payload = dragPayloadRef.current;
+      const rowHit = hitCatalogRect(rowRects, clientX, clientY, 'xy');
+      const folderHit = hitCatalogRect(folderRects, clientX, clientY, 'xy');
+      let hint = null as ReturnType<typeof api.resolveDropHint>;
+      let target: HTMLElement | null = null;
+
+      if (rowHit) {
+        const row = api.sortedRows.find((item) => item.id === rowHit.id);
+        if (row) {
+          hint = api.resolveDropHint(row, clientY, rowHit.el);
+          target = rowHit.el;
+        }
+      } else if (folderHit && payload && api.onMove && !payload.ids.includes(folderHit.id)) {
+        hint = { kind: 'into', id: folderHit.id };
+        target = folderHit.el;
+      }
+
+      dropHintRef.current = hint;
+      applyCatalogDropAttrs(hint, target);
+    };
+
+    const processMove = (e: PointerEvent) => {
+      const session = pointerDndRef.current;
+      if (!session || e.pointerId !== session.pointerId) return;
+
+      const dist = Math.hypot(e.clientX - session.startX, e.clientY - session.startY);
+      const threshold =
+        session.pointerType === 'touch' || session.pointerType === 'pen'
+          ? POINTER_DND_THRESHOLD_TOUCH
+          : POINTER_DND_THRESHOLD_MOUSE;
+      if (!session.active) {
+        if (dist < threshold) return;
+        session.active = true;
+        setCatalogDndCursor(true);
+        const payload = dragPayloadRef.current;
+        if (payload) {
+          markCatalogDndSources(payload.ids);
+          setDraggingIds(payload.ids);
+        }
+        const api = dndApiRef.current;
+        const idSet = new Set(payload?.ids ?? []);
+        const labels = api.sortedRows
+          .filter((item) => idSet.has(item.id))
+          .map((item) => item.name);
+        createCatalogLiveDragPreview(labels);
+        refreshHits();
+      }
+
+      e.preventDefault();
+      const pos = previewPos(e, session.pointerType);
+      moveCatalogDragPreview(pos.x, pos.y);
+      applyHintFromPoint(e.clientX, e.clientY);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      const session = pointerDndRef.current;
+      if (!session || e.pointerId !== session.pointerId) return;
+      lastPtr = e;
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        const ev = lastPtr;
+        if (ev) processMove(ev);
+      });
+    };
+
+    const flushMove = () => {
+      if (raf) {
+        window.cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      if (lastPtr) processMove(lastPtr);
+    };
+
+    const releaseCapture = (session: { pointerId: number; captureEl: HTMLElement | null }) => {
+      if (!session.captureEl) return;
+      try {
+        if (session.captureEl.hasPointerCapture(session.pointerId)) {
+          session.captureEl.releasePointerCapture(session.pointerId);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      const session = pointerDndRef.current;
+      if (!session || e.pointerId !== session.pointerId) return;
+      flushMove();
+      pointerDndRef.current = null;
+      lastPtr = null;
+      releaseCapture(session);
+
+      const api = dndApiRef.current;
+      if (!session.active) {
+        api.clearDropUi();
+        return;
+      }
+
+      const payload = dragPayloadRef.current;
+      applyHintFromPoint(e.clientX, e.clientY);
+      const hint = dropHintRef.current;
+
+      let didAction = false;
+      if (hint && payload) {
+        if (hint.kind === 'into' && api.onMove) {
+          const moveIds = payload.ids.filter((id) => id !== hint.id);
+          if (moveIds.length > 0) {
+            api.onMove(moveIds, hint.id);
+            didAction = true;
+          }
+        } else if (hint.kind === 'reorder' && payload.ids.length === 1) {
+          didAction = api.handleReorderDrop(payload.ids[0], hint.id, hint.position);
+        }
+      }
+
+      dropHintRef.current = null;
+      clearCatalogDropAttrs();
+
+      const sourceId = session.sourceRowId;
+      void (async () => {
+        if (!didAction) {
+          const sourceEl = document.querySelector(
+            `[data-catalog-row-id="${CSS.escape(sourceId)}"]`
+          );
+          await snapBackCatalogDragPreview(
+            sourceEl instanceof HTMLElement ? sourceEl : null
+          );
+        } else {
+          await dismissCatalogDragPreview();
+        }
+        api.clearDropUi();
+      })();
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!pointerDndRef.current) return;
+      e.preventDefault();
+    };
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      window.removeEventListener('touchmove', onTouchMove);
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -429,31 +958,43 @@ export function CatalogTable({
     switch (key) {
       case 'name':
         return (
-          <div className="flex items-center gap-2 min-w-0">
-            {!row.isGroup && onReorderGood && !isSearchMode && isManualSort && (
+          <div className="flex items-center gap-2 min-w-0 relative pl-5">
+            {showDragHandle && (
               <span
                 data-drag-handle
                 data-selection-ignore
-                className="cursor-grab text-default-300 hover:text-default-500 shrink-0 touch-none"
-                title="Перетягнути для сортування"
-                draggable
+                className={`touch-none text-default-300 absolute -left-1.5 top-1/2 -translate-y-1/2 inline-flex h-10 w-6 items-center justify-center hover:text-default-500 shrink-0 transition-opacity duration-200 ease-in-out
+                  ${draggingIds.length > 0 ? 'cursor-grabbing' : 'cursor-grab'}
+                  ${!isManualSort
+                    ? 'opacity-0 pointer-events-none'
+                    : 'opacity-100'
+                  }`}
+                title="Перетягнути для сортування або переміщення"
+                onContextMenu={(e) => e.preventDefault()}
                 onPointerDown={(e) => {
-                  // Не запускати paint-selection з рядка
+                  if (e.pointerType === 'mouse' && e.button !== 0) return;
                   e.stopPropagation();
-                }}
-                onDragStart={(e) => {
-                  e.stopPropagation();
-                  e.dataTransfer.setData(
-                    'application/x-catalog-reorder-id',
-                    row.id
-                  );
-                  e.dataTransfer.setData(
-                    'application/x-catalog-ids',
-                    JSON.stringify([row.id])
-                  );
-                  e.dataTransfer.effectAllowed = 'move';
-                  const preview = createCatalogDragPreview(row.name);
-                  e.dataTransfer.setDragImage(preview, 12, 12);
+                  e.preventDefault();
+                  const handleEl = e.currentTarget as HTMLElement;
+                  try {
+                    handleEl.setPointerCapture(e.pointerId);
+                  } catch {
+                    // Safari / already captured
+                  }
+                  const ids =
+                    selectedSet.has(row.id) && selectedIds.length > 0
+                      ? selectedIds
+                      : [row.id];
+                  rememberDragPayload(ids);
+                  pointerDndRef.current = {
+                    pointerId: e.pointerId,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    active: false,
+                    sourceRowId: row.id,
+                    pointerType: e.pointerType,
+                    captureEl: handleEl,
+                  };
                 }}
               >
                 <DynamicIcon name="grip-vertical" size={14} />
@@ -461,15 +1002,17 @@ export function CatalogTable({
             )}
             <button
               type="button"
-              className="flex min-w-0 items-center gap-2 text-left hover:text-primary"
+              className="flex min-w-0 items-center gap-2 text-left hover:text-primary select-none"
               onClick={() => (row.isGroup ? onOpenFolder(row.id) : onEdit(row.id))}
             >
-              <DynamicIcon
-                name={row.isGroup ? 'folder' : row.isKit ? 'package' : 'shopping-bag'}
-                size={16}
-                className="text-default-500 shrink-0"
-              />
-              <span className="truncate">{row.name}</span>
+              <span className="w-4 h-4">
+                <DynamicIcon
+                  name={row.isGroup ? 'folder' : row.isKit ? 'package' : 'shopping-bag'}
+                  size={16}
+                  className="text-default-500 shrink-0"
+                />
+              </span>
+              <span className="truncate select-none">{row.name}</span>
               {row.delMark && (
                 <Chip
                   size="sm"
@@ -509,7 +1052,7 @@ export function CatalogTable({
         );
       }
       case 'sku':
-        return <span className="font-mono">{row.sku || '—'}</span>;
+        return <SkuCopyCell sku={row.sku} />;
       case 'type': {
         const typeTokens = row.isGroup
           ? SPEC_COLOR_FALLBACK
@@ -652,6 +1195,9 @@ export function CatalogTable({
       aria-label="Каталог товарів"
       removeWrapper
       className={`min-h-[200px] ${isDragSelecting ? 'select-none' : ''}`}
+      classNames={{
+        th: 'first:rounded-l-md last:rounded-e-md',
+      }}
       sortDescriptor={
         isManualSort
           ? undefined
@@ -666,12 +1212,16 @@ export function CatalogTable({
     >
       <TableHeader>
         {[
-          <TableColumn key="sel" width={40} allowsSorting={false}>
+          <TableColumn key="sel" width={32} className="pr-0 min-w-8" allowsSorting={false}>
             <Checkbox
               aria-label="Вибрати всі"
               isSelected={allSelected}
               onValueChange={toggleAll}
               size="sm"
+              classNames={{
+                base: 'pr-0',
+                wrapper: 'm-0',
+              }}
             />
           </TableColumn>,
           ...columns.map((col) => (
@@ -679,6 +1229,7 @@ export function CatalogTable({
               key={col.key}
               allowsSorting={Boolean(col.sortable)}
               width={col.width}
+              className={col.key === 'name' ? 'pl-8' : ''}
             >
               {col.label}
             </TableColumn>
@@ -688,109 +1239,118 @@ export function CatalogTable({
       <TableBody emptyContent={isSearchMode ? 'Нічого не знайдено' : 'Папка порожня'}>
         {sortedRows.map((row, index) => {
           const isSelected = selectedSet.has(row.id);
-          const showDropBefore =
-            dropIndicator?.id === row.id && dropIndicator.position === 'before';
-          const showDropAfter =
-            dropIndicator?.id === row.id && dropIndicator.position === 'after';
+          const showDropInto = dropHint?.kind === 'into' && dropHint.id === row.id;
+          const isDndActive = draggingIds.length > 0;
+          const isDragging = draggingIds.includes(row.id);
           return (
             <TableRow
               key={row.id}
               data-catalog-row-id={row.id}
+              data-catalog-dnd-source={isDragging ? '' : undefined}
+              data-catalog-drop-into={showDropInto ? '' : undefined}
               className={[
-                isSelected
-                  ? 'bg-gray-100 hover:bg-gray-200/60'
-                  : 'hover:bg-gray-100/60 cursor-default',
-                'outline-none transition-colors relative',
-                showDropBefore ? 'shadow-[inset_0_2px_0_0_#f59e0b]' : '',
-                showDropAfter ? 'shadow-[inset_0_-2px_0_0_#f59e0b]' : '',
+                isSelected ? 'bg-gray-100' : 'cursor-default',
+                isDndActive
+                  ? ''
+                  : isSelected
+                    ? 'hover:bg-gray-200/60'
+                    : 'hover:bg-gray-100/60',
+                'outline-none relative transition-[background-color,opacity,box-shadow] duration-300 ease-in-out',
               ]
                 .filter(Boolean)
                 .join(' ')}
-              draggable={!row.isGroup || true}
-              onPointerDown={(e) => handleRowPointerDown(e, index)}
+              draggable={false}
+              onPointerDown={(e) => handleRowPointerDown(e, row.id)}
               onContextMenu={(e) => {
                 if (!onContextMenu) return;
                 e.preventDefault();
                 e.stopPropagation();
-                const ids =
-                  selectedSet.has(row.id) && selectedIds.length > 0
-                    ? selectedIds
-                    : [row.id];
-                if (!(selectedSet.has(row.id) && selectedIds.length > 1)) {
-                  onSelectionChange([row.id]);
-                }
-                onContextMenu(e, ids.length > 0 ? ids : [row.id]);
-              }}
-              onDragStart={(e) => {
-                if (suppressDragRef.current || dragSelectRef.current?.moved) {
-                  e.preventDefault();
-                  return;
-                }
-                const ids =
-                  selectedSet.has(row.id) && selectedIds.length > 0
-                    ? selectedIds
-                    : [row.id];
-                e.dataTransfer.setData('application/x-catalog-ids', JSON.stringify(ids));
-                e.dataTransfer.effectAllowed = 'move';
-                const labels = ids.map(
-                  (dragId) => sortedRows.find((r) => r.id === dragId)?.name || dragId
-                );
-                const preview = createCatalogDragPreview(labels);
-                e.dataTransfer.setDragImage(preview, 12, 12);
+                openRowContextMenu(e.clientX, e.clientY, row.id);
               }}
               onDragOver={(e) => {
-                if (row.isGroup || isSearchMode || !isManualSort || !onReorderGood) return;
                 const types = Array.from(e.dataTransfer.types);
                 if (
-                  !types.includes('application/x-catalog-reorder-id') &&
-                  !types.includes('application/x-catalog-ids')
+                  !dragPayloadRef.current &&
+                  !types.includes(CATALOG_REORDER_MIME) &&
+                  !types.includes(CATALOG_IDS_MIME)
                 ) {
+                  return;
+                }
+                const hint = resolveDropHint(
+                  row,
+                  e.clientY,
+                  e.currentTarget as HTMLElement
+                );
+                if (!hint) {
+                  setDropHint(null);
                   return;
                 }
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                const position =
-                  e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                setDropIndicator({ id: row.id, position });
+                setDropHint((prev) => {
+                  if (
+                    prev &&
+                    prev.kind === hint.kind &&
+                    prev.id === hint.id &&
+                    (prev.kind !== 'reorder' ||
+                      hint.kind !== 'reorder' ||
+                      prev.position === hint.position)
+                  ) {
+                    return prev;
+                  }
+                  return hint;
+                });
               }}
-              onDragLeave={() => {
-                setDropIndicator((prev) => (prev?.id === row.id ? null : prev));
+              onDragLeave={(e) => {
+                const related = e.relatedTarget;
+                if (related instanceof Element && related.closest('[data-catalog-row-id]')) {
+                  return;
+                }
+                setDropHint(null);
               }}
               onDrop={(e) => {
                 e.preventDefault();
-                setDropIndicator(null);
-                if (row.isGroup) {
-                  // Drop на папку — move через дерево (foreign); тут ігноруємо reorder
+                const hint =
+                  resolveDropHint(row, e.clientY, e.currentTarget as HTMLElement) ||
+                  dropHintRef.current;
+                const ids = parseCatalogDragIds(e.dataTransfer);
+                setDropHint(null);
+                dragPayloadRef.current = null;
+                if (!hint || ids.length === 0) return;
+
+                if (hint.kind === 'into') {
+                  const moveIds = ids.filter((id) => id !== hint.id);
+                  if (moveIds.length === 0 || !onMove) return;
+                  onMove(moveIds, hint.id);
                   return;
                 }
-                const reorderId =
-                  e.dataTransfer.getData('application/x-catalog-reorder-id') ||
-                  (() => {
-                    try {
-                      const ids = JSON.parse(
-                        e.dataTransfer.getData('application/x-catalog-ids') || '[]'
-                      ) as string[];
-                      return ids.length === 1 ? ids[0] : '';
-                    } catch {
-                      return '';
-                    }
-                  })();
-                if (!reorderId) return;
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                const position =
-                  e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                handleGoodReorderDrop(reorderId, row.id, position);
+
+                const draggedId = ids.length === 1 ? ids[0] : '';
+                if (!draggedId) return;
+                handleReorderDrop(draggedId, hint.id, hint.position);
               }}
             >
               {[
-                <TableCell key="sel">
-                  <Checkbox
-                    aria-label={`Вибрати ${row.name}`}
-                    isSelected={isSelected}
-                    onValueChange={() => toggleOne(row.id, index)}
-                    size="sm"
-                  />
+                <TableCell key="sel" width={32} className="pr-0 min-w-9 w-9">
+                  <div
+                    data-catalog-checkbox
+                    className="touch-none flex h-full min-h-6 w-full -m-2 items-center justify-center"
+                    onPointerDownCapture={(e) => handleCheckboxPointerDown(e, index)}
+                  >
+                    <Checkbox
+                      aria-label={`Вибрати ${row.name}`}
+                      isSelected={isSelected}
+                      onValueChange={() => {
+                        if (suppressCheckboxToggleRef.current) return;
+                        toggleOne(row.id, index);
+                      }}
+                      size="sm"
+                      classNames={{
+                        base: 'pr-0 m-0',
+                        wrapper: 'm-0',
+                      }}
+                    />
+                  </div>
                 </TableCell>,
                 ...columns.map((col) => (
                   <TableCell key={col.key}>{renderCell(row, col.key)}</TableCell>

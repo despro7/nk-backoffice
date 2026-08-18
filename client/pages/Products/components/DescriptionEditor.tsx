@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
 import { Button, Divider, Textarea } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
@@ -35,10 +34,10 @@ export function DescriptionEditor({
         codeBlock: false,
         blockquote: false,
         horizontalRule: false,
-      }),
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: { class: 'text-primary underline' },
+        link: {
+          openOnClick: false,
+          HTMLAttributes: { class: 'text-primary underline' },
+        },
       }),
     ],
     content: value || '',
@@ -161,6 +160,7 @@ export function DescriptionEditor({
             isIconOnly
             size="sm"
             variant={editor?.isActive('strike') ? 'flat' : 'light'}
+            className="hidden md:block"
             aria-label="Закреслений"
             isDisabled={fmtDisabled}
             onPress={() => editor?.chain().focus().toggleStrike().run()}

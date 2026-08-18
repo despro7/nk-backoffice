@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DynamicIcon } from 'lucide-react/dynamic';
+import {
+  CATALOG_ACTIONS_MENU_PANEL,
+  CatalogActionsMenuItems,
+} from './CatalogActionsMenu';
 
 export interface CatalogContextMenuState {
   x: number;
@@ -10,6 +13,8 @@ export interface CatalogContextMenuState {
   fromTrash?: boolean;
   /** true = ПКМ по елементу з архіву (також у пошуку) */
   fromArchive?: boolean;
+  /** Усі обрані елементи — групи/папки */
+  groupsOnly?: boolean;
 }
 
 interface CatalogContextMenuProps {
@@ -18,6 +23,7 @@ interface CatalogContextMenuProps {
   /** Fallback: ПКМ зсередини архівної папки */
   isInsideArchive?: boolean;
   onClose: () => void;
+  onEdit?: (id: string) => void;
   onSyncFromDilovod: (ids: string[]) => void;
   onLegacyUpdate: (ids: string[]) => void;
   onMoveTo: (ids: string[]) => void;
@@ -34,6 +40,7 @@ export function CatalogContextMenu({
   busy,
   isInsideArchive,
   onClose,
+  onEdit,
   onSyncFromDilovod,
   onLegacyUpdate,
   onMoveTo,
@@ -83,130 +90,36 @@ export function CatalogContextMenu({
 
   if (!state) return null;
 
-  const canDuplicate = state.ids.length === 1 && !busy;
-  const canBulk = state.ids.length > 0 && !busy;
   const fromTrash = Boolean(state.fromTrash);
   const fromArchive = Boolean(state.fromArchive) || (Boolean(isInsideArchive) && !fromTrash);
-
-  const run = (action: (ids: string[]) => void) => {
-    action(state.ids);
-    onClose();
-  };
 
   return createPortal(
     <div
       ref={menuRef}
       role="menu"
       aria-label="Дії з елементами каталогу"
-      className="fixed z-[100] min-w-[200px] overflow-hidden rounded-lg border border-default-200 bg-content1 p-2 shadow-lg"
+      className={`fixed z-[100] ${CATALOG_ACTIONS_MENU_PANEL}`}
       style={{ left: pos.x, top: pos.y }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {state.ids.length > 1 && (
-        <div className="border-b border-default-100 px-3 py-1.5 text-xs text-default-500">
-          Обрано: {state.ids.length}
-        </div>
-      )}
-
-      <MenuItem
-        icon="cloud-download"
-        label="Синхронізувати з Діловодом"
-        disabled={!canBulk}
-        onSelect={() => run(onSyncFromDilovod)}
+      <CatalogActionsMenuItems
+        ids={state.ids}
+        busy={busy}
+        fromTrash={fromTrash}
+        fromArchive={fromArchive}
+        groupsOnly={state.groupsOnly}
+        onEdit={onEdit}
+        onSyncFromDilovod={onSyncFromDilovod}
+        onLegacyUpdate={onLegacyUpdate}
+        onMoveTo={onMoveTo}
+        onDuplicate={onDuplicate}
+        onArchive={onArchive}
+        onRestore={onRestore}
+        onTrash={onTrash}
+        onRestoreFromTrash={onRestoreFromTrash}
+        onClose={onClose}
       />
-      <MenuItem
-        icon="database"
-        label="Синхронізувати товар(и)"
-        disabled={!canBulk}
-        legacy
-        onSelect={() => run(onLegacyUpdate)}
-      />
-      <MenuItem
-        icon="folder-input"
-        label="Перемістити в…"
-        disabled={!canBulk}
-        onSelect={() => run(onMoveTo)}
-      />
-      <MenuItem
-        icon="copy"
-        label="Дублювати"
-        disabled={!canDuplicate}
-        onSelect={() => run(onDuplicate)}
-      />
-      {!fromTrash &&
-        (fromArchive ? (
-          <MenuItem
-            icon="archive-restore"
-            label="Відновити з архіву"
-            disabled={!canBulk}
-            onSelect={() => run(onRestore)}
-          />
-        ) : (
-          <MenuItem
-            icon="archive"
-            label="В архів"
-            disabled={!canBulk}
-            onSelect={() => run(onArchive)}
-          />
-        ))}
-      {fromTrash ? (
-        <MenuItem
-          icon="archive-restore"
-          label="Відновити"
-          disabled={!canBulk}
-          onSelect={() => run(onRestoreFromTrash)}
-        />
-      ) : (
-        <MenuItem
-          icon="trash-2"
-          label="Видалити"
-          danger
-          disabled={!canBulk}
-          onSelect={() => run(onTrash)}
-        />
-      )}
     </div>,
     document.body
-  );
-}
-
-function MenuItem({
-  icon,
-  label,
-  danger,
-  legacy,
-  disabled,
-  onSelect,
-}: {
-  icon: 'copy' | 'archive' | 'trash-2' | 'folder-input' | 'archive-restore' | 'cloud-download' | 'database';
-  label: string;
-  danger?: boolean;
-  legacy?: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      disabled={disabled}
-      className={[
-        'flex w-full items-center gap-2 px-3 py-2 rounded-sm text-left text-sm transition-colors',
-        disabled
-          ? 'cursor-not-allowed text-default-300'
-          : danger
-            ? 'text-danger hover:bg-danger-50'
-            : 'text-foreground hover:bg-default-100',
-        legacy ? 'text-lime-600 hover:bg-lime-100' : '',
-      ].join(' ')}
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!disabled) onSelect();
-      }}
-    >
-      <DynamicIcon name={icon} size={14} className="shrink-0" />
-      <span>{label}</span>
-    </button>
   );
 }

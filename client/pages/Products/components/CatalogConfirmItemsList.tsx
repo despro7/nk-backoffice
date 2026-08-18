@@ -8,7 +8,7 @@ interface CatalogConfirmItemsListProps {
 
 export function CatalogConfirmItemsList({
   items,
-  maxVisible = 8,
+  maxVisible = 5,
 }: CatalogConfirmItemsListProps) {
   if (items.length === 0) return null;
 
@@ -16,17 +16,14 @@ export function CatalogConfirmItemsList({
   const rest = items.length - shown.length;
 
   return (
-    <ul className="mt-2 max-h-44 list-none overflow-auto rounded-md border border-default-200 bg-default-50/60 py-1">
+    <ul className="mt-4 max-h-44 list-none overflow-auto rounded-sm border border-default-200/75 bg-white py-1">
       {shown.map((item) => (
-        <li
-          key={item.id}
-          className="flex items-baseline gap-2 px-3 py-1.5 text-sm"
-        >
-          <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+        <li key={item.id} className="flex items-baseline gap-2 px-3 py-0.5 text-sm">
+          <span className="min-w-0 flex-1 truncate text-foreground">
             {item.name}
           </span>
           {item.isGroup ? (
-            <span className="shrink-0 text-xs text-default-400">папка</span>
+            <span className="shrink-0 text-xs text-default-400">група</span>
           ) : item.sku ? (
             <span className="shrink-0 font-mono text-xs text-default-500">
               {item.sku}

@@ -33,7 +33,6 @@ export function useProductsCatalog() {
   const [searchQuery, setSearchQuery] = useState('');
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [trashOpen, setTrashOpen] = useState(false);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
   const [duplicateConfirmOpen, setDuplicateConfirmOpen] = useState(false);
@@ -64,12 +63,6 @@ export function useProductsCatalog() {
         `/api/catalog/search?q=${encodeURIComponent(searchQuery.trim())}`
       ),
     enabled: searchQueryEnabled,
-  });
-
-  const trashQuery = useQuery({
-    queryKey: ['catalog', 'trash'],
-    queryFn: () => catalogFetch<CatalogGoodDto[]>('/api/catalog/trash'),
-    enabled: trashOpen,
   });
 
   const dictionariesQuery = useQuery({
@@ -461,8 +454,6 @@ export function useProductsCatalog() {
     setSearchQuery,
     drawerMode,
     editingId,
-    trashOpen,
-    setTrashOpen,
     archiveConfirmOpen,
     setArchiveConfirmOpen,
     trashConfirmOpen,
@@ -483,8 +474,6 @@ export function useProductsCatalog() {
     tableRows,
     tableLoading: searchQueryEnabled ? searchResultsQuery.isLoading : childrenQuery.isLoading,
     isSearchMode: searchQueryEnabled,
-    trashItems: trashQuery.data || [],
-    trashLoading: trashQuery.isLoading,
     dictionaries: dictionariesQuery.data || {
       units: [],
       priceTypes: [],

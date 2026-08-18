@@ -7,17 +7,18 @@ import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 import { ToastService } from '@/services/ToastService';
 import { ROLES } from '@shared/constants/roles';
 import { CatalogTree } from './components/CatalogTree';
+import { CatalogTreeBubble } from './components/CatalogTreeBubble';
 import { CatalogTable } from './components/CatalogTable';
 import { CatalogToolbar } from './components/CatalogToolbar';
+import { CatalogActionsDropdown } from './components/CatalogActionsMenu';
 import { CatalogBreadcrumbs } from './components/CatalogBreadcrumbs';
 import { CatalogContextMenu, type CatalogContextMenuState } from './components/CatalogContextMenu';
 import { CatalogConfirmItemsList } from './components/CatalogConfirmItemsList';
 import { ProductDrawer } from './components/ProductDrawer';
 import { ArchiveConfirmModal } from './components/ArchiveConfirmModal';
 import { MoveToFolderModal } from './components/MoveToFolderModal';
-import { TrashDrawer } from './components/TrashDrawer';
 import { useProductsCatalog } from './useProductsCatalog';
-import { CATALOG_ROOT_ID, type CatalogGoodDto } from './ProductsTypes';
+import { CATALOG_ROOT_ID, CATALOG_TRASH_ID, type CatalogGoodDto } from './ProductsTypes';
 import {
   estimateBranchRefreshCount,
   isArchiveFolderId,
@@ -32,6 +33,7 @@ import {
 } from '@/components/modals/ProductOrdersModal';
 import type { CatalogOrdersTabKey } from './components/CatalogTable';
 import { pluralize } from '@/lib/formatUtils';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const MANUAL_SORT: SortDescriptor = {
   column: 'sortOrder',
@@ -65,6 +67,8 @@ export default function ProductsPage() {
   const [ordersModalOpen, setOrdersModalOpen] = useState(false);
   const [ordersModalLoading, setOrdersModalLoading] = useState(false);
   const [ordersModalOrders, setOrdersModalOrders] = useState<ProductOrderRow[]>([]);
+  const isMobile = useIsMobile();
+  const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
   const isManualTableSort =
     !tableSort.column ||
     tableSort.column === 'sortOrder' ||
@@ -195,14 +199,13 @@ export default function ProductsPage() {
   const movePickerLabels = useMemo(
     () =>
       resolveCatalogItemLabels(movePickerIds || [], {
-        tableRows: [...catalog.tableRows, ...catalog.trashItems, ...(catalog.detail ? [catalog.detail] : [])],
+        tableRows: [...catalog.tableRows, ...(catalog.detail ? [catalog.detail] : [])],
         treeItems: movePickerFromTrash ? catalog.treeItems : catalog.treeItemsFull,
       }),
     [
       movePickerIds,
       movePickerFromTrash,
       catalog.tableRows,
-      catalog.trashItems,
       catalog.detail,
       catalog.treeItems,
       catalog.treeItemsFull,
@@ -238,7 +241,6 @@ export default function ProductsPage() {
       resolveCatalogItemLabels(legacyUpdateConfirmIds || [], {
         tableRows: [
           ...catalog.tableRows,
-          ...catalog.trashItems,
           ...(catalog.detail ? [catalog.detail] : []),
         ],
         treeItems: catalog.treeItemsFull,
@@ -246,7 +248,6 @@ export default function ProductsPage() {
     [
       legacyUpdateConfirmIds,
       catalog.tableRows,
-      catalog.trashItems,
       catalog.detail,
       catalog.treeItemsFull,
     ]
@@ -285,7 +286,6 @@ export default function ProductsPage() {
     const locs = ids.map((id) => {
       const row =
         catalog.tableRows.find((r) => r.id === id) ||
-        catalog.trashItems.find((t) => t.id === id) ||
         (catalog.detail?.id === id ? catalog.detail : null);
       return resolveCatalogItemLocation(row, catalog.treeItemsFull);
     });
@@ -295,13 +295,25 @@ export default function ProductsPage() {
   }, [
     catalog.selectedIds,
     catalog.tableRows,
-    catalog.trashItems,
     catalog.detail,
     catalog.treeItemsFull,
   ]);
 
   const selectionInArchive = selectionLocation === 'archive' || isInsideArchive;
-  const selectionInTrash = selectionLocation === 'trash';
+  const selectionInTrash =
+    selectionLocation === 'trash' || catalog.selectedFolderId === CATALOG_TRASH_ID;
+
+  const selectedGroupsOnly = useMemo(() => {
+    const ids = catalog.selectedIds;
+    if (ids.length === 0) return false;
+    return ids.every((id) => {
+      const row =
+        catalog.tableRows.find((r) => r.id === id) ||
+        (catalog.detail?.id === id ? catalog.detail : null);
+      if (row) return Boolean(row.isGroup);
+      return Boolean(catalog.treeItemsFull[id]?.isGroup);
+    });
+  }, [catalog.selectedIds, catalog.tableRows, catalog.detail, catalog.treeItemsFull]);
 
   const moveTargetIsArchive = useMemo(
     () =>
@@ -326,6 +338,7 @@ export default function ProductsPage() {
       catalog.setSelectedFolderId(id);
       catalog.setSelectedIds([]);
       catalog.setSearchQuery('');
+      setMobileTreeOpen(false);
     },
     [catalog.setSelectedFolderId, catalog.setSelectedIds, catalog.setSearchQuery]
   );
@@ -338,7 +351,6 @@ export default function ProductsPage() {
       const locations = unique.map((id) => {
         const row =
           catalog.tableRows.find((r) => r.id === id) ||
-          catalog.trashItems.find((t) => t.id === id) ||
           (catalog.detail?.id === id ? catalog.detail : null);
         return resolveCatalogItemLocation(row, catalog.treeItemsFull);
       });
@@ -348,15 +360,24 @@ export default function ProductsPage() {
       const fromArchive =
         !fromTrash && locations.length > 0 && locations.every((l) => l === 'archive');
 
+      const groupsOnly = unique.every((id) => {
+        const row =
+          catalog.tableRows.find((r) => r.id === id) ||
+          (catalog.detail?.id === id ? catalog.detail : null);
+        if (row) return Boolean(row.isGroup);
+        return Boolean(catalog.treeItemsFull[id]?.isGroup);
+      });
+
       setContextMenu({
         x: e.clientX,
         y: e.clientY,
         ids: unique,
         fromTrash,
         fromArchive,
+        groupsOnly,
       });
     },
-    [catalog.trashItems, catalog.tableRows, catalog.detail, catalog.treeItemsFull]
+    [catalog.tableRows, catalog.detail, catalog.treeItemsFull]
   );
 
   const requestMoveTo = useCallback(
@@ -373,11 +394,10 @@ export default function ProductsPage() {
     (ids: string[] | string) => {
       const list = (Array.isArray(ids) ? ids : [ids]).filter(Boolean);
       if (list.length === 0) return;
-      catalog.setTrashOpen(false);
       setMovePickerFromTrash(true);
       setMovePickerIds(list);
     },
-    [catalog.setTrashOpen]
+    []
   );
 
   const requestDuplicate = useCallback(
@@ -432,7 +452,6 @@ export default function ProductsPage() {
       const labels = resolveCatalogItemLabels(ids, {
         tableRows: [
           ...catalog.tableRows,
-          ...catalog.trashItems,
           ...(catalog.detail ? [catalog.detail] : []),
         ],
         treeItems: catalog.treeItemsFull,
@@ -453,7 +472,6 @@ export default function ProductsPage() {
     [
       catalog.setSelectedIds,
       catalog.tableRows,
-      catalog.trashItems,
       catalog.detail,
       catalog.treeItemsFull,
     ]
@@ -566,49 +584,65 @@ export default function ProductsPage() {
       <CatalogToolbar
         searchQuery={catalog.searchQuery}
         onSearchChange={catalog.setSearchQuery}
-        selectedCount={catalog.selectedIds.length}
         branchRefreshing={catalog.refreshBranchMutation.isPending}
-        syncingSelected={catalog.syncSelectedMutation.isPending}
         fullRefreshing={catalog.refreshFullMutation.isPending}
         onRefreshBranch={() => setBranchRefreshConfirmOpen(true)}
-        onSyncSelected={() => requestSyncFromDilovod(catalog.selectedIds)}
-        onLegacyUpdate={() => requestLegacyUpdate(catalog.selectedIds)}
-        legacyUpdating={catalog.legacySyncMutation.isPending}
         showFullRefresh={isAdmin}
         onFullRefresh={() => setFullRefreshConfirmOpen(true)}
         onCreateGood={() => catalog.openCreate(false)}
-        onDuplicate={() => requestDuplicate(catalog.selectedIds)}
-        isInsideArchive={selectionInArchive}
-        onArchive={() => requestArchive(catalog.selectedIds)}
-        onRestore={() => requestRestore(catalog.selectedIds)}
-        isInsideTrash={selectionInTrash}
-        onTrash={() => requestTrash(catalog.selectedIds)}
-        onRestoreFromTrash={() => requestRestoreFromTrash(catalog.selectedIds)}
-        onOpenTrash={() => catalog.setTrashOpen(true)}
         busy={busy}
+        actions={
+          <CatalogActionsDropdown
+            ids={catalog.selectedIds}
+            busy={busy}
+            fromTrash={selectionInTrash}
+            fromArchive={selectionInArchive}
+            groupsOnly={selectedGroupsOnly}
+            onEdit={catalog.openEdit}
+            onSyncFromDilovod={requestSyncFromDilovod}
+            onLegacyUpdate={requestLegacyUpdate}
+            onMoveTo={(ids) => {
+              if (selectionInTrash) requestRestoreFromTrash(ids);
+              else requestMoveTo(ids);
+            }}
+            onDuplicate={requestDuplicate}
+            onArchive={requestArchive}
+            onRestore={requestRestore}
+            onTrash={requestTrash}
+            onRestoreFromTrash={requestRestoreFromTrash}
+            onCreateGood={() => catalog.openCreate(false)}
+            onRefreshBranch={() => setBranchRefreshConfirmOpen(true)}
+            branchRefreshing={catalog.refreshBranchMutation.isPending}
+            showFullRefresh={isAdmin}
+            onFullRefresh={() => setFullRefreshConfirmOpen(true)}
+            fullRefreshing={catalog.refreshFullMutation.isPending}
+          />
+        }
       />
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 md:grid-cols-[280px_1fr]">
-        <aside className="min-h-0">
-          {catalog.treeLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <Spinner size="sm" />
-            </div>
-          ) : (
-            <CatalogTree
-              key={Object.keys(catalog.treeItems).join(',').slice(0, 200)}
-              items={catalog.treeItems}
-              selectedFolderId={catalog.selectedFolderId}
-              onSelectFolder={navigateToFolder}
-              onMove={catalog.requestMove}
-              onReorder={catalog.requestReorder}
-              onContextMenu={openContextMenu}
-            />
-          )}
-        </aside>
+        {!isMobile && (
+          <aside className="min-h-0 hidden md:block">
+            {catalog.treeLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <Spinner size="sm" />
+              </div>
+            ) : (
+              <CatalogTree
+                key={Object.keys(catalog.treeItems).join(',').slice(0, 200)}
+                items={catalog.treeItems}
+                selectedFolderId={catalog.selectedFolderId}
+                onSelectFolder={navigateToFolder}
+                onMove={catalog.requestMove}
+                onReorder={catalog.requestReorder}
+                onContextMenu={openContextMenu}
+              />
+            )}
+          </aside>
+        )}
 
         <main className="min-h-0 overflow-auto rounded-lg border border-default-200 bg-content1 p-2">
-          <div className="mb-2 flex min-h-8 items-center justify-between gap-2 px-3.5">
+          <div className="mb-2 flex min-h-8 items-center justify-between gap-2 pl-3.5 pr-1">
             <CatalogBreadcrumbs
               selectedFolderId={catalog.selectedFolderId}
               treeItems={catalog.treeItems}
@@ -617,16 +651,16 @@ export default function ProductsPage() {
               searchQuery={catalog.searchQuery}
             />
             {!isManualTableSort && (
-              <Tooltip content="Скинути на ручне сортування" placement="bottom" delay={200}>
+              <Tooltip content="Повернутися до ручного сортування" placement="top-end" showArrow classNames={{ base: 'before:bg-gray-700 before:rounded-[2px]', content: 'bg-gray-700 border-0 text-white text-xs' }} delay={200}>
                 <Button
                   size="sm"
                   variant="flat"
-                  className="min-w-0 h-7 px-2 shrink-0"
+                  className="min-w-0 h-6 px-2 shrink-0 bg-slate-600 text-slate-100"
                   aria-label="Скинути сортування"
-                  startContent={<DynamicIcon name="list-ordered" size={14} />}
+                  startContent={<DynamicIcon name="arrow-up-down" size={14} />}
                   onPress={() => setTableSort(MANUAL_SORT)}
                 >
-                  Ручний порядок
+                  Скинути сортування
                 </Button>
               </Tooltip>
             )}
@@ -664,15 +698,38 @@ export default function ProductsPage() {
                     });
                   }
             }
+            onMove={catalog.isSearchMode ? undefined : catalog.requestMove}
+            treeItems={catalog.treeItemsFull}
           />
         </main>
       </div>
+
+      {isMobile && (
+        <CatalogTreeBubble isOpen={mobileTreeOpen} onOpenChange={setMobileTreeOpen}>
+          {catalog.treeLoading ? (
+            <div className="flex h-full items-center justify-center">
+              <Spinner size="sm" />
+            </div>
+          ) : (
+            <CatalogTree
+              key={Object.keys(catalog.treeItems).join(',').slice(0, 200)}
+              items={catalog.treeItems}
+              selectedFolderId={catalog.selectedFolderId}
+              onSelectFolder={navigateToFolder}
+              onMove={catalog.requestMove}
+              onReorder={catalog.requestReorder}
+              onContextMenu={openContextMenu}
+            />
+          )}
+        </CatalogTreeBubble>
+      )}
 
       <CatalogContextMenu
         state={contextMenu}
         busy={busy}
         isInsideArchive={isInsideArchive}
         onClose={() => setContextMenu(null)}
+        onEdit={catalog.openEdit}
         onSyncFromDilovod={requestSyncFromDilovod}
         onLegacyUpdate={requestLegacyUpdate}
         onMoveTo={(ids) => {
@@ -701,19 +758,6 @@ export default function ProductsPage() {
         catalogSearch={catalogSearch}
         onLegacyUpdate={(id) => requestLegacyUpdate([id])}
         legacyUpdating={catalog.legacySyncMutation.isPending}
-      />
-
-      <TrashDrawer
-        isOpen={catalog.trashOpen}
-        loading={catalog.trashLoading}
-        items={catalog.trashItems}
-        onClose={() => catalog.setTrashOpen(false)}
-        onOpenItem={(id) => {
-          catalog.setTrashOpen(false);
-          catalog.openEdit(id);
-        }}
-        onRestore={(id) => requestRestoreFromTrash(id)}
-        onContextMenu={(e, ids) => openContextMenu(e, ids, { fromTrash: true })}
       />
 
       <MoveToFolderModal
@@ -777,20 +821,28 @@ export default function ProductsPage() {
         message={
           <div className="space-y-1">
             <p>
-              Буде синхронізовано структуру папки <b>«{branchEstimate.folderName}»</b> та всіх
-              вкладених рівнів.
+              Буде синхронізовано структуру папки <span className="font-medium text-sm px-1.5 py-1 mr-0.5 whitespace-nowrap bg-amber-100 text-orange-800 rounded ring-1 ring-inset ring-amber-800/20"><DynamicIcon name="folder-input" size={16} className="inline-block align-middle relative -top-[1px]" /> {branchEstimate.folderName}</span> та всіх вкладених рівнів.
             </p>
-            <p className="text-default-500 text-sm mt-2">
+          {!isAdmin && (
+            <p className="text-danger text-sm mt-2">
               Після цього тимчасово виконається Legacy Update активних товарів гілки в таблицю{' '}
               <b>products</b> (Dilovod <code>sync-manual</code>, force). Архівні лише
               позначаються <code>isOutdated</code>, без запиту в Dilovod.
             </p>
-            <p className="text-default-400 text-sm mt-2">
-              За локальним дзеркалом: ≈{branchEstimate.approxRecords} записів у межах{' '}
+          )}
+            {branchEstimate.approxRecords > 100 ? (
+              <p className="text-danger text-sm mt-2">
+                Приблизно {branchEstimate.approxRecords} записів у межах{' '}
               {branchEstimate.folderCount}{' '}
-              {branchEstimate.folderCount === 1 ? 'папки' : 'папок'}. Фактична кількість
-              може відрізнятися, якщо в Dilovod з’явились нові елементи.
-            </p>
+              {branchEstimate.folderCount === 1 ? 'папки' : 'папок'}. Це досить велика кількість. Якщо ви впевнені, що хочете продовжити, доведеться зачекати ~{Math.ceil(branchEstimate.approxRecords / 50)} {pluralize(Math.ceil(branchEstimate.approxRecords / 50), 'хвилину', 'хвилини', 'хвилин')}, поки синхронізація завершиться.
+              </p>
+            ) : (
+              <p className="text-default-400 text-sm mt-2">
+                Приблизно {branchEstimate.approxRecords} записів у межах{' '}
+                {branchEstimate.folderCount}{' '}
+                {branchEstimate.folderCount === 1 ? 'папки' : 'папок'}. Фактична кількість може відрізнятися, якщо в Діловоді з’явились нові товари.
+              </p>
+            )}
           </div>
         }
         confirmText="Синхронізувати гілку"
@@ -960,18 +1012,14 @@ export default function ProductsPage() {
 
       <ConfirmModal
         isOpen={Boolean(catalog.pendingMove)}
-        title="Перемістити елементи?"
+        title="Переміщення обʼєктів"
         message={
           <div className="space-y-1">
-            <p>
-              Перемістити {moveLabels.length} елемент(ів) у папку «{moveTargetName}»?
-              Зміниться лише батьківська папка (порядок у дереві не змінюється).
-              {moveTargetIsArchive ? ' Ціль — архівна папка.' : ''}
-            </p>
+            <p>Ви впевнені, що хочете перемістити <b>{moveLabels.length} {pluralize(moveLabels.length, 'позицію', 'позиції', 'позицій')}</b> в папку <span className="font-medium text-sm px-1.5 py-1 mr-0.5 whitespace-nowrap bg-amber-100 text-orange-800 rounded ring-1 ring-inset ring-amber-800/20"><DynamicIcon name="folder-input" size={16} className="inline-block align-middle relative -top-[1px]" /> {moveTargetName}</span>?</p>
             <CatalogConfirmItemsList items={moveLabels} />
           </div>
         }
-        confirmText="Перемістити"
+        confirmText="Так, перемістити"
         confirmColor="primary"
         cancelText="Скасувати"
         confirmLoading={catalog.moveMutation.isPending}

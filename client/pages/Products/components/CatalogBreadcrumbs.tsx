@@ -1,7 +1,7 @@
 import { BreadcrumbItem, Breadcrumbs } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { CatalogTreeItemData } from '../ProductsTypes';
-import { CATALOG_ROOT_ID } from '../ProductsTypes';
+import { CATALOG_ROOT_ID, CATALOG_TRASH_ID } from '../ProductsTypes';
 import { buildFolderBreadcrumbs } from '../ProductsUtils';
 
 interface CatalogBreadcrumbsProps {
@@ -32,11 +32,11 @@ export function CatalogBreadcrumbs({
   return (
     <Breadcrumbs
       size="sm"
-      maxItems={6}
+      maxItems={4}
       itemsBeforeCollapse={1}
-      itemsAfterCollapse={2}
+      itemsAfterCollapse={1}
       classNames={{
-        list: 'flex-wrap gap-y-1',
+        list: 'flex-nowrap',
       }}
       onAction={(key) => {
         const id = String(key);
@@ -53,7 +53,9 @@ export function CatalogBreadcrumbs({
             isCurrent={isLast}
             startContent={
               crumb.id === CATALOG_ROOT_ID ? (
-                <DynamicIcon name="folder-tree" size={12} className="text-default-400" />
+                <DynamicIcon name="folder-open-dot" size={12} className="text-default-400" />
+              ) : crumb.id === CATALOG_TRASH_ID ? (
+                <DynamicIcon name="trash-2" size={12} className="text-danger" />
               ) : undefined
             }
           >

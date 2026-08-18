@@ -8,6 +8,10 @@ import {
   DrawerContent,
   DrawerFooter,
   DrawerHeader,
+  Dropdown,
+  DropdownItem,
+  DropdownMenu,
+  DropdownTrigger,
   Input,
   Popover,
   PopoverContent,
@@ -45,6 +49,9 @@ import {
   CATALOG_ACC_POLICY_GOOD,
   CATALOG_ACC_POLICY_KIT,
   CATALOG_DEFAULT_CURRENCY_ID,
+  CATALOG_MAIN_PRICE_TYPE_IDS,
+  CATALOG_PRICE_TYPE_MILITARY_ID,
+  CATALOG_PRICE_TYPE_RETAIL_ID,
   CATALOG_DEFAULT_MAIN_UNIT_ID,
   CATALOG_FINISHED_PRODUCTS_FOLDER_NAME,
   CATALOG_ROOT_ID,
@@ -55,6 +62,16 @@ import { ProductImageUpload } from './ProductImageUpload';
 import { StepperInput } from '@/pages/Warehouse/shared/StepperInput';
 import { StockBadge } from '@/components/StockBadge';
 import type { CatalogGoodImageDto } from '../ProductsTypes';
+import {
+  areRequiredCatalogPricesFilled,
+  catalogKitPortionCount,
+  catalogMainPrice,
+  catalogNameContainsWeight,
+  expectedMilitaryPrice,
+  formatCatalogName,
+  pricesAlmostEqual,
+  withSyncedDerivedPrices,
+} from '../ProductsUtils';
 
 interface ProductDrawerProps {
   mode: DrawerMode;
@@ -127,10 +144,10 @@ const OBJECT_KIND_TABS: Array<{ key: DrawerObjectKind; title: string; icon: Icon
   { key: 'other', title: 'Інший обʼєкт', icon: 'file-spreadsheet' },
 ];
 
-const CARD_TABS: Array<{ key: CardTabKey; title: string; icon: IconName }> = [
-  { key: 'main', title: 'Основні дані', icon: 'clipboard-list' },
-  { key: 'content', title: 'Опис і зображення', icon: 'images' },
-  { key: 'stickers', title: 'Наліпки', icon: 'tag' },
+const CARD_TABS: Array<{ key: CardTabKey; title: string; titleMobile: string; icon: IconName }> = [
+  { key: 'main', title: 'Основні дані', titleMobile: 'Основні', icon: 'clipboard-list' },
+  { key: 'content', title: 'Опис і зображення', titleMobile: 'Опис', icon: 'images' },
+  { key: 'stickers', title: 'Наліпки', titleMobile: 'Наліпки', icon: 'tag' },
 ];
 
 function resolveObjectKind(
@@ -205,6 +222,12 @@ function parseWeightInput(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Поле заповнене додатним числом (не порожнє і не 0). */
+function isRequiredPositiveField(raw: string): boolean {
+  const n = parseWeightInput(raw);
+  return n != null && n > 0;
+}
+
 function sanitizeDecimalInput(raw: string): string {
   let next = raw.replace(/[^\d.,]/g, '');
   const sep = next.includes(',') ? ',' : next.includes('.') ? '.' : null;
@@ -222,9 +245,11 @@ function formatQtyDisplay(value: number): string {
 
 /** Decimal qty для специфікації (не комплект): text input з комою/крапкою. */
 function BomQtyInput({
+  className,
   value,
   onChange,
 }: {
+  className?: string;
   value: number;
   onChange: (qty: number) => void;
 }) {
@@ -242,7 +267,7 @@ function BomQtyInput({
       type="text"
       inputMode="decimal"
       size="sm"
-      className="w-28"
+      className={className}
       aria-label="Кількість"
       value={text}
       onFocus={() => {
@@ -322,6 +347,8 @@ export function ProductDrawer({
 
   const baselineRef = useRef<string>('');
   const [baselineVersion, setBaselineVersion] = useState(0);
+  /** Порції після зміни складу набору — щоб не перезаписувати військову ціну при гідрації drawer */
+  const pendingMilitarySyncRef = useRef<number | null>(null);
 
   /** Тип обрано (або вже заданий у edit / create-folder) */
   const hasObjectKind = objectKind != null;
@@ -331,6 +358,14 @@ export function ProductDrawer({
   const isOther = objectKind === 'other';
   /** BOM видимий для комплекту («Склад») і продукції («Специфікація») */
   const showBom = isKit || isGood;
+  const kitPortionCount = useMemo(() => catalogKitPortionCount(components), [components]);
+
+  useEffect(() => {
+    const portions = pendingMilitarySyncRef.current;
+    if (portions == null) return;
+    pendingMilitarySyncRef.current = null;
+    setPrices((prev) => withSyncedDerivedPrices(prev, true, portions, false));
+  }, [components]);
 
   /** Інші політики обліку (не Продукція / не Товарні набори) */
   const otherAccPolicies = useMemo(
@@ -477,7 +512,7 @@ export function ProductDrawer({
 
   const buildPayload = useCallback((): CatalogCreateGoodInput | CatalogUpdateGoodInput | null => {
     if (!objectKind) return null;
-    const name = form.name.trim();
+    const name = formatCatalogName(form.name).trim();
     if (!name) return null;
 
     const packageRatio = form.packageRatio ? parseFloat(form.packageRatio) : null;
@@ -558,6 +593,22 @@ export function ProductDrawer({
     const payload = buildPayload();
     if (!payload) return;
 
+    if (isGood || isKit) {
+      const missing: string[] = [];
+      if (!isRequiredPositiveField(form.packageRatio)) missing.push('порцій у коробці');
+      if (!isRequiredPositiveField(form.weight)) missing.push('вага');
+      if (!areRequiredCatalogPricesFilled(prices)) missing.push('основні ціни');
+      if (missing.length > 0) {
+        ToastService.show({
+          title: 'Не заповнені обовʼязкові поля',
+          description: `Вкажіть: ${missing.join(', ')}. Значення не можуть бути порожніми або 0.`,
+          color: 'warning',
+        });
+        setCardTab('main');
+        return;
+      }
+    }
+
     if (isEdit && detail) {
       const input: CatalogUpdateGoodInput = {
         ...payload,
@@ -577,7 +628,7 @@ export function ProductDrawer({
     // Staging commit на сервері через stagingSessionId у payload
     await onCreate(input);
     setStagingSessionId(null);
-  }, [buildPayload, isEdit, detail, onUpdate, onCreate, parentFolderId, isFolder]);
+  }, [buildPayload, isEdit, detail, onUpdate, onCreate, parentFolderId, isFolder, isGood, isKit, prices, form.packageRatio, form.weight]);
 
   /** Debug: показати payload, який піде на create/update */
   const handleShowPayload = useCallback(() => {
@@ -648,10 +699,14 @@ export function ProductDrawer({
     }
     if (key === 'kit') {
       setForm((f) => ({ ...f, accPolicyId: CATALOG_ACC_POLICY_KIT }));
+      setPrices((prev) =>
+        withSyncedDerivedPrices(prev, true, catalogKitPortionCount(components), false)
+      );
       return;
     }
     if (key === 'good') {
       setForm((f) => ({ ...f, accPolicyId: CATALOG_ACC_POLICY_GOOD }));
+      setPrices((prev) => withSyncedDerivedPrices(prev, false, 1, false));
       return;
     }
     // other — відновлюємо збережену політику; склад BOM лишаємо в state
@@ -788,6 +843,40 @@ export function ProductDrawer({
     ? dictionaries.units
     : [{ id: CATALOG_DEFAULT_MAIN_UNIT_ID, name: 'шт.' }];
   const priceTypes = dictionaries.priceTypes;
+  const mainPriceValue = catalogMainPrice(prices);
+  const militaryExpected =
+    mainPriceValue != null && Number.isFinite(mainPriceValue)
+      ? expectedMilitaryPrice(mainPriceValue, isKit, kitPortionCount)
+      : null;
+  const requiredPricesOk =
+    !isGood && !isKit ? true : areRequiredCatalogPricesFilled(prices);
+  const packageRatioInvalid =
+    (isGood || isKit) && !isRequiredPositiveField(form.packageRatio);
+  const weightInvalid = (isGood || isKit) && !isRequiredPositiveField(form.weight);
+  const requiredFieldsOk = requiredPricesOk && !packageRatioInvalid && !weightInvalid;
+  const nameHasWeight = catalogNameContainsWeight(form.name);
+
+  const patchKitComponents = (updater: (prev: BomRow[]) => BomRow[]) => {
+    setComponents((prev) => {
+      const next = updater(prev);
+      pendingMilitarySyncRef.current = catalogKitPortionCount(next);
+      return next;
+    });
+  };
+
+  const applyPriceRowChange = (idx: number, patch: Partial<PriceRow>) => {
+    setPrices((prev) => {
+      const next = prev.map((row, i) => (i === idx ? { ...row, ...patch } : row));
+      const changedType = next[idx]?.priceType;
+      if (changedType === CATALOG_PRICE_TYPE_MILITARY_ID) return next;
+      return withSyncedDerivedPrices(
+        next,
+        isKit,
+        kitPortionCount,
+        changedType === CATALOG_PRICE_TYPE_RETAIL_ID
+      );
+    });
+  };
 
   return (
     <>
@@ -796,12 +885,17 @@ export function ProductDrawer({
         onClose={requestClose}
         size="3xl"
         placement="right"
-        classNames={{ base: 'rounded-l-xl', closeButton: 'top-3' }}
+        classNames={{
+          base: 'rounded-none md:rounded-l-xl',
+          header: `flex flex-col gap-3 border-b border-default-200/60 py-2 md:py-4 px-3 md:px-6 md:pb-4 ${detailLoading ? 'hidden' : ''}`,
+          body: 'px-3 md:px-6 overflow-y-visible md:overflow-y-auto',
+          closeButton: 'top-2 md:top-3',
+        }}
         isDismissable={!isDirty}
         hideCloseButton={false}
       >
         <DrawerContent>
-          <DrawerHeader className={`flex flex-col gap-3 ${!detailLoading && 'border-b border-default-200/60 pb-4'}`}>
+          <DrawerHeader>
             {!detailLoading && (
               <>
               <div className="flex flex-col gap-1">
@@ -813,8 +907,8 @@ export function ProductDrawer({
                 </span>
                 <div className="flex items-center gap-2 text-xs font-normal text-default-400">
                   <span className="font-semibold">Група: <span className="font-normal">{detail?.parentName || parentFolderName || 'Немає'}</span></span>
-                  <Divider orientation="vertical" />
-                  <span className="font-semibold">SKU: <span className="font-normal">{detail?.sku || 'відсутній'}</span></span>
+                  <Divider orientation="vertical" className="hidden md:block" />
+                  <span className="font-semibold hidden md:block">SKU: <span className="font-normal">{detail?.sku || 'відсутній'}</span></span>
                   {detail?.stock ? (
                     <>
                       <Divider orientation="vertical" />
@@ -854,7 +948,8 @@ export function ProductDrawer({
                     title={
                       <div className="flex items-center gap-2">
                         <DynamicIcon name={tab.icon} size={14} />
-                        {tab.title}
+                        <span className="hidden md:block">{tab.title}</span>
+                        <span className="block md:hidden">{tab.titleMobile}</span>
                       </div>
                     }
                   />
@@ -880,7 +975,12 @@ export function ProductDrawer({
                   <Input
                     label="Назва"
                     value={form.name}
-                    onValueChange={(v) => setForm((f) => ({ ...f, name: v }))}
+                    onValueChange={(v) =>
+                      setForm((f) => ({ ...f, name: formatCatalogName(v) }))
+                    }
+                    onBlur={() =>
+                      setForm((f) => ({ ...f, name: formatCatalogName(f.name).trim() }))
+                    }
                     endContent={
                       <Tooltip content="Додати назву для друку" color="secondary" placement="top-end" showArrow={true} delay={200} classNames={{ base: 'before:rounded-[3px] before:z-[10]', content: 'rounded-sm' }}>
                         <Button
@@ -898,6 +998,14 @@ export function ProductDrawer({
                       </Tooltip>
                     }
                     isRequired
+                    classNames={{
+                      description: nameHasWeight ? 'text-warning-700' : undefined,
+                    }}
+                    description={
+                      nameHasWeight
+                        ? 'У назві вказана вага – для неї є окреме поле «Вага, кг»'
+                        : undefined
+                    }
                   />
                   {showPrintName && (
                     <Input
@@ -907,7 +1015,7 @@ export function ProductDrawer({
                     />
                   )}
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-start gap-2">
                     {/* Тип обʼєкта */}
                     <Select
                       label="Тип обʼєкта"
@@ -968,6 +1076,7 @@ export function ProductDrawer({
                     <Input
                       label="SKU (артикул)"
                       value={form.sku}
+                      isRequired={isGood || isKit}
                       onValueChange={(v) => setForm((f) => ({ ...f, sku: v }))}
                       endContent={
                         <Tooltip
@@ -1009,7 +1118,7 @@ export function ProductDrawer({
                             <DynamicIcon name="scaling" size={14} />
                             <span>Упаковка</span>
                           </h3>
-                          <div className={`grid ${isAdmin ? 'grid-cols-4' : 'grid-cols-3'} gap-3`}>
+                          <div className={`grid grid-cols-2 ${isAdmin ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-3`}>
                             <Select
                               label="Од. виміру"
                               selectedKeys={form.mainUnitId ? [form.mainUnitId] : []}
@@ -1024,10 +1133,18 @@ export function ProductDrawer({
                               ))}
                             </Select>
                             <Input
-                              label="Порцій у коробці, шт."
+                              label="Порцій в коробці"
                               type="number"
                               value={form.packageRatio}
-                              min={0}
+                              min={1}
+                              isRequired={isGood || isKit}
+                              isInvalid={packageRatioInvalid}
+                              color={packageRatioInvalid ? 'danger' : 'default'}
+                              errorMessage={
+                                packageRatioInvalid
+                                  ? 'Має бути більше 0'
+                                  : undefined
+                              }
                               onValueChange={(v) => setForm((f) => ({ ...f, packageRatio: v }))}
                               classNames={{
                                 input:
@@ -1043,6 +1160,12 @@ export function ProductDrawer({
                               inputMode="decimal"
                               value={form.weight}
                               step={0.01}
+                              isRequired={isGood || isKit}
+                              isInvalid={weightInvalid}
+                              color={weightInvalid ? 'danger' : 'default'}
+                              errorMessage={
+                                weightInvalid ? 'Має бути більше 0' : undefined
+                              }
                               onValueChange={(v) => {
                                 // Allow digits and one comma/dot
                                 let next = v.replace(/[^\d.,]/g, '');
@@ -1068,7 +1191,7 @@ export function ProductDrawer({
                             />
                             {isAdmin && (
                               <Input
-                                className="max-w-xs"
+                                className="md:max-w-xs"
                                 label="Коефіцієнт (unitRatio)"
                                 type="number"
                                 inputMode="decimal"
@@ -1103,252 +1226,258 @@ export function ProductDrawer({
                             {components.length > 0 && <span className="font-normal text-default-400">({components.length} поз.)</span>}
                           </h3>
                           <div className="flex flex-col gap-1">
-                          <Input
-                            aria-label="Додати компонент"
-                            placeholder={
-                              isKit
-                                ? `Пошук товарів в категорії «${CATALOG_FINISHED_PRODUCTS_FOLDER_NAME}» (за назвою або sku)`
-                                : 'Почніть пошук щоб додати компонент (за назвою або sku)'
-                            }
-                            classNames={{ inputWrapper: 'border-1 border-default-200/75', input: 'placeholder:text-default-400/75' }}
-                            value={bomQuery}
-                            onValueChange={setBomQuery}
-                            isClearable
-                            startContent={<DynamicIcon name="search" size={14} />}
-                          />
-                          {bomSuggestions.length > 0 && (
-                            <div className="max-h-36 overflow-y-auto rounded-md border border-default-200">
-                              {bomSuggestions.map((s) => (
-                                <button
-                                  key={s.id}
-                                  type="button"
-                                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-default-100"
-                                  onClick={() => {
-                                    // Dilovod дозволяє кілька рядків одного інгредієнта
-                                    setComponents((prev) => [
-                                      ...prev,
-                                      {
-                                        componentGoodId: s.id,
-                                        componentName: s.name,
-                                        componentSku: s.sku,
-                                        qty: 1,
-                                        unitId: form.mainUnitId || CATALOG_DEFAULT_MAIN_UNIT_ID,
-                                        note: '',
-                                      },
-                                    ]);
-                                    setBomQuery('');
-                                    setBomSuggestions([]);
-                                  }}
-                                >
-                                  <span>{s.name}</span>
-                                  <span className="font-mono text-xs text-default-400">{s.sku}</span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
+                            <Input
+                              aria-label="Додати компонент"
+                              placeholder={
+                                isKit
+                                  ? `Пошук товарів в категорії «${CATALOG_FINISHED_PRODUCTS_FOLDER_NAME}» (за назвою або sku)`
+                                  : 'Почніть пошук щоб додати компонент (за назвою або sku)'
+                              }
+                              classNames={{ inputWrapper: 'border-1 border-default-200/75', input: 'placeholder:text-default-400/75' }}
+                              value={bomQuery}
+                              onValueChange={setBomQuery}
+                              isClearable
+                              startContent={<DynamicIcon name="search" size={14} />}
+                            />
+                            {bomSuggestions.length > 0 && (
+                              <div className="max-h-46 overflow-y-auto rounded-sm border border-default-200">
+                                {bomSuggestions.map((s) => (
+                                  <button
+                                    key={s.id}
+                                    type="button"
+                                    className="grid grid-cols-[auto_40px] gap-2 w-full items-center justify-between px-3 py-2 text-left text-sm leading-tight hover:bg-default-200/50 [&:not(:last-child)]:border-b border-default-200/50"
+                                    onClick={() => {
+                                      // Dilovod дозволяє кілька рядків одного інгредієнта
+                                      const addRow = (prev: BomRow[]): BomRow[] => [
+                                        ...prev,
+                                        {
+                                          componentGoodId: s.id,
+                                          componentName: s.name,
+                                          componentSku: s.sku,
+                                          qty: 1,
+                                          unitId: form.mainUnitId || CATALOG_DEFAULT_MAIN_UNIT_ID,
+                                          note: '',
+                                        },
+                                      ];
+                                      if (isKit) patchKitComponents(addRow);
+                                      else setComponents(addRow);
+                                      setBomQuery('');
+                                      setBomSuggestions([]);
+                                    }}
+                                  >
+                                    <span>{s.name}</span>
+                                    <span className="font-mono text-xs text-default-400">{s.sku}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           {components.map((c, idx) => (
                             <div key={`${c.componentGoodId}-${idx}`} className="flex flex-col gap-1.5">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-right min-w-5 tabular-nums">{idx + 1}.</span>
-                              <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
-                                <span className="truncate text-sm">{c.componentName}</span>
-                                {c.componentSku && <span className="font-mono text-xs text-default-400 px-1 py-0.5 bg-default-100 rounded">{c.componentSku}</span>}
-                                {!isKit && (
-                                <Popover
-                                  placement="top-start"
-                                  isOpen={editingNoteIdx === idx}
-                                  onOpenChange={(open) => {
-                                    setEditingNoteIdx(open ? idx : null);
-                                    if (!open) setNoteDeleteConfirmIdx(null);
-                                  }}
-                                >
-                                  <PopoverTrigger>
-                                    <Button
-                                      size="sm"
-                                      variant={c.note.trim() ? 'flat' : 'light'}
-                                      color={c.note.trim() ? 'warning' : 'default'}
-                                      className={
-                                        c.note.trim()
-                                          ? 'h-6 min-w-0 pl-2 text-[13px] text-default-500/75 bg-default-200/50 rounded-full gap-1'
-                                          : 'min-w-0 h-7 px-1.5 text-default-400'
-                                      }
-                                      aria-label={c.note.trim() ? 'Редагувати примітку' : 'Додати примітку'}
-                                      title={c.note.trim() ? 'Редагувати примітку' : 'Додати примітку'}
-                                      startContent={
-                                        <DynamicIcon
-                                          name={
-                                            c.note.trim()
-                                              ? 'message-circle-more'
-                                              : 'message-circle-plus'
-                                          }
-                                          size={14}
-                                        />
-                                      }
-                                    >
-                                      {c.note.trim() ? truncateText(c.note, 25) : null}
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-80 p-4">
-                                    <div className="flex flex-col gap-2 w-full">
-                                      <p className="text-xs font-medium text-default-600">
-                                        Примітка (Dilovod remark)
-                                      </p>
-                                      <Input
-                                        size="sm"
-                                        aria-label="Примітка"
-                                        placeholder="Текст примітки…"
-                                        value={c.note}
-                                        autoFocus
-                                        onValueChange={(v) =>
-                                          setComponents((prev) =>
-                                            prev.map((row, i) =>
-                                              i === idx
-                                                ? { ...row, note: v.slice(0, 150) }
-                                                : row
-                                            )
-                                          )
-                                        }
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter' || e.key === 'Escape') {
-                                            setEditingNoteIdx(null);
-                                          }
-                                        }}
-                                        classNames={{
-                                          inputWrapper: 'border-1 border-default-200/50 bg-default-100/75! ring-0!',
-                                        }}
-                                      />
-                                      <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2 gap-y-1.5">
+                                <span className="text-sm font-semibold text-right min-w-5 tabular-nums">{idx + 1}.</span>
+                                <div className="min-w-0 w-[calc(100%-2rem)] sm:w-auto sm:flex-1 flex items-center gap-2 md:flex-wrap">
+                                  <span className="truncate text-sm">{c.componentName}</span>
+                                  {c.componentSku && <span className="font-mono text-xs text-default-400 px-1 py-0.5 bg-default-100 rounded">{c.componentSku}</span>}
+                                  {!isKit && (
+                                  <Popover
+                                    placement="top-start"
+                                    isOpen={editingNoteIdx === idx}
+                                    onOpenChange={(open) => {
+                                      setEditingNoteIdx(open ? idx : null);
+                                      if (!open) setNoteDeleteConfirmIdx(null);
+                                    }}
+                                  >
+                                    <PopoverTrigger>
                                       <Button
-                                          size="sm"
-                                          variant="flat"
-                                          color="primary"
-                                          className="bg-neutral-600/75 text-neutral-50"
-                                          onPress={() => {
-                                            setNoteDeleteConfirmIdx(null);
-                                            setEditingNoteIdx(null);
-                                          }}
-                                        >
-                                          Додати
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="light"
-                                          color="danger"
-                                          aria-label={
-                                            noteDeleteConfirmIdx === idx
-                                              ? 'Підтвердити видалення примітки'
-                                              : 'Видалити примітку'
-                                          }
-                                          isDisabled={!c.note.trim()}
-                                          className={[
-                                            'h-8 min-w-8 gap-0 overflow-hidden px-2.5 transition-[min-width,padding] duration-200 ease-out',
-                                          ].join(' ')}
-                                          onPress={() => {
-                                            if (noteDeleteConfirmIdx !== idx) {
-                                              setNoteDeleteConfirmIdx(idx);
-                                              return;
+                                        size="sm"
+                                        variant={c.note.trim() ? 'flat' : 'light'}
+                                        color={c.note.trim() ? 'warning' : 'default'}
+                                        className={
+                                          c.note.trim()
+                                            ? 'h-6 min-w-0 pl-2 text-[13px] text-default-500/75 bg-default-200/50 rounded-full gap-1'
+                                            : 'min-w-0 h-6 px-1.5 -m-1.5 text-default-400'
+                                        }
+                                        aria-label={c.note.trim() ? 'Редагувати примітку' : 'Додати примітку'}
+                                        title={c.note.trim() ? 'Редагувати примітку' : 'Додати примітку'}
+                                        startContent={
+                                          <DynamicIcon
+                                            name={
+                                              c.note.trim()
+                                                ? 'message-circle-more'
+                                                : 'message-circle-plus'
                                             }
+                                            size={14}
+                                            className="shrink-0"
+                                          />
+                                        }
+                                      >
+                                        {c.note.trim() ? truncateText(c.note, 25) : null}
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-80 p-3">
+                                      <div className="flex flex-col gap-2 w-full">
+                                        <p className="text-xs font-medium text-default-600">
+                                          Примітка (Dilovod remark)
+                                        </p>
+                                        <Input
+                                          size="sm"
+                                          aria-label="Примітка"
+                                          placeholder="Текст примітки…"
+                                          value={c.note}
+                                          autoFocus
+                                          onValueChange={(v) =>
                                             setComponents((prev) =>
                                               prev.map((row, i) =>
-                                                i === idx ? { ...row, note: '' } : row
+                                                i === idx
+                                                  ? { ...row, note: v.slice(0, 150) }
+                                                  : row
                                               )
-                                            );
-                                            setNoteDeleteConfirmIdx(null);
-                                            setEditingNoteIdx(null);
+                                            )
+                                          }
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === 'Escape') {
+                                              setEditingNoteIdx(null);
+                                            }
                                           }}
-                                        >
-                                          <DynamicIcon name="trash-2" size={14} className="shrink-0" />
-                                          <span
-                                            className={[
-                                              'overflow-hidden whitespace-nowrap transition-all duration-200 ease-out',
-                                              noteDeleteConfirmIdx === idx
-                                                ? 'max-w-[4.5rem] opacity-100 ml-2'
-                                                : 'max-w-0 opacity-0 ml-0',
-                                            ].join(' ')}
+                                          classNames={{
+                                            inputWrapper: 'border-1 border-default-200/50 bg-default-100/75! ring-0!',
+                                          }}
+                                        />
+                                        <div className="flex items-center gap-2">
+                                        <Button
+                                            size="sm"
+                                            variant="flat"
+                                            color="primary"
+                                            className="bg-neutral-600/75 text-neutral-50"
+                                            onPress={() => {
+                                              setNoteDeleteConfirmIdx(null);
+                                              setEditingNoteIdx(null);
+                                            }}
                                           >
-                                            Видалити?
-                                          </span>
-                                        </Button>
+                                            Додати
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="light"
+                                            color="danger"
+                                            aria-label={
+                                              noteDeleteConfirmIdx === idx
+                                                ? 'Підтвердити видалення примітки'
+                                                : 'Видалити примітку'
+                                            }
+                                            isDisabled={!c.note.trim()}
+                                            className={[
+                                              'h-8 min-w-8 gap-0 overflow-hidden px-2.5 transition-[min-width,padding] duration-200 ease-out',
+                                            ].join(' ')}
+                                            onPress={() => {
+                                              if (noteDeleteConfirmIdx !== idx) {
+                                                setNoteDeleteConfirmIdx(idx);
+                                                return;
+                                              }
+                                              setComponents((prev) =>
+                                                prev.map((row, i) =>
+                                                  i === idx ? { ...row, note: '' } : row
+                                                )
+                                              );
+                                              setNoteDeleteConfirmIdx(null);
+                                              setEditingNoteIdx(null);
+                                            }}
+                                          >
+                                            <DynamicIcon name="trash-2" size={14} className="shrink-0" />
+                                            <span
+                                              className={[
+                                                'overflow-hidden whitespace-nowrap transition-all duration-200 ease-out',
+                                                noteDeleteConfirmIdx === idx
+                                                  ? 'max-w-[4.5rem] opacity-100 ml-2'
+                                                  : 'max-w-0 opacity-0 ml-0',
+                                              ].join(' ')}
+                                            >
+                                              Видалити?
+                                            </span>
+                                          </Button>
+                                        </div>
                                       </div>
-                                    </div>
-                                  </PopoverContent>
-                                </Popover>
-                                )}
-                              </div>
+                                    </PopoverContent>
+                                  </Popover>
+                                  )}
+                                </div>
 
-                              {!isKit ? (
-                                <BomQtyInput
-                                  value={c.qty || 0}
-                                  onChange={(qty) =>
-                                    setComponents((prev) =>
-                                      prev.map((row, i) => (i === idx ? { ...row, qty } : row))
-                                    )
-                                  }
-                                />
-                              ) : (
-                                <StepperInput
-                                  size="xs"
-                                  className="min-w-26 ml-4"
-                                  inputClassName="text-sm"
-                                  aria-label="Кількість"
-                                  value={c.qty || 0}
-                                  onChange={(v) =>
-                                    setComponents((prev) =>
-                                      prev.map((row, i) => (i === idx ? { ...row, qty: v } : row))
-                                    )
-                                  }
-                                  onIncrement={() =>
+                                {!isKit ? (
+                                  <BomQtyInput
+                                    className="w-28 ml-auto sm:ml-0"
+                                    value={c.qty || 0}
+                                    onChange={(qty) =>
+                                      setComponents((prev) =>
+                                        prev.map((row, i) => (i === idx ? { ...row, qty } : row))
+                                      )
+                                    }
+                                  />
+                                ) : (
+                                  <StepperInput
+                                    size="xs"
+                                    className="w-28 ml-auto sm:ml-4"
+                                    inputClassName="text-sm"
+                                    aria-label="Кількість"
+                                    value={c.qty || 0}
+                                    onChange={(v) =>
+                                      patchKitComponents((prev) =>
+                                        prev.map((row, i) => (i === idx ? { ...row, qty: v } : row))
+                                      )
+                                    }
+                                    onIncrement={() =>
+                                      patchKitComponents((prev) =>
+                                        prev.map((row, i) =>
+                                          i === idx ? { ...row, qty: row.qty + 1 } : row
+                                        )
+                                      )
+                                    }
+                                    onDecrement={() =>
+                                      patchKitComponents((prev) =>
+                                        prev.map((row, i) =>
+                                          i === idx
+                                            ? { ...row, qty: Math.max(0, row.qty - 1) }
+                                            : row
+                                        )
+                                      )
+                                    }
+                                  />
+                                )}
+                                <Select
+                                  aria-label="Од. виміру"
+                                  size="sm"
+                                  classNames={{ base: 'w-20', popoverContent: 'bg-default-100 min-w-28' }}
+                                  selectedKeys={c.unitId ? [c.unitId] : []}
+                                  onSelectionChange={(keys) => {
+                                    const v = Array.from(keys)[0];
+                                    if (!v) return;
                                     setComponents((prev) =>
                                       prev.map((row, i) =>
-                                        i === idx ? { ...row, qty: row.qty + 1 } : row
+                                        i === idx ? { ...row, unitId: String(v) } : row
                                       )
-                                    )
-                                  }
-                                  onDecrement={() =>
-                                    setComponents((prev) =>
-                                      prev.map((row, i) =>
-                                        i === idx
-                                          ? { ...row, qty: Math.max(0, row.qty - 1) }
-                                          : row
-                                      )
-                                    )
-                                  }
-                                />
-                              )}
-                              <Select
-                                aria-label="Од. виміру"
-                                size="sm"
-                                className="w-28"
-                                classNames={{ popoverContent: 'bg-default-100' }}
-                                selectedKeys={c.unitId ? [c.unitId] : []}
-                                onSelectionChange={(keys) => {
-                                  const v = Array.from(keys)[0];
-                                  if (!v) return;
-                                  setComponents((prev) =>
-                                    prev.map((row, i) =>
-                                      i === idx ? { ...row, unitId: String(v) } : row
-                                    )
-                                  );
-                                }}
-                              >
-                                {units.map((u) => (
-                                  <SelectItem key={u.id}>{u.name}</SelectItem>
-                                ))}
-                              </Select>
-                              <Button
-                                isIconOnly
-                                size="sm"
-                                variant="light"
-                                color="danger"
-                                aria-label="Видалити компонент"
-                                onPress={() =>
-                                  setComponents((prev) => prev.filter((_, i) => i !== idx))
-                                }
-                              >
-                                <DynamicIcon name="trash-2" size={14} />
-                              </Button>
-                            </div>
+                                    );
+                                  }}
+                                >
+                                  {units.map((u) => (
+                                    <SelectItem key={u.id}>{u.name}</SelectItem>
+                                  ))}
+                                </Select>
+                                <Button
+                                  isIconOnly
+                                  size="sm"
+                                  variant="light"
+                                  color="danger"
+                                  aria-label="Видалити компонент"
+                                  onPress={() => {
+                                    const removeRow = (prev: BomRow[]) =>
+                                      prev.filter((_, i) => i !== idx);
+                                    if (isKit) patchKitComponents(removeRow);
+                                    else setComponents(removeRow);
+                                  }}
+                                >
+                                  <DynamicIcon name="trash-2" size={14} />
+                                </Button>
+                              </div>
                             </div>
                           ))}
                         </section>
@@ -1360,23 +1489,35 @@ export function ProductDrawer({
                       <h3 className="text-sm font-semibold flex items-center gap-1">
                         <DynamicIcon name="wallet" size={14} />
                         <span>Ціни</span>
+                        {(isGood || isKit) && (
+                          <span className="font-normal text-danger-500">*</span>
+                        )}
                       </h3>
-                      {prices.map((p, idx) => (
-                        <div key={idx} className="grid grid-cols-[1fr_112px_auto] gap-2">
+                      {!requiredPricesOk && (
+                        <p className="text-xs text-warning-700">
+                          Обовʼязково вкажіть основні ціни (Роздріб, Звичайна і Військові мають бути більші за 0 грн)
+                        </p>
+                      )}
+                      {prices.map((p, idx) => {
+                        const isMilitary = p.priceType === CATALOG_PRICE_TYPE_MILITARY_ID;
+                        const militaryMismatch =
+                          isMilitary &&
+                          militaryExpected != null &&
+                          !pricesAlmostEqual(p.price, militaryExpected);
+                        const militaryPortions = isKit ? kitPortionCount : 1;
+                        return (
+                        <div key={idx} className="flex flex-col gap-1">
+                        <div className="grid gap-2 grid-cols-[1fr_100px_auto] md:grid-cols-[1fr_100px_auto]">
                           {priceTypes.length > 0 ? (
                             <Select
                               size="md"
                               aria-label="Тип ціни"
                               selectedKeys={p.priceType ? [p.priceType] : []}
-                              classNames={{ popoverContent: 'bg-default-100' }}
+                              classNames={{ base: 'min-w-0', popoverContent: 'bg-default-100' }}
                               onSelectionChange={(keys) => {
                                 const v = Array.from(keys)[0];
                                 if (!v) return;
-                                setPrices((prev) =>
-                                  prev.map((row, i) =>
-                                    i === idx ? { ...row, priceType: String(v) } : row
-                                  )
-                                );
+                                applyPriceRowChange(idx, { priceType: String(v) });
                               }}
                             >
                               {priceTypes.map((t) => (
@@ -1388,13 +1529,7 @@ export function ProductDrawer({
                               size="md"
                               aria-label="Тип ціни (id)"
                               value={p.priceType}
-                              onValueChange={(v) =>
-                                setPrices((prev) =>
-                                  prev.map((row, i) =>
-                                    i === idx ? { ...row, priceType: v } : row
-                                  )
-                                )
-                              }
+                              onValueChange={(v) => applyPriceRowChange(idx, { priceType: v })}
                             />
                           )}
                           <Input
@@ -1402,17 +1537,13 @@ export function ProductDrawer({
                             aria-label="Ціна, грн"
                             type="number"
                             value={String(p.price)}
+                            color={militaryMismatch ? 'danger' : 'default'}
                             endContent={<span className="text-xs text-default-400/75">грн</span>}
                             classNames={{
-                              input:
-                                '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+                              input: '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
                             }}
                             onValueChange={(v) =>
-                              setPrices((prev) =>
-                                prev.map((row, i) =>
-                                  i === idx ? { ...row, price: parseFloat(v) || 0 } : row
-                                )
-                              )
+                              applyPriceRowChange(idx, { price: parseFloat(v) || 0 })
                             }
                             onWheel={(e) => {
                               (e.target as HTMLElement).blur();
@@ -1425,19 +1556,46 @@ export function ProductDrawer({
                             color="danger"
                             className="h-full"
                             aria-label="Видалити ціну"
-                            onPress={() => setPrices((prev) => prev.filter((_, i) => i !== idx))}
+                            onPress={() =>
+                              setPrices((prev) =>
+                                withSyncedDerivedPrices(
+                                  prev.filter((_, i) => i !== idx),
+                                  isKit,
+                                  kitPortionCount,
+                                  false
+                                )
+                              )
+                            }
                           >
                             <DynamicIcon name="trash-2" size={14} />
                           </Button>
                         </div>
-                      ))}
+                        {militaryMismatch && militaryExpected != null && mainPriceValue != null && (
+                          <p className="text-xs text-danger">
+                            Очікується {militaryExpected} грн (звичайна ціна {mainPriceValue} −{' '}
+                            {isKit ? `${militaryPortions}×5` : '5'})
+                          </p>
+                        )}
+                        </div>
+                        );
+                      })}
                       <Button
                         size="sm"
                         variant="solid"
                         color="primary"
                         className="bg-neutral-600/75 text-neutral-50 hover:bg-neutral-500/75"
                         startContent={<DynamicIcon name="plus-circle" size={14} />}
-                        onPress={() =>
+                        onPress={() => {
+                          if (prices.length === 0) {
+                            setPrices(
+                              CATALOG_MAIN_PRICE_TYPE_IDS.map((priceType) => ({
+                                priceType,
+                                price: 0,
+                                currency: CATALOG_DEFAULT_CURRENCY_ID,
+                              }))
+                            );
+                            return;
+                          }
                           setPrices((prev) => [
                             ...prev,
                             {
@@ -1445,10 +1603,10 @@ export function ProductDrawer({
                               price: 0,
                               currency: CATALOG_DEFAULT_CURRENCY_ID,
                             },
-                          ])
-                        }
+                          ]);
+                        }}
                       >
-                        Додати ціну
+                        {prices.length === 0 ? 'Додати основні ціни' : 'Додати ціну'}
                       </Button>
                     </section>
 
@@ -1459,7 +1617,7 @@ export function ProductDrawer({
                         <span>Штрихкоди</span>
                       </h3>
                       {barcodes.map((b, idx) => (
-                        <div key={idx} className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                        <div key={idx} className="grid grid-cols-[5fr_4fr_auto] gap-2">
                           <Input
                             size="md"
                             aria-label="Штрихкод"
@@ -1618,47 +1776,72 @@ export function ProductDrawer({
               {(isDebugMode ||
                 (isTrashed && detail && onRestore) ||
                 (isEdit && !isFolder && detail?.sku && onLegacyUpdate)) && (
-                <div className="mr-auto flex items-center gap-2">
-                  {isDebugMode && (
-                    <Button
-                      variant="flat"
-                      color="primary"
-                      className="bg-blue-200 text-blue-800/75 hover:bg-blue-200/90"
-                      onPress={handleShowPayload}
-                      startContent={<DynamicIcon name="code-2" className="w-4 h-4" />}
+                <div className="mr-auto">
+                  <Dropdown placement="top-start">
+                    <DropdownTrigger>
+                      <Button
+                        variant="flat"
+                        aria-label="Дії"
+                        endContent={<DynamicIcon name="chevron-down" size={16} />}
+                      >
+                        Дії
+                      </Button>
+                    </DropdownTrigger>
+                    <DropdownMenu
+                      aria-label="Дії з карткою"
+                      onAction={(key) => {
+                        switch (String(key)) {
+                          case 'payload':
+                            handleShowPayload();
+                            break;
+                          case 'restoreTrash':
+                            if (detail && onRestore) onRestore(detail.id);
+                            break;
+                          case 'legacyUpdate':
+                            if (detail && onLegacyUpdate) onLegacyUpdate(detail.id);
+                            break;
+                          default:
+                            break;
+                        }
+                      }}
                     >
-                      Payload
-                    </Button>
-                  )}
-                  {isTrashed && detail && onRestore && (
-                    <Button
-                      color="warning"
-                      variant="flat"
-                      onPress={() => onRestore(detail.id)}
-                      isDisabled={saving}
-                      startContent={<DynamicIcon name="archive-restore" size={14} />}
-                      className="bg-amber-200 text-amber-800/75 hover:bg-amber-200/90"
-                    >
-                      Відновити зі смітника
-                    </Button>
-                  )}
-                  {isEdit && !isFolder && detail?.sku && onLegacyUpdate && (
-                    <Button
-                      variant="flat"
-                      className="bg-lime-200 text-lime-800 hover:bg-lime-200"
-                      onPress={() => onLegacyUpdate(detail.id)}
-                      isDisabled={saving || legacyUpdating}
-                      startContent={
-                        <DynamicIcon
-                          name={legacyUpdating ? 'refresh-cw' : 'database'}
-                          size={14}
-                          className={legacyUpdating ? 'animate-spin' : ''}
-                        />
-                      }
-                    >
-                      Синхронізувати товар
-                    </Button>
-                  )}
+                      <DropdownItem
+                        key="payload"
+                        className={isDebugMode ? 'text-primary' : 'hidden'}
+                        startContent={<DynamicIcon name="code-2" size={16} className="shrink-0" />}
+                      >
+                        Payload
+                      </DropdownItem>
+                      <DropdownItem
+                        key="restoreTrash"
+                        className={isTrashed && detail && onRestore ? 'text-warning' : 'hidden'}
+                        isDisabled={saving}
+                        startContent={
+                          <DynamicIcon name="archive-restore" size={16} className="shrink-0" />
+                        }
+                      >
+                        Відновити зі смітника
+                      </DropdownItem>
+                      <DropdownItem
+                        key="legacyUpdate"
+                        className={
+                          isEdit && !isFolder && detail?.sku && onLegacyUpdate
+                            ? 'text-lime-600'
+                            : 'hidden'
+                        }
+                        isDisabled={saving || legacyUpdating}
+                        startContent={
+                          <DynamicIcon
+                            name={legacyUpdating ? 'refresh-cw' : 'database'}
+                            size={16}
+                            className={`shrink-0 ${legacyUpdating ? 'animate-spin' : ''}`}
+                          />
+                        }
+                      >
+                        Синхронізувати товар
+                      </DropdownItem>
+                    </DropdownMenu>
+                  </Dropdown>
                 </div>
               )}
               <Button variant="light" onPress={requestClose} isDisabled={saving}>
@@ -1668,7 +1851,7 @@ export function ProductDrawer({
                 color="primary"
                 onPress={() => void handleSave()}
                 // isLoading={saving}
-                isDisabled={!hasObjectKind || !form.name.trim() || saving || !isDirty}
+                isDisabled={!hasObjectKind || !form.name.trim() || saving || !isDirty || !requiredFieldsOk}
                 startContent={saving ? <DynamicIcon name="loader-2" className="animate-spin" size={14} /> : <DynamicIcon name="save" size={14} />}
               >
                 Зберегти

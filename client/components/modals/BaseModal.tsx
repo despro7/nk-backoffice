@@ -34,6 +34,7 @@ export function BaseModal({
       header: "pl-4 pb-2 pr-8",
       body: "px-4 py-3",
       footer: "px-4 justify-start gap-3",
+      closeButton: "absolute right-3 top-3",
     }}>
       <ModalContent>
         <ModalHeader className="flex items-center gap-2 text-lg font-semibold">

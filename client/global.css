@@ -280,3 +280,87 @@
     display: none;
   }
 }
+
+[data-drag-handle],
+[data-catalog-checkbox],
+[data-catalog-checkbox] * {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+/* iOS: без цього long-press виділяє текст; contextmenu тоді дає select-none. */
+[data-catalog-row-id],
+[data-catalog-row-id] * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html.catalog-dnd-dragging,
+html.catalog-dnd-dragging * {
+  cursor: auto !important;
+  user-select: none;
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+html.catalog-dnd-dragging [data-catalog-row-id] {
+  transition: none !important;
+}
+
+html.catalog-dnd-dragging [data-catalog-folder-id]:hover {
+  background-color: transparent !important;
+}
+
+html.catalog-dnd-dragging [data-catalog-row-id]:not([data-catalog-drop-into]):hover {
+  background-color: transparent !important;
+}
+
+html.catalog-dnd-dragging [data-catalog-row-id].bg-gray-100:not([data-catalog-drop-into]),
+html.catalog-dnd-dragging [data-catalog-row-id].bg-gray-100:not([data-catalog-drop-into]):hover {
+  background-color: rgb(243 244 246) !important;
+}
+
+html.catalog-dnd-dragging [data-catalog-row-id][data-catalog-drop-into],
+html.catalog-dnd-dragging [data-catalog-row-id][data-catalog-drop-into]:hover,
+html.catalog-dnd-dragging [data-catalog-row-id][data-catalog-drop-into] > td {
+  background-color: rgb(251 191 36 / 0.15) !important;
+}
+
+html.catalog-dnd-dragging [data-catalog-folder-id][data-catalog-drop-into] {
+  background-color: rgb(251 191 36 / 0.28) !important;
+}
+
+/* Лінія вставки: Safari ігнорує box-shadow на <tr>, тому дублюємо на td + gradient */
+html.catalog-dnd-dragging [data-catalog-drop-before] {
+  background-image: linear-gradient(#f59e0b, #f59e0b);
+  background-repeat: no-repeat;
+  background-size: 100% 2px;
+  background-position: top left;
+}
+
+html.catalog-dnd-dragging [data-catalog-drop-after] {
+  background-image: linear-gradient(#f59e0b, #f59e0b);
+  background-repeat: no-repeat;
+  background-size: 100% 2px;
+  background-position: bottom left;
+}
+
+html.catalog-dnd-dragging [data-catalog-drop-before] > td,
+html.catalog-dnd-dragging [data-catalog-folder-id][data-catalog-drop-before] {
+  box-shadow: inset 0 2px 0 0 #f59e0b !important;
+}
+
+html.catalog-dnd-dragging [data-catalog-drop-after] > td,
+html.catalog-dnd-dragging [data-catalog-folder-id][data-catalog-drop-after] {
+  box-shadow: inset 0 -2px 0 0 #f59e0b !important;
+}
+
+[data-catalog-row-id] {
+  transition: opacity 300ms ease-in-out;
+}
+
+[data-catalog-dnd-source] {
+  opacity: 0.35;
+}

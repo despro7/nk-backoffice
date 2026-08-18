@@ -17,6 +17,23 @@ export const CATALOG_ACC_POLICY_KIT = '1201200000001031';
 /** Default currency — UAH */
 export const CATALOG_DEFAULT_CURRENCY_ID = '1101200000001001';
 
+/** Роздріб (Інтернет-магазин) */
+export const CATALOG_PRICE_TYPE_RETAIL_ID = '1101300000001001';
+/** Звичайна */
+export const CATALOG_PRICE_TYPE_REGULAR_ID = '1101300000001007';
+/** Військові */
+export const CATALOG_PRICE_TYPE_MILITARY_ID = '1101300000001012';
+
+/** Основні типи цін Dilovod: Роздріб (ІМ), Звичайна, Військові */
+export const CATALOG_MAIN_PRICE_TYPE_IDS = [
+  CATALOG_PRICE_TYPE_RETAIL_ID,
+  CATALOG_PRICE_TYPE_REGULAR_ID,
+  CATALOG_PRICE_TYPE_MILITARY_ID,
+] as const;
+
+/** Знижка військової ціни за одну порцію, грн */
+export const CATALOG_MILITARY_DISCOUNT_PER_PORTION = 5;
+
 /**
  * Назва кореневої папки готової продукції в Dilovod.
  * Компоненти BOM комплекту шукаються лише в цій папці (рекурсивно).
