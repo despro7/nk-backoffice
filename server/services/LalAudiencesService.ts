@@ -11,6 +11,8 @@ import {
   LAL_DEFAULT_EXPORT_COLUMNS,
   LAL_DEFAULT_PAGE_SIZE,
   LAL_DEFAULT_PERIOD,
+  LAL_DEFAULT_SORT_COLUMN,
+  LAL_DEFAULT_SORT_DIRECTION,
   LAL_DEFAULT_STATUSES,
   LAL_EXCLUDED_STATUS,
   LAL_EXPORT_COLUMN_OPTIONS,
@@ -19,6 +21,7 @@ import {
   LAL_NEW_BUYER_DAYS,
   LAL_ORDER_COUNT_UNBOUNDED,
   LAL_PAGE_SIZE_OPTIONS,
+  LAL_SORT_COLUMNS,
   LAL_VIP_LTV_MIN,
   MILITARY_DISCOUNT_REASON_IDS,
   type LalAudienceFilters,
@@ -30,12 +33,44 @@ import {
   type LalLogicMode,
   type LalPeriodKey,
   type LalPresetId,
+  type LalSortColumn,
+  type LalSortDirection,
 } from '../../shared/types/lalAudiences.js';
 
 const EXPORT_COLUMN_KEYS = new Set(LAL_EXPORT_COLUMN_OPTIONS.map((option) => option.key));
 
 const MILITARY_SET = new Set(MILITARY_DISCOUNT_REASON_IDS.map(String));
-const RAW_DATA_BATCH = 400;
+const RAW_DATA_BATCH = 400; // 400 замовлень в одному запиті
+const AUDIENCE_CACHE_TTL_MS = 60_000 * 10; // 10 хвилин
+const AUDIENCE_CACHE_MAX_ENTRIES = 20; // 20 аудиторій в кеші
+
+type OrderContact = { rawData: string; customerName: string | null; cityName: string | null };
+
+type CollectedAudience = {
+  customers: AggregatedCustomer[];
+  contacts: Map<number, OrderContact>;
+};
+
+type AudienceCacheEntry = {
+  expiresAt: number;
+  value: CollectedAudience;
+};
+
+function audienceCacheKey(filters: LalAudienceFilters): string {
+  const statuses = [...filters.statuses].sort();
+  return JSON.stringify({
+    period: filters.period,
+    startDate: filters.startDate ?? null,
+    endDate: filters.endDate ?? null,
+    logic: filters.logic,
+    statuses,
+    preset: filters.preset ?? null,
+    orderCountMin: filters.orderCountMin ?? 0,
+    orderCountMax: filters.orderCountMax ?? null,
+    ltvMin: filters.ltvMin ?? 0,
+    ltvMax: filters.ltvMax ?? null,
+  });
+}
 
 type OrderLite = {
   id: number;
@@ -330,6 +365,73 @@ function clampPageSize(limit: number | undefined): number {
   return LAL_DEFAULT_PAGE_SIZE;
 }
 
+function isLalSortColumn(value: string): value is LalSortColumn {
+  return (LAL_SORT_COLUMNS as readonly string[]).includes(value);
+}
+
+function isLalSortDirection(value: string): value is LalSortDirection {
+  return value === 'asc' || value === 'desc';
+}
+
+function compareLocale(a: string, b: string): number {
+  return a.localeCompare(b, 'uk', { numeric: true, sensitivity: 'base' });
+}
+
+function sortCollectedCustomers(
+  customers: AggregatedCustomer[],
+  contacts: Map<number, OrderContact>,
+  sortBy: LalSortColumn | undefined,
+  sortDir: LalSortDirection | undefined
+): AggregatedCustomer[] {
+  const column = sortBy && isLalSortColumn(sortBy) ? sortBy : LAL_DEFAULT_SORT_COLUMN;
+  const direction = sortDir && isLalSortDirection(sortDir) ? sortDir : LAL_DEFAULT_SORT_DIRECTION;
+  const dir = direction === 'asc' ? 1 : -1;
+
+  const decorated = customers.map((customer) => {
+    const latest = contacts.get(customer.latestOrderId);
+    const contact = extractContact(latest?.rawData ?? null, latest?.customerName || customer.customerName);
+    return {
+      customer,
+      name: `${contact.lastName} ${contact.firstName}`.trim(),
+      email: contact.email ?? '',
+      city: (latest?.cityName || customer.city).trim(),
+    };
+  });
+
+  decorated.sort((a, b) => {
+    let cmp = 0;
+    switch (column) {
+      case 'name':
+        cmp = compareLocale(a.name, b.name);
+        break;
+      case 'phone':
+        cmp = compareLocale(a.customer.e164, b.customer.e164);
+        break;
+      case 'email':
+        cmp = compareLocale(a.email, b.email);
+        break;
+      case 'city':
+        cmp = compareLocale(a.city, b.city);
+        break;
+      case 'orders':
+        cmp = a.customer.orderCount - b.customer.orderCount;
+        break;
+      case 'ltv':
+        cmp = a.customer.ltv - b.customer.ltv;
+        break;
+      case 'lastOrder':
+        cmp = a.customer.lastOrderDate.getTime() - b.customer.lastOrderDate.getTime();
+        break;
+    }
+    if (cmp === 0) {
+      return b.customer.ltv - a.customer.ltv || b.customer.orderCount - a.customer.orderCount;
+    }
+    return cmp * dir;
+  });
+
+  return decorated.map((item) => item.customer);
+}
+
 export function parseLalAudienceFilters(
   source: Record<string, unknown>,
   defaults?: { requireFormat?: boolean }
@@ -371,6 +473,9 @@ export function parseLalAudienceFilters(
 
   const columns = sanitizeExportColumns(source.columns);
 
+  const sortByRaw = source.sortBy == null ? '' : String(source.sortBy);
+  const sortDirRaw = source.sortDir == null ? '' : String(source.sortDir);
+
   return {
     period,
     startDate: typeof source.startDate === 'string' ? source.startDate : undefined,
@@ -384,6 +489,8 @@ export function parseLalAudienceFilters(
     preset,
     page: parseNum(source.page),
     limit: parseNum(source.limit),
+    sortBy: sortByRaw && isLalSortColumn(sortByRaw) ? sortByRaw : LAL_DEFAULT_SORT_COLUMN,
+    sortDir: sortDirRaw && isLalSortDirection(sortDirRaw) ? sortDirRaw : LAL_DEFAULT_SORT_DIRECTION,
     format,
     excludePhones,
     columns,
@@ -391,14 +498,18 @@ export function parseLalAudienceFilters(
 }
 
 export class LalAudiencesService {
+  private audienceCache = new Map<string, AudienceCacheEntry>();
+  private audienceInflight = new Map<string, Promise<CollectedAudience>>();
+
   async list(filters: LalAudienceFilters): Promise<LalAudienceListResponse> {
-    const { customers, contacts } = await this.collectAudience(filters);
+    const { customers, contacts } = await this.getCollectedAudience(filters);
+    const sorted = sortCollectedCustomers(customers, contacts, filters.sortBy, filters.sortDir);
     const page = Math.max(1, filters.page ?? 1);
     const limit = clampPageSize(filters.limit);
-    const total = customers.length;
+    const total = sorted.length;
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const start = (page - 1) * limit;
-    const slice = customers.slice(start, start + limit);
+    const slice = sorted.slice(start, start + limit);
     const rows = slice.map((customer) => this.toRow(customer, contacts.get(customer.latestOrderId)));
 
     const withEmail = customers.filter((c) => {
@@ -430,7 +541,8 @@ export class LalAudiencesService {
     excludePhones: string[] = [],
     columns: LalExportColumn[] = LAL_DEFAULT_EXPORT_COLUMNS
   ): Promise<LalExportResult> {
-    const { customers, contacts } = await this.collectAudience(filters);
+    const { customers, contacts } = await this.getCollectedAudience(filters);
+    const sorted = sortCollectedCustomers(customers, contacts, filters.sortBy, filters.sortDir);
     const excluded = new Set(
       excludePhones
         .map((phone) => {
@@ -440,7 +552,7 @@ export class LalAudiencesService {
         .filter(Boolean)
     );
 
-    const rows = customers
+    const rows = sorted
       .filter((c) => !excluded.has(c.e164))
       .map((customer) => this.toRow(customer, contacts.get(customer.latestOrderId)));
 
@@ -481,10 +593,48 @@ export class LalAudiencesService {
     };
   }
 
-  private async collectAudience(filters: LalAudienceFilters): Promise<{
-    customers: AggregatedCustomer[];
-    contacts: Map<number, { rawData: string; customerName: string | null; cityName: string | null }>;
-  }> {
+  private async getCollectedAudience(filters: LalAudienceFilters): Promise<CollectedAudience> {
+    const key = audienceCacheKey(filters);
+    const now = Date.now();
+    const cached = this.audienceCache.get(key);
+    if (cached && cached.expiresAt > now) {
+      this.audienceCache.delete(key);
+      this.audienceCache.set(key, cached);
+      logServer('[LalAudiences] cache hit', { customers: cached.value.customers.length });
+      return cached.value;
+    }
+
+    const inflight = this.audienceInflight.get(key);
+    if (inflight) {
+      return inflight;
+    }
+
+    const pending = this.collectAudience(filters)
+      .then((value) => {
+        this.setAudienceCache(key, value);
+        return value;
+      })
+      .finally(() => {
+        this.audienceInflight.delete(key);
+      });
+
+    this.audienceInflight.set(key, pending);
+    return pending;
+  }
+
+  private setAudienceCache(key: string, value: CollectedAudience): void {
+    while (this.audienceCache.size >= AUDIENCE_CACHE_MAX_ENTRIES) {
+      const oldest = this.audienceCache.keys().next().value;
+      if (oldest == null) break;
+      this.audienceCache.delete(oldest);
+    }
+    this.audienceCache.set(key, {
+      expiresAt: Date.now() + AUDIENCE_CACHE_TTL_MS,
+      value,
+    });
+  }
+
+  private async collectAudience(filters: LalAudienceFilters): Promise<CollectedAudience> {
     const statuses =
       filters.statuses.length > 0 ? filters.statuses.filter((s) => s !== LAL_EXCLUDED_STATUS) : [...LAL_DEFAULT_STATUSES];
 
@@ -596,10 +746,8 @@ export class LalAudiencesService {
     return { customers: filtered, contacts };
   }
 
-  private async loadContacts(
-    orderIds: number[]
-  ): Promise<Map<number, { rawData: string; customerName: string | null; cityName: string | null }>> {
-    const map = new Map<number, { rawData: string; customerName: string | null; cityName: string | null }>();
+  private async loadContacts(orderIds: number[]): Promise<Map<number, OrderContact>> {
+    const map = new Map<number, OrderContact>();
     for (let i = 0; i < orderIds.length; i += RAW_DATA_BATCH) {
       const chunk = orderIds.slice(i, i + RAW_DATA_BATCH);
       const rows = await prisma.order.findMany({

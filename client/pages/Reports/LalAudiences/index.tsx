@@ -9,12 +9,11 @@ export default function LalAudiencesPage() {
     allStatusesSelected,
     customRange,
     error,
-    excludedCount,
-    excludedPhones,
     exportAudience,
     exportColumns,
     handleLtvChange,
     handleOrderCountChange,
+    handleSortChange,
     isExporting,
     limit,
     loading,
@@ -27,14 +26,14 @@ export default function LalAudiencesPage() {
     preset,
     resetFilters,
     rows,
-    selectedCustomers,
+    sortBy,
+    sortDir,
     setCustomRange,
     setExportColumns,
     setLimit,
     setLogic,
     setPage,
     setPeriod,
-    setRowIncluded,
     statuses,
     summary,
     toggleAllStatuses,
@@ -73,25 +72,25 @@ export default function LalAudiencesPage() {
         )}
 
         <LalSummaryCard
-          excludedCount={excludedCount}
           exportColumns={exportColumns}
           isExporting={isExporting}
-          selectedCustomers={selectedCustomers}
+          loading={loading}
           summary={summary}
           onExport={exportAudience}
           onExportColumnsChange={setExportColumns}
         />
 
         <LalAudiencesTable
-          excludedPhones={excludedPhones}
           limit={limit}
           loading={loading}
           page={page}
           pagination={pagination}
           rows={rows}
+          sortBy={sortBy}
+          sortDir={sortDir}
           onLimitChange={setLimit}
           onPageChange={setPage}
-          onRowIncludedChange={setRowIncluded}
+          onSortChange={handleSortChange}
         />
       </div>
     </div>

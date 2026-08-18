@@ -9,10 +9,13 @@ import {
   LAL_DEFAULT_LOGIC,
   LAL_DEFAULT_PAGE_SIZE,
   LAL_DEFAULT_PERIOD,
+  LAL_DEFAULT_SORT_COLUMN,
+  LAL_DEFAULT_SORT_DIRECTION,
   LAL_DEFAULT_STATUSES,
   LAL_EXPORT_COLUMN_OPTIONS,
   LAL_LTV_UNBOUNDED,
   LAL_ORDER_COUNT_UNBOUNDED,
+  LAL_SORT_COLUMNS,
   type LalAudienceExportBody,
   type LalAudienceFilters,
   type LalAudienceListResponse,
@@ -21,6 +24,8 @@ import {
   type LalLogicMode,
   type LalPeriodKey,
   type LalPresetId,
+  type LalSortColumn,
+  type LalSortDirection,
 } from '@shared/types/lalAudiences';
 import {
   dateRangeToIso,
@@ -33,9 +38,18 @@ import { ToastService } from '@/services/ToastService';
 
 const DEFAULT_STATUSES = [...LAL_DEFAULT_STATUSES];
 const ALL_VISIBLE_STATUS_KEYS = LAL_STATUS_OPTIONS.map((option) => option.key);
+const SLIDER_DEBOUNCE_MS = 500;
+const STATUS_DEBOUNCE_MS = 1000;
 
 function isRangeValue(value: number | number[]): value is number[] {
   return Array.isArray(value) && value.length === 2;
+}
+
+function statusesEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.every((value, index) => value === right[index]);
 }
 
 export default function useLalAudiences() {
@@ -46,6 +60,7 @@ export default function useLalAudiences() {
   const [customRange, setCustomRange] = useState<DateRange | null>(null);
   const [logic, setLogic] = useState<LalLogicMode>(LAL_DEFAULT_LOGIC);
   const [statuses, setStatuses] = useState<string[]>(DEFAULT_STATUSES);
+  const [committedStatuses, setCommittedStatuses] = useState<string[]>(DEFAULT_STATUSES);
   const [preset, setPreset] = useState<LalPresetId | null>(null);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(LAL_DEFAULT_PAGE_SIZE);
@@ -53,11 +68,12 @@ export default function useLalAudiences() {
   const [ltvRange, setLtvRange] = useState<[number, number]>([0, LAL_LTV_UNBOUNDED]);
   const [committedOrderCount, setCommittedOrderCount] = useState<[number, number]>([0, LAL_ORDER_COUNT_UNBOUNDED]);
   const [committedLtv, setCommittedLtv] = useState<[number, number]>([0, LAL_LTV_UNBOUNDED]);
-  const [excludedPhones, setExcludedPhones] = useState<Set<string>>(new Set());
   const [exportColumns, setExportColumns] = useState<Set<LalExportColumn>>(
     () => new Set(LAL_DEFAULT_EXPORT_COLUMNS),
   );
   const [isExporting, setIsExporting] = useState(false);
+  const [sortBy, setSortBy] = useState<LalSortColumn>(LAL_DEFAULT_SORT_COLUMN);
+  const [sortDir, setSortDir] = useState<LalSortDirection>(LAL_DEFAULT_SORT_DIRECTION);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -70,9 +86,20 @@ export default function useLalAudiences() {
       setCommittedOrderCount(orderCountRange);
       setCommittedLtv(ltvRange);
       setPage(1);
-    }, 300);
+    }, SLIDER_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [committedLtv, committedOrderCount, ltvRange, orderCountRange]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (statusesEqual(committedStatuses, statuses)) {
+        return;
+      }
+      setCommittedStatuses(statuses);
+      setPage(1);
+    }, STATUS_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [committedStatuses, statuses]);
 
   const customDates = dateRangeToIso(period === 'custom' ? customRange : null);
 
@@ -82,7 +109,7 @@ export default function useLalAudiences() {
       startDate: customDates.startDate,
       endDate: customDates.endDate,
       logic,
-      statuses,
+      statuses: committedStatuses,
       preset,
       orderCountMin: committedOrderCount[0],
       orderCountMax: committedOrderCount[1],
@@ -90,6 +117,8 @@ export default function useLalAudiences() {
       ltvMax: committedLtv[1],
       page,
       limit,
+      sortBy,
+      sortDir,
     }),
     [
       committedLtv,
@@ -101,7 +130,9 @@ export default function useLalAudiences() {
       page,
       period,
       preset,
-      statuses,
+      sortBy,
+      sortDir,
+      committedStatuses,
     ],
   );
 
@@ -110,6 +141,7 @@ export default function useLalAudiences() {
   const query = useQuery({
     queryKey: ['lal-audiences', filters],
     enabled: !isAuthLoading && customReady,
+    staleTime: 30_000,
     placeholderData: (previous) => previous,
     queryFn: async (): Promise<LalAudienceListResponse> => {
       const params = new URLSearchParams();
@@ -125,6 +157,8 @@ export default function useLalAudiences() {
       if (filters.ltvMin != null) params.set('ltvMin', String(filters.ltvMin));
       if (filters.ltvMax != null) params.set('ltvMax', String(filters.ltvMax));
       if (filters.preset) params.set('preset', filters.preset);
+      if (filters.sortBy) params.set('sortBy', filters.sortBy);
+      if (filters.sortDir) params.set('sortDir', filters.sortDir);
 
       const response = await apiCall(`/api/lal-audiences?${params.toString()}`);
       const data = (await response.json()) as LalAudienceListResponse | { success: false; error?: string };
@@ -196,12 +230,10 @@ export default function useLalAudiences() {
       const next = current.filter((key) => key !== statusKey);
       return next.length > 0 ? next : current;
     });
-    setPage(1);
   }, []);
 
   const toggleAllStatuses = useCallback((selected: boolean) => {
     setStatuses(selected ? [...ALL_VISIBLE_STATUS_KEYS] : [...DEFAULT_STATUSES]);
-    setPage(1);
   }, []);
 
   const resetFilters = useCallback(() => {
@@ -209,6 +241,7 @@ export default function useLalAudiences() {
     setCustomRange(null);
     setLogic(LAL_DEFAULT_LOGIC);
     setStatuses(DEFAULT_STATUSES);
+    setCommittedStatuses(DEFAULT_STATUSES);
     setPreset(null);
     setPage(1);
     setLimit(LAL_DEFAULT_PAGE_SIZE);
@@ -216,19 +249,15 @@ export default function useLalAudiences() {
     setLtvRange([0, LAL_LTV_UNBOUNDED]);
     setCommittedOrderCount([0, LAL_ORDER_COUNT_UNBOUNDED]);
     setCommittedLtv([0, LAL_LTV_UNBOUNDED]);
-    setExcludedPhones(new Set());
+    setSortBy(LAL_DEFAULT_SORT_COLUMN);
+    setSortDir(LAL_DEFAULT_SORT_DIRECTION);
   }, []);
 
-  const setRowIncluded = useCallback((phone: string, included: boolean) => {
-    setExcludedPhones((current) => {
-      const next = new Set(current);
-      if (included) {
-        next.delete(phone);
-      } else {
-        next.add(phone);
-      }
-      return next;
-    });
+  const handleSortChange = useCallback((column: string, direction: 'ascending' | 'descending') => {
+    if (!(LAL_SORT_COLUMNS as readonly string[]).includes(column)) return;
+    setSortBy(column as LalSortColumn);
+    setSortDir(direction === 'ascending' ? 'asc' : 'desc');
+    setPage(1);
   }, []);
 
   const exportAudience = useCallback(
@@ -239,7 +268,6 @@ export default function useLalAudiences() {
           ...filters,
           page: undefined,
           limit: undefined,
-          excludePhones: Array.from(excludedPhones),
           format,
           columns: LAL_EXPORT_COLUMN_OPTIONS.map((option) => option.key).filter((column) =>
             exportColumns.has(column),
@@ -284,24 +312,21 @@ export default function useLalAudiences() {
         setIsExporting(false);
       }
     },
-    [apiCall, excludedPhones, exportColumns, filters],
+    [apiCall, exportColumns, filters],
   );
 
   const summary = query.data?.summary ?? null;
-  const excludedCount = excludedPhones.size;
-  const selectedCustomers = Math.max(0, (summary?.customers ?? 0) - excludedCount);
   const allStatusesSelected = statuses.length === ALL_VISIBLE_STATUS_KEYS.length;
 
   return {
     allStatusesSelected,
     customRange,
     error: query.error instanceof Error ? query.error.message : null,
-    excludedCount,
-    excludedPhones,
     exportAudience,
     exportColumns,
     handleLtvChange,
     handleOrderCountChange,
+    handleSortChange,
     isExporting,
     limit,
     loading: query.isLoading || query.isFetching,
@@ -314,14 +339,14 @@ export default function useLalAudiences() {
     preset,
     resetFilters,
     rows: query.data?.rows ?? [],
-    selectedCustomers,
+    sortBy,
+    sortDir,
     setCustomRange: handleCustomRangeChange,
     setExportColumns,
     setLimit: setLimitAndResetPage,
     setLogic: setLogicAndResetPage,
     setPage,
     setPeriod,
-    setRowIncluded,
     statuses,
     summary,
     toggleAllStatuses,

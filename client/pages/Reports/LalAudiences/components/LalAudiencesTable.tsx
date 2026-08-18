@@ -1,5 +1,4 @@
 import {
-  Checkbox,
   Pagination,
   Select,
   SelectItem,
@@ -10,14 +9,14 @@ import {
   TableHeader,
   TableRow,
 } from '@heroui/react';
-import type { LalAudiencePagination, LalAudienceRow } from '@shared/types/lalAudiences';
+import type { SortDescriptor } from '@heroui/react';
+import type { LalAudiencePagination, LalAudienceRow, LalSortColumn, LalSortDirection } from '@shared/types/lalAudiences';
 import { LAL_PAGE_SIZE_OPTIONS } from '@shared/types/lalAudiences';
 import { formatNumber, formatPrice } from '@/lib/formatUtils';
 import { ReportLoadingOverlay } from '../../shared/ReportLoadingOverlay';
 import { ReportTableEmptyState } from '../../shared/ReportTableEmptyState';
 
-const COLUMNS = [
-  { key: 'include', label: '' },
+const COLUMNS: ReadonlyArray<{ key: LalSortColumn; label: string }> = [
   { key: 'name', label: 'ПІБ' },
   { key: 'phone', label: 'Телефон' },
   { key: 'email', label: 'Email' },
@@ -25,18 +24,19 @@ const COLUMNS = [
   { key: 'orders', label: 'Замовлень' },
   { key: 'ltv', label: 'LTV' },
   { key: 'lastOrder', label: 'Останнє замовлення' },
-] as const;
+];
 
 interface LalAudiencesTableProps {
-  excludedPhones: Set<string>;
   limit: number;
   loading: boolean;
   page: number;
   pagination: LalAudiencePagination | null;
   rows: LalAudienceRow[];
+  sortBy: LalSortColumn;
+  sortDir: LalSortDirection;
   onLimitChange: (limit: number) => void;
   onPageChange: (page: number) => void;
-  onRowIncludedChange: (phone: string, included: boolean) => void;
+  onSortChange: (column: string, direction: 'ascending' | 'descending') => void;
 }
 
 function formatLastOrderDate(value: string): string {
@@ -46,23 +46,34 @@ function formatLastOrderDate(value: string): string {
 }
 
 export default function LalAudiencesTable({
-  excludedPhones,
   limit,
   loading,
   page,
   pagination,
   rows,
+  sortBy,
+  sortDir,
   onLimitChange,
   onPageChange,
-  onRowIncludedChange,
+  onSortChange,
 }: LalAudiencesTableProps) {
   const totalPages = Math.max(1, pagination?.totalPages ?? 1);
+  const sortDescriptor: SortDescriptor = {
+    column: sortBy,
+    direction: sortDir === 'asc' ? 'ascending' : 'descending',
+  };
 
   return (
     <div className="bg-white rounded-xl p-4 flex flex-col gap-4">
       <div className="relative">
         <Table
           aria-label="LAL аудиторія"
+          sortDescriptor={sortDescriptor}
+          onSortChange={(descriptor) => {
+            const column = String(descriptor.column);
+            const direction = descriptor.direction === 'ascending' ? 'ascending' : 'descending';
+            onSortChange(column, direction);
+          }}
           classNames={{
             wrapper: 'min-h-80 p-0 pb-1 shadow-none bg-transparent rounded-none',
             th: 'bg-default-200/60 first:rounded-s-sm last:rounded-e-sm',
@@ -71,7 +82,9 @@ export default function LalAudiencesTable({
         >
           <TableHeader>
             {COLUMNS.map((column) => (
-              <TableColumn key={column.key}>{column.label}</TableColumn>
+              <TableColumn key={column.key} allowsSorting>
+                {column.label}
+              </TableColumn>
             ))}
           </TableHeader>
           <TableBody
@@ -87,22 +100,14 @@ export default function LalAudiencesTable({
             {(row) => (
               <TableRow key={row.phone}>
                 <TableCell>
-                  <Checkbox
-                    size="sm"
-                    aria-label={`Включити ${row.phone}`}
-                    isSelected={!excludedPhones.has(row.phone)}
-                    onValueChange={(selected) => onRowIncludedChange(row.phone, selected)}
-                  />
-                </TableCell>
-                <TableCell>
                   {[row.lastName, row.firstName].filter(Boolean).join(' ') || '—'}
                 </TableCell>
-                <TableCell className="whitespace-nowrap">{row.phone}</TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">{row.phone}</TableCell>
                 <TableCell>{row.email || '—'}</TableCell>
                 <TableCell>{row.city || '—'}</TableCell>
-                <TableCell>{formatNumber(row.orderCount)}</TableCell>
-                <TableCell className="whitespace-nowrap">{formatPrice(row.ltv)}</TableCell>
-                <TableCell className="whitespace-nowrap">{formatLastOrderDate(row.lastOrderDate)}</TableCell>
+                <TableCell className="tabular-nums">{formatNumber(row.orderCount)}</TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">{formatPrice(row.ltv)}</TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">{formatLastOrderDate(row.lastOrderDate)}</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -146,7 +151,7 @@ export default function LalAudiencesTable({
             }}
           />
 
-          <p className="text-sm text-default-400 min-w-24 text-right">
+          <p className="hidden xl:block text-sm text-default-400 min-w-24 text-right">
             {formatNumber(pagination.total)} клієнтів
           </p>
         </div>

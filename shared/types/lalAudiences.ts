@@ -57,6 +57,12 @@ export const LAL_DEFAULT_LOGIC: LalLogicMode = 'lifetime';
 export const LAL_PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 export const LAL_DEFAULT_PAGE_SIZE = 25;
 
+export const LAL_SORT_COLUMNS = ['name', 'phone', 'email', 'city', 'orders', 'ltv', 'lastOrder'] as const;
+export type LalSortColumn = (typeof LAL_SORT_COLUMNS)[number];
+export type LalSortDirection = 'asc' | 'desc';
+export const LAL_DEFAULT_SORT_COLUMN: LalSortColumn = 'ltv';
+export const LAL_DEFAULT_SORT_DIRECTION: LalSortDirection = 'desc';
+
 /** VIP / B2B: LTV строго більше цього порогу (₴) */
 export const LAL_VIP_LTV_MIN = 10_000;
 
@@ -70,15 +76,15 @@ export const LAL_CHURN_DAYS = 90;
 export const B2B_MIN_PORTIONS_IN_ORDER = 100;
 
 /**
- * Правий край слайдера «кількість замовлень» (15+) = без верхньої межі.
+ * Правий край слайдера «кількість замовлень» (25+) = без верхньої межі.
  * Якщо клієнт надсилає саме це значення як max — бекенд ігнорує верхню межу.
  */
-export const LAL_ORDER_COUNT_UNBOUNDED = 15;
+export const LAL_ORDER_COUNT_UNBOUNDED = 25;
 
 /**
- * Правий край слайдера LTV (50 000+) = без верхньої межі.
+ * Правий край слайдера LTV (100 000+) = без верхньої межі.
  */
-export const LAL_LTV_UNBOUNDED = 50_000;
+export const LAL_LTV_UNBOUNDED = 100_000;
 
 /**
  * Коди SalesDrive `pricinaZnizki` для сегмента «Військові».
@@ -104,6 +110,8 @@ export interface LalAudienceFilters {
   preset?: LalPresetId | null;
   page?: number;
   limit?: number;
+  sortBy?: LalSortColumn;
+  sortDir?: LalSortDirection;
 }
 
 export interface LalAudienceRow {

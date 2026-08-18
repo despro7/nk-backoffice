@@ -1,6 +1,7 @@
-import { Checkbox, Slider, Tab, Tabs } from '@heroui/react';
+import { Checkbox, Slider, Tab, Tabs, Tooltip } from '@heroui/react';
 import type { DateRange } from '@react-types/datepicker';
 import type { Key } from 'react';
+import { DynamicIcon } from 'lucide-react/dynamic';
 import {
   LAL_LTV_UNBOUNDED,
   LAL_ORDER_COUNT_UNBOUNDED,
@@ -83,7 +84,7 @@ export default function LalFiltersPanel({
         label="Кількість замовлень"
         aria-label="Кількість замовлень"
         size="sm"
-        minValue={0}
+        minValue={1}
         maxValue={LAL_ORDER_COUNT_UNBOUNDED}
         step={1}
         value={orderCountRange}
@@ -114,7 +115,33 @@ export default function LalFiltersPanel({
       />
 
       <div className="flex flex-col gap-2">
-        <span className="text-sm font-semibold text-default-800">Логіка вибірки</span>
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-default-800">
+          Логіка вибірки
+          <Tooltip
+            color="secondary"
+            className="max-w-72 bg-slate-600"
+            content={
+              <div className="flex flex-col gap-2 text-xs leading-snug py-0.5">
+                <p>
+                  <span className="font-semibold">За весь час</span> – клієнт у вибірці, якщо
+                  останнє з усіх існуючих замовлень клієнта потрапило в обраний період.
+                </p>
+                <p>
+                  <span className="font-semibold">Суворий режим</span> – лише якщо <u>всі</u> його
+                  замовлення (у вибраних статусах) потрапили в обраний період.
+                </p>
+              </div>
+            }
+          >
+            <button
+              type="button"
+              aria-label="Пояснення логіки вибірки"
+              className="inline-flex text-default-400 hover:text-default-600"
+            >
+              <DynamicIcon name="circle-question-mark" size={15} />
+            </button>
+          </Tooltip>
+        </span>
         <Tabs
           aria-label="Логіка вибірки"
           fullWidth

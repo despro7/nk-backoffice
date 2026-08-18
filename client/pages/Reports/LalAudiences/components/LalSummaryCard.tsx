@@ -5,6 +5,7 @@ import {
   DropdownItem,
   DropdownMenu,
   DropdownTrigger,
+  Skeleton,
 } from '@heroui/react';
 import type { SharedSelection } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
@@ -18,20 +19,18 @@ import { formatNumber } from '@/lib/formatUtils';
 import { qualityColor, qualityLabel } from '../LalAudiencesUtils';
 
 interface LalSummaryCardProps {
-  excludedCount: number;
   exportColumns: Set<LalExportColumn>;
   isExporting: boolean;
-  selectedCustomers: number;
+  loading: boolean;
   summary: LalAudienceSummary | null;
   onExport: (format: LalExportFormat) => void;
   onExportColumnsChange: (columns: Set<LalExportColumn>) => void;
 }
 
 export default function LalSummaryCard({
-  excludedCount,
   exportColumns,
   isExporting,
-  selectedCustomers,
+  loading,
   summary,
   onExport,
   onExportColumnsChange,
@@ -61,26 +60,41 @@ export default function LalSummaryCard({
       <div className="flex flex-wrap gap-8">
         <div className="flex flex-col justify-between">
           <p className="text-xs text-default-400 mb-1">Клієнтів у вибірці</p>
-          <p className="text-2xl font-semibold text-default-800 leading-none">{formatNumber(selectedCustomers)}</p>
-          {excludedCount > 0 && (
-            <p className="text-xs text-default-400 mt-1">Виключено: {formatNumber(excludedCount)}</p>
+          {loading ? (
+            <Skeleton className="rounded h-6 w-20 opacity-60" />
+          ) : (
+            <p className="text-2xl font-semibold text-default-800 leading-none">
+              {formatNumber(summary?.customers ?? 0)}
+            </p>
           )}
         </div>
         <div className="flex flex-col justify-between">
           <p className="text-xs text-default-400 mb-1">Телефон / email</p>
-          <p className="text-sm text-default-700 py-0.5">
-            {phonePercent.toFixed(0)}% / {emailPercent.toFixed(0)}%
-          </p>
+          {loading ? (
+            <Skeleton className="rounded h-5 w-20 opacity-60" />
+          ) : (
+            <p className="text-sm text-default-700 py-0.5">
+              {phonePercent.toFixed(0)}% / {emailPercent.toFixed(0)}%
+            </p>
+          )}
         </div>
         <div className="flex flex-col justify-between">
           <p className="text-xs text-default-400 mb-1">Якість</p>
-          <Chip size="sm" color={qualityColor(quality)} variant="flat">
-            {qualityLabel(quality)}
-          </Chip>
+          {loading ? (
+            <Skeleton className="rounded h-5 w-15 opacity-60" />
+          ) : (
+            <Chip size="sm" color={qualityColor(quality)} variant="flat">
+              {qualityLabel(quality)}
+            </Chip>
+          )}
         </div>
         <div className="flex flex-col justify-between">
           <p className="text-xs text-default-400 mb-1">Замовлень у вибірці</p>
-          <p className="text-sm text-default-700 py-0.5">{formatNumber(summary?.totalOrdersInSelection ?? 0)}</p>
+          {loading ? (
+            <Skeleton className="rounded h-5 w-16 opacity-60" />
+          ) : (
+            <p className="text-sm text-default-700 py-0.5">{formatNumber(summary?.totalOrdersInSelection ?? 0)}</p>
+          )}
         </div>
       </div>
 
@@ -114,7 +128,7 @@ export default function LalSummaryCard({
             <Button
               color="primary"
               isLoading={isExporting}
-              isDisabled={selectedCustomers <= 0 || isExporting}
+              isDisabled={loading || isExporting || (summary?.customers ?? 0) <= 0}
               startContent={!isExporting ? <DynamicIcon name="download" size={16} /> : undefined}
             >
               Експорт

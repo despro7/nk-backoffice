@@ -302,7 +302,7 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/reports/lal-audiences',
     component: LalAudiences,
-    title: 'LAL Аудиторії',
+    title: 'Lookalike Аудиторії',
     pageTitle: 'LAL Аудиторії | NK Backoffice',
     navLabel: 'LAL Аудиторії',
     icon: <DynamicIcon name="users" size={16} />,

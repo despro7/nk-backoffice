@@ -163,7 +163,7 @@ export function dateRangeToIso(range: DateRange | null): { startDate?: string; e
 
 export function formatOrderCountThumb(value: number, isMax: boolean): string {
   if (isMax && value >= LAL_ORDER_COUNT_UNBOUNDED) {
-    return `${LAL_ORDER_COUNT_UNBOUNDED}+`;
+    return '∞'; //`${LAL_ORDER_COUNT_UNBOUNDED}+`;
   }
   return String(value);
 }
@@ -171,9 +171,9 @@ export function formatOrderCountThumb(value: number, isMax: boolean): string {
 export function formatLtvThumb(value: number, isMax: boolean): string {
   const formatted = value.toLocaleString('uk-UA');
   if (isMax && value >= LAL_LTV_UNBOUNDED) {
-    return `${formatted}+ ₴`;
+    return '∞'; //`${LAL_LTV_UNBOUNDED}+`;
   }
-  return `${formatted} ₴`;
+  return `${formatted}`;
 }
 
 export function formatSliderRange(
