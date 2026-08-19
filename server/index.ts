@@ -107,8 +107,8 @@ export function createServer() {
     },
     credentials: true, // Обов’язково для cookies
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
-    exposedHeaders: ['Set-Cookie']
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Role-Preview'],
+    exposedHeaders: ['Set-Cookie', 'X-Role-Preview-Applied', 'X-Insufficient-Role']
   }));
   app.use(cookieParser());
   app.use(express.json({

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useRolePreview } from "../contexts/RolePreviewContext";
 import { cn } from "@/lib/utils";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, User } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatDateLong, formatWeekdayOnly } from "@/lib/formatUtils";
-import { DebugModeSwitch } from "./DebugModeSwitch";
+import { ROLE_LABELS, type RoleValue } from "@shared/constants/roles";
 import { NotificationBell } from "./NotificationBell";
 import { SidebarTrigger } from "./SidebarTrigger";
 import NumberFlow, { NumberFlowGroup } from '@number-flow/react';
@@ -13,11 +14,11 @@ import NumberFlow, { NumberFlowGroup } from '@number-flow/react';
 
 interface HeaderProps {
   className?: string;
-  onDebugModeChange?: (isEnabled: boolean) => void;
 }
 
-export function Header({ className, onDebugModeChange }: HeaderProps) {
+export function Header({ className }: HeaderProps) {
   const { user, logout } = useAuth();
+  const { isPreviewing, effectiveRole } = useRolePreview();
   const navigate = useNavigate();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -109,9 +110,6 @@ export function Header({ className, onDebugModeChange }: HeaderProps) {
           <div>{formatWeekdayOnly(currentTime)}</div>
         </div>
       </div>
-
-      {/* Debug Mode Switch */}
-      <DebugModeSwitch onDebugModeChange={onDebugModeChange} />
 
       {/* Full Screen Button */}
       <button

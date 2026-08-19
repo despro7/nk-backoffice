@@ -4,8 +4,7 @@ import PageTabs from '@/components/PageTabs';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
-import { useAuth } from '@/contexts/AuthContext';
-import { hasAccess, ROLES } from '@shared/constants/roles';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { LoggingService } from '@/services/LoggingService';
 import { ToastService } from '@/services/ToastService';
 import { useWarehouseMovement } from './useWarehouseMovement';
@@ -36,9 +35,8 @@ export default function WarehouseMovement() {
 
   const { getDrafts, deleteDraft } = mov;
 
-  const { user } = useAuth();
+  const { isAdmin } = useRoleAccess();
   const { isDebugMode } = useDebug();
-  const isAdmin = user?.role ? hasAccess(user.role, undefined, ROLES.ADMIN) : false;
 
   const dirsCtx = useDilovodDirectories();
   // Нормалізуємо список складів для селектів напрямку
@@ -554,7 +552,7 @@ export default function WarehouseMovement() {
             draftStatus={mov.savedDraft?.status ?? null}
             onCancel={() => mov.setShowConfirmCancel(true)}
             onSaveAndSend={sendAndFinalize}
-            isAdmin={isAdmin}
+            isAdmin={isAdmin()}
             isDebugMode={isDebugMode}
             onShowPayload={handleShowPayload}
             isLoadingPayload={isLoadingPayload}

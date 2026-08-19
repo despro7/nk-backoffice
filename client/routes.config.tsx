@@ -34,8 +34,8 @@ import TestSerialCom from "./pages/test-serial-com";
 import MetaLogNotifications from './pages/MetaLogs';
 
 // Определяем роли и их иерархию
-import { ROLES, ROLE_HIERARCHY, hasAccess } from '@shared/constants/roles';
-export { ROLES, ROLE_HIERARCHY, hasAccess };
+import { ROLES, ROLE_HIERARCHY, hasAccess, ROLE_LABELS } from '@shared/constants/roles';
+export { ROLES, ROLE_HIERARCHY, hasAccess, ROLE_LABELS };
 
 // Метадані для груп-контейнерів без власного маршруту (наприклад, "Налаштування")
 export interface NavGroupMeta {
@@ -538,3 +538,15 @@ export const getNavGroups = (userRole?: string) => {
 
   return { mainRoutes, subGroups };
 };
+
+/** Знайти маршрут за pathname (включно з динамічними :params). */
+export function findAppRouteByPath(pathname: string): AppRoute | undefined {
+  const exact = appRoutes.find((route) => route.path === pathname);
+  if (exact) return exact;
+
+  return appRoutes.find((route) => {
+    if (!route.path.includes(':')) return false;
+    const regexPattern = route.path.replace(/:[^/]+/g, '[^/]+');
+    return new RegExp(`^${regexPattern}$`).test(pathname);
+  });
+}

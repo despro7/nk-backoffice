@@ -11,6 +11,15 @@ export const ROLES = {
 
 export type RoleValue = typeof ROLES[keyof typeof ROLES];
 
+export const ROLE_LABELS: Record<RoleValue, string> = {
+  [ROLES.ADS_MANAGER]: 'Менеджер реклами',
+  [ROLES.STOREKEEPER]: 'Комірник',
+  [ROLES.WAREHOUSE_MANAGER]: 'Керівник складу',
+  [ROLES.SHOP_MANAGER]: 'Менеджер магазину',
+  [ROLES.BOSS]: 'Директор',
+  [ROLES.ADMIN]: 'Адміністратор'
+};
+
 export const ROLE_HIERARCHY: Record<RoleValue, number> = {
   [ROLES.ADS_MANAGER]: 1,
   [ROLES.STOREKEEPER]: 2,
@@ -39,6 +48,38 @@ export const hasAccess = (userRole: string, requiredRoles?: string[], minRole?: 
 
   return false;
 };
+
+export function isRoleValue(value: string | null | undefined): value is RoleValue {
+  return Boolean(value) && (Object.values(ROLES) as string[]).includes(value as string);
+}
+
+/** Заголовок UI-preview: адмін просить сервер перевіряти доступ як нижча роль. */
+export const ROLE_PREVIEW_HEADER = 'X-Role-Preview';
+export const ROLE_PREVIEW_APPLIED_HEADER = 'X-Role-Preview-Applied';
+/** Відповідь requireRole / requireMinRole: клієнт показує toast, не читаючи body. */
+export const INSUFFICIENT_ROLE_HEADER = 'X-Insufficient-Role';
+
+/**
+ * Ендпоінти сесії/ідентичності завжди йдуть від реальної ролі,
+ * щоб адмін не втратив профіль, logout і refresh під час прев’ю.
+ */
+export function isRolePreviewExemptPath(path: string): boolean {
+  const pathname = path.split('?')[0];
+  if (pathname === '/api/auth/settings') return true;
+  return [
+    '/api/auth/profile',
+    '/api/auth/logout',
+    '/api/auth/refresh',
+    '/api/auth/login',
+  ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+/** true лише якщо реальна роль — admin, а preview — відома роль строго нижче admin. */
+export function canApplyRolePreview(realRole: string, previewRole: string): boolean {
+  if (realRole !== ROLES.ADMIN) return false;
+  if (!isRoleValue(previewRole) || previewRole === ROLES.ADMIN) return false;
+  return ROLE_HIERARCHY[previewRole] < ROLE_HIERARCHY[ROLES.ADMIN];
+}
 
 // Зручні набори ролей для серверних перевірок (тільки для нестандартних випадків)
 export const ROLE_SETS = {

@@ -2,10 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Spinner, Tooltip, type SortDescriptor } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
-import { useAuth } from '@/contexts/AuthContext';
+import { useRolePreview } from '@/contexts/RolePreviewContext';
 import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 import { ToastService } from '@/services/ToastService';
-import { ROLES } from '@shared/constants/roles';
 import { CatalogTree } from './components/CatalogTree';
 import { CatalogTreeBubble } from './components/CatalogTreeBubble';
 import { CatalogTable } from './components/CatalogTable';
@@ -41,8 +40,7 @@ const MANUAL_SORT: SortDescriptor = {
 };
 
 export default function ProductsPage() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === ROLES.ADMIN;
+  const { isAdminView: isAdmin } = useRolePreview();
   const catalog = useProductsCatalog();
   const { settings: dilovodSettings } = useDilovodSettings({ loadDirectories: false });
   const pinnedHues = dilovodSettings?.accPolicyColorMap;

@@ -2,7 +2,7 @@ import { Tab } from '@heroui/react';
 import PageTabs from '@/components/PageTabs';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { ROLES } from '@shared/constants/roles';
+import { useRolePreview } from '@/contexts/RolePreviewContext';
 import { ToastService } from '@/services/ToastService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
@@ -25,7 +25,7 @@ import { InventoryCommentModal } from './components/InventoryCommentModal';
 
 export default function WarehouseInventory() {
   const { user } = useAuth();
-  const isAdmin = user?.role === ROLES.ADMIN;
+  const { isAdminView: isAdmin } = useRolePreview();
   const inv = useWarehouseInventory(isAdmin);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);

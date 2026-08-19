@@ -3,7 +3,7 @@ import { Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/AuthContext';
-import { ROLES } from '@shared/constants/roles';
+import { useRolePreview } from '@/contexts/RolePreviewContext';
 import type { InventorySession } from '../WarehouseInventoryTypes';
 import { statusLabel, statusColor, statusClass, totalPortions, totalPortionsGp } from '../WarehouseInventoryUtils';
 import useRowHistory from '../useRowHistory';
@@ -28,7 +28,7 @@ interface HistoryTableProps {
 
 const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSession, onRefreshSessionBalances, onRefresh, setCompositionBySku }: HistoryTableProps) => {
   const { user } = useAuth();
-  const isAdmin = user?.role === ROLES.ADMIN;
+  const { isAdminView: isAdmin } = useRolePreview();
   const currentUserId = user?.id ? String(user.id) : null;
   const latestOwnSessionId = currentUserId ? sessions.find((s) => String(s.createdBy) === currentUserId)?.id ?? null : null;
 

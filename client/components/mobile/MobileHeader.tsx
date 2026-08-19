@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, User } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRolePreview } from '@/contexts/RolePreviewContext';
 import { NotificationBell } from '@/components/NotificationBell';
 import { resolveMobileNavLabel } from '@/components/mobile/resolveMobileNavLabel';
 import { cn } from '@/lib/utils';
@@ -42,9 +43,10 @@ function NavBadgePill({ badge }: { badge: NavBadge }) {
  */
 export function MobileHeader({ className }: MobileHeaderProps) {
   const { user, logout } = useAuth();
+  const { effectiveRole } = useRolePreview();
   const navigate = useNavigate();
   const location = useLocation();
-  const navItem = resolveMobileNavLabel(location.pathname, user?.role);
+  const navItem = resolveMobileNavLabel(location.pathname, effectiveRole);
 
   const handleLogout = () => {
     logout();

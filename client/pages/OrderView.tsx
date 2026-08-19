@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApi } from '../hooks/useApi';
 import { useAuth, useEquipmentFromAuth } from '../contexts/AuthContext';
+import { useRoleAccess } from '../hooks/useRoleAccess';
 import { useDebug } from '../contexts/DebugContext';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { LoggingService } from '@/services/LoggingService';
@@ -31,6 +32,7 @@ export default function OrderView() {
   const navigate = useNavigate();
   const [equipmentState, equipmentActions] = useEquipmentFromAuth();
   const { user } = useAuth();
+  const { isAdmin } = useRoleAccess();
   const { isDebugMode } = useDebug();
 
   // Основний стан замовлення
@@ -974,7 +976,7 @@ export default function OrderView() {
       </div>
 
       {/* Блок деталей замовлення */}
-      {(user && ['admin'].includes(user.role) && isDebugMode) && (
+      {(isAdmin() && isDebugMode) && (
         <OrderDetailsAdmin order={order} externalId={externalId || ''} />
       )}
 

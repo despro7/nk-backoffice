@@ -2,8 +2,7 @@ import React, { useEffect } from 'react';
 import { Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useDebug } from '@/contexts/DebugContext';
-import { useAuth } from '@/contexts/AuthContext';
-import { ROLES } from '@shared/constants/roles';
+import { useRolePreview } from '@/contexts/RolePreviewContext';
 import type { CashInRow, CashInConfirmedRow } from '@shared/types/cashIn';
 
 interface CashInSummaryProps {
@@ -26,9 +25,7 @@ export default function CashInSummary({
   firm,
 }: CashInSummaryProps) {
   const { isDebugMode } = useDebug();
-  const { user } = useAuth();
-
-  const isAdmin = user?.role === ROLES.ADMIN;
+  const { isAdminView: isAdmin } = useRolePreview();
   const showPayloadButton = isAdmin && isDebugMode;
 
   // Рядки зі статусом ok або duplicate_cash_in+allowDuplicate підуть в Діловод

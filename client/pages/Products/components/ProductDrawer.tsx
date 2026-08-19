@@ -31,8 +31,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { useDebug } from '@/contexts/DebugContext';
-import { useAuth } from '@/contexts/AuthContext';
-import { ROLES } from '@shared/constants/roles';
+import { useRolePreview } from '@/contexts/RolePreviewContext';
 import { ToastService } from '@/services/ToastService';
 import { BatchNumbersAutocomplete } from '@/pages/Warehouse/WarehouseMovement/components/BatchNumbersAutocomplete';
 import {
@@ -429,8 +428,7 @@ export function ProductDrawer({
   const isEdit = mode === 'edit';
   const isTrashed = isEdit && detail?.parentId === CATALOG_TRASH_ID;
   const { isDebugMode } = useDebug();
-  const { user } = useAuth();
-  const isAdmin = user?.role === ROLES.ADMIN;
+  const { isAdminView: isAdmin } = useRolePreview();
   const { batches, loading: batchesLoading, fetchBatches } = useBatchNumbers();
   const [editingNoteIdx, setEditingNoteIdx] = useState<number | null>(null);
   /** Мікро-конфірм видалення примітки: idx, для якого показано «Видалити?» */

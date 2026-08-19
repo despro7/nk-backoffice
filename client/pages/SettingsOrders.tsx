@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useRoleAccess } from '../hooks/useRoleAccess';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { SyncHistory } from '../components/SyncHistory';
 import { formatDateTime, formatRelativeDate, formatDuration } from '../lib/formatUtils';
@@ -100,7 +100,7 @@ interface SyncSettings {
 }
 
 const SettingsOrders: React.FC = () => {
-  const { user } = useAuth();
+  const { isAdmin } = useRoleAccess();
 
   // State for sync logs
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
@@ -299,7 +299,7 @@ const SettingsOrders: React.FC = () => {
   });
 
   // Check if user is admin
-  if (!user || !['admin'].includes(user.role)) {
+  if (!isAdmin()) {
     return (
       <div className="flex items-center justify-center min-h-full">
         <div className="text-center">

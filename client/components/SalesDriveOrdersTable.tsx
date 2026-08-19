@@ -28,7 +28,7 @@ import { I18nProvider } from '@react-aria/i18n';
 import type { DateRange } from "@react-types/datepicker";
 import { useApi } from "../hooks/useApi";
 import { useDilovodSettings } from "../hooks/useDilovodSettings";
-import { useAuth } from "../contexts/AuthContext";
+import { useRolePreview } from "../contexts/RolePreviewContext";
 import { useDebug } from "../contexts/DebugContext";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate, getStatusLabel, getStatusColor, getChannelClass, ORDER_STATUSES } from "../lib/formatUtils";
@@ -50,7 +50,7 @@ interface SalesDriveOrdersTableProps {
 
 export default function SalesDriveOrdersTable({ className, initialSearch, initialSearchCategory, hideFilters = false }: SalesDriveOrdersTableProps) {
   const { apiCall } = useApi();
-  const { user } = useAuth();
+  const { isAdminView } = useRolePreview();
   const { isDebugMode } = useDebug();
   const { settings: dilovodSettings } = useDilovodSettings({ loadDirectories: false });
 
@@ -1912,7 +1912,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
       </div>
 
       {/* Третій ряд: Адмін-панель для автоматичних дій */}
-      {user?.role === 'admin' && isDebugMode && (
+      {isAdminView && isDebugMode && (
         <Card shadow="none" border-1 className="bg-neutral-50 border-1 border-neutral-200 rounded-md">
           <CardBody className="py-2 px-3 flex flex-row items-center gap-4">
             <div className="flex items-center gap-2">

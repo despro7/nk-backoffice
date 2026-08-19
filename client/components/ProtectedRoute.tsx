@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useRolePreview } from '../contexts/RolePreviewContext';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { hasAccess } from '../routes.config';
+import { findAppRouteByPath, hasAccess } from '../routes.config';
 import { LoggingService } from '../services/LoggingService';
 
 interface ProtectedRouteProps {
@@ -18,6 +19,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   fallbackPath = "/"
 }) => {
   const { user, isLoading } = useAuth();
+  const { effectiveRole, isPreviewing } = useRolePreview();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -63,7 +65,15 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     LoggingService.routeLog('✅ [ProtectedRoute] User authenticated, rendering children');
   }
 
-  if (!hasAccess(user.role, requiredRoles, minRole)) {
+  const currentRoute = findAppRouteByPath(location.pathname);
+  const routeRoles = requiredRoles ?? currentRoute?.roles;
+  const routeMinRole = minRole ?? currentRoute?.minRole;
+
+  if (!hasAccess(effectiveRole || user.role, routeRoles, routeMinRole)) {
+    if (isPreviewing) {
+      return <Navigate to={fallbackPath} replace />;
+    }
+
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">

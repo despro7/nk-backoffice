@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-08-20 — Перегляд UI як інша роль (admin preview)
+**Files:** `shared/constants/roles.ts`, `client/contexts/RolePreviewContext.tsx`, `client/lib/rolePreviewFetch.ts`, `client/components/RolePreviewSelect.tsx`, `SidebarAdminFooter.tsx`, `Sidebar.tsx`, `Header.tsx`, `useRoleAccess.ts`, `ProtectedRoute.tsx`, `server/middleware/auth.ts`, `server/index.ts`, `server/types/auth.ts`, `Docs/features/role-preview.md`
+
+- Адмін бачить меню / сторінки / кнопки обраної ролі, не виходячи з акаунта. `user.role` у AuthContext не підміняється (Debug mode і селект лишаються).
+- Селект ролі + Debug mode — спойлер унизу сайдбару (десктоп і мобайл); з хедера прибрано.
+- Обережне API-зниження: заголовок `X-Role-Preview`, сервер міняє лише `req.user.role` (не userId). Це не імперсонація: дозволені мутації виконуються від адміна.
+- 403 від `requireRole` / `requireMinRole` → toast «Недостатньо прав» (заголовок `X-Insufficient-Role`, без читання body).
+- Сесія (`/api/auth/profile`, logout, refresh) завжди йде від реальної ролі.
+
+---
+
 ## 2026-08-18 — LAL Аудиторії: вибірка клієнтів і експорт для Ads
 **Files:** `shared/types/lalAudiences.ts`, `server/services/LalAudiencesService.ts`, `server/routes/lal-audiences.ts`, `server/index.ts`, `prisma/schema.prisma`, `prisma/migrations/20260818120000_add_order_customer_phone_index/`, `client/pages/Reports/LalAudiences/**`, `client/routes.config.tsx`, `Docs/features/lal-audiences.md`
 

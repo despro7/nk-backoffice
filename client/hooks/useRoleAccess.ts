@@ -1,12 +1,14 @@
 import { useAuth } from "@/contexts/AuthContext";
+import { useRolePreview } from "@/contexts/RolePreviewContext";
 import { hasAccess, ROLES } from "@/routes.config";
 
 export const useRoleAccess = () => {
   const { user } = useAuth();
+  const { effectiveRole } = useRolePreview();
 
   const canAccess = (requiredRoles?: string[], minRole?: string): boolean => {
-    if (!user) return false;
-    return hasAccess(user.role, requiredRoles, minRole);
+    if (!user || !effectiveRole) return false;
+    return hasAccess(effectiveRole, requiredRoles, minRole);
   };
 
   const isAdmin = () => canAccess([ROLES.ADMIN]);

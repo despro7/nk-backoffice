@@ -14,6 +14,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { DilovodDirectoriesProvider } from './contexts/DilovodDirectoriesContext';
 import { useDilovodDirectories } from './contexts/DilovodDirectoriesContext';
 import { DebugProvider } from "./contexts/DebugContext";
+import { RolePreviewProvider } from "./contexts/RolePreviewContext";
 import { ServerStatusProvider } from "./hooks/ServerStatusContext";
 import { useEquipmentFromAuth } from "./contexts/AuthContext";
 import NotFound from "./pages/NotFound";
@@ -179,6 +180,7 @@ const App = () => (
         <DilovodDirectoriesProvider>
           <AuthProvider>
             <DebugProvider>
+            <RolePreviewProvider>
             <ServerStatusProvider>
               <AppInitializer>
                 <ScrollToTop />
@@ -187,6 +189,7 @@ const App = () => (
                   </ErrorBoundary>
                 </AppInitializer>
               </ServerStatusProvider>
+            </RolePreviewProvider>
             </DebugProvider>
           </AuthProvider>
         </DilovodDirectoriesProvider>

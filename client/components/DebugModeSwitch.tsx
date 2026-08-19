@@ -36,7 +36,7 @@ export const DebugModeSwitch: React.FC<DebugModeSwitchProps> = ({
   };
 
   return (
-    <div className={cn("flex items-center gap-3 w-full justify-center sm:w-auto ml-10", className)}>
+    <div className={cn("flex items-center gap-3 w-full justify-start", className)}>
       <Switch
         isSelected={isDebugMode}
         onValueChange={handleModeChange}

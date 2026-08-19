@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
-import { useAuth } from '@/contexts/AuthContext';
-import { ROLES } from '@shared/constants/roles';
+import { useRolePreview } from '@/contexts/RolePreviewContext';
 import { formatDate, formatRelativeDate, truncateText, pluralize } from '@/lib';
 import { HistoryItemsTable } from './HistoryItemsTable';
 import { normalizeSetsArray } from './historyNormalize';
@@ -33,8 +32,7 @@ export const HistoryAccordionItem = ({
   onEditRecord,
   recordType,
 }: HistoryAccordionItemProps) => {
-  const { user } = useAuth();
-  const isAdmin = user?.role === ROLES.ADMIN;
+  const { isAdminView: isAdmin } = useRolePreview();
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
   const [loadingLoadId, setLoadingLoadId] = useState<string | null>(null);
   const [loadingDeleteId, setLoadingDeleteId] = useState<string | null>(null);

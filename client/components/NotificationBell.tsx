@@ -11,7 +11,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import type { AppNotification, NotificationSeverity } from '../../shared/types/notifications';
 import { useNotifications } from '../hooks/useNotifications';
 import { useDebug } from '../contexts/DebugContext';
-import { useAuth } from '../contexts/AuthContext';
+import { useRolePreview } from '../contexts/RolePreviewContext';
 import ResultDrawer from './ResultDrawer';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -265,8 +265,7 @@ export function NotificationBell({ onNavigate: _onNavigate, size = 'default' }: 
   const [drawerLog, setDrawerLog] = useState<any[] | null>(null);
   const { notifications, unreadCount, markRead, markAllRead, markAllReadGlobal, hideAll, hideAllGlobal, hideOneGlobal, clearAll, refresh } = useNotifications();
   const { isDebugMode } = useDebug();
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { isAdminView: isAdmin } = useRolePreview();
 
   const handleOpenChange = useCallback((open: boolean) => {
     setIsOpen(open);

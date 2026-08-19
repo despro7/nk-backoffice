@@ -11,9 +11,9 @@ import {
 } from "@/routes.config";
 import React, { useState } from "react";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { useAuth } from "@/contexts/AuthContext";
 import { useSidebar } from "@/contexts/SidebarContext";
-import { DebugModeSwitch } from "@/components/DebugModeSwitch";
+import { SidebarAdminFooter } from "@/components/SidebarAdminFooter";
+import { useRolePreview } from "@/contexts/RolePreviewContext";
 
 interface SidebarProps {
   className?: string;
@@ -156,10 +156,10 @@ function SubmenuItem({ to, icon, label, isActive, badge, onNavigate }: NavItemPr
 
 export function Sidebar({ className }: SidebarProps) {
   const location = useLocation();
-  const { user } = useAuth();
+  const { effectiveRole } = useRolePreview();
   const { open, isMobile, setOpen } = useSidebar();
   
-  const { mainRoutes, subGroups } = getNavGroups(user?.role);
+  const { mainRoutes, subGroups } = getNavGroups(effectiveRole);
 
   const handleNavigate = () => {
     if (isMobile) {
@@ -236,50 +236,50 @@ export function Sidebar({ className }: SidebarProps) {
     );
   };
 
-  const navContent = (
-    <>
-      <div className="flex items-center gap-1.5 px-4 py-4 select-none">
-        <img src={favicon} alt="favicon" className="w-8 h-8" />
-        <div className="flex items-end gap-1 font-[Nunito] text-2xl font-bold text-slate-600 leading-none">
-          <span>Backoffice</span>
-          <div className="text-sm text-slate-400/80 bg-gray-100 px-1.5 py-1 rounded leading-none">2.0</div>
-        </div>
+  const brandHeader = (
+    <div className="flex items-center gap-1.5 px-4 py-4 select-none shrink-0">
+      <img src={favicon} alt="favicon" className="w-8 h-8" />
+      <div className="flex items-end gap-1 font-[Nunito] text-2xl font-bold text-slate-600 leading-none">
+        <span>Backoffice</span>
+        <div className="text-sm text-slate-400/80 bg-gray-100 px-1.5 py-1 rounded leading-none">2.0</div>
       </div>
-      <nav className="flex flex-col items-start gap-1 px-3 py-4 h-auto flex-1">
-        {[
-          ...mainRoutes.map(route => ({ type: 'route' as const, order: route.order ?? 0, route })),
-          ...Object.values(subGroups)
-            .filter(group => !group.parentRoute)
-            .map(group => ({ type: 'group' as const, order: group.order, group })),
-        ]
-          .sort((a, b) => a.order - b.order)
-          .map(item => {
-            if (item.type === 'group') {
-              return renderSubGroup(item.group);
-            }
-            const group = subGroups[item.route.path.replace(/^\//, '')];
-            if (group) {
-              return renderSubGroup(group);
-            }
-            return (
-              <NavItem
-                key={item.route.path}
-                to={item.route.path}
-                icon={item.route.icon}
-                label={item.route.navLabel}
-                isActive={location.pathname === item.route.path}
-                badge={item.route.navBadge}
-                onNavigate={handleNavigate}
-              />
-            );
-          })
-        }
-      </nav>
-      <div className="px-5 pb-4 pt-8 mt-auto lg:hidden">
-        <DebugModeSwitch className="ml-0 w-full justify-start" />
-      </div>
-    </>
+    </div>
   );
+
+  const nav = (
+    <nav className="flex flex-col items-start gap-1 px-3 py-4">
+      {[
+        ...mainRoutes.map(route => ({ type: 'route' as const, order: route.order ?? 0, route })),
+        ...Object.values(subGroups)
+          .filter(group => !group.parentRoute)
+          .map(group => ({ type: 'group' as const, order: group.order, group })),
+      ]
+        .sort((a, b) => a.order - b.order)
+        .map(item => {
+          if (item.type === 'group') {
+            return renderSubGroup(item.group);
+          }
+          const group = subGroups[item.route.path.replace(/^\//, '')];
+          if (group) {
+            return renderSubGroup(group);
+          }
+          return (
+            <NavItem
+              key={item.route.path}
+              to={item.route.path}
+              icon={item.route.icon}
+              label={item.route.navLabel}
+              isActive={location.pathname === item.route.path}
+              badge={item.route.navBadge}
+              onNavigate={handleNavigate}
+            />
+          );
+        })
+      }
+    </nav>
+  );
+
+  const footer = <SidebarAdminFooter />;
 
   // Mobile: fixed overlay + backdrop
   if (isMobile) {
@@ -301,15 +301,17 @@ export function Sidebar({ className }: SidebarProps) {
             className
           )}
         >
-          <div className="h-full overflow-y-auto bg-white scrollbar-hide flex flex-col pb-4">
-            {navContent}
+          {brandHeader}
+          <div className="flex-1 min-h-0 overflow-y-auto bg-white scrollbar-hide">
+            {nav}
           </div>
+          {footer}
         </aside>
       </>
     );
   }
 
-  // Desktop: wrapper закріплений у в'юпорті, скрол лише всередині
+  // Desktop: wrapper закріплений у в'юпорті, скрол лише в навігації
   return (
     <aside
       className={cn(
@@ -321,12 +323,16 @@ export function Sidebar({ className }: SidebarProps) {
     >
       <div
         className={cn(
-          'h-full overflow-y-auto bg-white scrollbar-hide pb-4 flex flex-col',
+          'h-full bg-white flex flex-col',
           'w-[250px] transition-opacity duration-300',
           open ? 'opacity-100' : 'opacity-0 pointer-events-none'
         )}
       >
-        {navContent}
+        {brandHeader}
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
+          {nav}
+        </div>
+        {footer}
       </div>
     </aside>
   );

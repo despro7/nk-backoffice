@@ -3,12 +3,12 @@ import jwt from 'jsonwebtoken';
 import { JwtPayload } from '../types/auth.js';
 import { AuthService } from '../services/authService.js';
 import { AuthSettingsService } from '../services/authSettingsService.js';
-import { ROLES, ROLE_SETS, hasAccess, ROLE_HIERARCHY } from '../../shared/constants/roles.js';
+import { ROLES, ROLE_SETS, hasAccess, ROLE_HIERARCHY, canApplyRolePreview, isRolePreviewExemptPath, ROLE_PREVIEW_HEADER, ROLE_PREVIEW_APPLIED_HEADER, INSUFFICIENT_ROLE_HEADER } from '../../shared/constants/roles.js';
 import type { RoleValue } from '../../shared/constants/roles.js';
 
 export { ROLES, ROLE_SETS };
 
-// Расширяем интерфейс Request для добавления пользователя
+// Розширюємо інтерфейс Request для додавання користувача
 declare global {
   namespace Express {
     interface Request {
@@ -17,10 +17,10 @@ declare global {
   }
 }
 
-// Счетчик для отслеживания проверок токенов
+// Лічильник для відстеження перевірок токенів
 let tokenCheckCount = 0;
 
-// Глобальная блокировка для предотвращения параллельных обновлений токенов
+// Глобальне блокування для запобігання паралельним оновленням токенів
 let refreshInProgress = false;
 let refreshPromise: Promise<any> | null = null;
 
@@ -44,22 +44,15 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
 
   try {
     tokenCheckCount++;
-    // console.log(`🔍 [Middleware] #${tokenCheckCount} Проверка токена для пути: ${req.path}`);
 
-    // Расширенное логирование для тестирования
+    // Розширене логування для тестування
     const shouldLog = process.env.NODE_ENV === 'development';
 
-    // Получаем токены из cookies
+    // Отримуємо токени з cookies
     const { accessToken, refreshToken } = await AuthService.getTokenFromCookies(req);
 
-    // Логируем для отладки
-    // console.log('🔍 [Middleware] Access token из cookie:', accessToken ? 'присутствует' : 'отсутствует');
-    // console.log('🔍 [Middleware] Refresh token из cookie:', refreshToken ? 'присутствует' : 'отсутствует');
-
     if (accessToken) {
-      // console.log('🔍 [Middleware] Access token найден, проверяем его валидность...');
-      
-      // Проверяем время истечения токена ДО его валидации
+      // Перевіряємо час закінчення терміну дії токена ДО його валідації
       try {
         const secret = process.env.JWT_SECRET || 'fallback_secret';
         const decoded = jwt.decode(accessToken) as any;
@@ -68,85 +61,85 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
           const now = Math.floor(Date.now() / 1000);
           const timeUntilExpiry = decoded.exp - now;
           
-          // Получаем настройки из БД
+          // Отримуємо налаштування з БД
           const settings = await AuthSettingsService.getAuthSettings();
           
-          // Если автоматическое обновление включено и токен истекает в ближайшее время
+          // Якщо автоматичне оновлення увімкнено і токен закінчується в найближчому часі
           if (settings.middlewareAutoRefreshEnabled && timeUntilExpiry <= settings.middlewareRefreshThresholdSeconds && timeUntilExpiry > 0) {
-            console.log(`⚠️  [Middleware] Access token истекает через ${timeUntilExpiry} секунд, обновляем...`);
-            
+            console.log(`⚠️  [Middleware] Access token закінчується через ${timeUntilExpiry} секунд, оновлюємо...`);
+              
             if (refreshToken) {
-              // Проверяем блокировку обновлений
+              // Перевіряємо блокування оновлень
               if (refreshInProgress) {
-                console.log('⏭️ [Middleware] Обновление уже в процессе, пропускаем этот запрос (избегаем блокировки пула БД)');
-                // НЕ ждем - просто продолжаем с текущим токеном
-                // Это избегает исчерпания пула соединений к БД
+                console.log('⏭️ [Middleware] Оновлення вже в процесі, пропускаємо цей запит (запобігаємо блокуванню пулу БД)');
+                // НЕ чекаємо - просто продовжуємо з поточным токеном
+                // Це запобігає вичерпанню пулу з'єднань з БД
               } else {
-                // Устанавливаем блокировку и начинаем обновление
+                // Встановлюємо блокування і починаємо оновлення
                 refreshInProgress = true;
-                console.log('🔒 [Middleware] Установлена блокировка обновления токенов');
+                console.log('🔒 [Middleware] Встановлено блокування оновлення токенів');
                 
                 refreshPromise = (async () => {
                   try {
                     const refreshResult = await AuthService.refreshToken({ refreshToken });
                     
-                    // Устанавливаем новые cookies
+                    // Встановлюємо нові cookies
                     await AuthService.setAuthCookies(res, refreshResult.token, refreshResult.refreshToken);
                     
-                    console.log('✅ [Middleware] Токен успешно обновлен автоматически');
+                    console.log('✅ [Middleware] Токен успішно оновлений автоматично');
                     
-                    // Устанавливаем заголовок для уведомления клиента об обновлении
+                    // Встановлюємо заголовок для сповіщення клієнта про оновлення
                     res.setHeader('X-Token-Refreshed', 'true');
                     res.setHeader('X-User-Email', decoded.email || 'unknown');
                     
                     return refreshResult;
                   } catch (refreshError) {
-                    console.log('❌ [Middleware] Ошибка автоматического обновления токена:', refreshError.message);
-                    // НЕ перебрасываем ошибку - иначе будет unhandled rejection
-                    // Клиент получит 401 при следующем запросе и сделает явный refresh
+                    console.log('❌ [Middleware] Помилка автоматичного оновлення токена:', refreshError.message);
+                    // НЕ перекладаємо помилку — інакше буде unhandled rejection
+                    // Клієнт отримає 401 при наступному запиті і зробить явне оновлення
                     return null;
                   } finally {
-                    // Освобождаем блокировку
+                    // Звільняємо блокування
                     refreshInProgress = false;
                     refreshPromise = null;
-                    console.log('🔓 [Middleware] Блокировка обновления токенов снята');
+                    console.log('🔓 [Middleware] Блокування оновлення токенів знято');
                   }
                 })();
                 
-                // Добавляем обработчик для предотвращения unhandled rejection
+                // Додаємо обробник для запобігання unhandled rejection
                 refreshPromise.catch((error) => {
-                  console.error('❌ [Middleware] Критическая ошибка в фоновом обновлении токена:', error.message);
-                  // Ошибка уже залогирована, просто предотвращаем падение сервера
+                  console.log('❌ [Middleware] Критична помилка в фоновому оновленні токена:', error.message);
+                  // Помилка уже залогірована, просто запобігаємо падінню сервера
                 });
                 
-                // НЕ ждем завершения - запускаем обновление в фоне
-                // Продолжаем с текущим токеном, чтобы не блокировать пул БД
+                // НЕ чекаємо завершення - запускаємо оновлення в фоновому режимі
+                // Продовжуємо з поточным токеном, щоб не блокувати пул БД
               }
             }
           }
         }
       } catch (decodeError) {
-        // Если не удалось декодировать токен, продолжаем с обычной валидацией
-        console.log('⚠️ [Middleware] Не удалось декодировать токен для проверки времени:', decodeError.message);
+        // Якщо не вдалося декодувати токен, продовжуємо зі звичайною валідацією
+        console.log(`⚠️ [Middleware] Не вдалося декодувати токен для перевірки часу: ${decodeError.message}`);
       }
     }
     
     if (!accessToken) {
-      // Если access token отсутствует, но есть refresh token,
-      // это сигнал для клиента, что нужно попытаться обновить токен.
-      // Это покрывает случай, когда cookie access token истек.
+      // Якщо access token відсутній, але є refresh token,
+      // це сигнал для клієнта, що потрібно спробувати оновити токен.
+      // Це покриває випадок, коли cookie access token закінчився.
       if (refreshToken) {
-        console.log('⚠️  [Middleware] Access token отсутствует, но refresh token есть. Требуется обновление.');
+        console.log('⚠️  [Middleware] Access token відсутній, але refresh token присутній. Потрібно оновити.');
         return res.status(401).json({
           message: 'Access token required, refresh needed',
-          code: 'TOKEN_EXPIRED', // Используем тот же код, что и для истекшего токена
+          code: 'TOKEN_EXPIRED', // Використовуємо той же код, що і для закінченого токена
           shouldRefresh: true,
         });
       }
 
-      // Если нет ни access, ни refresh токена, то пользователь не авторизован.
+      // Якщо немає ні access, ні refresh токена, то користувач не авторизований.
       if (shouldLog) {
-        console.log('❌ [Middleware] Access token не найден');
+        console.log('❌ [Middleware] Access token не знайдений');
       }
       return res.status(401).json({
         message: 'Access token required. Please login first.',
@@ -156,15 +149,11 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     }
 
     const secret = process.env.JWT_SECRET || 'fallback_secret';
-    // console.log('🔍 [Middleware] Проверяем access token...');
     const decoded = jwt.verify(accessToken, secret) as JwtPayload;
 
-    // console.log(`👤 [Middleware] Access token валиден для пользователя: ${decoded.email}`);
-    // console.log(`🔍 [Middleware] Тип токена: ${decoded.tokenType}`);
-
-    // Проверяем тип токена
+    // Перевіряємо тип токена
     if (decoded.tokenType !== 'access') {
-      console.log('❌ [Middleware] Неверный тип токена:', decoded.tokenType);
+      console.log(`❌ [Middleware] Неправильний тип токена: ${decoded.tokenType}`);
       return res.status(403).json({
         message: 'Invalid token type',
         code: 'INVALID_TOKEN_TYPE',
@@ -172,25 +161,24 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       });
     }
     
-    // Рассчитываем оставшееся время жизни токена
+    // Розраховуємо залишковий час існування токена
     if (decoded.exp) {
       const now = Math.floor(Date.now() / 1000);
       decoded.expiresIn = Math.max(0, decoded.exp - now);
-      // console.log(`⏱️  [Middleware] Токен истекает через: ${decoded.expiresIn} сек`);
     }
     
     req.user = decoded;
 
-    // console.log(`✅ [Middleware] #${tokenCheckCount} Токен успешно валидирован для ${decoded.email}`);
+    applyRolePreview(req, res);
 
-    // Тихое обновление активности пользователя
+    // Тихе оновлення активности користувача
     AuthService.updateUserActivity(decoded.userId).catch(() => {});
 
     next();
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
-      console.log('⚠️ [Middleware] Access token истек, возвращаем shouldRefresh');
-      console.log('🔄 [Middleware] Приложение должно автоматически обновить токен через refresh token');
+      console.log('⚠️ [Middleware] Access token закінчився, повертаємо shouldRefresh');
+      console.log('🔄 [Middleware] Додаток повинен автоматично оновити токен через refresh token');
       return res.status(401).json({
         message: 'Access token expired',
         code: 'TOKEN_EXPIRED',
@@ -199,11 +187,11 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       });
     }
 
-    console.log('❌ [Middleware] Ошибка проверки токена:', error.message);
+    console.log(`❌ [Middleware] Помилка перевірки токена: ${error.message}`);
     if (error.message.includes('invalid signature')) {
-      console.log('❌ [Middleware] Неверная подпись токена - возможно, JWT_SECRET изменился');
+      console.log('❌ [Middleware] Неправильна підпис токена - можливо, JWT_SECRET змінився');
     } else if (error.message.includes('malformed')) {
-      console.log('❌ [Middleware] Поврежденный токен - возможно, ошибка кодирования');
+      console.log('❌ [Middleware] Пошкоджений токен - можливо, помилка кодування');
     }
 
     return res.status(403).json({
@@ -213,6 +201,36 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     });
   }
 };
+
+/**
+ * Обережне зниження ролі на запит: лише для реального admin,
+ * лише на відому роль нижче admin. Identity (userId/email) не змінюється.
+ * Не застосовується до cron і до ендпоінтів сесії.
+ */
+function applyRolePreview(req: Request, res: Response): void {
+  const user = req.user;
+  if (!user || user.userId === 0) return;
+  if (isRolePreviewExemptPath(req.originalUrl || req.path || '')) return;
+
+  const rawHeader = req.get(ROLE_PREVIEW_HEADER);
+  if (!rawHeader) return;
+
+  if (!canApplyRolePreview(user.role, rawHeader)) return;
+
+  user.realRole = user.role;
+  user.role = rawHeader;
+  res.setHeader(ROLE_PREVIEW_APPLIED_HEADER, rawHeader);
+}
+
+function sendInsufficientRole(res: Response, message: string) {
+  res.setHeader(INSUFFICIENT_ROLE_HEADER, '1');
+  return res.status(403).json({
+    success: false,
+    error: 'Insufficient permissions',
+    code: 'INSUFFICIENT_ROLE',
+    message,
+  });
+}
 
 export const requireRole = (roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -225,11 +243,7 @@ export const requireRole = (roles: string[]) => {
     }
 
     if (!hasAccess(req.user.role, roles)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions',
-        message: `Required roles: ${roles.join(', ')}`
-      });
+      return sendInsufficientRole(res, `Required roles: ${roles.join(', ')}`);
     }
 
     next();
@@ -254,11 +268,10 @@ export const requireMinRole = (minRole: RoleValue) => {
     if (!hasAccess(req.user.role, undefined, minRole)) {
       const userLevel = ROLE_HIERARCHY[req.user.role as RoleValue] ?? 0;
       const requiredLevel = ROLE_HIERARCHY[minRole];
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions',
-        message: `Required minimum role: ${minRole} (level ${requiredLevel}), your role: ${req.user.role} (level ${userLevel})`
-      });
+      return sendInsufficientRole(
+        res,
+        `Required minimum role: ${minRole} (level ${requiredLevel}), your role: ${req.user.role} (level ${userLevel})`
+      );
     }
 
     next();

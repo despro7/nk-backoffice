@@ -7,14 +7,13 @@ import OtherMetaLogTable from './components/OtherMetaLogTable';
 import useMetaLogs from './hooks/useMetaLogs';
 import { useNotifications } from '../../hooks/useNotifications';
 import { ToastService } from '../../services/ToastService';
-import { useAuth } from '../../contexts/AuthContext';
+import { useRolePreview } from '../../contexts/RolePreviewContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 export default function MetaLogNotifications() {
   const { rowsShipment, rowsOther, rowsDoc, loading, totalUnique, totalOccurrences, reload } = useMetaLogs();
   const { hideOneGlobal } = useNotifications();
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { isAdminView: isAdmin } = useRolePreview();
 
   const handleResolve = async (ids: Array<number | string>) => {
     try {

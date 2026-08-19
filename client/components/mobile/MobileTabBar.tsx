@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { useAuth } from '@/contexts/AuthContext';
+import { useRolePreview } from '@/contexts/RolePreviewContext';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { getNavGroups } from '@/routes.config';
 import { isPathInNavGroup } from '@/components/mobile/resolveMobileNavLabel';
@@ -22,9 +22,9 @@ interface TabDef {
 export function MobileTabBar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { effectiveRole } = useRolePreview();
   const { open: sidebarOpen, toggle } = useSidebar();
-  const { mainRoutes, subGroups } = getNavGroups(user?.role);
+  const { mainRoutes, subGroups } = getNavGroups(effectiveRole);
 
   const [groupDrawerKey, setGroupDrawerKey] = useState<'warehouse' | 'reports' | null>(null);
 
