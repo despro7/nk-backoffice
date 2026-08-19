@@ -166,6 +166,7 @@ export class ProductsLocalSync {
     const createData = {
       id: payload.id,
       ...data,
+      specQty: payload.specQty ?? null,
       fullDescription: payload.fullDescription ?? null,
       unitRatio: payload.unitRatio ?? 1,
       stockBalanceByStock: payload.stockBalanceByStock ?? null,
@@ -173,6 +174,9 @@ export class ProductsLocalSync {
     };
 
     const updateData: Record<string, unknown> = { ...data };
+    if (payload.specQty !== undefined) {
+      updateData.specQty = payload.specQty;
+    }
     if (payload.fullDescription !== undefined) {
       updateData.fullDescription = payload.fullDescription;
     }

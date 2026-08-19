@@ -27,6 +27,7 @@ export interface DilovodCatalogGoodRow {
   mainUnitId: string | null;
   packageRatio: number | null;
   weight: number | null;
+  specQty: number | null;
   accPolicyId: string | null;
   printName: string | null;
   description: string | null;
@@ -47,6 +48,8 @@ export interface DilovodGoodHeaderPayload {
   mainUnit?: string;
   packageRatio?: number | string;
   weight?: number | string;
+  /** Dilovod `specQty` — «Розрахунок на N шт.» специфікації */
+  specQty?: number | string;
   accPolicy?: string;
   printName?: string | { uk: string; ru: string };
   description?: string | { uk: string; ru: string };
@@ -93,6 +96,7 @@ export interface LocalSyncGoodPayload {
   mainUnitId: string | null;
   packageRatio: number | null;
   weight: number | null;
+  specQty?: number | null;
   accPolicyId: string | null;
   printName: string | null;
   description: string | null;

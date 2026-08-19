@@ -66,6 +66,8 @@ export interface CatalogGoodDto {
   mainUnitId: string | null;
   packageRatio: number | null;
   weight: number | null;
+  /** Dilovod `specQty` — «Розрахунок на N шт.» специфікації продукції */
+  specQty: number | null;
   accPolicyId: string | null;
   printName: string | null;
   /** Короткий опис → Dilovod */
@@ -105,6 +107,10 @@ export interface CatalogGoodComponentDto {
   componentGoodId: string;
   componentName?: string;
   componentSku?: string | null;
+  /** Вага компонента з картки, кг (для прогнозу ваги батьківського обʼєкта) */
+  componentWeight?: number | null;
+  /** Політика обліку компонента (щоб відрізняти інгредієнти від продукції) */
+  componentAccPolicyId?: string | null;
   qty: number;
   rowNum: number;
   /** Од. виміру рядка tpGoods (для специфікації) */
@@ -175,6 +181,7 @@ export interface CatalogCreateGoodInput {
   mainUnitId?: string | null;
   packageRatio?: number | null;
   weight?: number | null;
+  specQty?: number | null;
   accPolicyId?: string | null;
   printName?: string | null;
   description?: string | null;
@@ -207,6 +214,7 @@ export interface CatalogUpdateGoodInput {
   mainUnitId?: string | null;
   packageRatio?: number | null;
   weight?: number | null;
+  specQty?: number | null;
   accPolicyId?: string | null;
   printName?: string | null;
   description?: string | null;

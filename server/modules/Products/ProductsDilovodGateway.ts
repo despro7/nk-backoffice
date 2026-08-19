@@ -20,6 +20,27 @@ import {
 import { allocateNextSku, isSkuDuplicateError } from './skuUtils.js';
 import { allocateNextEan13 } from './barcodeUtils.js';
 
+/** Поля списку catalogs.goods (у т.ч. specQty = «Розрахунок на»). */
+const GOODS_LIST_FIELDS = {
+  id: 'id',
+  productNum: 'sku',
+  parent: 'parent',
+  id__pr: 'name',
+  isGroup: 'isGroup',
+  delMark: 'delMark',
+  mainUnit: 'mainUnit',
+  packageRatio: 'packageRatio',
+  weight: 'weight',
+  specQty: 'specQty',
+  accPolicy: 'accPolicy',
+  printName: 'printName',
+  description: 'description',
+} as const;
+
+function parseHeaderSpecQty(header: Record<string, unknown>): number | null {
+  return toNumberOrNull(header.specQty ?? header.qty);
+}
+
 /** Мапінг CacheType → Dilovod `from` для каталожних довідників. */
 const DICT_FROM: Partial<Record<CacheType, string>> = {
   units: 'catalogs.units',
@@ -279,20 +300,7 @@ export class ProductsDilovodGateway {
         action: 'request',
         params: {
           from: 'catalogs.goods',
-          fields: {
-            id: 'id',
-            productNum: 'sku',
-            parent: 'parent',
-            id__pr: 'name',
-            isGroup: 'isGroup',
-            delMark: 'delMark',
-            mainUnit: 'mainUnit',
-            packageRatio: 'packageRatio',
-            weight: 'weight',
-            accPolicy: 'accPolicy',
-            printName: 'printName',
-            description: 'description',
-          },
+          fields: GOODS_LIST_FIELDS,
           // Dilovod docs: limit може бути { offset, count }
           limit: { offset, count: pageSize },
         },
@@ -337,20 +345,7 @@ export class ProductsDilovodGateway {
         action: 'request',
         params: {
           from: 'catalogs.goods',
-          fields: {
-            id: 'id',
-            productNum: 'sku',
-            parent: 'parent',
-            id__pr: 'name',
-            isGroup: 'isGroup',
-            delMark: 'delMark',
-            mainUnit: 'mainUnit',
-            packageRatio: 'packageRatio',
-            weight: 'weight',
-            accPolicy: 'accPolicy',
-            printName: 'printName',
-            description: 'description',
-          },
+          fields: GOODS_LIST_FIELDS,
           filters: [{ alias: 'id', operator: 'IL', value: chunk }],
         },
       });
@@ -375,20 +370,7 @@ export class ProductsDilovodGateway {
       action: 'request',
       params: {
         from: 'catalogs.goods',
-        fields: {
-          id: 'id',
-          productNum: 'sku',
-          parent: 'parent',
-          id__pr: 'name',
-          isGroup: 'isGroup',
-          delMark: 'delMark',
-          mainUnit: 'mainUnit',
-          packageRatio: 'packageRatio',
-          weight: 'weight',
-          accPolicy: 'accPolicy',
-          printName: 'printName',
-          description: 'description',
-        },
+        fields: GOODS_LIST_FIELDS,
         filters: [{ alias: 'parent', operator: '=', value: parentValue }],
       },
     });
@@ -701,6 +683,7 @@ export class ProductsDilovodGateway {
     mainUnitId: string | null;
     packageRatio: number | null;
     weight: number | null;
+    specQty: number | null;
     accPolicyId: string | null;
     printName: string | null;
     description: string | null;
@@ -800,6 +783,7 @@ export class ProductsDilovodGateway {
       mainUnitId,
       packageRatio: toNumberOrNull(header.packageRatio),
       weight: toNumberOrNull(header.weight),
+      specQty: parseHeaderSpecQty(header),
       accPolicyId,
       printName: extractUkName(header.printName) || (header.printName != null ? String(header.printName) : null),
       // Dilovod description = multilang { uk, ru }; String(obj) давав "[object Object]"
@@ -819,6 +803,7 @@ export class ProductsDilovodGateway {
       mainUnitId: r.mainUnit != null && String(r.mainUnit) ? String(r.mainUnit) : null,
       packageRatio: toNumberOrNull(r.packageRatio),
       weight: toNumberOrNull(r.weight),
+      specQty: toNumberOrNull(r.specQty ?? r.qty),
       accPolicyId: r.accPolicy != null && String(r.accPolicy) ? String(r.accPolicy) : null,
       printName: r.printName != null ? extractUkName(r.printName) || String(r.printName) : null,
       description: r.description != null ? String(r.description) : null,

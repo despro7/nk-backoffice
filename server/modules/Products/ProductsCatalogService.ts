@@ -86,6 +86,7 @@ function toStructurePayload(g: DilovodCatalogGoodRow): LocalSyncGoodPayload {
     mainUnitId: g.mainUnitId,
     packageRatio: g.packageRatio,
     weight: g.weight,
+    specQty: g.specQty,
     accPolicyId: g.accPolicyId,
     printName: g.printName,
     description: g.description,
@@ -103,6 +104,7 @@ function mapGoodDto(
     mainUnitId: string | null;
     packageRatio: number | null;
     weight: number | null;
+    specQty?: number | null;
     accPolicyId: string | null;
     printName: string | null;
     description: string | null;
@@ -129,6 +131,7 @@ function mapGoodDto(
     mainUnitId: row.mainUnitId,
     packageRatio: row.packageRatio,
     weight: row.weight,
+    specQty: row.specQty ?? null,
     accPolicyId: row.accPolicyId,
     printName: row.printName,
     description: row.description,
@@ -606,6 +609,7 @@ export class ProductsCatalogService {
       mainUnitId: mapped.mainUnitId,
       packageRatio: mapped.packageRatio,
       weight: mapped.weight,
+      specQty: mapped.specQty,
       accPolicyId: mapped.accPolicyId,
       printName: mapped.printName,
       description: mapped.description,
@@ -645,7 +649,7 @@ export class ProductsCatalogService {
       componentIds.length > 0
         ? await prisma.catalogGood.findMany({
             where: { id: { in: componentIds } },
-            select: { id: true, name: true, sku: true },
+            select: { id: true, name: true, sku: true, weight: true, accPolicyId: true },
           })
         : [];
     const componentMap = new Map(componentGoods.map((g) => [g.id, g]));
@@ -712,6 +716,8 @@ export class ProductsCatalogService {
         componentGoodId: c.componentGoodId,
         componentName: componentMap.get(c.componentGoodId)?.name,
         componentSku: componentMap.get(c.componentGoodId)?.sku ?? null,
+        componentWeight: componentMap.get(c.componentGoodId)?.weight ?? null,
+        componentAccPolicyId: componentMap.get(c.componentGoodId)?.accPolicyId ?? null,
         qty: c.qty,
         rowNum: c.rowNum,
         unitId: c.unitId ?? null,
@@ -773,6 +779,10 @@ export class ProductsCatalogService {
       if (skuValue) header.productNum = skuValue;
       if (input.packageRatio != null) header.packageRatio = input.packageRatio;
       if (input.weight != null) header.weight = input.weight;
+      if (!isGroup && accPolicyId === CATALOG_ACC_POLICY_GOOD) {
+        const specQty = Number(input.specQty);
+        header.specQty = Number.isFinite(specQty) && specQty > 0 ? specQty : 1;
+      }
       if (input.printName) header.printName = { uk: input.printName, ru: input.printName };
       const descriptionMl = toMultilang(input.description);
       if (descriptionMl) header.description = descriptionMl;
@@ -858,6 +868,12 @@ export class ProductsCatalogService {
       mainUnitId,
       packageRatio: input.packageRatio ?? null,
       weight: input.weight ?? null,
+      specQty:
+        accPolicyId === CATALOG_ACC_POLICY_GOOD && Number(input.specQty) > 0
+          ? Number(input.specQty)
+          : accPolicyId === CATALOG_ACC_POLICY_GOOD
+            ? 1
+            : null,
       accPolicyId,
       printName: input.printName ?? null,
       description: input.description ?? null,
@@ -982,6 +998,11 @@ export class ProductsCatalogService {
     if (sku) header.productNum = sku;
     const packageRatio = input.packageRatio !== undefined ? input.packageRatio : existing.packageRatio;
     const weight = input.weight !== undefined ? input.weight : existing.weight;
+    const specQtyRaw = input.specQty !== undefined ? input.specQty : existing.specQty;
+    const specQty =
+      specQtyRaw != null && Number.isFinite(Number(specQtyRaw)) && Number(specQtyRaw) > 0
+        ? Number(specQtyRaw)
+        : 1;
     const printName = input.printName !== undefined ? input.printName : existing.printName;
     const description = input.description !== undefined ? input.description : existing.description;
     const fullDescription =
@@ -990,6 +1011,7 @@ export class ProductsCatalogService {
       input.unitRatio !== undefined ? input.unitRatio : existing.unitRatio ?? 1;
     if (packageRatio != null) header.packageRatio = packageRatio;
     if (weight != null) header.weight = weight;
+    if (!isGroup && accPolicyId === CATALOG_ACC_POLICY_GOOD) header.specQty = specQty;
     if (printName) header.printName = { uk: printName, ru: printName };
     const descriptionMl = toMultilang(description);
     if (descriptionMl) header.description = descriptionMl;
@@ -1120,6 +1142,7 @@ export class ProductsCatalogService {
       mainUnitId,
       packageRatio: packageRatio ?? null,
       weight: weight ?? null,
+      specQty: accPolicyId === CATALOG_ACC_POLICY_GOOD ? specQty : existing.specQty ?? null,
       accPolicyId,
       printName: printName ?? null,
       description: description ?? null,
@@ -1317,6 +1340,7 @@ export class ProductsCatalogService {
       mainUnitId: mapped.mainUnitId,
       packageRatio: mapped.packageRatio,
       weight: mapped.weight,
+      specQty: mapped.specQty,
       accPolicyId: mapped.accPolicyId || (mapped.components.length ? CATALOG_ACC_POLICY_KIT : CATALOG_ACC_POLICY_GOOD),
       printName: mapped.printName,
       description: mapped.description,

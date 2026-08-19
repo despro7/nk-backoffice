@@ -283,12 +283,19 @@ export function useProductsCatalog() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, input }: { id: string; input: CatalogUpdateGoodInput }) =>
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: CatalogUpdateGoodInput;
+      keepOpen?: boolean;
+    }) =>
       catalogFetch<CatalogGoodDetailDto>(`/api/catalog/goods/${id}`, {
         method: 'PUT',
         body: JSON.stringify(input),
       }),
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       const skuPart = data.sku ? ` · SKU ${data.sku}` : '';
       ToastService.show({
         title: 'Збережено',
@@ -297,6 +304,14 @@ export function useProductsCatalog() {
           : `«${data.name}»${skuPart} оновлено в Dilovod`,
         color: 'success',
       });
+      if (variables.keepOpen) {
+        queryClient.setQueryData(['catalog', 'good', variables.id], data);
+        void queryClient.invalidateQueries({
+          queryKey: ['catalog'],
+          predicate: (query) => query.queryKey[1] !== 'good',
+        });
+        return;
+      }
       setDrawerMode(null);
       setEditingId(null);
       void invalidateCatalog({ skipLiveDetail: true });

@@ -37,8 +37,8 @@ function NavBadgePill({ badge }: { badge: NavBadge }) {
 }
 
 /**
- * Мобільний chrome-header у потоці app-shell (не fixed/sticky).
- * Скролиться лише <main> — header лишається видимим завжди.
+ * Мобільний chrome-header у потоці документа (не fixed/sticky).
+ * Скролиться разом зі сторінкою; TabBar закріплений знизу.
  */
 export function MobileHeader({ className }: MobileHeaderProps) {
   const { user, logout } = useAuth();
@@ -54,7 +54,7 @@ export function MobileHeader({ className }: MobileHeaderProps) {
   return (
     <header
       className={cn(
-        'lg:hidden shrink-0 z-[60] flex items-center gap-2 px-3 py-2 min-h-12',
+        'lg:hidden shrink-0 flex items-center gap-2 px-3 py-2 min-h-12',
         'border-b border-grey-200 bg-background-paper',
         'pt-[max(0.5rem,env(safe-area-inset-top))]',
         className

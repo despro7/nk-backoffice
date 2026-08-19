@@ -309,19 +309,19 @@ export function Sidebar({ className }: SidebarProps) {
     );
   }
 
-  // Desktop: width collapse in flex row
+  // Desktop: wrapper закріплений у в'юпорті, скрол лише всередині
   return (
     <aside
       className={cn(
-        'hidden lg:flex flex-col bg-white border-r border-neutral-200 self-stretch shrink-0',
-        'overflow-hidden transition-[width] duration-300 ease-in-out',
+        'hidden lg:flex flex-col bg-white border-r border-neutral-200 self-start shrink-0',
+        'sticky top-0 h-screen overflow-hidden transition-[width] duration-300 ease-in-out',
         open ? 'w-[250px]' : 'w-0 border-r-0',
         className
       )}
     >
       <div
         className={cn(
-          'sticky top-0 h-screen overflow-y-auto bg-white scrollbar-hide pb-4 flex flex-col',
+          'h-full overflow-y-auto bg-white scrollbar-hide pb-4 flex flex-col',
           'w-[250px] transition-opacity duration-300',
           open ? 'opacity-100' : 'opacity-0 pointer-events-none'
         )}

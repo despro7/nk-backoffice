@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Button,
   Chip,
@@ -57,6 +58,7 @@ import {
   CATALOG_ROOT_ID,
   CATALOG_TRASH_ID,
 } from '../ProductsTypes';
+import { pluralize } from '@/lib/formatUtils';
 import { DescriptionEditor } from './DescriptionEditor';
 import { ProductImageUpload } from './ProductImageUpload';
 import { StepperInput } from '@/pages/Warehouse/shared/StepperInput';
@@ -67,9 +69,11 @@ import {
   catalogKitPortionCount,
   catalogMainPrice,
   catalogNameContainsWeight,
+  expectedBomWeightKg,
   expectedMilitaryPrice,
   formatCatalogName,
   pricesAlmostEqual,
+  weightsAlmostEqual,
   withSyncedDerivedPrices,
 } from '../ProductsUtils';
 
@@ -84,15 +88,31 @@ interface ProductDrawerProps {
   saving?: boolean;
   onClose: () => void;
   onCreate: (input: CatalogCreateGoodInput) => void | Promise<unknown>;
-  onUpdate: (id: string, input: CatalogUpdateGoodInput) => void | Promise<unknown>;
+  onUpdate: (
+    id: string,
+    input: CatalogUpdateGoodInput,
+    opts?: { keepOpen?: boolean }
+  ) => void | Promise<unknown>;
   /** Відновити зі смітника (вибір папки ззовні) */
   onRestore?: (id: string) => void;
   catalogSearch: (
     q: string,
     opts?: { underFolderName?: string }
-  ) => Promise<Array<{ id: string; name: string; sku: string | null }>>;
+  ) => Promise<
+    Array<{
+      id: string;
+      name: string;
+      sku: string | null;
+      weight?: number | null;
+      accPolicyId?: string | null;
+    }>
+  >;
   onLegacyUpdate?: (id: string) => void;
   legacyUpdating?: boolean;
+  /** Глибина вкладеного drawer (GTM-стек) */
+  stackLevel?: number;
+  /** Id карток у відкритому стеку — щоб не відкривати ту саму двічі */
+  stackGoodIds?: string[];
 }
 
 interface BomRow {
@@ -104,6 +124,9 @@ interface BomRow {
   unitId: string;
   /** Примітка рядка специфікації ↔ Dilovod tpGoods.remark */
   note: string;
+  /** Вага компонента з картки, кг */
+  componentWeight: number | null;
+  componentAccPolicyId: string | null;
 }
 
 interface PriceRow {
@@ -124,6 +147,7 @@ interface DrawerForm {
   sku: string;
   mainUnitId: string;
   packageRatio: string;
+  specQty: string;
   weight: string;
   unitRatio: string;
   printName: string;
@@ -166,10 +190,10 @@ function resolveObjectKind(
 function drawerTitle(kind: DrawerObjectKind | null, isEdit: boolean): string {
   if (!kind) return 'Новий обʼєкт';
   const titles: Record<DrawerObjectKind, { create: string; edit: string }> = {
-    good: { create: 'Нова продукція', edit: 'Редагування продукції' },
-    kit: { create: 'Новий товарний набір', edit: 'Редагування товарного набору' },
-    group: { create: 'Нова група', edit: 'Редагування групи' },
-    other: { create: 'Новий обʼєкт', edit: 'Редагування обʼєкта' },
+    good: { create: 'Нова продукція', edit: 'Редагування' },
+    kit: { create: 'Новий товарний набір', edit: 'Редагування' },
+    group: { create: 'Нова група', edit: 'Редагування' },
+    other: { create: 'Новий обʼєкт', edit: 'Редагування' },
   };
   return isEdit ? titles[kind].edit : titles[kind].create;
 }
@@ -179,6 +203,7 @@ const emptyForm = (): DrawerForm => ({
   sku: '',
   mainUnitId: CATALOG_DEFAULT_MAIN_UNIT_ID,
   packageRatio: '',
+  specQty: '1',
   weight: '',
   unitRatio: '1',
   printName: '',
@@ -210,10 +235,53 @@ function newStagingSessionId(): string {
   return `stg${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** Вага: відображення з комою, 3 знаки після роздільника */
-function formatWeightDisplay(value: number): string {
-  return Math.max(0, value).toFixed(3).replace('.', ',');
+/** Вага, кг: завжди округлення до 0,01; `decimals` лише для відображення. */
+function formatWeightKg(value: number, decimals: 2 | 3): string {
+  const rounded = Math.round(Math.max(0, value) * 100) / 100;
+  if (decimals === 3) {
+    return rounded.toFixed(3).replace('.', ',');
+  }
+  const trimmed = rounded.toFixed(2).replace(/\.?0+$/, '');
+  return (trimmed || '0').replace('.', ',');
 }
+
+function hasComponentWeight(weight: number | null): boolean {
+  return weight != null && Number.isFinite(weight) && weight > 0;
+}
+
+function showMissingWeightBadge(
+  isKitBom: boolean,
+  accPolicyId: string | null | undefined,
+  hasWeight: boolean
+): boolean {
+  if (hasWeight) return false;
+  if (isKitBom) return true;
+  return accPolicyId === CATALOG_ACC_POLICY_GOOD || accPolicyId === CATALOG_ACC_POLICY_KIT;
+}
+
+function parseSpecQtyInput(raw: string): number {
+  const n = parseFloat(String(raw).replace(',', '.'));
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  return n;
+}
+
+async function fetchCatalogGoodDetail(id: string): Promise<CatalogGoodDetailDto> {
+  const res = await fetch(`/api/catalog/goods/${id}`, { credentials: 'include' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json?.success === false) {
+    throw new Error(json?.error || `HTTP ${res.status}`);
+  }
+  return json.data as CatalogGoodDetailDto;
+}
+
+const NESTED_DRAWER_Z = ['', '!z-[60]', '!z-[70]', '!z-[80]', '!z-[90]'] as const;
+const NESTED_DRAWER_MAX_W = [
+  '',
+  'max-h-[calc(100dvh-1rem)] top-4 md:max-w-[calc(var(--container-4xl)-2rem)]',
+  'max-h-[calc(100dvh-1.5rem)] top-6 md:max-w-[calc(var(--container-4xl)-4rem)]',
+  'max-h-[calc(100dvh-2rem)] top-8 md:max-w-[calc(var(--container-4xl)-6rem)]',
+  'max-h-[calc(100dvh-2.5rem)] top-10 md:max-w-[calc(var(--container-4xl)-8rem)]',
+] as const;
 
 function parseWeightInput(raw: string): number | null {
   const normalized = raw.trim().replace(/\s/g, '').replace(',', '.');
@@ -241,6 +309,55 @@ function sanitizeDecimalInput(raw: string): string {
 function formatQtyDisplay(value: number): string {
   if (!Number.isFinite(value) || value < 0) return '0';
   return Number(value.toFixed(3)).toString().replace('.', ',');
+}
+
+type RowDeleteKind = 'component' | 'price' | 'barcode';
+
+/** Мікро-конфірм видалення рядка: перший клік розгортає «Видалити?», другий — виконує. */
+function RowDeleteButton({
+  ariaLabel,
+  className,
+  confirming,
+  onRequest,
+  onConfirm,
+}: {
+  ariaLabel: string;
+  className?: string;
+  confirming: boolean;
+  onRequest: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Button
+      size="sm"
+      variant="light"
+      color="danger"
+      aria-label={confirming ? `Підтвердити: ${ariaLabel}` : ariaLabel}
+      className={[
+        'h-8 min-w-8 gap-0 overflow-hidden px-2.5 transition-[min-width,padding] duration-200 ease-out',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      onPress={() => {
+        if (!confirming) {
+          onRequest();
+          return;
+        }
+        onConfirm();
+      }}
+    >
+      <DynamicIcon name="trash-2" size={14} className="shrink-0" />
+      <span
+        className={[
+          'overflow-hidden whitespace-nowrap transition-all duration-200 ease-out',
+          confirming ? 'max-w-[4.5rem] opacity-100 ml-2' : 'max-w-0 opacity-0 ml-0',
+        ].join(' ')}
+      >
+        Видалити?
+      </span>
+    </Button>
+  );
 }
 
 /** Decimal qty для специфікації (не комплект): text input з комою/крапкою. */
@@ -305,6 +422,8 @@ export function ProductDrawer({
   catalogSearch,
   onLegacyUpdate,
   legacyUpdating,
+  stackLevel = 0,
+  stackGoodIds = [],
 }: ProductDrawerProps) {
   const open = mode != null;
   const isEdit = mode === 'edit';
@@ -316,6 +435,11 @@ export function ProductDrawer({
   const [editingNoteIdx, setEditingNoteIdx] = useState<number | null>(null);
   /** Мікро-конфірм видалення примітки: idx, для якого показано «Видалити?» */
   const [noteDeleteConfirmIdx, setNoteDeleteConfirmIdx] = useState<number | null>(null);
+  /** Мікро-конфірм видалення компонента / ціни / штрихкоду */
+  const [rowDeleteConfirm, setRowDeleteConfirm] = useState<{
+    kind: RowDeleteKind;
+    idx: number;
+  } | null>(null);
 
   const [showPayloadPreview, setShowPayloadPreview] = useState(false);
   const [payloadPreview, setPayloadPreview] = useState<Record<string, unknown> | null>(null);
@@ -342,8 +466,15 @@ export function ProductDrawer({
   const [barcodes, setBarcodes] = useState<BarcodeRow[]>([]);
   const [bomQuery, setBomQuery] = useState('');
   const [bomSuggestions, setBomSuggestions] = useState<
-    Array<{ id: string; name: string; sku: string | null }>
+    Array<{
+      id: string;
+      name: string;
+      sku: string | null;
+      weight?: number | null;
+      accPolicyId?: string | null;
+    }>
   >([]);
+  const [nestedGoodId, setNestedGoodId] = useState<string | null>(null);
 
   const baselineRef = useRef<string>('');
   const [baselineVersion, setBaselineVersion] = useState(0);
@@ -359,6 +490,63 @@ export function ProductDrawer({
   /** BOM видимий для комплекту («Склад») і продукції («Специфікація») */
   const showBom = isKit || isGood;
   const kitPortionCount = useMemo(() => catalogKitPortionCount(components), [components]);
+  const currentStackGoodIds = useMemo(() => {
+    const ids = [...stackGoodIds];
+    if (detail?.id && !ids.includes(detail.id)) ids.push(detail.id);
+    return ids;
+  }, [stackGoodIds, detail?.id]);
+
+  const nestedQuery = useQuery({
+    queryKey: ['catalog', 'good', nestedGoodId],
+    queryFn: () => fetchCatalogGoodDetail(nestedGoodId!),
+    enabled: Boolean(nestedGoodId),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  useEffect(() => {
+    if (!nestedQuery.isError || !nestedGoodId) return;
+    ToastService.show({
+      title: 'Не вдалося відкрити картку',
+      description: nestedQuery.error instanceof Error ? nestedQuery.error.message : 'Помилка завантаження',
+      color: 'danger',
+    });
+    setNestedGoodId(null);
+  }, [nestedQuery.isError, nestedQuery.error, nestedGoodId]);
+
+  const openNestedComponent = useCallback(
+    (componentGoodId: string) => {
+      if (!componentGoodId) return;
+      if (currentStackGoodIds.includes(componentGoodId) || nestedGoodId === componentGoodId) {
+        ToastService.show({
+          title: 'Картка вже відкрита',
+          description: 'Цей товар уже є у стеку карток.',
+          color: 'warning',
+        });
+        return;
+      }
+      setNestedGoodId(componentGoodId);
+    },
+    [currentStackGoodIds, nestedGoodId]
+  );
+
+  const applyNestedSaveToBom = useCallback((id: string, input: CatalogUpdateGoodInput) => {
+    setComponents((prev) =>
+      prev.map((row) =>
+        row.componentGoodId === id
+          ? {
+              ...row,
+              componentName: input.name?.trim() || row.componentName,
+              componentSku: input.sku === undefined ? row.componentSku : input.sku,
+              componentWeight:
+                input.weight != null && Number.isFinite(Number(input.weight))
+                  ? Number(input.weight)
+                  : row.componentWeight,
+            }
+          : row
+      )
+    );
+  }, []);
 
   useEffect(() => {
     const portions = pendingMilitarySyncRef.current;
@@ -397,10 +585,15 @@ export function ProductDrawer({
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setNestedGoodId(null);
+      return;
+    }
     const kind = resolveObjectKind(mode, detail);
     setObjectKind(kind);
     setCardTab('main');
+    setRowDeleteConfirm(null);
+    setNoteDeleteConfirmIdx(null);
 
     if (isEdit && detail) {
       // kind у edit завжди визначений через detail
@@ -413,7 +606,8 @@ export function ProductDrawer({
         sku: detail.sku || '',
         mainUnitId: detail.mainUnitId || CATALOG_DEFAULT_MAIN_UNIT_ID,
         packageRatio: detail.packageRatio != null ? String(detail.packageRatio) : '',
-        weight: detail.weight != null ? formatWeightDisplay(Number(detail.weight)) : '',
+        specQty: detail.specQty != null && Number(detail.specQty) > 0 ? String(detail.specQty) : '1',
+        weight: detail.weight != null ? formatWeightKg(Number(detail.weight), 3) : '',
         unitRatio: detail.unitRatio != null ? String(detail.unitRatio) : '1',
         printName: detail.printName || '',
         description: detail.description === '[object Object]' ? '' : detail.description || '',
@@ -443,6 +637,8 @@ export function ProductDrawer({
         qty: c.qty,
         unitId: c.unitId || detail.mainUnitId || CATALOG_DEFAULT_MAIN_UNIT_ID,
         note: c.note || '',
+        componentWeight: c.componentWeight ?? null,
+        componentAccPolicyId: c.componentAccPolicyId ?? null,
       }));
       const nextPrices = detail.prices.map((p) => ({
         priceType: p.priceType,
@@ -516,6 +712,7 @@ export function ProductDrawer({
     if (!name) return null;
 
     const packageRatio = form.packageRatio ? parseFloat(form.packageRatio) : null;
+    const specQty = isGood ? parseSpecQtyInput(form.specQty) : undefined;
     const weight = parseWeightInput(form.weight);
     const unitRatioRaw = form.unitRatio.trim().replace(',', '.');
     const unitRatioParsed = unitRatioRaw ? parseFloat(unitRatioRaw) : null;
@@ -535,6 +732,7 @@ export function ProductDrawer({
       sku: isFolder ? null : form.sku.trim() || null,
       mainUnitId: form.mainUnitId,
       packageRatio,
+      specQty,
       weight,
       unitRatio: isFolder ? undefined : unitRatio,
       printName: form.printName.trim() || null,
@@ -579,7 +777,7 @@ export function ProductDrawer({
       prices: [],
       barcodes: [],
     };
-  }, [form, isFolder, showBom, objectKind, components, prices, barcodes, isEdit, stagingSessionId]);
+  }, [form, isFolder, showBom, objectKind, components, prices, barcodes, isEdit, stagingSessionId, isGood, isKit]);
 
   const discardStaging = useCallback((sessionId: string | null) => {
     if (!sessionId) return;
@@ -850,9 +1048,23 @@ export function ProductDrawer({
       : null;
   const requiredPricesOk =
     !isGood && !isKit ? true : areRequiredCatalogPricesFilled(prices);
-  const packageRatioInvalid =
-    (isGood || isKit) && !isRequiredPositiveField(form.packageRatio);
+  const packageRatioInvalid = isGood && !isRequiredPositiveField(form.packageRatio);
   const weightInvalid = (isGood || isKit) && !isRequiredPositiveField(form.weight);
+  const bomWeightExpected = useMemo(
+    () =>
+      showBom
+        ? expectedBomWeightKg(components, units, isGood ? { divideBy: parseSpecQtyInput(form.specQty) } : undefined)
+        : null,
+    [showBom, components, units, isGood, form.specQty]
+  );
+  const currentWeightKg = parseWeightInput(form.weight);
+  const canFillWeightFromBom =
+    bomWeightExpected != null && bomWeightExpected.missingCount === 0;
+  const weightMismatch =
+    bomWeightExpected != null &&
+    (currentWeightKg == null || !weightsAlmostEqual(currentWeightKg, bomWeightExpected.kg));
+  const showExpectedWeightHint = canFillWeightFromBom && weightMismatch;
+  const weightFieldInvalid = weightInvalid && !canFillWeightFromBom;
   const requiredFieldsOk = requiredPricesOk && !packageRatioInvalid && !weightInvalid;
   const nameHasWeight = catalogNameContainsWeight(form.name);
 
@@ -883,15 +1095,29 @@ export function ProductDrawer({
       <Drawer
         isOpen={open}
         onClose={requestClose}
-        size="3xl"
-        placement="right"
+        size="4xl"
+        placement={window.innerWidth < 768 ? 'bottom' : 'right'}
         classNames={{
-          base: 'rounded-none md:rounded-l-xl',
-          header: `flex flex-col gap-3 border-b border-default-200/60 py-2 md:py-4 px-3 md:px-6 md:pb-4 ${detailLoading ? 'hidden' : ''}`,
-          body: 'px-3 md:px-6 overflow-y-visible md:overflow-y-auto',
-          closeButton: 'top-2 md:top-3',
+          wrapper: NESTED_DRAWER_Z[Math.min(stackLevel, NESTED_DRAWER_Z.length - 1)] || undefined,
+          backdrop: [
+            NESTED_DRAWER_Z[Math.min(stackLevel, NESTED_DRAWER_Z.length - 1)],
+            stackLevel > 0 ? 'bg-overlay/20' : '',
+          ]
+            .filter(Boolean)
+            .join(' ') || undefined,
+          base: [
+            'rounded-t-lg md:rounded-l-xl overflow-hidden flex flex-col max-h-[calc(100dvh-0.5rem)] md:max-h-none',
+            stackLevel > 0
+              ? `${NESTED_DRAWER_MAX_W[Math.min(stackLevel, NESTED_DRAWER_MAX_W.length - 1)]} rounded-t-lg md:top-0 md:rounded-t-none md:max-h-full shadow-2xl`
+              : '',
+          ].join(' '),
+          header: `shrink-0 sticky top-0 z-10 bg-content1 flex flex-col gap-3 border-b border-default-200/60 py-3 md:py-4 px-3 md:px-6 md:pb-4 ${detailLoading ? 'hidden' : ''}`,
+          body: 'px-3 md:px-6 flex-1 min-h-0 overflow-y-auto',
+          footer: 'px-0',
+          closeButton: 'absolute top-2 md:top-3 z-20',
         }}
-        isDismissable={!isDirty}
+        isDismissable={!isDirty && !nestedGoodId}
+        shouldBlockScroll={stackLevel === 0}
         hideCloseButton={false}
       >
         <DrawerContent>
@@ -901,9 +1127,7 @@ export function ProductDrawer({
               <div className="flex flex-col gap-1">
                 <span className="truncate pr-6">
                   {title}
-                  {form.name.trim() ? (
-                    <span className="font-normal text-default-500"> – {form.name.trim()}</span>
-                  ) : null}
+                  {form.name.trim() ? (<span className="font-normal text-default-500"> – {form.name.trim()}</span>) : null}
                 </span>
                 <div className="flex items-center gap-2 text-xs font-normal text-default-400">
                   <span className="font-semibold">Група: <span className="font-normal">{detail?.parentName || parentFolderName || 'Немає'}</span></span>
@@ -912,7 +1136,7 @@ export function ProductDrawer({
                   {detail?.stock ? (
                     <>
                       <Divider orientation="vertical" />
-                      <span className="font-semibold">
+                      <span className="font-semibold flex gap-2">
                         Залишки:{' '}
                         <span className="inline-flex items-center gap-1 font-normal">
                           <StockBadge variant="gp" size="9px" />
@@ -1015,14 +1239,17 @@ export function ProductDrawer({
                     />
                   )}
 
-                  <div className="flex items-start gap-2">
+                  <div className="grid grid-cols-2 gap-3">
                     {/* Тип обʼєкта */}
                     <Select
                       label="Тип обʼєкта"
                       placeholder="Оберіть тип"
                       isRequired
                       selectedKeys={objectKind ? [objectKind] : []}
-                      classNames={{ trigger: 'bg-default-200/75', popoverContent: 'bg-default-100' }}
+                      classNames={{ 
+                        // trigger: 'bg-default-200/75', 
+                        popoverContent: 'bg-default-100 w-auto min-w-max'
+                      }}
                       onSelectionChange={(keys) => {
                         const v = Array.from(keys)[0];
                         if (!v) return;
@@ -1043,7 +1270,7 @@ export function ProductDrawer({
                       {OBJECT_KIND_TABS.map((tab) => (
                         <SelectItem key={tab.key} textValue={tab.title}>
                           <div className="flex items-center gap-2">
-                            <DynamicIcon name={tab.icon} size={16} />
+                            <DynamicIcon name={tab.icon} size={16} className="shrink-0" />
                             {tab.title}
                           </div>
                         </SelectItem>
@@ -1054,6 +1281,7 @@ export function ProductDrawer({
                       <Select
                         label="Політика обліку"
                         selectedKeys={form.accPolicyId ? [form.accPolicyId] : []}
+                        classNames={{ popoverContent: 'bg-default-100' }}
                         onSelectionChange={(keys) => {
                           const v = Array.from(keys)[0];
                           if (!v) return;
@@ -1118,7 +1346,7 @@ export function ProductDrawer({
                             <DynamicIcon name="scaling" size={14} />
                             <span>Упаковка</span>
                           </h3>
-                          <div className={`grid grid-cols-2 ${isAdmin ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-3`}>
+                          <div className={`grid gap-3 grid-cols-2 md:grid-cols-${isAdmin ? (isKit ? '3' : '4') : (isKit ? '2' : '3')}`}>
                             <Select
                               label="Од. виміру"
                               selectedKeys={form.mainUnitId ? [form.mainUnitId] : []}
@@ -1132,63 +1360,88 @@ export function ProductDrawer({
                                 <SelectItem key={u.id}>{u.name}</SelectItem>
                               ))}
                             </Select>
-                            <Input
-                              label="Порцій в коробці"
-                              type="number"
-                              value={form.packageRatio}
-                              min={1}
-                              isRequired={isGood || isKit}
-                              isInvalid={packageRatioInvalid}
-                              color={packageRatioInvalid ? 'danger' : 'default'}
-                              errorMessage={
-                                packageRatioInvalid
-                                  ? 'Має бути більше 0'
-                                  : undefined
-                              }
-                              onValueChange={(v) => setForm((f) => ({ ...f, packageRatio: v }))}
-                              classNames={{
-                                input:
-                                  '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
-                              }}
-                              onWheel={(e) => {
-                                (e.target as HTMLElement).blur();
-                              }}
-                            />
-                            <Input
-                              label="Вага, кг"
-                              type="text"
-                              inputMode="decimal"
-                              value={form.weight}
-                              step={0.01}
-                              isRequired={isGood || isKit}
-                              isInvalid={weightInvalid}
-                              color={weightInvalid ? 'danger' : 'default'}
-                              errorMessage={
-                                weightInvalid ? 'Має бути більше 0' : undefined
-                              }
-                              onValueChange={(v) => {
-                                // Allow digits and one comma/dot
-                                let next = v.replace(/[^\d.,]/g, '');
-                                const sep = next.includes(',')
-                                  ? ','
-                                  : next.includes('.')
-                                    ? '.'
-                                    : null;
-                                if (sep) {
-                                  const [intPart, ...rest] = next.split(sep);
-                                  next = `${intPart}${sep}${rest.join('').replace(/[.,]/g, '').slice(0, 3)}`;
+                            {isGood && (
+                              <Input
+                                label="Порцій в коробці"
+                                type="number"
+                                value={form.packageRatio}
+                                min={1}
+                                isRequired={isGood}
+                                isInvalid={packageRatioInvalid}
+                                color={packageRatioInvalid ? 'danger' : 'default'}
+                                errorMessage={
+                                  packageRatioInvalid
+                                    ? 'Має бути більше 0'
+                                    : undefined
                                 }
-                                setForm((f) => ({ ...f, weight: next }));
-                              }}
-                              onBlur={() => {
-                                setForm((f) => {
-                                  if (!f.weight.trim()) return f;
-                                  const n = parseWeightInput(f.weight);
-                                  if (n == null) return f;
-                                  return { ...f, weight: formatWeightDisplay(n) };
-                                });
-                              }}
-                            />
+                                onValueChange={(v) => setForm((f) => ({ ...f, packageRatio: v }))}
+                                classNames={{
+                                  input:
+                                    '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+                                }}
+                                onWheel={(e) => {
+                                  (e.target as HTMLElement).blur();
+                                }}
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <Input
+                                label="Вага, кг"
+                                type="text"
+                                inputMode="decimal"
+                                value={form.weight}
+                                step={0.01}
+                                isRequired={isGood || isKit}
+                                isInvalid={weightFieldInvalid}
+                                color="default"
+                                errorMessage={
+                                  weightFieldInvalid ? 'Має бути більше 0' : undefined
+                                }
+                                onValueChange={(v) => {
+                                  // Allow digits and one comma/dot
+                                  let next = v.replace(/[^\d.,]/g, '');
+                                  const sep = next.includes(',')
+                                    ? ','
+                                    : next.includes('.')
+                                      ? '.'
+                                      : null;
+                                  if (sep) {
+                                    const [intPart, ...rest] = next.split(sep);
+                                    next = `${intPart}${sep}${rest.join('').replace(/[.,]/g, '').slice(0, 3)}`;
+                                  }
+                                  setForm((f) => ({ ...f, weight: next }));
+                                }}
+                                onBlur={() => {
+                                  setForm((f) => {
+                                    if (!f.weight.trim()) return f;
+                                    const n = parseWeightInput(f.weight);
+                                    if (n == null) return f;
+                                    return { ...f, weight: formatWeightKg(n, 3) };
+                                  });
+                                }}
+                              />
+                              {showExpectedWeightHint && bomWeightExpected && (
+                                <div className="mt-1 flex items-center gap-2">
+                                  <span className="text-xs text-warning-700">
+                                    Очікується {formatWeightKg(bomWeightExpected.kg, 2)}&nbsp;кг
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="flat"
+                                    color="warning"
+                                    className="h-5 min-w-0 px-1.5 text-[11px] rounded"
+                                    onPress={() =>
+                                      setForm((f) => ({
+                                        ...f,
+                                        weight: formatWeightKg(bomWeightExpected.kg, 3),
+                                      }))
+                                    }
+                                  >
+                                    Заповнити
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
                             {isAdmin && (
                               <Input
                                 className="md:max-w-xs"
@@ -1210,7 +1463,8 @@ export function ProductDrawer({
                         </section>
 
                         <Divider className="bg-default-200/60" />
-                        <section className="flex flex-col gap-3">
+                        <section className="flex flex-col gap-1 md:gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 gap-y-2 mb-3 md:mb-0">
                           <h3 className="text-sm font-semibold flex items-center gap-1">
                             {isGood ? 
                               <div className="flex items-center gap-1">
@@ -1223,9 +1477,41 @@ export function ProductDrawer({
                                 <span>Склад комплекту</span>
                               </div>
                             }
-                            {components.length > 0 && <span className="font-normal text-default-400">({components.length} поз.)</span>}
+                            {components.length > 0 && (
+                              <span className="font-normal text-default-400">
+                                {isKit
+                                  ? `(${components.length} поз. / ${kitPortionCount} ${pluralize(kitPortionCount, 'порція', 'порції', 'порцій')})`
+                                  : `(${components.length} поз.)`}
+                              </span>
+                            )}
                           </h3>
-                          <div className="flex flex-col gap-1">
+                          {isGood && (
+                            <div className="flex items-center gap-2 ml-4.5 md:ml-auto">
+                              <span className="text-sm font-semibold whitespace-nowrap">Розрахунок на</span>
+                              <Input
+                                aria-label="Розрахунок на, шт."
+                                type="number"
+                                size="sm"
+                                min={1}
+                                value={form.specQty}
+                                classNames={{
+                                  base: 'w-20',
+                                  input:
+                                    '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+                                }}
+                                onValueChange={(v) => setForm((f) => ({ ...f, specQty: v }))}
+                                onBlur={() => {
+                                  setForm((f) => ({ ...f, specQty: String(parseSpecQtyInput(f.specQty)) }));
+                                }}
+                                onWheel={(e) => {
+                                  (e.target as HTMLElement).blur();
+                                }}
+                              />
+                              <span className="text-sm text-default-500">шт.</span>
+                            </div>
+                          )}
+                          </div>
+                          <div className="flex flex-col gap-1 mb-4 md:mb-0">
                             <Input
                               aria-label="Додати компонент"
                               placeholder={
@@ -1257,6 +1543,8 @@ export function ProductDrawer({
                                           qty: 1,
                                           unitId: form.mainUnitId || CATALOG_DEFAULT_MAIN_UNIT_ID,
                                           note: '',
+                                          componentWeight: s.weight ?? null,
+                                          componentAccPolicyId: s.accPolicyId ?? null,
                                         },
                                       ];
                                       if (isKit) patchKitComponents(addRow);
@@ -1273,15 +1561,75 @@ export function ProductDrawer({
                             )}
                           </div>
                           {components.map((c, idx) => (
-                            <div key={`${c.componentGoodId}-${idx}`} className="flex flex-col gap-1.5">
-                              <div className="flex flex-wrap items-center gap-2 gap-y-1.5">
+                            <div key={`${c.componentGoodId}-${idx}`} className="flex flex-col gap-1.5 [&:not(:last-child)]:border-b border-default-200/60 pb-3">
+                              <div className="flex flex-wrap md:flex-nowrap items-center gap-2 gap-y-0.5">
                                 <span className="text-sm font-semibold text-right min-w-5 tabular-nums">{idx + 1}.</span>
-                                <div className="min-w-0 w-[calc(100%-2rem)] sm:w-auto sm:flex-1 flex items-center gap-2 md:flex-wrap">
-                                  <span className="truncate text-sm">{c.componentName}</span>
-                                  {c.componentSku && <span className="font-mono text-xs text-default-400 px-1 py-0.5 bg-default-100 rounded">{c.componentSku}</span>}
+                                <div className={`min-w-0 ${isKit ? 'w-[calc(100%-2rem)]' : 'w-[calc(100%-9rem)]'} sm:w-auto sm:flex-1 flex items-center gap-2 md:flex-wrap`}>
+                                  {c.componentGoodId ? (
+                                    <button
+                                      type="button"
+                                      className={`min-w-0 ${isKit ? 'w-full' : 'w-auto'} md:w-auto flex items-center gap-2 text-left hover:text-primary`}
+                                      onClick={() => openNestedComponent(c.componentGoodId)}
+                                    >
+                                      <span className="truncate text-sm hover:underline mr-auto md:mr-0">
+                                        {c.componentName}
+                                      </span>
+                                      {c.componentSku && (
+                                        <span className="font-mono text-xs text-default-400 px-1 py-0.5 bg-default-100 rounded">
+                                          {c.componentSku}
+                                        </span>
+                                      )}
+                                      {hasComponentWeight(c.componentWeight) ? (
+                                        <span className="text-xs text-default-400 tabular-nums whitespace-nowrap">
+                                          {formatWeightKg(c.componentWeight as number, 2)} кг
+                                        </span>
+                                      ) : showMissingWeightBadge(
+                                          isKit,
+                                          c.componentAccPolicyId,
+                                          false
+                                        ) ? (
+                                        <Chip
+                                          size="sm"
+                                          color="danger"
+                                          variant="flat"
+                                          className="h-5 min-h-5 px-1.5 text-[10px]"
+                                        >
+                                          немає ваги
+                                        </Chip>
+                                      ) : null}
+                                    </button>
+                                  ) : (
+                                    <>
+                                      <span className="truncate text-sm">{c.componentName}</span>
+                                      {c.componentSku && (
+                                        <span className="font-mono text-xs text-default-400 px-1 py-0.5 bg-default-100 rounded">
+                                          {c.componentSku}
+                                        </span>
+                                      )}
+                                      {hasComponentWeight(c.componentWeight) ? (
+                                        <span className="text-xs text-default-400 tabular-nums whitespace-nowrap">
+                                          {formatWeightKg(c.componentWeight as number, 2)} кг
+                                        </span>
+                                      ) : showMissingWeightBadge(
+                                          isKit,
+                                          c.componentAccPolicyId,
+                                          false
+                                        ) ? (
+                                        <Chip
+                                          size="sm"
+                                          color="danger"
+                                          variant="flat"
+                                          className="h-5 min-h-5 px-1.5 text-[10px]"
+                                        >
+                                          немає ваги
+                                        </Chip>
+                                      ) : null}
+                                    </>
+                                  )}
                                   {!isKit && (
                                   <Popover
                                     placement="top-start"
+                                    // classNames={{ trigger: 'hidden md:block' }}
                                     isOpen={editingNoteIdx === idx}
                                     onOpenChange={(open) => {
                                       setEditingNoteIdx(open ? idx : null);
@@ -1291,13 +1639,9 @@ export function ProductDrawer({
                                     <PopoverTrigger>
                                       <Button
                                         size="sm"
-                                        variant={c.note.trim() ? 'flat' : 'light'}
+                                        variant="light"
                                         color={c.note.trim() ? 'warning' : 'default'}
-                                        className={
-                                          c.note.trim()
-                                            ? 'h-6 min-w-0 pl-2 text-[13px] text-default-500/75 bg-default-200/50 rounded-full gap-1'
-                                            : 'min-w-0 h-6 px-1.5 -m-1.5 text-default-400'
-                                        }
+                                        className={`min-w-0 h-6 px-1.5 -my-1.5 ${c.note.trim() ? 'text-warning-700' : 'text-default-400'}`}
                                         aria-label={c.note.trim() ? 'Редагувати примітку' : 'Додати примітку'}
                                         title={c.note.trim() ? 'Редагувати примітку' : 'Додати примітку'}
                                         startContent={
@@ -1311,9 +1655,7 @@ export function ProductDrawer({
                                             className="shrink-0"
                                           />
                                         }
-                                      >
-                                        {c.note.trim() ? truncateText(c.note, 25) : null}
-                                      </Button>
+                                      />
                                     </PopoverTrigger>
                                     <PopoverContent className="w-80 p-3">
                                       <div className="flex flex-col gap-2 w-full">
@@ -1355,7 +1697,7 @@ export function ProductDrawer({
                                               setEditingNoteIdx(null);
                                             }}
                                           >
-                                            Додати
+                                            {c.note.trim() ? 'Редагувати' : 'Додати'}
                                           </Button>
                                           <Button
                                             size="sm"
@@ -1405,7 +1747,7 @@ export function ProductDrawer({
 
                                 {!isKit ? (
                                   <BomQtyInput
-                                    className="w-28 ml-auto sm:ml-0"
+                                    className="w-28 ml-7 sm:ml-0 order-last sm:order-none"
                                     value={c.qty || 0}
                                     onChange={(qty) =>
                                       setComponents((prev) =>
@@ -1416,7 +1758,7 @@ export function ProductDrawer({
                                 ) : (
                                   <StepperInput
                                     size="xs"
-                                    className="w-28 ml-auto sm:ml-4"
+                                    className="w-28 ml-7 sm:ml-4"
                                     inputClassName="text-sm"
                                     aria-label="Кількість"
                                     value={c.qty || 0}
@@ -1443,10 +1785,11 @@ export function ProductDrawer({
                                     }
                                   />
                                 )}
+                                {!isKit && (
                                 <Select
                                   aria-label="Од. виміру"
                                   size="sm"
-                                  classNames={{ base: 'w-20', popoverContent: 'bg-default-100 min-w-28' }}
+                                  classNames={{ base: 'w-20 order-last sm:order-none', popoverContent: 'bg-default-100 min-w-28' }}
                                   selectedKeys={c.unitId ? [c.unitId] : []}
                                   onSelectionChange={(keys) => {
                                     const v = Array.from(keys)[0];
@@ -1462,21 +1805,25 @@ export function ProductDrawer({
                                     <SelectItem key={u.id}>{u.name}</SelectItem>
                                   ))}
                                 </Select>
-                                <Button
-                                  isIconOnly
-                                  size="sm"
-                                  variant="light"
-                                  color="danger"
-                                  aria-label="Видалити компонент"
-                                  onPress={() => {
+                                )}
+                                <RowDeleteButton
+                                  ariaLabel="Видалити компонент"
+                                  className="ml-auto md:ml-0"
+                                  confirming={
+                                    rowDeleteConfirm?.kind === 'component' &&
+                                    rowDeleteConfirm.idx === idx
+                                  }
+                                  onRequest={() =>
+                                    setRowDeleteConfirm({ kind: 'component', idx })
+                                  }
+                                  onConfirm={() => {
                                     const removeRow = (prev: BomRow[]) =>
                                       prev.filter((_, i) => i !== idx);
                                     if (isKit) patchKitComponents(removeRow);
                                     else setComponents(removeRow);
+                                    setRowDeleteConfirm(null);
                                   }}
-                                >
-                                  <DynamicIcon name="trash-2" size={14} />
-                                </Button>
+                                />
                               </div>
                             </div>
                           ))}
@@ -1549,14 +1896,17 @@ export function ProductDrawer({
                               (e.target as HTMLElement).blur();
                             }}
                           />
-                          <Button
-                            isIconOnly
-                            size="sm"
-                            variant="light"
-                            color="danger"
+                          <RowDeleteButton
+                            ariaLabel="Видалити ціну"
                             className="h-full"
-                            aria-label="Видалити ціну"
-                            onPress={() =>
+                            confirming={
+                              rowDeleteConfirm?.kind === 'price' &&
+                              rowDeleteConfirm.idx === idx
+                            }
+                            onRequest={() =>
+                              setRowDeleteConfirm({ kind: 'price', idx })
+                            }
+                            onConfirm={() => {
                               setPrices((prev) =>
                                 withSyncedDerivedPrices(
                                   prev.filter((_, i) => i !== idx),
@@ -1564,11 +1914,10 @@ export function ProductDrawer({
                                   kitPortionCount,
                                   false
                                 )
-                              )
-                            }
-                          >
-                            <DynamicIcon name="trash-2" size={14} />
-                          </Button>
+                              );
+                              setRowDeleteConfirm(null);
+                            }}
+                          />
                         </div>
                         {militaryMismatch && militaryExpected != null && mainPriceValue != null && (
                           <p className="text-xs text-danger">
@@ -1681,17 +2030,21 @@ export function ProductDrawer({
                               />
                             }
                           />
-                          <Button
-                            isIconOnly
-                            size="sm"
-                            variant="light"
-                            color="danger"
+                          <RowDeleteButton
+                            ariaLabel="Видалити ШК"
                             className="shrink-0 h-10"
-                            aria-label="Видалити ШК"
-                            onPress={() => setBarcodes((prev) => prev.filter((_, i) => i !== idx))}
-                          >
-                            <DynamicIcon name="trash-2" size={14} />
-                          </Button>
+                            confirming={
+                              rowDeleteConfirm?.kind === 'barcode' &&
+                              rowDeleteConfirm.idx === idx
+                            }
+                            onRequest={() =>
+                              setRowDeleteConfirm({ kind: 'barcode', idx })
+                            }
+                            onConfirm={() => {
+                              setBarcodes((prev) => prev.filter((_, i) => i !== idx));
+                              setRowDeleteConfirm(null);
+                            }}
+                          />
                         </div>
                       ))}
                       <Button
@@ -1770,9 +2123,8 @@ export function ProductDrawer({
                 )}
               </>
             )}
-          </DrawerBody>
           {!detailLoading && (
-            <DrawerFooter className="border-t border-default-200/60">
+            <DrawerFooter className="-mx-3 md:-mx-6 px-3 md:px-6 mt-2 border-t border-default-200/60">
               {(isDebugMode ||
                 (isTrashed && detail && onRestore) ||
                 (isEdit && !isFolder && detail?.sku && onLegacyUpdate)) && (
@@ -1858,8 +2210,32 @@ export function ProductDrawer({
               </Button>
             </DrawerFooter>
           )}
+          </DrawerBody>
         </DrawerContent>
       </Drawer>
+      {nestedGoodId && (
+        <ProductDrawer
+          mode="edit"
+          parentFolderId={nestedQuery.data?.parentId || CATALOG_ROOT_ID}
+          parentFolderName={nestedQuery.data?.parentName}
+          detail={nestedQuery.data ?? null}
+          detailLoading={nestedQuery.isLoading || !nestedQuery.data}
+          dictionaries={dictionaries}
+          saving={saving}
+          onClose={() => setNestedGoodId(null)}
+          onCreate={onCreate}
+          onUpdate={async (id, input, opts) => {
+            await onUpdate(id, input, { ...opts, keepOpen: true });
+            applyNestedSaveToBom(id, input);
+          }}
+          onRestore={onRestore}
+          catalogSearch={catalogSearch}
+          onLegacyUpdate={onLegacyUpdate}
+          legacyUpdating={legacyUpdating}
+          stackLevel={stackLevel + 1}
+          stackGoodIds={currentStackGoodIds}
+        />
+      )}
       <PayloadPreviewModal
         isOpen={showPayloadPreview}
         onClose={() => setShowPayloadPreview(false)}

@@ -558,10 +558,12 @@ export default function ProductsPage() {
       if (!res.ok || json?.success === false) return [];
       return (json.data || [])
         .filter((r: { isGroup?: boolean }) => !r.isGroup)
-        .map((r: { id: string; name: string; sku: string | null }) => ({
+        .map((r: { id: string; name: string; sku: string | null; weight?: number | null; accPolicyId?: string | null }) => ({
           id: r.id,
           name: r.name,
           sku: r.sku,
+          weight: r.weight ?? null,
+          accPolicyId: r.accPolicyId ?? null,
         }));
     },
     []
@@ -753,7 +755,9 @@ export default function ProductsPage() {
         saving={catalog.createMutation.isPending || catalog.updateMutation.isPending}
         onClose={catalog.closeDrawer}
         onCreate={(input) => catalog.createMutation.mutateAsync(input)}
-        onUpdate={(id, input) => catalog.updateMutation.mutateAsync({ id, input })}
+        onUpdate={(id, input, opts) =>
+          catalog.updateMutation.mutateAsync({ id, input, keepOpen: opts?.keepOpen })
+        }
         onRestore={(id) => requestRestoreFromTrash(id)}
         catalogSearch={catalogSearch}
         onLegacyUpdate={(id) => requestLegacyUpdate([id])}

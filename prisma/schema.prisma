@@ -467,6 +467,8 @@ model CatalogGood {
   mainUnitId      String?  @db.VarChar(32)
   packageRatio    Float?
   weight          Float?
+  /// Dilovod catalogs.goods.specQty — «Розрахунок на N шт.» специфікації продукції
+  specQty         Float?
   accPolicyId     String?  @db.VarChar(32)
   printName       String?  @db.VarChar(512)
   description     String?  @db.Text // короткий опис → Dilovod

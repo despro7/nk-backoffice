@@ -8,7 +8,12 @@ import React, {
 } from 'react';
 
 const LG_BREAKPOINT = 1024;
+const XL_BREAKPOINT = 1280;
 const STORAGE_KEY = 'nova-field:sidebar-open';
+
+function isBelowXl(): boolean {
+  return window.innerWidth < XL_BREAKPOINT;
+}
 
 interface SidebarContextType {
   open: boolean;
@@ -43,24 +48,41 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   );
   const [open, setOpenState] = useState(() => {
     if (typeof window === 'undefined') return true;
-    return window.innerWidth < LG_BREAKPOINT ? false : readDesktopPreference();
+    return isBelowXl() ? false : readDesktopPreference();
   });
 
   useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${LG_BREAKPOINT - 1}px)`);
-    const onChange = () => {
+    const mobileMql = window.matchMedia(`(max-width: ${LG_BREAKPOINT - 1}px)`);
+    const xlMql = window.matchMedia(`(max-width: ${XL_BREAKPOINT - 1}px)`);
+
+    const onMobileChange = () => {
       const mobile = window.innerWidth < LG_BREAKPOINT;
       setIsMobile(mobile);
-      setOpenState(mobile ? false : readDesktopPreference());
+      if (mobile) setOpenState(false);
     };
-    mql.addEventListener('change', onChange);
-    return () => mql.removeEventListener('change', onChange);
+
+    const onXlChange = () => {
+      if (window.innerWidth < LG_BREAKPOINT) {
+        setOpenState(false);
+        return;
+      }
+      // Нижче XL — автоматично ховаємо; на XL+ відновлюємо збережену перевагу
+      setOpenState(isBelowXl() ? false : readDesktopPreference());
+    };
+
+    mobileMql.addEventListener('change', onMobileChange);
+    xlMql.addEventListener('change', onXlChange);
+    return () => {
+      mobileMql.removeEventListener('change', onMobileChange);
+      xlMql.removeEventListener('change', onXlChange);
+    };
   }, []);
 
   const setOpen = useCallback(
     (next: boolean) => {
       setOpenState(next);
-      if (!isMobile) {
+      // Зберігаємо лише на широкому десктопі, щоб автоприховування < XL не затирала preference
+      if (!isMobile && window.innerWidth >= XL_BREAKPOINT) {
         writeDesktopPreference(next);
       }
     },
