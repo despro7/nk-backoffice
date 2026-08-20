@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, User } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatDateLong, formatWeekdayOnly } from "@/lib/formatUtils";
-import { ROLE_LABELS, type RoleValue } from "@shared/constants/roles";
 import { NotificationBell } from "./NotificationBell";
 import { SidebarTrigger } from "./SidebarTrigger";
 import NumberFlow, { NumberFlowGroup } from '@number-flow/react';
@@ -18,7 +17,7 @@ interface HeaderProps {
 
 export function Header({ className }: HeaderProps) {
   const { user, logout } = useAuth();
-  const { isPreviewing, effectiveRole } = useRolePreview();
+  const { isPreviewing, effectiveRole, previewRoles } = useRolePreview();
   const navigate = useNavigate();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -174,7 +173,11 @@ export function Header({ className }: HeaderProps) {
                   description: "text-grey-500 text-[12px] leading-[110%]"
                 }}
                 name={user.name || user.email}
-                description={user.roleName || user.role || 'Користувач'}
+                description={
+                  isPreviewing
+                    ? `${previewRoles.find((role) => role.slug === effectiveRole)?.name ?? effectiveRole} · перегляд`
+                    : (user.roleName || user.role || 'Користувач')
+                }
               />
             </DropdownTrigger>
             <DropdownMenu aria-label="User Actions" variant="flat">

@@ -27,6 +27,7 @@ import SettingsOrderAssembly from "./pages/SettingsOrderAssembly";
 import SettingsEquipment from "./pages/SettingsEquipment";
 import SettingsOrders from "./pages/SettingsOrders";
 import SettingsAdmin from "./pages/SettingsAdmin";
+import SettingsUsers from "./pages/SettingsUsers";
 import SettingsDilovod from "./pages/SettingsDilovod";
 import SettingsWarehouseMovement from "./pages/SettingsWarehouseMovement";
 import SalesDriveOrders from "./pages/SalesDriveOrders";
@@ -35,6 +36,7 @@ import MetaLogNotifications from './pages/MetaLogs';
 
 // Определяем роли и их иерархию
 import { ROLES, ROLE_HIERARCHY, hasAccess, ROLE_LABELS } from '@shared/constants/roles';
+import { PERMISSIONS, canAccessRoute } from '@shared/constants/permissions';
 export { ROLES, ROLE_HIERARCHY, hasAccess, ROLE_LABELS };
 
 // Метадані для груп-контейнерів без власного маршруту (наприклад, "Налаштування")
@@ -97,6 +99,7 @@ export interface AppRoute {
   inNav: boolean;
   parent?: string; // Для розміщення в підменю
   order?: number; // Для сортування елементів
+  permission?: string; // Ключ права для доступу (переважає roles/minRole)
   roles?: string[]; // Дозволені ролі для доступу
   minRole?: string; // Мінімальна роль для доступу
   hasOwnTitle?: boolean; // Флаг для сторінок з власним заголовком
@@ -130,7 +133,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="layout-list" size={20} />,
     inNav: true,
     order: 2,
-    minRole: ROLES.STOREKEEPER // storekeeper і вище
+    permission: PERMISSIONS.PAGE_ORDERS,
   },
   {
     path: '/orders/:externalId',
@@ -140,7 +143,7 @@ export const appRoutes: AppRoute[] = [
     navLabel: 'Деталі замовлення',
     icon: null,
     inNav: false,
-    minRole: ROLES.STOREKEEPER,
+    permission: PERMISSIONS.PAGE_ORDERS,
     hasOwnTitle: true,
   },
   {
@@ -158,7 +161,7 @@ export const appRoutes: AppRoute[] = [
       icon: <DynamicIcon name="warehouse" size={20} />,
       order: 3,
     },
-    minRole: ROLES.STOREKEEPER, // storekeeper і вище
+    permission: PERMISSIONS.PAGE_WAREHOUSE_MOVEMENT,
   },
   {
     path: '/warehouse/movement-mob',
@@ -170,7 +173,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 3.1,
     parent: 'warehouse',
-    minRole: ROLES.STOREKEEPER,
+    permission: PERMISSIONS.PAGE_WAREHOUSE_MOVEMENT_MOB,
     navBadge: { label: 'NEW', color: 'danger' },
     hasOwnTitle: true,
   },
@@ -183,7 +186,7 @@ export const appRoutes: AppRoute[] = [
     icon: null,
     inNav: false,
     parent: 'warehouse',
-    minRole: ROLES.STOREKEEPER,
+    permission: PERMISSIONS.PAGE_WAREHOUSE_MOVEMENT_MOB,
     hasOwnTitle: true,
   },
   {
@@ -196,7 +199,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 3,
     parent: 'warehouse',
-    minRole: ROLES.STOREKEEPER, // storekeeper і вище
+    permission: PERMISSIONS.PAGE_WAREHOUSE_INVENTORY,
   },
   {
     path: '/warehouse/returns',
@@ -208,7 +211,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 4,
     parent: 'warehouse',
-    minRole: ROLES.STOREKEEPER,
+    permission: PERMISSIONS.PAGE_WAREHOUSE_RETURNS,
   },
   {
     path: '/warehouse/writeoff',
@@ -220,7 +223,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 5,
     parent: 'warehouse',
-    minRole: ROLES.STOREKEEPER,
+    permission: PERMISSIONS.PAGE_WAREHOUSE_WRITEOFF,
   },
   {
     path: '/warehouse/releases',
@@ -232,7 +235,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 6,
     parent: 'warehouse',
-    minRole: ROLES.STOREKEEPER,
+    permission: PERMISSIONS.PAGE_WAREHOUSE_RELEASES,
   },
   {
     path: '/warehouse/materials',
@@ -244,7 +247,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 7,
     parent: 'warehouse',
-    minRole: ROLES.STOREKEEPER,
+    permission: PERMISSIONS.PAGE_WAREHOUSE_MATERIALS,
   },
   {
     path: '/reports/sales',
@@ -261,7 +264,7 @@ export const appRoutes: AppRoute[] = [
       icon: <DynamicIcon name="chart-spline" size={20} />,
       order: 4,
     },
-    minRole: ROLES.ADS_MANAGER // ads-manager і вище
+    permission: PERMISSIONS.PAGE_REPORTS_SALES,
   },
   {
     path: '/reports/shipment',
@@ -273,7 +276,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 1,
-    minRole: ROLES.SHOP_MANAGER // shop-manager і вище
+    permission: PERMISSIONS.PAGE_REPORTS_SHIPMENT,
   },
   {
     path: '/reports/general',
@@ -285,7 +288,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 2,
-    minRole: ROLES.SHOP_MANAGER // shop-manager і вище
+    permission: PERMISSIONS.PAGE_REPORTS_GENERAL,
   },
   {
     path: '/reports/sales-dynamics',
@@ -297,7 +300,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 3,
-    minRole: ROLES.ADS_MANAGER // ads-manager і вище
+    permission: PERMISSIONS.PAGE_REPORTS_SALES_DYNAMICS,
   },
   {
     path: '/reports/lal-audiences',
@@ -309,7 +312,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 4,
-    minRole: ROLES.ADS_MANAGER,
+    permission: PERMISSIONS.PAGE_REPORTS_LAL,
     navBadge: {
       label: 'NEW',
       color: 'danger',
@@ -326,7 +329,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 9,
-    minRole: ROLES.STOREKEEPER,
+    permission: PERMISSIONS.PAGE_REPORTS_META_LOGS,
     hasOwnTitle: true,
   },
   {
@@ -338,7 +341,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="clipboard-check" size={20} />,
     inNav: true,
     order: 5,
-    minRole: ROLES.SHOP_MANAGER // shop-manager і вище (admin, boss, shop-manager)
+    permission: PERMISSIONS.PAGE_SALESDRIVE_ORDERS,
   },
   {
     path: '/profile',
@@ -366,7 +369,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 3,
-    minRole: ROLES.STOREKEEPER // storekeeper і вище
+    permission: PERMISSIONS.PAGE_SETTINGS_ORDER_ASSEMBLY,
   },
   {
     path: '/settings/equipment',
@@ -378,7 +381,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 4,
-    roles: [ROLES.ADMIN, ROLES.BOSS, ROLES.STOREKEEPER] // Тільки admin и boss
+    permission: PERMISSIONS.PAGE_SETTINGS_EQUIPMENT,
   },
   {
     path: '/settings/orders',
@@ -390,7 +393,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 7,
-    roles: [ROLES.ADMIN] // Тільки admin
+    permission: PERMISSIONS.PAGE_SETTINGS_ORDERS,
   },
   {
     path: '/settings/dilovod',
@@ -402,7 +405,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 8,
-    minRole: ROLES.SHOP_MANAGER // shop-manager і вище (admin, boss, shop-manager)
+    permission: PERMISSIONS.PAGE_SETTINGS_DILOVOD,
   },
   {
     path: '/settings/warehouse-movement',
@@ -414,7 +417,19 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 9,
-    roles: [ROLES.ADMIN]
+    permission: PERMISSIONS.PAGE_SETTINGS_WAREHOUSE_MOVEMENT,
+  },
+  {
+    path: '/settings/users',
+    component: SettingsUsers,
+    title: 'Користувачі і ролі',
+    pageTitle: 'Користувачі | NK Backoffice',
+    navLabel: 'Користувачі',
+    icon: <DynamicIcon name="users" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 9.5,
+    permission: PERMISSIONS.PAGE_SETTINGS_USERS,
   },
   {
     path: '/settings/design',
@@ -426,7 +441,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 20,
-    roles: [ROLES.ADMIN] // Тільки admin
+    permission: PERMISSIONS.PAGE_SETTINGS_DESIGN,
   },
   {
     path: '/settings/test-auth',
@@ -438,7 +453,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 25,
-    roles: [ROLES.ADMIN] // Тільки admin
+    permission: PERMISSIONS.PAGE_SETTINGS_TEST_AUTH,
   },
   {
     path: '/products',
@@ -449,7 +464,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="package" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     order: 8,
-    minRole: ROLES.WAREHOUSE_MANAGER,
+    permission: PERMISSIONS.PAGE_PRODUCTS,
     // roles: [ROLES.ADMIN], // тимчасово лише admin (приховати від інших до релізу)
     navBadge: {
       label: 'NEW',
@@ -467,7 +482,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     // parent: 'settings',
     order: 9,
-    minRole: ROLES.STOREKEEPER  // storekeeper і вище
+    permission: PERMISSIONS.PAGE_PRODUCT_SETS,
   },
   {
     path: '/settings/admin',
@@ -479,7 +494,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 10,
-    roles: [ROLES.ADMIN] // Тільки admin
+    permission: PERMISSIONS.PAGE_SETTINGS_ADMIN,
   },
   {
     path: '/test-serial-com',
@@ -489,7 +504,7 @@ export const appRoutes: AppRoute[] = [
     navLabel: 'Тест COM порту',
     icon: <DynamicIcon name="test-tube" size={20} />,
     inNav: false, // Не показувати в навігації
-    minRole: ROLES.STOREKEEPER // storekeeper і вище
+    permission: PERMISSIONS.PAGE_TEST_SERIAL_COM,
   },
 ];
 
@@ -503,10 +518,10 @@ export interface NavGroup {
 }
 
 // Повністю динамічна групировка навігації з урахуванням ролей
-export const getNavGroups = (userRole?: string) => {
+export const getNavGroups = (userRole?: string, permissions?: Iterable<string>) => {
   const filterByRole = (route: AppRoute) => {
-    if (!userRole) return false;
-    return hasAccess(userRole, route.roles, route.minRole);
+    if (!userRole && permissions == null) return false;
+    return canAccessRoute(permissions, route, userRole);
   };
 
   // Маршрути верхнього рівня (без parent), доступні за роллю

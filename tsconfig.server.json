@@ -12,5 +12,5 @@
     "lib": ["ES2022"]
   },
   "include": ["server/**/*"],
-  "exclude": ["node_modules", "dist", "client"]
+    "exclude": ["node_modules", "dist", "client", "**/*.spec.ts"]
 }

@@ -7,8 +7,9 @@ import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
 import { Router, type Response } from 'express';
-import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
-import { ROLES, hasAccess } from '../../../shared/constants/roles.js';
+import { authenticateToken, requirePermission } from '../../middleware/auth.js';
+import { PERMISSIONS } from '../../../shared/constants/permissions.js';
+import { roleService } from '../../services/RoleService.js';
 import { logServer } from '../../lib/utils.js';
 import { productsCatalogService } from './ProductsCatalogService.js';
 import { DilovodService, dilovodService } from '../../services/dilovod/DilovodService.js';
@@ -21,7 +22,7 @@ import {
 } from './CatalogMediaService.js';
 
 const router = Router();
-const guard = [authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER)] as const;
+const guard = [authenticateToken, requirePermission(PERMISSIONS.ACTION_CATALOG_MANAGE)] as const;
 
 const uploadTmpDir = path.resolve(process.cwd(), 'uploads', 'catalog', '_tmp');
 fs.mkdirSync(uploadTmpDir, { recursive: true });
@@ -337,7 +338,7 @@ router.post('/refresh', ...guard, async (req, res) => {
     }
 
     // Full catalog refresh — ADMIN only
-    if (!req.user || !hasAccess(req.user.role, undefined, ROLES.ADMIN)) {
+    if (!req.user || !(await roleService.hasPermission(req.user.role, PERMISSIONS.ACTION_CATALOG_FULL_REFRESH))) {
       res.status(403).json({ success: false, error: 'Повний refresh доступний лише ADMIN' });
       return;
     }

@@ -4,7 +4,6 @@ import { DebugModeSwitch } from '@/components/DebugModeSwitch';
 import { RolePreviewSelect } from '@/components/RolePreviewSelect';
 import { useRolePreview } from '@/contexts/RolePreviewContext';
 import { useDebug } from '@/contexts/DebugContext';
-import { ROLE_LABELS, type RoleValue } from '@shared/constants/roles';
 import { cn } from '@/lib/utils';
 
 const STORAGE_KEY = 'sidebarAdminToolsOpen';
@@ -18,7 +17,7 @@ function readStoredOpen(): boolean {
 }
 
 export function SidebarAdminFooter() {
-  const { isRealAdmin, isPreviewing, effectiveRole } = useRolePreview();
+  const { isRealAdmin, isPreviewing, effectiveRole, previewRoles } = useRolePreview();
   const { isDebugMode } = useDebug();
   const [open, setOpen] = useState(readStoredOpen);
 
@@ -40,7 +39,7 @@ export function SidebarAdminFooter() {
 
   const previewLabel =
     isPreviewing && effectiveRole
-      ? ROLE_LABELS[effectiveRole as RoleValue] ?? effectiveRole
+      ? previewRoles.find((role) => role.slug === effectiveRole)?.name ?? effectiveRole
       : null;
 
   const triggerLabel = previewLabel

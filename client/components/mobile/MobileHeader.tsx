@@ -43,10 +43,10 @@ function NavBadgePill({ badge }: { badge: NavBadge }) {
  */
 export function MobileHeader({ className }: MobileHeaderProps) {
   const { user, logout } = useAuth();
-  const { effectiveRole } = useRolePreview();
+  const { effectiveRole, effectivePermissions } = useRolePreview();
   const navigate = useNavigate();
   const location = useLocation();
-  const navItem = resolveMobileNavLabel(location.pathname, effectiveRole);
+  const navItem = resolveMobileNavLabel(location.pathname, effectiveRole, effectivePermissions);
 
   const handleLogout = () => {
     logout();

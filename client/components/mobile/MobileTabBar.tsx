@@ -22,9 +22,9 @@ interface TabDef {
 export function MobileTabBar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { effectiveRole } = useRolePreview();
+  const { effectiveRole, effectivePermissions } = useRolePreview();
   const { open: sidebarOpen, toggle } = useSidebar();
-  const { mainRoutes, subGroups } = getNavGroups(effectiveRole);
+  const { mainRoutes, subGroups } = getNavGroups(effectiveRole, effectivePermissions);
 
   const [groupDrawerKey, setGroupDrawerKey] = useState<'warehouse' | 'reports' | null>(null);
 

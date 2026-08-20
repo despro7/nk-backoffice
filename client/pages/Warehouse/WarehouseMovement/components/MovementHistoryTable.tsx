@@ -3,7 +3,8 @@ import { Chip, Spinner, Table, TableHeader, TableColumn, TableBody, TableRow, Ta
 import type { SortDescriptor } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate, pluralize } from '@/lib/formatUtils';
-import { useRolePreview } from '@/contexts/RolePreviewContext';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { PERMISSIONS } from '@shared/constants/permissions';
 import type { GoodMovingDocument, GoodMovingItem } from '@shared/types/movement';
 import { resolveMovementDirection } from '../storageDisplay';
 
@@ -26,7 +27,8 @@ export const MovementHistoryTable = ({
   detailsLoading = {},
   onEditMovement
 }: MovementHistoryTableProps) => {
-  const { isAdminView: isAdmin } = useRolePreview();
+  const { hasPermission } = useRoleAccess();
+  const isAdmin = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [contentHeights, setContentHeights] = useState<Record<string, number>>({});
   const contentRefs = useRef<Record<string, HTMLDivElement | null>>({});

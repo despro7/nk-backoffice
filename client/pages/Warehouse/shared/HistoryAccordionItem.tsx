@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
-import { useRolePreview } from '@/contexts/RolePreviewContext';
+import { PERMISSIONS } from '@shared/constants/permissions';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { formatDate, formatRelativeDate, truncateText, pluralize } from '@/lib';
 import { HistoryItemsTable } from './HistoryItemsTable';
 import { normalizeSetsArray } from './historyNormalize';
@@ -32,7 +33,8 @@ export const HistoryAccordionItem = ({
   onEditRecord,
   recordType,
 }: HistoryAccordionItemProps) => {
-  const { isAdminView: isAdmin } = useRolePreview();
+  const { hasPermission } = useRoleAccess();
+  const canDeleteHistory = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE);
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
   const [loadingLoadId, setLoadingLoadId] = useState<string | null>(null);
   const [loadingDeleteId, setLoadingDeleteId] = useState<string | null>(null);
@@ -232,7 +234,7 @@ export const HistoryAccordionItem = ({
                   <div className="flex items-center gap-4 mb-2">
                     <h3 className="text-lg font-semibold text-gray-700">Деталі операції</h3>
 										{/* Delete button (only visible to admin) */}
-										{isAdmin && showDelete && onDeleteRecord && (
+										{canDeleteHistory && showDelete && onDeleteRecord && (
 											<div className="ml-2" onClick={(e) => e.stopPropagation()}>
 												<Button
 													size="sm"
@@ -260,7 +262,7 @@ export const HistoryAccordionItem = ({
 											onCancel={handleCancelDelete}
 										/>
                     {/* Edit button (optional) */}
-                    {isAdmin && showEdit && onEditRecord && (
+                    {canDeleteHistory && showEdit && onEditRecord && (
                       <div className="ml-2" onClick={(e) => e.stopPropagation()}>
                         <Button
                           size="sm"

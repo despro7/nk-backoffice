@@ -3,10 +3,12 @@ import jwt from 'jsonwebtoken';
 import { JwtPayload } from '../types/auth.js';
 import { AuthService } from '../services/authService.js';
 import { AuthSettingsService } from '../services/authSettingsService.js';
-import { ROLES, ROLE_SETS, hasAccess, ROLE_HIERARCHY, canApplyRolePreview, isRolePreviewExemptPath, ROLE_PREVIEW_HEADER, ROLE_PREVIEW_APPLIED_HEADER, INSUFFICIENT_ROLE_HEADER } from '../../shared/constants/roles.js';
+import { ROLES, ROLE_SETS, hasAccess, ROLE_HIERARCHY, canApplyRolePreview, isRolePreviewExemptPath, ROLE_PREVIEW_HEADER, ROLE_PREVIEW_APPLIED_HEADER } from '../../shared/constants/roles.js';
 import type { RoleValue } from '../../shared/constants/roles.js';
+import { roleService } from '../services/RoleService.js';
+import { requirePermission, sendInsufficientRole } from './requirePermission.js';
 
-export { ROLES, ROLE_SETS };
+export { ROLES, ROLE_SETS, requirePermission };
 
 // Розширюємо інтерфейс Request для додавання користувача
 declare global {
@@ -169,7 +171,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     
     req.user = decoded;
 
-    applyRolePreview(req, res);
+    await applyRolePreview(req, res);
 
     // Тихе оновлення активности користувача
     AuthService.updateUserActivity(decoded.userId).catch(() => {});
@@ -207,7 +209,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
  * лише на відому роль нижче admin. Identity (userId/email) не змінюється.
  * Не застосовується до cron і до ендпоінтів сесії.
  */
-function applyRolePreview(req: Request, res: Response): void {
+async function applyRolePreview(req: Request, res: Response): Promise<void> {
   const user = req.user;
   if (!user || user.userId === 0) return;
   if (isRolePreviewExemptPath(req.originalUrl || req.path || '')) return;
@@ -215,21 +217,12 @@ function applyRolePreview(req: Request, res: Response): void {
   const rawHeader = req.get(ROLE_PREVIEW_HEADER);
   if (!rawHeader) return;
 
-  if (!canApplyRolePreview(user.role, rawHeader)) return;
+  const exists = await roleService.roleExists(rawHeader);
+  if (!canApplyRolePreview(user.role, rawHeader, exists)) return;
 
   user.realRole = user.role;
   user.role = rawHeader;
   res.setHeader(ROLE_PREVIEW_APPLIED_HEADER, rawHeader);
-}
-
-function sendInsufficientRole(res: Response, message: string) {
-  res.setHeader(INSUFFICIENT_ROLE_HEADER, '1');
-  return res.status(403).json({
-    success: false,
-    error: 'Insufficient permissions',
-    code: 'INSUFFICIENT_ROLE',
-    message,
-  });
 }
 
 export const requireRole = (roles: string[]) => {

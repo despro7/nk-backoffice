@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
 import { normalizeSetsArray, normalizeReleaseHistoryItems } from './historyNormalize.js';
-import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
-import { ROLES } from '../../../shared/constants/roles.js';
+import { authenticateToken, requirePermission } from '../../middleware/auth.js';
+import { PERMISSIONS } from '../../../shared/constants/permissions.js';
 import { dilovodExportFlowService } from '../../services/dilovod/index.js';
 import { getDilovodUserId, getDilovodExportErrorMessage, translateDilovodError, getDilovodConfigFromDB } from '../../services/dilovod/DilovodUtils.js';
 
@@ -186,7 +186,7 @@ async function collectFirstLevelComponents(items: ReleaseSetSourceItem[]): Promi
  * POST /api/warehouse/releases
  * Create a new set release record (snapshot)
  */
-router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/', authenticateToken, requirePermission(PERMISSIONS.ACTION_WAREHOUSE_OPERATE), async (req, res) => {
   try {
     const userId = (req as any).user?.userId || (req as any).user?.id || 0;
     const { items, storageId, firmId, comment, remark, status, dilovodDocId, operationType, operDate, date } = req.body;
@@ -239,7 +239,7 @@ router.post('/', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (re
 });
 
 /** POST /api/warehouse/releases/preview - preview expanded components for given sets */
-router.post('/preview', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/preview', authenticateToken, requirePermission(PERMISSIONS.ACTION_WAREHOUSE_OPERATE), async (req, res) => {
   try {
     const { items } = req.body;
     if (process.env.NODE_ENV === 'development') console.log('[SetRelease][preview] incoming items:', Array.isArray(items) ? items.length : typeof items);
@@ -259,7 +259,7 @@ router.post('/preview', authenticateToken, requireMinRole(ROLES.STOREKEEPER), as
 // NOTE: single-item `/check-dilovod` removed — use `/check-dilovod-batch` for batch operations
 
 /** POST /api/warehouse/releases/check-dilovod-batch - batch check dilovod documents */
-router.post('/check-dilovod-batch', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/check-dilovod-batch', authenticateToken, requirePermission(PERMISSIONS.ACTION_WAREHOUSE_OPERATE), async (req, res) => {
   try {
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
 
@@ -371,7 +371,7 @@ router.post('/check-dilovod-batch', authenticateToken, requireMinRole(ROLES.STOR
  * POST /api/warehouse/releases/send
  * Формування payload та відправка документа випуску набору в Діловод
  */
-router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/send', authenticateToken, requirePermission(PERMISSIONS.ACTION_WAREHOUSE_OPERATE), async (req, res) => {
   try {
     const { kitGood, kitQty, setSku, quantity, storageId, firmId, comment, remark, date, dryRun, docMode } = req.body;
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
@@ -542,7 +542,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 /** DELETE /api/warehouse/releases/:id */
-router.delete('/:id', authenticateToken, requireMinRole(ROLES.ADMIN), async (req, res) => {
+router.delete('/:id', authenticateToken, requirePermission(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await prisma.warehouseReleaseSet.findUnique({ where: { id } });

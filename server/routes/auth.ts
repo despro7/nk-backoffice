@@ -1,14 +1,17 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/utils.js';
 import { AuthService } from '../services/authService.js';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { authenticateToken, requirePermission } from '../middleware/auth.js';
 import { LoginRequest, RegisterRequest, UpdateProfileRequest, RefreshTokenRequest } from '../types/auth.js';
+import { PERMISSIONS } from '../../shared/constants/permissions.js';
+import { RoleError, roleService } from '../services/RoleService.js';
+import { ROLE_LABELS, type RoleValue } from '../../shared/constants/roles.js';
 
 
 const router = Router();
 
 // Регистрация (только для админов)
-router.post('/register', authenticateToken, requireRole(['admin']), async (req: Request<{}, {}, RegisterRequest>, res: Response) => {
+router.post('/register', authenticateToken, requirePermission(PERMISSIONS.ACTION_USERS_MANAGE), async (req: Request<{}, {}, RegisterRequest>, res: Response) => {
   try {
     console.log('🔍 Register request body:', req.body);
     console.log('🔍 Register request body type:', typeof req.body);
@@ -105,11 +108,17 @@ router.get('/profile', authenticateToken, async (req: Request, res: Response) =>
     }
 
     const { password, ...userWithoutPassword } = user;
+    const permissions = [...await roleService.getPermissionSet(user.role)];
+    const roleMeta = await roleService.getRoleBySlug(user.role);
     
     // Добавляем информацию о времени жизни токена из middleware
     const response = {
       ...userWithoutPassword,
-      expiresIn: req.user!.expiresIn
+      expiresIn: req.user!.expiresIn,
+      permissions,
+      roleMeta: roleMeta
+        ? { slug: roleMeta.slug, name: roleMeta.name, rank: roleMeta.rank }
+        : { slug: user.role, name: user.roleName || user.role, rank: 0 },
     };
     
     res.json(response);
@@ -135,64 +144,40 @@ router.put('/profile', authenticateToken, async (req: Request<{}, {}, UpdateProf
   }
 });
 
-// Получить уникальные роли пользователей (защищенный роут для админов)
-router.get('/roles', authenticateToken, requireRole(['admin']), async (req: Request, res: Response) => {
+router.get('/effective-permissions', authenticateToken, async (req: Request, res: Response) => {
   try {
-    const roles = await prisma.user.findMany({
-      select: {
-        role: true,
-        roleName: true
-      },
-      where: {
-        isActive: true
-      },
-      distinct: ['role']
+    const slug = req.user!.role;
+    const permissions = [...await roleService.getPermissionSet(slug)];
+    const roleMeta = await roleService.getRoleBySlug(slug);
+    res.json({
+      role: slug,
+      permissions,
+      roleMeta: roleMeta
+        ? { slug: roleMeta.slug, name: roleMeta.name, rank: roleMeta.rank }
+        : { slug, name: slug, rank: 0 },
     });
+  } catch (error) {
+    console.error('Error fetching effective permissions:', error);
+    res.status(500).json({ message: 'Failed to get permissions' });
+  }
+});
 
-    // Форматируем роли для фронтенда с поддержкой системных ролей
-    const uniqueRoles = roles.map(user => ({
-      value: user.role,
-      label: user.roleName || getRoleLabel(user.role)
-    }));
-
-    // Добавляем базовые системные роли если их нет
-    const baseRoles = [
-      { value: 'admin', label: 'Адміністратор' },
-      { value: 'boss', label: 'Начальник' },
-      { value: 'shop-manager', label: 'Менеджер магазину' },
-      { value: 'ads-manager', label: 'Менеджер реклами' },
-      { value: 'storekeeper', label: 'Комірник' }
-    ];
-
-    // Объединяем и убираем дубликаты
-    const allRoles = [...baseRoles];
-    uniqueRoles.forEach(role => {
-      if (!allRoles.find(r => r.value === role.value)) {
-        allRoles.push(role);
-      }
-    });
-
-    res.json(allRoles);
+router.get('/roles', authenticateToken, requirePermission(PERMISSIONS.ACTION_USERS_MANAGE), async (_req: Request, res: Response) => {
+  try {
+    const roles = await roleService.listRoles();
+    res.json(roles.map((role) => ({ value: role.slug, label: role.name })));
   } catch (error) {
     console.error('Error fetching roles:', error);
     res.status(500).json({ message: 'Failed to fetch roles' });
   }
 });
 
-// Вспомогательная функция для получения названия роли
 function getRoleLabel(role: string): string {
-  const roleLabels: Record<string, string> = {
-    'admin': 'Адміністратор',
-    'boss': 'Начальник',
-    'shop-manager': 'Менеджер магазину',
-    'ads-manager': 'Менеджер реклами',
-    'storekeeper': 'Комірник'
-  };
-  return roleLabels[role] || role.charAt(0).toUpperCase() + role.slice(1);
+  return ROLE_LABELS[role as RoleValue] || role;
 }
 
 // Получить список пользователей (только для админов)
-router.get('/users', authenticateToken, requireRole(['admin']), async (req: Request, res: Response) => {
+router.get('/users', authenticateToken, requirePermission(PERMISSIONS.ACTION_USERS_MANAGE), async (req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
       select: {
@@ -233,7 +218,7 @@ router.get('/users', authenticateToken, requireRole(['admin']), async (req: Requ
 });
 
 // Обновить пользователя (только для админов)
-router.put('/users/:id', authenticateToken, requireRole(['admin']), async (req: Request, res: Response) => {
+router.put('/users/:id', authenticateToken, requirePermission(PERMISSIONS.ACTION_USERS_MANAGE), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { name, email, password, role, roleName, isActive } = req.body;
@@ -252,14 +237,19 @@ router.put('/users/:id', authenticateToken, requireRole(['admin']), async (req: 
       }
     }
 
-    // Подготавливаем данные для обновления
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       name: name || undefined,
       email: email || undefined,
-      role: role || undefined,
-      roleName: roleName || undefined,
-      isActive: isActive !== undefined ? isActive : undefined
+      isActive: isActive !== undefined ? isActive : undefined,
     };
+
+    if (role) {
+      const roleRecord = await roleService.assertRoleExists(role);
+      updateData.role = roleRecord.slug;
+      updateData.roleName = roleName || roleRecord.name;
+    } else if (roleName !== undefined) {
+      updateData.roleName = roleName;
+    }
 
     // Хешируем новый пароль, если он был передан
     if (password) {
@@ -290,13 +280,16 @@ router.put('/users/:id', authenticateToken, requireRole(['admin']), async (req: 
       }
     });
   } catch (error) {
+    if (error instanceof RoleError) {
+      return res.status(error.status).json({ message: error.message });
+    }
     console.error('Error updating user:', error);
     res.status(500).json({ message: 'Failed to update user' });
   }
 });
 
 // Удалить пользователя (только для админов)
-router.delete('/users/:id', authenticateToken, requireRole(['admin']), async (req: Request, res: Response) => {
+router.delete('/users/:id', authenticateToken, requirePermission(PERMISSIONS.ACTION_USERS_MANAGE), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 

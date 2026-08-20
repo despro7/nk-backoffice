@@ -8,7 +8,8 @@ import { ToastService } from '@/services/ToastService';
 
 // Розширений тип користувача з інформацією про час життя токена
 interface UserWithExpiry extends Omit<UserType, 'password' | 'refreshToken' | 'refreshTokenExpiresAt'> {
-  expiresIn?: number; // Час життя access токена в секундах
+  expiresIn?: number;
+  permissions?: string[];
 }
 
 interface AuthContextType {

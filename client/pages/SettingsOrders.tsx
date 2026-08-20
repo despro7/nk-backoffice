@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRoleAccess } from '../hooks/useRoleAccess';
+import { PERMISSIONS } from '@shared/constants/permissions';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { SyncHistory } from '../components/SyncHistory';
 import { formatDateTime, formatRelativeDate, formatDuration } from '../lib/formatUtils';
@@ -100,7 +101,7 @@ interface SyncSettings {
 }
 
 const SettingsOrders: React.FC = () => {
-  const { isAdmin } = useRoleAccess();
+  const { hasPermission } = useRoleAccess();
 
   // State for sync logs
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
@@ -299,7 +300,7 @@ const SettingsOrders: React.FC = () => {
   });
 
   // Check if user is admin
-  if (!isAdmin()) {
+  if (!hasPermission(PERMISSIONS.PAGE_SETTINGS_ORDERS)) {
     return (
       <div className="flex items-center justify-center min-h-full">
         <div className="text-center">

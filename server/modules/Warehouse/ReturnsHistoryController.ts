@@ -3,8 +3,8 @@ import { prisma } from '../../lib/utils.js';
 import { resolveAuthorNames, getFirmDisplayNameServer } from '../../lib/utils.js';
 import { safeParseItems, normalizeItemsArray } from './historyNormalize.js';
 import { salesDriveService } from '../../services/salesDriveService.js';
-import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
-import { ROLES } from '../../../shared/constants/roles.js';
+import { authenticateToken, requirePermission } from '../../middleware/auth.js';
+import { PERMISSIONS } from '../../../shared/constants/permissions.js';
 
 const parseLocalDate = (value: any): Date | null => {
   if (!value) return null;
@@ -32,7 +32,7 @@ const router = Router();
  * GET /api/warehouse/returns/prepare
  * Підготувати повернення для замовлення
  */
-router.get('/prepare', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.get('/prepare', authenticateToken, requirePermission(PERMISSIONS.ACTION_WAREHOUSE_OPERATE), async (req, res) => {
   try {
     const orderId = req.query.orderId as string;
     if (!orderId) {
@@ -100,7 +100,7 @@ const { dilovodExportBuilder } = await import('../../services/dilovod/DilovodExp
  * POST /api/warehouse/returns/send
  * Оприбуткування повернення від покупця в Діловод
  */
-router.post('/send', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/send', authenticateToken, requirePermission(PERMISSIONS.ACTION_WAREHOUSE_OPERATE), async (req, res) => {
   try {
     const { orderId, items, comment, reason, dryRun, shipping_costs } = req.body;
 
@@ -493,7 +493,7 @@ router.post('/history', authenticateToken, async (req, res) => {
  * Фікс: парсити id як Number, отримати orderId із запису повернення,
  * скинути order.dilovodReturnDate = null та dilovodReturnDocsCount = 0 у відповідному замовленні
  */
-router.delete('/history/:id', authenticateToken, requireMinRole(ROLES.ADMIN), async (req, res) => {
+router.delete('/history/:id', authenticateToken, requirePermission(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE), async (req, res) => {
   try {
     const { id } = req.params;
     const { dryRun } = req.query; // Параметр для попереднього перегляду

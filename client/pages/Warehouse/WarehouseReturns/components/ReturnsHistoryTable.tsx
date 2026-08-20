@@ -2,7 +2,8 @@ import { Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useState, useRef, useEffect } from 'react';
 import { formatDate, truncateText } from '@/lib/formatUtils';
-import { useRolePreview } from '@/contexts/RolePreviewContext';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { PERMISSIONS } from '@shared/constants/permissions';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { formatTrackingNumberWithIcon, pluralize } from '@/lib';
 import { HistoryItemsTable } from '../../shared/HistoryItemsTable';
@@ -21,7 +22,8 @@ interface ReturnsHistoryTableProps {
 }
 
 export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: ReturnsHistoryTableProps) => {
-  const { isAdminView: isAdmin } = useRolePreview();
+  const { hasPermission } = useRoleAccess();
+  const isAdmin = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE);
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
   const [loadingLoadId, setLoadingLoadId] = useState<string | null>(null);
   const [loadingDeleteId, setLoadingDeleteId] = useState<string | null>(null);

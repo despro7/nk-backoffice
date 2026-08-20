@@ -1,15 +1,18 @@
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from './AuthContext';
-import { ROLES, isRoleValue, type RoleValue } from '@shared/constants/roles';
+import { ROLES } from '@shared/constants/roles';
 import { installRolePreviewFetch, setRolePreviewFetchRole } from '@/lib/rolePreviewFetch';
+import type { RoleDto } from '@shared/types/role';
 
 const STORAGE_KEY = 'rolePreview';
 
 interface RolePreviewContextType {
-  previewRole: RoleValue | null;
-  setPreviewRole: (role: RoleValue | null) => void;
+  previewRole: string | null;
+  setPreviewRole: (role: string | null) => void;
   effectiveRole: string | undefined;
+  effectivePermissions: string[];
+  previewRoles: RoleDto[];
   isPreviewing: boolean;
   isRealAdmin: boolean;
   isAdminView: boolean;
@@ -17,13 +20,10 @@ interface RolePreviewContextType {
 
 const RolePreviewContext = createContext<RolePreviewContextType | undefined>(undefined);
 
-/**
- * Зчитує з sessionStorage встановлену роль для превʼю, якщо вона валідна та не є ADMIN.
- */
-function readStoredPreview(): RoleValue | null {
+function readStoredPreview(): string | null {
   try {
     const stored = sessionStorage.getItem(STORAGE_KEY);
-    return isRoleValue(stored) && stored !== ROLES.ADMIN ? stored : null;
+    return stored && stored !== ROLES.ADMIN ? stored : null;
   } catch {
     return null;
   }
@@ -33,28 +33,37 @@ interface RolePreviewProviderProps {
   children: ReactNode;
 }
 
-/**
- * Провайдер контексту превʼю ролі.
- * Дозволяє адміністратору переглядати сторінку під іншою роллю.
- */
 export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
   const { user, isLoading } = useAuth();
   const queryClient = useQueryClient();
-  const [previewRole, setPreviewRoleState] = useState<RoleValue | null>(readStoredPreview);
-  const previousPreviewRef = useRef<RoleValue | null | undefined>(undefined);
+  const [previewRole, setPreviewRoleState] = useState<string | null>(readStoredPreview);
+  const [previewRoles, setPreviewRoles] = useState<RoleDto[]>([]);
+  const previousPreviewRef = useRef<string | null | undefined>(undefined);
 
   const isRealAdmin = user?.role === ROLES.ADMIN;
 
-  // Слідкує за зміною користувача/автентифікації та скидає превʼю, якщо доступ не дозволяється
+  useEffect(() => {
+    if (!isRealAdmin || previewRoles.length === 0 || !previewRole) return;
+    if (!previewRoles.some((item) => item.slug === previewRole)) {
+      setPreviewRoleState(null);
+      try {
+        sessionStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+    }
+  }, [isRealAdmin, previewRole, previewRoles]);
+
   useEffect(() => {
     if (isLoading) return;
 
     if (!user) {
       setPreviewRoleState(null);
+      setPreviewRoles([]);
       try {
         sessionStorage.removeItem(STORAGE_KEY);
       } catch {
-        // ignore storage errors
+        // ignore
       }
       return;
     }
@@ -64,23 +73,33 @@ export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
     }
   }, [isLoading, user, isRealAdmin, previewRole]);
 
-  /**
-   * Встановлює роль для превʼю (тільки для admin).
-   * Зберігає її у sessionStorage.
-   */
-  const setPreviewRole = (role: RoleValue | null) => {
+  useEffect(() => {
+    if (!isRealAdmin) return;
+    let cancelled = false;
+    void fetch('/api/roles', { credentials: 'include' })
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data)) setPreviewRoles(data);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewRoles([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isRealAdmin, user?.id]);
+
+  const setPreviewRole = (role: string | null) => {
     if (!isRealAdmin) return;
 
-    const next = role && role !== ROLES.ADMIN ? role : null;
+    const known = !role || role === ROLES.ADMIN || previewRoles.some((item) => item.slug === role);
+    const next = role && role !== ROLES.ADMIN && known ? role : null;
     setPreviewRoleState(next);
     try {
-      if (next) {
-        sessionStorage.setItem(STORAGE_KEY, next);
-      } else {
-        sessionStorage.removeItem(STORAGE_KEY);
-      }
+      if (next) sessionStorage.setItem(STORAGE_KEY, next);
+      else sessionStorage.removeItem(STORAGE_KEY);
     } catch {
-      // ignore storage errors
+      // ignore
     }
   };
 
@@ -89,11 +108,17 @@ export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
   const isPreviewing = Boolean(activePreview);
   const isAdminView = effectiveRole === ROLES.ADMIN;
 
-  // Встановлює глобальні функції/змінні для роботи превʼю ролі поза React
+  const effectivePermissions = useMemo(() => {
+    if (isPreviewing && activePreview) {
+      const preview = previewRoles.find((item) => item.slug === activePreview);
+      return preview?.permissions ?? [];
+    }
+    return user?.permissions ?? [];
+  }, [activePreview, isPreviewing, previewRoles, user?.permissions]);
+
   installRolePreviewFetch();
   setRolePreviewFetchRole(activePreview);
 
-  // Скидає кеш запитів при зміні ролі превʼю
   useEffect(() => {
     if (previousPreviewRef.current === undefined) {
       previousPreviewRef.current = activePreview;
@@ -110,6 +135,8 @@ export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
         previewRole: activePreview,
         setPreviewRole,
         effectiveRole,
+        effectivePermissions,
+        previewRoles,
         isPreviewing,
         isRealAdmin,
         isAdminView,
@@ -120,9 +147,6 @@ export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
   );
 }
 
-/**
- * Хук для отримання значення контексту превʼю ролі.
- */
 export function useRolePreview() {
   const context = useContext(RolePreviewContext);
   if (context === undefined) {

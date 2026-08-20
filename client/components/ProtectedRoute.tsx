@@ -2,7 +2,8 @@ import React, { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useRolePreview } from '../contexts/RolePreviewContext';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { findAppRouteByPath, hasAccess } from '../routes.config';
+import { findAppRouteByPath } from '../routes.config';
+import { canAccessRoute } from '@shared/constants/permissions';
 import { LoggingService } from '../services/LoggingService';
 
 interface ProtectedRouteProps {
@@ -19,7 +20,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   fallbackPath = "/"
 }) => {
   const { user, isLoading } = useAuth();
-  const { effectiveRole, isPreviewing } = useRolePreview();
+  const { effectiveRole, isPreviewing, effectivePermissions } = useRolePreview();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -69,7 +70,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const routeRoles = requiredRoles ?? currentRoute?.roles;
   const routeMinRole = minRole ?? currentRoute?.minRole;
 
-  if (!hasAccess(effectiveRole || user.role, routeRoles, routeMinRole)) {
+  if (!canAccessRoute(effectivePermissions, {
+    permission: currentRoute?.permission,
+    roles: routeRoles,
+    minRole: routeMinRole,
+  }, effectiveRole || user.role)) {
     if (isPreviewing) {
       return <Navigate to={fallbackPath} replace />;
     }

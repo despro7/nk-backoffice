@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/utils.js';
-import { authenticateToken, requireMinRole, ROLES } from '../middleware/auth.js';
+import { authenticateToken, requirePermission } from '../middleware/auth.js';
+import { PERMISSIONS } from '../../shared/constants/permissions.js';
 
 const router = Router();
 
@@ -73,7 +74,7 @@ router.get('/parent-ids', authenticateToken, async (req, res) => {
 });
 
 // PUT /api/materials/parent-ids — зберегти список parent IDs
-router.put('/parent-ids', authenticateToken, requireMinRole(ROLES.ADMIN), async (req, res) => {
+router.put('/parent-ids', authenticateToken, requirePermission(PERMISSIONS.ACTION_MATERIALS_PARENT_IDS), async (req, res) => {
   try {
     const { folders } = req.body;
     if (!Array.isArray(folders)) {
@@ -97,7 +98,7 @@ router.put('/parent-ids', authenticateToken, requireMinRole(ROLES.ADMIN), async 
 });
 
 // POST /api/materials/sync — синхронізація матеріалів з Dilovod за parent IDs
-router.post('/sync', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER), async (req, res) => {
+router.post('/sync', authenticateToken, requirePermission(PERMISSIONS.ACTION_MATERIALS_SYNC), async (req, res) => {
   try {
     const setting = await prisma.settingsBase.findUnique({
       where: { key: 'materials_parent_ids' },
@@ -249,7 +250,7 @@ router.post('/sync', authenticateToken, requireMinRole(ROLES.WAREHOUSE_MANAGER),
 });
 
 // PUT /api/materials/reorder — масове оновлення порядку після DnD
-router.put('/reorder', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.put('/reorder', authenticateToken, requirePermission(PERMISSIONS.ACTION_MATERIALS_EDIT), async (req, res) => {
   try {
     const { items } = req.body; // [{ id: number, manualOrder: number }]
     if (!Array.isArray(items)) {
@@ -268,7 +269,7 @@ router.put('/reorder', authenticateToken, requireMinRole(ROLES.STOREKEEPER), asy
 });
 
 // PUT /api/materials/:id/barcode
-router.put('/:id/barcode', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.put('/:id/barcode', authenticateToken, requirePermission(PERMISSIONS.ACTION_MATERIALS_EDIT), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { barcode } = req.body;

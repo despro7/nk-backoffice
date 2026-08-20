@@ -156,10 +156,10 @@ function SubmenuItem({ to, icon, label, isActive, badge, onNavigate }: NavItemPr
 
 export function Sidebar({ className }: SidebarProps) {
   const location = useLocation();
-  const { effectiveRole } = useRolePreview();
+  const { effectiveRole, effectivePermissions } = useRolePreview();
   const { open, isMobile, setOpen } = useSidebar();
   
-  const { mainRoutes, subGroups } = getNavGroups(effectiveRole);
+  const { mainRoutes, subGroups } = getNavGroups(effectiveRole, effectivePermissions);
 
   const handleNavigate = () => {
     if (isMobile) {

@@ -8,7 +8,8 @@
 
 import { Router } from 'express';
 import multer from 'multer';
-import { authenticateToken, requireMinRole, ROLES } from '../middleware/auth.js';
+import { authenticateToken, requirePermission } from '../middleware/auth.js';
+import { PERMISSIONS } from '../../shared/constants/permissions.js';
 import { cashInImportService } from '../services/dilovod/CashInImportService.js';
 import { cashInExportBuilder } from '../services/dilovod/CashInExportBuilder.js';
 import { logServer } from '../lib/utils.js';
@@ -43,7 +44,7 @@ const upload = multer({
 router.post(
   '/preview',
   authenticateToken,
-  requireMinRole(ROLES.SHOP_MANAGER),
+  requirePermission(PERMISSIONS.ACTION_DILOVOD_ADMIN),
   upload.single('file'),
   async (req, res) => {
     try {
@@ -74,7 +75,7 @@ router.post(
 router.post(
   '/export',
   authenticateToken,
-  requireMinRole(ROLES.SHOP_MANAGER),
+  requirePermission(PERMISSIONS.ACTION_DILOVOD_ADMIN),
   async (req, res) => {
     try {
       const { rows, fileCashAccount } = req.body as CashInExportRequest;

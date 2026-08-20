@@ -1,0 +1,94 @@
+import { Router, Request, Response } from 'express';
+import { authenticateToken } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/requirePermission.js';
+import { RoleError, roleService } from '../services/RoleService.js';
+import { PERMISSIONS } from '../../shared/constants/permissions.js';
+
+const router = Router();
+const guard = [authenticateToken, requirePermission(PERMISSIONS.ACTION_ROLES_MANAGE)] as const;
+
+function handleRoleError(res: Response, error: unknown) {
+  if (error instanceof RoleError) {
+    return res.status(error.status).json({ message: error.message });
+  }
+  console.error('Roles API error:', error);
+  return res.status(500).json({ message: 'Помилка керування ролями' });
+}
+
+router.get('/', ...guard, async (_req: Request, res: Response) => {
+  try {
+    const roles = await roleService.listRoles();
+    res.json(roles);
+  } catch (error) {
+    handleRoleError(res, error);
+  }
+});
+
+router.get('/catalog', ...guard, async (_req: Request, res: Response) => {
+  try {
+    const { PERMISSION_CATALOG, PERMISSION_GROUP_LABELS } = await import('../../shared/constants/permissions.js');
+    res.json({
+      groups: PERMISSION_GROUP_LABELS,
+      permissions: PERMISSION_CATALOG.map(({ key, group, label }) => ({ key, group, label })),
+    });
+  } catch (error) {
+    handleRoleError(res, error);
+  }
+});
+
+router.get('/:id', ...guard, async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Некоректний id' });
+    const role = await roleService.getRoleById(id);
+    if (!role) return res.status(404).json({ message: 'Роль не знайдена' });
+    res.json(role);
+  } catch (error) {
+    handleRoleError(res, error);
+  }
+});
+
+router.post('/', ...guard, async (req: Request, res: Response) => {
+  try {
+    const role = await roleService.createRole(req.body ?? {});
+    res.status(201).json(role);
+  } catch (error) {
+    handleRoleError(res, error);
+  }
+});
+
+router.put('/:id', ...guard, async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Некоректний id' });
+    const role = await roleService.updateRole(id, req.body ?? {});
+    res.json(role);
+  } catch (error) {
+    handleRoleError(res, error);
+  }
+});
+
+router.put('/:id/permissions', ...guard, async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Некоректний id' });
+    const keys = Array.isArray(req.body?.permissions) ? req.body.permissions : [];
+    const role = await roleService.setPermissions(id, keys);
+    res.json(role);
+  } catch (error) {
+    handleRoleError(res, error);
+  }
+});
+
+router.delete('/:id', ...guard, async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Некоректний id' });
+    await roleService.deleteRole(id);
+    res.json({ success: true });
+  } catch (error) {
+    handleRoleError(res, error);
+  }
+});
+
+export default router;

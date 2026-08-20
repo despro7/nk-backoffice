@@ -5,11 +5,10 @@ import {
   ROLE_LABELS,
   isRoleValue,
   isRolePreviewExemptPath,
-  type RoleValue,
 } from '@shared/constants/roles';
 import { ToastService } from '@/services/ToastService';
 
-let previewRole: RoleValue | null = null;
+let previewRole: string | null = null;
 let fetchPatched = false;
 let originalFetch: typeof window.fetch | null = null;
 let lastInsufficientRoleToastAt = 0;
@@ -19,7 +18,7 @@ const INSUFFICIENT_ROLE_TOAST_COOLDOWN_MS = 2000;
  * Встановлює роль для попереднього перегляду при запитах fetch.
  * @param role Значення ролі, або null для скидання.
  */
-export function setRolePreviewFetchRole(role: RoleValue | null): void {
+export function setRolePreviewFetchRole(role: string | null): void {
   previewRole = role;
 }
 
@@ -73,8 +72,10 @@ function notifyInsufficientRole(response: Response): void {
   lastInsufficientRoleToastAt = now;
 
   const previewApplied = response.headers.get(ROLE_PREVIEW_APPLIED_HEADER);
-  const deniedRole = isRoleValue(previewApplied) ? previewApplied : previewRole;
-  const roleLabel = deniedRole ? ROLE_LABELS[deniedRole] : null;
+  const deniedRole = previewApplied || previewRole;
+  const roleLabel = deniedRole
+    ? (isRoleValue(deniedRole) ? ROLE_LABELS[deniedRole] : deniedRole)
+    : null;
 
   ToastService.show({
     title: 'Недостатньо прав',

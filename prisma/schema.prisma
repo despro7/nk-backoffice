@@ -27,6 +27,29 @@ model User {
   @@map("users")
 }
 
+model Role {
+  id          Int              @id @default(autoincrement())
+  slug        String           @unique
+  name        String
+  description String?
+  rank        Int              @default(0)
+  isSystem    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model RolePermission {
+  roleId        Int
+  permissionKey String
+  role          Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionKey])
+  @@map("role_permissions")
+}
+
 model Order {
   id              Int             @id
   externalId      String          @unique

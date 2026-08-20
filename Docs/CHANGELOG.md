@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-08-20 — Користувачі, ролі в БД і permission-матриця
+**Files:** `shared/constants/permissions.ts`, `shared/constants/roles.ts`, `prisma/schema.prisma`, `prisma/migrations/20260820023000_add_roles_and_permissions/`, `server/services/RoleService.ts`, `server/routes/roles.ts`, `server/middleware/requirePermission.ts`, `server/middleware/auth.ts`, `server/routes/auth.ts`, `client/pages/SettingsUsers/`, `RolesManager.tsx`, `UserRegistrationManager.tsx`, `routes.config.tsx`, `RolePreviewContext.tsx`, `Docs/features/users-and-roles.md`, `Docs/features/role-preview.md`
+
+- Налаштування → **Користувачі** (`/settings/users`): таби Користувачі / Ролі (`?tab=roles`). CRUD користувачів прибрано з «Адмінських налаштувань».
+- Ролі в таблицях `roles` / `role_permissions`. Каталог ключів `page.*` / `action.*` у коді; seed 6 системних ролей = стара матриця `minRole`. `admin` — wildcard, без видалення / зміни slug.
+- Доступ: `requirePermission` на API, `route.permission` + `hasPermission` у меню / `ProtectedRoute`. JWT як і раніше несе slug.
+- Role preview: селект з `/api/roles` (і кастомні slug); ефективні права — `effectivePermissions`.
+- Тести: `npm test` (vitest). Після деплою: `npx prisma migrate deploy` (seed на старті сервера, якщо `roles` порожня).
+
+---
+
 ## 2026-08-20 — Перегляд UI як інша роль (admin preview)
 **Files:** `shared/constants/roles.ts`, `client/contexts/RolePreviewContext.tsx`, `client/lib/rolePreviewFetch.ts`, `client/components/RolePreviewSelect.tsx`, `SidebarAdminFooter.tsx`, `Sidebar.tsx`, `Header.tsx`, `useRoleAccess.ts`, `ProtectedRoute.tsx`, `server/middleware/auth.ts`, `server/index.ts`, `server/types/auth.ts`, `Docs/features/role-preview.md`
 

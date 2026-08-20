@@ -59,6 +59,13 @@ export class AuthService {
       throw new Error('Користувач вже існує');
     }
 
+    if (!userData.role) {
+      throw new Error('Роль обовʼязкова');
+    }
+
+    const { roleService } = await import('./RoleService.js');
+    const role = await roleService.assertRoleExists(userData.role);
+
     const hashedPassword = await bcrypt.hash(userData.password, 10);
     
     // Сначала создаем пользователя в БД
@@ -67,8 +74,8 @@ export class AuthService {
         name: userData.name || "",
         email: userData.email,
         password: hashedPassword,
-        role: userData.role || "user",
-        roleName: userData.roleName || "Користувач",
+        role: role.slug,
+        roleName: userData.roleName || role.name,
         lastLoginAt: new Date(),
         lastActivityAt: new Date(),
         isActive: true,

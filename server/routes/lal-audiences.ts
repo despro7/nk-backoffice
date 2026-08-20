@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { authenticateToken, requireMinRole, ROLES } from '../middleware/auth.js';
+import { authenticateToken, requirePermission } from '../middleware/auth.js';
+import { PERMISSIONS } from '../../shared/constants/permissions.js';
 import { logServer } from '../lib/utils.js';
 import {
   lalAudiencesService,
@@ -9,7 +10,7 @@ import type { LalExportFormat } from '../../shared/types/lalAudiences.js';
 
 const router = Router();
 
-router.get('/', authenticateToken, requireMinRole(ROLES.ADS_MANAGER), async (req: Request, res: Response) => {
+router.get('/', authenticateToken, requirePermission(PERMISSIONS.ACTION_LAL_MANAGE), async (req: Request, res: Response) => {
   try {
     const filters = parseLalAudienceFilters(req.query as Record<string, unknown>);
     const result = await lalAudiencesService.list(filters);
@@ -23,7 +24,7 @@ router.get('/', authenticateToken, requireMinRole(ROLES.ADS_MANAGER), async (req
   }
 });
 
-router.post('/export', authenticateToken, requireMinRole(ROLES.ADS_MANAGER), async (req: Request, res: Response) => {
+router.post('/export', authenticateToken, requirePermission(PERMISSIONS.ACTION_LAL_MANAGE), async (req: Request, res: Response) => {
   try {
     const parsed = parseLalAudienceFilters(
       (req.body ?? {}) as Record<string, unknown>,

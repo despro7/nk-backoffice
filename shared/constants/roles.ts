@@ -66,6 +66,7 @@ export const INSUFFICIENT_ROLE_HEADER = 'X-Insufficient-Role';
 export function isRolePreviewExemptPath(path: string): boolean {
   const pathname = path.split('?')[0];
   if (pathname === '/api/auth/settings') return true;
+  if (pathname === '/api/roles' || pathname.startsWith('/api/roles/')) return true;
   return [
     '/api/auth/profile',
     '/api/auth/logout',
@@ -74,11 +75,19 @@ export function isRolePreviewExemptPath(path: string): boolean {
   ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-/** true лише якщо реальна роль — admin, а preview — відома роль строго нижче admin. */
-export function canApplyRolePreview(realRole: string, previewRole: string): boolean {
+/**
+ * true якщо реальна роль — admin, а preview — існуючий slug строго не admin.
+ * `roleExists` передає сервер після перевірки таблиці roles; без нього — лише відомі системні ролі.
+ */
+export function canApplyRolePreview(
+  realRole: string,
+  previewRole: string,
+  roleExists?: boolean
+): boolean {
   if (realRole !== ROLES.ADMIN) return false;
-  if (!isRoleValue(previewRole) || previewRole === ROLES.ADMIN) return false;
-  return ROLE_HIERARCHY[previewRole] < ROLE_HIERARCHY[ROLES.ADMIN];
+  if (!previewRole || previewRole === ROLES.ADMIN) return false;
+  if (typeof roleExists === 'boolean') return roleExists;
+  return isRoleValue(previewRole);
 }
 
 // Зручні набори ролей для серверних перевірок (тільки для нестандартних випадків)

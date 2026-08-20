@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import path from "path";
+import rolesRoutes from './routes/roles.js';
 import authRoutes from "./routes/auth.js";
 import authSettingsRoutes from "./routes/auth-settings.js";
 import protectedRoutes from "./routes/protected.js";
@@ -16,6 +17,7 @@ import warehouseRoutes from './routes/warehouse.js';
 import ordersSyncRoutes from './routes/orders-sync.js';
 import { cronService, forceStopAllCronJobs } from './services/cronService.js';
 import { logServer } from './lib/utils.js';
+import { roleService } from './services/RoleService.js';
 import shippingRoutes from './routes/shipping.js';
 import shippingProvidersRoutes from './routes/shipping-providers.js';
 import qzTrayRoutes from './routes/qz-tray.js';
@@ -147,6 +149,7 @@ export function createServer() {
   // Auth routes
   app.use("/api/auth", authRoutes);
   app.use("/api/auth", authSettingsRoutes);
+  app.use("/api/roles", rolesRoutes);
 
   // Users (batch lookup)
   app.use('/api/users', usersRoutes);
@@ -234,6 +237,10 @@ export function createServer() {
 
   // Expand batch helper used by frontend pre-warm (POST /api/expand/flatten)
   app.use('/api/expand', expandRoutes);
+
+  void roleService.ensureSeeded().catch((error) => {
+    logServer('❌ Role seed failed:', error);
+  });
 
   return app;
 }

@@ -1,6 +1,7 @@
 import express from 'express';
 import { prisma } from '../lib/utils.js';
-import { authenticateToken, requireRole, requireMinRole, ROLE_SETS, ROLES } from '../middleware/auth.js';
+import { authenticateToken, requirePermission } from '../middleware/auth.js';
+import { PERMISSIONS } from '../../shared/constants/permissions.js';
 import { DilovodService } from '../services/dilovod/index.js';
 import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 import { salesDriveService } from '../services/salesDriveService.js';
@@ -278,7 +279,7 @@ router.get('/batch', authenticateToken, async (req, res) => {
 
 // Отримати один товар безпосередньо з Dilovod за SKU (без повної синхронізації)
 // GET /api/products/dilovod/:sku
-router.get('/dilovod/:sku', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER), async (req, res) => {
+router.get('/dilovod/:sku', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_VIEW_DILOVOD), async (req, res) => {
   try {
     const { sku } = req.params;
     const dilovodService = new DilovodService();
@@ -306,7 +307,7 @@ router.get('/dilovod/:sku', authenticateToken, requireMinRole(ROLES.SHOP_MANAGER
 
 // Отримати SKU whitelist (settings_wp_sku)
 // GET /api/products/sku-whitelist
-router.get('/sku-whitelist', authenticateToken, requireMinRole(ROLES.BOSS), async (req, res) => {
+router.get('/sku-whitelist', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SKU_WHITELIST), async (req, res) => {
   try {
     const record = await prisma.settingsWpSku.findFirst();
     if (!record) {
@@ -322,7 +323,7 @@ router.get('/sku-whitelist', authenticateToken, requireMinRole(ROLES.BOSS), asyn
 
 // Оновити SKU whitelist
 // PUT /api/products/sku-whitelist
-router.put('/sku-whitelist', authenticateToken, requireMinRole(ROLES.BOSS), async (req, res) => {
+router.put('/sku-whitelist', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SKU_WHITELIST), async (req, res) => {
   try {
     const { skus } = req.body;
     if (typeof skus !== 'string') {
@@ -354,7 +355,7 @@ router.put('/sku-whitelist', authenticateToken, requireMinRole(ROLES.BOSS), asyn
 
 // Отримати масив ID груп комплектів (dilovod_set_parent_ids)
 // GET /api/products/set-parent-ids
-router.get('/set-parent-ids', authenticateToken, requireMinRole(ROLES.BOSS), async (req, res) => {
+router.get('/set-parent-ids', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SET_PARENT_IDS_READ), async (req, res) => {
   try {
     // Спочатку читаємо новий ключ (масив), потім — старий (один рядок) для backward-compatibility
     const newRecord = await prisma.settingsBase.findFirst({
@@ -388,7 +389,7 @@ router.get('/set-parent-ids', authenticateToken, requireMinRole(ROLES.BOSS), asy
 
 // Оновити масив ID груп комплектів (dilovod_set_parent_ids)
 // PUT /api/products/set-parent-ids
-router.put('/set-parent-ids', authenticateToken, requireRole(ROLE_SETS.ADMIN_ONLY), async (req, res) => {
+router.put('/set-parent-ids', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SET_PARENT_IDS_WRITE), async (req, res) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.some((id: any) => typeof id !== 'string')) {
@@ -649,7 +650,7 @@ router.get('/:sku', authenticateToken, async (req, res) => {
 
 // Оновити вагу товару за ID
 // PUT /api/products/:id/weight
-router.put('/:id/weight', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.put('/:id/weight', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_EDIT), async (req, res) => {
   try {
     const { id } = req.params;
     const { weight } = req.body;
@@ -687,7 +688,7 @@ router.put('/:id/weight', authenticateToken, requireMinRole(ROLES.STOREKEEPER), 
 
 // Оновити ручний порядок (manualOrder) товару за ID
 // PUT /api/products/:id/manual-order
-router.put('/:id/manual-order', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.put('/:id/manual-order', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_EDIT), async (req, res) => {
   try {
     const { id } = req.params;
     const { manualOrder } = req.body;
@@ -715,7 +716,7 @@ router.put('/:id/manual-order', authenticateToken, requireMinRole(ROLES.STOREKEE
 
 // Оновити коефіцієнт unitRatio товару за ID
 // PUT /api/products/:id/unit-ratio
-router.put('/:id/unit-ratio', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.put('/:id/unit-ratio', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_EDIT), async (req, res) => {
   try {
     const { id } = req.params;
     const { unitRatio } = req.body;
@@ -744,7 +745,7 @@ router.put('/:id/unit-ratio', authenticateToken, requireMinRole(ROLES.STOREKEEPE
 
 // Оновити штрих-код товару за ID
 // PUT /api/products/:id/barcode
-router.put('/:id/barcode', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.put('/:id/barcode', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_EDIT), async (req, res) => {
   try {
     const { id } = req.params;
     const { barcode } = req.body;
@@ -772,7 +773,7 @@ router.put('/:id/barcode', authenticateToken, requireMinRole(ROLES.STOREKEEPER),
 
 // PUT /api/products/:id/portions-per-box
 // Оновлює кількість порцій у коробці для порційних товарів
-router.put('/:id/portions-per-box', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.put('/:id/portions-per-box', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_EDIT), async (req, res) => {
   try {
     const { id } = req.params;
     const { portionsPerBox } = req.body;
@@ -803,7 +804,7 @@ router.put('/:id/portions-per-box', authenticateToken, requireMinRole(ROLES.STOR
 
 // Скасувати поточну синхронізацію товарів
 // POST /api/products/sync/cancel
-router.post('/sync/cancel', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/sync/cancel', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
   try {
     const cancelled = DilovodService.cancelCurrentSync();
 
@@ -827,7 +828,7 @@ router.post('/sync/cancel', authenticateToken, requireMinRole(ROLES.STOREKEEPER)
 
 // Синхронізувати товари з Dilovod
 // POST /api/products/sync
-router.post('/sync', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/sync', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
   try {
 
     // Перевіряємо, чи увімкнено синхронізацію Dilovod
@@ -862,7 +863,7 @@ router.post('/sync', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async
 // Ручна синхронізація товарів за списком SKU
 // POST /api/products/sync-manual
 // body: { skus: string[], force?: boolean } — force=true ігнорує dilovodDataHash
-router.post('/sync-manual', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/sync-manual', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
   try {
     const { skus, force } = req.body;
 
@@ -939,7 +940,7 @@ router.post('/sync-manual', authenticateToken, requireMinRole(ROLES.STOREKEEPER)
 
 // Синхронізувати залишки товарів з Dilovod
 // POST /api/products/sync-stock
-router.post('/sync-stock', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/sync-stock', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
   try {
 
     // Перевіряємо, чи увімкнено синхронізацію залишків
@@ -965,7 +966,7 @@ router.post('/sync-stock', authenticateToken, requireMinRole(ROLES.STOREKEEPER),
 
 // Ручний тригер повного ланцюжку: синк товарів → залишки → експорт SD → WP sync
 // POST /api/products/sync-and-export
-router.post('/sync-and-export', authenticateToken, requireRole(ROLE_SETS.ADMIN_ONLY), async (req, res) => {
+router.post('/sync-and-export', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC_EXPORT), async (req, res) => {
   const jobId = Date.now();
   console.log(`🚀 [sync-and-export #${jobId}] Manual chain triggered by ${req.user.email}`);
 
@@ -1039,7 +1040,7 @@ router.post('/sync-and-export', authenticateToken, requireRole(ROLE_SETS.ADMIN_O
 // Тригер лише кроку SD → WP (HTTP виклик до syncStock.php)
 // POST /api/products/trigger-wp-sync
 // Доступно починаючи з ролі STOREKEEPER (комірник)
-router.post('/trigger-wp-sync', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/trigger-wp-sync', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
   try {
     console.log(`API: trigger-wp-sync called by ${req.user.email}`);
     const wpSyncUrl = 'https://nk-food.shop/wp-content/plugins/mrkv-salesdrive/inc/syncStock.php';
@@ -1150,7 +1151,7 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
 
 // Тест отримання залишків за списком SKU
 // POST /api/products/test-balance-by-sku
-router.post('/test-balance-by-sku', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/test-balance-by-sku', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
   try {
     console.log('=== API: test-balance-by-sku вызван ===');
 
@@ -1182,7 +1183,7 @@ router.post('/test-balance-by-sku', authenticateToken, requireMinRole(ROLES.STOR
 
 // Тест отримання тільки комплектів
 // POST /api/products/test-sets-only
-router.post('/test-sets-only', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.post('/test-sets-only', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
   try {
     console.log('=== API: test-sets-only вызван ===');
 
@@ -1202,7 +1203,7 @@ router.post('/test-sets-only', authenticateToken, requireMinRole(ROLES.STOREKEEP
 
 // Отримати залишки товарів з можливістю синхронізації
 // GET /api/products/stock/balance
-router.get('/stock/balance', authenticateToken, requireMinRole(ROLES.STOREKEEPER), async (req, res) => {
+router.get('/stock/balance', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
   try {
     const { sync = 'false' } = req.query;
     const shouldSync = sync === 'true';

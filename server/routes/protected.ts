@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { authenticateToken, requirePermission } from '../middleware/auth.js';
+import { PERMISSIONS } from '../../shared/constants/permissions.js';
 import { AuthService } from '../services/authService.js';
 import { prisma } from '../lib/utils.js';
 
@@ -15,7 +16,7 @@ router.get('/data', authenticateToken, (req: Request, res: Response) => {
 });
 
 // Защищенный роут только для админов
-router.get('/admin', authenticateToken, requireRole(['admin']), (req: Request, res: Response) => {
+router.get('/admin', authenticateToken, requirePermission(PERMISSIONS.ACTION_SETTINGS_ADMIN), (req: Request, res: Response) => {
   res.json({
     message: 'Admin only data',
     user: req.user,
@@ -40,7 +41,7 @@ router.get("/me", authenticateToken, async (req: Request, res: Response) => {
   });
 });
 
-router.get("/users", authenticateToken, requireRole(['admin']), async (req: Request, res: Response) => {
+router.get("/users", authenticateToken, requirePermission(PERMISSIONS.ACTION_SETTINGS_ADMIN), async (req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany();
 

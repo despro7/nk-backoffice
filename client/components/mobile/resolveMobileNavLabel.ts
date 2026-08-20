@@ -50,7 +50,8 @@ function matchRoute(pathname: string): AppRoute | null {
 /** Поточний пункт меню для MobileHeader (navLabel + icon, не page title). */
 export function resolveMobileNavLabel(
   pathname: string,
-  userRole?: string
+  userRole?: string,
+  permissions?: Iterable<string>
 ): MobileNavItem {
   const route = matchRoute(pathname);
   if (route) {
@@ -74,7 +75,7 @@ export function resolveMobileNavLabel(
     };
   }
 
-  const { subGroups } = getNavGroups(userRole);
+  const { subGroups } = getNavGroups(userRole, permissions);
   for (const group of Object.values(subGroups) as NavGroup[]) {
     const childHit = group.children.some(
       (c) => pathname === c.path || pathname.startsWith(c.path + '/')

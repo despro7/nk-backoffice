@@ -8,14 +8,16 @@
 
 ## Огляд
 
-Адмін, не виходячи зі свого акаунта, може дивитись UI так, як його бачить інша роль, і отримувати ті самі **403 від `requireRole` / `requireMinRole`**.
+Адмін, не виходячи зі свого акаунта, може дивитись UI так, як його бачить інша роль, і отримувати ті самі **403 від `requirePermission`**.
 
-Ієрархія: `ADS_MANAGER` < `STOREKEEPER` < `WAREHOUSE_MANAGER` < `SHOP_MANAGER` < `BOSS` < `ADMIN`.
+Список для селекта — ролі з БД (`GET /api/roles`), включно з кастомними. Прев’ю будь-якого існуючого slug ≠ `admin`. Системна ієрархія лишається для seed: `ADS_MANAGER` < `STOREKEEPER` < `WAREHOUSE_MANAGER` < `SHOP_MANAGER` < `BOSS` < `ADMIN`.
+
+Меню й `ProtectedRoute` дивляться на **`effectivePermissions`**, не лише на `effectiveRole`. Деталі RBAC: `Docs/features/users-and-roles.md`.
 
 | Що змінюється | Що не змінюється |
 | --- | --- |
-| Меню, маршрути, кнопки (`effectiveRole`) | `user.role` в `AuthContext` |
-| 403 на API з перевіркою ролі | Автор дій у БД / Dilovod / логах (`userId`, email) |
+| Меню, маршрути, кнопки (`effectivePermissions` / `effectiveRole`) | `user.role` в `AuthContext` |
+| 403 на API з `requirePermission` | Автор дій у БД / Dilovod / логах (`userId`, email) |
 | Toast «Недостатньо прав» | Дані, прив’язані до користувача (нотифікації, «мої» сесії) |
 
 **Ключове рішення:** не підміняти `user.role` у `AuthContext`. Debug mode і селект ролі дивляться на **реальну** роль адміна, інакше контролі зникнуть і адмін «застрягне» в прев’ю.
@@ -52,7 +54,7 @@
 Після `authenticateToken` middleware `applyRolePreview`:
 
 1. реальна роль JWT === `admin`;
-2. заголовок — відома роль **строго нижче** admin;
+2. заголовок — існуючий slug ролі **не** `admin` (`RoleService.roleExists`);
 3. шлях не з винятків сесії.
 
 Тоді `req.user.role` тимчасово стає preview-роллю, `req.user.realRole` = `admin`. У відповіді: `X-Role-Preview-Applied`.
@@ -61,7 +63,8 @@
 
 - cron / `userId === 0`;
 - `/api/auth/profile`, `logout`, `refresh`, `login`;
-- точний `GET /api/auth/settings` (не `/settings/admin`).
+- точний `GET /api/auth/settings` (не `/settings/admin`);
+- `/api/roles` і `/api/roles/*` (селект прев’ю має лишатись адмінським).
 
 Не-адмін, який надішле заголовок, ігнорується (підвищити роль неможливо).
 
@@ -84,7 +87,7 @@ CORS: `X-Role-Preview` у `allowedHeaders`, `X-Role-Preview-Applied` і `X-Insuf
 
 ## Toast на 403
 
-`requireRole` / `requireMinRole` ставлять `X-Insufficient-Role: 1` і `code: INSUFFICIENT_ROLE`.
+`requirePermission` (і застарілі `requireRole` / `requireMinRole`) ставлять `X-Insufficient-Role: 1` і `code: INSUFFICIENT_ROLE`.
 
 Патч `fetch` бачить заголовок (body не читає) і показує тост:
 
@@ -97,4 +100,4 @@ CORS: `X-Role-Preview` у `allowedHeaders`, `X-Role-Preview-Applied` і `X-Insuf
 
 ## Що не покрито
 
-Ендпоінти лише з `authenticateToken` (без `requireRole` / `requireMinRole`) лишаються доступними. Фільтрація по `userId` не змінюється. Inline-перевірки `req.user.role` підхоплюють прев’ю автоматично.
+Ендпоінти лише з `authenticateToken` (без `requirePermission`) лишаються доступними. Фільтрація по `userId` не змінюється. Inline-перевірки `req.user.role` підхоплюють прев’ю автоматично; lookup прав іде по цьому slug.

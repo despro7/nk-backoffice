@@ -29,6 +29,8 @@
     "postinstall": "prisma generate",
     "clean": "rm -rf dist",
     "rebuild": "npm run clean && npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "eslint . --ext .js,.ts,.jsx,.tsx --config eslint.config.js",
     "lint:fix": "eslint . --ext .js,.ts,.jsx,.tsx --config eslint.config.js --fix",
     "qz:test": "bash scripts/test-qz-connection.sh",

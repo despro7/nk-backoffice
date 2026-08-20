@@ -45,29 +45,32 @@ export const UserRegistrationManager: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isEditPasswordVisible, setIsEditPasswordVisible] = useState(false);
+  const [availableRoles, setAvailableRoles] = useState<RoleOption[]>([]);
 
   const [userData, setUserData] = useState<UserRegistrationData>({
     email: '',
     name: '',
     password: '',
-    role: ROLES.STOREKEEPER // Начальная роль - самая низкая в иерархии
+    role: ROLES.STOREKEEPER
   });
 
-  // Преобразование ролей из useRoleAccess в формат для Select
-  const availableRoles: RoleOption[] = React.useMemo(() => {
-    const roleLabels: Record<string, string> = {
-      [ROLES.ADMIN]: 'Адміністратор',
-      [ROLES.BOSS]: 'Директор',
-      [ROLES.SHOP_MANAGER]: 'Менеджер магазину',
-      [ROLES.ADS_MANAGER]: 'Ads Manager',
-      [ROLES.STOREKEEPER]: 'Комірник'
+  useEffect(() => {
+    const loadRoles = async () => {
+      try {
+        const response = await fetch('/api/auth/roles', { credentials: 'include' });
+        if (!response.ok) return;
+        const roles: Array<{ value: string; label: string }> = await response.json();
+        const options = roles.map((role) => ({ value: role.value, label: role.label }));
+        setAvailableRoles(options);
+        if (options.length && !options.some((item) => item.value === userData.role)) {
+          setUserData((prev) => ({ ...prev, role: options[0].value }));
+        }
+      } catch {
+        // ignore
+      }
     };
-
-    return Object.values(ROLES).map(role => ({
-      value: role,
-      label: roleLabels[role] || role.charAt(0).toUpperCase() + role.slice(1)
-    }));
-  }, [ROLES]);
+    void loadRoles();
+  }, []);
 
   // Загрузка списка пользователей
   useEffect(() => {

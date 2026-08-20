@@ -1,19 +1,18 @@
 import React from 'react';
 import { SettingsManager } from '../components/SettingsManager';
 import { ServerStatusSettings } from '../components/ServerStatusSettings';
-import { UserRegistrationManager } from '../components/UserRegistrationManager';
 import { LoggingSettings } from '../components/LoggingSettings';
 import { ToastSettings } from '@/components/ToastSettings';
 import { AuthSettings } from '../components/AuthSettings';
 import { ReportingDayStartHourSettings } from '../components/ReportingDayStartHourSettings';
 import { useRoleAccess } from '../hooks/useRoleAccess';
 import { DateFormatSettings } from "@/components/DateFormatSettings";
+import { PERMISSIONS } from '@shared/constants/permissions';
 
 const SettingsAdmin: React.FC = () => {
-  const { isAdmin } = useRoleAccess();
+  const { hasPermission } = useRoleAccess();
 
-  // Если пользователь не админ, не показываем страницу
-  if (!isAdmin()) {
+  if (!hasPermission(PERMISSIONS.PAGE_SETTINGS_ADMIN)) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -26,11 +25,6 @@ const SettingsAdmin: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* Реєстрація користувачів */}
-      <section>
-        <UserRegistrationManager />
-      </section>
-
       {/* Налаштування логування і toast */}
       <section>
         <h2 className="text-2xl font-semibold mb-2">Налаштування логування</h2>

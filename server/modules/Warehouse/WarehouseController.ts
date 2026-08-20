@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
 import { resolveAuthorNames } from '../../lib/utils.js';
-import { authenticateToken, requireMinRole } from '../../middleware/auth.js';
+import { authenticateToken } from '../../middleware/auth.js';
 import { ROLES } from '../../../shared/constants/roles.js';
 import { WarehouseService } from './WarehouseService.js';
 import { MovementHistoryService } from './MovementHistoryService.js';
