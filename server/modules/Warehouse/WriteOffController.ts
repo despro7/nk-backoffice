@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
 import { safeParseItems, normalizeItemsArray } from './historyNormalize.js';
 import { authenticateToken, requirePermission } from '../../middleware/auth.js';
-import { PERMISSIONS } from '../../../shared/constants/permissions.js';
 
 const parseLocalDate = (dt: any): Date | null => {
   if (!dt) return null;
@@ -42,12 +41,14 @@ const hasOwnStockInWarehouse = (stockBalanceByStock: any): boolean => {
 };
 
 const router = Router();
+const warehouseOperate = requirePermission('warehouse', 'operate', 'Складські операції (відправка, чернетки)');
+const warehouseHistoryDelete = requirePermission('warehouse', 'history.delete', 'Видаляти історію складських документів');
 
 /**
  * POST /api/warehouse/writeoff/send
  * Відправка документа списання в Діловод
  */
-router.post('/send', authenticateToken, requirePermission(PERMISSIONS.ACTION_WAREHOUSE_OPERATE), async (req, res) => {
+router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
   try {
     const { orderId, items, comment, reason, customReason, firmId, storageId, date, dryRun } = req.body;
 
@@ -420,7 +421,7 @@ router.post('/history', authenticateToken, async (req, res) => {
 /**
  * DELETE /api/warehouse/writeoff/history/:id
  */
-router.delete('/history/:id', authenticateToken, requirePermission(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE), async (req, res) => {
+router.delete('/history/:id', authenticateToken, warehouseHistoryDelete, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const record = await prisma.warehouseWriteOffHistory.findUnique({ where: { id } });

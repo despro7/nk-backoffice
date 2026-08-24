@@ -1,4 +1,3 @@
-import logo from "/logo.svg";
 import favicon from "/favicon.svg";
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "react-router-dom";
@@ -237,7 +236,7 @@ export function Sidebar({ className }: SidebarProps) {
   };
 
   const brandHeader = (
-    <div className="flex items-center gap-1.5 px-4 py-4 select-none shrink-0">
+    <div className="flex items-center gap-1.5 px-5 py-5 select-none shrink-0">
       <img src={favicon} alt="favicon" className="w-8 h-8" />
       <div className="flex items-end gap-1 font-[Nunito] text-2xl font-bold text-slate-600 leading-none">
         <span>Backoffice</span>

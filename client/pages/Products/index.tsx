@@ -700,6 +700,13 @@ export default function ProductsPage() {
             }
             onMove={catalog.isSearchMode ? undefined : catalog.requestMove}
             treeItems={catalog.treeItemsFull}
+            onUpdateWeight={(id, weight) =>
+              catalog.updateMutation.mutateAsync({
+                id,
+                input: { weight },
+                keepOpen: true,
+              })
+            }
           />
         </main>
       </div>

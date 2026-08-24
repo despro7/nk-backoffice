@@ -129,3 +129,42 @@ export async function allocateNextEan13(
     );
   });
 }
+
+export type CatalogBarcodeMatchRow = {
+  code: string;
+  activity: boolean;
+  dilovodRegisterId?: string | null;
+  goodPart?: string | null;
+  goodPartName?: string | null;
+};
+
+export function catalogBarcodeRowKey(row: CatalogBarcodeMatchRow): string {
+  return row.dilovodRegisterId || `${row.code}::${row.goodPart || ''}`;
+}
+
+/**
+ * Знайти існуючий рядок ШК, щоб оновити регістр Dilovod, а не створити дублікат коду.
+ * 1) точний code + goodPart
+ * 2) той самий code без партії (привʼязка партії)
+ * 3) єдиний рядок з цим code (зміна партії)
+ */
+export function matchExistingBarcode(
+  rows: CatalogBarcodeMatchRow[],
+  code: string,
+  goodPart: string | null,
+  usedKeys: Set<string>
+): CatalogBarcodeMatchRow | undefined {
+  const available = rows.filter((row) => {
+    if (row.code !== code) return false;
+    return !usedKeys.has(catalogBarcodeRowKey(row));
+  });
+
+  const exact = available.find((row) => (row.goodPart || null) === goodPart);
+  if (exact) return exact;
+
+  const unbound = available.find((row) => !row.goodPart);
+  if (unbound) return unbound;
+
+  if (available.length === 1) return available[0];
+  return undefined;
+}

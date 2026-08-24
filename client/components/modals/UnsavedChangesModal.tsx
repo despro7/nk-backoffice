@@ -16,8 +16,9 @@ import type { UnsavedGuardModalProps } from '@/hooks/useUnsavedGuard';
 //   cancelText      — текст кнопки скасування (за замовчуванням: 'Залишитись')
 // ---------------------------------------------------------------------------
 
-// Всі кастомні тексти вже включені в UnsavedGuardModalProps
-type UnsavedChangesModalProps = UnsavedGuardModalProps;
+type UnsavedChangesModalProps = UnsavedGuardModalProps & {
+  overlayZClassName?: string;
+};
 
 export function UnsavedChangesModal({
   isOpen,
@@ -31,6 +32,7 @@ export function UnsavedChangesModal({
   leaveText = 'Вийти без збереження',
   cancelText = 'Залишитись',
   modalSize = 'xl',
+  overlayZClassName,
 }: UnsavedChangesModalProps) {
   return (
     <Modal
@@ -40,6 +42,8 @@ export function UnsavedChangesModal({
       isDismissable={!isSaving}
       classNames={{
         base: 'py-2 bg-white rounded-lg shadow-lg',
+        wrapper: overlayZClassName,
+        backdrop: overlayZClassName,
       }}
     >
       <ModalContent>

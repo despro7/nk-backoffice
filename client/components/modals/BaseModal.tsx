@@ -13,6 +13,8 @@ interface BaseModalProps {
   onConfirm?: () => void;
   onCancel?: () => void;
   confirmLoading?: boolean;
+  /** z-index wrapper/backdrop, коли модалка відкривається поверх вкладених Drawer. */
+  overlayZClassName?: string;
 }
 
 export function BaseModal({
@@ -27,6 +29,7 @@ export function BaseModal({
   onConfirm,
   onCancel,
   confirmLoading = false,
+  overlayZClassName,
 }: BaseModalProps) {
   return (
     <Modal isOpen={isOpen} onClose={onCancel} classNames={{
@@ -35,6 +38,8 @@ export function BaseModal({
       body: "px-4 py-3",
       footer: "px-4 justify-start gap-3",
       closeButton: "absolute right-3 top-3",
+      wrapper: overlayZClassName,
+      backdrop: overlayZClassName,
     }}>
       <ModalContent>
         <ModalHeader className="flex items-center gap-2 text-lg font-semibold">

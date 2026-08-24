@@ -26,6 +26,8 @@ import {
   Tooltip,
 } from '@heroui/react';
 import { DynamicIcon, type IconName } from 'lucide-react/dynamic';
+import { NumberInput, NumberInputFromNumber } from '@/components/NumberInput';
+import { parseNumberInput } from '@/lib/numberInput';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
@@ -259,8 +261,8 @@ function showMissingWeightBadge(
 }
 
 function parseSpecQtyInput(raw: string): number {
-  const n = parseFloat(String(raw).replace(',', '.'));
-  if (!Number.isFinite(n) || n <= 0) return 1;
+  const n = parseNumberInput(raw);
+  if (n == null || n <= 0) return 1;
   return n;
 }
 
@@ -274,6 +276,8 @@ async function fetchCatalogGoodDetail(id: string): Promise<CatalogGoodDetailDto>
 }
 
 const NESTED_DRAWER_Z = ['', '!z-[60]', '!z-[70]', '!z-[80]', '!z-[90]'] as const;
+/** Confirm/модалки та «вибір партії» — на +5 над поточним nested Drawer. */
+const NESTED_OVERLAY_Z = ['!z-[55]', '!z-[65]', '!z-[75]', '!z-[85]', '!z-[95]'] as const;
 const NESTED_DRAWER_MAX_W = [
   '',
   'max-h-[calc(100dvh-1rem)] top-4 md:max-w-[calc(var(--container-4xl)-2rem)]',
@@ -282,32 +286,10 @@ const NESTED_DRAWER_MAX_W = [
   'max-h-[calc(100dvh-2.5rem)] top-10 md:max-w-[calc(var(--container-4xl)-8rem)]',
 ] as const;
 
-function parseWeightInput(raw: string): number | null {
-  const normalized = raw.trim().replace(/\s/g, '').replace(',', '.');
-  if (!normalized) return null;
-  const n = parseFloat(normalized);
-  return Number.isFinite(n) ? n : null;
-}
-
 /** Поле заповнене додатним числом (не порожнє і не 0). */
 function isRequiredPositiveField(raw: string): boolean {
-  const n = parseWeightInput(raw);
+  const n = parseNumberInput(raw);
   return n != null && n > 0;
-}
-
-function sanitizeDecimalInput(raw: string): string {
-  let next = raw.replace(/[^\d.,]/g, '');
-  const sep = next.includes(',') ? ',' : next.includes('.') ? '.' : null;
-  if (sep) {
-    const [intPart, ...rest] = next.split(sep);
-    next = `${intPart}${sep}${rest.join('').replace(/[.,]/g, '').slice(0, 3)}`;
-  }
-  return next;
-}
-
-function formatQtyDisplay(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return '0';
-  return Number(value.toFixed(3)).toString().replace('.', ',');
 }
 
 type RowDeleteKind = 'component' | 'price' | 'barcode';
@@ -356,53 +338,6 @@ function RowDeleteButton({
         Видалити?
       </span>
     </Button>
-  );
-}
-
-/** Decimal qty для специфікації (не комплект): text input з комою/крапкою. */
-function BomQtyInput({
-  className,
-  value,
-  onChange,
-}: {
-  className?: string;
-  value: number;
-  onChange: (qty: number) => void;
-}) {
-  const [text, setText] = useState(() => formatQtyDisplay(value));
-  const focusedRef = useRef(false);
-
-  useEffect(() => {
-    if (!focusedRef.current) {
-      setText(formatQtyDisplay(value));
-    }
-  }, [value]);
-
-  return (
-    <Input
-      type="text"
-      inputMode="decimal"
-      size="sm"
-      className={className}
-      aria-label="Кількість"
-      value={text}
-      onFocus={() => {
-        focusedRef.current = true;
-      }}
-      onValueChange={(v) => {
-        const next = sanitizeDecimalInput(v);
-        setText(next);
-        const n = parseWeightInput(next);
-        if (n != null) onChange(Math.max(0, n));
-      }}
-      onBlur={() => {
-        focusedRef.current = false;
-        const n = parseWeightInput(text);
-        const final = n != null ? Math.max(0, n) : 0;
-        onChange(final);
-        setText(formatQtyDisplay(final));
-      }}
-    />
   );
 }
 
@@ -711,7 +646,7 @@ export function ProductDrawer({
 
     const packageRatio = form.packageRatio ? parseFloat(form.packageRatio) : null;
     const specQty = isGood ? parseSpecQtyInput(form.specQty) : undefined;
-    const weight = parseWeightInput(form.weight);
+    const weight = parseNumberInput(form.weight);
     const unitRatioRaw = form.unitRatio.trim().replace(',', '.');
     const unitRatioParsed = unitRatioRaw ? parseFloat(unitRatioRaw) : null;
     const unitRatio =
@@ -1055,7 +990,7 @@ export function ProductDrawer({
         : null,
     [showBom, components, units, isGood, form.specQty]
   );
-  const currentWeightKg = parseWeightInput(form.weight);
+  const currentWeightKg = parseNumberInput(form.weight);
   const canFillWeightFromBom =
     bomWeightExpected != null && bomWeightExpected.missingCount === 0;
   const weightMismatch =
@@ -1088,6 +1023,9 @@ export function ProductDrawer({
     });
   };
 
+  const overlayZ =
+    NESTED_OVERLAY_Z[Math.min(stackLevel, NESTED_OVERLAY_Z.length - 1)];
+
   return (
     <>
       <Drawer
@@ -1104,7 +1042,7 @@ export function ProductDrawer({
             .filter(Boolean)
             .join(' ') || undefined,
           base: [
-            'rounded-t-lg md:rounded-l-xl overflow-hidden flex flex-col max-h-[calc(100dvh-0.5rem)] md:max-h-none',
+            'rounded-t-lg md:rounded-l-xl overflow-hidden flex flex-col max-h-[calc(100%-0.5rem)] md:max-h-full',
             stackLevel > 0
               ? `${NESTED_DRAWER_MAX_W[Math.min(stackLevel, NESTED_DRAWER_MAX_W.length - 1)]} rounded-t-lg md:top-0 md:rounded-t-none md:max-h-full shadow-2xl`
               : '',
@@ -1180,7 +1118,7 @@ export function ProductDrawer({
               </>
             )}
           </DrawerHeader>
-          <DrawerBody className={`gap-6 pt-5 pb-8 ${!detailLoading && 'shadow-inner'}`}>
+          <DrawerBody className={`gap-6 pt-5 ${!detailLoading && 'shadow-inner'}`}>
             {isEdit && detailLoading ? (
               <div className="flex justify-center h-full py-10">
                 <Spinner label="Завантаження картки…" />
@@ -1359,10 +1297,10 @@ export function ProductDrawer({
                               ))}
                             </Select>
                             {isGood && (
-                              <Input
+                              <NumberInput
                                 label="Порцій в коробці"
-                                type="number"
                                 value={form.packageRatio}
+                                decimalPlaces={0}
                                 min={1}
                                 isRequired={isGood}
                                 isInvalid={packageRatioInvalid}
@@ -1373,21 +1311,15 @@ export function ProductDrawer({
                                     : undefined
                                 }
                                 onValueChange={(v) => setForm((f) => ({ ...f, packageRatio: v }))}
-                                classNames={{
-                                  input:
-                                    '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
-                                }}
-                                onWheel={(e) => {
-                                  (e.target as HTMLElement).blur();
-                                }}
                               />
                             )}
                             <div className="min-w-0">
-                              <Input
+                              <NumberInput
                                 label="Вага, кг"
-                                type="text"
-                                inputMode="decimal"
                                 value={form.weight}
+                                decimalPlaces={3}
+                                min={0}
+                                max={20}
                                 step={0.01}
                                 isRequired={isGood || isKit}
                                 isInvalid={weightFieldInvalid}
@@ -1395,28 +1327,7 @@ export function ProductDrawer({
                                 errorMessage={
                                   weightFieldInvalid ? 'Має бути більше 0' : undefined
                                 }
-                                onValueChange={(v) => {
-                                  // Allow digits and one comma/dot
-                                  let next = v.replace(/[^\d.,]/g, '');
-                                  const sep = next.includes(',')
-                                    ? ','
-                                    : next.includes('.')
-                                      ? '.'
-                                      : null;
-                                  if (sep) {
-                                    const [intPart, ...rest] = next.split(sep);
-                                    next = `${intPart}${sep}${rest.join('').replace(/[.,]/g, '').slice(0, 3)}`;
-                                  }
-                                  setForm((f) => ({ ...f, weight: next }));
-                                }}
-                                onBlur={() => {
-                                  setForm((f) => {
-                                    if (!f.weight.trim()) return f;
-                                    const n = parseWeightInput(f.weight);
-                                    if (n == null) return f;
-                                    return { ...f, weight: formatWeightKg(n, 3) };
-                                  });
-                                }}
+                                onValueChange={(v) => setForm((f) => ({ ...f, weight: v }))}
                               />
                               {showExpectedWeightHint && bomWeightExpected && (
                                 <div className="mt-1 flex items-center gap-2">
@@ -1441,20 +1352,17 @@ export function ProductDrawer({
                               )}
                             </div>
                             {isAdmin && (
-                              <Input
+                              <NumberInput
                                 className="md:max-w-xs"
                                 label="Коефіцієнт (unitRatio)"
-                                type="number"
-                                inputMode="decimal"
                                 value={form.unitRatio}
-                                step={0.05}
+                                decimalPlaces={3}
                                 min={0}
+                                step={0.05}
+                                trimTrailingZeros
                                 onValueChange={(v) =>
-                                  setForm((f) => ({ ...f, unitRatio: sanitizeDecimalInput(v) }))
+                                  setForm((f) => ({ ...f, unitRatio: v }))
                                 }
-                                onWheel={(e) => {
-                                  (e.target as HTMLElement).blur();
-                                }}
                               />
                             )}
                           </div>
@@ -1486,24 +1394,17 @@ export function ProductDrawer({
                           {isGood && (
                             <div className="flex items-center gap-2 ml-4.5 md:ml-auto">
                               <span className="text-sm font-semibold whitespace-nowrap">Розрахунок на</span>
-                              <Input
+                              <NumberInput
                                 aria-label="Розрахунок на, шт."
-                                type="number"
                                 size="sm"
                                 min={1}
+                                decimalPlaces={0}
+                                emptyOnBlur="min"
                                 value={form.specQty}
                                 classNames={{
                                   base: 'w-20',
-                                  input:
-                                    '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
                                 }}
                                 onValueChange={(v) => setForm((f) => ({ ...f, specQty: v }))}
-                                onBlur={() => {
-                                  setForm((f) => ({ ...f, specQty: String(parseSpecQtyInput(f.specQty)) }));
-                                }}
-                                onWheel={(e) => {
-                                  (e.target as HTMLElement).blur();
-                                }}
                               />
                               <span className="text-sm text-default-500">шт.</span>
                             </div>
@@ -1744,9 +1645,15 @@ export function ProductDrawer({
                                 </div>
 
                                 {!isKit ? (
-                                  <BomQtyInput
-                                    className="w-28 ml-7 sm:ml-0 order-last sm:order-none"
+                                  <NumberInputFromNumber
+                                    size="sm"
+                                    className="w-20 ml-7 sm:ml-0 order-last sm:order-none"
+                                    aria-label="Кількість"
                                     value={c.qty || 0}
+                                    min={0}
+                                    decimalPlaces={3}
+                                    isInvalid={c.qty <= 0}
+                                    trimTrailingZeros
                                     onChange={(qty) =>
                                       setComponents((prev) =>
                                         prev.map((row, i) => (i === idx ? { ...row, qty } : row))
@@ -1852,7 +1759,7 @@ export function ProductDrawer({
                         const militaryPortions = isKit ? kitPortionCount : 1;
                         return (
                         <div key={idx} className="flex flex-col gap-1">
-                        <div className="grid gap-2 grid-cols-[1fr_100px_auto] md:grid-cols-[1fr_100px_auto]">
+                        <div className="grid gap-2 grid-cols-[1fr_110px_auto]">
                           {priceTypes.length > 0 ? (
                             <Select
                               size="md"
@@ -1877,22 +1784,17 @@ export function ProductDrawer({
                               onValueChange={(v) => applyPriceRowChange(idx, { priceType: v })}
                             />
                           )}
-                          <Input
+                          <NumberInputFromNumber
                             size="md"
                             aria-label="Ціна, грн"
-                            type="number"
-                            value={String(p.price)}
+                            value={p.price}
+                            decimalPlaces={2}
+                            min={0}
+                            trimTrailingZeros={false}
+                            isInvalid={p.price <= 0}
                             color={militaryMismatch ? 'danger' : 'default'}
                             endContent={<span className="text-xs text-default-400/75">грн</span>}
-                            classNames={{
-                              input: '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
-                            }}
-                            onValueChange={(v) =>
-                              applyPriceRowChange(idx, { price: parseFloat(v) || 0 })
-                            }
-                            onWheel={(e) => {
-                              (e.target as HTMLElement).blur();
-                            }}
+                            onChange={(price) => applyPriceRowChange(idx, { price })}
                           />
                           <RowDeleteButton
                             ariaLabel="Видалити ціну"
@@ -2122,7 +2024,7 @@ export function ProductDrawer({
               </>
             )}
           {!detailLoading && (
-            <DrawerFooter className="-mx-3 md:-mx-6 px-3 md:px-6 mt-2 border-t border-default-200/60">
+            <DrawerFooter className="-mx-3 md:-mx-6 px-3 md:px-6 pt-5 mt-auto border-t border-default-200/60">
               {(isDebugMode ||
                 (isTrashed && detail && onRestore) ||
                 (isEdit && !isFolder && detail?.sku && onLegacyUpdate)) && (
@@ -2239,10 +2141,12 @@ export function ProductDrawer({
         onClose={() => setShowPayloadPreview(false)}
         payload={payloadPreview}
         title="Перегляд Payload картки товару"
+        overlayZClassName={overlayZ}
       />
-      <UnsavedChangesModal {...guard.modalProps} />
+      <UnsavedChangesModal {...guard.modalProps} overlayZClassName={overlayZ} />
       <ConfirmModal
         isOpen={generateReplace != null}
+        overlayZClassName={overlayZ}
         title={generateReplace?.type === 'sku' ? 'Замінити SKU?' : 'Замінити штрихкод?'}
         message={
           generateReplace?.type === 'sku'
@@ -2284,6 +2188,7 @@ export function ProductDrawer({
             }
           }}
           inputRef={batchInputRef}
+          overlayZClassName={overlayZ}
         />
       )}
     </>

@@ -27,6 +27,7 @@ interface BatchNumbersAutocompleteProps {
   /** Примусово оновити партії з Dilovod (скинути серверний кеш) */
   onRefresh: () => void;
   inputRef?: React.RefObject<HTMLInputElement>;
+  overlayZClassName?: string;
 }
 
 /**
@@ -47,7 +48,8 @@ export const BatchNumbersAutocomplete = ({
   onSelect,
   onClose,
   onRefresh,
-  inputRef
+  inputRef,
+  overlayZClassName,
 }: BatchNumbersAutocompleteProps) => {
   const displayDate = selectedDateTime ?? new Date();
   const dateStr = displayDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -64,7 +66,10 @@ export const BatchNumbersAutocomplete = ({
         }
         onClose();
       }
-    }} size="sm" placement="right">
+    }} size="sm" placement="right" classNames={{
+      wrapper: overlayZClassName,
+      backdrop: overlayZClassName,
+    }}>
       <DrawerContent>
         {(onCloseDrawer) => (
           <>
@@ -93,7 +98,6 @@ export const BatchNumbersAutocomplete = ({
                   {batches.map((batch, index) => {
                     const isSelected = selectedBatch === batch.batchNumber && selectedStorage === batch.storage;
                     const isAlreadyAdded = addedBatchKeys?.has(`${batch.batchId}:${batch.storage}`) ?? false;
-                    console.log(batch);
                     return (
                       <motion.button
                         key={`${batch.batchNumber}-${batch.storage}`}

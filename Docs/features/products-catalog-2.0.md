@@ -256,7 +256,7 @@ client/pages/Products/
 
 - Тип обʼєкта: Tabs **Продукція / Товарні набори / Група / Інший** (`DrawerObjectKind` ↔ `accPolicyId` / `isGroup`).
 - BOM:
-  - **Продукція** — «Специфікація товару»; qty через `BomQtyInput`; **примітка** (Chip + Popover, Dilovod remark); мікро-конфірм видалення примітки (іконка → «Видалити?» → clear).
+  - **Продукція** — «Специфікація товару»; qty через `NumberInputFromNumber` (див. `Docs/architecture/number-input.md`); **примітка** (Chip + Popover, Dilovod remark); мікро-конфірм видалення примітки (іконка → «Видалити?» → clear).
   - **Товарні набори** — «Склад комплекту»; qty `StepperInput`; **без** примітки (`note: null` у save).
 - `unitRatio` — поле лише для Admin (продукція).
 - Одиниці / типи цін / валюти — Select з `GET /dictionaries`.

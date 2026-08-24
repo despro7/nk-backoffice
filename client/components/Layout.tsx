@@ -75,28 +75,30 @@ export function Layout({ children }: LayoutProps) {
           <Header className="hidden lg:flex shrink-0" />
           <MobileHeader />
 
-          <main className="flex flex-col gap-6 px-0 pt-4 pb-[calc(1rem+56px+env(safe-area-inset-bottom))] md:px-3 lg:p-8 lg:pb-12 flex-1">
-            {!currentRoute?.hasOwnTitle && (
-              <h1 className="text-primary font-inter text-2xl lg:text-3xl font-semibold leading-[100%] tracking-[-0.64px] min-h-10 flex items-center px-3 md:px-0">
-                <span className="hidden lg:flex shrink-0">
-                  {currentRoute?.icon && React.isValidElement(currentRoute.icon) && React.cloneElement(currentRoute.icon, {
-                    className: `${currentRoute.icon.props?.className || ''} w-6 h-6 mr-3`.trim()
-                  })}
-                </span>
-                {location.pathname.startsWith('/orders') && location.pathname.split('/').filter(Boolean).length > 1 && (
-                <Button
-                  color="secondary"
-                  variant="flat"
-                  className="text-neutral-500 min-w-fit mr-4"
-                  onPress={() => navigate("/orders")}
-                >
-                  <DynamicIcon name="arrow-left" size={20} />
-                </Button>
-                )}
-                {h1Title}
-              </h1>
-            )}
-            {children}
+          <main className="flex-1 px-0 pt-4 pb-[calc(1rem+56px+env(safe-area-inset-bottom))] md:px-3 lg:p-8 lg:pb-12">
+            <div className="container mx-auto flex flex-col gap-6">
+              {!currentRoute?.hasOwnTitle && (
+                <h1 className="text-primary font-inter text-2xl lg:text-3xl font-semibold leading-[100%] tracking-[-0.64px] min-h-10 flex items-center px-3 md:px-0">
+                  <span className="hidden lg:flex shrink-0">
+                    {currentRoute?.icon && React.isValidElement(currentRoute.icon) && React.cloneElement(currentRoute.icon, {
+                      className: `${currentRoute.icon.props?.className || ''} w-6 h-6 mr-3`.trim()
+                    })}
+                  </span>
+                  {location.pathname.startsWith('/orders') && location.pathname.split('/').filter(Boolean).length > 1 && (
+                  <Button
+                    color="secondary"
+                    variant="flat"
+                    className="text-neutral-500 min-w-fit mr-4"
+                    onPress={() => navigate("/orders")}
+                  >
+                    <DynamicIcon name="arrow-left" size={20} />
+                  </Button>
+                  )}
+                  {h1Title}
+                </h1>
+              )}
+              {children}
+            </div>
           </main>
 
           <Footer className="hidden lg:block shrink-0" />

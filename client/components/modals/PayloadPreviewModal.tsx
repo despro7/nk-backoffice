@@ -29,6 +29,7 @@ interface PayloadPreviewModalProps {
   isSending?: boolean;
   /** Коллбек фактичної відправки (dryRun=false) */
   onSend?: () => void;
+  overlayZClassName?: string;
 }
 
 export const PayloadPreviewModal = ({
@@ -41,6 +42,7 @@ export const PayloadPreviewModal = ({
   isLoading = false,
   isSending = false,
   onSend,
+  overlayZClassName,
 }: PayloadPreviewModalProps) => {
   const [activeTab, setActiveTab] = useState<'full' | 'params' | 'items'>('full');
 
@@ -70,6 +72,10 @@ export const PayloadPreviewModal = ({
       size="2xl"
       scrollBehavior="inside"
       backdrop="blur"
+      classNames={{
+        wrapper: overlayZClassName,
+        backdrop: overlayZClassName,
+      }}
     >
       <ModalContent>
         {(onModalClose) => (

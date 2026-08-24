@@ -71,6 +71,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const routeMinRole = minRole ?? currentRoute?.minRole;
 
   if (!canAccessRoute(effectivePermissions, {
+    parent: currentRoute?.parent,
     permission: currentRoute?.permission,
     roles: routeRoles,
     minRole: routeMinRole,

@@ -5,8 +5,26 @@
 
 ---
 
+## 2026-08-24 — NumberInput: десяткові поля з комою
+**Files:** `client/lib/numberInput.ts`, `client/lib/numberInput.spec.ts`, `client/components/NumberInput.tsx`, `client/pages/Products/components/ProductDrawer.tsx`, `Docs/architecture/number-input.md`, `Docs/features/products-catalog-2.0.md`
+
+- Спільний інпут замість розкиданих `type="number"` / ручного sanitize: крапка → кома, ліміт знаків, min/max на blur, колесо не крутить значення, нуль виділяється на фокусі.
+- `NumberInput` — рядок у стейті; `NumberInputFromNumber` — адаптер для `number` (чернетка всередині).
+- ProductDrawer: вага, порції в коробці, unitRatio, «Розрахунок на», qty специфікації, ціна. Комплект лишає `StepperInput`.
+
+---
+
+## 2026-08-20 — UI користувачів/ролей і домен Settings/Users
+**Files:** `client/pages/Settings/Users/**`, `client/routes.config.tsx`, `server/routes/auth.ts`, `server/services/authService.ts`, `client/components/UpdateNotificationBanner.tsx`, `client/hooks/usePermissionsRevisionCheck.ts`, `Docs/features/users-and-roles.md`
+
+- UI зібрано в домен `client/pages/Settings/Users/` (як Warehouse): сторінка + `UserRegistrationManager` / `RolesManager`.
+- Користувачі: Drawer створення/редагування, генератор пароля, останній візит, `dilovodUserId`, напівпрозорий неактивний рядок, лічильники дій. Register більше не підміняє cookies адміна.
+- Ролі: Drawer з колонками Сторінки / Дії. Зміна матриці → банер «оновити сторінку» для активних сесій.
+
+---
+
 ## 2026-08-20 — Користувачі, ролі в БД і permission-матриця
-**Files:** `shared/constants/permissions.ts`, `shared/constants/roles.ts`, `prisma/schema.prisma`, `prisma/migrations/20260820023000_add_roles_and_permissions/`, `server/services/RoleService.ts`, `server/routes/roles.ts`, `server/middleware/requirePermission.ts`, `server/middleware/auth.ts`, `server/routes/auth.ts`, `client/pages/SettingsUsers/`, `RolesManager.tsx`, `UserRegistrationManager.tsx`, `routes.config.tsx`, `RolePreviewContext.tsx`, `Docs/features/users-and-roles.md`, `Docs/features/role-preview.md`
+**Files:** `shared/constants/permissions.ts`, `shared/constants/roles.ts`, `prisma/schema.prisma`, `prisma/migrations/20260820023000_add_roles_and_permissions/`, `server/services/RoleService.ts`, `server/routes/roles.ts`, `server/middleware/requirePermission.ts`, `server/middleware/auth.ts`, `server/routes/auth.ts`, `client/pages/Settings/Users/`, `routes.config.tsx`, `RolePreviewContext.tsx`, `Docs/features/users-and-roles.md`, `Docs/features/role-preview.md`
 
 - Налаштування → **Користувачі** (`/settings/users`): таби Користувачі / Ролі (`?tab=roles`). CRUD користувачів прибрано з «Адмінських налаштувань».
 - Ролі в таблицях `roles` / `role_permissions`. Каталог ключів `page.*` / `action.*` у коді; seed 6 системних ролей = стара матриця `minRole`. `admin` — wildcard, без видалення / зміни slug.

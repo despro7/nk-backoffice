@@ -27,6 +27,7 @@ import { productsDilovodGateway } from './ProductsDilovodGateway.js';
 import { productsLocalSync } from './ProductsLocalSync.js';
 import { catalogMediaService } from './CatalogMediaService.js';
 import { pickLatestSku } from './skuUtils.js';
+import { catalogBarcodeRowKey, matchExistingBarcode } from './barcodeUtils.js';
 import {
   DilovodCatalogGoodRow,
   DilovodDictItem,
@@ -1075,14 +1076,21 @@ export class ProductsCatalogService {
       goodPartName?: string | null;
     }> = [];
     if (!isGroup && input.barcodes) {
+      const usedBarcodeKeys = new Set<string>();
       for (const b of barcodes) {
         if (!b.code?.trim()) continue;
         const code = b.code.trim();
         const goodPart = b.goodPart?.trim() || null;
         const activity = b.activity !== false;
-        const existingBarcode = existing.barcodes.find(
-          (x) => x.code === code && (x.goodPart || null) === goodPart
+        const existingBarcode = matchExistingBarcode(
+          existing.barcodes,
+          code,
+          goodPart,
+          usedBarcodeKeys
         );
+        if (existingBarcode) {
+          usedBarcodeKeys.add(catalogBarcodeRowKey(existingBarcode));
+        }
 
         // Не чіпаємо Dilovod, якщо ШК не змінився
         if (

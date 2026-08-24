@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Checkbox,
   Chip,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   Spinner,
   Table,
   TableBody,
@@ -13,6 +16,8 @@ import {
   type SortDescriptor,
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { NumberInput } from '@/components/NumberInput';
+import { formatNumberInput, parseNumberInput } from '@/lib/numberInput';
 import {
   buildSpecColorMap,
   getSpecColor,
@@ -27,6 +32,7 @@ import {
   goodTypeLabel,
   isArchiveFolderName,
   getBlockedMoveTargetIds,
+  weightsAlmostEqual,
   createCatalogLiveDragPreview,
   moveCatalogDragPreview,
   removeCatalogDragPreview,
@@ -77,6 +83,8 @@ interface CatalogTableProps {
   /** Controlled sort (для кнопки скидання на ручний порядок) */
   sortDescriptor?: SortDescriptor;
   onSortChange?: (desc: SortDescriptor) => void;
+  /** Швидке оновлення ваги з таблиці (Dilovod save). */
+  onUpdateWeight?: (id: string, weight: number) => void | Promise<unknown>;
 }
 
 type PaintMode = 'replace' | 'add' | 'remove';
@@ -117,6 +125,170 @@ function resolveCategory(
 function formatWeightKg(weight: number | null | undefined): string {
   if (weight == null || Number.isNaN(Number(weight))) return '—';
   return Number(weight).toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
+}
+
+function weightDraftFromRow(weight: number | null | undefined): string {
+  if (weight == null || Number.isNaN(Number(weight))) return '';
+  return formatNumberInput(Number(weight), {
+    decimalPlaces: 3,
+    trimTrailingZeros: true,
+    min: 0,
+    max: 20,
+  });
+}
+
+function WeightQuickEdit({
+  rowId,
+  weight,
+  onUpdateWeight,
+}: {
+  rowId: string;
+  weight: number | null | undefined;
+  onUpdateWeight: (id: string, next: number) => void | Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(() => weightDraftFromRow(weight));
+  const [invalid, setInvalid] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const discardOnCloseRef = useRef(false);
+
+  const commit = async (closeAfter: boolean) => {
+    const parsed = parseNumberInput(draft);
+    if (parsed == null || parsed <= 0) {
+      const unchangedEmpty =
+        closeAfter &&
+        draft.trim() === '' &&
+        (weight == null || Number.isNaN(Number(weight)));
+      if (unchangedEmpty) {
+        setOpen(false);
+        return true;
+      }
+      setInvalid(true);
+      return false;
+    }
+    setInvalid(false);
+    if (weight != null && Number.isFinite(Number(weight)) && weightsAlmostEqual(Number(weight), parsed)) {
+      if (closeAfter) setOpen(false);
+      return true;
+    }
+    setSaving(true);
+    try {
+      await onUpdateWeight(rowId, parsed);
+      if (closeAfter) setOpen(false);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Popover
+      placement="top-start"
+      offset={6}
+      showArrow
+      classNames={{
+        base: 'before:z-20 before:rounded-xs',
+      }}
+      isOpen={open}
+      onOpenChange={(next) => {
+        if (next) {
+          setDraft(weightDraftFromRow(weight));
+          setInvalid(false);
+          discardOnCloseRef.current = false;
+          setOpen(true);
+          return;
+        }
+        if (saving) return;
+        if (discardOnCloseRef.current) {
+          discardOnCloseRef.current = false;
+          setOpen(false);
+          return;
+        }
+        void commit(true);
+      }}
+    >
+      <PopoverTrigger>
+        <button
+          type="button"
+          data-selection-ignore
+          aria-label="Редагувати вагу"
+          title="Редагувати вагу"
+          className="group inline-flex items-center gap-1 rounded-md px-2 py-0.5 -mx-2 tabular-nums text-left transition-colors duration-200 hover:bg-default-200/80"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className={weight == null || Number.isNaN(Number(weight)) ? 'text-default-300' : ''}>
+            {formatWeightKg(weight)}
+          </span>
+          <DynamicIcon
+            name="pencil"
+            size={12}
+            className="pointer-events-none shrink-0 text-default-400 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+          />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="relative px-2 py-2 shadow-lg">
+        <button
+          type="button"
+          aria-label="Скасувати"
+          title="Скасувати"
+          className="absolute -top-1 -right-1 z-10 
+            flex h-4 w-4 items-center justify-center rounded-full shadow-[1px_-1px_5px_-3px_#00000040]
+            text-default-400 bg-white transition-colors duration-150 hover:bg-danger-100 hover:text-danger-700"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            discardOnCloseRef.current = true;
+            setOpen(false);
+          }}
+        >
+          <DynamicIcon name="x" size={10} />
+        </button>
+        <NumberInput
+          aria-label="Вага, кг"
+          size="sm"
+          autoFocus
+          decimalPlaces={3}
+          trimTrailingZeros
+          min={0}
+          max={20}
+          step={0.01}
+          value={draft}
+          isDisabled={saving}
+          isInvalid={invalid}
+          errorMessage={invalid ? 'Має бути більше 0' : undefined}
+          endContent={<span className="text-xs text-default-400 pr-0.5">кг</span>}
+          className="w-32"
+          classNames={{
+            inputWrapper: [
+              'h-8 min-h-8 border-1 border-default-200/50 bg-default-100/75!',
+              'shadow-none ring-0! ring-offset-0!',
+              'group-data-[focus-visible=true]:ring-0! group-data-[focus-visible=true]:ring-offset-0!',
+              'group-data-[focus-visible=true]:ring-offset-transparent!',
+              'data-[focus-visible=true]:ring-0! data-[focus-visible=true]:ring-offset-0!',
+            ].join(' '),
+            helperWrapper: 'pb-0',
+          }}
+          onValueChange={(v) => {
+            setDraft(v);
+            if (invalid) setInvalid(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              void commit(true);
+            }
+            if (e.key === 'Escape') {
+              discardOnCloseRef.current = true;
+            }
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 const CATALOG_IDS_MIME = 'application/x-catalog-ids';
@@ -225,6 +397,7 @@ export function CatalogTable({
   treeItems,
   sortDescriptor: sortDescriptorProp,
   onSortChange,
+  onUpdateWeight,
 }: CatalogTableProps) {
   const visibleRows = rows.filter(
     (r) => !(r.isGroup && isArchiveFolderName(r.name))
@@ -1075,10 +1248,18 @@ export function CatalogTable({
         );
       }
       case 'weight':
-        return row.isGroup ? (
-          <span className="text-default-300">—</span>
-        ) : (
-          <span className="tabular-nums">{formatWeightKg(row.weight)}</span>
+        if (row.isGroup) {
+          return <span className="text-default-300">—</span>;
+        }
+        if (!onUpdateWeight) {
+          return <span className="tabular-nums">{formatWeightKg(row.weight)}</span>;
+        }
+        return (
+          <WeightQuickEdit
+            rowId={row.id}
+            weight={row.weight}
+            onUpdateWeight={onUpdateWeight}
+          />
         );
       case 'packageRatio':
         return row.isGroup ? (

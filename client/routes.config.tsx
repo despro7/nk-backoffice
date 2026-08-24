@@ -27,7 +27,7 @@ import SettingsOrderAssembly from "./pages/SettingsOrderAssembly";
 import SettingsEquipment from "./pages/SettingsEquipment";
 import SettingsOrders from "./pages/SettingsOrders";
 import SettingsAdmin from "./pages/SettingsAdmin";
-import SettingsUsers from "./pages/SettingsUsers";
+import SettingsUsers from "./pages/Settings/Users";
 import SettingsDilovod from "./pages/SettingsDilovod";
 import SettingsWarehouseMovement from "./pages/SettingsWarehouseMovement";
 import SalesDriveOrders from "./pages/SalesDriveOrders";
@@ -36,7 +36,7 @@ import MetaLogNotifications from './pages/MetaLogs';
 
 // Определяем роли и их иерархию
 import { ROLES, ROLE_HIERARCHY, hasAccess, ROLE_LABELS } from '@shared/constants/roles';
-import { PERMISSIONS, canAccessRoute } from '@shared/constants/permissions';
+import { canAccessRoute, type RoutePermissionInput } from '@shared/constants/permissions';
 export { ROLES, ROLE_HIERARCHY, hasAccess, ROLE_LABELS };
 
 // Метадані для груп-контейнерів без власного маршруту (наприклад, "Налаштування")
@@ -99,7 +99,7 @@ export interface AppRoute {
   inNav: boolean;
   parent?: string; // Для розміщення в підменю
   order?: number; // Для сортування елементів
-  permission?: string; // Ключ права для доступу (переважає roles/minRole)
+  permission?: RoutePermissionInput;
   roles?: string[]; // Дозволені ролі для доступу
   minRole?: string; // Мінімальна роль для доступу
   hasOwnTitle?: boolean; // Флаг для сторінок з власним заголовком
@@ -133,7 +133,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="layout-list" size={20} />,
     inNav: true,
     order: 2,
-    permission: PERMISSIONS.PAGE_ORDERS,
+    permission: { name: 'orders' },
   },
   {
     path: '/orders/:externalId',
@@ -143,7 +143,7 @@ export const appRoutes: AppRoute[] = [
     navLabel: 'Деталі замовлення',
     icon: null,
     inNav: false,
-    permission: PERMISSIONS.PAGE_ORDERS,
+    permission: { name: 'orders' },
     hasOwnTitle: true,
   },
   {
@@ -161,7 +161,7 @@ export const appRoutes: AppRoute[] = [
       icon: <DynamicIcon name="warehouse" size={20} />,
       order: 3,
     },
-    permission: PERMISSIONS.PAGE_WAREHOUSE_MOVEMENT,
+    permission: { name: 'movement' },
   },
   {
     path: '/warehouse/movement-mob',
@@ -173,7 +173,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 3.1,
     parent: 'warehouse',
-    permission: PERMISSIONS.PAGE_WAREHOUSE_MOVEMENT_MOB,
+    permission: { name: 'movementMob' },
     navBadge: { label: 'NEW', color: 'danger' },
     hasOwnTitle: true,
   },
@@ -186,7 +186,7 @@ export const appRoutes: AppRoute[] = [
     icon: null,
     inNav: false,
     parent: 'warehouse',
-    permission: PERMISSIONS.PAGE_WAREHOUSE_MOVEMENT_MOB,
+    permission: { name: 'movementMob' },
     hasOwnTitle: true,
   },
   {
@@ -199,7 +199,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 3,
     parent: 'warehouse',
-    permission: PERMISSIONS.PAGE_WAREHOUSE_INVENTORY,
+    permission: { name: 'inventory' },
   },
   {
     path: '/warehouse/returns',
@@ -211,7 +211,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 4,
     parent: 'warehouse',
-    permission: PERMISSIONS.PAGE_WAREHOUSE_RETURNS,
+    permission: { name: 'returns' },
   },
   {
     path: '/warehouse/writeoff',
@@ -223,7 +223,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 5,
     parent: 'warehouse',
-    permission: PERMISSIONS.PAGE_WAREHOUSE_WRITEOFF,
+    permission: { name: 'writeoff' },
   },
   {
     path: '/warehouse/releases',
@@ -235,7 +235,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 6,
     parent: 'warehouse',
-    permission: PERMISSIONS.PAGE_WAREHOUSE_RELEASES,
+    permission: { name: 'releases' },
   },
   {
     path: '/warehouse/materials',
@@ -247,7 +247,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     order: 7,
     parent: 'warehouse',
-    permission: PERMISSIONS.PAGE_WAREHOUSE_MATERIALS,
+    permission: { name: 'materials' },
   },
   {
     path: '/reports/sales',
@@ -264,7 +264,7 @@ export const appRoutes: AppRoute[] = [
       icon: <DynamicIcon name="chart-spline" size={20} />,
       order: 4,
     },
-    permission: PERMISSIONS.PAGE_REPORTS_SALES,
+    permission: { name: 'sales' },
   },
   {
     path: '/reports/shipment',
@@ -276,7 +276,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 1,
-    permission: PERMISSIONS.PAGE_REPORTS_SHIPMENT,
+    permission: { name: 'shipment' },
   },
   {
     path: '/reports/general',
@@ -288,7 +288,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 2,
-    permission: PERMISSIONS.PAGE_REPORTS_GENERAL,
+    permission: { name: 'general' },
   },
   {
     path: '/reports/sales-dynamics',
@@ -300,7 +300,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 3,
-    permission: PERMISSIONS.PAGE_REPORTS_SALES_DYNAMICS,
+    permission: { name: 'salesDynamics' },
   },
   {
     path: '/reports/lal-audiences',
@@ -312,7 +312,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 4,
-    permission: PERMISSIONS.PAGE_REPORTS_LAL,
+    permission: { name: 'lalAudiences' },
     navBadge: {
       label: 'NEW',
       color: 'danger',
@@ -329,7 +329,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'reports',
     order: 9,
-    permission: PERMISSIONS.PAGE_REPORTS_META_LOGS,
+    permission: { name: 'metaLogs' },
     hasOwnTitle: true,
   },
   {
@@ -341,7 +341,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="clipboard-check" size={20} />,
     inNav: true,
     order: 5,
-    permission: PERMISSIONS.PAGE_SALESDRIVE_ORDERS,
+    permission: { name: 'salesdriveOrders' },
   },
   {
     path: '/profile',
@@ -369,7 +369,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 3,
-    permission: PERMISSIONS.PAGE_SETTINGS_ORDER_ASSEMBLY,
+    permission: { name: 'orderAssembly' },
   },
   {
     path: '/settings/equipment',
@@ -381,7 +381,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 4,
-    permission: PERMISSIONS.PAGE_SETTINGS_EQUIPMENT,
+    permission: { name: 'equipment' },
   },
   {
     path: '/settings/orders',
@@ -393,7 +393,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 7,
-    permission: PERMISSIONS.PAGE_SETTINGS_ORDERS,
+    permission: { name: 'orders' },
   },
   {
     path: '/settings/dilovod',
@@ -405,7 +405,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 8,
-    permission: PERMISSIONS.PAGE_SETTINGS_DILOVOD,
+    permission: { name: 'dilovod' },
   },
   {
     path: '/settings/warehouse-movement',
@@ -417,7 +417,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 9,
-    permission: PERMISSIONS.PAGE_SETTINGS_WAREHOUSE_MOVEMENT,
+    permission: { name: 'warehouseMovement' },
   },
   {
     path: '/settings/users',
@@ -429,7 +429,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 9.5,
-    permission: PERMISSIONS.PAGE_SETTINGS_USERS,
+    permission: { name: 'users' },
   },
   {
     path: '/settings/design',
@@ -441,7 +441,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 20,
-    permission: PERMISSIONS.PAGE_SETTINGS_DESIGN,
+    permission: { name: 'design' },
   },
   {
     path: '/settings/test-auth',
@@ -453,7 +453,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 25,
-    permission: PERMISSIONS.PAGE_SETTINGS_TEST_AUTH,
+    permission: { name: 'testAuth' },
   },
   {
     path: '/products',
@@ -464,7 +464,7 @@ export const appRoutes: AppRoute[] = [
     icon: <DynamicIcon name="package" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     order: 8,
-    permission: PERMISSIONS.PAGE_PRODUCTS,
+    permission: { name: 'products' },
     // roles: [ROLES.ADMIN], // тимчасово лише admin (приховати від інших до релізу)
     navBadge: {
       label: 'NEW',
@@ -482,7 +482,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     // parent: 'settings',
     order: 9,
-    permission: PERMISSIONS.PAGE_PRODUCT_SETS,
+    permission: { name: 'productSets' },
   },
   {
     path: '/settings/admin',
@@ -494,7 +494,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 10,
-    permission: PERMISSIONS.PAGE_SETTINGS_ADMIN,
+    permission: { name: 'admin' },
   },
   {
     path: '/test-serial-com',
@@ -504,7 +504,7 @@ export const appRoutes: AppRoute[] = [
     navLabel: 'Тест COM порту',
     icon: <DynamicIcon name="test-tube" size={20} />,
     inNav: false, // Не показувати в навігації
-    permission: PERMISSIONS.PAGE_TEST_SERIAL_COM,
+    permission: { name: 'testSerialCom' },
   },
 ];
 

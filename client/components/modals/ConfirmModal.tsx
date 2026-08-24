@@ -12,6 +12,7 @@ interface ConfirmModalProps {
   onConfirm: () => void;
   onCancel: () => void;
   confirmLoading?: boolean;
+  overlayZClassName?: string;
 }
 
 export function ConfirmModal({
@@ -25,6 +26,7 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
   confirmLoading = false,
+  overlayZClassName,
 }: ConfirmModalProps) {
   return (
     <BaseModal
@@ -38,6 +40,7 @@ export function ConfirmModal({
       onConfirm={onConfirm}
       onCancel={onCancel}
       confirmLoading={confirmLoading}
+      overlayZClassName={overlayZClassName}
     />
   );
 }
