@@ -411,10 +411,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Зберігаємо інформацію про час життя токена і оновлюємо стан користувача
         const userWithExpiry = {
           ...data.user,
-          expiresIn: data.expiresIn
+          expiresIn: data.expiresIn,
+          permissions: data.user.permissions ?? [],
         };
-        // Встановлюємо користувача у стан перед ініціалізацією сервісів,
-        // щоб сесійні куки / контекст були доступні для захищених запитів
+        profileCacheRef.current = {
+          data: userWithExpiry,
+          timestamp: Date.now()
+        };
         setUser(userWithExpiry);
 
         // Повторно ініціалізуємо LoggingService після встановлення user.
@@ -474,21 +477,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (response.ok) {
         const data = await response.json();
-        LoggingService.authLog('✅ [AuthContext]: Успішна реєстрація, встановлюємо користувача', data.user);
-
-        // Показуємо Toast повідомлення
-        ToastService.loginSuccess(data.user.email);
-
-        // Зберігаємо інформацію про час життя токена
-        const userWithExpiry = {
-          ...data.user,
-          expiresIn: data.expiresIn
-        };
-        setUser(userWithExpiry);
-        
-        // useEffect автоматически запланирует обновление токена при setUser
-
-        
+        LoggingService.authLog('✅ [AuthContext]: Користувача створено, сесію не змінюємо', data.user);
         return true;
       } else {
         const error = await response.json();

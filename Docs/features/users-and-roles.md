@@ -24,7 +24,7 @@
 - Сервіс: `server/services/RoleService.ts`
 - API ролей: `server/routes/roles.ts`
 - Middleware: `server/middleware/requirePermission.ts`
-- UI: `client/pages/SettingsUsers/index.tsx`, `UserRegistrationManager`, `RolesManager`
+- UI: `client/pages/Settings/Users/` (`index.tsx`, `components/UserRegistrationManager.tsx`, `components/RolesManager.tsx`)
 
 ---
 
@@ -35,9 +35,9 @@
 - `/settings/users` — користувачі
 - `/settings/users?tab=roles` — ролі
 
-**Користувачі:** створення / список / редагування / видалення. Селект ролі з `GET /api/auth/roles`. Не можна видалити себе.
+**Користувачі:** список на всю ширину, створення / редагування в Drawer. Селект ролі з `GET /api/auth/roles`. Генератор пароля. У таблиці: останній візит (`lastActivityAt` / `lastLoginAt`), `dilovodUserId` (inline), статус (неактивний рядок напівпрозорий), лічильники замовлень і складських документів. `POST /api/auth/register` не змінює сесію адміна. Не можна видалити себе.
 
-**Ролі:** таблиця (назва, slug, кількість користувачів, кількість прав). Модалка редактора: метадані, «скопіювати права з ролі», чекбокси по групах каталогу.
+**Ролі:** таблиця (назва, slug, користувачі, сторінки/дії). Редактор у Drawer: метадані, «скопіювати права з ролі», дві колонки **Сторінки** (`page.*`) і **Дії** (`action.*`). Після зміни матриці інші сесії бачать жовтий банер «оновити сторінку» (як після деплою).
 
 Адмінські налаштування (`/settings/admin`) лишаються для логів, JWT, статусу сервера тощо.
 

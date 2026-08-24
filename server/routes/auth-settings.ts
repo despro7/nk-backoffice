@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { AuthSettingsService } from '../services/authSettingsService.js';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
-import { PERMISSIONS } from '../../shared/constants/permissions.js';
 
 const router = Router();
+const settingsAdmin = requirePermission('settings', 'admin', 'Змінювати адмінські налаштування');
 
 // Получить настройки авторизации (для клиента)
 router.get('/settings', authenticateToken, async (req, res) => {
@@ -17,7 +17,7 @@ router.get('/settings', authenticateToken, async (req, res) => {
 });
 
 // Получить настройки авторизации (только для админов)
-router.get('/settings/admin', authenticateToken, requirePermission(PERMISSIONS.ACTION_SETTINGS_ADMIN), async (req, res) => {
+router.get('/settings/admin', authenticateToken, settingsAdmin, async (req, res) => {
   try {
     const settings = await AuthSettingsService.getAuthSettings();
     res.json(settings);
@@ -28,7 +28,7 @@ router.get('/settings/admin', authenticateToken, requirePermission(PERMISSIONS.A
 });
 
 // Обновить настройки авторизации
-router.put('/settings', authenticateToken, requirePermission(PERMISSIONS.ACTION_SETTINGS_ADMIN), async (req, res) => {
+router.put('/settings', authenticateToken, settingsAdmin, async (req, res) => {
   try {
     const {
       accessTokenExpiresIn,
@@ -67,7 +67,7 @@ router.put('/settings', authenticateToken, requirePermission(PERMISSIONS.ACTION_
 });
 
 // Сбросить настройки к значениям по умолчанию
-router.post('/settings/reset', authenticateToken, requirePermission(PERMISSIONS.ACTION_SETTINGS_ADMIN), async (req, res) => {
+router.post('/settings/reset', authenticateToken, settingsAdmin, async (req, res) => {
   try {
     const defaultSettings = [
       { key: 'access_token_expires_in', value: '1h', description: 'Время жизни access токена' },
@@ -96,7 +96,7 @@ router.post('/settings/reset', authenticateToken, requirePermission(PERMISSIONS.
 });
 
 // Очистить кеш настроек
-router.post('/settings/clear-cache', authenticateToken, requirePermission(PERMISSIONS.ACTION_SETTINGS_ADMIN), async (req, res) => {
+router.post('/settings/clear-cache', authenticateToken, settingsAdmin, async (req, res) => {
   try {
     AuthSettingsService.clearCache();
     console.log('✅ [AuthSettings API] Кеш настроек очищен');
@@ -108,7 +108,7 @@ router.post('/settings/clear-cache', authenticateToken, requirePermission(PERMIS
 });
 
 // Получить все настройки (для админки)
-router.get('/settings/all', authenticateToken, requirePermission(PERMISSIONS.ACTION_SETTINGS_ADMIN), async (req, res) => {
+router.get('/settings/all', authenticateToken, settingsAdmin, async (req, res) => {
   try {
     const settings = await AuthSettingsService.getAllSettings();
     res.json(settings);

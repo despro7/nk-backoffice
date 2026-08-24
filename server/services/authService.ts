@@ -67,8 +67,9 @@ export class AuthService {
     const role = await roleService.assertRoleExists(userData.role);
 
     const hashedPassword = await bcrypt.hash(userData.password, 10);
-    
-    // Сначала создаем пользователя в БД
+    const dilovodUserId = userData.dilovodUserId?.trim() || null;
+
+    // Адмін створює обліковку: без сесії і без lastLoginAt (користувач ще не входив).
     const newUser = await prisma.user.create({
       data: {
         name: userData.name || "",
@@ -76,35 +77,18 @@ export class AuthService {
         password: hashedPassword,
         role: role.slug,
         roleName: userData.roleName || role.name,
-        lastLoginAt: new Date(),
-        lastActivityAt: new Date(),
+        dilovodUserId,
         isActive: true,
-        // Пока не устанавливаем refresh token
         refreshToken: null,
         refreshTokenExpiresAt: null,
       },
     });
 
-    // Теперь генерируем токены с реальным user.id
-    const { accessToken, refreshToken, expiresIn } = await this.generateTokenPair(newUser as UserType);
-
-    // Обновляем пользователя с хешем refresh token
-    const refreshExpiryDate = new Date(Date.now() + await this.getRefreshTokenExpiryMs());
-    await prisma.user.update({
-      where: { id: newUser.id },
-      data: {
-        refreshToken: this.hashToken(refreshToken),
-        refreshTokenExpiresAt: refreshExpiryDate,
-      },
-    });
-
-    // Компактное логирование установки refresh токена
-
-    return { 
-      token: accessToken, 
-      refreshToken, 
+    return {
+      token: '',
+      refreshToken: '',
       user: sanitizeUser(newUser),
-      expiresIn
+      expiresIn: 0,
     };
   }
 

@@ -2,8 +2,8 @@ import { prisma } from '../lib/utils.js';
 import {
   ALL_PERMISSION_KEYS,
   isPermissionKey,
+  normalizePermissionKey,
   seedPermissionKeysForRole,
-  slugifyRoleName,
   SYSTEM_ROLES_SEED,
   type PermissionKey,
 } from '../../shared/constants/permissions.js';
@@ -105,7 +105,9 @@ export class RoleService {
   async hasPermission(slug: string, key: string): Promise<boolean> {
     if (slug === ROLES.ADMIN) return true;
     const keys = await this.getPermissionSet(slug);
-    return keys.has(key);
+    const normalized = normalizePermissionKey(key);
+    if (!normalized) return false;
+    return keys.has(normalized) || keys.has(key);
   }
 
   async roleExists(slug: string): Promise<boolean> {
@@ -134,7 +136,11 @@ export class RoleService {
       where: { slug },
       include: { permissions: true },
     });
-    const set = new Set((role?.permissions ?? []).map((p) => p.permissionKey));
+    const set = new Set<string>();
+    for (const row of role?.permissions ?? []) {
+      const key = normalizePermissionKey(row.permissionKey);
+      if (key) set.add(key);
+    }
     this.cache.set(slug, set);
     return set;
   }
@@ -173,7 +179,6 @@ export class RoleService {
 
   async createRole(input: {
     name: string;
-    slug?: string;
     description?: string | null;
     rank?: number;
     permissions?: string[];
@@ -182,24 +187,20 @@ export class RoleService {
     const name = input.name?.trim();
     if (!name) throw new RoleError('Назва ролі обовʼязкова');
 
-    const slug = (input.slug?.trim() || slugifyRoleName(name)).toLowerCase();
-    if (!slug) throw new RoleError('Slug ролі обовʼязковий');
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-      throw new RoleError('Slug має бути kebab-case латиницею');
-    }
-
-    const existing = await this.db.role.findUnique({ where: { slug } });
-    if (existing) throw new RoleError(`Роль «${slug}» вже існує`);
-
     const keys = this.sanitizeKeys(input.permissions);
     const created = await this.db.role.create({
       data: {
-        slug,
+        slug: `tmp-${crypto.randomUUID()}`,
         name,
         description: input.description ?? null,
         rank: input.rank ?? 0,
         isSystem: false,
       },
+    });
+
+    await this.db.role.update({
+      where: { id: created.id },
+      data: { slug: `role-${created.id}` },
     });
 
     if (keys.length > 0) {
@@ -210,6 +211,38 @@ export class RoleService {
 
     this.invalidateCache();
     return (await this.getRoleById(created.id))!;
+  }
+
+  async reorderRoles(ids: number[]): Promise<RoleDto[]> {
+    await this.ensureSeeded();
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new RoleError('Потрібен непорожній список id');
+    }
+    if (ids.some((id) => !Number.isInteger(id))) {
+      throw new RoleError('Некоректний id');
+    }
+    if (new Set(ids).size !== ids.length) {
+      throw new RoleError('Список ролей містить дублікати');
+    }
+
+    const roles = await this.db.role.findMany();
+    if (roles.length !== ids.length) {
+      throw new RoleError('Список ролей неповний');
+    }
+    const known = new Set(roles.map((role) => role.id));
+    for (const id of ids) {
+      if (!known.has(id)) throw new RoleError('Невідома роль у списку');
+    }
+
+    const total = ids.length;
+    for (let index = 0; index < total; index++) {
+      await this.db.role.update({
+        where: { id: ids[index] },
+        data: { rank: total - index },
+      });
+    }
+
+    return this.listRoles();
   }
 
   async updateRole(
@@ -286,8 +319,9 @@ export class RoleService {
   private sanitizeKeys(keys: string[] | undefined): PermissionKey[] {
     if (!keys) return [];
     const unique = new Set<PermissionKey>();
-    for (const key of keys) {
-      if (isPermissionKey(key)) unique.add(key);
+    for (const raw of keys) {
+      const key = normalizePermissionKey(raw);
+      if (key && isPermissionKey(key)) unique.add(key);
     }
     return [...unique];
   }
@@ -297,7 +331,13 @@ export class RoleService {
     const permissions =
       role.slug === ROLES.ADMIN
         ? [...ALL_PERMISSION_KEYS]
-        : (role.permissions ?? []).map((p) => p.permissionKey);
+        : [
+            ...new Set(
+              (role.permissions ?? [])
+                .map((p) => normalizePermissionKey(p.permissionKey))
+                .filter((key): key is string => Boolean(key))
+            ),
+          ];
     return {
       id: role.id,
       slug: role.slug,

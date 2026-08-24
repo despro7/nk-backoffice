@@ -1,16 +1,16 @@
 import { Router } from 'express';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
-import { PERMISSIONS } from '../../shared/constants/permissions.js';
 import { salesDriveCacheService } from '../services/salesdrive/SalesDriveCacheService.js';
 import type { SalesDriveChannel } from '../services/salesdrive/SalesDriveTypes.js';
 
 const router = Router();
+const salesdriveManage = requirePermission('salesdrive', 'manage', 'Керувати кешем SalesDrive');
 
 /**
  * GET /api/salesdrive/cache/status
  * Отримати статус кешу довідників SalesDrive
  */
-router.get('/cache/status', authenticateToken, requirePermission(PERMISSIONS.ACTION_SALESDRIVE_MANAGE), async (req, res) => {
+router.get('/cache/status', authenticateToken, salesdriveManage, async (req, res) => {
   try {
     const status = await salesDriveCacheService.getAllCacheStatus();
     res.json({ success: true, data: status });
@@ -24,7 +24,7 @@ router.get('/cache/status', authenticateToken, requirePermission(PERMISSIONS.ACT
  * POST /api/salesdrive/cache/refresh
  * Примусово оновити кеш довідників SalesDrive
  */
-router.post('/cache/refresh', authenticateToken, requirePermission(PERMISSIONS.ACTION_SALESDRIVE_MANAGE), async (req, res) => {
+router.post('/cache/refresh', authenticateToken, salesdriveManage, async (req, res) => {
   try {
     // Імпортуємо SalesDriveService
     const { salesDriveService } = await import('../services/salesDriveService.js');
@@ -79,7 +79,7 @@ router.post('/cache/refresh', authenticateToken, requirePermission(PERMISSIONS.A
  * POST /api/salesdrive/cache/clear
  * Очистити весь кеш довідників SalesDrive
  */
-router.post('/cache/clear', authenticateToken, requirePermission(PERMISSIONS.ACTION_SALESDRIVE_MANAGE), async (req, res) => {
+router.post('/cache/clear', authenticateToken, salesdriveManage, async (req, res) => {
   try {
     await salesDriveCacheService.clearAllCache();
 
@@ -134,7 +134,7 @@ router.get('/channels', authenticateToken, async (req, res) => {
  * PUT /api/salesdrive/channels
  * Зберегти оновлений список каналів продажів у DB.
  */
-router.put('/channels', authenticateToken, requirePermission(PERMISSIONS.ACTION_SALESDRIVE_MANAGE), async (req, res) => {
+router.put('/channels', authenticateToken, salesdriveManage, async (req, res) => {
   try {
     const { channels } = req.body as { channels: unknown };
 

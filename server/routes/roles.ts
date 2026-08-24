@@ -2,10 +2,11 @@ import { Router, Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { RoleError, roleService } from '../services/RoleService.js';
-import { PERMISSIONS } from '../../shared/constants/permissions.js';
+import { listRegisteredActions, PERMISSION_GROUP_LABELS } from '../../shared/constants/permissions.js';
 
 const router = Router();
-const guard = [authenticateToken, requirePermission(PERMISSIONS.ACTION_ROLES_MANAGE)] as const;
+const rolesManage = requirePermission('roles', 'manage', 'Керувати ролями');
+const guard = [authenticateToken, rolesManage] as const;
 
 function handleRoleError(res: Response, error: unknown) {
   if (error instanceof RoleError) {
@@ -26,10 +27,9 @@ router.get('/', ...guard, async (_req: Request, res: Response) => {
 
 router.get('/catalog', ...guard, async (_req: Request, res: Response) => {
   try {
-    const { PERMISSION_CATALOG, PERMISSION_GROUP_LABELS } = await import('../../shared/constants/permissions.js');
     res.json({
       groups: PERMISSION_GROUP_LABELS,
-      permissions: PERMISSION_CATALOG.map(({ key, group, label }) => ({ key, group, label })),
+      permissions: listRegisteredActions().map(({ key, group, label }) => ({ key, group, label })),
     });
   } catch (error) {
     handleRoleError(res, error);
@@ -52,6 +52,17 @@ router.post('/', ...guard, async (req: Request, res: Response) => {
   try {
     const role = await roleService.createRole(req.body ?? {});
     res.status(201).json(role);
+  } catch (error) {
+    handleRoleError(res, error);
+  }
+});
+
+router.put('/reorder', ...guard, async (req: Request, res: Response) => {
+  try {
+    const raw = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const ids = raw.map((value: unknown) => Number(value));
+    const roles = await roleService.reorderRoles(ids);
+    res.json(roles);
   } catch (error) {
     handleRoleError(res, error);
   }

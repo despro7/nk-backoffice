@@ -22,8 +22,14 @@ function createMemoryDb(userCounts: Record<string, number> = {}) {
   const db = {
     role: {
       count: async () => roles.length,
-      findMany: async (args?: { include?: { permissions?: boolean }; orderBy?: unknown }) => {
-        return roles.map((role) => ({
+      findMany: async (args?: {
+        include?: { permissions?: boolean };
+        orderBy?: { rank?: 'asc' | 'desc' };
+      }) => {
+        const sorted = [...roles];
+        if (args?.orderBy?.rank === 'desc') sorted.sort((a, b) => b.rank - a.rank);
+        if (args?.orderBy?.rank === 'asc') sorted.sort((a, b) => a.rank - b.rank);
+        return sorted.map((role) => ({
           ...role,
           permissions: args?.include?.permissions
             ? perms.filter((p) => p.roleId === role.id).map((p) => ({ permissionKey: p.permissionKey }))
@@ -105,10 +111,10 @@ describe('RoleService', () => {
 
     const created = await service.createRole({
       name: 'Night',
-      slug: 'night-shift',
-      permissions: [PERMISSIONS.PAGE_DASHBOARD],
+      permissions: [PERMISSIONS.PAGE_PRODUCTS],
     });
-    expect(await service.hasPermission(created.slug, PERMISSIONS.PAGE_DASHBOARD)).toBe(true);
+    expect(created.slug).toBe(`role-${created.id}`);
+    expect(await service.hasPermission(created.slug, PERMISSIONS.PAGE_PRODUCTS)).toBe(true);
     expect(await service.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(false);
   });
 
@@ -121,26 +127,51 @@ describe('RoleService', () => {
   it('refuses to delete a role that still has users', async () => {
     const created = await service.createRole({
       name: 'Temp',
-      slug: 'temp-users',
-      permissions: [PERMISSIONS.PAGE_DASHBOARD],
+      permissions: [PERMISSIONS.PAGE_PRODUCTS],
     });
-    memory.userCounts['temp-users'] = 2;
+    memory.userCounts[created.slug] = 2;
     await expect(service.deleteRole(created.id)).rejects.toThrow(/користувач/i);
   });
 
   it('invalidates cache after permission update', async () => {
     const created = await service.createRole({
       name: 'Temp',
-      slug: 'temp',
-      permissions: [PERMISSIONS.PAGE_DASHBOARD],
+      permissions: [PERMISSIONS.PAGE_PRODUCTS],
     });
-    expect(await service.hasPermission('temp', PERMISSIONS.PAGE_ORDERS)).toBe(false);
-    await service.setPermissions(created.id, [PERMISSIONS.PAGE_DASHBOARD, PERMISSIONS.PAGE_ORDERS]);
-    expect(await service.hasPermission('temp', PERMISSIONS.PAGE_ORDERS)).toBe(true);
+    expect(await service.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(false);
+    await service.setPermissions(created.id, [PERMISSIONS.PAGE_PRODUCTS, PERMISSIONS.PAGE_ORDERS]);
+    expect(await service.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(true);
   });
 
   it('assertRoleExists rejects unknown slug', async () => {
     await expect(service.assertRoleExists('nope')).rejects.toThrow();
     await expect(service.assertRoleExists(ROLES.ADMIN)).resolves.toBeDefined();
+  });
+
+  it('reorderRoles assigns descending rank by visual order', async () => {
+    const listed = await service.listRoles();
+    const reversed = [...listed].reverse().map((role) => role.id);
+    const reordered = await service.reorderRoles(reversed);
+    expect(reordered.map((role) => role.id)).toEqual(reversed);
+    expect(reordered.map((role) => role.rank)).toEqual(
+      reversed.map((_, index) => reversed.length - index)
+    );
+  });
+
+  it('reorderRoles rejects incomplete or unknown ids', async () => {
+    const listed = await service.listRoles();
+    await expect(service.reorderRoles(listed.slice(1).map((role) => role.id))).rejects.toThrow(/неповний/i);
+    await expect(service.reorderRoles([...listed.map((role) => role.id), 999])).rejects.toThrow();
+  });
+
+  it('normalizes legacy page.orders when saving and reading', async () => {
+    const created = await service.createRole({
+      name: 'Legacy',
+      permissions: ['page.orders'],
+    });
+    expect(created.permissions).toContain(PERMISSIONS.PAGE_ORDERS);
+    expect(created.permissions).not.toContain('page.orders');
+    expect(await service.hasPermission(created.slug, 'page.orders')).toBe(true);
+    expect(await service.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(true);
   });
 });

@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
-import { PERMISSIONS } from '../../shared/constants/permissions.js';
 import { DilovodService, dilovodExportFlowService, acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient, Prisma } from '@prisma/client';
@@ -15,6 +14,11 @@ import type {
 
 const router = Router();
 const prisma = new PrismaClient();
+
+const dilovodAdmin = requirePermission('dilovod', 'admin', 'Адмін-дії Dilovod (кеш, тест, cash-in)');
+const dilovodRead = requirePermission('dilovod', 'read', 'Читання Dilovod (довідники, перевірка замовлень)');
+const dilovodWriteSettings = requirePermission('dilovod', 'writeSettings', 'Змінювати налаштування Dilovod');
+const dilovodExport = requirePermission('dilovod', 'export', 'Експорт / відвантаження в Dilovod');
 
 // In-flight coalescing: when multiple requests ask for directories at the same time,
 // reuse the same promise so we only hit Dilovod once per process.
@@ -175,7 +179,7 @@ async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<Di
  * GET /api/dilovod/test-connection
  * Тест підключення до Dilovod API
  */
-router.get('/test-connection', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_ADMIN), async (req, res) => {
+router.get('/test-connection', authenticateToken, dilovodAdmin, async (req, res) => {
   try {
     const { user } = req as any;
 
@@ -200,7 +204,7 @@ router.get('/test-connection', authenticateToken, requirePermission(PERMISSIONS.
  * POST /api/dilovod/orders/test
  * Тест отримання замовлення з Dilovod за номером
  */
-router.post('/orders/test', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_ADMIN), async (req, res) => {
+router.post('/orders/test', authenticateToken, dilovodAdmin, async (req, res) => {
   try {
     const { user } = req as any;
 
@@ -283,7 +287,7 @@ router.post('/orders/test', authenticateToken, requirePermission(PERMISSIONS.ACT
  * GET /api/dilovod/orders/:orderId/details
  * Отримання детальної інформації про замовлення за ID
  */
-router.get('/orders/:orderId/details', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_READ), async (req, res) => {
+router.get('/orders/:orderId/details', authenticateToken, dilovodRead, async (req, res) => {
   try {
     const { user } = req as any;
 
@@ -323,7 +327,7 @@ router.get('/orders/:orderId/details', authenticateToken, requirePermission(PERM
  * GET /api/dilovod/settings
  * Отримання налаштувань Dilovod
  */
-router.get('/settings', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_READ), async (req, res) => {
+router.get('/settings', authenticateToken, dilovodRead, async (req, res) => {
   try {
     const { user } = req as any;
 
@@ -348,7 +352,7 @@ router.get('/settings', authenticateToken, requirePermission(PERMISSIONS.ACTION_
  * POST /api/dilovod/settings
  * Збереження налаштувань Dilovod
  */
-router.post('/settings', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_WRITE_SETTINGS), async (req, res) => {
+router.post('/settings', authenticateToken, dilovodWriteSettings, async (req, res) => {
   try {
     const { user } = req as any;
 
@@ -391,7 +395,7 @@ router.post('/settings', authenticateToken, requirePermission(PERMISSIONS.ACTION
  * GET /api/dilovod/directories
  * Отримання довідників з Dilovod (склади, рахунки, форми оплати, фірми)
  */
-router.get('/directories', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_READ), async (req, res) => {
+router.get('/directories', authenticateToken, dilovodRead, async (req, res) => {
   // If another request is already fetching directories, reuse its promise
   if (directoriesInFlight) {
     try {
@@ -499,7 +503,7 @@ router.get('/directories', authenticateToken, requirePermission(PERMISSIONS.ACTI
  * GET /api/dilovod/salesdrive/orders/shipment-counts
  * Підрахунок замовлень по фільтрам відвантаження (not_shipped, not_shipped_all, duplicates)
  */
-router.get('/salesdrive/orders/shipment-counts', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_EXPORT), async (req, res) => {
+router.get('/salesdrive/orders/shipment-counts', authenticateToken, dilovodExport, async (req, res) => {
   try {
     const channelsParam = req.query.channels as string;
     const includeUnknown = req.query.includeUnknown === 'true';
@@ -576,7 +580,7 @@ router.get('/salesdrive/orders/shipment-counts', authenticateToken, requirePermi
  * GET /api/dilovod/salesdrive/orders
  * Отримання замовлень SalesDrive для моніторингу вивантаження в Dilovod
  */
-router.get('/salesdrive/orders', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_EXPORT), async (req, res) => {
+router.get('/salesdrive/orders', authenticateToken, dilovodExport, async (req, res) => {
   try {
     // Параметри пагінації
     const page = parseInt(req.query.page as string) || 1;
@@ -864,7 +868,7 @@ router.get('/salesdrive/orders', authenticateToken, requirePermission(PERMISSION
  * POST /api/dilovod/salesdrive/orders/check
  * Перевірка наявності замовлень в Dilovod та оновлення локальної бази
  */
-router.post('/salesdrive/orders/check', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_READ), async (req, res) => {
+router.post('/salesdrive/orders/check', authenticateToken, dilovodRead, async (req, res) => {
   try {
     const { orderNumbers, auto, limit, offset, forceAll } = req.body;
     const dilovodService = new DilovodService();
@@ -908,7 +912,7 @@ router.post('/salesdrive/orders/check', authenticateToken, requirePermission(PER
  * Примусове скидання всіх Dilovod-полів + повторна перевірка в Dilovod API
  * Очищує: dilovodDocId, dilovodExportDate, dilovodCashInDate, dilovodSaleExportDate, dilovodCashInLastChecked, dilovodReturnDate, dilovodReturnDocsCount
  */
-router.post('/salesdrive/orders/reset-and-check', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_EXPORT), async (req, res) => {
+router.post('/salesdrive/orders/reset-and-check', authenticateToken, dilovodExport, async (req, res) => {
   try {
     const { orderNumbers } = req.body;
 
@@ -965,7 +969,7 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, requirePerm
  * POST /api/dilovod/salesdrive/orders/:orderId/reset-duplicate-count
  * Скидання лічильника дублікатів відвантаження до 1 (помилка "кілька документів знайдено")
  */
-router.post('/salesdrive/orders/:orderId/reset-duplicate-count', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_EXPORT), async (req, res) => {
+router.post('/salesdrive/orders/:orderId/reset-duplicate-count', authenticateToken, dilovodExport, async (req, res) => {
   try {
     const orderId = parseInt(req.params.orderId);
     if (isNaN(orderId)) {
@@ -999,7 +1003,7 @@ router.post('/salesdrive/orders/:orderId/reset-duplicate-count', authenticateTok
  * POST /api/dilovod/salesdrive/orders/:orderId/validate
  * Валідувати готовність замовлення до експорту в Dilovod
  */
-router.post('/salesdrive/orders/:orderId/validate', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_READ), async (req, res) => {
+router.post('/salesdrive/orders/:orderId/validate', authenticateToken, dilovodRead, async (req, res) => {
   try {
     const { orderId } = req.params;
     const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
@@ -1123,7 +1127,7 @@ router.post('/salesdrive/orders/:orderId/validate', authenticateToken, requirePe
  * POST /api/dilovod/salesdrive/orders/:orderId/export
  * Експортувати замовлення в Dilovod
  */
-router.post('/salesdrive/orders/:orderId/export', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_EXPORT), async (req, res) => {
+router.post('/salesdrive/orders/:orderId/export', authenticateToken, dilovodExport, async (req, res) => {
   try {
     const { orderId } = req.params;
     const orderNum = await orderDatabaseService.getOrderNumberFromId(Number(orderId));
@@ -1429,7 +1433,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, requirePerm
  * POST /api/dilovod/salesdrive/orders/:orderId/shipment
  * Створити документ відвантаження в Dilovod на основі baseDoc
  */
-router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_EXPORT), async (req, res) => {
+router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, dilovodExport, async (req, res) => {
   let saleShipmentLockToken: string | null = null;
 
   const hasShipmentPayload = (value: unknown): boolean => {
@@ -1724,7 +1728,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, requirePe
  * 
  * Використовується в UI для налаштування мапінгу каналів оплати
  */
-router.get('/salesdrive/payment-methods', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_ADMIN), async (req, res) => {
+router.get('/salesdrive/payment-methods', authenticateToken, dilovodAdmin, async (req, res) => {
   try {
     const { salesDriveService } = await import('../services/salesDriveService.js');
     const paymentMethods = await salesDriveService.fetchPaymentMethods();
@@ -1747,7 +1751,7 @@ router.get('/salesdrive/payment-methods', authenticateToken, requirePermission(P
  * GET /api/dilovod/cache/status
  * Отримати статус кешу довідників Dilovod
  */
-router.get('/cache/status', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_ADMIN), async (req, res) => {
+router.get('/cache/status', authenticateToken, dilovodAdmin, async (req, res) => {
   try {
     const { dilovodCacheService } = await import('../services/dilovod/DilovodCacheService.js');
 
@@ -1771,7 +1775,7 @@ router.get('/cache/status', authenticateToken, requirePermission(PERMISSIONS.ACT
  * GET /api/dilovod/cache/firms/:id
  * Повертає назву фірми з локального кешу за її ID (без звернення до зовнішнього API).
  */
-router.get('/cache/firms/:id', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_READ), async (req, res) => {
+router.get('/cache/firms/:id', authenticateToken, dilovodRead, async (req, res) => {
   try {
     const { id } = req.params;
     const utils = await import('../lib/utils.js');
@@ -1788,7 +1792,7 @@ router.get('/cache/firms/:id', authenticateToken, requirePermission(PERMISSIONS.
  * POST /api/dilovod/cache/refresh
  * Примусово оновити кеш довідників Dilovod
  */
-router.post('/cache/refresh', authenticateToken, requirePermission(PERMISSIONS.ACTION_DILOVOD_ADMIN), async (req, res) => {
+router.post('/cache/refresh', authenticateToken, dilovodAdmin, async (req, res) => {
   try {
     const { user } = req as any;
 

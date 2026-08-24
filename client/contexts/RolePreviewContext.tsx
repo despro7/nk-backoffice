@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from './AuthContext';
 import { ROLES } from '@shared/constants/roles';
 import { installRolePreviewFetch, setRolePreviewFetchRole } from '@/lib/rolePreviewFetch';
+import { PERMISSIONS_REVISION_EVENT } from '@/lib/notifyPermissionsChanged';
 import type { RoleDto } from '@shared/types/role';
 
 const STORAGE_KEY = 'rolePreview';
@@ -13,6 +14,7 @@ interface RolePreviewContextType {
   effectiveRole: string | undefined;
   effectivePermissions: string[];
   previewRoles: RoleDto[];
+  refreshPreviewRoles: () => Promise<void>;
   isPreviewing: boolean;
   isRealAdmin: boolean;
   isAdminView: boolean;
@@ -41,6 +43,34 @@ export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
   const previousPreviewRef = useRef<string | null | undefined>(undefined);
 
   const isRealAdmin = user?.role === ROLES.ADMIN;
+
+  const refreshPreviewRoles = useCallback(async () => {
+    if (!isRealAdmin) {
+      setPreviewRoles([]);
+      return;
+    }
+    try {
+      const response = await fetch('/api/roles', { credentials: 'include' });
+      const data = response.ok ? await response.json() : [];
+      setPreviewRoles(Array.isArray(data) ? data : []);
+    } catch {
+      setPreviewRoles([]);
+    }
+  }, [isRealAdmin]);
+
+  useEffect(() => {
+    if (!isRealAdmin) return;
+    void refreshPreviewRoles();
+  }, [isRealAdmin, user?.id, refreshPreviewRoles]);
+
+  useEffect(() => {
+    if (!isRealAdmin) return;
+    const onRolesUpdated = () => {
+      void refreshPreviewRoles();
+    };
+    window.addEventListener(PERMISSIONS_REVISION_EVENT, onRolesUpdated);
+    return () => window.removeEventListener(PERMISSIONS_REVISION_EVENT, onRolesUpdated);
+  }, [isRealAdmin, refreshPreviewRoles]);
 
   useEffect(() => {
     if (!isRealAdmin || previewRoles.length === 0 || !previewRole) return;
@@ -72,22 +102,6 @@ export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
       setPreviewRoleState(null);
     }
   }, [isLoading, user, isRealAdmin, previewRole]);
-
-  useEffect(() => {
-    if (!isRealAdmin) return;
-    let cancelled = false;
-    void fetch('/api/roles', { credentials: 'include' })
-      .then((response) => (response.ok ? response.json() : []))
-      .then((data) => {
-        if (!cancelled && Array.isArray(data)) setPreviewRoles(data);
-      })
-      .catch(() => {
-        if (!cancelled) setPreviewRoles([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isRealAdmin, user?.id]);
 
   const setPreviewRole = (role: string | null) => {
     if (!isRealAdmin) return;
@@ -137,6 +151,7 @@ export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
         effectiveRole,
         effectivePermissions,
         previewRoles,
+        refreshPreviewRoles,
         isPreviewing,
         isRealAdmin,
         isAdminView,

@@ -1,7 +1,6 @@
 import express from 'express';
 import { prisma } from '../lib/utils.js';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
-import { PERMISSIONS } from '../../shared/constants/permissions.js';
 import { DilovodService } from '../services/dilovod/index.js';
 import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 import { salesDriveService } from '../services/salesDriveService.js';
@@ -9,6 +8,12 @@ import { buildExportPayload } from '../services/productExportHelper.js';
 import { productsCatalogService } from '../modules/Products/ProductsCatalogService.js';
 
 const router = express.Router();
+
+const productsSkuWhitelist = requirePermission('products', 'skuWhitelist', 'SKU whitelist (DEPRECATED)');
+const productsSetParentIdsWrite = requirePermission('products', 'setParentIds.write', 'Зміна parent IDs комплектів (DEPRECATED)');
+const productsEdit = requirePermission('products', 'edit', 'Редагувати товари (вага, штрихкод, порядок)');
+const productsSync = requirePermission('products', 'sync', 'Синхронізувати товари');
+const productsSyncExport = requirePermission('products', 'syncExport', 'Синхронізація + експорт товарів');
 
 // Отримати всі товари з пагінацією
 // GET /api/products
@@ -279,7 +284,7 @@ router.get('/batch', authenticateToken, async (req, res) => {
 
 // Отримати один товар безпосередньо з Dilovod за SKU (без повної синхронізації)
 // GET /api/products/dilovod/:sku
-router.get('/dilovod/:sku', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_VIEW_DILOVOD), async (req, res) => {
+router.get('/dilovod/:sku', authenticateToken, async (req, res) => {
   try {
     const { sku } = req.params;
     const dilovodService = new DilovodService();
@@ -307,7 +312,7 @@ router.get('/dilovod/:sku', authenticateToken, requirePermission(PERMISSIONS.ACT
 
 // Отримати SKU whitelist (settings_wp_sku)
 // GET /api/products/sku-whitelist
-router.get('/sku-whitelist', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SKU_WHITELIST), async (req, res) => {
+router.get('/sku-whitelist', authenticateToken, productsSkuWhitelist, async (req, res) => {
   try {
     const record = await prisma.settingsWpSku.findFirst();
     if (!record) {
@@ -323,7 +328,7 @@ router.get('/sku-whitelist', authenticateToken, requirePermission(PERMISSIONS.AC
 
 // Оновити SKU whitelist
 // PUT /api/products/sku-whitelist
-router.put('/sku-whitelist', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SKU_WHITELIST), async (req, res) => {
+router.put('/sku-whitelist', authenticateToken, productsSkuWhitelist, async (req, res) => {
   try {
     const { skus } = req.body;
     if (typeof skus !== 'string') {
@@ -355,7 +360,7 @@ router.put('/sku-whitelist', authenticateToken, requirePermission(PERMISSIONS.AC
 
 // Отримати масив ID груп комплектів (dilovod_set_parent_ids)
 // GET /api/products/set-parent-ids
-router.get('/set-parent-ids', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SET_PARENT_IDS_READ), async (req, res) => {
+router.get('/set-parent-ids', authenticateToken, async (req, res) => {
   try {
     // Спочатку читаємо новий ключ (масив), потім — старий (один рядок) для backward-compatibility
     const newRecord = await prisma.settingsBase.findFirst({
@@ -389,7 +394,7 @@ router.get('/set-parent-ids', authenticateToken, requirePermission(PERMISSIONS.A
 
 // Оновити масив ID груп комплектів (dilovod_set_parent_ids)
 // PUT /api/products/set-parent-ids
-router.put('/set-parent-ids', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SET_PARENT_IDS_WRITE), async (req, res) => {
+router.put('/set-parent-ids', authenticateToken, productsSetParentIdsWrite, async (req, res) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.some((id: any) => typeof id !== 'string')) {
@@ -650,7 +655,7 @@ router.get('/:sku', authenticateToken, async (req, res) => {
 
 // Оновити вагу товару за ID
 // PUT /api/products/:id/weight
-router.put('/:id/weight', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_EDIT), async (req, res) => {
+router.put('/:id/weight', authenticateToken, productsEdit, async (req, res) => {
   try {
     const { id } = req.params;
     const { weight } = req.body;
@@ -688,7 +693,7 @@ router.put('/:id/weight', authenticateToken, requirePermission(PERMISSIONS.ACTIO
 
 // Оновити ручний порядок (manualOrder) товару за ID
 // PUT /api/products/:id/manual-order
-router.put('/:id/manual-order', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_EDIT), async (req, res) => {
+router.put('/:id/manual-order', authenticateToken, productsEdit, async (req, res) => {
   try {
     const { id } = req.params;
     const { manualOrder } = req.body;
@@ -716,7 +721,7 @@ router.put('/:id/manual-order', authenticateToken, requirePermission(PERMISSIONS
 
 // Оновити коефіцієнт unitRatio товару за ID
 // PUT /api/products/:id/unit-ratio
-router.put('/:id/unit-ratio', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_EDIT), async (req, res) => {
+router.put('/:id/unit-ratio', authenticateToken, productsEdit, async (req, res) => {
   try {
     const { id } = req.params;
     const { unitRatio } = req.body;
@@ -745,7 +750,7 @@ router.put('/:id/unit-ratio', authenticateToken, requirePermission(PERMISSIONS.A
 
 // Оновити штрих-код товару за ID
 // PUT /api/products/:id/barcode
-router.put('/:id/barcode', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_EDIT), async (req, res) => {
+router.put('/:id/barcode', authenticateToken, productsEdit, async (req, res) => {
   try {
     const { id } = req.params;
     const { barcode } = req.body;
@@ -773,7 +778,7 @@ router.put('/:id/barcode', authenticateToken, requirePermission(PERMISSIONS.ACTI
 
 // PUT /api/products/:id/portions-per-box
 // Оновлює кількість порцій у коробці для порційних товарів
-router.put('/:id/portions-per-box', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_EDIT), async (req, res) => {
+router.put('/:id/portions-per-box', authenticateToken, productsEdit, async (req, res) => {
   try {
     const { id } = req.params;
     const { portionsPerBox } = req.body;
@@ -804,7 +809,7 @@ router.put('/:id/portions-per-box', authenticateToken, requirePermission(PERMISS
 
 // Скасувати поточну синхронізацію товарів
 // POST /api/products/sync/cancel
-router.post('/sync/cancel', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
+router.post('/sync/cancel', authenticateToken, productsSync, async (req, res) => {
   try {
     const cancelled = DilovodService.cancelCurrentSync();
 
@@ -828,7 +833,7 @@ router.post('/sync/cancel', authenticateToken, requirePermission(PERMISSIONS.ACT
 
 // Синхронізувати товари з Dilovod
 // POST /api/products/sync
-router.post('/sync', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
+router.post('/sync', authenticateToken, productsSync, async (req, res) => {
   try {
 
     // Перевіряємо, чи увімкнено синхронізацію Dilovod
@@ -863,7 +868,7 @@ router.post('/sync', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRO
 // Ручна синхронізація товарів за списком SKU
 // POST /api/products/sync-manual
 // body: { skus: string[], force?: boolean } — force=true ігнорує dilovodDataHash
-router.post('/sync-manual', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
+router.post('/sync-manual', authenticateToken, productsSync, async (req, res) => {
   try {
     const { skus, force } = req.body;
 
@@ -940,7 +945,7 @@ router.post('/sync-manual', authenticateToken, requirePermission(PERMISSIONS.ACT
 
 // Синхронізувати залишки товарів з Dilovod
 // POST /api/products/sync-stock
-router.post('/sync-stock', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
+router.post('/sync-stock', authenticateToken, productsSync, async (req, res) => {
   try {
 
     // Перевіряємо, чи увімкнено синхронізацію залишків
@@ -966,7 +971,7 @@ router.post('/sync-stock', authenticateToken, requirePermission(PERMISSIONS.ACTI
 
 // Ручний тригер повного ланцюжку: синк товарів → залишки → експорт SD → WP sync
 // POST /api/products/sync-and-export
-router.post('/sync-and-export', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC_EXPORT), async (req, res) => {
+router.post('/sync-and-export', authenticateToken, productsSyncExport, async (req, res) => {
   const jobId = Date.now();
   console.log(`🚀 [sync-and-export #${jobId}] Manual chain triggered by ${req.user.email}`);
 
@@ -1040,7 +1045,7 @@ router.post('/sync-and-export', authenticateToken, requirePermission(PERMISSIONS
 // Тригер лише кроку SD → WP (HTTP виклик до syncStock.php)
 // POST /api/products/trigger-wp-sync
 // Доступно починаючи з ролі STOREKEEPER (комірник)
-router.post('/trigger-wp-sync', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
+router.post('/trigger-wp-sync', authenticateToken, productsSync, async (req, res) => {
   try {
     console.log(`API: trigger-wp-sync called by ${req.user.email}`);
     const wpSyncUrl = 'https://nk-food.shop/wp-content/plugins/mrkv-salesdrive/inc/syncStock.php';
@@ -1151,7 +1156,7 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
 
 // Тест отримання залишків за списком SKU
 // POST /api/products/test-balance-by-sku
-router.post('/test-balance-by-sku', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
+router.post('/test-balance-by-sku', authenticateToken, productsSync, async (req, res) => {
   try {
     console.log('=== API: test-balance-by-sku вызван ===');
 
@@ -1183,7 +1188,7 @@ router.post('/test-balance-by-sku', authenticateToken, requirePermission(PERMISS
 
 // Тест отримання тільки комплектів
 // POST /api/products/test-sets-only
-router.post('/test-sets-only', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
+router.post('/test-sets-only', authenticateToken, productsSync, async (req, res) => {
   try {
     console.log('=== API: test-sets-only вызван ===');
 
@@ -1203,7 +1208,7 @@ router.post('/test-sets-only', authenticateToken, requirePermission(PERMISSIONS.
 
 // Отримати залишки товарів з можливістю синхронізації
 // GET /api/products/stock/balance
-router.get('/stock/balance', authenticateToken, requirePermission(PERMISSIONS.ACTION_PRODUCTS_SYNC), async (req, res) => {
+router.get('/stock/balance', authenticateToken, productsSync, async (req, res) => {
   try {
     const { sync = 'false' } = req.query;
     const shouldSync = sync === 'true';

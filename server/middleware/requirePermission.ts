@@ -1,6 +1,9 @@
-import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { INSUFFICIENT_ROLE_HEADER } from '../../shared/constants/roles.js';
+import { registerAction } from '../../shared/constants/permissions.js';
 import { roleService } from '../services/RoleService.js';
+
+export type PermissionGuard = RequestHandler & { key: string };
 
 export function sendInsufficientRole(res: Response, message: string) {
   res.setHeader(INSUFFICIENT_ROLE_HEADER, '1');
@@ -15,8 +18,9 @@ export function sendInsufficientRole(res: Response, message: string) {
 export function createRequirePermission(
   hasPermissionFn: (slug: string, key: string) => Promise<boolean>
 ) {
-  return (key: string) => {
-    return async (req: Request, res: Response, next: NextFunction) => {
+  return (group: string, name: string, label: string): PermissionGuard => {
+    const key = registerAction(group, name, label);
+    const mw = async (req: Request, res: Response, next: NextFunction) => {
       if (!req.user) {
         return res.status(401).json({
           message: 'Authentication required',
@@ -36,6 +40,7 @@ export function createRequirePermission(
 
       next();
     };
+    return Object.assign(mw, { key });
   };
 }
 

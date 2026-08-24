@@ -13,6 +13,7 @@ export interface RegisterRequest {
   password: PrismaUser["password"];
   role?: PrismaUser["role"];
   roleName?: PrismaUser["roleName"];
+  dilovodUserId?: PrismaUser["dilovodUserId"];
 }
 
 export interface UpdateProfileRequest {

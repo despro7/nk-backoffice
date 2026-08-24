@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { prisma } from '../lib/utils.js';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
-import { PERMISSIONS } from '../../shared/constants/permissions.js';
 
 const router = Router();
+const materialsParentIds = requirePermission('materials', 'parentIds', 'Parent IDs матеріалів');
+const materialsSync = requirePermission('materials', 'sync', 'Синхронізувати матеріали');
+const materialsEdit = requirePermission('materials', 'edit', 'Редагувати матеріали');
 
 // GET /api/materials — список матеріалів
 router.get('/', authenticateToken, async (req, res) => {
@@ -74,7 +76,7 @@ router.get('/parent-ids', authenticateToken, async (req, res) => {
 });
 
 // PUT /api/materials/parent-ids — зберегти список parent IDs
-router.put('/parent-ids', authenticateToken, requirePermission(PERMISSIONS.ACTION_MATERIALS_PARENT_IDS), async (req, res) => {
+router.put('/parent-ids', authenticateToken, materialsParentIds, async (req, res) => {
   try {
     const { folders } = req.body;
     if (!Array.isArray(folders)) {
@@ -98,7 +100,7 @@ router.put('/parent-ids', authenticateToken, requirePermission(PERMISSIONS.ACTIO
 });
 
 // POST /api/materials/sync — синхронізація матеріалів з Dilovod за parent IDs
-router.post('/sync', authenticateToken, requirePermission(PERMISSIONS.ACTION_MATERIALS_SYNC), async (req, res) => {
+router.post('/sync', authenticateToken, materialsSync, async (req, res) => {
   try {
     const setting = await prisma.settingsBase.findUnique({
       where: { key: 'materials_parent_ids' },
@@ -250,7 +252,7 @@ router.post('/sync', authenticateToken, requirePermission(PERMISSIONS.ACTION_MAT
 });
 
 // PUT /api/materials/reorder — масове оновлення порядку після DnD
-router.put('/reorder', authenticateToken, requirePermission(PERMISSIONS.ACTION_MATERIALS_EDIT), async (req, res) => {
+router.put('/reorder', authenticateToken, materialsEdit, async (req, res) => {
   try {
     const { items } = req.body; // [{ id: number, manualOrder: number }]
     if (!Array.isArray(items)) {
@@ -269,7 +271,7 @@ router.put('/reorder', authenticateToken, requirePermission(PERMISSIONS.ACTION_M
 });
 
 // PUT /api/materials/:id/barcode
-router.put('/:id/barcode', authenticateToken, requirePermission(PERMISSIONS.ACTION_MATERIALS_EDIT), async (req, res) => {
+router.put('/:id/barcode', authenticateToken, materialsEdit, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { barcode } = req.body;
