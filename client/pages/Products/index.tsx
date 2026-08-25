@@ -13,7 +13,7 @@ import { CatalogActionsDropdown } from './components/CatalogActionsMenu';
 import { CatalogBreadcrumbs } from './components/CatalogBreadcrumbs';
 import { CatalogContextMenu, type CatalogContextMenuState } from './components/CatalogContextMenu';
 import { CatalogConfirmItemsList } from './components/CatalogConfirmItemsList';
-import { ProductDrawer } from './components/ProductDrawer';
+import { ProductDrawer } from './components/productDrawer/ProductDrawer';
 import { ArchiveConfirmModal } from './components/ArchiveConfirmModal';
 import { MoveToFolderModal } from './components/MoveToFolderModal';
 import { useProductsCatalog } from './useProductsCatalog';

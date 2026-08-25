@@ -722,21 +722,33 @@ export function weightsAlmostEqual(a: number, b: number): boolean {
   return Math.abs(round01(a) - round01(b)) < 0.005;
 }
 
-function massUnitToKgFactor(unit: { name: string; code?: string | null } | undefined): number | null {
+export function massUnitToKgFactor(
+  unit: { name: string; code?: string | null } | undefined
+): number | null {
   if (!unit) return null;
   const name = unit.name.trim().toLowerCase().replace(/\./g, '');
   const code = (unit.code || '').trim().toLowerCase().replace(/\./g, '');
+  const token = `${name} ${code}`;
   if (/^(кг|kg|кілограм)/.test(name) || /^(кг|kg)$/.test(code)) return 1;
-  if (/^(л|l|літр|литр|lt)$/.test(name) || /^(л|l|lt)$/.test(code)) return 1;
-  if (/^(г|гр|грам|g)$/.test(name) || /^(г|гр|g)$/.test(code)) return 0.001;
-  if (/^(мл|ml|мілілітр|миллилитр)$/.test(name) || /^(мл|ml)$/.test(code)) return 0.001;
+  if (/(^| )(л|l|літр|литр|lt|liter)/.test(token) && !/(мл|ml|мілілітр|миллилитр)/.test(token)) {
+    return 1;
+  }
+  if (/^(г|гр|грам|g)/.test(name) && !/кілограм/.test(name)) return 0.001;
+  if (/^(мл|ml|мілілітр|миллилитр)/.test(name) || /^(мл|ml)$/.test(code)) return 0.001;
   return null;
 }
+
+export type ExpectedBomWeight = {
+  kg: number;
+  missingCount: number;
+};
 
 /**
  * Очікувана вага картки, кг:
  * — рядок у кг/г/л/мл → qty (зведена до кг; 1 л = 1 кг);
- * — інакше (шт. тощо) → qty × вага компонента.
+ * — шт. тощо → qty × вага картки компонента, якщо вона є.
+ * У продукції шт. без ваги ігноруються (не попередження).
+ * У наборі шт. без ваги порції не входять у суму, але `missingCount` > 0.
  * Для продукції `divideBy` = «Розрахунок на N шт.» (вага порції).
  */
 export function expectedBomWeightKg(
@@ -746,14 +758,16 @@ export function expectedBomWeightKg(
     componentWeight: number | null;
   }>,
   units: Array<{ id: string; name: string; code?: string | null }>,
-  options?: { divideBy?: number }
-): { kg: number; missingCount: number } | null {
+  options?: { divideBy?: number; warnMissingPieceWeight?: boolean }
+): ExpectedBomWeight | null {
   if (components.length === 0) return null;
   const unitById = new Map(units.map((u) => [u.id, u]));
   let sum = 0;
   let used = 0;
   let missingCount = 0;
-  for (const row of components) {
+  const warnMissing = Boolean(options?.warnMissingPieceWeight);
+  for (let i = 0; i < components.length; i += 1) {
+    const row = components[i];
     const qty = Number(row.qty);
     if (!Number.isFinite(qty) || qty <= 0) continue;
     const massFactor = massUnitToKgFactor(unitById.get(row.unitId));
@@ -766,11 +780,11 @@ export function expectedBomWeightKg(
     if (w != null && Number.isFinite(w) && w > 0) {
       sum += qty * w;
       used += 1;
-    } else {
+    } else if (warnMissing) {
       missingCount += 1;
     }
   }
-  if (used === 0 || sum <= 0) return null;
+  if (used === 0 && missingCount === 0) return null;
   const divideBy = options?.divideBy != null && options.divideBy > 0 ? options.divideBy : 1;
   return { kg: Math.round((sum / divideBy) * 100) / 100, missingCount };
 }
