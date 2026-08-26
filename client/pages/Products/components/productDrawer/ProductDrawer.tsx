@@ -414,7 +414,7 @@ export function ProductDrawer({
   }, [bomQuery, catalogSearch, isKit]);
 
   const isDirty = useMemo(() => {
-    if (!open) return false;
+    if (!open || readOnly) return false;
     void baselineVersion;
     return snapshotState(form, components, prices, barcodes, objectKind, isEdit ? detail?.parentId : createParentId) !== baselineRef.current;
   }, [open, form, components, prices, barcodes, objectKind, baselineVersion, isEdit, detail?.parentId, createParentId]);
@@ -908,7 +908,7 @@ export function ProductDrawer({
               </>
             )}
           </DrawerHeader>
-          <DrawerBody className={`gap-6 pt-5 ${!detailLoading && 'shadow-inner'}`}>
+          <DrawerBody className={`gap-6 pt-5 pb-0 ${!detailLoading && 'shadow-inner'}`}>
             {isEdit && detailLoading ? (
               <div className="flex justify-center h-full py-10">
                 <Spinner label="Завантаження картки…" />
@@ -1081,7 +1081,7 @@ export function ProductDrawer({
               </>
             )}
           {!detailLoading && (
-            <DrawerFooter className="-mx-3 md:-mx-6 px-3 md:px-6 pt-5 mt-auto border-t border-default-200/60">
+            <DrawerFooter className="-mx-3 md:-mx-6 px-3 md:px-6 md:py-5 mt-auto border-t border-default-200/60 bg-content2/75">
               {!readOnly && (isDebugMode ||
                 (isTrashed && detail && onRestore) ||
                 (isEdit && !isFolder && detail?.sku && onLegacyUpdate) ||
@@ -1193,7 +1193,6 @@ export function ProductDrawer({
               <Button
                 color="primary"
                 onPress={() => void handleSave()}
-                // isLoading={saving}
                 isDisabled={!hasObjectKind || !form.name.trim() || saving || !isDirty || !requiredFieldsOk}
                 startContent={saving ? <DynamicIcon name="loader-2" className="animate-spin" size={14} /> : <DynamicIcon name="save" size={14} />}
               >

@@ -117,7 +117,7 @@ export function BomSection({
   const packCols = isAdmin ? (isKit ? '3' : '4') : isKit ? '2' : '3';
 
   return (
-    <div className={isReadOnly ? 'pointer-events-none' : undefined}>
+    <>
       <Divider className="bg-default-200/60" />
       <section className="space-y-3">
         <h3 className="text-sm font-semibold flex items-center gap-1">
@@ -514,7 +514,7 @@ export function BomSection({
           </div>
         ))}
       </section>
-    </div>
+    </>
   );
 }
 
