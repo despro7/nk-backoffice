@@ -110,6 +110,13 @@ describe('seedPermissionKeysForRole', () => {
       expect(seedPermissionKeysForRole(slug)).not.toContain(PERMISSIONS.PAGE_ACCOUNTING_CASH_IN);
     }
   });
+
+  it('accounting bank-statements page is admin-only in seed', () => {
+    expect(seedPermissionKeysForRole(ROLES.ADMIN)).toContain(PERMISSIONS.PAGE_ACCOUNTING_BANK_STATEMENTS);
+    for (const slug of [ROLES.ADS_MANAGER, ROLES.STOREKEEPER, ROLES.WAREHOUSE_MANAGER, ROLES.SHOP_MANAGER, ROLES.BOSS]) {
+      expect(seedPermissionKeysForRole(slug)).not.toContain(PERMISSIONS.PAGE_ACCOUNTING_BANK_STATEMENTS);
+    }
+  });
 });
 
 describe('canAccessRoute', () => {

@@ -191,6 +191,31 @@ export interface DilovodPaymentForm {
   name: string;
 }
 
+export interface DilovodSettlementsKind {
+  id: string;
+  code?: string;
+  name?: string;
+  id__pr?: string;
+}
+
+/** Статті руху коштів Dilovod (catalogs.cashItems) — header.cashItem */
+export interface DilovodCashItem {
+  id: string;
+  code?: string;
+  name?: string;
+  id__pr?: string;
+}
+
+/** План рахунків Dilovod (catalogs.accounts) — corAccount / account */
+export interface DilovodLedgerAccount {
+  id: string;
+  code?: string;
+  name?: string;
+  id__pr?: string;
+  parent?: string;
+  parent__pr?: string;
+}
+
 export interface DilovodFirm {
   id: string;
   name: string;
@@ -213,6 +238,9 @@ export interface DilovodDirectories {
   storages: DilovodStorage[];
   cashAccounts: DilovodCashAccount[];
   paymentForms: DilovodPaymentForm[];
+  settlementsKinds?: DilovodSettlementsKind[];
+  cashItems?: DilovodCashItem[];
+  ledgerAccounts?: DilovodLedgerAccount[];
   firms: DilovodFirm[];
   tradeChanels: DilovodTradeChanel[];
   deliveryMethods: DilovodDeliveryMethod[];

@@ -14,7 +14,7 @@ import {
   WordPressProduct
 } from './index.js';
 import { syncSettingsService } from '../syncSettingsService.js';
-import { dilovodCacheService } from './DilovodCacheService.js';
+import { dilovodCacheService, type CacheType } from './DilovodCacheService.js';
 import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
 import { compactMetaLogData, mapBarCodesByObjectId } from './DilovodUtils.js';
 import { pluralize } from '../../lib/utils.js';
@@ -1242,6 +1242,89 @@ export class DilovodService {
     }
   }
 
+  async getSettlementsKinds(forceRefresh = false): Promise<any[]> {
+    try {
+      if (!forceRefresh) {
+        const cached = await dilovodCacheService.getFromCache('settlementsKinds');
+        if (cached) {
+          console.log(`📒 [Dilovod] Види розрахунків з кешу: ${cached.length} записів`);
+          return cached;
+        }
+      }
+
+      console.log('🔄 [Dilovod] Отримання catalogs.settlementsKinds з Dilovod API');
+      const result = await this.apiClient.getSettlementsKinds();
+      console.log(`📒 [Dilovod] Отримано ${result.length} видів розрахунків з API`);
+      await dilovodCacheService.updateCache('settlementsKinds', result);
+      return result;
+    } catch (error) {
+      const errorMessage = `Помилка отримання видів розрахунків: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
+      console.log(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }
+
+  async getCashItems(forceRefresh = false): Promise<any[]> {
+    try {
+      if (!forceRefresh) {
+        const cached = await dilovodCacheService.getFromCache('cashItems');
+        if (cached) {
+          console.log(`📒 [Dilovod] Статті руху з кешу: ${cached.length} записів`);
+          return cached;
+        }
+      }
+
+      console.log('🔄 [Dilovod] Отримання статей руху коштів з Dilovod');
+      const result = await this.apiClient.getCashItems();
+      console.log(`📒 [Dilovod] Отримано ${result.length} статей руху`);
+      await dilovodCacheService.updateCache('cashItems', result);
+      return result;
+    } catch (error) {
+      const errorMessage = `Помилка отримання статей руху: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
+      console.log(errorMessage);
+      try {
+        await dilovodCacheService.updateCache('cashItems', []);
+      } catch {
+        // не блокуємо довідники через кеш
+      }
+      return [];
+    }
+  }
+
+  async getLedgerAccounts(forceRefresh = false): Promise<any[]> {
+    try {
+      if (!forceRefresh) {
+        const cached = await dilovodCacheService.getFromCache('ledgerAccounts');
+        if (cached) {
+          console.log(`📒 [Dilovod] План рахунків з кешу: ${cached.length} записів`);
+          return cached;
+        }
+      }
+
+      console.log('🔄 [Dilovod] Отримання catalogs.accounts з Dilovod API');
+      const raw = await this.apiClient.getLedgerAccounts();
+      const result = raw.map((item) => ({
+        id: item?.id ?? '',
+        code: item?.code ?? '',
+        name: item?.name ?? '',
+        id__pr: item?.id__pr ?? '',
+        parent: item?.parent ?? '',
+        parent__pr: item?.parent__pr ?? '',
+      }));
+      console.log(`📒 [Dilovod] Отримано ${result.length} рахунків плану`);
+      try {
+        await dilovodCacheService.updateCache('ledgerAccounts', result);
+      } catch (cacheError) {
+        console.log('⚠️ [Dilovod] План рахунків отримано, але кеш не записано:', cacheError);
+      }
+      return result;
+    } catch (error) {
+      const errorMessage = `Помилка отримання плану рахунків: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
+      console.log(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }
+
   // Отримання каналів продажів з Dilovod (з кешуванням)
   async getTradeChanels(forceRefresh = false): Promise<any[]> {
     try {
@@ -1332,6 +1415,9 @@ export class DilovodService {
     accounts: number;
     storages: number;
     paymentForms: number;
+    settlementsKinds: number;
+    cashItems: number;
+    ledgerAccounts: number;
     tradeChanels: number;
     deliveryMethods: number;
     units: number;
@@ -1346,6 +1432,24 @@ export class DilovodService {
     const accounts = await this.getCashAccounts(true);
     const storages = await this.getStorages(true);
     const paymentForms = await this.getPaymentForms(true);
+    let settlementsKinds: any[] = [];
+    try {
+      settlementsKinds = await this.getSettlementsKinds(true);
+    } catch (error) {
+      console.log('⚠️ [Dilovod] Види розрахунків не оновлено:', error);
+    }
+    let cashItems: any[] = [];
+    try {
+      cashItems = await this.getCashItems(true);
+    } catch (error) {
+      console.log('⚠️ [Dilovod] Статті руху не оновлено:', error);
+    }
+    let ledgerAccounts: any[] = [];
+    try {
+      ledgerAccounts = await this.getLedgerAccounts(true);
+    } catch (error) {
+      console.log('⚠️ [Dilovod] План рахунків не оновлено:', error);
+    }
     const tradeChanels = await this.getTradeChanels(true);
     const deliveryMethods = await this.getDeliveryMethods(true);
 
@@ -1361,6 +1465,9 @@ export class DilovodService {
       accounts: accounts.length,
       storages: storages.length,
       paymentForms: paymentForms.length,
+      settlementsKinds: settlementsKinds.length,
+      cashItems: cashItems.length,
+      ledgerAccounts: ledgerAccounts.length,
       tradeChanels: tradeChanels.length,
       deliveryMethods: deliveryMethods.length,
       units: units.length,
@@ -1371,6 +1478,38 @@ export class DilovodService {
 
     console.log(`✅ [Dilovod] Кеш оновлено: ${JSON.stringify(result)}`);
     return result;
+  }
+
+  /**
+   * Примусово оновити один довідник Dilovod.
+   */
+  async refreshDirectoryCache(type: CacheType): Promise<{ type: CacheType; count: number }> {
+    console.log(`🔄 [Dilovod] Примусове оновлення довідника: ${type}`);
+
+    const catalogTypes = ['units', 'priceTypes', 'currency', 'accPolicies'] as const;
+    if ((catalogTypes as readonly string[]).includes(type)) {
+      const { productsDilovodGateway } = await import('../../modules/Products/ProductsDilovodGateway.js');
+      const rows = await productsDilovodGateway.fetchCachedDict(
+        type as (typeof catalogTypes)[number],
+        true
+      );
+      return { type, count: rows.length };
+    }
+
+    const fetchers: Record<Exclude<CacheType, (typeof catalogTypes)[number]>, () => Promise<unknown[]>> = {
+      firms: () => this.getFirms(true),
+      accounts: () => this.getCashAccounts(true),
+      storages: () => this.getStorages(true),
+      paymentForms: () => this.getPaymentForms(true),
+      settlementsKinds: () => this.getSettlementsKinds(true),
+      cashItems: () => this.getCashItems(true),
+      ledgerAccounts: () => this.getLedgerAccounts(true),
+      tradeChanels: () => this.getTradeChanels(true),
+      deliveryMethods: () => this.getDeliveryMethods(true),
+    };
+
+    const rows = await fetchers[type as Exclude<CacheType, (typeof catalogTypes)[number]>]();
+    return { type, count: rows.length };
   }
 
   /**

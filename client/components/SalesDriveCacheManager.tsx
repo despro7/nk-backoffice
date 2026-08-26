@@ -235,7 +235,7 @@ export const SalesDriveCacheManager: React.FC = () => {
 						<p className="text-sm text-default-500">
 							Кеш оновлюється автоматично раз на добу. Ви можете оновити вручну за потреби.
 						</p>
-						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 							{(Object.keys(cacheStatus) as Array<keyof CacheStatus>).map((type) => {
 								const metadata = cacheStatus[type];
 								return (

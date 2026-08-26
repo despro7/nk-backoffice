@@ -9,6 +9,9 @@
  * - dilovod.cache.accounts - JSON масив рахунків
  * - dilovod.cache.storages - JSON масив складів
  * - dilovod.cache.paymentForms - JSON масив форм оплати
+ * - dilovod.cache.settlementsKinds - JSON масив видів розрахунків
+ * - dilovod.cache.cashItems - JSON масив статей руху коштів
+ * - dilovod.cache.ledgerAccounts - JSON масив плану рахунків (corAccount)
  * - dilovod.cache.tradeChanels - JSON масив каналів продажів
  * - dilovod.cache.units - одиниці виміру
  * - dilovod.cache.priceTypes - типи цін
@@ -24,12 +27,35 @@ export type CacheType =
   | 'accounts'
   | 'storages'
   | 'paymentForms'
+  | 'settlementsKinds'
+  | 'cashItems'
+  | 'ledgerAccounts'
   | 'tradeChanels'
   | 'deliveryMethods'
   | 'units'
   | 'priceTypes'
   | 'currency'
   | 'accPolicies';
+
+export const CACHE_TYPES: CacheType[] = [
+  'firms',
+  'accounts',
+  'storages',
+  'paymentForms',
+  'settlementsKinds',
+  'cashItems',
+  'ledgerAccounts',
+  'tradeChanels',
+  'deliveryMethods',
+  'units',
+  'priceTypes',
+  'currency',
+  'accPolicies',
+];
+
+export function isCacheType(value: string): value is CacheType {
+  return (CACHE_TYPES as string[]).includes(value);
+}
 
 interface CacheMetadata {
   lastUpdate: Date | null;
@@ -248,21 +274,9 @@ export class DilovodCacheService {
    * Отримати статус всіх кешів
    */
   async getAllCacheStatus(): Promise<Record<CacheType | 'goods', CacheMetadata>> {
-    const types: CacheType[] = [
-      'firms',
-      'accounts',
-      'storages',
-      'paymentForms',
-      'tradeChanels',
-      'deliveryMethods',
-      'units',
-      'priceTypes',
-      'currency',
-      'accPolicies',
-    ];
     const statuses: Record<string, CacheMetadata> = {};
 
-    for (const type of types) {
+    for (const type of CACHE_TYPES) {
       statuses[type] = await this.getCacheMetadata(type);
     }
 

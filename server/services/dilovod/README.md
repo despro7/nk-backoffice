@@ -161,3 +161,13 @@ export const DEFAULT_DILOVOD_CONFIG: DilovodConfig = {
 - `cleanDilovodErrorMessageFull()` — повна версія для логів
 
 Ці функції видаляют HTML-теги та переформатують помилки Dilovod для читаємості.
+
+## Банківські виписки
+
+Окремий модуль (не частина coordinator-потоку замовлень):
+
+- `BankStatementImportService.ts` — парсинг Excel
+- `BankStatementExportBuilder.ts` — `cashOut` / `cashIn`
+- `BankStatementTemplateService.ts` — шаблони в `settings_base`
+
+Документація фічі: `Docs/features/bank-statement-import.md`.

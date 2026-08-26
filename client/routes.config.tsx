@@ -32,6 +32,7 @@ import SettingsDilovod from "./pages/SettingsDilovod";
 import SettingsWarehouseMovement from "./pages/SettingsWarehouseMovement";
 import SalesDriveOrders from "./pages/SalesDriveOrders";
 import CashInImport from "./pages/CashInImport";
+import BankStatementImport from "./pages/BankStatementImport";
 import TestSerialCom from "./pages/test-serial-com";
 import MetaLogNotifications from './pages/MetaLogs';
 
@@ -349,6 +350,18 @@ export const appRoutes: AppRoute[] = [
       order: 5,
     },
     permission: { name: 'cashIn' },
+  },
+  {
+    path: '/accounting/bank-statements',
+    component: BankStatementImport,
+    title: 'Завантаження банківських виписок',
+    pageTitle: 'Завантаження банківських виписок | NK Backoffice',
+    navLabel: 'Банківські виписки',
+    icon: <DynamicIcon name="landmark" size={16} />,
+    inNav: true,
+    parent: 'accounting',
+    order: 1,
+    permission: { name: 'bankStatements' },
   },
   {
     path: '/salesdrive-to-dilovod',

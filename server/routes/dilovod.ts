@@ -418,6 +418,9 @@ router.get('/directories', authenticateToken, dilovodRead, async (req, res) => {
       let storagesResult: any[] = [];
       let accountsResult: any[] = [];
       let paymentFormsResult: any[] = [];
+      let settlementsKindsResult: any[] = [];
+      let cashItemsResult: any[] = [];
+      let ledgerAccountsResult: any[] = [];
       let firmsResult: any[] = [];
       let tradeChanelsResult: any[] = [];
       let deliveryMethodsResult: any[] = [];
@@ -425,6 +428,9 @@ router.get('/directories', authenticateToken, dilovodRead, async (req, res) => {
       try { storagesResult = await dilovodService.getStorages(); } catch (error) { console.log('API: ❌ Помилка отримання складів:', error); }
       try { accountsResult = await dilovodService.getCashAccounts(); } catch (error) { console.log('API: ❌ Помилка отримання рахунків:', error); }
       try { paymentFormsResult = await dilovodService.getPaymentForms(); } catch (error) { console.log('API: ❌ Помилка отримання форм оплати:', error); }
+      try { settlementsKindsResult = await dilovodService.getSettlementsKinds(); } catch (error) { console.log('API: ❌ Помилка отримання видів розрахунків:', error); }
+      try { cashItemsResult = await dilovodService.getCashItems(); } catch (error) { console.log('API: ❌ Помилка отримання статей руху:', error); }
+      try { ledgerAccountsResult = await dilovodService.getLedgerAccounts(); } catch (error) { console.log('API: ❌ Помилка отримання плану рахунків:', error); }
       try { firmsResult = await dilovodService.getFirms(); } catch (error) { console.log('API: ❌ Помилка отримання фірм:', error); }
       try { tradeChanelsResult = await dilovodService.getTradeChanels(); } catch (error) { console.log('API: ❌ Помилка отримання каналів продажів:', error); }
       try { deliveryMethodsResult = await dilovodService.getDeliveryMethods(); } catch (error) { console.log('API: ❌ Помилка отримання способів доставки:', error); }
@@ -471,6 +477,9 @@ router.get('/directories', authenticateToken, dilovodRead, async (req, res) => {
         storages: storagesResult,
         cashAccounts: accountsResult,
         paymentForms: paymentFormsResult,
+        settlementsKinds: settlementsKindsResult,
+        cashItems: cashItemsResult,
+        ledgerAccounts: ledgerAccountsResult,
         firms: firmsResult,
         tradeChanels: tradeChanelsResult,
         deliveryMethods: deliveryMethodsResult,
@@ -1815,6 +1824,41 @@ router.post('/cache/refresh', authenticateToken, dilovodAdmin, async (req, res) 
       success: false,
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Невідома помилка'
+    });
+  }
+});
+
+/**
+ * POST /api/dilovod/cache/refresh/:type
+ * Примусово оновити один довідник Dilovod
+ */
+router.post('/cache/refresh/:type', authenticateToken, dilovodAdmin, async (req, res) => {
+  try {
+    const { isCacheType } = await import('../services/dilovod/DilovodCacheService.js');
+    const type = String(req.params.type || '');
+
+    if (!isCacheType(type)) {
+      res.status(400).json({
+        success: false,
+        error: `Невідомий тип довідника: ${type}`,
+      });
+      return;
+    }
+
+    const dilovodService = new DilovodService();
+    const result = await dilovodService.refreshDirectoryCache(type);
+
+    res.json({
+      success: true,
+      data: result,
+      message: `Довідник ${type} успішно оновлено`,
+    });
+  } catch (error) {
+    console.log('API: Помилка оновлення довідника Dilovod:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Невідома помилка',
     });
   }
 });

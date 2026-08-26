@@ -21,6 +21,13 @@ import {
 import { delay } from './DilovodUtils.js';
 import { inspect } from 'node:util';
 
+type DilovodCashItemRow = {
+  id?: string;
+  name?: string;
+  code?: string;
+  id__pr?: string;
+};
+
 export class DilovodApiClient {
   // Простий внутрішній черговий механізм для серіалізації запитів
   private requestQueue: Array<{
@@ -972,6 +979,205 @@ export class DilovodApiClient {
           id: 'id',
           code: 'code',
           name: 'name'
+        }
+      }
+    };
+
+    const result = await this.makeRequest<any>(request);
+    return this.normalizeToArray(result);
+  }
+
+  /**
+   * Види розрахунків (catalogs.settlementsKinds).
+   * Якщо каталог має іншу назву — fallback через getMetadata.
+   */
+  async getSettlementsKinds(): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: 'catalogs.settlementsKinds',
+        fields: {
+          id: 'id',
+          code: 'code',
+          name: 'name',
+          id__pr: 'id__pr',
+        }
+      }
+    };
+
+    try {
+      const result = await this.makeRequest<any>(request);
+      if (result?.error) {
+        throw new Error(String(result.error));
+      }
+      return this.normalizeToArray(result);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.log(`⚠️ [Dilovod] catalogs.settlementsKinds недоступний (${msg}), пробуємо getMetadata`);
+      try {
+        const metaReq: DilovodApiRequest = {
+          version: "0.25",
+          key: this.apiKey,
+          action: "getMetadata",
+          params: { id: 'catalogs.settlementsKinds' },
+        };
+        await this.makeRequest<any>(metaReq);
+      } catch {
+        // ім'я каталогу зафіксоване як catalogs.settlementsKinds
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Статті руху коштів (header.cashItem).
+   * catalogs.cashItems часто закритий роллю API — тоді збираємо унікальні
+   * значення з documents.cashIn / cashOut і добираємо відомі id через getObject.
+   */
+  async getCashItems(): Promise<any[]> {
+    await this.ensureReady();
+
+    const catalogReq: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: 'catalogs.cashItems',
+        fields: {
+          id: 'id',
+          code: 'code',
+          name: 'name',
+          id__pr: 'id__pr',
+        }
+      }
+    };
+
+    const catalogResult = await this.makeRequest<unknown>(catalogReq);
+    const catalogError = this.extractDilovodError(catalogResult);
+    if (!catalogError) {
+      const items = this.normalizeToArray<DilovodCashItemRow>(catalogResult).filter((item) => Boolean(item?.id));
+      if (items.length > 0) return items;
+    } else {
+      console.log(`⚠️ [Dilovod] catalogs.cashItems недоступний (${catalogError}), збираємо статті з документів`);
+    }
+
+    const harvested = await this.harvestCashItemsFromDocuments();
+    return this.mergeKnownCashItems(harvested);
+  }
+
+  private extractDilovodError(result: unknown): string | undefined {
+    if (!result || typeof result !== 'object') return undefined;
+    const error = (result as { error?: unknown }).error;
+    return typeof error === 'string' && error.trim() ? error : undefined;
+  }
+
+  private cashItemPresentation(value: unknown): string {
+    if (value == null) return '';
+    if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
+    if (typeof value !== 'object') return '';
+    const rec = value as { uk?: unknown; ru?: unknown; pr?: unknown; id?: unknown };
+    if (typeof rec.uk === 'string' && rec.uk.trim()) return rec.uk.trim();
+    if (typeof rec.ru === 'string' && rec.ru.trim()) return rec.ru.trim();
+    if (typeof rec.pr === 'string' && rec.pr.trim()) return rec.pr.trim();
+    if (typeof rec.id === 'string') return rec.id.trim();
+    return '';
+  }
+
+  private async harvestCashItemsFromDocuments(): Promise<DilovodCashItemRow[]> {
+    const byId = new Map<string, DilovodCashItemRow>();
+    for (const from of ['documents.cashIn', 'documents.cashOut'] as const) {
+      try {
+        const request: DilovodApiRequest = {
+          version: "0.25",
+          key: this.apiKey,
+          action: "request",
+          params: {
+            from,
+            fields: {
+              cashItem: 'id',
+              'cashItem.id__pr': 'name',
+              'cashItem.code': 'code',
+            },
+            limit: 300,
+          }
+        };
+        const result = await this.makeRequest<unknown>(request);
+        const error = this.extractDilovodError(result);
+        if (error) {
+          console.log(`⚠️ [Dilovod] Не вдалося зібрати cashItem з ${from}: ${error}`);
+          continue;
+        }
+        for (const row of this.normalizeToArray<DilovodCashItemRow>(result)) {
+          const id = String(row.id ?? '').trim();
+          if (!id || id === '0') continue;
+          const name = String(row.name ?? row.id__pr ?? '').trim();
+          const code = String(row.code ?? '').trim();
+          const prev = byId.get(id);
+          byId.set(id, {
+            id,
+            name: name || prev?.name,
+            code: code || prev?.code,
+            id__pr: name || prev?.id__pr,
+          });
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.log(`⚠️ [Dilovod] Помилка збору cashItem з ${from}: ${msg}`);
+      }
+    }
+    return [...byId.values()];
+  }
+
+  private async mergeKnownCashItems(harvested: DilovodCashItemRow[]): Promise<DilovodCashItemRow[]> {
+    const knownIds = ['1104300000001016', '1104300000001022'];
+    const byId = new Map(harvested.map((item) => [item.id, item]));
+
+    for (const id of knownIds) {
+      if (byId.has(id)) continue;
+      try {
+        const obj = await this.getObject(id);
+        if (this.extractDilovodError(obj)) {
+          byId.set(id, { id, name: id, id__pr: id });
+          continue;
+        }
+        const header = obj.header ?? {};
+        const headerId = header.id;
+        const headerIdPr = headerId && typeof headerId === 'object' ? headerId.pr : undefined;
+        const name = this.cashItemPresentation(header.name)
+          || this.cashItemPresentation(header.id__pr)
+          || this.cashItemPresentation(headerIdPr);
+        byId.set(id, { id, name: name || id, id__pr: name || id });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.log(`⚠️ [Dilovod] getObject(${id}) для cashItem: ${msg}`);
+        byId.set(id, { id, name: id, id__pr: id });
+      }
+    }
+
+    return [...byId.values()];
+  }
+
+  /**
+   * План рахунків (catalogs.accounts) — corAccount / account у cashIn/cashOut.
+   */
+  async getLedgerAccounts(): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "request",
+      params: {
+        from: 'catalogs.accounts',
+        fields: {
+          id: 'id',
+          code: 'code',
+          name: 'name',
+          id__pr: 'id__pr',
+          parent: 'parent',
+          parent__pr: 'parent__pr',
         }
       }
     };

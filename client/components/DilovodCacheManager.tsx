@@ -19,6 +19,9 @@ interface CacheStatus {
   accounts: CacheMetadata;
   storages: CacheMetadata;
   paymentForms: CacheMetadata;
+  settlementsKinds: CacheMetadata;
+  cashItems: CacheMetadata;
+  ledgerAccounts: CacheMetadata;
   tradeChanels: CacheMetadata;
   deliveryMethods: CacheMetadata;
   units: CacheMetadata;
@@ -29,7 +32,7 @@ interface CacheStatus {
 }
 
 const CACHE_TYPE_ORDER: Array<keyof CacheStatus> = [
-  'firms', 'accounts', 'storages', 'paymentForms', 'tradeChanels', 'deliveryMethods',
+  'firms', 'accounts', 'storages', 'paymentForms', 'settlementsKinds', 'cashItems', 'ledgerAccounts', 'tradeChanels', 'deliveryMethods',
   'units', 'priceTypes', 'currency', 'accPolicies', 'goods',
 ];
 
@@ -148,6 +151,7 @@ export const DilovodCacheManager: React.FC = () => {
   const [cacheStatus, setCacheStatus] = useState<CacheStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingType, setRefreshingType] = useState<keyof CacheStatus | null>(null);
   const [viewingDirectory, setViewingDirectory] = useState<{
     type: keyof CacheStatus;
     data: any[];
@@ -232,6 +236,9 @@ export const DilovodCacheManager: React.FC = () => {
           accounts: 'cashAccounts',
           storages: 'storages',
           paymentForms: 'paymentForms',
+          settlementsKinds: 'settlementsKinds',
+          cashItems: 'cashItems',
+          ledgerAccounts: 'ledgerAccounts',
           tradeChanels: 'tradeChanels',
           deliveryMethods: 'deliveryMethods',
           units: 'units',
@@ -259,6 +266,9 @@ export const DilovodCacheManager: React.FC = () => {
           accounts: 'cashAccounts',
           storages: 'storages',
           paymentForms: 'paymentForms',
+          settlementsKinds: 'settlementsKinds',
+          cashItems: 'cashItems',
+          ledgerAccounts: 'ledgerAccounts',
           tradeChanels: 'tradeChanels',
           deliveryMethods: 'deliveryMethods',
           units: 'units',
@@ -302,6 +312,12 @@ export const DilovodCacheManager: React.FC = () => {
         return 'warehouse';
       case 'paymentForms':
         return 'credit-card';
+      case 'settlementsKinds':
+        return 'receipt';
+      case 'cashItems':
+        return 'coins';
+      case 'ledgerAccounts':
+        return 'book-marked';
       case 'tradeChanels':
         return 'radio';
       case 'deliveryMethods':
@@ -330,6 +346,12 @@ export const DilovodCacheManager: React.FC = () => {
         return 'Склади';
       case 'paymentForms':
         return 'Форми оплати';
+      case 'settlementsKinds':
+        return 'Види розрахунків';
+      case 'cashItems':
+        return 'Статті руху коштів';
+      case 'ledgerAccounts':
+        return 'План рахунків';
       case 'tradeChanels':
         return 'Канали продажів';
       case 'deliveryMethods':
@@ -344,6 +366,52 @@ export const DilovodCacheManager: React.FC = () => {
         return 'Облік (тип номенклатури)';
       case 'goods':
         return 'Товари';
+    }
+  };
+
+  const handleRefreshDirectory = async (type: keyof CacheStatus) => {
+    if (type === 'goods') {
+      await handleRefreshGoodsCache();
+      return;
+    }
+
+    setRefreshingType(type);
+    try {
+      const response = await fetch(`/api/dilovod/cache/refresh/${type}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      let data: { success?: boolean; error?: string; message?: string; data?: { count?: number } } | null = null;
+      try {
+        const text = await response.text();
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        throw new Error('Некоректна відповідь сервера (не JSON)');
+      }
+
+      if (response.ok && data?.success) {
+        ToastService.show({
+          title: `${getName(type)} оновлено`,
+          description: typeof data.data?.count === 'number' ? `Записів: ${data.data.count}` : data.message,
+          color: 'success',
+        });
+        await fetchCacheStatus();
+        if (dirsCtx) {
+          await dirsCtx.loadDirectories(true);
+        }
+      } else {
+        throw new Error(data?.error || data?.message || 'Unknown error');
+      }
+    } catch (error) {
+      console.error(`Error refreshing ${type} cache:`, error);
+      ToastService.show({
+        title: `Помилка оновлення: ${getName(type)}`,
+        description: error instanceof Error ? error.message : 'Unknown error',
+        color: 'danger',
+      });
+    } finally {
+      setRefreshingType(null);
     }
   };
 
@@ -370,6 +438,28 @@ export const DilovodCacheManager: React.FC = () => {
         return [
           { key: 'id', label: 'ID' },
           { key: 'name', label: 'Назва' }
+        ];
+      case 'settlementsKinds':
+        return [
+          { key: 'id', label: 'ID' },
+          { key: 'name', label: 'Назва' },
+          { key: 'id__pr', label: 'Представлення' },
+          { key: 'code', label: 'Код' }
+        ];
+      case 'cashItems':
+        return [
+          { key: 'id', label: 'ID' },
+          { key: 'name', label: 'Назва' },
+          { key: 'id__pr', label: 'Представлення' },
+          { key: 'code', label: 'Код' }
+        ];
+      case 'ledgerAccounts':
+        return [
+          { key: 'id', label: 'ID' },
+          { key: 'id__pr', label: 'Представлення' },
+          { key: 'name', label: 'Назва' },
+          { key: 'parent__pr', label: 'Батьківський' },
+          { key: 'code', label: 'Код' }
         ];
       case 'tradeChanels':
         return [
@@ -413,7 +503,7 @@ export const DilovodCacheManager: React.FC = () => {
             color="primary"
             onPress={handleRefreshGoodsCache}
             isLoading={updatingGoodsCache}
-            isDisabled={loading || refreshing}
+            isDisabled={loading || refreshing || refreshingType !== null}
             startContent={!updatingGoodsCache && <DynamicIcon name="package" size={14} />}
           >
             {updatingGoodsCache ? 'Оновлення товарів...' : 'Оновити товари'}
@@ -424,7 +514,7 @@ export const DilovodCacheManager: React.FC = () => {
             color="primary"
             onPress={refreshCache}
             isLoading={refreshing}
-            isDisabled={loading || updatingGoodsCache}
+            isDisabled={loading || updatingGoodsCache || refreshingType !== null}
             startContent={!refreshing && <DynamicIcon name="refresh-cw" size={14} />}
           >
             {refreshing ? 'Оновлення...' : 'Оновити все'}
@@ -442,9 +532,12 @@ export const DilovodCacheManager: React.FC = () => {
               Кеш оновлюється автоматично раз на добу. Ви можете оновити вручну за потреби.
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {CACHE_TYPE_ORDER.filter((type) => cacheStatus[type]).map((type) => {
                 const metadata = cacheStatus[type];
+                const isRefreshingThis =
+                  refreshingType === type || (type === 'goods' && updatingGoodsCache);
+                const busy = loading || refreshing || updatingGoodsCache || refreshingType !== null;
                 return (
                   <div
                     key={type}
@@ -473,21 +566,34 @@ export const DilovodCacheManager: React.FC = () => {
                       </div>
                     </div>
 
-                    {metadata.recordsCount > 0 && (
-                      <div className="mt-3">
+                    <div className="mt-3 flex gap-2">
+                      {metadata.recordsCount > 0 && (
                         <Button
                           size="sm"
                           variant="bordered"
                           color="primary"
-                          className='border-0 border-neutral-300 shadow-sm bg-neutral-100'
+                          className="border-0 border-neutral-300 shadow-sm bg-neutral-100 flex-1"
                           startContent={<DynamicIcon name="eye" className="w-4 h-4" />}
                           onPress={() => viewDirectory(type)}
-                          fullWidth
+                          isDisabled={busy}
                         >
                           Переглянути записи
                         </Button>
-                      </div>
-                    )}
+                      )}
+                      <Button
+                        size="sm"
+                        variant="bordered"
+                        color="primary"
+                        className={`border-0 border-neutral-300 shadow-sm bg-neutral-100 ${metadata.recordsCount > 0 ? 'shrink-0' : 'flex-1'}`}
+                        startContent={!isRefreshingThis && <DynamicIcon name="refresh-cw" className="w-4 h-4" />}
+                        onPress={() => handleRefreshDirectory(type)}
+                        isLoading={isRefreshingThis}
+                        isDisabled={busy && !isRefreshingThis}
+                        aria-label={`Оновити ${getName(type)}`}
+                      >
+                        Оновити
+                      </Button>
+                    </div>
 
                   </div>
                 );

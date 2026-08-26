@@ -3,27 +3,19 @@ import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '@/services/ToastService';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
+import Timeline, { type TimelineStep } from '@/components/Timeline';
 import FileUploadZone from './components/FileUploadZone';
 import CashInPreviewTable from './components/CashInPreviewTable';
 import CashInSummary from './components/CashInSummary';
 import type { CashInRow, CashInPreviewResponse, CashInConfirmedRow } from '@shared/types/cashIn';
 
-// Крок імпорту
 type Step = 'upload' | 'preview' | 'done';
 
-const STEPS: Step[] = ['upload', 'preview', 'done'];
-
-const STEP_LABELS: Record<Step, string> = {
-  upload: 'Завантаження',
-  preview: 'Перевірка',
-  done: 'Результат',
-};
-
-const STEP_ICONS: Record<Step, 'file-up' | 'list-checks' | 'circle-check'> = {
-  upload: 'file-up',
-  preview: 'list-checks',
-  done: 'circle-check',
-};
+const TIMELINE_STEPS: TimelineStep[] = [
+  { key: 'upload', label: 'Завантаження', icon: 'file-up' },
+  { key: 'preview', label: 'Перевірка', icon: 'list-checks' },
+  { key: 'done', label: 'Результат', icon: 'circle-check' },
+];
 
 export default function CashInImport() {
   const [step, setStep] = useState<Step>('upload');
@@ -195,60 +187,7 @@ export default function CashInImport() {
         </p>
       </div>
 
-      {/* Індикатор кроків — кола фіксовані, лінії flex-1 до max-w-50 */}
-      <div className="flex w-full items-center justify-center gap-2 pb-6">
-        {STEPS.map((s, index) => {
-          const currentIndex = STEPS.indexOf(step);
-          const isDone = index < currentIndex;
-          const isCurrent = index === currentIndex;
-          const isLast = index === STEPS.length - 1;
-          const nextDone = !isLast && index + 1 <= currentIndex;
-
-          return (
-            <React.Fragment key={s}>
-              <div className="relative flex h-7 w-7 shrink-0 items-center justify-center">
-                <div
-                  className={`flex h-7 w-7 items-center justify-center rounded-full ${
-                    isDone
-                      ? 'bg-amber-500 text-white'
-                      : isCurrent
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-default-200 text-default-400'
-                  }`}
-                >
-                  <DynamicIcon
-                    name={STEP_ICONS[s]}
-                    size={14}
-                    className="shrink-0"
-                  />
-                </div>
-                <span
-                  className={`absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap text-sm leading-tight ${
-                    isDone
-                      ? 'text-amber-600 font-medium'
-                      : isCurrent
-                        ? 'text-orange-600 font-medium'
-                        : 'text-default-400/80'
-                  }`}
-                >
-                  {STEP_LABELS[s]}
-                </span>
-              </div>
-              {!isLast && (
-                <div
-                  className={`h-0.5 min-w-20 max-w-50 flex-1 rounded-full ${
-                    isDone && nextDone
-                      ? 'bg-amber-500'
-                      : isDone
-                        ? 'bg-amber-400/50'
-                        : 'bg-default-200'
-                  }`}
-                />
-              )}
-            </React.Fragment>
-          );
-        })}
-      </div>
+      <Timeline steps={TIMELINE_STEPS} currentKey={step} color="amber" mobile={{ iconSize: 20, iconPadding: 10, connectorMinWidth: 60, connectorMaxWidth: 120 }} fontSize={14} gap={10} />
 
       {/* Крок 1: Upload */}
       {step === 'upload' && (

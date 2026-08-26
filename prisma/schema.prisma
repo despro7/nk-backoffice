@@ -183,7 +183,7 @@ model SettingsBoxes {
 model SettingsBase {
   id          Int      @id @default(autoincrement())
   key         String   @unique @db.VarChar(255)
-  value       String   @db.Text
+  value       String   @db.LongText
   description String?  @db.Text
   createdAt   DateTime @default(now()) @db.Timestamp(3)
   updatedAt   DateTime @updatedAt @db.Timestamp(3)

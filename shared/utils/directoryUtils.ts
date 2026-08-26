@@ -64,4 +64,29 @@ export function getStorageDisplayName(storageId: any, storageName?: any, dirsPar
   return id;
 }
 
+export type DilovodDictItem = {
+  id?: string;
+  name?: string;
+  id__pr?: string;
+  code?: string;
+  parent__pr?: string;
+};
+
+export function getDilovodItemLabel(item?: DilovodDictItem | null): string {
+  if (!item) return '';
+  const label = item.id__pr || item.name || item.code || item.id;
+  return label ? String(label) : '';
+}
+
+export function findDilovodItemLabel(
+  id: unknown,
+  items?: DilovodDictItem[] | null,
+): string {
+  const idNorm = normalizeForCompare(id);
+  if (!idNorm) return '';
+  if (!Array.isArray(items) || items.length === 0) return String(id);
+  const found = items.find((x) => normalizeForCompare(x.id) === idNorm);
+  return found ? (getDilovodItemLabel(found) || String(id)) : String(id);
+}
+
 export default getFirmDisplayName;

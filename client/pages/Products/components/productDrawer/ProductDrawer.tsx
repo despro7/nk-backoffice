@@ -514,6 +514,7 @@ export function ProductDrawer({
           title: 'Не заповнені обовʼязкові поля',
           description: `Вкажіть: ${missing.join(', ')}. Значення не можуть бути порожніми або 0.`,
           color: 'warning',
+          icon: 'alert-triangle'
         });
         setCardTab('main');
         return;

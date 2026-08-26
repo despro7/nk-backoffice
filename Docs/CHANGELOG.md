@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-08-26 — Бухгалтерія: завантаження банківських виписок
+**Files:** `client/pages/BankStatementImport/**`, `server/routes/dilovod-bank-statement.ts`, `server/services/dilovod/BankStatement*.ts`, `shared/types/bankStatement.ts`, `shared/utils/settlementsKindKeywords.ts`, `shared/utils/excelCol.ts`, `client/components/Timeline.tsx`, `client/components/table/**`, `client/hooks/useTableSelection.ts`, `prisma/migrations/20260826120000_settings_base_value_longtext/`, `Docs/features/bank-statement-import.md`, `Docs/architecture/timeline.md`
+
+- Нова сторінка **Бухгалтерія → Банківські виписки** (`/accounting/bank-statements`, `page.accounting.bankStatements`): Excel → preview (таби Витрати / Надходження) → `documents.cashOut` / `documents.cashIn` без прив’язки до замовлень.
+- Парсинг за шаблоном (дефолт NovaPay: з 17 рядка, дебет U / кредит W); шаблони, словник ключових слів виду розрахунків і inline-колонки в `settings_base` (`bank_statement_templates`).
+- Чекбокси = склад payload (витрати увімкнені, надходження вимкнені). `corAccount` / `settlementsKind` / `cashItem` з довідників Dilovod; автокомпліт і навчання ключових слів з призначення.
+- Довідники в кеші: `settlementsKinds`, `cashItems`, `ledgerAccounts`. `settings_base.value` → `LONGTEXT` (план рахунків не вміщався в TEXT). Після деплою: `npx prisma migrate deploy`.
+- `Timeline` винесено в спільний компонент (виписки — `sky`, реєстр НП — `amber`).
+
+---
+
 ## 2026-08-26 — Каталог: стан папки / пошуку / картки в URL hash
 **Files:** `client/hooks/useUrlHashSync.ts`, `client/hooks/useUrlHashSync.spec.ts`, `client/pages/Products/useProductsCatalog.ts`, `Docs/architecture/url-hash-sync.md`, `Docs/features/products-catalog-2.0.md`
 
