@@ -3,7 +3,7 @@
 Коротко: сторінка вивантаження SalesDrive тепер серіалізує поточний стан фільтрів у `window.location.hash` і відновлює його при завантаженні.
 
 Куди дивитись:
-- Код реалізації: `client/components/SalesDriveOrdersTable.tsx`
+- Код реалізації: `client/components/SalesDriveOrdersTable.tsx` (інлайн serialize/parse; спільний хук `useUrlHashSync` поки не підключено — див. `Docs/architecture/url-hash-sync.md`).
 
 Правила серіалізації:
 - `search` — текст пошуку (додається тільки коли непорожній).

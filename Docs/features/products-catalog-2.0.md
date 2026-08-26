@@ -1,6 +1,6 @@
 # Products 2.0 — домен керування каталогом Dilovod
 
-**Дата:** 2026-07-30 (оновлено 2026-08-17)  
+**Дата:** 2026-07-30 (оновлено 2026-08-26)  
 **Маршрут:** `/products` (`minRole: WAREHOUSE_MANAGER`)  
 **API:** `/api/catalog/`*
 
@@ -250,6 +250,22 @@ client/pages/Products/
 
 Маршрут у `client/routes.config.tsx`: `/products`, nav «Товари 2.0», опційний `navBadge: { label: 'NEW', color: 'danger', until: '…' }`.
 
+### URL hash (папка / пошук / картка)
+
+Стан навігації каталогу синхронізується з `window.location.hash` через `useUrlHashSync` (див. `Docs/architecture/url-hash-sync.md`). Підключення: `useProductsCatalog.ts`.
+
+| Ключ     | Коли є в hash                         | Відновлення                          |
+| -------- | ------------------------------------- | ------------------------------------ |
+| `folder` | обрана папка ≠ корінь (`root`)        | `setSelectedFolderId`                |
+| `q`      | непорожній пошук (після trim)         | `setSearchQuery`                     |
+| `good`   | відкрита картка в режимі **edit**     | `openEdit` (`editingId` + `drawerMode`) |
+
+Не пишеться: selection, confirm-модалки, create-drawer, sync overlay, ручний DnD-режим.
+
+Приклади: `#folder=11003…`, `#q=курка`, `#folder=11003…&q=курка&good=11003…`.
+
+Запис — `history.replaceState` (Back не крокує по кожній зміні папки). Поділитися виглядом — скопіювати URL з браузера.
+
 Залежності UI: `@headless-tree/core`, `@headless-tree/react`, `@tiptap/react` (+ starter-kit, extension-link).
 
 ### UI: ProductDrawer
@@ -397,7 +413,7 @@ client/pages/Products/
 4. Archive / Trash → зміна `parent` + `setDelMark`.
 5. Restore з архіву → батьківська папка архіву + `delMark: 0`; зі смітника → move picker.
 6. DnD: drop на папку = move; між siblings = `POST /reorder`.
-7. Навігація: дерево (іконка архіву), breadcrumbs або open папки з таблиці; у пошуку — restore за `parentId` рядка.
+7. Навігація: дерево (іконка архіву), breadcrumbs або open папки з таблиці; у пошуку — restore за `parentId` рядка. URL hash: `folder` / `q` / `good`.
 8. **Legacy Update** (вибірково або TEMP після sync гілки) → активні SKU → `sync-manual` force; архівні → `products.isOutdated`.
 9. Пошук → категорія / «В замовленнях» → модалка замовлень товару.
 
@@ -413,5 +429,5 @@ client/pages/Products/
 | Schema    | `prisma/schema.prisma`, migrations `20260727010000_*`, `20260803090000_catalog_ops_fields_and_sort`           |
 | Shared    | `shared/types/catalog.ts`, `shared/types/dilovod.ts`, `shared/utils/catalogSortOrder.ts`                       |
 | Server    | `server/modules/Products/*` (`listSkusInFolderSubtree`, `partitionCatalogSkusByArchive`, TEMP legacy після refresh гілки), `server/routes/catalog.ts`, `server/routes/products.ts` (`sync-manual` + archive→`isOutdated`), `server/lib/utils.ts` (HMR-safe `prisma`), `DilovodService` / `DilovodSyncManager` / `DilovodCacheService` |
-| Client    | `client/pages/Products/**`, `client/components/modals/ProductOrdersModal.tsx`, `ReportsShipment` (спільна модалка), `DilovodCacheManager.tsx`, `routes.config.tsx` |
+| Client    | `client/pages/Products/**`, `client/hooks/useUrlHashSync.ts`, `client/components/modals/ProductOrdersModal.tsx`, `ReportsShipment` (спільна модалка), `DilovodCacheManager.tsx`, `routes.config.tsx` |
 | Nav badge | `NavBadge` / `isNavBadgeVisible` у `routes.config.tsx`, рендер у `Sidebar.tsx`                                 |

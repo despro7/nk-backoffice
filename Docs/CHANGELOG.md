@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-08-26 — Каталог: стан папки / пошуку / картки в URL hash
+**Files:** `client/hooks/useUrlHashSync.ts`, `client/hooks/useUrlHashSync.spec.ts`, `client/pages/Products/useProductsCatalog.ts`, `Docs/architecture/url-hash-sync.md`, `Docs/features/products-catalog-2.0.md`
+
+- `/products` пише в `location.hash` поточну папку, пошук і відкриту картку (edit). Reload і копіювання URL відновлюють той самий вигляд.
+- Спільний хук `useUrlHashSync`: omit порожніх ключів, restore на mount, запис через `history.replaceState` (без зайвої історії). Codec лишається на сторінці.
+- SalesDrive поки лишається на своїй інлайн-серіалізації.
+
+---
+
 ## 2026-08-26 — Каталог: «В замовленнях» рахує комплекти окремо від порцій
 **Files:** `server/services/orderShipmentMetricsService.ts`, `server/services/orderShipmentMetricsService.spec.ts`, `server/routes/orders.ts`, `client/pages/Products/index.tsx`, `client/pages/Products/components/CatalogTable.tsx`, `client/components/modals/ProductOrdersModal.tsx`, `Docs/features/products-catalog-2.0.md`
 

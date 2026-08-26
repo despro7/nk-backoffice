@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useUrlHashSync } from '@/hooks/useUrlHashSync';
 import { ToastService } from '@/services/ToastService';
 import type {
   CatalogCreateGoodInput,
@@ -482,6 +483,25 @@ export function useProductsCatalog() {
   const tableRows = searchQueryEnabled
     ? searchResultsQuery.data || []
     : childrenQuery.data || [];
+
+  useUrlHashSync(
+    {
+      folder: selectedFolderId !== CATALOG_ROOT_ID ? selectedFolderId : undefined,
+      q: searchQuery.trim() || undefined,
+      good: drawerMode === 'edit' && editingId ? editingId : undefined,
+    },
+    (params) => {
+      const folder = params.get('folder')?.trim();
+      const q = params.get('q');
+      const good = params.get('good')?.trim();
+      if (folder) setSelectedFolderId(folder);
+      if (q) setSearchQuery(q);
+      if (good) {
+        setEditingId(good);
+        setDrawerMode('edit');
+      }
+    }
+  );
 
   return {
     selectedFolderId,
