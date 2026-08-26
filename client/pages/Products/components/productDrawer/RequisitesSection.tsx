@@ -1,6 +1,6 @@
-import { Button, Input, Select, SelectItem, Tooltip } from '@heroui/react';
+import { Button, Input, Autocomplete, AutocompleteItem, Select, SelectItem, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { formatCatalogName } from '../../ProductsUtils';
+import { formatCatalogName, type CatalogFolderOption } from '../../ProductsUtils';
 import type { CatalogDictItemDto } from '../../ProductsTypes';
 import type { DrawerForm, DrawerObjectKind } from './productDrawerTypes';
 import { OBJECT_KIND_TABS } from './productDrawerTypes';
@@ -8,6 +8,7 @@ import { OBJECT_KIND_TABS } from './productDrawerTypes';
 interface RequisitesSectionProps {
   form: DrawerForm;
   objectKind: DrawerObjectKind | null;
+  isCreate: boolean;
   isGood: boolean;
   isKit: boolean;
   isOther: boolean;
@@ -16,6 +17,9 @@ interface RequisitesSectionProps {
   skuGenerating: boolean;
   saving?: boolean;
   otherAccPolicies: CatalogDictItemDto[];
+  folderOptions: CatalogFolderOption[];
+  selectedFolderId: string;
+  onFolderChange: (id: string) => void;
   onFormChange: (patch: Partial<DrawerForm> | ((prev: DrawerForm) => DrawerForm)) => void;
   onShowPrintNameToggle: () => void;
   onObjectKindChange: (key: DrawerObjectKind) => void;
@@ -26,6 +30,7 @@ interface RequisitesSectionProps {
 export function RequisitesSection({
   form,
   objectKind,
+  isCreate,
   isGood,
   isKit,
   isOther,
@@ -34,6 +39,9 @@ export function RequisitesSection({
   skuGenerating,
   saving,
   otherAccPolicies,
+  folderOptions,
+  selectedFolderId,
+  onFolderChange,
   onFormChange,
   onShowPrintNameToggle,
   onObjectKindChange,
@@ -50,6 +58,36 @@ export function RequisitesSection({
         <DynamicIcon name="receipt-text" size={14} />
         <span>Реквізити</span>
       </h3>
+      {isCreate && (
+        <Autocomplete
+          label="Група"
+          placeholder="Оберіть групу"
+          isRequired
+          selectedKey={selectedFolderId || null}
+          items={folderOptions}
+          allowsCustomValue={false}
+          isClearable={false}
+          isDisabled={saving}
+          menuTrigger="focus"
+          classNames={{ popoverContent: 'bg-default-100' }}
+          onSelectionChange={(key) => {
+            if (key == null) return;
+            onFolderChange(String(key));
+          }}
+        >
+          {(folder) => (
+            <AutocompleteItem key={folder.id} textValue={folder.path}>
+              <div
+                className="flex items-center gap-2"
+                style={{ paddingLeft: folder.depth * 12 }}
+              >
+                <DynamicIcon name="folder" size={16} className="shrink-0 text-default-500" />
+                <span>{folder.name}</span>
+              </div>
+            </AutocompleteItem>
+          )}
+        </Autocomplete>
+      )}
       <Input
         label="Назва"
         value={form.name}
@@ -106,7 +144,7 @@ export function RequisitesSection({
         />
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <Select
           label="Тип обʼєкта"
           placeholder="Оберіть тип"

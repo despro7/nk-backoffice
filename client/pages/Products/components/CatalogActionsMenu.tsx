@@ -22,6 +22,7 @@ export interface CatalogActionsMenuItemsProps {
   onSyncFromDilovod: (ids: string[]) => void;
   onLegacyUpdate: (ids: string[]) => void;
   onMoveTo: (ids: string[]) => void;
+  onChangeType: (ids: string[]) => void;
   onDuplicate: (ids: string[]) => void;
   onArchive: (ids: string[]) => void;
   onRestore: (ids: string[]) => void;
@@ -40,6 +41,7 @@ export function CatalogActionsMenuItems({
   onSyncFromDilovod,
   onLegacyUpdate,
   onMoveTo,
+  onChangeType,
   onDuplicate,
   onArchive,
   onRestore,
@@ -98,6 +100,14 @@ export function CatalogActionsMenuItems({
         disabled={!canBulk}
         onSelect={() => run(onMoveTo)}
       />
+      {!onlyGroups && (
+        <CatalogMenuItem
+          icon="shapes"
+          label="Змінити тип"
+          disabled={!canBulk}
+          onSelect={() => run(onChangeType)}
+        />
+      )}
       <CatalogMenuItem
         icon="copy"
         label="Дублювати"
@@ -156,7 +166,8 @@ function CatalogMenuItem({
     | 'archive-restore'
     | 'cloud-download'
     | 'database'
-    | 'pencil';
+    | 'pencil'
+    | 'shapes';
   label: string;
   danger?: boolean;
   legacy?: boolean;
@@ -193,9 +204,16 @@ interface CatalogActionsDropdownProps extends Omit<CatalogActionsMenuItemsProps,
   onCreateGood: () => void;
   onRefreshBranch: () => void;
   branchRefreshing?: boolean;
+  onRefreshStock: () => void;
+  stockRefreshing?: boolean;
   onFullRefresh?: () => void;
   fullRefreshing?: boolean;
   showFullRefresh?: boolean;
+  /** Показати грибінці ручного сортування в таблиці */
+  listSortEnabled?: boolean;
+  onListSortToggle?: () => void;
+  /** Вимкнено, коли таблиця відсортована за колонкою */
+  listSortDisabled?: boolean;
 }
 
 export function CatalogActionsDropdown({
@@ -208,6 +226,7 @@ export function CatalogActionsDropdown({
   onSyncFromDilovod,
   onLegacyUpdate,
   onMoveTo,
+  onChangeType,
   onDuplicate,
   onArchive,
   onRestore,
@@ -216,9 +235,14 @@ export function CatalogActionsDropdown({
   onCreateGood,
   onRefreshBranch,
   branchRefreshing,
+  onRefreshStock,
+  stockRefreshing,
   onFullRefresh,
   fullRefreshing,
   showFullRefresh,
+  listSortEnabled = false,
+  onListSortToggle,
+  listSortDisabled = false,
 }: CatalogActionsDropdownProps) {
   const canDuplicate = ids.length === 1 && !busy;
   const canBulk = ids.length > 0 && !busy;
@@ -226,22 +250,46 @@ export function CatalogActionsDropdown({
   const inArchive = Boolean(fromArchive) && !inTrash;
   const onlyGroups = Boolean(groupsOnly);
   const canEditGroup = Boolean(onEdit) && onlyGroups && ids.length === 1 && !busy;
-  const catalogBusy = Boolean(busy || branchRefreshing || fullRefreshing);
+  const catalogBusy = Boolean(busy || branchRefreshing || stockRefreshing || fullRefreshing);
   const { isDebugMode } = useDebug();
   const showDebugRefresh = Boolean(showFullRefresh && onFullRefresh && isDebugMode);
   const sectionDivider = { className: 'mt-1 bg-neutral-200' };
 
+  const listSortOff = listSortDisabled || !listSortEnabled;
+
   return (
-    <Dropdown placement="bottom-end">
-      <DropdownTrigger>
-        <Button
-          size="sm"
-          className="bg-slate-600 font-medium text-slate-100"
-          aria-label="Дії"
-        >
-          Дії <DynamicIcon name="chevron-down" size={16} />
-        </Button>
-      </DropdownTrigger>
+    <div className="flex items-center gap-2">
+      <Button
+        size="sm"
+        isDisabled={listSortDisabled}
+        aria-label="Сортувати список"
+        aria-pressed={listSortEnabled && !listSortDisabled}
+        onPress={onListSortToggle}
+        className={
+          listSortEnabled && !listSortDisabled
+            ? 'min-w-8 bg-slate-600 px-2 font-medium text-slate-100 md:px-3'
+            : 'min-w-8 bg-default-100 px-2 font-medium text-default-500 md:px-3'
+        }
+        startContent={
+          <DynamicIcon
+            name="arrow-up-down"
+            size={16}
+            className={`shrink-0 ${listSortOff ? 'text-default-400' : 'text-slate-100'}`}
+          />
+        }
+      >
+        <span className="hidden md:inline">Сортувати список</span>
+      </Button>
+      <Dropdown placement="bottom-end">
+        <DropdownTrigger>
+          <Button
+            size="sm"
+            className="bg-slate-600 font-medium text-slate-100"
+            aria-label="Дії"
+          >
+            Дії <DynamicIcon name="chevron-down" size={16} />
+          </Button>
+        </DropdownTrigger>
       <DropdownMenu
         aria-label="Дії з каталогом"
         onAction={(key) => {
@@ -251,6 +299,9 @@ export function CatalogActionsDropdown({
               break;
             case 'refreshBranch':
               onRefreshBranch();
+              break;
+            case 'refreshStock':
+              onRefreshStock();
               break;
             case 'fullRefresh':
               if (showDebugRefresh) onFullRefresh?.();
@@ -266,6 +317,9 @@ export function CatalogActionsDropdown({
               break;
             case 'moveTo':
               onMoveTo(ids);
+              break;
+            case 'changeType':
+              onChangeType(ids);
               break;
             case 'duplicate':
               onDuplicate(ids);
@@ -314,6 +368,20 @@ export function CatalogActionsDropdown({
             Синхронізувати гілку
           </DropdownItem>
           <DropdownItem
+            key="refreshStock"
+            isDisabled={catalogBusy}
+            className="text-amber-600"
+            startContent={
+              <DynamicIcon
+                name={stockRefreshing ? 'refresh-cw' : 'boxes'}
+                size={16}
+                className={`shrink-0 ${stockRefreshing ? 'animate-spin' : ''}`}
+              />
+            }
+          >
+            Оновити залишки
+          </DropdownItem>
+          <DropdownItem
             key="fullRefresh"
             className={showDebugRefresh ? 'text-danger' : 'hidden'}
             isDisabled={catalogBusy}
@@ -356,6 +424,14 @@ export function CatalogActionsDropdown({
             startContent={<DynamicIcon name="folder-input" size={16} className="shrink-0" />}
           >
             Перемістити в…
+          </DropdownItem>
+          <DropdownItem
+            key="changeType"
+            className={onlyGroups ? 'hidden' : ''}
+            isDisabled={!canBulk}
+            startContent={<DynamicIcon name="shapes" size={16} className="shrink-0" />}
+          >
+            Змінити тип
           </DropdownItem>
           <DropdownItem
             key="duplicate"
@@ -403,5 +479,6 @@ export function CatalogActionsDropdown({
         </DropdownSection>
       </DropdownMenu>
     </Dropdown>
+    </div>
   );
 }

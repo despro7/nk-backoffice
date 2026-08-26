@@ -7,8 +7,10 @@ interface CatalogToolbarProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
   branchRefreshing?: boolean;
+  stockRefreshing?: boolean;
   fullRefreshing?: boolean;
   onRefreshBranch: () => void;
+  onRefreshStock: () => void;
   onFullRefresh?: () => void;
   showFullRefresh?: boolean;
   onCreateGood: () => void;
@@ -20,15 +22,17 @@ export function CatalogToolbar({
   searchQuery,
   onSearchChange,
   branchRefreshing,
+  stockRefreshing,
   fullRefreshing,
   onRefreshBranch,
+  onRefreshStock,
   onFullRefresh,
   showFullRefresh,
   onCreateGood,
   busy,
   actions,
 }: CatalogToolbarProps) {
-  const anyRefreshing = Boolean(branchRefreshing || fullRefreshing);
+  const anyRefreshing = Boolean(branchRefreshing || stockRefreshing || fullRefreshing);
   const { isDebugMode } = useDebug();
 
   return (
@@ -86,6 +90,36 @@ export function CatalogToolbar({
             isDisabled={busy || anyRefreshing}
           >
             Синхронізувати гілку
+          </Button>
+        </Tooltip>
+      </div>
+
+      <div className="hidden md:inline-flex">
+        <Tooltip
+          content="Оновити залишки: Dilovod → Backoffice → SalesDrive → WooCommerce"
+          placement="top-start"
+          delay={500}
+          showArrow
+          classNames={{
+            base: 'before:rounded-[2px] before:bottom-[calc(calc(1.25rem/4-2px)*-0.5)]!',
+            content: 'border-0 text-xs',
+          }}
+        >
+          <Button
+            size="sm"
+            color="warning"
+            className="bg-gradient-to-b from-amber-400 to-orange-600 text-white hover:bg-orange-600 font-medium"
+            startContent={
+              <DynamicIcon
+                name={stockRefreshing ? 'refresh-cw' : 'boxes'}
+                size={14}
+                className={stockRefreshing ? 'animate-spin' : ''}
+              />
+            }
+            onPress={onRefreshStock}
+            isDisabled={busy || anyRefreshing}
+          >
+            Оновити залишки
           </Button>
         </Tooltip>
       </div>

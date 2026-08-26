@@ -208,6 +208,21 @@ router.post('/goods/move', ...guard, async (req, res) => {
   }
 });
 
+// POST /api/catalog/goods/change-type
+router.post('/goods/change-type', ...guard, async (req, res) => {
+  try {
+    const { ids, accPolicyId } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0 || accPolicyId == null || accPolicyId === '') {
+      res.status(400).json({ success: false, error: 'ids[] і accPolicyId обовʼязкові' });
+      return;
+    }
+    const data = await productsCatalogService.changeGoodsType(ids.map(String), String(accPolicyId));
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'POST /goods/change-type');
+  }
+});
+
 // POST /api/catalog/reorder — інтервальний sortOrder siblings
 router.post('/reorder', ...guard, async (req, res) => {
   try {

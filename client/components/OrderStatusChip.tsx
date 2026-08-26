@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { Chip, Tooltip } from "@heroui/react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Chip, Popover, PopoverContent, PopoverTrigger, Tooltip } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatDate, getStatusColor, getStatusLabel } from "@/lib";
 
@@ -186,7 +186,7 @@ export function OrderStatusHistoryTooltip({
       : getReadyToShipDayMismatch(visibleHistory, dayStartHour);
 
   return (
-    <div className="flex flex-col gap-1.5 py-0.5 min-w-[220px]">
+    <div className="flex flex-col gap-1.5 py-0.5 pr-2">
       {visibleHistory.map((entry, index) => {
         const iconName = STATUS_ICONS[entry.status] ?? "circle";
         const entryLabel = entry.statusText || getStatusLabel(entry.status);
@@ -235,6 +235,24 @@ type OrderStatusChipProps = {
   tooltipPlacement?: "top" | "bottom" | "left" | "right" | "top-start" | "top-end";
 };
 
+const OVERLAY_CONTENT_CLASS =
+  "bg-white border border-neutral-200 text-neutral-700 px-3 py-2 shadow-md";
+
+/** Hover+fine pointer → Tooltip; touch / без hover → Popover по кліку. */
+function useCanHover(): boolean {
+  const [canHover, setCanHover] = useState(true);
+
+  useEffect(() => {
+    const media = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const update = () => setCanHover(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  return canHover;
+}
+
 export function OrderStatusChip({
   status,
   label,
@@ -254,6 +272,7 @@ export function OrderStatusChip({
       : getReadyToShipDayMismatch(statusHistory, dayStartHour);
   const showHistoryTooltip = statusHistory !== undefined;
   const showTooltip = showHistoryTooltip || extraTooltip != null;
+  const canHover = useCanHover();
 
   const chip = (
     <Chip
@@ -269,9 +288,37 @@ export function OrderStatusChip({
     </Chip>
   );
 
+  const triggerClassName = [
+    "inline-flex items-center gap-1",
+    showTooltip ? (canHover ? "cursor-help" : "cursor-pointer") : "",
+    className ?? "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const stopOverlayTriggerBubble = showTooltip && !canHover
+    ? (event: { stopPropagation: () => void }) => {
+        event.stopPropagation();
+      }
+    : undefined;
+
+  const overlayBody = (
+    <div className="flex flex-col gap-2">
+      {extraTooltip ? <div className="text-xs text-neutral-600">{extraTooltip}</div> : null}
+      {showHistoryTooltip ? (
+        <OrderStatusHistoryTooltip
+          dayStartHour={dayStartHour}
+          statusHistory={statusHistory}
+        />
+      ) : null}
+    </div>
+  );
+
   const trigger = (
     <span
-      className={`inline-flex items-center gap-1 ${showTooltip ? "cursor-help" : ""} ${className ?? ""}`.trim()}
+      className={triggerClassName}
+      onClick={stopOverlayTriggerBubble}
+      onPointerDown={stopOverlayTriggerBubble}
     >
       {chip}
       {showMismatchWarning && mismatch.mismatched && (
@@ -289,26 +336,29 @@ export function OrderStatusChip({
     return trigger;
   }
 
+  if (canHover) {
+    return (
+      <Tooltip
+        showArrow
+        placement={tooltipPlacement}
+        classNames={{ content: OVERLAY_CONTENT_CLASS }}
+        content={overlayBody}
+      >
+        {trigger}
+      </Tooltip>
+    );
+  }
+
   return (
-    <Tooltip
+    <Popover
       showArrow
       placement={tooltipPlacement}
-      classNames={{
-        content: "bg-white border border-neutral-200 text-neutral-700 px-3 py-2 shadow-md",
-      }}
-      content={
-        <div className="flex flex-col gap-2">
-          {extraTooltip ? <div className="text-xs text-neutral-600">{extraTooltip}</div> : null}
-          {showHistoryTooltip ? (
-            <OrderStatusHistoryTooltip
-              dayStartHour={dayStartHour}
-              statusHistory={statusHistory}
-            />
-          ) : null}
-        </div>
-      }
+      triggerScaleOnOpen={false}
+      shouldCloseOnScroll={false}
+      classNames={{ content: OVERLAY_CONTENT_CLASS }}
     >
-      {trigger}
-    </Tooltip>
+      <PopoverTrigger>{trigger}</PopoverTrigger>
+      <PopoverContent>{overlayBody}</PopoverContent>
+    </Popover>
   );
 }

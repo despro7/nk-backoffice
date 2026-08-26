@@ -23,6 +23,7 @@ import {
   computeIntervalSortOrder,
   rebalanceSortOrders,
 } from '../../../shared/utils/catalogSortOrder.js';
+import { getMissingRequiredCatalogFields } from '../../../shared/utils/catalogRequiredFields.js';
 import { productsDilovodGateway } from './ProductsDilovodGateway.js';
 import { productsLocalSync } from './ProductsLocalSync.js';
 import { catalogMediaService } from './CatalogMediaService.js';
@@ -116,6 +117,7 @@ function mapGoodDto(
     syncedAt: Date;
     updatedAt: Date;
     _count?: { components?: number };
+    prices?: Array<{ priceType: string; price: number }>;
   },
   parentName: string | null = null
 ): CatalogGoodDto {
@@ -145,8 +147,20 @@ function mapGoodDto(
     syncedAt: row.syncedAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     isKit,
+    missingRequired: getMissingRequiredCatalogFields({
+      isGroup: row.isGroup,
+      accPolicyId: row.accPolicyId,
+      weight: row.weight,
+      packageRatio: row.packageRatio,
+      prices: row.prices,
+    }),
   };
 }
+
+const catalogListInclude = {
+  _count: { select: { components: true as const } },
+  prices: { select: { priceType: true, price: true } },
+};
 
 export class ProductsCatalogService {
   /**
@@ -275,7 +289,7 @@ export class ProductsCatalogService {
           ? { OR: [{ parentId: null }, { parentId: '0' }, { parentId: '' }] }
           : { parentId: folderId }),
       },
-      include: { _count: { select: { components: true } } },
+      include: catalogListInclude,
       orderBy: [{ isGroup: 'desc' }, { sortOrder: 'asc' }, { name: 'asc' }],
     });
     return rows.map((row) => mapGoodDto(row));
@@ -472,7 +486,7 @@ export class ProductsCatalogService {
           { printName: { contains: query } },
         ],
       },
-      include: { _count: { select: { components: true } } },
+      include: catalogListInclude,
       take: Math.min(limit, 200),
       orderBy: { name: 'asc' },
     });
@@ -495,7 +509,7 @@ export class ProductsCatalogService {
   async getTrash(): Promise<CatalogGoodDto[]> {
     const rows = await prisma.catalogGood.findMany({
       where: { parentId: CATALOG_TRASH_ID },
-      include: { _count: { select: { components: true } } },
+      include: catalogListInclude,
       orderBy: { name: 'asc' },
     });
     return rows.map((row) => mapGoodDto(row));
@@ -1416,6 +1430,66 @@ export class ProductsCatalogService {
     }
 
     return { moved, deactivated };
+  }
+
+  /**
+   * Масова зміна типу (політики обліку). Групи пропускаються.
+   * Header як у moveGoods — Dilovod мерджить поля, BOM не чіпаємо.
+   */
+  async changeGoodsType(
+    ids: string[],
+    accPolicyId: string
+  ): Promise<{ updated: number; skipped: number }> {
+    const policy = String(accPolicyId || '').trim();
+    if (!ids.length) return { updated: 0, skipped: 0 };
+    if (!policy) throw new Error('accPolicyId обовʼязковий');
+
+    let updated = 0;
+    let skipped = 0;
+    const updatedIds: string[] = [];
+
+    for (const id of ids) {
+      const detail = await this.getGoodDetail(id);
+      if (!detail || detail.isGroup) {
+        skipped++;
+        continue;
+      }
+      if ((detail.accPolicyId || '') === policy) {
+        skipped++;
+        continue;
+      }
+
+      const header: DilovodSaveGoodParams['header'] = {
+        id,
+        name: { uk: detail.name, ru: detail.name },
+        parent: detail.parentId,
+        isGroup: 0,
+        accPolicy: policy,
+        ...(detail.sku ? { productNum: detail.sku } : {}),
+        ...(detail.mainUnitId ? { mainUnit: detail.mainUnitId } : {}),
+      };
+      if (detail.packageRatio != null) header.packageRatio = detail.packageRatio;
+      if (detail.weight != null) header.weight = detail.weight;
+      if (policy === CATALOG_ACC_POLICY_GOOD) {
+        const specQty =
+          detail.specQty != null && Number(detail.specQty) > 0 ? Number(detail.specQty) : 1;
+        header.specQty = specQty;
+      }
+      if (detail.printName) header.printName = { uk: detail.printName, ru: detail.printName };
+
+      await productsDilovodGateway.saveObject({ header });
+      updatedIds.push(id);
+      updated++;
+    }
+
+    try {
+      await productsLocalSync.updateAccPolicies(updatedIds, policy);
+    } catch (err) {
+      logServer('[ProductsCatalogService] change type local sync failed', err);
+      await this.refreshFromDilovod(updatedIds);
+    }
+
+    return { updated, skipped };
   }
 
   /**

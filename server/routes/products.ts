@@ -6,6 +6,7 @@ import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 import { salesDriveService } from '../services/salesDriveService.js';
 import { buildExportPayload } from '../services/productExportHelper.js';
 import { productsCatalogService } from '../modules/Products/ProductsCatalogService.js';
+import { cronService } from '../services/cronService.js';
 
 const router = express.Router();
 
@@ -966,6 +967,38 @@ router.post('/sync-stock', authenticateToken, productsSync, async (req, res) => 
   } catch (error) {
     console.log('Error starting stock sync:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// TEMP: Dilovod → Backoffice → SalesDrive → WooCommerce (syncStock.php)
+// POST /api/products/sync-stock-chain
+router.post('/sync-stock-chain', authenticateToken, productsSync, async (req, res) => {
+  try {
+    const { syncSettingsService } = await import('../services/syncSettingsService.js');
+    const isEnabled = await syncSettingsService.isSyncEnabled('stocks');
+
+    if (!isEnabled) {
+      return res.status(400).json({
+        success: false,
+        error: 'Синхронизация остатков отключена в настройках',
+      });
+    }
+
+    console.log(`API: sync-stock-chain triggered by ${req.user?.email}`);
+    const result = await cronService.runLegacyStockSyncChain(`manual:${req.user?.email ?? 'unknown'}`);
+
+    if (result.alreadyRunning) {
+      return res.status(409).json({
+        success: false,
+        error: result.stockMessage,
+        ...result,
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.log('Error starting stock sync chain:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 

@@ -49,9 +49,10 @@ export function snapshotState(
   components: BomRow[],
   prices: PriceRow[],
   barcodes: BarcodeRow[],
-  objectKind: DrawerObjectKind | null
+  objectKind: DrawerObjectKind | null,
+  parentId?: string | null
 ): string {
-  return JSON.stringify({ form, components, prices, barcodes, objectKind });
+  return JSON.stringify({ form, components, prices, barcodes, objectKind, parentId: parentId ?? null });
 }
 
 export function newStagingSessionId(): string {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Spinner, Tooltip, type SortDescriptor } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
@@ -10,12 +10,15 @@ import { CatalogTreeBubble } from './components/CatalogTreeBubble';
 import { CatalogTable } from './components/CatalogTable';
 import { CatalogToolbar } from './components/CatalogToolbar';
 import { CatalogActionsDropdown } from './components/CatalogActionsMenu';
+import { CatalogSyncOverlay, type CatalogSyncOp } from './components/CatalogSyncOverlay';
+import { CatalogSyncReportModal, type CatalogSyncReport } from './components/CatalogSyncReportModal';
 import { CatalogBreadcrumbs } from './components/CatalogBreadcrumbs';
 import { CatalogContextMenu, type CatalogContextMenuState } from './components/CatalogContextMenu';
 import { CatalogConfirmItemsList } from './components/CatalogConfirmItemsList';
 import { ProductDrawer } from './components/productDrawer/ProductDrawer';
 import { ArchiveConfirmModal } from './components/ArchiveConfirmModal';
 import { MoveToFolderModal } from './components/MoveToFolderModal';
+import { ChangeObjectTypeModal } from './components/ChangeObjectTypeModal';
 import { useProductsCatalog } from './useProductsCatalog';
 import { CATALOG_ROOT_ID, CATALOG_TRASH_ID, type CatalogGoodDto } from './ProductsTypes';
 import {
@@ -48,8 +51,12 @@ export default function ProductsPage() {
   const [movePickerIds, setMovePickerIds] = useState<string[] | null>(null);
   /** Picker відкрито для відновлення зі смітника (дерево без архівів) */
   const [movePickerFromTrash, setMovePickerFromTrash] = useState(false);
+  const [changeTypeIds, setChangeTypeIds] = useState<string[] | null>(null);
   const [fullRefreshConfirmOpen, setFullRefreshConfirmOpen] = useState(false);
   const [branchRefreshConfirmOpen, setBranchRefreshConfirmOpen] = useState(false);
+  const [stockRefreshConfirmOpen, setStockRefreshConfirmOpen] = useState(false);
+  const [syncReport, setSyncReport] = useState<CatalogSyncReport | null>(null);
+  const syncStartedAtRef = useRef(0);
   const [syncConfirmIds, setSyncConfirmIds] = useState<string[] | null>(null);
   const [legacyUpdateConfirmIds, setLegacyUpdateConfirmIds] = useState<string[] | null>(null);
   const [portionsBySku, setPortionsBySku] = useState<
@@ -57,6 +64,7 @@ export default function ProductsPage() {
   >(new Map());
   const [portionsLoading, setPortionsLoading] = useState(false);
   const [tableSort, setTableSort] = useState<SortDescriptor>(MANUAL_SORT);
+  const [listSortEnabled, setListSortEnabled] = useState(false);
   const [ordersModalProduct, setOrdersModalProduct] = useState<{
     name: string;
     sku: string;
@@ -71,6 +79,17 @@ export default function ProductsPage() {
     !tableSort.column ||
     tableSort.column === 'sortOrder' ||
     String(tableSort.column) === 'sortOrder';
+  const listSortActive =
+    isManualTableSort && (listSortEnabled || catalog.selectedIds.length > 0);
+
+  const activeSyncOp: CatalogSyncOp | null = catalog.refreshBranchMutation.isPending
+    ? 'branch'
+    : catalog.stockSyncMutation.isPending
+      ? 'stock'
+      : null;
+
+  const syncDurationSec = () =>
+    Math.max(0, Math.round((Date.now() - syncStartedAtRef.current) / 1000));
 
   const isFinishedProductsBranch = useMemo(
     () => isInFinishedProductsBranch(catalog.selectedFolderId, catalog.treeItemsFull),
@@ -166,6 +185,7 @@ export default function ProductsPage() {
     catalog.createMutation.isPending ||
     catalog.updateMutation.isPending ||
     catalog.moveMutation.isPending ||
+    catalog.changeTypeMutation.isPending ||
     catalog.reorderMutation.isPending ||
     catalog.archiveMutation.isPending ||
     catalog.restoreMutation.isPending ||
@@ -174,6 +194,7 @@ export default function ProductsPage() {
     catalog.refreshBranchMutation.isPending ||
     catalog.syncSelectedMutation.isPending ||
     catalog.legacySyncMutation.isPending ||
+    catalog.stockSyncMutation.isPending ||
     catalog.refreshFullMutation.isPending;
 
   const selectedLabels = useMemo(
@@ -208,6 +229,15 @@ export default function ProductsPage() {
       catalog.treeItems,
       catalog.treeItemsFull,
     ]
+  );
+
+  const changeTypeLabels = useMemo(
+    () =>
+      resolveCatalogItemLabels(changeTypeIds || [], {
+        tableRows: [...catalog.tableRows, ...(catalog.detail ? [catalog.detail] : [])],
+        treeItems: catalog.treeItemsFull,
+      }),
+    [changeTypeIds, catalog.tableRows, catalog.detail, catalog.treeItemsFull]
   );
 
   const archiveFolderName = useMemo(
@@ -384,6 +414,15 @@ export default function ProductsPage() {
       catalog.setSelectedIds(ids);
       setMovePickerFromTrash(false);
       setMovePickerIds(ids);
+    },
+    [catalog.setSelectedIds]
+  );
+
+  const requestChangeType = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      catalog.setSelectedIds(ids);
+      setChangeTypeIds(ids);
     },
     [catalog.setSelectedIds]
   );
@@ -585,8 +624,10 @@ export default function ProductsPage() {
         searchQuery={catalog.searchQuery}
         onSearchChange={catalog.setSearchQuery}
         branchRefreshing={catalog.refreshBranchMutation.isPending}
+        stockRefreshing={catalog.stockSyncMutation.isPending}
         fullRefreshing={catalog.refreshFullMutation.isPending}
         onRefreshBranch={() => setBranchRefreshConfirmOpen(true)}
+        onRefreshStock={() => setStockRefreshConfirmOpen(true)}
         showFullRefresh={isAdmin}
         onFullRefresh={() => setFullRefreshConfirmOpen(true)}
         onCreateGood={() => catalog.openCreate(false)}
@@ -605,6 +646,7 @@ export default function ProductsPage() {
               if (selectionInTrash) requestRestoreFromTrash(ids);
               else requestMoveTo(ids);
             }}
+            onChangeType={requestChangeType}
             onDuplicate={requestDuplicate}
             onArchive={requestArchive}
             onRestore={requestRestore}
@@ -613,9 +655,14 @@ export default function ProductsPage() {
             onCreateGood={() => catalog.openCreate(false)}
             onRefreshBranch={() => setBranchRefreshConfirmOpen(true)}
             branchRefreshing={catalog.refreshBranchMutation.isPending}
+            onRefreshStock={() => setStockRefreshConfirmOpen(true)}
+            stockRefreshing={catalog.stockSyncMutation.isPending}
             showFullRefresh={isAdmin}
             onFullRefresh={() => setFullRefreshConfirmOpen(true)}
             fullRefreshing={catalog.refreshFullMutation.isPending}
+            listSortEnabled={listSortActive}
+            listSortDisabled={!isManualTableSort}
+            onListSortToggle={() => setListSortEnabled((v) => !v)}
           />
         }
       />
@@ -641,7 +688,13 @@ export default function ProductsPage() {
           </aside>
         )}
 
-        <main className="min-h-0 overflow-auto rounded-lg border border-default-200 bg-content1 p-2">
+        <main className="relative min-h-0 self-start overflow-auto rounded-lg border border-default-200 bg-content1 p-2">
+          {activeSyncOp ? (
+            <div className="sticky top-0 z-20 mb-2">
+              <CatalogSyncOverlay op={activeSyncOp} folderName={branchEstimate.folderName} />
+            </div>
+          ) : null}
+          <div className={activeSyncOp ? 'pointer-events-none select-none blur-[2px]' : undefined}>
           <div className="mb-2 flex min-h-8 items-center justify-between gap-2 pl-3.5 pr-1">
             <CatalogBreadcrumbs
               selectedFolderId={catalog.selectedFolderId}
@@ -684,6 +737,7 @@ export default function ProductsPage() {
             onOpenOrders={openProductOrders}
             sortDescriptor={tableSort}
             onSortChange={setTableSort}
+            listSortEnabled={listSortActive}
             onReorderGood={
               catalog.isSearchMode
                 ? undefined
@@ -708,6 +762,7 @@ export default function ProductsPage() {
               })
             }
           />
+          </div>
         </main>
       </div>
 
@@ -743,6 +798,7 @@ export default function ProductsPage() {
           if (contextMenu?.fromTrash) requestRestoreFromTrash(ids);
           else requestMoveTo(ids);
         }}
+        onChangeType={requestChangeType}
         onDuplicate={requestDuplicate}
         onArchive={requestArchive}
         onRestore={requestRestore}
@@ -754,6 +810,7 @@ export default function ProductsPage() {
         mode={catalog.drawerMode}
         parentFolderId={parentForCreate}
         parentFolderName={parentFolderName}
+        treeItems={catalog.treeItemsFull}
         detail={catalog.detail}
         detailLoading={catalog.detailLoading}
         dictionaries={catalog.dictionaries}
@@ -795,6 +852,23 @@ export default function ProductsPage() {
         }}
       />
 
+      <ChangeObjectTypeModal
+        isOpen={Boolean(changeTypeIds?.length)}
+        items={changeTypeLabels}
+        accPolicies={catalog.dictionaries.accPolicies}
+        loading={catalog.changeTypeMutation.isPending}
+        onClose={() => setChangeTypeIds(null)}
+        onConfirm={(accPolicyId) => {
+          if (!changeTypeIds?.length) return;
+          catalog.changeTypeMutation.mutate(
+            { ids: changeTypeIds, accPolicyId },
+            {
+              onSuccess: () => setChangeTypeIds(null),
+            }
+          );
+        }}
+      />
+
       <ArchiveConfirmModal
         isOpen={catalog.archiveConfirmOpen}
         items={selectedLabels}
@@ -823,6 +897,8 @@ export default function ProductsPage() {
             : undefined
         }
       />
+
+      <CatalogSyncReportModal report={syncReport} onClose={() => setSyncReport(null)} />
 
       <ConfirmModal
         isOpen={branchRefreshConfirmOpen}
@@ -861,7 +937,69 @@ export default function ProductsPage() {
         onCancel={() => setBranchRefreshConfirmOpen(false)}
         onConfirm={() => {
           setBranchRefreshConfirmOpen(false);
-          catalog.refreshBranchMutation.mutate(folderIdForBranch);
+          syncStartedAtRef.current = Date.now();
+          catalog.refreshBranchMutation.mutate(folderIdForBranch, {
+            onSuccess: (data) =>
+              setSyncReport({
+                op: 'branch',
+                ok: true,
+                folderName: branchEstimate.folderName,
+                durationSec: syncDurationSec(),
+                branch: data,
+              }),
+            onError: (err: Error) =>
+              setSyncReport({
+                op: 'branch',
+                ok: false,
+                folderName: branchEstimate.folderName,
+                durationSec: syncDurationSec(),
+                error: err.message,
+              }),
+          });
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={stockRefreshConfirmOpen}
+        title="Оновити залишки?"
+        message={
+          <div className="space-y-1">
+            <p>
+              Буде виконано оновлення залишків всіх товарів:{' '}
+              <b>Dilovod → Backoffice → SalesDrive → WooCommerce (вітрина)</b>.
+            </p>
+            <p className="text-default-400 text-sm mt-2">
+              Операція зазвичай займає не більше 10 секунд...
+            </p>
+          </div>
+        }
+        confirmText="Оновити залишки"
+        confirmColor="warning"
+        cancelText="Скасувати"
+        confirmLoading={catalog.stockSyncMutation.isPending}
+        onCancel={() => setStockRefreshConfirmOpen(false)}
+        onConfirm={() => {
+          setStockRefreshConfirmOpen(false);
+          syncStartedAtRef.current = Date.now();
+          catalog.stockSyncMutation.mutate(undefined, {
+            onSuccess: (data) => {
+              const failed = data.success === false || Boolean(data.alreadyRunning);
+              setSyncReport({
+                op: 'stock',
+                ok: !failed,
+                durationSec: syncDurationSec(),
+                stock: data,
+                error: failed ? data.error || data.stockMessage : undefined,
+              });
+            },
+            onError: (err: Error) =>
+              setSyncReport({
+                op: 'stock',
+                ok: false,
+                durationSec: syncDurationSec(),
+                error: err.message,
+              }),
+          });
         }}
       />
 

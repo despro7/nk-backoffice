@@ -3,6 +3,7 @@ import type {
   CatalogCreateGoodInput,
   CatalogDictionariesDto,
   CatalogGoodDetailDto,
+  CatalogTreeItemData,
   CatalogUpdateGoodInput,
   DrawerMode,
 } from '../../ProductsTypes';
@@ -12,6 +13,8 @@ export interface ProductDrawerProps {
   parentFolderId: string;
   /** Назва батьківської папки для режиму create (коли detail ще немає) */
   parentFolderName?: string | null;
+  /** Дерево груп для селекта батьківської папки (create) */
+  treeItems?: Record<string, CatalogTreeItemData>;
   detail: CatalogGoodDetailDto | null;
   detailLoading?: boolean;
   dictionaries: CatalogDictionariesDto;

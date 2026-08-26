@@ -447,6 +447,7 @@ export function buildTreeItems(
       parentId: n.parentId,
       children: [],
       sortOrder: n.sortOrder ?? 0,
+      objectCount: n.childrenCount ?? 0,
       archiveChildId: null,
     };
   }
@@ -470,6 +471,12 @@ export function buildTreeItems(
     if (hideArchives && archiveId) {
       item.children = item.children.filter((id) => id !== archiveId);
     }
+    const groupKids =
+      item.children.length +
+      (item.archiveChildId && !item.children.includes(item.archiveChildId) ? 1 : 0);
+    if (typeof item.objectCount === 'number') {
+      item.objectCount = Math.max(0, item.objectCount - groupKids);
+    }
     item.children.sort((a, b) => {
       const sa = map[a]?.sortOrder ?? 0;
       const sb = map[b]?.sortOrder ?? 0;
@@ -478,6 +485,31 @@ export function buildTreeItems(
       const nb = map[b]?.name || '';
       return na.localeCompare(nb, 'uk');
     });
+  }
+
+  const OBJECT_COUNT_MAX_DEPTH = 5;
+  const directCount: Record<string, number> = {};
+  for (const item of Object.values(map)) {
+    directCount[item.id] = item.objectCount ?? 0;
+  }
+
+  const nestedCount = (id: string, depth: number, visiting: Set<string>): number => {
+    if (depth > OBJECT_COUNT_MAX_DEPTH) return 0;
+    if (visiting.has(id)) return 0;
+    const item = map[id];
+    if (!item) return 0;
+    visiting.add(id);
+    let total = directCount[id] ?? 0;
+    for (const childId of item.children) {
+      if (!map[childId]?.isGroup) continue;
+      total += nestedCount(childId, depth + 1, visiting);
+    }
+    visiting.delete(id);
+    return total;
+  };
+
+  for (const item of Object.values(map)) {
+    item.objectCount = nestedCount(item.id, 1, new Set());
   }
 
   return map;
@@ -553,6 +585,41 @@ export function buildFolderBreadcrumbs(
   }
 
   return path;
+}
+
+export interface CatalogFolderOption {
+  id: string;
+  name: string;
+  path: string;
+  depth: number;
+}
+
+/** Плоский список груп для селекта (DFS, без смітника й архівів). */
+export function listCatalogFolderOptions(
+  items: Record<string, CatalogTreeItemData>
+): CatalogFolderOption[] {
+  const rootName = items[CATALOG_ROOT_ID]?.name || 'Каталог';
+  const result: CatalogFolderOption[] = [
+    { id: CATALOG_ROOT_ID, name: rootName, path: rootName, depth: 0 },
+  ];
+  const visited = new Set<string>([CATALOG_ROOT_ID, CATALOG_TRASH_ID]);
+
+  const walk = (parentId: string, depth: number, parentPath: string) => {
+    const parent = items[parentId];
+    if (!parent) return;
+    for (const childId of parent.children || []) {
+      if (visited.has(childId) || childId === CATALOG_TRASH_ID) continue;
+      visited.add(childId);
+      const child = items[childId];
+      if (!child?.isGroup || child.delMark || isArchiveFolderName(child.name)) continue;
+      const path = `${parentPath} / ${child.name}`;
+      result.push({ id: child.id, name: child.name, path, depth });
+      walk(child.id, depth + 1, path);
+    }
+  };
+
+  walk(CATALOG_ROOT_ID, 1, rootName);
+  return result;
 }
 
 /** Чи поточна папка лежить у гілці «Готова продукція» (включно з самою папкою). */
@@ -835,19 +902,11 @@ export function withSyncedDerivedPrices<T extends { priceType: string; price: nu
   });
 }
 
-/** Чи заповнені обовʼязкові ціни (Роздріб, Звичайна > 0; Військові ≥ 0). */
-export function areRequiredCatalogPricesFilled(
-  prices: Array<{ priceType: string; price: number }>
-): boolean {
-  const byType = new Map(prices.map((p) => [p.priceType, p.price]));
-  const isPositive = (n: number | undefined) => n != null && Number.isFinite(n) && n > 0;
-  const isNonNegative = (n: number | undefined) => n != null && Number.isFinite(n) && n >= 0;
-  return (
-    isPositive(byType.get(CATALOG_PRICE_TYPE_RETAIL_ID)) &&
-    isPositive(byType.get(CATALOG_PRICE_TYPE_REGULAR_ID)) &&
-    isNonNegative(byType.get(CATALOG_PRICE_TYPE_MILITARY_ID))
-  );
-}
+export {
+  areRequiredCatalogPricesFilled,
+  catalogMissingNameLabels,
+  getMissingRequiredCatalogFields,
+} from '@shared/utils/catalogRequiredFields';
 
 /** Нормалізує пунктуацію в назві: пробіли біля дужок, +, після крапки/коми тощо. */
 export function formatCatalogName(raw: string): string {

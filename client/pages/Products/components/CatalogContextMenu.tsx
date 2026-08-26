@@ -27,6 +27,7 @@ interface CatalogContextMenuProps {
   onSyncFromDilovod: (ids: string[]) => void;
   onLegacyUpdate: (ids: string[]) => void;
   onMoveTo: (ids: string[]) => void;
+  onChangeType: (ids: string[]) => void;
   onDuplicate: (ids: string[]) => void;
   onArchive: (ids: string[]) => void;
   onRestore: (ids: string[]) => void;
@@ -44,6 +45,7 @@ export function CatalogContextMenu({
   onSyncFromDilovod,
   onLegacyUpdate,
   onMoveTo,
+  onChangeType,
   onDuplicate,
   onArchive,
   onRestore,
@@ -112,6 +114,7 @@ export function CatalogContextMenu({
         onSyncFromDilovod={onSyncFromDilovod}
         onLegacyUpdate={onLegacyUpdate}
         onMoveTo={onMoveTo}
+        onChangeType={onChangeType}
         onDuplicate={onDuplicate}
         onArchive={onArchive}
         onRestore={onRestore}

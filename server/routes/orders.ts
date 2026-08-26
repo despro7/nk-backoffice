@@ -2201,10 +2201,48 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
       }
     }
 
+    const orderIdsForHistory = [
+      ...new Set(
+        [...regularOrders, ...monolithicOrders]
+          .map((order) => order.id)
+          .filter((id): id is number => typeof id === 'number' && Number.isFinite(id)),
+      ),
+    ];
+    const allStatusHistory = orderIdsForHistory.length > 0
+      ? await prisma.ordersHistory.findMany({
+          where: { orderId: { in: orderIdsForHistory } },
+          orderBy: { changedAt: 'asc' },
+          select: {
+            orderId: true,
+            status: true,
+            statusText: true,
+            changedAt: true,
+          },
+        })
+      : [];
+    const statusHistoryByOrderId = new Map<number, Array<{
+      status: string;
+      statusText: string;
+      changedAt: string;
+    }>>();
+    for (const entry of allStatusHistory) {
+      const list = statusHistoryByOrderId.get(entry.orderId) || [];
+      list.push({
+        status: entry.status,
+        statusText: entry.statusText,
+        changedAt: entry.changedAt.toISOString(),
+      });
+      statusHistoryByOrderId.set(entry.orderId, list);
+    }
+    const withStatusHistory = <T extends { id: number }>(order: T) => ({
+      ...order,
+      statusHistory: statusHistoryByOrderId.get(order.id) || [],
+    });
+
     res.json({
       success: true,
-      data: regularOrders,
-      monolithicOrders,
+      data: regularOrders.map(withStatusHistory),
+      monolithicOrders: monolithicOrders.map(withStatusHistory),
       metadata: {
         totalOrders: regularOrders.length + monolithicOrders.length,
         regularOrdersCount: regularOrders.length,

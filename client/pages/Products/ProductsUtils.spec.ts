@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { expectedBomWeightKg, massUnitToKgFactor } from './ProductsUtils';
+import {
+  catalogMissingNameLabels,
+  expectedBomWeightKg,
+  getMissingRequiredCatalogFields,
+  massUnitToKgFactor,
+} from './ProductsUtils';
+import {
+  CATALOG_ACC_POLICY_GOOD,
+  CATALOG_ACC_POLICY_KIT,
+  CATALOG_PRICE_TYPE_MILITARY_ID,
+  CATALOG_PRICE_TYPE_REGULAR_ID,
+  CATALOG_PRICE_TYPE_RETAIL_ID,
+} from './ProductsTypes';
 
 const units = [
   { id: 'kg', name: 'кг', code: 'kg' },
@@ -118,5 +130,97 @@ describe('expectedBomWeightKg', () => {
       units
     );
     expect(r).toEqual({ kg: 1, missingCount: 0 });
+  });
+});
+
+const filledPrices = [
+  { priceType: CATALOG_PRICE_TYPE_RETAIL_ID, price: 100 },
+  { priceType: CATALOG_PRICE_TYPE_REGULAR_ID, price: 100 },
+  { priceType: CATALOG_PRICE_TYPE_MILITARY_ID, price: 95 },
+];
+
+describe('getMissingRequiredCatalogFields', () => {
+  it('папка — без попереджень', () => {
+    expect(getMissingRequiredCatalogFields({ isGroup: true, weight: null })).toEqual({
+      prices: [],
+      weight: false,
+      packageRatio: false,
+    });
+  });
+
+  it('продукція: ціни, вага, порції', () => {
+    expect(
+      getMissingRequiredCatalogFields({
+        isGroup: false,
+        accPolicyId: CATALOG_ACC_POLICY_GOOD,
+        weight: null,
+        packageRatio: 0,
+        prices: [],
+      })
+    ).toEqual({
+      prices: ['Роздріб', 'Звичайна', 'Військові'],
+      weight: true,
+      packageRatio: true,
+    });
+  });
+
+  it('військова ціна 0 — як у картці (isInvalid ≤ 0)', () => {
+    expect(
+      getMissingRequiredCatalogFields({
+        isGroup: false,
+        accPolicyId: CATALOG_ACC_POLICY_GOOD,
+        weight: 0.15,
+        packageRatio: 10,
+        prices: [
+          { priceType: CATALOG_PRICE_TYPE_RETAIL_ID, price: 100 },
+          { priceType: CATALOG_PRICE_TYPE_REGULAR_ID, price: 100 },
+          { priceType: CATALOG_PRICE_TYPE_MILITARY_ID, price: 0 },
+        ],
+      }).prices
+    ).toEqual(['Військові']);
+  });
+
+  it('набір: без порцій у коробці', () => {
+    expect(
+      getMissingRequiredCatalogFields({
+        isGroup: false,
+        accPolicyId: CATALOG_ACC_POLICY_KIT,
+        weight: 0.2,
+        packageRatio: null,
+        prices: filledPrices,
+      })
+    ).toEqual({
+      prices: [],
+      weight: false,
+      packageRatio: false,
+    });
+  });
+
+  it('повністю заповнена продукція', () => {
+    expect(
+      getMissingRequiredCatalogFields({
+        isGroup: false,
+        accPolicyId: CATALOG_ACC_POLICY_GOOD,
+        weight: 0.15,
+        packageRatio: 10,
+        prices: filledPrices,
+      })
+    ).toEqual({
+      prices: [],
+      weight: false,
+      packageRatio: false,
+    });
+  });
+});
+
+describe('catalogMissingNameLabels', () => {
+  it('ціни з префіксом групи', () => {
+    expect(
+      catalogMissingNameLabels({
+        prices: ['Військові'],
+        weight: true,
+        packageRatio: false,
+      })
+    ).toEqual(['Ціни -> Військові']);
   });
 });

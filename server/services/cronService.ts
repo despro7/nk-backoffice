@@ -77,6 +77,23 @@ function intervalToCronExpression(interval: DilovodSyncInterval, hour: number = 
 
 let isCronJobActive = false;
 
+/** Legacy WooCommerce: SalesDrive plugin тригерить sync залишків на сайт. */
+export const WP_STOCK_SYNC_URL =
+  'https://nk-food.shop/wp-content/plugins/mrkv-salesdrive/inc/syncStock.php';
+
+export type LegacyStockChainResult = {
+  success: boolean;
+  alreadyRunning?: boolean;
+  stockUpdated: number;
+  stockMessage: string;
+  exported: boolean;
+  exportedCount: number;
+  adjustedCount: number;
+  wpTriggered: boolean;
+  wpStatus: number | null;
+  errors: string[];
+};
+
 export class CronService {
   private syncJob: cron.ScheduledTask | null = null;
   private productsSyncJob: cron.ScheduledTask | null = null;
@@ -282,6 +299,129 @@ export class CronService {
 
   // ─── Stock Sync Job (залишки → SD export → WP sync) ──────────────────────
 
+  /**
+   * TEMP legacy-ланцюжок: Dilovod → Backoffice → SalesDrive → WooCommerce (syncStock.php).
+   * Спільний для cron і ручної кнопки каталогу.
+   */
+  async runLegacyStockSyncChain(triggeredBy: string): Promise<LegacyStockChainResult> {
+    if (this.isStockSyncRunning) {
+      console.log('⏳ Previous stock sync is still running, skipping this run.');
+      return {
+        success: false,
+        alreadyRunning: true,
+        stockUpdated: 0,
+        stockMessage: 'Оновлення залишків уже виконується',
+        exported: false,
+        exportedCount: 0,
+        adjustedCount: 0,
+        wpTriggered: false,
+        wpStatus: null,
+        errors: ['Оновлення залишків уже виконується'],
+      };
+    }
+
+    this.isStockSyncRunning = true;
+    const startTime = Date.now();
+    const tag = `[stock-sync] [${triggeredBy}]`;
+    const errors: string[] = [];
+    let stockUpdated = 0;
+    let stockMessage = '';
+    let exported = false;
+    let exportedCount = 0;
+    let adjustedCount = 0;
+    let wpTriggered = false;
+    let wpStatus: number | null = null;
+
+    try {
+      console.log(`🕐 ${tag} [1/3] Updating stock balances from Dilovod...`);
+      try {
+        const stockResult = await this.dilovodService.updateStockBalancesInDatabase();
+        stockUpdated = stockResult.updatedProducts;
+        stockMessage = stockResult.message;
+        if (stockResult.errors?.length) errors.push(...stockResult.errors);
+        const duration = Date.now() - startTime;
+        if (stockResult.success) {
+          console.log(`✅ ${tag} [1/3] Stock balances updated in ${duration}ms: ${stockResult.updatedProducts} products`);
+        } else {
+          console.warn(`⚠️ ${tag} [1/3] Stock update had errors in ${duration}ms: ${stockResult.message}`);
+          if (!stockResult.message) errors.push('Не вдалося оновити залишки з Dilovod');
+        }
+      } catch (error) {
+        console.error(`❌ ${tag} [1/3] Stock balances update failed:`, error);
+        const msg = error instanceof Error ? error.message : 'Помилка оновлення залишків';
+        return {
+          success: false,
+          stockUpdated: 0,
+          stockMessage: msg,
+          exported: false,
+          exportedCount: 0,
+          adjustedCount: 0,
+          wpTriggered: false,
+          wpStatus: null,
+          errors: [msg],
+        };
+      }
+
+      console.log(`🕐 ${tag} [2/3] Exporting products to SalesDrive...`);
+      try {
+        const exportResult = await salesDriveService.buildAndExportProducts();
+        const duration = Date.now() - startTime;
+        if (exportResult.success) {
+          exported = true;
+          exportedCount = exportResult.exported ?? 0;
+          adjustedCount = exportResult.adjustedCount ?? 0;
+          console.log(
+            `✅ ${tag} [2/3] Products exported to SalesDrive in ${duration}ms: ${exportResult.exported} products, ${exportResult.adjustedCount} stock adjustments`
+          );
+        } else {
+          const exportErrors = exportResult.errors || [];
+          errors.push(...exportErrors);
+          console.warn(`⚠️ ${tag} [2/3] SalesDrive export failed in ${duration}ms:`, exportErrors);
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Помилка експорту в SalesDrive';
+        errors.push(msg);
+        console.error(`❌ ${tag} [2/3] SalesDrive export failed:`, error);
+      }
+
+      if (exported) {
+        console.log(`🕐 ${tag} [3/3] Triggering SD → WP stock sync...`);
+        try {
+          const wpResponse = await fetch(WP_STOCK_SYNC_URL, { signal: AbortSignal.timeout(30_000) });
+          wpStatus = wpResponse.status;
+          wpTriggered = wpResponse.ok;
+          const duration = Date.now() - startTime;
+          if (wpResponse.ok) {
+            console.log(`✅ ${tag} [3/3] WP stock sync triggered in ${duration}ms (status ${wpResponse.status})`);
+          } else {
+            errors.push(`WooCommerce syncStock HTTP ${wpResponse.status}`);
+            console.warn(`⚠️ ${tag} [3/3] WP stock sync returned HTTP ${wpResponse.status} in ${duration}ms`);
+          }
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'Помилка тригера WooCommerce';
+          errors.push(msg);
+          console.error(`❌ ${tag} [3/3] WP stock sync request failed:`, error);
+        }
+      } else {
+        console.log(`⏭️ ${tag} [3/3] Skipping WP stock sync — SalesDrive export was not successful.`);
+      }
+
+      return {
+        success: exported || stockUpdated > 0,
+        stockUpdated,
+        stockMessage,
+        exported,
+        exportedCount,
+        adjustedCount,
+        wpTriggered,
+        wpStatus,
+        errors,
+      };
+    } finally {
+      this.isStockSyncRunning = false;
+    }
+  }
+
   async startStockSync(): Promise<void> {
     if (this.stockSyncJob) {
       console.log('⚠️  Stock sync cron job already running.');
@@ -305,68 +445,10 @@ export class CronService {
     console.log(`🕐 Stock sync schedule: "${cronExpression}"`);
 
     this.stockSyncJob = cron.schedule(cronExpression, async () => {
-      if (this.isStockSyncRunning) {
+      const result = await this.runLegacyStockSyncChain('cron');
+      if (result.alreadyRunning) {
         console.log('⏳ Previous stock sync is still running, skipping this scheduled run.');
-        return;
       }
-
-      this.isStockSyncRunning = true;
-      const startTime = Date.now();
-
-      // ── Крок 1: Оновлення залишків з Dilovod ─────────────────────────────
-      console.log('🕐 [stock-sync] [1/3] Updating stock balances from Dilovod...');
-      try {
-        const stockResult = await this.dilovodService.updateStockBalancesInDatabase();
-        const duration = Date.now() - startTime;
-        if (stockResult.success) {
-          console.log(`✅ [stock-sync] [1/3] Stock balances updated in ${duration}ms: ${stockResult.updatedProducts} products`);
-        } else {
-          console.warn(`⚠️ [stock-sync] [1/3] Stock update had errors in ${duration}ms: ${stockResult.message}`);
-        }
-      } catch (error) {
-        console.error('❌ [stock-sync] [1/3] Stock balances update failed:', error);
-        this.isStockSyncRunning = false;
-        return;
-      }
-
-      // ── Крок 2: Експорт у SalesDrive ─────────────────────────────────────
-      console.log('🕐 [stock-sync] [2/3] Exporting products to SalesDrive...');
-      let exportedOk = false;
-      try {
-        const exportResult = await salesDriveService.buildAndExportProducts();
-        const duration = Date.now() - startTime;
-        if (exportResult.success) {
-          exportedOk = true;
-          console.log(
-            `✅ [stock-sync] [2/3] Products exported to SalesDrive in ${duration}ms: ${exportResult.exported} products, ${exportResult.adjustedCount} stock adjustments`
-          );
-        } else {
-          console.warn(`⚠️ [stock-sync] [2/3] SalesDrive export failed in ${duration}ms:`, exportResult.errors);
-        }
-      } catch (error) {
-        console.error('❌ [stock-sync] [2/3] SalesDrive export failed:', error);
-      }
-
-      // ── Крок 3: Тригер синхронізації SD → WordPress ───────────────────────
-      if (exportedOk) {
-        console.log('🕐 [stock-sync] [3/3] Triggering SD → WP stock sync...');
-        try {
-          const wpSyncUrl = 'https://nk-food.shop/wp-content/plugins/mrkv-salesdrive/inc/syncStock.php';
-          const wpResponse = await fetch(wpSyncUrl, { signal: AbortSignal.timeout(30_000) });
-          const duration = Date.now() - startTime;
-          if (wpResponse.ok) {
-            console.log(`✅ [stock-sync] [3/3] WP stock sync triggered in ${duration}ms (status ${wpResponse.status})`);
-          } else {
-            console.warn(`⚠️ [stock-sync] [3/3] WP stock sync returned HTTP ${wpResponse.status} in ${duration}ms`);
-          }
-        } catch (error) {
-          console.error('❌ [stock-sync] [3/3] WP stock sync request failed:', error);
-        }
-      } else {
-        console.log('⏭️ [stock-sync] [3/3] Skipping WP stock sync — SalesDrive export was not successful.');
-      }
-
-      this.isStockSyncRunning = false;
     }, { timezone: "Europe/Kyiv" });
 
     this.stockSyncJob.start();

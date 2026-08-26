@@ -108,6 +108,16 @@ export class ProductsLocalSync {
     });
   }
 
+  async updateAccPolicies(ids: string[], accPolicyId: string): Promise<void> {
+    if (ids.length === 0) return;
+    await prisma.$transaction(async (tx) => {
+      await tx.catalogGood.updateMany({
+        where: { id: { in: ids } },
+        data: { accPolicyId, syncedAt: new Date() },
+      });
+    });
+  }
+
   private async upsertCatalogGood(tx: Tx, payload: LocalSyncGoodPayload): Promise<void> {
     const now = new Date();
     const data = {

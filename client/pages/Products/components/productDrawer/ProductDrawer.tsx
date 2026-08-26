@@ -58,6 +58,8 @@ import {
   expectedBomWeightKg,
   expectedMilitaryPrice,
   formatCatalogName,
+  isArchiveFolderId,
+  listCatalogFolderOptions,
   weightsAlmostEqual,
   withSyncedDerivedPrices,
 } from '../../ProductsUtils';
@@ -105,6 +107,7 @@ export function ProductDrawer({
   mode,
   parentFolderId,
   parentFolderName,
+  treeItems,
   detail,
   detailLoading,
   dictionaries,
@@ -154,6 +157,8 @@ export function ProductDrawer({
   const [batchPickerIdx, setBatchPickerIdx] = useState<number | null>(null);
   const batchInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<DrawerForm>(emptyForm);
+  /** Батьківська група при створенні (впливає на parentId і SKU) */
+  const [createParentId, setCreateParentId] = useState(parentFolderId);
   const [components, setComponents] = useState<BomRow[]>([]);
   const [prices, setPrices] = useState<PriceRow[]>([]);
   const [barcodes, setBarcodes] = useState<BarcodeRow[]>([]);
@@ -251,20 +256,32 @@ export function ProductDrawer({
     [dictionaries.accPolicies]
   );
 
+  const folderOptions = useMemo(
+    () => listCatalogFolderOptions(treeItems || {}),
+    [treeItems]
+  );
+
+  const createParentName = useMemo(() => {
+    const fromOptions = folderOptions.find((f) => f.id === createParentId);
+    return fromOptions?.name || parentFolderName || 'Немає';
+  }, [folderOptions, createParentId, parentFolderName]);
+
   const commitBaseline = useCallback(
     (
       nextForm: DrawerForm,
       nextComponents: BomRow[],
       nextPrices: PriceRow[],
       nextBarcodes: BarcodeRow[],
-      nextKind: DrawerObjectKind | null
+      nextKind: DrawerObjectKind | null,
+      nextParentId?: string | null
     ) => {
       baselineRef.current = snapshotState(
         nextForm,
         nextComponents,
         nextPrices,
         nextBarcodes,
-        nextKind
+        nextKind,
+        nextParentId
       );
       setBaselineVersion((v) => v + 1);
     },
@@ -342,9 +359,16 @@ export function ProductDrawer({
       setComponents(nextComponents);
       setPrices(nextPrices);
       setBarcodes(nextBarcodes);
-      commitBaseline(nextForm, nextComponents, nextPrices, nextBarcodes, resolvedKind);
+      commitBaseline(nextForm, nextComponents, nextPrices, nextBarcodes, resolvedKind, detail.parentId);
     } else {
       setImages([]);
+      const items = treeItems || {};
+      let nextParent = parentFolderId || CATALOG_ROOT_ID;
+      if (isArchiveFolderId(nextParent, items)) {
+        const liveParent = items[nextParent]?.parentId;
+        nextParent = !liveParent || liveParent === '0' ? CATALOG_ROOT_ID : liveParent;
+      }
+      setCreateParentId(nextParent);
       // Staging лише після вибору типу (не група); для create-folder kind уже 'group'
       setStagingSessionId(kind === 'group' ? null : kind ? newStagingSessionId() : null);
       const nextForm = emptyForm();
@@ -363,7 +387,7 @@ export function ProductDrawer({
       setComponents([]);
       setPrices([]);
       setBarcodes([]);
-      commitBaseline(nextForm, [], [], [], kind);
+      commitBaseline(nextForm, [], [], [], kind, nextParent);
     }
   }, [open, isEdit, detail, mode, commitBaseline, dictionaries.accPolicies]);
 
@@ -390,8 +414,8 @@ export function ProductDrawer({
   const isDirty = useMemo(() => {
     if (!open) return false;
     void baselineVersion;
-    return snapshotState(form, components, prices, barcodes, objectKind) !== baselineRef.current;
-  }, [open, form, components, prices, barcodes, objectKind, baselineVersion]);
+    return snapshotState(form, components, prices, barcodes, objectKind, isEdit ? detail?.parentId : createParentId) !== baselineRef.current;
+  }, [open, form, components, prices, barcodes, objectKind, baselineVersion, isEdit, detail?.parentId, createParentId]);
 
   const buildPayload = useCallback((): CatalogCreateGoodInput | CatalogUpdateGoodInput | null => {
     if (!objectKind) return null;
@@ -507,13 +531,13 @@ export function ProductDrawer({
 
     const input: CatalogCreateGoodInput = {
       ...(payload as CatalogCreateGoodInput),
-      parentId: parentFolderId === CATALOG_ROOT_ID ? null : parentFolderId,
+      parentId: createParentId === CATALOG_ROOT_ID ? null : createParentId,
       isGroup: isFolder,
     };
     // Staging commit на сервері через stagingSessionId у payload
     await onCreate(input);
     setStagingSessionId(null);
-  }, [buildPayload, isEdit, detail, onUpdate, onCreate, parentFolderId, isFolder, isGood, isKit, prices, form.packageRatio, form.weight]);
+  }, [buildPayload, isEdit, detail, onUpdate, onCreate, createParentId, isFolder, isGood, isKit, prices, form.packageRatio, form.weight]);
 
   /** Debug: показати payload, який піде на create/update */
   const handleShowPayload = useCallback(() => {
@@ -538,12 +562,12 @@ export function ProductDrawer({
     } else {
       setPayloadPreview({
         ...(payload as CatalogCreateGoodInput),
-        parentId: parentFolderId === CATALOG_ROOT_ID ? null : parentFolderId,
+        parentId: createParentId === CATALOG_ROOT_ID ? null : createParentId,
         isGroup: isFolder,
       });
     }
     setShowPayloadPreview(true);
-  }, [buildPayload, isEdit, detail, parentFolderId, isFolder]);
+  }, [buildPayload, isEdit, detail, createParentId, isFolder]);
 
   const closeAndDiscardStaging = useCallback(() => {
     if (!isEdit && stagingSessionId) {
@@ -615,9 +639,9 @@ export function ProductDrawer({
       const parentId =
         isEdit && detail
           ? detail.parentId || 'root'
-          : parentFolderId === CATALOG_ROOT_ID
+          : createParentId === CATALOG_ROOT_ID
             ? 'root'
-            : parentFolderId;
+            : createParentId;
       const qs = new URLSearchParams({ parentId });
       if (isEdit && detail?.id) qs.set('excludeId', detail.id);
       const res = await fetch(`/api/catalog/sku/next?${qs.toString()}`, {
@@ -830,7 +854,7 @@ export function ProductDrawer({
                   {form.name.trim() ? (<span className="font-normal text-default-500"> – {form.name.trim()}</span>) : null}
                 </span>
                 <div className="flex items-center gap-2 text-xs font-normal text-default-400">
-                  <span className="font-semibold">Група: <span className="font-normal">{detail?.parentName || parentFolderName || 'Немає'}</span></span>
+                  <span className="font-semibold">Група: <span className="font-normal">{isEdit ? (detail?.parentName || 'Немає') : createParentName}</span></span>
                   <Divider orientation="vertical" className="hidden md:block" />
                   <span className="font-semibold hidden md:block">SKU: <span className="font-normal">{detail?.sku || 'відсутній'}</span></span>
                   {detail?.stock ? (
@@ -894,6 +918,7 @@ export function ProductDrawer({
                     <RequisitesSection
                       form={form}
                       objectKind={objectKind}
+                      isCreate={!isEdit}
                       isGood={isGood}
                       isKit={isKit}
                       isOther={isOther}
@@ -902,6 +927,9 @@ export function ProductDrawer({
                       skuGenerating={skuGenerating}
                       saving={saving}
                       otherAccPolicies={otherAccPolicies}
+                      folderOptions={folderOptions}
+                      selectedFolderId={createParentId}
+                      onFolderChange={setCreateParentId}
                       onFormChange={(arg) => {
                         if (typeof arg === 'function') setForm(arg);
                         else setForm((f) => ({ ...f, ...arg }));
@@ -1052,7 +1080,8 @@ export function ProductDrawer({
             <DrawerFooter className="-mx-3 md:-mx-6 px-3 md:px-6 pt-5 mt-auto border-t border-default-200/60">
               {(isDebugMode ||
                 (isTrashed && detail && onRestore) ||
-                (isEdit && !isFolder && detail?.sku && onLegacyUpdate)) && (
+                (isEdit && !isFolder && detail?.sku && onLegacyUpdate) ||
+                (isAdmin && isEdit && detail)) && (
                 <div className="mr-auto">
                   <Dropdown placement="top-start">
                     <DropdownTrigger>
@@ -1117,6 +1146,38 @@ export function ProductDrawer({
                       >
                         Синхронізувати товар
                       </DropdownItem>
+                      <DropdownItem
+                        key="dilovodId"
+                        textValue="Dilovod ID"
+                        className={
+                          isAdmin && isEdit && detail
+                            ? 'font-semibold text-default-700 cursor-default data-[hover=true]:bg-white border-none'
+                            : 'hidden'
+                        }
+                        startContent={
+                          <DynamicIcon
+                            name="brackets"
+                            size={16}
+                            className="text-xl text-default-500 pointer-events-none shrink-0"
+                          />
+                        }
+                      >
+                        <div className="flex items-center gap-2 justify-between text-xs">
+                          {detail?.id || 'Немає ID'}
+                          {detail?.id && (
+                            <Button
+                              variant="flat"
+                              size="sm"
+                              className="px-2 py-1 min-w-auto h-auto rounded"
+                              onPress={() => {
+                                void navigator.clipboard.writeText(detail.id);
+                              }}
+                            >
+                              Copy
+                            </Button>
+                          )}
+                        </div>
+                      </DropdownItem>
                     </DropdownMenu>
                   </Dropdown>
                 </div>
@@ -1143,6 +1204,7 @@ export function ProductDrawer({
           mode="edit"
           parentFolderId={nestedQuery.data?.parentId || CATALOG_ROOT_ID}
           parentFolderName={nestedQuery.data?.parentName}
+          treeItems={treeItems}
           detail={nestedQuery.data ?? null}
           detailLoading={nestedQuery.isLoading || !nestedQuery.data}
           dictionaries={dictionaries}

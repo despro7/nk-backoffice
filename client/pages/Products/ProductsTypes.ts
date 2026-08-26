@@ -16,6 +16,7 @@ export type {
   CatalogCreateGoodInput,
   CatalogUpdateGoodInput,
   CatalogStockDto,
+  CatalogMissingRequired,
 } from '@shared/types/catalog';
 
 export {
@@ -44,6 +45,8 @@ export interface CatalogTreeItemData {
   parentId: string | null;
   children: string[];
   sortOrder?: number;
+  /** Товари в групі та у вкладених групах (до 5 рівнів, без архіву). */
+  objectCount?: number;
   /** Id дочірньої папки «Архів – …» (прихована в дереві, доступ через іконку). */
   archiveChildId?: string | null;
 }

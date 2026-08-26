@@ -137,37 +137,9 @@ export function useProductsCatalog() {
           recursive: true,
         }),
       }),
-    onSuccess: (data) => {
-      const extra = data.capped ? ' (досягнуто ліміт глибини/вузлів)' : '';
-      const legacy = data.legacySync;
-      const legacyParts = legacy
-        ? [
-            legacy.createdProducts ? `створено ${legacy.createdProducts}` : null,
-            legacy.updatedProducts ? `оновлено ${legacy.updatedProducts}` : null,
-            legacy.skippedProducts ? `без змін ${legacy.skippedProducts}` : null,
-          ].filter(Boolean)
-        : [];
-      const outdatedNote =
-        data.legacyOutdatedCount && data.legacyOutdatedCount > 0
-          ? `, архівних isOutdated: ${data.legacyOutdatedCount}`
-          : '';
-      const legacyNote =
-        data.legacyError
-          ? ` Legacy: помилка (${data.legacyError})`
-          : data.legacySkuCount
-            ? ` Legacy: ${data.legacySkuCount} SKU${legacyParts.length ? ` (${legacyParts.join(', ')})` : ''}${outdatedNote}`
-            : outdatedNote
-              ? ` Legacy${outdatedNote}`
-              : '';
-      ToastService.show({
-        title: 'Гілку оновлено',
-        description: `Записів каталогу: ${data.upserted}${extra}.${legacyNote}`,
-        color: data.capped || data.legacyError || (legacy?.errors?.length ?? 0) > 0 ? 'warning' : 'success',
-      });
+    onSuccess: () => {
       void invalidateCatalog();
     },
-    onError: (err: Error) =>
-      ToastService.show({ title: 'Помилка оновлення гілки', description: err.message, color: 'danger' }),
   });
 
   const syncSelectedMutation = useMutation({
@@ -241,6 +213,37 @@ export function useProductsCatalog() {
         description: err.message,
         color: 'danger',
       }),
+  });
+
+  /** TEMP: Dilovod → Backoffice → SalesDrive → WooCommerce. */
+  const stockSyncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/products/sync-stock-chain', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        stockUpdated?: number;
+        stockMessage?: string;
+        exported?: boolean;
+        exportedCount?: number;
+        adjustedCount?: number;
+        wpTriggered?: boolean;
+        wpStatus?: number | null;
+        errors?: string[];
+        alreadyRunning?: boolean;
+      };
+      if (!res.ok && json.success === undefined && !json.error && !json.stockMessage) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      return json;
+    },
+    onSuccess: (data) => {
+      if (!data.alreadyRunning) void invalidateCatalog();
+    },
   });
 
   const refreshFullMutation = useMutation({
@@ -340,6 +343,26 @@ export function useProductsCatalog() {
       void invalidateCatalog();
     },
     onError: (err: Error) => ToastService.show({ title: 'Помилка переміщення', description: err.message, color: 'danger' }),
+  });
+
+  const changeTypeMutation = useMutation({
+    mutationFn: ({ ids, accPolicyId }: { ids: string[]; accPolicyId: string }) =>
+      catalogFetch<{ updated: number; skipped: number }>('/api/catalog/goods/change-type', {
+        method: 'POST',
+        body: JSON.stringify({ ids, accPolicyId }),
+      }),
+    onSuccess: (data) => {
+      const skippedNote = data.skipped > 0 ? ` (пропущено: ${data.skipped})` : '';
+      ToastService.show({
+        title: 'Тип змінено',
+        description: `Елементів: ${data.updated}${skippedNote}`,
+        color: data.updated > 0 ? 'success' : 'warning',
+      });
+      setSelectedIds([]);
+      void invalidateCatalog();
+    },
+    onError: (err: Error) =>
+      ToastService.show({ title: 'Помилка зміни типу', description: err.message, color: 'danger' }),
   });
 
   const reorderMutation = useMutation({
@@ -504,10 +527,12 @@ export function useProductsCatalog() {
     refreshBranchMutation,
     syncSelectedMutation,
     legacySyncMutation,
+    stockSyncMutation,
     refreshFullMutation,
     createMutation,
     updateMutation,
     moveMutation,
+    changeTypeMutation,
     reorderMutation,
     archiveMutation,
     restoreMutation,

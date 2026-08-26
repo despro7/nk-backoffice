@@ -26,7 +26,7 @@ import {
 } from '@shared/utils/specColorPalette';
 import { StockBadge } from '@/components/StockBadge';
 import { ToastService } from '@/services/ToastService';
-import type { CatalogGoodDto, CatalogTreeItemData } from '../ProductsTypes';
+import type { CatalogGoodDto, CatalogMissingRequired, CatalogTreeItemData } from '../ProductsTypes';
 import { CATALOG_ROOT_ID } from '../ProductsTypes';
 import {
   goodTypeLabel,
@@ -45,6 +45,8 @@ import {
   applyCatalogDropAttrs,
   clearCatalogDropAttrs,
   markCatalogDndSources,
+  catalogMissingNameLabels,
+  getMissingRequiredCatalogFields,
 } from '../ProductsUtils';
 
 export type CatalogOrdersTabKey = 'all' | 'new' | 'confirmed' | 'hold';
@@ -83,6 +85,8 @@ interface CatalogTableProps {
   /** Controlled sort (для кнопки скидання на ручний порядок) */
   sortDescriptor?: SortDescriptor;
   onSortChange?: (desc: SortDescriptor) => void;
+  /** Показати грибінці ручного сортування (за замовчуванням сховані) */
+  listSortEnabled?: boolean;
   /** Швидке оновлення ваги з таблиці (Dilovod save). */
   onUpdateWeight?: (id: string, weight: number) => void | Promise<unknown>;
 }
@@ -125,6 +129,48 @@ function resolveCategory(
 function formatWeightKg(weight: number | null | undefined): string {
   if (weight == null || Number.isNaN(Number(weight))) return '—';
   return Number(weight).toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
+}
+
+function resolveMissingRequired(row: CatalogGoodDto): CatalogMissingRequired {
+  if (row.missingRequired) return row.missingRequired;
+  return getMissingRequiredCatalogFields(row);
+}
+
+function MissingRequiredHint({ labels }: { labels: string[] }) {
+  if (labels.length === 0) return null;
+  const summary = `Не вистачає: ${labels.join(', ')}`;
+  return (
+    <Tooltip
+      content={
+        <div className="text-xs">
+          <div className="font-semibold">Не вистачає:</div>
+          <ul className="mt-0.5 list-disc pl-4">
+            {labels.map((label) => (
+              <li key={label}>{label}</li>
+            ))}
+          </ul>
+        </div>
+      }
+      placement="top"
+      color="danger"
+      delay={200}
+      showArrow
+      classNames={{
+        base: 'before:bg-danger-500 before:rounded-[2px]',
+        content: 'bg-danger-500 border-0 text-white py-2',
+      }}
+    >
+      <span
+        data-selection-ignore
+        className="inline-flex shrink-0 text-danger-500 hover:text-danger-600"
+        aria-label={summary}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <DynamicIcon name="triangle-alert" size={14} />
+      </span>
+    </Tooltip>
+  );
 }
 
 function weightDraftFromRow(weight: number | null | undefined): string {
@@ -398,6 +444,7 @@ export function CatalogTable({
   sortDescriptor: sortDescriptorProp,
   onSortChange,
   onUpdateWeight,
+  listSortEnabled = false,
 }: CatalogTableProps) {
   const visibleRows = rows.filter(
     (r) => !(r.isGroup && isArchiveFolderName(r.name))
@@ -836,7 +883,8 @@ export function CatalogTable({
   );
   const canReorder = Boolean(onReorderGood && !isSearchMode && isManualSort);
   const canMove = Boolean(onMove && !isSearchMode);
-  const showDragHandle = canReorder || canMove;
+  const canShowDragHandle = canReorder || canMove;
+  const showDragHandle = listSortEnabled && canShowDragHandle;
 
   const rememberDragPayload = (ids: string[]) => {
     const unique = [...new Set(ids.filter(Boolean))];
@@ -1131,16 +1179,20 @@ export function CatalogTable({
     switch (key) {
       case 'name':
         return (
-          <div className="flex items-center gap-2 min-w-0 relative pl-5">
-            {showDragHandle && (
+          <div
+            className={`flex min-w-0 items-center gap-2 relative transition-[padding] duration-200 ease-out ${
+              showDragHandle ? 'pl-5' : 'pl-2'
+            }`}
+          >
+            {canShowDragHandle && (
               <span
                 data-drag-handle
                 data-selection-ignore
-                className={`touch-none text-default-300 absolute -left-1.5 top-1/2 -translate-y-1/2 inline-flex h-10 w-6 items-center justify-center hover:text-default-500 shrink-0 transition-opacity duration-200 ease-in-out
+                className={`touch-none text-default-300 absolute -left-1.5 top-1/2 -translate-y-1/2 inline-flex h-10 w-6 items-center justify-center hover:text-default-500 shrink-0 transition-opacity duration-200 ease-out
                   ${draggingIds.length > 0 ? 'cursor-grabbing' : 'cursor-grab'}
-                  ${!isManualSort
-                    ? 'opacity-0 pointer-events-none'
-                    : 'opacity-100'
+                  ${showDragHandle && isManualSort
+                    ? 'opacity-100'
+                    : 'pointer-events-none opacity-0'
                   }`}
                 title="Перетягнути для сортування або переміщення"
                 onContextMenu={(e) => e.preventDefault()}
@@ -1185,7 +1237,9 @@ export function CatalogTable({
                   className="text-default-500 shrink-0"
                 />
               </span>
-              <span className="truncate select-none">{row.name}</span>
+              <Tooltip content={row.name} placement="top" color="secondary" delay={500} showArrow={true} classNames={{ base: 'before:bg-gray-700 before:rounded-[2px]', content: 'bg-gray-700 border-0 text-white text-xs' }}>
+                <span className="max-w-[240px] truncate select-none">{row.name}</span>
+              </Tooltip>
               {row.delMark && (
                 <Chip
                   size="sm"
@@ -1200,6 +1254,7 @@ export function CatalogTable({
                 </Chip>
               )}
             </button>
+            <MissingRequiredHint labels={catalogMissingNameLabels(resolveMissingRequired(row))} />
           </div>
         );
       case 'category': {
@@ -1231,36 +1286,50 @@ export function CatalogTable({
           ? SPEC_COLOR_FALLBACK
           : getSpecColor(specColors, row.accPolicyId);
         return (
-          <Chip
-            size="sm"
-            variant="flat"
-            classNames={{
-              base: specColorToClassNames(typeTokens, {
-                border: true,
-                theme: 'light',
-                intensity: 'soft',
-              }),
-              content: 'font-medium truncate max-w-[120px]',
-            }}
-          >
-            {goodTypeLabel(row, accPolicies)}
-          </Chip>
+          <Tooltip content={goodTypeLabel(row, accPolicies)} placement="top" color="secondary" delay={500} showArrow={true} classNames={{ base: 'before:bg-gray-700 before:rounded-[2px]', content: 'bg-gray-700 border-0 text-white text-xs' }}>
+            <Chip
+              size="sm"
+              variant="flat"
+              classNames={{
+                base: specColorToClassNames(typeTokens, {
+                  border: true,
+                  theme: 'light',
+                  intensity: 'soft',
+                }),
+                content: 'font-medium truncate max-w-[90px]',
+              }}
+            >
+              {goodTypeLabel(row, accPolicies)}
+            </Chip>
+          </Tooltip>
         );
       }
-      case 'weight':
+      case 'weight': {
         if (row.isGroup) {
           return <span className="text-default-300">—</span>;
         }
+        const weightHint = resolveMissingRequired(row).weight ? (
+          <MissingRequiredHint labels={['Вага']} />
+        ) : null;
         if (!onUpdateWeight) {
-          return <span className="tabular-nums">{formatWeightKg(row.weight)}</span>;
+          return (
+            <span className="inline-flex items-center gap-1">
+              <span className="tabular-nums">{formatWeightKg(row.weight)}</span>
+              {weightHint}
+            </span>
+          );
         }
         return (
-          <WeightQuickEdit
-            rowId={row.id}
-            weight={row.weight}
-            onUpdateWeight={onUpdateWeight}
-          />
+          <span className="inline-flex items-center gap-1">
+            <WeightQuickEdit
+              rowId={row.id}
+              weight={row.weight}
+              onUpdateWeight={onUpdateWeight}
+            />
+            {weightHint}
+          </span>
         );
+      }
       case 'packageRatio':
         return row.isGroup ? (
           <span className="text-default-300">—</span>
@@ -1275,22 +1344,24 @@ export function CatalogTable({
         ) : (
           <span className="tabular-nums">{row.unitRatio ?? 1}</span>
         );
-      case 'stockGp':
-        return row.isGroup ? (
-          <span className="text-default-300">—</span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
-            {row.mainStock ?? 0}
+      case 'stockGp': {
+        if (row.isGroup) return <span className="text-default-300">—</span>;
+        const qty = row.mainStock ?? 0;
+        return (
+          <span className={`inline-flex items-center gap-1.5 text-sm font-semibold tabular-nums ${qty < 0 ? 'text-danger' : ''}`}>
+            {qty}
           </span>
         );
-      case 'stockMs':
-        return row.isGroup ? (
-          <span className="text-default-300">—</span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
-            {row.smallStock ?? 0}
+      }
+      case 'stockMs': {
+        if (row.isGroup) return <span className="text-default-300">—</span>;
+        const qty = row.smallStock ?? 0;
+        return (
+          <span className={`inline-flex items-center gap-1.5 text-sm font-semibold tabular-nums ${qty < 0 ? 'text-danger' : ''}`}>
+            {qty}
           </span>
         );
+      }
       case 'inOrders': {
         if (row.isGroup) return <span className="text-default-300">—</span>;
         if (portionsLoading) return <span className="text-default-300 text-xs">…</span>;
@@ -1410,7 +1481,11 @@ export function CatalogTable({
               key={col.key}
               allowsSorting={Boolean(col.sortable)}
               width={col.width}
-              className={col.key === 'name' ? 'pl-8' : ''}
+              className={
+                col.key === 'name'
+                  ? `transition-[padding] duration-200 ease-out ${showDragHandle ? 'pl-6' : 'pl-3'}`
+                  : ''
+              }
             >
               {col.label}
             </TableColumn>
@@ -1534,7 +1609,12 @@ export function CatalogTable({
                   </div>
                 </TableCell>,
                 ...columns.map((col) => (
-                  <TableCell key={col.key}>{renderCell(row, col.key)}</TableCell>
+                  <TableCell
+                    key={col.key}
+                    className={col.key === 'name' ? 'pl-1' : undefined}
+                  >
+                    {renderCell(row, col.key)}
+                  </TableCell>
                 )),
               ]}
             </TableRow>

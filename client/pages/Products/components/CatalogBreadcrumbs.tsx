@@ -47,6 +47,7 @@ export function CatalogBreadcrumbs({
     >
       {crumbs.map((crumb, index) => {
         const isLast = index === crumbs.length - 1 && !isSearchMode;
+        const objectCount = treeItems[crumb.id]?.objectCount;
         return (
           <BreadcrumbItem
             key={crumb.id}
@@ -60,6 +61,9 @@ export function CatalogBreadcrumbs({
             }
           >
             {crumb.name}
+            {typeof objectCount === 'number' ? (
+              <span className="tabular-nums text-[10px] leading-none text-default-400 bg-default-100 rounded px-1 py-1">{objectCount}</span>
+            ) : null}
           </BreadcrumbItem>
         );
       })}

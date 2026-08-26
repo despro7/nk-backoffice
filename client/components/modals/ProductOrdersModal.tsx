@@ -17,6 +17,7 @@ import { DynamicIcon, type IconName } from "lucide-react/dynamic";
 import { formatDate, pluralize } from "@/lib";
 import { OrderStatusChip, type OrderStatusHistoryEntry } from "@/components/OrderStatusChip";
 import { formatTrackingNumberWithIcon } from "@/lib/formatUtilsJSX";
+import useReportingDayStartHour from "@/pages/Reports/shared/useReportingDayStartHour";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 export interface ProductOrdersModalProduct {
@@ -186,6 +187,7 @@ export function ProductOrdersModal({
   productItems = [],
   onNavigate,
 }: ProductOrdersModalProps) {
+  const { dayStartHour } = useReportingDayStartHour({ enabled: isOpen });
   const initialTab = defaultTab ?? tabs[0]?.key ?? "";
   const [selectedTab, setSelectedTab] = useState(initialTab);
 
@@ -349,13 +351,8 @@ export function ProductOrdersModal({
                 <TableCell className="text-sm">
                   <OrderStatusChip
                     status={order.status}
-                    label={order.statusText}
-                    statusHistory={order.statusHistory}
-                    extraTooltip={
-                      order.dilovodReturnDate
-                        ? `Повернено ${formatDate(order.dilovodReturnDate)}`
-                        : undefined
-                    }
+                    statusHistory={order.statusHistory ?? []}
+                    dayStartHour={dayStartHour}
                   />
                 </TableCell>
                 <TableCell className="text-center text-sm font-semibold">

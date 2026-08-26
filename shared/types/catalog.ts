@@ -55,6 +55,14 @@ export interface CatalogGoodImageDto {
   updatedAt: string;
 }
 
+/** Прогалини обовʼязкових реквізитів картки. */
+export interface CatalogMissingRequired {
+  /** Назви основних типів цін, яких бракує або вони ≤ 0. */
+  prices: string[];
+  weight: boolean;
+  packageRatio: boolean;
+}
+
 export interface CatalogGoodDto {
   id: string;
   parentId: string | null;
@@ -87,6 +95,8 @@ export interface CatalogGoodDto {
   /** Has BOM or kit accPolicy */
   isKit?: boolean;
   childrenCount?: number;
+  /** Обовʼязкові поля, яких бракує (продукція / набір). */
+  missingRequired?: CatalogMissingRequired;
 }
 
 export interface CatalogTreeNodeDto {
@@ -239,6 +249,12 @@ export interface CatalogUpdateGoodInput {
 export interface CatalogMoveInput {
   ids: string[];
   targetParentId: string;
+}
+
+/** Bulk-зміна політики обліку (`accPolicy`) для товарів, не груп. */
+export interface CatalogChangeTypeInput {
+  ids: string[];
+  accPolicyId: string;
 }
 
 /** Reorder sibling у межах parentId (інтервальний sortOrder). */

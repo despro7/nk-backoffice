@@ -225,6 +225,11 @@ function TreeNode({
             />
           )}
           <span className={`truncate select-none ${isRoot ? 'font-semibold' : ''}`}>{data.name}</span>
+          {typeof data.objectCount === 'number' ? (
+            <span className="shrink-0 tabular-nums text-[11px] leading-none text-default-400 bg-default-100/50 rounded px-1 py-1">
+              {data.objectCount}
+            </span>
+          ) : null}
         </button>
 
         {isRoot && hasExpandedItems && (
