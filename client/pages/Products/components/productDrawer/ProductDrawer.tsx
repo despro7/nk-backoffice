@@ -506,7 +506,7 @@ export function ProductDrawer({
 
     if (isGood || isKit) {
       const missing: string[] = [];
-      if (!isRequiredPositiveField(form.packageRatio)) missing.push('порцій у коробці');
+      if (isGood && !isRequiredPositiveField(form.packageRatio)) missing.push('порцій у коробці');
       if (!isRequiredPositiveField(form.weight)) missing.push('вага');
       if (!areRequiredCatalogPricesFilled(prices)) missing.push('основні ціни');
       if (missing.length > 0) {
