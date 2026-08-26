@@ -3,6 +3,7 @@ import { Button, Spinner, Tooltip, type SortDescriptor } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useRolePreview } from '@/contexts/RolePreviewContext';
+import { resolveCatalogFolderAccess, resolveCatalogVisualRootFolderId } from '@shared/utils/catalogFolderAccess';
 import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 import { ToastService } from '@/services/ToastService';
 import { CatalogTree } from './components/CatalogTree';
@@ -43,8 +44,17 @@ const MANUAL_SORT: SortDescriptor = {
 };
 
 export default function ProductsPage() {
-  const { isAdminView: isAdmin } = useRolePreview();
+  const { isAdminView: isAdmin, effectivePermissions } = useRolePreview();
   const catalog = useProductsCatalog();
+  const visualRootId =
+    resolveCatalogVisualRootFolderId(catalog.treeNodes, effectivePermissions) ?? CATALOG_ROOT_ID;
+
+  useEffect(() => {
+    if (visualRootId === CATALOG_ROOT_ID) return;
+    if (catalog.selectedFolderId === CATALOG_ROOT_ID) {
+      catalog.setSelectedFolderId(visualRootId);
+    }
+  }, [visualRootId, catalog.selectedFolderId, catalog.setSelectedFolderId]);
   const { settings: dilovodSettings } = useDilovodSettings({ loadDirectories: false });
   const pinnedHues = dilovodSettings?.accPolicyColorMap;
   const [contextMenu, setContextMenu] = useState<CatalogContextMenuState | null>(null);
@@ -385,12 +395,14 @@ export default function ProductsPage() {
 
   const navigateToFolder = useCallback(
     (id: string) => {
-      catalog.setSelectedFolderId(id);
+      const nextId =
+        id === CATALOG_ROOT_ID && visualRootId !== CATALOG_ROOT_ID ? visualRootId : id;
+      catalog.setSelectedFolderId(nextId);
       catalog.setSelectedIds([]);
       catalog.setSearchQuery('');
       setMobileTreeOpen(false);
     },
-    [catalog.setSelectedFolderId, catalog.setSelectedIds, catalog.setSearchQuery]
+    [catalog.setSelectedFolderId, catalog.setSelectedIds, catalog.setSearchQuery, visualRootId]
   );
 
   const openContextMenu = useCallback(
@@ -640,6 +652,34 @@ export default function ProductsPage() {
         catalog.treeItems[parentForCreate]?.name ||
         null;
 
+  const catalogParentById = useMemo(() => {
+    const map: Record<string, string | null> = {};
+    for (const [id, item] of Object.entries(catalog.treeItemsFull)) {
+      if (id === CATALOG_ROOT_ID) continue;
+      map[id] = item.parentId && item.parentId !== '0' ? item.parentId : null;
+    }
+    return map;
+  }, [catalog.treeItemsFull]);
+
+  const canEditFolder = resolveCatalogFolderAccess(
+    effectivePermissions,
+    catalog.selectedFolderId === CATALOG_ROOT_ID ? null : catalog.selectedFolderId,
+    catalogParentById
+  ).edit;
+
+  const drawerFolderId = catalog.detail
+    ? catalog.detail.isGroup
+      ? catalog.detail.id
+      : catalog.detail.parentId
+    : parentForCreate === CATALOG_ROOT_ID
+      ? null
+      : parentForCreate;
+  const drawerReadOnly = !resolveCatalogFolderAccess(
+    effectivePermissions,
+    drawerFolderId,
+    catalogParentById
+  ).edit;
+
   return (
     <div className="flex flex-col gap-5 flex-1">
       <CatalogToolbar
@@ -654,6 +694,7 @@ export default function ProductsPage() {
         onFullRefresh={() => setFullRefreshConfirmOpen(true)}
         onCreateGood={() => catalog.openCreate(false)}
         busy={busy}
+        readOnly={!canEditFolder}
         actions={
           <CatalogActionsDropdown
             ids={catalog.selectedIds}
@@ -685,6 +726,7 @@ export default function ProductsPage() {
             listSortEnabled={listSortActive}
             listSortDisabled={!isManualTableSort}
             onListSortToggle={() => setListSortEnabled((v) => !v)}
+            readOnly={!canEditFolder}
           />
         }
       />
@@ -698,13 +740,15 @@ export default function ProductsPage() {
               </div>
             ) : (
               <CatalogTree
-                key={Object.keys(catalog.treeItems).join(',').slice(0, 200)}
+                key={`${visualRootId}:${Object.keys(catalog.treeItems).join(',').slice(0, 200)}`}
                 items={catalog.treeItems}
                 selectedFolderId={catalog.selectedFolderId}
                 onSelectFolder={navigateToFolder}
                 onMove={catalog.requestMove}
                 onReorder={catalog.requestReorder}
                 onContextMenu={openContextMenu}
+                readOnly={!canEditFolder}
+                rootItemId={visualRootId}
               />
             )}
           </aside>
@@ -724,6 +768,7 @@ export default function ProductsPage() {
               onNavigate={navigateToFolder}
               isSearchMode={catalog.isSearchMode}
               searchQuery={catalog.searchQuery}
+              visualRootId={visualRootId}
             />
             {!isManualTableSort && (
               <Tooltip content="Повернутися до ручного сортування" placement="top-end" showArrow classNames={{ base: 'before:bg-gray-700 before:rounded-[2px]', content: 'bg-gray-700 border-0 text-white text-xs' }} delay={200}>
@@ -761,7 +806,7 @@ export default function ProductsPage() {
             onSortChange={setTableSort}
             listSortEnabled={listSortActive}
             onReorderGood={
-              catalog.isSearchMode
+              !canEditFolder || catalog.isSearchMode
                 ? undefined
                 : (params) => {
                     setTableSort(MANUAL_SORT);
@@ -774,14 +819,17 @@ export default function ProductsPage() {
                     });
                   }
             }
-            onMove={catalog.isSearchMode ? undefined : catalog.requestMove}
+            onMove={!canEditFolder || catalog.isSearchMode ? undefined : catalog.requestMove}
             treeItems={catalog.treeItemsFull}
-            onUpdateWeight={(id, weight) =>
-              catalog.updateMutation.mutateAsync({
-                id,
-                input: { weight },
-                keepOpen: true,
-              })
+            onUpdateWeight={
+              canEditFolder
+                ? (id, weight) =>
+                    catalog.updateMutation.mutateAsync({
+                      id,
+                      input: { weight },
+                      keepOpen: true,
+                    })
+                : undefined
             }
           />
           </div>
@@ -796,13 +844,15 @@ export default function ProductsPage() {
             </div>
           ) : (
             <CatalogTree
-              key={Object.keys(catalog.treeItems).join(',').slice(0, 200)}
+              key={`${visualRootId}:${Object.keys(catalog.treeItems).join(',').slice(0, 200)}`}
               items={catalog.treeItems}
               selectedFolderId={catalog.selectedFolderId}
               onSelectFolder={navigateToFolder}
               onMove={catalog.requestMove}
               onReorder={catalog.requestReorder}
               onContextMenu={openContextMenu}
+              readOnly={!canEditFolder}
+              rootItemId={visualRootId}
             />
           )}
         </CatalogTreeBubble>
@@ -826,6 +876,7 @@ export default function ProductsPage() {
         onRestore={requestRestore}
         onTrash={requestTrash}
         onRestoreFromTrash={requestRestoreFromTrash}
+        readOnly={!canEditFolder}
       />
 
       <ProductDrawer
@@ -846,6 +897,7 @@ export default function ProductsPage() {
         catalogSearch={catalogSearch}
         onLegacyUpdate={(id) => requestLegacyUpdate([id])}
         legacyUpdating={catalog.legacySyncMutation.isPending}
+        readOnly={drawerReadOnly}
       />
 
       <MoveToFolderModal

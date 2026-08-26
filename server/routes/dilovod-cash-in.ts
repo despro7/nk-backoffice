@@ -8,14 +8,15 @@
 
 import { Router } from 'express';
 import multer from 'multer';
-import { authenticateToken, requirePermission } from '../middleware/auth.js';
+import { authenticateToken, requirePermissionKey } from '../middleware/auth.js';
 import { cashInImportService } from '../services/dilovod/CashInImportService.js';
 import { cashInExportBuilder } from '../services/dilovod/CashInExportBuilder.js';
 import { logServer } from '../lib/utils.js';
+import { PERMISSIONS } from '../../shared/constants/permissions.js';
 import type { CashInExportRequest } from '../../shared/types/cashIn.js';
 
 const router = Router();
-const dilovodAdmin = requirePermission('dilovod', 'admin', 'Адмін-дії Dilovod (кеш, тест, cash-in)');
+const accountingCashIn = requirePermissionKey(PERMISSIONS.PAGE_ACCOUNTING_CASH_IN);
 
 // Multer: зберігаємо файл в пам'яті (не на диск) — файли невеликі
 const upload = multer({
@@ -44,7 +45,7 @@ const upload = multer({
 router.post(
   '/preview',
   authenticateToken,
-  dilovodAdmin,
+  accountingCashIn,
   upload.single('file'),
   async (req, res) => {
     try {
@@ -75,7 +76,7 @@ router.post(
 router.post(
   '/export',
   authenticateToken,
-  dilovodAdmin,
+  accountingCashIn,
   async (req, res) => {
     try {
       const { rows, fileCashAccount } = req.body as CashInExportRequest;

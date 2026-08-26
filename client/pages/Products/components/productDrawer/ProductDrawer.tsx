@@ -121,9 +121,11 @@ export function ProductDrawer({
   legacyUpdating,
   stackLevel = 0,
   stackGoodIds = [],
+  readOnly = false,
 }: ProductDrawerProps) {
   const open = mode != null;
   const isEdit = mode === 'edit';
+  const fieldsLocked = saving || readOnly;
   const isTrashed = isEdit && detail?.parentId === CATALOG_TRASH_ID;
   const { isDebugMode } = useDebug();
   const { isAdminView: isAdmin } = useRolePreview();
@@ -925,7 +927,7 @@ export function ProductDrawer({
                       showPrintName={showPrintName}
                       nameHasWeight={nameHasWeight}
                       skuGenerating={skuGenerating}
-                      saving={saving}
+                      saving={fieldsLocked}
                       otherAccPolicies={otherAccPolicies}
                       folderOptions={folderOptions}
                       selectedFolderId={createParentId}
@@ -988,6 +990,7 @@ export function ProductDrawer({
                                 weight: formatWeightKg(bomWeightExpected.kg, 3),
                               }));
                             }}
+                            isReadOnly={readOnly}
                           />
                         )}
                         <Divider className="bg-default-200/60" />
@@ -1004,11 +1007,12 @@ export function ProductDrawer({
                           onApplyPriceRowChange={applyPriceRowChange}
                           onPricesChange={setPrices}
                           onRowDeleteConfirm={setRowDeleteConfirm}
+                          isReadOnly={readOnly}
                         />
                         <Divider className="bg-default-200/60" />
                         <BarcodesSection
                           barcodes={barcodes}
-                          saving={saving}
+                          saving={fieldsLocked}
                           barcodeGeneratingIdx={barcodeGeneratingIdx}
                           rowDeleteConfirm={rowDeleteConfirm}
                           onBarcodesChange={setBarcodes}
@@ -1031,7 +1035,7 @@ export function ProductDrawer({
                       aria-label="Короткий опис"
                       value={form.description}
                       onChange={(html) => setForm((f) => ({ ...f, description: html }))}
-                      isDisabled={saving}
+                      isDisabled={fieldsLocked}
                     />
                     
                     <h3 className="text-sm font-semibold flex items-center gap-1 pt-4">
@@ -1043,7 +1047,7 @@ export function ProductDrawer({
                       value={form.fullDescription}
                       onChange={(html) => setForm((f) => ({ ...f, fullDescription: html }))}
                       minHeightClass="min-h-[160px]"
-                      isDisabled={saving}
+                      isDisabled={fieldsLocked}
                     />
                     
                     <h3 className="text-sm font-semibold flex items-center gap-1 pt-4">
@@ -1054,7 +1058,7 @@ export function ProductDrawer({
                       goodId={isEdit ? detail?.id : null}
                       stagingSessionId={!isEdit ? stagingSessionId : null}
                       images={images}
-                      isDisabled={saving}
+                      isDisabled={fieldsLocked}
                       onImagesChange={setImages}
                     />
                   </section>
@@ -1078,7 +1082,7 @@ export function ProductDrawer({
             )}
           {!detailLoading && (
             <DrawerFooter className="-mx-3 md:-mx-6 px-3 md:px-6 pt-5 mt-auto border-t border-default-200/60">
-              {(isDebugMode ||
+              {!readOnly && (isDebugMode ||
                 (isTrashed && detail && onRestore) ||
                 (isEdit && !isFolder && detail?.sku && onLegacyUpdate) ||
                 (isAdmin && isEdit && detail)) && (
@@ -1121,7 +1125,7 @@ export function ProductDrawer({
                       <DropdownItem
                         key="restoreTrash"
                         className={isTrashed && detail && onRestore ? 'text-warning' : 'hidden'}
-                        isDisabled={saving}
+                        isDisabled={fieldsLocked}
                         startContent={
                           <DynamicIcon name="archive-restore" size={16} className="shrink-0" />
                         }
@@ -1183,8 +1187,9 @@ export function ProductDrawer({
                 </div>
               )}
               <Button variant="light" onPress={requestClose} isDisabled={saving}>
-                Скасувати
+                {readOnly ? 'Закрити' : 'Скасувати'}
               </Button>
+              {!readOnly && (
               <Button
                 color="primary"
                 onPress={() => void handleSave()}
@@ -1194,6 +1199,7 @@ export function ProductDrawer({
               >
                 Зберегти
               </Button>
+              )}
             </DrawerFooter>
           )}
           </DrawerBody>
@@ -1221,6 +1227,7 @@ export function ProductDrawer({
           legacyUpdating={legacyUpdating}
           stackLevel={stackLevel + 1}
           stackGoodIds={currentStackGoodIds}
+          readOnly={readOnly}
         />
       )}
       <PayloadPreviewModal

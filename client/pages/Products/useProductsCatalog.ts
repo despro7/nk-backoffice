@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUrlHashSync } from '@/hooks/useUrlHashSync';
 import { ToastService } from '@/services/ToastService';
@@ -91,6 +91,14 @@ export function useProductsCatalog() {
     () => buildTreeItems(treeQuery.data || [], { hideArchives: false }),
     [treeQuery.data]
   );
+
+  useEffect(() => {
+    if (treeQuery.isLoading || treeQuery.isPending) return;
+    if (selectedFolderId === CATALOG_ROOT_ID) return;
+    if (!treeItemsFull[selectedFolderId]) {
+      setSelectedFolderId(CATALOG_ROOT_ID);
+    }
+  }, [treeQuery.isLoading, treeQuery.isPending, selectedFolderId, treeItemsFull]);
 
   /**
    * Інвалідація каталогу.

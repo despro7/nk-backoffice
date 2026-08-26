@@ -33,6 +33,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { notifyPermissionsChanged } from '@/lib/notifyPermissionsChanged';
 import type { RoleDto } from '@shared/types/role';
 import { appRoutes } from '@/routes.config';
+import { CatalogFolderAclTree } from './CatalogFolderAclTree';
 
 const ROLE_ROW_GRID = 'grid grid-cols-[32px_minmax(160px,1.4fr)_120px_140px_80px] gap-2 items-center';
 
@@ -81,7 +82,12 @@ export const RolesManager = forwardRef<RolesTabActions>(function RolesManager(_p
       .then((response) => (response.ok ? response.json() : { permissions: [] }))
       .then((data: { permissions?: CatalogItem[] }) => {
         const list = Array.isArray(data.permissions) ? data.permissions : [];
-        setActionCatalog(list.filter((item) => isActionPermission(item.key)));
+        setActionCatalog(
+          list.filter(
+            (item) =>
+              isActionPermission(item.key) && item.key !== PERMISSIONS.ACTION_CATALOG_MANAGE
+          )
+        );
       })
       .catch(() => setActionCatalog([]));
   }, []);
@@ -474,6 +480,11 @@ function RoleEditorDrawer({
                   onToggleGroup={toggleGroup}
                 />
               </div>
+              <CatalogFolderAclTree
+                selected={selected}
+                disabled={isAdminLocked}
+                onChange={setSelected}
+              />
               <DrawerFooter className="border-t border-default-200 shrink-0">
                 <Button variant="light" onPress={onClose}>Скасувати</Button>
                 <Button color="primary" isLoading={saving} onPress={() => void handleSave()}>Зберегти</Button>

@@ -6,9 +6,9 @@ import { AuthSettingsService } from '../services/authSettingsService.js';
 import { ROLES, ROLE_SETS, hasAccess, ROLE_HIERARCHY, canApplyRolePreview, isRolePreviewExemptPath, ROLE_PREVIEW_HEADER, ROLE_PREVIEW_APPLIED_HEADER } from '../../shared/constants/roles.js';
 import type { RoleValue } from '../../shared/constants/roles.js';
 import { roleService } from '../services/RoleService.js';
-import { requirePermission, sendInsufficientRole } from './requirePermission.js';
+import { requirePermission, requirePermissionKey, sendInsufficientRole } from './requirePermission.js';
 
-export { ROLES, ROLE_SETS, requirePermission };
+export { ROLES, ROLE_SETS, requirePermission, requirePermissionKey };
 
 // Розширюємо інтерфейс Request для додавання користувача
 declare global {

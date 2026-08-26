@@ -174,4 +174,14 @@ describe('RoleService', () => {
     expect(await service.hasPermission(created.slug, 'page.orders')).toBe(true);
     expect(await service.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(true);
   });
+
+  it('keeps dynamic catalog folder view/edit keys', async () => {
+    const key = 'action.catalog.view.1100300000001001';
+    const created = await service.createRole({
+      name: 'Folder viewer',
+      permissions: [PERMISSIONS.PAGE_PRODUCTS, key],
+    });
+    expect(created.permissions).toContain(key);
+    expect(await service.hasPermission(created.slug, key)).toBe(true);
+  });
 });

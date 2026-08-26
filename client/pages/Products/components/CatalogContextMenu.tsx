@@ -34,6 +34,7 @@ interface CatalogContextMenuProps {
   onTrash: (ids: string[]) => void;
   /** Відновити зі смітника (вибір папки) */
   onRestoreFromTrash: (ids: string[]) => void;
+  readOnly?: boolean;
 }
 
 export function CatalogContextMenu({
@@ -51,6 +52,7 @@ export function CatalogContextMenu({
   onRestore,
   onTrash,
   onRestoreFromTrash,
+  readOnly,
 }: CatalogContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: state?.x ?? 0, y: state?.y ?? 0 });
@@ -121,6 +123,7 @@ export function CatalogContextMenu({
         onTrash={onTrash}
         onRestoreFromTrash={onRestoreFromTrash}
         onClose={onClose}
+        readOnly={readOnly}
       />
     </div>,
     document.body

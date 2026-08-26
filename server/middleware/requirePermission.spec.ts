@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
 import { INSUFFICIENT_ROLE_HEADER } from '../../shared/constants/roles';
-import { actionKey, resetActionRegistry } from '../../shared/constants/permissions';
-import { createRequirePermission } from './requirePermission';
+import { actionKey, pageKey, resetActionRegistry } from '../../shared/constants/permissions';
+import { createRequirePermission, createRequirePermissionKey } from './requirePermission';
 
 function mockRes() {
   const headers: Record<string, string> = {};
@@ -77,5 +77,28 @@ describe('requirePermission', () => {
     const next = vi.fn();
     await usersManage({ user: { userId: 1, role: 'admin' } } as Request, res, next as NextFunction);
     expect(next).toHaveBeenCalledOnce();
+  });
+});
+
+describe('requirePermissionKey', () => {
+  it('does not register an action and checks the given key', async () => {
+    const hasPermission = vi.fn(async (_slug: string, key: string) => key === pageKey('accounting', 'cashIn'));
+    const mw = createRequirePermissionKey(hasPermission)(pageKey('accounting', 'cashIn'));
+    expect(mw.key).toBe(pageKey('accounting', 'cashIn'));
+    const res = mockRes();
+    const next = vi.fn();
+    await mw({ user: { userId: 1, role: 'admin' } } as Request, res, next as NextFunction);
+    expect(next).toHaveBeenCalledOnce();
+    expect(hasPermission).toHaveBeenCalledWith('admin', pageKey('accounting', 'cashIn'));
+  });
+
+  it('returns 403 when the existing key is missing', async () => {
+    const mw = createRequirePermissionKey(async () => false)(pageKey('accounting', 'cashIn'));
+    const res = mockRes();
+    const next = vi.fn();
+    await mw({ user: { userId: 1, role: 'boss' } } as Request, res, next as NextFunction);
+    expect(res.statusCode).toBe(403);
+    expect(res.headers[INSUFFICIENT_ROLE_HEADER]).toBe('1');
+    expect(next).not.toHaveBeenCalled();
   });
 });

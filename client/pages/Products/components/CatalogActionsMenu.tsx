@@ -29,6 +29,7 @@ export interface CatalogActionsMenuItemsProps {
   onTrash: (ids: string[]) => void;
   onRestoreFromTrash: (ids: string[]) => void;
   onClose?: () => void;
+  readOnly?: boolean;
 }
 
 export function CatalogActionsMenuItems({
@@ -48,9 +49,10 @@ export function CatalogActionsMenuItems({
   onTrash,
   onRestoreFromTrash,
   onClose,
+  readOnly,
 }: CatalogActionsMenuItemsProps) {
-  const canDuplicate = ids.length === 1 && !busy;
-  const canBulk = ids.length > 0 && !busy;
+  const canDuplicate = ids.length === 1 && !busy && !readOnly;
+  const canBulk = ids.length > 0 && !busy && !readOnly;
   const inTrash = Boolean(fromTrash);
   const inArchive = Boolean(fromArchive) && !inTrash;
   const onlyGroups = Boolean(groupsOnly);
@@ -214,6 +216,7 @@ interface CatalogActionsDropdownProps extends Omit<CatalogActionsMenuItemsProps,
   onListSortToggle?: () => void;
   /** Вимкнено, коли таблиця відсортована за колонкою */
   listSortDisabled?: boolean;
+  readOnly?: boolean;
 }
 
 export function CatalogActionsDropdown({
@@ -243,9 +246,10 @@ export function CatalogActionsDropdown({
   listSortEnabled = false,
   onListSortToggle,
   listSortDisabled = false,
+  readOnly = false,
 }: CatalogActionsDropdownProps) {
-  const canDuplicate = ids.length === 1 && !busy;
-  const canBulk = ids.length > 0 && !busy;
+  const canDuplicate = ids.length === 1 && !busy && !readOnly;
+  const canBulk = ids.length > 0 && !busy && !readOnly;
   const inTrash = Boolean(fromTrash);
   const inArchive = Boolean(fromArchive) && !inTrash;
   const onlyGroups = Boolean(groupsOnly);
@@ -261,7 +265,7 @@ export function CatalogActionsDropdown({
     <div className="flex items-center gap-2">
       <Button
         size="sm"
-        isDisabled={listSortDisabled}
+        isDisabled={listSortDisabled || readOnly}
         aria-label="Сортувати список"
         aria-pressed={listSortEnabled && !listSortDisabled}
         onPress={onListSortToggle}
@@ -349,14 +353,16 @@ export function CatalogActionsDropdown({
         >
           <DropdownItem
             key="create"
-            isDisabled={busy}
+            isDisabled={busy || readOnly}
+            className={readOnly ? 'hidden' : undefined}
             startContent={<DynamicIcon name="circle-plus" size={16} className="shrink-0" />}
           >
             Додати обʼєкт
           </DropdownItem>
           <DropdownItem
             key="refreshBranch"
-            isDisabled={catalogBusy}
+            isDisabled={catalogBusy || readOnly}
+            className={readOnly ? 'hidden' : undefined}
             startContent={
               <DynamicIcon
                 name={branchRefreshing ? 'refresh-cw' : 'folder-sync'}
@@ -369,8 +375,8 @@ export function CatalogActionsDropdown({
           </DropdownItem>
           <DropdownItem
             key="refreshStock"
-            isDisabled={catalogBusy}
-            className="text-amber-600"
+            isDisabled={catalogBusy || readOnly}
+            className={readOnly ? 'hidden text-amber-600' : 'text-amber-600'}
             startContent={
               <DynamicIcon
                 name={stockRefreshing ? 'refresh-cw' : 'boxes'}

@@ -7,6 +7,7 @@ export type PermissionGroup =
   | 'pages.main'
   | 'pages.warehouse'
   | 'pages.reports'
+  | 'pages.accounting'
   | 'pages.settings'
   | 'actions.users'
   | 'actions.warehouse'
@@ -17,6 +18,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   'pages.main': 'Основні сторінки',
   'pages.warehouse': 'Склад',
   'pages.reports': 'Звіти',
+  'pages.accounting': 'Бухгалтерія',
   'pages.settings': 'Налаштування',
   'actions.users': 'Користувачі та адміністрування',
   'actions.warehouse': 'Складські операції',
@@ -213,6 +215,8 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: pageKey('reports', 'general'), seed: min(ROLES.SHOP_MANAGER) },
   { key: pageKey('reports', 'metaLogs'), seed: min(ROLES.STOREKEEPER) },
 
+  { key: pageKey('accounting', 'cashIn'), seed: only(ROLES.ADMIN) },
+
   { key: pageKey('settings', 'orderAssembly'), seed: min(ROLES.STOREKEEPER) },
   { key: pageKey('settings', 'equipment'), seed: only(ROLES.ADMIN, ROLES.BOSS, ROLES.STOREKEEPER) },
   { key: pageKey('settings', 'orders'), seed: only(ROLES.ADMIN) },
@@ -279,6 +283,7 @@ export const PERMISSIONS = {
   PAGE_REPORTS_SALES_DYNAMICS: pageKey('reports', 'salesDynamics'),
   PAGE_REPORTS_LAL: pageKey('reports', 'lalAudiences'),
   PAGE_REPORTS_META_LOGS: pageKey('reports', 'metaLogs'),
+  PAGE_ACCOUNTING_CASH_IN: pageKey('accounting', 'cashIn'),
   PAGE_SETTINGS_ORDER_ASSEMBLY: pageKey('settings', 'orderAssembly'),
   PAGE_SETTINGS_EQUIPMENT: pageKey('settings', 'equipment'),
   PAGE_SETTINGS_ORDERS: pageKey('settings', 'orders'),

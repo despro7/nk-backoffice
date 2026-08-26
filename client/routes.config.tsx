@@ -31,6 +31,7 @@ import SettingsUsers from "./pages/Settings/Users";
 import SettingsDilovod from "./pages/SettingsDilovod";
 import SettingsWarehouseMovement from "./pages/SettingsWarehouseMovement";
 import SalesDriveOrders from "./pages/SalesDriveOrders";
+import CashInImport from "./pages/CashInImport";
 import TestSerialCom from "./pages/test-serial-com";
 import MetaLogNotifications from './pages/MetaLogs';
 
@@ -333,6 +334,23 @@ export const appRoutes: AppRoute[] = [
     hasOwnTitle: true,
   },
   {
+    path: '/accounting/cash-in',
+    component: CashInImport,
+    title: 'Імпорт реєстру переказів НП',
+    pageTitle: 'Імпорт реєстру переказів НП | NK Backoffice',
+    navLabel: 'Реєстр переказів НП',
+    icon: <DynamicIcon name="file-input" size={16} />,
+    inNav: true,
+    parent: 'accounting',
+    order: 0,
+    groupMeta: {
+      label: 'Бухгалтерія',
+      icon: <DynamicIcon name="banknote" size={20} />,
+      order: 5,
+    },
+    permission: { name: 'cashIn' },
+  },
+  {
     path: '/salesdrive-to-dilovod',
     component: SalesDriveOrders,
     title: 'Статуси всіх замовлень',
@@ -340,7 +358,7 @@ export const appRoutes: AppRoute[] = [
     navLabel: 'Стан замовлень',
     icon: <DynamicIcon name="clipboard-check" size={20} />,
     inNav: true,
-    order: 5,
+    order: 6,
     permission: { name: 'salesdriveOrders' },
   },
   {

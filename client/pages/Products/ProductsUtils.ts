@@ -542,14 +542,17 @@ export function getBlockedMoveTargetIds(
   return blocked;
 }
 
-/** Шлях від root до папки для breadcrumbs. */
+/** Шлях від visual root до папки для breadcrumbs. */
 export function buildFolderBreadcrumbs(
   folderId: string,
-  items: Record<string, CatalogTreeItemData>
+  items: Record<string, CatalogTreeItemData>,
+  options?: { visualRootId?: string }
 ): Array<{ id: string; name: string }> {
-  const rootName = items[CATALOG_ROOT_ID]?.name || 'Каталог';
-  if (!folderId || folderId === CATALOG_ROOT_ID) {
-    return [{ id: CATALOG_ROOT_ID, name: rootName }];
+  const visualRootId = options?.visualRootId || CATALOG_ROOT_ID;
+  const rootName =
+    items[visualRootId]?.name || items[CATALOG_ROOT_ID]?.name || 'Каталог';
+  if (!folderId || folderId === CATALOG_ROOT_ID || folderId === visualRootId) {
+    return [{ id: visualRootId, name: rootName }];
   }
 
   const path: Array<{ id: string; name: string }> = [];
@@ -559,29 +562,31 @@ export function buildFolderBreadcrumbs(
   while (currentId && !seen.has(currentId)) {
     seen.add(currentId);
 
-    if (currentId === CATALOG_ROOT_ID) {
-      path.unshift({ id: CATALOG_ROOT_ID, name: rootName });
+    if (currentId === visualRootId || currentId === CATALOG_ROOT_ID) {
+      path.unshift({ id: visualRootId, name: rootName });
       break;
     }
 
     const item = items[currentId];
     if (!item) {
-      path.unshift({ id: CATALOG_ROOT_ID, name: rootName });
+      path.unshift({ id: visualRootId, name: rootName });
       break;
     }
 
     path.unshift({ id: item.id, name: item.name });
 
     const parent = item.parentId;
-    if (!parent || parent === '0' || !items[parent]) {
-      path.unshift({ id: CATALOG_ROOT_ID, name: rootName });
+    if (!parent || parent === '0' || parent === visualRootId || !items[parent]) {
+      if (path[0]?.id !== visualRootId) {
+        path.unshift({ id: visualRootId, name: rootName });
+      }
       break;
     }
     currentId = parent;
   }
 
-  if (path.length === 0 || path[0]?.id !== CATALOG_ROOT_ID) {
-    path.unshift({ id: CATALOG_ROOT_ID, name: rootName });
+  if (path.length === 0 || path[0]?.id !== visualRootId) {
+    path.unshift({ id: visualRootId, name: rootName });
   }
 
   return path;

@@ -24,6 +24,7 @@ interface PricesSectionProps {
   onApplyPriceRowChange: (idx: number, patch: Partial<PriceRow>) => void;
   onPricesChange: (updater: (prev: PriceRow[]) => PriceRow[]) => void;
   onRowDeleteConfirm: (next: { kind: RowDeleteKind; idx: number } | null) => void;
+  isReadOnly?: boolean;
 }
 
 export function PricesSection({
@@ -39,9 +40,10 @@ export function PricesSection({
   onApplyPriceRowChange,
   onPricesChange,
   onRowDeleteConfirm,
+  isReadOnly = false,
 }: PricesSectionProps) {
   return (
-    <section className="space-y-3">
+    <section className={`space-y-3 ${isReadOnly ? 'pointer-events-none' : ''}`}>
       <h3 className="text-sm font-semibold flex items-center gap-1">
         <DynamicIcon name="wallet" size={14} />
         <span>Ціни</span>

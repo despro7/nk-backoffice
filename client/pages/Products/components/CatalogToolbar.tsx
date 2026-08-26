@@ -16,6 +16,7 @@ interface CatalogToolbarProps {
   onCreateGood: () => void;
   busy?: boolean;
   actions?: ReactNode;
+  readOnly?: boolean;
 }
 
 export function CatalogToolbar({
@@ -31,6 +32,7 @@ export function CatalogToolbar({
   onCreateGood,
   busy,
   actions,
+  readOnly,
 }: CatalogToolbarProps) {
   const anyRefreshing = Boolean(branchRefreshing || stockRefreshing || fullRefreshing);
   const { isDebugMode } = useDebug();
@@ -59,7 +61,7 @@ export function CatalogToolbar({
         startContent={<DynamicIcon name="circle-plus" size={14} />}
         className="hidden bg-gradient-to-b from-sky-500 to-blue-600/75 text-white hover:bg-blue-600 font-medium md:inline-flex"
         onPress={onCreateGood}
-        isDisabled={busy}
+        isDisabled={busy || Boolean(readOnly)}
       >
         Додати обʼєкт
       </Button>
@@ -87,7 +89,7 @@ export function CatalogToolbar({
               />
             }
             onPress={onRefreshBranch}
-            isDisabled={busy || anyRefreshing}
+            isDisabled={busy || anyRefreshing || Boolean(readOnly)}
           >
             Синхронізувати гілку
           </Button>
@@ -117,7 +119,7 @@ export function CatalogToolbar({
               />
             }
             onPress={onRefreshStock}
-            isDisabled={busy || anyRefreshing}
+            isDisabled={busy || anyRefreshing || Boolean(readOnly)}
           >
             Оновити залишки
           </Button>

@@ -43,6 +43,9 @@ interface CatalogTreeProps {
     afterId?: string | null;
   }) => void;
   onContextMenu?: (e: React.MouseEvent, ids: string[]) => void;
+  readOnly?: boolean;
+  /** Візуальний корінь дерева (єдина доступна гілка або синтетичний `root`). */
+  rootItemId?: string;
 }
 
 interface TreeNodeProps {
@@ -57,6 +60,7 @@ interface TreeNodeProps {
   dropHint?: TreeDropHint | null;
   onFolderPointerDown?: (e: React.PointerEvent<HTMLElement>, folderId: string) => void;
   suppressClickRef?: React.MutableRefObject<boolean>;
+  rootItemId: string;
 }
 
 type TreeDropHint =
@@ -79,9 +83,10 @@ function TreeNode({
   dropHint,
   onFolderPointerDown,
   suppressClickRef,
+  rootItemId,
 }: TreeNodeProps) {
   const data = item.getItemData();
-  const isRoot = item.getId() === CATALOG_ROOT_ID;
+  const isRoot = item.getId() === rootItemId;
   const isActive = selectedFolderId === item.getId();
   const archiveChildId = data.archiveChildId || null;
   const isArchiveActive = Boolean(archiveChildId && selectedFolderId === archiveChildId);
@@ -93,7 +98,7 @@ function TreeNode({
   // true лише якщо є розгорнута папка з дочірніми групами (leaf у expandedItems не рахуємо)
   const hasExpandedItems = isRoot
     ? (item.getTree().getState().expandedItems ?? []).some((id) => {
-        if (id === CATALOG_ROOT_ID) return false;
+        if (id === rootItemId) return false;
         const inst = item.getTree().getItemInstance(id);
         return Boolean(inst?.isExpanded() && inst.getChildren().length > 0);
       })
@@ -162,7 +167,7 @@ function TreeNode({
             );
 
             if (isRoot) {
-              onSelectFolder(CATALOG_ROOT_ID);
+              onSelectFolder(rootItemId);
               return;
             }
 
@@ -308,6 +313,7 @@ function TreeNode({
                 dropHint={dropHint}
                 onFolderPointerDown={onFolderPointerDown}
                 suppressClickRef={suppressClickRef}
+                rootItemId={rootItemId}
               />
             ))}
           </ul>
@@ -324,17 +330,29 @@ export function CatalogTree({
   onMove,
   onReorder,
   onContextMenu,
+  readOnly = false,
+  rootItemId = CATALOG_ROOT_ID,
 }: CatalogTreeProps) {
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  const rootItemIdRef = useRef(rootItemId);
+  rootItemIdRef.current = rootItemId;
   const tree = useTree<CatalogTreeItemData>({
-    rootItemId: CATALOG_ROOT_ID,
+    rootItemId,
     indent: 16,
     canReorder: true,
     reorderAreaPercentage: 0.35,
-    initialState: { expandedItems: [CATALOG_ROOT_ID] },
+    initialState: { expandedItems: [rootItemId] },
     getItemName: (item) => item.getItemData().name,
     isItemFolder: (item) => item.getItemData().isGroup,
     canDrag: (dragItems) =>
-      dragItems.every((i) => i.getId() !== CATALOG_ROOT_ID && i.getItemData().isGroup),
+      !readOnlyRef.current &&
+      dragItems.every(
+        (i) =>
+          i.getId() !== CATALOG_ROOT_ID &&
+          i.getId() !== rootItemIdRef.current &&
+          i.getItemData().isGroup
+      ),
     setDragImage: (draggedItems) => {
       const labels = draggedItems.map((i) => i.getItemName());
       const imgElement = createCatalogDragPreview(labels);
@@ -373,7 +391,7 @@ export function CatalogTree({
       return targetData.isGroup || target.item.getId() === CATALOG_ROOT_ID;
     },
     onDrop: (dragItems, target) => {
-      const ids = dragItems.map((i) => i.getId()).filter((id) => id !== CATALOG_ROOT_ID);
+      const ids = dragItems.map((i) => i.getId()).filter((id) => id !== CATALOG_ROOT_ID && id !== rootItemIdRef.current);
       if (ids.length === 0) return;
 
       if (isOrderedDragTarget(target) && onReorder) {
@@ -438,7 +456,7 @@ export function CatalogTree({
   // Авто-розкриття шляху до активної папки (таблиця, breadcrumbs, дерево).
   // Архівні папки приховані в дереві — пропускаємо їх у expand.
   useEffect(() => {
-    const path = buildFolderBreadcrumbs(selectedFolderId, items);
+    const path = buildFolderBreadcrumbs(selectedFolderId, items, { visualRootId: rootItemId });
     for (const crumb of path) {
       const crumbItem = items[crumb.id];
       if (!crumbItem) continue;
@@ -498,7 +516,7 @@ export function CatalogTree({
       const ratio = rect.height > 0 ? (clientY - rect.top) / rect.height : 0.5;
       const dragParent = treeParentKey(treeItems[dragId]?.parentId);
       const targetParent = treeParentKey(treeItems[targetId]?.parentId);
-      const isSibling = dragParent === targetParent && targetId !== CATALOG_ROOT_ID;
+      const isSibling = dragParent === targetParent && targetId !== rootItemIdRef.current;
 
       if (isSibling && (ratio <= EDGE || ratio >= 1 - EDGE)) {
         const siblings = (treeItems[dragParent]?.children ?? []).filter((id) => id !== dragId);
@@ -646,8 +664,9 @@ export function CatalogTree({
   }, []);
 
   const onFolderPointerDown = (e: React.PointerEvent<HTMLElement>, folderId: string) => {
+    if (readOnlyRef.current) return;
     if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
-    if (folderId === CATALOG_ROOT_ID) return;
+    if (folderId === CATALOG_ROOT_ID || folderId === rootItemIdRef.current) return;
     const captureEl = e.currentTarget;
     const session = {
       pointerId: e.pointerId,
@@ -707,7 +726,7 @@ export function CatalogTree({
             onSelectFolder={onSelectFolder}
             onCollapseFolders={() => {
               tree.collapseAll();
-              tree.getItemInstance(CATALOG_ROOT_ID)?.expand();
+              tree.getItemInstance(rootItemId)?.expand();
             }}
             onContextMenu={onContextMenu}
             showChildGuides={false}
@@ -715,6 +734,7 @@ export function CatalogTree({
             dropHint={dropHint}
             onFolderPointerDown={onFolderPointerDown}
             suppressClickRef={suppressClickRef}
+            rootItemId={rootItemId}
           />
         )}
         <li className="list-none">

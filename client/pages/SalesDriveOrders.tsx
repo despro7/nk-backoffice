@@ -1,6 +1,5 @@
 import { useState } from "react";
 import SalesDriveOrdersTable from "../components/SalesDriveOrdersTable";
-import CashInImport from "./CashInImport";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { cn } from "@heroui/react";
 
@@ -62,16 +61,10 @@ function MobileOrdersDescription() {
 
 export default function SalesDriveOrders() {
   return (
-    <>
-      <div className="container bg-white rounded-lg p-4 lg:p-6">
-        <OrdersDescription className="mb-6 hidden lg:block [&>p]:leading-relaxed" />
-        <MobileOrdersDescription />
-        <SalesDriveOrdersTable />
-      </div>
-
-      <div className="container bg-white rounded-lg p-6 mt-4">
-        <CashInImport />
-      </div>
-    </>
+    <div className="container bg-white rounded-lg p-4 lg:p-6">
+      <OrdersDescription className="mb-6 hidden lg:block [&>p]:leading-relaxed" />
+      <MobileOrdersDescription />
+      <SalesDriveOrdersTable />
+    </div>
   );
 }

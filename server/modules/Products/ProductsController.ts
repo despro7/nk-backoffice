@@ -9,8 +9,24 @@ import multer from 'multer';
 import { Router, type Response } from 'express';
 import { authenticateToken, requirePermission } from '../../middleware/auth.js';
 import { roleService } from '../../services/RoleService.js';
-import { logServer } from '../../lib/utils.js';
+import { prisma, logServer } from '../../lib/utils.js';
 import { productsCatalogService } from './ProductsCatalogService.js';
+import {
+  assertCanUseCatalogApi,
+  assertFolderEdit,
+  assertFolderView,
+  assertHasAnyFolderEdit,
+  assertItemsEdit,
+  assertRootEdit,
+  accessFolderId,
+  filterChildrenForAcl,
+  filterSearchForAcl,
+  filterTreeForAcl,
+  invalidateCatalogAclIndex,
+  loadCatalogAclIndex,
+} from './catalogFolderAcl.js';
+import { CATALOG_TRASH_ID } from '../../../shared/types/catalog.js';
+import { normalizeCatalogFolderId } from '../../../shared/utils/catalogFolderAccess.js';
 import { DilovodService, dilovodService } from '../../services/dilovod/DilovodService.js';
 import type { DilovodSyncResult } from '../../services/dilovod/DilovodTypes.js';
 import {
@@ -21,9 +37,9 @@ import {
 } from './CatalogMediaService.js';
 
 const router = Router();
-const catalogManage = requirePermission('catalog', 'manage', 'Каталог Товари 2.0');
+requirePermission('catalog', 'manage', 'Каталог Товари 2.0');
 const catalogFullRefresh = requirePermission('catalog', 'fullRefresh', 'Повний refresh каталогу з Dilovod');
-const guard = [authenticateToken, catalogManage] as const;
+const authOnly = [authenticateToken] as const;
 
 const uploadTmpDir = path.resolve(process.cwd(), 'uploads', 'catalog', '_tmp');
 fs.mkdirSync(uploadTmpDir, { recursive: true });
@@ -65,10 +81,15 @@ function mapMulterFiles(
 }
 
 // GET /api/catalog/tree
-router.get('/tree', ...guard, async (req, res) => {
+router.get('/tree', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
     const includeTrash = String(req.query.includeTrash || '') === '1';
-    const data = await productsCatalogService.getTree({ includeTrash });
+    const data = filterTreeForAcl(
+      await productsCatalogService.getTree({ includeTrash }),
+      perms
+    );
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'GET /tree');
@@ -76,10 +97,18 @@ router.get('/tree', ...guard, async (req, res) => {
 });
 
 // GET /api/catalog/folder/:id/children  (id=root → null parent)
-router.get('/folder/:id/children', ...guard, async (req, res) => {
+router.get('/folder/:id/children', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
     const folderId = req.params.id === 'root' ? null : req.params.id;
-    const data = await productsCatalogService.getFolderChildren(folderId);
+    const index = await loadCatalogAclIndex();
+    const data = filterChildrenForAcl(
+      folderId,
+      await productsCatalogService.getFolderChildren(folderId),
+      perms,
+      index.parentById
+    );
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'GET /folder/:id/children');
@@ -87,7 +116,7 @@ router.get('/folder/:id/children', ...guard, async (req, res) => {
 });
 
 // GET /api/catalog/search?q=&underFolderId=&underFolderName=
-router.get('/search', ...guard, async (req, res) => {
+router.get('/search', ...authOnly, async (req, res) => {
   try {
     const q = String(req.query.q || '');
     const underFolderId = req.query.underFolderId
@@ -96,19 +125,26 @@ router.get('/search', ...guard, async (req, res) => {
     const underFolderName = req.query.underFolderName
       ? String(req.query.underFolderName)
       : undefined;
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
     const data = await productsCatalogService.search(q, 50, {
       underFolderId,
       underFolderName,
     });
-    res.json({ success: true, data });
+    const index = await loadCatalogAclIndex();
+    res.json({ success: true, data: filterSearchForAcl(data, perms, index.parentById) });
   } catch (error) {
     handleError(res, error, 'GET /search');
   }
 });
 
 // GET /api/catalog/trash
-router.get('/trash', ...guard, async (_req, res) => {
+router.get('/trash', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertFolderView(res, perms, CATALOG_TRASH_ID, index.parentById)) return;
     const data = await productsCatalogService.getTrash();
     res.json({ success: true, data });
   } catch (error) {
@@ -117,8 +153,10 @@ router.get('/trash', ...guard, async (_req, res) => {
 });
 
 // GET /api/catalog/units
-router.get('/units', ...guard, async (_req, res) => {
+router.get('/units', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
     const data = await productsCatalogService.getUnits();
     res.json({ success: true, data });
   } catch (error) {
@@ -127,8 +165,10 @@ router.get('/units', ...guard, async (_req, res) => {
 });
 
 // GET /api/catalog/dictionaries — units, priceTypes, currencies, accPolicies (кеш Dilovod)
-router.get('/dictionaries', ...guard, async (_req, res) => {
+router.get('/dictionaries', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
     const data = await productsCatalogService.getDictionaries();
     res.json({ success: true, data });
   } catch (error) {
@@ -137,10 +177,14 @@ router.get('/dictionaries', ...guard, async (_req, res) => {
 });
 
 // GET /api/catalog/sku/next?parentId=&excludeId=
-router.get('/sku/next', ...guard, async (req, res) => {
+router.get('/sku/next', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
     const parentRaw = String(req.query.parentId || 'root');
     const parentId = parentRaw === 'root' || parentRaw === '' ? null : parentRaw;
+    const index = await loadCatalogAclIndex();
+    if (!assertFolderEdit(res, perms, parentId, index.parentById)) return;
     const excludeId = req.query.excludeId ? String(req.query.excludeId) : undefined;
     const sku = await productsCatalogService.suggestNextSku(parentId, excludeId);
     res.json({ success: true, data: { sku } });
@@ -150,8 +194,11 @@ router.get('/sku/next', ...guard, async (req, res) => {
 });
 
 // GET /api/catalog/barcode/next — наступний вільний EAN-13 з Dilovod barCodes
-router.get('/barcode/next', ...guard, async (_req, res) => {
+router.get('/barcode/next', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    if (!assertHasAnyFolderEdit(res, perms)) return;
     const code = await productsCatalogService.suggestNextBarcode();
     res.json({ success: true, data: { code } });
   } catch (error) {
@@ -160,13 +207,18 @@ router.get('/barcode/next', ...guard, async (_req, res) => {
 });
 
 // GET /api/catalog/goods/:id
-router.get('/goods/:id', ...guard, async (req, res) => {
+router.get('/goods/:id', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
     const data = await productsCatalogService.getGoodDetail(req.params.id, { livePull: true });
     if (!data) {
       res.status(404).json({ success: false, error: 'Товар не знайдено' });
       return;
     }
+    const index = await loadCatalogAclIndex();
+    const folderId = data.isGroup ? data.id : data.parentId;
+    if (!assertFolderView(res, perms, folderId, index.parentById)) return;
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'GET /goods/:id');
@@ -174,9 +226,15 @@ router.get('/goods/:id', ...guard, async (req, res) => {
 });
 
 // POST /api/catalog/goods
-router.post('/goods', ...guard, async (req, res) => {
+router.post('/goods', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const parentId = normalizeCatalogFolderId(req.body?.parentId);
+    const index = await loadCatalogAclIndex();
+    if (!assertFolderEdit(res, perms, parentId, index.parentById)) return;
     const data = await productsCatalogService.createGood(req.body || {});
+    invalidateCatalogAclIndex();
     res.status(201).json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'POST /goods');
@@ -184,9 +242,23 @@ router.post('/goods', ...guard, async (req, res) => {
 });
 
 // PUT /api/catalog/goods/:id
-router.put('/goods/:id', ...guard, async (req, res) => {
+router.put('/goods/:id', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, [req.params.id], index)) return;
+    const nextParent = req.body?.parentId;
+    if (nextParent !== undefined) {
+      const target = normalizeCatalogFolderId(String(nextParent));
+      if (target == null) {
+        if (!assertRootEdit(res, perms)) return;
+      } else if (!assertFolderEdit(res, perms, target, index.parentById)) {
+        return;
+      }
+    }
     const data = await productsCatalogService.updateGood(req.params.id, req.body || {});
+    invalidateCatalogAclIndex();
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'PUT /goods/:id');
@@ -194,14 +266,25 @@ router.put('/goods/:id', ...guard, async (req, res) => {
 });
 
 // POST /api/catalog/goods/move
-router.post('/goods/move', ...guard, async (req, res) => {
+router.post('/goods/move', ...authOnly, async (req, res) => {
   try {
     const { ids, targetParentId } = req.body || {};
     if (!Array.isArray(ids) || targetParentId == null || targetParentId === '') {
       res.status(400).json({ success: false, error: 'ids[] і targetParentId обовʼязкові' });
       return;
     }
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, ids.map(String), index)) return;
+    const target = normalizeCatalogFolderId(String(targetParentId));
+    if (target == null) {
+      if (!assertRootEdit(res, perms)) return;
+    } else if (!assertFolderEdit(res, perms, target, index.parentById)) {
+      return;
+    }
     const data = await productsCatalogService.moveGoods(ids.map(String), String(targetParentId));
+    invalidateCatalogAclIndex();
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'POST /goods/move');
@@ -209,13 +292,17 @@ router.post('/goods/move', ...guard, async (req, res) => {
 });
 
 // POST /api/catalog/goods/change-type
-router.post('/goods/change-type', ...guard, async (req, res) => {
+router.post('/goods/change-type', ...authOnly, async (req, res) => {
   try {
     const { ids, accPolicyId } = req.body || {};
     if (!Array.isArray(ids) || ids.length === 0 || accPolicyId == null || accPolicyId === '') {
       res.status(400).json({ success: false, error: 'ids[] і accPolicyId обовʼязкові' });
       return;
     }
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, ids.map(String), index)) return;
     const data = await productsCatalogService.changeGoodsType(ids.map(String), String(accPolicyId));
     res.json({ success: true, data });
   } catch (error) {
@@ -224,8 +311,13 @@ router.post('/goods/change-type', ...guard, async (req, res) => {
 });
 
 // POST /api/catalog/reorder — інтервальний sortOrder siblings
-router.post('/reorder', ...guard, async (req, res) => {
+router.post('/reorder', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const parentId = normalizeCatalogFolderId(req.body?.parentId);
+    const index = await loadCatalogAclIndex();
+    if (!assertFolderEdit(res, perms, parentId, index.parentById)) return;
     const data = await productsCatalogService.reorderSibling(req.body || {});
     res.json({ success: true, data });
   } catch (error) {
@@ -234,14 +326,19 @@ router.post('/reorder', ...guard, async (req, res) => {
 });
 
 // POST /api/catalog/goods/archive
-router.post('/goods/archive', ...guard, async (req, res) => {
+router.post('/goods/archive', ...authOnly, async (req, res) => {
   try {
     const { ids } = req.body || {};
     if (!Array.isArray(ids) || ids.length === 0) {
       res.status(400).json({ success: false, error: 'ids[] обовʼязковий' });
       return;
     }
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, ids.map(String), index)) return;
     const data = await productsCatalogService.archiveGoods(ids.map(String));
+    invalidateCatalogAclIndex();
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'POST /goods/archive');
@@ -249,14 +346,19 @@ router.post('/goods/archive', ...guard, async (req, res) => {
 });
 
 // POST /api/catalog/goods/restore — з архіву в батьківську папку (без setDelMark)
-router.post('/goods/restore', ...guard, async (req, res) => {
+router.post('/goods/restore', ...authOnly, async (req, res) => {
   try {
     const { ids } = req.body || {};
     if (!Array.isArray(ids) || ids.length === 0) {
       res.status(400).json({ success: false, error: 'ids[] обовʼязковий' });
       return;
     }
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, ids.map(String), index)) return;
     const data = await productsCatalogService.restoreGoods(ids.map(String));
+    invalidateCatalogAclIndex();
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'POST /goods/restore');
@@ -264,14 +366,20 @@ router.post('/goods/restore', ...guard, async (req, res) => {
 });
 
 // POST /api/catalog/goods/trash
-router.post('/goods/trash', ...guard, async (req, res) => {
+router.post('/goods/trash', ...authOnly, async (req, res) => {
   try {
     const { ids } = req.body || {};
     if (!Array.isArray(ids) || ids.length === 0) {
       res.status(400).json({ success: false, error: 'ids[] обовʼязковий' });
       return;
     }
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, ids.map(String), index)) return;
+    if (!assertFolderEdit(res, perms, CATALOG_TRASH_ID, index.parentById)) return;
     const data = await productsCatalogService.trashGoods(ids.map(String));
+    invalidateCatalogAclIndex();
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'POST /goods/trash');
@@ -279,9 +387,14 @@ router.post('/goods/trash', ...guard, async (req, res) => {
 });
 
 // POST /api/catalog/goods/:id/duplicate
-router.post('/goods/:id/duplicate', ...guard, async (req, res) => {
+router.post('/goods/:id/duplicate', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, [req.params.id], index)) return;
     const data = await productsCatalogService.duplicateGood(req.params.id);
+    invalidateCatalogAclIndex();
     res.status(201).json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'POST /goods/:id/duplicate');
@@ -293,11 +406,14 @@ router.post('/goods/:id/duplicate', ...guard, async (req, res) => {
 //   { folderId, recursive?: true } → structure-only гілка
 //   { ids: string[] } → sync виділених (header + prices + barcodes)
 //   {} → повний refresh (лише ADMIN)
-router.post('/refresh', ...guard, async (req, res) => {
+router.post('/refresh', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
     const body = req.body || {};
     const hasFolderId = Object.prototype.hasOwnProperty.call(body, 'folderId');
     const ids = Array.isArray(body.ids) ? body.ids.map(String) : undefined;
+    const index = await loadCatalogAclIndex();
 
     if (hasFolderId) {
       const raw = body.folderId;
@@ -305,6 +421,7 @@ router.post('/refresh', ...guard, async (req, res) => {
         raw === 'root' || raw === null || raw === '' || raw === undefined
           ? null
           : String(raw);
+      if (!assertFolderEdit(res, perms, folderId, index.parentById)) return;
       const recursive = body.recursive !== false; // за замовчуванням recursive для гілки
       const data = await productsCatalogService.refreshFolderFromDilovod(folderId, {
         recursive,
@@ -348,6 +465,7 @@ router.post('/refresh', ...guard, async (req, res) => {
     }
 
     if (ids && ids.length > 0) {
+      if (!assertItemsEdit(res, perms, ids, index)) return;
       const data = await productsCatalogService.refreshFromDilovod(ids);
       res.json({ success: true, data });
       return;
@@ -369,8 +487,13 @@ router.post('/refresh', ...guard, async (req, res) => {
 // ─── Catalog images (local only) ───────────────────────────────────────────
 
 // GET /api/catalog/goods/:id/images
-router.get('/goods/:id/images', ...guard, async (req, res) => {
+router.get('/goods/:id/images', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    const folderId = accessFolderId(req.params.id, index);
+    if (!assertFolderView(res, perms, folderId, index.parentById)) return;
     const data = await catalogMediaService.listForGood(req.params.id);
     res.json({ success: true, data });
   } catch (error) {
@@ -379,13 +502,17 @@ router.get('/goods/:id/images', ...guard, async (req, res) => {
 });
 
 // POST /api/catalog/goods/:id/images — multipart field "files"
-router.post('/goods/:id/images', ...guard, (req, res) => {
+router.post('/goods/:id/images', ...authOnly, (req, res) => {
   imageUpload.array('files', CATALOG_MEDIA_MAX_FILES)(req, res, async (err) => {
     if (err) {
       handleError(res, err, 'POST /goods/:id/images multer');
       return;
     }
     try {
+      const perms = await assertCanUseCatalogApi(req, res);
+      if (!perms) return;
+      const index = await loadCatalogAclIndex();
+      if (!assertItemsEdit(res, perms, [req.params.id], index)) return;
       const data = await catalogMediaService.saveForGood(req.params.id, mapMulterFiles(req.files as Express.Multer.File[]));
       res.status(201).json({ success: true, data });
     } catch (error) {
@@ -395,13 +522,16 @@ router.post('/goods/:id/images', ...guard, (req, res) => {
 });
 
 // POST /api/catalog/images/staging/:sessionId
-router.post('/images/staging/:sessionId', ...guard, (req, res) => {
+router.post('/images/staging/:sessionId', ...authOnly, (req, res) => {
   imageUpload.array('files', CATALOG_MEDIA_MAX_FILES)(req, res, async (err) => {
     if (err) {
       handleError(res, err, 'POST /images/staging/:sessionId multer');
       return;
     }
     try {
+      const perms = await assertCanUseCatalogApi(req, res);
+      if (!perms) return;
+      if (!assertHasAnyFolderEdit(res, perms)) return;
       const data = await catalogMediaService.saveStaging(
         req.params.sessionId,
         mapMulterFiles(req.files as Express.Multer.File[])
@@ -414,8 +544,10 @@ router.post('/images/staging/:sessionId', ...guard, (req, res) => {
 });
 
 // GET /api/catalog/images/staging/:sessionId
-router.get('/images/staging/:sessionId', ...guard, async (req, res) => {
+router.get('/images/staging/:sessionId', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
     const data = await catalogMediaService.listStaging(req.params.sessionId);
     res.json({ success: true, data });
   } catch (error) {
@@ -424,8 +556,11 @@ router.get('/images/staging/:sessionId', ...guard, async (req, res) => {
 });
 
 // DELETE /api/catalog/images/staging/:sessionId — discard all
-router.delete('/images/staging/:sessionId', ...guard, async (req, res) => {
+router.delete('/images/staging/:sessionId', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    if (!assertHasAnyFolderEdit(res, perms)) return;
     await catalogMediaService.discardStaging(req.params.sessionId);
     res.json({ success: true, data: { discarded: true } });
   } catch (error) {
@@ -434,8 +569,11 @@ router.delete('/images/staging/:sessionId', ...guard, async (req, res) => {
 });
 
 // DELETE /api/catalog/images/staging/:sessionId/:fileName
-router.delete('/images/staging/:sessionId/:fileName', ...guard, async (req, res) => {
+router.delete('/images/staging/:sessionId/:fileName', ...authOnly, async (req, res) => {
   try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    if (!assertHasAnyFolderEdit(res, perms)) return;
     await catalogMediaService.removeStagingFile(req.params.sessionId, req.params.fileName);
     res.json({ success: true, data: { removed: true } });
   } catch (error) {
@@ -444,13 +582,17 @@ router.delete('/images/staging/:sessionId/:fileName', ...guard, async (req, res)
 });
 
 // POST /api/catalog/images/staging/:sessionId/commit — { goodId }
-router.post('/images/staging/:sessionId/commit', ...guard, async (req, res) => {
+router.post('/images/staging/:sessionId/commit', ...authOnly, async (req, res) => {
   try {
     const goodId = String(req.body?.goodId || '');
     if (!goodId) {
       res.status(400).json({ success: false, error: 'goodId обовʼязковий' });
       return;
     }
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, [goodId], index)) return;
     const data = await catalogMediaService.commitStaging(req.params.sessionId, goodId);
     res.json({ success: true, data });
   } catch (error) {
@@ -459,13 +601,25 @@ router.post('/images/staging/:sessionId/commit', ...guard, async (req, res) => {
 });
 
 // DELETE /api/catalog/images/:imageId
-router.delete('/images/:imageId', ...guard, async (req, res) => {
+router.delete('/images/:imageId', ...authOnly, async (req, res) => {
   try {
     const imageId = parseInt(req.params.imageId, 10);
     if (!Number.isFinite(imageId)) {
       res.status(400).json({ success: false, error: 'Невірний imageId' });
       return;
     }
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const row = await prisma.catalogGoodImage.findUnique({
+      where: { id: imageId },
+      select: { goodId: true },
+    });
+    if (!row) {
+      res.status(404).json({ success: false, error: 'Зображення не знайдено' });
+      return;
+    }
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, [row.goodId], index)) return;
     await catalogMediaService.deleteImage(imageId);
     res.json({ success: true, data: { deleted: true } });
   } catch (error) {
@@ -474,13 +628,25 @@ router.delete('/images/:imageId', ...guard, async (req, res) => {
 });
 
 // PATCH /api/catalog/images/:imageId — { isPrimary?: true, sortOrder?: number } or reorder via body.orderedIds on good
-router.patch('/images/:imageId', ...guard, async (req, res) => {
+router.patch('/images/:imageId', ...authOnly, async (req, res) => {
   try {
     const imageId = parseInt(req.params.imageId, 10);
     if (!Number.isFinite(imageId)) {
       res.status(400).json({ success: false, error: 'Невірний imageId' });
       return;
     }
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const row = await prisma.catalogGoodImage.findUnique({
+      where: { id: imageId },
+      select: { goodId: true },
+    });
+    if (!row) {
+      res.status(404).json({ success: false, error: 'Зображення не знайдено' });
+      return;
+    }
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, [row.goodId], index)) return;
     if (req.body?.isPrimary === true) {
       const data = await catalogMediaService.setPrimary(imageId);
       res.json({ success: true, data });
@@ -493,7 +659,7 @@ router.patch('/images/:imageId', ...guard, async (req, res) => {
 });
 
 // PUT /api/catalog/goods/:id/images/order — { orderedIds: number[] }
-router.put('/goods/:id/images/order', ...guard, async (req, res) => {
+router.put('/goods/:id/images/order', ...authOnly, async (req, res) => {
   try {
     const orderedIds = Array.isArray(req.body?.orderedIds)
       ? req.body.orderedIds.map((n: unknown) => Number(n))
@@ -502,6 +668,10 @@ router.put('/goods/:id/images/order', ...guard, async (req, res) => {
       res.status(400).json({ success: false, error: 'orderedIds[] обовʼязковий' });
       return;
     }
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, [req.params.id], index)) return;
     const data = await catalogMediaService.reorder(req.params.id, orderedIds);
     res.json({ success: true, data });
   } catch (error) {

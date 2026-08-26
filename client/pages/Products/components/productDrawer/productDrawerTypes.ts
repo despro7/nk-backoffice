@@ -38,6 +38,7 @@ export interface ProductDrawerProps {
   stackLevel?: number;
   /** Id карток у відкритому стеку — щоб не відкривати ту саму двічі */
   stackGoodIds?: string[];
+  readOnly?: boolean;
 }
 
 export interface CatalogSearchHit {

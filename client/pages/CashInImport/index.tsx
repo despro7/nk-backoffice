@@ -11,10 +11,18 @@ import type { CashInRow, CashInPreviewResponse, CashInConfirmedRow } from '@shar
 // Крок імпорту
 type Step = 'upload' | 'preview' | 'done';
 
+const STEPS: Step[] = ['upload', 'preview', 'done'];
+
 const STEP_LABELS: Record<Step, string> = {
-  upload: '1. Завантаження файлу',
-  preview: '2. Перевірка даних',
-  done: '3. Результат',
+  upload: 'Завантаження',
+  preview: 'Перевірка',
+  done: 'Результат',
+};
+
+const STEP_ICONS: Record<Step, 'file-up' | 'list-checks' | 'circle-check'> = {
+  upload: 'file-up',
+  preview: 'list-checks',
+  done: 'circle-check',
 };
 
 export default function CashInImport() {
@@ -178,28 +186,68 @@ export default function CashInImport() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="container bg-white rounded-lg p-6">
+      <div className="flex flex-col gap-6">
       {/* Заголовок секції */}
       <div>
-        <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
-          <DynamicIcon name="file-input" size={18} className="text-primary shrink-0 hidden lg:block" />
-          Імпорт реєстру переказів Нової Пошти (надходження грошей)
-        </h2>
         <p className="text-sm text-gray-500 mt-1 lg:leading-relaxed">
           Завантажте Excel-файл реєстру переказів. Дані будуть перевірені та вивантажені в Діловод як документ «Надходження грошей».
         </p>
       </div>
 
-      {/* Індикатор кроків */}
-      <div className="flex items-center gap-1 text-xs text-gray-500">
-        {(Object.keys(STEP_LABELS) as Step[]).map((s, i) => (
-          <React.Fragment key={s}>
-            {i > 0 && <DynamicIcon name="chevron-right" size={13} className="text-gray-300" />}
-            <span className={step === s ? 'text-primary font-semibold' : ''}>
-              {STEP_LABELS[s]}
-            </span>
-          </React.Fragment>
-        ))}
+      {/* Індикатор кроків — кола фіксовані, лінії flex-1 до max-w-50 */}
+      <div className="flex w-full items-center justify-center gap-2 pb-6">
+        {STEPS.map((s, index) => {
+          const currentIndex = STEPS.indexOf(step);
+          const isDone = index < currentIndex;
+          const isCurrent = index === currentIndex;
+          const isLast = index === STEPS.length - 1;
+          const nextDone = !isLast && index + 1 <= currentIndex;
+
+          return (
+            <React.Fragment key={s}>
+              <div className="relative flex h-7 w-7 shrink-0 items-center justify-center">
+                <div
+                  className={`flex h-7 w-7 items-center justify-center rounded-full ${
+                    isDone
+                      ? 'bg-amber-500 text-white'
+                      : isCurrent
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-default-200 text-default-400'
+                  }`}
+                >
+                  <DynamicIcon
+                    name={STEP_ICONS[s]}
+                    size={14}
+                    className="shrink-0"
+                  />
+                </div>
+                <span
+                  className={`absolute top-full mt-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap text-sm leading-tight ${
+                    isDone
+                      ? 'text-amber-600 font-medium'
+                      : isCurrent
+                        ? 'text-orange-600 font-medium'
+                        : 'text-default-400/80'
+                  }`}
+                >
+                  {STEP_LABELS[s]}
+                </span>
+              </div>
+              {!isLast && (
+                <div
+                  className={`h-0.5 min-w-20 max-w-50 flex-1 rounded-full ${
+                    isDone && nextDone
+                      ? 'bg-amber-500'
+                      : isDone
+                        ? 'bg-amber-400/50'
+                        : 'bg-default-200'
+                  }`}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
       </div>
 
       {/* Крок 1: Upload */}
@@ -271,6 +319,7 @@ export default function CashInImport() {
         payload={payloadData}
         title="Cash-In Payload (dry-run)"
       />
+      </div>
     </div>
   );
 }

@@ -103,6 +103,13 @@ describe('seedPermissionKeysForRole', () => {
     expect(seedPermissionKeysForRole(ROLES.WAREHOUSE_MANAGER)).toContain(PERMISSIONS.ACTION_CATALOG_MANAGE);
     expect(seedPermissionKeysForRole(ROLES.STOREKEEPER)).not.toContain(PERMISSIONS.PAGE_PRODUCTS);
   });
+
+  it('accounting cash-in page is admin-only in seed', () => {
+    expect(seedPermissionKeysForRole(ROLES.ADMIN)).toContain(PERMISSIONS.PAGE_ACCOUNTING_CASH_IN);
+    for (const slug of [ROLES.ADS_MANAGER, ROLES.STOREKEEPER, ROLES.WAREHOUSE_MANAGER, ROLES.SHOP_MANAGER, ROLES.BOSS]) {
+      expect(seedPermissionKeysForRole(slug)).not.toContain(PERMISSIONS.PAGE_ACCOUNTING_CASH_IN);
+    }
+  });
 });
 
 describe('canAccessRoute', () => {
@@ -141,6 +148,19 @@ describe('collectPagePermissions', () => {
         label: 'Інвентаризація',
       }),
     ]);
+  });
+
+  it('maps accounting parent to pages.accounting group', () => {
+    const catalog = collectPagePermissions([
+      { parent: 'accounting', navLabel: 'Реєстр переказів НП', inNav: true, permission: { name: 'cashIn' } },
+    ]);
+    expect(catalog[0]).toEqual(
+      expect.objectContaining({
+        key: pageKey('accounting', 'cashIn'),
+        group: 'pages.accounting',
+        label: 'Реєстр переказів НП',
+      })
+    );
   });
 
   it('defaults group to main when parent is missing', () => {

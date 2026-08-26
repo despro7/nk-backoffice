@@ -10,6 +10,7 @@ interface CatalogBreadcrumbsProps {
   onNavigate: (folderId: string) => void;
   isSearchMode?: boolean;
   searchQuery?: string;
+  visualRootId?: string;
 }
 
 export function CatalogBreadcrumbs({
@@ -18,16 +19,14 @@ export function CatalogBreadcrumbs({
   onNavigate,
   isSearchMode,
   searchQuery,
+  visualRootId = CATALOG_ROOT_ID,
 }: CatalogBreadcrumbsProps) {
+  const rootName =
+    treeItems[visualRootId]?.name || treeItems[CATALOG_ROOT_ID]?.name || 'Каталог';
   // У пошуку — лише корінь + «Пошук», без шляху поточної папки
   const crumbs = isSearchMode
-    ? [
-        {
-          id: CATALOG_ROOT_ID,
-          name: treeItems[CATALOG_ROOT_ID]?.name || 'Каталог',
-        },
-      ]
-    : buildFolderBreadcrumbs(selectedFolderId, treeItems);
+    ? [{ id: visualRootId, name: rootName }]
+    : buildFolderBreadcrumbs(selectedFolderId, treeItems, { visualRootId });
 
   return (
     <Breadcrumbs
@@ -53,7 +52,7 @@ export function CatalogBreadcrumbs({
             key={crumb.id}
             isCurrent={isLast}
             startContent={
-              crumb.id === CATALOG_ROOT_ID ? (
+              crumb.id === visualRootId || crumb.id === CATALOG_ROOT_ID ? (
                 <DynamicIcon name="folder-open-dot" size={12} className="text-default-400" />
               ) : crumb.id === CATALOG_TRASH_ID ? (
                 <DynamicIcon name="trash-2" size={12} className="text-danger" />

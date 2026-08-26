@@ -3,6 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { RoleError, roleService } from '../services/RoleService.js';
 import { listRegisteredActions, PERMISSION_GROUP_LABELS } from '../../shared/constants/permissions.js';
+import { productsCatalogService } from '../modules/Products/ProductsCatalogService.js';
 
 const router = Router();
 const rolesManage = requirePermission('roles', 'manage', 'Керувати ролями');
@@ -31,6 +32,15 @@ router.get('/catalog', ...guard, async (_req: Request, res: Response) => {
       groups: PERMISSION_GROUP_LABELS,
       permissions: listRegisteredActions().map(({ key, group, label }) => ({ key, group, label })),
     });
+  } catch (error) {
+    handleRoleError(res, error);
+  }
+});
+
+router.get('/catalog-folders', ...guard, async (_req: Request, res: Response) => {
+  try {
+    const folders = await productsCatalogService.getTree({ includeTrash: true });
+    res.json({ folders });
   } catch (error) {
     handleRoleError(res, error);
   }
