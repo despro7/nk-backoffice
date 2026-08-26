@@ -38,6 +38,7 @@ export interface ProductOrderRow {
   productQuantity?: number | null;
   regularQuantity?: number | null;
   monolithicComponentQuantity?: number | null;
+  monolithicSetQuantity?: number | null;
   totalPrice?: number | string | null;
 }
 

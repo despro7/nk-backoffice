@@ -294,7 +294,8 @@ client/pages/Products/
 
 **Таблиця** — діти поточної папки; рядки-папки з іменем архіву **приховані** (доступ лише через іконку в дереві або breadcrumbs).
 
-- Гілка «Готова продукція»: колонки weight, packageRatio, unitRatio (Admin), ГП/МС, «В замовленнях»; portions з `/api/orders/products/stats` (статуси 1 / 2 / 9).
+- Гілка «Готова продукція»: колонки weight, packageRatio, unitRatio (Admin), ГП/МС, «В замовленнях»; stats з `/api/orders/products/stats?status=1|2|9&splitMonolithic=true`.
+- **«В замовленнях»:** комплекти (`products.set`) — кількість наборів з рядків замовлення; звичайні товари — порції з `processedItems` мінус компоненти наборів (та сама логіка, що звіт відвантажень, але без `payload.shipment.bySku`).
 - **Пошук** (`q` ≥ 2): колонки **Категорія** (`parentName`, клік → папка) і **В замовленнях** (навіть поза гілкою ГП). Клік по сумі або кольоровій цифрі відкриває модалку замовлень.
 - Column `SortDescriptor`; кнопка **«Ручний порядок»** біля breadcrumbs скидає на `sortOrder`.
 - **DnD товарів:** grip поза кнопкою назви; `stopPropagation` на pointerDown; reorder siblings через `/reorder` (у пошуку вимкнено).
@@ -320,7 +321,7 @@ client/pages/Products/
 
 | Контекст | Таби |
 | --- | --- |
-| Каталог `/products` | Всі \| Нові \| Підтверджені \| На утриманні; `GET /api/orders/products/orders?sku=&status=1,2,9` |
+| Каталог `/products` | Всі \| Нові \| Підтверджені \| На утриманні; `GET /api/orders/products/orders?sku=&status=1,2,9&splitMonolithic=true` (для наборів — кількість комплектів) |
 | Звіт відвантажень | Звичайні порції \| У складі монолітних наборів (`hideTabs` для плоского монолітного списку) |
 
 Навігація між товарами: контрол у хедері **перед SKU** (↑/↓ + `n / total`); стрілки клавіатури лишаються. Футера немає.

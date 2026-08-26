@@ -7,8 +7,10 @@ import { prisma, getOrderSourceDetailed, getOrderSourceMaps, getReportingDayStar
 import { dilovodService } from '../services/dilovod/index.js';
 import { getStatusText } from '../services/salesdrive/statusMapper.js';
 import {
+  computeOrderedSetQuantityBreakdown,
   computeShippedQuantityBreakdown,
   expandSetToLeaves,
+  extractOrderedSetItems,
   extractShipmentPayloadItems,
   getOrderReportItems,
   getOrderedQuantity,
@@ -1782,9 +1784,12 @@ router.post('/cache/validate', authenticateToken, async (req, res) => {
  */
 router.get('/products/stats', authenticateToken, async (req, res) => {
   try {
-    const { status, startDate, endDate, sync, shippedOnly } = req.query;
+    const { status, startDate, endDate, sync, shippedOnly, splitMonolithic } = req.query;
+    const splitMonolithicSets = splitMonolithic === 'true';
+    const shippedOnlyMode = shippedOnly === 'true';
+    const useMonolithicSplit = shippedOnlyMode || splitMonolithicSets;
 
-    const cacheKey = `stats-products-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${shippedOnly || 'false'}`;
+    const cacheKey = `stats-products-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${shippedOnly || 'false'}-${splitMonolithicSets ? 'split' : 'raw'}`;
     if (sync !== 'true') {
       const cached = statsCache.get(cacheKey);
       if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
@@ -1927,18 +1932,22 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       try {
         // Перевіряємо, чи є кешовані дані
         const cachedStats = processedItemsByOrder.get(order.externalId);
-        const shipmentItems = shippedOnly === 'true' ? extractShipmentPayloadItems(order.payloadData) : [];
-        const shipmentSkuSet = new Set(shipmentItems.map((item) => item.sku));
-        if (shipmentItems.length > 0) {
+        const kitItems = shippedOnlyMode
+          ? extractShipmentPayloadItems(order.payloadData)
+          : splitMonolithicSets
+            ? extractOrderedSetItems(order, productDescriptors)
+            : [];
+        const kitSkuSet = new Set(kitItems.map((item) => item.sku).filter((sku): sku is string => Boolean(sku)));
+        if (kitItems.length > 0) {
           ordersWithMonolithicSetsCount++;
         }
-        if (cachedStats || shipmentItems.length > 0) {
+        if (cachedStats || kitItems.length > 0) {
             cacheHits++;
 
             // Додаємо кешовані дані до загальної статистики
-            for (const item of [...(cachedStats ?? []), ...shipmentItems]) {
+            for (const item of [...(cachedStats ?? []), ...kitItems]) {
               if (item && item.sku) {
-                const isMonolithicSet = shipmentSkuSet.has(item.sku);
+                const isMonolithicSet = kitSkuSet.has(item.sku);
                 const descriptor = productDescriptors.get(item.sku);
                 const orderedQuantity = getOrderedQuantity((item as RawOrderItem).orderedQuantity ?? (item as RawOrderItem).quantity);
 
@@ -1968,8 +1977,8 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
           // Відстежуємо кількість порцій компонентів, що входять до монолітних наборів,
           // щоб коректно розрахувати totalPortions у звіті (без подвійного рахунку).
           // expandSetToLeaves рекурсивно розгортає вкладені набори до листових SKU.
-          if (shippedOnly === 'true') {
-            for (const monoItem of shipmentItems) {
+          if (useMonolithicSplit) {
+            for (const monoItem of kitItems) {
               const monoQty = getOrderedQuantity(monoItem.orderedQuantity ?? monoItem.quantity);
               if (monoQty <= 0) continue;
 
@@ -1997,7 +2006,7 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
     // Фінальна корекція для звіту відвантажень:
     // Зменшуємо orderedQuantity звичайних товарів на ту кількість, що пішла в монолітні набори,
     // щоб уникнути подвійного рахунку (компоненти вже враховані через монолітний набір × setPortions).
-    if (shippedOnly === 'true') {
+    if (useMonolithicSplit) {
       for (const stat of Object.values(productStats)) {
         if (!stat.isMonolithicSet) {
           stat.orderedQuantity = Math.max(0, stat.orderedQuantity - stat.monolithicComponentQuantity);
@@ -2075,7 +2084,9 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
  */
 router.get('/products/orders', authenticateToken, async (req, res) => {
   try {
-    const { sku, status, startDate, endDate, shippedOnly } = req.query;
+    const { sku, status, startDate, endDate, shippedOnly, splitMonolithic } = req.query;
+    const splitMonolithicSets = splitMonolithic === 'true';
+    const shippedOnlyMode = shippedOnly === 'true';
 
     if (!sku) {
       return res.status(400).json({ success: false, error: 'SKU is required' });
@@ -2169,14 +2180,18 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
         }
       }
 
-      // Без shippedOnly не враховуємо payloadData.shipment.bySku (як і раніше).
-      const orderForBreakdown = shippedOnly === 'true' ? order : { ...order, payloadData: undefined };
-      const breakdown = computeShippedQuantityBreakdown(
-        orderForBreakdown,
-        cachedStats,
-        String(sku),
-        productDescriptors,
-      );
+      // shippedOnly: моноліти з payload. splitMonolithic: комплекти з рядків замовлення.
+      // Інакше payload ігноруємо (історична поведінка sales/general звітів).
+      const breakdown = shippedOnlyMode
+        ? computeShippedQuantityBreakdown(order, cachedStats, String(sku), productDescriptors)
+        : splitMonolithicSets
+          ? computeOrderedSetQuantityBreakdown(order, cachedStats, String(sku), productDescriptors)
+          : computeShippedQuantityBreakdown(
+              { ...order, payloadData: undefined },
+              cachedStats,
+              String(sku),
+              productDescriptors,
+            );
       const regularQuantity = Math.max(
         0,
         breakdown.cacheQuantity - breakdown.monolithicComponentQuantity - breakdown.monolithicSetQuantity,

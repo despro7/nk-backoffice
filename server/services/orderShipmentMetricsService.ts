@@ -169,6 +169,34 @@ export function extractShipmentPayloadItems(payloadData: unknown): ShipmentItem[
   });
 }
 
+/**
+ * Комплекти з оригінальних рядків замовлення (ще не розгорнуті в processedItems).
+ * Для відкритих замовлень це аналог shipment.bySku: кількість наборів, а не порцій.
+ */
+export function extractOrderedSetItems(
+  order: OrderLike,
+  descriptors: Map<string, ReportProductDescriptor>,
+): ShipmentItem[] {
+  return normalizeOrderItems(order.items).flatMap((item) => {
+    const sku = typeof item.sku === 'string' ? item.sku.trim() : String(item.sku ?? '').trim();
+    if (!sku || !descriptors.get(sku)?.isSet) {
+      return [];
+    }
+
+    const orderedQuantity = getOrderedQuantity(item.orderedQuantity ?? item.quantity);
+    if (orderedQuantity <= 0) {
+      return [];
+    }
+
+    return [{
+      sku,
+      name: item.name ?? sku,
+      orderedQuantity,
+      quantity: orderedQuantity,
+    }];
+  });
+}
+
 export function getOrderReportItems(
   order: OrderLike,
   cachedItems: ShipmentItem[] | null | undefined,
@@ -307,30 +335,29 @@ function sumCachedQuantityForSku(cachedItems: ShipmentItem[] | null | undefined,
     .reduce((sum, item) => sum + getOrderedQuantity(item.orderedQuantity ?? item.quantity), 0);
 }
 
-export function computeShippedQuantityBreakdown(
-  order: OrderLike,
+function computeQuantityBreakdownFromKitItems(
   cachedItems: ShipmentItem[] | null | undefined,
   targetSku: string,
   descriptors: Map<string, ReportProductDescriptor>,
+  kitItems: ShipmentItem[],
 ): ShippedQuantityBreakdown {
   const normalizedSku = String(targetSku).trim();
-  const shipmentItems = extractShipmentPayloadItems(order.payloadData);
-  const shipmentSkuSet = new Set(shipmentItems.map((item) => String(item.sku).trim()));
-  const isMonolithicSet = shipmentSkuSet.has(normalizedSku);
+  const kitSkuSet = new Set(kitItems.map((item) => String(item.sku).trim()));
+  const isMonolithicSet = kitSkuSet.has(normalizedSku);
 
   let monolithicSetQuantity = 0;
-  for (const monoItem of shipmentItems) {
-    if (String(monoItem.sku).trim() === normalizedSku) {
-      monolithicSetQuantity += getOrderedQuantity(monoItem.orderedQuantity ?? monoItem.quantity);
+  for (const kitItem of kitItems) {
+    if (String(kitItem.sku).trim() === normalizedSku) {
+      monolithicSetQuantity += getOrderedQuantity(kitItem.orderedQuantity ?? kitItem.quantity);
     }
   }
 
   let monolithicComponentQuantity = 0;
-  for (const monoItem of shipmentItems) {
-    const monoQty = getOrderedQuantity(monoItem.orderedQuantity ?? monoItem.quantity);
-    if (monoQty <= 0) continue;
+  for (const kitItem of kitItems) {
+    const kitQty = getOrderedQuantity(kitItem.orderedQuantity ?? kitItem.quantity);
+    if (kitQty <= 0) continue;
 
-    const leaves = expandSetToLeaves(monoItem.sku ?? '', monoQty, descriptors);
+    const leaves = expandSetToLeaves(kitItem.sku ?? '', kitQty, descriptors);
     monolithicComponentQuantity += leaves.get(normalizedSku) ?? 0;
   }
 
@@ -342,6 +369,35 @@ export function computeShippedQuantityBreakdown(
     monolithicComponentQuantity,
     isMonolithicSet,
   };
+}
+
+export function computeShippedQuantityBreakdown(
+  order: OrderLike,
+  cachedItems: ShipmentItem[] | null | undefined,
+  targetSku: string,
+  descriptors: Map<string, ReportProductDescriptor>,
+): ShippedQuantityBreakdown {
+  return computeQuantityBreakdownFromKitItems(
+    cachedItems,
+    targetSku,
+    descriptors,
+    extractShipmentPayloadItems(order.payloadData),
+  );
+}
+
+/** Відкриті замовлення: комплекти з рядків замовлення, порції — з processedItems без компонентів наборів. */
+export function computeOrderedSetQuantityBreakdown(
+  order: OrderLike,
+  cachedItems: ShipmentItem[] | null | undefined,
+  targetSku: string,
+  descriptors: Map<string, ReportProductDescriptor>,
+): ShippedQuantityBreakdown {
+  return computeQuantityBreakdownFromKitItems(
+    cachedItems,
+    targetSku,
+    descriptors,
+    extractOrderedSetItems(order, descriptors),
+  );
 }
 
 /**

@@ -103,9 +103,9 @@ export default function ProductsPage() {
     void (async () => {
       try {
         const [resNew, resConf, resHold] = await Promise.all([
-          fetch('/api/orders/products/stats?status=1', { credentials: 'include' }),
-          fetch('/api/orders/products/stats?status=2', { credentials: 'include' }),
-          fetch('/api/orders/products/stats?status=9', { credentials: 'include' }),
+          fetch('/api/orders/products/stats?status=1&splitMonolithic=true', { credentials: 'include' }),
+          fetch('/api/orders/products/stats?status=2&splitMonolithic=true', { credentials: 'include' }),
+          fetch('/api/orders/products/stats?status=9&splitMonolithic=true', { credentials: 'include' }),
         ]);
         const [datNew, datConf, datHold] = await Promise.all([
           resNew.json(),
@@ -152,14 +152,36 @@ export default function ProductsPage() {
         const params = new URLSearchParams({
           sku: ordersModalProduct.sku,
           status: '1,2,9',
+          splitMonolithic: 'true',
         });
         const res = await fetch(`/api/orders/products/orders?${params.toString()}`, {
           credentials: 'include',
         });
         const json = await res.json();
         if (cancelled) return;
-        if (json?.success && Array.isArray(json.data)) {
-          setOrdersModalOrders(json.data as ProductOrderRow[]);
+        if (json?.success) {
+          const regular = Array.isArray(json.data) ? (json.data as ProductOrderRow[]) : [];
+          const mono = Array.isArray(json.monolithicOrders)
+            ? (json.monolithicOrders as ProductOrderRow[])
+            : [];
+          const merged = new Map<string, ProductOrderRow>();
+          for (const order of regular) {
+            merged.set(order.externalId, {
+              ...order,
+              productQuantity: order.regularQuantity ?? order.productQuantity ?? 0,
+            });
+          }
+          for (const order of mono) {
+            const setQty = order.monolithicSetQuantity ?? 0;
+            if (setQty <= 0) continue;
+            const existing = merged.get(order.externalId);
+            if (existing) {
+              existing.productQuantity = (existing.productQuantity ?? 0) + setQty;
+            } else {
+              merged.set(order.externalId, { ...order, productQuantity: setQty });
+            }
+          }
+          setOrdersModalOrders([...merged.values()].filter((order) => (order.productQuantity ?? 0) > 0));
         } else {
           setOrdersModalOrders([]);
         }

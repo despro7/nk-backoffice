@@ -47,6 +47,7 @@ import {
   markCatalogDndSources,
   catalogMissingNameLabels,
   getMissingRequiredCatalogFields,
+  isKitGood,
 } from '../ProductsUtils';
 
 export type CatalogOrdersTabKey = 'all' | 'new' | 'confirmed' | 'hold';
@@ -1368,6 +1369,7 @@ export function CatalogTable({
         const p = portionsBySku?.get(String(row.sku ?? '').trim().toLowerCase());
         const total = (p?.newQty ?? 0) + (p?.confirmedQty ?? 0) + (p?.holdQty ?? 0);
         if (total === 0) return <span className="text-default-300">—</span>;
+        const asKits = isKitGood(row);
         const openOrders = (tab: CatalogOrdersTabKey) => {
           if (!row.sku || !onOpenOrders) return;
           onOpenOrders(row, tab);
@@ -1381,10 +1383,12 @@ export function CatalogTable({
               openOrders('all');
             }}
           >
-            <span className="font-bold text-neutral-800 tabular-nums">{total}</span>
+            <Tooltip color="secondary" content={asKits ? 'Замовлено комплектів' : 'Замовлено порцій'}>
+              <span className="font-bold text-neutral-800 tabular-nums">{total}</span>
+            </Tooltip>
             <div className="flex gap-1.5 text-xs px-1 py-0.5 rounded items-center bg-gray-100">
               {(p?.newQty ?? 0) > 0 && (
-                <Tooltip color="secondary" content="Нові замовлення">
+                <Tooltip color="secondary" content={asKits ? 'Нові (комплекти)' : 'Нові замовлення'}>
                   <span
                     className="text-blue-600 font-medium"
                     onClick={(e) => {
@@ -1397,7 +1401,7 @@ export function CatalogTable({
                 </Tooltip>
               )}
               {(p?.confirmedQty ?? 0) > 0 && (
-                <Tooltip color="secondary" content="Підтверджені">
+                <Tooltip color="secondary" content={asKits ? 'Підтверджені (комплекти)' : 'Підтверджені'}>
                   <span
                     className="text-green-600 font-medium"
                     onClick={(e) => {
@@ -1410,7 +1414,7 @@ export function CatalogTable({
                 </Tooltip>
               )}
               {(p?.holdQty ?? 0) > 0 && (
-                <Tooltip color="secondary" content="На утриманні">
+                <Tooltip color="secondary" content={asKits ? 'На утриманні (комплекти)' : 'На утриманні'}>
                   <span
                     className="text-amber-600 font-medium"
                     onClick={(e) => {

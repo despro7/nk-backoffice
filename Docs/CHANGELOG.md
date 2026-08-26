@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-08-26 — Каталог: «В замовленнях» рахує комплекти окремо від порцій
+**Files:** `server/services/orderShipmentMetricsService.ts`, `server/services/orderShipmentMetricsService.spec.ts`, `server/routes/orders.ts`, `client/pages/Products/index.tsx`, `client/pages/Products/components/CatalogTable.tsx`, `client/components/modals/ProductOrdersModal.tsx`, `Docs/features/products-catalog-2.0.md`
+
+- Колонка **В замовленнях** для наборів показує кількість комплектів (як таблиця «Монолітні набори» у звіті відвантажень), а не розгорнуті порції з `processedItems`.
+- Звичайні SKU: порції мінус компоненти, що пішли в комплекти. Модалка замовлень підхоплює ті самі набори.
+- API: `GET /api/orders/products/stats` і `/orders` приймають `splitMonolithic=true` (каталог). `shippedOnly` і sales/general звіти без цього прапорця не змінюються.
+
+---
+
 ## 2026-08-24 — NumberInput: десяткові поля з комою
 **Files:** `client/lib/numberInput.ts`, `client/lib/numberInput.spec.ts`, `client/components/NumberInput.tsx`, `client/pages/Products/components/ProductDrawer.tsx`, `Docs/architecture/number-input.md`, `Docs/features/products-catalog-2.0.md`
 
