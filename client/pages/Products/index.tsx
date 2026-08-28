@@ -7,7 +7,7 @@ import { resolveCatalogFolderAccess, resolveCatalogVisualRootFolderId } from '@s
 import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 import { ToastService } from '@/services/ToastService';
 import { CatalogTree } from './components/CatalogTree';
-import { CatalogTreeBubble } from './components/CatalogTreeBubble';
+import { ActionBubble, ActionBubbleDock } from '@/components/action-bubble';
 import { CatalogTable } from './components/CatalogTable';
 import { CatalogToolbar } from './components/CatalogToolbar';
 import { CatalogActionsDropdown } from './components/CatalogActionsMenu';
@@ -36,7 +36,7 @@ import {
 } from '@/components/modals/ProductOrdersModal';
 import type { CatalogOrdersTabKey } from './components/CatalogTable';
 import { pluralize } from '@/lib/formatUtils';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useTouchUi } from '@/hooks/useTouchUi';
 
 const MANUAL_SORT: SortDescriptor = {
   column: 'sortOrder',
@@ -83,7 +83,7 @@ export default function ProductsPage() {
   const [ordersModalOpen, setOrdersModalOpen] = useState(false);
   const [ordersModalLoading, setOrdersModalLoading] = useState(false);
   const [ordersModalOrders, setOrdersModalOrders] = useState<ProductOrderRow[]>([]);
-  const isMobile = useIsMobile();
+  const touchUi = useTouchUi();
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
   const isManualTableSort =
     !tableSort.column ||
@@ -731,9 +731,9 @@ export default function ProductsPage() {
         }
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 md:grid-cols-[280px_1fr]">
-        {!isMobile && (
-          <aside className="min-h-0 hidden md:block">
+      <div className={`grid min-h-0 flex-1 gap-5 ${touchUi ? 'grid-cols-1' : 'grid-cols-[280px_1fr]'}`}>
+        {!touchUi && (
+          <aside className="min-h-0">
             {catalog.treeLoading ? (
               <div className="flex h-full items-center justify-center">
                 <Spinner size="sm" />
@@ -836,26 +836,38 @@ export default function ProductsPage() {
         </main>
       </div>
 
-      {isMobile && (
-        <CatalogTreeBubble isOpen={mobileTreeOpen} onOpenChange={setMobileTreeOpen}>
-          {catalog.treeLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <Spinner size="sm" />
-            </div>
-          ) : (
-            <CatalogTree
-              key={`${visualRootId}:${Object.keys(catalog.treeItems).join(',').slice(0, 200)}`}
-              items={catalog.treeItems}
-              selectedFolderId={catalog.selectedFolderId}
-              onSelectFolder={navigateToFolder}
-              onMove={catalog.requestMove}
-              onReorder={catalog.requestReorder}
-              onContextMenu={openContextMenu}
-              readOnly={!canEditFolder}
-              rootItemId={visualRootId}
-            />
-          )}
-        </CatalogTreeBubble>
+      {touchUi && (
+        <ActionBubbleDock>
+          <ActionBubble
+            id="catalog"
+            colorPreset="sky"
+            icon="folder-tree"
+            title="Каталог"
+            ariaLabel="Каталог"
+            isOpen={mobileTreeOpen}
+            onOpenChange={setMobileTreeOpen}
+            ignoreCloseSelector='[role="menu"][aria-label="Дії з елементами каталогу"]'
+            panelBodyClassName="h-[min(60dvh,32rem)] max-h-none overflow-hidden p-1"
+          >
+            {catalog.treeLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <Spinner size="sm" />
+              </div>
+            ) : (
+              <CatalogTree
+                key={`${visualRootId}:${Object.keys(catalog.treeItems).join(',').slice(0, 200)}`}
+                items={catalog.treeItems}
+                selectedFolderId={catalog.selectedFolderId}
+                onSelectFolder={navigateToFolder}
+                onMove={catalog.requestMove}
+                onReorder={catalog.requestReorder}
+                onContextMenu={openContextMenu}
+                readOnly={!canEditFolder}
+                rootItemId={visualRootId}
+              />
+            )}
+          </ActionBubble>
+        </ActionBubbleDock>
       )}
 
       <CatalogContextMenu
