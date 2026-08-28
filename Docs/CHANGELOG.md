@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-08-28 — ActionBubble: touch-UI бульбашки (каталог і фільтри переміщень)
+**Files:** `client/hooks/useTouchUi.ts`, `client/hooks/use-mobile.tsx`, `client/components/action-bubble/**`, `client/pages/Products/index.tsx`, `client/pages/Warehouse/WarehouseMovementMob/index.tsx`, `client/pages/Warehouse/WarehouseMovementMob/components/MovementMobFilterBar.tsx`, `Docs/architecture/action-bubble.md`, `Docs/features/products-catalog-2.0.md`
+
+- Спільні `ActionBubble` + `ActionBubbleDock`: FAB + панель (пресети кольору, placement, badge, клік зовні з ignore для HeroUI popover/календар).
+- `useTouchUi()` = viewport `< lg` або `(any-pointer: coarse)`; бульбашки без `md:hidden`, щоб планшети їх бачили.
+- `/products`: дерево каталогу в бульбашці замість `CatalogTreeBubble`. `/warehouse/movement-mob`: фільтри в бульбашці на touch-UI, на десктопі — інлайн; Reset більше не підміняє date range.
+
+---
+
 ## 2026-08-26 — Бухгалтерія: завантаження банківських виписок
 **Files:** `client/pages/BankStatementImport/**`, `server/routes/dilovod-bank-statement.ts`, `server/services/dilovod/BankStatement*.ts`, `shared/types/bankStatement.ts`, `shared/utils/settlementsKindKeywords.ts`, `shared/utils/excelCol.ts`, `client/components/Timeline.tsx`, `client/components/table/**`, `client/hooks/useTableSelection.ts`, `prisma/migrations/20260826120000_settings_base_value_longtext/`, `Docs/features/bank-statement-import.md`, `Docs/architecture/timeline.md`
 

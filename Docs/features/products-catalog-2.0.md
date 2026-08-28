@@ -1,6 +1,6 @@
 # Products 2.0 — домен керування каталогом Dilovod
 
-**Дата:** 2026-07-30 (оновлено 2026-08-26)  
+**Дата:** 2026-07-30 (оновлено 2026-08-28)  
 **Маршрут:** `/products` (`minRole: WAREHOUSE_MANAGER`)  
 **API:** `/api/catalog/`*
 
@@ -291,6 +291,8 @@ client/pages/Products/
 - fallback без довідника: `…1001` → «Продукція», kit/`…1031` → «Товарні набори», інакше «Товар».
 
 ### UI: дерево, таблиця, breadcrumbs
+
+На `useTouchUi()` (viewport `< lg` або `(any-pointer: coarse)`) aside з деревом ховається; те саме дерево в плаваючій **`ActionBubble`** (`id="catalog"`). Деталі: `Docs/architecture/action-bubble.md`.
 
 **Дерево (**`CatalogTree`**)** — nested-рендер через `tree.getRootItem()`:
 
