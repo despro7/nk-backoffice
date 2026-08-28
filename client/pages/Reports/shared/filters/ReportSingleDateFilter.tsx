@@ -31,61 +31,59 @@ export default function ReportSingleDateFilter({
   const isNextDisabled = Boolean(value && maxValue && value.compare(maxValue) >= 0);
 
   return (
-    <div className={className}>
-      <div className="flex items-center gap-0">
-        <Button
-          isIconOnly
+    <div className={`flex items-center gap-0 ${className}`}>
+      <Button
+        isIconOnly
+        size={size}
+        variant="flat"
+        aria-label="Попередній день"
+        onPress={() => {
+          if (!value) {
+            return;
+          }
+
+          onChange(value.subtract({ days: 1 }));
+        }}
+        disabled={!value}
+        className={previousButtonClassName}
+      >
+        <DynamicIcon name="chevron-left" className="w-4 h-4" />
+      </Button>
+
+      <I18nProvider locale="uk-UA">
+        <DatePicker
+          aria-label={ariaLabel}
+          value={value}
+          onChange={onChange}
+          maxValue={maxValue}
           size={size}
-          variant="flat"
-          aria-label="Попередній день"
-          onPress={() => {
-            if (!value) {
-              return;
-            }
-
-            onChange(value.subtract({ days: 1 }));
+          selectorButtonPlacement="start"
+          selectorIcon={<DynamicIcon name={iconName} size={18} className="shrink-0" />}
+          classNames={{
+            base: "w-auto",
+            inputWrapper: triggerClassName,
+            segment: "rounded",
           }}
-          disabled={!value}
-          className={previousButtonClassName}
-        >
-          <DynamicIcon name="chevron-left" className="w-4 h-4" />
-        </Button>
+        />
+      </I18nProvider>
 
-        <I18nProvider locale="uk-UA">
-          <DatePicker
-            aria-label={ariaLabel}
-            value={value}
-            onChange={onChange}
-            maxValue={maxValue}
-            size={size}
-            selectorButtonPlacement="start"
-            selectorIcon={<DynamicIcon name={iconName} size={18} className="shrink-0" />}
-            classNames={{
-              base: "w-auto",
-              inputWrapper: triggerClassName,
-              segment: "rounded",
-            }}
-          />
-        </I18nProvider>
+      <Button
+        isIconOnly
+        size={size}
+        variant="flat"
+        aria-label="Наступний день"
+        onPress={() => {
+          if (!value) {
+            return;
+          }
 
-        <Button
-          isIconOnly
-          size={size}
-          variant="flat"
-          aria-label="Наступний день"
-          onPress={() => {
-            if (!value) {
-              return;
-            }
-
-            onChange(value.add({ days: 1 }));
-          }}
-          disabled={!value || isNextDisabled}
-          className={nextButtonClassName}
-        >
-          <DynamicIcon name="chevron-right" className="w-4 h-4" />
-        </Button>
-      </div>
+          onChange(value.add({ days: 1 }));
+        }}
+        disabled={!value || isNextDisabled}
+        className={nextButtonClassName}
+      >
+        <DynamicIcon name="chevron-right" className="w-4 h-4" />
+      </Button>
     </div>
   );
 }

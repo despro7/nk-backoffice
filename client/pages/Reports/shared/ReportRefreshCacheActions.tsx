@@ -39,8 +39,8 @@ export function ReportRefreshCacheActions({
   const disabledKeys = clearStatsCacheLoading ? ["clear-stats-cache"] : [];
 
   return (
-    <div className="flex items-center gap-4">
-      <div className="flex gap-1 items-end text-[13px]">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-x-4 gap-y-2">
+      <div className="flex gap-1 items-end text-[13px] mb-2 sm:mb-0">
         <DynamicIcon name="database" size={14} className="text-neutral-400" />
         <span className="leading-none">
           Оновлено:{" "}

@@ -1,5 +1,6 @@
-import ReportsShipmentSummarySection from "./components/ReportsShipmentSummarySection";
-import ReportsShipmentTableSection from "./components/ReportsShipmentTableSection";
+import ShipmentSummaryCards from "./components/ShipmentSummaryCards";
+import ProductShippedStatsTable from "./components/ProductShippedStatsTable";
+import ReportsSectionCard from "../shared/ReportsSectionCard";
 import useReportsShipment from "./useReportsShipment";
 
 export default function ReportsShipmentPage() {
@@ -7,8 +8,10 @@ export default function ReportsShipmentPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <ReportsShipmentSummarySection summary={summary} />
-      <ReportsShipmentTableSection onSummaryChange={setSummary} />
+      <ShipmentSummaryCards summary={summary} />
+      <ReportsSectionCard>
+        <ProductShippedStatsTable onSummaryChange={setSummary} />
+      </ReportsSectionCard>
     </div>
   );
 }

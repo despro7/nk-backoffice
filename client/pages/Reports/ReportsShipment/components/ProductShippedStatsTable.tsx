@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { ActionBubble, ActionBubbleDock } from "@/components/action-bubble";
+import { useIsMobile } from "@/hooks/useTouchUi";
 import {
   Table,
   TableHeader,
@@ -61,6 +63,7 @@ import type {
 import {
   buildShipmentCacheKey,
   getPresetKeyForShipmentDate,
+  isShipmentFilterDefault,
   SHIPMENT_DEFAULT_PRESET_KEY,
   toShipmentApiDateValue,
 } from "../ReportsShipmentUtils";
@@ -108,6 +111,8 @@ export default function ProductShippedStatsTable({
 }: ProductShippedStatsTableProps) {
   const { apiCall } = useApi();
   const { isAdmin } = useRoleAccess();
+  const isMobile = useIsMobile();
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [productStats, setProductStats] = useState<ProductStats[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
   const [ordersWithMonolithicSetsCount, setOrdersWithMonolithicSetsCount] = useState(0);
@@ -629,9 +634,9 @@ export default function ProductShippedStatsTable({
       : columns;
 
     return (
-      <div className="relative mt-10">
-        <div className="mb-0 flex items-center justify-between">
-          <div className="text-sm font-semibold uppercase tracking-wide text-default-500">
+      <div className="relative mt-4 sm:mt-10">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 mb-0 pl-3 sm:pl-0">
+          <div className="text-xl sm:text-sm font-semibold sm:uppercase sm:tracking-wide text-default-800 sm:text-default-500">
             {title}
           </div>
           <div className="text-sm text-default-500">
@@ -701,26 +706,30 @@ export default function ProductShippedStatsTable({
                   key={productItem.sku}
                   data-product-sku={productItem.sku}
                 >
-                  <TableCell className="font-medium text-base">
-                    <div className="flex items-center gap-2">
+                  <TableCell className="font-medium text-sm sm:text-base">
+                    <div className="flex items-center gap-2 leading-tight">
                       {productItem.name}
-                      {productItem.isMonolithicSet ? (
-                        <Chip size="sm" variant="flat" color="warning" className="shrink-0">
-                          Монолітний набір
-                        </Chip>
-                      ) : productItem.isSet ? (
-                        <Chip size="sm" variant="flat" color="default" className="shrink-0">
-                          Набір
-                        </Chip>
-                      ) : null}
-                      <DynamicIcon name="external-link" size={14} className="text-neutral-300" />
+                      {!isMobile && (
+                        <>
+                        {productItem.isMonolithicSet ? (
+                          <Chip size="sm" variant="flat" color="warning" className="shrink-0">
+                            Монолітний набір
+                          </Chip>
+                        ) : productItem.isSet ? (
+                          <Chip size="sm" variant="flat" color="default" className="shrink-0">
+                            Набір
+                          </Chip>
+                        ) : null}
+                        <DynamicIcon name="external-link" size={14} className="text-neutral-300 shrink-0" />
+                        </>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-base">
                     <Button
                       size="sm"
                       variant="light"
-                      className="font-mono text-base h-auto p-1 min-w-0 text-blue-600 hover:bg-blue-50"
+                      className="font-mono text-sm h-auto p-1 -m-1 min-w-0 text-blue-600 hover:bg-blue-100/50!"
                       onClick={(event) => event.stopPropagation()}
                       onPress={() => {
                         handleProductChange(productItem.sku);
@@ -748,10 +757,10 @@ export default function ProductShippedStatsTable({
         </Table>
         <div className="border-t-1 border-gray-200 py-2">
           <div className="flex items-center justify-between">
-            <div className="font-bold text-gray-800 pl-3">
+            <div className="sm:font-bold text-sm sm:font-base text-gray-800 pl-3">
               {footerLabel}
             </div>
-            <div className="text-center font-bold text-gray-800 min-w-[100px] w-3/16">
+            <div className="text-center sm:font-bold text-sm sm:font-base text-gray-800 min-w-[100px] w-6/16 sm:w-3/16">
               {totalOrderedQuantity}
             </div>
           </div>
@@ -768,8 +777,15 @@ export default function ProductShippedStatsTable({
     syncSummary(productStats, totalOrders, ordersWithMonolithicSetsCount);
   }, [productStats, totalOrders, ordersWithMonolithicSetsCount, syncSummary, viewMode]);
 
+  const filtersAreDefault = isShipmentFilterDefault(
+    statusFilter,
+    selectedProduct,
+    datePresetKey,
+  );
+
   const filters = useMemo<ReportFilterConfig[]>(() => {
     const extraFilters: ReportFilterConfig[] = [];
+    const compactClass = isMobile ? "min-w-0 w-full shrink-0" : undefined;
 
     if (isSingleDate) {
       extraFilters.push(createSingleDateFilterConfig({
@@ -784,10 +800,10 @@ export default function ProductShippedStatsTable({
           setDatePresetKey(getPresetKeyForShipmentDate(nextDate));
         },
         maxValue: maxDate,
-        className: "w-auto",
-        triggerClassName: "h-10 rounded-none",
-        previousButtonClassName: "h-10 rounded-r-none border-r-0",
-        nextButtonClassName: "h-10 rounded-l-none border-l-0",
+        className: isMobile ? "w-full" : "w-auto",
+        triggerClassName: `h-10 rounded-none ${isMobile ? 'px-4' : ''}`,
+        previousButtonClassName: "h-10 flex-1 rounded-r-none border-r-0",
+        nextButtonClassName: "h-10 flex-1 rounded-l-none border-l-0",
       }));
     } else {
       extraFilters.push(createDateRangeFilterConfig({
@@ -797,7 +813,7 @@ export default function ProductShippedStatsTable({
           setDatePresetKey(null);
         },
         maxValue: maxDate,
-        className: "flex-1",
+        className: isMobile ? "w-full basis-full" : undefined,
         inputWrapperClassName: "h-10",
       }));
     }
@@ -831,12 +847,12 @@ export default function ProductShippedStatsTable({
         ...(datePresetKey === "custom" ? [{ key: "custom", label: "Обрана дата" }] : []),
       ],
       loading,
-      productClassName: "flex-1 max-w-70",
-      productBaseClassName: "max-w-70",
+      productClassName: compactClass ?? "flex-1 max-w-70",
+      productBaseClassName: isMobile ? undefined : "max-w-70",
       productTriggerClassName: "h-10",
-      statusClassName: "max-w-50",
+      statusClassName: compactClass ?? "flex-1 max-w-50",
       statusTriggerClassName: "h-10",
-      periodClassName: "max-w-50 ml-auto",
+      periodClassName: compactClass ?? "flex-1 max-w-50 ml-auto",
       periodTriggerClassName: "h-10",
       periodIconName: "calendar-check",
       extraFilters,
@@ -845,13 +861,16 @@ export default function ProductShippedStatsTable({
       createResetFilterConfig({
         onPress: resetFilters,
         disabled: loading,
-      }),
-    );
+        className: isMobile
+          ? `h-10 px-3 gap-2 border-1.5 ${!filtersAreDefault ? 'bg-danger-50 border-danger-400/50 text-danger-400 hover:bg-danger-100' : 'bg-default-50 border-default-300/50 text-default-400/50 hover:bg-default-100'}`
+          : undefined
+      }))
   }, [
     datePresetKey,
     datePresets,
     dateRange,
     handleProductChange,
+    isMobile,
     isSingleDate,
     loading,
     maxDate,
@@ -862,10 +881,36 @@ export default function ProductShippedStatsTable({
     statusOptions,
   ]);
 
+  const filterBar = (
+    <ReportsFilterBuilder
+      filters={filters}
+      className={isMobile ? "flex flex-wrap gap-2 items-end justify-end" : undefined}
+    />
+  );
+
   return (
     <div className={`${className}`}>
-      {/* Фільтри */}
-      <ReportsFilterBuilder filters={filters} />
+      {isMobile ? (
+        <ActionBubbleDock visible>
+          <ActionBubble
+            id="filters"
+            colorPreset="sky"
+            icon="filter"
+            title="Фільтри"
+            ariaLabel="Фільтри відвантаження"
+            isOpen={filtersOpen}
+            onOpenChange={setFiltersOpen}
+            badge={!filtersAreDefault}
+            panelWidth="min(24rem, calc(100vw - 5rem))"
+            panelClassName="max-w-67"
+            panelBodyClassName="p-3"
+          >
+            {filterBar}
+          </ActionBubble>
+        </ActionBubbleDock>
+      ) : (
+        filterBar
+      )}
 
       <ReportCacheProgressCard progress={cacheProgress} />
 
@@ -999,26 +1044,23 @@ export default function ProductShippedStatsTable({
       </div>
 
       {/* Інформація про результати та кеш з кнопками */}
-      <div className="flex justify-between items-center text-sm text-gray-600 mt-4">
-        <div></div>
-        <div className="flex items-center gap-4">
-          <ReportRefreshCacheActions
-            lastCacheUpdate={lastCacheUpdate}
-            loading={loading}
-            cacheLoading={cacheLoading}
-            clearStatsCacheLoading={clearStatsCacheLoading}
-            canManageCache={isAdmin()}
-            onRefreshData={handleRefreshData}
-            onRefreshAllCache={handleRefreshAllCache}
-            onRefreshPeriodCache={handleRefreshPeriodCache}
-            onClearStatsCache={handleClearStatsCache}
-          />
-          <CacheRefreshConfirmModal {...cacheModals.confirmModalProps} />
-          <CachePeriodSelectModal
-            {...cacheModals.periodModalProps}
-            cacheLoading={cacheLoading}
-          />
-        </div>
+      <div className=" mt-4">
+        <ReportRefreshCacheActions
+          lastCacheUpdate={lastCacheUpdate}
+          loading={loading}
+          cacheLoading={cacheLoading}
+          clearStatsCacheLoading={clearStatsCacheLoading}
+          canManageCache={isAdmin()}
+          onRefreshData={handleRefreshData}
+          onRefreshAllCache={handleRefreshAllCache}
+          onRefreshPeriodCache={handleRefreshPeriodCache}
+          onClearStatsCache={handleClearStatsCache}
+        />
+        <CacheRefreshConfirmModal {...cacheModals.confirmModalProps} />
+        <CachePeriodSelectModal
+          {...cacheModals.periodModalProps}
+          cacheLoading={cacheLoading}
+        />
       </div>
 
       <ProductOrdersModal

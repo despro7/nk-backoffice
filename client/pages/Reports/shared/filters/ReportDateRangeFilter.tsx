@@ -22,7 +22,7 @@ export default function ReportDateRangeFilter({
   maxValue,
 }: ReportDateRangeFilterProps) {
   return (
-    <div className={className ?? "flex-1"}>
+    <div className={className ?? "flex-1 max-w-60"}>
       <I18nProvider locale="uk-UA">
         <DateRangePicker
           aria-label="Або власний період"
@@ -35,6 +35,7 @@ export default function ReportDateRangeFilter({
           classNames={{
             base: "w-auto",
             inputWrapper: inputWrapperClassName,
+            innerWrapper: "gap-x-2",
             segment: "rounded",
           }}
         />

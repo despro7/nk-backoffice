@@ -75,7 +75,7 @@ export function Layout({ children }: LayoutProps) {
           <Header className="hidden lg:flex shrink-0" />
           <MobileHeader />
 
-          <main className="flex-1 px-0 pt-4 pb-[calc(1rem+56px+env(safe-area-inset-bottom))] md:px-3 lg:p-8 lg:pb-12">
+          <main className="flex-1 px-0 pt-4 pb-26 md:px-3 lg:p-8 lg:pb-12">
             <div className="container mx-auto flex flex-col gap-6">
               {!currentRoute?.hasOwnTitle && (
                 <h1 className="text-primary font-inter text-2xl lg:text-3xl font-semibold leading-[100%] tracking-[-0.64px] min-h-10 flex items-center px-3 md:px-0">

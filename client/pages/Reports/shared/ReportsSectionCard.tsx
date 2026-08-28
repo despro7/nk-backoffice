@@ -11,7 +11,7 @@ export default function ReportsSectionCard({
   title,
   className,
 }: ReportsSectionCardProps) {
-  const cardClassName = className ? `bg-white rounded-lg p-6 ${className}` : "bg-white rounded-lg p-6";
+  const cardClassName = className ? `bg-white rounded-lg p-3 sm:p-6 ${className}` : "bg-white rounded-lg p-3 sm:p-6";
 
   return (
     <div className={cardClassName}>

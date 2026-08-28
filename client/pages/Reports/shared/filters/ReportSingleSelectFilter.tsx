@@ -28,7 +28,7 @@ export default function ReportSingleSelectFilter({
   size = "md",
 }: ReportSingleSelectFilterProps) {
   return (
-    <div className={`flex-1 ${className ?? ""}`}>
+    <div className={className ?? ""}>
       <Select
         aria-label={ariaLabel}
         placeholder={placeholder}

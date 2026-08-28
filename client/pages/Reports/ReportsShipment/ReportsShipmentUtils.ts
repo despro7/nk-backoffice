@@ -4,6 +4,18 @@ import { createReportCacheKey, formatCalendarDateValue } from "../shared/Reports
 
 export const SHIPMENT_DEFAULT_PRESET_KEY = "today";
 
+export function isShipmentFilterDefault(
+  statusFilter: string,
+  selectedProduct: string,
+  datePresetKey: string | null,
+): boolean {
+  return (
+    statusFilter === "all"
+    && selectedProduct === ""
+    && datePresetKey === SHIPMENT_DEFAULT_PRESET_KEY
+  );
+}
+
 export function buildShipmentCacheKey(statusFilter: string, dateRange: DateRange | null): string {
   return createReportCacheKey("shipped", statusFilter, dateRange);
 }
