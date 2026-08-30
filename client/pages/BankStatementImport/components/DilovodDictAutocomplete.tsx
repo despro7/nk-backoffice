@@ -98,10 +98,15 @@ export function DilovodDictAutocomplete({
       isVirtualized={false}
       aria-label={ariaLabel ?? label}
       classNames={{
-        base: '[&>]:bg-blue-500! border-default-200/80',
+        base: 'border-default-200/80',
         popoverContent: 'min-w-[240px] max-w-content!',
         selectorButton: 'rounded-r-sm! rounded-l-none',
         clearButton: 'rounded-none',
+      }}
+      listboxProps={{
+        itemClasses: {
+          base: 'data-[selected=true]:bg-blue-500! data-[selected=true]:text-white',
+        },
       }}
       menuTrigger="manual"
       onOpenChange={(open) => {
