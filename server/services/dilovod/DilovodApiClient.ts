@@ -16,7 +16,8 @@ import {
   validateDilovodConfig,
   DEFAULT_DILOVOD_CONFIG,
   getDilovodConfigFromDB,
-  formatDateForDilovod
+  formatDateForDilovod,
+  isActiveDilovodStorage,
 } from './DilovodUtils.js';
 import { delay } from './DilovodUtils.js';
 import { inspect } from 'node:util';
@@ -890,8 +891,16 @@ export class DilovodApiClient {
         fields: {
           id: 'id',
           code: 'code',
-          name: 'name'
-        }
+          name: 'name',
+          delMark: 'delMark',
+        },
+        filters: [
+          {
+            alias: 'delMark',
+            operator: '=',
+            value: false,
+          },
+        ],
       }
     };
 
@@ -911,17 +920,21 @@ export class DilovodApiClient {
       }
     }
     
-    // Фільтруємо виробничий цех зі списку складів
-    const filteredResult = normalizedResult.filter(storage => {
-      // Виключаємо склад виробничого цеху (ID: 1100700000001018)
-      return storage.id !== '1100700000001018';
-    });
-    
+    // Без видалених у Dilovod (delMark) і без виробничого цеху
+    const filteredResult = normalizedResult.filter((storage) => isActiveDilovodStorage(storage));
+
     if (filteredResult.length !== normalizedResult.length) {
-      console.log(`DilovodApiClient: Виключено склад виробничого цеху. Залишилось складів: ${filteredResult.length}`);
+      console.log(
+        `DilovodApiClient: Відсіяно неактивні склади. Залишилось: ${filteredResult.length}`
+      );
     }
-    
-    return filteredResult;
+
+    return filteredResult.map((storage) => ({
+      id: String(storage.id),
+      code: storage.code ?? '',
+      name: storage.name ?? String(storage.id),
+      delMark: false,
+    }));
   }
 
   // Отримання рахунків

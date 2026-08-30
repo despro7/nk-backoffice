@@ -1,4 +1,4 @@
-import { Autocomplete, AutocompleteItem, Button } from '@heroui/react';
+import { Select, SelectItem, Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 export interface MovementMobStorageOption {
@@ -27,66 +27,93 @@ export default function MovementMobWarehouseSelectors({
 }: MovementMobWarehouseSelectorsProps) {
   return (
     <div className="flex items-end gap-2">
-      <Autocomplete
-        label="Зі складу"
+      <Select
+        label="зі складу"
         labelPlacement="outside"
-        selectedKey={sourceId || null}
-        onSelectionChange={(key) => {
-          if (readOnly || key == null) return;
-          onSourceChange(String(key));
+        selectedKeys={sourceId != null ? [String(sourceId)] : []}
+        onSelectionChange={(keys) => {
+          if (readOnly || keys == null) return;
+          const selected = Array.from(keys)[0];
+          if (selected != null) {
+            onSourceChange(String(selected));
+          }
         }}
         isDisabled={readOnly}
+        disabledKeys={storages
+          .filter((storage) => String(storage.id) === String(destId))
+          .map((storage) => String(storage.id))
+        }
         size="sm"
-        className="flex-1 min-w-0"
-        inputProps={{
+        disallowEmptySelection={true}
+        classNames={{
+          base: 'flex-1 min-w-0',
+          label: 'text-default-400! ml-2!',
+        }}
+        popoverProps={{
+          offset: 10,
           classNames: {
-            inputWrapper: 'bg-white h-10',
+            base: 'min-w-64',
+            content: 'px-1'
           },
         }}
       >
         {storages.map((storage) => (
-          <AutocompleteItem key={storage.id} textValue={storage.name}>
+          <SelectItem key={storage.id} textValue={storage.name}>
             {storage.name}
-          </AutocompleteItem>
+          </SelectItem>
         ))}
-      </Autocomplete>
+      </Select>
 
       <Button
         isIconOnly
         radius="full"
+        size="md"
         color="primary"
-        size="sm"
-        className="mb-0.5 shrink-0"
+        className="-mb-1 shrink-0 bg-blue-500 text-white"
         aria-label="Поміняти склади місцями"
         onPress={onSwap}
         isDisabled={readOnly}
       >
-        <DynamicIcon name="arrow-left-right" size={16} />
+        <DynamicIcon name="arrow-left-right" size={24} />
       </Button>
 
-      <Autocomplete
-        label="На склад"
+      <Select
+        label="на склад"
         labelPlacement="outside"
-        selectedKey={destId || null}
-        onSelectionChange={(key) => {
-          if (readOnly || key == null) return;
-          onDestChange(String(key));
+        selectedKeys={destId != null ? [String(destId)] : []}
+        onSelectionChange={(keys) => {
+          if (readOnly || keys == null) return;
+          const selected = Array.from(keys)[0];
+          if (selected != null) {
+            onDestChange(String(selected));
+          }
         }}
         isDisabled={readOnly}
+        disabledKeys={storages
+          .filter((storage) => String(storage.id) === String(sourceId))
+          .map((storage) => String(storage.id))
+        }
         size="sm"
-        className="flex-1 min-w-0"
-        inputProps={{
+        disallowEmptySelection={true}
+        classNames={{
+          base: 'flex-1 min-w-0',
+          label: 'text-default-400! ml-2!',
+        }}
+        popoverProps={{
+          offset: 10,
+          crossOffset: -100,
           classNames: {
-            inputWrapper: 'bg-white h-10',
+            base: 'min-w-64',
+            content: 'px-1'
           },
         }}
       >
         {storages.map((storage) => (
-          <AutocompleteItem key={storage.id} textValue={storage.name}>
+          <SelectItem key={storage.id} textValue={storage.name}>
             {storage.name}
-          </AutocompleteItem>
+          </SelectItem>
         ))}
-      </Autocomplete>
+      </Select>
     </div>
   );
 }

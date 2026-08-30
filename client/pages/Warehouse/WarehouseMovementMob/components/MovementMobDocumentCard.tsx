@@ -1,7 +1,7 @@
 import { Card, CardBody } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { MovementMobListCardViewModel } from '../WarehouseMovementMobTypes';
-import { formatPortionsLabel } from '../WarehouseMovementMobUtils';
+import { pluralize } from '@/lib/formatUtils';
 import MovementMobStatusStepper, { MovementMobDirectionBadges } from './MovementMobStatusStepper';
 
 interface MovementMobDocumentCardProps {
@@ -16,12 +16,12 @@ export default function MovementMobDocumentCard({ card, onPress }: MovementMobDo
     <Card
       isPressable
       shadow="sm"
-      className="bg-white border border-default-100"
+      className="bg-white"
       onPress={() => onPress(card.id)}
     >
-      <CardBody className="gap-3 p-4">
+      <CardBody className="gap-4 p-3">
         <div className="flex items-start justify-between gap-2">
-          <span className="text-sm text-default-500">{card.displayDateTime}</span>
+          <span className="text-xs text-neutral-400">{card.displayDateTime}</span>
           <MovementMobDirectionBadges
             sourceBadge={card.sourceBadge}
             destBadge={card.destBadge}
@@ -30,22 +30,23 @@ export default function MovementMobDocumentCard({ card, onPress }: MovementMobDo
 
         <div className="flex items-end justify-between gap-3">
           <h3 className="text-lg font-bold text-default-900 leading-none">{card.displayNumber}</h3>
-          <div className="flex items-center gap-2.5 text-default-600 shrink-0">
+          <div className="flex items-center gap-2.5 text-neutral-500 shrink-0">
             {aggregates.totalBoxes > 0 && (
-              <span className="inline-flex items-center gap-1 text-sm">
-                <DynamicIcon name="package" size={16} className="text-default-400" />
-                {aggregates.totalBoxes}
+              <span className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 text-xs bg-neutral-200/50 rounded px-1.5 py-0.5 ring-1 ring-neutral-400/80">
+                  <DynamicIcon name="package-2" size={14} strokeWidth={1.5} className="shrink-0" />
+                  {aggregates.totalBoxes}
+                </span>
+                {aggregates.totalLoosePortions > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs bg-neutral-200/50 rounded px-1.5 py-0.5 ring-1 ring-neutral-400/80 relative">
+                    <DynamicIcon name="plus" size={12} strokeWidth={2} className="shrink-0 text-sm absolute -left-2.5 bg-yellow-200 rounded-full border-1 border-neutral-400 leading-none" />
+                    <DynamicIcon name="paper-bag" size={14} strokeWidth={1.5} className="shrink-0" />
+                    {aggregates.totalLoosePortions}
+                  </span>
+                )}
               </span>
             )}
-            {aggregates.totalLoosePortions > 0 && (
-              <span className="inline-flex items-center gap-1 text-sm">
-                <DynamicIcon name="shopping-bag" size={16} className="text-default-400" />
-                {aggregates.totalLoosePortions}
-              </span>
-            )}
-            <span className="text-sm font-medium text-default-700">
-              {formatPortionsLabel(aggregates.totalPortions)}
-            </span>
+            <span className="text-base font-semibold text-neutral-600">{aggregates.totalPortions} <span className="text-xs font-extralight">{pluralize(aggregates.totalPortions, 'порція', 'порції', 'порцій')}</span></span>
           </div>
         </div>
 

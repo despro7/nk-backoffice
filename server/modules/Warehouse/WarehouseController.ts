@@ -14,6 +14,7 @@ import {
   sumQuantityForSku,
 } from '../../services/orderShipmentMetricsService.js';
 import { safeParseItems } from './historyNormalize.js';
+import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
 
 const router = Router();
 
@@ -382,6 +383,52 @@ router.post('/stock-snapshot', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('🚨 [Warehouse] Помилка при POST stock-snapshot:', error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Внутрішня помилка сервера' });
+  }
+});
+
+/**
+ * GET /api/warehouse/product-by-barcode?code=…
+ *
+ * Lookup товару за ШК для мобільного скану.
+ * Залишки — GET /stock-snapshot (`storages[storageId]`) або POST з `storageId` → `selectedStock`.
+ *
+ * ШК коробки ще немає в БД; barcodeKind завжди 'portion'. Коли з’явиться box-код —
+ * перевіряти його першим; конфлікт того самого коду на обох рівнях → 'box'.
+ */
+router.get('/product-by-barcode', authenticateToken, async (req, res) => {
+  try {
+    const codeRaw = req.query.code;
+    if (typeof codeRaw !== 'string' || !codeRaw.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Параметр "code" обовʼязковий',
+      });
+    }
+
+    const code = codeRaw.trim();
+    console.log(`🔍 [Warehouse] GET /product-by-barcode — code=${code}`);
+
+    const product: WarehouseProductByBarcodeResponse | null =
+      await WarehouseService.findProductByBarcode(code);
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        error: `Товар зі штрих-кодом «${code}» не знайдено`,
+      });
+    }
+
+    console.log(
+      `✅ [Warehouse] product-by-barcode: sku=${product.sku} kind=${product.barcodeKind}` +
+        (product.batchId ? ` batch=${product.batchNumber ?? product.batchId}` : ''),
+    );
+    res.json({ success: true, ...product });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Помилка при GET /product-by-barcode:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Внутрішня помилка сервера',
+    });
   }
 });
 

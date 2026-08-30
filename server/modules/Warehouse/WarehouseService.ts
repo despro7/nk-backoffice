@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/utils.js';
+import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
 import { WarehouseMovement, WarehouseMovementItem, StockUpdateResult, WarehouseMapping } from './WarehouseTypes.js';
 
 export class WarehouseService {
@@ -350,5 +351,114 @@ export class WarehouseService {
       console.error('🚨 [WarehouseService] Помилка отримання товарів для переміщення:', error);
       throw error;
     }
+  }
+
+  /**
+   * Пошук товару за ШК: спочатку активний CatalogGoodBarcode, інакше Product.barcode.
+   *
+   * ШК коробки (таб «Наліпки») ще немає окремого регістра — усі знайдені коди = 'portion'.
+   * Коли з’явиться box-код: перевіряти його першим; якщо той самий код є на обох рівнях — пріоритет 'box'.
+   */
+  static async findProductByBarcode(code: string): Promise<WarehouseProductByBarcodeResponse | null> {
+    const trimmed = code.trim();
+    if (!trimmed) return null;
+
+    const barcodeRows = await prisma.catalogGoodBarcode.findMany({
+      where: { code: trimmed, activity: true },
+      include: {
+        good: {
+          select: { id: true, sku: true, delMark: true, isGroup: true },
+        },
+      },
+    });
+
+    const usableRows = barcodeRows.filter(
+      (row) => row.good && !row.good.delMark && !row.good.isGroup,
+    );
+    const catalogHit =
+      usableRows.find((row) => row.goodPart.trim().length > 0) ?? usableRows[0];
+
+    if (catalogHit) {
+      const product = await WarehouseService.findProductForCatalogGood(
+        catalogHit.good.id,
+        catalogHit.good.sku,
+      );
+      if (product) {
+        const batchId = catalogHit.goodPart.trim() || null;
+        const batchNumber = catalogHit.goodPartName?.trim() || null;
+        return WarehouseService.toBarcodeLookupResponse(product, trimmed, batchId, batchNumber);
+      }
+    }
+
+    const productByBarcode = await prisma.product.findFirst({
+      where: { barcode: trimmed },
+      select: {
+        sku: true,
+        name: true,
+        weight: true,
+        portionsPerBox: true,
+        barcode: true,
+      },
+    });
+
+    if (!productByBarcode) return null;
+
+    return WarehouseService.toBarcodeLookupResponse(productByBarcode, trimmed, null, null);
+  }
+
+  /** CatalogGood → Product: спочатку dilovodId (= catalog_goods.id), інакше sku. */
+  private static async findProductForCatalogGood(
+    catalogGoodId: string,
+    catalogSku: string | null,
+  ) {
+    const byDilovodId = await prisma.product.findFirst({
+      where: { dilovodId: catalogGoodId },
+      select: {
+        sku: true,
+        name: true,
+        weight: true,
+        portionsPerBox: true,
+        barcode: true,
+      },
+    });
+    if (byDilovodId) return byDilovodId;
+
+    const sku = catalogSku?.trim();
+    if (!sku) return null;
+
+    return prisma.product.findUnique({
+      where: { sku },
+      select: {
+        sku: true,
+        name: true,
+        weight: true,
+        portionsPerBox: true,
+        barcode: true,
+      },
+    });
+  }
+
+  private static toBarcodeLookupResponse(
+    product: {
+      sku: string;
+      name: string;
+      weight: number | null;
+      portionsPerBox: number;
+      barcode: string | null;
+    },
+    scannedCode: string,
+    batchId: string | null,
+    batchNumber: string | null,
+  ): WarehouseProductByBarcodeResponse {
+    return {
+      sku: product.sku,
+      name: product.name,
+      weight: product.weight,
+      portionsPerBox: product.portionsPerBox,
+      barcode: scannedCode,
+      barcodeKind: 'portion',
+      batchId,
+      batchNumber,
+    };
   }
 }

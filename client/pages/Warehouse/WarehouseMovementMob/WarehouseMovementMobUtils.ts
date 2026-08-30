@@ -16,6 +16,7 @@ import type {
   MovementMobProductMeta,
   MovementMobRawItem,
   MovementMobScreenMode,
+  MovementMobStockBreakdown,
   MovementMobStepperStep,
 } from './WarehouseMovementMobTypes';
 
@@ -194,15 +195,6 @@ export function formatDocNumber(internalDocNumber: string): string {
   return `П-${internalDocNumber}`;
 }
 
-export function formatPortionsLabel(count: number): string {
-  const n = Math.abs(count) % 100;
-  const n1 = n % 10;
-  if (n > 10 && n < 20) return `${count} порцій`;
-  if (n1 === 1) return `${count} порція`;
-  if (n1 >= 2 && n1 <= 4) return `${count} порції`;
-  return `${count} порцій`;
-}
-
 export function toListCardViewModel(record: MovementMobApiRecord): MovementMobListCardViewModel {
   const items = parseMovementItems(record.items);
   const aggregates = aggregateMovementItems(items);
@@ -242,59 +234,51 @@ export function buildProductLines(
       key: `${item.sku}-${item.batchId || item.batchNumber || index}`,
       sku: item.sku,
       productName: item.productName || item.sku,
+      batchId: item.batchId || '',
       batchNumber: item.batchNumber || item.batchId || '—',
       boxQuantity: boxes,
       portionQuantity: loose,
       totalPortions: total,
       weight: meta.weight,
       portionsPerBox,
+      barcode: item.barcode || undefined,
+      barcodeKind: item.barcodeKind === 'box' ? 'box' : item.barcodeKind === 'portion' ? 'portion' : undefined,
     };
   });
 }
 
 export function buildChronology(record: MovementMobApiRecord): MovementMobChronologyEvent[] {
-  const events: MovementMobChronologyEvent[] = [];
   const author = record.createdByName ?? null;
+  const destLabel = resolveStorageDisplay(record.destinationWarehouse).shortName;
+  const sentDone = record.status === 'active' || record.status === 'finalized';
+  const receivedDone = record.status === 'finalized';
+  const sentAt = record.sentToDilovodAt || record.lastSentToDilovodAt || record.draftLastEditedAt;
 
-  events.push({
-    key: 'prepared',
-    occurredAt: formatChronologyDateTime(record.draftCreatedAt),
-    title: 'Формування списку на переміщення',
-    userName: author,
-    state: 'done',
-  });
-
-  if (record.status === 'active' || record.status === 'finalized') {
-    const sentAt = record.sentToDilovodAt || record.lastSentToDilovodAt || record.draftLastEditedAt;
-    const destLabel = resolveStorageDisplay(record.destinationWarehouse).shortName;
-    events.push({
+  return [
+    {
+      key: 'prepared',
+      occurredAt: formatChronologyDateTime(record.draftCreatedAt),
+      title: 'Формування списку на переміщення',
+      userName: author,
+      state: 'done',
+    },
+    {
       key: 'sent',
-      occurredAt: formatChronologyDateTime(sentAt),
+      occurredAt: sentDone ? formatChronologyDateTime(sentAt) : 'ще не відправлено',
       title: `Відправлено на «${destLabel}»`,
-      userName: author,
-      state: 'done',
-    });
-  }
-
-  if (record.status === 'finalized') {
-    events.push({
+      userName: sentDone ? author : null,
+      state: sentDone ? 'done' : 'pending',
+    },
+    {
       key: 'received',
-      occurredAt: formatChronologyDateTime(record.lastSentToDilovodAt || record.sentToDilovodAt),
+      occurredAt: receivedDone
+        ? formatChronologyDateTime(record.lastSentToDilovodAt || record.sentToDilovodAt)
+        : 'ще не отримано',
       title: 'Отримано',
-      userName: author,
-      state: 'done',
-    });
-  } else if (record.status === 'active') {
-    events.push({
-      key: 'receive_pending',
-      occurredAt: formatChronologyDateTime(record.lastSentToDilovodAt || record.sentToDilovodAt || record.draftLastEditedAt),
-      title: 'Очікує на підтвердження...',
-      userName: null,
-      state: 'pending',
-    });
-  }
-
-  return events;
+      userName: receivedDone ? author : null,
+      state: receivedDone ? 'done' : 'pending',
+    },
+  ];
 }
 
 export function toDocumentViewModel(
@@ -322,6 +306,122 @@ export function toDocumentViewModel(
     chronology: buildChronology(record),
     createdByName: record.createdByName ?? null,
   };
+}
+
+export function movementMobLineKey(sku: string, batchId: string, batchNumber: string): string {
+  return `${sku}-${batchId || batchNumber || 'none'}`;
+}
+
+export function lineTotalPortions(boxes: number, portions: number, portionsPerBox: number): number {
+  const perBox = portionsPerBox > 0 ? portionsPerBox : 0;
+  return boxes * perBox + portions;
+}
+
+export function breakdownStockPortions(totalPortions: number, portionsPerBox: number): MovementMobStockBreakdown {
+  const portions = Number.isFinite(totalPortions) ? Math.max(0, totalPortions) : 0;
+  const perBox = portionsPerBox > 0 ? portionsPerBox : 0;
+  if (perBox <= 0) {
+    return { portions, boxes: 0, loosePortions: portions };
+  }
+  return {
+    portions,
+    boxes: Math.floor(portions / perBox),
+    loosePortions: portions % perBox,
+  };
+}
+
+export function aggregatesFromLines(lines: MovementMobProductLineViewModel[]): MovementMobAggregates {
+  return {
+    totalBoxes: lines.reduce((sum, line) => sum + line.boxQuantity, 0),
+    totalLoosePortions: lines.reduce((sum, line) => sum + line.portionQuantity, 0),
+    totalPortions: lines.reduce((sum, line) => sum + line.totalPortions, 0),
+    lineCount: lines.length,
+  };
+}
+
+export function mergeMovementMobLine(
+  lines: MovementMobProductLineViewModel[],
+  incoming: MovementMobProductLineViewModel,
+): MovementMobProductLineViewModel[] {
+  const index = lines.findIndex((line) => line.key === incoming.key);
+  if (index < 0) {
+    return [...lines, incoming];
+  }
+
+  const existing = lines[index];
+  const portionsPerBox = incoming.portionsPerBox ?? existing.portionsPerBox ?? 0;
+  const boxQuantity = existing.boxQuantity + incoming.boxQuantity;
+  const portionQuantity = existing.portionQuantity + incoming.portionQuantity;
+  const next: MovementMobProductLineViewModel = {
+    ...existing,
+    ...incoming,
+    boxQuantity,
+    portionQuantity,
+    totalPortions: lineTotalPortions(boxQuantity, portionQuantity, portionsPerBox ?? 0),
+    portionsPerBox: portionsPerBox || null,
+  };
+  const copy = [...lines];
+  copy[index] = next;
+  return copy;
+}
+
+/** Замінює рядок з тим самим ключем (або додає), без сумування кількостей. */
+export function replaceMovementMobLine(
+  lines: MovementMobProductLineViewModel[],
+  incoming: MovementMobProductLineViewModel,
+): MovementMobProductLineViewModel[] {
+  const index = lines.findIndex((line) => line.key === incoming.key);
+  if (index < 0) {
+    return [...lines, incoming];
+  }
+  const copy = [...lines];
+  copy[index] = incoming;
+  return copy;
+}
+
+export function insertMovementMobLineAt(
+  lines: MovementMobProductLineViewModel[],
+  incoming: MovementMobProductLineViewModel,
+  index: number,
+): MovementMobProductLineViewModel[] {
+  if (lines.some((line) => line.key === incoming.key)) {
+    return replaceMovementMobLine(lines, incoming);
+  }
+  const copy = [...lines];
+  const at = Math.max(0, Math.min(index, copy.length));
+  copy.splice(at, 0, incoming);
+  return copy;
+}
+
+export function committedPortionsForSku(
+  lines: MovementMobProductLineViewModel[],
+  sku: string,
+  exceptKey?: string,
+): number {
+  return lines.reduce((sum, line) => {
+    if (line.sku !== sku) return sum;
+    if (exceptKey && line.key === exceptKey) return sum;
+    return sum + line.totalPortions;
+  }, 0);
+}
+
+export function serializeMobDraftItems(
+  lines: MovementMobProductLineViewModel[],
+  sourceStorageId: string,
+): MovementMobRawItem[] {
+  return lines.map((line) => ({
+    sku: line.sku,
+    productName: line.productName,
+    boxQuantity: line.boxQuantity,
+    portionQuantity: line.portionQuantity,
+    totalPortions: line.totalPortions,
+    batchNumber: line.batchNumber === '—' ? '' : line.batchNumber,
+    batchId: line.batchId,
+    batchStorage: sourceStorageId,
+    forecast: 0,
+    barcode: line.barcode || undefined,
+    barcodeKind: line.barcodeKind,
+  }));
 }
 
 export function findPresetKeyForRange(

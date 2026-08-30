@@ -682,6 +682,19 @@ export function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/** Склад виробничого цеху — не показуємо в селектах складів. */
+export const DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID = '1100700000001018';
+
+export function isDilovodDeletionMark(delMark: unknown): boolean {
+  return delMark === true || delMark === 1 || delMark === '1';
+}
+
+/** Активний склад для UI/довідників: без delMark і без виробничого цеху. */
+export function isActiveDilovodStorage(storage: { id?: string; delMark?: unknown }): boolean {
+  if (String(storage.id ?? '') === DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID) return false;
+  return !isDilovodDeletionMark(storage.delMark);
+}
+
 /**
  * Мапінг Dilovod object ID → barcode (`code`).
  * Беремо перший наявний `code` на `object` (без фільтра `activity`).

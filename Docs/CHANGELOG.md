@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-08-30 — Мобільні переміщення: сканер, drawer, swipe-рядки, motion-примітиви
+**Files:** `client/pages/Warehouse/WarehouseMovementMob/**`, `client/components/motion/{bottom-sheet,slide-action-button,swipe-action-row}.tsx`, `client/lib/{ease,touch,haptic,presence-gate}.*`, `shared/types/warehouse.ts`, `server/modules/Warehouse/WarehouseController.ts`, `Docs/features/warehouse-movement-mob.md`, `Docs/architecture/swipe-action-row.md`, `Docs/architecture/motion-primitives.md`
+
+- Редактор чернетки без прихованого input ШК (краде фокус). Додавання: камера / HID, grouped **Додати ще** + «Ввести ШК вручну». Мок-ШК лише в DebugMode.
+- Drawer кількості (`BottomSheet`): залишки джерела/призначення з урахуванням уже доданих порцій SKU; повторний ШК відкриває накопичену кількість; ШК зберігається в рядку чернетки.
+- Рядки: на iOS — двосторонній кінетичний swipe (edit / delete), lock вертикального скролу, високий поріг commit; на Android — тап → панель кнопок. Видалення з collapse + undo ~6 с на той самий індекс.
+- Хронологія завжди з трьох кроків (pending сірі, «ще не відправлено / отримано», з’єднувальні лінії); показується і на збереженій чернетці.
+- Спільні `SwipeActionRow`, `SlideActionButton`, `BottomSheet`, токени `ease.ts`. `lightHaptic()` = лише Android `vibrate`; iOS Taptic-хаки прибрані.
+- API: `GET /api/warehouse/product-by-barcode`. Деталі: `Docs/features/warehouse-movement-mob.md`.
+
+---
+
 ## 2026-08-28 — ActionBubble: touch-UI бульбашки (каталог і фільтри переміщень)
 **Files:** `client/hooks/useTouchUi.ts`, `client/hooks/use-mobile.tsx`, `client/components/action-bubble/**`, `client/pages/Products/index.tsx`, `client/pages/Warehouse/WarehouseMovementMob/index.tsx`, `client/pages/Warehouse/WarehouseMovementMob/components/MovementMobFilterBar.tsx`, `Docs/architecture/action-bubble.md`, `Docs/features/products-catalog-2.0.md`
 

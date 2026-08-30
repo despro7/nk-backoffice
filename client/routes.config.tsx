@@ -7,6 +7,7 @@ import Orders from './pages/Orders';
 import WarehouseMovement from './pages/Warehouse/WarehouseMovement';
 import WarehouseMovementMob from './pages/Warehouse/WarehouseMovementMob';
 import MovementMobDocumentPage from './pages/Warehouse/WarehouseMovementMob/MovementMobDocumentPage';
+import MovementMobCreatePage from './pages/Warehouse/WarehouseMovementMob/MovementMobCreatePage';
 import WarehouseInventory from './pages/Warehouse/WarehouseInventory';
 import WarehouseReturns from './pages/Warehouse/WarehouseReturns';
 import WarehouseWriteOff from './pages/Warehouse/WarehouseWriteOff';
@@ -177,6 +178,18 @@ export const appRoutes: AppRoute[] = [
     parent: 'warehouse',
     permission: { name: 'movementMob' },
     navBadge: { label: 'NEW', color: 'danger' },
+    hasOwnTitle: true,
+  },
+  {
+    path: '/warehouse/movement-mob/new',
+    component: MovementMobCreatePage,
+    title: 'Нове переміщення',
+    pageTitle: 'Нове переміщення | NK Backoffice',
+    navLabel: 'Нове переміщення',
+    icon: <DynamicIcon name="combine" size={16} />,
+    inNav: false,
+    parent: 'warehouse',
+    permission: { name: 'movementMob' },
     hasOwnTitle: true,
   },
   {

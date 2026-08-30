@@ -6,6 +6,10 @@ export type MovementMobDbStatus = 'draft' | 'active' | 'finalized';
 
 export type MovementMobScreenMode = 'formation' | 'view';
 
+export type MovementMobEditorMode = 'empty' | 'formation' | 'view';
+
+export type MovementMobBarcodeKind = 'portion' | 'box';
+
 export type MovementMobStepperStepKey = 'prepared' | 'sent' | 'received';
 
 export type MovementMobStepperStepState = 'done' | 'pending';
@@ -20,6 +24,8 @@ export interface MovementMobRawItem {
   batchId?: string;
   batchStorage?: string;
   forecast?: number;
+  barcode?: string;
+  barcodeKind?: MovementMobBarcodeKind;
 }
 
 export interface MovementMobApiRecord {
@@ -76,12 +82,48 @@ export interface MovementMobProductLineViewModel {
   key: string;
   sku: string;
   productName: string;
+  batchId: string;
   batchNumber: string;
   boxQuantity: number;
   portionQuantity: number;
   totalPortions: number;
   weight: number | null;
   portionsPerBox: number | null;
+  barcode?: string;
+  barcodeKind?: MovementMobBarcodeKind;
+}
+
+/** Відповідь GET /api/warehouse/product-by-barcode — дзеркало WarehouseProductByBarcodeResponse. */
+export interface MovementMobProductByBarcode {
+  sku: string;
+  name: string;
+  weight: number | null;
+  portionsPerBox: number;
+  barcode: string;
+  barcodeKind: MovementMobBarcodeKind;
+  batchId: string | null;
+  batchNumber: string | null;
+}
+
+export interface MovementMobStockBreakdown {
+  portions: number;
+  boxes: number;
+  loosePortions: number;
+}
+
+export interface MovementMobScanDraft {
+  sku: string;
+  name: string;
+  weight: number | null;
+  portionsPerBox: number;
+  barcode: string;
+  barcodeKind: MovementMobBarcodeKind;
+  batchId: string;
+  batchNumber: string;
+  boxes: number;
+  portions: number;
+  sourceStock: MovementMobStockBreakdown;
+  destStock: MovementMobStockBreakdown;
 }
 
 export interface MovementMobChronologyEvent {

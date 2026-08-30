@@ -176,6 +176,8 @@ export interface DilovodStorage {
   id: string;
   code: string;
   name: string;
+  /** Позначка видалення в Dilovod; у довідниках мають лишатися лише активні (false). */
+  delMark?: boolean;
 }
 
 export interface DilovodCashAccount {

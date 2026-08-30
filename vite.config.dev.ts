@@ -5,10 +5,15 @@ import tailwindcss from "@tailwindcss/vite";
 import { createServer } from "./server";
 // import { cronService, forceStopAllCronJobs } from "./server/services/cronService.js"; - No longer needed here
 
+const disableHmr = process.env.VITE_DISABLE_HMR === "1";
+
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    // Після блокування екрана телефона WS HMR падає і Vite робить location.reload().
+    // Для прогону на LAN: VITE_DISABLE_HMR=1 npm run dev
+    hmr: disableHmr ? false : undefined,
     fs: {
       // Корінь проєкту потрібен для index.html; client/shared уже всередині нього
       allow: [path.resolve(__dirname)],

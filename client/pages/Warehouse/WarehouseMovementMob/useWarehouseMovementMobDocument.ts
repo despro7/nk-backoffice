@@ -49,6 +49,7 @@ export function useWarehouseMovementMobDocument(id: number | null) {
   const query = useQuery({
     queryKey: ['warehouse-movement-mob-document', id],
     enabled: id != null && Number.isFinite(id) && id > 0,
+    refetchOnWindowFocus: false,
     queryFn: async (): Promise<MovementMobDocumentViewModel> => {
       const response = await apiCall(`/api/warehouse/${id}`);
       if (!response.ok) {

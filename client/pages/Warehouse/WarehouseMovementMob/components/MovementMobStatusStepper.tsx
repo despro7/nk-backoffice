@@ -1,5 +1,5 @@
-import { Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { StockBadge, type StockBadgeVariant } from '@/components/StockBadge';
 import type { MovementMobStepperStep } from '../WarehouseMovementMobTypes';
 
 interface MovementMobStatusStepperProps {
@@ -13,39 +13,40 @@ export default function MovementMobStatusStepper({
 }: MovementMobStatusStepperProps) {
   return (
     <div className={`w-full ${className}`}>
-      <div className="flex items-start">
+      <div className="flex items-center gap-12">
         {steps.map((step, index) => {
           const isDone = step.state === 'done';
           const isLast = index === steps.length - 1;
           const nextDone = !isLast && steps[index + 1]?.state === 'done';
 
           return (
-            <div key={step.key} className={`flex items-start ${isLast ? '' : 'flex-1'}`}>
-              <div className="flex flex-col items-center min-w-14">
-                <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center ${
-                    isDone ? 'bg-success text-white' : 'bg-default-200 text-default-500'
-                  }`}
-                >
-                  <DynamicIcon
-                    name={isDone ? 'check' : 'clock'}
-                    size={14}
-                    className="shrink-0"
-                  />
-                </div>
-                <span
-                  className={`mt-1.5 text-[10px] leading-tight text-center max-w-18 ${
-                    isDone ? 'text-success-600 font-medium' : 'text-default-400'
-                  }`}
-                >
-                  {step.label}
-                </span>
+            <div key={step.key} className="relative flex-1 min-w-0 flex flex-col items-center">
+              <div
+                className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center ${
+                  isDone ? 'bg-success-500 text-white' : 'bg-default-200 text-default-500'
+                }`}
+              >
+                <DynamicIcon
+                  name={isDone ? 'check' : 'clock'}
+                  size={14}
+                  className="shrink-0"
+                />
               </div>
-
+              <span
+                className={`mt-1.5 w-full text-[10px] leading-tight text-center px-0.5 ${
+                  isDone ? 'text-success-600/90 font-medium' : 'text-default-400'
+                }`}
+              >
+                {step.label}
+              </span>
               {!isLast && (
                 <div
-                  className={`flex-1 h-0.5 mt-3.5 mx-1 rounded-full ${
-                    isDone && nextDone ? 'bg-success' : isDone ? 'bg-success/40' : 'bg-default-200'
+                  className={`absolute top-3.5 left-full w-[calc(100%+0.5rem)] h-0.5 rounded-full -translate-x-[calc(50%-1.5rem)] ${
+                    isDone && nextDone
+                      ? 'bg-success-500'
+                      : isDone
+                        ? 'bg-gradient-to-r from-success-500 to-default-200'
+                        : 'bg-default-200'
                   }`}
                 />
               )}
@@ -54,6 +55,24 @@ export default function MovementMobStatusStepper({
         })}
       </div>
     </div>
+  );
+}
+
+function badgeToStockVariant(badge: string): StockBadgeVariant | null {
+  if (badge === 'МС') return 'ms';
+  if (badge === 'ГП') return 'gp';
+  return null;
+}
+
+function DirectionStockBadge({ badge }: { badge: string }) {
+  const variant = badgeToStockVariant(badge);
+  if (variant) {
+    return <StockBadge variant={variant} size="10px" className="leading-tight pt-[3px]" />;
+  }
+  return (
+    <span className="px-1 py-0.5 rounded ring-1 text-[10px] text-default-500 bg-default-100">
+      {badge}
+    </span>
   );
 }
 
@@ -66,13 +85,9 @@ export function MovementMobDirectionBadges({
 }) {
   return (
     <div className="flex items-center gap-1 shrink-0">
-      <Chip size="sm" variant="flat" className="bg-sky-500/15 text-sky-700 h-6 px-2">
-        {sourceBadge}
-      </Chip>
+      <DirectionStockBadge badge={sourceBadge} />
       <DynamicIcon name="arrow-right" size={14} className="text-default-400 shrink-0" />
-      <Chip size="sm" variant="flat" className="bg-lime-500/15 text-lime-700 h-6 px-2">
-        {destBadge}
-      </Chip>
+      <DirectionStockBadge badge={destBadge} />
     </div>
   );
 }

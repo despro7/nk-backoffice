@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
 import { Button, Spinner } from '@heroui/react';
+import { SwipeActionRow, type SwipeActionRest } from '@/components/motion/swipe-action-row';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
-import { ToastService } from '@/services/ToastService';
-import type { MovementMobDocumentViewModel } from '../WarehouseMovementMobTypes';
+import { useState, type ReactNode } from 'react';
+import type { MovementMobAggregates, MovementMobChronologyEvent, MovementMobEditorMode, MovementMobProductLineViewModel } from '../WarehouseMovementMobTypes';
+import MovementMobAddMoreButton from './MovementMobAddMoreButton';
 import MovementMobChronology from './MovementMobChronology';
 import MovementMobDocumentSummary from './MovementMobDocumentSummary';
 import MovementMobProductCard from './MovementMobProductCard';
@@ -12,49 +12,51 @@ import MovementMobWarehouseSelectors, {
 } from './MovementMobWarehouseSelectors';
 
 interface MovementMobDocumentScreenProps {
-  document: MovementMobDocumentViewModel;
+  editorMode: MovementMobEditorMode;
+  storages: MovementMobStorageOption[];
+  sourceId: string;
+  destId: string;
+  onSourceChange: (id: string) => void;
+  onDestChange: (id: string) => void;
+  onSwap: () => void;
+  lines: MovementMobProductLineViewModel[];
+  aggregates: MovementMobAggregates;
+  chronology: MovementMobChronologyEvent[];
+  scanSlot: ReactNode;
+  onAddMore: () => void;
+  onManualBarcode: () => void;
+  onEditLine?: (line: MovementMobProductLineViewModel) => void;
+  onDeleteLine?: (line: MovementMobProductLineViewModel) => void;
+  enterLineKey?: string | null;
+  onSend: () => void;
+  warehousesLocked?: boolean;
 }
 
-export default function MovementMobDocumentScreen({ document }: MovementMobDocumentScreenProps) {
-  const dirsCtx = useDilovodDirectories();
-  const isFormation = document.mode === 'formation';
-
-  const storages = useMemo<MovementMobStorageOption[]>(() => {
-    const src = Array.isArray(dirsCtx.directories?.storages) ? dirsCtx.directories!.storages : [];
-    return (src || []).map((s: { id: string | number; name?: string }) => ({
-      id: String(s.id),
-      name: s.name ?? String(s.id),
-    }));
-  }, [dirsCtx.directories]);
-
-  const [sourceId, setSourceId] = useState(document.sourceStorageId);
-  const [destId, setDestId] = useState(document.destStorageId);
-
-  useEffect(() => {
-    setSourceId(document.sourceStorageId);
-    setDestId(document.destStorageId);
-  }, [document.sourceStorageId, document.destStorageId, document.id]);
-
-  const handleSwap = () => {
-    setSourceId(destId);
-    setDestId(sourceId);
-  };
-
-  const handleAddMore = () => {
-    ToastService.show({
-      title: 'Скоро',
-      description: 'Додавання товарів через сканування буде в наступному етапі',
-      color: 'primary',
-    });
-  };
-
-  const handleSend = () => {
-    ToastService.show({
-      title: 'Скоро',
-      description: 'Відправка без Dilovod (підтвердження отримання) буде в наступному етапі',
-      color: 'primary',
-    });
-  };
+export default function MovementMobDocumentScreen({
+  editorMode,
+  storages,
+  sourceId,
+  destId,
+  onSourceChange,
+  onDestChange,
+  onSwap,
+  lines,
+  aggregates,
+  chronology,
+  scanSlot,
+  onAddMore,
+  onManualBarcode,
+  onEditLine,
+  onDeleteLine,
+  enterLineKey = null,
+  onSend,
+  warehousesLocked = false,
+}: MovementMobDocumentScreenProps) {
+  const isView = editorMode === 'view';
+  const isEmpty = editorMode === 'empty';
+  const isFormation = editorMode === 'formation';
+  const [openSwipe, setOpenSwipe] = useState<{ key: string; side: Exclude<SwipeActionRest, 'closed'> } | null>(null);
+  const canSwipe = isFormation && Boolean(onEditLine && onDeleteLine);
 
   return (
     <div className="flex flex-col gap-4 pb-24 px-3 md:px-0">
@@ -62,58 +64,90 @@ export default function MovementMobDocumentScreen({ document }: MovementMobDocum
         storages={storages}
         sourceId={sourceId}
         destId={destId}
-        onSourceChange={setSourceId}
-        onDestChange={setDestId}
-        onSwap={handleSwap}
-        readOnly={!isFormation}
+        onSourceChange={onSourceChange}
+        onDestChange={onDestChange}
+        onSwap={onSwap}
+        readOnly={isView || warehousesLocked}
       />
 
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-default-700">Товари на переміщення</h3>
-          {isFormation && (
-            <Button
-              size="sm"
-              color="primary"
-              variant="flat"
-              startContent={<DynamicIcon name="package-plus" size={16} />}
-              onPress={handleAddMore}
-            >
-              Додати ще
-            </Button>
-          )}
+      {!isView && scanSlot}
+
+      {isEmpty && (
+        <div className="flex flex-col items-center justify-center gap-6 py-10 min-h-[18rem]">
+          <DynamicIcon
+            name="package-search"
+            size={120}
+            strokeWidth={1}
+            className="text-neutral-400"
+          />
+          <p className="text-center text-lg leading-tight text-neutral-400/75 max-w-68">
+            Оберіть товар для переміщення
+          </p>
+          <MovementMobAddMoreButton
+            onAdd={onAddMore}
+            onManualBarcode={onManualBarcode}
+            label="Додати товар"
+          />
         </div>
+      )}
 
-        {document.lines.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-default-200 bg-white py-10 text-center text-sm text-default-400">
-            Немає позицій у документі
+      {!isEmpty && (
+        <section className="flex flex-col gap-3 mt-1">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-base font-bold text-default-700">Товари на переміщення</h3>
           </div>
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {document.lines.map((line) => (
-              <MovementMobProductCard key={line.key} line={line} />
-            ))}
-          </div>
-        )}
 
-        <MovementMobDocumentSummary aggregates={document.aggregates} />
-      </section>
+          {lines.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-default-200 bg-white py-10 text-center text-sm text-default-400">
+              Немає позицій у документі
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              {lines.map((line) => (
+                <SwipeActionRow
+                  key={line.key}
+                  disabled={!canSwipe}
+                  rest={openSwipe?.key === line.key ? openSwipe.side : 'closed'}
+                  onRestChange={(next) => {
+                    setOpenSwipe(next === 'closed' ? null : { key: line.key, side: next });
+                  }}
+                  leading={{
+                    label: 'Редагувати',
+                    icon: <DynamicIcon name="pencil" size={18} strokeWidth={1.75} className="shrink-0" />,
+                    onAction: () => onEditLine?.(line),
+                  }}
+                  trailing={{
+                    label: 'Видалити',
+                    icon: <DynamicIcon name="trash-2" size={18} strokeWidth={1.75} className="shrink-0" />,
+                    onAction: () => onDeleteLine?.(line),
+                  }}
+                  enterFromCollapsed={enterLineKey === line.key}
+                >
+                  <MovementMobProductCard line={line} />
+                </SwipeActionRow>
+              ))}
+            </div>
+          )}
 
-      {!isFormation && <MovementMobChronology events={document.chronology} />}
+          <MovementMobDocumentSummary aggregates={aggregates} />
+        </section>
+      )}
 
       {isFormation && (
-        <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 px-3 lg:static lg:px-0 lg:z-auto">
+        <div className="flex items-stretch gap-3 mt-4">
+          <MovementMobAddMoreButton onAdd={onAddMore} onManualBarcode={onManualBarcode} />
           <Button
-            fullWidth
             size="lg"
-            className="bg-slate-700 text-white h-12 font-medium shadow-lg lg:shadow-none"
-            startContent={<DynamicIcon name="send" size={18} />}
-            onPress={handleSend}
+            className="gap-2 bg-gradient-to-b from-lime-500 to-lime-600 text-white h-12 font-medium shadow-button-primary shrink-0 w-auto px-6 sm:min-w-0 sm:flex-1 sm:w-auto"
+            startContent={<DynamicIcon name="send" size={18} strokeWidth={1.5} className="shrink-0" />}
+            onPress={onSend}
           >
-            Відправити переміщення
+            Відправити
           </Button>
         </div>
       )}
+
+      {chronology.length > 0 && <MovementMobChronology events={chronology} />}
     </div>
   );
 }

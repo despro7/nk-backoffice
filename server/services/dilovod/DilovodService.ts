@@ -16,7 +16,7 @@ import {
 import { syncSettingsService } from '../syncSettingsService.js';
 import { dilovodCacheService, type CacheType } from './DilovodCacheService.js';
 import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
-import { compactMetaLogData, mapBarCodesByObjectId } from './DilovodUtils.js';
+import { compactMetaLogData, isActiveDilovodStorage, mapBarCodesByObjectId } from './DilovodUtils.js';
 import { pluralize } from '../../lib/utils.js';
 
 export class DilovodService {
@@ -1167,9 +1167,13 @@ export class DilovodService {
       // Перевіряємо кеш, якщо не примусове оновлення
       if (!forceRefresh) {
         const cached = await dilovodCacheService.getFromCache('storages');
-        if (cached) {
-          console.log(`📦 [Dilovod] Склади завантажено з кешу: ${cached.length} записів`);
-          return cached;
+        const cacheHasDelMark = Array.isArray(cached)
+          && cached.some((s: { delMark?: unknown }) => s?.delMark !== undefined);
+        // Старий кеш без delMark може містити видалені склади — тоді йдемо в API
+        if (cached && (cacheHasDelMark || cached.length === 0)) {
+          const active = cached.filter((s: { id?: string; delMark?: unknown }) => isActiveDilovodStorage(s));
+          console.log(`📦 [Dilovod] Склади завантажено з кешу: ${active.length} записів`);
+          return active;
         }
       }
 

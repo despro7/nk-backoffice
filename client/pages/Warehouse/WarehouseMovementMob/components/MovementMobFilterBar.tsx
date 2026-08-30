@@ -57,24 +57,13 @@ export default function MovementMobFilterBar({
             ? [{ key: 'custom', label: 'Обраний період' }]
             : []),
         ],
-        className: 'flex-1 min-w-0',
+        className: 'min-w-0 w-full shrink-0',
         triggerClassName: 'h-10',
         iconName: 'calendar-days',
         placeholder: 'Період',
         ariaLabel: 'Період переміщень',
       }),
     ];
-
-    if (showReset) {
-      configs.push(
-        createResetFilterConfig({
-          onPress: onReset,
-          disabled: loading,
-          className:
-            'h-10 px-3 gap-2 bg-danger-50 border-1.5 border-danger-100 text-danger-600 hover:bg-danger-100',
-        }),
-      );
-    }
 
     if (singleDay) {
       configs.push(
@@ -88,7 +77,7 @@ export default function MovementMobFilterBar({
             onDatePresetKeyChange(findPresetKeyForRange(nextRange, datePresets) ?? 'custom');
           },
           maxValue: maxDate,
-          className: 'w-full basis-full',
+          // className: 'w-full basis-full',
           triggerClassName: 'h-10 rounded-none',
           previousButtonClassName: 'h-10 rounded-r-none border-r-0',
           nextButtonClassName: 'h-10 rounded-l-none border-l-0',
@@ -113,6 +102,17 @@ export default function MovementMobFilterBar({
       );
     }
 
+    if (showReset) {
+      configs.push(
+        createResetFilterConfig({
+          onPress: onReset,
+          disabled: loading,
+          className:
+            'h-10 px-3 gap-2 bg-danger-50 border-1.5 border-danger-400/50 text-danger-400 hover:bg-danger-100',
+        }),
+      );
+    }
+
     return configs;
   }, [
     datePresetKey,
@@ -130,7 +130,7 @@ export default function MovementMobFilterBar({
   return (
     <ReportsFilterBuilder
       filters={filters}
-      className="flex flex-wrap gap-2 items-end"
+      className="flex flex-wrap gap-2 items-end justify-end"
     />
   );
 }

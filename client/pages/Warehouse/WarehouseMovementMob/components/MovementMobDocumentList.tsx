@@ -1,7 +1,8 @@
-import { Spinner } from '@heroui/react';
+import { Button, Spinner } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import type { MovementMobListCardViewModel } from '../WarehouseMovementMobTypes';
+import { useNavigate } from 'react-router-dom';
 import MovementMobDocumentCard from './MovementMobDocumentCard';
+import type { MovementMobListCardViewModel } from '../WarehouseMovementMobTypes';
 
 interface MovementMobDocumentListProps {
   cards: MovementMobListCardViewModel[];
@@ -10,12 +11,7 @@ interface MovementMobDocumentListProps {
   onCardPress: (id: number) => void;
 }
 
-export default function MovementMobDocumentList({
-  cards,
-  loading,
-  error,
-  onCardPress,
-}: MovementMobDocumentListProps) {
+export default function MovementMobDocumentList({cards, loading, error, onCardPress}: MovementMobDocumentListProps) {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3 text-default-500">
@@ -34,11 +30,28 @@ export default function MovementMobDocumentList({
     );
   }
 
+  const navigate = useNavigate();
+
   if (cards.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 gap-2 text-default-400 px-4 text-center">
-        <DynamicIcon name="package-open" size={32} className="opacity-50" />
-        <p className="text-sm">Немає переміщень за обраний період</p>
+      <div className="flex flex-col items-center justify-center gap-6 py-10 min-h-[28rem]">
+        <DynamicIcon
+          name="package-open"
+          size={120}
+          strokeWidth={1}
+          className="text-neutral-400"
+        />
+        <p className="text-center text-lg leading-tight text-neutral-400/75 max-w-68">
+          Немає переміщень за обраний період
+        </p>
+        <Button
+          size="lg"
+          className="bg-gradient-to-b from-yellow-500 to-orange-500 px-6 py-8 mt-6 text-xl font-bold text-white rounded-xl"
+          startContent={<DynamicIcon name="plus" size={24} />}
+          onPress={() => navigate('/warehouse/movement-mob/new')}
+        >
+          Створити переміщення
+        </Button>
       </div>
     );
   }
