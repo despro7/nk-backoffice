@@ -1,5 +1,6 @@
 import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import MovementMobEditorPage from './MovementMobEditorPage';
 import { useWarehouseMovementMobDocument } from './useWarehouseMovementMobDocument';
@@ -9,6 +10,11 @@ export default function MovementMobDocumentPage() {
   const { id } = useParams<{ id: string }>();
   const numericId = id && !Number.isNaN(Number(id)) ? Number(id) : null;
   const { document } = useWarehouseMovementMobDocument(numericId);
+
+  useEffect(() => {
+    if (!document?.displayNumber) return;
+    window.document.title = `${document.displayNumber} | NK Backoffice`;
+  }, [document?.displayNumber]);
 
   return (
     <div className="flex flex-col gap-3">

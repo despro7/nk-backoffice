@@ -102,7 +102,80 @@ function invertCanvas(source: HTMLCanvasElement): HTMLCanvasElement {
   return canvas;
 }
 
-async function detectOnCanvas(canvas: HTMLCanvasElement): Promise<string | null> {
+/** Прямокутник оверлею (рамка) → координати в кадрі video з урахуванням object-cover. */
+export function mapCoveredOverlayToVideoSource(
+  video: HTMLVideoElement,
+  overlay: HTMLElement,
+): { sx: number; sy: number; sw: number; sh: number } | null {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return null;
+
+  const videoRect = video.getBoundingClientRect();
+  const overlayRect = overlay.getBoundingClientRect();
+  if (videoRect.width <= 0 || videoRect.height <= 0 || overlayRect.width <= 0 || overlayRect.height <= 0) {
+    return null;
+  }
+
+  const scale = Math.max(videoRect.width / vw, videoRect.height / vh);
+  const displayedW = vw * scale;
+  const displayedH = vh * scale;
+  const cropX = (displayedW - videoRect.width) / 2;
+  const cropY = (displayedH - videoRect.height) / 2;
+
+  const sx = (overlayRect.left - videoRect.left + cropX) / scale;
+  const sy = (overlayRect.top - videoRect.top + cropY) / scale;
+  const sw = overlayRect.width / scale;
+  const sh = overlayRect.height / scale;
+
+  const clampedSx = Math.max(0, Math.min(vw, sx));
+  const clampedSy = Math.max(0, Math.min(vh, sy));
+  const clampedSw = Math.max(1, Math.min(vw - clampedSx, sw));
+  const clampedSh = Math.max(1, Math.min(vh - clampedSy, sh));
+  if (clampedSw < 8 || clampedSh < 8) return null;
+  return { sx: clampedSx, sy: clampedSy, sw: clampedSw, sh: clampedSh };
+}
+
+export function drawVideoRegionToCanvas(
+  video: HTMLVideoElement,
+  region: { sx: number; sy: number; sw: number; sh: number },
+  canvas: HTMLCanvasElement,
+): boolean {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return false;
+  const width = Math.max(1, Math.round(region.sw));
+  const height = Math.max(1, Math.round(region.sh));
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  ctx.drawImage(video, region.sx, region.sy, region.sw, region.sh, 0, 0, width, height);
+  return true;
+}
+
+export function createLiveBarcodeScanner(): (canvas: HTMLCanvasElement) => Promise<string | null> {
+  const Detector = getBarcodeDetectorCtor();
+  if (Detector) {
+    const detector = new Detector({ formats: [...BARCODE_FORMATS] });
+    return async (canvas) => {
+      try {
+        const codes = await detector.detect(canvas);
+        return codes.find((item) => item.rawValue?.trim())?.rawValue?.trim() ?? null;
+      } catch {
+        return null;
+      }
+    };
+  }
+
+  const reader = createZxingReader();
+  return async (canvas) => {
+    try {
+      return reader.decodeFromCanvas(canvas).getText().trim() || null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+export async function detectBarcodeOnCanvas(canvas: HTMLCanvasElement): Promise<string | null> {
   const Detector = getBarcodeDetectorCtor();
   if (Detector) {
     try {
@@ -127,7 +200,7 @@ async function detectOnCanvas(canvas: HTMLCanvasElement): Promise<string | null>
 async function decodeCanvasVariants(base: HTMLCanvasElement): Promise<string | null> {
   const variants = [base, invertCanvas(base), rotateCanvas(base, 90), rotateCanvas(base, 270), rotateCanvas(base, 180)];
   for (const canvas of variants) {
-    const value = await detectOnCanvas(canvas);
+    const value = await detectBarcodeOnCanvas(canvas);
     if (value) return value;
   }
   return null;

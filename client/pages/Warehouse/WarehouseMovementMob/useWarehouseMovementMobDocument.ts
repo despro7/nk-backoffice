@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { useApi } from '@/hooks/useApi';
 import type {
   MovementMobApiRecord,
   MovementMobDocumentViewModel,
   MovementMobProductMeta,
 } from './WarehouseMovementMobTypes';
-import { parseMovementItems, toDocumentViewModel } from './WarehouseMovementMobUtils';
+import { parseMovementItems, sentChronologyTitle, toDocumentViewModel } from './WarehouseMovementMobUtils';
 
 interface ProductsBatchResponse {
   products: Array<{
@@ -45,6 +46,11 @@ async function fetchProductMetaBySkus(
 
 export function useWarehouseMovementMobDocument(id: number | null) {
   const { apiCall } = useApi();
+  const dirsCtx = useDilovodDirectories();
+  const destNameById = useMemo(() => {
+    const src = Array.isArray(dirsCtx.directories?.storages) ? dirsCtx.directories!.storages : [];
+    return new Map((src || []).map((s: { id: string | number; name?: string }) => [String(s.id), s.name ?? '']));
+  }, [dirsCtx.directories]);
 
   const query = useQuery({
     queryKey: ['warehouse-movement-mob-document', id],
@@ -63,11 +69,25 @@ export function useWarehouseMovementMobDocument(id: number | null) {
       const items = parseMovementItems(record.items);
       const skus = [...new Set(items.map((item) => item.sku).filter(Boolean))];
       const metaBySku = await fetchProductMetaBySkus(apiCall, skus);
-      return toDocumentViewModel(record, metaBySku);
+      const destName = destNameById.get(String(record.destinationWarehouse)) || null;
+      return toDocumentViewModel(record, metaBySku, destName);
     },
   });
 
-  const document = useMemo(() => query.data ?? null, [query.data]);
+  const document = useMemo(() => {
+    const data = query.data ?? null;
+    if (!data) return null;
+    const destName = destNameById.get(data.destStorageId)?.trim();
+    if (!destName) return data;
+    return {
+      ...data,
+      chronology: data.chronology.map((event) => (
+        event.key === 'sent'
+          ? { ...event, title: sentChronologyTitle(destName) }
+          : event
+      )),
+    };
+  }, [destNameById, query.data]);
 
   return {
     document,

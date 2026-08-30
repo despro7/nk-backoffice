@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-08-31 — Мобільні переміщення: прийом, Dilovod, адмін-правка двох списків
+**Files:** `client/pages/Warehouse/WarehouseMovementMob/**`, `server/modules/Warehouse/{WarehouseController,WarehouseService,WarehousePayloadBuilder,WarehouseMovementExport}.ts`, `shared/constants/permissions.ts`, `shared/utils/dilovodBatchId.ts`, `prisma/schema.prisma`, `prisma/migrations/20260830120000_warehouse_movement_receipt_fields/`, `Docs/features/warehouse-movement-mob.md`, `Docs/features/warehouse-movement-dilovod-export.md`
+
+- Цикл: чернетка → **Відправити** (`pending_receipt`, без Dilovod) → сканування отримувачем → **Підтвердити отримання** (у Dilovod лише фактичні кількості). Автор не приймає власне відправлення. Номер `П-00xxx`. Старий `/warehouse/movement` паралельно.
+- Розбіжності (нестача / надлишок / збіг) з кольорами; `goodPart` не з `"0"`; підстановка партій `fillMissingBatchIds`.
+- Адмін після `finalized`: окреме редагування **Відправлене / Отримане**; **Зберегти в Dilovod** (`POST /api/warehouse/:id/sync-dilovod`) перезаписує документ отриманими кількостями.
+- Soft-delete (`deleted` + Dilovod `delMark`). Права в ролях: `action.warehouse.movement.edit` / `.delete` (seed — admin). Камера читає ШК лише у видимій рамці.
+- Деталі: `Docs/features/warehouse-movement-mob.md`.
+
+---
+
 ## 2026-08-30 — Мобільні переміщення: сканер, drawer, swipe-рядки, motion-примітиви
 **Files:** `client/pages/Warehouse/WarehouseMovementMob/**`, `client/components/motion/{bottom-sheet,slide-action-button,swipe-action-row}.tsx`, `client/lib/{ease,touch,haptic,presence-gate}.*`, `shared/types/warehouse.ts`, `server/modules/Warehouse/WarehouseController.ts`, `Docs/features/warehouse-movement-mob.md`, `Docs/architecture/swipe-action-row.md`, `Docs/architecture/motion-primitives.md`
 

@@ -1,11 +1,13 @@
 import { prisma } from '../../lib/utils.js';
 import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
+import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
 import { WarehouseMovement, WarehouseMovementItem, StockUpdateResult, WarehouseMapping } from './WarehouseTypes.js';
+import type { PayloadMovementProduct } from './WarehousePayloadBuilder.js';
 
 export class WarehouseService {
   // Парсить JSON-поле items з відповіді Prisma.
   // Prisma зберігає items як JSON.stringify(array) → рядок, тому потрібно розпарсити назад у масив.
-  private static parseItems(raw: any): WarehouseMovementItem[] {
+  static parseItems(raw: any): WarehouseMovementItem[] {
     if (typeof raw === 'string') {
       try { return JSON.parse(raw); } catch { return []; }
     }
@@ -63,7 +65,7 @@ export class WarehouseService {
     // Крок 2: одразу оновлюємо internalDocNumber на базі id (гарантовано унікальний)
     const result = await prisma.warehouseMovement.update({
       where: { id: tmp.id },
-      data: { internalDocNumber: tmp.id.toString().padStart(5, '0') },
+      data: { internalDocNumber: `П-${tmp.id.toString().padStart(5, '0')}` },
     });
 
     // Перетворюємо JsonValue в WarehouseMovementItem[]
@@ -109,6 +111,37 @@ export class WarehouseService {
     } as unknown as WarehouseMovement;
   }
 
+  /** Позначити документ переміщення як видалений у Dilovod (delMark). */
+  static async markDilovodMovementDeleted(dilovodDocId: string): Promise<{
+    success: boolean;
+    notFound: boolean;
+    error?: string;
+  }> {
+    const { dilovodExportFlowService } = await import('../../services/dilovod/index.js');
+    const payload = { saveType: 2, header: { id: dilovodDocId, delMark: 1 } };
+    const exportResult = await dilovodExportFlowService.send({
+      payload,
+      dryRun: false,
+      warnings: [],
+      label: '[WarehouseMovement]',
+    });
+    if (exportResult.success) {
+      return { success: true, notFound: false };
+    }
+    const msg = String(
+      exportResult.error
+      || (exportResult.dilovodResponse as { error?: string; message?: string } | undefined)?.error
+      || (exportResult.dilovodResponse as { message?: string } | undefined)?.message
+      || 'Unknown error',
+    );
+    const lower = msg.toLowerCase();
+    const notFound = lower.includes('not found')
+      || lower.includes('object with id')
+      || lower.includes('не знайдено')
+      || lower.includes('не знайден');
+    return { success: false, notFound, error: msg };
+  }
+
   // Відправка в Dilovod
   static async sendToDilovod(id: number, dilovodDocNumber: string): Promise<WarehouseMovement> {
     const result = await prisma.warehouseMovement.update({
@@ -142,6 +175,7 @@ export class WarehouseService {
 
     const where: any = {};
     if (status) where.status = status;
+    else where.status = { not: 'deleted' };
     if (warehouse) {
       where.OR = [
         { sourceWarehouse: warehouse },
@@ -376,7 +410,7 @@ export class WarehouseService {
       (row) => row.good && !row.good.delMark && !row.good.isGroup,
     );
     const catalogHit =
-      usableRows.find((row) => row.goodPart.trim().length > 0) ?? usableRows[0];
+      usableRows.find((row) => isUsableDilovodBatchId(row.goodPart)) ?? usableRows[0];
 
     if (catalogHit) {
       const product = await WarehouseService.findProductForCatalogGood(
@@ -384,7 +418,9 @@ export class WarehouseService {
         catalogHit.good.sku,
       );
       if (product) {
-        const batchId = catalogHit.goodPart.trim() || null;
+        const batchId = isUsableDilovodBatchId(catalogHit.goodPart)
+          ? catalogHit.goodPart.trim()
+          : null;
         const batchNumber = catalogHit.goodPartName?.trim() || null;
         return WarehouseService.toBarcodeLookupResponse(product, trimmed, batchId, batchNumber);
       }
@@ -436,6 +472,233 @@ export class WarehouseService {
         barcode: true,
       },
     });
+  }
+
+  static movementLineKey(item: {
+    sku?: string;
+    batchId?: string;
+    batchNumber?: string;
+  }): string {
+    return `${String(item.sku ?? '').trim()}::${String(item.batchId || item.batchNumber || '').trim()}`;
+  }
+
+  static itemSentPortions(item: Record<string, unknown>): number {
+    if (item.totalPortions != null && Number.isFinite(Number(item.totalPortions))) {
+      return Math.max(0, Number(item.totalPortions));
+    }
+    return Math.max(0, Number(item.portionQuantity) || 0);
+  }
+
+  static itemReceivedPortions(item: Record<string, unknown>, portionsPerBox = 0): number {
+    const stored = Number(item.receivedTotalPortions);
+    if (Number.isFinite(stored) && stored > 0) {
+      return stored;
+    }
+    const boxes = Number(item.receivedBoxQuantity) || 0;
+    const loose = Number(item.receivedPortionQuantity) || 0;
+    const perBox = portionsPerBox > 0 ? portionsPerBox : 0;
+    if (perBox > 0) {
+      return Math.max(0, boxes * perBox + loose);
+    }
+    return Math.max(0, loose);
+  }
+
+  static zeroReceivedFields(items: Record<string, unknown>[]): Record<string, unknown>[] {
+    return items.map((item) => ({
+      ...item,
+      receivedBoxQuantity: 0,
+      receivedPortionQuantity: 0,
+      receivedTotalPortions: 0,
+    }));
+  }
+
+  static mergeReceivedItems(
+    storedItems: Record<string, unknown>[],
+    clientItems: Record<string, unknown>[],
+  ): Record<string, unknown>[] {
+    const clientByKey = new Map(
+      clientItems.map((item) => [WarehouseService.movementLineKey(item), item]),
+    );
+    const used = new Set<string>();
+
+    const merged: Record<string, unknown>[] = storedItems.map((item) => {
+      const key = WarehouseService.movementLineKey(item);
+      const client = clientByKey.get(key);
+      used.add(key);
+      if (!client) {
+        return {
+          ...item,
+          receivedBoxQuantity: Number(item.receivedBoxQuantity) || 0,
+          receivedPortionQuantity: Number(item.receivedPortionQuantity) || 0,
+          receivedTotalPortions: Number(item.receivedTotalPortions) || 0,
+        };
+      }
+      return {
+        ...item,
+        receivedBoxQuantity: Number(client.receivedBoxQuantity) || 0,
+        receivedPortionQuantity: Number(client.receivedPortionQuantity) || 0,
+        receivedTotalPortions: Number(client.receivedTotalPortions) || 0,
+      };
+    });
+
+    for (const client of clientItems) {
+      const key = WarehouseService.movementLineKey(client);
+      if (used.has(key)) continue;
+      merged.push({
+        sku: String(client.sku ?? ''),
+        productName: String(client.productName ?? client.sku ?? ''),
+        boxQuantity: 0,
+        portionQuantity: 0,
+        totalPortions: 0,
+        batchNumber: client.batchNumber ?? '',
+        batchId: client.batchId ?? '',
+        batchStorage: client.batchStorage,
+        forecast: 0,
+        barcode: client.barcode,
+        barcodeKind: client.barcodeKind,
+        receivedBoxQuantity: Number(client.receivedBoxQuantity) || 0,
+        receivedPortionQuantity: Number(client.receivedPortionQuantity) || 0,
+        receivedTotalPortions: Number(client.receivedTotalPortions) || 0,
+      });
+    }
+
+    return merged;
+  }
+
+  static buildReceiptDeviations(items: Record<string, unknown>[]): Array<{
+    sku: string;
+    productName?: string;
+    batchNumber: string;
+    sentPortions: number;
+    receivedPortions: number;
+    deviation: number;
+  }> {
+    return items
+      .map((item) => {
+        const sentPortions = WarehouseService.itemSentPortions(item);
+        const receivedPortions = WarehouseService.itemReceivedPortions(item);
+        return {
+          sku: String(item.sku ?? ''),
+          productName: item.productName != null ? String(item.productName) : undefined,
+          batchNumber: String(item.batchNumber || item.batchId || ''),
+          sentPortions,
+          receivedPortions,
+          deviation: receivedPortions - sentPortions,
+        };
+      })
+      .filter((row) => row.deviation !== 0);
+  }
+
+  static async fillMissingBatchIds(
+    summaryItems: PayloadMovementProduct[],
+    sourceWarehouse: string,
+  ): Promise<PayloadMovementProduct[]> {
+    const needsLookup = summaryItems.some((item) =>
+      item.details.batches.some((batch) => !isUsableDilovodBatchId(batch.batchId)),
+    );
+    if (!needsLookup) return summaryItems;
+
+    const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
+    const { getDilovodConfigFromDB } = await import('../../services/dilovod/DilovodUtils.js');
+    const dilovodService = new DilovodService();
+    const config = await getDilovodConfigFromDB();
+
+    for (const item of summaryItems) {
+      const needFill = item.details.batches.some((batch) => !isUsableDilovodBatchId(batch.batchId));
+      if (!needFill) continue;
+
+      const batches = await dilovodService.getBatchNumbersBySku(item.sku, config.defaultFirmId);
+      const onSource = sourceWarehouse
+        ? batches.filter((row) => row.storage === sourceWarehouse)
+        : batches;
+      const pool = onSource.length > 0 ? onSource : batches;
+
+      for (const batch of item.details.batches) {
+        if (isUsableDilovodBatchId(batch.batchId)) continue;
+        const byName = pool.find((row) => (
+          String(row.batchNumber) === batch.batchNumber
+          || String(row.batchId) === batch.batchNumber
+        ));
+        const usablePool = pool.filter((row) => isUsableDilovodBatchId(row.batchId));
+        const picked = (byName && isUsableDilovodBatchId(byName.batchId) ? byName : null)
+          ?? [...usablePool].sort((a, b) => (b.quantity || 0) - (a.quantity || 0))[0];
+        if (picked && isUsableDilovodBatchId(picked.batchId)) {
+          console.log(
+            `📦 [Warehouse] SKU ${item.sku}: підставлено goodPart ${picked.batchId}`
+            + ` замість «${batch.batchId || batch.batchNumber || ''}»`,
+          );
+          batch.batchId = String(picked.batchId);
+          if (!batch.batchNumber || batch.batchNumber === '0') {
+            batch.batchNumber = picked.batchNumber;
+          }
+        }
+      }
+    }
+
+    return summaryItems;
+  }
+
+  static productIsSet(rawSet: unknown): boolean {
+    if (Array.isArray(rawSet)) return rawSet.length > 0;
+    if (typeof rawSet !== 'string' || !rawSet.trim()) return false;
+    try {
+      const parsed = JSON.parse(rawSet);
+      return Array.isArray(parsed) && parsed.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  static buildSummaryItemsFromReceived(
+    items: Record<string, unknown>[],
+    products: Array<{
+      sku: string;
+      name: string;
+      dilovodId: string | null;
+      portionsPerBox: number;
+      set: unknown;
+    }>,
+  ): PayloadMovementProduct[] {
+    const productBySku = new Map(products.map((product) => [product.sku, product]));
+    const bySku = new Map<string, PayloadMovementProduct>();
+
+    for (const item of items) {
+      const sku = String(item.sku ?? '').trim();
+      if (!sku) continue;
+      const product = productBySku.get(sku);
+      const portionsPerBox = product?.portionsPerBox ?? 0;
+      const receivedTotal = WarehouseService.itemReceivedPortions(item, portionsPerBox);
+      if (receivedTotal <= 0) continue;
+
+      let grouped = bySku.get(sku);
+      if (!grouped) {
+        grouped = {
+          id: sku,
+          sku,
+          name: product?.name || String(item.productName ?? sku),
+          dilovodId: product?.dilovodId ?? null,
+          portionsPerBox,
+          isSet: WarehouseService.productIsSet(product?.set),
+          details: { batches: [] },
+        };
+        bySku.set(sku, grouped);
+      }
+
+      const rawBatchId = String(item.batchId ?? '').trim();
+      const batchNumber = String(item.batchNumber || item.batchId || '').trim();
+      const numericName = isUsableDilovodBatchId(batchNumber) ? batchNumber : null;
+
+      grouped.details.batches.push({
+        batchNumber,
+        batchId: isUsableDilovodBatchId(rawBatchId) ? rawBatchId : numericName,
+        // qty в payload = boxes * portionsPerBox + portions; для комплектів — лише portions.
+        // Кладемо всю прийняту кількість у portions, щоб 0 portionsPerBox не занулив рядок.
+        boxes: 0,
+        portions: receivedTotal,
+      });
+    }
+
+    return [...bySku.values()];
   }
 
   private static toBarcodeLookupResponse(

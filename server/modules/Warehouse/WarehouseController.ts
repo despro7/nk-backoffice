@@ -2,10 +2,14 @@ import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
 import { resolveAuthorNames } from '../../lib/utils.js';
 import { authenticateToken } from '../../middleware/auth.js';
+import { requirePermission } from '../../middleware/requirePermission.js';
 import { ROLES } from '../../../shared/constants/roles.js';
+import { PERMISSIONS } from '../../../shared/constants/permissions.js';
+import { roleService } from '../../services/RoleService.js';
 import { WarehouseService } from './WarehouseService.js';
 import { MovementHistoryService } from './MovementHistoryService.js';
 import { WarehousePayloadBuilder } from './WarehousePayloadBuilder.js';
+import { exportWarehouseMovementToDilovod } from './WarehouseMovementExport.js';
 import {
   collectSkusFromOrders,
   computeShippedQuantityForSku,
@@ -17,6 +21,19 @@ import { safeParseItems } from './historyNormalize.js';
 import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
 
 const router = Router();
+
+requirePermission('warehouse', 'movement.edit', 'Редагувати чужі та відправлені переміщення');
+requirePermission('warehouse', 'movement.delete', 'Видаляти переміщення (у Dilovod — delMark)');
+
+async function canOverrideMovementEdit(role: string | undefined): Promise<boolean> {
+  if (!role) return false;
+  return roleService.hasPermission(role, PERMISSIONS.ACTION_WAREHOUSE_MOVEMENT_EDIT);
+}
+
+async function canOverrideMovementDelete(role: string | undefined): Promise<boolean> {
+  if (!role) return false;
+  return roleService.hasPermission(role, PERMISSIONS.ACTION_WAREHOUSE_MOVEMENT_DELETE);
+}
 
 // ============================================================================
 // КЕШ ПАРТІЙ (in-memory)
@@ -638,7 +655,16 @@ router.get('/:id', authenticateToken, async (req, res) => {
     }
 
     const [withAuthor] = await resolveAuthorNames([movement as { createdBy: number | null }]);
-    res.json(withAuthor);
+    let receivedByName: string | null = null;
+    const receivedBy = (movement as { receivedBy?: number | null }).receivedBy;
+    if (receivedBy != null) {
+      const receiver = await prisma.user.findUnique({
+        where: { id: receivedBy },
+        select: { name: true },
+      });
+      receivedByName = receiver?.name ?? null;
+    }
+    res.json({ ...withAuthor, receivedByName });
   } catch (error) {
     console.error('❌ [Warehouse] Error fetching warehouse movement:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -662,15 +688,14 @@ router.put('/:id', authenticateToken, async (req, res) => {
     }
 
     const userRole = (req as any).user?.role;
-    const isAdmin = userRole === ROLES.ADMIN;
+    const canOverrideEdit = await canOverrideMovementEdit(userRole);
 
-    // Перевіряємо що документ належить користувачу і не є фіналізованим
-    // Адмін може редагувати будь-який документ
+    // Автор — свої draft/active; з правом movement.edit — будь-який невидалений документ
     const existingDraft = await prisma.warehouseMovement.findFirst({
       where: {
         id: Number(id),
-        ...(!isAdmin && { createdBy: userId }),
-        status: { in: ['draft', 'active'] }, // 'finalized' — не редагується
+        ...(!canOverrideEdit && { createdBy: userId }),
+        status: canOverrideEdit ? { not: 'deleted' } : { in: ['draft', 'active'] },
       }
     });
 
@@ -679,11 +704,14 @@ router.put('/:id', authenticateToken, async (req, res) => {
       const anyDoc = await prisma.warehouseMovement.findFirst({
         where: {
           id: Number(id),
-          ...(!isAdmin && { createdBy: userId }),
+          ...(!canOverrideEdit && { createdBy: userId }),
         },
         select: { status: true },
       });
-      if (anyDoc?.status === 'finalized') {
+      if (anyDoc?.status === 'deleted') {
+        return res.status(409).json({ error: 'Документ видалено' });
+      }
+      if (anyDoc?.status === 'finalized' || anyDoc?.status === 'pending_receipt') {
         return res.status(403).json({ error: 'Документ завершено і не може бути змінений' });
       }
       return res.status(404).json({ error: 'Draft not found or access denied' });
@@ -710,6 +738,333 @@ router.put('/:id', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('🚨 [Warehouse] Error updating draft:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/warehouse/:id/submit — відправка на отримання (без Dilovod)
+router.post('/:id/submit', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as { user?: { userId?: number; id?: number; role?: string } }).user?.userId
+      || (req as { user?: { id?: number } }).user?.id;
+    const userRole = (req as { user?: { role?: string } }).user?.role;
+    const canOverrideEdit = await canOverrideMovementEdit(userRole);
+
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ error: 'Invalid movement ID' });
+    }
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const movement = await prisma.warehouseMovement.findUnique({
+      where: { id: Number(id) },
+    });
+    if (!movement) {
+      return res.status(404).json({ error: 'Документ не знайдено' });
+    }
+    if (!canOverrideEdit && movement.createdBy !== userId) {
+      return res.status(403).json({ error: 'Відправити може лише автор документа' });
+    }
+    if (movement.status !== 'draft') {
+      return res.status(409).json({ error: 'Документ уже відправлено або завершено' });
+    }
+
+    const items = WarehouseService.parseItems(movement.items) as unknown as Record<string, unknown>[];
+    const hasQty = items.some((item) => (
+      WarehouseService.itemSentPortions(item) > 0
+      || (Number(item.boxQuantity) || 0) > 0
+    ));
+    if (!hasQty) {
+      return res.status(400).json({ error: 'Неможливо відправити порожній документ' });
+    }
+
+    const now = new Date();
+    const updated = await prisma.warehouseMovement.update({
+      where: { id: movement.id },
+      data: {
+        status: 'pending_receipt',
+        submittedAt: now,
+        items: JSON.stringify(WarehouseService.zeroReceivedFields(items)),
+      },
+    });
+
+    const [withAuthor] = await resolveAuthorNames([updated as { createdBy: number | null }]);
+    res.json({ ...withAuthor, receivedByName: null });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Error submitting movement:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/warehouse/:id/receipt — зберегти прийняті кількості
+router.put('/:id/receipt', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { items } = req.body as { items?: unknown };
+    const userId = (req as { user?: { userId?: number; id?: number } }).user?.userId
+      || (req as { user?: { id?: number } }).user?.id;
+
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ error: 'Invalid movement ID' });
+    }
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: 'Очікується масив items' });
+    }
+
+    const movement = await prisma.warehouseMovement.findUnique({
+      where: { id: Number(id) },
+    });
+    if (!movement) {
+      return res.status(404).json({ error: 'Документ не знайдено' });
+    }
+    if (movement.status !== 'pending_receipt') {
+      return res.status(409).json({ error: 'Прийом доступний лише для відправлених документів' });
+    }
+    if (movement.createdBy === userId) {
+      return res.status(403).json({ error: 'Автор документа не може прийняти власне відправлення' });
+    }
+
+    const stored = WarehouseService.parseItems(movement.items) as unknown as Record<string, unknown>[];
+    const clientItems = items as Record<string, unknown>[];
+    const merged = WarehouseService.mergeReceivedItems(stored, clientItems);
+
+    const updated = await prisma.warehouseMovement.update({
+      where: { id: movement.id },
+      data: { items: JSON.stringify(merged) },
+    });
+
+    const [withAuthor] = await resolveAuthorNames([updated as { createdBy: number | null }]);
+    res.json({ ...withAuthor, receivedByName: null });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Error saving receipt:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+type MovementRow = NonNullable<Awaited<ReturnType<typeof prisma.warehouseMovement.findUnique>>>;
+
+async function exportReceivedQuantitiesToDilovod(params: {
+  movement: MovementRow;
+  userId: number;
+  dryRun: boolean;
+  extraUpdate?: Record<string, unknown>;
+  logLabel: string;
+}) {
+  const { movement, userId, dryRun, extraUpdate, logLabel } = params;
+  const items = WarehouseService.parseItems(movement.items) as unknown as Record<string, unknown>[];
+  const skus = [...new Set(items.map((item) => String(item.sku ?? '').trim()).filter(Boolean))];
+  const products = await prisma.product.findMany({
+    where: { sku: { in: skus } },
+    select: { sku: true, name: true, dilovodId: true, portionsPerBox: true, set: true },
+  });
+  const ppbBySku = new Map(products.map((product) => [product.sku, product.portionsPerBox]));
+  const receivedTotal = items.reduce(
+    (sum, item) => sum + WarehouseService.itemReceivedPortions(
+      item,
+      ppbBySku.get(String(item.sku ?? '').trim()) ?? 0,
+    ),
+    0,
+  );
+  if (receivedTotal <= 0) {
+    return { kind: 'noqty' as const, message: 'Немає прийнятих позицій для відправки в Dilovod' };
+  }
+
+  const summaryItems = await WarehouseService.fillMissingBatchIds(
+    WarehouseService.buildSummaryItemsFromReceived(items, products),
+    movement.sourceWarehouse,
+  );
+  if (summaryItems.length === 0) {
+    return { kind: 'noqty' as const, message: 'Немає прийнятих позицій для відправки в Dilovod' };
+  }
+
+  console.log(
+    `📦 [Warehouse] ${logLabel} #${movement.id}: ${summaryItems.length} SKU, ` +
+      `${summaryItems.reduce((n, item) => n + item.details.batches.length, 0)} партій ` +
+      `[${summaryItems.flatMap((item) => item.details.batches.map((b) => `${item.sku}:${b.batchId || '—'}`)).join(', ')}]`,
+  );
+
+  const deviations = WarehouseService.buildReceiptDeviations(items);
+  const exportResult = await exportWarehouseMovementToDilovod({
+    draft: movement,
+    summaryItems,
+    userId,
+    movementDate: movement.movementDate,
+    dryRun,
+    isFinal: !dryRun,
+    extraUpdate: dryRun
+      ? undefined
+      : {
+        deviations: JSON.stringify(deviations),
+        ...(extraUpdate ?? {}),
+      },
+  });
+
+  return { kind: 'done' as const, exportResult, deviations };
+}
+
+// POST /api/warehouse/:id/confirm-receipt — фіналізація з фактично прийнятими кількостями
+router.post('/:id/confirm-receipt', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as { user?: { userId?: number; id?: number } }).user?.userId
+      || (req as { user?: { id?: number } }).user?.id;
+
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ error: 'Invalid movement ID' });
+    }
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const movement = await prisma.warehouseMovement.findUnique({
+      where: { id: Number(id) },
+    });
+    if (!movement) {
+      return res.status(404).json({ error: 'Документ не знайдено' });
+    }
+    if (movement.status !== 'pending_receipt') {
+      return res.status(409).json({ error: 'Підтвердити можна лише документ в очікуванні отримання' });
+    }
+    if (movement.createdBy === userId) {
+      return res.status(403).json({ error: 'Автор документа не може підтвердити отримання власного відправлення' });
+    }
+
+    const dryRun = req.body?.dryRun === true || req.query.dryRun === 'true';
+    const now = new Date();
+    const prepared = await exportReceivedQuantitiesToDilovod({
+      movement,
+      userId,
+      dryRun,
+      logLabel: 'confirm-receipt',
+      extraUpdate: {
+        receivedBy: userId,
+        receivedAt: now,
+      },
+    });
+
+    if (prepared.kind === 'noqty') {
+      return res.status(400).json({ error: prepared.message });
+    }
+
+    const { exportResult, deviations } = prepared;
+
+    if (exportResult.kind === 'error') {
+      return res.status(exportResult.httpStatus).json(exportResult.body);
+    }
+    if (exportResult.kind === 'dryRun') {
+      return res.json({
+        success: true,
+        dryRun: true,
+        payload: exportResult.payload,
+        validation: exportResult.validation,
+      });
+    }
+
+    const updated = await prisma.warehouseMovement.findUnique({ where: { id: movement.id } });
+    const [withAuthor] = updated
+      ? await resolveAuthorNames([updated as { createdBy: number | null }])
+      : [];
+    const receiver = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+
+    return res.json({
+      success: true,
+      ...withAuthor,
+      receivedByName: receiver?.name ?? null,
+      deviations,
+      dilovodDocId: exportResult.dilovodDocId,
+      docNumber: exportResult.docNumber,
+    });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Error confirming receipt:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error',
+    });
+  }
+});
+
+// POST /api/warehouse/:id/sync-dilovod — перезапис уже отриманого документа в Dilovod
+router.post('/:id/sync-dilovod', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as { user?: { userId?: number; id?: number; role?: string } }).user?.userId
+      || (req as { user?: { id?: number } }).user?.id;
+    const userRole = (req as { user?: { role?: string } }).user?.role;
+    const canOverrideEdit = await canOverrideMovementEdit(userRole);
+
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ error: 'Invalid movement ID' });
+    }
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (!canOverrideEdit) {
+      return res.status(403).json({ error: 'Немає права перезаписувати документ у Dilovod' });
+    }
+
+    const movement = await prisma.warehouseMovement.findUnique({
+      where: { id: Number(id) },
+    });
+    if (!movement) {
+      return res.status(404).json({ error: 'Документ не знайдено' });
+    }
+    if (movement.status === 'deleted') {
+      return res.status(409).json({ error: 'Документ видалено' });
+    }
+    if (movement.status !== 'finalized') {
+      return res.status(409).json({ error: 'Перезапис у Dilovod доступний лише для отриманих документів' });
+    }
+
+    const dryRun = req.body?.dryRun === true || req.query.dryRun === 'true';
+    const prepared = await exportReceivedQuantitiesToDilovod({
+      movement,
+      userId,
+      dryRun,
+      logLabel: 'sync-dilovod',
+    });
+
+    if (prepared.kind === 'noqty') {
+      return res.status(400).json({ error: prepared.message });
+    }
+
+    const { exportResult, deviations } = prepared;
+    if (exportResult.kind === 'error') {
+      return res.status(exportResult.httpStatus).json(exportResult.body);
+    }
+    if (exportResult.kind === 'dryRun') {
+      return res.json({
+        success: true,
+        dryRun: true,
+        payload: exportResult.payload,
+        validation: exportResult.validation,
+      });
+    }
+
+    const updated = await prisma.warehouseMovement.findUnique({ where: { id: movement.id } });
+    const [withAuthor] = updated
+      ? await resolveAuthorNames([updated as { createdBy: number | null }])
+      : [];
+
+    return res.json({
+      success: true,
+      ...withAuthor,
+      deviations,
+      dilovodDocId: exportResult.dilovodDocId,
+      docNumber: exportResult.docNumber,
+    });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Error syncing movement to Dilovod:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error',
+    });
   }
 });
 
@@ -825,224 +1180,42 @@ router.post('/send', authenticateToken, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Чернетку не знайдено' });
     }
 
-    // Використовуємо sourceWarehouse/destinationWarehouse з запиту, якщо передано
-    // Інакше беремо з бази даних (для зворотної сумісності)
-    const effectiveSourceWarehouse = sourceWarehouse ?? draft.sourceWarehouse;
-    const effectiveDestinationWarehouse = destinationWarehouse ?? draft.destinationWarehouse;
-
-    // Валідуємо що всі товари мають dilovodId
-    const idValidation = WarehousePayloadBuilder.validateDilovodIds(summaryItems);
-    if (!idValidation.valid) {
-      return res.status(422).json({
-        success: false,
-        error: 'Деякі товари не мають ID Діловода',
-        details: idValidation.errors,
-      });
-    }
-
-    // Валідуємо що всі партії мають batchId (Діловод очікує число, порожній batchId = 0 = помилка)
-    const missingBatchIds: string[] = [];
-    for (const item of summaryItems) {
-      for (const batch of item.details.batches) {
-        const qty = batch.boxes * item.portionsPerBox + batch.portions;
-        if (qty <= 0) continue;
-        if (!batch.batchId) {
-          missingBatchIds.push(`"${item.name}" (SKU: ${item.sku}, партія: ${batch.batchNumber}) — відсутній ID партії в Діловоді`);
-        }
-      }
-    }
-    if (missingBatchIds.length > 0) {
-      return res.status(422).json({
-        success: false,
-        error: 'Деякі партії не мають ID в Діловоді (goodPart)',
-        details: missingBatchIds,
-      });
-    }
-
-    // Завантажуємо налаштування
-    const settings = await WarehousePayloadBuilder.loadSettings();
-
-    // Отримуємо dilovodUserId автора
-    const authorDilovodId = await WarehousePayloadBuilder.getAuthorDilovodId(userId);
-
-    // Визначаємо дату документа
-    const docDate = movementDate ? new Date(movementDate) : (draft.movementDate ?? new Date());
-
-    // Будуємо payload
-    const payload = await WarehousePayloadBuilder.buildPayload({
-      draft: {
-        id: draft.id,
-        internalDocNumber: draft.internalDocNumber,
-        dilovodDocId: draft.dilovodDocId,
-        docNumber: draft.docNumber,
-        notes: draft.notes,
-        sourceWarehouse: effectiveSourceWarehouse,
-        destinationWarehouse: effectiveDestinationWarehouse,
-      },
+    const exportResult = await exportWarehouseMovementToDilovod({
+      draft,
       summaryItems,
-      settings,
-      movementDate: docDate,
-      authorDilovodId,
+      userId,
+      movementDate,
       overrides,
+      dryRun,
+      isFinal,
+      sourceWarehouse,
+      destinationWarehouse,
     });
 
-    // Валідуємо payload
-    const validation = WarehousePayloadBuilder.validatePayload(payload);
-    if (!validation.valid) {
-      return res.status(422).json({
-        success: false,
-        error: 'Помилка валідації payload',
-        details: validation.errors,
-        warnings: validation.warnings,
-      });
+    if (exportResult.kind === 'error') {
+      return res.status(exportResult.httpStatus).json(exportResult.body);
     }
 
-    const { dilovodExportFlowService, dilovodService } = await import('../../services/dilovod/index.js');
-    const exportResult = await dilovodExportFlowService.send({
-      payload: {
-        ...(payload.saveType !== undefined && { saveType: payload.saveType }),
-        header: payload.header,
-        tableParts: payload.tableParts,
-      },
-      dryRun,
-      warnings: validation.warnings,
-      label: '[Warehouse]',
-    });
-
-    if (exportResult.dryRun) {
+    if (exportResult.kind === 'dryRun') {
       return res.json({
         success: true,
         dryRun: true,
-        payload,
-        validation,
+        payload: exportResult.payload,
+        validation: exportResult.validation,
       });
     }
-
-    if (!exportResult.success) {
-      const rawErrMsg = exportResult.error ?? 'Невідома помилка від Діловода';
-      const { cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull, translateDilovodError } = await import('../../services/dilovod/DilovodUtils.js');
-      const translated = exportResult.translatedError ?? translateDilovodError(rawErrMsg);
-      const detailedMessage = cleanDilovodErrorMessageShort(rawErrMsg) || translated.message;
-
-      console.error(`🚨 [Warehouse] Діловод повернув помилку:`, rawErrMsg);
-
-      try {
-        await dilovodService.logMetaDilovodExport({
-          title: translated.title,
-          status: 'error',
-          message: `[Мануал] Помилка відправки переміщення #${draft.internalDocNumber ?? draftId}: ${detailedMessage}`,
-          initiatedBy: String(userId),
-          data: {
-            draftId,
-            internalDocNumber: draft.internalDocNumber,
-            dilovodDocId: draft.dilovodDocId,
-            isFinal,
-            error: cleanDilovodErrorMessageFull(rawErrMsg),
-            dilovodResponse: exportResult.dilovodResponse,
-          },
-        });
-      } catch (logErr) {
-        console.error('🚨 [Warehouse] Помилка запису в meta_logs:', logErr);
-      }
-
-      return res.status(422).json({
-        success: false,
-        errorTitle: translated.title,
-        error: detailedMessage,
-        errorFallback: translated.message,
-        dilovodResponse: exportResult.dilovodResponse,
-      });
-    }
-
-    const dilovodResult = exportResult.dilovodResponse;
-    console.log(`📬 [Warehouse] Відповідь Діловода:`, JSON.stringify(dilovodResult, null, 2));
-
-    // Отримуємо ID документа з відповіді Діловода
-    const dilovodDocId: string | undefined =
-      exportResult.dilovodDocId ??
-      dilovodResult?.id ??
-      dilovodResult?.header?.id ??
-      dilovodResult?.header?.id?.id ??
-      undefined;
-
-    // Визначаємо номер документа:
-    // - якщо це перша відправка (раніше не було dilovodDocId) і Діловод повернув id —
-    //   робимо getObject щоб отримати реальний number (Діловод не повертає його в saveObject)
-    // - інакше — беремо з payload або з відповіді
-    let docNumber: string | undefined =
-      dilovodResult?.number ??
-      dilovodResult?.header?.number ??
-      payload.header.number ??
-      undefined;
-
-    const isFirstSend = !draft.dilovodDocId && !!dilovodDocId;
-    if (isFirstSend && !docNumber) {
-      try {
-        const docDetails = await dilovodService.getMovementDocument(dilovodDocId!);
-        const fetchedNumber = docDetails?.header?.number ?? docDetails?.number;
-        if (fetchedNumber) {
-          docNumber = String(fetchedNumber);
-          console.log(`📋 [Warehouse] Отримано номер документа з Діловода: ${docNumber}`);
-        }
-      } catch (err) {
-        console.warn(`⚠️ [Warehouse] Не вдалось отримати номер документа з Діловода:`, err);
-      }
-    }
-
-    // Визначаємо новий статус:
-    // Після зміни логіки чернетки більше не існує — будь-яка відправка
-    // одразу закриває документ (статус 'finalized', документ проведено в Діловоді).
-    // Параметр isFinal більше не впливає на статус.
-    const newStatus = 'finalized';
-    const now = new Date();
-
-    // Оновлюємо запис у БД
-    await prisma.warehouseMovement.update({
-      where: { id: draft.id },
-      data: {
-        status: newStatus,
-        lastSentToDilovodAt: now,
-        // Час першої відправки фіксуємо лише один раз
-        ...(isFirstSend && { sentToDilovodAt: now }),
-        ...(dilovodDocId != null && { dilovodDocId }),
-        ...(docNumber != null && { docNumber }),
-      },
-    });
-
-    console.log(`✅ [Warehouse] Документ ${draft.id} відправлено до Діловода. ID: ${dilovodDocId}, Номер: ${docNumber}, Статус: ${newStatus}`);
-
-    // Тригеримо оновлення залишків у фоні (fire-and-forget)
-    // Виконуємо після кожної успішної відправки в Діловод, незалежно від isFinal.
-    // Якщо синхронізація залишків вимкнена в налаштуваннях — пропускаємо.
-    void (async () => {
-      try {
-        const { syncSettingsService } = await import('../../services/syncSettingsService.js');
-        const isEnabled = await syncSettingsService.isSyncEnabled('stocks');
-        if (!isEnabled) {
-          console.log(`⏭️ [Warehouse] Stock sync після відправки пропущено — синхронізація залишків вимкнена`);
-          return;
-        }
-        console.log(`🔄 [Warehouse] Запускаємо оновлення залишків після відправки документа ${draft.id}...`);
-        const { DilovodService: DilovodServiceCls } = await import('../../services/dilovod/DilovodService.js');
-        const stockService = new DilovodServiceCls();
-        const result = await stockService.updateStockBalancesInDatabase();
-        console.log(`✅ [Warehouse] Залишки оновлено після відправки документа ${draft.id}:`, result?.message ?? 'OK');
-      } catch (err) {
-        console.warn(`⚠️ [Warehouse] Не вдалось оновити залишки після відправки документа ${draft.id}:`, err);
-      }
-    })();
 
     return res.json({
       success: true,
       dryRun: false,
-      isFinal,
-      status: newStatus,
-      lastSentToDilovodAt: now.toISOString(),
-      payload,
-      validation,
-      dilovodDocId,
-      docNumber,
-      dilovodResponse: dilovodResult,
+      isFinal: exportResult.isFinal,
+      status: exportResult.status,
+      lastSentToDilovodAt: exportResult.lastSentToDilovodAt,
+      payload: exportResult.payload,
+      validation: exportResult.validation,
+      dilovodDocId: exportResult.dilovodDocId,
+      docNumber: exportResult.docNumber,
+      dilovodResponse: exportResult.dilovodResponse,
     });
   } catch (error) {
     console.error('🚨 [Warehouse] Помилка при відправці до Діловода:', error);
@@ -1053,13 +1226,13 @@ router.post('/send', authenticateToken, async (req, res) => {
   }
 });
 
-// DELETE /api/warehouse/:id - видалити чернетку (доступно лише для документів зі статусом 'draft' і які належать користувачу)
+// DELETE /api/warehouse/:id — soft-delete (status=deleted). У Dilovod — delMark, якщо є dilovodDocId.
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = (req as any).user?.userId || (req as any).user?.id;
 
-    console.log(`🗑️ [Warehouse] Видалення чернетки ${id}...`);
+    console.log(`🗑️ [Warehouse] Видалення документа ${id}...`);
 
     if (!id || isNaN(Number(id))) {
       return res.status(400).json({ error: 'Invalid movement ID' });
@@ -1069,32 +1242,47 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Отримуємо документ
     const movement = await prisma.warehouseMovement.findUnique({
-      where: { id: Number(id) }
+      where: { id: Number(id) },
     });
 
     if (!movement) {
       return res.status(404).json({ error: 'Movement not found' });
     }
 
-    // Перевіряємо статус і власника: адміну дозволено видаляти чужі чернетки
     const userRole = (req as any).user?.role;
-    const isAdmin = userRole === ROLES.ADMIN;
+    const canOverrideDelete = await canOverrideMovementDelete(userRole);
 
-    if (movement.status !== 'draft' || (!isAdmin && movement.createdBy !== userId)) {
+    if (movement.status === 'deleted') {
+      return res.status(409).json({ error: 'Документ уже видалено' });
+    }
+
+    if (!canOverrideDelete && (movement.status !== 'draft' || movement.createdBy !== userId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Видаляємо документ
-    await prisma.warehouseMovement.delete({
-      where: { id: Number(id) }
+    if (movement.dilovodDocId) {
+      const mark = await WarehouseService.markDilovodMovementDeleted(movement.dilovodDocId);
+      if (!mark.success && !mark.notFound) {
+        return res.status(422).json({
+          error: mark.error || 'Не вдалося позначити документ у Діловоді',
+          errorTitle: 'Dilovod delMark',
+        });
+      }
+      if (mark.notFound) {
+        console.warn(`⚠️ [Warehouse] Dilovod id ${movement.dilovodDocId} не знайдено — локальне видалення`);
+      }
+    }
+
+    await prisma.warehouseMovement.update({
+      where: { id: movement.id },
+      data: { status: 'deleted' },
     });
 
-    console.log(`✅ [Warehouse] Чернетку ${id} видалено`);
-    res.json({ message: 'Draft deleted successfully' });
+    console.log(`✅ [Warehouse] Документ ${id} позначено як deleted`);
+    res.json({ success: true, status: 'deleted' });
   } catch (error) {
-    console.error('🚨 [Warehouse] Error deleting draft:', error);
+    console.error('🚨 [Warehouse] Error deleting movement:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

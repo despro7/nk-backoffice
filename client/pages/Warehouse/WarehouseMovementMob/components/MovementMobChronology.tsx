@@ -27,7 +27,7 @@ export default function MovementMobChronology({ events }: MovementMobChronologyP
                   aria-hidden
                   className={`pointer-events-none absolute left-[14px] top-7 -bottom-1 z-0 w-0.5 -translate-x-1/2 rounded-full ${
                     isDone && nextDone
-                      ? 'bg-success/50'
+                      ? 'bg-success-500'
                       : isDone
                         ? 'bg-gradient-to-b from-success-500 to-default-300'
                         : 'bg-default-300'

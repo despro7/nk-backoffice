@@ -5,12 +5,16 @@ const UNDO_MS = 6000;
 
 interface MovementMobUndoBannerProps {
   productName: string;
+  prefix?: string;
+  tone?: 'danger' | 'success';
   onUndo: () => void;
   onElapsed: () => void;
 }
 
 export default function MovementMobUndoBanner({
   productName,
+  prefix = 'Видалено',
+  tone = 'danger',
   onUndo,
   onElapsed,
 }: MovementMobUndoBannerProps) {
@@ -26,7 +30,7 @@ export default function MovementMobUndoBanner({
   }, [onElapsed]);
 
   return (
-    <div className="fixed inset-x-3 bottom-24 z-50 mx-auto max-w-lg overflow-hidden rounded-xl bg-danger text-white shadow-lg">
+    <div className={`fixed inset-x-3 bottom-24 z-50 mx-auto max-w-lg overflow-hidden rounded-xl text-white shadow-lg ${tone === 'success' ? 'bg-success' : 'bg-danger'}`}>
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 origin-left bg-white/25 mix-blend-soft-light will-change-transform"
@@ -37,7 +41,7 @@ export default function MovementMobUndoBanner({
       />
       <div className="relative z-10 flex items-center gap-3 px-3.5 py-3">
         <p className="min-w-0 flex-1 text-sm leading-tight">
-          Видалено: <span className="font-medium">{productName}</span>
+          {prefix}: <span className="font-medium">{productName}</span>
         </p>
         <Button
           size="sm"

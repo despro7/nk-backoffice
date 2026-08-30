@@ -9,12 +9,12 @@ import type {
   MovementMobAggregates,
   MovementMobApiRecord,
   MovementMobChronologyEvent,
-  MovementMobDbStatus,
   MovementMobDocumentViewModel,
   MovementMobListCardViewModel,
   MovementMobProductLineViewModel,
   MovementMobProductMeta,
   MovementMobRawItem,
+  MovementMobReceiptState,
   MovementMobScreenMode,
   MovementMobStockBreakdown,
   MovementMobStepperStep,
@@ -136,10 +136,13 @@ export function resolveShortStorageBadge(storageId?: string, fallbackName?: stri
 }
 
 export function buildStepperSteps(status: string): MovementMobStepperStep[] {
-  const normalized = status as MovementMobDbStatus;
-  const preparedDone = normalized === 'draft' || normalized === 'active' || normalized === 'finalized';
-  const sentDone = normalized === 'active' || normalized === 'finalized';
-  const receivedDone = normalized === 'finalized';
+  const preparedDone =
+    status === 'draft'
+    || status === 'active'
+    || status === 'pending_receipt'
+    || status === 'finalized';
+  const sentDone = status === 'active' || status === 'pending_receipt' || status === 'finalized';
+  const receivedDone = status === 'finalized';
 
   return [
     {
@@ -161,7 +164,10 @@ export function buildStepperSteps(status: string): MovementMobStepperStep[] {
 }
 
 export function resolveScreenMode(status: string): MovementMobScreenMode {
-  return status === 'draft' ? 'formation' : 'view';
+  if (status === 'deleted') return 'view';
+  if (status === 'draft') return 'formation';
+  if (status === 'pending_receipt') return 'receiving';
+  return 'view';
 }
 
 export function formatMovementDateTime(iso: string | null | undefined): string {
@@ -192,7 +198,20 @@ export function formatChronologyDateTime(iso: string | null | undefined): string
 }
 
 export function formatDocNumber(internalDocNumber: string): string {
-  return `П-${internalDocNumber}`;
+  const trimmed = String(internalDocNumber || '').trim();
+  if (!trimmed) return 'П-';
+  if (/^П-/i.test(trimmed)) return trimmed;
+  return `П-${trimmed}`;
+}
+
+export function resolveChronologyStorageLabel(storageId: string, directoryName?: string): string {
+  const fromDir = directoryName?.trim();
+  if (fromDir) return fromDir;
+  return resolveStorageDisplay(storageId).shortName;
+}
+
+export function sentChronologyTitle(destWarehouseName: string): string {
+  return `Відправлено на «${destWarehouseName}»`;
 }
 
 export function toListCardViewModel(record: MovementMobApiRecord): MovementMobListCardViewModel {
@@ -243,16 +262,27 @@ export function buildProductLines(
       portionsPerBox,
       barcode: item.barcode || undefined,
       barcodeKind: item.barcodeKind === 'box' ? 'box' : item.barcodeKind === 'portion' ? 'portion' : undefined,
+      receivedBoxQuantity: Number(item.receivedBoxQuantity) || 0,
+      receivedPortionQuantity: Number(item.receivedPortionQuantity) || 0,
+      receivedTotalPortions:
+        item.receivedTotalPortions != null && Number.isFinite(Number(item.receivedTotalPortions))
+          ? Number(item.receivedTotalPortions)
+          : Number(item.receivedPortionQuantity) || 0,
     };
   });
 }
 
-export function buildChronology(record: MovementMobApiRecord): MovementMobChronologyEvent[] {
+export function buildChronology(
+  record: MovementMobApiRecord,
+  destDirectoryName?: string,
+): MovementMobChronologyEvent[] {
   const author = record.createdByName ?? null;
-  const destLabel = resolveStorageDisplay(record.destinationWarehouse).shortName;
-  const sentDone = record.status === 'active' || record.status === 'finalized';
+  const receiver = record.receivedByName ?? null;
+  const destLabel = resolveChronologyStorageLabel(record.destinationWarehouse, destDirectoryName);
+  const sentDone = record.status === 'active' || record.status === 'pending_receipt' || record.status === 'finalized';
   const receivedDone = record.status === 'finalized';
-  const sentAt = record.sentToDilovodAt || record.lastSentToDilovodAt || record.draftLastEditedAt;
+  const sentAt = record.submittedAt || record.sentToDilovodAt || record.lastSentToDilovodAt || record.draftLastEditedAt;
+  const receivedAt = record.receivedAt || record.lastSentToDilovodAt || record.sentToDilovodAt;
 
   return [
     {
@@ -265,17 +295,17 @@ export function buildChronology(record: MovementMobApiRecord): MovementMobChrono
     {
       key: 'sent',
       occurredAt: sentDone ? formatChronologyDateTime(sentAt) : 'ще не відправлено',
-      title: `Відправлено на «${destLabel}»`,
+      title: sentChronologyTitle(destLabel),
       userName: sentDone ? author : null,
       state: sentDone ? 'done' : 'pending',
     },
     {
       key: 'received',
       occurredAt: receivedDone
-        ? formatChronologyDateTime(record.lastSentToDilovodAt || record.sentToDilovodAt)
+        ? formatChronologyDateTime(receivedAt)
         : 'ще не отримано',
       title: 'Отримано',
-      userName: receivedDone ? author : null,
+      userName: receivedDone ? (receiver || author) : null,
       state: receivedDone ? 'done' : 'pending',
     },
   ];
@@ -284,6 +314,7 @@ export function buildChronology(record: MovementMobApiRecord): MovementMobChrono
 export function toDocumentViewModel(
   record: MovementMobApiRecord,
   metaBySku: Record<string, MovementMobProductMeta> = {},
+  destDirectoryName?: string,
 ): MovementMobDocumentViewModel {
   const items = parseMovementItems(record.items);
   const lines = buildProductLines(items, metaBySku);
@@ -303,8 +334,21 @@ export function toDocumentViewModel(
     destStorageId: record.destinationWarehouse,
     lines,
     aggregates,
-    chronology: buildChronology(record),
+    chronology: buildChronology(record, destDirectoryName),
+    createdBy: Number(record.createdBy) || 0,
     createdByName: record.createdByName ?? null,
+    receivedByName: record.receivedByName ?? null,
+  };
+}
+
+export function emptyReceivedQty(): Pick<
+  MovementMobProductLineViewModel,
+  'receivedBoxQuantity' | 'receivedPortionQuantity' | 'receivedTotalPortions'
+> {
+  return {
+    receivedBoxQuantity: 0,
+    receivedPortionQuantity: 0,
+    receivedTotalPortions: 0,
   };
 }
 
@@ -337,6 +381,42 @@ export function aggregatesFromLines(lines: MovementMobProductLineViewModel[]): M
     totalPortions: lines.reduce((sum, line) => sum + line.totalPortions, 0),
     lineCount: lines.length,
   };
+}
+
+export function aggregatesFromReceivedLines(lines: MovementMobProductLineViewModel[]): MovementMobAggregates {
+  return {
+    totalBoxes: lines.reduce((sum, line) => sum + line.receivedBoxQuantity, 0),
+    totalLoosePortions: lines.reduce((sum, line) => sum + line.receivedPortionQuantity, 0),
+    totalPortions: lines.reduce((sum, line) => sum + line.receivedTotalPortions, 0),
+    lineCount: lines.filter((line) => line.receivedTotalPortions > 0).length,
+  };
+}
+
+export function lineReceiptState(
+  line: MovementMobProductLineViewModel,
+): MovementMobReceiptState {
+  if (line.receivedTotalPortions <= 0) return 'pending';
+  if (line.receivedTotalPortions === line.totalPortions) return 'match';
+  return line.receivedTotalPortions < line.totalPortions ? 'shortage' : 'surplus';
+}
+
+/** Колір фактично прийнятої кількості. */
+export function receiptReceivedClass(state: MovementMobReceiptState): string {
+  if (state === 'match') return 'text-success-600';
+  if (state === 'shortage') return 'text-danger-600';
+  if (state === 'surplus') return 'text-primary-600';
+  return 'text-default-400';
+}
+
+/** Колір дельти (отримано − відправлено). */
+export function receiptDeltaClass(delta: number): string {
+  if (delta === 0) return 'text-success-600';
+  if (delta < 0) return 'text-danger-600';
+  return 'text-primary-600';
+}
+
+export function receiptDeviations(lines: MovementMobProductLineViewModel[]): MovementMobProductLineViewModel[] {
+  return lines.filter((line) => line.receivedTotalPortions !== line.totalPortions);
 }
 
 export function mergeMovementMobLine(
@@ -397,11 +477,12 @@ export function committedPortionsForSku(
   lines: MovementMobProductLineViewModel[],
   sku: string,
   exceptKey?: string,
+  side: 'sent' | 'received' = 'sent',
 ): number {
   return lines.reduce((sum, line) => {
     if (line.sku !== sku) return sum;
     if (exceptKey && line.key === exceptKey) return sum;
-    return sum + line.totalPortions;
+    return sum + (side === 'received' ? line.receivedTotalPortions : line.totalPortions);
   }, 0);
 }
 
@@ -421,6 +502,9 @@ export function serializeMobDraftItems(
     forecast: 0,
     barcode: line.barcode || undefined,
     barcodeKind: line.barcodeKind,
+    receivedBoxQuantity: line.receivedBoxQuantity,
+    receivedPortionQuantity: line.receivedPortionQuantity,
+    receivedTotalPortions: line.receivedTotalPortions,
   }));
 }
 

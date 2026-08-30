@@ -195,8 +195,8 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/warehouse/movement-mob/:id',
     component: MovementMobDocumentPage,
-    title: (params) => `Переміщення №${params.id}`,
-    pageTitle: (params) => `Переміщення №${params.id} | NK Backoffice`,
+    title: 'Переміщення',
+    pageTitle: 'Переміщення | NK Backoffice',
     navLabel: 'Деталі переміщення',
     icon: null,
     inNav: false,

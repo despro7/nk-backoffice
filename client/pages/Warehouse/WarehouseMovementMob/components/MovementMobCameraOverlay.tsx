@@ -2,14 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Spinner } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
 import { SPRING_PANEL, SPRING_PRESS } from '@/lib/ease';
 import { lightHaptic } from '@/lib/haptic';
 import { playSoundChoice } from '@/lib/soundUtils';
 import { ToastService } from '@/services/ToastService';
 import {
   attachStreamToVideo,
+  createLiveBarcodeScanner,
+  drawVideoRegionToCanvas,
   getLiveVideoTrack,
+  mapCoveredOverlayToVideoSource,
   setTrackTorch,
   trackSupportsTorch,
 } from '../cameraMedia';
@@ -20,15 +22,6 @@ interface MovementMobCameraOverlayProps {
   onClose: () => void;
   onDetected: (code: string) => void;
   onManualBarcode?: () => void;
-}
-
-interface BarcodeDetectorLike {
-  detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue?: string }>>;
-}
-
-function getBarcodeDetector(): (new (options?: { formats?: string[] }) => BarcodeDetectorLike) | null {
-  const ctor = (window as unknown as { BarcodeDetector?: new (options?: { formats?: string[] }) => BarcodeDetectorLike }).BarcodeDetector;
-  return ctor ?? null;
 }
 
 const SCAN_LINE = {
@@ -48,6 +41,7 @@ export default function MovementMobCameraOverlay({
   onManualBarcode,
 }: MovementMobCameraOverlayProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -62,7 +56,8 @@ export default function MovementMobCameraOverlay({
     let cancelled = false;
     let rafId = 0;
     let emitted = false;
-    let zxingControls: IScannerControls | null = null;
+    const cropCanvas = document.createElement('canvas');
+    const scanCrop = createLiveBarcodeScanner();
     setError(null);
     setStarting(true);
     setTorchOn(false);
@@ -76,6 +71,34 @@ export default function MovementMobCameraOverlay({
       onDetectedRef.current(trimmed);
     };
 
+    const tick = async () => {
+      const videoEl = videoRef.current;
+      const frameEl = frameRef.current;
+      if (cancelled || emitted || !videoEl || !frameEl) {
+        if (!cancelled && !emitted) {
+          rafId = window.requestAnimationFrame(() => { void tick(); });
+        }
+        return;
+      }
+      if (videoEl.readyState >= 2) {
+        const region = mapCoveredOverlayToVideoSource(videoEl, frameEl);
+        if (region && drawVideoRegionToCanvas(videoEl, region, cropCanvas)) {
+          try {
+            const value = await scanCrop(cropCanvas);
+            if (value) {
+              emitOnce(value);
+              return;
+            }
+          } catch {
+            // keep scanning
+          }
+        }
+      }
+      if (!cancelled && !emitted) {
+        rafId = window.requestAnimationFrame(() => { void tick(); });
+      }
+    };
+
     const start = async () => {
       const videoEl = videoRef.current;
       if (!videoEl || cancelled) return;
@@ -87,44 +110,7 @@ export default function MovementMobCameraOverlay({
         const track = getLiveVideoTrack(stream);
         setTorchAvailable(trackSupportsTorch(track));
         setStarting(false);
-
-        const Detector = getBarcodeDetector();
-        if (Detector) {
-          const detector = new Detector({
-            formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code'],
-          });
-
-          const tick = async () => {
-            if (cancelled || emitted || videoEl.readyState < 2) {
-              if (!cancelled && !emitted) {
-                rafId = window.requestAnimationFrame(() => { void tick(); });
-              }
-              return;
-            }
-            try {
-              const codes = await detector.detect(videoEl);
-              const value = codes.find((item) => item.rawValue)?.rawValue;
-              if (value) {
-                emitOnce(value);
-                return;
-              }
-            } catch {
-              // keep scanning
-            }
-            if (!cancelled && !emitted) {
-              rafId = window.requestAnimationFrame(() => { void tick(); });
-            }
-          };
-          void tick();
-          return;
-        }
-
-        const reader = new BrowserMultiFormatReader();
-        zxingControls = await reader.decodeFromStream(stream, videoEl, (result) => {
-          if (cancelled || !result) return;
-          const text = result.getText();
-          if (text) emitOnce(text);
-        });
+        void tick();
       } catch (err) {
         if (!cancelled) {
           setStarting(false);
@@ -138,7 +124,6 @@ export default function MovementMobCameraOverlay({
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(rafId);
-      zxingControls?.stop();
       const track = getLiveVideoTrack(stream);
       if (track) void setTrackTorch(track, false);
       const currentVideo = videoRef.current;
@@ -206,6 +191,7 @@ export default function MovementMobCameraOverlay({
 
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center px-6">
               <div
+                ref={frameRef}
                 className="relative aspect-square w-[min(72vw,280px)]"
                 style={{ boxShadow: '0 0 0 200vmax rgba(0,0,0,0.58)' }}
               >

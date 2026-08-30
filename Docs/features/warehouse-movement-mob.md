@@ -1,12 +1,31 @@
 # Мобільні переміщення між складами (`WarehouseMovementMob`)
 
-**Дата:** 2026-08-30  
+**Дата:** 2026-08-31  
 **Маршрути:** `/warehouse/movement-mob`, `/warehouse/movement-mob/new`, `/warehouse/movement-mob/:id`  
-**Дозвіл:** `movementMob`
+**Дозвіл сторінки:** `page.warehouse.movementMob`
 
-Окрема мобільна гілка переміщень (не десктопний `WarehouseMovement`). Документ описує редактор чернетки зі скануванням ШК, drawer кількості, swipe-дії з рядками, undo, хронологію та спільні motion-примітиви, які з’явились у цій ітерації.
+Окрема мобільна гілка переміщень (не десктопний `WarehouseMovement`). Десктопний цикл «зберегти / відправити в Dilovod» лишається в `Docs/features/warehouse-movement-dilovod-export.md`.
 
-Десктопний цикл «зберегти / відправити в Dilovod» лишається в `Docs/features/warehouse-movement-dilovod-export.md` і `Docs/features/warehouse-movement-refactoring.md`.
+---
+
+## Життєвий цикл документа
+
+Статуси БД (`warehouse_movement.status`): `draft` → `pending_receipt` → `finalized`. Soft-delete: `deleted` (список за замовчуванням їх не показує). Старий десктопний `active` лишається для `/warehouse/movement`.
+
+| Крок | Хто | Що відбувається | Dilovod |
+|------|-----|-----------------|---------|
+| Формування | автор чернетки | сканування, автозбереження рядків (`PUT /api/warehouse/:id`) | ні |
+| **Відправити** | автор (або `movement.edit`) | `POST /:id/submit` → `pending_receipt`, `submittedAt` | ні |
+| Прийом | **не** автор | сканування фактичних кількостей (`PUT /:id/receipt`) | ні |
+| **Підтвердити отримання** | не автор | `POST /:id/confirm-receipt` | так: `tpGoods` з **отриманих** порцій |
+| Адмін-правка після отримання | `movement.edit` | окремо відправлене / отримане; `POST /:id/sync-dilovod` | перезапис існуючого документа |
+| Видалення | `movement.delete` | `status=deleted`; якщо є `dilovodDocId` — `delMark` | позначка видалення |
+
+Внутрішній номер генерується на сервері: `П-{id}` з padding (`П-00316`).
+
+Автор **не може** прийняти власне відправлення (403 на `receipt` / `confirm-receipt`). У UI відправник бачить неактивну кнопку «Документ відправлено». Чернетку до відправки редагує лише автор (іншим користувачам кнопки формування сховані), якщо немає `movement.edit`.
+
+Розбіжності кількості дозволені (менше / більше за відправлене). У Dilovod іде лише фактично отримане. `goodPart` не береться з `"0"`: `isUsableDilovodBatchId` (`shared/utils/dilovodBatchId.ts`); під час експорту порожні партії підставляються з Dilovod (`fillMissingBatchIds`).
 
 ---
 
@@ -14,7 +33,7 @@
 
 | Шлях | Компонент | Зміст |
 |------|-----------|--------|
-| `/warehouse/movement-mob` | `index.tsx` | Список документів, фільтри (`MovementMobFilterBar` / ActionBubble на touch-UI) |
+| `/warehouse/movement-mob` | `index.tsx` | Список документів, фільтри (`MovementMobFilterBar` / ActionBubble на touch-UI); кнопки адмін-редагування/видалення за дозволами |
 | `/warehouse/movement-mob/new` | `MovementMobCreatePage.tsx` | Нова чернетка → редактор |
 | `/warehouse/movement-mob/:id` | `MovementMobDocumentPage.tsx` | Перегляд або редагування збереженої чернетки |
 
@@ -24,7 +43,37 @@
 
 - `empty` — склади обрані, рядків ще немає.
 - `formation` — можна сканувати, редагувати, видаляти, відправляти.
-- `view` — документ уже пішов далі чернетки; жести рядків вимкнені.
+- `receiving` — прийом: сканування в отримані кількості, «Підтвердити отримання».
+- `view` — документ далі чернетки / чужа чернетка / `deleted`; жести рядків вимкнені (окрім адмін-режиму).
+
+Панель кнопок `MovementMobActionBar`: `formation` | `receiving` | `awaitingReceipt` | `adminEdit`.
+
+Прийом: кнопки на всю ширину, стовпчик — **Сканувати позицію**, потім **Підтвердити отримання**. У DebugMode поруч — **Payload** (dry-run Dilovod).
+
+---
+
+## Права (`action.warehouse.*`)
+
+Налаштування → Користувачі → Ролі. Seed за замовчуванням — лише `admin`.
+
+| Ключ | UI | Ефект |
+|------|-----|--------|
+| `action.warehouse.movement.edit` | Редагувати чужі та відправлені переміщення | `PUT` будь-якого невидаленого документа; submit чужої чернетки; адмін-режим у редакторі; `POST /:id/sync-dilovod` |
+| `action.warehouse.movement.delete` | Видаляти переміщення (у Dilovod — delMark) | `DELETE /api/warehouse/:id` (soft-delete) |
+
+---
+
+## Адмін-редагування отриманого документа
+
+Після `finalized` кнопка **Редагувати** вмикає `adminEdit` і перемикач **Відправлене / Отримане**:
+
+- **Відправлене** — drawer і сканування змінюють `boxQuantity` / `portionQuantity` / `totalPortions`.
+- **Отримане** — ті самі жести змінюють `received*`. Новий SKU можна додати як надлишок (відправлене = 0).
+- Swipe «видалити»: якщо в іншому списку ще є кількість — обнуляється лише активний бік; інакше рядок знімається.
+- Картка показує обидва числа; велике (σ) — активний список; кольори збігу / нестачі / надлишку.
+- **Зберегти в Dilovod** (`MovementMobSyncDilovodModal`) перезаписує документ у Dilovod **отриманими** кількостями (`saveType: 1` + існуючий `dilovodDocId`). Відправлений список лишається лише в бек-офісі.
+
+Чернетка й `pending_receipt` в адмін-режимі як і раніше правлять відправлений список (отриманого ще немає або його набирає отримувач).
 
 ---
 
@@ -35,8 +84,8 @@
 Джерела коду:
 
 1. HID-сканер через `equipmentState.lastBarcode` (`useMovementMobScan`).
-2. Камера: live-потік або capture (`cameraMedia.ts`, `MovementMobCameraOverlay`).
-3. Кнопка **Додати ще** відкриває камеру / overlay.
+2. Камера: live-потік або capture (`cameraMedia.ts`, `MovementMobCameraOverlay`). Детекція лише в видимому віконці: кадр кропиться до рамки оверлею (`mapCoveredOverlayToVideoSource` / `drawVideoRegionToCanvas`).
+3. Кнопка **Додати ще** / **Сканувати позицію** відкриває камеру / overlay.
 4. Dropdown тієї ж кнопки — **Ввести ШК вручну** (`MovementMobManualBarcodeModal`).
 
 Мок-штрихкоди (`MovementMobMockBarcodeBar`) рендеряться **лише в DebugMode** (`useDebug().isDebugMode`).
@@ -54,9 +103,10 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 Усередині:
 
 - Назва, SKU, вага, шт. у коробці, партія, **ШК** (зберігається в рядку чернетки).
+- У адмін-режимі finalized — підказка «Редагування відправленої / отриманої кількості».
 - Дві картки залишків: склад-джерело і склад-призначення. Показ **до → після** з урахуванням:
   - поточного введення в drawer;
-  - уже доданих у документ порцій цього SKU (`committedPortionsForSku`), окрім рядка, який зараз редагується.
+  - уже доданих у документ порцій цього SKU (`committedPortionsForSku(..., side)`), окрім рядка, який зараз редагується (`side` = sent або received).
 - `StepperInput` коробок / порцій.
 - Підсумок порцій.
 - `MovementMobSwipeConfirm` → `SlideActionButton` («Проведіть для підтвердження»).
@@ -65,7 +115,7 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 
 Редагування рядка відкриває той самий drawer; `barcode` / `barcodeKind` їдуть у `MovementMobRawItem` через `serializeMobDraftItems` / `buildProductLines`, інакше ШК у drawer зникав після збереження.
 
-Підтвердження: `replaceMovementMobLine` (редагування) або `mergeMovementMobLine` (нове сканування).
+Підтвердження: `replaceMovementMobLine` (кількість з drawer замінює рядок, не сумується повторно).
 
 ---
 
@@ -85,6 +135,8 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 
 Екран документа тримає одне відкрите rest-стан на ключ рядка (`openSwipe`).
 
+Картка списку (`MovementMobDocumentCard`) **не** `isPressable` (HeroUI тоді рендерить `<button>`): інакше кнопки адміна вкладені в button. Клік по тілу картки відкриває документ.
+
 Кнопки під списком (`< sm`): **Додати ще** займає решту ширини, **Відправити** — `shrink-0` / `w-auto`.
 
 ---
@@ -93,13 +145,19 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 
 Видалення не одразу ріже стейт: рядок анімовано зникає (opacity + height → 0), далі знімається зі списку.
 
-Банер `MovementMobUndoBanner`: «Видалено: {назва}», кнопка **Скасувати**, індикатор часу ~**6 с** (`UNDO_MS = 6000`). Undo вставляє рядок **на попередній індекс** (`insertMovementMobLineAt`) з `enterFromCollapsed`, щоб висота плавно розкривалась на тому ж місці, а не в кінці списку.
+Банер `MovementMobUndoBanner`:
+
+- видалення рядка — «Видалено», тон danger;
+- сканування прийому — «Прийнято», тон success;
+- обнулення одного боку в адмін-режимі — «Змінено».
+
+Кнопка **Скасувати**, індикатор часу ~**6 с** (`UNDO_MS = 6000`). Undo вставляє рядок **на попередній індекс** (`insertMovementMobLineAt`) з `enterFromCollapsed`.
 
 ---
 
 ## Залишки з урахуванням чернетки
 
-`committedPortionsForSku(lines, sku, exceptKey?)` сумує `totalPortions` усіх рядків цього SKU, опційно без рядка, який відкритий у drawer.
+`committedPortionsForSku(lines, sku, exceptKey?, side = 'sent')` сумує `totalPortions` або `receivedTotalPortions` усіх рядків цього SKU, опційно без рядка, який відкритий у drawer.
 
 У drawer:
 
@@ -118,10 +176,12 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 | Крок | done коли | Дата, якщо pending |
 |------|-----------|-------------------|
 | Формування списку | завжди (чернетка існує) | `draftCreatedAt` |
-| Відправлено на «склад» | `active` або `finalized` | текст **«ще не відправлено»** |
+| Відправлено на «склад» | `pending_receipt`, `active` або `finalized` | текст **«ще не відправлено»** |
 | Отримано | `finalized` | текст **«ще не отримано»** |
 
-Pending: сіра точка (`clock`), сірий заголовок, без імені користувача. Done: зелена точка (`check`), дата, автор.
+Назва складу в «Відправлено на «…»» — **повна з довідника Dilovod** (`destNameById` / `resolveChronologyStorageLabel`), не короткий бейдж.
+
+Pending: сіра точка (`clock`), сірий заголовок, без імені користувача. Done: зелена точка (`check`), дата, автор / отримувач.
 
 Вертикальні лінії між точками: success, якщо обидва сусіди done; градієнт success → default, якщо лише верхній done; інакше `default-300`.
 
@@ -145,21 +205,31 @@ Pending: сіра точка (`clock`), сірий заголовок, без і
 
 ---
 
-## Типи чернетки
+## Типи рядка
 
-`MovementMobRawItem` / `MovementMobProductLineViewModel` зберігають опційно `barcode`, `barcodeKind`, щоб drawer редагування показував той самий ШК після reload.
+`MovementMobRawItem` / `MovementMobProductLineViewModel`: `barcode`, `barcodeKind`, відправлені кількості та `receivedBoxQuantity` / `receivedPortionQuantity` / `receivedTotalPortions`.
 
 Ключ рядка: `sku + batchId|batchNumber`.
 
+Поля документа: `submittedAt`, `receivedBy`, `receivedAt`, `dilovodDocId`.
+
 ---
 
-## API, задіяні редактором
+## API мобільного циклу
 
-- `GET /api/warehouse/product-by-barcode?code=`
-- snapshot залишків за SKU / складами
-- CRUD чернетки переміщення (`WarehouseService` / існуючі movement endpoints)
+| Метод | Шлях | Призначення |
+|-------|------|-------------|
+| `POST` | `/api/warehouse` | Створити чернетку |
+| `PUT` | `/api/warehouse/:id` | Оновити items (автор: draft/active; `movement.edit`: будь-який не `deleted`) |
+| `POST` | `/api/warehouse/:id/submit` | `draft` → `pending_receipt` |
+| `PUT` | `/api/warehouse/:id/receipt` | Зберегти отримані кількості (не автор, лише `pending_receipt`) |
+| `POST` | `/api/warehouse/:id/confirm-receipt` | Фіналізація + Dilovod; `{ dryRun: true }` — payload |
+| `POST` | `/api/warehouse/:id/sync-dilovod` | Перезапис finalized у Dilovod; теж `dryRun`; потрібен `movement.edit` |
+| `DELETE` | `/api/warehouse/:id` | Soft-delete + Dilovod `delMark` |
 
-Клієнтський шар: `movementMobApi.ts`.
+Експорт: `WarehouseMovementExport.exportWarehouseMovementToDilovod` (якщо є `dilovodDocId` — оновлення, інакше створення). Клієнт: `movementMobApi.ts`.
+
+Міграція полів прийому: `prisma/migrations/20260830120000_warehouse_movement_receipt_fields/`.
 
 ---
 
@@ -181,12 +251,10 @@ client/pages/Warehouse/WarehouseMovementMob/
 └── components/
     ├── MovementMobDocumentScreen.tsx
     ├── MovementMobScanDrawer.tsx
-    ├── MovementMobSwipeConfirm.tsx
-    ├── MovementMobAddMoreButton.tsx
-    ├── MovementMobManualBarcodeModal.tsx
-    ├── MovementMobUndoBanner.tsx
-    ├── MovementMobChronology.tsx
-    ├── MovementMobCameraOverlay.tsx
-    ├── MovementMobMockBarcodeBar.tsx
+    ├── MovementMobSubmitSheet.tsx
+    ├── MovementMobConfirmReceiptSheet.tsx
+    ├── MovementMobSyncDilovodModal.tsx
+    ├── MovementMobDeleteConfirmModal.tsx
+    ├── MovementMobProductCard.tsx
     └── …
 ```

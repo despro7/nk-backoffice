@@ -76,6 +76,8 @@ describe('seedPermissionKeysForRole', () => {
     expect(keys).toContain(PERMISSIONS.ACTION_WAREHOUSE_OPERATE);
     expect(keys).not.toContain(PERMISSIONS.PAGE_PRODUCTS);
     expect(keys).not.toContain(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE);
+    expect(keys).not.toContain(PERMISSIONS.ACTION_WAREHOUSE_MOVEMENT_EDIT);
+    expect(keys).not.toContain(PERMISSIONS.ACTION_WAREHOUSE_MOVEMENT_DELETE);
   });
 
   it('equipment page is storekeeper/boss/admin, not shop-manager', () => {
@@ -206,6 +208,8 @@ describe('routePermissionKey / normalizePermissionKey', () => {
 
   it('accepts dotted action names', () => {
     expect(isPermissionKey(actionKey('warehouse', 'history.delete'))).toBe(true);
+    expect(isPermissionKey(actionKey('warehouse', 'movement.edit'))).toBe(true);
+    expect(isPermissionKey(actionKey('warehouse', 'movement.delete'))).toBe(true);
     expect(isPermissionKey(actionKey('products', 'setParentIds.read'))).toBe(true);
   });
 });

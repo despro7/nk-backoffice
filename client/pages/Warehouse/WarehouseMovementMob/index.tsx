@@ -2,17 +2,29 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActionBubble, ActionBubbleDock, ActionConfirmBubble } from '@/components/action-bubble';
 import { useTouchUi } from '@/hooks/useTouchUi';
+import { PERMISSIONS } from '@shared/constants/permissions';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { useApi } from '@/hooks/useApi';
+import { ToastService } from '@/services/ToastService';
 import MovementMobDocumentList from './components/MovementMobDocumentList';
 import MovementMobFilterBar from './components/MovementMobFilterBar';
+import MovementMobDeleteConfirmModal from './components/MovementMobDeleteConfirmModal';
 import { isMovementMobFilterDefault } from './WarehouseMovementMobUtils';
 import { useWarehouseMovementMobList } from './useWarehouseMovementMobList';
+import { deleteMovement } from './movementMobApi';
 
 export default function WarehouseMovementMob() {
   const navigate = useNavigate();
+  const { apiCall } = useApi();
+  const { hasPermission } = useRoleAccess();
+  const canOverrideEdit = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_MOVEMENT_EDIT);
+  const canOverrideDelete = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_MOVEMENT_DELETE);
   const list = useWarehouseMovementMobList();
   const touchUi = useTouchUi();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; displayNumber: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const filtersAreDefault = isMovementMobFilterDefault(list.dateRange, list.datePresetKey);
 
   const filterBar = (
@@ -71,6 +83,45 @@ export default function WarehouseMovementMob() {
         loading={list.loading}
         error={list.error}
         onCardPress={(id) => navigate(`/warehouse/movement-mob/${id}`)}
+        showAdminActions={canOverrideEdit || canOverrideDelete}
+        onAdminEdit={canOverrideEdit
+          ? (id) => navigate(`/warehouse/movement-mob/${id}`, { state: { adminEdit: true } })
+          : undefined}
+        onAdminDelete={canOverrideDelete
+          ? (id) => {
+            const card = list.cards.find((item) => item.id === id);
+            setDeleteTarget({ id, displayNumber: card?.displayNumber ?? String(id) });
+          }
+          : undefined}
+      />
+
+      <MovementMobDeleteConfirmModal
+        isOpen={deleteTarget != null}
+        displayNumber={deleteTarget?.displayNumber}
+        deleting={deleting}
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          const id = deleteTarget.id;
+          setDeleting(true);
+          void deleteMovement(apiCall, id)
+            .then(async () => {
+              ToastService.show({
+                title: 'Документ видалено',
+                color: 'success',
+              });
+              setDeleteTarget(null);
+              await list.refetch();
+            })
+            .catch((err: unknown) => {
+              ToastService.show({
+                title: 'Не вдалося видалити',
+                description: err instanceof Error ? err.message : undefined,
+                color: 'danger',
+              });
+            })
+            .finally(() => setDeleting(false));
+        }}
       />
     </div>
   );

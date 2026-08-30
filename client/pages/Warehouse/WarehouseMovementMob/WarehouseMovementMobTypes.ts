@@ -2,11 +2,16 @@
 // Types for WarehouseMovementMob
 // ---------------------------------------------------------------------------
 
-export type MovementMobDbStatus = 'draft' | 'active' | 'finalized';
+export type MovementMobDbStatus = 'draft' | 'active' | 'pending_receipt' | 'finalized' | 'deleted';
 
-export type MovementMobScreenMode = 'formation' | 'view';
+export type MovementMobScreenMode = 'formation' | 'receiving' | 'view';
 
-export type MovementMobEditorMode = 'empty' | 'formation' | 'view';
+export type MovementMobEditorMode = 'empty' | 'formation' | 'receiving' | 'view';
+
+export type MovementMobActionBar = 'formation' | 'receiving' | 'awaitingReceipt' | 'adminEdit';
+
+/** Який список кількостей редагує адмін у вже отриманому документі. */
+export type MovementMobAdminQtySide = 'sent' | 'received';
 
 export type MovementMobBarcodeKind = 'portion' | 'box';
 
@@ -26,6 +31,9 @@ export interface MovementMobRawItem {
   forecast?: number;
   barcode?: string;
   barcodeKind?: MovementMobBarcodeKind;
+  receivedBoxQuantity?: number;
+  receivedPortionQuantity?: number;
+  receivedTotalPortions?: number;
 }
 
 export interface MovementMobApiRecord {
@@ -43,8 +51,12 @@ export interface MovementMobApiRecord {
   draftLastEditedAt: string;
   sentToDilovodAt: string | null;
   lastSentToDilovodAt: string | null;
+  submittedAt?: string | null;
+  receivedBy?: number | null;
+  receivedAt?: string | null;
   createdBy: number;
   createdByName?: string | null;
+  receivedByName?: string | null;
 }
 
 export interface MovementMobAggregates {
@@ -91,6 +103,9 @@ export interface MovementMobProductLineViewModel {
   portionsPerBox: number | null;
   barcode?: string;
   barcodeKind?: MovementMobBarcodeKind;
+  receivedBoxQuantity: number;
+  receivedPortionQuantity: number;
+  receivedTotalPortions: number;
 }
 
 /** Відповідь GET /api/warehouse/product-by-barcode — дзеркало WarehouseProductByBarcodeResponse. */
@@ -144,5 +159,9 @@ export interface MovementMobDocumentViewModel {
   lines: MovementMobProductLineViewModel[];
   aggregates: MovementMobAggregates;
   chronology: MovementMobChronologyEvent[];
+  createdBy: number;
   createdByName: string | null;
+  receivedByName: string | null;
 }
+
+export type MovementMobReceiptState = 'pending' | 'match' | 'shortage' | 'surplus';

@@ -9,9 +9,20 @@ interface MovementMobDocumentListProps {
   loading: boolean;
   error: string | null;
   onCardPress: (id: number) => void;
+  showAdminActions?: boolean;
+  onAdminEdit?: (id: number) => void;
+  onAdminDelete?: (id: number) => void;
 }
 
-export default function MovementMobDocumentList({cards, loading, error, onCardPress}: MovementMobDocumentListProps) {
+export default function MovementMobDocumentList({
+  cards,
+  loading,
+  error,
+  onCardPress,
+  showAdminActions = false,
+  onAdminEdit,
+  onAdminDelete,
+}: MovementMobDocumentListProps) {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3 text-default-500">
@@ -59,7 +70,14 @@ export default function MovementMobDocumentList({cards, loading, error, onCardPr
   return (
     <div className="flex flex-col gap-3">
       {cards.map((card) => (
-        <MovementMobDocumentCard key={card.id} card={card} onPress={onCardPress} />
+        <MovementMobDocumentCard
+          key={card.id}
+          card={card}
+          onPress={onCardPress}
+          showAdminActions={showAdminActions}
+          onAdminEdit={onAdminEdit}
+          onAdminDelete={onAdminDelete}
+        />
       ))}
     </div>
   );

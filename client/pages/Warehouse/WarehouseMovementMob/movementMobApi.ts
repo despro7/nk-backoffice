@@ -1,4 +1,5 @@
 import type { WarehouseProductByBarcodeResponse } from '@shared/types/warehouse';
+import { isUsableDilovodBatchId } from '@shared/utils/dilovodBatchId';
 import type { MovementMobApiRecord, MovementMobProductByBarcode } from './WarehouseMovementMobTypes';
 import type { MovementMobRawItem } from './WarehouseMovementMobTypes';
 
@@ -49,8 +50,10 @@ function toProductByBarcode(
     portionsPerBox: asFiniteNumber(payload.portionsPerBox) ?? payload.portionsPerBox ?? 0,
     barcode: String(payload.barcode ?? scannedCode),
     barcodeKind: payload.barcodeKind === 'box' ? 'box' : 'portion',
-    batchId: payload.batchId ? String(payload.batchId) : null,
-    batchNumber: payload.batchNumber ? String(payload.batchNumber) : null,
+    batchId: isUsableDilovodBatchId(payload.batchId) ? String(payload.batchId) : null,
+    batchNumber: payload.batchNumber && payload.batchNumber !== '0'
+      ? String(payload.batchNumber)
+      : null,
   };
 }
 
@@ -95,7 +98,7 @@ export async function fetchBatchFallback(
   }
 
   const fetchedBatches = [...(data.batches ?? [])]
-    .filter((batch) => String(batch.batchId ?? '').trim().length > 0)
+    .filter((batch) => isUsableDilovodBatchId(batch.batchId))
     .sort((a, b) => (Number(b.quantity) || 0) - (Number(a.quantity) || 0));
 
   const picked = fetchedBatches[0];
@@ -194,6 +197,110 @@ export async function createWarehouseMovementDraft(
   return (await response.json()) as MovementMobApiRecord;
 }
 
+export async function submitMovement(
+  apiCall: ApiCall,
+  id: number,
+): Promise<MovementMobApiRecord> {
+  const response = await apiCall(`/api/warehouse/${id}/submit`, { method: 'POST' });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(err.error || 'Не вдалося відправити документ');
+  }
+  return (await response.json()) as MovementMobApiRecord;
+}
+
+export async function saveReceipt(
+  apiCall: ApiCall,
+  id: number,
+  items: MovementMobRawItem[],
+): Promise<MovementMobApiRecord> {
+  const response = await apiCall(`/api/warehouse/${id}/receipt`, {
+    method: 'PUT',
+    body: JSON.stringify({ items }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(err.error || 'Не вдалося зберегти прийом');
+  }
+  return (await response.json()) as MovementMobApiRecord;
+}
+
+function parseConfirmReceiptError(err: {
+  error?: string;
+  errorTitle?: string;
+  details?: string[];
+}, fallback: string): Error {
+  const details = Array.isArray(err.details) ? err.details.filter(Boolean).join(' | ') : '';
+  return new Error(
+    [err.errorTitle, err.error, details].filter(Boolean).join(' — ') || fallback,
+  );
+}
+
+export async function confirmReceipt(
+  apiCall: ApiCall,
+  id: number,
+): Promise<MovementMobApiRecord> {
+  const response = await apiCall(`/api/warehouse/${id}/confirm-receipt`, { method: 'POST' });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({})) as {
+      error?: string;
+      errorTitle?: string;
+      details?: string[];
+    };
+    throw parseConfirmReceiptError(err, 'Не вдалося підтвердити отримання');
+  }
+  return (await response.json()) as MovementMobApiRecord;
+}
+
+export async function fetchConfirmReceiptPayload(
+  apiCall: ApiCall,
+  id: number,
+): Promise<Record<string, unknown>> {
+  const response = await apiCall(`/api/warehouse/${id}/confirm-receipt`, {
+    method: 'POST',
+    body: JSON.stringify({ dryRun: true }),
+  });
+  const data = await response.json().catch(() => ({})) as {
+    success?: boolean;
+    payload?: Record<string, unknown>;
+    error?: string;
+    errorTitle?: string;
+    details?: string[];
+  };
+  if (!response.ok || !data.payload) {
+    throw parseConfirmReceiptError(data, 'Не вдалося отримати payload');
+  }
+  return data.payload;
+}
+
+export async function syncMovementToDilovod(
+  apiCall: ApiCall,
+  id: number,
+  options?: { dryRun?: boolean },
+): Promise<Record<string, unknown> | void> {
+  const dryRun = options?.dryRun === true;
+  const response = await apiCall(`/api/warehouse/${id}/sync-dilovod`, {
+    method: 'POST',
+    body: JSON.stringify({ dryRun }),
+  });
+  const data = await response.json().catch(() => ({})) as {
+    success?: boolean;
+    payload?: Record<string, unknown>;
+    error?: string;
+    errorTitle?: string;
+    details?: string[];
+  };
+  if (!response.ok) {
+    throw parseConfirmReceiptError(data, dryRun ? 'Не вдалося отримати payload' : 'Не вдалося зберегти в Dilovod');
+  }
+  if (dryRun) {
+    if (!data.payload) {
+      throw parseConfirmReceiptError(data, 'Не вдалося отримати payload');
+    }
+    return data.payload;
+  }
+}
+
 export async function updateWarehouseMovementDraft(
   apiCall: ApiCall,
   id: number,
@@ -210,4 +317,15 @@ export async function updateWarehouseMovementDraft(
   }
 
   return (await response.json()) as MovementMobApiRecord;
+}
+
+export async function deleteMovement(
+  apiCall: ApiCall,
+  id: number,
+): Promise<void> {
+  const response = await apiCall(`/api/warehouse/${id}`, { method: 'DELETE' });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({})) as { error?: string; errorTitle?: string };
+    throw new Error([err.errorTitle, err.error].filter(Boolean).join(' — ') || 'Не вдалося видалити документ');
+  }
 }

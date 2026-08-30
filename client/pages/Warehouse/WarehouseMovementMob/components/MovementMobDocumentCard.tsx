@@ -1,4 +1,4 @@
-import { Card, CardBody } from '@heroui/react';
+import { Button, Card, CardBody } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { MovementMobListCardViewModel } from '../WarehouseMovementMobTypes';
 import { pluralize } from '@/lib/formatUtils';
@@ -7,25 +7,66 @@ import MovementMobStatusStepper, { MovementMobDirectionBadges } from './Movement
 interface MovementMobDocumentCardProps {
   card: MovementMobListCardViewModel;
   onPress: (id: number) => void;
+  showAdminActions?: boolean;
+  onAdminEdit?: (id: number) => void;
+  onAdminDelete?: (id: number) => void;
 }
 
-export default function MovementMobDocumentCard({ card, onPress }: MovementMobDocumentCardProps) {
+export default function MovementMobDocumentCard({
+  card,
+  onPress,
+  showAdminActions = false,
+  onAdminEdit,
+  onAdminDelete,
+}: MovementMobDocumentCardProps) {
   const { aggregates } = card;
 
   return (
-    <Card
-      isPressable
-      shadow="sm"
-      className="bg-white"
-      onPress={() => onPress(card.id)}
-    >
-      <CardBody className="gap-4 p-3">
+    <Card shadow="sm" className="bg-white">
+      <CardBody
+        className="gap-4 p-3 md:p-4 cursor-pointer"
+        onClick={() => onPress(card.id)}
+      >
         <div className="flex items-start justify-between gap-2">
           <span className="text-xs text-neutral-400">{card.displayDateTime}</span>
-          <MovementMobDirectionBadges
-            sourceBadge={card.sourceBadge}
-            destBadge={card.destBadge}
-          />
+          <div className="flex items-center gap-1">
+            {showAdminActions && (
+              <div
+                className="flex items-center"
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                {onAdminEdit && (
+                  <Button
+                    isIconOnly
+                    size="sm"
+                    variant="light"
+                    aria-label="Редагувати документ"
+                    className="min-w-8 w-8 h-8 text-primary"
+                    onPress={() => onAdminEdit(card.id)}
+                  >
+                    <DynamicIcon name="pencil" size={16} strokeWidth={1.75} />
+                  </Button>
+                )}
+                {onAdminDelete && (
+                  <Button
+                    isIconOnly
+                    size="sm"
+                    variant="light"
+                    aria-label="Видалити документ"
+                    className="min-w-8 w-8 h-8 text-danger"
+                    onPress={() => onAdminDelete(card.id)}
+                  >
+                    <DynamicIcon name="trash-2" size={16} strokeWidth={1.75} />
+                  </Button>
+                )}
+              </div>
+            )}
+            <MovementMobDirectionBadges
+              sourceBadge={card.sourceBadge}
+              destBadge={card.destBadge}
+            />
+          </div>
         </div>
 
         <div className="flex items-end justify-between gap-3">

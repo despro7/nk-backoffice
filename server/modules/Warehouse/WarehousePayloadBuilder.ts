@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/utils.js';
 import { getDilovodUserId } from '../../services/dilovod/DilovodUtils.js';
+import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
 import type {
   WarehouseMovementSettings,
   DilovodMovementPayload,
@@ -86,6 +87,7 @@ export class WarehousePayloadBuilder {
   static generateDocumentNumber(template: string, internalDocNumber: string): string {
     const now = new Date();
     const pad = (n: number, len = 2): string => String(n).padStart(len, '0');
+    const numeric = String(internalDocNumber).replace(/^П-/i, '').replace(/\D/g, '') || internalDocNumber;
 
     return template
       .replace('{YYYY}', String(now.getFullYear()))
@@ -93,8 +95,8 @@ export class WarehousePayloadBuilder {
       .replace('{DD}', pad(now.getDate()))
       .replace('{HH}', pad(now.getHours()))
       .replace('{mm}', pad(now.getMinutes()))
-      .replace('{###}', internalDocNumber.padStart(3, '0'))
-      .replace('{#####}', internalDocNumber.padStart(5, '0'));
+      .replace('{###}', numeric.padStart(3, '0'))
+      .replace('{#####}', numeric.padStart(5, '0'));
   }
 
   // --------------------------------------------------------------------------
@@ -212,7 +214,7 @@ export class WarehousePayloadBuilder {
           : (batch.boxes * item.portionsPerBox + batch.portions);
 
         if (qty <= 0) continue; // Пропускаємо нульові рядки
-        if (!batch.batchId) continue; // Пропускаємо партії без ID в Діловоді (валідація підхопить помилку через validatePayload)
+        if (!isUsableDilovodBatchId(batch.batchId)) continue;
 
         tpGoods.push({
           rowNum,

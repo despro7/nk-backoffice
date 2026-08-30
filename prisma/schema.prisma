@@ -211,12 +211,15 @@ model WarehouseMovement {
   movementDate         DateTime? // Дата/час переміщення (використовується для запиту партій та формування payload для Діловода)
   sentToDilovodAt      DateTime? // Дата першої відправки до Діловода
   lastSentToDilovodAt  DateTime? // Дата останньої (проміжної або фінальної) відправки до Діловода
+  submittedAt          DateTime? // Момент підтвердження відправки на отримання (pending_receipt)
+  receivedBy           Int?      // Користувач, який підтвердив отримання
+  receivedAt           DateTime? // Момент підтвердження отримання
   internalDocNumber    String    @unique @default("00001")
   docNumber            String?   // Номер документа від Діловода (після відправки)
   dilovodDocId         String?   @unique // ID документа в Діловоді (унікальний — для upsert при імпорті з history)
   items                String    @db.LongText
   deviations           String?   @db.LongText
-  status               String    @default("draft") // 'draft' | 'active' | 'finalized'
+  status               String    @default("draft") // 'draft' | 'active' | 'pending_receipt' | 'finalized' | 'deleted'
   sourceWarehouse      String
   destinationWarehouse String
   notes                String?

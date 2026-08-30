@@ -77,3 +77,14 @@ model User {
 
 - **«Завершити переміщення»** — пряма відправка `dryRun=false`
 - **«Показати payload»** — видима тільки адміністраторам, викликає `dryRun=true`, відкриває `PayloadPreviewModal` з можливістю відправити звідти
+
+## Мобільна гілка (прийом і перезапис)
+
+Окремий цикл `/warehouse/movement-mob` **не** викликає `POST /api/warehouse/movements/send`. Dilovod з’являється лише після підтвердження отримання:
+
+| Метод | Шлях | Коли |
+|-------|------|------|
+| `POST` | `/api/warehouse/:id/confirm-receipt` | `pending_receipt` → `finalized`; payload з отриманих кількостей; `{ dryRun: true }` у DebugMode |
+| `POST` | `/api/warehouse/:id/sync-dilovod` | уже `finalized`; право `action.warehouse.movement.edit`; той самий builder, перезапис `dilovodDocId` |
+
+Спільна реалізація: `exportWarehouseMovementToDilovod` у `WarehouseMovementExport.ts`. Повний опис статусів і UI — `Docs/features/warehouse-movement-mob.md`.

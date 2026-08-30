@@ -13,6 +13,7 @@ interface MovementMobScanDrawerProps {
   destLabel: string;
   otherCommittedPortions?: number;
   confirming?: boolean;
+  qtySideHint?: string;
   onClose: () => void;
   onBoxesChange: (value: number) => void;
   onPortionsChange: (value: number) => void;
@@ -70,6 +71,7 @@ export default function MovementMobScanDrawer({
   destLabel,
   otherCommittedPortions = 0,
   confirming = false,
+  qtySideHint,
   onClose,
   onBoxesChange,
   onPortionsChange,
@@ -77,6 +79,7 @@ export default function MovementMobScanDrawer({
   onConfirm,
 }: MovementMobScanDrawerProps) {
   const portionsPerBox = draft?.portionsPerBox ?? 0;
+  const maxLoosePortions = portionsPerBox > 1 ? portionsPerBox - 1 : undefined;
   const total = draft
     ? lineTotalPortions(draft.boxes, draft.portions, portionsPerBox)
     : 0;
@@ -130,6 +133,9 @@ export default function MovementMobScanDrawer({
     >
       {draft && (
         <div className="flex flex-col gap-4 mt-3">
+          {qtySideHint && (
+            <p className="text-xs font-medium text-primary-600 -mb-1">{qtySideHint}</p>
+          )}
           <div className="flex items-center justify-between text-sm">
             <p className="text-default-600 font-semibold">
               Партія: <span className="font-light">{draft.batchNumber}</span>
@@ -179,8 +185,15 @@ export default function MovementMobScanDrawer({
               label="Порцій"
               value={draft.portions}
               size="lg"
+              max={maxLoosePortions}
               onChange={onPortionsChange}
-              onIncrement={() => onPortionsChange(draft.portions + 1)}
+              onIncrement={() =>
+                onPortionsChange(
+                  maxLoosePortions !== undefined
+                    ? Math.min(draft.portions + 1, maxLoosePortions)
+                    : draft.portions + 1,
+                )
+              }
               onDecrement={() => onPortionsChange(Math.max(0, draft.portions - 1))}
               className="gap-1"
               inputClassName="border-1! shadow-md"

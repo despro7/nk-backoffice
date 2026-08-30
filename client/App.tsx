@@ -24,6 +24,7 @@ import TestSerialCom from "./pages/test-serial-com";
 import { ToastService } from "./services/ToastService";
 import { LoggingService } from "./services/LoggingService";
 import { initAudioContext } from "./lib/soundUtils";
+import { useIsMobile } from "./hooks/useTouchUi";
 
 const queryClient = new QueryClient();
 
@@ -172,9 +173,20 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 
+function AppToastProvider() {
+  const isMobile = useIsMobile();
+  return (
+    <ToastProvider
+      toastProps={{ radius: "md", shadow: "md", classNames: { icon: "fill-none" } }}
+      placement={isMobile ? "top-center" : "bottom-right"}
+      toastOffset={isMobile ? 12 : 30}
+    />
+  );
+}
+
 const App = () => (
   <HeroUIProvider>
-    <ToastProvider toastProps={{ radius: "md", shadow: "md", classNames: { icon: "fill-none" } }} placement="bottom-right" toastOffset={30} />
+    <AppToastProvider />
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <DilovodDirectoriesProvider>

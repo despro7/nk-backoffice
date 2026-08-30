@@ -46,7 +46,9 @@ export function useWarehouseMovementMobList() {
       }
 
       const data = (await response.json()) as MovementMobListResponse;
-      return (data.movements ?? []).map(toListCardViewModel);
+      return (data.movements ?? [])
+        .filter((record) => record.status !== 'deleted')
+        .map(toListCardViewModel);
     },
   });
 
