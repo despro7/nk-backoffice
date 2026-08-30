@@ -2,8 +2,8 @@ import type { ActionBubbleColorPreset, ActionBubblePlacement } from './types';
 
 export const ACTION_BUBBLE_COLOR_PRESETS: Record<ActionBubbleColorPreset, string> = {
   sky: 'bg-gradient-to-b from-sky-500 to-blue-600 text-white shadow-lg shadow-sky-600/30',
-  purple: 'bg-gradient-to-b from-purple-400 to-purple-600 text-white shadow-lg shadow-danger',
-  orange: 'bg-gradient-to-b from-orange-400 to-orange-600 text-white shadow-lg shadow-orange-600/30',
+  purple: 'bg-gradient-to-b from-purple-400 to-purple-500 text-white shadow-lg shadow-danger',
+  orange: 'bg-gradient-to-b from-orange-400 to-orange-500 text-white shadow-lg shadow-orange-600/30',
   red: 'bg-gradient-to-b from-rose-500 to-rose-700 text-white shadow-lg shadow-red-600/30',
   lime: 'bg-gradient-to-b from-lime-400 to-lime-600 text-white shadow-lg shadow-lime-600/40',
 };
