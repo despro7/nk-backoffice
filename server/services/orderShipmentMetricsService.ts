@@ -1,4 +1,4 @@
-import { prisma } from '../lib/utils.js';
+import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 
 type ShipmentItem = {
   sku?: string;
@@ -284,26 +284,14 @@ export async function getReportProductDescriptors(skus: Iterable<string>): Promi
     return new Map();
   }
 
-  const products = await prisma.product.findMany({
-    where: {
-      sku: {
-        in: uniqueSkus,
-      },
-    },
-    select: {
-      sku: true,
-      name: true,
-      categoryId: true,
-      categoryName: true,
-      set: true,
-      stockBalanceByStock: true,
-    },
-  });
+  const found = await catalogOpsLookup.getBySkus(uniqueSkus);
+  const products = catalogOpsLookup.listUnique(found);
 
   return new Map(
     products.map((product) => {
       const categoryKey = normalizeCategoryKey(product.categoryId ?? null, product.categoryName ?? null);
       const categoryLabel = normalizeCategoryLabel(product.categoryName ?? null);
+      const setJson = product.set && product.set.length > 0 ? JSON.stringify(product.set) : null;
 
       return [
         product.sku,
@@ -314,10 +302,10 @@ export async function getReportProductDescriptors(skus: Iterable<string>): Promi
           categoryName: product.categoryName ?? null,
           categoryKey,
           categoryLabel,
-          isSet: parseJsonArray(product.set).length > 0,
-          setPortions: getSetPortions(product.set),
-          setComponents: parseSetComponents(product.set),
-          stockBalances: parseStockBalances(product.stockBalanceByStock),
+          isSet: (product.set?.length ?? 0) > 0,
+          setPortions: getSetPortions(setJson),
+          setComponents: parseSetComponents(setJson),
+          stockBalances: parseStockBalances(product.stockBalanceByStockRaw),
         },
       ];
     }),

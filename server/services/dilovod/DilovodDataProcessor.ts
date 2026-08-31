@@ -4,9 +4,10 @@ import {
   DilovodProduct, 
   DilovodPricesResponse, 
   DilovodGoodsResponse, 
-  DilovodSetComponent
 } from './DilovodTypes.js';
 import { DilovodApiClient } from './DilovodApiClient.js';
+import { prisma } from '../../lib/utils.js';
+import { isKitAccPolicy } from '../../modules/Products/ProductsTypes.js';
 import { 
   DEFAULT_DILOVOD_CONFIG,
   getPriceTypeNameById,
@@ -16,12 +17,9 @@ import {
 
 export class DilovodDataProcessor {
   private config: typeof DEFAULT_DILOVOD_CONFIG;
-  private apiClient: DilovodApiClient;
 
-  constructor(apiClient: DilovodApiClient) {
-    // Инициализируем с настройками по умолчанию, затем перезагрузим из БД
+  constructor(_apiClient: DilovodApiClient) {
     this.config = DEFAULT_DILOVOD_CONFIG;
-    this.apiClient = apiClient;
     this.loadConfig();
   }
 
@@ -59,17 +57,16 @@ export class DilovodDataProcessor {
       console.log(`📊 Унікальних товарів для обробки: ${uniquePricesResponse.length} (з ${pricesResponse.length} записів цін)`);
       
       // Створюємо маппінги
-      const idToSku = this.createIdToSkuMapping(uniquePricesResponse);
-      const pricesByGoodId = this.createPricesMapping(pricesResponse); // Залишаємо оригінальний для цін
+      const pricesByGoodId = this.createPricesMapping(pricesResponse);
       const goodsById = this.createGoodsMapping(goodsResponse);
+      const kitSetsByGoodId = await this.loadKitSetsFromCatalog(
+        uniquePricesResponse.map((row) => row.id).filter(Boolean)
+      );
 
-      // Обробляємо товари і отримуємо комплекти
-      // ВАЖЛИВО: передаємо uniquePricesResponse, а не pricesResponse, щоб уникнути зайвих запитів до API
       const processedGoods = await this.processGoodsWithSetsAsync(
-        uniquePricesResponse, 
-        idToSku, 
-        pricesByGoodId,
-        goodsById
+        uniquePricesResponse,
+        goodsById,
+        kitSetsByGoodId
       );
 
       // Формуємо фінальний результат
@@ -87,22 +84,6 @@ export class DilovodDataProcessor {
       console.log('Помилка обробки товарів у комплекті:', error);
       throw error;
     }
-  }
-
-  // Створення маппінгу ID -> SKU
-  private createIdToSkuMapping(pricesResponse: DilovodPricesResponse[] | any): { [key: string]: string } {
-    const mapping: { [key: string]: string } = {};
-    
-    if (!Array.isArray(pricesResponse)) return mapping;
-    pricesResponse.forEach((row) => {
-      const id = row.id;
-      const sku = row.sku;
-      if (id && sku) {
-        mapping[id] = sku;
-      }
-    });
-    
-    return mapping;
   }
 
   // Створення маппінгу цін по товарам
@@ -137,12 +118,50 @@ export class DilovodDataProcessor {
     return mapping;
   }
 
+  /**
+   * Комплекти = accPolicy «Товарні набори» у catalog_goods; склад — catalog_good_components.
+   */
+  private async loadKitSetsFromCatalog(
+    goodIds: string[]
+  ): Promise<Map<string, Array<{ id: string; name?: string; quantity: number }>>> {
+    const result = new Map<string, Array<{ id: string; name?: string; quantity: number }>>();
+    const uniqueIds = [...new Set(goodIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return result;
+
+    const kitRows = await prisma.catalogGood.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, accPolicyId: true },
+    });
+    const kitIds = kitRows.filter((row) => isKitAccPolicy(row.accPolicyId)).map((row) => row.id);
+    if (kitIds.length === 0) return result;
+
+    const components = await prisma.catalogGoodComponent.findMany({
+      where: { parentGoodId: { in: kitIds } },
+      orderBy: { rowNum: 'asc' },
+      include: { componentGood: { select: { sku: true, name: true } } },
+    });
+
+    for (const kitId of kitIds) {
+      result.set(kitId, []);
+    }
+    for (const row of components) {
+      const sku = row.componentGood?.sku?.trim() || row.componentGoodId;
+      const list = result.get(row.parentGoodId) ?? [];
+      list.push({
+        id: sku,
+        name: row.componentGood?.name,
+        quantity: row.qty,
+      });
+      result.set(row.parentGoodId, list);
+    }
+    return result;
+  }
+
   // Асинхронна обробка товарів з комплектами
   private async processGoodsWithSetsAsync(
     pricesResponse: DilovodPricesResponse[],
-    idToSku: { [key: string]: string },
-    pricesByGoodId: { [key: string]: Array<{ priceType: string; price: string }> },
-    goodsById: { [key: string]: DilovodGoodsResponse }
+    goodsById: { [key: string]: DilovodGoodsResponse },
+    kitSetsByGoodId: Map<string, Array<{ id: string; name?: string; quantity: number }>>
   ): Promise<any[]> {
     try {
       // Обробляємо товари послідовно (не паралельно) для правильної роботи затримок
@@ -151,16 +170,10 @@ export class DilovodDataProcessor {
       for (let index = 0; index < pricesResponse.length; index++) {
         const good = pricesResponse[index];
         
-        if (this.config.setParentIds.includes(good.parent)) {
-          // Отримуємо детальну інформацію про комплект
-          const set = await this.getSetComponents(good.id, idToSku, goodsById);
-          good.set = set;
-          
-          // Збільшена затримка для уникнення блокування API
-          await delay(500);
-          
+        if (kitSetsByGoodId.has(good.id)) {
+          good.set = kitSetsByGoodId.get(good.id) ?? [];
         } else {
-          good.set = []; // не комплект, масив set буде []
+          good.set = [];
         }
         
         // Дозволяємо назву категорії через каталог: беремо presentation у батька
@@ -209,115 +222,6 @@ export class DilovodDataProcessor {
     } catch (error) {
       console.log(`❌ ПОМИЛКА в processGoodsWithSetsAsync:`, error);
       throw error;
-    }
-  }
-
-  // Отримання компонентів комплекту
-  private async getSetComponents(
-    goodId: string, 
-    idToSku: { [key: string]: string }, 
-    goodsById: { [key: string]: DilovodGoodsResponse }
-  ): Promise<Array<{ id: string; quantity: number }>> {
-    try {
-      // Викликаємо API для отримання детальної інформації про об'єкт
-      const object = await this.apiClient.getObject(goodId);
-      
-      if (!object || !object.tableParts || !object.tableParts.tpGoods) {
-        return [];
-      }
-      
-      const setComponents = object.tableParts.tpGoods;
-      
-      // tpGoods може бути об'єктом, а не масивом - перетворюємо в масив
-      let componentsArray: any[] = [];
-      if (Array.isArray(setComponents)) {
-        componentsArray = setComponents;
-      } else if (typeof setComponents === 'object' && setComponents !== null) {
-        // Перетворюємо об'єкт в масив
-        componentsArray = Object.values(setComponents);
-      } else {
-        return [];
-      }
-      
-      // Збираємо ID компонентів, для яких немає SKU в мапі
-      const missingIds: string[] = [];
-      componentsArray.forEach((row: DilovodSetComponent) => {
-        const componentId = String(row.good);
-        if (!idToSku[componentId] && !goodsById[componentId]) {
-          missingIds.push(componentId);
-        }
-      });
-
-      // Якщо є відсутні SKU - отримуємо їх через API
-      let additionalSkuMap: { [key: string]: string } = {};
-      if (missingIds.length > 0) {
-        try {
-          console.log(`🔍 Отримуємо SKU для ${missingIds.length} компонентів комплекту...`);
-          
-          // Використовуємо прямий запит getObject для кожного ID
-          for (const componentId of missingIds) {
-            try {
-              const componentInfo = await this.apiClient.getObject(componentId);
-              
-              // SKU знаходиться в header.productNum
-              const sku = componentInfo?.header?.productNum;
-              if (sku) {
-                additionalSkuMap[componentId] = sku;
-                console.log(`  ✅ ${componentId} → ${sku}`);
-              } else {
-                console.log(`  ⚠️ SKU не знайдено для ${componentId}`);
-              }
-              await delay(100); // Невелика затримка між запитами
-            } catch (err) {
-              console.log(`  ⚠️ Не вдалося отримати SKU для ${componentId}:`, err);
-            }
-          }
-        } catch (error) {
-          console.log(`⚠️ Помилка отримання SKU компонентів:`, error);
-        }
-      }
-      
-      const set: Array<{ id: string; name?: string; quantity: number }> = [];
-      
-      componentsArray.forEach((row: DilovodSetComponent) => {
-        const componentId = String(row.good);
-        // Спочатку шукаємо в idToSku, потім в goodsById, потім в additionalSkuMap
-        let sku = idToSku[componentId];
-        if (!sku && goodsById[componentId]) {
-          sku = goodsById[componentId].sku;
-        }
-        if (!sku) {
-          sku = additionalSkuMap[componentId];
-        }
-        // Якщо все ще немає SKU - використовуємо ID
-        if (!sku) {
-          sku = componentId;
-          console.log(`⚠️ SKU не знайдено для компонента ${componentId}, використовуємо ID`);
-        }
-        
-        const quantity = parseFloat(row.qty) || 0;
-        
-        // Отримуємо назву компонента
-        let componentName: string | undefined;
-        if (goodsById[componentId]) {
-          componentName = goodsById[componentId].name;
-        } else if (additionalSkuMap[componentId]) {
-          // Спробуємо отримати назву через API, якщо можливо
-          // Але поки що залишимо undefined - буде fallback в orderAssemblyUtils
-        }
-        
-        set.push({
-          id: sku,
-          name: componentName,
-          quantity: quantity
-        });
-      });
-      
-      return set;
-      
-    } catch (error) {
-      console.log(`Ошибка получения состава комплекта ${goodId}:`, error);
-      return [];
     }
   }
 
@@ -409,8 +313,7 @@ export class DilovodDataProcessor {
         },
         set: good.set || [],
         additionalPrices: filteredAdditionalPrices,
-        parent: good.parent // Зберігаємо parent для визначення комплектів
-        ,
+        parent: good.parent,
         portionsPerBox: (good.packageRatio !== undefined && good.packageRatio !== null)
           ? parseInt(String(good.packageRatio))
           : undefined
@@ -464,7 +367,7 @@ export class DilovodDataProcessor {
   // Логування фінального результату
   private logFinalResult(products: DilovodProduct[]): void {
     // Группируем товары по типам
-    const sets = products.filter(p => this.config.setParentIds.includes(p.parent) && p.set && p.set.length > 0);
+    const sets = products.filter(p => (p.set?.length ?? 0) > 0);
     
     // Логування кількості знайдених комплектів
     if (sets.length > 0) {

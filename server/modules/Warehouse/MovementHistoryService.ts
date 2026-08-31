@@ -6,6 +6,7 @@ import { prisma } from '../../lib/utils.js';
 import { DilovodApiClient } from '../../services/dilovod/DilovodApiClient.js';
 import type { GoodMovingDocument, GoodMovingDocumentDetails, MovementHistoryResponse } from '../../../shared/types/movement.js';
 import type { GetMovementHistoryParams } from './WarehouseTypes.js';
+import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 
 export class MovementHistoryService {
   private static dilovodClient: DilovodApiClient | null = null;
@@ -227,13 +228,9 @@ export class MovementHistoryService {
       // Збираємо Dilovod ID товарів для маппінгу good → sku через таблицю products
       const dilovodIds = goods.map((g: any) => g.good).filter(Boolean);
       const productRows = dilovodIds.length > 0
-        ? await prisma.product.findMany({
-            where: { dilovodId: { in: dilovodIds } },
-            select: { dilovodId: true, sku: true },
-          })
+        ? catalogOpsLookup.listUnique(await catalogOpsLookup.getByDilovodIds(dilovodIds))
         : [];
 
-      // Мапа: dilovodId → sku
       const dilovodIdToSku = new Map<string, string>(
         productRows.map((p) => [p.dilovodId, p.sku]),
       );

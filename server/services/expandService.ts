@@ -1,4 +1,6 @@
-import { prisma, logServer } from '../lib/utils.js';
+import { logServer } from '../lib/utils.js';
+import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
+import { productOpsCache, type OpsCachedProduct } from '../modules/Products/ProductOpsCache.js';
 
 export class ExpandService {
   /**
@@ -16,60 +18,68 @@ export class ExpandService {
     const notFound: string[] = [];
 
     try {
-      // Normalize initial SKUs
       const initial = Array.from(new Set(skus.map(s => String(s).trim().toLowerCase()))).filter(Boolean);
 
-      // We'll iteratively fetch discovered SKUs (BFS style) so we return the full closure
+      const snap = await productOpsCache.getMap();
+
       const toFetch = new Set(initial);
       const fetched = new Set<string>();
 
-      // Limit chunk size to avoid huge DB IN lists
       const CHUNK_SIZE = 200;
       while (toFetch.size > 0) {
         const batch = Array.from(toFetch).filter(s => !fetched.has(s)).slice(0, CHUNK_SIZE);
         if (batch.length === 0) break;
 
-        // Fetch existing products for this batch
-        const products = await prisma.product.findMany({ where: { sku: { in: batch } } });
-
-        // Mark found
-        for (const p of products) {
-          const key = String(p.sku).trim().toLowerCase();
-          // parse some JSON fields safely
-          const parsed = {
-            ...p,
-            set: p.set ? (() => { try { return typeof p.set === 'string' ? JSON.parse(p.set) : p.set; } catch { return null; } })() : null,
-            additionalPrices: (p as any).additionalPrices ? (() => { try { return typeof (p as any).additionalPrices === 'string' ? JSON.parse((p as any).additionalPrices) : (p as any).additionalPrices; } catch { return null; } })() : null,
-            stockBalanceByStock: (p as any).stockBalanceByStock ? (() => { try { return typeof (p as any).stockBalanceByStock === 'string' ? JSON.parse((p as any).stockBalanceByStock) : (p as any).stockBalanceByStock; } catch { return null; } })() : null
-          };
-          result[key] = parsed;
-          fetched.add(key);
-
-          // Enqueue nested SKUs from set composition
-          if (parsed.set && Array.isArray(parsed.set)) {
-            for (const s of parsed.set) {
-              if (s && s.id) {
+        const putParsed = (parsed: OpsCachedProduct, requestKey: string) => {
+          const copy = { ...parsed };
+          const skuKey = String(copy.sku ?? requestKey).trim().toLowerCase();
+          result[skuKey] = copy;
+          result[requestKey] = copy;
+          fetched.add(skuKey);
+          fetched.add(requestKey);
+          const dilovodId = copy.dilovodId ? String(copy.dilovodId).trim().toLowerCase() : '';
+          if (dilovodId) {
+            result[dilovodId] = copy;
+            fetched.add(dilovodId);
+          }
+          const set = copy.set;
+          if (Array.isArray(set)) {
+            for (const s of set as Array<{ id?: string }>) {
+              if (s?.id) {
                 const child = String(s.id).trim().toLowerCase();
                 if (!fetched.has(child)) toFetch.add(child);
               }
             }
           }
+        };
+
+        const missingAfterCache: string[] = [];
+        for (const sku of batch) {
+          const row = snap.get(sku);
+          if (!row) {
+            missingAfterCache.push(sku);
+            continue;
+          }
+          putParsed(row, sku);
         }
 
-        // Any batch items not returned by DB are missing
-        for (const sku of batch) {
-          if (!result[sku]) {
-            result[sku] = null;
-            notFound.push(sku);
-            fetched.add(sku); // considered processed
+        if (missingAfterCache.length > 0) {
+          const found = await catalogOpsLookup.getBySkus(missingAfterCache);
+          for (const sku of missingAfterCache) {
+            const p = found.get(sku) ?? found.get(sku.toLowerCase()) ?? null;
+            if (!p) {
+              result[sku] = null;
+              notFound.push(sku);
+              fetched.add(sku);
+              continue;
+            }
+            putParsed(catalogOpsLookup.toApiShape(p) as OpsCachedProduct, sku);
           }
         }
 
-        // Remove processed from toFetch
         for (const k of batch) toFetch.delete(k);
       }
 
-      // Now compute aggregates for each found product (sumPortionsOne, weightKgOne)
       const calcCache = new Map<string, { sumPortionsOne: number; weightKgOne: number }>();
       const MAX_DEPTH = 10;
 
@@ -83,7 +93,6 @@ export class ExpandService {
           { min: 0, value: 0.25 }
         ];
         if (!weightGrams || typeof weightGrams !== 'number') return 1;
-        // Normalize: if weight looks like kilograms (e.g. 0.42 or <= 10), convert to grams
         let grams = weightGrams;
         if (grams > 0 && grams <= 10) grams = grams * 1000;
         for (const g of GRADATIONS) if (grams >= g.min) return g.value;
@@ -129,31 +138,30 @@ export class ExpandService {
             return res;
           }
 
-          // Simple product
           const unitRatio = (typeof prod.unitRatio === 'number') ? prod.unitRatio : deriveUnitRatioFromWeight(prod.weight);
           const weightKgOne = calculateExpectedWeight(prod, 1);
           const simple = { sumPortionsOne: unitRatio || 1, weightKgOne };
           calcCache.set(sku, simple);
           visited.delete(sku);
           return simple;
-        } catch (err) {
+        } catch {
           visited.delete(sku);
           return { sumPortionsOne: 1, weightKgOne: 0 };
         }
       };
 
-      // compute for all keys present in result (excluding nulls)
       const keys = Object.keys(result);
       for (const k of keys) {
         if (result[k]) {
           const calc = await computeAggregates(k);
-          // attach calc to product payload
           result[k].calc = calc;
         }
       }
 
       const durationMs = Date.now() - start;
-      const foundCount = Object.values(result).filter(v => v).length;
+      const foundCount = new Set(
+        Object.values(result).filter(Boolean).map((p) => String(p.sku).trim().toLowerCase())
+      ).size;
 
       logServer(`✅ ExpandService.flattenBatch: requested=${skus.length}, closure=${Object.keys(result).length}, found=${foundCount}, missing=${notFound.length}, time=${durationMs}ms`);
 

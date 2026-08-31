@@ -5,16 +5,38 @@ import { DilovodService } from '../services/dilovod/index.js';
 import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 import { salesDriveService } from '../services/salesDriveService.js';
 import { buildExportPayload } from '../services/productExportHelper.js';
+import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
+import { productOpsCache } from '../modules/Products/ProductOpsCache.js';
 import { productsCatalogService } from '../modules/Products/ProductsCatalogService.js';
 import { cronService } from '../services/cronService.js';
 
 const router = express.Router();
 
-const productsSkuWhitelist = requirePermission('products', 'skuWhitelist', 'SKU whitelist (DEPRECATED)');
-const productsSetParentIdsWrite = requirePermission('products', 'setParentIds.write', 'Зміна parent IDs комплектів (DEPRECATED)');
 const productsEdit = requirePermission('products', 'edit', 'Редагувати товари (вага, штрихкод, порядок)');
 const productsSync = requirePermission('products', 'sync', 'Синхронізувати товари');
 const productsSyncExport = requirePermission('products', 'syncExport', 'Синхронізація + експорт товарів');
+
+async function resolveCatalogGoodId(id: string): Promise<string | null> {
+  const numeric = parseInt(id, 10);
+  if (!Number.isNaN(numeric) && String(numeric) === String(id).trim()) {
+    const cache = await prisma.product.findUnique({
+      where: { id: numeric },
+      select: { sku: true, dilovodId: true },
+    });
+    if (cache?.dilovodId) return cache.dilovodId;
+    if (cache?.sku) {
+      const ops = await catalogOpsLookup.getBySku(cache.sku);
+      return ops?.dilovodId ?? null;
+    }
+  }
+  const byId = await prisma.catalogGood.findUnique({
+    where: { id: String(id).trim() },
+    select: { id: true, isGroup: true },
+  });
+  if (byId && !byId.isGroup) return byId.id;
+  const bySku = await catalogOpsLookup.getBySku(id);
+  return bySku?.dilovodId ?? null;
+}
 
 // Отримати всі товари з пагінацією
 // GET /api/products
@@ -26,125 +48,19 @@ router.get('/', authenticateToken, async (req, res) => {
     const category = req.query.category as string;
 
     const skip = (page - 1) * limit;
-
-    const where: any = {};
-
-    if (search) {
-      where.OR = [
-        { name: { contains: search } },
-        { sku: { contains: search } }
-      ];
-    }
-
-    if (category) {
-      // Support comma-separated values. Accept numeric categoryId values and/or names.
-      const parts = category.split(',').map(s => s.trim()).filter(Boolean);
-      const numericIds = parts.map(p => parseInt(p, 10)).filter(n => !isNaN(n));
-      const nonNumeric = parts.filter(p => isNaN(parseInt(p, 10)));
-
-      if (numericIds.length > 0 && nonNumeric.length > 0) {
-        // Mixed: match either by ID or by name
-        where.OR = [
-          { categoryId: { in: numericIds } },
-          { categoryName: { in: nonNumeric } }
-        ];
-      } else if (numericIds.length > 0) {
-        where.categoryId = { in: numericIds };
-      } else if (nonNumeric.length > 0) {
-        where.categoryName = { in: nonNumeric };
-      }
-    }
-
-    // By default exclude outdated products unless client explicitly requests to show them
-    if (req.query.showOutdated !== 'true') {
-      where.isOutdated = false;
-    }
-
     const sortBy = (req.query.sortBy as string) || 'lastSyncAt';
     const sortOrder = (req.query.sortOrder as string) === 'asc' ? 'asc' : 'desc';
 
-    const orderBy: any = {};
-    if (['lastSyncAt', 'name', 'categoryName', 'weight', 'manualOrder', 'unitRatio'].includes(sortBy)) {
-      orderBy[sortBy] = sortOrder;
-    } else {
-      orderBy['lastSyncAt'] = 'desc';
-    }
-
-    const [products, total] = await Promise.all([
-      prisma.product.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy
-      }),
-      prisma.product.count({ where })
-    ]);
-
-    // Парсим JSON поля для всех продуктов с обработкой ошибок
-    const parsedProducts = products.map(product => ({
-      ...product,
-      set: product.set ? (() => {
-        try {
-          return JSON.parse(product.set);
-        } catch (e) {
-          console.warn(`Failed to parse set for product ${product.sku}:`, e);
-          return null;
-        }
-      })() : null,
-      additionalPrices: product.additionalPrices ? (() => {
-        try {
-          return JSON.parse(product.additionalPrices);
-        } catch (e) {
-          console.warn(`Failed to parse additionalPrices for product ${product.sku}:`, e);
-          return null;
-        }
-      })() : null,
-      stockBalanceByStock: product.stockBalanceByStock ? (() => {
-        try {
-          return JSON.parse(product.stockBalanceByStock);
-        } catch (e) {
-          console.warn(`Failed to parse stockBalanceByStock for product ${product.sku}:`, e);
-          return null;
-        }
-      })() : null
-    }));
-
-    // Enrich set items with component names when available in DB to avoid client-side race
-    try {
-      const allSetSkus = new Set<string>();
-      for (const p of parsedProducts) {
-        const s = p.set;
-        if (Array.isArray(s)) {
-          for (const it of s) {
-            const id = it?.id ?? it?.sku;
-            if (id) allSetSkus.add(String(id).trim().toLowerCase());
-          }
-        }
-      }
-
-      if (allSetSkus.size > 0) {
-        const skusArray = Array.from(allSetSkus);
-        const components = await prisma.product.findMany({ where: { sku: { in: skusArray } }, select: { sku: true, name: true } });
-        const nameBySku: Record<string, string> = {};
-        for (const c of components) {
-          if (c && c.sku) nameBySku[String(c.sku).trim().toLowerCase()] = c.name || '';
-        }
-
-        for (const p of parsedProducts) {
-          const s = p.set;
-          if (Array.isArray(s)) {
-            for (const it of s) {
-              const id = String(it?.id ?? it?.sku).trim().toLowerCase();
-              if (!it.name && nameBySku[id]) {
-                it.name = nameBySku[id];
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to enrich set items with names:', e);
-    }
+    const { products, total } = await catalogOpsLookup.search({
+      search,
+      category,
+      showOutdated: req.query.showOutdated === 'true',
+      skip,
+      take: limit,
+      sortBy,
+      sortOrder,
+    });
+    const parsedProducts = products.map((p) => catalogOpsLookup.toApiShape(p));
 
     res.json({
       products: parsedProducts,
@@ -172,74 +88,28 @@ router.get('/batch', authenticateToken, async (req, res) => {
 
     if (skus.length === 0) return res.status(400).json({ error: 'skus query parameter required' });
 
-    // Build select projection based on requested fields, always include sku
-    const select: any = { sku: true };
-    for (const f of requestedFields) {
-      if (['costPerItem', 'additionalPrices', 'set', 'name', 'id', 'weight', 'portionsPerBox'].includes(f)) {
-        select[f] = true;
+    const found = await catalogOpsLookup.getBySkus(skus);
+    const parsed: any[] = [];
+    for (const sku of skus) {
+      const p = found.get(sku) ?? found.get(sku.toLowerCase());
+      if (!p) continue;
+      const shape = catalogOpsLookup.toApiShape(p);
+      if (requestedFields.length === 0) {
+        parsed.push(shape);
+        continue;
       }
-    }
-    // If client requests computed set details, ensure we fetch raw `set` from DB
-    if (requestedFields.includes('setItems') || requestedFields.includes('expandedPortions')) {
-      select['set'] = true;
-    }
-
-    const products = await prisma.product.findMany({
-      where: { sku: { in: skus } },
-      select
-    });
-
-    // Parse JSON fields if present
-    const parsed: any = products.map(p => ({
-      ...p,
-      additionalPrices: (p as any).additionalPrices ? (() => {
-        try { return JSON.parse((p as any).additionalPrices); } catch { return null; }
-      })() : null,
-      set: (p as any).set ? (() => {
-        try { return JSON.parse((p as any).set); } catch { return null; }
-      })() : null,
-    }));
-
-      // Enrich set items with component names when available in DB
-      try {
-        const allSetSkus = new Set<string>();
-        for (const p of parsed) {
-          const s = (p as any).set;
-          if (Array.isArray(s)) {
-            for (const it of s) {
-              const id = it?.id ?? it?.sku;
-              if (id) allSetSkus.add(String(id).trim().toLowerCase());
-            }
-          }
-        }
-
-        if (allSetSkus.size > 0) {
-          const skusArray = Array.from(allSetSkus);
-          const components = await prisma.product.findMany({ where: { sku: { in: skusArray } }, select: { sku: true, name: true } });
-          const nameBySku: Record<string, string> = {};
-          for (const c of components) {
-            if (c && c.sku) nameBySku[String(c.sku).trim().toLowerCase()] = c.name || '';
-          }
-
-          for (const p of parsed) {
-            const s = (p as any).set;
-            if (Array.isArray(s)) {
-              for (const it of s) {
-                const id = String(it?.id ?? it?.sku).trim().toLowerCase();
-                if (!it.name && nameBySku[id]) {
-                  it.name = nameBySku[id];
-                }
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to enrich batch set items with names:', e);
+      const row: Record<string, unknown> = { sku: p.sku };
+      for (const f of requestedFields) {
+        if (f === 'setItems' || f === 'expandedPortions') continue;
+        if (f in shape) row[f] = (shape as Record<string, unknown>)[f];
       }
+      if (requestedFields.includes('setItems') || requestedFields.includes('expandedPortions') || requestedFields.includes('set')) {
+        row.set = shape.set;
+      }
+      parsed.push(row);
+    }
 
-    // Optionally compute expanded set details if requested via `fields` parameter
     try {
-      const requestedFields = fieldsParam.split(',').map(s => s.trim()).filter(Boolean);
       const wantExpanded = requestedFields.includes('expandedPortions');
       const wantSetItems = requestedFields.includes('setItems');
 
@@ -311,123 +181,6 @@ router.get('/dilovod/:sku', authenticateToken, async (req, res) => {
   }
 });
 
-// Отримати SKU whitelist (settings_wp_sku)
-// GET /api/products/sku-whitelist
-router.get('/sku-whitelist', authenticateToken, productsSkuWhitelist, async (req, res) => {
-  try {
-    const record = await prisma.settingsWpSku.findFirst();
-    if (!record) {
-      return res.json({ skus: '', totalCount: 0, lastUpdated: null });
-    }
-
-    res.json({ skus: record.skus || '', totalCount: record.totalCount || 0, lastUpdated: record.lastUpdated });
-  } catch (error) {
-    console.log('Error fetching SKU whitelist:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Оновити SKU whitelist
-// PUT /api/products/sku-whitelist
-router.put('/sku-whitelist', authenticateToken, productsSkuWhitelist, async (req, res) => {
-  try {
-    const { skus } = req.body;
-    if (typeof skus !== 'string') {
-      return res.status(400).json({ error: 'skus must be a string' });
-    }
-
-    // Очищаємо список і підраховуємо
-    const parsed = skus.split(/[\s,]+/).map((s: string) => s.trim()).filter((s: string) => s.length > 0);
-    const totalCount = parsed.length;
-
-    const existing = await prisma.settingsWpSku.findFirst();
-    if (existing) {
-      await prisma.settingsWpSku.update({
-        where: { id: existing.id },
-        data: { skus: parsed.join(', '), totalCount, lastUpdated: new Date() }
-      });
-    } else {
-      await prisma.settingsWpSku.create({
-        data: { skus: parsed.join(', '), totalCount, lastUpdated: new Date() }
-      });
-    }
-
-    res.json({ success: true, totalCount });
-  } catch (error) {
-    console.log('Error updating SKU whitelist:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Отримати масив ID груп комплектів (dilovod_set_parent_ids)
-// GET /api/products/set-parent-ids
-router.get('/set-parent-ids', authenticateToken, async (req, res) => {
-  try {
-    // Спочатку читаємо новий ключ (масив), потім — старий (один рядок) для backward-compatibility
-    const newRecord = await prisma.settingsBase.findFirst({
-      where: { key: 'dilovod_set_parent_ids', isActive: true }
-    });
-
-    if (newRecord) {
-      try {
-        const ids = JSON.parse(newRecord.value) as string[];
-        return res.json({ ids });
-      } catch {
-        // Ignore parse error and fall through
-      }
-    }
-
-    const oldRecord = await prisma.settingsBase.findFirst({
-      where: { key: 'dilovod_set_parent_id', isActive: true }
-    });
-
-    if (oldRecord?.value) {
-      return res.json({ ids: [oldRecord.value] });
-    }
-
-    // Значення за замовчуванням
-    res.json({ ids: ['1100300000001315'] });
-  } catch (error) {
-    console.log('Error fetching set-parent-ids:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Оновити масив ID груп комплектів (dilovod_set_parent_ids)
-// PUT /api/products/set-parent-ids
-router.put('/set-parent-ids', authenticateToken, productsSetParentIdsWrite, async (req, res) => {
-  try {
-    const { ids } = req.body;
-    if (!Array.isArray(ids) || ids.some((id: any) => typeof id !== 'string')) {
-      return res.status(400).json({ error: 'ids must be an array of strings' });
-    }
-
-    const cleaned = ids.map((id: string) => id.trim()).filter((id: string) => id.length > 0);
-
-    await prisma.settingsBase.upsert({
-      where: { key: 'dilovod_set_parent_ids' },
-      update: { value: JSON.stringify(cleaned), isActive: true },
-      create: {
-        key: 'dilovod_set_parent_ids',
-        value: JSON.stringify(cleaned),
-        description: 'Масив ID батьківських груп комплектів у Dilovod',
-        category: 'dilovod',
-        isActive: true
-      }
-    });
-
-    // Очищаємо кеш конфігурації Dilovod, щоб зміни підхопились одразу
-    const { clearConfigCache } = await import('../services/dilovod/DilovodUtils.js');
-    clearConfigCache();
-
-    console.log(`✅ dilovod_set_parent_ids оновлено: ${JSON.stringify(cleaned)}`);
-    res.json({ success: true, ids: cleaned });
-  } catch (error) {
-    console.log('Error updating set-parent-ids:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 /**
  * Рекурсивно розгортає комплект на кінцеві товари
  * @param expandedComponents - Об'єкт для накопичення розгорнутих компонентів
@@ -469,9 +222,7 @@ async function expandProductSetRecursively(
       if (!setItem.id || !setItem.quantity) continue;
 
       // Знаходимо компонент в БД
-      const component = await prisma.product.findUnique({
-        where: { sku: setItem.id }
-      });
+      const component = await catalogOpsLookup.getBySku(setItem.id);
 
       if (!component) {
         console.warn(`⚠️ Компонент не знайдено: ${setItem.id}`);
@@ -578,27 +329,7 @@ router.route('/export-to-salesdrive')
 // GET /api/products/categories-mapping
 router.get('/categories-mapping', authenticateToken, async (req, res) => {
   try {
-    // Отримуємо унікальні пари categoryName -> categoryId
-    const categoryMappings = await prisma.product.findMany({
-      where: {
-        categoryName: { not: null },
-        categoryId: { not: null }
-      },
-      select: {
-        categoryName: true,
-        categoryId: true
-      },
-      distinct: ['categoryName', 'categoryId']
-    });
-
-    // Групуємо по categoryName, вибираємо перший categoryId (якщо є кілька)
-    const mapping: { [name: string]: number } = {};
-    categoryMappings.forEach(item => {
-      if (item.categoryName && item.categoryId && !mapping[item.categoryName]) {
-        mapping[item.categoryName] = item.categoryId;
-      }
-    });
-
+    const mapping = await catalogOpsLookup.getCategoryMapping();
     res.json({ mapping });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
@@ -610,44 +341,17 @@ router.get('/categories-mapping', authenticateToken, async (req, res) => {
 router.get('/:sku', authenticateToken, async (req, res) => {
   try {
     const { sku } = req.params;
-    const product = await prisma.product.findUnique({
-      where: { sku }
-    });
+    const cached = await productOpsCache.get(sku);
+    if (cached) {
+      return res.json(cached);
+    }
+    const product = await catalogOpsLookup.getBySku(sku);
 
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    // Парсим JSON поля с обработкой ошибок
-    const parsedProduct = {
-      ...product,
-      set: product.set ? (() => {
-        try {
-          return JSON.parse(product.set);
-        } catch (e) {
-          console.warn(`Failed to parse set for product ${sku}:`, e);
-          return null;
-        }
-      })() : null,
-      additionalPrices: product.additionalPrices ? (() => {
-        try {
-          return JSON.parse(product.additionalPrices);
-        } catch (e) {
-          console.warn(`Failed to parse additionalPrices for product ${sku}:`, e);
-          return null;
-        }
-      })() : null,
-      stockBalanceByStock: product.stockBalanceByStock ? (() => {
-        try {
-          return JSON.parse(product.stockBalanceByStock);
-        } catch (e) {
-          console.warn(`Failed to parse stockBalanceByStock for product ${sku}:`, e);
-          return null;
-        }
-      })() : null
-    };
-
-    res.json(parsedProduct);
+    res.json(catalogOpsLookup.toApiShape(product));
   } catch (error) {
     console.log('Error fetching product:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -666,26 +370,20 @@ router.put('/:id/weight', authenticateToken, productsEdit, async (req, res) => {
       return res.status(400).json({ error: 'Weight must be a non-negative number' });
     }
 
-    const productId = parseInt(id);
-
-    // Проверяем, существует ли товар
-    const existingProduct = await prisma.product.findUnique({
-      where: { id: productId }
-    });
-
-    if (!existingProduct) {
+    const goodId = await resolveCatalogGoodId(id);
+    if (!goodId) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    // Обновляем вес товара
-    const updatedProduct = await prisma.product.update({
-      where: { id: productId },
-      data: { weight: weight }
+    await prisma.catalogGood.update({
+      where: { id: goodId },
+      data: { weight: weight / 1000 },
     });
-
+    await catalogOpsLookup.projectGood(goodId);
+    const product = await catalogOpsLookup.getByDilovodIds([goodId]);
     res.json({
       success: true,
-      product: updatedProduct
+      product: catalogOpsLookup.toApiShape([...product.values()][0]),
     });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
@@ -703,18 +401,18 @@ router.put('/:id/manual-order', authenticateToken, productsEdit, async (req, res
       return res.status(400).json({ error: 'manualOrder must be a non-negative number' });
     }
 
-    const productId = parseInt(id);
-    const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
-    if (!existingProduct) {
+    const goodId = await resolveCatalogGoodId(id);
+    if (!goodId) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const updatedProduct = await prisma.product.update({
-      where: { id: productId },
-      data: ({ manualOrder } as any)
+    await prisma.catalogGood.update({
+      where: { id: goodId },
+      data: { sortOrder: manualOrder },
     });
-
-    res.json({ success: true, product: updatedProduct });
+    await catalogOpsLookup.projectGood(goodId);
+    const product = [...(await catalogOpsLookup.getByDilovodIds([goodId])).values()][0];
+    res.json({ success: true, product: product ? catalogOpsLookup.toApiShape(product) : null });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -731,18 +429,18 @@ router.put('/:id/unit-ratio', authenticateToken, productsEdit, async (req, res) 
       return res.status(400).json({ error: 'unitRatio must be a positive number' });
     }
 
-    const productId = parseInt(id);
-    const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
-    if (!existingProduct) {
+    const goodId = await resolveCatalogGoodId(id);
+    if (!goodId) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const updatedProduct = await prisma.product.update({
-      where: { id: productId },
-      data: { unitRatio }
+    await prisma.catalogGood.update({
+      where: { id: goodId },
+      data: { unitRatio },
     });
-
-    res.json({ success: true, product: updatedProduct });
+    await catalogOpsLookup.projectGood(goodId);
+    const product = [...(await catalogOpsLookup.getByDilovodIds([goodId])).values()][0];
+    res.json({ success: true, product: product ? catalogOpsLookup.toApiShape(product) : null });
   } catch (error) {
     console.log('Error updating unitRatio:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -760,18 +458,28 @@ router.put('/:id/barcode', authenticateToken, productsEdit, async (req, res) => 
       return res.status(400).json({ error: 'barcode must be a string' });
     }
 
-    const productId = parseInt(id);
-    const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
-    if (!existingProduct) {
+    const goodId = await resolveCatalogGoodId(id);
+    if (!goodId) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const updatedProduct = await prisma.product.update({
-      where: { id: productId },
-      data: ({ barcode } as any)
+    const code = barcode.trim();
+    const existing = await prisma.catalogGoodBarcode.findFirst({
+      where: { goodId, goodPart: '' },
     });
-
-    res.json({ success: true, product: updatedProduct });
+    if (existing) {
+      await prisma.catalogGoodBarcode.update({
+        where: { id: existing.id },
+        data: { code, activity: true },
+      });
+    } else if (code) {
+      await prisma.catalogGoodBarcode.create({
+        data: { goodId, code, goodPart: '', activity: true },
+      });
+    }
+    await catalogOpsLookup.projectGood(goodId);
+    const product = [...(await catalogOpsLookup.getByDilovodIds([goodId])).values()][0];
+    res.json({ success: true, product: product ? catalogOpsLookup.toApiShape(product) : null });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -789,19 +497,19 @@ router.put('/:id/portions-per-box', authenticateToken, productsEdit, async (req,
       return res.status(400).json({ error: 'portionsPerBox must be a positive integer' });
     }
 
-    const productId = parseInt(id);
-    const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
-    if (!existingProduct) {
+    const goodId = await resolveCatalogGoodId(id);
+    if (!goodId) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const updatedProduct = await prisma.product.update({
-      where: { id: productId },
-      data: { portionsPerBox: value }
+    await prisma.catalogGood.update({
+      where: { id: goodId },
+      data: { packageRatio: value },
     });
-
-    console.log(`✅ [Products] portionsPerBox updated for product ${existingProduct.sku}: ${existingProduct.portionsPerBox} → ${value}`);
-    res.json({ success: true, product: updatedProduct });
+    await catalogOpsLookup.projectGood(goodId);
+    const product = [...(await catalogOpsLookup.getByDilovodIds([goodId])).values()][0];
+    console.log(`✅ [Products] portionsPerBox updated for ${product?.sku}: ${value}`);
+    res.json({ success: true, product: product ? catalogOpsLookup.toApiShape(product) : null });
   } catch (error) {
     console.log('Error updating portionsPerBox:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1100,72 +808,20 @@ router.post('/trigger-wp-sync', authenticateToken, productsSync, async (req, res
 // GET /api/products/stats/summary
 router.get('/stats/summary', authenticateToken, async (req, res) => {
   try {
-    const [
-      totalProducts,
-      outdatedProducts,
-      totalSets,
-      outdatedSets,
-      totalDishes,
-      outdatedDishes,
-      categoriesCount,
-      activeCategoriesCount,
-      lastSync
-    ] = await Promise.all([
-      // Всього товарів
-      prisma.product.count(),
-      // Застарілих товарів
-      prisma.product.count({ where: { isOutdated: true } }),
-      // Всього комплектів (set != null)
-      prisma.product.count({ where: { set: { not: null } } }),
-      // Застарілих комплектів
-      prisma.product.count({ where: { set: { not: null }, isOutdated: true } }),
-      // Всього страв (окремих, не-комплектних товарів: set == null)
-      prisma.product.count({ where: { set: null } }),
-      // Застарілих страв
-      prisma.product.count({ where: { set: null, isOutdated: true } }),
-      // Всі товари по категоріях
-      prisma.product.groupBy({
-        by: ['categoryName'],
-        _count: { categoryName: true }
-      }),
-      // Активні товари по категоріях
-      prisma.product.groupBy({
-        by: ['categoryName'],
-        where: { isOutdated: false },
-        _count: { categoryName: true }
-      }),
-      prisma.product.findFirst({
-        orderBy: { lastSyncAt: 'desc' },
-        select: { lastSyncAt: true }
-      })
-    ]);
-
-    // Будуємо map активних товарів по категорії
-    const activeCountMap = new Map(
-      activeCategoriesCount.map(c => [c.categoryName, c._count.categoryName])
-    );
-
-    const categoriesWithActive = categoriesCount.map(c => ({
-      name: c.categoryName || 'Без категорії',
-      count: c._count.categoryName,
-      activeCount: activeCountMap.get(c.categoryName) ?? 0
-    }));
-
-    const activeCategoriesTotal = categoriesWithActive.filter(c => c.activeCount > 0).length;
-
+    const stats = await catalogOpsLookup.getStats();
     res.json({
-      totalProducts,
-      activeProducts: totalProducts - outdatedProducts,
-      outdatedProducts,
-      totalSets,
-      activeSets: totalSets - outdatedSets,
-      outdatedSets,
-      totalDishes,
-      activeDishes: totalDishes - outdatedDishes,
-      outdatedDishes,
-      categoriesCount: categoriesWithActive,
-      activeCategoriesCount: activeCategoriesTotal,
-      lastSync: lastSync?.lastSyncAt
+      totalProducts: stats.totalProducts,
+      activeProducts: stats.activeProducts,
+      outdatedProducts: stats.outdatedProducts,
+      totalSets: stats.totalSets,
+      activeSets: stats.totalSets - stats.outdatedSets,
+      outdatedSets: stats.outdatedSets,
+      totalDishes: stats.totalDishes,
+      activeDishes: stats.totalDishes - stats.outdatedDishes,
+      outdatedDishes: stats.outdatedDishes,
+      categoriesCount: stats.categoriesWithActive,
+      activeCategoriesCount: stats.activeCategoriesTotal,
+      lastSync: stats.lastSyncAt,
     });
   } catch (error) {
     console.log('Error fetching stats:', error);
@@ -1248,8 +904,10 @@ router.get('/stock/balance', authenticateToken, productsSync, async (req, res) =
 
     const dilovodService = new DilovodService();
 
+    const list = await catalogOpsLookup.listFinishedProducts({ includeOutdated: true });
+    const products = list.map((p) => catalogOpsLookup.toApiShape(p));
+
     if (shouldSync) {
-      // Синхронизируем товары с Dilovod
       const syncResult = await dilovodService.syncProductsWithDilovod();
 
       if (!syncResult.success) {
@@ -1259,19 +917,13 @@ router.get('/stock/balance', authenticateToken, productsSync, async (req, res) =
         });
       }
 
+      const after = await catalogOpsLookup.listFinishedProducts({ includeOutdated: true });
       res.json({
         message: 'Sync completed successfully',
         syncResult,
-        products: await prisma.product.findMany({
-          orderBy: { lastSyncAt: 'desc' }
-        })
+        products: after.map((p) => catalogOpsLookup.toApiShape(p)),
       });
     } else {
-      // Просто возвращаем товары из базы
-      const products = await prisma.product.findMany({
-        orderBy: { lastSyncAt: 'desc' }
-      });
-
       res.json({ products });
     }
   } catch (error) {

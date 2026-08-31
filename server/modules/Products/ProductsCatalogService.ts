@@ -8,6 +8,8 @@ import {
   CATALOG_ACC_POLICY_GOOD,
   CATALOG_ACC_POLICY_KIT,
   CATALOG_DEFAULT_MAIN_UNIT_ID,
+  CATALOG_FINISHED_PRODUCTS_FOLDER_ID,
+  CATALOG_MATERIALS_FOLDER_ID,
   CATALOG_TRASH_ID,
   CatalogCreateGoodInput,
   CatalogDictionariesDto,
@@ -51,12 +53,6 @@ function toMultilang(value: string | null | undefined): { uk: string; ru: string
 function normalizeParentId(parent: string | null | undefined): string | null {
   if (!parent || parent === '0' || parent === '') return null;
   return parent;
-}
-
-/** Вага в catalog — кг (float); у products — грами (Int). */
-function weightKgToGrams(weightKg: number | null | undefined): number | null {
-  if (weightKg == null || Number.isNaN(Number(weightKg))) return null;
-  return Math.round(Number(weightKg) * 1000);
 }
 
 function parseStockJson(
@@ -168,49 +164,9 @@ export class ProductsCatalogService {
    * Не чіпає set / dilovodDataHash.
    */
   async syncCatalogOpsFieldsToProducts(goodId: string): Promise<void> {
-    const good = await prisma.catalogGood.findUnique({
-      where: { id: goodId },
-      select: {
-        id: true,
-        sku: true,
-        isGroup: true,
-        unitRatio: true,
-        weight: true,
-        packageRatio: true,
-        sortOrder: true,
-        stockBalanceByStock: true,
-      },
-    });
-    if (!good || good.isGroup) return;
-
-    const data: {
-      unitRatio?: number;
-      weight?: number | null;
-      portionsPerBox?: number;
-      manualOrder?: number;
-      stockBalanceByStock?: string | null;
-    } = {};
-
-    if (good.unitRatio != null) data.unitRatio = good.unitRatio;
-    const grams = weightKgToGrams(good.weight);
-    if (grams != null) data.weight = grams;
-    if (good.packageRatio != null && !Number.isNaN(Number(good.packageRatio))) {
-      data.portionsPerBox = Math.max(1, Math.round(Number(good.packageRatio)));
-    }
-    if (good.sortOrder != null) data.manualOrder = good.sortOrder;
-    if (good.stockBalanceByStock != null) {
-      data.stockBalanceByStock = good.stockBalanceByStock;
-    }
-
-    if (Object.keys(data).length === 0) return;
-
-    const where =
-      good.sku != null && good.sku.trim()
-        ? { OR: [{ dilovodId: good.id }, { sku: good.sku }] }
-        : { dilovodId: good.id };
-
     try {
-      await prisma.product.updateMany({ where, data });
+      const { catalogOpsLookup } = await import('./CatalogOpsLookup.js');
+      await catalogOpsLookup.projectGood(goodId);
     } catch (err) {
       logServer('[ProductsCatalogService] syncCatalogOpsFieldsToProducts failed', {
         goodId,
@@ -379,6 +335,170 @@ export class ProductsCatalogService {
       select: { sku: true, parentId: true },
     });
     return await this.splitSkusByArchiveParent(rows);
+  }
+
+  /**
+   * SKU для legacy `products` sync: піддерево «Готова продукція».
+   * Якщо папку не знайдено — порожні списки (без throw).
+   */
+  async listSkusForLegacySync(): Promise<{
+    activeSkus: string[];
+    archivedSkus: string[];
+  }> {
+    return this.listSkusInFolderSubtree(CATALOG_FINISHED_PRODUCTS_FOLDER_ID);
+  }
+
+  /**
+   * Листкові товари папки (рекурсивно) для інвентаризації.
+   * Архівні батьки → isOutdated; категорія = назва батьківської папки.
+   */
+  private async listInventoryLeafGoods(folderId: string): Promise<Array<{
+    id: string;
+    sku: string;
+    name: string;
+    parentId: string | null;
+    categoryName: string | null;
+    isOutdated: boolean;
+    isKit: boolean;
+    packageRatio: number | null;
+    stockBalanceByStock: string | null;
+  }>> {
+    const parentIds = await this.resolveFolderSubtreeIds({ underFolderId: folderId });
+    if (parentIds.length === 0) {
+      logServer(`[ProductsCatalogService] listInventoryLeafGoods: папку ${folderId} не знайдено`);
+      return [];
+    }
+
+    const rows = await prisma.catalogGood.findMany({
+      where: {
+        isGroup: false,
+        parentId: { in: parentIds },
+        NOT: { sku: null },
+      },
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        parentId: true,
+        accPolicyId: true,
+        packageRatio: true,
+        stockBalanceByStock: true,
+        sortOrder: true,
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+
+    const uniqueParentIds = [
+      ...new Set(rows.map((row) => row.parentId).filter((id): id is string => Boolean(id))),
+    ];
+    const parents =
+      uniqueParentIds.length > 0
+        ? await prisma.catalogGood.findMany({
+            where: { id: { in: uniqueParentIds } },
+            select: { id: true, name: true, isGroup: true },
+          })
+        : [];
+    const parentById = new Map(parents.map((parent) => [parent.id, parent]));
+    const archiveParentIds = new Set(
+      parents
+        .filter((parent) => parent.isGroup && isArchiveFolderName(parent.name))
+        .map((parent) => parent.id)
+    );
+
+    return rows
+      .map((row) => {
+        const sku = row.sku?.trim();
+        if (!sku) return null;
+        const parent = row.parentId ? parentById.get(row.parentId) : undefined;
+        return {
+          id: row.id,
+          sku,
+          name: row.name,
+          parentId: row.parentId,
+          categoryName: parent?.name ?? null,
+          isOutdated: Boolean(row.parentId && archiveParentIds.has(row.parentId)),
+          isKit: isKitAccPolicy(row.accPolicyId),
+          packageRatio: row.packageRatio,
+          stockBalanceByStock: row.stockBalanceByStock,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null);
+  }
+
+  private mapInventoryItem(
+    row: {
+      id: string;
+      sku: string;
+      name: string;
+      categoryName: string | null;
+      isOutdated: boolean;
+      packageRatio: number | null;
+      stockBalanceByStock: string | null;
+    },
+    options?: { forcePcs?: boolean; componentsSnapshot?: Array<{ id: string; name?: string; quantity: number }> }
+  ) {
+    const stock = parseStockJson(row.stockBalanceByStock);
+    const portionsPerBox = options?.forcePcs
+      ? 1
+      : row.packageRatio != null && !Number.isNaN(Number(row.packageRatio))
+        ? Math.max(1, Math.round(Number(row.packageRatio)))
+        : 1;
+    return {
+      id: row.id,
+      sku: row.sku,
+      name: row.name,
+      categoryName: row.categoryName,
+      isOutdated: row.isOutdated,
+      systemBalance: stock.smallStock,
+      systemBalanceGp: stock.mainStock,
+      unit: (portionsPerBox > 1 ? 'portions' : 'pcs') as 'portions' | 'pcs',
+      portionsPerBox,
+      ...(options?.componentsSnapshot ? { componentsSnapshot: options.componentsSnapshot } : {}),
+    };
+  }
+
+  /** Матеріали: піддерево папки матеріалів. */
+  async listInventoryMaterials() {
+    const rows = await this.listInventoryLeafGoods(CATALOG_MATERIALS_FOLDER_ID);
+    return rows.map((row) => this.mapInventoryItem(row, { forcePcs: true }));
+  }
+
+  /** Порції (не комплекти) у «Готова продукція». */
+  async listInventoryProducts() {
+    const rows = await this.listInventoryLeafGoods(CATALOG_FINISHED_PRODUCTS_FOLDER_ID);
+    return rows.filter((row) => !row.isKit).map((row) => this.mapInventoryItem(row));
+  }
+
+  /** Комплекти (accPolicy kit) у «Готова продукція» + BOM з catalog_good_components. */
+  async listInventorySets() {
+    const rows = await this.listInventoryLeafGoods(CATALOG_FINISHED_PRODUCTS_FOLDER_ID);
+    const kits = rows.filter((row) => row.isKit);
+    if (kits.length === 0) return [];
+
+    const kitIds = kits.map((kit) => kit.id);
+    const components = await prisma.catalogGoodComponent.findMany({
+      where: { parentGoodId: { in: kitIds } },
+      orderBy: { rowNum: 'asc' },
+      include: { componentGood: { select: { sku: true, name: true } } },
+    });
+    const byKit = new Map<string, Array<{ id: string; name?: string; quantity: number }>>();
+    for (const kit of kits) {
+      byKit.set(kit.id, []);
+    }
+    for (const row of components) {
+      const sku = row.componentGood?.sku?.trim() || row.componentGoodId;
+      const list = byKit.get(row.parentGoodId) ?? [];
+      list.push({
+        id: sku,
+        name: row.componentGood?.name,
+        quantity: row.qty,
+      });
+      byKit.set(row.parentGoodId, list);
+    }
+
+    return kits.map((row) =>
+      this.mapInventoryItem(row, { componentsSnapshot: byKit.get(row.id) ?? [] })
+    );
   }
 
   /**
@@ -681,7 +801,6 @@ export class ProductsCatalogService {
 
     let stock: CatalogGoodDetailDto['stock'] = null;
     if (!row.isGroup) {
-      // Спочатку дзеркало на catalog_goods; fallback на products
       if (row.stockBalanceByStock) {
         const parsed = parseStockJson(row.stockBalanceByStock);
         stock = {
@@ -689,21 +808,6 @@ export class ProductsCatalogService {
           smallStock: parsed.smallStock,
           stockBalanceByStock: parsed.stockBalanceByStock,
         };
-      } else if (row.sku) {
-        const product = await prisma.product.findFirst({
-          where: { OR: [{ dilovodId: row.id }, { sku: row.sku }] },
-          select: { stockBalanceByStock: true },
-        });
-        if (product?.stockBalanceByStock) {
-          const parsed = parseStockJson(product.stockBalanceByStock);
-          stock = {
-            mainStock: parsed.mainStock,
-            smallStock: parsed.smallStock,
-            stockBalanceByStock: parsed.stockBalanceByStock,
-          };
-        } else {
-          stock = { mainStock: 0, smallStock: 0, stockBalanceByStock: null };
-        }
       } else {
         stock = { mainStock: 0, smallStock: 0, stockBalanceByStock: null };
       }

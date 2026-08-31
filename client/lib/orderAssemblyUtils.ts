@@ -1,5 +1,6 @@
 import { LoggingService } from '@/services/LoggingService';
 import type { OrderChecklistItem } from '../types/orderAssembly';
+import { getCachedProduct, seedCachedProducts, setCachedProduct, productCacheKey } from './productLookupCache';
 
 // Градації для визначення дефолтного `unitRatio` за вагою в грамах
 const GRADATIONS = [
@@ -33,6 +34,20 @@ export interface Product {
   manualOrder?: number; // Ручне сортування
   barcode?: string; // Штрих-код товару
   set: Array<{ id: string; name?: string; quantity: number }> | null;
+}
+
+function getProd(cache: Map<string, any> | undefined, sku: string): any | undefined {
+  if (!sku) return undefined;
+  const lower = productCacheKey(sku);
+  return cache?.get(`prod:${sku}`) ?? cache?.get(`prod:${lower}`) ?? getCachedProduct(sku);
+}
+
+function putProd(cache: Map<string, any> | undefined, sku: string, product: unknown): void {
+  if (!product) return;
+  const lower = productCacheKey(sku);
+  cache?.set(`prod:${sku}`, product);
+  cache?.set(`prod:${lower}`, product);
+  setCachedProduct(sku, product);
 }
 
 /**
@@ -85,7 +100,7 @@ const computeFlattenedComponent = async (
 
   try {
     // Try to use cached product payload if available (batch endpoint populates `prod:SKU` with server-side `calc`)
-    const cachedProd = cache?.get(`prod:${sku}`);
+    const cachedProd = getProd(cache, sku);
     let prod: Product & { unitRatio?: number } | undefined = undefined;
     if (cachedProd) {
       const instr = cache?.get('__orderAssemblyInstrumentation');
@@ -106,7 +121,7 @@ const computeFlattenedComponent = async (
         return { sumPortionsOne: 1, weightKgOne: 0 };
       }
       prod = await res.json();
-      cache?.set(`prod:${sku}`, prod);
+      putProd(cache, sku, prod);
       if (instr) {
         instr.cacheIndividualCachedCount = (instr.cacheIndividualCachedCount || 0) + 1;
         instr.cacheLastFillAt = new Date().toISOString();
@@ -181,14 +196,14 @@ const computeActualSetPortions = async (
   visitedSets.add(sku);
 
   try {
-    let product: Product | undefined = cache?.get(`prod:${sku}`);
+    let product: Product | undefined = getProd(cache, sku);
     if (!product) {
       const res = await apiCall(`/api/products/${sku}`);
       if (!res.ok) {
         return 1;
       }
       product = await res.json();
-      cache?.set(`prod:${sku}`, product);
+      putProd(cache, sku, product);
     }
 
     if (product.set && Array.isArray(product.set) && product.set.length > 0) {
@@ -271,7 +286,7 @@ const expandProductRecursively = async (
 
   try {
     // Try to reuse per-request cache populated by batchFetchProducts
-    let product: Product | undefined = cache?.get(`prod:${sku}`);
+    let product: Product | undefined = getProd(cache, sku);
     if (product) {
       const instr = cache?.get('__orderAssemblyInstrumentation');
       if (instr) instr.cacheHitProdCount = (instr.cacheHitProdCount || 0) + 1;
@@ -286,7 +301,7 @@ const expandProductRecursively = async (
       }
 
       product = await response.json();
-      cache?.set(`prod:${sku}`, product);
+      putProd(cache, sku, product);
     }
 
     // Перевіряємо, чи це комплект
@@ -337,7 +352,7 @@ const expandProductRecursively = async (
             let name = si.name;
             try {
               if (!name) {
-                const cachedComp = cache?.get(`prod:${si.id}`);
+                const cachedComp = getProd(cache, si.id);
                 if (cachedComp) {
                   name = cachedComp.name || name;
                 } else {
@@ -345,7 +360,7 @@ const expandProductRecursively = async (
                   if (componentResponse.ok) {
                     const componentData = await componentResponse.json();
                     name = componentData.name || `Товар ${si.id}`;
-                    cache?.set(`prod:${si.id}`, componentData);
+                    putProd(cache, si.id, componentData);
                   }
                 }
               }
@@ -687,20 +702,23 @@ export const expandProductSets = async (
           }
           for (const sku of Object.keys(productsObj || {})) {
             if (productsObj[sku]) {
-              perRequestCache.set(`prod:${sku}`, productsObj[sku]);
-                // increment aggregated counters instead of noisy per-SKU debug
+              putProd(perRequestCache, sku, productsObj[sku]);
                 instrumentation.cacheBatchCachedCount = (instrumentation.cacheBatchCachedCount || 0) + 1;
                 instrumentation.cacheLastFillAt = new Date().toISOString();
                 if (!instrumentation.cacheFirstFillAt) instrumentation.cacheFirstFillAt = instrumentation.cacheLastFillAt;
+              fetched.add(productCacheKey(sku));
               fetched.add(sku);
-              // enqueue inner components if present
               if (productsObj[sku].set && Array.isArray(productsObj[sku].set)) {
                 for (const s of productsObj[sku].set) {
-                  if (s && s.id && !perRequestCache.has(`prod:${s.id}`)) toFetch.add(s.id);
+                  if (!s?.id) continue;
+                  if (!getProd(perRequestCache, s.id)) {
+                    toFetch.add(s.id);
+                  }
                 }
               }
             }
           }
+          seedCachedProducts(productsObj);
           // remove processed
           skusBatch.forEach(s => toFetch.delete(s));
           continue;
@@ -718,14 +736,14 @@ export const expandProductSets = async (
           instrumentation.individualFetchCount++;
           if (r && r.ok) {
             const p = await r.json();
-            perRequestCache.set(`prod:${sku}`, p);
+            putProd(perRequestCache, sku, p);
             instrumentation.cacheIndividualCachedCount = (instrumentation.cacheIndividualCachedCount || 0) + 1;
             instrumentation.cacheLastFillAt = new Date().toISOString();
             if (!instrumentation.cacheFirstFillAt) instrumentation.cacheFirstFillAt = instrumentation.cacheLastFillAt;
             fetched.add(sku);
             if (p.set && Array.isArray(p.set)) {
               for (const s of p.set) {
-                if (s && s.id && !perRequestCache.has(`prod:${s.id}`)) toFetch.add(s.id);
+                if (s && s.id && !getProd(perRequestCache, s.id)) toFetch.add(s.id);
               }
             }
           }

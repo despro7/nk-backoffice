@@ -1,6 +1,6 @@
 # Products 2.0 — домен керування каталогом Dilovod
 
-**Дата:** 2026-07-30 (оновлено 2026-08-28)  
+**Дата:** 2026-07-30 (оновлено 2026-08-31)  
 **Маршрут:** `/products` (`minRole: WAREHOUSE_MANAGER`)  
 **API:** `/api/catalog/`*
 
@@ -84,11 +84,27 @@ server/modules/Products/
   ProductsLocalSync.ts        # catalog_* (+ preserve local ops; merge note)
   CatalogMediaService.ts      # зображення товару
   ProductsTypes.ts            # + isArchiveFolderName, extractUkName
+  CatalogOpsLookup.ts         # ops-форма legacy `products` з `catalog_*`
+  ProductOpsCache.ts          # in-memory знімок для комплектації (TTL 2 хв)
   skuUtils.ts                 # allocateNextSku + race-safe retry
   barcodeUtils.ts             # EAN-13 серія 22… + check digit + allocateNextEan13
 ```
 
 Підключення: `server/routes/catalog.ts` → `server/index.ts` (`/api/catalog`).
+
+### Операційний знімок для комплектації (`ProductOpsCache`)
+
+Гарячий шлях відкриття замовлення **не** ходить у `catalog_*` по кожному SKU.
+
+| Шар | Роль |
+| --- | --- |
+| `catalog_*` | SoT назв, BOM комплектів (`accPolicy` kit), залишків |
+| `products` | Тонке дзеркало (вага, SKU, dual-write) |
+| `ProductOpsCache` | Знімок у памʼяті на **120 с**: рядки `products` + `stockBalanceByStock` з `catalog_goods` + `set` лише для облікової політики «комплект» |
+
+Рецептура звичайного товару (`spec` / BOM страви) **не** є `set` і не розгортається в чек-листі. `POST /api/expand/flatten` і `GET /api/products/:sku` читають знімок. Інвалідація: `applyStockBalances`, `deductSmallStock`, `projectToProductsCache`.
+
+Деталі: `Docs/features/expand-flatten-calc.md`.
 
 ### API (мін. роль `WAREHOUSE_MANAGER`)
 

@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-08-31 — Комплектація: ops-кеш, комплекти з каталогу, динамічні набори
+**Files:** `server/modules/Products/{ProductOpsCache,CatalogOpsLookup}.ts`, `server/services/expandService.ts`, `server/routes/products.ts`, `client/lib/{orderAssemblyUtils,productLookupCache}.ts`, `client/components/OrderChecklistItem.tsx`, `Docs/features/expand-flatten-calc.md`, `Docs/features/products-catalog-2.0.md`, `Docs/features/order-assembly/dynamic-monolithic-order-payload.md`
+
+- `ProductOpsCache` (TTL 2 хв): знімок `products` + залишки `catalog_goods` + BOM лише для `accPolicy` комплект. `POST /api/expand/flatten` і `GET /api/products/:sku` читають знімок; інвалідація після стоку/проєкції.
+- `set` у комплектації = товарний набір, не рецептура страви. Динамічний моноліт дивиться на каталожний сток, не на порожнє дзеркало `products`.
+- Клієнтський `productLookupCache` (SKU + Dilovod id, lowercase) спільний для flatten і чек-листа — без N+1 GET на рядки.
+- Деталі: `Docs/features/expand-flatten-calc.md`.
+
+---
+
 ## 2026-08-31 — Мобільні переміщення: прийом, Dilovod, адмін-правка двох списків
 **Files:** `client/pages/Warehouse/WarehouseMovementMob/**`, `server/modules/Warehouse/{WarehouseController,WarehouseService,WarehousePayloadBuilder,WarehouseMovementExport}.ts`, `shared/constants/permissions.ts`, `shared/utils/dilovodBatchId.ts`, `prisma/schema.prisma`, `prisma/migrations/20260830120000_warehouse_movement_receipt_fields/`, `Docs/features/warehouse-movement-mob.md`, `Docs/features/warehouse-movement-dilovod-export.md`
 

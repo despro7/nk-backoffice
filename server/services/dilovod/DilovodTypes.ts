@@ -119,12 +119,6 @@ export interface DilovodPricesResponse {
   [key: string]: any;
 }
 
-export interface WordPressProduct {
-  sku: string;
-  stock_quantity: number;
-  [key: string]: any;
-}
-
 export interface DatabaseProduct {
   id: number;
   sku: string;
@@ -149,8 +143,6 @@ export interface DatabaseProduct {
 export interface DilovodConfig {
   apiUrl: string;
   apiKey: string;
-  /** Масив ID батьківських груп, що вважаються "комплектами" в Dilovod */
-  setParentIds: string[];
   mainPriceType: string;
   categoriesMap: { [key: string]: number };
   /** ID головного складу (склад готової продукції) */

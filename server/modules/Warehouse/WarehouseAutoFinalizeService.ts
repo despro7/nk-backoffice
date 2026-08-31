@@ -11,9 +11,9 @@
  *  4. Записує результат у meta_logs (category: 'warehouse_movement', status: 'success'/'error')
  */
 
-import { prisma } from '../../lib/utils.js';
+import { prisma, logServer } from '../../lib/utils.js';
 import { WarehousePayloadBuilder } from './WarehousePayloadBuilder.js';
-import { logServer } from '../../lib/utils.js';
+import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 
 const TAG = '[WarehouseAutoFinalize]';
 
@@ -74,10 +74,8 @@ export class WarehouseAutoFinalizeService {
 
         // Отримуємо dilovodId для кожного SKU з таблиці products
         const skuList = [...new Set(rawItems.map((i: any) => i.sku).filter(Boolean))] as string[];
-        const products = await prisma.product.findMany({
-          where: { sku: { in: skuList } },
-          select: { sku: true, dilovodId: true, portionsPerBox: true, name: true },
-        });
+        const found = await catalogOpsLookup.getBySkus(skuList);
+        const products = catalogOpsLookup.listUnique(found);
         const productMap = Object.fromEntries(products.map(p => [p.sku, p]));
 
         // Формуємо summaryItems у форматі PayloadMovementProduct

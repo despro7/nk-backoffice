@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { prisma } from '../../lib/utils.js';
 import { DilovodProduct, DilovodSyncResult } from './DilovodTypes.js';
 import { syncSettingsService } from '../syncSettingsService.js';
+import { catalogOpsLookup } from '../../modules/Products/CatalogOpsLookup.js';
 
 export class DilovodSyncManager {
   constructor() {
@@ -616,171 +617,28 @@ export class DilovodSyncManager {
     skipped: number;
     errors: string[];
   }> {
-    const CHUNK_SIZE = 25;
-    const errors: string[] = [];
-    let updated = 0;
-    let skipped = 0;
-
-    // 1. Один запит для отримання поточних залишків усіх товарів
-    const existingProducts = await prisma.product.findMany({
-      where: { sku: { in: items.map((i) => i.sku) } },
-      select: { sku: true, stockBalanceByStock: true }
-    });
-
-    const existingMap = new Map(
-      existingProducts.map((p) => {
-        // Парсимо JSON-рядок у об'єкт для порівняння
-        let parsed: Record<string, number> | null = null;
-        try {
-          parsed = p.stockBalanceByStock ? JSON.parse(p.stockBalanceByStock) : null;
-        } catch {
-          // Якщо рядок некоректний — вважаємо що треба оновити
-        }
-        return [p.sku, parsed];
-      })
-    );
-
-    // 2. Фільтруємо лише ті, де залишки дійсно змінилися
-    const itemsToUpdate = items.filter((item) => {
-      const existing = existingMap.get(item.sku);
-      // Якщо SKU не знайдено в БД — пропускаємо (update впаде з P2025)
-      if (existing === undefined) return false;
-
-      // Якщо в БД немає даних про залишки (null) — вважаємо, що потрібно оновити
-      if (existing === null) return true;
-
-      // Порівнюємо значення по складах. Якщо ключів немає — використовуємо 0 як дефолт.
-      const unchanged =
-        (existing["1"] ?? 0) === item.mainStorage &&
-        (existing["2"] ?? 0) === item.smallStorage;
-
-      if (unchanged) skipped++;
-      return !unchanged;
-    });
-
-    console.log(
-      `📦 Залишки: ${items.length} товарів → потребують оновлення: ${itemsToUpdate.length}, пропущено (без змін): ${skipped}`
-    );
-
-    if (itemsToUpdate.length === 0) {
-      return { success: true, updated: 0, skipped, errors: [] };
-    }
-
-    // 3. Оновлюємо чанками по CHUNK_SIZE
-    for (let i = 0; i < itemsToUpdate.length; i += CHUNK_SIZE) {
-      const chunk = itemsToUpdate.slice(i, i + CHUNK_SIZE);
-
-      try {
-        await prisma.$transaction(
-          chunk.map((item) =>
-            prisma.product.update({
-              where: { sku: item.sku },
-              data: {
-                stockBalanceByStock: JSON.stringify({
-                  "1": item.mainStorage,
-                  "2": item.smallStorage
-                })
-              }
-            })
-          )
-        );
-
-        // Дзеркало залишків у catalog_goods (за sku)
-        try {
-          const stockJson = (sku: string, main: number, small: number) =>
-            JSON.stringify({ "1": main, "2": small });
-          await prisma.$transaction(
-            chunk.map((item) =>
-              prisma.catalogGood.updateMany({
-                where: { sku: item.sku, isGroup: false },
-                data: {
-                  stockBalanceByStock: stockJson(
-                    item.sku,
-                    item.mainStorage,
-                    item.smallStorage
-                  ),
-                },
-              })
-            )
-          );
-        } catch (catalogStockErr) {
-          console.warn(
-            '[DilovodSyncManager] catalog_goods stock mirror failed:',
-            catalogStockErr instanceof Error ? catalogStockErr.message : catalogStockErr
-          );
-        }
-
-        updated += chunk.length;
-
-      } catch (chunkError) {
-        console.error(`Помилка chunk-транзакції [${i}..${i + chunk.length - 1}]:`, chunkError);
-
-        // Fallback — оновлюємо поштучно щоб знайти проблемний SKU
-        for (const item of chunk) {
-          try {
-            await prisma.product.update({
-              where: { sku: item.sku },
-              data: {
-                stockBalanceByStock: JSON.stringify({
-                  "1": item.mainStorage,
-                  "2": item.smallStorage
-                })
-              }
-            });
-            await prisma.catalogGood.updateMany({
-              where: { sku: item.sku, isGroup: false },
-              data: {
-                stockBalanceByStock: JSON.stringify({
-                  "1": item.mainStorage,
-                  "2": item.smallStorage,
-                }),
-              },
-            });
-            updated++;
-          } catch (err) {
-            errors.push(`${item.sku}: ${err instanceof Error ? err.message : "error"}`);
-          }
-        }
-      }
-    }
-
+    const result = await catalogOpsLookup.applyStockBalances(items);
     return {
-      success: errors.length === 0,
-      updated,
-      skipped,
-      errors
+      success: result.errors.length === 0,
+      updated: result.updated,
+      skipped: result.skipped,
+      errors: result.errors,
     };
   }
 
-  // Позначення застарілих товарів (які є в БД але немає в WordPress)
+  // Позначення застарілих товарів (є в `products`, немає в актуальному списку каталогу)
   // scope = 'all'    — перевіряє всі товари в БД (full sync)
-  //                    currentSkus = повний список SKU з WordPress
+  //                    currentSkus = активні SKU з catalog_goods (Готова продукція)
   // scope = 'scoped' — перевіряє тільки товари з переданого списку manualSkus (manual sync)
-  //                    currentSkus = актуальний список SKU з WordPress (для валідації)
+  //                    currentSkus = актуальний список SKU з каталогу (для валідації)
   //                    manualSkus  = список SKU, які були синхронізовані вручну
   async markOutdatedProducts(currentSkus: string[], scope: 'all' | 'scoped' = 'all', manualSkus?: string[]): Promise<void> {
     try {
       console.log(`Позначаємо застарілі товари... (режим: ${scope})`);
-      console.log(`Отримано ${currentSkus.length} актуальних SKU з WordPress`);
+      console.log(`Отримано ${currentSkus.length} актуальних SKU з каталогу`);
       
-      // Створюємо Set для швидкого пошуку по актуальному списку WordPress
       const currentSkusSet = new Set(currentSkus.map(sku => sku.toLowerCase().trim()));
 
-      // Завантажуємо whitelist зі служби налаштувань (таблиця settings_wp_sku)
-      let whitelistSet = new Set<string>();
-      try {
-        const wpSkuRecord = await prisma.settingsWpSku.findFirst();
-        if (wpSkuRecord && wpSkuRecord.skus) {
-          const parsed = wpSkuRecord.skus.split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(s => s.length > 0);
-          whitelistSet = new Set(parsed);
-          console.log(`Знайдено ${whitelistSet.size} SKU у whitelist`);
-        }
-      } catch (e) {
-        console.log('Не вдалося завантажити SKU whitelist:', e);
-      }
-      
-      // При scoped — беремо тільки товари з переданого списку manualSkus
-      // При all — беремо всі товари з БД
       const scopedSkus = scope === 'scoped' ? (manualSkus ?? currentSkus) : undefined;
       const allProducts = await prisma.product.findMany({
         where: scopedSkus !== undefined
@@ -801,13 +659,9 @@ export class DilovodSyncManager {
       
       for (const product of allProducts) {
         const productSku = product.sku.toLowerCase().trim();
-        // Не позначаємо як застарілий товари, які є у whitelist
-        const isInWhitelist = whitelistSet.has(productSku);
-        // Перевіряємо наявність у актуальному списку WordPress (або whitelist)
-        const isInWordPress = isInWhitelist || currentSkusSet.has(productSku);
-        
-        // Якщо товар НЕ в WordPress але НЕ позначений як застарілий - позначаємо
-        if (!isInWordPress && !product.isOutdated) {
+        const isCurrent = currentSkusSet.has(productSku);
+
+        if (!isCurrent && !product.isOutdated) {
           await prisma.product.update({
             where: { id: product.id },
             data: { isOutdated: true }
@@ -815,9 +669,8 @@ export class DilovodSyncManager {
           console.log(`  ⚠️  Товар ${product.sku} (${product.name}) позначено як застарілий`);
           markedAsOutdated++;
         }
-        
-        // Якщо товар Є в WordPress але позначений як застарілий - знімаємо позначку
-        if (isInWordPress && product.isOutdated) {
+
+        if (isCurrent && product.isOutdated) {
           await prisma.product.update({
             where: { id: product.id },
             data: { isOutdated: false }

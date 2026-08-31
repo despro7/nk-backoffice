@@ -1,6 +1,5 @@
 // Основний сервіс Dilovod - координатор всіх модулів
 
-import { PrismaClient } from '@prisma/client';
 import { prisma } from '../../lib/utils.js';
 import {
   DilovodApiClient,
@@ -11,8 +10,10 @@ import {
   DilovodSyncResult,
   DilovodTestResult,
   DilovodStockBalance,
-  WordPressProduct
 } from './index.js';
+import { productsCatalogService } from '../../modules/Products/ProductsCatalogService.js';
+import { catalogOpsLookup } from '../../modules/Products/CatalogOpsLookup.js';
+import { isKitAccPolicy } from '../../modules/Products/ProductsTypes.js';
 import { syncSettingsService } from '../syncSettingsService.js';
 import { dilovodCacheService, type CacheType } from './DilovodCacheService.js';
 import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
@@ -216,21 +217,11 @@ export class DilovodService {
    */
   private async getProductNamesBySkus(skus: string[]): Promise<Record<string, string>> {
     try {
-      const products = await prisma.product.findMany({
-        where: {
-          sku: { in: skus }
-        },
-        select: {
-          sku: true,
-          name: true
-        }
-      });
-
+      const found = await catalogOpsLookup.getBySkus(skus);
       const nameMap: Record<string, string> = {};
-      products.forEach(product => {
-        nameMap[product.sku] = product.name;
-      });
-
+      for (const p of catalogOpsLookup.listUnique(found)) {
+        nameMap[p.sku] = p.name;
+      }
       return nameMap;
     } catch (error) {
       console.log('Помилка отримання назв товарів:', error);
@@ -364,9 +355,8 @@ export class DilovodService {
       let skus = [];
 
       if (mode === 'full') {
-        // Отримання SKU товарів з WordPress
-        console.log('📋 Крок 1: Отримання SKU товарів з WordPress...');
-        skus = await this.fetchSkusDirectlyFromWordPress();
+        console.log('📋 Крок 1: Отримання SKU з каталогу (Готова продукція)...');
+        skus = await this.fetchSkusFromCatalog();
       } else {
         skus = manualSkus;
       }
@@ -378,7 +368,7 @@ export class DilovodService {
         await this.logSyncError({
           sku: 'system',
           errorType: 'sync_failed',
-          message: 'Не знайдено SKU товарів в WordPress для синхронізації',
+          message: 'Не знайдено SKU товарів у каталозі (Готова продукція) для синхронізації',
           productData: { mode, manualSkus },
           initiatedBy: 'system'
         });
@@ -392,145 +382,16 @@ export class DilovodService {
         };
       }
 
-      // Підмішуємо SKU з Whitelist — тільки при повній синхронізації (full).
-      if (mode === 'full') {
-        try {
-          const whitelistRecord = await prisma.settingsWpSku.findFirst();
-          if (whitelistRecord?.skus) {
-            // Розділяємо рядок на масив SKU (припускаємо, що SKU розділені комами або новими рядками)
-            const whitelistSkus = whitelistRecord.skus
-              .split(/[\n,]/)
-              .map(sku => sku.trim())
-              .filter(sku => sku.length > 0);
-
-            console.log(`📋 Завантажено ${whitelistSkus.length} SKU з whitelist:`, whitelistSkus);
-            
-            // Додаємо тільки унікальні SKU (через Set для уникнення дублів)
-            const uniqueSkusSet = new Set(skus);
-            whitelistSkus.forEach(sku => uniqueSkusSet.add(sku));
-            skus = Array.from(uniqueSkusSet);
-          }
-        } catch (error) {
-          console.warn('Не вдалося завантажити SKU whitelist з БД:', error);
-        }
-      } else {
-        console.log('📋 Manual sync: whitelist не додається до списку SKU');
-      }
-
       console.log(`✅ Отримано ${skus.length} SKU для синхронізації`);
 
-      // Крок 2: Отримання інформації про товари та комплекти з Dilovod
-      console.log('\n📋 Крок 2: Отримання інформації про товари та комплекти з Dilovod...');
-
-      let dilovodProducts: any[] = [];
-      try {
-        dilovodProducts = await this.getGoodsInfoWithSetsOptimized(skus, signal);
-      } catch (error) {
-        console.error('❌ Критична помилка при отриманні даних з Dilovod:', error);
-
-        // Логуємо критичну помилку в систему повідомлень
-        await this.logSyncError({
-          sku: 'system',
-          errorType: 'sync_failed',
-          message: `Критична помилка синхронізації: ${error instanceof Error ? error.message : 'Невідома помилка'}`,
-          productData: { requestedSkus: skus, error: error instanceof Error ? error.message : String(error) },
-          initiatedBy: 'system'
-        });
-
-        // При критичній помилці (мережева проблема, API недоступне) - зупиняємо синхронізацію
-        return {
-          success: false,
-          message: `Критична помилка при отриманні даних з Dilovod: ${error instanceof Error ? error.message : 'Невідома помилка'}`,
-          syncedProducts: 0,
-          syncedSets: 0,
-          errors: [`Критична помилка: ${error instanceof Error ? error.message : String(error)}`]
-        };
+      console.log('\n📋 Крок 2: Проекція catalog_goods → кеш products...');
+      if (signal?.aborted) {
+        const err: Error & { name?: string } = new Error('Запит скасовано');
+        err.name = 'AbortError';
+        throw err;
       }
 
-      console.log(`✅ Отримано ${dilovodProducts.length} товарів з Dilovod`);
-
-      // Аналізуємо отримані дані
-      const productsWithSets = dilovodProducts.filter(p => p.set && p.set.length > 0);
-      const regularProducts = dilovodProducts.filter(p => !p.set || p.set.length === 0);
-
-      console.log(`📊 Аналіз отриманих даних:`);
-      console.log(`  - Всього товарів: ${dilovodProducts.length}`);
-      console.log(`  - Комплектів: ${productsWithSets.length}`);
-      console.log(`  - Звичайних товарів: ${regularProducts.length}`);
-
-      if (productsWithSets.length > 0) {
-        console.log(`🎯 Знайдені комплекти:`);
-        productsWithSets.forEach((product, index) => {
-          console.log(`  ${index + 1}. ${product.sku} - ${product.name} (${product.set.length} компонентів)`);
-        });
-      }
-
-      // Крок 3: Синхронізація з базою даних
-      console.log('\n📋 Крок 3: Синхронізація з базою даних...');
-      let syncResult: DilovodSyncResult;
-      try {
-        syncResult = await this.syncManager.syncProductsToDatabase(
-          dilovodProducts,
-          this.logSyncError.bind(this),
-          signal,
-          options
-        );
-      } catch (error) {
-        console.error('❌ Помилка при синхронізації з базою даних:', error);
-
-        // Логуємо помилку в систему повідомлень
-        await this.logSyncError({
-          sku: 'system',
-          errorType: 'sync_failed',
-          message: `Помилка синхронізації з базою даних: ${error instanceof Error ? error.message : 'Невідома помилка'}`,
-          productData: { dilovodProductsCount: dilovodProducts.length, error: error instanceof Error ? error.message : String(error) },
-          initiatedBy: 'system'
-        });
-
-        // Повертаємо результат з частковим успіхом замість повної невдачі
-        console.warn('⚠️ Помилка при синхронізації з БД, продовжуємо з порожніми даними...');
-        syncResult = {
-          success: true, // Змінюємо на true, щоб процес не зупинявся
-          message: `Виникла помилка при збереженні даних в БД: ${error instanceof Error ? error.message : 'Невідома помилка'}. Продовжуємо з порожніми даними.`,
-          syncedProducts: 0,
-          syncedSets: 0,
-          errors: [`Помилка БД: ${error instanceof Error ? error.message : String(error)}`]
-        };
-      }
-
-      // Крок 4: Позначення застарілих товарів
-      console.log('\n📋 Крок 4: Позначення застарілих товарів...');
-      try {
-        if (mode === 'full') {
-          // При full — skus вже є актуальним списком з WordPress, перевіряємо всі товари в БД
-          await this.syncManager.markOutdatedProducts(skus, 'all');
-        } else {
-          // При manual — отримуємо актуальний список з WordPress для валідації,
-          // але перевіряємо тільки передані manualSkus
-          console.log('Отримуємо актуальний список SKU з WordPress для валідації...');
-          let wpSkus: string[] = [];
-          try {
-            wpSkus = await this.fetchSkusDirectlyFromWordPress();
-            console.log(`Отримано ${wpSkus.length} SKU з WordPress для валідації`);
-          } catch (e) {
-            console.log('⚠️ Не вдалося отримати SKU з WordPress, перевірка застарілості пропускається:', e);
-          }
-          if (wpSkus.length > 0) {
-            await this.syncManager.markOutdatedProducts(wpSkus, 'scoped', manualSkus);
-          }
-        }
-      } catch (error) {
-        console.warn('⚠️ Помилка при позначенні застарілих товарів (не критична):', error);
-
-        // Логуємо попередження, але не припиняємо процес
-        await this.logSyncError({
-          sku: 'system',
-          errorType: 'sync_failed',
-          message: `Попередження: не вдалося позначити застарілі товари: ${error instanceof Error ? error.message : 'Невідома помилка'}`,
-          productData: { mode, skusCount: skus.length },
-          initiatedBy: 'system'
-        });
-      }
+      const syncResult = await catalogOpsLookup.projectToProductsCache(skus);
 
       console.log('\n✅ === СИНХРОНІЗАЦІЯ ЗАВЕРШЕНА ===');
       console.log(`Результат: ${syncResult.message}`);
@@ -722,16 +583,8 @@ export class DilovodService {
       console.log('Отримуємо залишки товарів за списком SKU...');
 
       // Отримуємо SKU всіх товарів з бази даних (включаючи застарілі)
-      const products = await prisma.product.findMany({
-        // where: {
-        //   isOutdated: false  // Закоментовано: тепер залишки оновлюються і для застарілих товарів
-        // },
-        select: {
-          sku: true
-        }
-      });
-
-      const skus = products.map(p => p.sku);
+      const list = await catalogOpsLookup.listFinishedProducts({ includeOutdated: true });
+      const skus = list.map((p) => p.sku);
       if (skus.length === 0) {
         console.log('Не знайдено товарів у базі даних');
         return [];
@@ -920,7 +773,7 @@ export class DilovodService {
     try {
       console.log('\n🧪 === ТЕСТ ОТРИМАННЯ КОМПЛЕКТІВ ===');
 
-      const skus = await this.fetchSkusDirectlyFromWordPress();
+      const skus = await this.fetchSkusFromCatalog();
       if (skus.length === 0) {
         return {
           success: false,
@@ -930,42 +783,37 @@ export class DilovodService {
 
       console.log(`Отримано ${skus.length} SKU для тестування`);
 
-      // Отримуємо товари з каталогу
-      const response = await this.apiClient.getGoodsFromCatalog(skus);
+      const kitRows = await prisma.catalogGood.findMany({
+        where: {
+          sku: { in: skus },
+          isGroup: false,
+        },
+        select: { id: true, sku: true, name: true, accPolicyId: true },
+      });
+      const potentialSets = kitRows.filter((row) => isKitAccPolicy(row.accPolicyId));
+      const regularGoods = kitRows.filter((row) => !isKitAccPolicy(row.accPolicyId));
 
-      if (!Array.isArray(response)) {
-        return {
-          success: false,
-          message: 'Несподіваний формат відповіді'
-        };
-      }
-
-      // Аналізуємо відповідь — перевіряємо за всіма ID груп комплектів
-      const setParentIds = ["1100300000001315"];
-      const potentialSets = response.filter((item: any) => setParentIds.includes(item.parent));
-      const regularGoods = response.filter((item: any) => !setParentIds.includes(item.parent));
-
-      console.log(`\n📊 Аналіз відповіді:`);
-      console.log(`  - Всього товарів: ${response.length}`);
-      console.log(`  - Потенційних комплектів (parent in [${setParentIds.join(', ')}]): ${potentialSets.length}`);
+      console.log(`\n📊 Аналіз каталогу:`);
+      console.log(`  - Всього товарів: ${kitRows.length}`);
+      console.log(`  - Комплектів (accPolicy kit): ${potentialSets.length}`);
       console.log(`  - Звичайних товарів: ${regularGoods.length}`);
 
       if (potentialSets.length > 0) {
-        console.log(`\n🎯 Потенційні комплекти:`);
-        potentialSets.forEach((item: any, index: number) => {
-          console.log(`  ${index + 1}. ID: ${item.id}, SKU: ${item.sku}, Назва: ${item.id__pr || 'N/A'}`);
+        console.log(`\n🎯 Комплекти:`);
+        potentialSets.forEach((item, index) => {
+          console.log(`  ${index + 1}. ID: ${item.id}, SKU: ${item.sku}, Назва: ${item.name || 'N/A'}`);
         });
       }
 
       return {
         success: true,
-        message: `Тест завершено. Знайдено ${potentialSets.length} потенційних комплектів`,
+        message: `Тест завершено. Знайдено ${potentialSets.length} комплектів`,
         data: {
-          totalGoods: response.length,
+          totalGoods: kitRows.length,
           potentialSets: potentialSets.length,
           regularGoods: regularGoods.length,
-          response: response
-        }
+          response: kitRows,
+        },
       };
 
     } catch (error) {
@@ -981,7 +829,7 @@ export class DilovodService {
 
   // Отримання SKU для тестування
   async getTestSkus(): Promise<string[]> {
-    return this.fetchSkusDirectlyFromWordPress();
+    return this.fetchSkusFromCatalog();
   }
 
   // Отримання статистики кеша
@@ -1043,74 +891,14 @@ export class DilovodService {
 
   // ===== ПРИВАТНІ МЕТОДИ =====
 
-  // Прямий запит SKU з WordPress (без кешу)
-  private async fetchSkusDirectlyFromWordPress(): Promise<string[]> {
-    try {
-      if (!process.env.WORDPRESS_DATABASE_URL) {
-        throw new Error('WORDPRESS_DATABASE_URL не налаштований у змінних оточення');
-      }
-
-      console.log('Підключаємося до бази даних WordPress...');
-      console.log(`URL підключення: ${process.env.WORDPRESS_DATABASE_URL.replace(/\/\/.*@/, '//***@')}`);
-
-      // Створюємо окреме підключення до бази даних WordPress
-      const wordpressDb = new PrismaClient({
-        datasources: {
-          db: {
-            url: process.env.WORDPRESS_DATABASE_URL
-          }
-        }
-      });
-
-      try {
-        console.log('Виконуємо SQL запит до бази WordPress...');
-
-        // Отримуємо SKU товарів
-        const products = await wordpressDb.$queryRaw<WordPressProduct[]>`
-          SELECT DISTINCT 
-            pm.meta_value as sku,
-            COALESCE(CAST(pm2.meta_value AS SIGNED), 1) as stock_quantity
-          FROM wp_postmeta pm
-          INNER JOIN wp_posts p ON pm.post_id = p.ID
-          LEFT JOIN wp_postmeta pm2 ON pm.post_id = pm2.post_id AND pm2.meta_key = '_stock'
-          WHERE pm.meta_key = '_sku'
-            AND pm.meta_value IS NOT NULL
-            AND pm.meta_value != ''
-            AND p.post_type = 'product'
-            AND p.post_status = 'publish'
-          ORDER BY pm.meta_value
-        `;
-
-        console.log(`SQL запит виконано успішно. Отримано ${products.length} записів з WordPress`);
-
-        if (products.length === 0) {
-          console.log('Попередження: SQL запит повернув 0 записів.');
-          return [];
-        }
-
-        // Фільтруємо тільки валідні SKU
-        const validSkus = products
-          .filter(product => product.sku && product.sku.trim() !== '')
-          .map(product => product.sku.trim());
-
-        console.log(`Після фільтрації залишилось ${validSkus.length} валідних SKU`);
-
-        if (validSkus.length > 0) {
-          console.log(`Приклади валідних SKU: ${validSkus.slice(0, 5).join(', ')}`);
-        }
-
-        return validSkus;
-
-      } finally {
-        // Завжди закриваємо з'єднання
-        await wordpressDb.$disconnect();
-        console.log('З\'єднання з базою WordPress закрито');
-      }
-
-    } catch (error) {
-      console.log('Помилка отримання SKU з WordPress:', error);
-      throw error;
+  /** Активні SKU з піддерева «Готова продукція» у catalog_goods. */
+  private async fetchSkusFromCatalog(): Promise<string[]> {
+    const { activeSkus } = await productsCatalogService.listSkusForLegacySync();
+    console.log(`Отримано ${activeSkus.length} активних SKU з каталогу (Готова продукція)`);
+    if (activeSkus.length > 0) {
+      console.log(`Приклади SKU: ${activeSkus.slice(0, 5).join(', ')}`);
     }
+    return activeSkus;
   }
 
 

@@ -4,6 +4,7 @@ import { normalizeSetsArray, normalizeReleaseHistoryItems } from './historyNorma
 import { authenticateToken, requirePermission } from '../../middleware/auth.js';
 import { dilovodExportFlowService } from '../../services/dilovod/index.js';
 import { getDilovodUserId, getDilovodExportErrorMessage, translateDilovodError, getDilovodConfigFromDB } from '../../services/dilovod/DilovodUtils.js';
+import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 
 const router = Router();
 const warehouseOperate = requirePermission('warehouse', 'operate', 'Складські операції (відправка, чернетки)');
@@ -55,11 +56,7 @@ async function resolveKitGoodId(setSku: string | number | undefined, kitGood: st
     return null;
   }
 
-  const product = await prisma.product.findUnique({
-    where: { sku: normalizedSku },
-    select: { dilovodId: true },
-  });
-
+  const product = await catalogOpsLookup.getBySku(normalizedSku);
   return product?.dilovodId?.trim() || null;
 }
 
@@ -142,7 +139,7 @@ async function collectFirstLevelComponents(items: ReleaseSetSourceItem[]): Promi
     let directComponents = normalizeDirectComponentsFromSnapshot(item.components_snapshot, quantity);
 
     if (directComponents.length === 0) {
-      const product = await prisma.product.findUnique({ where: { sku } });
+      const product = await catalogOpsLookup.getBySku(sku);
       const setData = parseSetComponents(product?.set);
       if (setData.length === 0) {
         if (product?.dilovodId) {
@@ -200,9 +197,9 @@ router.post('/', authenticateToken, warehouseOperate, async (req, res) => {
     const skus = Array.from(new Set(items.map((it: any) => String(it.set_sku || it.setSku || it.sku || '').trim()).filter((s: string) => s)));
     let nameMap: Record<string, string> = {};
     if (skus.length > 0) {
-      const products = await prisma.product.findMany({ where: { sku: { in: skus } }, select: { sku: true, name: true } });
-      for (const p of products) {
-        if (p && p.sku) nameMap[String(p.sku)] = p.name || '';
+      const found = await catalogOpsLookup.getBySkus(skus);
+      for (const p of catalogOpsLookup.listUnique(found)) {
+        nameMap[String(p.sku)] = p.name || '';
       }
     }
 
@@ -437,8 +434,8 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
       // Map expanded skus to products to get dilovodId
       const expandedList = Object.values(expandedComponents);
       const skus = expandedList.map(c => c.sku).filter(Boolean);
-      const products = skus.length ? await prisma.product.findMany({ where: { sku: { in: skus } }, select: { sku: true, dilovodId: true, set: true } }) : [];
-      const skuToProduct = new Map(products.map((p: any) => [p.sku, p]));
+      const found = skus.length ? await catalogOpsLookup.getBySkus(skus) : new Map();
+      const skuToProduct = new Map(catalogOpsLookup.listUnique(found).map((p) => [p.sku, p]));
 
       const tpGoods: any[] = [];
       let row = 1;

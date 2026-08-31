@@ -15,6 +15,8 @@
 
 У `OrderView` і `orderAssemblyUtils` набір може бути відображений як монолітний або розгорнутий у звичайний список компонентів. Для цього використовується окремий стан управління відображенням, а `OrderChecklistItem` отримує `dynamicMonolithic` як ознаку для логіки зборки.
 
+**Динамічний** моноліт: у товару є `set` (лише `accPolicy` «комплект», не рецептура страви) і сума `stockBalanceByStock` з каталогу `> 0`. Залишки для цього рішення бере `ProductOpsCache`, не застарілий JSON у таблиці `products`. Якщо сток у знімку порожній, набір розкладеться на порції, навіть коли в Dilovod/каталозі залишок є. Див. `Docs/features/expand-flatten-calc.md`.
+
 ### 2. `payloadData` в `OrderView`
 
 У `OrderView` payload не береться напряму з інпуту, а збирається як похідний стан `shipmentPayloadData`:

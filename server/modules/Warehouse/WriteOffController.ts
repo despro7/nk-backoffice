@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
 import { safeParseItems, normalizeItemsArray } from './historyNormalize.js';
 import { authenticateToken, requirePermission } from '../../middleware/auth.js';
+import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 
 const parseLocalDate = (dt: any): Date | null => {
   if (!dt) return null;
@@ -59,8 +60,9 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
     // Build payload
     // Map SKU -> dilovodId
     const skus = items.map((it: any) => it.sku).filter(Boolean);
-    const products = await prisma.product.findMany({ where: { sku: { in: skus } }, select: { id: true, sku: true, dilovodId: true, name: true, set: true, stockBalanceByStock: true } });
-    const skuToProduct = new Map(products.map((p: any) => [p.sku, p]));
+    const found = await catalogOpsLookup.getBySkus(skus);
+    const products = catalogOpsLookup.listUnique(found);
+    const skuToProduct = new Map(products.map((p) => [p.sku, p]));
 
     const { getDilovodConfigFromDB } = await import('../../services/dilovod/DilovodUtils.js');
     const dilovodConfig = await getDilovodConfigFromDB();
@@ -337,7 +339,7 @@ router.post('/history', authenticateToken, async (req, res) => {
 
       // Enrich incoming items with productName, batchNumber, sku and productId where possible
       const incomingSkus = Array.isArray(items) ? items.map((it: any) => it.sku).filter(Boolean) : [];
-      const foundProducts = incomingSkus.length ? await prisma.product.findMany({ where: { sku: { in: incomingSkus } }, select: { id: true, sku: true, name: true } }) : [];
+      const foundProducts = incomingSkus.length ? catalogOpsLookup.listUnique(await catalogOpsLookup.getBySkus(incomingSkus)) : [];
       const skuMap = new Map(foundProducts.map((p: any) => [p.sku, p]));
 
       // Enrich items and resolve batch names when possible

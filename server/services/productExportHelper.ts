@@ -10,6 +10,7 @@
  */
 
 import { prisma } from '../lib/utils.js';
+import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 import { ordersCacheService, OrderCacheItem } from './ordersCacheService.js';
 
 // ─── Типи ────────────────────────────────────────────────────────────────────
@@ -109,18 +110,11 @@ async function expandSetRecursively(
   for (const setItem of set) {
     if (!setItem.id || !setItem.quantity) continue;
 
-    const component = await prisma.product.findFirst({ where: { sku: setItem.id } });
+    const component = await catalogOpsLookup.getBySku(setItem.id);
     if (!component) continue;
 
-    // Effective quantity taking into account parent multiplier
     const effectiveQty = Number(setItem.quantity) * Number(multiplier || 1);
-
-    let componentSet: any[] = [];
-    try {
-      componentSet = typeof component.set === 'string' ? JSON.parse(component.set) : component.set || [];
-    } catch {
-      console.warn(`Failed to parse set for component ${component.sku}`);
-    }
+    const componentSet = Array.isArray(component.set) ? component.set : [];
 
     if (Array.isArray(componentSet) && componentSet.length > 0) {
       // Pass effectiveQty as multiplier to child expansion so nested components are scaled
@@ -150,40 +144,17 @@ export async function buildExportPayload(
   const { expandSets = false, adjustStock = true } = options;
 
   // Отримуємо всі активні товари
-  const products = await prisma.product.findMany({
-    orderBy: { name: 'asc' },
-    where: { isOutdated: { not: true } },
-  });
+  const products = await catalogOpsLookup.listFinishedProducts({ includeOutdated: false });
 
-  // Завантажуємо порції в замовленнях (паралельно)
   const portionsMap = adjustStock ? await getPortionsInOrdersBySku() : new Map<string, number>();
 
   let adjustedCount = 0;
 
   const payload = await Promise.all(
     products.map(async (product): Promise<ExportPayloadItem> => {
-      let set: any[] = [];
-      try {
-        set = product.set ? JSON.parse(product.set) : [];
-      } catch {
-        console.warn(`Failed to parse set for product ${product.sku}`);
-      }
-
-      let additionalPrices: any[] = [];
-      try {
-        additionalPrices = product.additionalPrices ? JSON.parse(product.additionalPrices) : [];
-      } catch {
-        console.warn(`Failed to parse additionalPrices for product ${product.sku}`);
-      }
-
-      let stockBalanceByStock: Record<string, number> = {};
-      try {
-        stockBalanceByStock = product.stockBalanceByStock
-          ? JSON.parse(product.stockBalanceByStock)
-          : {};
-      } catch {
-        console.warn(`Failed to parse stockBalanceByStock for product ${product.sku}`);
-      }
+      const set = Array.isArray(product.set) ? product.set : [];
+      const additionalPrices = product.additionalPrices ?? [];
+      let stockBalanceByStock: Record<string, number> = { ...(product.stockBalanceByStock ?? {}) };
 
       // Коригуємо залишок складу "2"
       if (adjustStock) {

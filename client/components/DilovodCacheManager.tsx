@@ -103,7 +103,7 @@ export const DilovodCacheManager: React.FC = () => {
   const handleRefreshGoodsCache = async () => {
     setUpdatingGoodsCache(true);
     try {
-      // Спочатку отримуємо свіжий список SKU з WordPress (без кешу)
+      // Свіжий список SKU з catalog_goods (Готова продукція)
       const skusResp = await fetch('/api/dilovod/cache/fresh-skus', {
         method: 'GET',
         credentials: 'include'

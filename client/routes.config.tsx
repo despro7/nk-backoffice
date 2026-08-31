@@ -12,7 +12,6 @@ import WarehouseInventory from './pages/Warehouse/WarehouseInventory';
 import WarehouseReturns from './pages/Warehouse/WarehouseReturns';
 import WarehouseWriteOff from './pages/Warehouse/WarehouseWriteOff';
 import WarehouseReleaseSets from './pages/Warehouse/WarehouseReleaseSets';
-import WarehouseMaterials from './pages/WarehouseMaterials';
 import Reports from './pages/Reports/ReportsGeneral';
 import ReportsSales from './pages/Reports/ReportsSales';
 import ReportsShipment from './pages/Reports/ReportsShipment';
@@ -251,18 +250,6 @@ export const appRoutes: AppRoute[] = [
     order: 6,
     parent: 'warehouse',
     permission: { name: 'releases' },
-  },
-  {
-    path: '/warehouse/materials',
-    component: WarehouseMaterials,
-    title: 'Матеріали',
-    pageTitle: 'Матеріали | NK Backoffice',
-    navLabel: 'Матеріали',
-    icon: <DynamicIcon name="arrows-up-from-line" size={16} />,
-    inNav: true,
-    order: 7,
-    parent: 'warehouse',
-    permission: { name: 'materials' },
   },
   {
     path: '/reports/sales',
@@ -519,11 +506,11 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/product-sets',
     component: SettingsProductSets,
-    title: 'Товари і комплекти з Dilovod',
-    pageTitle: 'Товари і комплекти | NK Backoffice',
+    title: 'Товари (кеш / експорт)',
+    pageTitle: 'Товари (кеш) | NK Backoffice',
     navLabel: 'Товари і комплекти',
     icon: <DynamicIcon name="shopping-bag" size={20} className="max-w-full max-h-full" />,
-    inNav: true,
+    inNav: false,
     // parent: 'settings',
     order: 9,
     permission: { name: 'productSets' },

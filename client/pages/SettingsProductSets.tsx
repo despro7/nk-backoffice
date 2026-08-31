@@ -53,7 +53,7 @@ interface Product {
   stockBalanceByStock: any; // Вже розпарсений об'єкт або null
   lastSyncAt: string;
   updatedAt: string;
-  isOutdated?: boolean; // Чи застарілий товар (немає в WordPress)
+  isOutdated?: boolean; // Архівна папка в catalog_goods
   dilovodId?: string; // ID товару в Діловоді
 }
 
@@ -169,11 +169,6 @@ const ProductSets: React.FC = () => {
   // AbortController для основної синхронізації
   const syncAbortController = useRef<AbortController | null>(null);
 
-  // Стан для модалки SKU whitelist
-  const [isSkuWhitelistModalOpen, setIsSkuWhitelistModalOpen] = useState(false);
-  const [skuWhitelistText, setSkuWhitelistText] = useState('');
-  const [skuWhitelistSaving, setSkuWhitelistSaving] = useState(false);
-
   // Стан для експорту в SalesDrive
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportPayload, setExportPayload] = useState<any[]>([]);
@@ -181,90 +176,11 @@ const ProductSets: React.FC = () => {
   const [expandSets, setExpandSets] = useState(false);
   const [expandSetsSaving, setExpandSetsSaving] = useState(false);
 
-  // Стан для модалки управління ID груп комплектів (Set Parent IDs)
-  const [isSetParentIdsModalOpen, setIsSetParentIdsModalOpen] = useState(false);
-  const [setParentIds, setSetParentIds] = useState<string[]>([]);
-  const [setParentIdsLoading, setSetParentIdsLoading] = useState(false);
-  const [setParentIdsSaving, setSetParentIdsSaving] = useState(false);
-  const [newSetParentIdInput, setNewSetParentIdInput] = useState('');
-
   // Стан для монолітних категорій (комплекти яких не розгортаються)
   const [monolithicCategories, setMonolithicCategories] = useState<Set<string>>(new Set());
   const [monolithicLoading, setMonolithicLoading] = useState(false);
   const [monolithicSaving, setMonolithicSaving] = useState(false);
   const [categoriesMapping, setCategoriesMapping] = useState<{ [name: string]: number }>({});
-
-  // Завантажити whitelist з сервера
-  const fetchSkuWhitelist = async () => {
-    try {
-      const response = await fetch('/api/products/sku-whitelist', { credentials: 'include' });
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data.skus)) {
-          data.skus = data.skus.join(', ');
-        }
-        setSkuWhitelistText(data.skus || '');
-      } else {
-        console.warn('Не вдалося завантажити SKU whitelist');
-      }
-    } catch (error) {
-      console.warn('Помилка мережі при завантаженні SKU whitelist:', error);
-    }
-  };
-
-  useEffect(() => {
-    if (isSkuWhitelistModalOpen) {
-      fetchSkuWhitelist();
-    }
-  }, [isSkuWhitelistModalOpen]);
-
-  // Завантажити масив ID груп комплектів з сервера
-  const fetchSetParentIds = async () => {
-    setSetParentIdsLoading(true);
-    try {
-      const response = await fetch('/api/products/set-parent-ids', { credentials: 'include' });
-      if (response.ok) {
-        const data = await response.json();
-        setSetParentIds(Array.isArray(data.ids) ? data.ids : []);
-      } else {
-        console.warn('Не вдалося завантажити Set Parent IDs');
-      }
-    } catch (error) {
-      console.warn('Помилка мережі при завантаженні Set Parent IDs:', error);
-    } finally {
-      setSetParentIdsLoading(false);
-    }
-  };
-
-  // Зберегти масив ID груп комплектів на сервері
-  const saveSetParentIds = async () => {
-    setSetParentIdsSaving(true);
-    try {
-      const response = await fetch('/api/products/set-parent-ids', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: setParentIds }),
-        credentials: 'include',
-      });
-      if (response.ok) {
-        ToastService.show({ title: 'Збережено', description: 'ID груп комплектів оновлено', color: 'success' });
-        setIsSetParentIdsModalOpen(false);
-      } else {
-        const err = await response.json().catch(() => ({}));
-        ToastService.show({ title: 'Помилка', description: err.error || 'Не вдалося зберегти', color: 'danger' });
-      }
-    } catch (error) {
-      ToastService.show({ title: 'Помилка мережі', description: String(error), color: 'danger' });
-    } finally {
-      setSetParentIdsSaving(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isSetParentIdsModalOpen) {
-      fetchSetParentIds();
-    }
-  }, [isSetParentIdsModalOpen]);
 
   // Завантажити монолітні категорії
   const fetchMonolithicCategories = async () => {
@@ -2623,12 +2539,6 @@ const ProductSets: React.FC = () => {
                             } catch (e) { ToastService.show({ title: 'Помилка мережі', description: e instanceof Error ? e.message : 'Невідома помилка', color: 'danger', hideIcon: false, icon: 'x-circle' }); }
                             finally { setWpSyncing(false); }
                           }
-                          if (key === 'setParentIds') {
-                            setIsSetParentIdsModalOpen(true);
-                          }
-                          if (key === 'skuWhitelist') {
-                            setIsSkuWhitelistModalOpen(true);
-                          }
                           if (key === 'fullSync') {
                             setIsFullSyncConfirmOpen(true);
                           }
@@ -2665,11 +2575,6 @@ const ProductSets: React.FC = () => {
                               </div>
                             </div>
                           </DropdownItem>
-                        </DropdownSection>
-
-                        <DropdownSection title="Налаштування" showDivider dividerProps={{ className: 'mt-1 bg-neutral-200' }} className={`${!isAdmin() ? 'hidden' : ''}`}>
-                          <DropdownItem key="setParentIds" startContent={<DynamicIcon name="layers" size={16} className="shrink-0" />}>Set Parent IDs</DropdownItem>
-                          <DropdownItem key="skuWhitelist" startContent={<DynamicIcon name="shield-check" size={16} className="shrink-0" />}>SKU Whitelist</DropdownItem>
                         </DropdownSection>
 
                         <DropdownSection title="Експорт">
@@ -2958,80 +2863,6 @@ const ProductSets: React.FC = () => {
         </ModalContent>
       </Modal>
 
-      {/* Модалка для редагування SKU whitelist (складається в таблицю settings_wp_sku) */}
-      <Modal
-        isOpen={isSkuWhitelistModalOpen}
-        onClose={() => setIsSkuWhitelistModalOpen(false)}
-        size="lg"
-      >
-        <ModalContent>
-          <ModalHeader className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <DynamicIcon name="shield-check" size={20} />
-              SKU Whitelist
-            </div>
-            <p className="text-sm font-normal text-gray-500">Сюди можна внести список SKU, які ніколи не повинні позначатися як застарілі.</p>
-          </ModalHeader>
-          <ModalBody>
-            <div className="space-y-4">
-              <Textarea
-                label="Whitelist SKU"
-                placeholder="Введіть SKU через кому, пробіл або кожен з нового рядка..."
-                value={skuWhitelistText}
-                onValueChange={setSkuWhitelistText}
-                minRows={8}
-                maxRows={20}
-                description={`Введено SKU: ${skuWhitelistText.split(/[,\s]+/).filter(s => s.trim().length > 0).length}`}
-              />
-              <div className="text-sm text-gray-500">
-                <p className="font-medium mb-1">Порада:</p>
-                <p>Запишіть SKU через кому, пробіл або з нового рядка. Збережений список буде використовуватися сервером у функції позначення застарілих товарів.</p>
-              </div>
-            </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setIsSkuWhitelistModalOpen(false)} disabled={skuWhitelistSaving}>
-              Скасувати
-            </Button>
-            <Button
-              color="primary"
-              onPress={async () => {
-                try {
-                  setSkuWhitelistSaving(true);
-                  const response = await fetch('/api/products/sku-whitelist', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({ skus: skuWhitelistText })
-                  });
-
-                  if (response.ok) {
-                    ToastService.show({ title: 'Збережено', description: 'Whitelist збережено на сервері', color: 'success' });
-                    setIsSkuWhitelistModalOpen(false);
-                  } else {
-                    const err = await response.json().catch(() => ({}));
-                    ToastService.show({ title: 'Помилка', description: err.error || 'Не вдалося зберегти whitelist', color: 'danger' });
-                  }
-                } catch (error) {
-                  ToastService.show({ title: 'Помилка мережі', description: error instanceof Error ? error.message : 'Невідома помилка', color: 'danger' });
-                } finally {
-                  setSkuWhitelistSaving(false);
-                }
-              }}
-              disabled={skuWhitelistSaving}
-            >
-              {skuWhitelistSaving ? (
-                <>
-                  <DynamicIcon name="loader-2" className="animate-spin" size={14} /> Збереження...
-                </>
-              ) : (
-                'Зберегти'
-              )}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
       {/* Модал експорту в SalesDrive */}
       <Modal
         isOpen={isExportModalOpen}
@@ -3103,128 +2934,6 @@ const ProductSets: React.FC = () => {
                 <>
                   <DynamicIcon name="upload" size={14} />
                   Підтвердити експорт
-                </>
-              )}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      {/* Модалка управління ID батьківських груп комплектів (Set Parent IDs) */}
-      <Modal
-        isOpen={isSetParentIdsModalOpen}
-        onClose={() => setIsSetParentIdsModalOpen(false)}
-        size="lg"
-      >
-        <ModalContent>
-          <ModalHeader>
-            <div className="flex items-center gap-2">
-              <DynamicIcon name="layers" size={18} />
-              Set Parent IDs — ID груп комплектів
-            </div>
-          </ModalHeader>
-          <ModalBody>
-            <p className="text-sm text-gray-600 mb-3">
-              Товари, у яких поле <code className="bg-gray-100 px-1 rounded">parent</code> збігається з одним із зазначених ID,
-              вважатимуться <strong>комплектами</strong> під час синхронізації з Dilovod.
-            </p>
-
-            {setParentIdsLoading ? (
-              <div className="flex items-center gap-2 py-4 text-gray-500">
-                <DynamicIcon name="loader-2" className="animate-spin" size={16} />
-                Завантаження...
-              </div>
-            ) : (
-              <>
-                {/* Список поточних ID */}
-                <div className="space-y-2 mb-4">
-                  {setParentIds.length === 0 && (
-                    <p className="text-sm text-gray-400 italic">Список порожній</p>
-                  )}
-                  {setParentIds.map((id, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <Input
-                        size="sm"
-                        value={id}
-                        onChange={(e) =>
-                          setSetParentIds(prev =>
-                            prev.map((v, i) => (i === index ? e.target.value : v))
-                          )
-                        }
-                        placeholder="ID групи в Dilovod"
-                        className="flex-1 font-mono"
-                      />
-                      <Button
-                        size="sm"
-                        color="danger"
-                        variant="flat"
-                        isIconOnly
-                        onPress={() =>
-                          setSetParentIds(prev => prev.filter((_, i) => i !== index))
-                        }
-                        title="Видалити"
-                      >
-                        <DynamicIcon name="trash-2" size={14} />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Додавання нового ID */}
-                <div className="flex items-center gap-2">
-                  <Input
-                    size="sm"
-                    value={newSetParentIdInput}
-                    onChange={(e) => setNewSetParentIdInput(e.target.value)}
-                    placeholder="Новий ID групи комплектів..."
-                    className="flex-1 font-mono"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newSetParentIdInput.trim()) {
-                        setSetParentIds(prev => [...prev, newSetParentIdInput.trim()]);
-                        setNewSetParentIdInput('');
-                      }
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    color="primary"
-                    variant="flat"
-                    onPress={() => {
-                      if (newSetParentIdInput.trim()) {
-                        setSetParentIds(prev => [...prev, newSetParentIdInput.trim()]);
-                        setNewSetParentIdInput('');
-                      }
-                    }}
-                  >
-                    <DynamicIcon name="plus" size={14} />
-                    Додати
-                  </Button>
-                </div>
-              </>
-            )}
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant="flat"
-              onPress={() => setIsSetParentIdsModalOpen(false)}
-              disabled={setParentIdsSaving}
-            >
-              Скасувати
-            </Button>
-            <Button
-              color="primary"
-              onPress={saveSetParentIds}
-              disabled={setParentIdsSaving || setParentIdsLoading}
-            >
-              {setParentIdsSaving ? (
-                <>
-                  <DynamicIcon name="loader-2" className="animate-spin" size={14} />
-                  Збереження...
-                </>
-              ) : (
-                <>
-                  <DynamicIcon name="save" size={14} />
-                  Зберегти
                 </>
               )}
             </Button>

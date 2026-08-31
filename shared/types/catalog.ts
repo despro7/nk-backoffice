@@ -40,6 +40,12 @@ export const CATALOG_MILITARY_DISCOUNT_PER_PORTION = 5;
  */
 export const CATALOG_FINISHED_PRODUCTS_FOLDER_NAME = 'Готова продукція';
 
+/** Папка «Готова продукція» — порції та комплекти (`/products#folder=…`). */
+export const CATALOG_FINISHED_PRODUCTS_FOLDER_ID = '1100300000001026';
+
+/** Папка матеріалів (`/products#folder=…`). */
+export const CATALOG_MATERIALS_FOLDER_ID = '1100300000001651';
+
 export interface CatalogGoodImageDto {
   id: number;
   goodId: string;
@@ -86,7 +92,7 @@ export interface CatalogGoodDto {
   sortOrder: number;
   /** Локальний коеф. порцій; dual-write → products.unitRatio */
   unitRatio: number | null;
-  /** Розпарсені залишки з stockBalanceByStock (дзеркало products) */
+  /** Розпарсені залишки з stockBalanceByStock */
   mainStock?: number;
   smallStock?: number;
   stockBalanceByStock?: Record<string, number> | null;

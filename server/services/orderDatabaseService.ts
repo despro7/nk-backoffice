@@ -1,5 +1,6 @@
 import { prisma } from '../lib/utils.js';
 import { ordersCacheService } from './ordersCacheService.js';
+import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 
 export interface OrderBaseData {
   externalId: string;
@@ -1430,44 +1431,9 @@ export class OrderDatabaseService {
    */
   async getProductBySku(sku: string) {
     try {
-      const product = await prisma.product.findUnique({
-        where: { sku }
-      });
-
-      if (!product) {
-        return null;
-      }
-
-      // Парсим JSON поля с обработкой ошибок
-      const parsedProduct = {
-        ...product,
-        set: product.set ? (() => {
-          try {
-            return JSON.parse(product.set);
-          } catch (e) {
-            console.warn(`Failed to parse set for product ${sku}:`, e);
-            return null;
-          }
-        })() : null,
-        additionalPrices: product.additionalPrices ? (() => {
-          try {
-            return JSON.parse(product.additionalPrices);
-          } catch (e) {
-            console.warn(`Failed to parse additionalPrices for product ${sku}:`, e);
-            return null;
-          }
-        })() : null,
-        stockBalanceByStock: product.stockBalanceByStock ? (() => {
-          try {
-            return JSON.parse(product.stockBalanceByStock);
-          } catch (e) {
-            console.warn(`Failed to parse stockBalanceByStock for product ${sku}:`, e);
-            return null;
-          }
-        })() : null
-      };
-
-      return parsedProduct;
+      const product = await catalogOpsLookup.getBySku(sku);
+      if (!product) return null;
+      return catalogOpsLookup.toApiShape(product);
     } catch (error) {
       console.error(`❌ Error getting product by SKU ${sku}:`, error);
       throw error;

@@ -21,6 +21,7 @@ import type {
 } from '../../../shared/types/dilovod.js';
 import { normalizePhoneNumber } from '../../../shared/utils/phoneNormalizer.js';
 import { getDilovodConfigFromDB, getDilovodUserId } from './DilovodUtils.js';
+import { catalogOpsLookup } from '../../modules/Products/CatalogOpsLookup.js';
 import { DilovodService } from './index.js';
 import { orderDatabaseService } from '../orderDatabaseService.js';
 import { dilovodService } from './DilovodService.js';
@@ -345,7 +346,7 @@ export class DilovodExportBuilder {
       let rowNum = 1;
 
       for (const item of returnItems) {
-        const product = await prisma.product.findFirst({ where: { sku: item.sku } });
+        const product = await catalogOpsLookup.getBySku(item.sku);
         if (!product?.dilovodId) {
           context.warnings.push(`Товар ${item.sku} не має Dilovod ID, пропущено.`);
           continue;
@@ -744,16 +745,17 @@ export class DilovodExportBuilder {
       const normalizedSku = String(sku || '').trim();
       if (!normalizedSku) return null;
 
-      const product = await prisma.product.findFirst({
-        where: { sku: normalizedSku },
-        select: { id: true, sku: true, name: true, dilovodId: true, set: true, costPerItem: true }
-      });
+      const product = await catalogOpsLookup.getBySku(normalizedSku);
 
       if (!product) return null;
 
       return {
-        ...product,
-        set: parseSet(product.set),
+        id: product.id,
+        sku: product.sku,
+        name: product.name,
+        dilovodId: product.dilovodId,
+        set: product.set,
+        costPerItem: product.costPerItem,
       };
     };
 

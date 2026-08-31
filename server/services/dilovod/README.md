@@ -46,11 +46,10 @@ dilovod/
 - `testConnection()` - тест подключения
 
 ### 4. DilovodCacheManager.ts
-Управление кешем SKU товаров:
-- `getInStockSkusFromWordPress()` - получение SKU из WordPress
-- `getCachedSkus()` - получение кешированных SKU
-- `clearSkuCache()` - очистка кеша
-- `getCacheStats()` - статистика кеша
+SKU для legacy sync / goods cache:
+- `fetchFreshSkusFromCatalog()` — активні SKU з `catalog_goods` (піддерево «Готова продукція»)
+- `getCacheStats()` — кількість SKU з каталогу
+- `forceRefreshCache()` — повторне читання SKU з каталогу
 
 ### 5. DilovodDataProcessor.ts
 Обработка и трансформация данных:
@@ -101,11 +100,8 @@ import { DilovodApiClient, DilovodCacheManager } from '../services/dilovod';
 const apiClient = new DilovodApiClient();
 const cacheManager = new DilovodCacheManager();
 
-// Тест подключения
 const isConnected = await apiClient.testConnection();
-
-// Очистка кеша
-await cacheManager.clearSkuCache();
+const skus = await cacheManager.fetchFreshSkusFromCatalog();
 ```
 
 ## Конфигурация
@@ -116,7 +112,6 @@ await cacheManager.clearSkuCache();
 export const DEFAULT_DILOVOD_CONFIG: DilovodConfig = {
   apiUrl: process.env.DILOVOD_API_URL || '',
   apiKey: process.env.DILOVOD_API_KEY || '',
-  setParentId: "1100300000001315", // ID группы-комплектов
   mainPriceType: "1101300000001001", // Роздріб (Інтернет-магазин)
   categoriesMap: {
     "Перші страви": 1,

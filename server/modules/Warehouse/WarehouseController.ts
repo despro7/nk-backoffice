@@ -19,6 +19,8 @@ import {
 } from '../../services/orderShipmentMetricsService.js';
 import { safeParseItems } from './historyNormalize.js';
 import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
+import { productsCatalogService } from '../Products/ProductsCatalogService.js';
+import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 
 const router = Router();
 
@@ -857,10 +859,14 @@ async function exportReceivedQuantitiesToDilovod(params: {
   const { movement, userId, dryRun, extraUpdate, logLabel } = params;
   const items = WarehouseService.parseItems(movement.items) as unknown as Record<string, unknown>[];
   const skus = [...new Set(items.map((item) => String(item.sku ?? '').trim()).filter(Boolean))];
-  const products = await prisma.product.findMany({
-    where: { sku: { in: skus } },
-    select: { sku: true, name: true, dilovodId: true, portionsPerBox: true, set: true },
-  });
+  const found = await catalogOpsLookup.getBySkus(skus);
+  const products = catalogOpsLookup.listUnique(found).map((p) => ({
+    sku: p.sku,
+    name: p.name,
+    dilovodId: p.dilovodId,
+    portionsPerBox: p.portionsPerBox,
+    set: p.set,
+  }));
   const ppbBySku = new Map(products.map((product) => [product.sku, product.portionsPerBox]));
   const receivedTotal = items.reduce(
     (sum, item) => sum + WarehouseService.itemReceivedPortions(
@@ -1292,46 +1298,13 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 // ============================================================================
 
 // GET /api/warehouse/inventory/products
-// Повертає всі товари з їх залишком на малому складі ("2").
+// catalog_goods у «Готова продукція», без комплектів.
 router.get('/inventory/products', authenticateToken, async (req, res) => {
   try {
-    console.log('📦 [Inventory] GET /inventory/products — завантаження товарів малого складу...');
-
-    const products = await prisma.product.findMany({
-      where: { set: null },
-      select: { id: true, sku: true, name: true, portionsPerBox: true, categoryName: true, isOutdated: true, stockBalanceByStock: true },
-      orderBy: [{ manualOrder: 'asc' }, { name: 'asc' }],
-    });
-
-    const result = products
-      .map((product) => {
-        try {
-          const stock: Record<string, number> = product.stockBalanceByStock
-            ? JSON.parse(product.stockBalanceByStock)
-            : {};
-          const systemBalance = stock['2'] ?? 0;
-          const systemBalanceGp = stock['1'] ?? 0;
-
-          return {
-            id: String(product.id),
-            sku: product.sku,
-            name: product.name,
-            categoryName: product.categoryName ?? null,
-            isOutdated: product.isOutdated,
-            systemBalance,
-            systemBalanceGp,
-            unit: product.portionsPerBox > 1 ? 'portions' : 'pcs',
-            portionsPerBox: product.portionsPerBox,
-          };
-        } catch {
-          console.warn(`⚠️ [Inventory] Не вдалось розпарсити stockBalanceByStock для ${product.sku}`);
-          return null;
-        }
-      })
-      .filter(Boolean);
-
-    console.log(`✅ [Inventory] Знайдено ${result.length} товарів для інвентаризації`);
-    res.json({ products: result, total: result.length });
+    console.log('📦 [Inventory] GET /inventory/products — завантаження порцій з каталогу...');
+    const products = await productsCatalogService.listInventoryProducts();
+    console.log(`✅ [Inventory] Знайдено ${products.length} товарів для інвентаризації`);
+    res.json({ products, total: products.length });
   } catch (error) {
     console.error('🚨 [Inventory] Error fetching inventory products:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1339,44 +1312,13 @@ router.get('/inventory/products', authenticateToken, async (req, res) => {
 });
 
 // GET /api/warehouse/inventory/materials
-// Повертає всі активні матеріали з їх залишком на малому складі ("2").
+// catalog_goods у папці матеріалів.
 router.get('/inventory/materials', authenticateToken, async (req, res) => {
   try {
-    console.log('📦 [Inventory] GET /inventory/materials — завантаження матеріалів малого складу...');
-
-    const materials = await prisma.material.findMany({
-      where: { isActive: true },
-      select: { id: true, sku: true, name: true, stockBalanceByStock: true },
-      orderBy: [{ manualOrder: 'asc' }, { name: 'asc' }],
-    });
-
-    const result = materials
-      .map((material) => {
-        try {
-          const stock: Record<string, number> = material.stockBalanceByStock
-            ? JSON.parse(material.stockBalanceByStock)
-            : {};
-          const systemBalance = stock['2'] ?? 0;
-          const systemBalanceGp = stock['1'] ?? 0;
-
-          return {
-            id: String(material.id),
-            sku: material.sku,
-            name: material.name,
-            systemBalance,
-            systemBalanceGp,
-            unit: 'pcs' as const,
-            portionsPerBox: 1,
-          };
-        } catch {
-          console.warn(`⚠️ [Inventory] Не вдалось розпарсити stockBalanceByStock для матеріалу ${material.sku}`);
-          return null;
-        }
-      })
-      .filter(Boolean);
-
-    console.log(`✅ [Inventory] Знайдено ${result.length} активних матеріалів для інвентаризації`);
-    res.json({ materials: result, total: result.length });
+    console.log('📦 [Inventory] GET /inventory/materials — завантаження матеріалів з каталогу...');
+    const materials = await productsCatalogService.listInventoryMaterials();
+    console.log(`✅ [Inventory] Знайдено ${materials.length} матеріалів для інвентаризації`);
+    res.json({ materials, total: materials.length });
   } catch (error) {
     console.error('🚨 [Inventory] Error fetching inventory materials:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1384,90 +1326,13 @@ router.get('/inventory/materials', authenticateToken, async (req, res) => {
 });
 
 // GET /api/warehouse/inventory/sets
-// Повертає всі комплекти (set != null) з їх залишком на малому складі ("2").
+// catalog_goods у «Готова продукція», accPolicy kit + BOM.
 router.get('/inventory/sets', authenticateToken, async (req, res) => {
   try {
-    console.log('📦 [Inventory] GET /inventory/sets — завантаження комплектів малого складу...');
-
-    const sets = await prisma.product.findMany({
-      where: { NOT: { set: null } },
-      select: { id: true, sku: true, name: true, portionsPerBox: true, categoryName: true, isOutdated: true, stockBalanceByStock: true, set: true },
-      orderBy: [{ manualOrder: 'asc' }, { name: 'asc' }],
-    });
-
-    const result = sets
-      .map((product) => {
-        try {
-          const stock: Record<string, number> = product.stockBalanceByStock
-            ? JSON.parse(product.stockBalanceByStock)
-            : {};
-          const systemBalance = stock['2'] ?? 0;
-          const systemBalanceGp = stock['1'] ?? 0;
-          const componentsSnapshot = product.set
-            ? (typeof product.set === 'string' ? JSON.parse(product.set) : product.set)
-            : [];
-
-          return {
-            id: String(product.id),
-            sku: product.sku,
-            name: product.name,
-            categoryName: product.categoryName ?? null,
-            isOutdated: product.isOutdated,
-            systemBalance,
-            systemBalanceGp,
-            unit: product.portionsPerBox > 1 ? 'portions' : 'pcs',
-            portionsPerBox: product.portionsPerBox,
-            componentsSnapshot,
-          };
-        } catch {
-          console.warn(`⚠️ [Inventory] Не вдалось розпарсити stockBalanceByStock для ${product.sku}`);
-          return null;
-        }
-      })
-      .filter(Boolean);
-
-    try {
-      const componentSkus = new Set<string>();
-      for (const setItem of result as Array<{ componentsSnapshot?: any[] }>) {
-        const components = Array.isArray(setItem?.componentsSnapshot) ? setItem.componentsSnapshot : [];
-        for (const component of components) {
-          const componentSku = String(component?.sku ?? component?.id ?? '').trim();
-          if (componentSku) componentSkus.add(componentSku.toLowerCase());
-        }
-      }
-
-      if (componentSkus.size > 0) {
-        const components = await prisma.product.findMany({
-          where: { sku: { in: Array.from(componentSkus) } },
-          select: { sku: true, name: true },
-        });
-
-        const nameBySku = new Map<string, string>();
-        for (const component of components) {
-          if (component.sku) {
-            nameBySku.set(String(component.sku).trim().toLowerCase(), component.name ?? '');
-          }
-        }
-
-        for (const setItem of result as Array<{ componentsSnapshot?: any[] }>) {
-          const components = Array.isArray(setItem?.componentsSnapshot) ? setItem.componentsSnapshot : [];
-          for (const component of components) {
-            const componentSku = String(component?.sku ?? component?.id ?? '').trim().toLowerCase();
-            if (componentSku && !component.name) {
-              const componentName = nameBySku.get(componentSku);
-              if (componentName) {
-                component.name = componentName;
-              }
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ [Inventory] Не вдалось підтягнути назви компонентів наборів:', error);
-    }
-
-    console.log(`✅ [Inventory] Знайдено ${result.length} комплектів для інвентаризації`);
-    res.json({ sets: result, total: result.length });
+    console.log('📦 [Inventory] GET /inventory/sets — завантаження комплектів з каталогу...');
+    const sets = await productsCatalogService.listInventorySets();
+    console.log(`✅ [Inventory] Знайдено ${sets.length} комплектів для інвентаризації`);
+    res.json({ sets, total: sets.length });
   } catch (error) {
     console.error('🚨 [Inventory] Error fetching inventory sets:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1924,7 +1789,7 @@ router.post('/inventory/:id/refresh-balances', authenticateToken, async (req, re
     }
 
     // Для кожного балансу формуємо звіт: "before" беремо з session.items (systemBalance),
-    // "after" беремо з Dilovod (smallStorage). Ніяких записів у products/materials не робимо.
+    // "after" беремо з Dilovod (smallStorage). Кеш products не чіпаємо.
     for (const b of balances) {
       const sku = b.sku;
       const newSmall = Number(b.smallStorage ?? 0);
@@ -2351,12 +2216,9 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
           }
           let portionsPerBoxBySku = new Map<string, number>();
           if (movementSkus.size > 0) {
-            const products = await prisma.product.findMany({
-              where: { sku: { in: [...movementSkus] } },
-              select: { sku: true, portionsPerBox: true },
-            });
+            const found = await catalogOpsLookup.getBySkus([...movementSkus]);
             portionsPerBoxBySku = new Map(
-              products.map((p) => [p.sku, Number(p.portionsPerBox) || 1]),
+              catalogOpsLookup.listUnique(found).map((p) => [p.sku, Number(p.portionsPerBox) || 1]),
             );
           }
 

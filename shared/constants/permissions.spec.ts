@@ -210,7 +210,7 @@ describe('routePermissionKey / normalizePermissionKey', () => {
     expect(isPermissionKey(actionKey('warehouse', 'history.delete'))).toBe(true);
     expect(isPermissionKey(actionKey('warehouse', 'movement.edit'))).toBe(true);
     expect(isPermissionKey(actionKey('warehouse', 'movement.delete'))).toBe(true);
-    expect(isPermissionKey(actionKey('products', 'setParentIds.read'))).toBe(true);
+    expect(isPermissionKey(actionKey('products', 'sync'))).toBe(true);
   });
 });
 

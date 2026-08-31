@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { getCachedProduct, setCachedProduct } from '@/lib/productLookupCache';
 import { pluralize } from '@/lib/formatUtils';
 import { useDebug } from '@/contexts/DebugContext';
 import { DynamicIcon } from 'lucide-react/dynamic';
@@ -7,7 +8,6 @@ import { useNavigate } from 'react-router-dom';
 import { ConfirmModal } from './modals/ConfirmModal';
 
 // Simple in-memory cache to avoid refetching products while rendering nested sets
-const productCache = new Map<string, any>();
 const stockCache = new Map<string, number>();
 const stockRequestsInFlight = new Map<string, Promise<number | null>>();
 
@@ -63,9 +63,14 @@ const getStockTotalForSku = async (sku: string): Promise<number | null> => {
   }
 
   const request = (async () => {
+    const cached = getCachedProduct(sku);
+    if (cached) {
+      return extractStockTotal((cached as { stockBalanceByStock?: unknown }).stockBalanceByStock);
+    }
     const res = await fetch(`/api/products/${sku}`);
     if (!res.ok) return null;
     const prod = await res.json();
+    setCachedProduct(sku, prod);
     return extractStockTotal(prod?.stockBalanceByStock);
   })();
 
@@ -83,15 +88,14 @@ const getStockTotalForSku = async (sku: string): Promise<number | null> => {
 };
 
 const fetchProductBySku = async (sku: string): Promise<any | null> => {
-  if (productCache.has(sku)) {
-    return productCache.get(sku);
-  }
+  const cached = getCachedProduct(sku);
+  if (cached) return cached;
 
   try {
     const res = await fetch(`/api/products/${sku}`);
     if (!res.ok) return null;
     const product = await res.json();
-    productCache.set(sku, product);
+    setCachedProduct(sku, product);
     return product;
   } catch {
     return null;
@@ -147,8 +151,8 @@ const NestedComponentRenderer = ({ component, depth = 0, isDebugMode }: NestedCo
     let mounted = true;
     const loadMeta = async () => {
       if (!sku) return;
-      if (productCache.has(sku)) {
-        const cached = productCache.get(sku);
+      const cached = getCachedProduct(sku);
+      if (cached) {
         if (mounted) {
           setNestedList(cached);
           setIsSetFlag(Boolean(cached && Array.isArray(cached.set) && cached.set.length > 0));
@@ -157,13 +161,11 @@ const NestedComponentRenderer = ({ component, depth = 0, isDebugMode }: NestedCo
       }
       setLoadingNestedMeta(true);
       try {
-        const res = await fetch(`/api/products/${sku}`);
-        if (!res.ok) {
+        const prod = await fetchProductBySku(sku);
+        if (!prod) {
           if (mounted) setIsSetFlag(false);
           return;
         }
-        const prod = await res.json();
-        productCache.set(sku, prod);
         if (mounted) {
           setNestedList(prod);
           setIsSetFlag(Boolean(prod && Array.isArray(prod.set) && prod.set.length > 0));
@@ -208,7 +210,7 @@ const NestedComponentRenderer = ({ component, depth = 0, isDebugMode }: NestedCo
         <ul className="pl-4 list-none mt-1">
           {nestedItems.map((si: any, idx: number) => {
             const lookupId = si.sku || si.id || si.productId || si.product_id;
-            const cached = lookupId ? productCache.get(lookupId) : null;
+            const cached = lookupId ? getCachedProduct(lookupId) : null;
             const name = si.name || si.productName || si.title || (cached && (cached.name || cached.productName || cached.title)) || `Товар ${lookupId}`;
             const nestedComponent = { name, quantity: si.quantity || si.count || 1, unitRatio: si.unitRatio || 1, sku: lookupId };
             const nestedKey = [lookupId || name, nestedComponent.quantity ?? 1, nestedComponent.unitRatio ?? 1, depth + 1, idx].join('|');

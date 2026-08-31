@@ -37,7 +37,7 @@ const COPY: Record<
 > = {
   branch: {
     title: 'Синхронізація гілки',
-    steps: ['Структура папки з Dilovod', 'TEMP Legacy Update у таблицю products'],
+    steps: ['Структура папки з Dilovod', 'Проекція в кеш products'],
     icon: 'folder-sync',
     tone: 'border-lime-300/80 bg-lime-50/95 text-lime-950',
   },

@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type Key } from 'react';
 import { Autocomplete, AutocompleteItem } from '@heroui/react';
 import {
   findDilovodItemLabel,
   getDilovodItemLabel,
   type DilovodDictItem,
 } from '@shared/utils/directoryUtils';
+
+const LISTBOX_PROPS = {
+  itemClasses: {
+    base: 'data-[selected=true]:bg-blue-500! data-[selected=true]:text-white',
+  },
+} as const;
 
 export interface DilovodDictAutocompleteProps {
   dictItems: DilovodDictItem[];
@@ -23,8 +29,8 @@ export interface DilovodDictAutocompleteProps {
 
 /**
  * HeroUI Autocomplete для довідників Dilovod:
- * - `defaultItems` + key після завантаження — внутрішня фільтрація працює
- * - сортування за алфавітом (uk)
+ * - `items` оновлюються без remount (React 19 + HeroUI AnimatePresence інакше дає static flag)
+ * - фільтрація за inputValue, поки список відкритий
  * - menuTrigger="manual" — список лише по кнопці-тригеру (або стрілках)
  * - при відкритті очищаємо inputValue для пошуку
  * - прокрутка до обраної опції
@@ -51,6 +57,15 @@ export function DilovodDictAutocomplete({
   const selectedLabel = findDilovodItemLabel(selectedKey, dictItems);
   const [inputValue, setInputValue] = useState(selectedLabel);
   const [isOpen, setIsOpen] = useState(false);
+
+  const visibleItems = useMemo(() => {
+    if (!isOpen) return sortedItems;
+    const q = inputValue.trim().toLocaleLowerCase('uk');
+    if (!q) return sortedItems;
+    return sortedItems.filter((item) =>
+      getDilovodItemLabel(item).toLocaleLowerCase('uk').includes(q),
+    );
+  }, [sortedItems, isOpen, inputValue]);
 
   useEffect(() => {
     if (!isOpen) setInputValue(selectedLabel);
@@ -81,9 +96,25 @@ export function DilovodDictAutocomplete({
     };
   }, [isOpen, selectedKey, inputValue]);
 
+  const handleOpenChange = useCallback((open: boolean) => {
+    setIsOpen(open);
+    setInputValue(open ? '' : selectedLabel);
+  }, [selectedLabel]);
+
+  const handleSelectionChange = useCallback((key: Key | null) => {
+    if (key == null || key === '') {
+      // null під час набору — не скидаємо; clear лише через isClearable / onClear
+      return;
+    }
+    onChange(String(key));
+  }, [onChange]);
+
+  const handleClear = useCallback(() => {
+    onChange('');
+  }, [onChange]);
+
   return (
     <Autocomplete
-      key={sortedItems.length > 0 ? 'ready' : 'loading'}
       className={className}
       size="sm"
       variant={variant}
@@ -92,10 +123,11 @@ export function DilovodDictAutocomplete({
       selectedKey={selectedKey || null}
       inputValue={inputValue}
       onInputChange={setInputValue}
-      defaultItems={sortedItems}
+      items={visibleItems}
       allowsCustomValue={false}
       isClearable={isClearable}
       isVirtualized={false}
+      disableAnimation
       aria-label={ariaLabel ?? label}
       classNames={{
         base: 'border-default-200/80',
@@ -103,28 +135,11 @@ export function DilovodDictAutocomplete({
         selectorButton: 'rounded-r-sm! rounded-l-none',
         clearButton: 'rounded-none',
       }}
-      listboxProps={{
-        itemClasses: {
-          base: 'data-[selected=true]:bg-blue-500! data-[selected=true]:text-white',
-        },
-      }}
+      listboxProps={LISTBOX_PROPS}
       menuTrigger="manual"
-      onOpenChange={(open) => {
-        setIsOpen(open);
-        if (open) {
-          setInputValue('');
-        } else {
-          setInputValue(selectedLabel);
-        }
-      }}
-      onClear={isClearable ? () => onChange('') : undefined}
-      onSelectionChange={(key) => {
-        if (key == null || key === '') {
-          // null під час набору — не скидаємо; clear лише через isClearable / onClear
-          return;
-        }
-        onChange(String(key));
-      }}
+      onOpenChange={handleOpenChange}
+      onClear={isClearable ? handleClear : undefined}
+      onSelectionChange={handleSelectionChange}
     >
       {(item) => (
         <AutocompleteItem key={String(item.id)} textValue={getDilovodItemLabel(item)}>

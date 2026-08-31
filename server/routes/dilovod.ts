@@ -5,6 +5,7 @@ import { DilovodService, dilovodExportFlowService, acquireSaleShipmentLock, comp
 import { handleDilovodApiError, clearConfigCache, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
+import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 import { cronService } from '../services/cronService.js';
 import type {
   DilovodSettings,
@@ -450,25 +451,10 @@ router.get('/directories', authenticateToken, dilovodRead, async (req, res) => {
         console.log('API: ❌ Помилка Products Dilovod gateway:', error);
       }
 
-      // Отримуємо товари з products (будемо використовувати поле products.dilovodId)
+      // Отримуємо товари з catalog_goods
       let goodsResult: any[] = [];
       try {
-        const { PrismaClient } = await import('@prisma/client');
-        const prismaLocal = new PrismaClient();
-        const products = await prismaLocal.product.findMany({
-          where: ({ dilovodId: { not: null } } as any),
-          orderBy: { sku: 'asc' }
-        });
-
-        goodsResult = products.map(p => ({
-          id: p.id,
-          good_id: (p as any).dilovodId,
-          productNum: p.sku,
-          name: p.name || null,
-          parent: null
-        }));
-
-        await prismaLocal.$disconnect();
+        goodsResult = await catalogOpsLookup.listGoodsDict();
       } catch (error) {
         console.log('API: ❌ Помилка отримання товарів з кешу:', error);
       }
@@ -1865,13 +1851,13 @@ router.post('/cache/refresh/:type', authenticateToken, dilovodAdmin, async (req,
 
 /**
  * GET /api/dilovod/cache/fresh-skus
- * Отримати свіжі SKU напряму з WordPress (без використання кешу)
+ * Активні SKU з catalog_goods (піддерево «Готова продукція»)
  */
 router.get('/cache/fresh-skus', authenticateToken, async (req, res) => {
   try {
     const { DilovodCacheManager } = await import('../services/dilovod/DilovodCacheManager.js');
     const manager = new DilovodCacheManager();
-    const skus = await manager.fetchFreshSkusFromWordPress();
+    const skus = await manager.fetchFreshSkusFromCatalog();
     res.json({ success: true, data: skus });
   } catch (error) {
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });

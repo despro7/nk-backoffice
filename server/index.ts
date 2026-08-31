@@ -30,7 +30,6 @@ import metaLogsRouter from './routes/meta-logs.js';
 import wordpressReceiptRoutes from './routes/wordpress-receipt.js';
 import notificationsRouter from './routes/notifications.js';
 import usersRoutes from './routes/users.js';
-import materialsRouter from './routes/materials.js';
 import statRouter from './routes/stat.js';
 import expandRoutes from './routes/expand.js';
 import lalAudiencesRoutes from './routes/lal-audiences.js';
@@ -182,9 +181,6 @@ export function createServer() {
 
   // Warehouse routes
   app.use("/api/warehouse", warehouseRoutes);
-
-  // Materials routes
-  app.use("/api/materials", materialsRouter);
 
   // Stat routes (sales dynamics, etc.)
   app.use("/api/stat", statRouter);

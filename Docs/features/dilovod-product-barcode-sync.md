@@ -8,7 +8,7 @@
 
 ## Потік синхронізації
 
-1. `DilovodService.syncProductsWithDilovod()` збирає SKU (WordPress + whitelist при full).
+1. `DilovodService.syncProductsWithDilovod()` збирає SKU з `catalog_goods` (піддерево «Готова продукція»).
 2. `getGoodsInfoWithSetsOptimized()`:
    - `getGoodsWithPrices` + `getGoodsFromCatalog`
    - `processGoodsWithSets` → список `DilovodProduct`

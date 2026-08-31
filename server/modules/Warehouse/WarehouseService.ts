@@ -3,6 +3,7 @@ import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/wa
 import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
 import { WarehouseMovement, WarehouseMovementItem, StockUpdateResult, WarehouseMapping } from './WarehouseTypes.js';
 import type { PayloadMovementProduct } from './WarehousePayloadBuilder.js';
+import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 
 export class WarehouseService {
   // Парсить JSON-поле items з відповіді Prisma.
@@ -253,19 +254,17 @@ export class WarehouseService {
       console.log('🏭 [WarehouseService] Отримання товарів для переміщення...');
 
       // Отримуємо товари та комплекти з бази даних
-      const products = await prisma.product.findMany({
-        select: {
-          sku: true,
-          name: true,
-          portionsPerBox: true,
-          stockBalanceByStock: true,
-          barcode: true,
-          dilovodId: true,
-          isOutdated: true,
-          set: true,
-        },
-        orderBy: { name: 'asc' }
-      });
+      const opsProducts = await catalogOpsLookup.listFinishedProducts({ includeOutdated: true });
+      const products = opsProducts.map((p) => ({
+        sku: p.sku,
+        name: p.name,
+        portionsPerBox: p.portionsPerBox,
+        stockBalanceByStock: p.stockBalanceByStockRaw,
+        barcode: p.barcode,
+        dilovodId: p.dilovodId,
+        isOutdated: p.isOutdated,
+        set: p.set,
+      }));
 
       console.log(`🏭 [WarehouseService] Знайдено ${products.length} активних товарів`);
 
@@ -413,65 +412,30 @@ export class WarehouseService {
       usableRows.find((row) => isUsableDilovodBatchId(row.goodPart)) ?? usableRows[0];
 
     if (catalogHit) {
-      const product = await WarehouseService.findProductForCatalogGood(
-        catalogHit.good.id,
-        catalogHit.good.sku,
-      );
+      const good = catalogHit.good;
+      const ops = await catalogOpsLookup.getByDilovodIds([good.id]);
+      const product = [...ops.values()][0] ?? (good.sku ? await catalogOpsLookup.getBySku(good.sku) : null);
       if (product) {
         const batchId = isUsableDilovodBatchId(catalogHit.goodPart)
           ? catalogHit.goodPart.trim()
           : null;
         const batchNumber = catalogHit.goodPartName?.trim() || null;
-        return WarehouseService.toBarcodeLookupResponse(product, trimmed, batchId, batchNumber);
+        return WarehouseService.toBarcodeLookupResponse(
+          {
+            sku: product.sku,
+            name: product.name,
+            weight: product.weight,
+            portionsPerBox: product.portionsPerBox,
+            barcode: product.barcode,
+          },
+          trimmed,
+          batchId,
+          batchNumber,
+        );
       }
     }
 
-    const productByBarcode = await prisma.product.findFirst({
-      where: { barcode: trimmed },
-      select: {
-        sku: true,
-        name: true,
-        weight: true,
-        portionsPerBox: true,
-        barcode: true,
-      },
-    });
-
-    if (!productByBarcode) return null;
-
-    return WarehouseService.toBarcodeLookupResponse(productByBarcode, trimmed, null, null);
-  }
-
-  /** CatalogGood → Product: спочатку dilovodId (= catalog_goods.id), інакше sku. */
-  private static async findProductForCatalogGood(
-    catalogGoodId: string,
-    catalogSku: string | null,
-  ) {
-    const byDilovodId = await prisma.product.findFirst({
-      where: { dilovodId: catalogGoodId },
-      select: {
-        sku: true,
-        name: true,
-        weight: true,
-        portionsPerBox: true,
-        barcode: true,
-      },
-    });
-    if (byDilovodId) return byDilovodId;
-
-    const sku = catalogSku?.trim();
-    if (!sku) return null;
-
-    return prisma.product.findUnique({
-      where: { sku },
-      select: {
-        sku: true,
-        name: true,
-        weight: true,
-        portionsPerBox: true,
-        barcode: true,
-      },
-    });
+    return null;
   }
 
   static movementLineKey(item: {

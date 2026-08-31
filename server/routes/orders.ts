@@ -4,6 +4,7 @@ import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { ordersCacheService } from '../services/ordersCacheService.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { prisma, getOrderSourceDetailed, getOrderSourceMaps, getReportingDayStartHour, getReportingDate, getReportingDateRange, logServer } from '../lib/utils.js';
+import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 import { dilovodService } from '../services/dilovod/index.js';
 import { getStatusText } from '../services/salesdrive/statusMapper.js';
 import {
@@ -80,7 +81,7 @@ function normalizeDeductionQuantity(value: unknown): number {
   return Math.max(0, Math.round(quantity));
 }
 
-async function buildMonolithicSetStockUpdates(payloadData: unknown): Promise<Array<ReturnType<typeof prisma.product.update>>> {
+async function buildMonolithicSetStockUpdates(payloadData: unknown): Promise<[]> {
   const shipmentBySku = (payloadData as ShipmentPayloadData | null | undefined)?.shipment?.bySku;
   if (!shipmentBySku || typeof shipmentBySku !== 'object') {
     return [];
@@ -103,37 +104,8 @@ async function buildMonolithicSetStockUpdates(payloadData: unknown): Promise<Arr
     return [];
   }
 
-  const products = await prisma.product.findMany({
-    where: { sku: { in: Array.from(deductionMap.keys()) } },
-    select: { id: true, sku: true, stockBalanceByStock: true }
-  });
-
-  const updates = products.flatMap((product) => {
-    const deduction = deductionMap.get(product.sku) ?? 0;
-    if (deduction <= 0) {
-      return [];
-    }
-
-    const stockBalances = parseStockBalances(product.stockBalanceByStock);
-    const currentBalance = Number(stockBalances['2']) || 0;
-    const nextBalance = Math.max(0, currentBalance - deduction);
-
-    if (nextBalance === currentBalance) {
-      return [];
-    }
-
-    return prisma.product.update({
-      where: { id: product.id },
-      data: {
-        stockBalanceByStock: JSON.stringify({
-          ...stockBalances,
-          '2': nextBalance,
-        })
-      }
-    });
-  });
-
-  return updates;
+  await catalogOpsLookup.deductSmallStock(deductionMap);
+  return [];
 }
 
 function normalizeOrderItems(items: unknown): RawOrderItem[] {
