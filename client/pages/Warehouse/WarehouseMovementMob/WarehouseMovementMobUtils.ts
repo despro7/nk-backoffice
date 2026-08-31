@@ -11,6 +11,7 @@ import type {
   MovementMobChronologyEvent,
   MovementMobDocumentViewModel,
   MovementMobListCardViewModel,
+  MovementMobReceiptSummary,
   MovementMobProductLineViewModel,
   MovementMobProductMeta,
   MovementMobRawItem,
@@ -122,6 +123,85 @@ export function aggregateMovementItems(items: MovementMobRawItem[]): MovementMob
   );
 }
 
+function hasStoredDeviations(raw: unknown): boolean {
+  return raw != null && raw !== '';
+}
+
+function resolvedSentPortions(item: MovementMobRawItem): number {
+  if (item.totalPortions != null && Number.isFinite(Number(item.totalPortions))) {
+    return Number(item.totalPortions);
+  }
+  return Number(item.portionQuantity) || 0;
+}
+
+function resolvedReceivedPortions(item: MovementMobRawItem): number {
+  if (item.receivedTotalPortions != null && Number.isFinite(Number(item.receivedTotalPortions))) {
+    return Number(item.receivedTotalPortions);
+  }
+  return Number(item.receivedPortionQuantity) || 0;
+}
+
+/** Підсумок прийому лише для документів, де вже є етап отримання. */
+export function summarizeMovementReceipt(
+  items: MovementMobRawItem[],
+  status: string,
+  deviations?: unknown,
+): MovementMobReceiptSummary | null {
+  if (status === 'pending_receipt') {
+    return buildReceiptSummary(items, status);
+  }
+  // Старі finalized-документи (десктоп / Dilovod) не мають snapshot відхилень.
+  if (status === 'finalized' && hasStoredDeviations(deviations)) {
+    return buildReceiptSummary(items, status);
+  }
+  return null;
+}
+
+function buildReceiptSummary(
+  items: MovementMobRawItem[],
+  status: string,
+): MovementMobReceiptSummary {
+  const summary: MovementMobReceiptSummary = {
+    receivedBoxes: 0,
+    receivedLoosePortions: 0,
+    receivedTotalPortions: 0,
+    deltaPortions: 0,
+    matchLines: 0,
+    shortageLines: 0,
+    surplusLines: 0,
+    pendingLines: 0,
+    shortagePortions: 0,
+    surplusPortions: 0,
+  };
+
+  let sentTotal = 0;
+  for (const item of items) {
+    const sent = resolvedSentPortions(item);
+    const received = resolvedReceivedPortions(item);
+    sentTotal += sent;
+    summary.receivedBoxes += Number(item.receivedBoxQuantity) || 0;
+    summary.receivedLoosePortions += Number(item.receivedPortionQuantity) || 0;
+    summary.receivedTotalPortions += received;
+
+    if (status === 'pending_receipt' && received <= 0) {
+      summary.pendingLines += 1;
+      continue;
+    }
+    if (received === sent) {
+      summary.matchLines += 1;
+    } else if (received < sent) {
+      summary.shortageLines += 1;
+      summary.shortagePortions += sent - received;
+    } else {
+      summary.surplusLines += 1;
+      summary.surplusPortions += received - sent;
+    }
+  }
+
+  summary.deltaPortions = summary.receivedTotalPortions - sentTotal;
+  return summary;
+}
+
 export function resolveShortStorageBadge(storageId?: string, fallbackName?: string): string {
   if (storageId && SHORT_BADGE_BY_STORAGE_ID[storageId]) {
     return SHORT_BADGE_BY_STORAGE_ID[storageId];
@@ -228,6 +308,7 @@ export function toListCardViewModel(record: MovementMobApiRecord): MovementMobLi
     sourceBadge: resolveShortStorageBadge(record.sourceWarehouse),
     destBadge: resolveShortStorageBadge(record.destinationWarehouse),
     aggregates,
+    receiptSummary: summarizeMovementReceipt(items, record.status, record.deviations),
     stepperSteps: buildStepperSteps(record.status),
     status: record.status,
   };

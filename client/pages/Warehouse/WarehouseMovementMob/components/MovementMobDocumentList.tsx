@@ -23,6 +23,8 @@ export default function MovementMobDocumentList({
   onAdminEdit,
   onAdminDelete,
 }: MovementMobDocumentListProps) {
+  const navigate = useNavigate();
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3 text-default-500">
@@ -40,8 +42,6 @@ export default function MovementMobDocumentList({
       </div>
     );
   }
-
-  const navigate = useNavigate();
 
   if (cards.length === 0) {
     return (

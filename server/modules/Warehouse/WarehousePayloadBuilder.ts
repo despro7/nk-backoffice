@@ -188,15 +188,11 @@ export class WarehousePayloadBuilder {
     const pad = (n: number): string => String(n).padStart(2, '0');
     const formattedDate = `${movementDate.getFullYear()}-${pad(movementDate.getMonth() + 1)}-${pad(movementDate.getDate())} ${pad(movementDate.getHours())}:${pad(movementDate.getMinutes())}:${pad(movementDate.getSeconds())}`;
 
-    // Визначаємо номер документа
-    let docNumber: string | undefined;
-    if (draft.dilovodDocId) {
-      // Редагування — використовуємо оригінальний номер
-      docNumber = draft.docNumber || undefined;
-    } else if (settings.numberGeneration === 'server') {
-      docNumber = this.generateDocumentNumber(settings.numberTemplate, draft.internalDocNumber);
-    }
-    // Якщо numberGeneration === 'dilovod' і новий документ — number не передаємо
+    // Номер у Dilovod = внутрішній номер backoffice (напр. «П-00319»).
+    // При повторній відправці вже існуючого документа зберігаємо номер, який уже стоїть у Dilovod.
+    const docNumber = draft.dilovodDocId
+      ? (draft.docNumber || draft.internalDocNumber || undefined)
+      : (draft.internalDocNumber || undefined);
 
     // Формуємо tpGoods з summaryItems
     const tpGoods: DilovodMovementGoodItem[] = [];

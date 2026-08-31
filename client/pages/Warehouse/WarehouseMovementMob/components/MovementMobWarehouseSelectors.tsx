@@ -16,6 +16,15 @@ interface MovementMobWarehouseSelectorsProps {
   readOnly?: boolean;
 }
 
+function optionsWithSelected(
+  storages: MovementMobStorageOption[],
+  selectedId: string,
+): MovementMobStorageOption[] {
+  if (!selectedId) return storages;
+  if (storages.some((storage) => String(storage.id) === String(selectedId))) return storages;
+  return [{ id: selectedId, name: selectedId }, ...storages];
+}
+
 export default function MovementMobWarehouseSelectors({
   storages,
   sourceId,
@@ -25,12 +34,17 @@ export default function MovementMobWarehouseSelectors({
   onSwap,
   readOnly = false,
 }: MovementMobWarehouseSelectorsProps) {
+  const sourceOptions = optionsWithSelected(storages, sourceId);
+  const destOptions = optionsWithSelected(storages, destId);
+  const sourceKeys = sourceId ? [String(sourceId)] : [];
+  const destKeys = destId ? [String(destId)] : [];
+
   return (
     <div className="flex items-end gap-2">
       <Select
         label="зі складу"
         labelPlacement="outside"
-        selectedKeys={sourceId != null ? [String(sourceId)] : []}
+        selectedKeys={sourceKeys}
         onSelectionChange={(keys) => {
           if (readOnly || keys == null) return;
           const selected = Array.from(keys)[0];
@@ -57,8 +71,8 @@ export default function MovementMobWarehouseSelectors({
           },
         }}
       >
-        {storages.map((storage) => (
-          <SelectItem key={storage.id} textValue={storage.name}>
+        {sourceOptions.map((storage) => (
+          <SelectItem key={String(storage.id)} textValue={storage.name}>
             {storage.name}
           </SelectItem>
         ))}
@@ -80,7 +94,7 @@ export default function MovementMobWarehouseSelectors({
       <Select
         label="на склад"
         labelPlacement="outside"
-        selectedKeys={destId != null ? [String(destId)] : []}
+        selectedKeys={destKeys}
         onSelectionChange={(keys) => {
           if (readOnly || keys == null) return;
           const selected = Array.from(keys)[0];
@@ -108,8 +122,8 @@ export default function MovementMobWarehouseSelectors({
           },
         }}
       >
-        {storages.map((storage) => (
-          <SelectItem key={storage.id} textValue={storage.name}>
+        {destOptions.map((storage) => (
+          <SelectItem key={String(storage.id)} textValue={storage.name}>
             {storage.name}
           </SelectItem>
         ))}

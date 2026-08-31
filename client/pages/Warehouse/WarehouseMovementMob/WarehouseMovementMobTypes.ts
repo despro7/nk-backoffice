@@ -46,6 +46,7 @@ export interface MovementMobApiRecord {
   destinationWarehouse: string;
   notes: string | null;
   items: string | MovementMobRawItem[];
+  deviations?: string | unknown[] | null;
   movementDate: string | null;
   draftCreatedAt: string;
   draftLastEditedAt: string;
@@ -66,6 +67,20 @@ export interface MovementMobAggregates {
   lineCount: number;
 }
 
+/** Підсумок прийому для картки списку: отримано vs відправлено. */
+export interface MovementMobReceiptSummary {
+  receivedBoxes: number;
+  receivedLoosePortions: number;
+  receivedTotalPortions: number;
+  deltaPortions: number;
+  matchLines: number;
+  shortageLines: number;
+  surplusLines: number;
+  pendingLines: number;
+  shortagePortions: number;
+  surplusPortions: number;
+}
+
 export interface MovementMobStepperStep {
   key: MovementMobStepperStepKey;
   label: string;
@@ -81,6 +96,7 @@ export interface MovementMobListCardViewModel {
   sourceBadge: string;
   destBadge: string;
   aggregates: MovementMobAggregates;
+  receiptSummary: MovementMobReceiptSummary | null;
   stepperSteps: MovementMobStepperStep[];
   status: MovementMobDbStatus | string;
 }
