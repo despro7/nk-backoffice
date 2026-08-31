@@ -54,7 +54,20 @@ export function NumberInput({
   classNames,
   ...rest
 }: NumberInputProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const negative = allowNegative ?? (min != null && min < 0);
+
+  // React вішає onWheel як passive — preventDefault там лише спамить консоль.
+  useEffect(() => {
+    if (!disableMouseWheel) return;
+    const el = inputRef.current;
+    if (!el) return;
+    const blockWheel = (event: globalThis.WheelEvent) => {
+      event.preventDefault();
+    };
+    el.addEventListener('wheel', blockWheel, { passive: false });
+    return () => el.removeEventListener('wheel', blockWheel);
+  }, [disableMouseWheel]);
 
   const handleValueChange = useCallback(
     (next: string) => {
@@ -112,15 +125,15 @@ export function NumberInput({
 
   const handleWheel = useCallback(
     (e: WheelEvent<HTMLInputElement>) => {
-      if (disableMouseWheel) e.preventDefault();
       onWheel?.(e);
     },
-    [disableMouseWheel, onWheel],
+    [onWheel],
   );
 
   return (
     <Input
       {...rest}
+      ref={inputRef}
       type="text"
       inputMode={decimalPlaces > 0 ? 'decimal' : 'numeric'}
       value={value}
@@ -130,7 +143,7 @@ export function NumberInput({
       onValueChange={handleValueChange}
       onFocus={handleFocus}
       onBlur={handleBlur}
-      onWheel={handleWheel}
+      onWheel={onWheel ? handleWheel : undefined}
       classNames={{
         ...classNames,
         input: cn(SPIN_HIDE, classNames?.input),

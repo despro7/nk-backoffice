@@ -5,6 +5,7 @@
 
 import { prisma, logServer } from '../../lib/utils.js';
 import { CATALOG_ACC_POLICY_KIT } from '../../../shared/types/catalog.js';
+import { pickPrimaryBarcode } from './barcodeUtils.js';
 
 const SNAPSHOT_TTL_MS = 120_000;
 
@@ -127,7 +128,7 @@ class ProductOpsCache {
     const rows = await prisma.product.findMany({ select: productSelect });
     const dilovodIds = rows.map((r) => r.dilovodId).filter((id): id is string => Boolean(id));
 
-    const [catalogStocks, kits] = await Promise.all([
+    const [catalogStocks, kits, catalogBarcodes] = await Promise.all([
       dilovodIds.length
         ? prisma.catalogGood.findMany({
             where: { id: { in: dilovodIds } },
@@ -150,6 +151,13 @@ class ProductOpsCache {
           },
         },
       }),
+      dilovodIds.length
+        ? prisma.catalogGoodBarcode.findMany({
+            where: { goodId: { in: dilovodIds } },
+            select: { goodId: true, code: true, goodPart: true },
+            orderBy: { id: 'asc' },
+          })
+        : Promise.resolve([]),
     ]);
 
     const stockByCatalogId = new Map(
@@ -159,6 +167,12 @@ class ProductOpsCache {
     const kitBySku = new Map(
       kits.filter((kit) => kit.sku).map((kit) => [String(kit.sku).trim().toLowerCase(), kit]),
     );
+    const barcodesByGood = new Map<string, Array<{ code: string; goodPart: string }>>();
+    for (const row of catalogBarcodes) {
+      const list = barcodesByGood.get(row.goodId) ?? [];
+      list.push({ code: row.code, goodPart: row.goodPart });
+      barcodesByGood.set(row.goodId, list);
+    }
 
     const byKey = new Map<string, OpsCachedProduct>();
     for (const row of rows) {
@@ -194,7 +208,7 @@ class ProductOpsCache {
         weight: row.weight,
         manualOrder: row.manualOrder,
         unitRatio: row.unitRatio,
-        barcode: row.barcode,
+        barcode: (row.dilovodId && pickPrimaryBarcode(barcodesByGood.get(row.dilovodId) ?? [])) || row.barcode,
         isOutdated: row.isOutdated,
         portionsPerBox: row.portionsPerBox,
         stockBalanceByStock: catalogStock ?? parseStock(row.stockBalanceByStock),

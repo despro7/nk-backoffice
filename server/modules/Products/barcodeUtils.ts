@@ -143,6 +143,24 @@ export function catalogBarcodeRowKey(row: CatalogBarcodeMatchRow): string {
 }
 
 /**
+ * Операційний ШК для комплектації: будь-який код, без фільтра activity.
+ * Пріоритет — рядок без партії (порожнє / "0"), інакше перший.
+ */
+export function pickPrimaryBarcode(
+  rows: Array<{ code?: string | null; goodPart?: string | null }>
+): string | null {
+  const codes = rows
+    .map((row) => ({
+      code: String(row.code ?? '').trim(),
+      goodPart: String(row.goodPart ?? '').trim(),
+    }))
+    .filter((row) => row.code);
+  if (codes.length === 0) return null;
+  const unbound = codes.find((row) => !row.goodPart || row.goodPart === '0');
+  return (unbound ?? codes[0]).code;
+}
+
+/**
  * Знайти існуючий рядок ШК, щоб оновити регістр Dilovod, а не створити дублікат коду.
  * 1) точний code + goodPart
  * 2) той самий code без партії (привʼязка партії)

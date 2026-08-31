@@ -387,7 +387,7 @@ export class WarehouseService {
   }
 
   /**
-   * Пошук товару за ШК: спочатку активний CatalogGoodBarcode, інакше Product.barcode.
+   * Пошук товару за ШК: CatalogGoodBarcode (будь-який activity), інакше Product.barcode.
    *
    * ШК коробки (таб «Наліпки») ще немає окремого регістра — усі знайдені коди = 'portion'.
    * Коли з’явиться box-код: перевіряти його першим; якщо той самий код є на обох рівнях — пріоритет 'box'.
@@ -397,7 +397,7 @@ export class WarehouseService {
     if (!trimmed) return null;
 
     const barcodeRows = await prisma.catalogGoodBarcode.findMany({
-      where: { code: trimmed, activity: true },
+      where: { code: trimmed },
       include: {
         good: {
           select: { id: true, sku: true, delMark: true, isGroup: true },

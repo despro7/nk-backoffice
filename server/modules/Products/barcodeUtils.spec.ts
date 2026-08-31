@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   catalogBarcodeRowKey,
   matchExistingBarcode,
+  pickPrimaryBarcode,
   type CatalogBarcodeMatchRow,
 } from './barcodeUtils';
 
@@ -69,3 +70,25 @@ describe('matchExistingBarcode', () => {
     expect(matched).toBeUndefined();
   });
 });
+
+describe('pickPrimaryBarcode', () => {
+  it('бере ШК навіть якщо він єдиний і з партією', () => {
+    expect(
+      pickPrimaryBarcode([{ code: '4820249330210', goodPart: '1112200000001995' }])
+    ).toBe('4820249330210');
+  });
+
+  it('пріоритет рядка без партії, goodPart "0" вважає непривʼязаним', () => {
+    expect(
+      pickPrimaryBarcode([
+        { code: '111', goodPart: 'batch' },
+        { code: '2200000000378', goodPart: '0' },
+      ])
+    ).toBe('2200000000378');
+  });
+
+  it('порожній список → null', () => {
+    expect(pickPrimaryBarcode([])).toBeNull();
+  });
+});
+

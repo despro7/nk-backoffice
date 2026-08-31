@@ -12,6 +12,7 @@ import {
 } from '../../../shared/types/catalog.js';
 import { DEFAULT_DILOVOD_CONFIG, getPriceTypeNameById } from '../../services/dilovod/DilovodUtils.js';
 import { isArchiveFolderName, isKitAccPolicy } from './ProductsTypes.js';
+import { pickPrimaryBarcode } from './barcodeUtils.js';
 
 export interface CatalogOpsSetItem {
   id: string;
@@ -62,7 +63,6 @@ const opsSelect = {
   updatedAt: true,
   prices: { select: { priceType: true, price: true, currency: true } },
   barcodes: {
-    where: { activity: true },
     select: { code: true, goodPart: true },
     orderBy: { id: 'asc' as const },
   },
@@ -145,8 +145,7 @@ function mapPrices(row: CatalogRow): {
 }
 
 function pickBarcode(row: CatalogRow): string | null {
-  const primary = row.barcodes.find((b) => !b.goodPart || b.goodPart === '') ?? row.barcodes[0];
-  return primary?.code?.trim() || null;
+  return pickPrimaryBarcode(row.barcodes);
 }
 
 function toOpsProduct(
