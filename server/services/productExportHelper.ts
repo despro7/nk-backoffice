@@ -11,7 +11,21 @@
 
 import { prisma } from '../lib/utils.js';
 import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
+import { CATALOG_DEFAULT_CURRENCY_ID } from '../../shared/types/catalog.js';
 import { ordersCacheService, OrderCacheItem } from './ordersCacheService.js';
+
+/** SalesDrive product-handler приймає код валюти (UAH), не Dilovod id. */
+function toSalesDriveCurrency(currency: string | null | undefined): string {
+  const value = (currency ?? '').trim();
+  if (!value || value === CATALOG_DEFAULT_CURRENCY_ID || value.toUpperCase() === 'UAH') {
+    return 'UAH';
+  }
+  // Інші Dilovod id (лише цифри) SalesDrive теж не знає — магазин працює в гривні
+  if (/^\d{10,}$/.test(value)) {
+    return 'UAH';
+  }
+  return value;
+}
 
 // ─── Типи ────────────────────────────────────────────────────────────────────
 
@@ -193,7 +207,7 @@ export async function buildExportPayload(
         name: product.name,
         sku: product.sku,
         costPerItem: (product.costPerItem || 0).toFixed(5),
-        currency: product.currency || 'UAH',
+        currency: toSalesDriveCurrency(product.currency),
         category: {
           id: product.categoryId || 0,
           name: product.categoryName || '',
