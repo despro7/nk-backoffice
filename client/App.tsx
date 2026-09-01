@@ -163,7 +163,7 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-neutral-400 mx-auto mb-4"></div>
           <p className="text-gray-600">Завантаження налаштувань застосунку...</p>
         </div>
       </div>
