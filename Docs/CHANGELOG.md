@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-09-01 — Dilovod: модуль метаданих (listMetadata / getMetadata)
+**Files:** `server/services/dilovod/{DilovodApiClient,DilovodMetadataService,DilovodTypes,index}.ts`, `server/routes/dilovod.ts`, `Docs/integrations/dilovod-metadata.md`
+
+- `DilovodApiClient`: `listMetadata`, `getMetadataByName` / `getMetadataById` через чергу `makeRequest`. `getSettlementsKinds` без хибного `params.id`.
+- `DilovodMetadataService`: кеш 24 год (memory + `settings_base` `dilovod.meta.*`), резолв коротких імен (пріоритет регістрів), `getRegisterShape`, `virtualBatFields` для BAT.
+- HTTP: `GET /api/dilovod/metadata` і `/:objectName` (`q`, `refresh`), право `dilovodRead`.
+- Деталі: `Docs/integrations/dilovod-metadata.md`.
+
+---
+
 ## 2026-08-31 — Комплектація: ops-кеш, комплекти з каталогу, динамічні набори
 **Files:** `server/modules/Products/{ProductOpsCache,CatalogOpsLookup}.ts`, `server/services/expandService.ts`, `server/routes/products.ts`, `client/lib/{orderAssemblyUtils,productLookupCache}.ts`, `client/components/OrderChecklistItem.tsx`, `Docs/features/expand-flatten-calc.md`, `Docs/features/products-catalog-2.0.md`, `Docs/features/order-assembly/dynamic-monolithic-order-payload.md`
 

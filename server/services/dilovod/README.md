@@ -1,49 +1,51 @@
-# Dilovod Service - Модульная архитектура
+# Dilovod Service — модульна архітектура
 
-## Обзор
+## Огляд
 
-Сервис для работы с Dilovod API разделен на логические модули для улучшения читаемости, тестируемости и поддержки кода.
+Сервіс для роботи з Dilovod API розділений на логічні модулі для покращення читабельності, тестованості та підтримки коду.
 
-## Структура модулей
+## Структура модулів
 
 ```
 dilovod/
-├── index.ts                    # Главный экспорт всех модулей
-├── DilovodService.ts          # Основной класс-координатор
-├── DilovodApiClient.ts        # Клиент для работы с Dilovod API
-├── DilovodDataProcessor.ts    # Обработка и трансформация данных
-├── DilovodSyncManager.ts      # Управление синхронизацией с БД
-├── DilovodCacheManager.ts     # Управление кешем SKU товаров
-├── DilovodTypes.ts            # Типы и интерфейсы
-├── DilovodUtils.ts            # Утилиты и хелперы
-└── README.md                  # Эта документация
+├── index.ts                    # Головний експорт усіх модулів
+├── DilovodService.ts          # Основний клас-координатор
+├── DilovodApiClient.ts        # Клієнт для роботи з Dilovod API
+├── DilovodMetadataService.ts  # listMetadata / getMetadata, форма регістрів
+├── DilovodDataProcessor.ts    # Обробка та трансформація даних
+├── DilovodSyncManager.ts      # Керування синхронізацією з БД
+├── DilovodCacheManager.ts     # Керування кешем SKU товарів
+├── DilovodTypes.ts            # Типи та інтерфейси
+├── DilovodUtils.ts            # Утиліти та хелпери
+└── README.md                  # Ця документація
 ```
 
-## Описание модулей
+## Опис модулів
 
 ### 1. DilovodTypes.ts
-Содержит все типы и интерфейсы для работы с Dilovod API:
-- `DilovodProduct` - структура товара
-- `DilovodSyncResult` - результат синхронизации
-- `DilovodApiRequest` - запрос к API
-- И другие типы...
+Містить усі типи та інтерфейси для роботи з Dilovod API:
+- `DilovodProduct` — структура товару
+- `DilovodSyncResult` — результат синхронізації
+- `DilovodApiRequest` — запит до API
+- та інші типи...
 
 ### 2. DilovodUtils.ts
-Утилиты и хелперы:
-- `getPriceTypeNameById()` - получение названия типа цены
-- `formatDateForDilovod()` - форматирование даты для API
-- `validateDilovodConfig()` - валидация конфигурации
-- `handleDilovodApiError()` - обработка ошибок API
-- `logWithTimestamp()` - логирование с временными метками
+Утиліти та хелпери:
+- `getPriceTypeNameById()` — отримання назви типу ціни
+- `formatDateForDilovod()` — форматування дати для API
+- `validateDilovodConfig()` — валідація конфігурації
+- `handleDilovodApiError()` — обробка помилок API
+- `logWithTimestamp()` — логування з часовими мітками
 
 ### 3. DilovodApiClient.ts
-Клиент для работы с Dilovod API:
-- `makeRequest()` - основной метод для запросов
-- `getGoodsWithPrices()` - получение товаров с ценами
-- `getGoodsFromCatalog()` - получение товаров из каталога
-- `getBarCodesByObjectIds()` - получение штрих-кодов из регистра barCodes
-- `getObject()` - получение детальной информации об объекте
-- `testConnection()` - тест подключения
+Клієнт для роботи з Dilovod API:
+- `makeRequest()` — основний метод для запитів
+- `listMetadata()` / `getMetadataByName()` / `getMetadataById()` — метадані об'єктів API
+- `getGoodsWithPrices()` — отримання товарів з цінами
+- `getGoodsFromCatalog()` — отримання товарів з каталогу
+- `getBarCodesByObjectIds()` — отримання штрих-кодів з регістру barCodes
+- `getObject()` — отримання детальної інформації про об'єкт
+- `testConnection()` — тест підключення
 
 ### 4. DilovodCacheManager.ts
 SKU для legacy sync / goods cache:
@@ -52,48 +54,59 @@ SKU для legacy sync / goods cache:
 - `forceRefreshCache()` — повторне читання SKU з каталогу
 
 ### 5. DilovodDataProcessor.ts
-Обработка и трансформация данных:
-- `processGoodsWithSets()` - обработка товаров с комплектами
-- `createIdToSkuMapping()` - создание маппинга ID -> SKU
-- `buildFinalProducts()` - формирование финальных товаров
-- `processStockBalance()` - обработка остатков
+Обробка та трансформація даних:
+- `processGoodsWithSets()` — обробка товарів з комплектами
+- `createIdToSkuMapping()` — створення мапінгу ID -> SKU
+- `buildFinalProducts()` — формування фінальних товарів
+- `processStockBalance()` — обробка залишків
 
 ### 6. DilovodSyncManager.ts
-Управление синхронизацией с базой данных:
-- `syncProductsToDatabase()` - синхронизация товаров с БД (хеш включает `barcode`)
-- `getSyncStats()` - статистика синхронизации
-- `getProducts()` - получение товаров по фильтрам
-- `cleanupOldProducts()` - очистка старых товаров
+Керування синхронізацією з базою даних:
+- `syncProductsToDatabase()` — синхронізація товарів з БД (хеш включає `barcode`)
+- `getSyncStats()` — статистика синхронізації
+- `getProducts()` — отримання товарів за фільтрами
+- `cleanupOldProducts()` — очищення старих товарів
 
 ### 7. DilovodService.ts
-Основной класс-координатор, который использует все модули:
-- `syncProductsWithDilovod()` - полная синхронизация
-- `getGoodsInfoWithSetsOptimized()` - получение товаров с комплектами + штрих-коды из `barCodes`
-- `logSyncError()` - запись ошибок sync в `meta_logs` (в т.ч. `missing_barcode`)
-- `testSetsOnly()` - тест получения комплектов
-- Управление всеми аспектами работы с Dilovod
+Основний клас-координатор, який використовує всі модулі:
+- `syncProductsWithDilovod()` — повна синхронізація
+- `getGoodsInfoWithSetsOptimized()` — отримання товарів з комплектами + штрих-коди з `barCodes`
+- `logSyncError()` — запис помилок sync у `meta_logs` (у т.ч. `missing_barcode`)
+- `testSetsOnly()` — тест отримання комплектів
+- керування всіма аспектами роботи з Dilovod
 
-Документация по синхронизации ШК: `Docs/features/dilovod-product-barcode-sync.md`.
+Документація з синхронізації ШК: `Docs/features/dilovod-product-barcode-sync.md`.
 
-## Использование
+### DilovodMetadataService.ts
 
-### Базовое использование
+Опис схеми Dilovod без хардкоду полів регістрів:
+
+- `getList({ q, forceRefresh })` — `listMetadata`, фільтр за ім'ям / presentation
+- `getObject(objectName)` — `getMetadata`; коротке ім'я (`goods`) резолвиться в регістр, не в каталог
+- `getRegisterShape(objectName)` — виміри / ресурси / атрибути
+- `virtualBatFields(resourceName)` — `qtyStart` / `qtyReceipt` / `qtyExpense` / `qtyFinal`
+
+Кеш 24 год: memory + `settings_base` (`dilovod.meta.*`). HTTP: `GET /api/dilovod/metadata`. Повна документація: `Docs/integrations/dilovod-metadata.md`.
+
+## Використання
+
+### Базове використання
 ```typescript
 import { DilovodService } from '../services/dilovod';
 
 const dilovodService = new DilovodService();
 
-// Синхронизация товаров
+// Синхронізація товарів
 const result = await dilovodService.syncProductsWithDilovod();
 
-// Тест комплектов
+// Тест комплектів
 const testResult = await dilovodService.testSetsOnly();
 
-// Получение статистики
+// Отримання статистики
 const stats = await dilovodService.getSyncStats();
 ```
 
-### Использование отдельных модулей
+### Використання окремих модулів
 ```typescript
 import { DilovodApiClient, DilovodCacheManager } from '../services/dilovod';
 
@@ -104,9 +117,9 @@ const isConnected = await apiClient.testConnection();
 const skus = await cacheManager.fetchFreshSkusFromCatalog();
 ```
 
-## Конфигурация
+## Конфігурація
 
-Конфигурация по умолчанию находится в `DilovodUtils.ts`:
+Конфігурація за замовчуванням знаходиться в `DilovodUtils.ts`:
 
 ```typescript
 export const DEFAULT_DILOVOD_CONFIG: DilovodConfig = {
@@ -121,41 +134,41 @@ export const DEFAULT_DILOVOD_CONFIG: DilovodConfig = {
 };
 ```
 
-## Преимущества новой архитектуры
+## Переваги нової архітектури
 
-1. **Модульность** - каждый файл отвечает за одну область
-2. **Тестируемость** - легче писать unit-тесты для каждого модуля
-3. **Читаемость** - проще найти нужную функциональность
-4. **Переиспользование** - модули можно использовать независимо
-5. **Поддержка** - легче вносить изменения и исправления
-6. **Разделение ответственности** - каждый класс имеет четкую роль
+1. **Модульність** — кожен файл відповідає за одну область
+2. **Тестованість** — легше писати unit-тести для кожного модуля
+3. **Читабельність** — простіше знайти потрібну функціональність
+4. **Повторне використання** — модулі можна використовувати незалежно
+5. **Підтримка** — легше вносити зміни та виправлення
+6. **Розділення відповідальності** — кожен клас має чітку роль
 
-## Миграция с старого кода
+## Міграція зі старого коду
 
-Старый `dilovodService.ts` заменен на новую модульную структуру. Все существующие вызовы должны работать без изменений, так как основной класс `DilovodService` сохраняет тот же интерфейс.
+Старий `dilovodService.ts` замінено на нову модульну структуру. Усі наявні виклики мають працювати без змін, оскільки основний клас `DilovodService` зберігає той самий інтерфейс.
 
-## Логирование
+## Логування
 
-Все модули используют единую систему логирования через `logWithTimestamp()`:
-- Временные метки для каждого сообщения
-- Структурированные логи для отладки
-- Единый формат для всех модулей
+Усі модулі використовують єдину систему логування через `logWithTimestamp()`:
+- часові мітки для кожного повідомлення
+- структуровані логи для налагодження
+- єдиний формат для всіх модулів
 
-## Обработка ошибок
+## Обробка помилок
 
-Централизованная обработка ошибок через `handleDilovodApiError()`:
-- HTTP ошибки с детальным описанием
-- Ошибки сети
-- Валидация конфигурации
-- Логирование всех ошибок
+Централізована обробка помилок через `handleDilovodApiError()`:
+- HTTP-помилки з детальним описом
+- помилки мережі
+- валідація конфігурації
+- логування всіх помилок
 
-### Форматирование ошибок для NotificationBell
+### Форматування помилок для NotificationBell
 
-Смотрите `../../Docs/architecture/dilovod-error-formatting.md` для детальной документации по функциям:
+Дивіться `../../Docs/architecture/dilovod-error-formatting.md` для детальної документації за функціями:
 - `cleanDilovodErrorMessageShort()` — коротка версія для UI
 - `cleanDilovodErrorMessageFull()` — повна версія для логів
 
-Ці функції видаляют HTML-теги та переформатують помилки Dilovod для читаємості.
+Ці функції видаляють HTML-теги та переформатовують помилки Dilovod для читабельності.
 
 ## Банківські виписки
 

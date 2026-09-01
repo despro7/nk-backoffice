@@ -12,6 +12,7 @@ export { DilovodCacheManager } from './DilovodCacheManager.js';
 export { DilovodDataProcessor } from './DilovodDataProcessor.js';
 export { DilovodSyncManager } from './DilovodSyncManager.js';
 export { DilovodService, dilovodService } from './DilovodService.js';
+export { DilovodMetadataService, dilovodMetadataService } from './DilovodMetadataService.js';
 export { DilovodExportBuilder, dilovodExportBuilder } from './DilovodExportBuilder.js';
 export { DilovodExportFlowService, dilovodExportFlowService } from './DilovodExportFlowService.js';
 export { acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock } from './DilovodShipmentLockService.js';

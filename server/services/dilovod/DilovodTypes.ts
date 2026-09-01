@@ -194,3 +194,63 @@ export interface DilovodOrderResponse {
   error?: string;
   message?: string;
 }
+
+export interface DilovodMetadataListItem {
+  id: string;
+  idPrefix?: string;
+  presentation?: string;
+}
+
+export type DilovodMetadataList = Record<string, DilovodMetadataListItem>;
+
+export interface DilovodMetadataReq {
+  name?: string;
+  presentation?: string;
+  valueType?: string | Record<string, unknown> | Array<string | Record<string, unknown>>;
+  kind?: string;
+  use?: string;
+  role?: string;
+  purpose?: string;
+  type?: string;
+  [key: string]: unknown;
+}
+
+export interface DilovodObjectMetadata {
+  name: string;
+  presentation?: string;
+  listPresentation?: string;
+  idPrefix?: string;
+  hierarchyType?: string;
+  autoNumeration?: number;
+  reqs: Record<string, DilovodMetadataReq>;
+  dimensions?: Record<string, DilovodMetadataReq> | DilovodMetadataReq[];
+  resources?: Record<string, DilovodMetadataReq> | DilovodMetadataReq[];
+  predefined?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export type DilovodRegisterFieldKind = 'dimension' | 'resource' | 'attribute';
+
+export interface DilovodRegisterField {
+  name: string;
+  presentation: string;
+  valueType?: string;
+  kind: DilovodRegisterFieldKind;
+  raw: DilovodMetadataReq;
+}
+
+export interface DilovodRegisterShape {
+  objectName: string;
+  registerName: string;
+  presentation?: string;
+  dimensions: DilovodRegisterField[];
+  resources: DilovodRegisterField[];
+  attributes: DilovodRegisterField[];
+}
+
+export interface DilovodVirtualBatFields {
+  start: string;
+  receipt: string;
+  expense: string;
+  final: string;
+}

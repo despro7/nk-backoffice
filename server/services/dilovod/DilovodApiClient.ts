@@ -8,7 +8,10 @@ import {
   DilovodPricesResponse,
   DilovodBarCodeResponse,
   DilovodOrder,
-  DilovodOrderResponse
+  DilovodOrderResponse,
+  DilovodMetadataList,
+  DilovodObjectMetadata,
+  DilovodMetadataReq,
 } from './DilovodTypes.js';
 import { DilovodStorage } from '../../../shared/types/dilovod.js';
 import {
@@ -389,6 +392,93 @@ export class DilovodApiClient {
     };
 
     return this.makeRequest<DilovodObjectResponse>(request);
+  }
+
+  /**
+   * Перелік об'єктів метаданих Dilovod (`listMetadata`).
+   * Відповідь — карта `objectName → { id, idPrefix, presentation }`.
+   */
+  async listMetadata(lang = 'uk'): Promise<DilovodMetadataList> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "listMetadata",
+      params: { lang },
+    };
+
+    const resp = await this.makeRequest<unknown>(request);
+    this.assertNoDilovodError(resp, 'listMetadata');
+    if (!resp || typeof resp !== 'object' || Array.isArray(resp)) {
+      throw new Error('Dilovod listMetadata: неочікуваний формат відповіді');
+    }
+    return resp as DilovodMetadataList;
+  }
+
+  /**
+   * Опис об'єкта метаданих за `objectName` (наприклад `catalogs.units`).
+   */
+  async getMetadataByName(objectName: string, lang = 'uk'): Promise<DilovodObjectMetadata> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "getMetadata",
+      params: { objectName, lang },
+    };
+
+    const resp = await this.makeRequest<unknown>(request);
+    this.assertNoDilovodError(resp, `getMetadata(${objectName})`);
+    return this.normalizeObjectMetadata(resp, objectName);
+  }
+
+  /**
+   * Опис об'єкта метаданих за `objectId` з `listMetadata`.
+   */
+  async getMetadataById(objectId: string, lang = 'uk'): Promise<DilovodObjectMetadata> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: "0.25",
+      key: this.apiKey,
+      action: "getMetadata",
+      params: { objectId, lang },
+    };
+
+    const resp = await this.makeRequest<unknown>(request);
+    this.assertNoDilovodError(resp, `getMetadata(id=${objectId})`);
+    return this.normalizeObjectMetadata(resp);
+  }
+
+  private assertNoDilovodError(resp: unknown, context: string): void {
+    const error = this.extractDilovodError(resp);
+    if (error) {
+      throw new Error(`Dilovod ${context}: ${error}`);
+    }
+  }
+
+  private normalizeObjectMetadata(resp: unknown, fallbackName?: string): DilovodObjectMetadata {
+    if (!resp || typeof resp !== 'object' || Array.isArray(resp)) {
+      throw new Error('Dilovod getMetadata: неочікуваний формат відповіді');
+    }
+    const raw = resp as Record<string, unknown>;
+    const reqsRaw = raw.reqs;
+    let reqs: DilovodObjectMetadata['reqs'] = {};
+    if (Array.isArray(reqsRaw)) {
+      for (const item of reqsRaw) {
+        if (!item || typeof item !== 'object') continue;
+        const rec = item as DilovodMetadataReq;
+        const name = typeof rec.name === 'string' ? rec.name : '';
+        if (name) reqs[name] = rec;
+      }
+    } else if (reqsRaw && typeof reqsRaw === 'object') {
+      reqs = reqsRaw as DilovodObjectMetadata['reqs'];
+    }
+
+    return {
+      ...(raw as DilovodObjectMetadata),
+      name: typeof raw.name === 'string' && raw.name ? raw.name : (fallbackName || ''),
+      reqs,
+    };
   }
 
   /**
@@ -1002,7 +1092,6 @@ export class DilovodApiClient {
 
   /**
    * Види розрахунків (catalogs.settlementsKinds).
-   * Якщо каталог має іншу назву — fallback через getMetadata.
    */
   async getSettlementsKinds(): Promise<any[]> {
     await this.ensureReady();
@@ -1021,28 +1110,11 @@ export class DilovodApiClient {
       }
     };
 
-    try {
-      const result = await this.makeRequest<any>(request);
-      if (result?.error) {
-        throw new Error(String(result.error));
-      }
-      return this.normalizeToArray(result);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.log(`⚠️ [Dilovod] catalogs.settlementsKinds недоступний (${msg}), пробуємо getMetadata`);
-      try {
-        const metaReq: DilovodApiRequest = {
-          version: "0.25",
-          key: this.apiKey,
-          action: "getMetadata",
-          params: { id: 'catalogs.settlementsKinds' },
-        };
-        await this.makeRequest<any>(metaReq);
-      } catch {
-        // ім'я каталогу зафіксоване як catalogs.settlementsKinds
-      }
-      throw error;
+    const result = await this.makeRequest<any>(request);
+    if (result?.error) {
+      throw new Error(String(result.error));
     }
+    return this.normalizeToArray(result);
   }
 
   /**

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
-import { DilovodService, dilovodExportFlowService, acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock } from '../services/dilovod/index.js';
+import { DilovodService, dilovodExportFlowService, acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock, dilovodMetadataService } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
@@ -491,6 +491,70 @@ router.get('/directories', authenticateToken, dilovodRead, async (req, res) => {
   } finally {
     // Clear the in-flight marker so future requests will refetch when necessary
     directoriesInFlight = null;
+  }
+});
+
+function parseRefreshFlag(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+/**
+ * GET /api/dilovod/metadata
+ * Перелік об'єктів метаданих Dilovod. Query: q (пошук), objectName (один об'єкт), refresh.
+ */
+router.get('/metadata', authenticateToken, dilovodRead, async (req, res) => {
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const objectName = typeof req.query.objectName === 'string' ? req.query.objectName : undefined;
+    const forceRefresh = parseRefreshFlag(req.query.refresh);
+
+    if (objectName?.trim()) {
+      const object = await dilovodMetadataService.getObject(objectName.trim(), forceRefresh);
+      const shape = await dilovodMetadataService.getRegisterShape(object.name, false);
+      return res.json({ success: true, data: { object, shape } });
+    }
+
+    const list = await dilovodMetadataService.getList({ q, forceRefresh });
+    return res.json({
+      success: true,
+      data: list,
+      count: Object.keys(list).length,
+    });
+  } catch (error) {
+    console.log('❌ [API] Dilovod metadata list:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to load Dilovod metadata',
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+/**
+ * GET /api/dilovod/metadata/:objectName
+ * Опис одного об'єкта (getMetadata) + форма регістру (виміри/ресурси).
+ */
+router.get('/metadata/:objectName', authenticateToken, dilovodRead, async (req, res) => {
+  try {
+    const objectName = decodeURIComponent(req.params.objectName || '').trim();
+    if (!objectName) {
+      return res.status(400).json({ success: false, error: 'objectName is required' });
+    }
+
+    const forceRefresh = parseRefreshFlag(req.query.refresh);
+    const object = await dilovodMetadataService.getObject(objectName, forceRefresh);
+    const shape = await dilovodMetadataService.getRegisterShape(object.name, false);
+
+    res.json({ success: true, data: { object, shape } });
+  } catch (error) {
+    console.log('❌ [API] Dilovod metadata object:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to load Dilovod metadata object',
+      details: error instanceof Error ? error.message : String(error),
+    });
   }
 });
 
