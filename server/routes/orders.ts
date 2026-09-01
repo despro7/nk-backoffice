@@ -421,7 +421,7 @@ const WEIGHT_STATS_CACHE_TTL = 5 * 60 * 1000; // 5 хвилин
 router.get('/weight-stats', authenticateToken, async (req, res) => {
   try {
     console.log('📊 [WEIGHT STATS] Запит статистики ваги замовлень (через CACHE)');
-    const cacheKey = 'weight-stats';
+    const cacheKey = 'weight-stats-v2';
     const cached = weightStatsCache.get(cacheKey);
     if (cached && (Date.now() - cached.timestamp) < WEIGHT_STATS_CACHE_TTL) {
       console.log('📊 [WEIGHT STATS] Повертаємо дані з кешу');
@@ -432,68 +432,61 @@ router.get('/weight-stats', authenticateToken, async (req, res) => {
     aWeekAgo.setDate(aWeekAgo.getDate() - 7);
     aWeekAgo.setHours(0, 0, 0, 0);
 
+    const weightStatuses = ['1', '2', '3'] as const;
+
     // Витягуємо тільки externalId + status за останній тиждень
     const orders = await prisma.order.findMany({
       where: {
-        status: { in: ['2', '3', '4'] },
+        status: { in: [...weightStatuses] },
         orderDate: { gte: aWeekAgo },
       },
       select: { externalId: true, status: true }
     });
 
-    const orderIdsByStatus: { [status: string]: string[] } = { '2': [], '3': [], '4': [] };
+    const orderIdsByStatus: { [status: string]: string[] } = { '1': [], '2': [], '3': [] };
     for (const order of orders) {
       if (order.status && order.externalId) {
         if (!orderIdsByStatus[order.status]) orderIdsByStatus[order.status] = [];
         orderIdsByStatus[order.status].push(order.externalId);
       }
     }
-    // Об'єднання всіх externalId для bulk кеш-запиту
     const allExternalIds = orders.map(o => o.externalId);
-
-    // Bulk отримаємо кеші
     const ordersCacheMap = await ordersCacheService.getMultipleOrderCaches(allExternalIds);
 
-    // Агрегація по статусу
+    let newWeightKg = 0;
     let confirmedWeightKg = 0;
     let readyToShipWeightKg = 0;
-    let shippedWeightKg = 0;
+    let newCount = 0;
     let confirmedCount = 0;
     let readyToShipCount = 0;
-    let shippedCount = 0;
 
-    for (const status of ['2', '3', '4']) {
+    for (const status of weightStatuses) {
       for (const externalId of orderIdsByStatus[status] || []) {
         const cache = ordersCacheMap.get(externalId);
         if (cache && cache.totalWeight != null && !isNaN(Number(cache.totalWeight))) {
           const w = Number(cache.totalWeight);
-          if (status === '2') { confirmedWeightKg += w; confirmedCount++; }
+          if (status === '1') { newWeightKg += w; newCount++; }
+          else if (status === '2') { confirmedWeightKg += w; confirmedCount++; }
           else if (status === '3') { readyToShipWeightKg += w; readyToShipCount++; }
-          else if (status === '4') { shippedWeightKg += w; shippedCount++; }
         }
       }
     }
-    
-    const activeTotalWeightKg = confirmedWeightKg + readyToShipWeightKg;
-    const activeTotalCount = confirmedCount + readyToShipCount;
+
+    const toBucket = (count: number, weight: number) => ({
+      count,
+      weight,
+      weightText: `${weight.toFixed(2)} кг`
+    });
+
+    const activeTotalWeightKg = newWeightKg + confirmedWeightKg + readyToShipWeightKg;
+    const activeTotalCount = newCount + confirmedCount + readyToShipCount;
     const response = {
       success: true,
       data: {
-        confirmed: {
-          count: confirmedCount,
-          weight: confirmedWeightKg,
-          weightText: `${confirmedWeightKg.toFixed(2)} кг`
-        },
-        readyToShip: {
-          count: readyToShipCount,
-          weight: readyToShipWeightKg,
-          weightText: `${readyToShipWeightKg.toFixed(2)} кг`
-        },
-        total: {
-          count: activeTotalCount,
-          weight: activeTotalWeightKg,
-          weightText: `${activeTotalWeightKg.toFixed(2)} кг`
-        }
+        newOrders: toBucket(newCount, newWeightKg),
+        confirmed: toBucket(confirmedCount, confirmedWeightKg),
+        readyToShip: toBucket(readyToShipCount, readyToShipWeightKg),
+        total: toBucket(activeTotalCount, activeTotalWeightKg)
       },
       metadata: {
         calculatedAt: new Date().toISOString(),

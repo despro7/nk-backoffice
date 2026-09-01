@@ -1,28 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useApi } from '@/hooks/useApi';
+import { formatRelativeDate, pluralize } from '@/lib/formatUtils';
 import { Button } from '@heroui/button';
+import { DynamicIcon } from 'lucide-react/dynamic';
+
+interface WeightBucket {
+	count: number;
+	weight: number;
+	weightText: string;
+}
 
 interface WeightStatsData {
-	confirmed: {
-		count: number;
-		weight: number;
-		weightText: string;
-	};
-	readyToShip: {
-		count: number;
-		weight: number;
-		weightText: string;
-	};
-	total: {
-		count: number;
-		weight: number;
-		weightText: string;
-	};
-	shipped: {
-		count: number;
-		weight: number;
-		weightText: string;
-	};
+	newOrders: WeightBucket;
+	confirmed: WeightBucket;
+	readyToShip: WeightBucket;
+	total: WeightBucket;
 }
 
 interface WeightStatsResponse {
@@ -34,156 +26,134 @@ interface WeightStatsResponse {
 	};
 }
 
+const EMPTY_BUCKET: WeightBucket = {
+	count: 0,
+	weight: 0,
+	weightText: '0.00 кг',
+};
+
+const STAT_CARDS: Array<{ key: keyof WeightStatsData; label: string; color: string; icon: React.ReactNode }> = [
+	{ key: 'newOrders', label: 'Нові замовлення', color: 'blue-500', icon: <DynamicIcon name="plus-square" /> },
+	{ key: 'confirmed', label: 'Підтверджені', color: 'lime-600', icon: <DynamicIcon name="check-square" /> },
+	{ key: 'readyToShip', label: 'Готові до відправки', color: 'yellow-500', icon: <DynamicIcon name="arrow-up-square" /> },
+	{ key: 'total', label: 'Загальна вага', color: 'gray-500', icon: <DynamicIcon name="sigma-square" /> },
+];
+
+function formatOrderCount(count: number): string {
+	return `${count} ${pluralize(count, 'замовлення', 'замовлення', 'замовлень')}`;
+}
+
 export default function WeightStatsTable() {
 	const { apiCall } = useApi();
 	const [stats, setStats] = useState<WeightStatsData | null>(null);
+	const [calculatedAt, setCalculatedAt] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
-	const Header = (
-		<h3 className="text-xl font-semibold">Вага замовлень</h3>
-	);
-
-	const fetchWeightStats = async () => {
+	const fetchWeightStats = useCallback(async () => {
 		try {
 			setLoading(true);
 			setError(null);
-			
+
 			const response = await apiCall('/api/orders/weight-stats');
 			const data: WeightStatsResponse = await response.json();
-			
-			if (data.success) {
-				setStats(data.data);
-			} else {
+
+			if (!data.success || !data.data) {
+				setStats(null);
 				setError('Не вдалося завантажити статистику ваги');
+				return;
 			}
+
+			setStats({
+				newOrders: data.data.newOrders ?? EMPTY_BUCKET,
+				confirmed: data.data.confirmed ?? EMPTY_BUCKET,
+				readyToShip: data.data.readyToShip ?? EMPTY_BUCKET,
+				total: data.data.total ?? EMPTY_BUCKET,
+			});
+			setCalculatedAt(data.metadata?.calculatedAt ?? null);
 		} catch (err) {
 			console.error('Error fetching weight stats:', err);
+			setStats(null);
 			setError('Помилка завантаження статистики ваги');
 		} finally {
 			setLoading(false);
 		}
-	};
+	}, [apiCall]);
 
 	useEffect(() => {
-		fetchWeightStats();
-	}, []);
-
-	if (loading) {
-		return (
-			<>
-				{Header}
-				<div className="animate-pulse">
-					<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-						{[1, 2, 3].map((i) => (
-							<div key={i} className="text-center">
-								<div className="h-4 bg-gray-200 rounded w-3/4 mb-2 mx-auto"></div>
-								<div className="h-8 bg-gray-200 rounded w-1/2 mx-auto"></div>
-							</div>
-						))}
-					</div>
-				</div>
-			</>
-		);
-	}
-
-	if (error) {
-		return (
-			<>
-				{Header}
-				<div className="text-center text-red-600">
-					<p>{error}</p>
-					<button
-						onClick={fetchWeightStats}
-						className="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-					>
-						Спробувати знову
-					</button>
-				</div>
-			</>
-		);
-	}
-
-	if (!stats) {
-		return (
-			<>
-				{Header}
-				<div className="text-center text-gray-500">
-					Немає даних для відображення
-				</div>
-			</>
-		);
-	}
+		void fetchWeightStats();
+	}, [fetchWeightStats]);
 
 	return (
-		<>
-			<div className="flex justify-between items-center mb-4">
-				{Header}
-
-				<Button
-					color="default"
-					onPress={fetchWeightStats}
-					disabled={loading}
-					className="bg-neutral-600 text-white h-8 px-3 rounded-sm"
+		<div>
+			<div className="flex flex-col lg:flex-row justify-between lg:items-center gap-3 mb-4">
+				<h2 className="text-xl font-semibold">Вага замовлень</h2>
+				<div className="flex items-center gap-3 justify-between lg:justify-start">
+					{calculatedAt && !loading && !error && (
+						<div className="text-sm text-gray-500">
+							Оновлено: <strong>{formatRelativeDate(calculatedAt)}</strong>
+						</div>
+					)}
+					<Button
+						color="default"
+						onPress={fetchWeightStats}
+						disabled={loading}
+						className="bg-neutral-600 text-white h-8 px-3 rounded-sm"
 					>
-					{loading ? 'Оновлення...' : 'Оновити'}
-				</Button>
+						{loading ? 'Оновлення...' : 'Оновити'}
+					</Button>
+				</div>
 			</div>
 
-			<div className="grid grid-cols-3 md:grid-cols-3 gap-4">
-				{/* Підтверджені замовлення */}
-				<div className="flex flex-col justify-center p-4 lg:p-6 bg-white rounded-xl shadow-sm">
-					<div className="text-3xl font-extrabold mb-1 tracking-tight text-neutral-700">
-						{stats.confirmed.weightText}
-					</div>
-					<div className="text-sm text-neutral-500 font-medium mb-0.5">
-						Підтверджені замовлення
-					</div>
-					<div className="text-xs text-neutral-400">
-						{stats.confirmed.count} замовлень
-					</div>
+			{loading && !stats ? (
+				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+					{STAT_CARDS.map(({ key }) => (
+						<div
+							key={key}
+							className="flex flex-col justify-center p-4 lg:p-6 bg-white rounded-xl shadow-sm min-h-[108px]"
+						>
+							<div className="animate-pulse w-24 h-8 bg-gray-200 rounded mb-2" />
+							<div className="animate-pulse w-32 h-4 bg-gray-100 rounded mb-2" />
+							<div className="animate-pulse w-20 h-3 bg-gray-100 rounded" />
+						</div>
+					))}
 				</div>
-
-				{/* Готові до відправки */}
-				<div className="flex flex-col justify-center p-4 lg:p-6 bg-white rounded-xl shadow-sm">
-					<div className="text-3xl font-extrabold mb-1 tracking-tight text-neutral-700">
-						{stats.readyToShip.weightText}
-					</div>
-					<div className="text-sm text-neutral-500 font-medium mb-0.5">
-						Готові до відправки
-					</div>
-					<div className="text-xs text-neutral-400">
-						{stats.readyToShip.count} замовлень
-					</div>
+			) : error ? (
+				<div className="text-center text-red-600 py-8">
+					<p>{error}</p>
+					<Button
+						color="default"
+						onPress={fetchWeightStats}
+						className="mt-3 bg-neutral-600 text-white h-8 px-3 rounded-sm"
+					>
+						Спробувати знову
+					</Button>
 				</div>
+			) : stats ? (
+				<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+					{STAT_CARDS.map(({ key, label, color, icon }) => {
+						const bucket = stats[key] ?? EMPTY_BUCKET;
+						const isTotal = key === 'total';
 
-				{/* Загальна сума */}
-				<div className="flex flex-col justify-center p-4 lg:p-6 bg-white rounded-xl shadow-sm">
-					<div className="text-3xl font-extrabold mb-1 tracking-tight text-neutral-700">
-						{stats.total.weightText}
-					</div>
-					<div className="text-sm text-neutral-500 font-medium mb-0.5">
-						Загальна вага
-					</div>
-					<div className="text-xs text-neutral-400">
-						{stats.total.count} замовлень
-					</div>
+						return (
+							<div key={key}
+								className={`flex flex-col justify-center p-4 lg:p-6 bg-white rounded-xl shadow-sm relative ${
+									isTotal ? 'ring-1 ring-neutral-200' : ''
+								}`}
+							>
+								<span className="text-2xl sm:text-3xl font-extrabold mb-1 tracking-tight text-neutral-700 relative z-10">{bucket.weightText}</span>
+								<span className={`text-sm text-${color} font-medium whitespace-nowrap truncate relative z-10`}>{label}</span>
+								<span className="text-xs text-neutral-400 mt-0.5">{formatOrderCount(bucket.count)}</span>
+								<span className="absolute top-2 right-2 text-gray-100/50 z-0 [&>svg]:size-12">{icon}</span>
+							</div>
+						);
+					})}
 				</div>
-
-				{/* Відправлені */}
-				{/* <div className="flex flex-col justify-center p-6 bg-white rounded-xl shadow-sm">
-					<div className="text-3xl font-extrabold mb-1 tracking-tight">
-						{stats.shipped.weightText}
-					</div>
-					<div className="text-sm text-neutral-500 font-medium mb-0.5">
-						Відправлені
-					</div>
-					<div className="text-xs text-neutral-400">
-						{stats.shipped.count} замовлень
-					</div>
-				</div> */}
-			</div>
-
-		</>
+			) : (
+				<div className="text-center text-gray-500 py-8">
+					Немає даних для відображення
+				</div>
+			)}
+		</div>
 	);
 }
