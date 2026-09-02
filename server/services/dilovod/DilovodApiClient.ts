@@ -979,42 +979,72 @@ export class DilovodApiClient {
     const pageSize = 200;
     const maxPages = 20;
     let offset = 0;
+    let useLimit = true;
     const all: DilovodStorage[] = [];
     const seen = new Set<string>();
 
     console.log('DilovodApiClient: Запит складів до Dilovod API');
 
     for (let page = 0; page < maxPages; page += 1) {
+      const params: DilovodApiRequest['params'] = {
+        from: 'catalogs.storages',
+        fields: {
+          id: 'id',
+          code: 'code',
+          name: 'name',
+          delMark: 'delMark',
+        },
+        filters: [
+          { alias: 'delMark', operator: '=', value: false },
+        ],
+      };
+      if (useLimit) {
+        params.limit = { offset, count: pageSize };
+      }
+
       const request: DilovodApiRequest = {
         version: "0.25",
         key: this.apiKey,
         action: "request",
-        params: {
-          from: 'catalogs.storages',
-          fields: {
-            id: 'id',
-            code: 'code',
-            name: 'name',
-            id__pr: 'id__pr',
-            delMark: 'delMark',
-          },
-          limit: { offset, count: pageSize },
-        },
+        params,
       };
 
       const result = await this.makeRequest<any>(request);
-      const rows = this.normalizeToArray<DilovodStorage & { id__pr?: unknown }>(result);
-      let newOnPage = 0;
+      const dilovodError = result && typeof result === 'object' && !Array.isArray(result)
+        ? result.error
+        : undefined;
+      if (dilovodError && useLimit && offset === 0) {
+        console.log(`DilovodApiClient: склади — помилка з limit (${String(dilovodError)}), повтор без пагінації`);
+        useLimit = false;
+        page -= 1;
+        continue;
+      }
+      if (dilovodError) {
+        throw new Error(String(dilovodError));
+      }
+      const rows = this.normalizeToArray<DilovodStorage>(result);
 
+      // `limit` на catalogs.storages у деяких відповідях Dilovod дає порожньо — тоді без пагінації.
+      if (useLimit && offset === 0 && rows.length === 0) {
+        console.log('DilovodApiClient: склади — порожня сторінка з limit, повтор без пагінації');
+        useLimit = false;
+        page -= 1;
+        continue;
+      }
+
+      let newOnPage = 0;
       for (const storage of rows) {
-        const id = unwrapDilovodId(storage.id);
+        const id = unwrapDilovodId(storage.id)
+          || (typeof storage.id === 'string' || typeof storage.id === 'number' ? String(storage.id).trim() : '');
         if (!id || seen.has(id)) continue;
         seen.add(id);
         newOnPage += 1;
+        const name = unwrapDilovodName(storage.name)
+          || (typeof storage.name === 'string' ? storage.name.trim() : '');
         all.push({
           id,
           code: unwrapDilovodName(storage.code) || String(storage.code ?? ''),
-          name: unwrapDilovodName(storage.name) || unwrapDilovodName(storage.id__pr) || id,
+          name: name || id,
           delMark: isDilovodDeletionMark(storage.delMark),
         });
       }
@@ -1023,7 +1053,7 @@ export class DilovodApiClient {
         `DilovodApiClient: склади page=${page + 1} offset=${offset} raw=${rows.length} new=${newOnPage} total=${all.length}`,
       );
 
-      if (rows.length < pageSize || newOnPage === 0) {
+      if (!useLimit || rows.length < pageSize || newOnPage === 0) {
         break;
       }
       offset += pageSize;

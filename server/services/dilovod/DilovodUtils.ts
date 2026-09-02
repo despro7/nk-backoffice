@@ -684,10 +684,14 @@ export function unwrapDilovodName(value: unknown): string {
   if (value == null) return '';
   if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
   if (typeof value !== 'object') return '';
-  const rec = value as { uk?: unknown; ru?: unknown; pr?: unknown; name?: unknown };
-  for (const key of ['uk', 'ru', 'pr', 'name'] as const) {
+  const rec = value as { uk?: unknown; ru?: unknown; pr?: unknown; name?: unknown; presentation?: unknown };
+  for (const key of ['uk', 'ru', 'pr', 'name', 'presentation'] as const) {
     const part = rec[key];
     if (typeof part === 'string' && part.trim()) return part.trim();
+    if (part && typeof part === 'object' && part !== value) {
+      const nested = unwrapDilovodName(part);
+      if (nested) return nested;
+    }
   }
   return '';
 }

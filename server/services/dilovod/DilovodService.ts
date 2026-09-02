@@ -957,18 +957,24 @@ export class DilovodService {
       // Перевіряємо кеш, якщо не примусове оновлення
       if (!forceRefresh) {
         const cached = await dilovodCacheService.getFromCache('storages');
-        const cacheHasDelMark = Array.isArray(cached)
+        const cacheHasRows = Array.isArray(cached) && cached.length > 0;
+        const cacheHasDelMark = cacheHasRows
           && cached.some((s: { delMark?: unknown }) => s?.delMark !== undefined);
-        const cacheHasWorkshop = Array.isArray(cached)
+        const cacheHasWorkshop = cacheHasRows
           && cached.some((s: { id?: string }) => String(s?.id ?? '') === DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID);
-        // Старий кеш: без delMark або без виробничого цеху (раніше відсіювали)
-        if (cached && (cacheHasDelMark || cached.length === 0)) {
-          const useCache = cacheHasWorkshop || cached.length === 0 || DilovodService.storagesLegacyCacheBusted;
-          if (useCache) {
-            const active = cached.filter((s: { id?: string; delMark?: unknown }) => isActiveDilovodStorage(s));
-            console.log(`📦 [Dilovod] Склади завантажено з кешу: ${active.length} записів`);
-            return active;
-          }
+        const cacheHasReadableNames = cacheHasRows
+          && cached.some((s: { id?: string; name?: string }) => {
+            const id = String(s?.id ?? '');
+            const name = String(s?.name ?? '').trim();
+            return Boolean(name) && name !== id;
+          });
+        // Порожній / «id замість назви» / без цеху — не використовуємо, йдемо в API
+        if (cacheHasRows && cacheHasDelMark && cacheHasWorkshop && cacheHasReadableNames) {
+          const active = cached.filter((s: { id?: string; delMark?: unknown }) => isActiveDilovodStorage(s));
+          console.log(`📦 [Dilovod] Склади завантажено з кешу: ${active.length} записів`);
+          return active;
+        }
+        if (cacheHasRows && !DilovodService.storagesLegacyCacheBusted) {
           DilovodService.storagesLegacyCacheBusted = true;
         }
       }
@@ -977,8 +983,11 @@ export class DilovodService {
       const result = await this.apiClient.getStorages();
       console.log(`📦 [Dilovod] Отримано ${result.length} складів з API`);
 
-      // Оновлюємо кеш
-      await dilovodCacheService.updateCache('storages', result);
+      if (result.length > 0) {
+        await dilovodCacheService.updateCache('storages', result);
+      } else {
+        console.log('📦 [Dilovod] Порожній список складів не кешуємо');
+      }
 
       return result;
     } catch (error) {
