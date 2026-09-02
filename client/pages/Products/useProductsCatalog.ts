@@ -511,7 +511,8 @@ export function useProductsCatalog() {
         setEditingId(null);
         setDrawerMode(null);
       }
-    }
+    },
+    { replace: true }
   );
 
   return {

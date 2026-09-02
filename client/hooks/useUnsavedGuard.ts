@@ -18,6 +18,26 @@ import { UNSAFE_NavigationContext as NavigationContext } from 'react-router-dom'
 // onSaveDraft  — async-функція збереження чернетки
 // ---------------------------------------------------------------------------
 
+/** true — змінюється лише hash, pathname/search ті самі (in-page URL state). */
+function isHashOnlyNavigation(to: unknown): boolean {
+  const path = window.location.pathname;
+  const search = window.location.search;
+  if (typeof to === 'string') {
+    if (to.startsWith('#')) return true;
+    try {
+      const url = new URL(to, window.location.href);
+      return url.pathname === path && url.search === search;
+    } catch {
+      return false;
+    }
+  }
+  if (to && typeof to === 'object') {
+    const next = to as { pathname?: string; search?: string };
+    return (next.pathname ?? path) === path && (next.search ?? search) === search;
+  }
+  return false;
+}
+
 export interface UseUnsavedGuardOptions {
   isDirty: boolean;
   onSaveDraft: () => Promise<unknown>;
@@ -85,11 +105,19 @@ export function useUnsavedGuard({ isDirty, onSaveDraft }: UseUnsavedGuardOptions
     const originalReplace = nav.replace.bind(nav);
 
     nav.push = (...args: Parameters<typeof originalPush>) => {
+      if (isHashOnlyNavigation(args[0])) {
+        originalPush(...args);
+        return;
+      }
       pendingNavigationRef.current = () => originalPush(...args);
       setIsOpen(true);
     };
 
     nav.replace = (...args: Parameters<typeof originalReplace>) => {
+      if (isHashOnlyNavigation(args[0])) {
+        originalReplace(...args);
+        return;
+      }
       pendingNavigationRef.current = () => originalReplace(...args);
       setIsOpen(true);
     };

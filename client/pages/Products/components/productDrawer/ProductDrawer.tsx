@@ -295,6 +295,9 @@ export function ProductDrawer({
       setNestedGoodId(null);
       return;
     }
+    // Поки live-pull/кеш не віддав detail — не гідратимо як «створення».
+    // Інакше snapshot без parentId ≠ baseline і isDirty спалахує на першому відкритті.
+    if (isEdit && !detail) return;
     const kind = resolveObjectKind(mode, detail);
     setObjectKind(kind);
     setCardTab('main');
@@ -415,9 +418,11 @@ export function ProductDrawer({
 
   const isDirty = useMemo(() => {
     if (!open || readOnly) return false;
+    if (!baselineRef.current) return false;
+    if (isEdit && !detail) return false;
     void baselineVersion;
     return snapshotState(form, components, prices, barcodes, objectKind, isEdit ? detail?.parentId : createParentId) !== baselineRef.current;
-  }, [open, form, components, prices, barcodes, objectKind, baselineVersion, isEdit, detail?.parentId, createParentId]);
+  }, [open, readOnly, form, components, prices, barcodes, objectKind, baselineVersion, isEdit, detail, createParentId]);
 
   const buildPayload = useCallback((): CatalogCreateGoodInput | CatalogUpdateGoodInput | null => {
     if (!objectKind) return null;
