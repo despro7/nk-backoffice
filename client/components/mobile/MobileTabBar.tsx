@@ -134,7 +134,7 @@ export function MobileTabBar() {
     <>
       <nav
         className={cn(
-          'lg:hidden fixed bottom-6 left-0 right-0 z-[20]',
+          'lg:hidden fixed bottom-6 left-0 right-0 z-20',
           'rounded-lg ring-1 ring-white bg-white/75 shadow-[0_15px_50px_-12px_theme(colors.gray.400),inset_0_1px_4px_0_theme(colors.white)] backdrop-blur-sm',
           'mx-3'
         )}

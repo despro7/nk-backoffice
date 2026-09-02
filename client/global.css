@@ -375,3 +375,26 @@ html.catalog-dnd-dragging [data-catalog-folder-id][data-catalog-drop-after] {
 [data-catalog-dnd-source] {
   opacity: 0.35;
 }
+
+/* Поза @layer: інакше overlay-скролбар macOS/Chrome ховає смугу до моменту скролу */
+.scrollbar-visible {
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(113 113 122) rgb(228 228 231);
+}
+
+.scrollbar-visible::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+  background-color: rgb(228 228 231);
+}
+
+.scrollbar-visible::-webkit-scrollbar-track {
+  background: rgb(228 228 231);
+}
+
+.scrollbar-visible::-webkit-scrollbar-thumb {
+  background-color: rgb(113 113 122);
+  border-radius: 999px;
+  border: 2px solid rgb(228 228 231);
+}

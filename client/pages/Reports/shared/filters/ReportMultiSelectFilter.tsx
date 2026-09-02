@@ -53,7 +53,17 @@ export default function ReportMultiSelectFilter({
         }}
       >
         {options.map((option) => (
-          <SelectItem key={option.key}>{option.label}</SelectItem>
+          <SelectItem key={option.key} textValue={option.label}>
+            <span
+              className="block truncate"
+              style={{ paddingLeft: `${(option.depth ?? 0) * 14}px` }}
+            >
+              {option.depth ? (
+                <span className="text-default-400 mr-1">{'└'}</span>
+              ) : null}
+              {option.label}
+            </span>
+          </SelectItem>
         ))}
       </Select>
     </div>

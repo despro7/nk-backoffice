@@ -17,6 +17,7 @@ import ReportsSales from './pages/Reports/ReportsSales';
 import ReportsShipment from './pages/Reports/ReportsShipment';
 import ReportsSalesDynamics from './pages/Reports/ReportsSalesDynamics';
 import LalAudiences from './pages/Reports/LalAudiences';
+import ReportsWarehouseStatement from './pages/Reports/ReportsWarehouseStatement';
 import DesignSystem from './pages/DesignSystem';
 import OrderView from './pages/OrderView';
 import SettingsTestAuth from "./pages/SettingsTestAuth";
@@ -319,6 +320,23 @@ export const appRoutes: AppRoute[] = [
       label: 'NEW',
       color: 'danger',
       until: '2026-08-25',
+    },
+  },
+  {
+    path: '/reports/warehouse-statement',
+    component: ReportsWarehouseStatement,
+    title: 'Відомість по складу',
+    pageTitle: 'Відомість по складу | NK Backoffice',
+    navLabel: 'Відомість по складу',
+    icon: <DynamicIcon name="warehouse" size={16} />,
+    inNav: true,
+    parent: 'reports',
+    order: 5,
+    permission: { name: 'warehouseStatement' },
+    navBadge: {
+      label: 'NEW',
+      color: 'danger',
+      until: '2026-09-14',
     },
   },
   {

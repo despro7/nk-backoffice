@@ -3,8 +3,8 @@
 Коротко: домен `client/pages/Reports` розбитий на окремі піддомени, а спільна логіка фільтрів, кешу, валідації та fetch-flow винесена в `shared`.
 
 Куди дивитись:
-- Сторінки домену: `client/pages/Reports/ReportsGeneral`, `client/pages/Reports/ReportsSales`, `client/pages/Reports/ReportsShipment`, `client/pages/Reports/ReportsSalesDynamics`, `client/pages/Reports/LalAudiences`
-- Shared-шар: `client/pages/Reports/shared`
+- Сторінки домену: `client/pages/Reports/ReportsGeneral`, `client/pages/Reports/ReportsSales`, `client/pages/Reports/ReportsShipment`, `client/pages/Reports/ReportsSalesDynamics`, `client/pages/Reports/LalAudiences`, `client/pages/Reports/ReportsWarehouseStatement`
+- Shared-шар: `client/pages/Reports/shared` (фільтри, empty/loading, конструктор: `shared/constructor/` — панель вкладок, DnD-групування, `HierarchicalReportTable`)
 - Централізовані preset-и дат: `client/lib/dateReportingUtils.ts`
 - Стабілізація API helper: `client/hooks/useApi.ts`
 
@@ -23,6 +23,7 @@
 - Менше дублювання між різними report-секціями.
 - Простіше вносити зміни у cache validation, preset-и дат і fetch orchestration в одному місці.
 - Нові report-компоненти легше додавати в ту ж структуру без копіювання логіки.
+- Відомість по складу першою сідає на спільний конструктор таблиці (`HierarchicalReportTable`, sticky-шапка, ресайз назви); деталі — `Docs/features/warehouse-statement.md`.
 
 Примітка:
 - Після рефакторингу перевірено типізацію через `npx tsc --noEmit -p tsconfig.json`; домен `Reports` лишився без нових TS-помилок.

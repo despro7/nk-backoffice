@@ -33,6 +33,7 @@ import usersRoutes from './routes/users.js';
 import statRouter from './routes/stat.js';
 import expandRoutes from './routes/expand.js';
 import lalAudiencesRoutes from './routes/lal-audiences.js';
+import reportsWarehouseRoutes from './routes/reports-warehouse.js';
 
 // Збільшуємо ліміт слухачів для обробки подій, щоб уникнути попереджень про витік пам'яті при великій кількості одночасних cron задач або вебхуків.
 process.setMaxListeners(20);
@@ -188,6 +189,9 @@ export function createServer() {
   // LAL audiences (ads lookalike exports)
   app.use("/api/lal-audiences", lalAudiencesRoutes);
 
+  // Складські звіти (відомість)
+  app.use("/api/reports", reportsWarehouseRoutes);
+
   // Webhook routes (должны быть до protected routes)
   app.use('/api/webhooks', webhookRoutes);
 
@@ -277,6 +281,10 @@ if (!(process as any).__SHUTDOWN_HANDLER_ATTACHED__) {
 
   process.once('SIGTERM', () => shutdown('SIGTERM'));
   process.once('SIGINT', () => shutdown('SIGINT'));
+
+  process.on('unhandledRejection', (reason) => {
+    logServer('❌ Unhandled promise rejection (process kept alive):', reason);
+  });
 
   (process as any).__SHUTDOWN_HANDLER_ATTACHED__ = true;
   // console.log('🔧 Shutdown handlers attached.');

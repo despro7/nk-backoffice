@@ -12,6 +12,7 @@ import {
   DilovodMetadataList,
   DilovodObjectMetadata,
   DilovodMetadataReq,
+  DilovodBalanceAndTurnoverParams,
 } from './DilovodTypes.js';
 import { DilovodStorage } from '../../../shared/types/dilovod.js';
 import {
@@ -1408,6 +1409,42 @@ export class DilovodApiClient {
       console.error(`🚨 Помилка отримання партій для SKU ${sku}:`, error);
       return [];
     }
+  }
+
+  /**
+   * Залишки й обороти регістру (`balanceAndTurnover`).
+   * `params` уже містить імена з getRegisterShape; сюди не підставляти qty/good/storage.
+   */
+  async getGoodsBalanceAndTurnover(
+    params: DilovodBalanceAndTurnoverParams,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>[]> {
+    await this.ensureReady();
+    const fieldList = params.fields;
+    const fields: Record<string, string> = Array.isArray(fieldList)
+      ? Object.fromEntries(fieldList.map((name) => [name, name]))
+      : fieldList;
+
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'request',
+      params: {
+        from: {
+          type: 'balanceAndTurnover',
+          register: params.register,
+          startDate: params.startDate,
+          endDate: params.endDate,
+          dimensions: params.dimensions,
+        },
+        fields,
+        ...(params.filters && params.filters.length > 0 ? { filters: params.filters } : {}),
+      },
+    };
+
+    const resp = await this.makeRequest<unknown>(request, signal);
+    this.assertNoDilovodError(resp, 'balanceAndTurnover');
+    return this.normalizeToArray<Record<string, unknown>>(resp);
   }
 
   // Отримання поточної конфігурації

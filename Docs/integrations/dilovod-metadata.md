@@ -116,9 +116,9 @@ Query:
 
 Path-параметр треба URL-encode: `/api/dilovod/metadata/balanceRegisters.goods`.
 
-## Приклад для звіту BAT (агент / наступний таск)
+## Приклад для звіту BAT
 
-Не підставляти імена полів з голови. Перед `request` з `balanceAndTurnover`:
+Реалізований звіт: `Docs/features/warehouse-statement.md` (`WarehouseStatementService`). Не підставляти імена полів з голови. Перед `request` з `balanceAndTurnover`:
 
 ```typescript
 const shape = await dilovodMetadataService.getRegisterShape('goods');

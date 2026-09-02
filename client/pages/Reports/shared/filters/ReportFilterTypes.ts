@@ -5,6 +5,8 @@ import type { IconName } from "lucide-react/dynamic";
 export interface ReportFilterOption {
   key: string;
   label: string;
+  /** Вкладеність у дереві (для груп товарів). */
+  depth?: number;
 }
 
 export interface ReportFilterProductOption {

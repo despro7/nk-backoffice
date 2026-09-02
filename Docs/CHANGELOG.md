@@ -5,6 +5,27 @@
 
 ---
 
+## 2026-09-02 — Відомість складу: таблиця, виключення, рентабельність
+**Files:** `shared/types/warehouseStatement.ts`, `server/services/dilovod/WarehouseStatementService.ts`, `client/pages/Reports/ReportsWarehouseStatement/**`, `client/pages/Reports/shared/constructor/**`, `client/components/UndoActionBanner.tsx`, `Docs/features/warehouse-statement.md`
+
+- Таблиця поза Card, `h-full`; темна sticky-шапка; ресайз «Найменування» на всю висоту; min-width колонок; згортання груп по назві; один склад — без зайвого рядка групи; від’ємні числа червоні; pin «Разом».
+- Виключення груп/товарів у `POST` і пресеті; іконка в рядку, undo 6 с, лічильник і скидання в конструкторі.
+- Колонка **Рентабельність** (з «Ціна продажу», за замовчуванням увімкнена): `(ціна − собівартість) ÷ ціна`; не рахується при собівартості ≤ 0; світлофор ≥30 / 15–30 / <15; заголовок «Рент.».
+- Заголовки колонок лише `full` / `short` (опцію «бейджем» прибрано).
+- Деталі: `Docs/features/warehouse-statement.md`.
+
+---
+
+## 2026-09-02 — Звіти: відомість по складу (конструктор + BAT Dilovod)
+**Files:** `shared/types/warehouseStatement.ts`, `server/services/dilovod/WarehouseStatementService.ts`, `server/routes/reports-warehouse.ts`, `client/pages/Reports/ReportsWarehouseStatement/**`, `client/pages/Reports/shared/constructor/**`, `Docs/features/warehouse-statement.md`
+
+- Сторінка **Звіти → Відомість по складу** (`/reports/warehouse-statement`, `page.reports.warehouseStatement`, storekeeper+). Залишки/обороти з `balanceAndTurnover` регістру `goods`; імена полів з `getRegisterShape`, не хардкод.
+- Конструктор: відбір, DnD-групування, колонки; дерево рядків; Excel. Без складу / групи / товару запит відхиляється.
+- Дефолти: групування склад → група → товар; колонки **Кількість** + **Собівартість** (BAT + «за одиницю», без валюти й цін продажу); період `lastMonth`. Пресет `localStorage` `…constructorPreset.v4`.
+- Деталі: `Docs/features/warehouse-statement.md`.
+
+---
+
 ## 2026-09-01 — Dilovod: модуль метаданих (listMetadata / getMetadata)
 **Files:** `server/services/dilovod/{DilovodApiClient,DilovodMetadataService,DilovodTypes,index}.ts`, `server/routes/dilovod.ts`, `Docs/integrations/dilovod-metadata.md`
 

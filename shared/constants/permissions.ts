@@ -212,6 +212,7 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: pageKey('reports', 'shipment'), seed: min(ROLES.SHOP_MANAGER) },
   { key: pageKey('reports', 'general'), seed: min(ROLES.SHOP_MANAGER) },
   { key: pageKey('reports', 'metaLogs'), seed: min(ROLES.STOREKEEPER) },
+  { key: pageKey('reports', 'warehouseStatement'), seed: min(ROLES.STOREKEEPER) },
 
   { key: pageKey('accounting', 'cashIn'), seed: only(ROLES.ADMIN) },
   { key: pageKey('accounting', 'bankStatements'), seed: only(ROLES.ADMIN) },
@@ -277,6 +278,7 @@ export const PERMISSIONS = {
   PAGE_REPORTS_SALES_DYNAMICS: pageKey('reports', 'salesDynamics'),
   PAGE_REPORTS_LAL: pageKey('reports', 'lalAudiences'),
   PAGE_REPORTS_META_LOGS: pageKey('reports', 'metaLogs'),
+  PAGE_REPORTS_WAREHOUSE_STATEMENT: pageKey('reports', 'warehouseStatement'),
   PAGE_ACCOUNTING_CASH_IN: pageKey('accounting', 'cashIn'),
   PAGE_ACCOUNTING_BANK_STATEMENTS: pageKey('accounting', 'bankStatements'),
   PAGE_SETTINGS_ORDER_ASSEMBLY: pageKey('settings', 'orderAssembly'),

@@ -187,6 +187,58 @@ export class SalesDriveService {
   }
 
   /**
+   * Сторінки треба стартувати лише в момент await.
+   * Інакше Promise.allSettled по батчах не рятує: решта запитів уже летить,
+   * а їхній reject стає unhandledRejection і валить Node.
+   */
+  private async fetchRemainingPagesSequentially(
+    fromPage: number,
+    toPage: number,
+    fetchPage: (page: number) => Promise<any[]>,
+    requestDelay: number,
+    onPageLoaded?: (loadedCount: number) => void,
+  ): Promise<any[]> {
+    const collected: any[] = [];
+
+    for (let page = fromPage; page <= toPage; page++) {
+      console.log(`📄 [SalesDrive] Fetching page ${page}/${toPage}`);
+      const pageOrders = await fetchPage(page);
+      collected.push(...pageOrders);
+      onPageLoaded?.(collected.length);
+
+      if (page < toPage) {
+        console.log(`⏱️ [SalesDrive] Waiting ${requestDelay}ms before next page...`);
+        await new Promise((resolve) => setTimeout(resolve, requestDelay));
+      }
+    }
+
+    return collected;
+  }
+
+  private async retryFailedPage(
+    page: number,
+    attempt: number,
+    status: number,
+    statusText: string,
+    retry: () => Promise<any[]>,
+  ): Promise<any[]> {
+    const maxPageRetries = this.getSetting('orders.retryAttempts', 3);
+    if (attempt >= maxPageRetries) {
+      throw new Error(`Page ${page} failed after ${attempt} attempts: ${status} - ${statusText}`);
+    }
+
+    const delay = status === 429
+      ? this.handleRateLimit()
+      : this.getSetting('orders.retryDelay', 3000);
+
+    console.log(
+      `🚦 [SalesDrive] Page ${page} got ${status} ${statusText}, waiting ${Math.round(delay)}ms (retry ${attempt + 1}/${maxPageRetries})...`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    return retry();
+  }
+
+  /**
    * Вычисляет адаптивную задержку при получении 429 ошибки
    */
   private calculateAdaptiveDelay(): number {
@@ -739,9 +791,8 @@ export class SalesDriveService {
 
     const maxRetries = this.getSetting('orders.retryAttempts', 3);
     const retryDelay = this.getSetting('orders.retryDelay', 3000);
-    const concurrencyLimit = 1; // SalesDrive: 10 запросов/мин, используем 1 для надежности
 
-    console.log(`🔧 [SalesDrive] Using sync settings: retries=${maxRetries}, delay=${retryDelay}ms, concurrency=${concurrencyLimit}`);
+    console.log(`🔧 [SalesDrive] Using sync settings: retries=${maxRetries}, delay=${retryDelay}ms, sequential pages`);
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       console.log(`🔄 [SalesDrive] Starting attempt ${attempt}/${maxRetries}`);
@@ -827,65 +878,25 @@ export class SalesDriveService {
         const requestDelay = this.calculateRequestDelay(maxAllowedPages);
         console.log(`⏱️ [SalesDrive] Using dynamic delay: ${requestDelay}ms (based on ${maxAllowedPages} pages)`);
 
-        // Загружаем оставшиеся страницы параллельно с контролем количества
-        const allOrders = [...firstPageOrders];
-        const pagePromises: Promise<any[]>[] = [];
+        console.log(`📊 [Filter] Will fetch pages 2–${maxAllowedPages} sequentially (${totalOrders} orders)`);
 
-        // Оптимизируем количество страниц - с batchSize=100, для большинства случаев хватит 1-5 страниц
-        console.log(`📊 [Parallel Filter] Will fetch all ${maxAllowedPages} pages (${Math.ceil(totalOrders / batchSize)} pages needed for ${totalOrders} orders)`);
-
-        for (let page = 2; page <= maxAllowedPages; page++) {
-          pagePromises.push(this.fetchSinglePage(startDate, endDate, page));
-        }
-
-        // Разбиваем на батчи для строгого контроля concurrency
-        const batches: Promise<any[]>[][] = [];
-        for (let i = 0; i < pagePromises.length; i += concurrencyLimit) {
-          batches.push(pagePromises.slice(i, i + concurrencyLimit));
-        }
-
-        // Выполняем батчи последовательно, но внутри батча - параллельно
-        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-          console.log(`🔄 Processing batch ${batchIndex + 1}/${batches.length} (${batches[batchIndex].length} pages)`);
-
-          const batchResults = await Promise.allSettled(batches[batchIndex]);
-
-          for (const result of batchResults) {
-            if (result.status === 'fulfilled') {
-              allOrders.push(...result.value);
-              // Обновляем прогресс после получения данных
-              if (options.onProgress) {
-                options.onProgress('fetching', `Отримуємо замовлення з SalesDrive API...`, allOrders.length, totalOrders);
-              }
-            } else {
-              const error = result.reason as Error;
-              if (error.message.includes('RATE_LIMIT_429')) {
-                // При rate limiting - повторяем всю пачку с задержкой
-                console.log(`🚦 Rate limit detected in batch, applying adaptive delay...`);
-                const adaptiveDelay = this.handleRateLimit();
-                await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
-
-                // Повторяем текущую пачку
-                const retryBatch = await Promise.allSettled(batches[batchIndex]);
-                for (const retryResult of retryBatch) {
-                  if (retryResult.status === 'fulfilled') {
-                    allOrders.push(...retryResult.value);
-                  } else {
-                    console.warn(`❌ Failed to fetch page after retry:`, retryResult.reason);
-                  }
-                }
-              } else {
-                console.warn(`❌ Failed to fetch page:`, error.message);
-              }
+        const remainingOrders = await this.fetchRemainingPagesSequentially(
+          2,
+          maxAllowedPages,
+          (page) => this.fetchSinglePage(startDate, endDate, page),
+          requestDelay,
+          (loadedCount) => {
+            if (options.onProgress) {
+              options.onProgress(
+                'fetching',
+                `Отримуємо замовлення з SalesDrive API...`,
+                firstPageOrders.length + loadedCount,
+                totalOrders,
+              );
             }
-          }
-
-          // Динамическая задержка между батчами на основе количества страниц
-          if (batchIndex < batches.length - 1) {
-            console.log(`⏱️ [SalesDrive] Waiting ${requestDelay}ms before next batch (dynamic delay based on ${maxAllowedPages} pages)...`);
-            await new Promise(resolve => setTimeout(resolve, requestDelay));
-          }
-        }
+          },
+        );
+        const allOrders = [...firstPageOrders, ...remainingOrders];
 
         console.log(`✅ Parallel fetch completed: ${allOrders.length} orders from ${maxAllowedPages} pages`);
 
@@ -932,9 +943,8 @@ export class SalesDriveService {
   private async fetchOrdersFromDateRangeParallelUpdateAt(startDate: string, endDate: string): Promise<SalesDriveApiResponse> {
     const maxRetries = this.getSetting('orders.retryAttempts', 3);
     const retryDelay = this.getSetting('orders.retryDelay', 3000);
-    const concurrencyLimit = 1; // SalesDrive: 10 запросов/мин, используем 1 для надежности
 
-    console.log(`🔧 [SalesDrive UpdateAt] Using sync settings: retries=${maxRetries}, delay=${retryDelay}ms, concurrency=${concurrencyLimit}`);
+    console.log(`🔧 [SalesDrive UpdateAt] Using sync settings: retries=${maxRetries}, delay=${retryDelay}ms, sequential pages`);
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -1017,60 +1027,15 @@ export class SalesDriveService {
         const requestDelay = this.calculateRequestDelay(maxAllowedPages);
         console.log(`⏱️ [SalesDrive UpdateAt] Using dynamic delay: ${requestDelay}ms (based on ${maxAllowedPages} pages)`);
 
-        // Создаем массив промисов для параллельной загрузки с контролем количества
-        const pagePromises: Promise<any[]>[] = [];
+        console.log(`📊 [UpdateAt Filter] Will fetch pages 2–${maxAllowedPages} sequentially (${totalOrders} orders)`);
 
-        // Оптимизируем количество страниц для UpdateAt фильтра
-        // const maxPagesToFetch = maxAllowedPages - 1; // Загружаем все необходимые страницы
-        console.log(`📊 [UpdateAt Filter] Will fetch all ${maxAllowedPages} pages (${Math.ceil(totalOrders / batchSize)} pages needed for ${totalOrders} orders)`);
-
-        for (let page = 2; page <= maxAllowedPages; page++) {
-          pagePromises.push(this.fetchSinglePageUpdateAt(startDate, endDate, page));
-        }
-
-        // Разбиваем на батчи для строгого контроля concurrency
-        const batches: Promise<any[]>[][] = [];
-        for (let i = 0; i < pagePromises.length; i += concurrencyLimit) {
-          batches.push(pagePromises.slice(i, i + concurrencyLimit));
-        }
-
-        // Выполняем батчи последовательно, но внутри батча - параллельно
-        const allOrders = [...firstPageOrders];
-        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-          console.log(`🔄 Processing batch ${batchIndex + 1}/${batches.length} (${batches[batchIndex].length} pages) - updateAt filter`);
-
-          const batchResults = await Promise.allSettled(batches[batchIndex]);
-
-          for (const result of batchResults) {
-            if (result.status === 'fulfilled') {
-              allOrders.push(...result.value);
-            } else {
-              const error = result.reason as Error;
-              if (error.message.includes('RATE_LIMIT_429')) {
-                // При rate limiting - повторяем всю пачку с задержкой
-                console.log(`🚦 Rate limit detected in batch, applying adaptive delay...`);
-                const adaptiveDelay = this.handleRateLimit();
-                await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
-
-                // Повторяем текущую пачку
-                const retryBatch = await Promise.allSettled(batches[batchIndex]);
-                for (const retryResult of retryBatch) {
-                  if (retryResult.status === 'fulfilled') {
-                    allOrders.push(...retryResult.value);
-                  }
-                }
-              } else {
-                console.error(`❌ Batch ${batchIndex} failed:`, error.message);
-              }
-            }
-          }
-
-          // Динамическая задержка между батчами на основе количества страниц
-          if (batchIndex < batches.length - 1) {
-            console.log(`⏱️ [SalesDrive] Waiting ${requestDelay}ms before next batch (dynamic delay based on ${maxAllowedPages} pages)...`);
-            await new Promise(resolve => setTimeout(resolve, requestDelay));
-          }
-        }
+        const remainingOrders = await this.fetchRemainingPagesSequentially(
+          2,
+          maxAllowedPages,
+          (page) => this.fetchSinglePageUpdateAt(startDate, endDate, page),
+          requestDelay,
+        );
+        const allOrders = [...firstPageOrders, ...remainingOrders];
 
         console.log(`✅ [SalesDrive] Parallel fetch completed: ${allOrders.length} orders from ${maxAllowedPages} pages (updateAt filter)`);
 
@@ -1103,8 +1068,8 @@ export class SalesDriveService {
   /**
    * Загружает одну страницу заказов с обработкой rate limiting
    */
-  private async fetchSinglePage(startDate: string, endDate: string, page: number): Promise<any[]> {
-    const batchSize = this.getSetting('orders.batchSize', 100); // Увеличиваем batch size до 100 для эффективности
+  private async fetchSinglePage(startDate: string, endDate: string, page: number, attempt = 1): Promise<any[]> {
+    const batchSize = Math.min(this.getSetting('orders.batchSize', 100), 100);
     const params = new URLSearchParams({
       page: page.toString(),
       limit: batchSize.toString(),
@@ -1124,14 +1089,14 @@ export class SalesDriveService {
       },
     });
 
-    if (response.status === 429) {
-      // При rate limiting - применяем адаптивную задержку и повторяем
-      console.log(`🚦 Rate limit detected on page ${page}, applying adaptive delay...`);
-      const adaptiveDelay = this.handleRateLimit();
-      await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
-
-      // Повторяем запрос после задержки
-      return await this.fetchSinglePage(startDate, endDate, page);
+    if (response.status === 429 || response.status === 400) {
+      return this.retryFailedPage(
+        page,
+        attempt,
+        response.status,
+        response.statusText,
+        () => this.fetchSinglePage(startDate, endDate, page, attempt + 1),
+      );
     }
 
     if (!response.ok) {
@@ -1299,7 +1264,7 @@ export class SalesDriveService {
   /**
    * Загружает одну страницу заказов с фильтром по updateAt (время изменения)
    */
-  private async fetchSinglePageUpdateAt(startDate: string, endDate: string, page: number): Promise<any[]> {
+  private async fetchSinglePageUpdateAt(startDate: string, endDate: string, page: number, attempt = 1): Promise<any[]> {
     const batchSize = this.getSetting('orders.batchSize', 25);
     const formattedStartDate = this.formatSalesDriveDate(startDate);
     const formattedEndDate = this.formatSalesDriveDate(endDate);
@@ -1325,14 +1290,14 @@ export class SalesDriveService {
       },
     });
 
-    if (response.status === 429) {
-      // При rate limiting - применяем адаптивную задержку и повторяем
-      console.log(`🚦 [SalesDrive] Rate limit detected on page ${page}, applying adaptive delay...`);
-      const adaptiveDelay = this.handleRateLimit();
-      await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
-
-      // Повторяем запрос после задержки
-      return await this.fetchSinglePageUpdateAt(startDate, endDate, page);
+    if (response.status === 429 || response.status === 400) {
+      return this.retryFailedPage(
+        page,
+        attempt,
+        response.status,
+        response.statusText,
+        () => this.fetchSinglePageUpdateAt(startDate, endDate, page, attempt + 1),
+      );
     }
 
     if (!response.ok) {

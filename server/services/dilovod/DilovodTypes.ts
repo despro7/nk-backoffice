@@ -254,3 +254,14 @@ export interface DilovodVirtualBatFields {
   expense: string;
   final: string;
 }
+
+/** Параметри `request` / `balanceAndTurnover`. Імена вже з live shape — клієнт схеми не знає. */
+export interface DilovodBalanceAndTurnoverParams {
+  register: string;
+  startDate: string;
+  endDate: string;
+  dimensions: string[];
+  /** Імена полів (виміри + віртуальні BAT-ресурси). Без `shape.attributes`. */
+  fields: string[];
+  filters?: Array<{ alias: string; operator: string; value: unknown }>;
+}
