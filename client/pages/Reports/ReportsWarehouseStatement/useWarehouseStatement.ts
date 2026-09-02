@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import type { DateRange } from '@react-types/datepicker';
 import { CalendarDate, getLocalTimeZone, today } from '@internationalized/date';
 import { useApi } from '@/hooks/useApi';
+import { parseUrlHash, useUrlHashSync } from '@/hooks/useUrlHashSync';
 import type {
   WarehouseStatementColumnHeaderStyle,
   WarehouseStatementConstructorPreset,
@@ -20,7 +21,9 @@ import type {
 } from '@shared/types/warehouseStatement';
 import { createStandardDatePresets } from '@/lib/dateReportingUtils';
 import {
+  applyWarehouseStatementHash,
   buildQueryRequest,
+  buildWarehouseStatementHashValues,
   calendarValueToYmd,
   dateRangeToPeriod,
   defaultAsOfDate,
@@ -30,6 +33,7 @@ import {
   loadConstructorPreset,
   matchDatePresetKey,
   parseYmdToCalendarDate,
+  periodFromHash,
   periodToDateRange,
   readApiError,
   saveConstructorPreset,
@@ -69,25 +73,34 @@ export default function useWarehouseStatement(meta: WarehouseStatementMetaRespon
   const [datePresetKey, setDatePresetKey] = useState<string | null>(WAREHOUSE_STATEMENT_DEFAULT_PERIOD_PRESET);
   const [asOfDate, setAsOfDate] = useState<CalendarDate | null>(() => today(getLocalTimeZone()));
   const appliedMetaRef = useRef(false);
+  const hashRestoreCountRef = useRef(0);
+
+  const syncPeriodUi = useCallback((period: WarehouseStatementConstructorPreset['period']) => {
+    if (period.mode === 'asOfDate') {
+      const date = parseYmdToCalendarDate(period.asOfDate);
+      setAsOfDate(date);
+      setDateRange(date ? { start: date, end: date } : null);
+      setDatePresetKey(date ? matchDatePresetKey({ start: date, end: date }) : null);
+      return;
+    }
+    const range = periodToDateRange(period);
+    setDateRange(range);
+    setDatePresetKey(matchDatePresetKey(range));
+  }, []);
 
   useEffect(() => {
     if (!meta || appliedMetaRef.current) {
       return;
     }
     appliedMetaRef.current = true;
-    const next = sanitizePreset(loadConstructorPreset(), meta);
-    setDraft(next);
-    if (next.period.mode === 'asOfDate') {
-      setAsOfDate(parseYmdToCalendarDate(next.period.asOfDate));
-      const date = parseYmdToCalendarDate(next.period.asOfDate);
-      setDateRange(date ? { start: date, end: date } : null);
-      setDatePresetKey(date ? matchDatePresetKey({ start: date, end: date }) : null);
-    } else {
-      const range = periodToDateRange(next.period);
-      setDateRange(range);
-      setDatePresetKey(matchDatePresetKey(range));
+    let next = sanitizePreset(loadConstructorPreset(), meta);
+    const params = parseUrlHash(window.location.hash);
+    if ([...params.keys()].length > 0) {
+      next = sanitizePreset(applyWarehouseStatementHash(next, params, meta), meta);
     }
-  }, [meta]);
+    setDraft(next);
+    syncPeriodUi(next.period);
+  }, [meta, syncPeriodUi]);
 
   useEffect(() => {
     if (!draft) {
@@ -95,6 +108,32 @@ export default function useWarehouseStatement(meta: WarehouseStatementMetaRespon
     }
     saveConstructorPreset(draft);
   }, [draft]);
+
+  useUrlHashSync(
+    draft && meta ? buildWarehouseStatementHashValues(draft, meta, datePresetKey) : {},
+    (params) => {
+      hashRestoreCountRef.current += 1;
+      if ([...params.keys()].length === 0 && hashRestoreCountRef.current === 1) {
+        return;
+      }
+      if (!meta) {
+        return;
+      }
+      const hashedPeriod = periodFromHash(params);
+      if (hashedPeriod) {
+        syncPeriodUi(hashedPeriod);
+      } else if (hashRestoreCountRef.current > 1) {
+        syncPeriodUi(defaultPeriod());
+      }
+      setDraft((current) => {
+        if (!current) {
+          return current;
+        }
+        return sanitizePreset(applyWarehouseStatementHash(current, params, meta), meta);
+      });
+    },
+    { enabled: Boolean(draft && meta), replace: true },
+  );
 
   const periodMode: WarehouseStatementPeriodMode = draft?.period.mode ?? 'dateRange';
 
@@ -220,10 +259,19 @@ export default function useWarehouseStatement(meta: WarehouseStatementMetaRespon
     patchDraft({ exclusions });
   }, [patchDraft]);
 
-  const [exclusionUndo, setExclusionUndo] = useState<{
-    snapshot: WarehouseStatementExclusion[];
+  const [actionUndo, setActionUndo] = useState<{
+    prefix: string;
     label: string;
+    restore: Partial<WarehouseStatementConstructorPreset>;
   } | null>(null);
+
+  const beginUndo = useCallback((
+    prefix: string,
+    label: string,
+    restore: Partial<WarehouseStatementConstructorPreset>,
+  ) => {
+    setActionUndo({ prefix, label, restore });
+  }, []);
 
   const addExclusion = useCallback((item: WarehouseStatementExclusion) => {
     if (!item.valueId || !item.dimensionId || !draft) {
@@ -233,27 +281,30 @@ export default function useWarehouseStatement(meta: WarehouseStatementMetaRespon
     if (list.some((entry) => entry.dimensionId === item.dimensionId && entry.valueId === item.valueId)) {
       return;
     }
-    setExclusionUndo({ snapshot: list, label: item.label || item.valueId });
+    beginUndo('Виключено', item.label || item.valueId, { exclusions: list });
     patchDraft({ exclusions: [...list, item] });
-  }, [draft, patchDraft]);
+  }, [beginUndo, draft, patchDraft]);
 
-  const undoExclusion = useCallback(() => {
-    setExclusionUndo((current) => {
+  const undoAction = useCallback(() => {
+    setActionUndo((current) => {
       if (current) {
-        patchDraft({ exclusions: current.snapshot });
+        patchDraft(current.restore);
       }
       return null;
     });
   }, [patchDraft]);
 
-  const dismissExclusionUndo = useCallback(() => {
-    setExclusionUndo(null);
+  const dismissActionUndo = useCallback(() => {
+    setActionUndo(null);
   }, []);
 
   const clearExclusions = useCallback(() => {
+    const list = draft?.exclusions ?? [];
+    if (list.length > 0) {
+      beginUndo('Скинуто', `виключення (${list.length})`, { exclusions: list });
+    }
     patchDraft({ exclusions: [] });
-    setExclusionUndo(null);
-  }, [patchDraft]);
+  }, [beginUndo, draft, patchDraft]);
 
   const query = useQuery({
     queryKey: ['warehouse-statement', submittedRequest, runToken],
@@ -450,9 +501,10 @@ export default function useWarehouseStatement(meta: WarehouseStatementMetaRespon
     setExclusions,
     addExclusion,
     clearExclusions,
-    exclusionUndo,
-    undoExclusion,
-    dismissExclusionUndo,
+    beginUndo,
+    actionUndo,
+    undoAction,
+    dismissActionUndo,
     generate,
     exportToExcel,
     result,

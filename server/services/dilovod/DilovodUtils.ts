@@ -661,16 +661,39 @@ export function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/** Склад виробничого цеху — не показуємо в селектах складів. */
+/** Склад виробничого цеху (довідник / звіт мають його показувати). */
 export const DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID = '1100700000001018';
 
 export function isDilovodDeletionMark(delMark: unknown): boolean {
   return delMark === true || delMark === 1 || delMark === '1';
 }
 
-/** Активний склад для UI/довідників: без delMark і без виробничого цеху. */
+/** Розгортає Dilovod id (рядок або `{ id, pr }`). */
+export function unwrapDilovodId(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
+  if (typeof value === 'object') {
+    const rec = value as { id?: unknown };
+    if (rec.id != null && rec.id !== value) return unwrapDilovodId(rec.id);
+  }
+  return '';
+}
+
+/** Розгортає Dilovod name / id__pr / локалізований об'єкт. */
+export function unwrapDilovodName(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
+  if (typeof value !== 'object') return '';
+  const rec = value as { uk?: unknown; ru?: unknown; pr?: unknown; name?: unknown };
+  for (const key of ['uk', 'ru', 'pr', 'name'] as const) {
+    const part = rec[key];
+    if (typeof part === 'string' && part.trim()) return part.trim();
+  }
+  return '';
+}
+
+/** Активний склад для UI/довідників: без delMark. */
 export function isActiveDilovodStorage(storage: { id?: string; delMark?: unknown }): boolean {
-  if (String(storage.id ?? '') === DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID) return false;
   return !isDilovodDeletionMark(storage.delMark);
 }
 

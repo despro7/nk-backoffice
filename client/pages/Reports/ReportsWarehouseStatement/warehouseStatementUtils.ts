@@ -653,3 +653,134 @@ export function isQueryResponse(value: unknown): value is WarehouseStatementQuer
   const candidate = value as WarehouseStatementQueryResponse;
   return Array.isArray(candidate.rows) && Array.isArray(candidate.columns) && candidate.totals != null;
 }
+
+export function splitHashIds(raw: string | null): string[] {
+  if (!raw) {
+    return [];
+  }
+  return raw.split(',').map((part) => part.trim()).filter(Boolean);
+}
+
+export function joinHashIds(ids: string[] | undefined): string | undefined {
+  if (!ids?.length) {
+    return undefined;
+  }
+  return ids.join(',');
+}
+
+export function periodFromHash(params: URLSearchParams): WarehouseStatementPeriod | null {
+  const presetKey = params.get('period');
+  if (presetKey && presetKey !== 'custom') {
+    const found = createStandardDatePresets().find((item) => item.key === presetKey);
+    if (found) {
+      const range = found.getRange();
+      const end = range.end as { year: number; month: number; day: number };
+      if (WAREHOUSE_STATEMENT_AS_OF_PRESETS.has(presetKey)) {
+        return { mode: 'asOfDate', asOfDate: calendarValueToYmd(end) };
+      }
+      return {
+        mode: 'dateRange',
+        startDate: calendarValueToYmd(range.start as { year: number; month: number; day: number }),
+        endDate: calendarValueToYmd(end),
+      };
+    }
+  }
+  const asOf = params.get('asOf');
+  if (params.get('mode') === 'asOf' && asOf) {
+    return { mode: 'asOfDate', asOfDate: asOf };
+  }
+  const from = params.get('from');
+  const to = params.get('to');
+  if (from && to) {
+    return { mode: 'dateRange', startDate: from, endDate: to };
+  }
+  return null;
+}
+
+export function buildWarehouseStatementHashValues(
+  preset: WarehouseStatementConstructorPreset,
+  meta: WarehouseStatementMetaResponse,
+  datePresetKey: string | null,
+): Record<string, string | number | undefined | false> {
+  const storageName = meta.resolved.storageDimensionName;
+  const firmName = meta.resolved.firmDimensionName;
+  const isDefaultPeriod = datePresetKey === WAREHOUSE_STATEMENT_DEFAULT_PERIOD_PRESET
+    && preset.period.mode === 'dateRange';
+  const groupExclusions = (preset.exclusions ?? [])
+    .filter((item) => item.dimensionId === WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP)
+    .map((item) => item.valueId);
+
+  return {
+    period: !isDefaultPeriod && datePresetKey && datePresetKey !== 'custom' ? datePresetKey : undefined,
+    mode: preset.period.mode === 'asOfDate' && (!datePresetKey || datePresetKey === 'custom')
+      ? 'asOf'
+      : undefined,
+    from:
+      preset.period.mode === 'dateRange' && !isDefaultPeriod && (datePresetKey === 'custom' || !datePresetKey)
+        ? preset.period.startDate
+        : undefined,
+    to:
+      preset.period.mode === 'dateRange' && !isDefaultPeriod && (datePresetKey === 'custom' || !datePresetKey)
+        ? preset.period.endDate
+        : undefined,
+    asOf:
+      preset.period.mode === 'asOfDate' && (!datePresetKey || datePresetKey === 'custom')
+        ? preset.period.asOfDate
+        : undefined,
+    st: storageName ? joinHashIds(preset.dimensionFilters?.[storageName]) : undefined,
+    firm: firmName ? joinHashIds(preset.dimensionFilters?.[firmName]) : undefined,
+    g: joinHashIds(preset.groupIds),
+    xg: joinHashIds(groupExclusions),
+    ek: joinHashIds(preset.expenseKinds),
+    pt: preset.priceType,
+    z: preset.hideZeroQty === false ? 0 : undefined,
+  };
+}
+
+export function applyWarehouseStatementHash(
+  preset: WarehouseStatementConstructorPreset,
+  params: URLSearchParams,
+  meta: WarehouseStatementMetaResponse,
+): WarehouseStatementConstructorPreset {
+  const storageName = meta.resolved.storageDimensionName;
+  const firmName = meta.resolved.firmDimensionName;
+  const nextFilters = { ...(preset.dimensionFilters ?? {}) };
+
+  if (storageName) {
+    const st = splitHashIds(params.get('st'));
+    if (st.length) nextFilters[storageName] = st;
+    else delete nextFilters[storageName];
+  }
+  if (firmName) {
+    const firm = splitHashIds(params.get('firm'));
+    if (firm.length) nextFilters[firmName] = firm;
+    else delete nextFilters[firmName];
+  }
+
+  const groupIds = splitHashIds(params.get('g')).filter((id) => meta.groups.some((group) => group.id === id));
+  const restExclusions = (preset.exclusions ?? []).filter(
+    (item) => item.dimensionId !== WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP,
+  );
+  const groupExclusions = splitHashIds(params.get('xg'))
+    .filter((id) => meta.groups.some((group) => group.id === id))
+    .map((id) => ({
+      dimensionId: WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP,
+      valueId: id,
+      label: meta.groups.find((group) => group.id === id)?.name ?? id,
+    }));
+
+  const hashedPeriod = periodFromHash(params);
+  const priceType = params.get('pt');
+  const zeros = params.get('z');
+
+  return {
+    ...preset,
+    period: hashedPeriod ?? preset.period,
+    dimensionFilters: nextFilters,
+    groupIds,
+    exclusions: [...restExclusions, ...groupExclusions],
+    expenseKinds: sanitizeExpenseKinds(splitHashIds(params.get('ek')) as WarehouseStatementExpenseKind[]),
+    priceType: priceType && meta.priceTypes.some((item) => item.id === priceType) ? priceType : undefined,
+    hideZeroQty: zeros === '0' ? false : true,
+  };
+}

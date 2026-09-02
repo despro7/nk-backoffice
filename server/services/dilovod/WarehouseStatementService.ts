@@ -40,6 +40,7 @@ import { isArchiveFolderName } from '../../modules/Products/ProductsTypes.js';
 import { DilovodApiClient } from './DilovodApiClient.js';
 import { dilovodMetadataService } from './DilovodMetadataService.js';
 import type { DilovodRegisterField, DilovodRegisterShape } from './DilovodTypes.js';
+import { unwrapDilovodId, unwrapDilovodName } from './DilovodUtils.js';
 
 const DATE_YMD = /^\d{4}-\d{2}-\d{2}$/;
 const IL_CHUNK = 50;
@@ -175,6 +176,7 @@ export class WarehouseStatementService {
     );
     const catalog = await this.loadCatalogIndex(goodIds);
     const directoryLabels = await this.loadDirectoryLabels();
+    await this.enrichDirectoryLabels(directoryLabels, batRows, slim);
 
     const pricesByGood = await this.loadSalesPrices(body.priceType, catalog, goodIds, columns);
     const expenseByKey = await this.loadExpenseBreakdown({
@@ -944,20 +946,76 @@ export class WarehouseStatementService {
   private async loadStorages() {
     try {
       const rows = await this.api.getStorages();
-      return rows.map((s) => ({ id: String(s.id), name: s.name || String(s.id) }));
+      return rows.map((s) => {
+        const id = unwrapDilovodId(s.id) || String(s.id ?? '');
+        return {
+          id,
+          name: unwrapDilovodName(s.name) || id,
+        };
+      }).filter((item) => item.id);
     } catch (error) {
       logServer('WarehouseStatement: склади', error);
       return [];
     }
   }
 
+  private async enrichDirectoryLabels(
+    labels: Map<string, string>,
+    batRows: Record<string, unknown>[],
+    slim: WarehouseStatementRegisterShape,
+  ): Promise<void> {
+    const missing = new Set<string>();
+    for (const dim of slim.dimensions) {
+      const wanted =
+        warehouseStatementValueTypeIncludes(dim.valueType, WAREHOUSE_STATEMENT_VALUE_TYPES.storages)
+        || warehouseStatementValueTypeIncludes(dim.valueType, WAREHOUSE_STATEMENT_VALUE_TYPES.firms);
+      if (!wanted) continue;
+      for (const row of batRows) {
+        const id = str(row[dim.name]);
+        if (id && !labels.has(id)) missing.add(id);
+      }
+    }
+    if (missing.size === 0) return;
+
+    const ids = [...missing];
+    for (const from of ['catalogs.storages', 'catalogs.firms'] as const) {
+      try {
+        await this.api.ensureReady();
+        for (let i = 0; i < ids.length; i += IL_CHUNK) {
+          const chunk = ids.slice(i, i + IL_CHUNK);
+          const resp = await this.api.makeRequest<unknown>({
+            version: '0.25',
+            key: this.api.getApiKey(),
+            action: 'request',
+            params: {
+              from,
+              fields: { id: 'id', name: 'name', id__pr: 'id__pr' },
+              filters: [{ alias: 'id', operator: 'IL', value: chunk }],
+            },
+          });
+          const rows = Array.isArray(resp) ? resp : [];
+          for (const row of rows as Array<{ id?: unknown; name?: unknown; id__pr?: unknown }>) {
+            const id = unwrapDilovodId(row.id);
+            const name = unwrapDilovodName(row.name) || unwrapDilovodName(row.id__pr);
+            if (id && name) labels.set(id, name);
+          }
+        }
+      } catch (error) {
+        logServer(`WarehouseStatement: назви ${from}`, error);
+      }
+    }
+  }
+
   private async loadFirms() {
     try {
       const rows = await this.api.getFirms();
-      return rows.map((f: { id?: unknown; name?: unknown }) => ({
-        id: String(f.id ?? ''),
-        name: String(f.name ?? f.id ?? ''),
-      })).filter((f: { id: string }) => f.id);
+      return rows.map((f: { id?: unknown; name?: unknown }) => {
+        const id = unwrapDilovodId(f.id) || String(f.id ?? '');
+        return {
+          id,
+          name: unwrapDilovodName(f.name) || id,
+        };
+      }).filter((f: { id: string }) => f.id);
     } catch (error) {
       logServer('WarehouseStatement: фірми', error);
       return [];
@@ -1406,6 +1464,8 @@ function uniqueStrings(values: string[]): string[] {
 }
 
 function str(value: unknown): string {
+  const id = unwrapDilovodId(value);
+  if (id) return id;
   if (value == null) return '';
   return String(value).trim();
 }

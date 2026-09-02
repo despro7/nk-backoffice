@@ -528,7 +528,7 @@ export default function HierarchicalReportTable({
 
   return (
     <div className="relative h-full min-h-64 min-w-0 w-full">
-      <ReportLoadingOverlay loading={loading} message={loadingMessage} className="z-40" />
+      <ReportLoadingOverlay loading={loading} message={loadingMessage} className="z-40 rounded-xl" />
 
       {!hasData && !loading ? (
         <ReportTableEmptyState

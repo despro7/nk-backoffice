@@ -22,6 +22,9 @@ import {
   getDilovodConfigFromDB,
   formatDateForDilovod,
   isActiveDilovodStorage,
+  isDilovodDeletionMark,
+  unwrapDilovodId,
+  unwrapDilovodName,
 } from './DilovodUtils.js';
 import { delay } from './DilovodUtils.js';
 import { inspect } from 'node:util';
@@ -970,60 +973,71 @@ export class DilovodApiClient {
     return allResults;
   }
 
-  // Отримання складів
+  // Отримання складів (усі сторінки catalogs.storages, без delMark).
   async getStorages(): Promise<DilovodStorage[]> {
     await this.ensureReady();
-    const request: DilovodApiRequest = {
-      version: "0.25",
-      key: this.apiKey,
-      action: "request",
-      params: {
-        from: 'catalogs.storages',
-        fields: {
-          id: 'id',
-          code: 'code',
-          name: 'name',
-          delMark: 'delMark',
-        },
-        filters: [
-          {
-            alias: 'delMark',
-            operator: '=',
-            value: false,
-          },
-        ],
-      }
-    };
+    const pageSize = 200;
+    const maxPages = 20;
+    let offset = 0;
+    const all: DilovodStorage[] = [];
+    const seen = new Set<string>();
 
     console.log('DilovodApiClient: Запит складів до Dilovod API');
-    const result = await this.makeRequest<any>(request);
-    
-    console.log(`DilovodApiClient: Сира відповідь API: ${JSON.stringify(result)}`);
-    
-    const normalizedResult = this.normalizeToArray<DilovodStorage>(result);
-    console.log(`DilovodApiClient: Нормалізовано складів: ${normalizedResult.length}`);
-    
-    // Детальний лог перших записів для діагностики
-    if (normalizedResult.length > 0) {
-      console.log(`DilovodApiClient: Перший склад: ${JSON.stringify(normalizedResult[0])}`);
-      if (normalizedResult.length > 1) {
-        console.log(`DilovodApiClient: Другий склад: ${JSON.stringify(normalizedResult[1])}`);
-      }
-    }
-    
-    // Без видалених у Dilovod (delMark) і без виробничого цеху
-    const filteredResult = normalizedResult.filter((storage) => isActiveDilovodStorage(storage));
 
-    if (filteredResult.length !== normalizedResult.length) {
+    for (let page = 0; page < maxPages; page += 1) {
+      const request: DilovodApiRequest = {
+        version: "0.25",
+        key: this.apiKey,
+        action: "request",
+        params: {
+          from: 'catalogs.storages',
+          fields: {
+            id: 'id',
+            code: 'code',
+            name: 'name',
+            id__pr: 'id__pr',
+            delMark: 'delMark',
+          },
+          limit: { offset, count: pageSize },
+        },
+      };
+
+      const result = await this.makeRequest<any>(request);
+      const rows = this.normalizeToArray<DilovodStorage & { id__pr?: unknown }>(result);
+      let newOnPage = 0;
+
+      for (const storage of rows) {
+        const id = unwrapDilovodId(storage.id);
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        newOnPage += 1;
+        all.push({
+          id,
+          code: unwrapDilovodName(storage.code) || String(storage.code ?? ''),
+          name: unwrapDilovodName(storage.name) || unwrapDilovodName(storage.id__pr) || id,
+          delMark: isDilovodDeletionMark(storage.delMark),
+        });
+      }
+
       console.log(
-        `DilovodApiClient: Відсіяно неактивні склади. Залишилось: ${filteredResult.length}`
+        `DilovodApiClient: склади page=${page + 1} offset=${offset} raw=${rows.length} new=${newOnPage} total=${all.length}`,
+      );
+
+      if (rows.length < pageSize || newOnPage === 0) {
+        break;
+      }
+      offset += pageSize;
+    }
+
+    const filteredResult = all.filter((storage) => isActiveDilovodStorage(storage));
+    if (filteredResult.length !== all.length) {
+      console.log(
+        `DilovodApiClient: Відсіяно склади з delMark. Залишилось: ${filteredResult.length}`
       );
     }
 
     return filteredResult.map((storage) => ({
-      id: String(storage.id),
-      code: storage.code ?? '',
-      name: storage.name ?? String(storage.id),
+      ...storage,
       delMark: false,
     }));
   }

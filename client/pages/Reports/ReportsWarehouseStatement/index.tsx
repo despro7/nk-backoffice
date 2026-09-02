@@ -55,7 +55,7 @@ export default function ReportsWarehouseStatementPage() {
           onColumnHeaderStyleChange={statement.setColumnHeaderStyle}
           onPinTotalsChange={statement.setPinTotals}
           onExclusionsChange={statement.setExclusions}
-          onClearExclusions={statement.clearExclusions}
+          onBeginUndo={statement.beginUndo}
         />
       ) : null}
 
@@ -92,13 +92,13 @@ export default function ReportsWarehouseStatementPage() {
         />
       </div>
 
-      {statement.exclusionUndo ? (
+      {statement.actionUndo ? (
         <UndoActionBanner
-          key={`${statement.exclusionUndo.label}:${statement.exclusionUndo.snapshot.length}`}
-          prefix="Виключено"
-          productName={statement.exclusionUndo.label}
-          onUndo={statement.undoExclusion}
-          onElapsed={statement.dismissExclusionUndo}
+          key={`${statement.actionUndo.prefix}:${statement.actionUndo.label}:${statement.actionUndo.restore ? '1' : '0'}`}
+          prefix={statement.actionUndo.prefix}
+          productName={statement.actionUndo.label}
+          onUndo={statement.undoAction}
+          onElapsed={statement.dismissActionUndo}
           className="fixed inset-x-3 bottom-24 lg:bottom-8 z-[100] mx-auto max-w-lg"
         />
       ) : null}

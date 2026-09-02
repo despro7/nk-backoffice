@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Checkbox, Chip, Radio, RadioGroup, Select, SelectItem, Tooltip } from '@heroui/react';
+import { Checkbox, Chip, Radio, RadioGroup } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import {
   WAREHOUSE_STATEMENT_COLUMN_HEADER_STYLES,
@@ -20,6 +20,7 @@ import {
   type ConstructorTabKey,
 } from '../../shared/constructor';
 import ReportMultiSelectFilter from '../../shared/filters/ReportMultiSelectFilter';
+import ReportSingleSelectFilter from '../../shared/filters/ReportSingleSelectFilter';
 import {
   constructorMetricCheckboxLabel,
   directoryItemsForDimension,
@@ -36,6 +37,42 @@ const HEADER_STYLE_LABELS: Record<WarehouseStatementColumnHeaderStyle, string> =
   short: 'Короткі (Початок, Прихід…)',
 };
 
+function ColumnMetricHint({ text }: { text: string }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        className="inline-flex shrink-0 text-default-400 hover:text-default-600 cursor-help"
+        aria-label="Підказка"
+        aria-expanded={isOpen}
+        onPointerEnter={() => setIsOpen(true)}
+        onPointerLeave={() => setIsOpen(false)}
+        onMouseEnter={() => setIsOpen(true)}
+        onMouseLeave={() => setIsOpen(false)}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => setIsOpen(false)}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setIsOpen(true);
+        }}
+      >
+        <DynamicIcon name="circle-question-mark" size={14} />
+      </button>
+      {isOpen ? (
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-64 -translate-x-1/2 rounded-md bg-gray-700 px-2 py-1.5 text-left text-xs leading-snug text-white shadow-md"
+        >
+          {text}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 interface ConstructorPanelProps {
   meta: WarehouseStatementMetaResponse;
   draft: WarehouseStatementConstructorPreset;
@@ -51,7 +88,11 @@ interface ConstructorPanelProps {
   onColumnHeaderStyleChange: (style: WarehouseStatementColumnHeaderStyle) => void;
   onPinTotalsChange: (value: boolean) => void;
   onExclusionsChange: (items: WarehouseStatementExclusion[]) => void;
-  onClearExclusions: () => void;
+  onBeginUndo: (
+    prefix: string,
+    label: string,
+    restore: Partial<WarehouseStatementConstructorPreset>,
+  ) => void;
 }
 
 export default function ConstructorPanel({
@@ -69,7 +110,7 @@ export default function ConstructorPanel({
   onColumnHeaderStyleChange,
   onPinTotalsChange,
   onExclusionsChange,
-  onClearExclusions,
+  onBeginUndo,
 }: ConstructorPanelProps) {
   const [tab, setTab] = useState<ConstructorTabKey>('selection');
 
@@ -149,8 +190,32 @@ export default function ConstructorPanel({
     setOrderedColumns(draft.columns.filter((id) => !drop.has(id)));
   };
 
+  const notifyRemoved = (
+    removed: string[],
+    source: 'chip' | 'reset' | 'list',
+    options: Array<{ key: string; label: string }>,
+    restore: Partial<WarehouseStatementConstructorPreset>,
+  ) => {
+    const labels = removed
+      .map((key) => options.find((option) => option.key === key)?.label ?? key)
+      .join(', ');
+    if (!labels) {
+      return;
+    }
+    onBeginUndo(source === 'reset' ? 'Скинуто' : 'Прибрано', labels, restore);
+  };
+
   const selection = (
     <div className="flex flex-col gap-4">
+      
+      <Checkbox
+        size="sm"
+        isSelected={draft.hideZeroQty ?? true}
+        onValueChange={onHideZeroQtyChange}
+      >
+        Ховати нульові залишки
+      </Checkbox>
+
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {registerDimensions.map((dimension) => {
           if (warehouseStatementValueTypeIncludes(dimension.valueType, WAREHOUSE_STATEMENT_VALUE_TYPES.goods)) {
@@ -163,13 +228,21 @@ export default function ConstructorPanel({
           if (options.length === 0) {
             return null;
           }
+          const selected = draft.dimensionFilters?.[dimension.id] ?? [];
           return (
             <ReportMultiSelectFilter
               key={dimension.id}
               ariaLabel={dimension.presentation}
               placeholder={dimension.presentation + ' (всі)'}
-              selectedKeys={new Set(draft.dimensionFilters?.[dimension.id] ?? [])}
+              selectedKeys={new Set(selected)}
               onChange={(keys) => onDimensionFilterChange(dimension.id, Array.from(keys))}
+              onReset={() => onDimensionFilterChange(dimension.id, [])}
+              onRemoved={(removed, source) =>
+                notifyRemoved(removed, source, options, {
+                  dimensionFilters: { ...(draft.dimensionFilters ?? {}) },
+                })
+              }
+              showTags
               options={options}
               iconName={dimension.id === 'firm' ? 'users' : 'warehouse'}
               className="w-full"
@@ -178,12 +251,80 @@ export default function ConstructorPanel({
           );
         })}
 
+        <ReportMultiSelectFilter
+          ariaLabel="Тип витрати"
+          placeholder="Розкладка витрати (всі)"
+          selectedKeys={new Set(draft.expenseKinds ?? [])}
+          onChange={(keys) =>
+            onExpenseKindsChange(
+              Array.from(keys).filter((key): key is (typeof WAREHOUSE_STATEMENT_EXPENSE_KINDS)[number] =>
+                (WAREHOUSE_STATEMENT_EXPENSE_KINDS as readonly string[]).includes(key),
+              ),
+            )
+          }
+          onReset={() => onExpenseKindsChange([])}
+          onRemoved={(removed, source) =>
+            notifyRemoved(
+              removed,
+              source,
+              WAREHOUSE_STATEMENT_EXPENSE_KINDS.map((kind) => ({
+                key: kind,
+                label: EXPENSE_KIND_LABELS[kind],
+              })),
+              { expenseKinds: [...(draft.expenseKinds ?? [])] },
+            )
+          }
+          showTags
+          options={WAREHOUSE_STATEMENT_EXPENSE_KINDS.map((kind) => ({
+            key: kind,
+            label: EXPENSE_KIND_LABELS[kind],
+          }))}
+          iconName="split"
+          className="w-full"
+          size="md"
+        />
+
+        {meta.priceTypes.length > 0 ? (
+          <ReportSingleSelectFilter
+            ariaLabel="Тип цін продажу"
+            placeholder="Тип цін (за замовчуванням)"
+            selectedKey={draft.priceType ?? null}
+            onChange={(key) => onPriceTypeChange(key ?? undefined)}
+            onReset={() => onPriceTypeChange(undefined)}
+            onRemoved={(removed, source) =>
+              notifyRemoved(
+                removed,
+                source,
+                meta.priceTypes.map((item) => ({ key: item.id, label: item.name })),
+                { priceType: draft.priceType },
+              )
+            }
+            showTags
+            options={meta.priceTypes.map((item) => ({ key: item.id, label: item.name }))}
+            iconName="badge-dollar-sign"
+            className="w-full"
+            size="md"
+          />
+        ) : null}
+
         {meta.groups.length > 0 ? (
           <ReportMultiSelectFilter
             ariaLabel="Групи товарів"
             placeholder="Групи товарів (всі)"
+            chipColor="danger"
             selectedKeys={new Set(draft.groupIds ?? [])}
             onChange={(keys) => onGroupIdsChange(Array.from(keys))}
+            onReset={() => onGroupIdsChange([])}
+            onRemoved={(removed, source) =>
+              notifyRemoved(
+                removed,
+                source,
+                meta.groups.map((item) => ({ key: item.id, label: item.name })),
+                { groupIds: [...(draft.groupIds ?? [])] },
+              )
+            }
+            showTags
+            mode="autocomplete"
             options={meta.groups.map((item) => ({
               key: item.id,
               label: item.name,
@@ -199,6 +340,7 @@ export default function ConstructorPanel({
           <ReportMultiSelectFilter
             ariaLabel="Виключення груп"
             placeholder="Виключення груп (немає)"
+            chipColor="danger"
             selectedKeys={new Set(
               (draft.exclusions ?? [])
                 .filter((item) => item.dimensionId === WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP)
@@ -218,6 +360,23 @@ export default function ConstructorPanel({
                 })),
               ]);
             }}
+            onReset={() => {
+              onExclusionsChange(
+                (draft.exclusions ?? []).filter(
+                  (item) => item.dimensionId !== WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP,
+                ),
+              );
+            }}
+            onRemoved={(removed, source) =>
+              notifyRemoved(
+                removed,
+                source,
+                meta.groups.map((item) => ({ key: item.id, label: item.name })),
+                { exclusions: [...(draft.exclusions ?? [])] },
+              )
+            }
+            showTags
+            mode="autocomplete"
             options={meta.groups.map((item) => ({
               key: item.id,
               label: item.name,
@@ -228,76 +387,38 @@ export default function ConstructorPanel({
             size="md"
           />
         ) : null}
-
-        <ReportMultiSelectFilter
-          ariaLabel="Тип витрати"
-          placeholder="Розкладка витрати (всі)"
-          selectedKeys={new Set(draft.expenseKinds ?? [])}
-          onChange={(keys) =>
-            onExpenseKindsChange(
-              Array.from(keys).filter((key): key is (typeof WAREHOUSE_STATEMENT_EXPENSE_KINDS)[number] =>
-                (WAREHOUSE_STATEMENT_EXPENSE_KINDS as readonly string[]).includes(key),
-              ),
-            )
-          }
-          options={WAREHOUSE_STATEMENT_EXPENSE_KINDS.map((kind) => ({
-            key: kind,
-            label: EXPENSE_KIND_LABELS[kind],
-          }))}
-          iconName="split"
-          className="w-full"
-          size="md"
-        />
-
-        {meta.priceTypes.length > 0 ? (
-          <Select
-            size="md"
-            aria-label="Тип цін продажу"
-            placeholder="Тип цін (за замовчуванням)"
-            selectedKeys={draft.priceType ? [draft.priceType] : []}
-            onSelectionChange={(keys) => {
-              const value = Array.from(keys)[0] as string | undefined;
-              onPriceTypeChange(value);
-            }}
-          >
-            {meta.priceTypes.map((item) => (
-              <SelectItem key={item.id}>{item.name}</SelectItem>
-            ))}
-          </Select>
-        ) : null}
       </div>
-
-      <Checkbox
-        isSelected={draft.hideZeroQty ?? true}
-        onValueChange={onHideZeroQtyChange}
-      >
-        Ховати нульові залишки
-      </Checkbox>
 
       {(draft.exclusions ?? []).some(
         (item) => item.dimensionId !== WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP,
       ) ? (
-        <div className="flex flex-wrap gap-1.5">
-          {(draft.exclusions ?? [])
-            .filter((item) => item.dimensionId !== WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP)
-            .map((item) => (
-              <Chip
-                key={`${item.dimensionId}:${item.valueId}`}
-                size="sm"
-                variant="flat"
-                color="danger"
-                onClose={() =>
-                  onExclusionsChange(
-                    (draft.exclusions ?? []).filter(
-                      (entry) =>
-                        !(entry.dimensionId === item.dimensionId && entry.valueId === item.valueId),
-                    ),
-                  )
-                }
-              >
-                {item.label || item.valueId}
-              </Chip>
-            ))}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-semibold text-default-700">Виключення товарів</span>
+          <div className="flex flex-wrap gap-1.5">
+            {(draft.exclusions ?? [])
+              .filter((item) => item.dimensionId !== WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP)
+              .map((item) => (
+                <Chip
+                  key={`${item.dimensionId}:${item.valueId}`}
+                  size="sm"
+                  variant="flat"
+                  color="danger"
+                  onClose={() => {
+                    onBeginUndo('Прибрано', item.label || item.valueId, {
+                      exclusions: [...(draft.exclusions ?? [])],
+                    });
+                    onExclusionsChange(
+                      (draft.exclusions ?? []).filter(
+                        (entry) =>
+                          !(entry.dimensionId === item.dimensionId && entry.valueId === item.valueId),
+                      ),
+                    );
+                  }}
+                >
+                  {item.label || item.valueId}
+                </Chip>
+              ))}
+          </div>
         </div>
       ) : null}
     </div>
@@ -335,46 +456,30 @@ export default function ConstructorPanel({
                 {group.title}
               </Checkbox>
               {visibleMetrics.map((metric) => (
-                <Checkbox
-                  key={metric.id}
-                  size="sm"
-                  className="ml-4"
-                  isSelected={selectedColumns.has(metric.id)}
-                  onValueChange={(selected) => {
-                    if (selected) {
-                      setOrderedColumns([...draft.columns, metric.id]);
-                      return;
-                    }
-                    setOrderedColumns(draft.columns.filter((id) => id !== metric.id));
-                  }}
-                >
-                  {constructorMetricCheckboxLabel(metric, group.title)}
+                <div key={metric.id} className="ml-4 flex items-center gap-1">
+                  <Checkbox
+                    size="sm"
+                    isSelected={selectedColumns.has(metric.id)}
+                    onValueChange={(selected) => {
+                      if (selected) {
+                        setOrderedColumns([...draft.columns, metric.id]);
+                        return;
+                      }
+                      setOrderedColumns(draft.columns.filter((id) => id !== metric.id));
+                    }}
+                  >
+                    {constructorMetricCheckboxLabel(metric, group.title)}
+                  </Checkbox>
                   {metric.kind === 'unitCost' || metric.kind === 'salesProfitability' ? (
-                    <Tooltip
-                      content={
+                    <ColumnMetricHint
+                      text={
                         metric.kind === 'salesProfitability'
                           ? PROFITABILITY_COLUMN_TOOLTIP
                           : UNIT_COST_COLUMN_TOOLTIP
                       }
-                      placement="top"
-                      color="secondary"
-                      delay={500}
-                      showArrow={true}
-                      classNames={{
-                        base: 'before:bg-gray-700 before:rounded-[2px]',
-                        content: 'bg-gray-700 border-0 text-white text-xs max-w-xs',
-                      }}
-                    >
-                      <span
-                        className="inline-flex ml-1 text-default-400 hover:text-default-600"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => event.preventDefault()}
-                      >
-                        <DynamicIcon name="circle-question-mark" size={14} />
-                      </span>
-                    </Tooltip>
+                    />
                   ) : null}
-                </Checkbox>
+                </div>
               ))}
             </div>
           );
@@ -429,24 +534,6 @@ export default function ConstructorPanel({
           )}
         </Chip>
       ))}
-      headerExtra={
-        (draft.exclusions?.length ?? 0) > 0 ? (
-          <div className="flex items-center gap-1.5">
-            <Chip size="sm" variant="flat" color="danger">
-              Виключення: {draft.exclusions?.length}
-            </Chip>
-            <Button
-              size="sm"
-              variant="light"
-              color="danger"
-              aria-label="Скинути список виключення"
-              onPress={onClearExclusions}
-            >
-              Скинути
-            </Button>
-          </div>
-        ) : null
-      }
     />
   );
 }

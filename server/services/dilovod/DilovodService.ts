@@ -17,12 +17,14 @@ import { isKitAccPolicy } from '../../modules/Products/ProductsTypes.js';
 import { syncSettingsService } from '../syncSettingsService.js';
 import { dilovodCacheService, type CacheType } from './DilovodCacheService.js';
 import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
-import { compactMetaLogData, isActiveDilovodStorage, mapBarCodesByObjectId } from './DilovodUtils.js';
+import { compactMetaLogData, DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID, isActiveDilovodStorage, mapBarCodesByObjectId } from './DilovodUtils.js';
 import { pluralize } from '../../lib/utils.js';
 
 export class DilovodService {
   // Глобальний AbortController для поточної синхронізації товарів
   static currentSyncAbortController: AbortController | null = null;
+  /** Один раз обходимо старий кеш складів без виробничого цеху. */
+  private static storagesLegacyCacheBusted = false;
 
   /**
    * Реєструє зовнішній AbortController як поточний для синхронізації.
@@ -957,11 +959,17 @@ export class DilovodService {
         const cached = await dilovodCacheService.getFromCache('storages');
         const cacheHasDelMark = Array.isArray(cached)
           && cached.some((s: { delMark?: unknown }) => s?.delMark !== undefined);
-        // Старий кеш без delMark може містити видалені склади — тоді йдемо в API
+        const cacheHasWorkshop = Array.isArray(cached)
+          && cached.some((s: { id?: string }) => String(s?.id ?? '') === DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID);
+        // Старий кеш: без delMark або без виробничого цеху (раніше відсіювали)
         if (cached && (cacheHasDelMark || cached.length === 0)) {
-          const active = cached.filter((s: { id?: string; delMark?: unknown }) => isActiveDilovodStorage(s));
-          console.log(`📦 [Dilovod] Склади завантажено з кешу: ${active.length} записів`);
-          return active;
+          const useCache = cacheHasWorkshop || cached.length === 0 || DilovodService.storagesLegacyCacheBusted;
+          if (useCache) {
+            const active = cached.filter((s: { id?: string; delMark?: unknown }) => isActiveDilovodStorage(s));
+            console.log(`📦 [Dilovod] Склади завантажено з кешу: ${active.length} записів`);
+            return active;
+          }
+          DilovodService.storagesLegacyCacheBusted = true;
         }
       }
 
