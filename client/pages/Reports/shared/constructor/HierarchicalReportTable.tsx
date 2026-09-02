@@ -102,8 +102,27 @@ function metricColMinWidth(column: HierarchicalTableColumn): number {
   return Math.max(byFormat, byHeader);
 }
 
-function nameStickyShadow(scrolled: boolean): string {
-  return scrolled ? '8px 0 10px -6px rgba(15, 23, 42, 0.22)' : 'none';
+function NameColumnScrollShadow({
+  visible,
+  offset,
+}: {
+  visible: boolean;
+  offset: number;
+}) {
+  return (
+    <div
+      aria-hidden
+      className={`pointer-events-none col-start-1 row-start-1 z-[2] w-5 self-stretch justify-self-start sticky transition-opacity duration-300 ${
+        visible ? 'opacity-100' : 'opacity-0'
+      }`}
+      style={{
+        left: offset,
+        marginLeft: offset,
+        background:
+          'linear-gradient(to right, rgba(15, 23, 42, 0.16), rgba(15, 23, 42, 0.07) 32%, rgba(15, 23, 42, 0.02) 62%, transparent)',
+      }}
+    />
+  );
 }
 
 const PERCENT_TONE_CLASS = {
@@ -547,20 +566,18 @@ export default function HierarchicalReportTable({
               className="overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               onScroll={() => syncHorizontalScroll('header')}
             >
-              <table className={tableClass} style={{ minWidth: tableMinWidth }}>
+              <div className="grid" style={{ minWidth: tableMinWidth }}>
+              <table className={`${tableClass} col-start-1 row-start-1`} style={{ minWidth: tableMinWidth }}>
               {renderColGroup()}
               <thead className="bg-neutral-800">
                 {groupLabels ? (
                   <tr>
                     <th
                       rowSpan={2}
-                      className={`sticky left-0 z-40 bg-neutral-500 px-2 md:px-3 py-2 text-left font-bold text-white align-middle border-r-2 transition-shadow duration-300 ${
+                      className={`sticky left-0 z-40 bg-neutral-500 px-2 md:px-3 py-2 text-left font-bold text-white align-middle border-r-2 ${
                         nameEdgeActive ? 'border-r-default-600' : 'border-white/20'
                       }`}
-                      style={{
-                        ...nameColStyle,
-                        boxShadow: nameStickyShadow(scrolled),
-                      }}
+                      style={nameColStyle}
                     >
                       Найменування
                       {renderResizeHandle()}
@@ -593,13 +610,10 @@ export default function HierarchicalReportTable({
                 <tr>
                   {groupLabels ? null : (
                     <th
-                      className={`sticky left-0 z-40 bg-neutral-500 px-2 md:px-3 py-2 text-left font-medium text-white not-last:border-r-2 transition-shadow duration-300 ${
+                      className={`sticky left-0 z-40 bg-neutral-500 px-2 md:px-3 py-2 text-left font-medium text-white not-last:border-r-2 ${
                         nameEdgeActive ? 'border-r-primary' : 'border-white/20'
                       }`}
-                      style={{
-                        ...nameColStyle,
-                        boxShadow: nameStickyShadow(scrolled),
-                      }}
+                      style={nameColStyle}
                     >
                       Найменування
                       {renderResizeHandle()}
@@ -639,12 +653,9 @@ export default function HierarchicalReportTable({
                 {pinnedTotals.map((row) => (
                   <tr key={row.id} className="bg-default-50 font-semibold">
                     <th
-                      className={`sticky left-0 z-40 bg-default-50 px-2 md:px-3 py-1.5 text-left font-semibold border-b border-r-2 transition-shadow duration-300 ${
+                      className={`sticky left-0 z-40 bg-default-50 px-2 md:px-3 py-1.5 text-left font-semibold border-b border-r-2 ${
                         nameEdgeActive ? 'border-r-default-400' : 'border-default-200'}`}
-                      style={{
-                        ...nameColStyle,
-                        boxShadow: nameStickyShadow(scrolled),
-                      }}
+                      style={nameColStyle}
                     >
                       <NameCell
                         row={row}
@@ -673,6 +684,8 @@ export default function HierarchicalReportTable({
                 ))}
               </thead>
             </table>
+            <NameColumnScrollShadow visible={scrolled} offset={displayNameWidth} />
+            </div>
             </div>
           </div>
           <div
@@ -680,7 +693,8 @@ export default function HierarchicalReportTable({
             className="overflow-x-auto overscroll-x-contain rounded-b-xl"
             onScroll={() => syncHorizontalScroll('body')}
           >
-            <table className={tableClass} style={{ minWidth: tableMinWidth }}>
+            <div className="grid" style={{ minWidth: tableMinWidth }}>
+            <table className={`${tableClass} col-start-1 row-start-1`} style={{ minWidth: tableMinWidth }}>
               {renderColGroup()}
               <tbody>
                 {flatRows.map(({ row, hasChildren }) => {
@@ -688,18 +702,15 @@ export default function HierarchicalReportTable({
                   return (
                     <tr
                       key={row.id}
-                      className={`group hover:bg-default-50 [&:not(:last-child)_td]:border-b ${
+                      className={`group hover:bg-default-100 [&:not(:last-child)_td]:border-b ${
                         isTotal ? 'font-semibold bg-default-50/70' : 'bg-white'
                       }`}
                     >
                       <td
-                        className={`group/name sticky left-0 z-[1] px-2 md:px-3 py-1.5 border-r-2 overflow-hidden group-hover:bg-default-50 transition-shadow duration-300 ${nameBg(isTotal)} ${
+                        className={`group/name sticky left-0 z-[1] px-2 md:px-3 py-1.5 border-r-2 overflow-hidden group-hover:bg-default-100 ${nameBg(isTotal)} ${
                           nameEdgeActive ? 'border-r-default-400' : 'border-default-200'
                         }`}
-                        style={{
-                          ...nameColStyle,
-                          boxShadow: nameStickyShadow(scrolled),
-                        }}
+                        style={nameColStyle}
                       >
                         <NameCell
                           row={row}
@@ -730,6 +741,8 @@ export default function HierarchicalReportTable({
                 })}
               </tbody>
             </table>
+            <NameColumnScrollShadow visible={scrolled} offset={displayNameWidth} />
+            </div>
           </div>
         </div>
       ) : null}
