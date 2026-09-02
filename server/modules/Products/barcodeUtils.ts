@@ -160,6 +160,24 @@ export function pickPrimaryBarcode(
   return (unbound ?? codes[0]).code;
 }
 
+/** Унікальні ШК товару (усі рядки регістру + опційний fallback). */
+export function collectBarcodeCodes(
+  rows: Array<{ code?: string | null }>,
+  extra?: string | null
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (raw?: string | null) => {
+    const code = String(raw ?? '').trim();
+    if (!code || seen.has(code)) return;
+    seen.add(code);
+    out.push(code);
+  };
+  for (const row of rows) add(row.code);
+  add(extra);
+  return out;
+}
+
 /**
  * Знайти існуючий рядок ШК, щоб оновити регістр Dilovod, а не створити дублікат коду.
  * 1) точний code + goodPart

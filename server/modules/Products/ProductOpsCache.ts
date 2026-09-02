@@ -5,7 +5,7 @@
 
 import { prisma, logServer } from '../../lib/utils.js';
 import { CATALOG_ACC_POLICY_KIT } from '../../../shared/types/catalog.js';
-import { pickPrimaryBarcode } from './barcodeUtils.js';
+import { collectBarcodeCodes, pickPrimaryBarcode } from './barcodeUtils.js';
 
 const SNAPSHOT_TTL_MS = 120_000;
 
@@ -61,6 +61,7 @@ export type OpsCachedProduct = {
   manualOrder: number | null;
   unitRatio: number | null;
   barcode: string | null;
+  barcodes: string[];
   isOutdated: boolean;
   portionsPerBox: number;
   stockBalanceByStock: Record<string, number> | null;
@@ -209,6 +210,10 @@ class ProductOpsCache {
         manualOrder: row.manualOrder,
         unitRatio: row.unitRatio,
         barcode: (row.dilovodId && pickPrimaryBarcode(barcodesByGood.get(row.dilovodId) ?? [])) || row.barcode,
+        barcodes: collectBarcodeCodes(
+          row.dilovodId ? (barcodesByGood.get(row.dilovodId) ?? []) : [],
+          row.barcode,
+        ),
         isOutdated: row.isOutdated,
         portionsPerBox: row.portionsPerBox,
         stockBalanceByStock: catalogStock ?? parseStock(row.stockBalanceByStock),

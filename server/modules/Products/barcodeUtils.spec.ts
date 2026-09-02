@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   catalogBarcodeRowKey,
+  collectBarcodeCodes,
   matchExistingBarcode,
   pickPrimaryBarcode,
   type CatalogBarcodeMatchRow,
@@ -89,6 +90,21 @@ describe('pickPrimaryBarcode', () => {
 
   it('порожній список → null', () => {
     expect(pickPrimaryBarcode([])).toBeNull();
+  });
+});
+
+describe('collectBarcodeCodes', () => {
+  it('збирає унікальні коди і додає fallback', () => {
+    expect(
+      collectBarcodeCodes(
+        [{ code: '4820249330210' }, { code: '2200000000378' }, { code: '4820249330210' }],
+        'legacy-sku-code'
+      )
+    ).toEqual(['4820249330210', '2200000000378', 'legacy-sku-code']);
+  });
+
+  it('порожні рядки ігнорує', () => {
+    expect(collectBarcodeCodes([{ code: '  ' }, { code: null }], '  111  ')).toEqual(['111']);
   });
 });
 

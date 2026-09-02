@@ -281,6 +281,7 @@ interface OrderItem {
   manualOrder?: number;
   sku?: string;
   barcode?: string;
+  barcodes?: string[];
   composition?: Array<string | { name: string; quantity?: number; unitRatio?: number; sku?: string }>;
   portionsPerItem?: number;
   unitRatio?: number;
@@ -371,8 +372,12 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
   // Якщо barcode === sku (часто так у Dilovod/БД) — це не окремий ШК, показуємо як SKU.
   const rawBarcode = String((type === 'box' ? boxSettings?.barcode : barcode) ?? '').trim();
   const rawSku = String(sku ?? '').trim();
-  const hasRealBarcode = Boolean(rawBarcode) && rawBarcode !== rawSku;
-  const displayCode = hasRealBarcode ? rawBarcode : rawSku;
+  const extraBarcodes = (item.barcodes ?? []).map((code) => String(code).trim()).filter(Boolean);
+  const hasRealBarcode = (Boolean(rawBarcode) && rawBarcode !== rawSku)
+    || extraBarcodes.some((code) => code !== rawSku);
+  const displayCode = hasRealBarcode
+    ? [rawBarcode, ...extraBarcodes].filter((code) => code && code !== rawSku).filter((code, idx, arr) => arr.indexOf(code) === idx).join(', ')
+    : rawSku;
   const isSkuFallback = Boolean(displayCode) && !hasRealBarcode;
   const handleClick = async () => {
     if (item.composition?.length > 0 && setSku) {

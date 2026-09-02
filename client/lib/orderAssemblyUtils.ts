@@ -32,8 +32,42 @@ export interface Product {
   categoryId?: number; // ID категорії для визначення ваги за замовчуванням
   categoryName?: string; // Назва категорії
   manualOrder?: number; // Ручне сортування
-  barcode?: string; // Штрих-код товару
+  barcode?: string; // Основний штрих-код товару
+  barcodes?: string[] | Array<{ code?: string | null }>; // Усі штрих-коди товару
   set: Array<{ id: string; name?: string; quantity: number }> | null;
+}
+
+function uniqueBarcodeCodes(codes: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of codes) {
+    const code = String(raw ?? '').trim();
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+  }
+  return out;
+}
+
+export function collectProductBarcodes(product: Product): string[] {
+  const fromList = Array.isArray(product.barcodes)
+    ? product.barcodes.flatMap((entry) => {
+        if (typeof entry === 'string') return [entry];
+        if (entry && typeof entry === 'object') return [String(entry.code ?? '')];
+        return [];
+      })
+    : [];
+  return uniqueBarcodeCodes([product.barcode, ...fromList]);
+}
+
+export function itemMatchesScannedCode(
+  item: Pick<OrderChecklistItem, 'sku' | 'barcode' | 'barcodes'>,
+  scannedCode: string,
+): boolean {
+  const code = String(scannedCode ?? '').trim();
+  if (!code) return false;
+  const candidates = uniqueBarcodeCodes([item.sku, item.barcode, ...(item.barcodes ?? [])]);
+  return candidates.includes(code);
 }
 
 function getProd(cache: Map<string, any> | undefined, sku: string): any | undefined {
@@ -565,7 +599,20 @@ const addOrUpdateExpandedItem = (
     if (shippedAsMonolithic) {
       expandedItems[key].shippedAsMonolithic = true;
     }
+    const mergedBarcodes = uniqueBarcodeCodes([
+      ...(expandedItems[key].barcodes ?? []),
+      ...collectProductBarcodes(product),
+    ]);
+    if (mergedBarcodes.length > 0) {
+      expandedItems[key].barcodes = mergedBarcodes;
+    }
+    if (!expandedItems[key].barcode) {
+      const primary = mergedBarcodes.find((code) => code !== (expandedItems[key].sku || sku));
+      if (primary) expandedItems[key].barcode = primary;
+    }
   } else {
+    const productBarcodes = collectProductBarcodes(product);
+    const primaryBarcode = productBarcodes.find((code) => code !== sku);
     // Додаємо новий товар
     expandedItems[key] = {
       id: sku,
@@ -576,7 +623,8 @@ const addOrUpdateExpandedItem = (
       type: 'product',
       sku: sku,
       // Лише справжній ШК, відмінний від SKU (інакше UI/сканер плутають fallback із barcode)
-      barcode: (product.barcode && product.barcode !== sku) ? product.barcode : undefined,
+      barcode: primaryBarcode,
+      barcodes: productBarcodes.length > 0 ? productBarcodes : undefined,
       manualOrder: product.manualOrder,
       composition: composition,
       portionsPerItem: portionsPerItem,

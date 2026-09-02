@@ -13,7 +13,8 @@ export interface OrderChecklistItem {
   portionsRange?: { start: number; end: number }; // Діапазон порцій для коробки
   portionsPerBox?: number; // Кількість порцій на коробку
   sku?: string; // SKU товару для пошуку по штрих-коду
-  barcode?: string; // Штрих-код товару
+  barcode?: string; // Основний штрих-код товару
+  barcodes?: string[]; // Усі штрих-коди товару (для звірки при скануванні)
   manualOrder?: number; // Ручне сортування
   composition?: Array<string | { name: string; quantity?: number; unitRatio?: number; sku?: string }>; // Склад монолітного комплекту (може містити об'єкти з додатковими полями)
   portionsPerItem?: number; // Для монолітних комплектів: кількість порцій в одному комплекті

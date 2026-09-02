@@ -12,7 +12,7 @@ import {
 } from '../../../shared/types/catalog.js';
 import { DEFAULT_DILOVOD_CONFIG, getPriceTypeNameById } from '../../services/dilovod/DilovodUtils.js';
 import { isArchiveFolderName, isKitAccPolicy } from './ProductsTypes.js';
-import { pickPrimaryBarcode } from './barcodeUtils.js';
+import { collectBarcodeCodes, pickPrimaryBarcode } from './barcodeUtils.js';
 
 export interface CatalogOpsSetItem {
   id: string;
@@ -41,6 +41,7 @@ export interface CatalogOpsProduct {
   manualOrder: number | null;
   unitRatio: number | null;
   barcode: string | null;
+  barcodes: string[];
   isOutdated: boolean;
   portionsPerBox: number;
 }
@@ -187,6 +188,7 @@ function toOpsProduct(
     manualOrder: row.sortOrder ?? 0,
     unitRatio: row.unitRatio ?? 1,
     barcode: pickBarcode(row),
+    barcodes: collectBarcodeCodes(row.barcodes),
     isOutdated,
     portionsPerBox,
   };
@@ -418,6 +420,7 @@ export class CatalogOpsLookup {
       manualOrder: p.manualOrder,
       unitRatio: p.unitRatio,
       barcode: p.barcode,
+      barcodes: p.barcodes,
       isOutdated: p.isOutdated,
       portionsPerBox: p.portionsPerBox,
     };

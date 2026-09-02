@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import type { OrderChecklistItem } from '../types/orderAssembly';
+import { itemMatchesScannedCode } from '../lib/orderAssemblyUtils';
 import { addToast } from '@heroui/toast';
 import { ToastService } from '@/services/ToastService';
 
@@ -240,7 +241,7 @@ export function useBarcodeScanning({
     if (assemblyMode === 'no_scales') {
       const productFoundInNoScales = currentChecklistItems.find(item =>
         item.type === 'product' &&
-        (item.barcode === scannedCode || item.sku === scannedCode) &&
+        itemMatchesScannedCode(item, scannedCode) &&
         (item.boxIndex || 0) === currentActiveBoxIndex
       );
 
@@ -317,13 +318,15 @@ export function useBarcodeScanning({
       // Спочатку шукаємо по barcode, потім fallback на SKU
       foundItem = currentChecklistItems.find(item => 
         item.type === 'product' && 
-        (item.barcode === scannedCode || item.sku === scannedCode) &&
+        itemMatchesScannedCode(item, scannedCode) &&
         (item.boxIndex || 0) === currentActiveBoxIndex
       );
       
       if (foundItem) {
-        console.log('✅ [useBarcodeScanning] Знайдений товар:', foundItem.name, 
-          foundItem.barcode === scannedCode ? '(по barcode)' : '(по SKU)');
+        const matchKind = foundItem.barcode === scannedCode || foundItem.barcodes?.includes(scannedCode)
+          ? '(по barcode)'
+          : '(по SKU)';
+        console.log('✅ [useBarcodeScanning] Знайдений товар:', foundItem.name, matchKind);
       }
     }
 
