@@ -5,14 +5,19 @@ import {
   getNavGroups,
   NavGroup,
   NavBadge,
-  NavBadgeColor,
-  isNavBadgeVisible,
 } from "@/routes.config";
 import React, { useState } from "react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { SidebarAdminFooter } from "@/components/SidebarAdminFooter";
 import { useRolePreview } from "@/contexts/RolePreviewContext";
+import { NavBadgePill } from "@/components/NavBadgePill";
+import {
+  SALESDRIVE_ORDERS_PATH,
+  resolveRouteNavBadge,
+  resolveSalesdriveNavTo,
+  useNotShippedOrdersCount,
+} from "@/hooks/useNotShippedOrdersCount";
 
 interface SidebarProps {
   className?: string;
@@ -34,30 +39,6 @@ interface SubmenuProps {
   isExpanded: boolean;
   isChildrenActive: boolean;
   onToggle: () => void;
-}
-
-const NAV_BADGE_COLOR_CLASS: Record<NavBadgeColor, string> = {
-  danger: 'bg-danger text-danger-foreground',
-  primary: 'bg-primary text-primary-foreground',
-  success: 'bg-success text-success-foreground',
-  warning: 'bg-warning text-warning-foreground',
-  secondary: 'bg-secondary text-secondary-foreground',
-  default: 'bg-default-500 text-white',
-};
-
-function NavBadgePill({ badge }: { badge: NavBadge }) {
-  if (!isNavBadgeVisible(badge)) return null;
-  const color = badge.color ?? 'danger';
-  return (
-    <span
-      className={cn(
-        'shrink-0 rounded-full px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide leading-none',
-        NAV_BADGE_COLOR_CLASS[color] ?? NAV_BADGE_COLOR_CLASS.danger
-      )}
-    >
-      {badge.label}
-    </span>
-  );
 }
 
 function NavItem({ to, icon, label, isActive, badge, onNavigate }: NavItemProps) {
@@ -159,6 +140,8 @@ export function Sidebar({ className }: SidebarProps) {
   const { open, isMobile, setOpen } = useSidebar();
   
   const { mainRoutes, subGroups } = getNavGroups(effectiveRole, effectivePermissions);
+  const hasSalesdriveNav = mainRoutes.some((r) => r.path === SALESDRIVE_ORDERS_PATH);
+  const notShippedCount = useNotShippedOrdersCount(hasSalesdriveNav);
 
   const handleNavigate = () => {
     if (isMobile) {
@@ -212,22 +195,26 @@ export function Sidebar({ className }: SidebarProps) {
       >
         {group.parentRoute && (
           <SubmenuItem
-            to={group.parentRoute.path}
+            to={
+              group.parentRoute.path === SALESDRIVE_ORDERS_PATH
+                ? resolveSalesdriveNavTo(notShippedCount)
+                : group.parentRoute.path
+            }
             icon={group.parentRoute.icon}
             label={group.parentRoute.navLabel}
             isActive={location.pathname === group.parentRoute.path}
-            badge={group.parentRoute.navBadge}
+            badge={resolveRouteNavBadge(group.parentRoute.path, group.parentRoute.navBadge, notShippedCount)}
             onNavigate={handleNavigate}
           />
         )}
         {group.children.map((child) => (
           <SubmenuItem
             key={child.path}
-            to={child.path}
+            to={child.path === SALESDRIVE_ORDERS_PATH ? resolveSalesdriveNavTo(notShippedCount) : child.path}
             icon={child.icon}
             label={child.navLabel}
             isActive={location.pathname === child.path}
-            badge={child.navBadge}
+            badge={resolveRouteNavBadge(child.path, child.navBadge, notShippedCount)}
             onNavigate={handleNavigate}
           />
         ))}
@@ -265,11 +252,15 @@ export function Sidebar({ className }: SidebarProps) {
           return (
             <NavItem
               key={item.route.path}
-              to={item.route.path}
+              to={
+                item.route.path === SALESDRIVE_ORDERS_PATH
+                  ? resolveSalesdriveNavTo(notShippedCount)
+                  : item.route.path
+              }
               icon={item.route.icon}
               label={item.route.navLabel}
               isActive={location.pathname === item.route.path}
-              badge={item.route.navBadge}
+              badge={resolveRouteNavBadge(item.route.path, item.route.navBadge, notShippedCount)}
               onNavigate={handleNavigate}
             />
           );

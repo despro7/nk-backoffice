@@ -6,8 +6,15 @@ import { useSidebar } from '@/contexts/SidebarContext';
 import { getNavGroups } from '@/routes.config';
 import { isPathInNavGroup } from '@/components/mobile/resolveMobileNavLabel';
 import { MobileGroupDrawer } from '@/components/mobile/MobileGroupDrawer';
+import { NavBadgePill } from '@/components/NavBadgePill';
 import { cn } from '@/lib/utils';
 import type { NavGroup } from '@/routes.config';
+import {
+  SALESDRIVE_ORDERS_PATH,
+  buildNotShippedNavBadge,
+  resolveSalesdriveNavTo,
+  useNotShippedOrdersCount,
+} from '@/hooks/useNotShippedOrdersCount';
 
 interface TabDef {
   id: string;
@@ -32,7 +39,9 @@ export function MobileTabBar() {
   const reportsGroup = subGroups.reports as NavGroup | undefined;
 
   const hasHome = mainRoutes.some((r) => r.path === '/');
-  const hasShipment = mainRoutes.some((r) => r.path === '/salesdrive-to-dilovod');
+  const hasShipment = mainRoutes.some((r) => r.path === SALESDRIVE_ORDERS_PATH);
+  const notShippedCount = useNotShippedOrdersCount(hasShipment);
+  const notShippedBadge = buildNotShippedNavBadge(notShippedCount);
   const hasWarehouse = Boolean(warehouseGroup?.children?.length);
   const hasReports = Boolean(reportsGroup?.children?.length);
 
@@ -67,7 +76,7 @@ export function MobileTabBar() {
         label: 'Стан замовлень',
         icon: 'clipboard-check',
         kind: 'link',
-        path: '/salesdrive-to-dilovod',
+        path: SALESDRIVE_ORDERS_PATH,
         visible: hasShipment,
       },
       {
@@ -85,7 +94,7 @@ export function MobileTabBar() {
 
   const isPrimaryTabPath =
     location.pathname === '/' ||
-    location.pathname === '/salesdrive-to-dilovod' ||
+    location.pathname === SALESDRIVE_ORDERS_PATH ||
     isPathInNavGroup(location.pathname, warehouseGroup) ||
     isPathInNavGroup(location.pathname, reportsGroup);
 
@@ -107,7 +116,7 @@ export function MobileTabBar() {
 
   const handlePress = (tab: TabDef) => {
     if (tab.kind === 'link' && tab.path) {
-      navigate(tab.path);
+      navigate(tab.id === 'shipment' ? resolveSalesdriveNavTo(notShippedCount) : tab.path);
       return;
     }
     if (tab.kind === 'group' && tab.groupKey === 'warehouse') {
@@ -154,11 +163,18 @@ export function MobileTabBar() {
                   active ? 'text-sky-600' : 'text-neutral-500',
                 )}
               >
-                <DynamicIcon
-                  name={tab.icon}
-                  size={22}
-                  strokeWidth={active ? 2 : 1.75}
-                />
+                <span className="relative">
+                  <DynamicIcon
+                    name={tab.icon}
+                    size={22}
+                    strokeWidth={active ? 2 : 1.75}
+                  />
+                  {tab.id === 'shipment' && notShippedBadge ? (
+                    <span className="absolute -top-1.5 -right-2.5">
+                      <NavBadgePill badge={notShippedBadge} tooltipPlacement="top" />
+                    </span>
+                  ) : null}
+                </span>
                 <span
                   className={cn(
                     'font-inter text-[10px] leading-tight truncate max-w-full',

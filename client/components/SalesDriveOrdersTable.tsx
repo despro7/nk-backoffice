@@ -26,7 +26,10 @@ import {
 } from "@heroui/react";
 import { I18nProvider } from '@react-aria/i18n';
 import type { DateRange } from "@react-types/datepicker";
+import { useUrlHashSync, type UrlHashValue } from "../hooks/useUrlHashSync";
+import { useQueryClient } from '@tanstack/react-query';
 import { useApi } from "../hooks/useApi";
+import { NOT_SHIPPED_ORDERS_QUERY_KEY } from '@/hooks/useNotShippedOrdersCount';
 import { useDilovodSettings } from "../hooks/useDilovodSettings";
 import { useRolePreview } from "../contexts/RolePreviewContext";
 import { useDebug } from "../contexts/DebugContext";
@@ -50,6 +53,7 @@ interface SalesDriveOrdersTableProps {
 
 export default function SalesDriveOrdersTable({ className, initialSearch, initialSearchCategory, hideFilters = false }: SalesDriveOrdersTableProps) {
   const { apiCall } = useApi();
+  const queryClient = useQueryClient();
   const { isAdminView } = useRolePreview();
   const { isDebugMode } = useDebug();
   const { settings: dilovodSettings } = useDilovodSettings({ loadDirectories: false });
@@ -130,18 +134,15 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
   // State для фільтру по конкретним датам відвантаження (DateRangePicker)
   const [dateRange, setDateRange] = useState<DateRange | null>(null);
 
-  // Refs for initial hash restore process
-  const parsedHashRef = useRef<Record<string, any> | null>(null);
-  const isRestoringRef = useRef(true);
+  const isRestoringRef = useRef(false);
+  const hashSyncEnabled = !initialSearch && !hideFilters;
 
   // If mounted with explicit initial search (e.g., opened from Drawer), apply it and skip hash restore
   useEffect(() => {
     if (!initialSearch) return;
-    // override any hash-restore behavior
-    parsedHashRef.current = null;
     isRestoringRef.current = false;
     setSearch(initialSearch);
-    if (initialSearchCategory) setSearchCategory(initialSearchCategory as any);
+    if (initialSearchCategory) setSearchCategory(initialSearchCategory as SearchCategory);
     setPage(1);
   }, [initialSearch, initialSearchCategory]);
 
@@ -239,7 +240,12 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
         if (hasUnknownForCounts) countsParams.append('includeUnknown', 'true');
         apiCall(`/api/dilovod/salesdrive/orders/shipment-counts?${countsParams}`)
           .then(r => r.json())
-          .then(d => { if (d.success) setShipmentCounts(d.counts); })
+          .then(d => {
+            if (d.success) {
+              setShipmentCounts(d.counts);
+              queryClient.setQueryData(NOT_SHIPPED_ORDERS_QUERY_KEY, d.counts?.not_shipped ?? 0);
+            }
+          })
           .catch(() => {});
       } else {
         console.error('Failed to fetch orders:', data);
@@ -263,7 +269,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, searchCategory, selectedChannels, shipmentFilter, dateRange, selectedStatus]);
+  }, [page, pageSize, search, searchCategory, selectedChannels, shipmentFilter, dateRange, selectedStatus, queryClient]);
 
   // Завантажуємо дані під час монтування та зміни параметрів
   useEffect(() => {
@@ -281,47 +287,9 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
             { id: 'unknown', name: '⚠️ Невідомо' },
           ];
           setSalesChannels(channels);
-          // Якщо при завантаженні був виявлений hash з каналами — застосуємо його,
-          // інакше ставимо всі канали за замовчуванням
-          if (parsedHashRef.current && parsedHashRef.current.channels) {
-            const parsed = parsedHashRef.current;
-            const availableIds = new Set(channels.map((ch: SalesChannel) => ch.id));
-            // Якщо в hash було 'all' — застосовуємо всі доступні канали
-            if (parsed.channels === 'all') {
-              setSelectedChannels(new Set(channels.map((ch: SalesChannel) => ch.id)));
-            } else {
-              const channelsToSet = new Set<string>();
-              parsed.channels.forEach((chId: string) => {
-                if (availableIds.has(chId)) channelsToSet.add(chId);
-                else if (chId === 'unknown') channelsToSet.add('unknown');
-              });
-              // Якщо не залишилось валідних каналів — встановимо всі
-              if (channelsToSet.size === 0) {
-                setSelectedChannels(new Set(channels.map((ch: SalesChannel) => ch.id)));
-              } else {
-                setSelectedChannels(channelsToSet);
-              }
-            }
-          } else {
+          if (!hashSyncEnabled) {
             setSelectedChannels(new Set(channels.map((ch: SalesChannel) => ch.id)));
           }
-          // Якщо був parsed hash, також відновимо інші фільтри
-          if (parsedHashRef.current) {
-            const parsed = parsedHashRef.current;
-            if (parsed.search) setSearch(parsed.search);
-            if (parsed.searchCategory) setSearchCategory(parsed.searchCategory as any);
-            if (parsed.shipmentFilter) setShipmentFilter(parsed.shipmentFilter as any);
-            if (parsed.selectedStatus) setSelectedStatus(parsed.selectedStatus as any);
-            if (parsed.page) setPage(Number(parsed.page) || 1);
-            if (parsed.pageSize) setPageSize(Number(parsed.pageSize) || pageSize);
-            if (parsed.dateRange && parsed.dateRange.start && parsed.dateRange.end) {
-              setDateRange(parsed.dateRange);
-            }
-            // Скидаємо ref після застосування
-            parsedHashRef.current = null;
-          }
-          // Завершуємо режим відновлення
-          isRestoringRef.current = false;
         }
       })
       .catch(err => console.error('Failed to fetch sales channels:', err));
@@ -329,117 +297,95 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
 
   // Скидаємо сторінку на 1 при зміні пошуку або фільтрів
   useEffect(() => {
-    if (isRestoringRef.current) return;
-    setPage(1);
-  }, [search, searchCategory, selectedChannels, shipmentFilter, dateRange, selectedStatus, pageSize]);
-
-  // --- Hash serialization / restore ---
-  const serializeFiltersToHash = useCallback(() => {
-    const params = new URLSearchParams();
-    if (search) params.set('search', search);
-    // Не додаємо searchCategory якщо це значення за замовчуванням
-    if (searchCategory && searchCategory !== 'orderNumber') params.set('searchCategory', searchCategory);
-    if (selectedChannels && selectedChannels.size > 0) {
-      // Якщо всі доступні канали обрані — відображаємо як 'all'
-      if (salesChannels.length > 0) {
-        const availableIds = salesChannels.map(ch => ch.id);
-        const allSelected = selectedChannels.size === availableIds.length && [...selectedChannels].every(id => availableIds.includes(id));
-        // Якщо обрані всі канали — не додаємо параметр (залишаємо дефолтну поведінку)
-        if (!allSelected) {
-          params.set('channels', Array.from(selectedChannels).join('.'));
-        }
-      } else {
-        params.set('channels', Array.from(selectedChannels).join('.'));
-      }
-    }
-    if (shipmentFilter && shipmentFilter !== 'all') params.set('shipmentFilter', shipmentFilter);
-    if (selectedStatus && selectedStatus !== 'all') params.set('selectedStatus', selectedStatus);
-    if (dateRange && dateRange.start && dateRange.end) {
-      const start = `${dateRange.start.year}-${String(dateRange.start.month).padStart(2,'0')}-${String(dateRange.start.day).padStart(2,'0')}`;
-      const end = `${dateRange.end.year}-${String(dateRange.end.month).padStart(2,'0')}-${String(dateRange.end.day).padStart(2,'0')}`;
-      params.set('dateFrom', start);
-      params.set('dateTo', end);
-    }
-    if (page && page > 1) params.set('page', String(page));
-    if (pageSize && pageSize !== 20) params.set('pageSize', String(pageSize));
-
-    const hash = params.toString();
-    try {
-      if (hash) window.location.hash = hash;
-      else window.history.replaceState(null, '', window.location.pathname + window.location.search);
-    } catch (e) {
-      // ignore
-    }
-  }, [search, searchCategory, selectedChannels, shipmentFilter, selectedStatus, dateRange, page, pageSize, salesChannels]);
-
-  const parseHashToFilters = useCallback(() => {
-    try {
-      const raw = window.location.hash.startsWith('#') ? window.location.hash.substring(1) : window.location.hash;
-      if (!raw) return null;
-      const params = new URLSearchParams(raw);
-      const parsed: Record<string, any> = {};
-      if (params.has('search')) parsed.search = params.get('search') || '';
-      if (params.has('searchCategory')) parsed.searchCategory = params.get('searchCategory');
-      if (params.has('channels')) {
-        const rawChannels = params.get('channels') || '';
-        parsed.channels = rawChannels.split('.').filter(Boolean);
-      }
-      if (params.has('shipmentFilter')) parsed.shipmentFilter = params.get('shipmentFilter');
-      if (params.has('selectedStatus')) parsed.selectedStatus = params.get('selectedStatus');
-      if (params.has('dateFrom') && params.has('dateTo')) {
-        const from = params.get('dateFrom')!;
-        const to = params.get('dateTo')!;
-        const [fy, fm, fd] = from.split('-').map(Number);
-        const [ty, tm, td] = to.split('-').map(Number);
-        parsed.dateRange = {
-          start: { year: fy, month: fm, day: fd },
-          end: { year: ty, month: tm, day: td }
-        };
-      }
-      if (params.has('page')) parsed.page = Number(params.get('page')) || 1;
-      if (params.has('pageSize')) parsed.pageSize = Number(params.get('pageSize')) || pageSize;
-      return parsed;
-    } catch (e) {
-      return null;
-    }
-  }, [pageSize]);
-
-  // Підписуємо зміни фільтрів до hash
-  useEffect(() => {
-    if (isRestoringRef.current) return;
-    serializeFiltersToHash();
-  }, [serializeFiltersToHash]);
-
-  // При монтуванні — читаємо hash і зберігаємо для застосування
-  useEffect(() => {
-    const parsed = parseHashToFilters();
-    if (!parsed) {
+    if (isRestoringRef.current) {
       isRestoringRef.current = false;
       return;
     }
-    // Зберігаємо тимчасово. Канали можуть ще не бути завантажені.
-    parsedHashRef.current = parsed;
-    // Якщо канали вже завантажені — застосуємо негайно
-    if (salesChannels.length > 0) {
-      if (parsed.channels) {
-        const availableIds = new Set(salesChannels.map(ch => ch.id));
+    setPage(1);
+  }, [search, searchCategory, selectedChannels, shipmentFilter, dateRange, selectedStatus, pageSize]);
+
+  const allChannelsSelected =
+    salesChannels.length > 0 &&
+    selectedChannels.size === salesChannels.length &&
+    salesChannels.every((ch) => selectedChannels.has(ch.id));
+
+  const hashValues: Record<string, UrlHashValue> = {
+    search: search.trim() || undefined,
+    searchCategory: searchCategory !== 'orderNumber' ? searchCategory : undefined,
+    channels:
+      salesChannels.length > 0 && selectedChannels.size > 0 && !allChannelsSelected
+        ? Array.from(selectedChannels).join('.')
+        : undefined,
+    shipmentFilter: shipmentFilter !== 'all' ? shipmentFilter : undefined,
+    selectedStatus: selectedStatus !== 'all' ? selectedStatus : undefined,
+    dateFrom:
+      dateRange?.start
+        ? `${dateRange.start.year}-${String(dateRange.start.month).padStart(2, '0')}-${String(dateRange.start.day).padStart(2, '0')}`
+        : undefined,
+    dateTo:
+      dateRange?.end
+        ? `${dateRange.end.year}-${String(dateRange.end.month).padStart(2, '0')}-${String(dateRange.end.day).padStart(2, '0')}`
+        : undefined,
+    page: page > 1 ? page : undefined,
+    pageSize: pageSize !== 20 ? pageSize : undefined,
+  };
+
+  useUrlHashSync(
+    hashValues,
+    (params) => {
+      isRestoringRef.current = true;
+      const availableIds = new Set(salesChannels.map((ch) => ch.id));
+      const rawChannels = params.get('channels');
+      if (rawChannels) {
         const channelsToSet = new Set<string>();
-        parsed.channels.forEach((chId: string) => { if (availableIds.has(chId) || chId === 'unknown') channelsToSet.add(chId); });
-        if (channelsToSet.size > 0) setSelectedChannels(channelsToSet);
-        else setSelectedChannels(new Set(salesChannels.map(ch => ch.id)));
+        for (const chId of rawChannels.split('.').filter(Boolean)) {
+          if (availableIds.has(chId) || chId === 'unknown') channelsToSet.add(chId);
+        }
+        setSelectedChannels(
+          channelsToSet.size > 0
+            ? channelsToSet
+            : new Set(salesChannels.map((ch) => ch.id))
+        );
+      } else {
+        setSelectedChannels(new Set(salesChannels.map((ch) => ch.id)));
       }
-      if (parsed.search) setSearch(parsed.search);
-      if (parsed.searchCategory) setSearchCategory(parsed.searchCategory);
-      if (parsed.shipmentFilter) setShipmentFilter(parsed.shipmentFilter);
-      if (parsed.selectedStatus) setSelectedStatus(parsed.selectedStatus);
-      if (parsed.page) setPage(parsed.page);
-      if (parsed.pageSize) setPageSize(parsed.pageSize);
-      if (parsed.dateRange) setDateRange(parsed.dateRange);
-      parsedHashRef.current = null;
-      isRestoringRef.current = false;
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+      setSearch(params.get('search') || '');
+      const nextCategory = params.get('searchCategory');
+      setSearchCategory(
+        nextCategory === 'ttn' || nextCategory === 'phone' || nextCategory === 'name' || nextCategory === 'all'
+          ? nextCategory
+          : 'orderNumber'
+      );
+      const nextShipment = params.get('shipmentFilter');
+      setShipmentFilter(
+        nextShipment === 'shipped' ||
+          nextShipment === 'not_shipped' ||
+          nextShipment === 'not_shipped_all' ||
+          nextShipment === 'duplicates'
+          ? nextShipment
+          : 'all'
+      );
+      setSelectedStatus(params.get('selectedStatus') || 'all');
+
+      const from = params.get('dateFrom');
+      const to = params.get('dateTo');
+      if (from && to) {
+        const [fy, fm, fd] = from.split('-').map(Number);
+        const [ty, tm, td] = to.split('-').map(Number);
+        setDateRange({
+          start: { year: fy, month: fm, day: fd },
+          end: { year: ty, month: tm, day: td },
+        });
+      } else {
+        setDateRange(null);
+      }
+
+      setPage(Number(params.get('page')) || 1);
+      setPageSize(Number(params.get('pageSize')) || 20);
+    },
+    { enabled: hashSyncEnabled && salesChannels.length > 0 }
+  );
 
   // Обробка пошуку
   const handleSearchSubmit = () => {

@@ -8,8 +8,8 @@ import {
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { cn } from '@/lib/utils';
-import type { NavGroup, AppRoute, NavBadge } from '@/routes.config';
-import { isNavBadgeVisible, type NavBadgeColor } from '@/routes.config';
+import type { NavGroup, AppRoute } from '@/routes.config';
+import { NavBadgePill } from '@/components/NavBadgePill';
 
 /** Перевизначає size у DynamicIcon з routes.config (там часто 16). */
 function withIconSize(icon: ReactNode, size: number): ReactNode {
@@ -17,35 +17,11 @@ function withIconSize(icon: ReactNode, size: number): ReactNode {
   return cloneElement(icon as ReactElement<{ size?: number }>, { size });
 }
 
-const NAV_BADGE_COLOR_CLASS: Record<NavBadgeColor, string> = {
-  danger: 'bg-danger text-danger-foreground',
-  primary: 'bg-primary text-primary-foreground',
-  success: 'bg-success text-success-foreground',
-  warning: 'bg-warning text-warning-foreground',
-  secondary: 'bg-secondary text-secondary-foreground',
-  default: 'bg-default-500 text-white',
-};
-
 interface MobileGroupDrawerProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   group: NavGroup | null;
   activePath: string;
-}
-
-function BadgePill({ badge }: { badge: NavBadge }) {
-  if (!isNavBadgeVisible(badge)) return null;
-  const color = badge.color ?? 'danger';
-  return (
-    <span
-      className={cn(
-        'shrink-0 rounded-full px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide leading-none',
-        NAV_BADGE_COLOR_CLASS[color] ?? NAV_BADGE_COLOR_CLASS.danger
-      )}
-    >
-      {badge.label}
-    </span>
-  );
 }
 
 export function MobileGroupDrawer({
@@ -100,7 +76,7 @@ export function MobileGroupDrawer({
                     </div>
                     <span className="flex-1 font-inter text-md font-medium flex items-center gap-1.5">
                       {item.navLabel}
-                      {item.navBadge ? <BadgePill badge={item.navBadge} /> : null}
+                      {item.navBadge ? <NavBadgePill badge={item.navBadge} /> : null}
                     </span>
                     {isActive && (
                       <DynamicIcon name="check" size={18} className="text-primary shrink-0" />

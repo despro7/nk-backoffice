@@ -500,13 +500,16 @@ export function useProductsCatalog() {
     },
     (params) => {
       const folder = params.get('folder')?.trim();
-      const q = params.get('q');
+      const q = params.get('q') ?? '';
       const good = params.get('good')?.trim();
-      if (folder) setSelectedFolderId(folder);
-      if (q) setSearchQuery(q);
+      setSelectedFolderId(folder || CATALOG_ROOT_ID);
+      setSearchQuery(q);
       if (good) {
         setEditingId(good);
         setDrawerMode('edit');
+      } else {
+        setEditingId(null);
+        setDrawerMode(null);
       }
     }
   );

@@ -5,36 +5,17 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRolePreview } from '@/contexts/RolePreviewContext';
 import { NotificationBell } from '@/components/NotificationBell';
+import { NavBadgePill } from '@/components/NavBadgePill';
 import { resolveMobileNavLabel } from '@/components/mobile/resolveMobileNavLabel';
 import { cn } from '@/lib/utils';
-import { isNavBadgeVisible, type NavBadge, type NavBadgeColor } from '@/routes.config';
+import {
+  SALESDRIVE_ORDERS_PATH,
+  resolveRouteNavBadge,
+  useNotShippedOrdersCount,
+} from '@/hooks/useNotShippedOrdersCount';
 
 interface MobileHeaderProps {
   className?: string;
-}
-
-const NAV_BADGE_COLOR_CLASS: Record<NavBadgeColor, string> = {
-  danger: 'bg-danger text-danger-foreground',
-  primary: 'bg-primary text-primary-foreground',
-  success: 'bg-success text-success-foreground',
-  warning: 'bg-warning text-warning-foreground',
-  secondary: 'bg-secondary text-secondary-foreground',
-  default: 'bg-default-500 text-white',
-};
-
-function NavBadgePill({ badge }: { badge: NavBadge }) {
-  if (!isNavBadgeVisible(badge)) return null;
-  const color = badge.color ?? 'danger';
-  return (
-    <span
-      className={cn(
-        'shrink-0 rounded-full px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide leading-none',
-        NAV_BADGE_COLOR_CLASS[color] ?? NAV_BADGE_COLOR_CLASS.danger
-      )}
-    >
-      {badge.label}
-    </span>
-  );
 }
 
 /**
@@ -47,6 +28,8 @@ export function MobileHeader({ className }: MobileHeaderProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const navItem = resolveMobileNavLabel(location.pathname, effectiveRole, effectivePermissions);
+  const notShippedCount = useNotShippedOrdersCount(navItem.path === SALESDRIVE_ORDERS_PATH);
+  const navBadge = resolveRouteNavBadge(navItem.path ?? '', navItem.navBadge, notShippedCount);
 
   const handleLogout = () => {
     logout();
@@ -70,7 +53,7 @@ export function MobileHeader({ className }: MobileHeaderProps) {
           })}
         <span className="min-w-0 truncate font-inter text-sm font-semibold text-neutral-700 leading-tight flex items-center gap-1.5">
           <span className="truncate">{navItem.label}</span>
-          {navItem.navBadge ? <NavBadgePill badge={navItem.navBadge} /> : null}
+          {navBadge ? <NavBadgePill badge={navBadge} /> : null}
         </span>
       </div>
 
