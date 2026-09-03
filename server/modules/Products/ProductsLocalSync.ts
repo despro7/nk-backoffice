@@ -216,19 +216,25 @@ export class ProductsLocalSync {
       rowNum: number;
       unitId?: string | null;
       note?: string | null;
+      dilovodRowId?: string | null;
     }>
   ): Promise<void> {
     // Примітки: Dilovod SoT (remark). Якщо payload.note === undefined — зберігаємо попереднє
     // (structure-only sync без BOM). Якщо null/рядок — пишемо з Dilovod / UI.
     // Ключ по rowNum: один інгредієнт може бути в кількох рядках.
-    const existingNotes = await tx.catalogGoodComponent.findMany({
+    const existingRows = await tx.catalogGoodComponent.findMany({
       where: { parentGoodId },
-      select: { componentGoodId: true, rowNum: true, note: true },
+      select: { componentGoodId: true, rowNum: true, note: true, dilovodRowId: true },
     });
     const noteByRow = new Map(
-      existingNotes
+      existingRows
         .filter((r) => r.note != null && String(r.note).trim() !== '')
         .map((r) => [`${r.rowNum}:${r.componentGoodId}`, r.note as string])
+    );
+    const rowIdByRow = new Map(
+      existingRows
+        .filter((r) => r.dilovodRowId != null && String(r.dilovodRowId).trim() !== '')
+        .map((r) => [`${r.rowNum}:${r.componentGoodId}`, r.dilovodRowId as string])
     );
 
     await tx.catalogGoodComponent.deleteMany({ where: { parentGoodId } });
@@ -267,11 +273,20 @@ export class ProductsLocalSync {
             : noteByRow.get(`${c.rowNum}:${c.componentGoodId}`) ??
               noteByRow.get(`${rowNum}:${c.componentGoodId}`) ??
               null;
+        const rowIdFromPayload =
+          c.dilovodRowId !== undefined ? (c.dilovodRowId?.trim() || null) : undefined;
+        const dilovodRowId =
+          rowIdFromPayload !== undefined
+            ? rowIdFromPayload
+            : rowIdByRow.get(`${c.rowNum}:${c.componentGoodId}`) ??
+              rowIdByRow.get(`${rowNum}:${c.componentGoodId}`) ??
+              null;
         return {
           parentGoodId,
           componentGoodId: c.componentGoodId,
           qty: c.qty,
           rowNum,
+          dilovodRowId,
           unitId: c.unitId ?? null,
           note,
         };

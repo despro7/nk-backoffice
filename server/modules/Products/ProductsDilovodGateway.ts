@@ -692,6 +692,8 @@ export class ProductsDilovodGateway {
       qty: number;
       rowNum: number;
       unitId: string | null;
+      note: string | null;
+      dilovodRowId: string | null;
     }>;
   } {
     const header = obj?.header || obj || {};
@@ -756,6 +758,12 @@ export class ProductsDilovodGateway {
           note: row.remark != null && String(row.remark).trim()
             ? String(row.remark).trim()
             : null,
+          dilovodRowId:
+            row.rowID != null && String(row.rowID).trim()
+              ? String(row.rowID).trim()
+              : row.rowId != null && String(row.rowId).trim()
+                ? String(row.rowId).trim()
+                : null,
         };
       })
       .filter(Boolean)
@@ -769,6 +777,7 @@ export class ProductsDilovodGateway {
       rowNum: number;
       unitId: string | null;
       note: string | null;
+      dilovodRowId: string | null;
     }>;
 
     return {

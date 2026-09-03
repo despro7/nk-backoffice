@@ -39,6 +39,11 @@ import {
   isArchiveFolderName,
   isKitAccPolicy,
 } from './ProductsTypes.js';
+import {
+  resolveTpGoodsForSave,
+  type CatalogComponentRowRef,
+  type CatalogComponentSaveInput,
+} from './catalogTpGoods.js';
 
 const BRANCH_REFRESH_MAX_NODES = 2000;
 const BRANCH_REFRESH_MAX_DEPTH = 20;
@@ -766,6 +771,33 @@ export class ProductsCatalogService {
     await productsLocalSync.syncGood(payload);
   }
 
+  private async loadComponentRowRefs(parentGoodId: string): Promise<CatalogComponentRowRef[]> {
+    const rows = await prisma.catalogGoodComponent.findMany({
+      where: { parentGoodId },
+      orderBy: { rowNum: 'asc' },
+      select: { rowNum: true, componentGoodId: true, dilovodRowId: true },
+    });
+    return rows.map((row) => ({
+      rowNum: row.rowNum,
+      componentGoodId: row.componentGoodId,
+      dilovodRowId: row.dilovodRowId,
+    }));
+  }
+
+  private mapLocalSyncComponents(
+    rows: Array<CatalogComponentSaveInput & { rowNum: number; dilovodRowId: string }>,
+    mainUnitId: string
+  ): LocalSyncGoodPayload['components'] {
+    return rows.map((row) => ({
+      componentGoodId: row.componentGoodId,
+      qty: row.qty,
+      rowNum: row.rowNum,
+      dilovodRowId: row.dilovodRowId,
+      unitId: row.unitId || mainUnitId,
+      note: row.note?.trim() || null,
+    }));
+  }
+
   private async readGoodDetailFromLocal(id: string): Promise<CatalogGoodDetailDto | null> {
     const row = await prisma.catalogGood.findUnique({
       where: { id },
@@ -839,6 +871,7 @@ export class ProductsCatalogService {
         componentAccPolicyId: componentMap.get(c.componentGoodId)?.accPolicyId ?? null,
         qty: c.qty,
         rowNum: c.rowNum,
+        dilovodRowId: c.dilovodRowId ?? null,
         unitId: c.unitId ?? null,
         note: c.note ?? null,
       })),
@@ -886,7 +919,10 @@ export class ProductsCatalogService {
       }
     }
 
-    const buildParams = (skuValue: string | null): DilovodSaveGoodParams => {
+    const buildParams = (
+      skuValue: string | null,
+      tpGoods: DilovodSaveGoodParams['tableParts']
+    ): DilovodSaveGoodParams => {
       const header: DilovodSaveGoodParams['header'] = {
         id: 'catalogs.goods',
         name: { uk: name, ru: name },
@@ -907,32 +943,41 @@ export class ProductsCatalogService {
       if (descriptionMl) header.description = descriptionMl;
 
       const params: DilovodSaveGoodParams = { header };
-      if (!isGroup && hasComponents) {
-        params.tableParts = {
-          tpGoods: (input.components || []).map((c, idx) => ({
-            rowNum: c.rowNum ?? idx + 1,
-            good: c.componentGoodId,
-            qty: c.qty,
-            unit: c.unitId || mainUnitId,
-            remark: (c.note?.trim() || '').slice(0, 150) || undefined,
-          })),
-        };
+      if (!isGroup && hasComponents && tpGoods?.tpGoods?.length) {
+        params.tableParts = tpGoods;
       }
       return params;
     };
+
+    const componentInputs: CatalogComponentSaveInput[] = (input.components || []).map((c) => ({
+      componentGoodId: c.componentGoodId,
+      qty: c.qty,
+      rowNum: c.rowNum,
+      unitId: c.unitId || mainUnitId,
+      note: c.note?.trim() || null,
+    }));
+    const { tpGoods, componentsWithRowIds } = !isGroup && hasComponents
+      ? await resolveTpGoodsForSave({
+          goodId: null,
+          components: componentInputs,
+          mainUnitId,
+          localRows: [],
+        })
+      : { tpGoods: [], componentsWithRowIds: [] as Array<CatalogComponentSaveInput & { rowNum: number; dilovodRowId: string }> };
+    const tableParts = tpGoods.length > 0 ? { tpGoods } : undefined;
 
     let dilovodId: string;
     let finalSku = sku;
 
     if (!isGroup && sku) {
       const { result, sku: usedSku } = await productsDilovodGateway.saveGoodWithSkuRetry(
-        (s) => buildParams(s),
+        (s) => buildParams(s, tableParts),
         sku
       );
       dilovodId = result.id;
       finalSku = usedSku;
     } else {
-      const result = await productsDilovodGateway.saveObject(buildParams(null));
+      const result = await productsDilovodGateway.saveObject(buildParams(null, tableParts));
       dilovodId = result.id;
     }
 
@@ -998,13 +1043,9 @@ export class ProductsCatalogService {
       description: input.description ?? null,
       fullDescription: input.fullDescription ?? null,
       unitRatio: input.unitRatio ?? 1,
-      components: (input.components || []).map((c, idx) => ({
-        componentGoodId: c.componentGoodId,
-        qty: c.qty,
-        rowNum: c.rowNum ?? idx + 1,
-        unitId: c.unitId || mainUnitId,
-        note: c.note?.trim() || null,
-      })),
+      components: hasComponents
+        ? this.mapLocalSyncComponents(componentsWithRowIds, mainUnitId)
+        : [],
       prices: prices.map((p) => ({
         priceType: p.priceType,
         price: p.price,
@@ -1082,6 +1123,13 @@ export class ProductsCatalogService {
       unitId: c.unitId ?? null,
       note: c.note ?? null,
     }));
+    const componentInputs: CatalogComponentSaveInput[] = components.map((c) => ({
+      componentGoodId: c.componentGoodId,
+      qty: c.qty,
+      rowNum: c.rowNum,
+      unitId: c.unitId ?? mainUnitId,
+      note: 'note' in c ? (c.note ?? null) : null,
+    }));
     const hasComponents = !isGroup && components.length > 0;
     const accPolicyId = isGroup
       ? existing.accPolicyId || CATALOG_ACC_POLICY_GOOD
@@ -1137,16 +1185,18 @@ export class ProductsCatalogService {
     else if (description === '' || description === null) header.description = { uk: '', ru: '' };
 
     const params: DilovodSaveGoodParams = { header };
+    let componentsWithRowIds: Array<CatalogComponentSaveInput & { rowNum: number; dilovodRowId: string }> =
+      [];
     if (!isGroup) {
-      params.tableParts = {
-        tpGoods: components.map((c, idx) => ({
-          rowNum: c.rowNum ?? idx + 1,
-          good: c.componentGoodId,
-          qty: c.qty,
-          unit: c.unitId || mainUnitId,
-          remark: (String(('note' in c ? c.note : null) || '').trim()).slice(0, 150) || undefined,
-        })),
-      };
+      const localRowRefs = await this.loadComponentRowRefs(id);
+      const resolved = await resolveTpGoodsForSave({
+        goodId: id,
+        components: componentInputs,
+        mainUnitId,
+        localRows: localRowRefs,
+      });
+      componentsWithRowIds = resolved.componentsWithRowIds;
+      params.tableParts = { tpGoods: resolved.tpGoods };
     }
 
     await productsDilovodGateway.saveObject(params);
@@ -1276,13 +1326,7 @@ export class ProductsCatalogService {
       unitRatio: unitRatio ?? 1,
       components: isGroup
         ? []
-        : components.map((c, idx) => ({
-            componentGoodId: c.componentGoodId,
-            qty: c.qty,
-            rowNum: c.rowNum ?? idx + 1,
-            unitId: c.unitId || mainUnitId,
-            note: 'note' in c ? (c.note?.trim() || null) : undefined,
-          })),
+        : this.mapLocalSyncComponents(componentsWithRowIds, mainUnitId),
       prices: isGroup
         ? []
         : prices.map((p) => ({

@@ -129,6 +129,8 @@ export interface CatalogGoodComponentDto {
   componentAccPolicyId?: string | null;
   qty: number;
   rowNum: number;
+  /** Dilovod tpGoods.rowID (локальний кеш для save) */
+  dilovodRowId?: string | null;
   /** Од. виміру рядка tpGoods (для специфікації) */
   unitId?: string | null;
   /** Примітка рядка специфікації ↔ Dilovod tpGoods.remark */

@@ -65,6 +65,8 @@ export interface DilovodDictItem {
 
 export interface DilovodTpGoodsRow {
   rowNum?: number;
+  /** Dilovod tpGoods.rowID — обовʼязковий для update існуючих рядків BOM */
+  rowID?: string;
   good: string;
   qty: number | string;
   unit?: string;
@@ -113,6 +115,7 @@ export interface LocalSyncGoodPayload {
     componentGoodId: string;
     qty: number;
     rowNum: number;
+    dilovodRowId?: string | null;
     unitId?: string | null;
     note?: string | null;
   }>;
