@@ -8,22 +8,26 @@ export type PermissionGroup =
   | 'pages.warehouse'
   | 'pages.reports'
   | 'pages.accounting'
+  | 'pages.hr'
   | 'pages.settings'
   | 'actions.users'
   | 'actions.warehouse'
   | 'actions.products'
-  | 'actions.integrations';
+  | 'actions.integrations'
+  | 'actions.hr';
 
 export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   'pages.main': 'Основні сторінки',
   'pages.warehouse': 'Склад',
   'pages.reports': 'Звіти',
   'pages.accounting': 'Бухгалтерія',
+  'pages.hr': 'Персонал',
   'pages.settings': 'Налаштування',
   'actions.users': 'Користувачі та адміністрування',
   'actions.warehouse': 'Складські операції',
   'actions.products': 'Операції з товарами',
   'actions.integrations': 'Dilovod / SalesDrive',
+  'actions.hr': 'Персонал',
 };
 
 /** Група ключа екшена → група чекбоксів у UI (мапінг з PERMISSION_GROUP_LABELS). */
@@ -37,6 +41,7 @@ const ACTION_UI_GROUP: Record<string, PermissionGroup> = {
   dilovod: 'actions.integrations',
   salesdrive: 'actions.integrations',
   lal: 'actions.integrations',
+  hr: 'actions.hr',
 };
 
 export const DEFAULT_PAGE_GROUP = 'main';
@@ -217,6 +222,15 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: pageKey('accounting', 'cashIn'), seed: only(ROLES.ADMIN) },
   { key: pageKey('accounting', 'bankStatements'), seed: only(ROLES.ADMIN) },
 
+  { key: pageKey('hr', 'timesheet'), seed: min(ROLES.BOSS) },
+  { key: pageKey('hr', 'employees'), seed: min(ROLES.BOSS) },
+  { key: pageKey('hr', 'payroll'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
+  { key: actionKey('hr', 'timesheet.edit'), seed: min(ROLES.BOSS) },
+  { key: actionKey('hr', 'employees.manage'), seed: min(ROLES.BOSS) },
+  { key: actionKey('hr', 'payroll.view'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
+  { key: actionKey('hr', 'payterms.manage'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
+  { key: actionKey('hr', 'payouts.view'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
+
   { key: pageKey('settings', 'orderAssembly'), seed: min(ROLES.STOREKEEPER) },
   { key: pageKey('settings', 'equipment'), seed: only(ROLES.ADMIN, ROLES.BOSS, ROLES.STOREKEEPER) },
   { key: pageKey('settings', 'orders'), seed: only(ROLES.ADMIN) },
@@ -281,6 +295,14 @@ export const PERMISSIONS = {
   PAGE_REPORTS_WAREHOUSE_STATEMENT: pageKey('reports', 'warehouseStatement'),
   PAGE_ACCOUNTING_CASH_IN: pageKey('accounting', 'cashIn'),
   PAGE_ACCOUNTING_BANK_STATEMENTS: pageKey('accounting', 'bankStatements'),
+  PAGE_HR_TIMESHEET: pageKey('hr', 'timesheet'),
+  PAGE_HR_EMPLOYEES: pageKey('hr', 'employees'),
+  PAGE_HR_PAYROLL: pageKey('hr', 'payroll'),
+  ACTION_HR_TIMESHEET_EDIT: actionKey('hr', 'timesheet.edit'),
+  ACTION_HR_EMPLOYEES_MANAGE: actionKey('hr', 'employees.manage'),
+  ACTION_HR_PAYROLL_VIEW: actionKey('hr', 'payroll.view'),
+  ACTION_HR_PAYTERMS_MANAGE: actionKey('hr', 'payterms.manage'),
+  ACTION_HR_PAYOUTS_VIEW: actionKey('hr', 'payouts.view'),
   PAGE_SETTINGS_ORDER_ASSEMBLY: pageKey('settings', 'orderAssembly'),
   PAGE_SETTINGS_EQUIPMENT: pageKey('settings', 'equipment'),
   PAGE_SETTINGS_ORDERS: pageKey('settings', 'orders'),

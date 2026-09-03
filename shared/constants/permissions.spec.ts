@@ -119,6 +119,30 @@ describe('seedPermissionKeysForRole', () => {
       expect(seedPermissionKeysForRole(slug)).not.toContain(PERMISSIONS.PAGE_ACCOUNTING_BANK_STATEMENTS);
     }
   });
+
+  it('HR timesheet/employees are boss+admin; storekeeper has none', () => {
+    const boss = seedPermissionKeysForRole(ROLES.BOSS);
+    const storekeeper = seedPermissionKeysForRole(ROLES.STOREKEEPER);
+    expect(boss).toContain(PERMISSIONS.PAGE_HR_TIMESHEET);
+    expect(boss).toContain(PERMISSIONS.PAGE_HR_EMPLOYEES);
+    expect(boss).toContain(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT);
+    expect(boss).toContain(PERMISSIONS.ACTION_HR_EMPLOYEES_MANAGE);
+    expect(storekeeper).not.toContain(PERMISSIONS.PAGE_HR_TIMESHEET);
+    expect(storekeeper).not.toContain(PERMISSIONS.PAGE_HR_EMPLOYEES);
+    expect(storekeeper).not.toContain(PERMISSIONS.ACTION_HR_EMPLOYEES_MANAGE);
+  });
+
+  it('HR payroll/payterms/cards are explicit admin+boss', () => {
+    const boss = seedPermissionKeysForRole(ROLES.BOSS);
+    const shop = seedPermissionKeysForRole(ROLES.SHOP_MANAGER);
+    expect(boss).toContain(PERMISSIONS.PAGE_HR_PAYROLL);
+    expect(boss).toContain(PERMISSIONS.ACTION_HR_PAYROLL_VIEW);
+    expect(boss).toContain(PERMISSIONS.ACTION_HR_PAYTERMS_MANAGE);
+    expect(boss).toContain(PERMISSIONS.ACTION_HR_PAYOUTS_VIEW);
+    expect(shop).not.toContain(PERMISSIONS.PAGE_HR_PAYROLL);
+    expect(shop).not.toContain(PERMISSIONS.ACTION_HR_PAYTERMS_MANAGE);
+    expect(shop).not.toContain(PERMISSIONS.ACTION_HR_PAYOUTS_VIEW);
+  });
 });
 
 describe('canAccessRoute', () => {
@@ -168,6 +192,19 @@ describe('collectPagePermissions', () => {
         key: pageKey('accounting', 'cashIn'),
         group: 'pages.accounting',
         label: 'Реєстр переказів НП',
+      })
+    );
+  });
+
+  it('maps hr parent to pages.hr group', () => {
+    const catalog = collectPagePermissions([
+      { parent: 'hr', navLabel: 'Співробітники', inNav: true, permission: { name: 'employees' } },
+    ]);
+    expect(catalog[0]).toEqual(
+      expect.objectContaining({
+        key: pageKey('hr', 'employees'),
+        group: 'pages.hr',
+        label: 'Співробітники',
       })
     );
   });
@@ -236,6 +273,13 @@ describe('registerAction', () => {
     );
     expect(listRegisteredActions().find((item) => item.key === actionKey('roles', 'manage'))?.group).toBe(
       'actions.users'
+    );
+  });
+
+  it('maps hr actions into pages/actions.hr UI group', () => {
+    registerAction('hr', 'employees.manage', 'Керувати співробітниками');
+    expect(listRegisteredActions().find((item) => item.key === actionKey('hr', 'employees.manage'))?.group).toBe(
+      'actions.hr'
     );
   });
 

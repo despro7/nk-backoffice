@@ -34,6 +34,9 @@ import SettingsWarehouseMovement from "./pages/SettingsWarehouseMovement";
 import SalesDriveOrders from "./pages/SalesDriveOrders";
 import CashInImport from "./pages/CashInImport";
 import BankStatementImport from "./pages/BankStatementImport";
+import HrTimesheetPage from "./pages/Hr/HrTimesheetPage";
+import HrPayrollPage from "./pages/Hr/HrPayrollPage";
+import HrEmployeesPage from "./pages/Hr/Employees";
 import TestSerialCom from "./pages/test-serial-com";
 import MetaLogNotifications from './pages/MetaLogs';
 
@@ -382,6 +385,47 @@ export const appRoutes: AppRoute[] = [
     parent: 'accounting',
     order: 1,
     permission: { name: 'bankStatements' },
+  },
+  {
+    path: '/hr/timesheet',
+    component: HrTimesheetPage,
+    title: 'Табель',
+    pageTitle: 'Табель | NK Backoffice',
+    navLabel: 'Табель',
+    icon: <DynamicIcon name="calendar-days" size={16} />,
+    inNav: true,
+    parent: 'hr',
+    order: 0,
+    groupMeta: {
+      label: 'Персонал',
+      icon: <DynamicIcon name="contact-round" size={20} />,
+      order: 7,
+    },
+    permission: { name: 'timesheet' },
+  },
+  {
+    path: '/hr/payroll',
+    component: HrPayrollPage,
+    title: 'Розрахунок',
+    pageTitle: 'Розрахунок | NK Backoffice',
+    navLabel: 'Розрахунок',
+    icon: <DynamicIcon name="calculator" size={16} />,
+    inNav: true,
+    parent: 'hr',
+    order: 1,
+    permission: { name: 'payroll' },
+  },
+  {
+    path: '/hr/employees',
+    component: HrEmployeesPage,
+    title: 'Співробітники',
+    pageTitle: 'Співробітники | NK Backoffice',
+    navLabel: 'Співробітники',
+    icon: <DynamicIcon name="users" size={16} />,
+    inNav: true,
+    parent: 'hr',
+    order: 2,
+    permission: { name: 'employees' },
   },
   {
     path: '/salesdrive-to-dilovod',

@@ -30,6 +30,7 @@ import metaLogsRouter from './routes/meta-logs.js';
 import wordpressReceiptRoutes from './routes/wordpress-receipt.js';
 import notificationsRouter from './routes/notifications.js';
 import usersRoutes from './routes/users.js';
+import hrRoutes from './modules/Hr/HrController.js';
 import statRouter from './routes/stat.js';
 import expandRoutes from './routes/expand.js';
 import lalAudiencesRoutes from './routes/lal-audiences.js';
@@ -154,6 +155,9 @@ export function createServer() {
 
   // Users (batch lookup)
   app.use('/api/users', usersRoutes);
+
+  // HR: співробітники / зайнятість / ставки
+  app.use('/api/hr', hrRoutes);
 
   // Protected routes
   app.use("/api/protected", protectedRoutes);
