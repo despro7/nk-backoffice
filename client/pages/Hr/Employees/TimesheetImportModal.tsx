@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   Button,
   Chip,
@@ -7,9 +7,11 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Spinner,
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '@/services/ToastService';
+import FileUploadZone from '@/pages/CashInImport/components/FileUploadZone';
 import {
   HR_PAY_GROUP_LABELS,
   type HrXlsxImportCommitDto,
@@ -35,7 +37,6 @@ async function postFile(url: string, file: File): Promise<{ ok: boolean; data: u
 }
 
 export function TimesheetImportModal({ isOpen, onClose, onImported }: TimesheetImportModalProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<HrXlsxImportPreviewDto | null>(null);
   const [result, setResult] = useState<HrXlsxImportCommitDto | null>(null);
@@ -45,7 +46,6 @@ export function TimesheetImportModal({ isOpen, onClose, onImported }: TimesheetI
     setFile(null);
     setPreview(null);
     setResult(null);
-    if (inputRef.current) inputRef.current.value = '';
   };
 
   const handleClose = () => {
@@ -81,7 +81,7 @@ export function TimesheetImportModal({ isOpen, onClose, onImported }: TimesheetI
       const data = response.data as HrXlsxImportCommitDto;
       setResult(data);
       ToastService.show({
-        title: `Імпорт завершено: ${data.createdEmployees} нових співробітників, ${data.upsertedEntries} клітинок табеля`,
+        title: `Імпорт завершено: ${data.createdEmployees} нових співробітників, ${data.createdLegalEntities} роботодавців, ${data.upsertedEntries} клітинок табеля`,
         color: 'success',
       });
       onImported();
@@ -102,19 +102,40 @@ export function TimesheetImportModal({ isOpen, onClose, onImported }: TimesheetI
             Історичне завантаження «Табель 2026». Внутрішній калькулятор, не податковий облік. Повторний імпорт
             оновлює ті самі людей за ключем прізвище|імʼя|по-батькові і не створює дублікати.
           </p>
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            className="block w-full text-sm"
-            onChange={(event) => {
-              const next = event.target.files?.[0] ?? null;
-              setFile(next);
-              setPreview(null);
-              setResult(null);
-              if (next) void runPreview(next);
-            }}
-          />
+          {!file ? (
+            <FileUploadZone
+              isLoading={loading}
+              onFileSelect={(next) => {
+                setFile(next);
+                setPreview(null);
+                setResult(null);
+                void runPreview(next);
+              }}
+            />
+          ) : (
+            <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                <DynamicIcon name="file-spreadsheet" size={20} className="text-primary" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-neutral-800">{file.name}</p>
+                <p className="text-xs text-neutral-500">
+                  {(file.size / 1024).toFixed(1)} KB
+                  {loading ? ' · аналіз файлу…' : preview ? ' · попередній перегляд готовий' : ''}
+                </p>
+              </div>
+              {loading ? <Spinner size="sm" color="primary" /> : null}
+              <Button
+                size="sm"
+                variant="flat"
+                onPress={reset}
+                isDisabled={loading}
+                startContent={<DynamicIcon name="rotate-ccw" size={14} />}
+              >
+                Змінити
+              </Button>
+            </div>
+          )}
           {preview ? (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2">
@@ -144,17 +165,15 @@ export function TimesheetImportModal({ isOpen, onClose, onImported }: TimesheetI
               ) : null}
               {result ? (
                 <p className="text-sm text-emerald-700">
-                  Записано: +{result.createdEmployees} людей, {result.reusedEmployments} зайнятостей повторно,
-                  {result.upsertedEntries} клітинок.
+                  Записано: +{result.createdEmployees} людей, +{result.createdLegalEntities} роботодавців,{' '}
+                  {result.reusedEmployments} зайнятостей повторно, {result.upsertedEntries} клітинок.
                   {result.skippedClosedMonths.length
                     ? ` Пропущено закриті місяці: ${result.skippedClosedMonths.join(', ')}.`
                     : ''}
                 </p>
               ) : null}
             </div>
-          ) : (
-            <p className="text-sm text-gray-500">Оберіть .xlsx, щоб побачити попередній перегляд.</p>
-          )}
+          ) : null}
         </ModalBody>
         <ModalFooter>
           <Button variant="flat" onPress={handleClose} isDisabled={loading}>

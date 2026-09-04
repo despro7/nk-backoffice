@@ -108,8 +108,21 @@ function hoursInWeek(entries: PayrollEntryInput[], week: HrTimesheetWeekDto): nu
   return sum;
 }
 
+function accruedFromRate(
+  rateKind: HrPayTermsKind,
+  rate: number,
+  workHours: number,
+  normHours: number,
+): number {
+  if (rateKind === 'salary') {
+    return roundMoney(normHours > 0 ? (rate * workHours) / normHours : 0);
+  }
+  return roundMoney(rate * workHours);
+}
+
 function applyGroupAmounts(
   payGroup: HrPayGroup,
+  rateKind: HrPayTermsKind,
   rate: number,
   workHours: number,
   normHours: number,
@@ -119,20 +132,21 @@ function applyGroupAmounts(
     return { accrued: 0, extra: 0, toPay: 0 };
   }
 
+  const accrued = accruedFromRate(rateKind, rate, workHours, normHours);
+
   if (payGroup === 'official_salary') {
-    const accrued = roundMoney(normHours > 0 ? (rate * workHours) / normHours : 0);
     const extra = roundMoney(accrued * Number(formula.extraRate));
     const divisor = Number(formula.grossDivisor);
     const toPay = roundMoney(divisor > 0 ? accrued / divisor : accrued);
     return { accrued, extra, toPay };
   }
 
-  const accrued = roundMoney(rate * workHours);
   return { accrued, extra: 0, toPay: accrued };
 }
 
 function breakdownFor(
   payGroup: HrPayGroup,
+  rateKind: HrPayTermsKind,
   formula: HrPayrollFormulaSnapshot,
   amounts: { accrued: number; extra: number; toPay: number },
   skipReason: HrPayrollSkipReason | null,
@@ -170,18 +184,21 @@ function breakdownFor(
     ];
   }
 
-  const hourlyLabel =
-    payGroup === 'unofficial_cash'
-      ? 'Нараховано: ставка × години (готівка)'
-      : 'Нараховано: погодинна ставка × години';
+  const accruedLabel =
+    rateKind === 'salary'
+      ? payGroup === 'unofficial_cash'
+        ? 'Нараховано: місячна ставка × години / норма (готівка)'
+        : 'Нараховано: місячна ставка × години / норма'
+      : payGroup === 'unofficial_cash'
+        ? 'Нараховано: погодинна ставка × години (готівка)'
+        : 'Нараховано: погодинна ставка × години';
   return [
-    { id: 'accrued', label: hourlyLabel, amount: moneyStr(amounts.accrued) },
+    { id: 'accrued', label: accruedLabel, amount: moneyStr(amounts.accrued) },
     { id: 'toPay', label: 'До виплати', amount: moneyStr(amounts.toPay) },
   ];
 }
 
 export function calculatePayrollLine(input: PayrollCalcInput): PayrollCalcResult {
-  void input.rateKind;
   const formula = input.formula ?? HR_PAYROLL_FORMULA_V1;
   const { hoursByKind, workHours, leaveDays } = collectHoursByKind(input.entries);
 
@@ -196,7 +213,7 @@ export function calculatePayrollLine(input: PayrollCalcInput): PayrollCalcResult
     const hours = skipReason ? 0 : hoursInWeek(input.entries, week);
     const amounts = skipReason
       ? { accrued: 0, extra: 0, toPay: 0 }
-      : applyGroupAmounts(input.payGroup, input.rate, hours, input.normHours, formula);
+      : applyGroupAmounts(input.payGroup, input.rateKind, input.rate, hours, input.normHours, formula);
     return {
       weekId: week.id,
       hours: hoursStr(hours),
@@ -215,7 +232,13 @@ export function calculatePayrollLine(input: PayrollCalcInput): PayrollCalcResult
     ratesUsed: formula,
     hoursByKind,
     weekAmounts,
-    breakdown: breakdownFor(input.payGroup, formula, { accrued: accruedAmount, extra: extraAmount, toPay: toPayAmount }, skipReason),
+    breakdown: breakdownFor(
+      input.payGroup,
+      input.rateKind,
+      formula,
+      { accrued: accruedAmount, extra: extraAmount, toPay: toPayAmount },
+      skipReason,
+    ),
     accruedAmount: moneyStr(accruedAmount),
     extraAmount: moneyStr(extraAmount),
     toPayAmount: moneyStr(toPayAmount),

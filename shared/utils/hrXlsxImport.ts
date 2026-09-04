@@ -3,6 +3,7 @@ import {
   hrEmployeeImportKey,
   hrEmployeeImportKeyCandidates,
   hrEmploymentImportKey,
+  type HrLegalEntityKind,
   type HrPayGroup,
   type HrPayTermsKind,
   type HrTimesheetKind,
@@ -12,6 +13,7 @@ import {
   type HrXlsxImportPreviewDto,
   type HrXlsxImportSkipDto,
 } from '../types/hr.js';
+import { normalizeHrImportEmployerName, slugifyLegalEntityCodeFromName } from './hrLegalEntitySlug.js';
 import { daysInMonth, formatYearMonth } from './hrTimesheetCalendar.js';
 import { parseTimesheetHours } from './hrTimesheetCell.js';
 
@@ -51,6 +53,8 @@ export interface HrXlsxPersonMonth {
   altKeys: string[];
   payGroup: HrPayGroup;
   legalEntityCode: string;
+  legalEntityName: string;
+  legalEntityKind: HrLegalEntityKind;
   employerRaw: string;
   cardDigits: string | null;
   notes: string | null;
@@ -226,24 +230,80 @@ export function isHrImportGroupHeader(raw: string): HrPayGroup | null {
 export function mapHrImportEmployer(
   raw: string,
   sectionGroup: HrPayGroup,
-): { legalEntityCode: string; payGroup: HrPayGroup; unnamed: boolean } {
-  const e = cellStr(raw).toLocaleLowerCase('uk').replace(/\\/g, '');
+): {
+  legalEntityCode: string;
+  legalEntityName: string;
+  kind: HrLegalEntityKind;
+  payGroup: HrPayGroup;
+  unnamed: boolean;
+} {
+  const trimmed = cellStr(raw);
+  const e = trimmed.toLocaleLowerCase('uk').replace(/\\/g, '');
+
   if (/не\s*штан?тн/.test(e)) {
-    return { legalEntityCode: 'unofficial_cash', payGroup: 'unofficial_cash', unnamed: false };
+    const kind = 'unofficial_cash' as const;
+    const name = normalizeHrImportEmployerName(trimmed, 'Нештатні / готівка');
+    return {
+      kind,
+      legalEntityName: name,
+      legalEntityCode: trimmed ? slugifyLegalEntityCodeFromName(name, kind) : kind,
+      payGroup: 'unofficial_cash',
+      unnamed: !trimmed,
+    };
   }
   if (/(^|\s)тов(\s|$)/.test(e) || e.includes('нова кухня')) {
-    return { legalEntityCode: 'tov', payGroup: sectionGroup, unnamed: false };
+    const kind = 'tov' as const;
+    const name = normalizeHrImportEmployerName(trimmed, 'ТОВ (за замовч.)');
+    return {
+      kind,
+      legalEntityName: name,
+      legalEntityCode: trimmed ? slugifyLegalEntityCodeFromName(name, kind) : kind,
+      payGroup: sectionGroup,
+      unnamed: !trimmed,
+    };
   }
   if (/(^|\s)фоп(\s|$)/.test(e)) {
-    return { legalEntityCode: 'fop', payGroup: sectionGroup, unnamed: false };
+    const kind = 'fop' as const;
+    const name = normalizeHrImportEmployerName(trimmed, 'ФОП (за замовч.)');
+    return {
+      kind,
+      legalEntityName: name,
+      legalEntityCode: trimmed ? slugifyLegalEntityCodeFromName(name, kind) : kind,
+      payGroup: sectionGroup,
+      unnamed: !trimmed,
+    };
   }
   if (sectionGroup === 'unofficial_cash') {
-    return { legalEntityCode: 'unofficial_cash', payGroup: 'unofficial_cash', unnamed: !e };
+    const kind = 'unofficial_cash' as const;
+    const name = normalizeHrImportEmployerName(trimmed, 'Готівка (за замовч.)');
+    return {
+      kind,
+      legalEntityName: name,
+      legalEntityCode: trimmed ? slugifyLegalEntityCodeFromName(name, kind) : kind,
+      payGroup: 'unofficial_cash',
+      unnamed: !trimmed,
+    };
   }
   if (sectionGroup === 'hourly') {
-    return { legalEntityCode: 'unofficial_cash', payGroup: 'hourly', unnamed: true };
+    const kind = 'unofficial_cash' as const;
+    const name = normalizeHrImportEmployerName(trimmed, 'Готівка (за замовч.)');
+    return {
+      kind,
+      legalEntityName: name,
+      legalEntityCode: trimmed ? slugifyLegalEntityCodeFromName(name, kind) : kind,
+      payGroup: 'hourly',
+      unnamed: !trimmed,
+    };
   }
-  return { legalEntityCode: 'fop', payGroup: 'official_salary', unnamed: true };
+  const kind = 'fop' as const;
+  const name = normalizeHrImportEmployerName(trimmed, 'ФОП (за замовч.)');
+  return {
+    kind,
+    legalEntityName: name,
+    legalEntityCode: trimmed ? slugifyLegalEntityCodeFromName(name, kind) : kind,
+    payGroup: 'official_salary',
+    unnamed: !trimmed,
+  };
 }
 
 export function parseHrImportRate(value: unknown): HrXlsxParsedRate | null {
@@ -491,6 +551,8 @@ export function parseHrTimesheetWorkbook(sheets: HrXlsxSheetInput[]): HrXlsxPars
         altKeys,
         payGroup: mapped.payGroup,
         legalEntityCode: mapped.legalEntityCode,
+        legalEntityName: mapped.legalEntityName,
+        legalEntityKind: mapped.kind,
         employerRaw,
         cardDigits: parsed.cardDigits,
         notes: parsed.notes.length ? parsed.notes.join('; ') : null,
@@ -567,6 +629,8 @@ export function parseHrTimesheetWorkbook(sheets: HrXlsxSheetInput[]): HrXlsxPars
         employeeKey: key,
         displayName: [best.lastName, best.firstName, best.middleName].filter(Boolean).join(' '),
         legalEntityCode: first.legalEntityCode,
+        legalEntityName: first.legalEntityName,
+        legalEntityKind: first.legalEntityKind,
         payGroup: first.payGroup,
         validFrom,
         rateKind: rate?.kind ?? null,

@@ -24,7 +24,7 @@ import {
 } from '@shared/types/hr';
 import { EmployeeDrawer } from './EmployeeDrawer';
 import { TimesheetImportModal } from './TimesheetImportModal';
-import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
+import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HR_TABLE_CLASS_NAMES, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
 
 export default function HrEmployeesPage() {
   const { hasPermission } = useRoleAccess();
@@ -143,10 +143,10 @@ export default function HrEmployeesPage() {
         />
         {canManage ? (
           <div className="flex flex-wrap gap-2">
-            <Button className={HR_BTN_NEUTRAL} startContent={<DynamicIcon name="upload" size={16} />} onPress={() => setImportOpen(true)}>
+            <Button className={`${HR_BTN_NEUTRAL} bg-slate-50! `} startContent={<DynamicIcon name="upload" size={16} className="shrink-0" />} onPress={() => setImportOpen(true)}>
               Імпорт Excel
             </Button>
-            <Button className={HR_BTN_PRIMARY} startContent={<DynamicIcon name="plus" size={16} />} onPress={openCreate}>
+            <Button className={HR_BTN_PRIMARY} startContent={<DynamicIcon name="plus" size={16} className="shrink-0" />} onPress={openCreate}>
               Новий співробітник
             </Button>
           </div>
@@ -160,7 +160,11 @@ export default function HrEmployeesPage() {
           ) : employees.length === 0 ? (
             <div className="p-8 text-center text-gray-500">Немає співробітників</div>
           ) : (
-            <Table aria-label="Співробітники" classNames={{ wrapper: 'p-2 shadow-none' }}>
+            <Table
+              aria-label="Співробітники"
+              removeWrapper
+              classNames={HR_TABLE_CLASS_NAMES}
+            >
               <TableHeader>
                 <TableColumn>ПІБ</TableColumn>
                 <TableColumn>Роботодавець</TableColumn>
@@ -201,15 +205,15 @@ export default function HrEmployeesPage() {
                     </TableCell>
                     <TableCell className="text-center">
                       {employee.status === 'active' ? (
-                        <HrSpecChip tokens={hrStatusTokens('active')}>активний</HrSpecChip>
+                        <HrSpecChip tokens={hrStatusTokens('active')} icon="success">активний</HrSpecChip>
                       ) : (
-                        <HrSpecChip tokens={hrStatusTokens('inactive')}>неактивний</HrSpecChip>
+                        <HrSpecChip tokens={hrStatusTokens('inactive')} icon="error">неактивний</HrSpecChip>
                       )}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-center gap-1">
-                        <Button size="sm" variant="light" isIconOnly aria-label="Відкрити" className="text-sky-700" onPress={() => openEdit(employee.id)}>
-                          <DynamicIcon name="pencil" size={16} />
+                        <Button size="sm" variant="light" isIconOnly aria-label="Відкрити" className="text-slate-700 hover:bg-slate-700/10!" onPress={() => openEdit(employee.id)}>
+                          <DynamicIcon name="pencil" size={16} className="shrink-0" />
                         </Button>
                         {canManage ? (
                           <Button
@@ -217,10 +221,10 @@ export default function HrEmployeesPage() {
                             variant="light"
                             isIconOnly
                             aria-label="Видалити"
-                            className="text-rose-600"
+                            className="text-rose-600 hover:bg-rose-600/10!"
                             onPress={() => setDeleteId(employee.id)}
                           >
-                            <DynamicIcon name="trash-2" size={16} />
+                            <DynamicIcon name="trash-2" size={16} className="shrink-0" />
                           </Button>
                         ) : null}
                       </div>

@@ -37,6 +37,7 @@ import BankStatementImport from "./pages/BankStatementImport";
 import HrTimesheetPage from "./pages/Hr/HrTimesheetPage";
 import HrPayrollPage from "./pages/Hr/HrPayrollPage";
 import HrEmployeesPage from "./pages/Hr/Employees";
+import HrEmployersPage from "./pages/Hr/Employers";
 import TestSerialCom from "./pages/test-serial-com";
 import MetaLogNotifications from './pages/MetaLogs';
 
@@ -425,6 +426,18 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'hr',
     order: 2,
+    permission: { name: 'employees' },
+  },
+  {
+    path: '/hr/employers',
+    component: HrEmployersPage,
+    title: 'Роботодавці',
+    pageTitle: 'Роботодавці | NK Backoffice',
+    navLabel: 'Роботодавці',
+    icon: <DynamicIcon name="building-2" size={16} />,
+    inNav: true,
+    parent: 'hr',
+    order: 3,
     permission: { name: 'employees' },
   },
   {

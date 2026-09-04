@@ -3,10 +3,13 @@ import * as XLSX from 'xlsx';
 import { prisma, logServer } from '../../lib/utils.js';
 import {
   hrEmployeeImportKeyCandidates,
+  type HrLegalEntityKind,
   type HrXlsxImportCommitDto,
   type HrXlsxImportPreviewDto,
 } from '../../../shared/types/hr.js';
 import { buildTimesheetMonthMeta, daysInMonth, formatYearMonth } from '../../../shared/utils/hrTimesheetCalendar.js';
+import { mergeEmploymentRecords } from './HrEmploymentMerge.js';
+import { HR_SEED_LEGAL_ENTITY_CODES } from '../../../shared/utils/hrEmploymentDedupe.js';
 import { parseHrTimesheetWorkbook } from '../../../shared/utils/hrXlsxImport.js';
 import { cardLast4FromDigits, encryptCardNumber } from './HrCardCrypto.js';
 import { HrError } from './HrService.js';
@@ -37,11 +40,76 @@ export class HrXlsxImportService {
   async commit(fileBuffer: Buffer, options: { importPayTerms: boolean }): Promise<HrXlsxImportCommitDto> {
     const parsed = this.parseWorkbook(fileBuffer);
     const preview = parsed.preview;
-    const entities = await prisma.hrLegalEntity.findMany({ where: { isActive: true } });
+    const entities = await prisma.hrLegalEntity.findMany({ orderBy: { id: 'asc' } });
     const entityByCode = new Map(entities.map((row) => [row.code, row]));
+    const entityByKind = new Map<string, (typeof entities)[number]>();
+    for (const row of entities) {
+      if (row.isActive && !entityByKind.has(row.kind)) entityByKind.set(row.kind, row);
+    }
+
+    let createdLegalEntities = 0;
+
+    const resolveEntity = async (item: {
+      legalEntityCode: string;
+      legalEntityName: string;
+      legalEntityKind: HrLegalEntityKind;
+    }) => {
+      const cached = entityByCode.get(item.legalEntityCode);
+      if (cached) return cached;
+
+      const legacyCodes = ['fop', 'tov', 'unofficial_cash'] as const;
+      if (legacyCodes.includes(item.legalEntityCode as (typeof legacyCodes)[number])) {
+        const legacy = entityByCode.get(item.legalEntityCode) ?? entityByKind.get(item.legalEntityCode);
+        if (legacy) {
+          entityByCode.set(item.legalEntityCode, legacy);
+          return legacy;
+        }
+      }
+
+      const byName = await prisma.hrLegalEntity.findFirst({
+        where: { name: item.legalEntityName, isActive: true },
+      });
+      if (byName) {
+        entityByCode.set(byName.code, byName);
+        entityByCode.set(item.legalEntityCode, byName);
+        return byName;
+      }
+
+      const byCode = await prisma.hrLegalEntity.findUnique({ where: { code: item.legalEntityCode } });
+      if (byCode) {
+        entityByCode.set(byCode.code, byCode);
+        return byCode;
+      }
+
+      try {
+        const created = await prisma.hrLegalEntity.create({
+          data: {
+            code: item.legalEntityCode,
+            name: item.legalEntityName,
+            kind: item.legalEntityKind,
+            isActive: true,
+          },
+        });
+        entityByCode.set(created.code, created);
+        createdLegalEntities += 1;
+        logServer(`[hr-import] created legal entity id=${created.id} code=${created.code} name=${created.name}`);
+        return created;
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          const again = await prisma.hrLegalEntity.findUnique({ where: { code: item.legalEntityCode } });
+          if (again) {
+            entityByCode.set(again.code, again);
+            return again;
+          }
+        }
+        throw error;
+      }
+    };
+
     for (const code of ['fop', 'tov', 'unofficial_cash'] as const) {
-      if (!entityByCode.has(code)) {
-        throw new HrError(`Немає юрособи зі seed-кодом ${code}. Застосуйте міграцію HR.`);
+      const fallback = entityByCode.get(code) ?? entityByKind.get(code);
+      if (!fallback) {
+        throw new HrError(`Немає активного роботодавця типу ${code}. Додайте або активуйте запис у довіднику.`);
       }
     }
 
@@ -115,46 +183,19 @@ export class HrXlsxImportService {
 
     for (const item of preview.employments) {
       const employeeId = idByImportKey.get(item.employeeKey);
-      const entity = entityByCode.get(item.legalEntityCode);
+      const entity = employeeId
+        ? await resolveEntity({
+            legalEntityCode: item.legalEntityCode,
+            legalEntityName: item.legalEntityName,
+            legalEntityKind: item.legalEntityKind,
+          })
+        : null;
       if (!employeeId || !entity) continue;
 
-      const uniqueWhere = {
-        employeeId_legalEntityId_validFrom: {
-          employeeId,
-          legalEntityId: entity.id,
-          validFrom: toDate(item.validFrom),
-        },
-      };
-
-      const found = await prisma.hrEmployment.findUnique({ where: uniqueWhere });
-      if (found) {
-        reusedEmployments += 1;
-        importEmploymentIds.set(item.employmentImportKey, found.id);
-        continue;
-      }
-
-      try {
-        const created = await prisma.hrEmployment.create({
-          data: {
-            employeeId,
-            legalEntityId: entity.id,
-            payGroup: item.payGroup,
-            validFrom: toDate(item.validFrom),
-          },
-        });
-        createdEmployments += 1;
-        importEmploymentIds.set(item.employmentImportKey, created.id);
-      } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-          const again = await prisma.hrEmployment.findUnique({ where: uniqueWhere });
-          if (again) {
-            reusedEmployments += 1;
-            importEmploymentIds.set(item.employmentImportKey, again.id);
-            continue;
-          }
-        }
-        throw error;
-      }
+      const { employmentId, created } = await this.resolveEmploymentForImport(employeeId, entity, item);
+      if (created) createdEmployments += 1;
+      else reusedEmployments += 1;
+      importEmploymentIds.set(item.employmentImportKey, employmentId);
     }
 
     await this.closeSupersededEmployments(parsed.byEmployeeKey, preview.employments, importEmploymentIds);
@@ -278,12 +319,151 @@ export class HrXlsxImportService {
       preview,
       createdEmployees,
       updatedEmployees,
+      createdLegalEntities,
       createdEmployments,
       reusedEmployments,
       upsertedEntries,
       createdPayTerms,
       skippedClosedMonths,
     };
+  }
+
+  private async resolveEmploymentForImport(
+    employeeId: number,
+    entity: { id: number; code: string },
+    item: { payGroup: string; validFrom: string },
+  ): Promise<{ employmentId: number; created: boolean }> {
+    const validFromDate = toDate(item.validFrom);
+    const uniqueWhere = {
+      employeeId_legalEntityId_validFrom: {
+        employeeId,
+        legalEntityId: entity.id,
+        validFrom: validFromDate,
+      },
+    };
+
+    const exact = await prisma.hrEmployment.findUnique({ where: uniqueWhere });
+    if (exact) {
+      await this.mergeDuplicateEmployments(employeeId, item.payGroup, validFromDate, entity, exact.id);
+      return { employmentId: exact.id, created: false };
+    }
+
+    const overlapping = await prisma.hrEmployment.findMany({
+      where: {
+        employeeId,
+        payGroup: item.payGroup,
+        validFrom: { lte: validFromDate },
+        OR: [{ validTo: null }, { validTo: { gte: validFromDate } }],
+      },
+      include: { legalEntity: true },
+      orderBy: { id: 'asc' },
+    });
+
+    if (overlapping.length > 0) {
+      const sorted = [...overlapping].sort((a, b) => {
+        const aSeed = HR_SEED_LEGAL_ENTITY_CODES.has(a.legalEntity.code) ? 1 : 0;
+        const bSeed = HR_SEED_LEGAL_ENTITY_CODES.has(b.legalEntity.code) ? 1 : 0;
+        if (aSeed !== bSeed) return aSeed - bSeed;
+        return a.id - b.id;
+      });
+      let canonical = sorted[0];
+
+      if (
+        HR_SEED_LEGAL_ENTITY_CODES.has(canonical.legalEntity.code) &&
+        !HR_SEED_LEGAL_ENTITY_CODES.has(entity.code) &&
+        canonical.legalEntityId !== entity.id
+      ) {
+        try {
+          canonical = await prisma.hrEmployment.update({
+            where: { id: canonical.id },
+            data: { legalEntityId: entity.id },
+            include: { legalEntity: true },
+          });
+        } catch (error) {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            const existing = await prisma.hrEmployment.findUnique({
+              where: uniqueWhere,
+              include: { legalEntity: true },
+            });
+            if (existing) {
+              for (const dup of sorted) {
+                if (dup.id === existing.id) continue;
+                await mergeEmploymentRecords(prisma, dup.id, existing.id);
+              }
+              return { employmentId: existing.id, created: false };
+            }
+          }
+          throw error;
+        }
+      }
+
+      for (const dup of sorted) {
+        if (dup.id === canonical.id) continue;
+        await mergeEmploymentRecords(prisma, dup.id, canonical.id);
+      }
+
+      return { employmentId: canonical.id, created: false };
+    }
+
+    try {
+      const created = await prisma.hrEmployment.create({
+        data: {
+          employeeId,
+          legalEntityId: entity.id,
+          payGroup: item.payGroup,
+          validFrom: validFromDate,
+        },
+      });
+      return { employmentId: created.id, created: true };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const again = await prisma.hrEmployment.findUnique({ where: uniqueWhere });
+        if (again) return { employmentId: again.id, created: false };
+      }
+      throw error;
+    }
+  }
+
+  private async mergeDuplicateEmployments(
+    employeeId: number,
+    payGroup: string,
+    validFromDate: Date,
+    entity: { id: number; code: string },
+    canonicalId: number,
+  ): Promise<void> {
+    const overlapping = await prisma.hrEmployment.findMany({
+      where: {
+        employeeId,
+        payGroup,
+        validFrom: { lte: validFromDate },
+        OR: [{ validTo: null }, { validTo: { gte: validFromDate } }],
+        NOT: { id: canonicalId },
+      },
+      include: { legalEntity: true },
+    });
+
+    if (
+      overlapping.some((row) => HR_SEED_LEGAL_ENTITY_CODES.has(row.legalEntity.code)) &&
+      !HR_SEED_LEGAL_ENTITY_CODES.has(entity.code)
+    ) {
+      const canonical = await prisma.hrEmployment.findUnique({ where: { id: canonicalId } });
+      if (canonical && HR_SEED_LEGAL_ENTITY_CODES.has(
+        (await prisma.hrLegalEntity.findUnique({ where: { id: canonical.legalEntityId } }))?.code ?? '',
+      )) {
+        try {
+          await prisma.hrEmployment.update({
+            where: { id: canonicalId },
+            data: { legalEntityId: entity.id },
+          });
+        } catch {
+          // ignore unique conflict — canonical already on target entity
+        }
+      }
+    }
+
+    for (const dup of overlapping) {
+      await mergeEmploymentRecords(prisma, dup.id, canonicalId);
+    }
   }
 
   private parseWorkbook(fileBuffer: Buffer) {

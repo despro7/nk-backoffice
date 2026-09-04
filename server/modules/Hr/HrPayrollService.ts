@@ -23,7 +23,12 @@ import {
   type HrPayoutKind,
   type HrPayoutWritePayload,
   type HrTimesheetKind,
+  HR_PAYROLL_FORMULA_TABELL_2026_V1,
 } from '../../../shared/types/hr.js';
+import {
+  dedupeEmploymentsByEmployeePayGroup,
+  remapEmploymentId,
+} from '../../../shared/utils/hrEmploymentDedupe.js';
 import {
   buildTimesheetMonthMeta,
   parseYearMonth,
@@ -67,6 +72,26 @@ function parseMoney(raw: string): Prisma.Decimal {
     throw new HrError('Некоректна сума');
   }
   return new Prisma.Decimal(normalized);
+}
+
+function parseFormulaRate(raw: string, field: string): string {
+  const normalized = String(raw).trim().replace(',', '.').replace(/\s/g, '');
+  if (!/^\d+(\.\d+)?$/.test(normalized)) {
+    throw new HrError(`Некоректне значення «${field}»`);
+  }
+  const n = Number(normalized);
+  if (!Number.isFinite(n) || n <= 0 || n >= 1) {
+    throw new HrError(`«${field}» має бути числом від 0 до 1 (наприклад 0.23)`);
+  }
+  return n.toFixed(2);
+}
+
+function buildFormulaSnapshot(extraRate: string, grossDivisor: string): HrPayrollFormulaSnapshot {
+  return {
+    formulaId: HR_PAYROLL_FORMULA_TABELL_2026_V1,
+    extraRate: parseFormulaRate(extraRate, 'Додатковий коефіцієнт'),
+    grossDivisor: parseFormulaRate(grossDivisor, 'Дільник'),
+  };
 }
 
 function asFormulaSnapshot(value: unknown): HrPayrollFormulaSnapshot {
@@ -260,7 +285,7 @@ export class HrPayrollService {
     const monthStart = utcDate(year, month, 1);
     const monthEnd = utcDate(year, month, meta.days.length);
 
-    const [period, timesheet, employments] = await Promise.all([
+    const [period, timesheet, employmentBundle] = await Promise.all([
       prisma.hrPayrollPeriod.findUnique({
         where: { year_month: { year, month } },
         include: {
@@ -275,6 +300,7 @@ export class HrPayrollService {
       }),
       this.listEmployments(monthStart, monthEnd),
     ]);
+    const { employments, idRemap } = employmentBundle;
 
     const payouts = period ? period.payouts.map(toPayoutDto) : [];
     const useSnapshot = period && (period.status === 'calculated' || period.status === 'locked');
@@ -282,10 +308,14 @@ export class HrPayrollService {
     let lines: HrPayrollLineDto[];
     if (useSnapshot && period) {
       const byEmployment = new Map(employments.map((row) => [row.id, row]));
+      const seenEmployment = new Set<number>();
       lines = period.lines
         .map((line) => {
-          const employment = byEmployment.get(line.employmentId);
+          const canonicalId = remapEmploymentId(idRemap, line.employmentId);
+          if (seenEmployment.has(canonicalId)) return null;
+          const employment = byEmployment.get(canonicalId);
           if (!employment) return null;
+          seenEmployment.add(canonicalId);
           return this.lineFromSnapshot(employment, line, revealCard);
         })
         .filter((item): item is HrPayrollLineDto => item != null);
@@ -295,7 +325,7 @@ export class HrPayrollService {
         : [];
       const formula = period ? asFormulaSnapshot(period.formulaSnapshot) : HR_PAYROLL_FORMULA_V1;
       const normHours = timesheet ? Number(timesheet.normHours.toFixed(2)) : Number(meta.normHours);
-      lines = this.previewLines(employments, entries, meta.weeks, monthStart, monthEnd, formula, normHours, revealCard);
+      lines = this.previewLines(employments, entries, idRemap, meta.weeks, monthStart, monthEnd, formula, normHours, revealCard);
     }
 
     this.sortLines(lines);
@@ -330,7 +360,6 @@ export class HrPayrollService {
     const meta = buildTimesheetMonthMeta(year, month);
     const monthStart = utcDate(year, month, 1);
     const monthEnd = utcDate(year, month, meta.days.length);
-    const formula = HR_PAYROLL_FORMULA_V1;
 
     await prisma.$transaction(async (tx) => {
       const existing = await tx.hrPayrollPeriod.findUnique({ where: { year_month: { year, month } } });
@@ -341,10 +370,14 @@ export class HrPayrollService {
         throw new HrError('Розрахунок змінено іншим користувачем. Оновіть дані.', 409, 'PAYROLL_VERSION');
       }
 
+      const formula = existing
+        ? asFormulaSnapshot(existing.formulaSnapshot)
+        : HR_PAYROLL_FORMULA_V1;
+
       const timesheet = await tx.hrTimesheetMonth.findUnique({
         where: { year_month: { year, month } },
       });
-      const employments = await tx.hrEmployment.findMany({
+      const rawEmployments = await tx.hrEmployment.findMany({
         where: {
           validFrom: { lte: monthEnd },
           OR: [{ validTo: null }, { validTo: { gte: monthStart } }],
@@ -352,6 +385,7 @@ export class HrPayrollService {
         },
         include: employmentInclude,
       });
+      const { employments, idRemap } = dedupeEmploymentsByEmployeePayGroup(rawEmployments);
       const entries = timesheet
         ? await tx.hrTimesheetEntry.findMany({ where: { monthId: timesheet.id } })
         : [];
@@ -359,6 +393,7 @@ export class HrPayrollService {
       const preview = this.previewLines(
         employments,
         entries,
+        idRemap,
         meta.weeks,
         monthStart,
         monthEnd,
@@ -416,6 +451,52 @@ export class HrPayrollService {
       logServer(`[hr] payroll calculated periodId=${period.id} year=${year} month=${month} lines=${preview.length}`);
     });
 
+    return this.loadMonth(monthParam, revealCard);
+  }
+
+  async updateFormula(
+    monthParam: string | undefined,
+    extraRate: string,
+    grossDivisor: string,
+    version: number | undefined,
+    revealCard: boolean,
+  ): Promise<HrPayrollLoadDto> {
+    const { year, month } = this.parseMonth(monthParam);
+    const formula = buildFormulaSnapshot(extraRate, grossDivisor);
+
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.hrPayrollPeriod.findUnique({ where: { year_month: { year, month } } });
+      if (existing?.status === 'locked') {
+        throw new HrError('Період заблоковано. Налаштування формули не можна змінити.', 409, 'PAYROLL_LOCKED');
+      }
+      if (existing && version != null && existing.version !== version) {
+        throw new HrError('Розрахунок змінено іншим користувачем. Оновіть дані.', 409, 'PAYROLL_VERSION');
+      }
+
+      if (existing) {
+        await tx.hrPayrollPeriod.update({
+          where: { id: existing.id },
+          data: {
+            formulaId: formula.formulaId,
+            formulaSnapshot: formula as unknown as Prisma.InputJsonValue,
+            version: { increment: 1 },
+          },
+        });
+      } else {
+        await tx.hrPayrollPeriod.create({
+          data: {
+            year,
+            month,
+            status: 'draft',
+            version: 1,
+            formulaId: formula.formulaId,
+            formulaSnapshot: formula as unknown as Prisma.InputJsonValue,
+          },
+        });
+      }
+    });
+
+    logServer(`[hr] payroll formula updated year=${year} month=${month}`);
     return this.loadMonth(monthParam, revealCard);
   }
 
@@ -520,8 +601,8 @@ export class HrPayrollService {
     }
   }
 
-  private async listEmployments(monthStart: Date, monthEnd: Date): Promise<EmploymentRow[]> {
-    return prisma.hrEmployment.findMany({
+  private async listEmployments(monthStart: Date, monthEnd: Date) {
+    const rows = await prisma.hrEmployment.findMany({
       where: {
         validFrom: { lte: monthEnd },
         OR: [{ validTo: null }, { validTo: { gte: monthStart } }],
@@ -530,11 +611,13 @@ export class HrPayrollService {
       include: employmentInclude,
       orderBy: [{ payGroup: 'asc' }, { id: 'asc' }],
     });
+    return dedupeEmploymentsByEmployeePayGroup(rows);
   }
 
   private previewLines(
     employments: EmploymentRow[],
     entries: Array<{ employmentId: number; date: Date; kind: string; hours: Prisma.Decimal | null }>,
+    idRemap: Map<number, number>,
     weeks: HrPayrollLoadDto['weeks'],
     monthStart: Date,
     monthEnd: Date,
@@ -544,13 +627,14 @@ export class HrPayrollService {
   ): HrPayrollLineDto[] {
     const entriesByEmployment = new Map<number, PayrollEntryInput[]>();
     for (const entry of entries) {
-      const list = entriesByEmployment.get(entry.employmentId) ?? [];
+      const canonicalId = remapEmploymentId(idRemap, entry.employmentId);
+      const list = entriesByEmployment.get(canonicalId) ?? [];
       list.push({
         date: toDateOnlyUtc(entry.date),
         kind: (isTimesheetKind(entry.kind) ? entry.kind : 'work') as HrTimesheetKind,
         hours: entry.hours == null ? null : Number(entry.hours.toFixed(2)),
       });
-      entriesByEmployment.set(entry.employmentId, list);
+      entriesByEmployment.set(canonicalId, list);
     }
 
     return employments.map((employment) => {

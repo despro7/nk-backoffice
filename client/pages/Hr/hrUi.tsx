@@ -13,11 +13,12 @@ import {
   type SpecColorIntensity,
   type SpecColorTokens,
 } from '@shared/utils/specColorPalette';
+import { DynamicIcon } from 'lucide-react/dynamic';
 
 /** Закріплені hue як у довіднику «Облік (тип номенклатури)». */
 export const HR_PAY_GROUP_HUES: Record<HrPayGroup, string> = {
   official_salary: 'indigo',
-  hourly: 'cyan',
+  hourly: 'lime',
   unofficial_cash: 'orange',
 };
 
@@ -42,13 +43,20 @@ export const HR_TIMESHEET_KIND_DEFAULT_HUES: Record<HrTimesheetKindCode, string>
 };
 
 export const HR_BTN_PRIMARY =
-  'bg-gradient-to-b from-sky-500 to-blue-600/75 text-white hover:bg-blue-600 font-medium';
+  'bg-blue-500 text-white font-medium';
 export const HR_BTN_SUCCESS =
-  'bg-gradient-to-b from-lime-500 to-green-600 text-white hover:bg-green-600 font-medium';
+  'bg-lime-500 text-white font-medium';
 export const HR_BTN_WARNING =
-  'bg-gradient-to-b from-amber-400 to-orange-600 text-white hover:bg-orange-600 font-medium';
+  'bg-amber-500 text-white font-medium';
 export const HR_BTN_NEUTRAL =
   'bg-slate-100 text-slate-800 hover:bg-slate-200 font-medium border border-slate-200';
+
+/** HeroUI Table — лише горизонтальні лінії між рядками (header без змін). */
+export const HR_TABLE_CLASS_NAMES = {
+  wrapper: 'p-0 shadow-none',
+  td: 'border-b border-border-subtle',
+  tr: 'last:[&>td]:border-b-0',
+};
 
 export function hrPayGroupTokens(group: HrPayGroup, intensity: SpecColorIntensity = 'soft'): SpecColorTokens {
   return getSpecColorByHue(HR_PAY_GROUP_HUES[group], 'light', intensity);
@@ -58,9 +66,17 @@ export function hrStatusTokens(status: 'active' | 'inactive'): SpecColorTokens {
   return getSpecColorByHue(HR_EMPLOYEE_STATUS_HUES[status], 'light', 'soft');
 }
 
-export function hrLegalEntityTokens(code: string | null | undefined): SpecColorTokens {
-  const hue = (code && HR_LEGAL_ENTITY_HUES[code]) || 'slate';
+export function hrLegalEntityTokens(codeOrKind: string | null | undefined): SpecColorTokens {
+  const key = (codeOrKind ?? '').toLowerCase();
+  const hue =
+    HR_LEGAL_ENTITY_HUES[key] ||
+    HR_LEGAL_ENTITY_HUES[key.split('_')[0]] ||
+    'slate';
   return getSpecColorByHue(hue, 'light', 'soft');
+}
+
+export function hrLegalEntityKindTokens(kind: string | null | undefined): SpecColorTokens {
+  return hrLegalEntityTokens(kind);
 }
 
 export function hrEmployerTokensFromName(name: string | null | undefined): SpecColorTokens {
@@ -102,7 +118,7 @@ export function timesheetKindCellClass(
   hues: Partial<Record<HrTimesheetKindCode, string>>,
 ): string {
   if (!kind || kind === 'prefill') {
-    return 'bg-slate-50 text-slate-300 border-transparent';
+    return 'text-slate-300 border-transparent';
   }
   if (kind === 'work') {
     return 'text-slate-800';
@@ -110,8 +126,19 @@ export function timesheetKindCellClass(
   return hrKindClassName(kindHueOrDefault(kind, hues));
 }
 
+const HR_SPEC_CHIP_LUCIDE_ICONS = {
+  success: 'circle-check',
+  warning: 'triangle-alert',
+  error: 'circle-x',
+  info: 'info',
+  default: 'circle',
+} as const;
+
+type HrSpecChipIcon = keyof typeof HR_SPEC_CHIP_LUCIDE_ICONS;
+
 interface HrSpecChipProps {
   tokens: SpecColorTokens;
+  icon?: HrSpecChipIcon;
   children: ReactNode;
   className?: string;
   size?: 'sm' | 'md';
@@ -121,23 +148,27 @@ interface HrSpecChipProps {
 
 export function HrSpecChip({
   tokens,
+  icon,
   children,
   className,
   size = 'sm',
   selected = false,
   onClick,
 }: HrSpecChipProps) {
+  const lucideIcon = icon ? HR_SPEC_CHIP_LUCIDE_ICONS[icon] : undefined;
+
   return (
     <Chip
       size={size}
       variant="flat"
       className={onClick ? 'cursor-pointer' : undefined}
       onClick={onClick}
+      startContent={lucideIcon ? <DynamicIcon name={lucideIcon} size={13} /> : undefined}
       classNames={{
         base: [
           specColorToClassNames(tokens, { border: true, intensity: selected ? 'medium' : tokens.intensity }),
           selected ? 'ring-2 ring-slate-800 ring-offset-1' : '',
-          className ?? '',
+          className ?? 'px-1.5',
         ].join(' '),
         content: 'font-medium',
       }}

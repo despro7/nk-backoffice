@@ -49,10 +49,10 @@ export const TimesheetCell = memo(function TimesheetCell({
       aria-readonly={readOnly || undefined}
       onContextMenu={onContextMenu}
       className={[
-        'relative flex h-8 min-w-9 items-center justify-center text-xs font-medium outline-none rounded-sm select-none',
+        'relative flex h-8 min-w-8 items-center justify-center text-xs font-medium outline-none select-none bg-transparent rounded-sm z-[1]',
         colorClass,
-        isActive ? 'ring-2 ring-inset ring-sky-500 z-[1]' : '',
-        isDirty ? 'shadow-[inset_3px_0_0_0_hsl(var(--heroui-primary))]' : '',
+        isActive ? 'border-2 border-blue-500!' : '',
+        isDirty ? `border-2 ${colorClass}` : '',
         readOnly ? 'cursor-default' : 'cursor-cell',
       ].join(' ')}
     >

@@ -18,12 +18,31 @@ export const HR_PAY_TERMS_KIND_LABELS: Record<HrPayTermsKind, string> = {
 export const HR_EMPLOYEE_STATUSES = ['active', 'inactive'] as const;
 export type HrEmployeeStatus = (typeof HR_EMPLOYEE_STATUSES)[number];
 
+export const HR_LEGAL_ENTITY_KINDS = ['fop', 'tov', 'unofficial_cash'] as const;
+export type HrLegalEntityKind = (typeof HR_LEGAL_ENTITY_KINDS)[number];
+
+export const HR_LEGAL_ENTITY_KIND_LABELS: Record<HrLegalEntityKind, string> = {
+  fop: 'ФОП',
+  tov: 'ТОВ',
+  unofficial_cash: 'Нештатні (готівка)',
+};
+
 export interface HrLegalEntityDto {
   id: number;
   code: string;
   name: string;
-  kind: string;
+  kind: HrLegalEntityKind;
   isActive: boolean;
+}
+
+export interface HrLegalEntityWritePayload {
+  name: string;
+  kind: HrLegalEntityKind;
+  isActive?: boolean;
+}
+
+export interface HrLegalEntityDeletePayload {
+  targetLegalEntityId: number;
 }
 
 export interface HrUserOptionDto {
@@ -344,6 +363,13 @@ export interface HrPayrollCalculatePayload {
   version?: number;
 }
 
+export interface HrPayrollFormulaUpdatePayload {
+  month: string;
+  extraRate: string;
+  grossDivisor: string;
+  version?: number;
+}
+
 /** Нормалізований ключ людини для зіставлення з Excel (PR4). */
 export function hrEmployeeImportKey(
   lastName: string,
@@ -403,6 +429,8 @@ export interface HrXlsxImportEmploymentPreviewDto {
   employeeKey: string;
   displayName: string;
   legalEntityCode: string;
+  legalEntityName: string;
+  legalEntityKind: HrLegalEntityKind;
   payGroup: HrPayGroup;
   validFrom: string;
   rateKind: HrPayTermsKind | null;
@@ -433,6 +461,7 @@ export interface HrXlsxImportCommitDto {
   preview: HrXlsxImportPreviewDto;
   createdEmployees: number;
   updatedEmployees: number;
+  createdLegalEntities: number;
   createdEmployments: number;
   reusedEmployments: number;
   upsertedEntries: number;

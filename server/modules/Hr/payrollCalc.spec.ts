@@ -92,6 +92,43 @@ describe('payrollCalc — Excel Табель 2026', () => {
     expect(result.extraAmount).toBe('0.00');
   });
 
+  it('нештатні з місячною ставкою: ставка × години / норма (18000 / 176 × 16)', () => {
+    const weeks = [
+      { id: 'w1', label: '1–6 вер', startDate: '2026-09-01', endDate: '2026-09-06', colSpan: 6 },
+    ];
+    const result = calculatePayrollLine({
+      payGroup: 'unofficial_cash',
+      rateKind: 'salary',
+      rate: 18000,
+      normHours: 176,
+      weeks,
+      formula: FORMULA,
+      entries: [
+        { date: '2026-09-01', kind: 'work', hours: 8 },
+        { date: '2026-09-02', kind: 'work', hours: 8 },
+      ],
+    });
+    expect(result.accruedAmount).toBe('1636.36');
+    expect(result.toPayAmount).toBe('1636.36');
+    expect(result.breakdown[0]?.label).toMatch(/місячна ставка/);
+  });
+
+  it('погодинні з місячною ставкою: ставка × години / норма', () => {
+    const weeks = [
+      { id: 'w1', label: 'тест', startDate: '2026-09-01', endDate: '2026-09-07', colSpan: 7 },
+    ];
+    const result = calculatePayrollLine({
+      payGroup: 'hourly',
+      rateKind: 'salary',
+      rate: 18000,
+      normHours: 176,
+      weeks,
+      formula: FORMULA,
+      entries: [{ date: '2026-09-01', kind: 'work', hours: 16 }],
+    });
+    expect(result.toPayAmount).toBe('1636.36');
+  });
+
   it('відпустка/лікарняний не йдуть через ставка × години', () => {
     const weeks = [
       { id: 'w1', label: 'тест', startDate: '2026-08-03', endDate: '2026-08-07', colSpan: 5 },

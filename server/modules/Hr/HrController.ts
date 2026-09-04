@@ -11,6 +11,9 @@ import { hrXlsxImportService } from './HrXlsxImportService.js';
 import type {
   HrEmployeeWritePayload,
   HrEmploymentWritePayload,
+  HrLegalEntityWritePayload,
+  HrLegalEntityDeletePayload,
+  HrPayrollFormulaUpdatePayload,
   HrPayTermsWritePayload,
   HrPayoutWritePayload,
   HrTimesheetSavePayload,
@@ -70,12 +73,44 @@ function sendHrError(res: Response, error: unknown, context: string) {
   return res.status(500).json({ success: false, error: message, message });
 }
 
-router.get('/legal-entities', authenticateToken, pageEmployees, async (_req: Request, res: Response) => {
+router.get('/legal-entities', authenticateToken, pageEmployees, async (req: Request, res: Response) => {
   try {
-    const data = await hrService.listLegalEntities();
+    const includeInactive = req.query.includeInactive === 'true';
+    const data = await hrService.listLegalEntities(includeInactive);
     res.json({ success: true, data });
   } catch (error) {
     sendHrError(res, error, 'legal-entities');
+  }
+});
+
+router.post('/legal-entities', authenticateToken, manageEmployees, async (req: Request, res: Response) => {
+  try {
+    const data = await hrService.createLegalEntity(req.body as HrLegalEntityWritePayload);
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    sendHrError(res, error, 'create legal entity');
+  }
+});
+
+router.put('/legal-entities/:id', authenticateToken, manageEmployees, async (req: Request, res: Response) => {
+  try {
+    const data = await hrService.updateLegalEntity(parseId(req.params.id), req.body as HrLegalEntityWritePayload);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendHrError(res, error, 'update legal entity');
+  }
+});
+
+router.delete('/legal-entities/:id', authenticateToken, manageEmployees, async (req: Request, res: Response) => {
+  try {
+    const { targetLegalEntityId } = req.body as HrLegalEntityDeletePayload;
+    if (!Number.isInteger(targetLegalEntityId) || targetLegalEntityId <= 0) {
+      throw new HrError('Вкажіть роботодавця для перенесення даних');
+    }
+    await hrService.deleteLegalEntity(parseId(req.params.id), targetLegalEntityId);
+    res.json({ success: true });
+  } catch (error) {
+    sendHrError(res, error, 'delete legal entity');
   }
 });
 
@@ -271,6 +306,23 @@ router.post('/payroll/calculate', authenticateToken, viewPayroll, async (req: Re
     res.json({ success: true, data });
   } catch (error) {
     sendHrError(res, error, 'calculate payroll');
+  }
+});
+
+router.put('/payroll/formula', authenticateToken, viewPayroll, async (req: Request, res: Response) => {
+  try {
+    const body = req.body as HrPayrollFormulaUpdatePayload;
+    const revealCard = await resolveRevealCard(req);
+    const data = await hrPayrollService.updateFormula(
+      body.month,
+      body.extraRate,
+      body.grossDivisor,
+      body.version != null ? Number(body.version) : undefined,
+      revealCard,
+    );
+    res.json({ success: true, data });
+  } catch (error) {
+    sendHrError(res, error, 'update payroll formula');
   }
 });
 

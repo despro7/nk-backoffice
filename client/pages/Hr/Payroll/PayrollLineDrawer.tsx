@@ -108,7 +108,7 @@ export function PayrollLineDrawer({
           line ? (
             <>
               <DrawerHeader className="flex flex-col gap-1">
-                <span>{line.displayName}</span>
+                <span className="capitalize">{line.displayName}</span>
                 <span className="text-sm font-normal text-gray-500">
                   {HR_PAY_GROUP_LABELS[line.payGroup]} · {line.legalEntityName}
                 </span>

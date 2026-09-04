@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma, logServer } from '../../lib/utils.js';
 import {
   HR_EMPLOYEE_STATUSES,
+  HR_LEGAL_ENTITY_KINDS,
   HR_PAY_GROUPS,
   HR_PAY_TERMS_KINDS,
   type HrEmployeeDetailDto,
@@ -11,12 +12,16 @@ import {
   type HrEmploymentDto,
   type HrEmploymentWritePayload,
   type HrLegalEntityDto,
+  type HrLegalEntityKind,
+  type HrLegalEntityWritePayload,
   type HrPayGroup,
   type HrPayTermsDto,
   type HrPayTermsKind,
   type HrPayTermsWritePayload,
   type HrUserOptionDto,
 } from '../../../shared/types/hr.js';
+import { HR_SEED_LEGAL_ENTITY_CODES } from '../../../shared/utils/hrEmploymentDedupe.js';
+import { mergeEmploymentRecords } from './HrEmploymentMerge.js';
 import {
   cardLast4FromDigits,
   decryptCardNumber,
@@ -85,14 +90,29 @@ function buildDisplayName(lastName: string, firstName: string, middleName?: stri
   return [lastName, firstName, middleName].map((p) => p?.trim()).filter(Boolean).join(' ');
 }
 
+function isLegalEntityKind(value: string): value is HrLegalEntityKind {
+  return (HR_LEGAL_ENTITY_KINDS as readonly string[]).includes(value);
+}
+
 function toLegalEntityDto(row: { id: number; code: string; name: string; kind: string; isActive: boolean }): HrLegalEntityDto {
   return {
     id: row.id,
     code: row.code,
     name: row.name,
-    kind: row.kind,
+    kind: isLegalEntityKind(row.kind) ? row.kind : 'fop',
     isActive: row.isActive,
   };
+}
+
+function slugifyLegalEntityCode(name: string, kind: string): string {
+  const normalized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9а-яіїєґ]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+  const suffix = Date.now().toString(36).slice(-4);
+  return `${kind}_${normalized || 'entity'}_${suffix}`.slice(0, 32);
 }
 
 function toPayTermsDto(row: {
@@ -193,12 +213,137 @@ function applyCardUpdate(payload: HrEmployeeWritePayload): {
 }
 
 export class HrService {
-  async listLegalEntities(): Promise<HrLegalEntityDto[]> {
+  async listLegalEntities(includeInactive = false): Promise<HrLegalEntityDto[]> {
     const rows = await prisma.hrLegalEntity.findMany({
-      where: { isActive: true },
-      orderBy: { id: 'asc' },
+      where: includeInactive ? undefined : { isActive: true },
+      orderBy: [{ kind: 'asc' }, { name: 'asc' }],
     });
     return rows.map(toLegalEntityDto);
+  }
+
+  async createLegalEntity(payload: HrLegalEntityWritePayload): Promise<HrLegalEntityDto> {
+    const name = payload.name?.trim();
+    if (!name) throw new HrError('Вкажіть назву роботодавця');
+    if (!isLegalEntityKind(payload.kind)) throw new HrError('Невідомий тип роботодавця');
+
+    let code = slugifyLegalEntityCode(name, payload.kind);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const exists = await prisma.hrLegalEntity.findUnique({ where: { code } });
+      if (!exists) break;
+      code = slugifyLegalEntityCode(name, payload.kind);
+    }
+
+    const created = await prisma.hrLegalEntity.create({
+      data: {
+        code,
+        name,
+        kind: payload.kind,
+        isActive: payload.isActive ?? true,
+      },
+    });
+    logServer('[hr] created legal entity', { id: created.id, code: created.code });
+    return toLegalEntityDto(created);
+  }
+
+  async updateLegalEntity(id: number, payload: HrLegalEntityWritePayload): Promise<HrLegalEntityDto> {
+    const existing = await prisma.hrLegalEntity.findUnique({ where: { id } });
+    if (!existing) throw new HrError('Роботодавця не знайдено', 404);
+
+    const name = payload.name?.trim();
+    if (!name) throw new HrError('Вкажіть назву роботодавця');
+    if (!isLegalEntityKind(payload.kind)) throw new HrError('Невідомий тип роботодавця');
+
+    const nextActive = payload.isActive ?? existing.isActive;
+    if (!nextActive) {
+      const activeCount = await prisma.hrLegalEntity.count({
+        where: { kind: existing.kind, isActive: true, id: { not: id } },
+      });
+      if (activeCount === 0) {
+        throw new HrError('Не можна деактивувати останнього активного роботодавця цього типу');
+      }
+    }
+
+    const updated = await prisma.hrLegalEntity.update({
+      where: { id },
+      data: {
+        name,
+        kind: payload.kind,
+        isActive: nextActive,
+      },
+    });
+    return toLegalEntityDto(updated);
+  }
+
+  async deleteLegalEntity(sourceId: number, targetLegalEntityId: number): Promise<void> {
+    if (sourceId === targetLegalEntityId) {
+      throw new HrError('Оберіть іншого роботодавця для перенесення даних');
+    }
+
+    const source = await prisma.hrLegalEntity.findUnique({ where: { id: sourceId } });
+    if (!source) throw new HrError('Роботодавця не знайдено', 404);
+    if (HR_SEED_LEGAL_ENTITY_CODES.has(source.code)) {
+      throw new HrError('Не можна видалити базового роботодавця системи');
+    }
+
+    const target = await prisma.hrLegalEntity.findUnique({ where: { id: targetLegalEntityId } });
+    if (!target) throw new HrError('Роботодавця для перенесення не знайдено', 404);
+    if (!target.isActive) throw new HrError('Роботодавець для перенесення має бути активним');
+
+    await prisma.$transaction(
+      async (tx) => {
+        const employments = await tx.hrEmployment.findMany({ where: { legalEntityId: sourceId } });
+        for (const employment of employments) {
+          const existing = await tx.hrEmployment.findUnique({
+            where: {
+              employeeId_legalEntityId_validFrom: {
+                employeeId: employment.employeeId,
+                legalEntityId: targetLegalEntityId,
+                validFrom: employment.validFrom,
+              },
+            },
+          });
+
+          if (existing) {
+            await mergeEmploymentRecords(tx, employment.id, existing.id);
+            continue;
+          }
+
+          try {
+            await tx.hrEmployment.update({
+              where: { id: employment.id },
+              data: { legalEntityId: targetLegalEntityId },
+            });
+          } catch (error) {
+            if (
+              error instanceof Prisma.PrismaClientKnownRequestError &&
+              error.code === 'P2002'
+            ) {
+              const conflict = await tx.hrEmployment.findFirst({
+                where: {
+                  employeeId: employment.employeeId,
+                  legalEntityId: targetLegalEntityId,
+                  payGroup: employment.payGroup,
+                  validFrom: employment.validFrom,
+                },
+              });
+              if (!conflict) throw error;
+              await mergeEmploymentRecords(tx, employment.id, conflict.id);
+            } else {
+              throw error;
+            }
+          }
+        }
+
+        await tx.hrLegalEntity.delete({ where: { id: sourceId } });
+      },
+      { maxWait: 10_000, timeout: 60_000 },
+    );
+
+    logServer('[hr] deleted legal entity with merge', {
+      sourceId,
+      targetLegalEntityId,
+      sourceCode: source.code,
+    });
   }
 
   async listUserOptions(excludeEmployeeId?: number): Promise<HrUserOptionDto[]> {

@@ -91,15 +91,19 @@ describe('hrXlsxImport — клітинки, ставка, юрособа', () =
     expect(parseHrImportRate(750)).toBeNull();
   });
 
-  it('мапить ФОП/ТОВ/нештатні без ярликів податків', () => {
-    expect(mapHrImportEmployer('ФОП Бубнов С.В.', 'official_salary')).toEqual({
-      legalEntityCode: 'fop',
-      payGroup: 'official_salary',
-      unnamed: false,
-    });
-    expect(mapHrImportEmployer('ТОВ "Нова кухня"', 'official_salary').legalEntityCode).toBe('tov');
+  it('мапить ФОП/ТОВ/нештатні з конкретними кодами роботодавців', () => {
+    const fop = mapHrImportEmployer('ФОП Бубнов С.В.', 'official_salary');
+    expect(fop.kind).toBe('fop');
+    expect(fop.payGroup).toBe('official_salary');
+    expect(fop.unnamed).toBe(false);
+    expect(fop.legalEntityName).toBe('ФОП Бубнов С.В.');
+    expect(fop.legalEntityCode).toMatch(/^fop_/);
+
+    expect(mapHrImportEmployer('ТОВ "Нова кухня"', 'official_salary').legalEntityCode).toMatch(/^tov_/);
     expect(mapHrImportEmployer('не штантні/готівка', 'hourly')).toEqual({
-      legalEntityCode: 'unofficial_cash',
+      legalEntityCode: expect.stringMatching(/^unofficial_cash_/),
+      legalEntityName: 'не штантні/готівка',
+      kind: 'unofficial_cash',
       payGroup: 'unofficial_cash',
       unnamed: false,
     });
@@ -163,12 +167,13 @@ describe('hrXlsxImport — аркуш-фікстура', () => {
     expect(petryk?.entryCount).toBe(2);
 
     const employment = bundle.preview.employments.find((item) => item.employeeKey === 'прокопенко|олена');
-    expect(employment?.legalEntityCode).toBe('fop');
+    expect(employment?.legalEntityCode).toMatch(/^fop_/);
+    expect(employment?.legalEntityName).toBe('ФОП Бубнов С.В.');
     expect(employment?.payGroup).toBe('official_salary');
     expect(employment?.validFrom).toBe('2026-01-01');
     expect(employment?.rateAmount).toBe('22000.00');
     expect(employment?.employmentImportKey).toBe(
-      hrEmploymentImportKey('прокопенко|олена', 'fop', 'official_salary', '2026-01-01'),
+      hrEmploymentImportKey('прокопенко|олена', employment!.legalEntityCode, 'official_salary', '2026-01-01'),
     );
 
     expect(bundle.preview.skipped.some((item) => item.reason === 'legend_or_header')).toBe(true);

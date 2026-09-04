@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-09-03 — HR: розрахунок у стилі табеля, довідник роботодавців
+**Files:** `client/pages/Hr/HrPayrollPage.tsx`, `client/pages/Hr/HrTimesheetPage.tsx`, `client/pages/Hr/Payroll/PayrollTable.tsx`, `client/pages/Hr/Timesheet/TimesheetGrid.tsx`, `client/pages/Hr/Timesheet/TimesheetKindLegend.tsx`, `client/pages/Hr/Timesheet/TimesheetCellContextMenu.tsx`, `client/pages/Hr/Employers/index.tsx`, `client/pages/Hr/hrUi.tsx`, `client/routes.config.tsx`, `server/modules/Hr/HrService.ts`, `server/modules/Hr/HrController.ts`, `server/modules/Hr/HrXlsxImportService.ts`, `shared/types/hr.ts`, `Docs/features/hr-module.md`
+
+- **Табель:** `PageTabs` над таблицею; toolbar — пошук → місяць; sticky header; згортання правого сайдбару підсумків (за замовч. згорнутий); кольорові заголовки груп; контекстне меню комірки; налаштування hue легенди; введення годин з клавіатури (F2 / цифри).
+- **Розрахунок:** toolbar як у табелі; фільтри груп у `PageTabs` над таблицею; `PayrollTable` — темна sticky-шапка, кольорові заголовки груп, бейджі роботодавця за конкретною назвою.
+- **Роботодавці:** новий підрозділ **Персонал → Роботодавці** (`/hr/employers`) — створення, редагування, деактивація; seed-записи (`fop`, `tov`, `unofficial_cash`) можна перейменувати (напр. «ФОП Бубнова М.В.»).
+- **API:** `POST/PUT /api/hr/legal-entities`, `GET ?includeInactive=true`; типи `HrLegalEntityKind`, `HrLegalEntityWritePayload`.
+- **Імпорт Excel:** підбір роботодавця за `code`, fallback — перший активний з відповідним `kind`.
+- Деталі: `Docs/features/hr-module.md`.
+
+---
+
 ## 2026-09-02 — Відомість складу: таблиця, виключення, рентабельність
 **Files:** `shared/types/warehouseStatement.ts`, `server/services/dilovod/WarehouseStatementService.ts`, `client/pages/Reports/ReportsWarehouseStatement/**`, `client/pages/Reports/shared/constructor/**`, `client/components/UndoActionBanner.tsx`, `Docs/features/warehouse-statement.md`
 

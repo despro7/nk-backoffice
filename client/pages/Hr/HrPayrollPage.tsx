@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Button, Input, Spinner } from '@heroui/react';
+import { Button, Input, Spinner, Tab } from '@heroui/react';
+import PageTabs from '@/components/PageTabs';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { MonthSwitcher } from '@/components/MonthSwitcher';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
@@ -20,7 +21,9 @@ import { getSpecColorByHue } from '@shared/utils/specColorPalette';
 import { formatYearMonth, parseYearMonth } from '@shared/utils/hrTimesheetCalendar';
 import { PayrollTable } from './Payroll/PayrollTable';
 import { PayrollLineDrawer } from './Payroll/PayrollLineDrawer';
-import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HR_BTN_WARNING, HrSpecChip, hrPayGroupTokens } from './hrUi';
+import { PayrollHelpDrawer } from './Payroll/PayrollHelpDrawer';
+import { PayrollFormulaDrawer } from './Payroll/PayrollFormulaDrawer';
+import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HR_BTN_WARNING, HrSpecChip } from './hrUi';
 
 function parseGroupParam(raw: string | null): HrTimesheetGroupFilter | null {
   if (!raw) return null;
@@ -48,6 +51,9 @@ export default function HrPayrollPage() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<HrPayrollLineDto | null>(null);
   const [lockOpen, setLockOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [formulaOpen, setFormulaOpen] = useState(false);
+  const [formulaSaving, setFormulaSaving] = useState(false);
 
   const monthKey = (() => {
     const raw = params.get('month');
@@ -176,6 +182,39 @@ export default function HrPayrollPage() {
     }
   };
 
+  const saveFormula = async (extraRate: string, grossDivisor: string) => {
+    if (!canCalculate || locked) return;
+    setFormulaSaving(true);
+    try {
+      const response = await fetch('/api/hr/payroll/formula', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          month: monthKey,
+          extraRate,
+          grossDivisor,
+          version: data?.period?.version,
+        }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (response.status === 409) {
+        ToastService.show({ title: json.message || 'Розрахунок змінено. Оновіть дані.', color: 'warning' });
+        await load(monthKey);
+        return;
+      }
+      if (!response.ok) {
+        ToastService.show({ title: json.message || 'Не вдалося зберегти формулу', color: 'danger' });
+        return;
+      }
+      setData(json.data as HrPayrollLoadDto);
+      setFormulaOpen(false);
+      ToastService.show({ title: 'Налаштування формули збережено', color: 'success' });
+    } finally {
+      setFormulaSaving(false);
+    }
+  };
+
   if (!canView) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -194,29 +233,6 @@ export default function HrPayrollPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-white rounded-xl p-3 md:p-4 flex flex-wrap items-center gap-3">
-        <MonthSwitcher value={monthDate} onChange={setMonthParam} disableFuture={false} size="sm" />
-        <div className="flex flex-wrap items-center gap-1.5">
-          <HrSpecChip
-            tokens={getSpecColorByHue('slate', 'light', groupFilter == null ? 'medium' : 'soft')}
-            selected={groupFilter == null}
-            onClick={() => setGroup(null)}
-          >
-            Усі
-          </HrSpecChip>
-          {HR_TIMESHEET_GROUP_FILTERS.map((key) => {
-            const group = HR_TIMESHEET_GROUP_TO_PAY[key];
-            return (
-              <HrSpecChip
-                key={key}
-                tokens={hrPayGroupTokens(group)}
-                selected={groupFilter === key}
-                onClick={() => setGroup(key)}
-              >
-                {HR_PAY_GROUP_LABELS[group]}
-              </HrSpecChip>
-            );
-          })}
-        </div>
         <Input
           size="sm"
           placeholder="Пошук за ПІБ"
@@ -225,6 +241,7 @@ export default function HrPayrollPage() {
           className="w-full sm:w-56"
           startContent={<DynamicIcon name="search" size={14} className="text-default-400" />}
         />
+        <MonthSwitcher value={monthDate} onChange={setMonthParam} disableFuture={false} size="sm" />
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           {locked ? (
             <HrSpecChip tokens={getSpecColorByHue('amber', 'light', 'soft')}>Заблоковано</HrSpecChip>
@@ -235,11 +252,21 @@ export default function HrPayrollPage() {
           )}
           <Button
             size="sm"
+            variant="flat"
             className={HR_BTN_NEUTRAL}
-            onPress={() => navigate(timesheetHref)}
-            startContent={<DynamicIcon name="calendar-days" size={14} />}
+            onPress={() => setHelpOpen(true)}
+            startContent={<DynamicIcon name="circle-question-mark" size={14} />}
           >
-            До табеля
+            Довідка
+          </Button>
+          <Button
+            size="sm"
+            variant="flat"
+            className={HR_BTN_NEUTRAL}
+            onPress={() => setFormulaOpen(true)}
+            startContent={<DynamicIcon name="calculator" size={14} />}
+          >
+            Формула
           </Button>
           <Button
             size="sm"
@@ -262,34 +289,60 @@ export default function HrPayrollPage() {
       </div>
 
       <p className="text-sm text-gray-600 px-1">
-        Внутрішній розрахунок як у файлі Табель 2026. Це не податковий облік. Зміна годин — лише в табелі.
+        Внутрішній розрахунок як у файлі Табель 2026. Це не податковий облік. Зміна годин – лише в табелі.
       </p>
-
-      {data ? (
-        <div className="flex flex-wrap gap-2 px-1">
-          <HrSpecChip tokens={getSpecColorByHue('blue', 'light', 'soft')}>
-            До виплати: {formatMoney(data.summary.toPay)}
-          </HrSpecChip>
-          <HrSpecChip tokens={getSpecColorByHue('emerald', 'light', 'soft')}>
-            Виплачено: {formatMoney(data.summary.paid)}
-          </HrSpecChip>
-          <HrSpecChip tokens={getSpecColorByHue('orange', 'light', 'soft')}>
-            Кеш: {formatMoney(data.summary.cash)}
-          </HrSpecChip>
-        </div>
-      ) : null}
 
       {loading && !data ? (
         <div className="flex justify-center py-16">
           <Spinner />
         </div>
       ) : data ? (
-        <PayrollTable
-          weeks={data.weeks}
-          lines={visibleLines}
-          paidByEmployment={paidByEmployment}
-          onSelect={setSelected}
-        />
+        <div className="flex flex-col min-w-0">
+          <div className="flex flex-row items-center justify-between gap-2">
+            <PageTabs
+              selectedKey={groupFilter ?? 'all'}
+              onSelectionChange={(key) => {
+                const next = String(key);
+                setGroup(next === 'all' ? null : (next as HrTimesheetGroupFilter));
+              }}
+              className="self-start"
+              classNames={{
+                tabList: "gap-2 p-[6px] bg-neutral-700 rounded-t-lg rounded-b-none",
+                cursor: "bg-neutral-600 text-white shadow-sm rounded-md",
+                tab: "px-3 py-1.5 h-6 text-sm font-normal data-[hover-unselected=true]:opacity-100 text-neutral-500",
+                tabContent: "group-data-[selected=true]:text-white text-neutral-400",
+              }}
+            >
+              <Tab key="all" title="Усі" />
+              {HR_TIMESHEET_GROUP_FILTERS.map((key) => (
+                <Tab key={key} title={HR_PAY_GROUP_LABELS[HR_TIMESHEET_GROUP_TO_PAY[key]]} />
+              ))}
+            </PageTabs>
+            {data ? (
+              <div className="flex flex-wrap gap-2 px-1">
+                <HrSpecChip tokens={getSpecColorByHue('blue', 'light', 'medium')} className="rounded-sm">
+                  До виплати: {formatMoney(data.summary.toPay)}
+                </HrSpecChip>
+                <HrSpecChip tokens={getSpecColorByHue('lime', 'light', 'medium')} className="rounded-sm">
+                  Виплачено: {formatMoney(data.summary.paid)}
+                </HrSpecChip>
+                <HrSpecChip tokens={getSpecColorByHue('orange', 'light', 'medium')} className="rounded-sm">
+                  Готівкою: {formatMoney(data.summary.cash)}
+                </HrSpecChip>
+              </div>
+            ) : null}
+          </div>
+          <PayrollTable
+            weeks={data.weeks}
+            lines={visibleLines}
+            payouts={data.payouts}
+            paidByEmployment={paidByEmployment}
+            periodId={data.period?.id ?? null}
+            canEditPayouts={canEditPayouts}
+            onSelect={setSelected}
+            onPayoutsChanged={() => void load(monthKey)}
+          />
+        </div>
       ) : null}
 
       <PayrollLineDrawer
@@ -301,6 +354,17 @@ export default function HrPayrollPage() {
         canRevealCard={canRevealCard}
         onClose={() => setSelected(null)}
         onPayoutsChanged={() => void load(monthKey)}
+      />
+
+      <PayrollHelpDrawer isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+      <PayrollFormulaDrawer
+        isOpen={formulaOpen}
+        formula={data?.formula ?? { formulaId: 'tabell-2026-v1', extraRate: '0.23', grossDivisor: '0.77' }}
+        locked={locked}
+        canEdit={canCalculate}
+        saving={formulaSaving}
+        onClose={() => setFormulaOpen(false)}
+        onSave={(extraRate, grossDivisor) => void saveFormula(extraRate, grossDivisor)}
       />
 
       <ConfirmModal

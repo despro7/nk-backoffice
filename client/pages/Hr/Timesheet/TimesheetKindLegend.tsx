@@ -51,7 +51,7 @@ export function TimesheetKindLegend({
         </button>
       </div>
       {colorSettingsOpen ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
           {HR_TIMESHEET_KIND_CODES.map((code) => {
             const hue = hueFor(code);
             const tokens = hrKindTokens(hue);

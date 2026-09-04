@@ -75,7 +75,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'emerald',
     light: {
-      soft: { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200' },
+      soft: { bg: 'bg-emerald-100', text: 'text-emerald-600', border: 'border-emerald-200' },
       medium: { bg: 'bg-emerald-200', text: 'text-emerald-800', border: 'border-emerald-700' },
       hard: { bg: 'bg-emerald-600', text: 'text-emerald-50', border: 'border-emerald-700' },
     },
@@ -88,7 +88,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'blue',
     light: {
-      soft: { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' },
+      soft: { bg: 'bg-blue-100', text: 'text-blue-600', border: 'border-blue-200' },
       medium: { bg: 'bg-blue-200', text: 'text-blue-800', border: 'border-blue-700' },
       hard: { bg: 'bg-blue-600', text: 'text-blue-50', border: 'border-blue-700' },
     },
@@ -101,7 +101,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'violet',
     light: {
-      soft: { bg: 'bg-violet-100', text: 'text-violet-800', border: 'border-violet-200' },
+      soft: { bg: 'bg-violet-100', text: 'text-violet-600', border: 'border-violet-200' },
       medium: { bg: 'bg-violet-200', text: 'text-violet-800', border: 'border-violet-700' },
       hard: { bg: 'bg-violet-600', text: 'text-violet-50', border: 'border-violet-700' },
     },
@@ -114,7 +114,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'amber',
     light: {
-      soft: { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-200' },
+      soft: { bg: 'bg-amber-100', text: 'text-amber-600', border: 'border-amber-200' },
       medium: { bg: 'bg-amber-200', text: 'text-amber-800', border: 'border-amber-700' },
       hard: { bg: 'bg-amber-600', text: 'text-amber-50', border: 'border-amber-700' },
     },
@@ -127,7 +127,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'rose',
     light: {
-      soft: { bg: 'bg-rose-100', text: 'text-rose-800', border: 'border-rose-200' },
+      soft: { bg: 'bg-rose-100', text: 'text-rose-600', border: 'border-rose-200' },
       medium: { bg: 'bg-rose-200', text: 'text-rose-800', border: 'border-rose-700' },
       hard: { bg: 'bg-rose-600', text: 'text-rose-50', border: 'border-rose-700' },
     },
@@ -140,7 +140,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'cyan',
     light: {
-      soft: { bg: 'bg-cyan-100', text: 'text-cyan-800', border: 'border-cyan-200' },
+      soft: { bg: 'bg-cyan-100', text: 'text-cyan-600', border: 'border-cyan-200' },
       medium: { bg: 'bg-cyan-200', text: 'text-cyan-800', border: 'border-cyan-700' },
       hard: { bg: 'bg-cyan-600', text: 'text-cyan-50', border: 'border-cyan-700' },
     },
@@ -153,7 +153,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'orange',
     light: {
-      soft: { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-200' },
+      soft: { bg: 'bg-orange-100', text: 'text-orange-600', border: 'border-orange-200' },
       medium: { bg: 'bg-orange-200', text: 'text-orange-800', border: 'border-orange-700' },
       hard: { bg: 'bg-orange-600', text: 'text-orange-50', border: 'border-orange-700' },
     },
@@ -166,7 +166,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'teal',
     light: {
-      soft: { bg: 'bg-teal-100', text: 'text-teal-800', border: 'border-teal-200' },
+      soft: { bg: 'bg-teal-100', text: 'text-teal-600', border: 'border-teal-200' },
       medium: { bg: 'bg-teal-200', text: 'text-teal-800', border: 'border-teal-700' },
       hard: { bg: 'bg-teal-600', text: 'text-teal-50', border: 'border-teal-700' },
     },
@@ -179,7 +179,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'indigo',
     light: {
-      soft: { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-200' },
+      soft: { bg: 'bg-indigo-100', text: 'text-indigo-600', border: 'border-indigo-200' },
       medium: { bg: 'bg-indigo-200', text: 'text-indigo-800', border: 'border-indigo-700' },
       hard: { bg: 'bg-indigo-600', text: 'text-indigo-50', border: 'border-indigo-700' },
     },
@@ -192,7 +192,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'pink',
     light: {
-      soft: { bg: 'bg-pink-100', text: 'text-pink-800', border: 'border-pink-200' },
+      soft: { bg: 'bg-pink-100', text: 'text-pink-600', border: 'border-pink-200' },
       medium: { bg: 'bg-pink-200', text: 'text-pink-800', border: 'border-pink-700' },
       hard: { bg: 'bg-pink-600', text: 'text-pink-50', border: 'border-pink-700' },
     },
@@ -205,7 +205,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'lime',
     light: {
-      soft: { bg: 'bg-lime-100', text: 'text-lime-800', border: 'border-lime-200' },
+      soft: { bg: 'bg-lime-100', text: 'text-lime-600', border: 'border-lime-200' },
       medium: { bg: 'bg-lime-200', text: 'text-lime-800', border: 'border-lime-700' },
       hard: { bg: 'bg-lime-600', text: 'text-lime-50', border: 'border-lime-700' },
     },
@@ -218,7 +218,7 @@ const HUE_PALETTE: HuePair[] = [
   {
     name: 'slate',
     light: {
-      soft: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200' },
+      soft: { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200' },
       medium: { bg: 'bg-slate-200', text: 'text-slate-800', border: 'border-slate-700' },
       hard: { bg: 'bg-slate-600', text: 'text-slate-50', border: 'border-slate-700' },
     },

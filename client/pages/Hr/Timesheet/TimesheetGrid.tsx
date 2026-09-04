@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
+import { DynamicIcon } from 'lucide-react/dynamic';
 import {
   HR_PAY_GROUP_LABELS,
   HR_PAY_GROUPS,
@@ -32,13 +41,80 @@ const DAY_W = 36;
 const TOTAL_W = 42;
 const LETTER_DEBOUNCE_MS = 400;
 const TOTAL_CODES = HR_TIMESHEET_KIND_CODES;
+const TOTALS_SIDEBAR_STORAGE_KEY = 'hr.timesheet.totalsSidebarExpanded';
 
-const stickyTotalStyle = (right: number) => ({
-  right,
-  width: TOTAL_W,
-  minWidth: TOTAL_W,
-  maxWidth: TOTAL_W,
-});
+const tableClass = 'w-full border-separate border-spacing-0 text-xs table-fixed';
+
+function readTotalsSidebarExpanded(): boolean {
+  try {
+    return localStorage.getItem(TOTALS_SIDEBAR_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function totalsSidebarWidth(expanded: boolean): number {
+  return TOTAL_W + (expanded ? TOTAL_CODES.length * TOTAL_W : 0);
+}
+
+function TotalsSidebarToggle({
+  expanded,
+  onToggle,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="inline-flex w-full items-center justify-center gap-1 rounded-sm px-1 py-0.5 text-[10px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+      aria-expanded={expanded}
+      aria-label={expanded ? 'Згорнути підсумки кодів' : 'Розгорнути підсумки кодів'}
+      onClick={onToggle}
+    >
+      <DynamicIcon name={expanded ? 'chevrons-right' : 'chevrons-left'} size={12} />
+      {expanded ? <span>Згорнути</span> : null}
+    </button>
+  );
+}
+
+function stickyTotalStyle(right: number, width = TOTAL_W) {
+  return {
+    right,
+    width,
+    minWidth: width,
+    maxWidth: width,
+  };
+}
+
+function kindColStyle(right: number, expanded: boolean) {
+  const width = expanded ? TOTAL_W : 0;
+  return {
+    ...stickyTotalStyle(right, width),
+    opacity: expanded ? 1 : 0,
+    paddingLeft: expanded ? undefined : 0,
+    paddingRight: expanded ? undefined : 0,
+    overflow: 'hidden' as const,
+    transition: 'width 300ms ease-in-out, min-width 300ms ease-in-out, opacity 250ms ease-in-out',
+  };
+}
+
+function NameColumnScrollShadow({ visible, offset }: { visible: boolean; offset: number }) {
+  return (
+    <div
+      aria-hidden
+      className={`pointer-events-none col-start-1 row-start-1 z-[2] w-5 self-stretch justify-self-start sticky transition-opacity duration-300 ${
+        visible ? 'opacity-100' : 'opacity-0'
+      }`}
+      style={{
+        left: offset,
+        marginLeft: offset,
+        background:
+          'linear-gradient(to right, rgba(15, 23, 42, 0.16), rgba(15, 23, 42, 0.07) 32%, rgba(15, 23, 42, 0.02) 62%, transparent)',
+      }}
+    />
+  );
+}
 
 function cellKey(employmentId: number, date: string): string {
   return `${employmentId}:${date}`;
@@ -116,9 +192,16 @@ export function TimesheetGrid({
   const [focus, setFocus] = useState<TimesheetFocus>({ row: 0, col: 0 });
   const [hoursEdit, setHoursEdit] = useState<{ row: number; col: number; text: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<TimesheetCellContextMenuState | null>(null);
+  const [totalsSidebarExpanded, setTotalsSidebarExpanded] = useState(readTotalsSidebarExpanded);
+  const [scrolled, setScrolled] = useState(false);
+  const [isStuck, setIsStuck] = useState(false);
   const bufferRef = useRef('');
   const bufferTimer = useRef<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const syncingScroll = useRef(false);
 
   const grouped = useMemo(() => {
     const byGroup = new Map<HrPayGroup, HrTimesheetRowDto[]>();
@@ -134,6 +217,15 @@ export function TimesheetGrid({
   }, [rows]);
 
   const flatRows = useMemo(() => grouped.flatMap((item) => item.rows), [grouped]);
+
+  const sidebarWidth = totalsSidebarWidth(totalsSidebarExpanded);
+  const kindColsWidth = totalsSidebarExpanded ? TOTAL_CODES.length * TOTAL_W : 0;
+  const hoursStickyRight = kindColsWidth;
+  const totalsRight = useCallback(
+    (index: number) => (totalsSidebarExpanded ? (TOTAL_CODES.length - index) * TOTAL_W : 0),
+    [totalsSidebarExpanded],
+  );
+  const tableMinWidth = NAME_W + days.length * DAY_W + TOTAL_W + kindColsWidth;
 
   const getValue = useCallback(
     (employmentId: number, date: string): HrTimesheetCellValue => {
@@ -151,6 +243,56 @@ export function TimesheetGrid({
     },
     [draft, original],
   );
+
+  const syncHorizontalScroll = useCallback((source: 'header' | 'body') => {
+    const header = headerScrollRef.current;
+    const body = bodyScrollRef.current;
+    if (!header || !body || syncingScroll.current) return;
+    syncingScroll.current = true;
+    if (source === 'header') {
+      body.scrollLeft = header.scrollLeft;
+      setScrolled(header.scrollLeft > 0);
+    } else {
+      header.scrollLeft = body.scrollLeft;
+      setScrolled(body.scrollLeft > 0);
+    }
+    syncingScroll.current = false;
+  }, []);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      setIsStuck(!entry.isIntersecting);
+    }, { threshold: 0 });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [rows.length]);
+
+  useEffect(() => {
+    const header = headerScrollRef.current;
+    const body = bodyScrollRef.current;
+    if (!header || !body) return;
+    const alignGutter = () => {
+      const gutter = body.offsetWidth - body.clientWidth;
+      header.style.paddingRight = gutter > 0 ? `${gutter}px` : '';
+    };
+    alignGutter();
+    window.addEventListener('resize', alignGutter);
+    return () => window.removeEventListener('resize', alignGutter);
+  }, [rows.length, days.length, tableMinWidth, totalsSidebarExpanded]);
+
+  const toggleTotalsSidebar = () => {
+    setTotalsSidebarExpanded((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(TOTALS_SIDEBAR_STORAGE_KEY, next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
 
   const commitHours = useCallback(
     (rowIndex: number, colIndex: number, text: string) => {
@@ -323,18 +465,103 @@ export function TimesheetGrid({
     }
   };
 
-  const totalsRight = (index: number) => (TOTAL_CODES.length - index) * TOTAL_W;
-  const hoursRight = (TOTAL_CODES.length + 1) * TOTAL_W;
-  const tableMinWidth = NAME_W + days.length * DAY_W + hoursRight;
+  const renderColGroup = () => (
+    <colgroup>
+      <col style={{ width: NAME_W }} />
+      {days.map((day) => (
+        <col key={day.date} style={{ width: DAY_W }} />
+      ))}
+      <col style={{ width: TOTAL_W }} />
+      {TOTAL_CODES.map((code) => (
+        <col
+          key={code}
+          style={{
+            width: totalsSidebarExpanded ? TOTAL_W : 0,
+            minWidth: totalsSidebarExpanded ? TOTAL_W : 0,
+          }}
+        />
+      ))}
+    </colgroup>
+  );
 
-  const stickyName = 'sticky left-0 z-20';
-  const stickyHours = 'sticky z-20';
+  const renderHeader = () => (
+    <thead className="bg-neutral-800">
+      <tr>
+        <th
+          rowSpan={2}
+          className="sticky left-0 z-40 bg-neutral-800 px-3 py-2 text-left font-semibold text-white border-b border-r-2 border-white/20"
+        >
+          ПІБ
+        </th>
+        {weeks.map((week) => (
+          <th
+            key={week.id}
+            colSpan={week.colSpan}
+            className="bg-neutral-800 px-1 py-1 text-center text-[11px] font-medium text-white/80 border-b border-r border-white/15"
+          >
+            {week.label}
+          </th>
+        ))}
+        <th
+          className="sticky z-40 bg-neutral-800 px-1 py-1 text-center font-semibold text-white border-b border-l-2 border-white/20 transition-[right] duration-300 ease-in-out"
+          style={stickyTotalStyle(hoursStickyRight)}
+        >
+          год
+        </th>
+        {TOTAL_CODES.map((code, index) => (
+          <th
+            key={code}
+            className="sticky z-40 bg-neutral-800 px-1 py-1 text-center font-semibold text-white border-b border-white/15 whitespace-nowrap"
+            style={kindColStyle(totalsRight(index + 1), totalsSidebarExpanded)}
+          >
+            {code}
+          </th>
+        ))}
+      </tr>
+      <tr>
+        {days.map((day) => (
+          <th
+            key={day.date}
+            className={`bg-neutral-800 px-0 py-1 text-center font-medium border-b border-r border-white/10 ${
+              day.isWeekend ? 'text-white/45' : 'text-white'
+            }`}
+          >
+            <div className="leading-none">{day.day}</div>
+            <div className="text-[10px] font-normal uppercase opacity-70">{day.weekdayLabel}</div>
+          </th>
+        ))}
+        <th
+          colSpan={1 + TOTAL_CODES.length}
+          className="sticky z-40 bg-neutral-800 border-b border-l-2 border-white/20 px-0.5 py-0.5 transition-[width,min-width] duration-300 ease-in-out"
+          style={{
+            right: 0,
+            width: sidebarWidth,
+            minWidth: sidebarWidth,
+            maxWidth: sidebarWidth,
+          }}
+        >
+          <TotalsSidebarToggle expanded={totalsSidebarExpanded} onToggle={toggleTotalsSidebar} />
+        </th>
+      </tr>
+    </thead>
+  );
+
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-lg border border-border-subtle bg-surface-card p-8 text-center text-sm text-text-secondary">
+        Немає зайнятостей у цьому місяці
+      </div>
+    );
+  }
 
   return (
-    <div className="relative min-w-0">
+    <div className="relative min-w-0 w-full">
       <div className="sr-only" aria-live="polite">
         {liveMessage}
       </div>
+
+      <div ref={sentinelRef} aria-hidden className="h-0" />
+
       <div
         ref={gridRef}
         role="grid"
@@ -342,106 +569,75 @@ export function TimesheetGrid({
         aria-rowcount={flatRows.length + grouped.length + 2}
         tabIndex={0}
         onKeyDown={onGridKeyDown}
-        className="overflow-auto overscroll-x-contain rounded-xl border border-slate-200 bg-white max-h-[calc(100vh-16rem)] outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+        className={`min-w-0 w-full max-w-full rounded-b-lg border-2 border-neutral-800 bg-surface-card outline-none ${isStuck ? 'rounded-tr-none' : 'rounded-tr-sm'}`}
       >
-        <table className="border-separate border-spacing-0 text-xs table-fixed" style={{ minWidth: tableMinWidth }}>
-          <colgroup>
-            <col style={{ width: NAME_W }} />
-            {days.map((day) => (
-              <col key={day.date} style={{ width: DAY_W }} />
-            ))}
-            <col style={{ width: TOTAL_W }} />
-            {TOTAL_CODES.map((code) => (
-              <col key={code} style={{ width: TOTAL_W }} />
-            ))}
-          </colgroup>
-          <thead className="sticky top-0 z-30">
-            <tr>
-              <th
-                rowSpan={2}
-                className={`${stickyName} bg-neutral-800 px-3 py-2 text-left font-semibold text-white border-b border-r-2 border-white/20`}
-              >
-                ПІБ
-              </th>
-              {weeks.map((week) => (
-                <th
-                  key={week.id}
-                  colSpan={week.colSpan}
-                  className="bg-neutral-800 px-1 py-1 text-center text-[11px] font-medium text-white/80 border-b border-r border-white/15"
-                >
-                  {week.label}
-                </th>
-              ))}
-              <th
-                rowSpan={2}
-                className={`${stickyHours} bg-neutral-800 px-1 py-1 text-center font-semibold text-white border-b border-l-2 border-white/20`}
-                style={stickyTotalStyle(hoursRight - TOTAL_W)}
-              >
-                год
-              </th>
-              {TOTAL_CODES.map((code, index) => (
-                <th
-                  key={code}
-                  rowSpan={2}
-                  className={`${stickyHours} bg-neutral-800 px-1 py-1 text-center font-semibold text-white border-b border-white/15`}
-                  style={stickyTotalStyle(totalsRight(index + 1))}
-                >
-                  {code}
-                </th>
-              ))}
-            </tr>
-            <tr>
-              {days.map((day) => (
-                <th
-                  key={day.date}
-                  className={`bg-neutral-800 px-0 py-1 text-center font-medium border-b border-r border-white/10 ${
-                    day.isWeekend ? 'text-white/45' : 'text-white'
-                  }`}
-                >
-                  <div className="leading-none">{day.day}</div>
-                  <div className="text-[10px] font-normal uppercase opacity-70">{day.weekdayLabel}</div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {grouped.map((block) => (
-              <GroupBlock
-                key={block.group}
-                group={block.group}
-                rows={block.rows}
-                days={days}
-                flatRows={flatRows}
-                focus={focus}
-                hoursEdit={hoursEdit}
-                getValue={getValue}
-                isDirtyCell={isDirtyCell}
-                readOnly={readOnly}
-                canEdit={canEdit}
-                hoursRight={hoursRight}
-                totalsRight={totalsRight}
-                onFocusCell={(row, col) => {
-                  if (hoursEdit) commitHours(hoursEdit.row, hoursEdit.col, hoursEdit.text);
-                  setFocus({ row, col });
-                  setContextMenu(null);
-                  requestAnimationFrame(() => gridRef.current?.focus());
-                }}
-                onStartHours={(row, col) => {
-                  const current = flatRows[row];
-                  const day = days[col];
-                  if (!canEdit || !current || !day) return;
-                  const value = getValue(current.employmentId, day.date);
-                  startHours(row, col, value.kind === 'work' ? formatTimesheetHours(value.hours) : '');
-                }}
-                onContextMenu={openContextMenu}
-                kindHues={kindHues}
-              />
-            ))}
-          </tbody>
-        </table>
-        {rows.length === 0 ? (
-          <div className="p-8 text-center text-sm text-default-500">Немає зайнятостей у цьому місяці</div>
-        ) : null}
+        <div
+          className={`sticky top-0 z-20 overflow-hidden bg-neutral-800 transition-all duration-200 ${
+            isStuck ? 'shadow-md' : ''
+          }`}
+        >
+          <div
+            ref={headerScrollRef}
+            className="overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            onScroll={() => syncHorizontalScroll('header')}
+          >
+            <div className="grid" style={{ minWidth: tableMinWidth }}>
+              <table className={`${tableClass} col-start-1 row-start-1`} style={{ minWidth: tableMinWidth }}>
+                {renderColGroup()}
+                {renderHeader()}
+              </table>
+              <NameColumnScrollShadow visible={scrolled} offset={NAME_W} />
+            </div>
+          </div>
+        </div>
+
+        <div
+          ref={bodyScrollRef}
+          className="overflow-x-auto overscroll-x-contain overflow-hidden rounded-b-lg"
+          onScroll={() => syncHorizontalScroll('body')}
+        >
+          <div className="grid" style={{ minWidth: tableMinWidth }}>
+            <table className={`${tableClass} col-start-1 row-start-1`} style={{ minWidth: tableMinWidth }}>
+              {renderColGroup()}
+              <tbody>
+                {grouped.map((block) => (
+                  <GroupBlock
+                    key={block.group}
+                    group={block.group}
+                    rows={block.rows}
+                    days={days}
+                    flatRows={flatRows}
+                    focus={focus}
+                    hoursEdit={hoursEdit}
+                    getValue={getValue}
+                    isDirtyCell={isDirtyCell}
+                    readOnly={readOnly}
+                    canEdit={canEdit}
+                    hoursStickyRight={hoursStickyRight}
+                    totalsRight={totalsRight}
+                    totalsSidebarExpanded={totalsSidebarExpanded}
+                    onFocusCell={(row, col) => {
+                      if (hoursEdit) commitHours(hoursEdit.row, hoursEdit.col, hoursEdit.text);
+                      setFocus({ row, col });
+                      setContextMenu(null);
+                      requestAnimationFrame(() => gridRef.current?.focus());
+                    }}
+                    onStartHours={(row, col) => {
+                      const current = flatRows[row];
+                      const day = days[col];
+                      if (!canEdit || !current || !day) return;
+                      const value = getValue(current.employmentId, day.date);
+                      startHours(row, col, value.kind === 'work' ? formatTimesheetHours(value.hours) : '');
+                    }}
+                    onContextMenu={openContextMenu}
+                    kindHues={kindHues}
+                  />
+                ))}
+              </tbody>
+            </table>
+            <NameColumnScrollShadow visible={scrolled} offset={NAME_W} />
+          </div>
+        </div>
       </div>
 
       <TimesheetCellContextMenu
@@ -484,8 +680,9 @@ function GroupBlock({
   isDirtyCell,
   readOnly,
   canEdit,
-  hoursRight,
+  hoursStickyRight,
   totalsRight,
+  totalsSidebarExpanded,
   onFocusCell,
   onStartHours,
   onContextMenu,
@@ -501,33 +698,35 @@ function GroupBlock({
   isDirtyCell: (employmentId: number, date: string) => boolean;
   readOnly: boolean;
   canEdit: boolean;
-  hoursRight: number;
+  hoursStickyRight: number;
   totalsRight: (index: number) => number;
+  totalsSidebarExpanded: boolean;
   onFocusCell: (row: number, col: number) => void;
   onStartHours: (row: number, col: number) => void;
   onContextMenu: (event: MouseEvent, row: number, col: number) => void;
   kindHues: Partial<Record<HrTimesheetKindCode, string>>;
 }) {
-  const groupAccent = hrPayGroupTokens(group).text;
+  const tokens = hrPayGroupTokens(group);
+  const groupRowBg = tokens.bg;
 
   return (
     <>
-      <tr className="border-b border-slate-200">
-        <td className="sticky left-0 z-10 bg-slate-50 px-3 py-1 border-r border-slate-200">
-          <span className={`text-[11px] font-semibold uppercase tracking-wide ${groupAccent}`}>
+      <tr className={`border-b ${tokens.border}`}>
+        <td className={`sticky left-0 z-10 ${groupRowBg} px-3 py-1.5 border-r border-slate-200/70`}>
+          <span className={`text-[11px] font-semibold uppercase tracking-wide ${tokens.text}`}>
             {HR_PAY_GROUP_LABELS[group]}
           </span>
         </td>
-        <td colSpan={days.length} className="bg-slate-50 border-r border-slate-200" />
+        <td colSpan={days.length} className={`${groupRowBg} border-r border-slate-200/70`} />
         <td
-          className="sticky z-10 bg-slate-50 border-l-2 border-slate-200"
-          style={stickyTotalStyle(hoursRight - TOTAL_W)}
+          className={`sticky z-10 ${groupRowBg} border-l-2 border-slate-200/70 transition-[right] duration-300 ease-in-out`}
+          style={stickyTotalStyle(hoursStickyRight)}
         />
         {TOTAL_CODES.map((code, index) => (
           <td
             key={code}
-            className="sticky z-10 bg-slate-50 border-slate-200"
-            style={stickyTotalStyle(totalsRight(index + 1))}
+            className={`sticky z-10 ${groupRowBg}`}
+            style={kindColStyle(totalsRight(index + 1), totalsSidebarExpanded)}
           />
         ))}
       </tr>
@@ -536,9 +735,9 @@ function GroupBlock({
         const totals = summarize(values);
         const rowIndex = flatRows.findIndex((item) => item.employmentId === row.employmentId);
         return (
-          <tr key={row.employmentId} className="hover:bg-slate-50/80">
-            <td className="sticky left-0 z-10 bg-white px-2 py-0 border-b border-r border-slate-200">
-              <span className="block truncate font-medium text-slate-800" title={row.displayName}>
+          <tr key={row.employmentId} className="group hover:bg-white">
+            <td className="sticky left-0 z-10 bg-slate-100 px-2 py-0 border-b border-r border-slate-200 group-hover:bg-slate-200/90">
+              <span className="block truncate font-medium text-slate-800 capitalize" title={row.displayName}>
                 {row.displayName}
               </span>
             </td>
@@ -550,7 +749,7 @@ function GroupBlock({
               return (
                 <td
                   key={day.date}
-                  className={`p-0 border-b border-r border-slate-200 ${day.isWeekend ? 'bg-slate-50/80' : 'bg-white'}`}
+                  className={`p-[1px] border-b border-r border-slate-200 ${day.isWeekend ? 'bg-slate-100/80 group-hover:bg-slate-200/80' : 'bg-white group-hover:bg-slate-100/50'}`}
                   onMouseDown={() => onFocusCell(rowIndex, col)}
                   onDoubleClick={() => onStartHours(rowIndex, col)}
                   onContextMenu={(event) => onContextMenu(event, rowIndex, col)}
@@ -570,18 +769,18 @@ function GroupBlock({
               );
             })}
             <td
-              className="sticky z-10 bg-white px-1 text-center font-semibold border-b border-l-2 border-slate-200"
-              style={stickyTotalStyle(hoursRight - TOTAL_W)}
+              className="sticky z-10 bg-white px-1 text-center font-semibold border-b border-l-2 border-slate-200 group-hover:bg-slate-100 transition-[right] duration-300 ease-in-out"
+              style={stickyTotalStyle(hoursStickyRight)}
             >
-              {totals.hours ? formatTimesheetHours(String(totals.hours)) : '—'}
+              {totals.hours ? formatTimesheetHours(String(totals.hours)) : <span className="text-slate-300">—</span>}
             </td>
             {TOTAL_CODES.map((code, index) => (
               <td
                 key={code}
-                className="sticky z-10 bg-white px-1 text-center text-slate-600 border-b border-slate-200"
-                style={stickyTotalStyle(totalsRight(index + 1))}
+                className="sticky z-10 bg-white px-1 text-center text-slate-600 border-b border-slate-200 group-hover:bg-slate-100 whitespace-nowrap"
+                style={kindColStyle(totalsRight(index + 1), totalsSidebarExpanded)}
               >
-                {totals.counts[code] || '—'}
+                {totalsSidebarExpanded ? totals.counts[code] || <span className="text-slate-300">—</span> : null}
               </td>
             ))}
           </tr>

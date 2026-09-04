@@ -18,6 +18,10 @@ import {
   utcDate,
 } from '../../../shared/utils/hrTimesheetCalendar.js';
 import { isTimesheetKind, parseTimesheetHours } from '../../../shared/utils/hrTimesheetCell.js';
+import {
+  dedupeEmploymentsByEmployeePayGroup,
+  remapEmploymentId,
+} from '../../../shared/utils/hrEmploymentDedupe.js';
 import { HrError } from './HrService.js';
 
 const LOCK_TTL_MS = 15 * 60 * 1000;
@@ -192,7 +196,7 @@ export class HrTimesheetService {
         },
         include: {
           employee: { select: { id: true, displayName: true, status: true } },
-          legalEntity: { select: { name: true } },
+          legalEntity: { select: { name: true, code: true } },
         },
         orderBy: [{ payGroup: 'asc' }, { id: 'asc' }],
       }),
@@ -201,16 +205,21 @@ export class HrTimesheetService {
       }),
     ]);
 
+    const { employments: dedupedEmployments, idRemap } = dedupeEmploymentsByEmployeePayGroup(employments);
+
     const entriesByEmployment = new Map<number, HrTimesheetEntryDto[]>();
     for (const entry of entries) {
       const dto = toEntryDto(entry);
-      const list = entriesByEmployment.get(entry.employmentId) ?? [];
-      list.push(dto);
-      entriesByEmployment.set(entry.employmentId, list);
+      const canonicalId = remapEmploymentId(idRemap, entry.employmentId);
+      const list = entriesByEmployment.get(canonicalId) ?? [];
+      const existingIdx = list.findIndex((item) => item.date === dto.date);
+      if (existingIdx >= 0) list[existingIdx] = dto;
+      else list.push(dto);
+      entriesByEmployment.set(canonicalId, list);
     }
 
     const groupOrder = new Map(HR_PAY_GROUPS.map((group, index) => [group, index]));
-    const rows = employments
+    const rows = dedupedEmployments
       .map((employment) => ({
         employmentId: employment.id,
         employeeId: employment.employee.id,

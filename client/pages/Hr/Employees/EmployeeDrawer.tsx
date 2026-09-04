@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button,
+  DatePicker,
   Divider,
   Drawer,
   DrawerBody,
@@ -10,8 +11,11 @@ import {
   Input,
   Select,
   SelectItem,
+  Switch,
   Textarea,
 } from '@heroui/react';
+import { CalendarDate, parseDate, type DateValue } from '@internationalized/date';
+import { I18nProvider } from '@react-aria/i18n';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { NumberInput } from '@/components/NumberInput';
 import { ToastService } from '@/services/ToastService';
@@ -70,6 +74,50 @@ function errorMessage(data: Record<string, unknown>, fallback: string): string {
   if (typeof data.error === 'string' && data.error) return data.error;
   return fallback;
 }
+
+function ymdToDateValue(value: string): CalendarDate | null {
+  if (!value) return null;
+  try {
+    return parseDate(value);
+  } catch {
+    return null;
+  }
+}
+
+function dateValueToYmd(value: DateValue | null): string {
+  if (!value) return '';
+  return `${value.year}-${String(value.month).padStart(2, '0')}-${String(value.day).padStart(2, '0')}`;
+}
+
+interface HrDateFieldProps {
+  label: string;
+  description?: string;
+  value: string;
+  onChange: (value: string) => void;
+  isRequired?: boolean;
+}
+
+function HrDateField({ label, description, value, onChange, isRequired }: HrDateFieldProps) {
+  return (
+    <DatePicker
+      label={label}
+      labelPlacement="outside"
+      description={description}
+      value={ymdToDateValue(value)}
+      onChange={(date) => onChange(dateValueToYmd(date))}
+      isRequired={isRequired}
+      showMonthAndYearPickers
+      granularity="day"
+      selectorButtonPlacement="start"
+      classNames={{
+        base: 'w-full',
+        segment: 'rounded',
+      }}
+    />
+  );
+}
+
+const HR_ADD_BUTTON_CLASS = 'font-medium';
 
 export function EmployeeDrawer({
   isOpen,
@@ -164,6 +212,18 @@ export function EmployeeDrawer({
   }, [isOpen, isCreate, employeeId, legalEntities, loadDetail, loadUsers]);
 
   const selectedUserKeys = useMemo(() => (form.userId ? [form.userId] : ['none']), [form.userId]);
+
+  const userSelectOptions = useMemo(
+    () => [
+      { key: 'none', label: 'Не привʼязано', textValue: 'Не привʼязано' },
+      ...userOptions.map((user) => ({
+        key: String(user.id),
+        label: `${user.name} · ${user.email}`,
+        textValue: `${user.name} ${user.email}`,
+      })),
+    ],
+    [userOptions],
+  );
 
   const handleSave = async () => {
     if (!form.lastName.trim() || !form.firstName.trim()) {
@@ -308,6 +368,7 @@ export function EmployeeDrawer({
                 {isCreate ? 'Новий співробітник' : detail?.displayName || 'Співробітник'}
               </DrawerHeader>
               <DrawerBody className="gap-5 py-5 overflow-y-auto">
+                <I18nProvider locale="uk-UA">
                 {loading ? (
                   <div className="text-sm text-gray-500">Завантаження...</div>
                 ) : (
@@ -343,6 +404,7 @@ export function EmployeeDrawer({
                         label="Обліковий запис (опційно)"
                         labelPlacement="outside"
                         placeholder="Не привʼязано"
+                        items={userSelectOptions}
                         selectedKeys={selectedUserKeys}
                         onSelectionChange={(keys) => {
                           const selected = Array.from(keys)[0];
@@ -354,12 +416,11 @@ export function EmployeeDrawer({
                         }}
                         isDisabled={!canManage}
                       >
-                        <SelectItem key="none">Не привʼязано</SelectItem>
-                        {userOptions.map((user) => (
-                          <SelectItem key={String(user.id)} textValue={`${user.name} ${user.email}`}>
-                            {user.name} · {user.email}
+                        {(item) => (
+                          <SelectItem key={item.key} textValue={item.textValue}>
+                            {item.label}
                           </SelectItem>
-                        ))}
+                        )}
                       </Select>
                       <Input
                         label="Картка"
@@ -391,14 +452,13 @@ export function EmployeeDrawer({
                         minRows={2}
                       />
                       {!isCreate && canManage ? (
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={form.statusActive}
-                            onChange={(event) => patchForm('statusActive', event.target.checked)}
-                          />
+                        <Switch
+                          isSelected={form.statusActive}
+                          size="sm"
+                          onValueChange={(value) => patchForm('statusActive', value)}
+                        >
                           Активний
-                        </label>
+                        </Switch>
                       ) : null}
                     </div>
 
@@ -455,21 +515,27 @@ export function EmployeeDrawer({
                                   <SelectItem key={group}>{HR_PAY_GROUP_LABELS[group]}</SelectItem>
                                 ))}
                               </Select>
-                              <Input
-                                type="date"
-                                label="З"
-                                labelPlacement="outside"
+                              <HrDateField
+                                label="Дата початку"
+                                description="З якого дня діє ця зайнятість"
                                 value={employmentForm.validFrom}
-                                onValueChange={(value) => setEmploymentForm((prev) => ({ ...prev, validFrom: value }))}
+                                onChange={(value) => setEmploymentForm((prev) => ({ ...prev, validFrom: value }))}
+                                isRequired
                               />
-                              <Input
-                                type="date"
-                                label="По (порожньо = чинна)"
-                                labelPlacement="outside"
+                              <HrDateField
+                                label="Дата закінчення"
+                                description="Залиште порожнім, якщо зайнятість діє досі"
                                 value={employmentForm.validTo}
-                                onValueChange={(value) => setEmploymentForm((prev) => ({ ...prev, validTo: value }))}
+                                onChange={(value) => setEmploymentForm((prev) => ({ ...prev, validTo: value }))}
                               />
-                              <Button size="sm" variant="flat" onPress={() => void handleAddEmployment()}>
+                              <Button
+                                size="sm"
+                                color="primary"
+                                variant="solid"
+                                className={HR_ADD_BUTTON_CLASS}
+                                startContent={<DynamicIcon name="plus" size={14} />}
+                                onPress={() => void handleAddEmployment()}
+                              >
                                 Додати зайнятість
                               </Button>
                             </div>
@@ -518,21 +584,27 @@ export function EmployeeDrawer({
                                 decimalPlaces={2}
                                 min={0}
                               />
-                              <Input
-                                type="date"
+                              <HrDateField
                                 label="Чинна з"
-                                labelPlacement="outside"
+                                description="З якого дня застосовується ця ставка"
                                 value={payForm.effectiveFrom}
-                                onValueChange={(value) => setPayForm((prev) => ({ ...prev, effectiveFrom: value }))}
+                                onChange={(value) => setPayForm((prev) => ({ ...prev, effectiveFrom: value }))}
+                                isRequired
                               />
-                              <Input
-                                type="date"
-                                label="По"
-                                labelPlacement="outside"
+                              <HrDateField
+                                label="Дата закінчення"
+                                description="Залиште порожнім, якщо ставка діє досі"
                                 value={payForm.effectiveTo}
-                                onValueChange={(value) => setPayForm((prev) => ({ ...prev, effectiveTo: value }))}
+                                onChange={(value) => setPayForm((prev) => ({ ...prev, effectiveTo: value }))}
                               />
-                              <Button size="sm" color="primary" variant="flat" onPress={() => void handleAddPayTerms()}>
+                              <Button
+                                size="sm"
+                                color="primary"
+                                variant="solid"
+                                className={HR_ADD_BUTTON_CLASS}
+                                startContent={<DynamicIcon name="plus" size={14} />}
+                                onPress={() => void handleAddPayTerms()}
+                              >
                                 Додати ставку
                               </Button>
                             </div>
@@ -544,6 +616,7 @@ export function EmployeeDrawer({
                     )}
                   </>
                 )}
+                </I18nProvider>
               </DrawerBody>
               <DrawerFooter className="border-t border-default-200 shrink-0">
                 <Button variant="light" onPress={onClose}>Закрити</Button>

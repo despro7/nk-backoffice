@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Button, Input, Spinner } from '@heroui/react';
+import { Button, Input, Spinner, Tab } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import PageTabs from '@/components/PageTabs';
 import { MonthSwitcher } from '@/components/MonthSwitcher';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
@@ -27,7 +28,6 @@ import {
 import { TimesheetGrid } from './Timesheet/TimesheetGrid';
 import { TimesheetKindLegend } from './Timesheet/TimesheetKindLegend';
 import { useHrTimesheetKindColors } from './useHrTimesheetKindColors';
-import { getSpecColorByHue } from '@shared/utils/specColorPalette';
 import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HrSpecChip, hrPayGroupTokens } from './hrUi';
 
 const COLOR_SETTINGS_STORAGE_KEY = 'hr.timesheet.colorSettingsOpen';
@@ -263,29 +263,6 @@ export default function HrTimesheetPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-white rounded-xl p-3 md:p-4 flex flex-wrap items-center gap-3">
-        <MonthSwitcher value={monthDate} onChange={setMonthParam} disableFuture={false} size="sm" />
-        <div className="flex flex-wrap items-center gap-1.5">
-          <HrSpecChip
-            tokens={getSpecColorByHue('slate', 'light', groupFilter == null ? 'medium' : 'soft')}
-            selected={groupFilter == null}
-            onClick={() => setGroup(null)}
-          >
-            Усі
-          </HrSpecChip>
-          {HR_TIMESHEET_GROUP_FILTERS.map((key) => {
-            const group = HR_TIMESHEET_GROUP_TO_PAY[key];
-            return (
-              <HrSpecChip
-                key={key}
-                tokens={hrPayGroupTokens(group)}
-                selected={groupFilter === key}
-                onClick={() => setGroup(key)}
-              >
-                {HR_PAY_GROUP_LABELS[group]}
-              </HrSpecChip>
-            );
-          })}
-        </div>
         <Input
           size="sm"
           placeholder="Пошук за ПІБ"
@@ -294,6 +271,7 @@ export default function HrTimesheetPage() {
           className="w-full sm:w-56"
           startContent={<DynamicIcon name="search" size={14} className="text-default-400" />}
         />
+        <MonthSwitcher value={monthDate} onChange={setMonthParam} disableFuture={false} size="sm" />
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           {data?.month.status === 'closed' ? (
             <HrSpecChip tokens={hrPayGroupTokens('unofficial_cash')}>Закрито</HrSpecChip>
@@ -319,16 +297,6 @@ export default function HrTimesheetPage() {
           >
             Зберегти
           </Button>
-          <Button
-            size="sm"
-            className={HR_BTN_NEUTRAL}
-            onPress={guard.guardAction(() => {
-              navigate(payrollHref);
-            })}
-            startContent={<DynamicIcon name="calculator" size={14} />}
-          >
-            До розрахунку
-          </Button>
         </div>
       </div>
 
@@ -338,16 +306,33 @@ export default function HrTimesheetPage() {
         hueFor={kindColors.hueFor}
         onHueChange={kindColors.setHue}
       />
-      <p className="text-xs text-slate-500 px-1">
-        Клік — фокус. Цифра — години, літера — код. F2 / подвійний клік / контекстне меню — редагування годин.
-      </p>
 
       {loading && !data ? (
         <div className="flex justify-center py-16">
           <Spinner />
         </div>
       ) : data ? (
-        <TimesheetGrid
+        <div className="flex flex-col min-w-0 mt-6">
+          <PageTabs
+            selectedKey={groupFilter ?? 'all'}
+            onSelectionChange={(key) => {
+              const next = String(key);
+              setGroup(next === 'all' ? null : (next as HrTimesheetGroupFilter));
+            }}
+            className="self-start"
+            classNames={{
+              tabList: "gap-2 p-[6px] bg-neutral-700 rounded-t-lg rounded-b-none",
+              cursor: "bg-neutral-600 text-white shadow-sm rounded-md",
+              tab: "px-3 py-1.5 h-6 text-sm font-normal data-[hover-unselected=true]:opacity-100 text-neutral-500",
+              tabContent: "group-data-[selected=true]:text-white text-neutral-400",
+            }}
+          >
+            <Tab key="all" title="Усі" />
+            {HR_TIMESHEET_GROUP_FILTERS.map((key) => (
+              <Tab key={key} title={HR_PAY_GROUP_LABELS[HR_TIMESHEET_GROUP_TO_PAY[key]]} />
+            ))}
+          </PageTabs>
+          <TimesheetGrid
           days={data.days}
           weeks={data.weeks}
           rows={visibleRows}
@@ -360,6 +345,7 @@ export default function HrTimesheetPage() {
           onLiveMessage={setLiveMessage}
           kindHues={kindColors.overrides}
         />
+        </div>
       ) : null}
 
       <UnsavedChangesModal {...guard.modalProps} />
