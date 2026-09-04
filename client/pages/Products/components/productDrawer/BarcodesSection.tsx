@@ -82,7 +82,7 @@ export function BarcodesSection({
             classNames={{
               base: 'flex-1',
               inputWrapper: 'cursor-pointer',
-              input: 'cursor-pointer',
+              input: 'cursor-pointer py-2',
             }}
             onClick={() => onOpenBatchPicker(idx)}
             endContent={
