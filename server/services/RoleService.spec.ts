@@ -175,6 +175,31 @@ describe('RoleService', () => {
     expect(await service.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(true);
   });
 
+  it('syncs missing seed permissions for system roles on startup', async () => {
+    memory.roles.length = 0;
+    memory.perms.length = 0;
+
+    const bossRole = {
+      id: 1,
+      slug: ROLES.BOSS,
+      name: 'Директор',
+      description: null,
+      rank: 50,
+      isSystem: true,
+    };
+    memory.roles.push(bossRole);
+    memory.perms.push({
+      roleId: bossRole.id,
+      permissionKey: PERMISSIONS.PAGE_HR_TIMESHEET,
+    });
+
+    const resynced = new RoleService(memory.db as never);
+    await resynced.ensureSeeded();
+
+    expect(await resynced.hasPermission(ROLES.BOSS, PERMISSIONS.ACTION_HR_TIMESHEET_EDIT)).toBe(true);
+    expect(await resynced.hasPermission(ROLES.BOSS, PERMISSIONS.PAGE_HR_TIMESHEET)).toBe(true);
+  });
+
   it('keeps dynamic catalog folder view/edit keys', async () => {
     const key = 'action.catalog.view.1100300000001001';
     const created = await service.createRole({

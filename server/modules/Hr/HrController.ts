@@ -25,7 +25,7 @@ const pageEmployees = requirePermissionKey(PERMISSIONS.PAGE_HR_EMPLOYEES);
 const pageTimesheet = requirePermissionKey(PERMISSIONS.PAGE_HR_TIMESHEET);
 const manageEmployees = requirePermission('hr', 'employees.manage', 'Керувати співробітниками');
 const managePayTerms = requirePermission('hr', 'payterms.manage', 'Керувати ставками співробітників');
-const editTimesheet = requirePermissionKey(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT);
+const editTimesheet = requirePermission('hr', 'timesheet.edit', 'Редагувати табель');
 const pagePayroll = requirePermissionKey(PERMISSIONS.PAGE_HR_PAYROLL);
 const viewPayroll = requirePermission('hr', 'payroll.view', 'Переглядати внутрішній розрахунок виплат');
 requirePermission('hr', 'payouts.view', 'Бачити повний номер картки');

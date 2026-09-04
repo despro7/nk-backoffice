@@ -25,6 +25,12 @@ interface TimesheetCellContextMenuProps {
   onSelectKind: (kind: HrTimesheetKindCode) => void;
 }
 
+const TIMESHEET_CONTEXT_MENU_PANEL =
+  'min-w-[200px] overflow-hidden rounded-lg border border-default-200 bg-content1 p-2 shadow-lg';
+
+const TIMESHEET_CONTEXT_MENU_ITEM =
+  'flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm transition-colors';
+
 export function TimesheetCellContextMenu({
   state,
   hueFor,
@@ -77,34 +83,36 @@ export function TimesheetCellContextMenu({
     <div
       ref={menuRef}
       role="menu"
-      className="fixed z-[200] min-w-[11rem] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+      aria-label="Дії з коміркою табеля"
+      className={`fixed z-[200] ${TIMESHEET_CONTEXT_MENU_PANEL}`}
       style={{ left: pos.x, top: pos.y }}
+      onContextMenu={(event) => event.preventDefault()}
     >
       <button
         type="button"
         role="menuitem"
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+        className={`${TIMESHEET_CONTEXT_MENU_ITEM} text-foreground hover:bg-default-100`}
         onClick={() => {
           onEditHours();
           onClose();
         }}
       >
-        <DynamicIcon name="pencil" size={14} className="text-slate-500" />
+        <DynamicIcon name="pencil" size={14} className="shrink-0 text-default-500" />
         Редагувати години…
       </button>
       <button
         type="button"
         role="menuitem"
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-rose-700 hover:bg-rose-50"
+        className={`${TIMESHEET_CONTEXT_MENU_ITEM} text-danger hover:bg-danger-50`}
         onClick={() => {
           onClear();
           onClose();
         }}
       >
-        <DynamicIcon name="eraser" size={14} />
+        <DynamicIcon name="eraser" size={14} className="shrink-0" />
         Очистити
       </button>
-      <div className="my-1 border-t border-slate-100" />
+      <div className="my-1 border-t border-default-100" />
       {HR_TIMESHEET_KIND_CODES.map((code) => {
         const tokens = hrKindTokens(hueFor(code));
         return (
@@ -112,18 +120,18 @@ export function TimesheetCellContextMenu({
             key={code}
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50"
+            className={`${TIMESHEET_CONTEXT_MENU_ITEM} text-foreground hover:bg-default-100`}
             onClick={() => {
               onSelectKind(code);
               onClose();
             }}
           >
             <span
-              className={`inline-flex min-w-[2rem] justify-center rounded px-1.5 py-0.5 text-xs font-semibold ${specColorToClassNames(tokens, { border: true })}`}
+              className={`inline-flex min-w-[2rem] shrink-0 justify-center rounded px-1.5 py-0.5 text-xs font-semibold ${specColorToClassNames(tokens, { border: true })}`}
             >
               {code}
             </span>
-            <span className="text-slate-600">{HR_TIMESHEET_KIND_LABELS[code]}</span>
+            <span className="text-default-600">{HR_TIMESHEET_KIND_LABELS[code]}</span>
           </button>
         );
       })}

@@ -70,7 +70,7 @@ export class RoleService {
 
   async ensureSeeded(): Promise<void> {
     if (this.seedPromise) return this.seedPromise;
-    this.seedPromise = this.seedIfEmpty();
+    this.seedPromise = this.seedIfEmpty().then(() => this.syncSystemRoleMissingSeedPermissions());
     try {
       await this.seedPromise;
     } finally {
@@ -100,6 +100,33 @@ export class RoleService {
       });
     }
     this.invalidateCache();
+  }
+
+  /** Додає нові seed-права системним ролям (без видалення існуючих). */
+  private async syncSystemRoleMissingSeedPermissions(): Promise<void> {
+    const roles = await this.db.role.findMany({
+      where: { isSystem: true },
+      include: { permissions: true },
+    });
+
+    let changed = false;
+    for (const role of roles) {
+      if (role.slug === ROLES.ADMIN) continue;
+      const expected = new Set(seedPermissionKeysForRole(role.slug));
+      const current = new Set(
+        (role.permissions ?? [])
+          .map((row) => normalizePermissionKey(row.permissionKey))
+          .filter((key): key is string => Boolean(key)),
+      );
+      const missing = [...expected].filter((key) => !current.has(key));
+      if (missing.length === 0) continue;
+      await this.db.rolePermission.createMany({
+        data: missing.map((permissionKey) => ({ roleId: role.id, permissionKey })),
+      });
+      changed = true;
+    }
+
+    if (changed) this.invalidateCache();
   }
 
   async hasPermission(slug: string, key: string): Promise<boolean> {
