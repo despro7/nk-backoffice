@@ -1,6 +1,6 @@
 # Мобільні переміщення між складами (`WarehouseMovementMob`)
 
-**Дата:** 2026-08-31  
+**Дата:** 2026-09-04 (оновлено)  
 **Маршрути:** `/warehouse/movement-mob`, `/warehouse/movement-mob/new`, `/warehouse/movement-mob/:id`  
 **Дозвіл сторінки:** `page.warehouse.movementMob`
 
@@ -155,7 +155,69 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 
 ---
 
-## Залишки з урахуванням чернетки
+## Картка товару (`MovementMobProductCard`)
+
+Рядок документа на екрані редактора / перегляду. Дані з `MovementMobProductLineViewModel`, збагачені хуком `useMovementMobLinesEnrichment`.
+
+### Відображення
+
+| Елемент | Джерело / логіка |
+|---------|------------------|
+| Назва, σ-порції, коробки / розсип | рядок документа |
+| Штрих-код | `line.barcode` (у debug — також SKU, ID партії, `catalogGoodId`) |
+| Партія | людська назва з Dilovod або каталогу; якщо `batchLinked === false` — **«Партія: не обрано!»** (червоний) |
+| Залишки після переміщення | прогноз `computeProjectedLineStock` (див. нижче) |
+| Статус прийому | «Відправлено: N / Отримано: M / Результат: збіг \| нестача \| надлишок» + кольорове кільце рядка |
+
+Skeleton (`@heroui/react`) на партії та залишках, поки `useMovementMobLinesEnrichment` у стані `loading` / `refreshing`.
+
+### Редагування товару на місці
+
+Якщо відомий `catalogGoodId`, поруч із партією — іконка олівця. Відкриває `MovementMobProductEditDrawer` (обгортка над `ProductDrawer` з Products 2.0): привʼязка партії до штрих-коду без переходу в розділ товарів. Після збереження інвалідується кеш `warehouse-movement-mob-line-enrichment`.
+
+---
+
+## Збагачення рядків (`useMovementMobLinesEnrichment`)
+
+Хук підключається в `MovementMobDocumentScreen` і повертає `{ lines, loading, refreshing }`.
+
+**Джерела даних (паралельно + послідовно):**
+
+1. `GET /api/warehouse/stock-snapshot?skus=…` — загальні залишки ГП / МС по SKU (`mainStock` / `smallStock`).
+2. `GET /api/warehouse/batch-numbers/:sku?includeSmallStorage=true` — партії з Dilovod по SKU (послідовно по SKU, щоб уникнути `multithreadApiSession`; при порожній відповіді — повтор з `force=true`).
+3. `POST /api/warehouse/resolve-batch-names` — назви партій і метадані привʼязки з `catalog_good_barcodes` (за `batchId`, SKU, barcode).
+
+**Кеш клієнта (React Query):** `staleTime` 10 хв, `gcTime` 30 хв, `placeholderData` — попередній знімок під час оновлення.
+
+**`batchLinked`:** `true` лише якщо в каталозі для штрих-коду задано `goodPart` (Dilovod batch id). Інакше партія в документі може мати числовий id, але UI показує «не обрано!», а залишок **по партії** не виводиться (лише «всього»).
+
+**Резолв назви партії:**
+
+1. Dilovod `goodPart__pr` у відповіді `batch-numbers` (поле не запитується в `fields` — Dilovod віддає його разом із `goodPart`).
+2. Каталог `goodPartName` через `resolve-batch-names`.
+3. `isHumanBatchLabel` / `isUsableDilovodBatchId` — відрізнити людську назву від сирого id.
+
+Деталі полів Dilovod: `Docs/integrations/dilovod-metadata.md`.
+
+---
+
+## Залишки після переміщення (прогноз)
+
+Поточні залишки з Dilovod / snapshot **не** показуються напряму — картка рахує **прогноз після застосування рядка**:
+
+- зі **складу-джерела** (`sourceStorageId`) віднімається відправлена кількість (`totalPortions`);
+- на **склад-призначення** (`destStorageId`) додається отримана (`receivedTotalPortions`, якщо є прийом і значення > 0, інакше — відправлена);
+- коригуються і **партія**, і **всього** по ГП / МС, якщо `batchLinked === true`.
+
+Утиліти: `computeProjectedLineStock`, `movementQtyForStockProjection`, `computeLineStockFromBatches` (поточні залишки з партій Dilovod).
+
+Приклад (ГП → МС, 72 порції, поточні 556/600 і 23/56): **484 / 528** [ГП] | **95 / 128** [МС].
+
+При нестачі (відправлено 72, отримано 50): з ГП −72, на МС +50.
+
+---
+
+## Залишки в drawer сканування (чернетка)
 
 `committedPortionsForSku(lines, sku, exceptKey?, side = 'sent')` сумує `totalPortions` або `receivedTotalPortions` усіх рядків цього SKU, опційно без рядка, який відкритий у drawer.
 
@@ -169,23 +231,24 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 
 ---
 
-## Хронологія
+## Хронологія і степпер
 
-`buildChronology` **завжди** віддає три кроки:
+`buildChronology` і `buildStepperSteps` віддають **чотири** кроки. Назви складів динамічні: **Відправлено з [ГП|МС]**, **Прийнято на [ГП|МС]** (`resolveShortStorageBadge`).
 
-| Крок | done коли | Дата, якщо pending |
-|------|-----------|-------------------|
-| Формування списку | завжди (чернетка існує) | `draftCreatedAt` |
-| Відправлено на «склад» | `pending_receipt`, `active` або `finalized` | текст **«ще не відправлено»** |
-| Отримано | `finalized` | текст **«ще не отримано»** |
+| Крок | Степпер (desktop) | `shortLabel` (мобільний) | done коли | Дата / текст, якщо pending |
+|------|-------------------|--------------------------|-----------|------------------------------|
+| `prepared` | Підготовлено | Підготовлено | чернетка існує | `draftCreatedAt` |
+| `sent` | Відправлено з «…» | Відправлено | `pending_receipt` / `active` / `finalized` | **«ще не відправлено»** |
+| `accepted` | Прийнято на «…» | Прийнято | сканування прийому або `finalized` | інтервал сканування або **«ще не прийнято»** |
+| `received` | Підтверджено / Ще не підтверджено | Підтверджено / Очікує | `finalized` | **«ще не підтверджено»** |
 
-Назва складу в «Відправлено на «…»» — **повна з довідника Dilovod** (`destNameById` / `resolveChronologyStorageLabel`), не короткий бейдж.
+**Крок «Прийнято»:** користувач-сканер (`receiptScannedBy` / `receiptScannedByName`). Час — `formatReceiptScanInterval(receiptScanStartedAt, receiptScanEndedAt)`: одна дата, інтервал часу через дефіс, тривалість у дужках (`formatDurationUk`). Сканувати і підтвердити отримання можуть різні люди — тому окремі поля сканування й `receivedBy`.
 
-Pending: сіра точка (`clock`), сірий заголовок, без імені користувача. Done: зелена точка (`check`), дата, автор / отримувач.
+Поля БД (міграція `20260904120000_warehouse_movement_receipt_scan_fields`): `receiptScanStartedAt`, `receiptScanEndedAt`, `receiptScannedBy`. Заповнюються при `PUT /:id/receipt` (перший скан — `receiptScanStartedAt`, кожне збереження оновлює `receiptScanEndedAt` і `receiptScannedBy`).
 
-Вертикальні лінії між точками: success, якщо обидва сусіди done; градієнт success → default, якщо лише верхній done; інакше `default-300`.
+Pending: сіра точка, сірий заголовок, без імені користувача. Done: зелена точка, дата, автор / сканер / отримувач.
 
-Хронологія рендериться на екрані документа **і для збереженої чернетки** (не лише view) — під кнопками формування, якщо є події.
+Хронологія рендериться на екрані документа **і для збереженої чернетки** — під кнопками формування.
 
 ---
 
@@ -207,11 +270,13 @@ Pending: сіра точка (`clock`), сірий заголовок, без і
 
 ## Типи рядка
 
-`MovementMobRawItem` / `MovementMobProductLineViewModel`: `barcode`, `barcodeKind`, відправлені кількості та `receivedBoxQuantity` / `receivedPortionQuantity` / `receivedTotalPortions`.
+`MovementMobRawItem` / `MovementMobProductLineViewModel`: `barcode`, `barcodeKind`, відправлені кількості, `received*`, опційно `stock` (`MovementMobLineStockInfo`: `batchGp`, `batchMs`, `totalGp`, `totalMs`), `batchLinked`, `catalogGoodId`.
 
-Ключ рядка: `sku + batchId|batchNumber`.
+Ключ рядка: `sku + batchId|batchNumber`. Ключ збагачення: `movementMobEnrichmentLineKey` (`sku::barcode::batchId::batchNumber`).
 
-Поля документа: `submittedAt`, `receivedBy`, `receivedAt`, `dilovodDocId`.
+Поля документа: `submittedAt`, `receivedBy`, `receivedAt`, `receiptScanStartedAt`, `receiptScanEndedAt`, `receiptScannedBy`, `receiptScannedByName`, `dilovodDocId`.
+
+Степпер: `MovementMobStepperStepKey` = `prepared` | `sent` | `accepted` | `received`; опційний `shortLabel` для вузьких екранів.
 
 ---
 
@@ -222,14 +287,19 @@ Pending: сіра точка (`clock`), сірий заголовок, без і
 | `POST` | `/api/warehouse` | Створити чернетку |
 | `PUT` | `/api/warehouse/:id` | Оновити items (автор: draft/active; `movement.edit`: будь-який не `deleted`) |
 | `POST` | `/api/warehouse/:id/submit` | `draft` → `pending_receipt` |
-| `PUT` | `/api/warehouse/:id/receipt` | Зберегти отримані кількості (не автор, лише `pending_receipt`) |
+| `PUT` | `/api/warehouse/:id/receipt` | Зберегти отримані кількості; оновлює `receiptScan*` (не автор, лише `pending_receipt`) |
 | `POST` | `/api/warehouse/:id/confirm-receipt` | Фіналізація + Dilovod; `{ dryRun: true }` — payload |
 | `POST` | `/api/warehouse/:id/sync-dilovod` | Перезапис finalized у Dilovod; теж `dryRun`; потрібен `movement.edit` |
 | `DELETE` | `/api/warehouse/:id` | Soft-delete + Dilovod `delMark` |
+| `GET` | `/api/warehouse/batch-numbers/:sku` | Партії з Dilovod по SKU (`includeSmallStorage`, `force`); серверний кеш 5 хв, порожні відповіді не кешуються |
+| `POST` | `/api/warehouse/resolve-batch-names` | `{ batchIds?, lines? }` → `{ names, lineMeta }` з каталогу штрих-кодів |
+| `GET` | `/api/warehouse/stock-snapshot` | Загальні залишки ГП/МС по SKU (для збагачення рядків) |
 
 Експорт: `WarehouseMovementExport.exportWarehouseMovementToDilovod` (якщо є `dilovodDocId` — оновлення, інакше створення). Клієнт: `movementMobApi.ts`.
 
-Міграція полів прийому: `prisma/migrations/20260830120000_warehouse_movement_receipt_fields/`.
+**Dilovod `getBatchNumbersBySku`:** фільтр SKU — оператор `IL` (список); `goodPart__pr` не вказувати в `fields` (API повертає помилку); при 0 партій з firm — повтор без firm; `unwrapDilovodId` / `unwrapDilovodName` для трансформації.
+
+Міграції: `20260830120000_warehouse_movement_receipt_fields/`, `20260904120000_warehouse_movement_receipt_scan_fields/`.
 
 ---
 
@@ -244,6 +314,7 @@ client/pages/Warehouse/WarehouseMovementMob/
 ├── useWarehouseMovementMobDocument.ts
 ├── useWarehouseMovementMobList.ts
 ├── useMovementMobScan.ts
+├── useMovementMobLinesEnrichment.ts
 ├── movementMobApi.ts
 ├── cameraMedia.ts
 ├── WarehouseMovementMobTypes.ts
@@ -256,5 +327,7 @@ client/pages/Warehouse/WarehouseMovementMob/
     ├── MovementMobSyncDilovodModal.tsx
     ├── MovementMobDeleteConfirmModal.tsx
     ├── MovementMobProductCard.tsx
+    ├── MovementMobProductEditDrawer.tsx
+    ├── MovementMobStatusStepper.tsx
     └── …
 ```

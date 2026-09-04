@@ -13,7 +13,7 @@ export default function MovementMobStatusStepper({
 }: MovementMobStatusStepperProps) {
   return (
     <div className={`w-full ${className}`}>
-      <div className="flex items-center gap-12">
+      <div className={`flex items-center ${steps.length > 3 ? 'gap-4 sm:gap-8' : 'gap-12'}`}>
         {steps.map((step, index) => {
           const isDone = step.state === 'done';
           const isFirst = index === 0;
@@ -25,11 +25,12 @@ export default function MovementMobStatusStepper({
               <div className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center ${isDone ? 'bg-success-500 text-white' : 'bg-default-200 text-default-500'}`}>
                 <DynamicIcon name={isDone ? 'check' : 'clock'} size={14} className="shrink-0" />
               </div>
-              <span className={`mt-1.5 w-full text-[10px] leading-tight text-center px-0.5 ${isDone ? 'text-success-600/90 font-medium' : 'text-default-400'}`}>
-                {step.label}
+              <span className={`mt-1.5 w-full text-[10px] leading-tight text-center px-0.5 whitespace-nowrap ${isDone ? 'text-success-600/90 font-medium' : 'text-default-400'}`}>
+                <span className="sm:hidden">{step.shortLabel ?? step.label}</span>
+                <span className="hidden sm:inline">{step.label}</span>
               </span>
               {!isLast && (
-                <div className={`absolute top-3.5 left-full w-[calc(100%+0.5rem)] h-0.5 rounded-full -translate-x-[calc(50%-1.5rem)] ${
+                <div className={`absolute top-3.5 left-full w-[calc(100%-1rem)] h-0.5 rounded-full -translate-x-[calc(50%-0.5rem)] md:-translate-x-[calc(50%-1rem)] ${
                     isDone && nextDone ? 'bg-success-500' : isDone ? 'bg-gradient-to-r from-success-500 to-default-200' : 'bg-default-200'}`}
                 />
               )}

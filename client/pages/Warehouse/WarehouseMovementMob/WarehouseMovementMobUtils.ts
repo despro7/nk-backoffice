@@ -1,6 +1,7 @@
 import { CalendarDate, getLocalTimeZone, today } from '@internationalized/date';
 import type { DateRange } from '@react-types/datepicker';
 import { createStandardDatePresets } from '@/lib/dateReportingUtils';
+import { isUsableDilovodBatchId } from '@shared/utils/dilovodBatchId';
 import {
   STORAGE_DISPLAY_MAP,
   resolveStorageDisplay,
@@ -11,6 +12,8 @@ import type {
   MovementMobChronologyEvent,
   MovementMobDocumentViewModel,
   MovementMobListCardViewModel,
+  MovementMobLineStockInfo,
+  MovementMobLineEnrichmentMeta,
   MovementMobReceiptSummary,
   MovementMobProductLineViewModel,
   MovementMobProductMeta,
@@ -23,9 +26,9 @@ import type {
 
 export const MOVEMENT_MOB_DEFAULT_PRESET_KEY = 'last7Days';
 
-/** ID складу ГП / малого — для коротких бейджів макету */
-const STORAGE_ID_GP = '1100700000001005';
-const STORAGE_ID_SMALL = '1100700000001019';
+/** ID складу ГП / малого — для коротких бейджів макету та залишків */
+export const STORAGE_ID_GP = '1100700000001005';
+export const STORAGE_ID_SMALL = '1100700000001019';
 
 const SHORT_BADGE_BY_STORAGE_ID: Record<string, string> = {
   [STORAGE_ID_GP]: 'ГП',
@@ -215,29 +218,52 @@ export function resolveShortStorageBadge(storageId?: string, fallbackName?: stri
   return display.shortName.replace(/^Склад\s+/i, '') || '—';
 }
 
-export function buildStepperSteps(status: string): MovementMobStepperStep[] {
+export function buildStepperSteps(
+  status: string,
+  record?: Pick<MovementMobApiRecord, 'receiptScanStartedAt' | 'receiptScanEndedAt' | 'items' | 'sourceWarehouse' | 'destinationWarehouse'>,
+): MovementMobStepperStep[] {
+  const sourceBadge = resolveShortStorageBadge(record?.sourceWarehouse);
+  const destBadge = resolveShortStorageBadge(record?.destinationWarehouse);
   const preparedDone =
     status === 'draft'
     || status === 'active'
     || status === 'pending_receipt'
     || status === 'finalized';
   const sentDone = status === 'active' || status === 'pending_receipt' || status === 'finalized';
+
+  const hasScanActivity = Boolean(
+    record?.receiptScanStartedAt
+    || record?.receiptScanEndedAt
+    || (record?.items && parseMovementItems(record.items).some(
+      (item) => resolvedReceivedPortions(item) > 0,
+    )),
+  );
+  const acceptedDone = hasScanActivity || status === 'finalized';
   const receivedDone = status === 'finalized';
 
   return [
     {
       key: 'prepared',
       label: 'Підготовлено',
+      shortLabel: 'Підготовлено',
       state: preparedDone ? 'done' : 'pending',
     },
     {
       key: 'sent',
-      label: 'Відправлено',
+      label: sentStepperLabel(sourceBadge),
+      shortLabel: 'Відправлено',
       state: sentDone ? 'done' : 'pending',
     },
     {
+      key: 'accepted',
+      label: acceptedStepperLabel(destBadge),
+      shortLabel: 'Прийнято',
+      state: acceptedDone ? 'done' : 'pending',
+    },
+    {
       key: 'received',
-      label: receivedDone ? 'Отримано' : 'Ще не отримано',
+      label: receivedDone ? 'Підтверджено' : 'Ще не підтверджено',
+      shortLabel: receivedDone ? 'Підтверджено' : 'Очікує',
       state: receivedDone ? 'done' : 'pending',
     },
   ];
@@ -290,8 +316,70 @@ export function resolveChronologyStorageLabel(storageId: string, directoryName?:
   return resolveStorageDisplay(storageId).shortName;
 }
 
-export function sentChronologyTitle(destWarehouseName: string): string {
-  return `Відправлено на «${destWarehouseName}»`;
+export function formatDurationUk(durationMs: number): string {
+  const totalSec = Math.max(0, Math.floor(durationMs / 1000));
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours} год`);
+  if (minutes > 0) parts.push(`${minutes} хв`);
+  if (seconds > 0 || parts.length === 0) parts.push(`${seconds} сек`);
+  return parts.join(' ');
+}
+
+export function formatReceiptScanInterval(
+  startIso: string | null | undefined,
+  endIso: string | null | undefined,
+): string | null {
+  if (!startIso) return null;
+  const start = new Date(startIso);
+  if (Number.isNaN(start.getTime())) return null;
+  const end = endIso ? new Date(endIso) : start;
+  if (Number.isNaN(end.getTime())) return formatChronologyDateTime(startIso);
+
+  const timeOpts: Intl.DateTimeFormatOptions = {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  };
+  const sameDay =
+    start.getFullYear() === end.getFullYear()
+    && start.getMonth() === end.getMonth()
+    && start.getDate() === end.getDate();
+  const durationLabel = formatDurationUk(end.getTime() - start.getTime());
+
+  if (sameDay) {
+    const datePart = start.toLocaleDateString('uk-UA', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    const startTime = start.toLocaleTimeString('uk-UA', timeOpts);
+    const endTime = end.toLocaleTimeString('uk-UA', timeOpts);
+    if (startTime === endTime) {
+      return `${datePart}, ${startTime} (${durationLabel})`;
+    }
+    return `${datePart}, ${startTime} – ${endTime} (${durationLabel})`;
+  }
+
+  return `${formatChronologyDateTime(startIso)} – ${formatChronologyDateTime(endIso)} (${durationLabel})`;
+}
+
+export function acceptedChronologyTitle(storageBadge: string): string {
+  return `Прийнято на ${storageBadge}`;
+}
+
+export function sentChronologyTitle(storageBadge: string): string {
+  return `Відправлено з ${storageBadge}`;
+}
+
+export function acceptedStepperLabel(storageBadge: string): string {
+  return `Прийнято на ${storageBadge}`;
+}
+
+export function sentStepperLabel(storageBadge: string): string {
+  return `Відправлено з ${storageBadge}`;
 }
 
 export function toListCardViewModel(record: MovementMobApiRecord): MovementMobListCardViewModel {
@@ -309,9 +397,283 @@ export function toListCardViewModel(record: MovementMobApiRecord): MovementMobLi
     destBadge: resolveShortStorageBadge(record.destinationWarehouse),
     aggregates,
     receiptSummary: summarizeMovementReceipt(items, record.status, record.deviations),
-    stepperSteps: buildStepperSteps(record.status),
+    stepperSteps: buildStepperSteps(record.status, {
+      receiptScanStartedAt: record.receiptScanStartedAt,
+      receiptScanEndedAt: record.receiptScanEndedAt,
+      items: record.items,
+      sourceWarehouse: record.sourceWarehouse,
+      destinationWarehouse: record.destinationWarehouse,
+    }),
     status: record.status,
   };
+}
+
+/** Чи виглядає значення як людська назва партії (не сирий Dilovod ID). */
+export function isHumanBatchLabel(value: string): boolean {
+  const label = (value || '').trim();
+  if (!label || label === '—') return false;
+  return !isUsableDilovodBatchId(label);
+}
+
+export function batchNumberNeedsResolution(batchNumber: string, batchId: string): boolean {
+  const label = (batchNumber || '').trim();
+  const id = (batchId || '').trim();
+  if (!label || label === '—') return Boolean(id);
+  if (id && label === id) return true;
+  if (isUsableDilovodBatchId(label) && (!id || label === id)) return true;
+  return false;
+}
+
+export interface MovementMobBatchRow {
+  batchId: string;
+  batchNumber: string;
+  storage: string;
+  quantity: number;
+}
+
+export function effectiveBatchId(batchId: string, batchNumber: string): string {
+  const id = (batchId || '').trim();
+  if (isUsableDilovodBatchId(id)) return id;
+  const label = (batchNumber || '').trim();
+  if (isUsableDilovodBatchId(label)) return label;
+  return id || label;
+}
+
+export function resolveBatchDisplayName(
+  batchId: string,
+  batchNumber: string,
+  batches: MovementMobBatchRow[],
+): string {
+  const lookupId = effectiveBatchId(batchId, batchNumber);
+  if (!batchNumberNeedsResolution(batchNumber, lookupId)) {
+    return batchNumber || lookupId || '—';
+  }
+  const byId = batches.find((row) => row.batchId === lookupId);
+  if (byId?.batchNumber && byId.batchNumber !== byId.batchId) {
+    return byId.batchNumber;
+  }
+  const numericLabel = (batchNumber || '').trim();
+  const byLabel = batches.find((row) => (
+    row.batchId === numericLabel
+    || row.batchNumber === numericLabel
+  ));
+  if (byLabel?.batchNumber && byLabel.batchNumber !== byLabel.batchId) {
+    return byLabel.batchNumber;
+  }
+  return batchNumber || lookupId || '—';
+}
+
+export function movementMobEnrichmentLineKey(
+  line: Pick<MovementMobProductLineViewModel, 'sku' | 'barcode' | 'batchId' | 'batchNumber'>,
+): string {
+  return [
+    line.sku,
+    String(line.barcode ?? '').trim(),
+    String(line.batchId ?? '').trim(),
+    String(line.batchNumber ?? '').trim(),
+  ].join('::');
+}
+
+function batchRowMatchesLine(
+  row: MovementMobBatchRow,
+  batchId: string,
+  batchNumber: string,
+  resolvedName = '',
+): boolean {
+  const id = effectiveBatchId(batchId, batchNumber);
+  const label = (batchNumber || '').trim();
+  const resolved = (resolvedName || '').trim();
+  if (id && isUsableDilovodBatchId(id) && row.batchId === id) return true;
+  if (label && (row.batchNumber === label || row.batchId === label)) return true;
+  if (resolved && resolved !== '—' && row.batchNumber === resolved) return true;
+  return false;
+}
+
+export function findMatchingBatchRow(
+  batches: MovementMobBatchRow[],
+  batchId: string,
+  batchNumber: string,
+  resolvedName = '',
+): MovementMobBatchRow | undefined {
+  return batches.find((row) => batchRowMatchesLine(row, batchId, batchNumber, resolvedName));
+}
+
+function isGpStorage(storageId: string): boolean {
+  const normalized = String(storageId ?? '').trim();
+  return normalized === STORAGE_ID_GP;
+}
+
+function isMsStorage(storageId: string): boolean {
+  const normalized = String(storageId ?? '').trim();
+  return normalized === STORAGE_ID_SMALL;
+}
+
+export function computeLineStockFromBatches(
+  batches: MovementMobBatchRow[],
+  batchId: string,
+  batchNumber = '',
+  resolvedName = '',
+): MovementMobLineStockInfo {
+  let batchGp: number | null = null;
+  let batchMs: number | null = null;
+  let totalGp = 0;
+  let totalMs = 0;
+
+  for (const row of batches) {
+    const qty = Number(row.quantity) || 0;
+    const matchesBatch = batchRowMatchesLine(row, batchId, batchNumber, resolvedName);
+    if (isGpStorage(row.storage)) {
+      totalGp += qty;
+      if (matchesBatch) batchGp = qty;
+    }
+    if (isMsStorage(row.storage)) {
+      totalMs += qty;
+      if (matchesBatch) batchMs = qty;
+    }
+  }
+
+  return { batchGp, batchMs, totalGp, totalMs };
+}
+
+function projectWarehouseStock(
+  currentBatch: number | null,
+  currentTotal: number,
+  isSource: boolean,
+  isDest: boolean,
+  sourceOut: number,
+  destIn: number,
+  adjustBatch: boolean,
+): { batch: number | null; total: number } {
+  let total = currentTotal;
+  let batch = currentBatch;
+
+  if (isSource && sourceOut > 0) {
+    total = Math.max(0, total - sourceOut);
+    if (adjustBatch && batch !== null) {
+      batch = Math.max(0, batch - sourceOut);
+    }
+  }
+  if (isDest && destIn > 0) {
+    total += destIn;
+    if (adjustBatch) {
+      batch = (batch ?? 0) + destIn;
+    }
+  }
+
+  return {
+    batch: adjustBatch ? batch : null,
+    total,
+  };
+}
+
+/** Прогноз залишків після застосування рядка переміщення до поточних даних Dilovod. */
+export function computeProjectedLineStock(
+  stock: MovementMobLineStockInfo | undefined,
+  sourceStorageId: string,
+  destStorageId: string,
+  sourceOut: number,
+  destIn: number,
+  batchLinked?: boolean,
+): MovementMobLineStockInfo {
+  const adjustBatch = batchLinked === true;
+  const sourceGp = isGpStorage(sourceStorageId);
+  const sourceMs = isMsStorage(sourceStorageId);
+  const destGp = isGpStorage(destStorageId);
+  const destMs = isMsStorage(destStorageId);
+
+  const gp = projectWarehouseStock(
+    stock?.batchGp ?? null,
+    stock?.totalGp ?? 0,
+    sourceGp,
+    destGp,
+    sourceOut,
+    destIn,
+    adjustBatch,
+  );
+  const ms = projectWarehouseStock(
+    stock?.batchMs ?? null,
+    stock?.totalMs ?? 0,
+    sourceMs,
+    destMs,
+    sourceOut,
+    destIn,
+    adjustBatch,
+  );
+
+  return {
+    batchGp: gp.batch,
+    batchMs: ms.batch,
+    totalGp: gp.total,
+    totalMs: ms.total,
+  };
+}
+
+export function movementQtyForStockProjection(
+  line: Pick<MovementMobProductLineViewModel, 'totalPortions' | 'receivedTotalPortions'>,
+  showReceipt: boolean,
+): { sourceOut: number; destIn: number } {
+  const sent = Math.max(0, Number(line.totalPortions) || 0);
+  const received = Math.max(0, Number(line.receivedTotalPortions) || 0);
+  if (showReceipt && received > 0) {
+    return { sourceOut: sent, destIn: received };
+  }
+  return { sourceOut: sent, destIn: sent };
+}
+
+export interface MovementMobSkuStockTotals {
+  totalGp: number;
+  totalMs: number;
+}
+
+export function enrichMovementMobLines(
+  lines: MovementMobProductLineViewModel[],
+  batchesBySku: Record<string, MovementMobBatchRow[]>,
+  stockTotalsBySku?: Record<string, MovementMobSkuStockTotals>,
+  lineMetaByKey?: Record<string, MovementMobLineEnrichmentMeta>,
+): MovementMobProductLineViewModel[] {
+  return lines.map((line) => {
+    const metaKey = movementMobEnrichmentLineKey(line);
+    const meta = lineMetaByKey?.[metaKey];
+    const enrichmentReady = lineMetaByKey !== undefined;
+    const batchLinked = enrichmentReady ? meta?.batchLinked === true : undefined;
+    const catalogBatchId = meta?.catalogBatchId?.trim() || '';
+    const batches = batchesBySku[line.sku] ?? [];
+    const lookupId = isUsableDilovodBatchId(catalogBatchId)
+      ? catalogBatchId
+      : effectiveBatchId(line.batchId, line.batchNumber);
+    const batchNumber = batchLinked === true
+      ? resolveBatchDisplayName(line.batchId, line.batchNumber, batches)
+      : batchLinked === false
+        ? ''
+        : line.batchNumber;
+    const matchRow = findMatchingBatchRow(batches, lookupId, line.batchNumber, batchNumber);
+    const stockBatchId = matchRow?.batchId ?? lookupId;
+    const stockBatchNumber = matchRow?.batchNumber ?? line.batchNumber;
+    const totals = stockTotalsBySku?.[line.sku];
+    const stockFromBatches = batches.length > 0
+      ? computeLineStockFromBatches(batches, stockBatchId, stockBatchNumber, batchNumber)
+      : null;
+    const stock: MovementMobLineStockInfo = stockFromBatches
+      ? {
+          batchGp: batchLinked === true ? stockFromBatches.batchGp : null,
+          batchMs: batchLinked === true ? stockFromBatches.batchMs : null,
+          totalGp: stockFromBatches.totalGp || totals?.totalGp || 0,
+          totalMs: stockFromBatches.totalMs || totals?.totalMs || 0,
+        }
+      : {
+          batchGp: null,
+          batchMs: null,
+          totalGp: totals?.totalGp ?? 0,
+          totalMs: totals?.totalMs ?? 0,
+        };
+    return {
+      ...line,
+      batchNumber,
+      batchLinked,
+      catalogGoodId: meta?.catalogGoodId ?? line.catalogGoodId ?? null,
+      stock,
+    };
+  });
 }
 
 export function buildProductLines(
@@ -359,11 +721,23 @@ export function buildChronology(
 ): MovementMobChronologyEvent[] {
   const author = record.createdByName ?? null;
   const receiver = record.receivedByName ?? null;
-  const destLabel = resolveChronologyStorageLabel(record.destinationWarehouse, destDirectoryName);
+  const scanner = record.receiptScannedByName ?? null;
+  const sourceBadge = resolveShortStorageBadge(record.sourceWarehouse);
+  const destBadge = resolveShortStorageBadge(record.destinationWarehouse);
   const sentDone = record.status === 'active' || record.status === 'pending_receipt' || record.status === 'finalized';
+  const scanStarted = Boolean(record.receiptScanStartedAt);
+  const scanEnded = Boolean(record.receiptScanEndedAt);
+  const hasReceivedQty = parseMovementItems(record.items).some(
+    (item) => resolvedReceivedPortions(item) > 0,
+  );
+  const acceptedDone = scanStarted || scanEnded || hasReceivedQty || record.status === 'finalized';
   const receivedDone = record.status === 'finalized';
   const sentAt = record.submittedAt || record.sentToDilovodAt || record.lastSentToDilovodAt || record.draftLastEditedAt;
   const receivedAt = record.receivedAt || record.lastSentToDilovodAt || record.sentToDilovodAt;
+  const scanInterval = formatReceiptScanInterval(
+    record.receiptScanStartedAt,
+    record.receiptScanEndedAt ?? record.receiptScanStartedAt,
+  );
 
   return [
     {
@@ -376,16 +750,25 @@ export function buildChronology(
     {
       key: 'sent',
       occurredAt: sentDone ? formatChronologyDateTime(sentAt) : 'ще не відправлено',
-      title: sentChronologyTitle(destLabel),
+      title: sentChronologyTitle(sourceBadge),
       userName: sentDone ? author : null,
       state: sentDone ? 'done' : 'pending',
+    },
+    {
+      key: 'accepted',
+      occurredAt: acceptedDone
+        ? (scanInterval ?? formatChronologyDateTime(record.receiptScanStartedAt))
+        : 'ще не прийнято',
+      title: acceptedChronologyTitle(destBadge),
+      userName: acceptedDone ? scanner : null,
+      state: acceptedDone ? 'done' : 'pending',
     },
     {
       key: 'received',
       occurredAt: receivedDone
         ? formatChronologyDateTime(receivedAt)
-        : 'ще не отримано',
-      title: 'Отримано',
+        : 'ще не підтверджено',
+      title: 'Підтверджено отримання',
       userName: receivedDone ? (receiver || author) : null,
       state: receivedDone ? 'done' : 'pending',
     },
@@ -479,6 +862,13 @@ export function lineReceiptState(
   if (line.receivedTotalPortions <= 0) return 'pending';
   if (line.receivedTotalPortions === line.totalPortions) return 'match';
   return line.receivedTotalPortions < line.totalPortions ? 'shortage' : 'surplus';
+}
+
+export function receiptResultLabel(state: MovementMobReceiptState, qtyDelta: number): string {
+  if (state === 'pending') return 'ще не скановано';
+  if (state === 'match') return 'збіг';
+  if (state === 'shortage') return `нестача ${qtyDelta}`;
+  return `надлишок +${qtyDelta}`;
 }
 
 /** Колір фактично прийнятої кількості. */

@@ -21,6 +21,7 @@ import { safeParseItems } from './historyNormalize.js';
 import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
 import { productsCatalogService } from '../Products/ProductsCatalogService.js';
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
+import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
 
 const router = Router();
 
@@ -87,6 +88,54 @@ function resolveBatchCacheTtl(asOfDate: Date | undefined): number {
 /** Перевірка чи запис у кеші ще дійсний */
 function isBatchCacheValid(entry: BatchCacheEntry): boolean {
   return Date.now() - entry.timestamp < entry.ttl;
+}
+
+type BatchNumbersRow = {
+  batchId: string;
+  batchNumber: string;
+  storage: string;
+  storageDisplayName: string;
+  quantity: number;
+  firm: string;
+  firmDisplayName: string;
+};
+
+function batchLabelNeedsCatalogFallback(batch: Pick<BatchNumbersRow, 'batchId' | 'batchNumber'>): boolean {
+  const id = String(batch.batchId ?? '').trim();
+  const label = String(batch.batchNumber ?? '').trim();
+  if (!isUsableDilovodBatchId(id)) return false;
+  if (!label || label === id) return true;
+  return isUsableDilovodBatchId(label) && label === id;
+}
+
+/** Доповнює batchNumber з локального каталогу (catalog_good_barcodes.goodPartName). */
+async function enrichBatchNamesFromCatalog(batches: BatchNumbersRow[]): Promise<BatchNumbersRow[]> {
+  const ids = [...new Set(
+    batches
+      .filter(batchLabelNeedsCatalogFallback)
+      .map((batch) => String(batch.batchId).trim()),
+  )];
+  if (ids.length === 0) return batches;
+
+  const catalogRows = await prisma.catalogGoodBarcode.findMany({
+    where: { goodPart: { in: ids } },
+    select: { goodPart: true, goodPartName: true },
+  });
+  const nameByPart = new Map<string, string>();
+  for (const row of catalogRows) {
+    const name = row.goodPartName?.trim();
+    if (name && row.goodPart) {
+      nameByPart.set(row.goodPart, name);
+    }
+  }
+  if (nameByPart.size === 0) return batches;
+
+  return batches.map((batch) => {
+    if (!batchLabelNeedsCatalogFallback(batch)) return batch;
+    const catalogName = nameByPart.get(String(batch.batchId).trim());
+    if (!catalogName) return batch;
+    return { ...batch, batchNumber: catalogName };
+  });
 }
 
 // ============================================================================
@@ -178,6 +227,141 @@ router.get('/products-for-movement', authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/warehouse/resolve-batch-names — назви партій, привʼязка до ШК, ID товару в каталозі
+router.post('/resolve-batch-names', authenticateToken, async (req, res) => {
+  try {
+    const batchIds = Array.isArray(req.body?.batchIds)
+      ? req.body.batchIds
+        .map((id: unknown) => String(id ?? '').trim())
+        .filter((id: string) => isUsableDilovodBatchId(id))
+      : [];
+    const uniqueIds = [...new Set<string>(batchIds)];
+    const names: Record<string, string> = {};
+    const lineMeta: Record<string, {
+      batchLinked: boolean;
+      catalogGoodId: string | null;
+      catalogBatchId: string | null;
+    }> = {};
+
+    const rawLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
+    const lineEntries = rawLines
+      .map((line: { sku?: unknown; batchId?: unknown; batchNumber?: unknown; barcode?: unknown }) => ({
+        sku: String(line?.sku ?? '').trim(),
+        batchId: String(line?.batchId ?? '').trim(),
+        batchNumber: String(line?.batchNumber ?? '').trim(),
+        barcode: String(line?.barcode ?? '').trim(),
+      }))
+      .filter((line: { sku: string }) => line.sku);
+
+    const lineMetaKey = (line: { sku: string; barcode: string; batchId: string; batchNumber: string }) =>
+      [line.sku, line.barcode, line.batchId, line.batchNumber].join('::');
+
+    if (lineEntries.length > 0) {
+      const skus = [...new Set<string>(lineEntries.map((line) => line.sku))];
+      const barcodes = [...new Set<string>(
+        lineEntries.map((line) => line.barcode).filter((code: string) => code.length > 0),
+      )];
+
+      const [goodsBySku, barcodeRows] = await Promise.all([
+        prisma.catalogGood.findMany({
+          where: { sku: { in: skus }, delMark: false, isGroup: false },
+          select: { id: true, sku: true },
+        }),
+        barcodes.length > 0
+          ? prisma.catalogGoodBarcode.findMany({
+            where: { code: { in: barcodes } },
+            include: { good: { select: { id: true, sku: true } } },
+          })
+          : Promise.resolve([]),
+      ]);
+
+      const goodIdBySku = new Map<string, string>();
+      for (const good of goodsBySku) {
+        if (good.sku) goodIdBySku.set(good.sku, good.id);
+      }
+
+      const barcodeByCode = new Map<string, (typeof barcodeRows)[number]>();
+      for (const row of barcodeRows) {
+        barcodeByCode.set(row.code, row);
+      }
+
+      for (const line of lineEntries) {
+        const key = lineMetaKey(line);
+        const hit = line.barcode ? barcodeByCode.get(line.barcode) : undefined;
+        const catalogGoodId = hit?.good?.id ?? goodIdBySku.get(line.sku) ?? null;
+        const catalogBatchId = hit && isUsableDilovodBatchId(hit.goodPart)
+          ? hit.goodPart.trim()
+          : null;
+        const batchLinked = Boolean(catalogBatchId);
+        lineMeta[key] = { batchLinked, catalogGoodId, catalogBatchId };
+
+        const partName = hit?.goodPartName?.trim();
+        if (batchLinked && partName) {
+          names[key] = partName;
+          if (catalogBatchId) {
+            names[catalogBatchId] = partName;
+            names[`${line.sku}::${catalogBatchId}`] = partName;
+          }
+        }
+      }
+
+      const catalogRows = await prisma.catalogGoodBarcode.findMany({
+        where: {
+          good: { sku: { in: skus } },
+          goodPartName: { not: null },
+        },
+        include: {
+          good: { select: { sku: true } },
+        },
+      });
+
+      for (const line of lineEntries) {
+        const key = lineMetaKey(line);
+        if (names[key]) continue;
+        if (!lineMeta[key]?.batchLinked) continue;
+
+        const lookupId = line.batchId && isUsableDilovodBatchId(line.batchId)
+          ? line.batchId
+          : lineMeta[key]?.catalogBatchId ?? '';
+        const label = line.batchNumber && line.batchNumber !== '—' ? line.batchNumber : '';
+
+        const hit = catalogRows.find((row) => {
+          const name = row.goodPartName?.trim();
+          if (!name || row.good.sku !== line.sku) return false;
+          if (lookupId && row.goodPart === lookupId) return true;
+          if (label && (row.goodPartName === label || row.goodPart === label)) return true;
+          return false;
+        });
+
+        const resolvedName = hit?.goodPartName?.trim();
+        if (!resolvedName) continue;
+        names[key] = resolvedName;
+        if (lookupId) names[lookupId] = resolvedName;
+        if (lookupId) names[`${line.sku}::${lookupId}`] = resolvedName;
+        if (label) names[`${line.sku}::${label}`] = resolvedName;
+      }
+    }
+
+    if (uniqueIds.length > 0) {
+      const catalogRows = await prisma.catalogGoodBarcode.findMany({
+        where: { goodPart: { in: uniqueIds } },
+        select: { goodPart: true, goodPartName: true },
+      });
+      for (const row of catalogRows) {
+        const name = row.goodPartName?.trim();
+        if (name && row.goodPart) {
+          names[row.goodPart] = name;
+        }
+      }
+    }
+
+    res.json({ success: true, names, lineMeta });
+  } catch (error) {
+    console.error('🚨 [Warehouse] resolve-batch-names:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
 // Отримати доступні партії (batch numbers) по SKU
 router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
   try {
@@ -237,11 +421,12 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
         const ageLabel = ageSeconds < 60 ? `${ageSeconds}с` : (ageSeconds < 3600 ? `${Math.round(ageSeconds / 60)}хв` : `${Math.round(ageSeconds / 3600)}год`);
         const cachedTtlLabel = cached.ttl === BATCH_CACHE_TTL_LONG ? '12 год' : '5 хв';
         console.log(`✅ [Warehouse] Партії для SKU ${sku} отримані з кешу (вік: ${ageLabel}, TTL запису: ${cachedTtlLabel}). Дата переміщення ${parsedDate ? `${parsedDate.toLocaleString('uk-UA')}` : 'не вказана'}.`);
+        const cachedBatches = await enrichBatchNamesFromCatalog(cached.data as BatchNumbersRow[]);
         return res.json({
           success: true,
           sku,
-          batches: cached.data,
-          count: (cached.data as unknown[]).length,
+          batches: cachedBatches,
+          count: cachedBatches.length,
           asOfDate: parsedDate ? parsedDate.toISOString() : null,
           fromCache: true,
         });
@@ -255,13 +440,15 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
 
     const batches = await dilovodService.getBatchNumbersBySku(sku, finalFirmId, parsedDate);
 
-    const filteredBatches = targetStorageId
-      ? batches.filter(b => b.storage === targetStorageId)
-      : shouldOnlySmallStorage
-        ? batches.filter(b => b.storage === dilovodConfig.smallStorageId)
-        : shouldIncludeSmallStorage
-          ? batches
-          : batches.filter(b => b.storage !== dilovodConfig.smallStorageId);
+    const filteredBatches = await enrichBatchNamesFromCatalog(
+      targetStorageId
+        ? batches.filter(b => b.storage === targetStorageId)
+        : shouldOnlySmallStorage
+          ? batches.filter(b => b.storage === dilovodConfig.smallStorageId)
+          : shouldIncludeSmallStorage
+            ? batches
+            : batches.filter(b => b.storage !== dilovodConfig.smallStorageId),
+    );
 
     const filterLabel = targetStorageId
       ? `лише склад ${targetStorageId}`
@@ -273,8 +460,12 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
 
     console.log(`✅ [Warehouse] Отримано ${batches.length} партій для SKU: ${sku}, після фільтрації (${filterLabel}): ${filteredBatches.length}. Кешуємо на ${ttlLabel}`);
 
-    // Зберігаємо в кеш
-    batchCache.set(cacheKey, { data: filteredBatches, timestamp: Date.now(), ttl });
+    // Порожні відповіді не кешуємо довго — уникаємо «отруєного» кешу при тимчасових збоях Dilovod
+    if (filteredBatches.length > 0) {
+      batchCache.set(cacheKey, { data: filteredBatches, timestamp: Date.now(), ttl });
+    } else {
+      console.log(`⚠️ [Warehouse] Партії для SKU ${sku} порожні — кеш не оновлюємо`);
+    }
 
     res.json({
       success: true,
@@ -666,7 +857,16 @@ router.get('/:id', authenticateToken, async (req, res) => {
       });
       receivedByName = receiver?.name ?? null;
     }
-    res.json({ ...withAuthor, receivedByName });
+    let receiptScannedByName: string | null = null;
+    const receiptScannedBy = (movement as { receiptScannedBy?: number | null }).receiptScannedBy;
+    if (receiptScannedBy != null) {
+      const scanner = await prisma.user.findUnique({
+        where: { id: receiptScannedBy },
+        select: { name: true },
+      });
+      receiptScannedByName = scanner?.name ?? null;
+    }
+    res.json({ ...withAuthor, receivedByName, receiptScannedByName });
   } catch (error) {
     console.error('❌ [Warehouse] Error fetching warehouse movement:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -834,13 +1034,32 @@ router.put('/:id/receipt', authenticateToken, async (req, res) => {
     const clientItems = items as Record<string, unknown>[];
     const merged = WarehouseService.mergeReceivedItems(stored, clientItems);
 
+    const now = new Date();
+    const scanUpdate: Record<string, unknown> = {
+      receiptScanEndedAt: now,
+      receiptScannedBy: userId,
+    };
+    const existingScanStarted = (movement as { receiptScanStartedAt?: Date | null }).receiptScanStartedAt;
+    if (!existingScanStarted) {
+      scanUpdate.receiptScanStartedAt = now;
+    }
+
     const updated = await prisma.warehouseMovement.update({
       where: { id: movement.id },
-      data: { items: JSON.stringify(merged) },
+      data: {
+        items: JSON.stringify(merged),
+        ...scanUpdate,
+      },
     });
 
     const [withAuthor] = await resolveAuthorNames([updated as { createdBy: number | null }]);
-    res.json({ ...withAuthor, receivedByName: null });
+    let receiptScannedByName: string | null = null;
+    const scanner = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+    receiptScannedByName = scanner?.name ?? null;
+    res.json({ ...withAuthor, receivedByName: null, receiptScannedByName });
   } catch (error) {
     console.error('🚨 [Warehouse] Error saving receipt:', error);
     res.status(500).json({ error: 'Internal server error' });

@@ -105,7 +105,7 @@ function useEnterFromCollapsed(
 
 export function SwipeActionRow(props: SwipeActionRowProps) {
   if (props.disabled) {
-    return <div className={cn("pb-2.5", props.className)}>{props.children}</div>;
+    return <div className={cn("pb-4", props.className)}>{props.children}</div>;
   }
   if (!usesIosSwipeGestures()) {
     return <PanelActionRow {...props} />;

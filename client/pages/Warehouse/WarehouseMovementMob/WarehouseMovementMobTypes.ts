@@ -15,7 +15,7 @@ export type MovementMobAdminQtySide = 'sent' | 'received';
 
 export type MovementMobBarcodeKind = 'portion' | 'box';
 
-export type MovementMobStepperStepKey = 'prepared' | 'sent' | 'received';
+export type MovementMobStepperStepKey = 'prepared' | 'sent' | 'accepted' | 'received';
 
 export type MovementMobStepperStepState = 'done' | 'pending';
 
@@ -53,11 +53,15 @@ export interface MovementMobApiRecord {
   sentToDilovodAt: string | null;
   lastSentToDilovodAt: string | null;
   submittedAt?: string | null;
+  receiptScanStartedAt?: string | null;
+  receiptScanEndedAt?: string | null;
+  receiptScannedBy?: number | null;
   receivedBy?: number | null;
   receivedAt?: string | null;
   createdBy: number;
   createdByName?: string | null;
   receivedByName?: string | null;
+  receiptScannedByName?: string | null;
 }
 
 export interface MovementMobAggregates {
@@ -84,6 +88,8 @@ export interface MovementMobReceiptSummary {
 export interface MovementMobStepperStep {
   key: MovementMobStepperStepKey;
   label: string;
+  /** Короткий підпис для вузьких екранів (список документів). */
+  shortLabel?: string;
   state: MovementMobStepperStepState;
 }
 
@@ -106,12 +112,33 @@ export interface MovementMobProductMeta {
   portionsPerBox: number | null;
 }
 
+export interface MovementMobLineStockInfo {
+  /** Залишок у поточній партії на складі ГП */
+  batchGp: number | null;
+  /** Залишок у поточній партії на складі МС */
+  batchMs: number | null;
+  /** Загальний залишок (усі партії) на ГП */
+  totalGp: number;
+  /** Загальний залишок (усі партії) на МС */
+  totalMs: number;
+}
+
+export interface MovementMobLineEnrichmentMeta {
+  batchLinked: boolean;
+  catalogGoodId: string | null;
+  catalogBatchId: string | null;
+}
+
 export interface MovementMobProductLineViewModel {
   key: string;
   sku: string;
   productName: string;
   batchId: string;
   batchNumber: string;
+  /** Чи привʼязана партія до штрих-коду в каталозі */
+  batchLinked?: boolean;
+  /** ID товару в каталозі Dilovod (для drawer редагування) */
+  catalogGoodId?: string | null;
   boxQuantity: number;
   portionQuantity: number;
   totalPortions: number;
@@ -122,6 +149,7 @@ export interface MovementMobProductLineViewModel {
   receivedBoxQuantity: number;
   receivedPortionQuantity: number;
   receivedTotalPortions: number;
+  stock?: MovementMobLineStockInfo;
 }
 
 /** Відповідь GET /api/warehouse/product-by-barcode — дзеркало WarehouseProductByBarcodeResponse. */

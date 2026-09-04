@@ -17,6 +17,7 @@ import MovementMobProductCard from './MovementMobProductCard';
 import MovementMobWarehouseSelectors, {
   type MovementMobStorageOption,
 } from './MovementMobWarehouseSelectors';
+import { useMovementMobLinesEnrichment } from '../useMovementMobLinesEnrichment';
 
 interface MovementMobDocumentScreenProps {
   editorMode: MovementMobEditorMode;
@@ -35,6 +36,7 @@ interface MovementMobDocumentScreenProps {
   onManualBarcode: () => void;
   onEditLine?: (line: MovementMobProductLineViewModel) => void;
   onDeleteLine?: (line: MovementMobProductLineViewModel) => void;
+  onEditProduct?: (line: MovementMobProductLineViewModel) => void;
   enterLineKey?: string | null;
   onSend: () => void;
   onConfirmReceipt?: () => void;
@@ -74,6 +76,7 @@ export default function MovementMobDocumentScreen({
   onManualBarcode,
   onEditLine,
   onDeleteLine,
+  onEditProduct,
   enterLineKey = null,
   onSend,
   onConfirmReceipt,
@@ -110,6 +113,7 @@ export default function MovementMobDocumentScreen({
     : isReceiving
       ? 'Прийом товарів'
       : 'Товари на переміщення';
+  const { lines: displayLines, loading: enrichmentLoading, refreshing: enrichmentRefreshing } = useMovementMobLinesEnrichment(lines);
 
   return (
     <div className="flex flex-col gap-4 pb-24 px-3 md:px-0">
@@ -159,13 +163,13 @@ export default function MovementMobDocumentScreen({
             </h3>
           </div>
 
-          {lines.length === 0 ? (
+          {displayLines.length === 0 ? (
             <div className="rounded-xl border border-dashed border-default-200 bg-white py-10 text-center text-sm text-default-400">
               Немає позицій у документі
             </div>
           ) : (
-            <div className="flex flex-col">
-              {lines.map((line) => (
+            <div className="flex flex-col md:grid md:grid-cols-2 md:gap-x-4">
+              {displayLines.map((line) => (
                 <SwipeActionRow
                   key={line.key}
                   disabled={!canSwipe}
@@ -185,7 +189,16 @@ export default function MovementMobDocumentScreen({
                   }}
                   enterFromCollapsed={enterLineKey === line.key}
                 >
-                  <MovementMobProductCard line={line} showReceipt={showReceipt} qtyFocus={qtyFocus} />
+                  <MovementMobProductCard
+                    line={line}
+                    sourceStorageId={sourceId}
+                    destStorageId={destId}
+                    showReceipt={showReceipt}
+                    qtyFocus={qtyFocus}
+                    onEditProduct={onEditProduct}
+                    enrichmentLoading={enrichmentLoading}
+                    enrichmentRefreshing={enrichmentRefreshing}
+                  />
                 </SwipeActionRow>
               ))}
             </div>
@@ -213,7 +226,7 @@ export default function MovementMobDocumentScreen({
       )}
 
       {actionBar === 'receiving' && (
-        <div className="flex flex-col gap-3 mt-4 w-full">
+        <div className="flex flex-col md:grid md:grid-cols-2 gap-3 mt-4 w-full">
           <MovementMobAddMoreButton
             onAdd={onAddMore}
             onManualBarcode={onManualBarcode}
@@ -329,21 +342,18 @@ export default function MovementMobDocumentScreen({
         <div className="flex items-stretch gap-2 mt-6">
           {canAdminEdit && (adminEditing ? (
             <Button
-              size="sm"
               variant="flat"
-              className="flex-1 h-10 text-white bg-neutral-400/75 hover:bg-neutral-400/80"
-              startContent={<DynamicIcon name="check" size={16} strokeWidth={1.75} />}
+              className="min-w-0 h-10 text-white bg-neutral-400/75 hover:bg-neutral-400/80"
+              startContent={<DynamicIcon name="check" size={16} strokeWidth={1.75} className="shrink-0" />}
               onPress={onFinishAdminEdit}
             >
               Завершити редагування
             </Button>
           ) : (
             <Button
-              size="sm"
-              variant="flat"
               color="primary"
-              className="flex-1 h-10 text-white bg-blue-600 hover:bg-blue-600"
-              startContent={<DynamicIcon name="pencil" size={16} strokeWidth={1.75} />}
+              className="min-w-0 h-10 text-neutral-700 border-1.5 border-neutral-700 bg-transparent hover:bg-neutral-700 hover:text-white"
+              startContent={<DynamicIcon name="pencil" size={16} strokeWidth={1.75} className="shrink-0" />}
               onPress={onAdminEdit}
             >
               Редагувати
@@ -351,11 +361,9 @@ export default function MovementMobDocumentScreen({
           ))}
           {canAdminDelete && (
             <Button
-              size="sm"
-              variant="flat"
               color="danger"
-              className="flex-1 h-10 text-white bg-danger-500 hover:bg-danger-500"
-              startContent={<DynamicIcon name="trash-2" size={16} strokeWidth={1.75} />}
+              className="min-w-0 h-10 text-danger-700 border-1.5 border-danger-500 bg-transparent hover:bg-danger-700 hover:text-white"
+              startContent={<DynamicIcon name="trash-2" size={16} strokeWidth={1.75} className="shrink-0" />}
               onPress={onAdminDelete}
             >
               Видалити

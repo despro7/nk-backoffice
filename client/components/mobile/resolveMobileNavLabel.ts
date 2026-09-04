@@ -84,7 +84,7 @@ export function resolveMobileNavLabel(
       return {
         label: group.parentRoute?.navLabel ?? group.groupMeta?.label ?? group.key,
         icon: group.parentRoute?.icon ?? group.groupMeta?.icon ?? null,
-        navBadge: group.parentRoute?.navBadge,
+        navBadge: group.parentRoute?.navBadge ?? group.groupMeta?.navBadge,
       };
     }
   }

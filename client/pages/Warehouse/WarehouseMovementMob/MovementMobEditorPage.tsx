@@ -28,8 +28,6 @@ import {
   movementMobLineKey,
   receiptDeviations,
   replaceMovementMobLine,
-  resolveChronologyStorageLabel,
-  sentChronologyTitle,
   serializeMobDraftItems,
   toDocumentViewModel,
 } from './WarehouseMovementMobUtils';
@@ -41,6 +39,7 @@ import {
   fetchConfirmReceiptPayload,
   fetchMovementMobStocks,
   fetchProductByBarcode,
+  resolveBatchNameForProduct,
   saveReceipt,
   submitMovement,
   syncMovementToDilovod,
@@ -60,6 +59,7 @@ import MovementMobSubmitSheet from './components/MovementMobSubmitSheet';
 import MovementMobConfirmReceiptSheet from './components/MovementMobConfirmReceiptSheet';
 import MovementMobDeleteConfirmModal from './components/MovementMobDeleteConfirmModal';
 import MovementMobSyncDilovodModal from './components/MovementMobSyncDilovodModal';
+import MovementMobProductEditDrawer from './components/MovementMobProductEditDrawer';
 import MovementMobUndoBanner from './components/MovementMobUndoBanner';
 import type { MovementMobStorageOption } from './components/MovementMobWarehouseSelectors';
 
@@ -123,6 +123,7 @@ export default function MovementMobEditorPage({
   const [deleting, setDeleting] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncingDilovod, setSyncingDilovod] = useState(false);
+  const [productEditGoodId, setProductEditGoodId] = useState<string | null>(null);
   const [enterLineKey, setEnterLineKey] = useState<string | null>(null);
   const [mockEnabled, setMockEnabled] = useState(() => useMockBarcodeProp ?? readMovementMobMock().enabled);
   const [mockCode, setMockCode] = useState(() => mockBarcodeProp ?? readMovementMobMock().code);
@@ -211,15 +212,7 @@ export default function MovementMobEditorPage({
 
   const aggregates = useMemo(() => aggregatesFromLines(lines), [lines]);
   const receivedAggregates = useMemo(() => aggregatesFromReceivedLines(lines), [lines]);
-  const destIdForChrono = document?.destStorageId ?? destId;
-  const destDirectoryName = storages.find((item) => item.id === destIdForChrono)?.name;
-  const chronology = useMemo(() => {
-    const events = document?.chronology ?? [];
-    const destLabel = resolveChronologyStorageLabel(destIdForChrono, destDirectoryName);
-    return events.map((event) => (
-      event.key === 'sent' ? { ...event, title: sentChronologyTitle(destLabel) } : event
-    ));
-  }, [destDirectoryName, destIdForChrono, document?.chronology]);
+  const chronology = document?.chronology ?? [];
   const otherCommittedPortions = draft
     ? committedPortionsForSku(
       lines,
@@ -268,6 +261,16 @@ export default function MovementMobEditorPage({
         }
         batchId = fallback.batchId;
         batchNumber = fallback.batchNumber || batchNumber;
+      } else {
+        const resolved = await resolveBatchNameForProduct(
+          apiCall,
+          product.sku,
+          batchId,
+          batchNumber,
+          sourceIdRef.current,
+        );
+        batchId = resolved.batchId;
+        batchNumber = resolved.batchNumber;
       }
 
       if (openDraft) {
@@ -758,6 +761,9 @@ export default function MovementMobEditorPage({
         onManualBarcode={() => setManualOpen(true)}
         onEditLine={editorMode === 'formation' || editorMode === 'receiving' || adminCanEdit ? handleEditLine : undefined}
         onDeleteLine={editorMode === 'formation' || adminCanEdit ? handleDeleteLine : undefined}
+        onEditProduct={(line) => {
+          if (line.catalogGoodId) setProductEditGoodId(line.catalogGoodId);
+        }}
         enterLineKey={enterLineKey}
         onSend={handleSend}
         onConfirmReceipt={handleConfirmReceiptPress}
@@ -902,6 +908,15 @@ export default function MovementMobEditorPage({
           onElapsed={() => setReceiveUndo(null)}
         />
       )}
+
+      <MovementMobProductEditDrawer
+        catalogGoodId={productEditGoodId}
+        open={Boolean(productEditGoodId)}
+        onClose={() => setProductEditGoodId(null)}
+        onSaved={() => {
+          void queryClient.invalidateQueries({ queryKey: ['warehouse-movement-mob-line-enrichment'] });
+        }}
+      />
     </>
   );
 }

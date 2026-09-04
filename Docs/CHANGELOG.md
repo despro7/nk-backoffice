@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-09-04 — Мобільні переміщення: картка товару, партії, залишки після переміщення
+**Files:** `client/pages/Warehouse/WarehouseMovementMob/**`, `server/modules/Warehouse/WarehouseController.ts`, `server/services/dilovod/DilovodApiClient.ts`, `prisma/schema.prisma`, `prisma/migrations/20260904120000_warehouse_movement_receipt_scan_fields/`, `Docs/features/warehouse-movement-mob.md`
+
+- **Картка товару (`MovementMobProductCard`):** штрих-код; статус прийому «Відправлено / Отримано / Результат» (збіг | нестача | надлишок); блок **Залишки після переміщення** — прогноз по ГП і МС (партія / всього) з урахуванням кількості рядка; skeleton при завантаженні; попередження **«Партія: не обрано!»**, якщо партія не привʼязана до ШК в каталозі; кнопка редагування товару (drawer на місці).
+- **Збагачення рядків:** хук `useMovementMobLinesEnrichment` (React Query, кеш 10/30 хв) — партії з Dilovod (`GET /batch-numbers/:sku`), назви та `batchLinked` з каталогу (`POST /resolve-batch-names`), загальні залишки (`stock-snapshot`). Послідовні запити до Dilovod (без multithread-помилок).
+- **Степпер і хронологія:** 4 кроки — Підготовлено → **Відправлено з [ГП|МС]** → **Прийнято на [ГП|МС]** → Підтверджено. На мобільних — `shortLabel`. Крок «Прийнято» — сканер (`receiptScannedBy`), інтервал `receiptScanStartedAt`–`receiptScanEndedAt` (дата один раз, час через дефіс, тривалість у дужках).
+- **БД:** `receiptScanStartedAt`, `receiptScanEndedAt`, `receiptScannedBy` на `warehouse_movement`; міграція `20260904120000_warehouse_movement_receipt_scan_fields`.
+- **API:** `POST /api/warehouse/resolve-batch-names` — `names`, `lineMeta` (`batchLinked`, `catalogGoodId`, `catalogBatchId`) за SKU, batchId, barcode.
+- **Dilovod:** виправлено `getBatchNumbersBySku` — фільтр SKU `IL`, без `goodPart__pr` у `fields` (помилка API), fallback без firm; кеш `/batch-numbers` не зберігає порожні відповіді.
+- **Прогноз залишків:** `computeProjectedLineStock` — з джерела віднімається відправлене, на призначення додається отримане (або відправлене до прийому).
+- Деталі: `Docs/features/warehouse-movement-mob.md`.
+
+---
+
 ## 2026-09-03 — HR: розрахунок у стилі табеля, довідник роботодавців
 **Files:** `client/pages/Hr/HrPayrollPage.tsx`, `client/pages/Hr/HrTimesheetPage.tsx`, `client/pages/Hr/Payroll/PayrollTable.tsx`, `client/pages/Hr/Timesheet/TimesheetGrid.tsx`, `client/pages/Hr/Timesheet/TimesheetKindLegend.tsx`, `client/pages/Hr/Timesheet/TimesheetCellContextMenu.tsx`, `client/pages/Hr/Employers/index.tsx`, `client/pages/Hr/hrUi.tsx`, `client/routes.config.tsx`, `server/modules/Hr/HrService.ts`, `server/modules/Hr/HrController.ts`, `server/modules/Hr/HrXlsxImportService.ts`, `shared/types/hr.ts`, `Docs/features/hr-module.md`
 

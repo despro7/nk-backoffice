@@ -206,6 +206,9 @@ model WarehouseMovement {
   sentToDilovodAt      DateTime? // Дата першої відправки до Діловода
   lastSentToDilovodAt  DateTime? // Дата останньої (проміжної або фінальної) відправки до Діловода
   submittedAt          DateTime? // Момент підтвердження відправки на отримання (pending_receipt)
+  receiptScanStartedAt DateTime? // Початок сканування при прийомі на МС
+  receiptScanEndedAt   DateTime? // Останнє сканування при прийомі на МС
+  receiptScannedBy     Int?      // Користувач, який сканував товари при прийомі
   receivedBy           Int?      // Користувач, який підтвердив отримання
   receivedAt           DateTime? // Момент підтвердження отримання
   internalDocNumber    String    @unique @default("00001")

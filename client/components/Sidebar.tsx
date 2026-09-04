@@ -39,6 +39,7 @@ interface SubmenuProps {
   isExpanded: boolean;
   isChildrenActive: boolean;
   onToggle: () => void;
+  badge?: NavBadge | null;
 }
 
 function NavItem({ to, icon, label, isActive, badge, onNavigate }: NavItemProps) {
@@ -65,7 +66,7 @@ function NavItem({ to, icon, label, isActive, badge, onNavigate }: NavItemProps)
   );
 }
 
-function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle }: SubmenuProps) {
+function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle, badge }: SubmenuProps) {
   return (
     <div className="w-full relative">
       <button
@@ -79,8 +80,9 @@ function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle
         <div className="w-5 h-5">
           {icon}
         </div>
-        <span className="flex-1 font-inter text-base font-medium leading-[125%] text-left">
+        <span className="flex-1 font-inter text-base font-medium leading-[125%] text-left flex items-center gap-1.5">
           {label}
+          {badge ? <NavBadgePill badge={badge} /> : null}
         </span>
         <DynamicIcon 
           name="chevron-right" 
@@ -183,12 +185,14 @@ export function Sidebar({ className }: SidebarProps) {
 
     const label = group.parentRoute?.navLabel ?? group.groupMeta?.label ?? group.key;
     const icon = group.parentRoute?.icon ?? group.groupMeta?.icon ?? null;
+    const badge = group.parentRoute?.navBadge ?? group.groupMeta?.navBadge ?? null;
 
     return (
       <Submenu
         key={group.key}
         label={label}
         icon={icon}
+        badge={badge}
         isExpanded={expanded}
         isChildrenActive={childActive}
         onToggle={() => toggleSubmenu(group.key)}

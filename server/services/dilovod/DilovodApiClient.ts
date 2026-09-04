@@ -27,6 +27,7 @@ import {
   unwrapDilovodName,
 } from './DilovodUtils.js';
 import { delay } from './DilovodUtils.js';
+import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
 import { inspect } from 'node:util';
 
 type DilovodCashItemRow = {
@@ -1386,7 +1387,24 @@ export class DilovodApiClient {
     // Якщо firmId не передана, беремо з конфігурації
     const effectiveFirmId = firmId || this.config.defaultFirmId;
 
-    const request: DilovodApiRequest = {
+    const transformBatchRows = (rows: any[]) => rows
+      .filter((row: any) => !row?.error)
+      .map((row: any) => {
+        const batchId = unwrapDilovodId(row.goodPart);
+        const batchNumber = unwrapDilovodName(row.goodPart__pr) || batchId;
+        return {
+          batchId,
+          batchNumber: batchNumber || 'невідома',
+          storage: unwrapDilovodId(row.storage) || 'unknown',
+          storageDisplayName: unwrapDilovodName(row.storage__pr) || 'невідомий склад',
+          quantity: parseFloat(row.qty) || 0,
+          firm: unwrapDilovodId(row.firm) || 'unknown',
+          firmDisplayName: unwrapDilovodName(row.firm__pr) || 'невідома фірма',
+        };
+      })
+      .filter((row) => isUsableDilovodBatchId(row.batchId) && row.quantity > 0);
+
+    const buildRequest = (withFirmFilter: boolean): DilovodApiRequest => ({
       version: "0.25",
       key: this.apiKey,
       action: "request",
@@ -1408,45 +1426,46 @@ export class DilovodApiClient {
         filters: [
           {
             alias: "sku",
-            operator: "=",
-            value: sku
+            operator: "IL",
+            value: [sku]
           },
           {
             alias: "qty",
             operator: ">",
             value: 0
           },
-          ...(effectiveFirmId ? [{ alias: "firm", operator: "=", value: effectiveFirmId }] : [])
+          ...(withFirmFilter && effectiveFirmId
+            ? [{ alias: "firm", operator: "=", value: effectiveFirmId }]
+            : [])
         ]
       }
-    };
+    });
 
     try {
       console.log(`📦 [DilovodApiClient] Запит партій для SKU ${sku} на дату ${formattedDate}${effectiveFirmId ? ` з фірмою ${effectiveFirmId}` : ' (без фільтра по фірмі)'}`);
-      // console.log(`📦 [DilovodApiClient] Запит:`, JSON.stringify(request, null, 2));
-      
-      const result = await this.makeRequest<any>(request);
-      
-      // console.log(`📦 [DilovodApiClient] Сира відповідь Dilovod:`, JSON.stringify(result, null, 2));
-      
-      const rows = this.normalizeToArray<any>(result);
 
-      // console.log(`📦 [DilovodApiClient] Нормалізовано ${rows.length} рядків`);
-      
-      // Трансформуємо відповідь з Dilovod в зручний формат для клієнта
-      const transformed = rows.map((row: any) => {
-        console.log(`📦 [DilovodApiClient] Обробляємо рядок:`, row);
-        return {
-          batchId: row.goodPart || '',
-          batchNumber: row.goodPart__pr || row.goodPart || 'невідома',
-          storage: row.storage || 'unknown',
-          storageDisplayName: row.storage__pr || 'невідомий склад',
-          quantity: parseFloat(row.qty) || 0,
-          firm: row.firm || 'unknown',
-          firmDisplayName: row.firm__pr || 'невідома фірма'
-        };
-      });
-      
+      let rows = this.normalizeToArray<any>(await this.makeRequest<any>(buildRequest(true)));
+      console.log(`📦 [DilovodApiClient] SKU ${sku}: ${rows.length} сирих рядків (фірма=${effectiveFirmId ?? '—'})`);
+      let transformed = transformBatchRows(rows);
+
+      if (transformed.length === 0 && effectiveFirmId) {
+        rows = this.normalizeToArray<any>(await this.makeRequest<any>(buildRequest(false)));
+        console.log(`📦 [DilovodApiClient] SKU ${sku}: ${rows.length} сирих рядків (fallback без фірми)`);
+        transformed = transformBatchRows(rows);
+      }
+
+      if (transformed.length === 0 && rows.length > 0) {
+        const sample = rows.slice(0, 3).map((row: any) => ({
+          sku: row?.sku,
+          goodPart: row?.goodPart,
+          goodPart__pr: row?.goodPart__pr,
+          storage: row?.storage,
+          qty: row?.qty,
+          error: row?.error,
+        }));
+        console.log(`⚠️ [DilovodApiClient] SKU ${sku}: ${rows.length} сирих рядків, але 0 партій після фільтрації. Приклад:`, sample);
+      }
+
       console.log(`✅ [DilovodApiClient] Трансформовано ${transformed.length} партій для SKU ${sku}`);
       return transformed;
     } catch (error) {

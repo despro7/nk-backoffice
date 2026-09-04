@@ -52,6 +52,7 @@ export interface NavGroupMeta {
   icon: React.ReactNode;
   /** Порядок групи в навігації серед mainRoutes та груп-контейнерів */
   order?: number;
+  navBadge?: NavBadge;
 }
 
 /** Колір бейджа пункту меню (мапиться на Tailwind у Sidebar) */
@@ -183,7 +184,11 @@ export const appRoutes: AppRoute[] = [
     order: 3.1,
     parent: 'warehouse',
     permission: { name: 'movementMob' },
-    navBadge: { label: 'NEW', color: 'danger' },
+    navBadge: {
+      label: 'NEW',
+      color: 'danger',
+      until: '2026-09-12',
+    },
     hasOwnTitle: true,
   },
   {
@@ -342,7 +347,7 @@ export const appRoutes: AppRoute[] = [
     navBadge: {
       label: 'NEW',
       color: 'danger',
-      until: '2026-09-14',
+      until: '2026-09-15',
     },
   },
   {
@@ -401,6 +406,11 @@ export const appRoutes: AppRoute[] = [
       label: 'Персонал',
       icon: <DynamicIcon name="contact-round" size={20} />,
       order: 7,
+      navBadge: {
+        label: 'NEW',
+        color: 'danger',
+        until: '2026-09-15',
+      }
     },
     permission: { name: 'timesheet' },
   },
@@ -538,6 +548,11 @@ export const appRoutes: AppRoute[] = [
     parent: 'settings',
     order: 9.5,
     permission: { name: 'users' },
+    navBadge: {
+      label: 'NEW',
+      color: 'danger',
+      until: '2026-09-08',
+    },
   },
   {
     path: '/settings/design',
@@ -566,18 +581,17 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/products',
     component: ProductsPage,
-    title: 'Товари 2.0',
-    pageTitle: 'Товари 2.0 | NK Backoffice',
-    navLabel: 'Товари 2.0',
+    title: 'Товари',
+    pageTitle: 'Товари | NK Backoffice',
+    navLabel: 'Товари',
     icon: <DynamicIcon name="package" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     order: 8,
     permission: { name: 'products' },
-    // roles: [ROLES.ADMIN], // тимчасово лише admin (приховати від інших до релізу)
     navBadge: {
       label: 'NEW',
       color: 'danger',
-      until: '2026-08-25',
+      until: '2026-09-09',
     },
   },
   {

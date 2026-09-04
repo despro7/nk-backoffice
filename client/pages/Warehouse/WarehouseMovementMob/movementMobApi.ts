@@ -2,6 +2,8 @@ import type { WarehouseProductByBarcodeResponse } from '@shared/types/warehouse'
 import { isUsableDilovodBatchId } from '@shared/utils/dilovodBatchId';
 import type { MovementMobApiRecord, MovementMobProductByBarcode } from './WarehouseMovementMobTypes';
 import type { MovementMobRawItem } from './WarehouseMovementMobTypes';
+import type { MovementMobBatchRow } from './WarehouseMovementMobUtils';
+import { batchNumberNeedsResolution, resolveBatchDisplayName } from './WarehouseMovementMobUtils';
 
 type ApiCall = (url: string, options?: RequestInit) => Promise<Response>;
 
@@ -26,6 +28,7 @@ interface BatchNumbersResponse {
     batchId?: string;
     batchNumber?: string;
     quantity?: number;
+    storage?: string;
   }>;
   error?: string;
 }
@@ -77,42 +80,108 @@ export async function fetchProductByBarcode(
   return toProductByBarcode(data, code);
 }
 
+export async function fetchBatchNumbersBySku(
+  apiCall: ApiCall,
+  sku: string,
+  options?: { sourceStorageId?: string; includeSmallStorage?: boolean; force?: boolean },
+): Promise<MovementMobBatchRow[]> {
+  const url = new URL(`/api/warehouse/batch-numbers/${encodeURIComponent(sku)}`, window.location.origin);
+  if (options?.sourceStorageId) {
+    url.searchParams.set('storageId', options.sourceStorageId);
+  }
+  if (options?.includeSmallStorage) {
+    url.searchParams.set('includeSmallStorage', 'true');
+  }
+  if (options?.force) {
+    url.searchParams.set('force', 'true');
+  }
+
+  const response = await apiCall(url.pathname + url.search);
+  if (!response.ok) {
+    return [];
+  }
+
+  const data = (await response.json().catch(() => null)) as BatchNumbersResponse | null;
+  if (!data || data.success === false) {
+    return [];
+  }
+
+  return (data.batches ?? [])
+    .filter((batch) => isUsableDilovodBatchId(batch.batchId))
+    .map((batch) => ({
+      batchId: String(batch.batchId).trim(),
+      batchNumber: String(batch.batchNumber ?? batch.batchId ?? '').trim(),
+      storage: String((batch as { storage?: string }).storage ?? ''),
+      quantity: Number(batch.quantity) || 0,
+    }));
+}
+
+export async function resolveBatchById(
+  apiCall: ApiCall,
+  sku: string,
+  batchId: string,
+  sourceStorageId: string,
+): Promise<{ batchId: string; batchNumber: string } | null> {
+  const id = String(batchId ?? '').trim();
+  if (!isUsableDilovodBatchId(id)) {
+    return null;
+  }
+
+  const batches = await fetchBatchNumbersBySku(apiCall, sku, {
+    sourceStorageId,
+    includeSmallStorage: true,
+  });
+  const hit = batches.find((batch) => batch.batchId === id);
+  if (!hit) {
+    return { batchId: id, batchNumber: id };
+  }
+
+  const batchNumber = resolveBatchDisplayName(hit.batchId, hit.batchNumber, batches);
+  return { batchId: hit.batchId, batchNumber: batchNumber || hit.batchId };
+}
+
 export async function fetchBatchFallback(
   apiCall: ApiCall,
   sku: string,
   sourceStorageId: string,
 ): Promise<{ batchId: string; batchNumber: string } | null> {
-  const url = new URL(`/api/warehouse/batch-numbers/${encodeURIComponent(sku)}`, window.location.origin);
-  if (sourceStorageId) {
-    url.searchParams.set('storageId', sourceStorageId);
-  }
-
-  const response = await apiCall(url.pathname + url.search);
-  if (!response.ok) {
-    return null;
-  }
-
-  const data = (await response.json().catch(() => null)) as BatchNumbersResponse | null;
-  if (!data || data.success === false) {
-    return null;
-  }
-
-  const fetchedBatches = [...(data.batches ?? [])]
-    .filter((batch) => isUsableDilovodBatchId(batch.batchId))
-    .sort((a, b) => (Number(b.quantity) || 0) - (Number(a.quantity) || 0));
-
-  const picked = fetchedBatches[0];
+  const batches = await fetchBatchNumbersBySku(apiCall, sku, { sourceStorageId });
+  const picked = [...batches].sort((a, b) => b.quantity - a.quantity)[0];
   if (!picked) {
     return null;
   }
 
-  const batchId = String(picked.batchId).trim();
-  const batchNumber = String(picked.batchNumber ?? picked.batchId ?? '').trim();
-  if (!batchId) {
-    return null;
+  const batchNumber = resolveBatchDisplayName(picked.batchId, picked.batchNumber, batches);
+  return { batchId: picked.batchId, batchNumber: batchNumber || picked.batchId };
+}
+
+export async function resolveBatchNameForProduct(
+  apiCall: ApiCall,
+  sku: string,
+  batchId: string,
+  batchNumber: string,
+  sourceStorageId: string,
+): Promise<{ batchId: string; batchNumber: string }> {
+  const id = String(batchId ?? '').trim();
+  const label = String(batchNumber ?? '').trim();
+
+  if (isUsableDilovodBatchId(id) && !batchNumberNeedsResolution(label || id, id)) {
+    return { batchId: id, batchNumber: label || id };
   }
 
-  return { batchId, batchNumber: batchNumber || batchId };
+  if (isUsableDilovodBatchId(id)) {
+    const resolved = await resolveBatchById(apiCall, sku, id, sourceStorageId);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  const fallback = await fetchBatchFallback(apiCall, sku, sourceStorageId);
+  if (fallback) {
+    return fallback;
+  }
+
+  return { batchId: id, batchNumber: label || id || '—' };
 }
 
 async function readStockPortionsFromPost(
