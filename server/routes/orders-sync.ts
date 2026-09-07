@@ -1350,12 +1350,57 @@ router.post('/sync/single-order', authenticateToken, async (req, res) => {
       lastSynced: new Date()
     };
 
+    const previousExternalId = existingOrder.externalId;
+    if (
+      changes.includes('externalId') ||
+      changes.includes('orderNumber')
+    ) {
+      const nextIdentity =
+        salesDriveOrder.externalId || salesDriveOrder.orderNumber;
+      updateData.externalId = nextIdentity;
+      updateData.orderNumber = nextIdentity;
+    }
+
     console.log('Update data:', updateData);
 
-    const updatedOrder = await prisma.order.update({
-      where: { id: parseInt(id) },
-      data: updateData
-    });
+    let updatedOrder;
+    try {
+      updatedOrder = await prisma.order.update({
+        where: { id: parseInt(id) },
+        data: updateData
+      });
+    } catch (updateError: any) {
+      const isUnique =
+        updateError?.code === 'P2002' && updateData.externalId;
+      if (!isUnique) throw updateError;
+
+      const temp = `__sync_tmp_${id}_${Date.now()}`;
+      await prisma.order.update({
+        where: { id: parseInt(id) },
+        data: { externalId: temp, orderNumber: temp },
+      });
+      updatedOrder = await prisma.order.update({
+        where: { id: parseInt(id) },
+        data: updateData,
+      });
+    }
+
+    if (
+      updateData.externalId &&
+      previousExternalId !== updatedOrder.externalId
+    ) {
+      try {
+        await orderDatabaseService.migrateOrderCacheExternalId(
+          previousExternalId,
+          updatedOrder.externalId,
+        );
+      } catch (cacheMigrateError) {
+        console.warn(
+          `Failed to migrate cache ${previousExternalId} → ${updatedOrder.externalId}:`,
+          cacheMigrateError,
+        );
+      }
+    }
 
     console.log(`✅ [SINGLE ORDER SYNC] Order updated successfully with ${changes.length} changes`);
 

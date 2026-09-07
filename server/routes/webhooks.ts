@@ -103,13 +103,14 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           paymentMethod = webhookMeta.payment_method.options[0]?.text?.toString() || '';
         }
 
-        if (existingOrder) {
+          if (existingOrder) {
           const newStatus = webhookData.statusId?.toString() || '1'; // За замовчуванням '1' (Новий) якщо статус не вказано
+          const newExternalId = generateExternalId(webhookData);
 
           // Для існуючого замовлення використовуємо дані з webhook, якщо вони є, інакше з БД
           orderDetails = {
             id: existingOrder.id,
-            orderNumber: existingOrder.orderNumber,
+            orderNumber: newExternalId || existingOrder.orderNumber,
             status: newStatus,
             statusText: webhookMeta.statusId.options[0]?.text?.toString() || getStatusText(newStatus),
             items: items || existingOrder.items,
@@ -139,6 +140,12 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
           if (newStatus !== existingOrder.status) {
             changes.status = newStatus;
             changes.statusText = orderDetails.statusText;
+          }
+
+          // Identity: якщо SD змінив externalId — підтягуємо дзеркало orderNumber
+          if (newExternalId && newExternalId !== existingOrder.externalId) {
+            changes.externalId = newExternalId;
+            changes.orderNumber = newExternalId;
           }
 
           // RawData завжди оновлюємо (для історії змін)

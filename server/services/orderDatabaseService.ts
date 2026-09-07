@@ -43,6 +43,8 @@ export class OrderDatabaseService {
     const changes: string[] = [];
     const changeDetails: any = {};
     const fieldsToCheck = [
+      // identity: SD може змінити externalId після restore/інцидентів — синхронізуємо дзеркало orderNumber
+      'externalId', 'orderNumber',
       'status', 'statusText', 'ttn', 'quantity', 'customerName', 'customerPhone',
       'deliveryAddress', 'totalPrice', 'shippingMethod', 'paymentMethod',
       'cityName', 'provider', 'pricinaZnizki', 'sajt'
@@ -209,14 +211,13 @@ export class OrderDatabaseService {
    */
   async updateOrder(externalId: string, data: OrderUpdateData) {
     try {
-      // Попередній статус потрібен до update — після update order.status уже новий
-      const existingOrder = data.status !== undefined
-        ? await prisma.order.findUnique({
-            where: { externalId },
-            select: { status: true },
-          })
-        : null;
+      // Попередній стан потрібен до update — після update order.* уже нові
+      const existingOrder = await prisma.order.findUnique({
+        where: { externalId },
+        select: { status: true, externalId: true, orderNumber: true },
+      });
       const previousStatus = existingOrder?.status ?? null;
+      const previousExternalId = existingOrder?.externalId ?? externalId;
 
       const updateData: any = {
         lastSynced: new Date(),
@@ -226,6 +227,14 @@ export class OrderDatabaseService {
 
       // dilovodExportDate має бути призначено після визначення updateData
       if (data.dilovodExportDate !== undefined) updateData.dilovodExportDate = data.dilovodExportDate;
+
+      // Identity: externalId і orderNumber завжди дзеркальні в нашій моделі
+      if (data.externalId !== undefined) updateData.externalId = data.externalId;
+      if (data.orderNumber !== undefined) {
+        updateData.orderNumber = data.orderNumber;
+      } else if (data.externalId !== undefined) {
+        updateData.orderNumber = data.externalId;
+      }
 
       // Додаємо тільки певні поля
       if (data.orderDate !== undefined) updateData.orderDate = data.orderDate;
@@ -279,6 +288,18 @@ export class OrderDatabaseService {
         await this.createOrderHistory(order.id, data.status, data.statusText || '', data.source || 'salesdrive');
       }
 
+      // Міграція ключа кешу при зміні externalId
+      if (order.externalId !== previousExternalId) {
+        try {
+          await this.migrateOrderCacheExternalId(previousExternalId, order.externalId);
+        } catch (cacheMigrateError) {
+          console.warn(
+            `Failed to migrate cache ${previousExternalId} → ${order.externalId}:`,
+            cacheMigrateError,
+          );
+        }
+      }
+
       // Перераховуємо кешовані дані, якщо змінилися items
       if (data.items) {
         try {
@@ -295,6 +316,32 @@ export class OrderDatabaseService {
       console.error(`❌ Error updating order ${externalId}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Переносить orders_cache на новий externalId (після reconcile / sync identity).
+   */
+  async migrateOrderCacheExternalId(oldExternalId: string, newExternalId: string): Promise<void> {
+    if (!oldExternalId || !newExternalId || oldExternalId === newExternalId) return;
+
+    const oldCache = await prisma.ordersCache.findUnique({
+      where: { externalId: oldExternalId },
+    });
+    if (!oldCache) return;
+
+    const existingNew = await prisma.ordersCache.findUnique({
+      where: { externalId: newExternalId },
+    });
+
+    if (existingNew) {
+      await prisma.ordersCache.delete({ where: { externalId: oldExternalId } });
+      return;
+    }
+
+    await prisma.ordersCache.update({
+      where: { externalId: oldExternalId },
+      data: { externalId: newExternalId },
+    });
   }
 
   /**
@@ -1195,8 +1242,28 @@ export class OrderDatabaseService {
               }
 
               // Применяем только изменившиеся поля
-              if (changes.includes('externalId')) updateData.externalId = orderData.externalId;
-              if (changes.includes('orderNumber')) updateData.orderNumber = orderData.orderNumber;
+              // Identity: тримаємо externalId ↔ orderNumber дзеркально
+              const identityChanged =
+                changes.includes('externalId') || changes.includes('orderNumber');
+              const previousExternalId = existingOrder.externalId;
+              let identitySkippedDueToConflict = false;
+              if (identityChanged) {
+                const nextIdentity = orderData.externalId || orderData.orderNumber;
+                const conflict = await prisma.order.findUnique({
+                  where: { externalId: nextIdentity },
+                  select: { id: true },
+                });
+                if (conflict && conflict.id !== orderData.id) {
+                  // Масовий swap / зайнятий ключ — не ламаємо рядок; потрібен reconcile-скрипт
+                  identitySkippedDueToConflict = true;
+                  console.warn(
+                    `⚠️ [IDENTITY] Skip externalId ${previousExternalId} → ${nextIdentity} for id=${orderData.id}: held by id=${conflict.id}. Run reconcile-order-external-ids.ts`,
+                  );
+                } else {
+                  updateData.externalId = nextIdentity;
+                  updateData.orderNumber = nextIdentity;
+                }
+              }
               if (changes.includes('status')) updateData.status = orderData.status;
               if (changes.includes('statusText')) updateData.statusText = orderData.statusText;
               if (changes.includes('ttn')) updateData.ttn = orderData.ttn;
@@ -1232,10 +1299,32 @@ export class OrderDatabaseService {
                 data: updateData
               });
 
+              if (
+                identityChanged &&
+                !identitySkippedDueToConflict &&
+                previousExternalId !== updateResult.externalId
+              ) {
+                try {
+                  await this.migrateOrderCacheExternalId(
+                    previousExternalId,
+                    updateResult.externalId,
+                  );
+                } catch (cacheMigrateError) {
+                  console.warn(
+                    `Failed to migrate cache ${previousExternalId} → ${updateResult.externalId}:`,
+                    cacheMigrateError,
+                  );
+                }
+              }
+
               // console.log(`✅ [DEBUG] Order ${orderData.orderNumber} successfully updated in database (ID: ${updateResult.id})`);
 
               // Створюємо запис історії лише для суттєвих змін
-              if (changes.includes('ttn') || changes.includes('items')) {
+              if (
+                changes.includes('ttn') ||
+                changes.includes('items') ||
+                (identityChanged && !identitySkippedDueToConflict)
+              ) {
                 // Використовуємо поточний статус замовлення, якщо новий статус не передано
                 const statusForHistory = orderData.status || String(existingOrder.status);
                 
@@ -1245,7 +1334,9 @@ export class OrderDatabaseService {
                   orderData.statusText || existingOrder.statusText || '',
                   'salesdrive:auto_sync',
                   undefined,
-                  `Smart batch update: ${changes.join(', ')}`
+                  `Smart batch update: ${changes.join(', ')}${
+                    identitySkippedDueToConflict ? ' (identity skipped: conflict)' : ''
+                  }`
                 );
                 // console.log(`📝 [DEBUG] Created history record for order ${orderData.orderNumber}`);
               }

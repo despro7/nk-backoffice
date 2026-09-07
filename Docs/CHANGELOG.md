@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-09-07 — SalesDrive: reconcile externalId/orderNumber після інциденту
+**Files:** `server/services/salesdrive/externalIdHelper.ts`, `server/services/orderDatabaseService.ts`, `server/routes/webhooks.ts`, `server/routes/orders-sync.ts`, `server/scripts/reconcile-order-external-ids.ts`, `package.json`, `Docs/features/salesdrive-order-identity.md`
+
+- **Інцидент:** після атаки/простою SD sync оновлював дані по `id`, але не `externalId`/`orderNumber` → номери «залипали», хоча `rawData` уже був актуальний.
+- **Дані:** two-phase reconcile виправив 10 замовлень sajt=19 (напр. `22960` → `22966`); міграція `orders_cache`; історія `reconcile:external-id`.
+- **Sync/webhook:** `detectOrderChanges` і оновлення включають identity; при unique-конфлікті batch skip + warn; `migrateOrderCacheExternalId`.
+- **`generateExternalId`:** для sajt 31/38 канон `SD{id}`, навіть якщо SD прислав голий id.
+- **CLI:** `npm run orders:reconcile-external-ids` / `:apply`.
+- Деталі: `Docs/features/salesdrive-order-identity.md`.
+
+---
+
 ## 2026-09-04 — Мобільні переміщення: картка товару, партії, залишки після переміщення
 **Files:** `client/pages/Warehouse/WarehouseMovementMob/**`, `server/modules/Warehouse/WarehouseController.ts`, `server/services/dilovod/DilovodApiClient.ts`, `prisma/schema.prisma`, `prisma/migrations/20260904120000_warehouse_movement_receipt_scan_fields/`, `Docs/features/warehouse-movement-mob.md`
 
