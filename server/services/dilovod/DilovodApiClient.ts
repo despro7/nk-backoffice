@@ -1365,7 +1365,13 @@ export class DilovodApiClient {
 
   // Отримання доступних партій (goodPart) по SKU з залишками по складах
   // Параметр asOfDate дозволяє отримати партії на конкретну дату
-  async getBatchNumbersBySku(sku: string, firmId?: string, asOfDate?: Date): Promise<Array<{
+  // includeNonPositiveQty — виняток (напр. повернення): показувати партії з qty ≤ 0
+  async getBatchNumbersBySku(
+    sku: string,
+    firmId?: string,
+    asOfDate?: Date,
+    options?: { includeNonPositiveQty?: boolean },
+  ): Promise<Array<{
     batchId: string;       // ID партії в Діловоді (goodPart) — для поля goodPart у payload
     batchNumber: string;   // Людська назва партії (goodPart__pr) — для відображення у UI
     storage: string;
@@ -1375,6 +1381,8 @@ export class DilovodApiClient {
     firmDisplayName: string;
   }>> {
     await this.ensureReady();
+
+    const includeNonPositiveQty = Boolean(options?.includeNonPositiveQty);
     
     // Якщо дата передана, використовуємо її; інакше поточна дата
     // Форматуємо дату до YYYY-MM-DD HH:mm:ss у часовому поясі Europe/Kyiv
@@ -1409,17 +1417,21 @@ export class DilovodApiClient {
         // __pr часто порожній або = id; людський номер може бути лише в словнику партії
         const fromPr = unwrapDilovodName(row.goodPart__pr);
         const batchNumber = pickHumanBatchLabel(batchId, fromPr) || batchId || 'невідома';
+        const rawQty = parseFloat(row.qty);
         return {
           batchId,
           batchNumber,
           storage: unwrapDilovodId(row.storage) || 'unknown',
           storageDisplayName: unwrapDilovodName(row.storage__pr) || 'невідомий склад',
-          quantity: parseFloat(row.qty) || 0,
+          quantity: Number.isFinite(rawQty) ? rawQty : 0,
           firm: unwrapDilovodId(row.firm) || 'unknown',
           firmDisplayName: unwrapDilovodName(row.firm__pr) || 'невідома фірма',
         };
       })
-      .filter((row) => isUsableDilovodBatchId(row.batchId) && row.quantity > 0);
+      .filter((row) =>
+        isUsableDilovodBatchId(row.batchId)
+        && (includeNonPositiveQty || row.quantity > 0),
+      );
 
     const buildRequest = (withFirmFilter: boolean): DilovodApiRequest => ({
       version: "0.25",
@@ -1446,11 +1458,10 @@ export class DilovodApiClient {
             operator: "IL",
             value: [sku]
           },
-          {
-            alias: "qty",
-            operator: ">",
-            value: 0
-          },
+          // За замовчуванням лише додатні залишки; для повернень можна зняти фільтр
+          ...(!includeNonPositiveQty
+            ? [{ alias: "qty", operator: ">", value: 0 }]
+            : []),
           ...(withFirmFilter && effectiveFirmId
             ? [{ alias: "firm", operator: "=", value: effectiveFirmId }]
             : [])
@@ -1459,7 +1470,7 @@ export class DilovodApiClient {
     });
 
     try {
-      console.log(`📦 [DilovodApiClient] Запит партій для SKU ${sku} на дату ${formattedDate}${effectiveFirmId ? ` з фірмою ${effectiveFirmId}` : ' (без фільтра по фірмі)'}`);
+      console.log(`📦 [DilovodApiClient] Запит партій для SKU ${sku} на дату ${formattedDate}${effectiveFirmId ? ` з фірмою ${effectiveFirmId}` : ' (без фільтра по фірмі)'}${includeNonPositiveQty ? ' (вкл. qty≤0)' : ''}`);
 
       let rows = this.normalizeToArray<any>(await this.makeRequest<any>(buildRequest(true)));
       console.log(`📦 [DilovodApiClient] SKU ${sku}: ${rows.length} сирих рядків (фірма=${effectiveFirmId ?? '—'})`);

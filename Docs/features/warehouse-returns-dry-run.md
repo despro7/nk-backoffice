@@ -37,6 +37,20 @@
 - Без цього режиму спрацьовував би fallback по монолітних категоріях / поточних залишках (`dynamicMonolithic`) і порційні відвантаження помилково лишались би монолітами.
 - UI-бейдж «Набір» і `shipment.bySku` у payload оприбуткування будуються через `isMonolithicForReturn` → лише `shippedAsMonolithic`.
 
+## Партії на дату відвантаження
+
+Партії для рядків повернення вантажаться через `GET /api/warehouse/batch-numbers/:sku` з `firmId`, `onlySmallStorage=true` і `asOfDate` = дата відвантаження в Dilovod (`dilovodSaleExportDate`).
+
+1. **Класика:** лише партії з `qty > 0`.
+2. **Fallback (виняток):** якщо класичних немає — повторний запит з `includeNonPositiveQty=true` (партії з qty ≤ 0, зокрема від’ємні залишки на дату відвантаження).
+3. UI-попередження «Залишок ≤ 0…» показується **лише** коли спрацював fallback (`usedNonPositiveBatchFallback`).
+
+API-прапорець `includeNonPositiveQty` враховується в ключі серверного кешу (`nonpos` vs `pos`), щоб не змішувати відповіді.
+
+## Причина повернення
+
+Опції містять emoji (`😩 Брак товару`, `📝 Інше` тощо). Селект має використовувати `selectedKeys` + `onSelectionChange` **без** стрипу emoji з ключа — інакше тригер лишається з placeholder. Перевірка «Інше» — через `.includes('Інше')`. Перед відправкою в Dilovod emoji знімаються окремим `sanitizeText`.
+
 ## API
 
 ### `GET /api/orders`

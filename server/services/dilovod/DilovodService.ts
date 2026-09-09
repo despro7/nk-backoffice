@@ -666,7 +666,12 @@ export class DilovodService {
   }
 
   // Отримання доступних партій (goodPart) по SKU з залишками по складах
-  async getBatchNumbersBySku(sku: string, firmId?: string, asOfDate?: Date): Promise<Array<{    batchId: string;
+  async getBatchNumbersBySku(
+    sku: string,
+    firmId?: string,
+    asOfDate?: Date,
+    options?: { includeNonPositiveQty?: boolean },
+  ): Promise<Array<{    batchId: string;
     batchNumber: string;
     storage: string;
     storageDisplayName: string;
@@ -675,8 +680,9 @@ export class DilovodService {
     firmDisplayName: string;
   }>> {
     try {
-      console.log(`📦 [Dilovod] Запит партій для SKU: ${sku}${asOfDate ? ` на дату ${asOfDate.toLocaleString('uk-UA')}` : ''}${firmId ? ` (фірма: ${firmId})` : ''}`);
-      const batches = await this.apiClient.getBatchNumbersBySku(sku, firmId, asOfDate);
+      const includeNonPositiveQty = Boolean(options?.includeNonPositiveQty);
+      console.log(`📦 [Dilovod] Запит партій для SKU: ${sku}${asOfDate ? ` на дату ${asOfDate.toLocaleString('uk-UA')}` : ''}${firmId ? ` (фірма: ${firmId})` : ''}${includeNonPositiveQty ? ' (вкл. qty≤0)' : ''}`);
+      const batches = await this.apiClient.getBatchNumbersBySku(sku, firmId, asOfDate, options);
       console.log(`✅ [Dilovod] Отримано ${batches.length} партій для SKU: ${sku}`);
       return batches;
     } catch (error) {

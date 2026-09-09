@@ -44,7 +44,7 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
   }
 
   const getReturnReasonLabel = (reason: string, customReason?: string) => {
-    if (reason === 'Інше' && customReason) {
+    if (reason.includes('Інше') && customReason) {
       return customReason;
     }
     return reason;

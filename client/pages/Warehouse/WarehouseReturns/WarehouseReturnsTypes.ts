@@ -19,6 +19,8 @@ export interface ReturnItem {
   portionsPerBox: number;
   firmId: string | null;
   availableBatches: ReturnBatch[] | null;
+  /** true лише коли класичних партій (qty>0) не було і підставили qty≤0 */
+  usedNonPositiveBatchFallback?: boolean;
   selectedBatchId: string | null; // actual Dilovod batchId
   selectedBatchKey: string | null; // unique key for UI option
   price: number;

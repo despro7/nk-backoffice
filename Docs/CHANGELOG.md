@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-09-10 — WarehouseReturns: партії з qty≤0 + фікс селекта причини
+**Files:** `DilovodApiClient.ts`, `DilovodService.ts`, `WarehouseController.ts`, `useWarehouseReturns.ts`, `ReturnsItemRow.tsx`, `WarehouseReturnsTypes.ts`, `WarehouseReturns/index.tsx`, `ReturnsHistoryTable.tsx`, `Docs/features/warehouse-returns-dry-run.md`
+
+- **Партії:** `GET /batch-numbers/:sku?includeNonPositiveQty=true` — опційно без фільтра `qty > 0`. Повернення: спочатку класичні партії; fallback з qty≤0 лише якщо класичних немає. Попередження в UI лише на fallback.
+- **Причина:** селект з emoji-опціями не показував вибір у тригері — `onChange` стрипав emoji → key mismatch. Тепер `onSelectionChange` + `.includes('Інше')`.
+- Деталі: `Docs/features/warehouse-returns-dry-run.md` (секція «Партії»).
+
+---
+
 ## 2026-09-10 — Dilovod: резолв назв партій + аудит порожнього серійного №
 **Files:** `shared/utils/dilovodBatchId.ts`, `server/services/dilovod/DilovodApiClient.ts`, `DilovodUtils.ts`, `DilovodGoodPartsSerialService.ts`, `server/routes/dilovod.ts`, `server/modules/Warehouse/WarehouseController.ts`, `ProductsCatalogService.ts`, `ProductsDilovodGateway.ts`, `client/components/DilovodGoodPartsSerialAudit.tsx`, `client/pages/SettingsDilovod.tsx`, `Docs/integrations/dilovod-metadata.md`
 

@@ -219,46 +219,69 @@ export function useWarehouseReturns() {
     const uniqueSkus = Array.from(skuToItems.keys());
     if (uniqueSkus.length === 0) return;
 
-    const results: Array<{ sku: string; batches: ReturnBatch[] }> = [];
+    const mapBatchRows = (sku: string, batches: any[]): ReturnBatch[] =>
+      batches.map((batch, index) => {
+        const normalizedBatchId = batch.batchId || batch.id || '';
+        const normalizedStorage = batch.storage || batch.storageDisplayName || '';
+        const uniqueId = normalizedBatchId
+          ? `${normalizedBatchId}-${normalizedStorage || index}`
+          : `${sku}-${batch.batchNumber || 'unknown'}-${normalizedStorage || index}`;
+        return {
+          id: uniqueId,
+          batchId: normalizedBatchId,
+          batchNumber: batch.batchNumber || batch.goodPart__pr || batch.name || 'Невідома партія',
+          quantity: Number(batch.quantity ?? batch.qty ?? 0),
+          storage: normalizedStorage || undefined,
+          storageDisplayName: batch.storageDisplayName || batch.storage__pr || undefined,
+        } as ReturnBatch;
+      });
+
+    const fetchBatchesForSku = async (sku: string, includeNonPositiveQty: boolean): Promise<ReturnBatch[]> => {
+      const url = new URL(`/api/warehouse/batch-numbers/${encodeURIComponent(sku)}`, window.location.origin);
+      if (orderFirmId) url.searchParams.set('firmId', orderFirmId);
+      url.searchParams.set('onlySmallStorage', 'true');
+      if (includeNonPositiveQty) url.searchParams.set('includeNonPositiveQty', 'true');
+      if (asOfDate) url.searchParams.set('asOfDate', asOfDate.toISOString());
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      return mapBatchRows(sku, Array.isArray(data.batches) ? data.batches : []);
+    };
+
+    const results: Array<{ sku: string; batches: ReturnBatch[]; usedNonPositiveBatchFallback: boolean }> = [];
 
     for (const sku of uniqueSkus) {
       try {
-        const url = new URL(`/api/warehouse/batch-numbers/${encodeURIComponent(sku)}`, window.location.origin);
-        if (orderFirmId) url.searchParams.set('firmId', orderFirmId);
-        url.searchParams.set('onlySmallStorage', 'true');
-        if (asOfDate) url.searchParams.set('asOfDate', asOfDate.toISOString());
-        const response = await fetch(url.toString(), { method: 'GET', credentials: 'include', headers: { 'Content-Type': 'application/json' } });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        const batches = Array.isArray(data.batches) ? data.batches as any[] : [];
-        results.push({
-          sku,
-          batches: batches.map((batch, index) => {
-            const normalizedBatchId = batch.batchId || batch.id || '';
-            const normalizedStorage = batch.storage || batch.storageDisplayName || '';
-            const uniqueId = normalizedBatchId ? `${normalizedBatchId}-${normalizedStorage || index}` : `${sku}-${batch.batchNumber || 'unknown'}-${normalizedStorage || index}`;
-            return {
-              id: uniqueId,
-              batchId: normalizedBatchId,
-              batchNumber: batch.batchNumber || batch.goodPart__pr || batch.name || 'Невідома партія',
-              quantity: Number(batch.quantity ?? batch.qty ?? 0),
-              storage: normalizedStorage || undefined,
-              storageDisplayName: batch.storageDisplayName || batch.storage__pr || undefined,
-            } as ReturnBatch;
-          }),
-        });
+        // 1) Класика: лише qty > 0
+        let batches = await fetchBatchesForSku(sku, false);
+        let usedNonPositiveBatchFallback = false;
+
+        // 2) Виняток лише якщо класичних партій немає
+        if (batches.length === 0) {
+          batches = await fetchBatchesForSku(sku, true);
+          usedNonPositiveBatchFallback = batches.length > 0;
+        }
+
+        results.push({ sku, batches, usedNonPositiveBatchFallback });
       } catch (err) {
         console.error(`Помилка завантаження партій для SKU ${sku}:`, err);
-        results.push({ sku, batches: [] });
+        results.push({ sku, batches: [], usedNonPositiveBatchFallback: false });
       }
     }
 
-    const batchMap = new Map(results.map((r) => [r.sku, r.batches]));
+    const batchMap = new Map(results.map((r) => [r.sku, r]));
     setItems((current) => current.map((item) => {
-      const batches = batchMap.get(item.sku) ?? [];
+      const loaded = batchMap.get(item.sku);
+      if (!loaded) return item;
+      const { batches, usedNonPositiveBatchFallback } = loaded;
       return {
         ...item,
         availableBatches: batches,
+        usedNonPositiveBatchFallback,
         selectedBatchKey: item.selectedBatchKey ?? batches[0]?.id ?? null,
         selectedBatchId: item.selectedBatchId ?? batches[0]?.batchId ?? null,
         // Preserve original orderedQuantity (it represents what was ordered).
@@ -294,7 +317,7 @@ export function useWarehouseReturns() {
     if (items.length === 0) return;
 
     // Prepare items with cleared batches so loader will fetch them
-    const itemsToReload = items.map((it) => ({ ...it, availableBatches: null }));
+    const itemsToReload = items.map((it) => ({ ...it, availableBatches: null, usedNonPositiveBatchFallback: false }));
     setItems(itemsToReload);
 
     const batchDate = dilovodSaleExportDate ? new Date(dilovodSaleExportDate) : returnDate ? new Date(returnDate) : undefined;
@@ -468,7 +491,7 @@ export function useWarehouseReturns() {
 
   const handleReturnReasonChange = useCallback((reason: string) => {
     setReturnReason(reason);
-    if (reason !== 'Інше') setCustomReason('');
+    if (!reason.includes('Інше')) setCustomReason('');
     setIsDirty(true);
   }, []);
 
@@ -484,7 +507,7 @@ export function useWarehouseReturns() {
       if (!item.selectedBatchId) return `Оберіть партію для SKU ${item.sku}.`;
     }
     if (!returnReason) return 'Оберіть причину повернення.';
-    if (returnReason === 'Інше' && !customReason?.trim()) return 'Вкажіть причину повернення.';
+    if (returnReason.includes('Інше') && !customReason?.trim()) return 'Вкажіть причину повернення.';
     const amount = Number(String(returnAmount).replace(',', '.'));
     if (returnAmount.trim() === '' || Number.isNaN(amount) || amount < 0) {
       return 'Вкажіть суму витрат на доставку повернення.';
@@ -548,7 +571,7 @@ export function useWarehouseReturns() {
         orderId: String(selectedOrderId),
         date: payloadDate,
         comment: sanitizedComment,
-        reason: sanitizedReason === 'Інше' ? sanitizedCustom || sanitizedReason : sanitizedReason,
+        reason: (sanitizedReason.includes('Інше') ? sanitizedCustom || sanitizedReason : sanitizedReason),
         // payload firm should be the receiving firm
         firmId: receiveFirmId || undefined,
         // Include shipping firm so server can decide whether to keep `contract` in header
@@ -582,7 +605,7 @@ export function useWarehouseReturns() {
           items: items.map((item) => ({ sku: item.sku, name: item.name, quantity: item.quantity, batchId: item.selectedBatchId, batchNumber: item.availableBatches?.find((b) => b.id === item.selectedBatchKey)?.batchNumber, price: item.price })),
           // Preserve original return reason (with emoji) in local DB; payload sent to Dilovod is sanitized
           returnReason: returnReason,
-          customReason: returnReason === 'Інше' ? customReason : undefined,
+          customReason: returnReason.includes('Інше') ? customReason : undefined,
           comment: sanitizedComment || undefined,
           payload: data.payload || payload,
         };

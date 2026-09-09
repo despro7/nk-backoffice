@@ -9,12 +9,19 @@ interface ReturnsItemRowProps {
   onBatchChange: (itemId: string, batchId: string | null) => void;
 }
 
+function formatBatchLabel(batch: ReturnBatch): string {
+  return `${batch.batchNumber} (${batch.quantity} шт.)`;
+}
+
 export function ReturnsItemRow({
   item,
   onQuantityChange,
   onPriceChange,
   onBatchChange,
 }: ReturnsItemRowProps) {
+  // Попередження лише для виняткового fallback (немає класичних qty>0)
+  const showNonPositiveFallbackWarning = Boolean(item.usedNonPositiveBatchFallback);
+
   return (
     <div className="grid gap-5 border-b border-gray-100 py-4 sm:grid-cols-[1fr_20%_25%]">
       <div className="space-y-2">
@@ -79,7 +86,6 @@ export function ReturnsItemRow({
 
       <div className="space-y-2">
         <div className="flex items-center gap-1 text-xs font-medium">
-          {/* <DynamicIcon name="package" className="w-4 h-4 text-gray-500" /> */}
           Партія
         </div>
         {item.availableBatches === null ? (
@@ -87,10 +93,19 @@ export function ReturnsItemRow({
         ) : (item.availableBatches.length === 0 ? (
           <div className="text-xs px-3 py-[11px] text-red-500 border border-red-500/50 rounded-md">Партії не знайдено</div>
         ) : (item.availableBatches.length === 1 ? (
-          // If only one batch is available, show plain text with a small icon
-          <div className="flex items-center gap-2 justify-between text-sm text-green-700 bg-green-700/3 px-3 py-2 border border-green-700/20 rounded-md">
-            <span className="font-medium">{`${item.availableBatches[0].batchNumber} (${item.availableBatches[0].quantity} шт.)`}</span>
-            <DynamicIcon name="check-circle" className="w-3 h-3 text-green-500" />
+          <div
+            className={`flex items-center gap-2 justify-between text-sm px-3 py-2 border rounded-md ${
+              showNonPositiveFallbackWarning
+                ? 'text-amber-800 bg-amber-50 border-amber-300'
+                : 'text-green-700 bg-green-700/3 border-green-700/20'
+            }`}
+            title={showNonPositiveFallbackWarning ? 'Залишок партії ≤ 0 на дату відвантаження — дозволено для повернення' : undefined}
+          >
+            <span className="font-medium">{formatBatchLabel(item.availableBatches[0])}</span>
+            <DynamicIcon
+              name={showNonPositiveFallbackWarning ? 'alert-triangle' : 'check-circle'}
+              className={`w-3 h-3 ${showNonPositiveFallbackWarning ? 'text-amber-600' : 'text-green-500'}`}
+            />
           </div>
         ) : (
           <Select
@@ -103,11 +118,13 @@ export function ReturnsItemRow({
             }}
             classNames={{
               label: 'text-xs font-medium text-gray-500',
-              trigger: 'border border-gray-200 bg-white',
+              trigger: showNonPositiveFallbackWarning
+                ? 'border border-amber-300 bg-amber-50'
+                : 'border border-gray-200 bg-white',
             }}
           >
             {(item.availableBatches ?? []).map((batch) => {
-              const label = `${batch.batchNumber} (${batch.quantity} шт.)`;
+              const label = formatBatchLabel(batch);
               return (
                 <SelectItem
                   key={batch.id}
@@ -119,6 +136,9 @@ export function ReturnsItemRow({
             })}
           </Select>
         )))}
+        {showNonPositiveFallbackWarning && (
+          <div className="text-[11px] text-amber-700">Залишок ≤ 0 на дату відвантаження — вибір дозволено для повернення</div>
+        )}
       </div>
     </div>
   );

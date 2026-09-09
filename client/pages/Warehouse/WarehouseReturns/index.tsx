@@ -503,21 +503,17 @@ const dateValue = (() => {
                     </div>
 
                     <div className="flex items-center gap-4">
-                      <div className={`${returns.returnReason === 'Інше' ? 'w-60' : 'min-w-[300px]'} space-y-1`}>
+                      <div className={`${returns.returnReason.includes('Інше') ? 'w-60' : 'min-w-[300px]'} space-y-1`}>
                         <Select
                           id="return-reason"
                           label={<span>Причина повернення <span className="text-red-500">(обов'язково)</span></span>}
                           placeholder="Оберіть причину повернення"
                           labelPlacement="outside"
-                          value={returns.returnReason}
-                          onChange={(event) => {
-                            const cleanValue = (event.target.value || '')
-                              .replace(/[^а-яА-ЯёЁa-zA-ZіІїЇєЄґҐ0-9 \-.,'"]/g, '')
-                              .trim();
-                            returns.handleReturnReasonChange(cleanValue);
-                          }}
-                  
                           selectedKeys={returns.returnReason ? [returns.returnReason] : []}
+                          onSelectionChange={(keys) => {
+                            const next = Array.from(keys)[0];
+                            returns.handleReturnReasonChange(typeof next === 'string' ? next : '');
+                          }}
                           disallowEmptySelection={true}
                           classNames={{
                             label: 'text-xs font-medium text-gray-500 mb-1',
@@ -529,7 +525,7 @@ const dateValue = (() => {
                           ))}
                         </Select>
                       </div>
-                      {returns.returnReason === 'Інше' && (
+                      {returns.returnReason.includes('Інше') && (
                         <div className="flex-1">
                           <Input
                             label="Додаткова причина"
@@ -673,7 +669,7 @@ const dateValue = (() => {
         isSubmitting={returns.isSubmitting}
         orderNumber={returns.selectedOrderNumber}
         items={returns.items}
-        returnReason={returns.returnReason === 'Інше' ? returns.customReason || returns.returnReason : returns.returnReason}
+        returnReason={returns.returnReason.includes('Інше') ? returns.customReason || returns.returnReason : returns.returnReason}
         comment={returns.comment}
         onClose={() => returns.setConfirmOpen(false)}
         onConfirm={returns.sendReturn}

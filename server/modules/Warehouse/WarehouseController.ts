@@ -69,15 +69,23 @@ const BATCH_CACHE_OLD_THRESHOLD_MS = 30 * 60 * 1000;
  */
 type BatchStorageMode = 'all' | 'exclude-small' | 'small-only';
 
-function buildBatchCacheKey(sku: string, firmId: string | undefined, asOfDate: Date | undefined, storageMode: BatchStorageMode, storageId?: string): string {
+function buildBatchCacheKey(
+  sku: string,
+  firmId: string | undefined,
+  asOfDate: Date | undefined,
+  storageMode: BatchStorageMode,
+  storageId?: string,
+  includeNonPositiveQty?: boolean,
+): string {
   const firmPart = firmId ?? 'default';
   const storagePart = storageId ?? 'any';
+  const qtyPart = includeNonPositiveQty ? 'nonpos' : 'pos';
   if (!asOfDate) {
-    return `${sku}:${firmPart}:${storageMode}:${storagePart}:now`;
+    return `${sku}:${firmPart}:${storageMode}:${storagePart}:${qtyPart}:now`;
   }
   const pad = (n: number) => n.toString().padStart(2, '0');
   const datePart = `${asOfDate.getFullYear()}-${pad(asOfDate.getMonth() + 1)}-${pad(asOfDate.getDate())}_${pad(asOfDate.getHours())}:${pad(asOfDate.getMinutes())}`;
-  return `${sku}:${firmPart}:${storageMode}:${storagePart}:${datePart}`;
+  return `${sku}:${firmPart}:${storageMode}:${storagePart}:${qtyPart}:${datePart}`;
 }
 
 /**
@@ -366,10 +374,12 @@ router.post('/resolve-batch-names', authenticateToken, async (req, res) => {
 router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
   try {
     const { sku } = req.params;
-    const { firmId, asOfDate, force, includeSmallStorage, onlySmallStorage, storageId } = req.query;
+    const { firmId, asOfDate, force, includeSmallStorage, onlySmallStorage, storageId, includeNonPositiveQty } = req.query;
     const forceRefresh = force === 'true';
     const shouldIncludeSmallStorage = includeSmallStorage === 'true';
     const shouldOnlySmallStorage = onlySmallStorage === 'true';
+    // Виняток для повернень: дозволити партії з qty ≤ 0 на дату asOfDate
+    const shouldIncludeNonPositiveQty = includeNonPositiveQty === 'true';
     // Якщо передано storageId — фільтруємо партії лише по цьому складу (склад-джерело переміщення)
     const targetStorageId = typeof storageId === 'string' && storageId.trim() ? storageId.trim() : undefined;
 
@@ -410,7 +420,7 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
       : shouldIncludeSmallStorage
         ? 'all'
         : 'exclude-small';
-    const cacheKey = buildBatchCacheKey(sku, finalFirmId, parsedDate, storageMode, targetStorageId);
+    const cacheKey = buildBatchCacheKey(sku, finalFirmId, parsedDate, storageMode, targetStorageId, shouldIncludeNonPositiveQty);
     const ttl = resolveBatchCacheTtl(parsedDate);
     const ttlLabel = ttl === BATCH_CACHE_TTL_LONG ? '12 год' : '5 хв';
 
@@ -429,6 +439,7 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
           count: cachedBatches.length,
           asOfDate: parsedDate ? parsedDate.toISOString() : null,
           fromCache: true,
+          includeNonPositiveQty: shouldIncludeNonPositiveQty,
         });
       }
     } else {
@@ -436,9 +447,11 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
       batchCache.delete(cacheKey);
     }
 
-    console.log(`📦 [Warehouse] GET /batch-numbers/:sku - запит партій для SKU: ${sku}${parsedDate ? ` на дату ${parsedDate.toLocaleString('uk-UA')}` : ''}`);
+    console.log(`📦 [Warehouse] GET /batch-numbers/:sku - запит партій для SKU: ${sku}${parsedDate ? ` на дату ${parsedDate.toLocaleString('uk-UA')}` : ''}${shouldIncludeNonPositiveQty ? ' (вкл. qty≤0)' : ''}`);
 
-    const batches = await dilovodService.getBatchNumbersBySku(sku, finalFirmId, parsedDate);
+    const batches = await dilovodService.getBatchNumbersBySku(sku, finalFirmId, parsedDate, {
+      includeNonPositiveQty: shouldIncludeNonPositiveQty,
+    });
 
     const filteredBatches = await enrichBatchNamesFromCatalog(
       targetStorageId
@@ -474,6 +487,7 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
       count: filteredBatches.length,
       asOfDate: parsedDate ? parsedDate.toISOString() : null,
       fromCache: false,
+      includeNonPositiveQty: shouldIncludeNonPositiveQty,
     });
   } catch (error) {
     console.error('🚨 [Warehouse] Помилка при отриманні партій:', error);
