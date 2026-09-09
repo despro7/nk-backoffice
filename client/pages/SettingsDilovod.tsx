@@ -4,6 +4,7 @@ import { Card, CardBody, CardHeader, Input, Button, ButtonGroup, Dropdown, Dropd
 import { DynamicIcon } from 'lucide-react/dynamic';
 import DilovodSettingsManager from '../components/DilovodSettingsManager';
 import { DilovodCacheManager } from '../components/DilovodCacheManager';
+import { DilovodGoodPartsSerialAudit } from '../components/DilovodGoodPartsSerialAudit';
 import { SalesDriveCacheManager } from '../components/SalesDriveCacheManager';
 import { useDilovodSettings } from '../hooks/useDilovodSettings';
 
@@ -166,6 +167,10 @@ const SettingsDilovod: React.FC = () => {
 
 			{/* Dilovod Settings Manager */}
 			<DilovodSettingsManager />
+
+			<div className="grid grid-cols-1 gap-6">
+				<DilovodGoodPartsSerialAudit />
+			</div>
 
 			<div className="grid grid-cols-1 gap-6">				
 				{/* Dilovod Cache Manager */}

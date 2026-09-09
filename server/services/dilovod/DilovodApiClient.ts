@@ -25,9 +25,14 @@ import {
   isDilovodDeletionMark,
   unwrapDilovodId,
   unwrapDilovodName,
+  extractBatchLabelFromGoodPartHeader,
 } from './DilovodUtils.js';
 import { delay } from './DilovodUtils.js';
-import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
+import {
+  batchNumberNeedsResolution,
+  isUsableDilovodBatchId,
+  pickHumanBatchLabel,
+} from '../../../shared/utils/dilovodBatchId.js';
 import { inspect } from 'node:util';
 
 type DilovodCashItemRow = {
@@ -1387,14 +1392,26 @@ export class DilovodApiClient {
     // Якщо firmId не передана, беремо з конфігурації
     const effectiveFirmId = firmId || this.config.defaultFirmId;
 
-    const transformBatchRows = (rows: any[]) => rows
+    type BatchNumbersRow = {
+      batchId: string;
+      batchNumber: string;
+      storage: string;
+      storageDisplayName: string;
+      quantity: number;
+      firm: string;
+      firmDisplayName: string;
+    };
+
+    const transformBatchRows = (rows: any[]): BatchNumbersRow[] => rows
       .filter((row: any) => !row?.error)
       .map((row: any) => {
         const batchId = unwrapDilovodId(row.goodPart);
-        const batchNumber = unwrapDilovodName(row.goodPart__pr) || batchId;
+        // __pr часто порожній або = id; людський номер може бути лише в словнику партії
+        const fromPr = unwrapDilovodName(row.goodPart__pr);
+        const batchNumber = pickHumanBatchLabel(batchId, fromPr) || batchId || 'невідома';
         return {
           batchId,
-          batchNumber: batchNumber || 'невідома',
+          batchNumber,
           storage: unwrapDilovodId(row.storage) || 'unknown',
           storageDisplayName: unwrapDilovodName(row.storage__pr) || 'невідомий склад',
           quantity: parseFloat(row.qty) || 0,
@@ -1466,12 +1483,66 @@ export class DilovodApiClient {
         console.log(`⚠️ [DilovodApiClient] SKU ${sku}: ${rows.length} сирих рядків, але 0 партій після фільтрації. Приклад:`, sample);
       }
 
-      console.log(`✅ [DilovodApiClient] Трансформовано ${transformed.length} партій для SKU ${sku}`);
-      return transformed;
+      const enriched = await this.enrichBatchLabelsFromGoodPartObjects(transformed);
+      console.log(`✅ [DilovodApiClient] Трансформовано ${enriched.length} партій для SKU ${sku}`);
+      return enriched;
     } catch (error) {
       console.error(`🚨 Помилка отримання партій для SKU ${sku}:`, error);
       return [];
     }
+  }
+
+  /**
+   * Якщо balance віддав лише raw id як назву — добираємо code/name/number через getObject.
+   */
+  private async enrichBatchLabelsFromGoodPartObjects<
+    T extends { batchId: string; batchNumber: string },
+  >(batches: T[]): Promise<T[]> {
+    const needIds = [
+      ...new Set(
+        batches
+          .filter((batch) => batchNumberNeedsResolution(batch.batchNumber, batch.batchId))
+          .map((batch) => batch.batchId),
+      ),
+    ];
+    if (needIds.length === 0) return batches;
+
+    console.log(
+      `🔎 [DilovodApiClient] Дорезолв назв партій через getObject: ${needIds.length} id`,
+    );
+
+    const labelById = new Map<string, string>();
+    for (const chunk of this.chunkArray(needIds, 4)) {
+      await Promise.all(
+        chunk.map(async (id) => {
+          try {
+            const obj = await this.getObject(id);
+            if (this.extractDilovodError(obj)) return;
+            const header =
+              obj.header && typeof obj.header === 'object'
+                ? (obj.header as Record<string, unknown>)
+                : undefined;
+            const label = extractBatchLabelFromGoodPartHeader(header, id);
+            if (label) labelById.set(id, label);
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            console.log(`⚠️ [DilovodApiClient] getObject(${id}) для назви партії: ${msg}`);
+          }
+        }),
+      );
+    }
+
+    if (labelById.size === 0) return batches;
+
+    console.log(
+      `✅ [DilovodApiClient] Отримано ${labelById.size}/${needIds.length} назв партій зі словника`,
+    );
+
+    return batches.map((batch) => {
+      if (!batchNumberNeedsResolution(batch.batchNumber, batch.batchId)) return batch;
+      const label = labelById.get(batch.batchId);
+      return label ? { ...batch, batchNumber: label } : batch;
+    });
   }
 
   /**

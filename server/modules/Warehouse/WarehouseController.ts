@@ -21,7 +21,11 @@ import { safeParseItems } from './historyNormalize.js';
 import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
 import { productsCatalogService } from '../Products/ProductsCatalogService.js';
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
-import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
+import {
+  batchNumberNeedsResolution,
+  isUsableDilovodBatchId,
+  sanitizeStoredBatchName,
+} from '../../../shared/utils/dilovodBatchId.js';
 
 const router = Router();
 
@@ -101,11 +105,7 @@ type BatchNumbersRow = {
 };
 
 function batchLabelNeedsCatalogFallback(batch: Pick<BatchNumbersRow, 'batchId' | 'batchNumber'>): boolean {
-  const id = String(batch.batchId ?? '').trim();
-  const label = String(batch.batchNumber ?? '').trim();
-  if (!isUsableDilovodBatchId(id)) return false;
-  if (!label || label === id) return true;
-  return isUsableDilovodBatchId(label) && label === id;
+  return batchNumberNeedsResolution(batch.batchNumber, batch.batchId);
 }
 
 /** Доповнює batchNumber з локального каталогу (catalog_good_barcodes.goodPartName). */
@@ -123,7 +123,7 @@ async function enrichBatchNamesFromCatalog(batches: BatchNumbersRow[]): Promise<
   });
   const nameByPart = new Map<string, string>();
   for (const row of catalogRows) {
-    const name = row.goodPartName?.trim();
+    const name = sanitizeStoredBatchName(row.goodPartName, row.goodPart);
     if (name && row.goodPart) {
       nameByPart.set(row.goodPart, name);
     }
@@ -295,7 +295,7 @@ router.post('/resolve-batch-names', authenticateToken, async (req, res) => {
         const batchLinked = Boolean(catalogBatchId);
         lineMeta[key] = { batchLinked, catalogGoodId, catalogBatchId };
 
-        const partName = hit?.goodPartName?.trim();
+        const partName = sanitizeStoredBatchName(hit?.goodPartName, catalogBatchId);
         if (batchLinked && partName) {
           names[key] = partName;
           if (catalogBatchId) {
@@ -326,14 +326,14 @@ router.post('/resolve-batch-names', authenticateToken, async (req, res) => {
         const label = line.batchNumber && line.batchNumber !== '—' ? line.batchNumber : '';
 
         const hit = catalogRows.find((row) => {
-          const name = row.goodPartName?.trim();
+          const name = sanitizeStoredBatchName(row.goodPartName, row.goodPart);
           if (!name || row.good.sku !== line.sku) return false;
           if (lookupId && row.goodPart === lookupId) return true;
           if (label && (row.goodPartName === label || row.goodPart === label)) return true;
           return false;
         });
 
-        const resolvedName = hit?.goodPartName?.trim();
+        const resolvedName = sanitizeStoredBatchName(hit?.goodPartName, hit?.goodPart ?? lookupId);
         if (!resolvedName) continue;
         names[key] = resolvedName;
         if (lookupId) names[lookupId] = resolvedName;
@@ -348,7 +348,7 @@ router.post('/resolve-batch-names', authenticateToken, async (req, res) => {
         select: { goodPart: true, goodPartName: true },
       });
       for (const row of catalogRows) {
-        const name = row.goodPartName?.trim();
+        const name = sanitizeStoredBatchName(row.goodPartName, row.goodPart);
         if (name && row.goodPart) {
           names[row.goodPart] = name;
         }

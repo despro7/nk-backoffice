@@ -144,6 +144,22 @@ await api.makeRequest({
 
 Фільтри UI (склад, товар, фірма) будувати з `shape.dimensions` і їх `valueType` (посилання на `catalogs.*`).
 
+## `catalogs.goodParts` — серійний № партії
+
+У UI Dilovod поле **«Серійний № (серія)»** = API-поле **`code`**. `getMetadata` для `catalogs.goodParts` **не** віддає `name` / `number`, хоча `getObject` інколи їх повертає.
+
+| Ситуація | Джерело людської назви |
+|---|---|
+| `code` заповнений | `code` (канон) |
+| `code` порожній, є `name.uk` / `number` | `pickHumanBatchLabel` / `extractBatchLabelFromGoodPartHeader` |
+| Усе порожнє | Альтернативи в balance / barcodes / documents **немає** — треба заповнити `code` |
+
+Аудит порожніх `code` (папка «Готова продукція»): Settings → Dilovod → `DilovodGoodPartsSerialAudit`.  
+API: `GET /api/dilovod/good-parts/missing-serial?folderId=…`, `POST /api/dilovod/good-parts/:id/serial` `{ "code": "60905" }`.  
+Генерація номера: YMMDD з `header.date` (`2026-09-05` → `60905`).
+
+Утиліти: `shared/utils/dilovodBatchId.ts` (`sanitizeStoredBatchName`, `generateBatchSerialFromDate`, …).
+
 ## Правило для агентів
 
 У тасках зі звітами / регістрами Dilovod:
@@ -151,3 +167,4 @@ await api.makeRequest({
 1. Структура регістру — `dilovodMetadataService.getRegisterShape`, не константи в коді.
 2. Віртуальні колонки BAT — лише `virtualBatFields(resourceName)`.
 3. Якщо потрібен live-опис у середовищі — `GET /api/dilovod/metadata?q=…` або `?objectName=…` (після логіну).
+4. Назва партії: канон `catalogs.goodParts.code`; не зберігати raw `goodPart` id як `goodPartName`.

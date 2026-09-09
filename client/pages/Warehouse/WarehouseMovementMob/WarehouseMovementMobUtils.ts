@@ -1,7 +1,11 @@
 import { CalendarDate, getLocalTimeZone, today } from '@internationalized/date';
 import type { DateRange } from '@react-types/datepicker';
 import { createStandardDatePresets } from '@/lib/dateReportingUtils';
-import { isUsableDilovodBatchId } from '@shared/utils/dilovodBatchId';
+import {
+  batchNumberNeedsResolution,
+  isHumanBatchLabel,
+  isUsableDilovodBatchId,
+} from '@shared/utils/dilovodBatchId';
 import {
   STORAGE_DISPLAY_MAP,
   resolveStorageDisplay,
@@ -409,20 +413,7 @@ export function toListCardViewModel(record: MovementMobApiRecord): MovementMobLi
 }
 
 /** Чи виглядає значення як людська назва партії (не сирий Dilovod ID). */
-export function isHumanBatchLabel(value: string): boolean {
-  const label = (value || '').trim();
-  if (!label || label === '—') return false;
-  return !isUsableDilovodBatchId(label);
-}
-
-export function batchNumberNeedsResolution(batchNumber: string, batchId: string): boolean {
-  const label = (batchNumber || '').trim();
-  const id = (batchId || '').trim();
-  if (!label || label === '—') return Boolean(id);
-  if (id && label === id) return true;
-  if (isUsableDilovodBatchId(label) && (!id || label === id)) return true;
-  return false;
-}
+export { isHumanBatchLabel, batchNumberNeedsResolution };
 
 export interface MovementMobBatchRow {
   batchId: string;

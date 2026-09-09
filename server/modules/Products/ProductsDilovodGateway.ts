@@ -19,6 +19,7 @@ import {
 } from './ProductsTypes.js';
 import { allocateNextSku, isSkuDuplicateError } from './skuUtils.js';
 import { allocateNextEan13 } from './barcodeUtils.js';
+import { sanitizeStoredBatchName } from '../../../shared/utils/dilovodBatchId.js';
 
 /** Поля списку catalogs.goods (у т.ч. specQty = «Розрахунок на»). */
 const GOODS_LIST_FIELDS = {
@@ -532,10 +533,12 @@ export class ProductsDilovodGateway {
             r.goodPart != null && String(r.goodPart).trim()
               ? String(r.goodPart).trim()
               : null,
-          goodPartName:
+          goodPartName: sanitizeStoredBatchName(
             r.goodPart__pr != null && String(r.goodPart__pr).trim()
               ? String(r.goodPart__pr).trim()
               : null,
+            r.goodPart,
+          ),
           activity: String(r.activity ?? '1') !== '0',
         });
       }

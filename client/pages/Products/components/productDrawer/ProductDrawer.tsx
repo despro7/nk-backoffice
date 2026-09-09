@@ -25,6 +25,7 @@ import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { useDebug } from '@/contexts/DebugContext';
 import { useRolePreview } from '@/contexts/RolePreviewContext';
 import { ToastService } from '@/services/ToastService';
+import { sanitizeStoredBatchName } from '@shared/utils/dilovodBatchId';
 import { BatchNumbersAutocomplete } from '@/pages/Warehouse/WarehouseMovement/components/BatchNumbersAutocomplete';
 import {
   useBatchNumbers,
@@ -749,7 +750,12 @@ export function ProductDrawer({
     setBarcodes((prev) =>
       prev.map((row, i) =>
         i === idx
-          ? { ...row, goodPart: batch.batchId, goodPartName: batch.batchNumber }
+          ? {
+              ...row,
+              goodPart: batch.batchId,
+              // Не зберігати raw Dilovod id як «назву» партії
+              goodPartName: sanitizeStoredBatchName(batch.batchNumber, batch.batchId),
+            }
           : row
       )
     );

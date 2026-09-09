@@ -193,11 +193,12 @@ Skeleton (`@heroui/react`) на партії та залишках, поки `us
 
 **Резолв назви партії:**
 
-1. Dilovod `goodPart__pr` у відповіді `batch-numbers` (поле не запитується в `fields` — Dilovod віддає його разом із `goodPart`).
-2. Каталог `goodPartName` через `resolve-batch-names`.
-3. `isHumanBatchLabel` / `isUsableDilovodBatchId` — відрізнити людську назву від сирого id.
+1. Dilovod `goodPart__pr` у відповіді `batch-numbers` (поле не запитується в `fields` — Dilovod віддає його разом із `goodPart`); через `pickHumanBatchLabel` відсікається сирий id.
+2. Якщо `__pr` порожній / = id — `getObject(catalogs.goodParts)` і `extractBatchLabelFromGoodPartHeader` (`code` / `name` / `number`).
+3. Каталог `goodPartName` через `resolve-batch-names` (лише `sanitizeStoredBatchName`).
+4. Утиліти: `shared/utils/dilovodBatchId.ts`. Якщо в Dilovod порожній `code` — номер партії з API не відновити; аудит у Settings → Dilovod.
 
-Деталі полів Dilovod: `Docs/integrations/dilovod-metadata.md`.
+Деталі полів Dilovod: `Docs/integrations/dilovod-metadata.md` (секція goodParts).
 
 ---
 

@@ -2,6 +2,7 @@
 
 import { DilovodConfig } from './DilovodTypes.js';
 import { prisma } from '../../lib/utils.js';
+import { pickHumanBatchLabel } from '../../../shared/utils/dilovodBatchId.js';
 
 // ============================================================
 // Діагностика результату saveObject від Dilovod API
@@ -694,6 +695,39 @@ export function unwrapDilovodName(value: unknown): string {
     }
   }
   return '';
+}
+
+/**
+ * Людська назва партії зі словника goodPart (`getObject`).
+ * Dilovod кладе номер то в `code`, то в `name.uk`, то в `number`.
+ */
+export function extractBatchLabelFromGoodPartHeader(
+  header: Record<string, unknown> | null | undefined,
+  batchId: string,
+): string | null {
+  if (!header || typeof header !== 'object') return null;
+
+  const code = unwrapDilovodName(header.code);
+  const name = unwrapDilovodName(header.name);
+  const number = unwrapDilovodName(header.number);
+  const printName = unwrapDilovodName(header.printName);
+  const sysName = unwrapDilovodName(header.sysName);
+
+  let idPresentation = '';
+  const headerId = header.id;
+  if (headerId && typeof headerId === 'object') {
+    idPresentation = unwrapDilovodName((headerId as { pr?: unknown }).pr);
+  }
+
+  return pickHumanBatchLabel(
+    batchId,
+    code,
+    name,
+    number,
+    printName,
+    sysName,
+    idPresentation,
+  );
 }
 
 /** Активний склад для UI/довідників: без delMark. */

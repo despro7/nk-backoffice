@@ -31,6 +31,7 @@ import { productsLocalSync } from './ProductsLocalSync.js';
 import { catalogMediaService } from './CatalogMediaService.js';
 import { pickLatestSku } from './skuUtils.js';
 import { catalogBarcodeRowKey, matchExistingBarcode } from './barcodeUtils.js';
+import { sanitizeStoredBatchName } from '../../../shared/utils/dilovodBatchId.js';
 import {
   DilovodCatalogGoodRow,
   DilovodDictItem,
@@ -53,6 +54,14 @@ function toMultilang(value: string | null | undefined): { uk: string; ru: string
   const s = String(value || '').trim();
   if (!s) return undefined;
   return { uk: s, ru: s };
+}
+
+/** Не зберігати в каталог назву партії, якщо вона = сирий Dilovod id. */
+function safeGoodPartName(
+  name: string | null | undefined,
+  goodPart: string | null | undefined,
+): string | null {
+  return sanitizeStoredBatchName(name, goodPart);
 }
 
 function normalizeParentId(parent: string | null | undefined): string | null {
@@ -1018,7 +1027,7 @@ export class ProductsCatalogService {
         activity: b.activity !== false,
         dilovodRegisterId: regId,
         goodPart,
-        goodPartName: b.goodPartName?.trim() || null,
+        goodPartName: safeGoodPartName(b.goodPartName, goodPart),
       });
     }
 
@@ -1271,7 +1280,10 @@ export class ProductsCatalogService {
             activity,
             dilovodRegisterId: existingBarcode.dilovodRegisterId,
             goodPart,
-            goodPartName: b.goodPartName?.trim() || existingBarcode.goodPartName || null,
+            goodPartName:
+              safeGoodPartName(b.goodPartName, goodPart)
+              || safeGoodPartName(existingBarcode.goodPartName, goodPart)
+              || null,
           });
           continue;
         }
@@ -1293,7 +1305,10 @@ export class ProductsCatalogService {
           activity,
           dilovodRegisterId: regId,
           goodPart,
-          goodPartName: b.goodPartName?.trim() || existingBarcode?.goodPartName || null,
+          goodPartName:
+            safeGoodPartName(b.goodPartName, goodPart)
+            || safeGoodPartName(existingBarcode?.goodPartName, goodPart)
+            || null,
         });
       }
     } else if (!isGroup) {

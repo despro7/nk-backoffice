@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-09-10 — Dilovod: резолв назв партій + аудит порожнього серійного №
+**Files:** `shared/utils/dilovodBatchId.ts`, `server/services/dilovod/DilovodApiClient.ts`, `DilovodUtils.ts`, `DilovodGoodPartsSerialService.ts`, `server/routes/dilovod.ts`, `server/modules/Warehouse/WarehouseController.ts`, `ProductsCatalogService.ts`, `ProductsDilovodGateway.ts`, `client/components/DilovodGoodPartsSerialAudit.tsx`, `client/pages/SettingsDilovod.tsx`, `Docs/integrations/dilovod-metadata.md`
+
+- **Проблема:** у `catalogs.goodParts` номер партії лежить то в `code`, то в `name`/`number`; порожній `code` → UI показує сирий Dilovod ID.
+- **Резолв:** `pickHumanBatchLabel` / `sanitizeStoredBatchName`; fallback `getObject` → `extractBatchLabelFromGoodPartHeader`; каталог більше не зберігає raw ID як `goodPartName`.
+- **Аудит:** Settings → Dilovod — партії без `code` у папці «Готова продукція»; збереження `code` через `saveObject`; генерація YMMDD з дати (`60905` = 05.09.2026); рядок без дати — danger.
+- **API:** `GET /api/dilovod/good-parts/missing-serial`, `POST /api/dilovod/good-parts/:id/serial`.
+- Деталі: `Docs/integrations/dilovod-metadata.md` (секція goodParts).
+
+---
+
 ## 2026-09-07 — SalesDrive: reconcile externalId/orderNumber після інциденту
 **Files:** `server/services/salesdrive/externalIdHelper.ts`, `server/services/orderDatabaseService.ts`, `server/routes/webhooks.ts`, `server/routes/orders-sync.ts`, `server/scripts/reconcile-order-external-ids.ts`, `package.json`, `Docs/features/salesdrive-order-identity.md`
 

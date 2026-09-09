@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
-import { DilovodService, dilovodExportFlowService, acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock, dilovodMetadataService } from '../services/dilovod/index.js';
+import { DilovodService, dilovodExportFlowService, acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock, dilovodMetadataService, dilovodGoodPartsSerialService } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
@@ -554,6 +554,69 @@ router.get('/metadata/:objectName', authenticateToken, dilovodRead, async (req, 
       success: false,
       error: 'Failed to load Dilovod metadata object',
       details: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+/**
+ * GET /api/dilovod/good-parts/missing-serial
+ * Аудит партій (catalogs.goodParts) без серійного № (`code`).
+ * Query: limit (1..500, default 200).
+ */
+router.get('/good-parts/missing-serial', authenticateToken, dilovodRead, async (req, res) => {
+  try {
+    const rawLimit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    const folderId =
+      typeof req.query.folderId === 'string' && req.query.folderId.trim()
+        ? req.query.folderId.trim()
+        : undefined;
+    const data = await dilovodGoodPartsSerialService.listMissingSerial({
+      limit: Number.isFinite(rawLimit) ? rawLimit : undefined,
+      folderId,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.log('❌ [API] Dilovod good-parts missing-serial:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to audit goodParts serial numbers',
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+/**
+ * POST /api/dilovod/good-parts/:id/serial
+ * Заповнює порожній серійний № (`code`) у партії. Body: { code: string }.
+ * Не перезаписує вже заповнений code (окрім noop з тим самим значенням).
+ */
+router.post('/good-parts/:id/serial', authenticateToken, dilovodAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const code = typeof req.body?.code === 'string' ? req.body.code : '';
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'id is required' });
+    }
+    if (!String(code || '').trim()) {
+      return res.status(400).json({ success: false, error: 'code is required' });
+    }
+
+    const data = await dilovodGoodPartsSerialService.setSerial(id, code);
+    res.json({ success: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log('❌ [API] Dilovod good-parts set serial:', error);
+    const status =
+      message.includes('вже є серійний') ||
+      message.includes('Некоректний') ||
+      message.includes('не може бути') ||
+      message.includes('не повинен')
+        ? 400
+        : 500;
+    res.status(status).json({
+      success: false,
+      error: 'Failed to set goodPart serial',
+      details: message,
     });
   }
 });
