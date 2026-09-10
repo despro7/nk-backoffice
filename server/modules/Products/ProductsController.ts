@@ -403,7 +403,7 @@ router.post('/goods/:id/duplicate', ...authOnly, async (req, res) => {
 
 // POST /api/catalog/refresh
 // body:
-//   { folderId, recursive?: true } → structure-only гілка
+//   { folderId, recursive?: true, maxDepth?: number } → structure-only гілка
 //   { ids: string[] } → sync виділених (header + prices + barcodes)
 //   {} → повний refresh (лише ADMIN)
 router.post('/refresh', ...authOnly, async (req, res) => {
@@ -423,8 +423,14 @@ router.post('/refresh', ...authOnly, async (req, res) => {
           : String(raw);
       if (!assertFolderEdit(res, perms, folderId, index.parentById)) return;
       const recursive = body.recursive !== false; // за замовчуванням recursive для гілки
+      const maxDepthRaw = body.maxDepth;
+      const maxDepth =
+        maxDepthRaw === undefined || maxDepthRaw === null || maxDepthRaw === ''
+          ? undefined
+          : Number(maxDepthRaw);
       const data = await productsCatalogService.refreshFolderFromDilovod(folderId, {
         recursive,
+        maxDepth: Number.isFinite(maxDepth) ? maxDepth : undefined,
       });
 
       // TEMP: після refresh гілки — force Legacy Update в таблицю `products`.
@@ -435,7 +441,9 @@ router.post('/refresh', ...authOnly, async (req, res) => {
       let legacyError: string | null = null;
       try {
         const { activeSkus, archivedSkus } =
-          await productsCatalogService.listSkusInFolderSubtree(folderId);
+          await productsCatalogService.listSkusInFolderSubtree(folderId, {
+            visitedFolderIds: data.visitedFolderIds,
+          });
         legacySkuCount = activeSkus.length + archivedSkus.length;
         legacyOutdatedCount = await productsCatalogService.markLegacyProductsOutdatedBySku(
           archivedSkus
@@ -459,7 +467,16 @@ router.post('/refresh', ...authOnly, async (req, res) => {
 
       res.json({
         success: true,
-        data: { ...data, legacySkuCount, legacyOutdatedCount, legacySync, legacyError },
+        data: {
+          upserted: data.upserted,
+          orphansResolved: data.orphansResolved,
+          capped: data.capped,
+          maxDepth: data.maxDepth,
+          legacySkuCount,
+          legacyOutdatedCount,
+          legacySync,
+          legacyError,
+        },
       });
       return;
     }

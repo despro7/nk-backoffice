@@ -122,11 +122,12 @@ export function useProductsCatalog() {
   );
 
   const refreshBranchMutation = useMutation({
-    mutationFn: (folderId: string | null) =>
+    mutationFn: (input: { folderId: string | null; maxDepth: number }) =>
       catalogFetch<{
         upserted: number;
         orphansResolved: number;
         capped: boolean;
+        maxDepth?: number;
         legacySkuCount?: number;
         legacyOutdatedCount?: number;
         legacyError?: string | null;
@@ -142,8 +143,9 @@ export function useProductsCatalog() {
       }>('/api/catalog/refresh', {
         method: 'POST',
         body: JSON.stringify({
-          folderId: folderId ?? 'root',
+          folderId: input.folderId ?? 'root',
           recursive: true,
+          maxDepth: input.maxDepth,
         }),
       }),
     onSuccess: () => {

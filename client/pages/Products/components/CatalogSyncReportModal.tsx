@@ -6,6 +6,7 @@ export type BranchSyncReportData = {
   upserted: number;
   orphansResolved: number;
   capped: boolean;
+  maxDepth?: number;
   legacySkuCount?: number;
   legacyOutdatedCount?: number;
   legacyError?: string | null;
@@ -182,6 +183,9 @@ export function CatalogSyncReportModal({ report, onClose }: CatalogSyncReportMod
                 label="Каталог Dilovod"
                 detail={joinParts([
                   `${report.branch.upserted} записів`,
+                  report.branch.maxDepth !== undefined
+                    ? `глибина ${report.branch.maxDepth}`
+                    : null,
                   report.branch.orphansResolved
                     ? `сиріт ${report.branch.orphansResolved}`
                     : null,

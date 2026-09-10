@@ -272,6 +272,8 @@ export class ProductsCatalogService {
   private async resolveFolderSubtreeIds(options: {
     underFolderId?: string | null;
     underFolderName?: string | null;
+    /** Макс. відносна глибина вкладених папок (0 = лише корінь піддерева). Без ліміту — усе. */
+    maxDepth?: number;
   }): Promise<string[]> {
     const byId = String(options.underFolderId || '').trim();
     const byName = String(options.underFolderName || '').trim();
@@ -297,9 +299,16 @@ export class ProductsCatalogService {
 
     if (!rootId) return [];
 
+    const maxDepth =
+      options.maxDepth === undefined || options.maxDepth === null
+        ? Number.POSITIVE_INFINITY
+        : Math.max(0, Math.floor(Number(options.maxDepth)));
+
     const folderIds = new Set<string>([rootId]);
     let frontier = [rootId];
+    let depth = 0;
     while (frontier.length > 0) {
+      if (depth >= maxDepth) break;
       const children = await prisma.catalogGood.findMany({
         where: {
           isGroup: true,
@@ -314,6 +323,7 @@ export class ProductsCatalogService {
         folderIds.add(child.id);
         frontier.push(child.id);
       }
+      depth += 1;
     }
     return [...folderIds];
   }
@@ -321,15 +331,26 @@ export class ProductsCatalogService {
   /**
    * TEMP: SKU товарів у піддереві папки для dual-write в legacy `products`.
    * Архівні — окремо, щоб лише позначити isOutdated без Dilovod sync-manual.
+   * `visitedFolderIds` — папки, які щойно structure-refresh'нули (null = root).
    */
-  async listSkusInFolderSubtree(folderId: string | null): Promise<{
+  async listSkusInFolderSubtree(
+    folderId: string | null,
+    options?: { visitedFolderIds?: Array<string | null>; maxDepth?: number }
+  ): Promise<{
     activeSkus: string[];
     archivedSkus: string[];
   }> {
+    if (options?.visitedFolderIds && options.visitedFolderIds.length > 0) {
+      return this.listSkusUnderVisitedFolders(options.visitedFolderIds);
+    }
+
     const parentIds =
       folderId == null
         ? null
-        : await this.resolveFolderSubtreeIds({ underFolderId: folderId });
+        : await this.resolveFolderSubtreeIds({
+            underFolderId: folderId,
+            maxDepth: options?.maxDepth,
+          });
     if (folderId != null && (!parentIds || parentIds.length === 0)) {
       return { activeSkus: [], archivedSkus: [] };
     }
@@ -346,6 +367,38 @@ export class ProductsCatalogService {
               isGroup: false,
               parentId: { in: parentIds },
             },
+      select: { sku: true, parentId: true },
+    });
+    return await this.splitSkusByArchiveParent(rows);
+  }
+
+  /** TEMP: SKU прямих дітей відвіданих папок (після branch refresh з maxDepth). */
+  private async listSkusUnderVisitedFolders(
+    visitedFolderIds: Array<string | null>
+  ): Promise<{ activeSkus: string[]; archivedSkus: string[] }> {
+    const hasRoot = visitedFolderIds.some((id) => id == null);
+    const concreteIds = visitedFolderIds.filter((id): id is string => id != null);
+    const parentClauses: Array<Record<string, unknown>> = [];
+    if (concreteIds.length > 0) {
+      parentClauses.push({ parentId: { in: concreteIds } });
+    }
+    if (hasRoot) {
+      parentClauses.push(
+        { parentId: null },
+        { parentId: '0' },
+        { parentId: '' }
+      );
+    }
+    if (parentClauses.length === 0) {
+      return { activeSkus: [], archivedSkus: [] };
+    }
+
+    const rows = await prisma.catalogGood.findMany({
+      where: {
+        isGroup: false,
+        id: { not: CATALOG_TRASH_ID },
+        OR: parentClauses,
+      },
       select: { sku: true, parentId: true },
     });
     return await this.splitSkusByArchiveParent(rows);
@@ -1885,14 +1938,28 @@ export class ProductsCatalogService {
   /**
    * Structure-only sync піддерева (або одного рівня, якщо recursive=false).
    * Без цін / ШК / BOM.
+   * `maxDepth`: 0 = лише поточна папка; N = вкладеність до N; без значення — BRANCH_REFRESH_MAX_DEPTH.
    */
   async refreshFolderFromDilovod(
     folderId: string | null,
-    options?: { recursive?: boolean }
-  ): Promise<{ upserted: number; orphansResolved: number; capped: boolean }> {
+    options?: { recursive?: boolean; maxDepth?: number }
+  ): Promise<{
+    upserted: number;
+    orphansResolved: number;
+    capped: boolean;
+    visitedFolderIds: Array<string | null>;
+    maxDepth: number;
+  }> {
     const recursive = Boolean(options?.recursive);
+    const requestedMaxDepth =
+      options?.maxDepth === undefined || options?.maxDepth === null
+        ? BRANCH_REFRESH_MAX_DEPTH
+        : Math.max(0, Math.floor(Number(options.maxDepth)));
+    const effectiveMaxDepth = recursive
+      ? Math.min(requestedMaxDepth, BRANCH_REFRESH_MAX_DEPTH)
+      : 0;
     logServer(
-      `[ProductsCatalogService] folder refresh start folderId=${folderId ?? 'root'} recursive=${recursive}`
+      `[ProductsCatalogService] folder refresh start folderId=${folderId ?? 'root'} recursive=${recursive} maxDepth=${effectiveMaxDepth}`
     );
 
     let upserted = 0;
@@ -1904,6 +1971,7 @@ export class ProductsCatalogService {
       { id: folderId, depth: 0 },
     ];
     const visited = new Set<string>();
+    const visitedFolderIds: Array<string | null> = [];
 
     while (queue.length > 0) {
       const current = queue.shift()!;
@@ -1911,20 +1979,21 @@ export class ProductsCatalogService {
       if (visited.has(visitKey)) continue;
       visited.add(visitKey);
 
-      if (current.depth > BRANCH_REFRESH_MAX_DEPTH || nodesVisited >= BRANCH_REFRESH_MAX_NODES) {
+      if (current.depth > effectiveMaxDepth || nodesVisited >= BRANCH_REFRESH_MAX_NODES) {
         capped = true;
         logServer(
-          `[ProductsCatalogService] folder refresh capped depth=${current.depth} nodes=${nodesVisited}`
+          `[ProductsCatalogService] folder refresh capped depth=${current.depth} nodes=${nodesVisited} maxDepth=${effectiveMaxDepth}`
         );
         break;
       }
 
+      visitedFolderIds.push(current.id);
       const level = await this.refreshOneFolderLevel(current.id);
       upserted += level.upserted;
       orphansResolved += level.orphansResolved;
       nodesVisited += 1 + level.childGroupIds.length;
 
-      if (recursive) {
+      if (recursive && current.depth < effectiveMaxDepth) {
         for (const childId of level.childGroupIds) {
           if (!visited.has(childId)) {
             queue.push({ id: childId, depth: current.depth + 1 });
@@ -1934,9 +2003,15 @@ export class ProductsCatalogService {
     }
 
     logServer(
-      `[ProductsCatalogService] folder refresh done upserted=${upserted} orphans=${orphansResolved} capped=${capped}`
+      `[ProductsCatalogService] folder refresh done upserted=${upserted} orphans=${orphansResolved} capped=${capped} folders=${visitedFolderIds.length}`
     );
-    return { upserted, orphansResolved, capped };
+    return {
+      upserted,
+      orphansResolved,
+      capped,
+      visitedFolderIds,
+      maxDepth: effectiveMaxDepth,
+    };
   }
 
   private async refreshOneFolderLevel(folderId: string | null): Promise<{

@@ -68,7 +68,7 @@ export function CatalogToolbar({
 
       <div className="hidden md:inline-flex">
         <Tooltip
-          content="Синхронізувати поточну папку та всі вкладені елементи"
+          content="Синхронізувати поточну папку; глибину вкладеності можна обрати в підтвердженні"
           placement="top-start"
           delay={500}
           showArrow

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Spinner, Tooltip, type SortDescriptor } from '@heroui/react';
+import { Button, Select, SelectItem, Spinner, Tooltip, type SortDescriptor } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useRolePreview } from '@/contexts/RolePreviewContext';
@@ -24,6 +24,8 @@ import { useProductsCatalog } from './useProductsCatalog';
 import { CATALOG_ROOT_ID, CATALOG_TRASH_ID, type CatalogGoodDto } from './ProductsTypes';
 import {
   estimateBranchRefreshCount,
+  formatBranchDepthOptionLabel,
+  getBranchMaxDepth,
   isArchiveFolderId,
   isInFinishedProductsBranch,
   predictArchiveFolderName,
@@ -64,6 +66,7 @@ export default function ProductsPage() {
   const [changeTypeIds, setChangeTypeIds] = useState<string[] | null>(null);
   const [fullRefreshConfirmOpen, setFullRefreshConfirmOpen] = useState(false);
   const [branchRefreshConfirmOpen, setBranchRefreshConfirmOpen] = useState(false);
+  const [branchRefreshDepth, setBranchRefreshDepth] = useState(0);
   const [stockRefreshConfirmOpen, setStockRefreshConfirmOpen] = useState(false);
   const [syncReport, setSyncReport] = useState<CatalogSyncReport | null>(null);
   const syncStartedAtRef = useRef(0);
@@ -277,15 +280,31 @@ export default function ProductsPage() {
     [selectedLabels, catalog.treeItems]
   );
 
+  const branchMaxDepthAvailable = useMemo(
+    () => getBranchMaxDepth(catalog.selectedFolderId, catalog.treeItemsFull),
+    [catalog.selectedFolderId, catalog.treeItemsFull]
+  );
+
   const branchEstimate = useMemo(
     () =>
       estimateBranchRefreshCount(
         catalog.selectedFolderId,
         catalog.treeItemsFull,
-        catalog.treeNodes
+        catalog.treeNodes,
+        branchRefreshDepth
       ),
-    [catalog.selectedFolderId, catalog.treeItemsFull, catalog.treeNodes]
+    [
+      catalog.selectedFolderId,
+      catalog.treeItemsFull,
+      catalog.treeNodes,
+      branchRefreshDepth,
+    ]
   );
+
+  const openBranchRefreshConfirm = useCallback(() => {
+    setBranchRefreshDepth(getBranchMaxDepth(catalog.selectedFolderId, catalog.treeItemsFull));
+    setBranchRefreshConfirmOpen(true);
+  }, [catalog.selectedFolderId, catalog.treeItemsFull]);
 
   const syncConfirmLabels = useMemo(
     () =>
@@ -688,7 +707,7 @@ export default function ProductsPage() {
         branchRefreshing={catalog.refreshBranchMutation.isPending}
         stockRefreshing={catalog.stockSyncMutation.isPending}
         fullRefreshing={catalog.refreshFullMutation.isPending}
-        onRefreshBranch={() => setBranchRefreshConfirmOpen(true)}
+        onRefreshBranch={openBranchRefreshConfirm}
         onRefreshStock={() => setStockRefreshConfirmOpen(true)}
         showFullRefresh={isAdmin}
         onFullRefresh={() => setFullRefreshConfirmOpen(true)}
@@ -716,7 +735,7 @@ export default function ProductsPage() {
             onTrash={requestTrash}
             onRestoreFromTrash={requestRestoreFromTrash}
             onCreateGood={() => catalog.openCreate(false)}
-            onRefreshBranch={() => setBranchRefreshConfirmOpen(true)}
+            onRefreshBranch={openBranchRefreshConfirm}
             branchRefreshing={catalog.refreshBranchMutation.isPending}
             onRefreshStock={() => setStockRefreshConfirmOpen(true)}
             stockRefreshing={catalog.stockSyncMutation.isPending}
@@ -990,28 +1009,76 @@ export default function ProductsPage() {
         isOpen={branchRefreshConfirmOpen}
         title="Синхронізувати гілку з Dilovod?"
         message={
-          <div className="space-y-1">
+          <div className="space-y-3">
             <p>
-              Буде синхронізовано структуру папки <span className="font-medium text-sm px-1.5 py-1 mr-0.5 whitespace-nowrap bg-amber-100 text-orange-800 rounded ring-1 ring-inset ring-amber-800/20"><DynamicIcon name="folder-input" size={16} className="inline-block align-middle relative -top-[1px]" /> {branchEstimate.folderName}</span> та всіх вкладених рівнів.
+              Буде синхронізовано структуру папки{' '}
+              <span className="font-medium text-sm px-1.5 py-1 mr-0.5 whitespace-nowrap bg-amber-100 text-orange-800 rounded ring-1 ring-inset ring-amber-800/20">
+                <DynamicIcon
+                  name="folder-input"
+                  size={16}
+                  className="inline-block align-middle relative -top-[1px]"
+                />{' '}
+                {branchEstimate.folderName}
+              </span>
+              {branchRefreshDepth === 0
+                ? ' (лише поточний рівень).'
+                : branchRefreshDepth >= branchMaxDepthAvailable
+                  ? ' та всіх вкладених рівнів.'
+                  : ` та вкладених рівнів до глибини ${branchRefreshDepth}.`}
             </p>
-          {!isAdmin && (
-            <p className="text-danger text-sm mt-2">
-              Після цього тимчасово виконається Legacy Update активних товарів гілки в таблицю{' '}
-              <b>products</b> (Dilovod <code>sync-manual</code>, force). Архівні лише
-              позначаються <code>isOutdated</code>, без запиту в Dilovod.
-            </p>
-          )}
-            {branchEstimate.approxRecords > 100 ? (
-              <p className="text-danger text-sm mt-2">
-                Приблизно {branchEstimate.approxRecords} записів у межах{' '}
-              {branchEstimate.folderCount}{' '}
-              {branchEstimate.folderCount === 1 ? 'папки' : 'папок'}. Це досить велика кількість. Якщо ви впевнені, що хочете продовжити, доведеться зачекати ~{Math.ceil(branchEstimate.approxRecords / 50)} {pluralize(Math.ceil(branchEstimate.approxRecords / 50), 'хвилину', 'хвилини', 'хвилин')}, поки синхронізація завершиться.
+
+            {branchMaxDepthAvailable > 0 && (
+              <Select
+                label="Глибина гілки"
+                size="sm"
+                selectedKeys={[String(branchRefreshDepth)]}
+                onSelectionChange={(keys) => {
+                  const key = Array.from(keys as Set<string>)[0];
+                  if (key == null) return;
+                  const next = Number(key);
+                  if (Number.isFinite(next)) setBranchRefreshDepth(next);
+                }}
+                description={`Від 0 (поточна папка) до ${branchMaxDepthAvailable} (макс. за локальним дзеркалом)`}
+                classNames={{
+                  trigger: 'bg-default-100',
+                  description: 'text-xs text-default-400',
+                }}
+              >
+                {Array.from({ length: branchMaxDepthAvailable + 1 }, (_, depth) => (
+                  <SelectItem key={String(depth)} textValue={formatBranchDepthOptionLabel(depth, branchMaxDepthAvailable)}>
+                    {formatBranchDepthOptionLabel(depth, branchMaxDepthAvailable)}
+                  </SelectItem>
+                ))}
+              </Select>
+            )}
+
+            {!isAdmin && (
+              <p className="text-danger text-sm">
+                Після цього тимчасово виконається Legacy Update активних товарів гілки в таблицю{' '}
+                <b>products</b> (Dilovod <code>sync-manual</code>, force). Архівні лише позначаються{' '}
+                <code>isOutdated</code>, без запиту в Dilovod.
               </p>
-            ) : (
-              <p className="text-default-400 text-sm mt-2">
+            )}
+            {branchEstimate.approxRecords > 100 ? (
+              <p className="text-danger text-sm">
                 Приблизно {branchEstimate.approxRecords} записів у межах{' '}
                 {branchEstimate.folderCount}{' '}
-                {branchEstimate.folderCount === 1 ? 'папки' : 'папок'}. Фактична кількість може відрізнятися, якщо в Діловоді з’явились нові товари.
+                {branchEstimate.folderCount === 1 ? 'папки' : 'папок'}. Це досить велика кількість. Якщо
+                ви впевнені, що хочете продовжити, доведеться зачекати ~
+                {Math.ceil(branchEstimate.approxRecords / 50)}{' '}
+                {pluralize(
+                  Math.ceil(branchEstimate.approxRecords / 50),
+                  'хвилину',
+                  'хвилини',
+                  'хвилин'
+                )}
+                , поки синхронізація завершиться.
+              </p>
+            ) : (
+              <p className="text-default-400 text-sm">
+                Приблизно {branchEstimate.approxRecords} записів у межах {branchEstimate.folderCount}{' '}
+                {branchEstimate.folderCount === 1 ? 'папки' : 'папок'}. Фактична кількість може
+                відрізнятися, якщо в Діловоді з’явились нові товари.
               </p>
             )}
           </div>
@@ -1024,24 +1091,27 @@ export default function ProductsPage() {
         onConfirm={() => {
           setBranchRefreshConfirmOpen(false);
           syncStartedAtRef.current = Date.now();
-          catalog.refreshBranchMutation.mutate(folderIdForBranch, {
-            onSuccess: (data) =>
-              setSyncReport({
-                op: 'branch',
-                ok: true,
-                folderName: branchEstimate.folderName,
-                durationSec: syncDurationSec(),
-                branch: data,
-              }),
-            onError: (err: Error) =>
-              setSyncReport({
-                op: 'branch',
-                ok: false,
-                folderName: branchEstimate.folderName,
-                durationSec: syncDurationSec(),
-                error: err.message,
-              }),
-          });
+          catalog.refreshBranchMutation.mutate(
+            { folderId: folderIdForBranch, maxDepth: branchRefreshDepth },
+            {
+              onSuccess: (data) =>
+                setSyncReport({
+                  op: 'branch',
+                  ok: true,
+                  folderName: branchEstimate.folderName,
+                  durationSec: syncDurationSec(),
+                  branch: data,
+                }),
+              onError: (err: Error) =>
+                setSyncReport({
+                  op: 'branch',
+                  ok: false,
+                  folderName: branchEstimate.folderName,
+                  durationSec: syncDurationSec(),
+                  error: err.message,
+                }),
+            }
+          );
         }}
       />
 

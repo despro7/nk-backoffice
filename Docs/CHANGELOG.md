@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-09-10 — Products: глибина при «Синхронізувати гілку»
+**Files:** `Products/index.tsx`, `ProductsUtils.ts`, `useProductsCatalog.ts`, `CatalogToolbar.tsx`, `CatalogSyncReportModal.tsx`, `ProductsCatalogService.ts`, `ProductsController.ts`, `Docs/features/products-catalog-2.0.md`
+
+- ConfirmModal: Select глибини **0…макс** (0 = лише поточна папка; дефолт = усі рівні за локальним дзеркалом).
+- `POST /api/catalog/refresh` з `folderId` приймає `maxDepth`; TEMP Legacy Sync лише по відвіданих папках.
+- Оцінка «≈ N записів» перераховується під обрану глибину.
+
+---
+
 ## 2026-09-10 — WarehouseReturns: партії з qty≤0 + фікс селекта причини
 **Files:** `DilovodApiClient.ts`, `DilovodService.ts`, `WarehouseController.ts`, `useWarehouseReturns.ts`, `ReturnsItemRow.tsx`, `WarehouseReturnsTypes.ts`, `WarehouseReturns/index.tsx`, `ReturnsHistoryTable.tsx`, `Docs/features/warehouse-returns-dry-run.md`
 

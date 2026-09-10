@@ -1,6 +1,6 @@
 # Products 2.0 — домен керування каталогом Dilovod
 
-**Дата:** 2026-07-30 (оновлено 2026-08-31)  
+**Дата:** 2026-07-30 (оновлено 2026-09-10)  
 **Маршрут:** `/products` (`minRole: WAREHOUSE_MANAGER`)  
 **API:** `/api/catalog/`*
 
@@ -128,7 +128,7 @@ server/modules/Products/
 | GET    | `/trash`               | Вміст смітника                                                                   |
 | GET    | `/units`               | Довідник одиниць (thin-wrapper над кешем)                                        |
 | GET    | `/dictionaries`        | `{ units, priceTypes, currencies, accPolicies }` з кешу Dilovod                  |
-| POST   | `/refresh`             | Full або partial (`ids`) re-pull з Dilovod                                       |
+| POST   | `/refresh`             | Full; partial (`ids`); гілка `{ folderId, recursive?, maxDepth? }`               |
 
 
 ### Кешовані довідники Dilovod
@@ -400,7 +400,7 @@ client/pages/Products/
 
 1. `syncCatalogOpsFieldsToProducts` (ops після create/update/reorder);
 2. явна дія користувача **Legacy Update** → `POST /api/products/sync-manual`;
-3. **TEMP:** після «Синхронізувати гілку» (`POST /api/catalog/refresh` з `folderId`) — Legacy Update активних SKU гілки. Прибрати після відмови від `products`.
+3. **TEMP:** після «Синхронізувати гілку» (`POST /api/catalog/refresh` з `folderId`, опційно `maxDepth`) — Legacy Update активних SKU **лише відвіданих** папок. Прибрати після відмови від `products`.
 
 ### Legacy Update (Products 2.0 → `products`)
 
@@ -412,12 +412,12 @@ client/pages/Products/
 | Confirm | Список обраних з SKU; папки / без SKU пропускаються |
 | Клієнт | `legacySyncMutation` → `POST /api/products/sync-manual` з `{ skus, force: true }` |
 | Сервер (вибірково) | `partitionCatalogSkusByArchive` → архівні: `products.isOutdated = true`; активні: `dilovodService.syncProductsWithDilovod('manual', …, { force })` |
-| **TEMP гілка** | Після `refreshFolderFromDilovod`: `listSkusInFolderSubtree` → ті самі правила; відповідь містить `legacySkuCount`, `legacyOutdatedCount`, `legacySync` |
+| **TEMP гілка** | Після `refreshFolderFromDilovod` (`maxDepth`: 0 = поточна папка): SKU з `visitedFolderIds` → ті самі правила; відповідь: `legacySkuCount`, `legacyOutdatedCount`, `legacySync`, `maxDepth` |
 | Force | Ігнорує `dilovodDataHash` — завжди `update` / `create` |
 | Поля sync | name, ціни, category, `set`, `portionsPerBox`, barcode, hash, `lastSyncAt`; weight при force через `determineWeightByCategory` |
 | Архів | **Без** Dilovod: лише `isOutdated`, щоб не ловити зайві помилки API |
 
-«Синхронізувати з Діловодом» по `ids` як і раніше оновлює лише `catalog_*`. «Синхронізувати гілку» = structure-refresh `catalog_*` **плюс TEMP Legacy**.
+«Синхронізувати з Діловодом» по `ids` як і раніше оновлює лише `catalog_*`. «Синхронізувати гілку» = structure-refresh `catalog_*` з вибором глибини **плюс TEMP Legacy** у межах цієї глибини.
 
 ---
 

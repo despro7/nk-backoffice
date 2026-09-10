@@ -676,8 +676,9 @@ export interface CatalogItemLabel {
 export function estimateBranchRefreshCount(
   folderId: string,
   treeItems: Record<string, CatalogTreeItemData>,
-  treeNodes: CatalogTreeNodeDto[]
-): { folderCount: number; approxRecords: number; folderName: string } {
+  treeNodes: CatalogTreeNodeDto[],
+  maxDepth?: number
+): { folderCount: number; approxRecords: number; folderName: string; maxDepthAvailable: number } {
   const startId = !folderId || folderId === CATALOG_ROOT_ID ? CATALOG_ROOT_ID : folderId;
   const folderName =
     startId === CATALOG_ROOT_ID
@@ -688,8 +689,16 @@ export function estimateBranchRefreshCount(
     treeNodes.map((n) => [n.id, n.childrenCount ?? 0])
   );
 
-  const descendantFolderIds: string[] = [];
-  const walk = (id: string) => {
+  const maxDepthAvailable = getBranchMaxDepth(startId, treeItems);
+  const depthLimit =
+    maxDepth === undefined || maxDepth === null
+      ? maxDepthAvailable
+      : Math.max(0, Math.min(Math.floor(maxDepth), maxDepthAvailable));
+
+  /** Папки, які потрапляють у refresh при обраній глибині (відносна depth ≤ depthLimit). */
+  const foldersInScope: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
+  const walk = (id: string, depth: number) => {
+    if (depth >= depthLimit) return;
     const item = treeItems[id];
     if (!item) return;
     const childIds = [...(item.children || [])];
@@ -698,33 +707,67 @@ export function estimateBranchRefreshCount(
     }
     for (const childId of childIds) {
       if (!treeItems[childId]?.isGroup) continue;
-      descendantFolderIds.push(childId);
-      walk(childId);
+      foldersInScope.push({ id: childId, depth: depth + 1 });
+      walk(childId, depth + 1);
     }
   };
-  walk(startId);
+  walk(startId, 0);
 
-  // parents, чиїх дітей тягнемо: обрана папка + усі вкладені
   let approxRecords = 0;
-  if (startId === CATALOG_ROOT_ID) {
-    // прямі діти root (лише папки в дереві) + childrenCount усіх папок
-    approxRecords += treeItems[CATALOG_ROOT_ID]?.children.length ?? 0;
-    for (const id of descendantFolderIds) {
-      approxRecords += childrenCountById.get(id) ?? 0;
-    }
-  } else {
-    approxRecords += childrenCountById.get(startId) ?? 0;
-    for (const id of descendantFolderIds) {
-      approxRecords += childrenCountById.get(id) ?? 0;
+  for (const folder of foldersInScope) {
+    if (folder.id === CATALOG_ROOT_ID) {
+      approxRecords += treeItems[CATALOG_ROOT_ID]?.children.length ?? 0;
+    } else {
+      approxRecords += childrenCountById.get(folder.id) ?? 0;
     }
   }
 
   const folderCount =
     startId === CATALOG_ROOT_ID
-      ? descendantFolderIds.length
-      : 1 + descendantFolderIds.length;
+      ? foldersInScope.filter((f) => f.id !== CATALOG_ROOT_ID).length
+      : foldersInScope.length;
 
-  return { folderCount, approxRecords, folderName };
+  return { folderCount, approxRecords, folderName, maxDepthAvailable };
+}
+
+/**
+ * Макс. відносна глибина вкладених папок від обраної (0 = немає вкладених груп).
+ * Узгоджено з server `refreshFolderFromDilovod` (depth стартової папки = 0).
+ */
+export function getBranchMaxDepth(
+  folderId: string,
+  treeItems: Record<string, CatalogTreeItemData>
+): number {
+  const startId = !folderId || folderId === CATALOG_ROOT_ID ? CATALOG_ROOT_ID : folderId;
+  let max = 0;
+  const walk = (id: string, depth: number) => {
+    max = Math.max(max, depth);
+    const item = treeItems[id];
+    if (!item) return;
+    const childIds = [...(item.children || [])];
+    if (item.archiveChildId && !childIds.includes(item.archiveChildId)) {
+      childIds.push(item.archiveChildId);
+    }
+    for (const childId of childIds) {
+      if (!treeItems[childId]?.isGroup) continue;
+      walk(childId, depth + 1);
+    }
+  };
+  walk(startId, 0);
+  return max;
+}
+
+/** Підпис опції глибини в ConfirmModal синхронізації гілки. */
+export function formatBranchDepthOptionLabel(depth: number, maxAvailable: number): string {
+  if (depth === 0) return '0 — лише поточна папка';
+  if (depth === maxAvailable) return `${depth} — усі рівні`;
+  const levelWord =
+    depth % 10 === 1 && depth % 100 !== 11
+      ? 'рівень'
+      : depth % 10 >= 2 && depth % 10 <= 4 && (depth % 100 < 10 || depth % 100 >= 20)
+        ? 'рівні'
+        : 'рівнів';
+  return `${depth} — поточна + ${depth} ${levelWord}`;
 }
 
 /** Назви елементів для confirm / context з tableRows + treeItems. */
