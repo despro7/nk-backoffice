@@ -192,6 +192,10 @@ export const SettingsEquipment = () => {
     let lastTestTime = Date.now();
 
     const testScannerListener = (event: KeyboardEvent) => {
+      if (!event.key) {
+        return;
+      }
+
       // Проверяем, что событие еще не обработано основным сканером
       if ((event as any)._barcodeProcessed) {
         return; // Пропускаем, уже обработано

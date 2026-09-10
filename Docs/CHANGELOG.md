@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-09-11 — BarcodeScanner: guard для keydown без `event.key`
+**Files:** `BarcodeScannerService.ts`, `SettingsEquipment.tsx`, `test-serial-com.tsx`
+
+- Виправлено `TypeError: Cannot read properties of undefined (reading 'length')` у глобальному `keyboardListener` — деякі `keydown`-події (сканер, розширення) приходять без `event.key`.
+- Додано ранній `return` перед зверненням до `event.key.length` у тестових listener'ах обладнання.
+
+---
+
 ## 2026-09-11 — HR співробітники: картка зайнятості, ставки, isDirty
 **Files:** `EmployeeDrawer.tsx`, `Employees/index.tsx`, `HrService.ts`, `shared/types/hr.ts`, `shared/utils/hrPayHealth.ts`, `hrPayHealth.spec.ts`, `Docs/features/hr-module.md`, `Docs/architecture/unsaved-guard.md`
 

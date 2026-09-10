@@ -129,6 +129,10 @@ export class BarcodeScannerService {
         return;
       }
 
+      if (!event.key) {
+        return;
+      }
+
       // Ігноруємо якщо користувач вводить в поле вводу
       const activeElement = document.activeElement;
       if (activeElement && (

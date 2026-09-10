@@ -193,7 +193,7 @@ const TestSerialCom: React.FC = () => {
 
   // Обробка вводу зі сканера
   const handleScannerInput = useCallback((event: KeyboardEvent) => {
-    if (!scannerActive) return;
+    if (!scannerActive || !event.key) return;
 
     const currentTime = Date.now();
 
