@@ -143,6 +143,7 @@ interface HrSpecChipProps {
   children: ReactNode;
   className?: string;
   size?: 'sm' | 'md';
+  rounded?: 'full' | 'sm';
   selected?: boolean;
   onClick?: () => void;
 }
@@ -153,6 +154,7 @@ export function HrSpecChip({
   children,
   className,
   size = 'sm',
+  rounded = 'full',
   selected = false,
   onClick,
 }: HrSpecChipProps) {
@@ -167,9 +169,10 @@ export function HrSpecChip({
       startContent={lucideIcon ? <DynamicIcon name={lucideIcon} size={13} /> : undefined}
       classNames={{
         base: [
+          rounded ? `rounded-${rounded}` : 'rounded-full',
           specColorToClassNames(tokens, { border: true, intensity: selected ? 'medium' : tokens.intensity }),
           selected ? 'ring-2 ring-slate-800 ring-offset-1' : '',
-          className ?? 'px-1.5',
+          className ?? rounded === 'full' ? 'px-1.5' : 'px-1',
         ].join(' '),
         content: 'font-medium',
       }}

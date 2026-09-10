@@ -143,6 +143,8 @@ window.addEventListener('beforeunload', (e) => {
 | Сторінка | Файл |
 |----------|------|
 | Інвентаризація складу | `client/pages/Warehouse/WarehouseInventory/index.tsx` |
+| Каталог Products 2.0 | `client/pages/Products/components/productDrawer/ProductDrawer.tsx` |
+| HR співробітники | `client/pages/Hr/Employees/EmployeeDrawer.tsx` |
 
 ---
 

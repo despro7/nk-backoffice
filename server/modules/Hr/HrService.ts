@@ -21,6 +21,7 @@ import {
   type HrUserOptionDto,
 } from '../../../shared/types/hr.js';
 import { HR_SEED_LEGAL_ENTITY_CODES } from '../../../shared/utils/hrEmploymentDedupe.js';
+import { collectHrPayWarnings } from '../../../shared/utils/hrPayHealth.js';
 import { mergeEmploymentRecords } from './HrEmploymentMerge.js';
 import {
   cardLast4FromDigits,
@@ -156,6 +157,20 @@ function toEmploymentDto(row: EmployeeRecord['employments'][number]): HrEmployme
 
 function toListItem(row: EmployeeRecord): HrEmployeeListItemDto {
   const current = pickCurrentEmployment(row.employments);
+  const payWarnings = collectHrPayWarnings(
+    row.employments.map((item) => ({
+      payGroup: item.payGroup,
+      validFrom: toDateOnly(item.validFrom),
+      validTo: item.validTo ? toDateOnly(item.validTo) : null,
+      legalEntityName: item.legalEntity.name,
+      payTerms: item.payTerms.map((term) => ({
+        effectiveFrom: toDateOnly(term.effectiveFrom),
+        effectiveTo: term.effectiveTo ? toDateOnly(term.effectiveTo) : null,
+      })),
+    })),
+    undefined,
+    isStatus(row.status) ? row.status : 'inactive',
+  );
   return {
     id: row.id,
     lastName: row.lastName,
@@ -169,6 +184,7 @@ function toListItem(row: EmployeeRecord): HrEmployeeListItemDto {
     cardMasked: maskCardLast4(row.cardLast4),
     currentLegalEntityName: current?.legalEntity.name ?? null,
     currentPayGroup: current && isPayGroup(current.payGroup) ? current.payGroup : null,
+    hasPayWarning: payWarnings.length > 0,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
   };
 }
@@ -559,8 +575,22 @@ export class HrService {
     const employment = await prisma.hrEmployment.findUnique({ where: { id: employmentId } });
     if (!employment) throw new HrError('Зайнятість не знайдено', 404);
     const data = this.normalizePayTermsPayload(payload);
-    const created = await prisma.hrPayTerms.create({
-      data: { employmentId, ...data },
+    const created = await prisma.$transaction(async (tx) => {
+      if (payload.closePrevious) {
+        const terms = await tx.hrPayTerms.findMany({ where: { employmentId } });
+        const closeDate = new Date(data.effectiveFrom);
+        closeDate.setUTCDate(closeDate.getUTCDate() - 1);
+        for (const term of terms) {
+          const termEnd = term.effectiveTo ?? new Date(Date.UTC(9999, 11, 31));
+          const newEnd = data.effectiveTo ?? new Date(Date.UTC(9999, 11, 31));
+          if (term.effectiveFrom > newEnd || data.effectiveFrom > termEnd) continue;
+          const effectiveTo = closeDate < term.effectiveFrom ? term.effectiveFrom : closeDate;
+          await tx.hrPayTerms.update({ where: { id: term.id }, data: { effectiveTo } });
+        }
+      }
+      return tx.hrPayTerms.create({
+        data: { employmentId, ...data },
+      });
     });
     return toPayTermsDto(created);
   }

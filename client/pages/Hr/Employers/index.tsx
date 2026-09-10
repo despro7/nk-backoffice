@@ -305,7 +305,7 @@ export default function HrEmployersPage() {
                       </button>
                     </TableCell>
                     <TableCell>
-                      <HrSpecChip tokens={hrLegalEntityKindTokens(item.kind)}>
+                      <HrSpecChip tokens={hrLegalEntityKindTokens(item.kind)} rounded="sm">
                         {HR_LEGAL_ENTITY_KIND_LABELS[item.kind]}
                       </HrSpecChip>
                     </TableCell>
@@ -399,7 +399,7 @@ export default function HrEmployersPage() {
                     classNames={SELECT_CLASS_NAMES}
                     renderValue={(items) =>
                       items.map((item) => (
-                        <HrSpecChip key={item.key} tokens={hrLegalEntityKindTokens(String(item.key))}>
+                        <HrSpecChip key={item.key} tokens={hrLegalEntityKindTokens(String(item.key))} rounded="sm">
                           {item.textValue}
                         </HrSpecChip>
                       ))

@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-09-11 — HR співробітники: картка зайнятості, ставки, isDirty
+**Files:** `EmployeeDrawer.tsx`, `Employees/index.tsx`, `HrService.ts`, `shared/types/hr.ts`, `shared/utils/hrPayHealth.ts`, `hrPayHealth.spec.ts`, `Docs/features/hr-module.md`, `Docs/architecture/unsaved-guard.md`
+
+- **Drawer:** `size="3xl"`, 2 колонки; зайнятість як `Card` (період + статус у header); ставки всередині картки; форми додавання під спойлером.
+- **Ставка:** маска суми `00 000` + `грн`; при перекритті — ConfirmModal і `closePrevious` (закриває попередню `effectiveTo` днем раніше).
+- **Warning:** `collectHrPayWarnings` — немає ставки / кілька чинних ставок / кілька зайнятостей в групі. Alert у drawer, іконка біля імені в таблиці (`hasPayWarning`).
+- **Таблиця:** примітка під іменем; ПІБ капіталізуються; картка з маскою `0000 0000 0000 0000`.
+- **isDirty:** snapshot полів картки + `useUnsavedGuard` / `UnsavedChangesModal` перед закриттям.
+- Деталі: `Docs/features/hr-module.md` (секція «Співробітники»).
+
+---
+
 ## 2026-09-10 — Products: глибина при «Синхронізувати гілку»
 **Files:** `Products/index.tsx`, `ProductsUtils.ts`, `useProductsCatalog.ts`, `CatalogToolbar.tsx`, `CatalogSyncReportModal.tsx`, `ProductsCatalogService.ts`, `ProductsController.ts`, `Docs/features/products-catalog-2.0.md`
 

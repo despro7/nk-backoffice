@@ -196,14 +196,27 @@ export default function HrEmployeesPage() {
                 {sortedEmployees.map((employee) => (
                   <TableRow key={employee.id} className={employee.status === 'active' ? undefined : 'opacity-40'}>
                     <TableCell>
-                      <button type="button" className="text-left" onClick={() => openEdit(employee.id)}>
-                        <div className="font-medium">{employee.displayName}</div>
+                      <button type="button" className="text-left max-w-full" onClick={() => openEdit(employee.id)}>
+                        <div className="flex items-center gap-1.5 font-medium">
+                          {employee.hasPayWarning ? (
+                            <DynamicIcon
+                              name="triangle-alert"
+                              size={15}
+                              className="shrink-0 text-rose-600"
+                              aria-label="Перевірте ставки"
+                            />
+                          ) : null}
+                          <span>{employee.displayName}</span>
+                        </div>
+                        {employee.notes ? (
+                          <div className="text-xs truncate max-w-full text-gray-400">{employee.notes}</div>
+                        ) : null}
                         {employee.userName ? <div className="text-xs text-text-secondary">{employee.userName}</div> : null}
                       </button>
                     </TableCell>
                     <TableCell>
                       {employee.currentLegalEntityName ? (
-                        <HrSpecChip tokens={hrEmployerTokensFromName(employee.currentLegalEntityName)}>
+                        <HrSpecChip tokens={hrEmployerTokensFromName(employee.currentLegalEntityName)} rounded="sm">
                           {employee.currentLegalEntityName}
                         </HrSpecChip>
                       ) : (
@@ -212,7 +225,7 @@ export default function HrEmployeesPage() {
                     </TableCell>
                     <TableCell>
                       {employee.currentPayGroup ? (
-                        <HrSpecChip tokens={hrPayGroupTokens(employee.currentPayGroup)}>
+                        <HrSpecChip tokens={hrPayGroupTokens(employee.currentPayGroup)} rounded="sm">
                           {HR_PAY_GROUP_LABELS[employee.currentPayGroup]}
                         </HrSpecChip>
                       ) : (

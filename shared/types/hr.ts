@@ -86,6 +86,8 @@ export interface HrEmployeeListItemDto {
   cardMasked: string | null;
   currentLegalEntityName: string | null;
   currentPayGroup: HrPayGroup | null;
+  /** Неконсистентні ставки / зайнятості (не блокує дії) */
+  hasPayWarning: boolean;
   /** ISO datetime; заповнюється лише для архівних записів */
   deletedAt?: string | null;
 }
@@ -121,6 +123,8 @@ export interface HrPayTermsWritePayload {
   currency?: string;
   effectiveFrom: string;
   effectiveTo?: string | null;
+  /** Закрити чинні ставки зайнятості днем раніше за effectiveFrom */
+  closePrevious?: boolean;
 }
 
 export const HR_TIMESHEET_STATUSES = ['draft', 'closed'] as const;
