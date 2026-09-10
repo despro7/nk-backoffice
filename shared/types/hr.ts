@@ -86,6 +86,8 @@ export interface HrEmployeeListItemDto {
   cardMasked: string | null;
   currentLegalEntityName: string | null;
   currentPayGroup: HrPayGroup | null;
+  /** ISO datetime; заповнюється лише для архівних записів */
+  deletedAt?: string | null;
 }
 
 export interface HrEmployeeDetailDto extends HrEmployeeListItemDto {

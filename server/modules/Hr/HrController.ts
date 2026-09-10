@@ -127,8 +127,10 @@ router.get('/users-options', authenticateToken, pageEmployees, async (req: Reque
 router.get('/employees', authenticateToken, pageEmployees, async (req: Request, res: Response) => {
   try {
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
-    const includeInactive = req.query.includeInactive !== 'false';
-    const data = await hrService.listEmployees(search, includeInactive);
+    const archived = req.query.archived === 'true';
+    const data = archived
+      ? await hrService.listArchivedEmployees(search)
+      : await hrService.listEmployees(search, req.query.includeInactive !== 'false');
     res.json({ success: true, data });
   } catch (error) {
     sendHrError(res, error, 'list employees');
@@ -167,10 +169,19 @@ router.put('/employees/:id', authenticateToken, manageEmployees, async (req: Req
 
 router.delete('/employees/:id', authenticateToken, manageEmployees, async (req: Request, res: Response) => {
   try {
-    const data = await hrService.deleteEmployee(parseId(req.params.id));
-    res.json({ success: true, data });
+    await hrService.deleteEmployee(parseId(req.params.id));
+    res.json({ success: true });
   } catch (error) {
     sendHrError(res, error, 'delete employee');
+  }
+});
+
+router.post('/employees/:id/restore', authenticateToken, manageEmployees, async (req: Request, res: Response) => {
+  try {
+    const data = await hrService.restoreEmployee(parseId(req.params.id));
+    res.json({ success: true, data });
+  } catch (error) {
+    sendHrError(res, error, 'restore employee');
   }
 });
 

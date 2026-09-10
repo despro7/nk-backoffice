@@ -169,6 +169,7 @@ function toListItem(row: EmployeeRecord): HrEmployeeListItemDto {
     cardMasked: maskCardLast4(row.cardLast4),
     currentLegalEntityName: current?.legalEntity.name ?? null,
     currentPayGroup: current && isPayGroup(current.payGroup) ? current.payGroup : null,
+    deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
   };
 }
 
@@ -371,25 +372,40 @@ export class HrService {
     }));
   }
 
+  private buildEmployeeSearchWhere(q: string | undefined, deleted: boolean): Prisma.HrEmployeeWhereInput {
+    const trimmed = q?.trim();
+    return {
+      deletedAt: deleted ? { not: null } : null,
+      ...(trimmed
+        ? {
+            OR: [
+              { displayName: { contains: trimmed } },
+              { lastName: { contains: trimmed } },
+              { firstName: { contains: trimmed } },
+              { notes: { contains: trimmed } },
+            ],
+          }
+        : {}),
+    };
+  }
+
   async listEmployees(search?: string, includeInactive = true): Promise<HrEmployeeListItemDto[]> {
-    const q = search?.trim();
     const rows = await prisma.hrEmployee.findMany({
       where: {
-        deletedAt: null,
+        ...this.buildEmployeeSearchWhere(search, false),
         ...(includeInactive ? {} : { status: 'active' }),
-        ...(q
-          ? {
-              OR: [
-                { displayName: { contains: q } },
-                { lastName: { contains: q } },
-                { firstName: { contains: q } },
-                { notes: { contains: q } },
-              ],
-            }
-          : {}),
       },
       include: employeeInclude,
       orderBy: [{ status: 'asc' }, { displayName: 'asc' }],
+    });
+    return rows.map(toListItem);
+  }
+
+  async listArchivedEmployees(search?: string): Promise<HrEmployeeListItemDto[]> {
+    const rows = await prisma.hrEmployee.findMany({
+      where: this.buildEmployeeSearchWhere(search, true),
+      include: employeeInclude,
+      orderBy: [{ deletedAt: 'desc' }, { displayName: 'asc' }],
     });
     return rows.map(toListItem);
   }
@@ -461,17 +477,40 @@ export class HrService {
     return toDetail(updated, revealCard);
   }
 
-  async deleteEmployee(id: number): Promise<{ soft: boolean }> {
+  async deleteEmployee(id: number): Promise<void> {
     const existing = await prisma.hrEmployee.findFirst({
       where: { id, deletedAt: null },
       select: { id: true },
     });
     if (!existing) throw new HrError('Співробітника не знайдено', 404);
 
-    // Табель ще не в PR1: фізичне видалення. Soft-delete — коли з’являться записи табеля.
-    await prisma.hrEmployee.delete({ where: { id } });
+    await prisma.hrEmployee.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        status: 'inactive',
+      },
+    });
     logServer('[hr] deleted employee', { id });
-    return { soft: false };
+  }
+
+  async restoreEmployee(id: number): Promise<HrEmployeeListItemDto> {
+    const existing = await prisma.hrEmployee.findFirst({
+      where: { id, deletedAt: { not: null } },
+      select: { id: true },
+    });
+    if (!existing) throw new HrError('Архівний запис не знайдено', 404);
+
+    const restored = await prisma.hrEmployee.update({
+      where: { id },
+      data: {
+        deletedAt: null,
+        status: 'active',
+      },
+      include: employeeInclude,
+    });
+    logServer('[hr] restored employee', { id });
+    return toListItem(restored);
   }
 
   async createEmployment(employeeId: number, payload: HrEmploymentWritePayload): Promise<HrEmploymentDto> {

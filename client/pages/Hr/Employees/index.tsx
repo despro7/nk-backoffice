@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { SortDescriptor } from '@heroui/react';
 import {
   Button,
   Card,
@@ -23,7 +24,9 @@ import {
   type HrLegalEntityDto,
 } from '@shared/types/hr';
 import { EmployeeDrawer } from './EmployeeDrawer';
+import { EmployeesArchiveModal } from './EmployeesArchiveModal';
 import { TimesheetImportModal } from './TimesheetImportModal';
+import { DEFAULT_EMPLOYEE_SORT, sortHrEmployees } from './employeeTableSort';
 import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HR_TABLE_CLASS_NAMES, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
 
 export default function HrEmployeesPage() {
@@ -40,6 +43,13 @@ export default function HrEmployeesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>(DEFAULT_EMPLOYEE_SORT);
+
+  const sortedEmployees = useMemo(
+    () => sortHrEmployees(employees, sortDescriptor),
+    [employees, sortDescriptor],
+  );
 
   const fetchEmployees = useCallback(async (q?: string) => {
     setLoading(true);
@@ -113,7 +123,7 @@ export default function HrEmployeesPage() {
       ToastService.show({ title: data.message || 'Не вдалося видалити', color: 'danger' });
       return;
     }
-    ToastService.show({ title: 'Співробітника видалено', color: 'success' });
+    ToastService.show({ title: 'Співробітника видалено', color: 'success', icon: 'user-round-x' });
     await fetchEmployees(search);
   };
 
@@ -121,8 +131,8 @@ export default function HrEmployeesPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Доступ заборонено</h2>
-          <p className="text-gray-600">У вас немає прав доступу до цієї сторінки.</p>
+          <h2 className="text-2xl font-semibold text-text-primary mb-4">Доступ заборонено</h2>
+          <p className="text-text-secondary">У вас немає прав доступу до цієї сторінки.</p>
         </div>
       </div>
     );
@@ -143,6 +153,13 @@ export default function HrEmployeesPage() {
         />
         {canManage ? (
           <div className="flex flex-wrap gap-2">
+            <Button
+              className={`${HR_BTN_NEUTRAL} bg-slate-50!`}
+              startContent={<DynamicIcon name="archive" size={16} className="shrink-0" />}
+              onPress={() => setArchiveOpen(true)}
+            >
+              Архів
+            </Button>
             <Button className={`${HR_BTN_NEUTRAL} bg-slate-50! `} startContent={<DynamicIcon name="upload" size={16} className="shrink-0" />} onPress={() => setImportOpen(true)}>
               Імпорт Excel
             </Button>
@@ -154,32 +171,34 @@ export default function HrEmployeesPage() {
       </div>
 
       <Card className="hover:shadow-md transition-shadow">
-        <CardBody className="p-0">
+        <CardBody className="p-2">
           {loading ? (
-            <div className="p-8 text-center text-gray-500">Завантаження...</div>
+            <div className="p-8 text-center text-text-secondary">Завантаження...</div>
           ) : employees.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">Немає співробітників</div>
+            <div className="p-8 text-center text-text-secondary">Немає співробітників</div>
           ) : (
             <Table
               aria-label="Співробітники"
               removeWrapper
               classNames={HR_TABLE_CLASS_NAMES}
+              sortDescriptor={sortDescriptor}
+              onSortChange={setSortDescriptor}
             >
               <TableHeader>
-                <TableColumn>ПІБ</TableColumn>
-                <TableColumn>Роботодавець</TableColumn>
-                <TableColumn>Група</TableColumn>
-                <TableColumn>Картка</TableColumn>
-                <TableColumn className="text-center">Статус</TableColumn>
-                <TableColumn className="text-center">Керування</TableColumn>
+                <TableColumn key="displayName" allowsSorting>ПІБ</TableColumn>
+                <TableColumn key="currentLegalEntityName" allowsSorting>Роботодавець</TableColumn>
+                <TableColumn key="currentPayGroup" allowsSorting>Група</TableColumn>
+                <TableColumn key="cardMasked" allowsSorting>Картка</TableColumn>
+                <TableColumn key="status" allowsSorting>Статус</TableColumn>
+                <TableColumn key="actions">Керування</TableColumn>
               </TableHeader>
               <TableBody>
-                {employees.map((employee) => (
+                {sortedEmployees.map((employee) => (
                   <TableRow key={employee.id} className={employee.status === 'active' ? undefined : 'opacity-40'}>
                     <TableCell>
                       <button type="button" className="text-left" onClick={() => openEdit(employee.id)}>
                         <div className="font-medium">{employee.displayName}</div>
-                        {employee.userName ? <div className="text-xs text-gray-500">{employee.userName}</div> : null}
+                        {employee.userName ? <div className="text-xs text-text-secondary">{employee.userName}</div> : null}
                       </button>
                     </TableCell>
                     <TableCell>
@@ -197,13 +216,13 @@ export default function HrEmployeesPage() {
                           {HR_PAY_GROUP_LABELS[employee.currentPayGroup]}
                         </HrSpecChip>
                       ) : (
-                        <span className="text-sm text-gray-400">—</span>
+                        <span className="text-sm text-text-secondary">—</span>
                       )}
                     </TableCell>
                     <TableCell>
                       <span className="text-sm font-mono">{employee.cardMasked || '—'}</span>
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell>
                       {employee.status === 'active' ? (
                         <HrSpecChip tokens={hrStatusTokens('active')} icon="success">активний</HrSpecChip>
                       ) : (
@@ -211,7 +230,7 @@ export default function HrEmployeesPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center justify-center gap-1">
+                      <div className="flex items-center gap-1">
                         <Button size="sm" variant="light" isIconOnly aria-label="Відкрити" className="text-slate-700 hover:bg-slate-700/10!" onPress={() => openEdit(employee.id)}>
                           <DynamicIcon name="pencil" size={16} className="shrink-0" />
                         </Button>
@@ -254,10 +273,16 @@ export default function HrEmployeesPage() {
         onImported={() => void fetchEmployees(search)}
       />
 
+      <EmployeesArchiveModal
+        isOpen={archiveOpen}
+        onClose={() => setArchiveOpen(false)}
+        onRestored={() => void fetchEmployees(search)}
+      />
+
       <ConfirmModal
         isOpen={deleteId != null}
         title="Видалити співробітника?"
-        message="Картку буде видалено. Після появи табеля видалення стане мʼяким."
+        message="Співробітника буде переміщено в архів."
         confirmText="Так, видалити"
         cancelText="Скасувати"
         onConfirm={async () => {

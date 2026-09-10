@@ -54,8 +54,9 @@ export const HR_BTN_NEUTRAL =
 /** HeroUI Table — лише горизонтальні лінії між рядками (header без змін). */
 export const HR_TABLE_CLASS_NAMES = {
   wrapper: 'p-0 shadow-none',
-  td: 'border-b border-border-subtle',
-  tr: 'last:[&>td]:border-b-0',
+  th: 'first:rounded-s-md last:rounded-e-md',
+  tr: 'hover:bg-gray-100/60 transition-colors duration-50',
+  td: 'first:rounded-s-md last:rounded-e-md',
 };
 
 export function hrPayGroupTokens(group: HrPayGroup, intensity: SpecColorIntensity = 'soft'): SpecColorTokens {
