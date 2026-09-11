@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-09-11 — Користувачі: CreateUserDrawer, сила паролю, створення з картки HR
+**Files:** `CreateUserDrawer.tsx`, `PasswordStrengthIndicator.tsx`, `shared/lib/passwordStrength.ts`, `UserRegistrationManager.tsx`, `EmployeeDrawer.tsx`, `Docs/features/users-and-roles.md`, `Docs/features/hr-module.md`, `Docs/integrations/dilovod-metadata.md`
+
+- **`CreateUserDrawer`** — спільний Drawer створення користувача (`POST /api/auth/register`): email, імʼя, роль, Dilovod user ID, пароль. Вкладений у `EmployeeDrawer` (`z-index` 60).
+- **HR → Співробітники:** кнопка `[+]` біля Select «Обліковий запис» (при `action.users.manage`) відкриває Drawer з імʼям (Прізвище + Імʼя, без по батькові); після створення — автопривʼязка `userId` і оновлення списку.
+- **Пароль:** генератор 10 символів; `PasswordStrengthIndicator` (HeroUI `Progress`, кольори за `getPasswordStrength`). Валідація через `isInvalid`/`errorMessage` + `showFieldErrors` — помилка зникає після «Згенерувати пароль».
+- **UserRegistrationManager:** та сама сила паролю; роль за замовчуванням порожня (треба обрати явно).
+- **Dilovod user ID:** поки ручний Input; довідник `catalogs.users` доступний через API (див. `dilovod-metadata.md`) — заплановано Autocomplete.
+
+---
+
 ## 2026-09-11 — BarcodeScanner: guard для keydown без `event.key`
 **Files:** `BarcodeScannerService.ts`, `SettingsEquipment.tsx`, `test-serial-com.tsx`
 

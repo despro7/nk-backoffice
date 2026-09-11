@@ -17,6 +17,7 @@ import {
   SelectItem,
   Switch,
   Textarea,
+  Tooltip,
 } from '@heroui/react';
 import { CalendarDate, parseDate, type DateValue } from '@internationalized/date';
 import { I18nProvider } from '@react-aria/i18n';
@@ -24,7 +25,13 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '@/services/ToastService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
+import {
+  CreateUserDrawer,
+  type CreateUserInitialValues,
+} from '@/components/users/CreateUserDrawer';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
+import { PERMISSIONS } from '@shared/constants/permissions';
 import {
   HR_PAY_GROUP_LABELS,
   HR_PAY_GROUPS,
@@ -138,6 +145,18 @@ function capitalizeUaName(value: string): string {
       return part.charAt(0).toLocaleUpperCase('uk-UA') + part.slice(1).toLocaleLowerCase('uk-UA');
     })
     .join('');
+}
+
+function buildEmployeeFullName(form: FormState, fallback?: string | null): string {
+  const parts = [form.lastName, form.firstName]
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length > 0) return parts.join(' ');
+  if (fallback?.trim()) {
+    const words = fallback.trim().split(/\s+/);
+    return words.slice(0, 2).join(' ');
+  }
+  return '';
 }
 
 function formatCardMask(value: string): string {
@@ -259,6 +278,8 @@ export function EmployeeDrawer({
   onClose,
   onSaved,
 }: EmployeeDrawerProps) {
+  const { hasPermission } = useRoleAccess();
+  const canCreateUser = hasPermission(PERMISSIONS.ACTION_USERS_MANAGE);
   const isCreate = employeeId == null;
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [detail, setDetail] = useState<HrEmployeeDetailDto | null>(null);
@@ -277,6 +298,8 @@ export function EmployeeDrawer({
   const [deleteEmploymentId, setDeleteEmploymentId] = useState<number | null>(null);
   const [deletePayId, setDeletePayId] = useState<number | null>(null);
   const [addingEmployment, setAddingEmployment] = useState(false);
+  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [createUserInitial, setCreateUserInitial] = useState<CreateUserInitialValues | undefined>();
 
   const patchForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -326,10 +349,12 @@ export function EmployeeDrawer({
   useEffect(() => {
     if (!isOpen) {
       baselineRef.current = '';
+      setCreateUserOpen(false);
       return;
     }
     setCardVisible(false);
     setAddingEmployment(false);
+    setCreateUserOpen(false);
     if (isCreate) {
       setDetail(null);
       setForm(EMPTY_FORM);
@@ -601,28 +626,58 @@ export function EmployeeDrawer({
                         isReadOnly={!canManage}
                         autoComplete="off"
                       />
-                      <Select
-                        label="Обліковий запис (опційно)"
-                        labelPlacement="outside"
-                        placeholder="Не привʼязано"
-                        items={userSelectOptions}
-                        selectedKeys={selectedUserKeys}
-                        onSelectionChange={(keys) => {
-                          const selected = Array.from(keys)[0];
-                          if (selected === 'none' || selected == null) {
-                            patchForm('userId', '');
-                            return;
-                          }
-                          patchForm('userId', typeof selected === 'string' ? selected : '');
-                        }}
-                        isDisabled={!canManage}
-                      >
-                        {(item) => (
-                          <SelectItem key={item.key} textValue={item.textValue}>
-                            {item.label}
-                          </SelectItem>
-                        )}
-                      </Select>
+                      <div className="flex items-end gap-2">
+                        <Select
+                          label="Обліковий запис (опційно)"
+                          labelPlacement="outside"
+                          placeholder="Не привʼязано"
+                          items={userSelectOptions}
+                          selectedKeys={selectedUserKeys}
+                          onSelectionChange={(keys) => {
+                            const selected = Array.from(keys)[0];
+                            if (selected === 'none' || selected == null) {
+                              patchForm('userId', '');
+                              return;
+                            }
+                            patchForm('userId', typeof selected === 'string' ? selected : '');
+                          }}
+                          isDisabled={!canManage}
+                          className="min-w-0 flex-1"
+                        >
+                          {(item) => (
+                            <SelectItem key={item.key} textValue={item.textValue}>
+                              {item.label}
+                            </SelectItem>
+                          )}
+                        </Select>
+                        {canManage && canCreateUser ? (
+                          <Tooltip
+                            content="Створити обліковий запис на основі даних співробітника"
+                            placement='top-end'
+                            showArrow
+                            classNames={{
+                              base: 'before:rounded-[3px] before:bg-blue-500 before:z-[10]',
+                              content: 'bg-blue-500 text-white rounded-sm',
+                            }}
+                          >
+                            <Button
+                              isIconOnly
+                              size="md"
+                              className="bg-blue-200 text-blue-600"
+                              aria-label="Створити обліковий запис"
+                              isDisabled={Boolean(form.userId)}
+                              onPress={() => {
+                                setCreateUserInitial({
+                                  name: buildEmployeeFullName(form, detail?.displayName),
+                                });
+                                setCreateUserOpen(true);
+                              }}
+                            >
+                              <DynamicIcon name="plus" size={18} />
+                            </Button>
+                          </Tooltip>
+                        ) : null}
+                      </div>
                       <Input
                         label="Картка"
                         labelPlacement="outside"
@@ -836,6 +891,15 @@ export function EmployeeDrawer({
         cancelText="Скасувати"
         onConfirm={() => void confirmDeletePay()}
         onCancel={() => setDeletePayId(null)}
+      />
+      <CreateUserDrawer
+        isOpen={createUserOpen}
+        initialValues={createUserInitial}
+        onClose={() => setCreateUserOpen(false)}
+        onCreated={(user) => {
+          patchForm('userId', String(user.id));
+          void loadUsers(isCreate ? undefined : employeeId ?? undefined);
+        }}
       />
     </>
   );

@@ -144,6 +144,38 @@ await api.makeRequest({
 
 Фільтри UI (склад, товар, фірма) будувати з `shape.dimensions` і їх `valueType` (посилання на `catalogs.*`).
 
+## `catalogs.users` — користувачі Dilovod (поле `author`)
+
+Для привʼязки локального користувача backoffice до автора документів у Dilovod (`users.dilovodUserId` → `header.author` у payload складу / cash-in / bank-statement).
+
+| Поле метаданих | Призначення |
+|---|---|
+| `id` / `idPrefix` `10002` | Dilovod user ID (напр. `1000200000001021`) |
+| `name` / `id__pr` | Відображуване імʼя |
+| `code` | Email користувача в Dilovod |
+| `disabled` | Вимкнений користувач |
+| `person` | Посилання на `catalogs.persons` (фізична особа) |
+| `role` | Роль у Dilovod (`catalogs.roles`) |
+
+**Запит списку** (як інші довідники, через `request`):
+
+```typescript
+await api.makeRequest({
+  action: 'request',
+  params: {
+    from: 'catalogs.users',
+    fields: { id: 'id', name: 'name', code: 'code', disabled: 'disabled', delMark: 'delMark' },
+    filters: [{ alias: 'delMark', operator: '=', value: false }],
+  },
+});
+```
+
+У dev-базі NK Food — ~22 записи (невеликий довідник, зручний для Autocomplete у UI).
+
+**Рекомендація для backoffice:** додати `getUsers()` у `DilovodApiClient` (за зразком `getStorages`), кеш у `settings_base` або розширити `GET /api/dilovod/directories` ключем `users`, на клієнті — `DilovodDictAutocomplete` (`client/pages/BankStatementImport/components/DilovodDictAutocomplete.tsx`) у `CreateUserDrawer` і `UserRegistrationManager` замість ручного Input. Опційно: при створенні користувача з картки HR — автопідбір за email (`code`).
+
+> **Не плутати** з `catalogs.employees` («Працівники») — це кадровий довідник для полів на кшталт `manager` у документах, не системні користувачі API/автори.
+
 ## `catalogs.goodParts` — серійний № партії
 
 У UI Dilovod поле **«Серійний № (серія)»** = API-поле **`code`**. `getMetadata` для `catalogs.goodParts` **не** віддає `name` / `number`, хоча `getObject` інколи їх повертає.

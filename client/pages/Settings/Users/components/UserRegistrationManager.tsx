@@ -1,4 +1,4 @@
-import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -25,6 +25,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '@/services/ToastService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { formatDateOnly, formatRelativeDate } from '@/lib/formatUtils';
+import { PasswordStrengthIndicator } from '@/components/users/PasswordStrengthIndicator';
 import { generatePassword } from '@shared/lib/generatePassword';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -93,6 +94,7 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
   const [form, setForm] = useState<UserFormState>(EMPTY_FORM);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showFieldErrors, setShowFieldErrors] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const fetchUsers = useCallback(async () => {
@@ -127,21 +129,13 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
     void loadRoles();
   }, []);
 
-  useEffect(() => {
-    if (!form.role && availableRoles[0]) {
-      setForm((prev) => (prev.role ? prev : { ...prev, role: availableRoles[0].value }));
-    }
-  }, [availableRoles, form.role]);
-
   const openCreate = useCallback(() => {
     setEditingUser(null);
-    setForm({
-      ...EMPTY_FORM,
-      role: availableRoles[0]?.value ?? '',
-    });
+    setForm(EMPTY_FORM);
     setIsPasswordVisible(false);
+    setShowFieldErrors(false);
     setDrawerOpen(true);
-  }, [availableRoles]);
+  }, []);
 
   useImperativeHandle(ref, () => ({ openCreate }), [openCreate]);
 
@@ -156,6 +150,7 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
       isActive: user.isActive,
     });
     setIsPasswordVisible(false);
+    setShowFieldErrors(false);
     setDrawerOpen(true);
   };
 
@@ -164,6 +159,7 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
     setEditingUser(null);
     setForm(EMPTY_FORM);
     setIsSaving(false);
+    setShowFieldErrors(false);
   };
 
   const patchForm = (field: keyof UserFormState, value: string | boolean) => {
@@ -171,7 +167,7 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
   };
 
   const handleGeneratePassword = async () => {
-    const password = generatePassword(14);
+    const password = generatePassword(10);
     patchForm('password', password);
     setIsPasswordVisible(true);
     try {
@@ -191,7 +187,15 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
     return null;
   };
 
+  const passwordFieldError = useMemo(() => {
+    if (editingUser && !form.password) return undefined;
+    if (!form.password) return 'Вкажіть пароль';
+    if (form.password.length < 6) return 'Пароль повинен містити мінімум 6 символів';
+    return undefined;
+  }, [editingUser, form.password]);
+
   const handleSave = async () => {
+    setShowFieldErrors(true);
     const error = validateForm();
     if (error) {
       ToastService.show({ title: error, color: 'danger' });
@@ -472,7 +476,8 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
                     placeholder={editingUser ? 'Залиште порожнім, щоб не змінювати' : 'Мінімум 6 символів'}
                     value={form.password}
                     onValueChange={(value) => patchForm('password', value)}
-                    isRequired={!editingUser}
+                    isInvalid={showFieldErrors && Boolean(passwordFieldError)}
+                    errorMessage={showFieldErrors ? passwordFieldError : undefined}
                     autoComplete="new-password"
                     endContent={
                       <button className="focus:outline-none" type="button" onClick={() => setIsPasswordVisible((prev) => !prev)}>
@@ -480,6 +485,7 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
                       </button>
                     }
                   />
+                  <PasswordStrengthIndicator password={form.password} />
                   <Button size="sm" variant="flat" onPress={() => void handleGeneratePassword()} startContent={<DynamicIcon name="key-round" size={14} />}>
                     Згенерувати пароль
                   </Button>
