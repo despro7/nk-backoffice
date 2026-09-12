@@ -14,7 +14,7 @@ import {
   DilovodMetadataReq,
   DilovodBalanceAndTurnoverParams,
 } from './DilovodTypes.js';
-import { DilovodStorage } from '../../../shared/types/dilovod.js';
+import { DEFAULT_DILOVOD_ROLE_ID, DilovodRole, DilovodStorage, DilovodUser } from '../../../shared/types/dilovod.js';
 import {
   handleDilovodApiError,
   validateDilovodConfig,
@@ -23,6 +23,7 @@ import {
   formatDateForDilovod,
   isActiveDilovodStorage,
   isDilovodDeletionMark,
+  isDilovodDisabledFlag,
   unwrapDilovodId,
   unwrapDilovodName,
   extractBatchLabelFromGoodPartHeader,
@@ -1098,6 +1099,195 @@ export class DilovodApiClient {
 
     const result = await this.makeRequest<any>(request);
     return this.normalizeToArray(result);
+  }
+
+  /** Системні користувачі Dilovod (catalogs.users) — автори документів складу */
+  async getUsers(): Promise<DilovodUser[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'request',
+      params: {
+        from: 'catalogs.users',
+        fields: {
+          id: 'id',
+          name: 'name',
+          code: 'code',
+          role: 'role',
+          disabled: 'disabled',
+          delMark: 'delMark',
+        },
+        filters: [
+          { alias: 'delMark', operator: '=', value: false },
+        ],
+      },
+    };
+
+    const result = await this.makeRequest<unknown>(request);
+    const rows = this.normalizeToArray<{
+      id?: unknown;
+      name?: unknown;
+      code?: unknown;
+      role?: unknown;
+      disabled?: unknown;
+      delMark?: unknown;
+    }>(result);
+
+    return rows
+      .filter((row) => !isDilovodDeletionMark(row.delMark) && !isDilovodDisabledFlag(row.disabled))
+      .map((row) => {
+        const id = unwrapDilovodId(row.id)
+          || (typeof row.id === 'string' || typeof row.id === 'number' ? String(row.id).trim() : '');
+        const name = unwrapDilovodName(row.name)
+          || (typeof row.name === 'string' ? row.name.trim() : '');
+        const code = unwrapDilovodName(row.code)
+          || (typeof row.code === 'string' ? row.code.trim() : '');
+        const roleId = unwrapDilovodId(row.role)
+          || (typeof row.role === 'object' && row.role !== null
+            ? unwrapDilovodId((row.role as { id?: unknown }).id)
+            : '');
+        return {
+          id,
+          name: name || id,
+          code,
+          roleId: roleId || undefined,
+          disabled: isDilovodDisabledFlag(row.disabled),
+        };
+      })
+      .filter((user) => Boolean(user.id));
+  }
+
+  /** Ролі системних користувачів Dilovod (catalogs.roles) */
+  async getRoles(): Promise<DilovodRole[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'request',
+      params: {
+        from: 'catalogs.roles',
+        fields: {
+          id: 'id',
+          name: 'name',
+          code: 'code',
+          delMark: 'delMark',
+        },
+        filters: [
+          { alias: 'delMark', operator: '=', value: false },
+        ],
+      },
+    };
+
+    const result = await this.makeRequest<unknown>(request);
+    const rows = this.normalizeToArray<{
+      id?: unknown;
+      name?: unknown;
+      code?: unknown;
+      delMark?: unknown;
+    }>(result);
+
+    return rows
+      .filter((row) => !isDilovodDeletionMark(row.delMark))
+      .map((row) => {
+        const id = unwrapDilovodId(row.id)
+          || (typeof row.id === 'string' || typeof row.id === 'number' ? String(row.id).trim() : '');
+        const name = unwrapDilovodName(row.name)
+          || (typeof row.name === 'string' ? row.name.trim() : '');
+        const code = unwrapDilovodName(row.code)
+          || (typeof row.code === 'string' ? row.code.trim() : '');
+        return {
+          id,
+          name: name || id,
+          code: code || undefined,
+        };
+      })
+      .filter((role) => Boolean(role.id))
+      .sort((a, b) => a.name.localeCompare(b.name, 'uk', { sensitivity: 'base' }));
+  }
+
+  /**
+   * Створити системного користувача Dilovod (catalogs.users).
+   * Роль за замовчуванням — «Комірник» (автор складських документів).
+   */
+  async createUser(params: { name: string; email: string; roleId?: string }): Promise<DilovodUser> {
+    await this.ensureReady();
+    const name = params.name.trim();
+    const email = params.email.trim();
+    if (!name) throw new Error('Вкажіть імʼя користувача Dilovod');
+    if (!email) throw new Error('Вкажіть email користувача Dilovod');
+
+    const roleId = params.roleId?.trim() || DEFAULT_DILOVOD_ROLE_ID;
+
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'saveObject',
+      params: {
+        header: {
+          id: 'catalogs.users',
+          name: { uk: name },
+          code: email,
+          role: { id: roleId },
+          person: { id: '0' },
+          disabled: '0',
+          sendInvite: '0',
+        },
+      },
+    };
+
+    const resp = await this.makeRequest<{ id?: unknown; error?: unknown }>(request);
+    if (resp?.error) {
+      const message = typeof resp.error === 'string' ? resp.error : JSON.stringify(resp.error);
+      throw new Error(message);
+    }
+
+    const id = unwrapDilovodId(resp?.id);
+    if (!id) {
+      throw new Error('Dilovod saveObject не повернув id користувача');
+    }
+
+    return { id, name, code: email, roleId, disabled: false };
+  }
+
+  /** Оновити існуючого користувача Dilovod (catalogs.users) */
+  async updateUser(params: {
+    id: string;
+    name?: string;
+    email?: string;
+    roleId?: string;
+  }): Promise<void> {
+    await this.ensureReady();
+    const id = params.id.trim();
+    if (!id) throw new Error('Вкажіть id користувача Dilovod');
+
+    const header: Record<string, unknown> = { id };
+    if (params.name?.trim()) {
+      header.name = { uk: params.name.trim() };
+    }
+    if (params.email?.trim()) {
+      header.code = params.email.trim();
+    }
+    if (params.roleId?.trim()) {
+      header.role = { id: params.roleId.trim() };
+    }
+
+    if (Object.keys(header).length === 1) {
+      return;
+    }
+
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'saveObject',
+      params: { header },
+    };
+
+    const resp = await this.makeRequest<{ error?: unknown }>(request);
+    if (resp?.error) {
+      const message = typeof resp.error === 'string' ? resp.error : JSON.stringify(resp.error);
+      throw new Error(message);
+    }
   }
 
   // Отримання фірм (власників рахунків)

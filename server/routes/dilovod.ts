@@ -425,6 +425,7 @@ router.get('/directories', authenticateToken, dilovodRead, async (req, res) => {
       let firmsResult: any[] = [];
       let tradeChanelsResult: any[] = [];
       let deliveryMethodsResult: any[] = [];
+      let usersResult: any[] = [];
 
       try { storagesResult = await dilovodService.getStorages(); } catch (error) { console.log('API: ❌ Помилка отримання складів:', error); }
       try { accountsResult = await dilovodService.getCashAccounts(); } catch (error) { console.log('API: ❌ Помилка отримання рахунків:', error); }
@@ -435,6 +436,7 @@ router.get('/directories', authenticateToken, dilovodRead, async (req, res) => {
       try { firmsResult = await dilovodService.getFirms(); } catch (error) { console.log('API: ❌ Помилка отримання фірм:', error); }
       try { tradeChanelsResult = await dilovodService.getTradeChanels(); } catch (error) { console.log('API: ❌ Помилка отримання каналів продажів:', error); }
       try { deliveryMethodsResult = await dilovodService.getDeliveryMethods(); } catch (error) { console.log('API: ❌ Помилка отримання способів доставки:', error); }
+      try { usersResult = await dilovodService.getUsers(); } catch (error) { console.log('API: ❌ Помилка отримання користувачів Dilovod:', error); }
 
       // Products 2.0 catalog dictionaries (з кешу Dilovod)
       let unitsResult: any[] = [];
@@ -474,6 +476,7 @@ router.get('/directories', authenticateToken, dilovodRead, async (req, res) => {
         priceTypes: priceTypesResult,
         currencies: currenciesResult,
         accPolicies: accPoliciesResult,
+        users: usersResult,
       };
 
       return { success: true, data: directories };

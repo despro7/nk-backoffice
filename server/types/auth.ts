@@ -14,6 +14,10 @@ export interface RegisterRequest {
   role?: PrismaUser["role"];
   roleName?: PrismaUser["roleName"];
   dilovodUserId?: PrismaUser["dilovodUserId"];
+  /** Роль користувача в Dilovod (catalogs.roles) */
+  dilovodRoleId?: string;
+  /** Створити користувача в Dilovod перед реєстрацією в backoffice */
+  createDilovodUser?: boolean;
 }
 
 export interface UpdateProfileRequest {

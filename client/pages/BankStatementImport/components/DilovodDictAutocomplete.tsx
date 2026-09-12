@@ -1,16 +1,21 @@
-import { useCallback, useEffect, useMemo, useState, type Key } from 'react';
+import { useCallback, useMemo, type Key } from 'react';
 import { Autocomplete, AutocompleteItem } from '@heroui/react';
 import {
-  findDilovodItemLabel,
   getDilovodItemLabel,
   type DilovodDictItem,
 } from '@shared/utils/directoryUtils';
 
 const LISTBOX_PROPS = {
   itemClasses: {
-    base: 'data-[selected=true]:bg-blue-500! data-[selected=true]:text-white',
+    base: 'data-[hover=true]:bg-default-200/75 data-[selected=true]:bg-blue-500 data-[selected=true]:text-white data-[selected=true]:[&_.item-description]:text-blue-200!',
   },
 } as const;
+
+const filterDilovodItem = (textValue: string, inputValue: string) => {
+  const query = inputValue.trim().toLocaleLowerCase('uk');
+  if (!query) return true;
+  return textValue.toLocaleLowerCase('uk').includes(query);
+};
 
 export interface DilovodDictAutocompleteProps {
   dictItems: DilovodDictItem[];
@@ -25,15 +30,16 @@ export interface DilovodDictAutocompleteProps {
   isClearable?: boolean;
   /** Показати parent__pr під підписом (план рахунків) */
   showParent?: boolean;
+  labelPlacement?: 'inside' | 'outside' | 'outside-left';
+  description?: string;
+  /** @default 'sm' */
+  size?: 'sm' | 'md' | 'lg';
+  isDisabled?: boolean;
 }
 
 /**
- * HeroUI Autocomplete для довідників Dilovod:
- * - `items` оновлюються без remount (React 19 + HeroUI AnimatePresence інакше дає static flag)
- * - фільтрація за inputValue, поки список відкритий
- * - menuTrigger="manual" — список лише по кнопці-тригеру (або стрілках)
- * - при відкритті очищаємо inputValue для пошуку
- * - прокрутка до обраної опції
+ * HeroUI Autocomplete для довідників Dilovod.
+ * Стандартна поведінка ComboBox: фільтрація при наборі, після вибору — підпис обраного елемента.
  */
 export function DilovodDictAutocomplete({
   dictItems,
@@ -46,6 +52,10 @@ export function DilovodDictAutocomplete({
   variant = 'flat',
   isClearable = false,
   showParent = false,
+  labelPlacement,
+  description,
+  size = 'sm',
+  isDisabled = false,
 }: DilovodDictAutocompleteProps) {
   const sortedItems = useMemo(
     () =>
@@ -54,56 +64,9 @@ export function DilovodDictAutocomplete({
       ),
     [dictItems],
   );
-  const selectedLabel = findDilovodItemLabel(selectedKey, dictItems);
-  const [inputValue, setInputValue] = useState(selectedLabel);
-  const [isOpen, setIsOpen] = useState(false);
-
-  const visibleItems = useMemo(() => {
-    if (!isOpen) return sortedItems;
-    const q = inputValue.trim().toLocaleLowerCase('uk');
-    if (!q) return sortedItems;
-    return sortedItems.filter((item) =>
-      getDilovodItemLabel(item).toLocaleLowerCase('uk').includes(q),
-    );
-  }, [sortedItems, isOpen, inputValue]);
-
-  useEffect(() => {
-    if (!isOpen) setInputValue(selectedLabel);
-  }, [selectedKey, selectedLabel, isOpen]);
-
-  // Очищення inputValue скидає focusedKey у react-stately — прокручуємо до обраної опції вручну
-  useEffect(() => {
-    if (!isOpen || !selectedKey || inputValue !== '') return;
-    let cancelled = false;
-    let t1 = 0;
-    const scrollToSelected = (): boolean => {
-      if (cancelled) return false;
-      const option = document.querySelector<HTMLElement>(
-        `[data-slot="list"] [data-key="${CSS.escape(String(selectedKey))}"]`,
-      );
-      if (!option) return false;
-      option.scrollIntoView({ block: 'nearest' });
-      return true;
-    };
-    const t0 = window.setTimeout(() => {
-      if (scrollToSelected()) return;
-      t1 = window.setTimeout(scrollToSelected, 50);
-    }, 0);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(t0);
-      window.clearTimeout(t1);
-    };
-  }, [isOpen, selectedKey, inputValue]);
-
-  const handleOpenChange = useCallback((open: boolean) => {
-    setIsOpen(open);
-    setInputValue(open ? '' : selectedLabel);
-  }, [selectedLabel]);
 
   const handleSelectionChange = useCallback((key: Key | null) => {
     if (key == null || key === '') {
-      // null під час набору — не скидаємо; clear лише через isClearable / onClear
       return;
     }
     onChange(String(key));
@@ -116,43 +79,35 @@ export function DilovodDictAutocomplete({
   return (
     <Autocomplete
       className={className}
-      size="sm"
+      size={size}
       variant={variant}
+      isDisabled={isDisabled}
       label={label}
+      labelPlacement={labelPlacement}
+      description={description}
       placeholder={placeholder}
       selectedKey={selectedKey || null}
-      inputValue={inputValue}
-      onInputChange={setInputValue}
-      items={visibleItems}
+      items={sortedItems}
+      defaultFilter={filterDilovodItem}
       allowsCustomValue={false}
       isClearable={isClearable}
       isVirtualized={false}
-      disableAnimation
+      maxListboxHeight={400}
       aria-label={ariaLabel ?? label}
       classNames={{
-        base: 'border-default-200/80',
-        popoverContent: 'min-w-[240px] max-w-content!',
-        selectorButton: 'rounded-r-sm! rounded-l-none',
-        clearButton: 'rounded-none',
+        popoverContent: 'shadow-lg border-1 border-default-200/60',
+        clearButton: 'data-[hover=true]:bg-red-300/25 data-[hover=true]:text-red-600',
       }}
       listboxProps={LISTBOX_PROPS}
-      menuTrigger="manual"
-      onOpenChange={handleOpenChange}
       onClear={isClearable ? handleClear : undefined}
       onSelectionChange={handleSelectionChange}
     >
       {(item) => (
         <AutocompleteItem key={String(item.id)} textValue={getDilovodItemLabel(item)}>
-          {showParent ? (
-            <>
-              <span>{getDilovodItemLabel(item)}</span>
-              {item.parent__pr ? (
-                <span className="block text-xs text-default-400">{item.parent__pr}</span>
-              ) : null}
-            </>
-          ) : (
-            getDilovodItemLabel(item)
-          )}
+          <span>{getDilovodItemLabel(item)}</span>
+          {showParent && item.parent__pr ? (
+            <span className="block text-xs text-default-400 item-description">{item.parent__pr}</span>
+          ) : null}
         </AutocompleteItem>
       )}
     </Autocomplete>

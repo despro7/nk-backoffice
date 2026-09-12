@@ -28,12 +28,13 @@ interface CacheStatus {
   priceTypes: CacheMetadata;
   currency: CacheMetadata;
   accPolicies: CacheMetadata;
+  users: CacheMetadata;
   goods: CacheMetadata;
 }
 
 const CACHE_TYPE_ORDER: Array<keyof CacheStatus> = [
   'firms', 'accounts', 'storages', 'paymentForms', 'settlementsKinds', 'cashItems', 'ledgerAccounts', 'tradeChanels', 'deliveryMethods',
-  'units', 'priceTypes', 'currency', 'accPolicies', 'goods',
+  'units', 'priceTypes', 'currency', 'accPolicies', 'users', 'goods',
 ];
 
 export const DilovodCacheManager: React.FC = () => {
@@ -245,6 +246,7 @@ export const DilovodCacheManager: React.FC = () => {
           priceTypes: 'priceTypes',
           currency: 'currencies',
           accPolicies: 'accPolicies',
+          users: 'users',
           goods: 'goods'
         };
         const apiKey = apiKeyMap[type];
@@ -275,6 +277,7 @@ export const DilovodCacheManager: React.FC = () => {
           priceTypes: 'priceTypes',
           currency: 'currencies',
           accPolicies: 'accPolicies',
+          users: 'users',
           goods: 'goods'
         };
 
@@ -330,6 +333,8 @@ export const DilovodCacheManager: React.FC = () => {
         return 'banknote';
       case 'accPolicies':
         return 'book-open';
+      case 'users':
+        return 'users';
       case 'goods':
         return 'package-2';
     }
@@ -364,6 +369,8 @@ export const DilovodCacheManager: React.FC = () => {
         return 'Валюти';
       case 'accPolicies':
         return 'Облік (тип номенклатури)';
+      case 'users':
+        return 'Користувачі';
       case 'goods':
         return 'Товари';
     }
@@ -481,6 +488,12 @@ export const DilovodCacheManager: React.FC = () => {
           { key: 'id', label: 'ID' },
           { key: 'name', label: 'Назва' },
           { key: 'code', label: 'Код' }
+        ];
+      case 'users':
+        return [
+          { key: 'id', label: 'ID' },
+          { key: 'name', label: 'Імʼя' },
+          { key: 'code', label: 'Email' }
         ];
       case 'goods':
         return [

@@ -25,8 +25,13 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '@/services/ToastService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { formatDateOnly, formatRelativeDate } from '@/lib/formatUtils';
+import { DilovodRoleSelect } from '@/components/users/DilovodRoleSelect';
+import { DilovodUserEmailFields } from '@/components/users/DilovodUserEmailFields';
 import { PasswordStrengthIndicator } from '@/components/users/PasswordStrengthIndicator';
+import { useDilovodRoles } from '@/hooks/useDilovodRoles';
+import { invalidateDilovodUsersCache, useDilovodUsers } from '@/hooks/useDilovodUsers';
 import { generatePassword } from '@shared/lib/generatePassword';
+import { DEFAULT_DILOVOD_ROLE_ID } from '@shared/types/dilovod';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface RoleOption {
@@ -68,6 +73,7 @@ interface UserFormState {
   password: string;
   role: string;
   dilovodUserId: string;
+  dilovodRoleId: string;
   isActive: boolean;
 }
 
@@ -77,6 +83,7 @@ const EMPTY_FORM: UserFormState = {
   password: '',
   role: '',
   dilovodUserId: '',
+  dilovodRoleId: '',
   isActive: true,
 };
 
@@ -95,7 +102,11 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showFieldErrors, setShowFieldErrors] = useState(false);
+  const [createNewInDilovod, setCreateNewInDilovod] = useState(false);
+  const [dilovodStepComplete, setDilovodStepComplete] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const { roles: dilovodRoles } = useDilovodRoles(drawerOpen);
+  const { users: dilovodUsers } = useDilovodUsers(drawerOpen);
 
   const fetchUsers = useCallback(async () => {
     setUsersLoading(true);
@@ -132,6 +143,8 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
   const openCreate = useCallback(() => {
     setEditingUser(null);
     setForm(EMPTY_FORM);
+    setCreateNewInDilovod(false);
+    setDilovodStepComplete(false);
     setIsPasswordVisible(false);
     setShowFieldErrors(false);
     setDrawerOpen(true);
@@ -147,8 +160,11 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
       password: '',
       role: user.role,
       dilovodUserId: user.dilovodUserId ?? '',
+      dilovodRoleId: '',
       isActive: user.isActive,
     });
+    setCreateNewInDilovod(false);
+    setDilovodStepComplete(true);
     setIsPasswordVisible(false);
     setShowFieldErrors(false);
     setDrawerOpen(true);
@@ -158,6 +174,8 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
     setDrawerOpen(false);
     setEditingUser(null);
     setForm(EMPTY_FORM);
+    setCreateNewInDilovod(false);
+    setDilovodStepComplete(false);
     setIsSaving(false);
     setShowFieldErrors(false);
   };
@@ -165,6 +183,23 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
   const patchForm = (field: keyof UserFormState, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
+
+  const showDilovodRole = Boolean(editingUser || dilovodStepComplete)
+    && (createNewInDilovod || Boolean(form.dilovodUserId));
+
+  useEffect(() => {
+    if (!showDilovodRole || form.dilovodRoleId) return;
+    const defaultRole = dilovodRoles.find((role) => role.id === DEFAULT_DILOVOD_ROLE_ID) ?? dilovodRoles[0];
+    patchForm('dilovodRoleId', defaultRole?.id ?? DEFAULT_DILOVOD_ROLE_ID);
+  }, [showDilovodRole, form.dilovodRoleId, dilovodRoles]);
+
+  useEffect(() => {
+    if (!form.dilovodUserId || form.dilovodRoleId || dilovodUsers.length === 0) return;
+    const linkedUser = dilovodUsers.find((user) => user.id === form.dilovodUserId);
+    if (linkedUser?.roleId) {
+      patchForm('dilovodRoleId', linkedUser.roleId);
+    }
+  }, [form.dilovodUserId, form.dilovodRoleId, dilovodUsers]);
 
   const handleGeneratePassword = async () => {
     const password = generatePassword(10);
@@ -179,11 +214,14 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
   };
 
   const validateForm = (): string | null => {
+    if (!editingUser && !dilovodStepComplete) return 'Оберіть користувача в Діловоді або увімкніть створення нового';
     if (!form.email.trim()) return 'Вкажіть email';
     if (!editingUser && !form.password) return 'Вкажіть пароль';
     if (form.password && form.password.length < 6) return 'Пароль повинен містити мінімум 6 символів';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Некоректний email';
     if (!form.role) return 'Оберіть роль';
+    if (!editingUser && !createNewInDilovod && !form.dilovodUserId) return 'Оберіть користувача в Діловоді';
+    if (!editingUser && createNewInDilovod && !form.name.trim()) return 'Вкажіть імʼя для нового користувача Dilovod';
     return null;
   };
 
@@ -212,6 +250,7 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
           roleName: availableRoles.find((item) => item.value === form.role)?.label || form.role,
           isActive: form.isActive,
           dilovodUserId: form.dilovodUserId,
+          dilovodRoleId: form.dilovodRoleId || undefined,
         };
         if (form.password.trim()) updates.password = form.password;
 
@@ -227,6 +266,9 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
           return;
         }
         setUsers((prev) => prev.map((user) => (user.id === editingUser.id ? { ...user, ...data.user } : user)));
+        if (form.dilovodUserId) {
+          invalidateDilovodUsersCache();
+        }
         ToastService.show({ title: 'Користувача оновлено', color: 'success' });
         closeDrawer();
         return;
@@ -242,13 +284,18 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
           password: form.password,
           role: form.role,
           roleName: availableRoles.find((item) => item.value === form.role)?.label || form.role,
-          dilovodUserId: form.dilovodUserId || undefined,
+          dilovodUserId: createNewInDilovod ? undefined : (form.dilovodUserId || undefined),
+          dilovodRoleId: form.dilovodRoleId || undefined,
+          createDilovodUser: createNewInDilovod,
         }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         ToastService.show({ title: data.message || 'Помилка створення користувача', color: 'danger' });
         return;
+      }
+      if (createNewInDilovod || form.dilovodUserId) {
+        invalidateDilovodUsersCache();
       }
       ToastService.show({ title: 'Користувача створено', color: 'success' });
       closeDrawer();
@@ -426,75 +473,93 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
                 {editingUser ? 'Редагувати користувача' : 'Створити користувача'}
               </DrawerHeader>
               <DrawerBody className="gap-5 py-5 overflow-y-auto">
-                <Input
-                  type="email"
-                  label="Email"
-                  labelPlacement="outside"
-                  placeholder="user@example.com"
-                  value={form.email}
-                  onValueChange={(value) => patchForm('email', value)}
-                  isRequired
-                  autoComplete="off"
+                <DilovodUserEmailFields
+                  key={editingUser ? `edit-${editingUser.id}` : 'create'}
+                  dilovodUserId={form.dilovodUserId}
+                  email={form.email}
+                  name={form.name}
+                  onDilovodUserIdChange={(value) => patchForm('dilovodUserId', value)}
+                  onEmailChange={(value) => patchForm('email', value)}
+                  onNameChange={(value) => patchForm('name', value)}
+                  onDilovodRoleIdChange={(value) => patchForm('dilovodRoleId', value)}
+                  createNewInDilovod={createNewInDilovod}
+                  onCreateNewInDilovodChange={setCreateNewInDilovod}
+                  onStepCompleteChange={setDilovodStepComplete}
+                  variant={editingUser ? 'edit' : 'create'}
+                  showEmailField={Boolean(editingUser) || dilovodStepComplete}
                 />
-                <Input
-                  type="text"
-                  label="Ім'я"
-                  labelPlacement="outside"
-                  placeholder="Іван Петренко"
-                  value={form.name}
-                  onValueChange={(value) => patchForm('name', value)}
-                  autoComplete="off"
-                />
-                <Select
-                  label="Роль"
-                  labelPlacement="outside"
-                  placeholder="Оберіть роль"
-                  selectedKeys={selectedRoleKeys}
-                  onSelectionChange={(keys) => {
-                    const selected = Array.from(keys)[0];
-                    if (typeof selected === 'string') patchForm('role', selected);
-                  }}
-                  isRequired
-                >
-                  {availableRoles.map((role) => (
-                    <SelectItem key={role.value}>{role.label}</SelectItem>
-                  ))}
-                </Select>
-                <Input
-                  label="Dilovod user ID"
-                  labelPlacement="outside"
-                  placeholder="1000200000001021"
-                  description="ID користувача в Dilovod — документи складу підуть від його імені"
-                  value={form.dilovodUserId}
-                  onValueChange={(value) => patchForm('dilovodUserId', value)}
-                />
-                <div className="space-y-2">
-                  <Input
-                    type={isPasswordVisible ? 'text' : 'password'}
-                    label={editingUser ? 'Новий пароль' : 'Пароль'}
-                    labelPlacement="outside"
-                    placeholder={editingUser ? 'Залиште порожнім, щоб не змінювати' : 'Мінімум 6 символів'}
-                    value={form.password}
-                    onValueChange={(value) => patchForm('password', value)}
-                    isInvalid={showFieldErrors && Boolean(passwordFieldError)}
-                    errorMessage={showFieldErrors ? passwordFieldError : undefined}
-                    autoComplete="new-password"
-                    endContent={
-                      <button className="focus:outline-none" type="button" onClick={() => setIsPasswordVisible((prev) => !prev)}>
-                        <DynamicIcon name={isPasswordVisible ? 'eye-off' : 'eye'} size={18} className="text-default-400" />
-                      </button>
-                    }
-                  />
-                  <PasswordStrengthIndicator password={form.password} />
-                  <Button size="sm" variant="flat" onPress={() => void handleGeneratePassword()} startContent={<DynamicIcon name="key-round" size={14} />}>
-                    Згенерувати пароль
-                  </Button>
-                </div>
-                {editingUser && (
-                  <Checkbox isSelected={form.isActive} onValueChange={(checked) => patchForm('isActive', checked)}>
-                    Активний користувач
-                  </Checkbox>
-                )}
+
+                {(editingUser || dilovodStepComplete) ? (
+                  <>
+                    <Input
+                      type="text"
+                      label="Ім'я"
+                      labelPlacement="outside"
+                      placeholder="Іван Петренко"
+                      value={form.name}
+                      onValueChange={(value) => patchForm('name', value)}
+                      isRequired={!editingUser && createNewInDilovod}
+                      description={
+                        createNewInDilovod || form.dilovodUserId
+                          ? 'Синхронізується з обліковим записом Dilovod при збереженні'
+                          : undefined
+                      }
+                      autoComplete="off"
+                      isClearable
+                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Select
+                        label="Роль"
+                        labelPlacement="outside"
+                        placeholder="Оберіть роль"
+                        selectedKeys={selectedRoleKeys}
+                        onSelectionChange={(keys) => {
+                          const selected = Array.from(keys)[0];
+                          if (typeof selected === 'string') patchForm('role', selected);
+                        }}
+                        isRequired
+                      >
+                        {availableRoles.map((role) => (
+                          <SelectItem key={role.value}>{role.label}</SelectItem>
+                        ))}
+                      </Select>
+                      {showDilovodRole ? (
+                        <DilovodRoleSelect
+                          value={form.dilovodRoleId}
+                          onChange={(value) => patchForm('dilovodRoleId', value)}
+                          isRequired={!editingUser && createNewInDilovod}
+                        />
+                      ) : null}
+                    </div>
+                    <div className="space-y-2">
+                      <Input
+                        type={isPasswordVisible ? 'text' : 'password'}
+                        label={editingUser ? 'Новий пароль' : 'Пароль'}
+                        labelPlacement="outside"
+                        placeholder={editingUser ? 'Залиште порожнім, щоб не змінювати' : 'Мінімум 6 символів'}
+                        value={form.password}
+                        onValueChange={(value) => patchForm('password', value)}
+                        isInvalid={showFieldErrors && Boolean(passwordFieldError)}
+                        errorMessage={showFieldErrors ? passwordFieldError : undefined}
+                        autoComplete="new-password"
+                        endContent={
+                          <button className="focus:outline-none" type="button" onClick={() => setIsPasswordVisible((prev) => !prev)}>
+                            <DynamicIcon name={isPasswordVisible ? 'eye-off' : 'eye'} size={18} className="text-default-400" />
+                          </button>
+                        }
+                      />
+                      <PasswordStrengthIndicator password={form.password} />
+                      <Button size="sm" variant="flat" onPress={() => void handleGeneratePassword()} startContent={<DynamicIcon name="key-round" size={14} />}>
+                        Згенерувати пароль
+                      </Button>
+                    </div>
+                    {editingUser && (
+                      <Checkbox isSelected={form.isActive} onValueChange={(checked) => patchForm('isActive', checked)}>
+                        Активний користувач
+                      </Checkbox>
+                    )}
+                  </>
+                ) : null}
               </DrawerBody>
               <DrawerFooter className="border-t border-default-200 shrink-0">
                 <Button variant="light" onPress={closeDrawer}>Скасувати</Button>

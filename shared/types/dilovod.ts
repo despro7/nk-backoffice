@@ -235,6 +235,27 @@ export interface DilovodDeliveryMethod {
   code: string;   // Код способу доставки
 }
 
+/** Роль системного користувача Dilovod (catalogs.roles) */
+export interface DilovodRole {
+  id: string;
+  name: string;
+  code?: string;
+}
+
+/** ID ролі «Комірник» у Dilovod — типовий автор складських документів */
+export const DEFAULT_DILOVOD_ROLE_ID = '1000700000001008';
+
+/** Системний користувач Dilovod (catalogs.users) — автор документів складу */
+export interface DilovodUser {
+  id: string;
+  name: string;
+  /** Email користувача в Dilovod */
+  code: string;
+  /** ID ролі в Dilovod (catalogs.roles) */
+  roleId?: string;
+  disabled?: boolean;
+}
+
 // Структура для отримання довідників
 export interface DilovodDirectories {
   storages: DilovodStorage[];
@@ -252,6 +273,7 @@ export interface DilovodDirectories {
   priceTypes?: Array<{ id: string; name: string; code?: string | null }>;
   currencies?: Array<{ id: string; name: string; code?: string | null }>;
   accPolicies?: Array<{ id: string; name: string; code?: string | null }>;
+  users?: DilovodUser[];
 }
 
 // Request/Response типи для API

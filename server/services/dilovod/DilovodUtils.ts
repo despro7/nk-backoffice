@@ -669,6 +669,10 @@ export function isDilovodDeletionMark(delMark: unknown): boolean {
   return delMark === true || delMark === 1 || delMark === '1';
 }
 
+export function isDilovodDisabledFlag(disabled: unknown): boolean {
+  return disabled === true || disabled === 1 || disabled === '1';
+}
+
 /** Розгортає Dilovod id (рядок або `{ id, pr }`). */
 export function unwrapDilovodId(value: unknown): string {
   if (value == null) return '';

@@ -1194,6 +1194,73 @@ export class DilovodService {
     }
   }
 
+  /** Ролі системних користувачів Dilovod (catalogs.roles) */
+  async getRoles(): Promise<import('../../../shared/types/dilovod.js').DilovodRole[]> {
+    try {
+      return await this.apiClient.getRoles();
+    } catch (error) {
+      const errorMessage = `Помилка отримання ролей Dilovod: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
+      console.log(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }
+
+  /** Створити системного користувача Dilovod і оновити кеш довідника */
+  async createUser(params: { name: string; email: string; roleId?: string }) {
+    const created = await this.apiClient.createUser(params);
+    try {
+      const users = await this.getUsers(true);
+      const exists = users.some((user) => user.id === created.id);
+      if (!exists) {
+        await dilovodCacheService.updateCache('users', [...users, created]);
+      }
+    } catch (error) {
+      console.log('⚠️ [Dilovod] Не вдалося оновити кеш після створення користувача:', error);
+    }
+    return created;
+  }
+
+  /** Оновити користувача Dilovod і оновити кеш довідника */
+  async updateUser(params: {
+    id: string;
+    name?: string;
+    email?: string;
+    roleId?: string;
+  }) {
+    await this.apiClient.updateUser(params);
+    try {
+      await this.getUsers(true);
+    } catch (error) {
+      console.log('⚠️ [Dilovod] Не вдалося оновити кеш після зміни користувача:', error);
+    }
+  }
+
+  /** Системні користувачі Dilovod (catalogs.users) з кешуванням */
+  async getUsers(forceRefresh = false): Promise<any[]> {
+    try {
+      if (!forceRefresh) {
+        const cached = await dilovodCacheService.getFromCache('users');
+        if (cached && cached.length > 0) {
+          console.log(`👤 [Dilovod] Користувачі завантажено з кешу: ${cached.length} записів`);
+          return cached;
+        }
+        if (cached && cached.length === 0) {
+          console.log('⚠️ [Dilovod] Кеш користувачів порожній — повторний запит до API');
+        }
+      }
+
+      console.log('🔄 [Dilovod] Отримання catalogs.users з Dilovod API');
+      const result = await this.apiClient.getUsers();
+      console.log(`👤 [Dilovod] Отримано ${result.length} користувачів з API`);
+      await dilovodCacheService.updateCache('users', result);
+      return result;
+    } catch (error) {
+      const errorMessage = `Помилка отримання користувачів Dilovod: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
+      console.log(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }
+
   // Отримання фірм (власників рахунків) з Dilovod (з кешуванням)
   async getFirms(forceRefresh = false): Promise<any[]> {
     try {
@@ -1239,10 +1306,17 @@ export class DilovodService {
     priceTypes: number;
     currency: number;
     accPolicies: number;
+    users: number;
   }> {
     console.log('🔄 Примусове оновлення всіх довідників Dilovod...');
 
     // Робимо запити ПОСЛІДОВНО через обмеження Dilovod API
+    let users: any[] = [];
+    try {
+      users = await this.getUsers(true);
+    } catch (error) {
+      console.log('⚠️ [Dilovod] Користувачі не оновлено:', error);
+    }
     const firms = await this.getFirms(true);
     const accounts = await this.getCashAccounts(true);
     const storages = await this.getStorages(true);
@@ -1289,6 +1363,7 @@ export class DilovodService {
       priceTypes: priceTypes.length,
       currency: currency.length,
       accPolicies: accPolicies.length,
+      users: users.length,
     };
 
     console.log(`✅ [Dilovod] Кеш оновлено: ${JSON.stringify(result)}`);
@@ -1321,6 +1396,7 @@ export class DilovodService {
       ledgerAccounts: () => this.getLedgerAccounts(true),
       tradeChanels: () => this.getTradeChanels(true),
       deliveryMethods: () => this.getDeliveryMethods(true),
+      users: () => this.getUsers(true),
     };
 
     const rows = await fetchers[type as Exclude<CacheType, (typeof catalogTypes)[number]>]();

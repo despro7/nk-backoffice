@@ -17,6 +17,7 @@
  * - dilovod.cache.priceTypes - типи цін
  * - dilovod.cache.currency - валюти
  * - dilovod.cache.accPolicies - політики обліку (тип обʼєкта каталогу)
+ * - dilovod.cache.users - системні користувачі Dilovod (catalogs.users)
  * - dilovod.cache.{type}.lastUpdate - дата останнього оновлення (ISO string)
  */
 
@@ -35,7 +36,8 @@ export type CacheType =
   | 'units'
   | 'priceTypes'
   | 'currency'
-  | 'accPolicies';
+  | 'accPolicies'
+  | 'users';
 
 export const CACHE_TYPES: CacheType[] = [
   'firms',
@@ -51,6 +53,7 @@ export const CACHE_TYPES: CacheType[] = [
   'priceTypes',
   'currency',
   'accPolicies',
+  'users',
 ];
 
 export function isCacheType(value: string): value is CacheType {

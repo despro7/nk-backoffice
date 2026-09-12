@@ -25,7 +25,28 @@ async function withRoleAccess<T extends { role: string; roleName?: string | null
 // Регистрация (только для админов)
 router.post('/register', authenticateToken, usersManage, async (req: Request<{}, {}, RegisterRequest>, res: Response) => {
   try {
-    const result = await AuthService.register(req.body);
+    const payload: RegisterRequest = { ...req.body };
+    const { DilovodService } = await import('../services/dilovod/DilovodService.js');
+    const dilovodService = new DilovodService();
+
+    if (payload.createDilovodUser) {
+      const displayName = payload.name?.trim() || payload.email.trim();
+      const created = await dilovodService.createUser({
+        name: displayName,
+        email: payload.email.trim(),
+        roleId: payload.dilovodRoleId,
+      });
+      payload.dilovodUserId = created.id;
+    } else if (payload.dilovodUserId) {
+      await dilovodService.updateUser({
+        id: payload.dilovodUserId,
+        name: payload.name?.trim() || undefined,
+        email: payload.email.trim(),
+        roleId: payload.dilovodRoleId,
+      });
+    }
+
+    const result = await AuthService.register(payload);
     res.status(201).json({
       user: result.user,
       message: 'User successfully registered'
@@ -264,6 +285,30 @@ function formatUser(user: UserListRow, stats: UserActivityStats = EMPTY_STATS) {
   };
 }
 
+router.get('/dilovod-users', authenticateToken, usersManage, async (_req: Request, res: Response) => {
+  try {
+    const { DilovodService } = await import('../services/dilovod/DilovodService.js');
+    const dilovodService = new DilovodService();
+    const users = await dilovodService.getUsers();
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching Dilovod users:', error);
+    res.status(500).json({ message: 'Не вдалося завантажити користувачів Dilovod' });
+  }
+});
+
+router.get('/dilovod-roles', authenticateToken, usersManage, async (_req: Request, res: Response) => {
+  try {
+    const { DilovodService } = await import('../services/dilovod/DilovodService.js');
+    const dilovodService = new DilovodService();
+    const roles = await dilovodService.getRoles();
+    res.json(roles);
+  } catch (error) {
+    console.error('Error fetching Dilovod roles:', error);
+    res.status(500).json({ message: 'Не вдалося завантажити ролі Dilovod' });
+  }
+});
+
 router.get('/users', authenticateToken, usersManage, async (_req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
@@ -281,7 +326,7 @@ router.get('/users', authenticateToken, usersManage, async (_req: Request, res: 
 router.put('/users/:id', authenticateToken, usersManage, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, email, password, role, roleName, isActive, dilovodUserId } = req.body;
+    const { name, email, password, role, roleName, isActive, dilovodUserId, dilovodRoleId } = req.body;
     const userId = parseInt(id, 10);
 
     if (email) {
@@ -325,6 +370,21 @@ router.put('/users/:id', authenticateToken, usersManage, async (req: Request, re
       data: updateData,
       select: USER_LIST_SELECT,
     });
+
+    const linkedDilovodUserId = typeof updatedUser.dilovodUserId === 'string'
+      ? updatedUser.dilovodUserId.trim()
+      : '';
+    if (linkedDilovodUserId) {
+      const { DilovodService } = await import('../services/dilovod/DilovodService.js');
+      const dilovodService = new DilovodService();
+      await dilovodService.updateUser({
+        id: linkedDilovodUserId,
+        name: typeof name === 'string' ? name.trim() : undefined,
+        email: typeof email === 'string' ? email.trim() : undefined,
+        roleId: typeof dilovodRoleId === 'string' ? dilovodRoleId.trim() : undefined,
+      });
+    }
+
     const stats = await loadUserStats([updatedUser.id]);
 
     res.json({
