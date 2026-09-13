@@ -362,33 +362,6 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
     }
   }, [fetchChartData, dateRange?.start, dateRange?.end, statusFilter, groupBy, selectedProducts]);
 
-  // Сортування даних
-  const sortedItems = useMemo(() => {
-    const items = [...productStats];
-
-    items.sort((a, b) => {
-      const first = a[sortDescriptor.column as keyof ProductStats];
-      const second = b[sortDescriptor.column as keyof ProductStats];
-
-      let cmp = 0;
-
-      if (sortDescriptor.column === "totalStock") {
-        // Для загальної кількості на складах
-        const firstTotal = Object.values(a.stockBalances).reduce((sum, balance) => sum + balance, 0);
-        const secondTotal = Object.values(b.stockBalances).reduce((sum, balance) => sum + balance, 0);
-        cmp = firstTotal - secondTotal;
-      } else if (typeof first === "string" && typeof second === "string") {
-        cmp = first.localeCompare(second);
-      } else if (typeof first === "number" && typeof second === "number") {
-        cmp = first - second;
-      }
-
-      return sortDescriptor.direction === "descending" ? -cmp : cmp;
-    });
-
-    return items;
-  }, [productStats, sortDescriptor]);
-
   const allFilterOptions = useMemo(() => {
     const options: Array<{
       key: string;
@@ -414,16 +387,6 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
 
     return options;
   }, [availableSeries]);
-
-  // Загальна кількість товарів для placeholder
-  const totalProductsCount = useMemo(() => {
-    return sortedItems.length;
-  }, [sortedItems]);
-
-  // Розрахунок кількості серій у вибраних фільтрах
-  const selectedProductsCount = useMemo(() => {
-    return selectedProducts.size;
-  }, [selectedProducts]);
 
   const selectionSummary = useMemo(() => {
     if (selectedProducts.size === 0) {
@@ -537,8 +500,6 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
         onSelectedProductsChange={(value) => {
           setSelectedProducts(normalizeSelectedSeries(value));
         }}
-        totalProductsCount={totalProductsCount}
-        selectedProductsCount={selectedProductsCount}
         allFilterOptions={allFilterOptions}
         sortDescriptor={sortDescriptor}
         onSortDescriptorChange={setSortDescriptor}

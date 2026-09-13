@@ -22,7 +22,7 @@ export default function ReportDateRangeFilter({
   maxValue,
 }: ReportDateRangeFilterProps) {
   return (
-    <div className={className ?? "flex-1 max-w-60"}>
+    <div className={className ?? "w-fit shrink-0"}>
       <I18nProvider locale="uk-UA">
         <DateRangePicker
           aria-label="Або власний період"
@@ -33,9 +33,10 @@ export default function ReportDateRangeFilter({
           selectorButtonPlacement="start"
           selectorIcon={<DynamicIcon name="calendar" size={18} />}
           classNames={{
-            base: "w-auto",
-            inputWrapper: inputWrapperClassName,
-            innerWrapper: "gap-x-2",
+            // HeroUI default: base/inputWrapper = w-full — розтягує hit-area на всю ширину wrapper.
+            base: "w-fit",
+            inputWrapper: `${inputWrapperClassName} w-fit`,
+            innerWrapper: "gap-x-2 w-fit",
             segment: "rounded",
           }}
         />

@@ -1,6 +1,4 @@
-import { Select, SelectItem } from "@heroui/react";
 import type { DateRange } from "@react-types/datepicker";
-import { DynamicIcon } from "lucide-react/dynamic";
 import { useMemo } from "react";
 import {
   createActionButtonFilterConfig,
@@ -50,8 +48,6 @@ interface ProductStatsChartFiltersProps {
   onGroupByChange: (value: ProductChartGroupBy) => void;
   selectedProducts: Set<string>;
   onSelectedProductsChange: (value: Set<string>) => void;
-  totalProductsCount: number;
-  selectedProductsCount: number;
   allFilterOptions: ProductFilterOption[];
   sortDescriptor: ProductStatsSortDescriptor;
   onSortDescriptorChange: (value: ProductStatsSortDescriptor) => void;
@@ -72,14 +68,17 @@ export function ProductStatsChartFilters({
   onGroupByChange,
   selectedProducts,
   onSelectedProductsChange,
-  totalProductsCount,
-  selectedProductsCount,
   allFilterOptions,
   sortDescriptor,
   onSortDescriptorChange,
   sortOptions,
   onReset,
 }: ProductStatsChartFiltersProps) {
+  const categoryOptions = useMemo(
+    () => allFilterOptions.filter((option) => option.kind === "category"),
+    [allFilterOptions],
+  );
+
   const filters = useMemo<ReportFilterConfig[]>(() => {
     const nextFilters: ReportFilterConfig[] = [
       createStatusFilterConfig({
@@ -88,15 +87,31 @@ export function ProductStatsChartFilters({
           onStatusFilterChange(selectedKey ?? "all");
         },
         options: PRODUCT_CHART_STATUS_OPTIONS,
+        className: "w-40 shrink-0",
+        popoverClassName: "w-auto min-w-full",
       }),
       createPeriodFilterConfig({
         selectedKey: datePresetKey,
-        onChange: onDatePresetChange,
+        onChange: (selectedKey) => {
+          if (!selectedKey) {
+            return;
+          }
+
+          const preset = datePresets.find(
+            (item) => item.key === selectedKey || item.label === selectedKey,
+          );
+          if (preset) {
+            onDatePresetChange(preset.key);
+          }
+        },
         options: datePresets,
+        className: "w-48 shrink-0",
+        popoverClassName: "w-auto min-w-full",
       }),
       createDateRangeFilterConfig({
         value: dateRange,
         onChange: onDateRangeChange,
+        className: "w-62 shrink-0",
       }),
       createStatusFilterConfig({
         key: "groupBy",
@@ -110,97 +125,44 @@ export function ProductStatsChartFilters({
         },
         options: PRODUCT_CHART_GROUP_BY_OPTIONS,
         iconName: "bar-chart-3",
+        className: "w-44 shrink-0",
+        popoverClassName: "w-auto min-w-full",
       }),
       {
-        type: "custom",
+        type: "multiSelect",
         key: "productFilter",
-        className: "flex-1",
-        render: () => (
-          <Select
-            aria-label="Фільтр товарів"
-            placeholder={
-              selectedProducts.size === 0
-                ? "Всі категорії"
-                : `Вибрано ${selectedProductsCount} категор${selectedProductsCount === 1 ? "ію" : selectedProductsCount < 5 ? "ії" : "ій"}`
-            }
-            selectionMode="multiple"
-            selectedKeys={selectedProducts}
-            onSelectionChange={(keys) => {
-              if (keys === "all") {
-                onSelectedProductsChange(new Set(allFilterOptions.map((option) => option.key)));
-                return;
-              }
-
-              onSelectedProductsChange(new Set(Array.from(keys) as string[]));
-            }}
-            size="md"
-            startContent={<DynamicIcon name="package" className="text-gray-400" size={19} />}
-            classNames={{
-              trigger: "h-10 max-w-54",
-              innerWrapper: "gap-2",
-            }}
-          >
-            {allFilterOptions.map((option) => {
-              if (option.kind === "header") {
-                return (
-                  <SelectItem
-                    key={option.key}
-                    isDisabled
-                    className="[&>span]:text-xs [&>span]:text-gray-500 uppercase border-b border-gray-200 pb-1 rounded-none"
-                  >
-                    {option.label}
-                  </SelectItem>
-                );
-              }
-
-              return (
-                <SelectItem key={option.key}>
-                  {option.label}
-                </SelectItem>
-              );
-            })}
-          </Select>
-        ),
+        ariaLabel: "Фільтр категорій",
+        placeholder: "Всі категорії",
+        selectedKeys: selectedProducts,
+        onChange: onSelectedProductsChange,
+        options: categoryOptions,
+        iconName: "package",
+        className: "w-56 shrink-0",
+        popoverClassName: "w-auto min-w-full",
+        compactTrigger: true,
       },
     ];
 
     if (!(dateRange?.start && dateRange?.end)) {
       nextFilters.push(
-        {
-          type: "custom",
+        createStatusFilterConfig({
           key: "sortColumn",
-          className: "flex-1",
-          render: () => (
-            <Select
-              aria-label="Сортування"
-              placeholder="Сортувати за"
-              selectedKeys={[sortDescriptor.column]}
-              onSelectionChange={(keys) => {
-                const selected = Array.from(keys)[0] as string;
-                onSortDescriptorChange({
-                  column: selected,
-                  direction: sortDescriptor.direction,
-                });
-              }}
-              size="md"
-              startContent={
-                <DynamicIcon
-                  name={sortDescriptor.direction === "descending" ? "arrow-down" : "arrow-up"}
-                  className="text-gray-400"
-                  size={19}
-                />
-              }
-              classNames={{
-                trigger: "h-10",
-                innerWrapper: "gap-2",
-              }}
-            >
-              {sortOptions.map((option) => (
-                <SelectItem key={option.key}>{option.label}</SelectItem>
-              ))}
-            </Select>
-          ),
-        },
+          ariaLabel: "Сортування",
+          placeholder: "Сортувати за",
+          selectedKey: sortDescriptor.column,
+          onChange: (selectedKey) => {
+            if (selectedKey) {
+              onSortDescriptorChange({
+                column: selectedKey,
+                direction: sortDescriptor.direction,
+              });
+            }
+          },
+          options: sortOptions,
+          iconName: "arrow-up-down",
+          className: "w-48 shrink-0",
+          popoverClassName: "w-auto min-w-full",
+        }),
         createActionButtonFilterConfig({
           key: "sortDirection",
           onPress: () =>
@@ -212,20 +174,23 @@ export function ProductStatsChartFilters({
                   : "descending",
             }),
           iconName: sortDescriptor.direction === "descending" ? "arrow-down" : "arrow-up",
-          className: "h-10 px-3 gap-2",
+          isIconOnly: true,
+          className: "h-10 px-3 gap-2 shrink-0 border-1.5 border-neutral-200",
         }),
       );
     }
 
-    nextFilters.push(createResetFilterConfig({
-      onPress: onReset,
-      disabled: loading,
-      className: "h-10 px-3 gap-2 bg-transparent border-1.5 border-neutral-200 hover:bg-red-100 hover:border-red-200 hover:text-red-500",
-    }));
+    nextFilters.push(
+      createResetFilterConfig({
+        onPress: onReset,
+        disabled: loading,
+        className: "h-10 px-3 gap-2 ml-auto shrink-0 bg-transparent border-1.5 border-neutral-200 hover:bg-red-100 hover:border-red-200 hover:text-red-500",
+      }),
+    );
 
     return nextFilters;
   }, [
-    allFilterOptions,
+    categoryOptions,
     datePresetKey,
     datePresets,
     dateRange,
@@ -239,13 +204,10 @@ export function ProductStatsChartFilters({
     onSortDescriptorChange,
     onStatusFilterChange,
     selectedProducts,
-    selectedProductsCount,
     sortDescriptor,
     sortOptions,
     statusFilter,
   ]);
 
-  return (
-    <ReportsFilterBuilder filters={filters} />
-  );
+  return <ReportsFilterBuilder filters={filters} />;
 }

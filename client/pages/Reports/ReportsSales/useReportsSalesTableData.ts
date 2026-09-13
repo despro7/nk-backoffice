@@ -11,11 +11,11 @@ import {
   createStandardDatePresets,
 } from "@/lib";
 import type { SalesData } from "./ReportsSalesTypes";
-import { buildSalesReportCacheKey } from "./ReportsSalesUtils";
 import {
-  formatCalendarDateValue,
-  getPresetRangeByKey,
-} from "../shared/ReportsSharedUtils";
+  buildSalesReportCacheKey,
+  getSalesTableDefaultDatePreset,
+} from "./ReportsSalesUtils";
+import { formatCalendarDateValue } from "../shared/ReportsSharedUtils";
 import useReportCacheValidation from "../shared/useReportCacheValidation";
 import useReportClientCache from "../shared/useReportClientCache";
 import useReportStatsCacheClear from "../shared/useReportStatsCacheClear";
@@ -35,11 +35,13 @@ export default function useReportsSalesTableData() {
     timestamp: number;
   }>();
   const datePresets = useMemo(() => createStandardDatePresets(), []);
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [datePresetKey, setDatePresetKey] = useState<string>("last7Days");
-  const [dateRange, setDateRange] = useState<DateRange | null>(() =>
-    getPresetRangeByKey(datePresets, "last7Days"),
+  const defaultDatePreset = useMemo(
+    () => getSalesTableDefaultDatePreset(datePresets),
+    [datePresets],
   );
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [datePresetKey, setDatePresetKey] = useState<string>(defaultDatePreset.presetKey);
+  const [dateRange, setDateRange] = useState<DateRange | null>(defaultDatePreset.range);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const firstLoadRef = useRef(true);
   const fetchSalesDataRef = useRef<(() => Promise<void>) | null>(null);
@@ -149,9 +151,10 @@ export default function useReportsSalesTableData() {
   }, [dateRange, fetchSalesData, invalidateCacheKey, selectedProducts, statusFilter]);
 
   const resetFilters = useCallback(() => {
+    const nextDefaultDatePreset = getSalesTableDefaultDatePreset(datePresets);
     setStatusFilter("all");
-    setDatePresetKey("last7Days");
-    setDateRange(getPresetRangeByKey(datePresets, "last7Days"));
+    setDatePresetKey(nextDefaultDatePreset.presetKey);
+    setDateRange(nextDefaultDatePreset.range);
     setSelectedProducts(new Set());
     setExtraFilters(new Set());
     clearCache();

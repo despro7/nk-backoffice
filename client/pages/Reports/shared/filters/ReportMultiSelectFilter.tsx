@@ -15,10 +15,13 @@ interface ReportMultiSelectFilterProps {
   className?: string;
   baseClassName?: string;
   triggerClassName?: string;
+  popoverClassName?: string;
+  popoverProps?: Record<string, unknown>;
   iconSize?: number;
   size?: "sm" | "md" | "lg";
   mode?: "select" | "autocomplete";
   showTags?: boolean;
+  compactTrigger?: boolean;
   chipColor?: "default" | "primary" | "secondary" | "success" | "warning" | "danger";
   onReset?: () => void;
   /** Викликається перед onChange / onReset, коли зникають обрані ключі. */
@@ -66,10 +69,13 @@ export default function ReportMultiSelectFilter({
   className,
   baseClassName,
   triggerClassName = "h-10",
+  popoverClassName,
+  popoverProps,
   iconSize = 19,
   size = "md",
   mode = "select",
   showTags = false,
+  compactTrigger = false,
   chipColor = "default",
   onReset,
   onRemoved,
@@ -80,7 +86,9 @@ export default function ReportMultiSelectFilter({
     (key) => !options.some((option) => option.key === key),
   );
   const hasSelection = selectedKeys.size > 0;
-  const countPlaceholder = `${placeholder.replace(/\s*\(.*\)$/, "")} (${selectedKeys.size})`;
+  const compactLabel = placeholder.replace(/\s*\(.*\)$/, "");
+  const countPlaceholder = `${compactLabel} (${selectedKeys.size})`;
+  const useCompactTrigger = showTags || compactTrigger;
 
   const emitRemoved = (next: Set<string>, source: "chip" | "reset" | "list") => {
     if (!onRemoved) {
@@ -132,8 +140,10 @@ export default function ReportMultiSelectFilter({
             innerWrapper: "gap-2",
           },
         }}
+        popoverProps={popoverProps}
         classNames={{
-          base: baseClassName,
+          base: baseClassName ?? "w-full",
+          popoverContent: popoverClassName,
         }}
       >
         {(option) => {
@@ -173,18 +183,20 @@ export default function ReportMultiSelectFilter({
         maxListboxHeight={maxListboxHeight}
         startContent={<DynamicIcon name={iconName} className="text-gray-400" size={iconSize} />}
         renderValue={
-          showTags
+          useCompactTrigger
             ? () => (
                 <span className="truncate text-default-500">
-                  {hasSelection ? `${placeholder.replace(/\s*\(.*\)$/, "")}: ${selectedKeys.size}` : placeholder}
+                  {hasSelection ? countPlaceholder : placeholder}
                 </span>
               )
             : undefined
         }
+        popoverProps={popoverProps}
         classNames={{
-          base: baseClassName,
+          base: baseClassName ?? "w-full",
           trigger: triggerClassName,
           innerWrapper: "gap-2",
+          popoverContent: popoverClassName,
         }}
       >
         {options.map((option) => (

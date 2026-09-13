@@ -64,6 +64,8 @@ export function SalesReportTableFilters({
           onStatusFilterChange(found ? found.key : selectedKey);
         },
         options: ORDER_STATUSES,
+        className: "w-40 shrink-0",
+        popoverClassName: "w-auto min-w-full",
       }),
       createPeriodFilterConfig({
         selectedKey: datePresetKey,
@@ -80,10 +82,13 @@ export function SalesReportTableFilters({
           }
         },
         options: datePresets,
+        className: "w-48 shrink-0",
+        popoverClassName: "w-auto min-w-full",
       }),
       createDateRangeFilterConfig({
         value: dateRange,
         onChange: onDateRangeChange,
+        className: "w-62 shrink-0",
       }),
     ];
 
@@ -108,7 +113,9 @@ export function SalesReportTableFilters({
         },
         options: SALES_EXTRA_FILTER_OPTIONS,
         iconName: "filter",
-        className: "flex-1 min-w-[220px]",
+        className: "w-56 shrink-0",
+        popoverClassName: "w-auto min-w-full",
+        compactTrigger: true,
       });
     }
 
@@ -118,7 +125,7 @@ export function SalesReportTableFilters({
         onPress: onColoredToggle,
         iconName: "palette",
         isIconOnly: true,
-        className: `h-10 px-3 gap-2 border-1.5 transition-colors ${
+        className: `h-10 px-3 gap-2 shrink-0 ml-auto border-1.5 transition-colors ${
           colored
             ? "bg-lime-100 border-lime-500/50 text-lime-600/70 hover:bg-lime-100"
             : "bg-transparent border-neutral-200 text-neutral-400 hover:bg-neutral-100"

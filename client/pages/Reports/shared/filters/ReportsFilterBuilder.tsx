@@ -33,6 +33,8 @@ export default function ReportsFilterBuilder({
                 iconName={filter.iconName}
                 className={filter.className}
                 triggerClassName={filter.triggerClassName}
+                popoverClassName={filter.popoverClassName}
+                popoverProps={filter.popoverProps}
                 iconSize={filter.iconSize}
                 size={filter.size}
               />
@@ -51,6 +53,10 @@ export default function ReportsFilterBuilder({
                 className={filter.className}
                 baseClassName={filter.baseClassName}
                 triggerClassName={filter.triggerClassName}
+                popoverClassName={filter.popoverClassName}
+                popoverProps={filter.popoverProps}
+                compactTrigger={filter.compactTrigger}
+                showTags={filter.showTags}
                 iconSize={filter.iconSize}
                 size={filter.size}
               />

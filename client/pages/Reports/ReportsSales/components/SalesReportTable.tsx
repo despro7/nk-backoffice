@@ -1,22 +1,18 @@
 import { useCallback, useMemo, useState } from "react";
 import { Table, TableHeader, TableBody, TableColumn } from "@heroui/react";
-import { DynamicIcon } from "lucide-react/dynamic";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { useExportFunctions } from "@/hooks/useExportFunctions";
 import { ReportCacheProgressCard } from "../../shared/ReportCacheProgressCard";
 import { ReportLoadingOverlay } from "../../shared/ReportLoadingOverlay";
 import { ReportTableEmptyState } from "../../shared/ReportTableEmptyState";
-import type { SalesData, SalesReportTableProps, SalesSortDescriptor } from "../ReportsSalesTypes";
 import { SalesDateDetailsModal } from "./SalesDateDetailsModal";
 import { SalesReportTableFooter } from "./SalesReportTableFooter";
 import { SalesReportTableFilters } from "./SalesReportTableFilters";
 import { renderSalesReportTableRow } from "./SalesReportTableRow";
 import { SalesReportTableTotalsRow } from "./SalesReportTableTotalsRow";
-import useReportsSalesTableData, {
-  CachePeriodSelectModal,
-  CacheRefreshConfirmModal,
-} from "../useReportsSalesTableData";
 import { useSalesReportTableMetrics } from "../useSalesReportTableMetrics";
+import useReportsSalesTableData, { CachePeriodSelectModal, CacheRefreshConfirmModal } from "../useReportsSalesTableData";
+import type { SalesData, SalesReportTableProps, SalesSortDescriptor } from "../ReportsSalesTypes";
 
 export default function SalesReportTable({ className }: SalesReportTableProps) {
   // Кольорове форматування таблиці

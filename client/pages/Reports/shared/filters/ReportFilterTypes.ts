@@ -16,13 +16,22 @@ export interface ReportFilterProductOption {
 
 type ReportFilterSize = "sm" | "md" | "lg";
 
+/** HeroUI Select / Autocomplete popoverProps (placement, offset тощо). */
+export type ReportFilterPopoverProps = Record<string, unknown>;
+
 interface ReportFilterBaseConfig {
   key: string;
   className?: string;
   size?: ReportFilterSize;
 }
 
-export interface ReportSingleSelectFilterConfig extends ReportFilterBaseConfig {
+interface ReportSelectPopoverConfig {
+  /** Клас для popover — може бути ширшим за trigger (`w-auto min-w-max`). */
+  popoverClassName?: string;
+  popoverProps?: ReportFilterPopoverProps;
+}
+
+export interface ReportSingleSelectFilterConfig extends ReportFilterBaseConfig, ReportSelectPopoverConfig {
   type: "singleSelect";
   ariaLabel: string;
   placeholder: string;
@@ -34,7 +43,7 @@ export interface ReportSingleSelectFilterConfig extends ReportFilterBaseConfig {
   iconSize?: number;
 }
 
-export interface ReportMultiSelectFilterConfig extends ReportFilterBaseConfig {
+export interface ReportMultiSelectFilterConfig extends ReportFilterBaseConfig, ReportSelectPopoverConfig {
   type: "multiSelect";
   ariaLabel: string;
   placeholder: string;
@@ -45,6 +54,9 @@ export interface ReportMultiSelectFilterConfig extends ReportFilterBaseConfig {
   triggerClassName?: string;
   baseClassName?: string;
   iconSize?: number;
+  /** Компактний trigger: «Плейсхолдер (N)» замість переліку обраних. */
+  compactTrigger?: boolean;
+  showTags?: boolean;
 }
 
 export interface ReportProductSelectFilterConfig extends ReportFilterBaseConfig {

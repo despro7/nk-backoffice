@@ -35,6 +35,8 @@ interface CreateStatusFilterConfigParams {
   options: ReportFilterOption[];
   className?: string;
   triggerClassName?: string;
+  popoverClassName?: string;
+  popoverProps?: Record<string, unknown>;
   size?: ReportFilterSize;
   key?: string;
   ariaLabel?: string;
@@ -49,6 +51,8 @@ interface CreatePeriodFilterConfigParams {
   options: ReportFilterOption[];
   className?: string;
   triggerClassName?: string;
+  popoverClassName?: string;
+  popoverProps?: Record<string, unknown>;
   size?: ReportFilterSize;
   key?: string;
   ariaLabel?: string;
@@ -168,6 +172,8 @@ export function createStatusFilterConfig({
     iconName,
     className: params.className,
     triggerClassName: params.triggerClassName,
+    popoverClassName: params.popoverClassName,
+    popoverProps: params.popoverProps,
     size: params.size,
     iconSize: params.iconSize,
   };
@@ -191,6 +197,8 @@ export function createPeriodFilterConfig({
     iconName,
     className: params.className,
     triggerClassName: params.triggerClassName,
+    popoverClassName: params.popoverClassName,
+    popoverProps: params.popoverProps,
     size: params.size,
     iconSize: params.iconSize,
   };

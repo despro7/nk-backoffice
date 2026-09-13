@@ -16,6 +16,8 @@ interface ReportSingleSelectFilterProps {
   iconName: IconName;
   className?: string;
   triggerClassName?: string;
+  popoverClassName?: string;
+  popoverProps?: Record<string, unknown>;
   iconSize?: number;
   size?: "sm" | "md" | "lg";
   showTags?: boolean;
@@ -33,6 +35,8 @@ export default function ReportSingleSelectFilter({
   iconName,
   className,
   triggerClassName = "h-10",
+  popoverClassName,
+  popoverProps,
   iconSize = 19,
   size = "md",
   showTags = false,
@@ -69,9 +73,13 @@ export default function ReportSingleSelectFilter({
             size={size}
             maxListboxHeight={maxListboxHeight}
             startContent={<DynamicIcon name={iconName} className="text-gray-400" size={iconSize} />}
+            popoverProps={popoverProps}
             classNames={{
+              base: "w-full",
               trigger: triggerClassName,
               innerWrapper: "gap-2",
+              value: "truncate",
+              popoverContent: popoverClassName,
             }}
           >
             {options.map((option) => (
