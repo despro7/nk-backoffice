@@ -26,6 +26,7 @@ import {
 } from "@heroui/react";
 import { I18nProvider } from '@react-aria/i18n';
 import type { DateRange } from "@react-types/datepicker";
+import { CalendarDate } from "@internationalized/date";
 import { useUrlHashSync, type UrlHashValue } from "../hooks/useUrlHashSync";
 import { useQueryClient } from '@tanstack/react-query';
 import { useApi } from "../hooks/useApi";
@@ -374,8 +375,8 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
         const [fy, fm, fd] = from.split('-').map(Number);
         const [ty, tm, td] = to.split('-').map(Number);
         setDateRange({
-          start: { year: fy, month: fm, day: fd },
-          end: { year: ty, month: tm, day: td },
+          start: new CalendarDate(fy, fm, fd),
+          end: new CalendarDate(ty, tm, td),
         });
       } else {
         setDateRange(null);
