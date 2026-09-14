@@ -8,9 +8,11 @@ import {
   type HrPayrollHoursByKind,
   type HrPayrollSkipReason,
   type HrPayrollWeekAmount,
+  type HrTaxBreakdownItem,
   type HrTimesheetKind,
   type HrTimesheetWeekDto,
 } from '../../../shared/types/hr.js';
+import type { TaxRuleCalc } from './HrTaxRuleService.js';
 
 export const HR_PAYROLL_FORMULA_V1: HrPayrollFormulaSnapshot = {
   formulaId: HR_PAYROLL_FORMULA_TABELL_2026_V1,
@@ -50,6 +52,16 @@ export interface PayrollCalcInput {
   formula?: HrPayrollFormulaSnapshot;
 }
 
+export interface PayrollTaxResult {
+  grossAccrued: string;
+  netToPay: string;
+  employerTotalCost: string;
+  bonusAmount: string;
+  esvAmount: string;
+  taxAmount: string;
+  taxBreakdown: HrTaxBreakdownItem[];
+}
+
 export interface PayrollCalcResult {
   formulaId: string;
   ratesUsed: HrPayrollFormulaSnapshot;
@@ -59,7 +71,20 @@ export interface PayrollCalcResult {
   accruedAmount: string;
   extraAmount: string;
   toPayAmount: string;
+  grossAccrued: string;
+  netToPay: string;
+  employerTotalCost: string;
+  bonusAmount: string;
+  esvAmount: string;
+  taxAmount: string;
+  taxBreakdown: HrTaxBreakdownItem[];
   skipReason: HrPayrollSkipReason | null;
+}
+
+export interface PayrollCalcWithTaxesInput extends PayrollCalcInput {
+  taxRules?: TaxRuleCalc[];
+  bonusAmount?: number;
+  asOfDate?: string;
 }
 
 function emptyHours(): HrPayrollHoursByKind {
@@ -198,6 +223,128 @@ function breakdownFor(
   ];
 }
 
+function emptyTaxResult(bonusAmount = 0): PayrollTaxResult {
+  const bonus = moneyStr(bonusAmount);
+  return {
+    grossAccrued: '0.00',
+    netToPay: '0.00',
+    employerTotalCost: bonus,
+    bonusAmount: bonus,
+    esvAmount: '0.00',
+    taxAmount: '0.00',
+    taxBreakdown: [],
+  };
+}
+
+function reverseGrossFromAccrued(accrued: number, employeeRules: TaxRuleCalc[]): number {
+  const employeeRate = employeeRules.reduce((sum, rule) => sum + rule.rate, 0);
+  const divisor = 1 - employeeRate;
+  if (divisor <= 0) return accrued;
+  return roundMoney(accrued / divisor);
+}
+
+export function applyTaxRules(
+  payGroup: HrPayGroup,
+  accrued: number,
+  taxRules: TaxRuleCalc[],
+  bonusAmount = 0,
+): PayrollTaxResult {
+  if (accrued <= 0 && bonusAmount <= 0) {
+    return emptyTaxResult(bonusAmount);
+  }
+
+  if (payGroup !== 'official_salary' || taxRules.length === 0) {
+    const total = roundMoney(accrued + bonusAmount);
+    return {
+      grossAccrued: moneyStr(accrued),
+      netToPay: moneyStr(accrued),
+      employerTotalCost: moneyStr(total),
+      bonusAmount: moneyStr(bonusAmount),
+      esvAmount: '0.00',
+      taxAmount: '0.00',
+      taxBreakdown: [],
+    };
+  }
+
+  const employeeRules = taxRules.filter((rule) => rule.payer === 'employee');
+  const employerRules = taxRules.filter((rule) => rule.payer === 'employer');
+  const gross = reverseGrossFromAccrued(accrued, employeeRules);
+
+  const breakdown: HrTaxBreakdownItem[] = [];
+  let esvAmount = 0;
+  let taxAmount = 0;
+
+  for (const rule of taxRules) {
+    const base = rule.base === 'accrued' ? accrued : gross;
+    const amount = roundMoney(base * rule.rate);
+    breakdown.push({
+      code: rule.code,
+      label: rule.label,
+      rate: rule.rate.toFixed(6),
+      amount: moneyStr(amount),
+      payer: rule.payer,
+    });
+    if (rule.code === 'esv' || rule.payer === 'employer') {
+      esvAmount += amount;
+    }
+    if (rule.payer === 'employee') {
+      taxAmount += amount;
+    }
+  }
+
+  const bonusEsv = employerRules
+    .filter((rule) => rule.code === 'esv')
+    .reduce((sum, rule) => sum + roundMoney(bonusAmount * rule.rate), 0);
+
+  const net = roundMoney(gross - taxAmount);
+  const employerTotalCost = roundMoney(gross + esvAmount + bonusAmount + bonusEsv);
+
+  return {
+    grossAccrued: moneyStr(gross),
+    netToPay: moneyStr(net),
+    employerTotalCost: moneyStr(employerTotalCost),
+    bonusAmount: moneyStr(bonusAmount),
+    esvAmount: moneyStr(esvAmount + bonusEsv),
+    taxAmount: moneyStr(taxAmount),
+    taxBreakdown: breakdown,
+  };
+}
+
+export function calculatePayrollLineWithTaxes(input: PayrollCalcWithTaxesInput): PayrollCalcResult {
+  const base = calculatePayrollLine(input);
+  const accrued = Number(base.accruedAmount);
+  const bonusAmount = input.bonusAmount ?? 0;
+  const tax = applyTaxRules(input.payGroup, accrued, input.taxRules ?? [], bonusAmount);
+
+  const taxBreakdownSteps: HrPayrollBreakdownStep[] = tax.taxBreakdown.map((item) => ({
+    id: `tax-${item.code}`,
+    label: `${item.label} (${item.payer === 'employer' ? 'роботодавець' : 'працівник'})`,
+    amount: item.amount,
+  }));
+
+  if (bonusAmount > 0) {
+    taxBreakdownSteps.push({
+      id: 'bonus',
+      label: 'Премія',
+      amount: tax.bonusAmount,
+    });
+  }
+
+  if (Number(tax.employerTotalCost) > 0) {
+    taxBreakdownSteps.push({
+      id: 'employer-cost',
+      label: 'ФОП (вартість роботодавця)',
+      amount: tax.employerTotalCost,
+    });
+  }
+
+  return {
+    ...base,
+    ...tax,
+    breakdown: [...base.breakdown, ...taxBreakdownSteps],
+  };
+}
+
 export function calculatePayrollLine(input: PayrollCalcInput): PayrollCalcResult {
   const formula = input.formula ?? HR_PAYROLL_FORMULA_V1;
   const { hoursByKind, workHours, leaveDays } = collectHoursByKind(input.entries);
@@ -227,6 +374,8 @@ export function calculatePayrollLine(input: PayrollCalcInput): PayrollCalcResult
   const extraAmount = roundMoney(weekAmounts.reduce((sum, week) => sum + Number(week.extra), 0));
   const toPayAmount = roundMoney(weekAmounts.reduce((sum, week) => sum + Number(week.toPay), 0));
 
+  const tax = applyTaxRules(input.payGroup, accruedAmount, [], 0);
+
   return {
     formulaId: formula.formulaId,
     ratesUsed: formula,
@@ -242,6 +391,13 @@ export function calculatePayrollLine(input: PayrollCalcInput): PayrollCalcResult
     accruedAmount: moneyStr(accruedAmount),
     extraAmount: moneyStr(extraAmount),
     toPayAmount: moneyStr(toPayAmount),
+    grossAccrued: tax.grossAccrued,
+    netToPay: tax.netToPay,
+    employerTotalCost: tax.employerTotalCost,
+    bonusAmount: tax.bonusAmount,
+    esvAmount: tax.esvAmount,
+    taxAmount: tax.taxAmount,
+    taxBreakdown: tax.taxBreakdown,
     skipReason,
   };
 }

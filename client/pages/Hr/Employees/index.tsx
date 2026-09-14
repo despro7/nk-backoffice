@@ -25,7 +25,6 @@ import {
 } from '@shared/types/hr';
 import { EmployeeDrawer } from './EmployeeDrawer';
 import { EmployeesArchiveModal } from './EmployeesArchiveModal';
-import { TimesheetImportModal } from './TimesheetImportModal';
 import { DEFAULT_EMPLOYEE_SORT, sortHrEmployees } from './employeeTableSort';
 import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HR_TABLE_CLASS_NAMES, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
 
@@ -38,12 +37,13 @@ export default function HrEmployeesPage() {
   const [employees, setEmployees] = useState<HrEmployeeListItemDto[]>([]);
   const [legalEntities, setLegalEntities] = useState<HrLegalEntityDto[]>([]);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [syncingEmployees, setSyncingEmployees] = useState(false);
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>(DEFAULT_EMPLOYEE_SORT);
 
   const sortedEmployees = useMemo(
@@ -75,9 +75,17 @@ export default function HrEmployeesPage() {
   }, []);
 
   useEffect(() => {
-    void fetchEmployees();
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    void fetchEmployees(debouncedSearch);
+  }, [fetchEmployees, debouncedSearch]);
+
+  useEffect(() => {
     void fetchLegalEntities();
-  }, [fetchEmployees, fetchLegalEntities]);
+  }, [fetchLegalEntities]);
 
   useUrlHashSync(
     { emp: drawerOpen && editingId != null ? editingId : null },
@@ -113,6 +121,26 @@ export default function HrEmployeesPage() {
     setEditingId(null);
   };
 
+  const handleSyncEmployees = async () => {
+    setSyncingEmployees(true);
+    try {
+      const response = await fetch('/api/hr/sync/employees', { method: 'POST', credentials: 'include' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        ToastService.show({ title: data.message || 'Синхронізація не вдалась', color: 'danger' });
+        return;
+      }
+      const result = data.data ?? {};
+      ToastService.show({
+        title: `Синхронізовано: оновлено ${result.updated ?? 0}, створено ${result.created ?? 0}, без пари ${result.unmatched ?? 0}`,
+        color: 'success',
+      });
+      await fetchEmployees(search);
+    } finally {
+      setSyncingEmployees(false);
+    }
+  };
+
   const handleDelete = async (id: number) => {
     const response = await fetch(`/api/hr/employees/${id}`, {
       method: 'DELETE',
@@ -142,26 +170,32 @@ export default function HrEmployeesPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Input
-          className="max-w-xs"
+          classNames={{ 
+            base: 'max-w-xs',
+            inputWrapper: 'data-[hover=true]:bg-white',
+          }}
+          autoComplete="off"
           placeholder="Пошук за ПІБ"
           value={search}
+          isClearable
           onValueChange={setSearch}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') void fetchEmployees(search);
-          }}
           startContent={<DynamicIcon name="search" size={16} className="text-default-400" />}
         />
         {canManage ? (
           <div className="flex flex-wrap gap-2">
             <Button
               className={`${HR_BTN_NEUTRAL} bg-slate-50!`}
+              startContent={<DynamicIcon name="refresh-cw" size={16} className={`shrink-0 ${syncingEmployees ? 'animate-spin' : ''}`} />}
+              onPress={() => void handleSyncEmployees()}
+            >
+              Синхронізувати співробітників
+            </Button>
+            <Button
+              className={`${HR_BTN_NEUTRAL} bg-slate-50!`}
               startContent={<DynamicIcon name="archive" size={16} className="shrink-0" />}
               onPress={() => setArchiveOpen(true)}
             >
               Архів
-            </Button>
-            <Button className={`${HR_BTN_NEUTRAL} bg-slate-50! `} startContent={<DynamicIcon name="upload" size={16} className="shrink-0" />} onPress={() => setImportOpen(true)}>
-              Імпорт Excel
             </Button>
             <Button className={HR_BTN_PRIMARY} startContent={<DynamicIcon name="plus" size={16} className="shrink-0" />} onPress={openCreate}>
               Новий співробітник
@@ -171,7 +205,7 @@ export default function HrEmployeesPage() {
       </div>
 
       <Card className="hover:shadow-md transition-shadow">
-        <CardBody className="p-2">
+        <CardBody className="p-3">
           {loading ? (
             <div className="p-8 text-center text-text-secondary">Завантаження...</div>
           ) : employees.length === 0 ? (
@@ -278,12 +312,6 @@ export default function HrEmployeesPage() {
         canRevealCard={canRevealCard}
         onClose={closeDrawer}
         onSaved={() => void fetchEmployees(search)}
-      />
-
-      <TimesheetImportModal
-        isOpen={importOpen}
-        onClose={() => setImportOpen(false)}
-        onImported={() => void fetchEmployees(search)}
       />
 
       <EmployeesArchiveModal

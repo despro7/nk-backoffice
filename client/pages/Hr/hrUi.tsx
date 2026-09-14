@@ -4,6 +4,8 @@ import {
   HR_PAY_GROUPS,
   HR_TIMESHEET_KIND_CODES,
   type HrPayGroup,
+  type HrTaxBase,
+  type HrTaxPayer,
   type HrTimesheetKind,
   type HrTimesheetKindCode,
 } from '@shared/types/hr';
@@ -31,6 +33,22 @@ export const HR_LEGAL_ENTITY_HUES: Record<string, string> = {
   fop: 'blue',
   tov: 'violet',
   unofficial_cash: 'amber',
+};
+
+export const HR_TAX_RULE_HUES: Record<string, string> = {
+  esv: 'violet',
+  pdfo: 'blue',
+  military: 'amber',
+};
+
+export const HR_TAX_PAYER_HUES: Record<HrTaxPayer, string> = {
+  employer: 'indigo',
+  employee: 'cyan',
+};
+
+export const HR_TAX_BASE_LABELS: Record<HrTaxBase, string> = {
+  gross: 'До утримань',
+  accrued: 'Нараховано',
 };
 
 export const HR_TIMESHEET_KIND_DEFAULT_HUES: Record<HrTimesheetKindCode, string> = {
@@ -61,6 +79,14 @@ export const HR_TABLE_CLASS_NAMES = {
 
 export function hrPayGroupTokens(group: HrPayGroup, intensity: SpecColorIntensity = 'soft'): SpecColorTokens {
   return getSpecColorByHue(HR_PAY_GROUP_HUES[group], 'light', intensity);
+}
+
+export function hrTaxRuleTokens(code: string, intensity: SpecColorIntensity = 'soft'): SpecColorTokens {
+  return getSpecColorByHue(HR_TAX_RULE_HUES[code] ?? 'slate', 'light', intensity);
+}
+
+export function hrTaxPayerTokens(payer: HrTaxPayer, intensity: SpecColorIntensity = 'soft'): SpecColorTokens {
+  return getSpecColorByHue(HR_TAX_PAYER_HUES[payer], 'light', intensity);
 }
 
 export function hrStatusTokens(status: 'active' | 'inactive'): SpecColorTokens {
@@ -133,6 +159,7 @@ const HR_SPEC_CHIP_LUCIDE_ICONS = {
   error: 'circle-x',
   info: 'info',
   default: 'circle',
+  merge: 'merge',
 } as const;
 
 type HrSpecChipIcon = keyof typeof HR_SPEC_CHIP_LUCIDE_ICONS;
@@ -174,7 +201,7 @@ export function HrSpecChip({
           selected ? 'ring-2 ring-slate-800 ring-offset-1' : '',
           className ?? rounded === 'full' ? 'px-1.5' : 'px-1',
         ].join(' '),
-        content: 'font-medium',
+        content: 'font-medium leading-none ml-0.5',
       }}
     >
       {children}

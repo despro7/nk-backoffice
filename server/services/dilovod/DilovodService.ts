@@ -2340,6 +2340,10 @@ export class DilovodService {
   }
 
 
+  getApiClient(): DilovodApiClient {
+    return this.apiClient;
+  }
+
   async disconnect(): Promise<void> {
     console.log('Закриваємо з\'єднання DilovodService...');
 

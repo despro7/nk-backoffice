@@ -245,7 +245,7 @@ export function DilovodUserEmailFields({
         <Input
           type="email"
           label={emailLabel}
-          labelPlacement="outside"
+          // labelPlacement="outside"
           placeholder="user@example.com"
           value={email}
           onValueChange={onEmailChange}

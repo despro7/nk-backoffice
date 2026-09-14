@@ -26,6 +26,7 @@ model User {
   hrEmployee            HrEmployee?
   hrTimesheetLocks      HrTimesheetMonth[]
   hrPayrollLocks        HrPayrollPeriod[]  @relation("HrPayrollLockedBy")
+  hrAuditLogs           HrAuditLog[]
 
   @@map("users")
 }
@@ -583,16 +584,80 @@ model CatalogGoodBarcode {
   @@map("catalog_good_barcodes")
 }
 
+/// Журнал дій HR (audit trail користувача)
+model HrAuditLog {
+  id         Int      @id @default(autoincrement())
+  entityType String   @db.VarChar(32)
+  entityId   Int
+  action     String   @db.VarChar(64)
+  userId     Int?
+  payload    Json?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("hr_audit_log")
+}
+
+/// Група оплати (офіційна / погодинні / неофіційна)
+model HrPayGroup {
+  id             Int             @id @default(autoincrement())
+  slug           String          @unique @db.VarChar(32)
+  label          String          @db.VarChar(64)
+  sortOrder      Int             @default(0)
+  isActive       Boolean         @default(true)
+  formulaProfile String          @db.VarChar(32)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  employments    HrEmployment[]
+  payrollLines   HrPayrollLine[]
+
+  @@map("hr_pay_groups")
+}
+
+/// Фізична особа (локальна копія catalogs.persons)
+model HrPerson {
+  id                  Int          @id @default(autoincrement())
+  dilovodPersonId     String?      @unique @db.VarChar(32)
+  dilovodCode         String?      @db.VarChar(32)
+  displayName         String       @db.VarChar(255)
+  taxCode             String?      @db.VarChar(32)
+  phone               String?      @db.VarChar(20)
+  email               String?      @db.VarChar(255)
+  address             String?      @db.Text
+  dilovodParentId     String?      @db.VarChar(32)
+  dilovodPersonTypeId String?      @db.VarChar(32)
+  dilovodStateId      String?      @db.VarChar(32)
+  isDeletedInDilovod  Boolean      @default(false)
+  localStatus         String       @default("active") @db.VarChar(32)
+  canonicalPersonId   Int?
+  duplicateOfId       Int?
+  notes               String?      @db.Text
+  dilovodVersion      String?      @db.VarChar(32)
+  lastSyncedAt        DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  employees           HrEmployee[]
+
+  @@index([dilovodParentId])
+  @@index([localStatus])
+  @@index([phone])
+  @@index([taxCode])
+  @@map("hr_persons")
+}
+
 /// Юрособа / ФОП / «нештатні готівка» для зайнятості HR
 model HrLegalEntity {
-  id          Int            @id @default(autoincrement())
-  code        String         @unique @db.VarChar(32)
-  name        String         @db.VarChar(255)
-  kind        String         @db.VarChar(32)
-  isActive    Boolean        @default(true)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  employments HrEmployment[]
+  id            Int            @id @default(autoincrement())
+  code          String         @unique @db.VarChar(32)
+  name          String         @db.VarChar(255)
+  kind          String         @db.VarChar(32)
+  dilovodFirmId String?        @unique @db.VarChar(32)
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  employments   HrEmployment[]
 
   @@map("hr_legal_entities")
 }
@@ -605,6 +670,7 @@ model HrEmployee {
   middleName          String?        @db.VarChar(128)
   displayName         String         @db.VarChar(255)
   status              String         @default("active") @db.VarChar(16)
+  personId            Int?
   userId              Int?           @unique
   notes               String?        @db.Text
   cardLast4           String?        @db.VarChar(4)
@@ -612,36 +678,67 @@ model HrEmployee {
   deletedAt           DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
+  person              HrPerson?      @relation(fields: [personId], references: [id], onDelete: SetNull)
   user                User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   employments         HrEmployment[]
 
   @@index([status])
   @@index([displayName])
   @@index([deletedAt])
+  @@index([personId])
   @@map("hr_employees")
 }
 
 /// Зайнятість у часі: людина × юрособа × група оплати
 model HrEmployment {
-  id            Int          @id @default(autoincrement())
-  employeeId    Int
-  legalEntityId Int
-  payGroup      String       @db.VarChar(32)
-  validFrom     DateTime     @db.Date
-  validTo       DateTime?    @db.Date
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  employee      HrEmployee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  legalEntity   HrLegalEntity  @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
-  payTerms         HrPayTerms[]
-  timesheetEntries HrTimesheetEntry[]
-  payrollLines     HrPayrollLine[]
-  payouts          HrPayout[]
+  id                 Int             @id @default(autoincrement())
+  employeeId         Int
+  legalEntityId      Int
+  payGroupId         Int
+  personnelNumber    String?         @db.VarChar(16)
+  dilovodEmployeeId  String?         @unique @db.VarChar(32)
+  officialPosition   String?         @db.VarChar(255)
+  unofficialPosition String?         @db.VarChar(255)
+  employeeCategory   String?         @db.VarChar(64)
+  benefitCode        String?         @db.VarChar(32)
+  validFrom          DateTime        @db.Date
+  validTo            DateTime?       @db.Date
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  employee           HrEmployee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  legalEntity        HrLegalEntity   @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
+  payGroup           HrPayGroup      @relation(fields: [payGroupId], references: [id], onDelete: Restrict)
+  payTerms           HrPayTerms[]
+  timesheetEntries   HrTimesheetEntry[]
+  payrollLines       HrPayrollLine[]
+  payouts            HrPayout[]
+  bonuses            HrBonus[]
+  staffOrders        HrStaffOrder[]
 
   @@unique([employeeId, legalEntityId, validFrom])
   @@index([employeeId])
   @@index([legalEntityId])
+  @@index([payGroupId])
   @@map("hr_employments")
+}
+
+/// Кадровий наказ (read-only кеш з Dilovod)
+model HrStaffOrder {
+  id           Int          @id @default(autoincrement())
+  employmentId Int
+  kind         String       @db.VarChar(16)
+  position     String?      @db.VarChar(255)
+  orderDate    DateTime     @db.Date
+  orderNumber  String?      @db.VarChar(64)
+  hireDate     DateTime?    @db.Date
+  dismissDate  DateTime?    @db.Date
+  dilovodDocId String?      @unique @db.VarChar(32)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  employment   HrEmployment @relation(fields: [employmentId], references: [id], onDelete: Cascade)
+
+  @@index([employmentId])
+  @@map("hr_staff_orders")
 }
 
 /// Ставка / погодинна сума на зайнятість (гроші лише Decimal)
@@ -735,7 +832,7 @@ model HrPayrollLine {
   id             Int             @id @default(autoincrement())
   periodId       Int
   employmentId   Int
-  payGroup       String          @db.VarChar(32)
+  payGroupId     Int
   formulaId      String          @db.VarChar(64)
   rate           Decimal         @db.Decimal(12, 2)
   rateKind       String          @db.VarChar(16)
@@ -747,15 +844,98 @@ model HrPayrollLine {
   accruedAmount  Decimal         @db.Decimal(12, 2)
   extraAmount    Decimal         @db.Decimal(12, 2)
   toPayAmount    Decimal         @db.Decimal(12, 2)
-  skipReason     String?         @db.VarChar(64)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  period         HrPayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
-  employment     HrEmployment    @relation(fields: [employmentId], references: [id], onDelete: Restrict)
+  skipReason         String?         @db.VarChar(64)
+  esvAmount          Decimal?        @db.Decimal(12, 2)
+  taxAmount          Decimal?        @db.Decimal(12, 2)
+  grossAccrued       Decimal         @default(0) @db.Decimal(12, 2)
+  netToPay           Decimal         @default(0) @db.Decimal(12, 2)
+  employerTotalCost  Decimal         @default(0) @db.Decimal(12, 2)
+  bonusAmount        Decimal         @default(0) @db.Decimal(12, 2)
+  taxBreakdown       Json?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  period             HrPayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  employment         HrEmployment    @relation(fields: [employmentId], references: [id], onDelete: Restrict)
+  payGroup           HrPayGroup      @relation(fields: [payGroupId], references: [id], onDelete: Restrict)
 
   @@unique([periodId, employmentId])
   @@index([employmentId])
+  @@index([payGroupId])
   @@map("hr_payroll_lines")
+}
+
+/// Довідник податкових правил (ЄСВ, ПДФО, військовий тощо)
+model HrTaxRule {
+  id            Int       @id @default(autoincrement())
+  code          String    @db.VarChar(32)
+  label         String    @db.VarChar(128)
+  rate          Decimal   @db.Decimal(8, 6)
+  payer         String    @db.VarChar(16)
+  base          String    @db.VarChar(16)
+  payGroups     Json
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date
+  sortOrder     Int       @default(0)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([code, isActive])
+  @@index([effectiveFrom])
+  @@map("hr_tax_rules")
+}
+
+/// Опційний виробничий календар (singleton)
+model HrProductionCalendar {
+  id           Int      @id @default(autoincrement())
+  isEnabled    Boolean  @default(false)
+  weekStartDay Int      @default(1)
+  fopWeekdays  Json
+  label        String   @default("Стандарт пн–пт") @db.VarChar(128)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("hr_production_calendar")
+}
+
+/// Матеріалізований виробничий період
+model HrProductionWeek {
+  id          Int        @id @default(autoincrement())
+  startDate   DateTime   @db.Date
+  endDate     DateTime   @db.Date
+  fopWeekdays Json
+  label       String     @db.VarChar(128)
+  year        Int
+  sequence    Int
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  bonuses     HrBonus[]
+
+  @@unique([startDate, endDate])
+  @@index([year, sequence])
+  @@map("hr_production_weeks")
+}
+
+/// Премія працівника за виробничий період
+model HrBonus {
+  id                Int               @id @default(autoincrement())
+  employmentId      Int
+  productionWeekId  Int?
+  calendarWeekId    String?           @db.VarChar(16)
+  amount            Decimal           @db.Decimal(12, 2)
+  kind              String            @default("manual") @db.VarChar(16)
+  note              String?           @db.VarChar(255)
+  status            String            @default("draft") @db.VarChar(16)
+  createdByUserId   Int?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  employment        HrEmployment      @relation(fields: [employmentId], references: [id], onDelete: Cascade)
+  productionWeek    HrProductionWeek? @relation(fields: [productionWeekId], references: [id], onDelete: SetNull)
+
+  @@index([employmentId])
+  @@index([productionWeekId])
+  @@index([calendarWeekId])
+  @@map("hr_bonuses")
 }
 
 /// Тижнева / авансова виплата (не рядок табеля)

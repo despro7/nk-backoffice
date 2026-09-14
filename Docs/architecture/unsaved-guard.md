@@ -145,6 +145,13 @@ window.addEventListener('beforeunload', (e) => {
 | Інвентаризація складу | `client/pages/Warehouse/WarehouseInventory/index.tsx` |
 | Каталог Products 2.0 | `client/pages/Products/components/productDrawer/ProductDrawer.tsx` |
 | HR співробітники | `client/pages/Hr/Employees/EmployeeDrawer.tsx` |
+| HR табель | `client/pages/Hr/HrTimesheetPage.tsx` |
+| HR фіз. особи | `client/components/person-card/PersonCard.tsx` |
+| HR користувачі (drawer) | `client/components/person-card/UserCard.tsx` |
+| HR премії | `client/pages/Hr/Bonuses/BonusDrawer.tsx` |
+| HR податкові правила | `client/pages/Hr/Employers/TaxRulesTab.tsx` (модалка) |
+| HR групи оплати | `client/pages/Hr/Employers/PayGroupsTab.tsx` (модалка) |
+| HR виробничий календар | `client/pages/Hr/Employers/index.tsx` + `ProductionCalendarTab.tsx` (guard при зміні таба) |
 
 ---
 

@@ -22,6 +22,7 @@ import {
   dedupeEmploymentsByEmployeePayGroup,
   remapEmploymentId,
 } from '../../../shared/utils/hrEmploymentDedupe.js';
+import { hrAuditService } from './HrAuditService.js';
 import { HrError } from './HrService.js';
 
 const LOCK_TTL_MS = 15 * 60 * 1000;
@@ -66,12 +67,14 @@ function toMonthDto(row: {
 }
 
 function toEntryDto(row: {
+  id?: number;
   employmentId: number;
   date: Date;
   kind: string;
   hours: Prisma.Decimal | null;
 }): HrTimesheetEntryDto {
   return {
+    id: row.id,
     employmentId: row.employmentId,
     date: toDateOnlyUtc(row.date),
     kind: (isTimesheetKind(row.kind) ? row.kind : 'work') as HrTimesheetKind,
@@ -197,8 +200,9 @@ export class HrTimesheetService {
         include: {
           employee: { select: { id: true, displayName: true, status: true } },
           legalEntity: { select: { name: true, code: true } },
+          payGroup: { select: { slug: true, sortOrder: true } },
         },
-        orderBy: [{ payGroup: 'asc' }, { id: 'asc' }],
+        orderBy: [{ payGroup: { sortOrder: 'asc' } }, { id: 'asc' }],
       }),
       prisma.hrTimesheetEntry.findMany({
         where: { monthId: row.id },
@@ -224,7 +228,7 @@ export class HrTimesheetService {
         employmentId: employment.id,
         employeeId: employment.employee.id,
         displayName: employment.employee.displayName,
-        payGroup: isPayGroup(employment.payGroup) ? employment.payGroup : 'official_salary',
+        payGroup: isPayGroup(employment.payGroup.slug) ? employment.payGroup.slug : 'official_salary',
         legalEntityName: employment.legalEntity.name,
         entries: entriesByEmployment.get(employment.id) ?? [],
       }))
@@ -296,30 +300,71 @@ export class HrTimesheetService {
         }
       }
 
+      const auditDiffs: Array<{
+        entryId?: number;
+        employmentId: number;
+        date: string;
+        before: { kind: string; hours: string | null } | null;
+        after: { kind: string; hours: string | null } | null;
+      }> = [];
+
       for (const item of writes) {
         const date = String(item.date ?? '');
         if (!allowedDates.has(date)) {
           throw new HrError('Дата не належить до цього місяця');
         }
         const dateValue = new Date(`${date}T00:00:00.000Z`);
+        const employmentId = Number(item.employmentId);
+        const existing = await tx.hrTimesheetEntry.findUnique({
+          where: {
+            monthId_employmentId_date: { monthId, employmentId, date: dateValue },
+          },
+        });
         const parsed = parseEntryKind(item);
         if (!parsed) {
+          if (existing) {
+            auditDiffs.push({
+              entryId: existing.id,
+              employmentId,
+              date,
+              before: {
+                kind: existing.kind,
+                hours: existing.hours?.toFixed(2) ?? null,
+              },
+              after: null,
+            });
+          }
           await tx.hrTimesheetEntry.deleteMany({
-            where: { monthId, employmentId: Number(item.employmentId), date: dateValue },
+            where: { monthId, employmentId, date: dateValue },
           });
           continue;
+        }
+        const after = {
+          kind: parsed.kind,
+          hours: parsed.hours?.toFixed(2) ?? null,
+        };
+        if (!existing || existing.kind !== after.kind || existing.hours?.toFixed(2) !== after.hours) {
+          auditDiffs.push({
+            entryId: existing?.id,
+            employmentId,
+            date,
+            before: existing
+              ? { kind: existing.kind, hours: existing.hours?.toFixed(2) ?? null }
+              : null,
+            after,
+          });
         }
         await tx.hrTimesheetEntry.upsert({
           where: {
             monthId_employmentId_date: {
               monthId,
-              employmentId: Number(item.employmentId),
+              employmentId,
               date: dateValue,
             },
           },
           create: {
             monthId,
-            employmentId: Number(item.employmentId),
+            employmentId,
             date: dateValue,
             kind: parsed.kind,
             hours: parsed.hours,
@@ -343,8 +388,32 @@ export class HrTimesheetService {
             },
           })
         : [];
-      return { monthRow, savedEntries };
+      return { monthRow, savedEntries, auditDiffs };
     });
+
+    for (const diff of result.auditDiffs) {
+      let entityId = diff.entryId;
+      if (entityId == null) {
+        const entry = await prisma.hrTimesheetEntry.findFirst({
+          where: {
+            monthId,
+            employmentId: diff.employmentId,
+            date: new Date(`${diff.date}T00:00:00.000Z`),
+          },
+          select: { id: true },
+        });
+        if (!entry) continue;
+        entityId = entry.id;
+      }
+      const { entryId: _entryId, ...payload } = diff;
+      await hrAuditService.log({
+        entityType: 'timesheet_entry',
+        entityId,
+        action: 'cell_changed',
+        userId,
+        payload,
+      });
+    }
 
     logServer(`[hr] timesheet saved monthId=${monthId} entries=${writes.length}`);
     return {

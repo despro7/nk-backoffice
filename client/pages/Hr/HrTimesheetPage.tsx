@@ -56,6 +56,7 @@ export default function HrTimesheetPage() {
   const { hasPermission } = useRoleAccess();
   const canView = hasPermission(PERMISSIONS.PAGE_HR_TIMESHEET);
   const canEditPerm = hasPermission(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT);
+  const canViewAudit = hasPermission(PERMISSIONS.ACTION_HR_AUDIT_VIEW);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [data, setData] = useState<HrTimesheetLoadDto | null>(null);
@@ -344,6 +345,7 @@ export default function HrTimesheetPage() {
           liveMessage={liveMessage}
           onLiveMessage={setLiveMessage}
           kindHues={kindColors.overrides}
+          canViewAudit={canViewAudit}
         />
         </div>
       ) : null}

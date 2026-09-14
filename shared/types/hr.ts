@@ -4,8 +4,94 @@ export type HrPayGroup = (typeof HR_PAY_GROUPS)[number];
 export const HR_PAY_GROUP_LABELS: Record<HrPayGroup, string> = {
   official_salary: 'Офіційна ставка',
   hourly: 'Погодинні',
-  unofficial_cash: 'Нештатні (готівка)',
+  unofficial_cash: 'Неофіційна ставка',
 };
+
+export interface HrPayGroupDto {
+  id: number;
+  slug: HrPayGroup;
+  label: string;
+  sortOrder: number;
+  isActive: boolean;
+  formulaProfile: string;
+}
+
+export interface HrPayGroupWritePayload {
+  slug?: HrPayGroup;
+  label?: string;
+  sortOrder?: number;
+  isActive?: boolean;
+  formulaProfile?: string;
+}
+
+export const HR_AUDIT_ENTITY_TYPES = [
+  'employee',
+  'employment',
+  'legal_entity',
+  'pay_group',
+  'person',
+  'pay_terms',
+  'timesheet_entry',
+] as const;
+export type HrAuditEntityType = (typeof HR_AUDIT_ENTITY_TYPES)[number];
+
+export interface HrAuditLogDto {
+  id: number;
+  entityType: HrAuditEntityType;
+  entityId: number;
+  action: string;
+  userId: number | null;
+  userName: string | null;
+  payload: unknown;
+  createdAt: string;
+}
+
+export const HR_PERSON_LOCAL_STATUSES = ['active', 'duplicate_candidate', 'archived'] as const;
+export type HrPersonLocalStatus = (typeof HR_PERSON_LOCAL_STATUSES)[number];
+
+export interface HrPersonSummaryDto {
+  id: number;
+  displayName: string;
+  taxCode: string | null;
+  phone: string | null;
+  dilovodCode?: string | null;
+  mergedAt?: string | null;
+}
+
+export interface HrPersonDto {
+  id: number;
+  dilovodPersonId: string | null;
+  dilovodCode: string | null;
+  displayName: string;
+  taxCode: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  dilovodParentId: string | null;
+  dilovodPersonTypeId: string | null;
+  dilovodStateId: string | null;
+  isDeletedInDilovod: boolean;
+  localStatus: HrPersonLocalStatus;
+  canonicalPersonId: number | null;
+  duplicateOfId: number | null;
+  notes: string | null;
+  lastSyncedAt: string | null;
+  /** @deprecated Use hasUnresolvedDuplicates */
+  isDuplicateCandidate: boolean;
+  mergedCount: number;
+  hasUnresolvedDuplicates: boolean;
+}
+
+export interface HrPersonWritePayload {
+  displayName?: string;
+  taxCode?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  dilovodParentId?: string | null;
+  notes?: string | null;
+  localStatus?: HrPersonLocalStatus;
+}
 
 export const HR_PAY_TERMS_KINDS = ['salary', 'hourly'] as const;
 export type HrPayTermsKind = (typeof HR_PAY_TERMS_KINDS)[number];
@@ -32,6 +118,7 @@ export interface HrLegalEntityDto {
   code: string;
   name: string;
   kind: HrLegalEntityKind;
+  dilovodFirmId: string | null;
   isActive: boolean;
 }
 
@@ -62,15 +149,37 @@ export interface HrPayTermsDto {
   effectiveTo: string | null;
 }
 
+export interface HrStaffOrderDto {
+  id: number;
+  employmentId: number;
+  kind: string;
+  position: string | null;
+  orderDate: string;
+  orderNumber: string | null;
+  hireDate: string | null;
+  dismissDate: string | null;
+  dilovodDocId: string | null;
+}
+
 export interface HrEmploymentDto {
   id: number;
   employeeId: number;
   legalEntityId: number;
+  payGroupId: number;
+  payGroupSlug: HrPayGroup;
+  /** Slug групи оплати (сумісність з UI) */
   payGroup: HrPayGroup;
+  personnelNumber: string | null;
+  dilovodEmployeeId: string | null;
+  officialPosition: string | null;
+  unofficialPosition: string | null;
+  employeeCategory: string | null;
+  benefitCode: string | null;
   validFrom: string;
   validTo: string | null;
   legalEntity: HrLegalEntityDto;
   payTerms: HrPayTermsDto[];
+  staffOrders: HrStaffOrderDto[];
 }
 
 export interface HrEmployeeListItemDto {
@@ -80,6 +189,7 @@ export interface HrEmployeeListItemDto {
   middleName: string | null;
   displayName: string;
   status: HrEmployeeStatus;
+  personId: number | null;
   userId: number | null;
   userName: string | null;
   notes: string | null;
@@ -96,6 +206,7 @@ export interface HrEmployeeDetailDto extends HrEmployeeListItemDto {
   cardLast4: string | null;
   /** Повний номер лише за правом action.hr.payouts.view */
   cardNumber: string | null;
+  person?: HrPersonSummaryDto | null;
   employments: HrEmploymentDto[];
 }
 
@@ -104,6 +215,7 @@ export interface HrEmployeeWritePayload {
   firstName: string;
   middleName?: string | null;
   status?: HrEmployeeStatus;
+  personId?: number | null;
   userId?: number | null;
   notes?: string | null;
   /** Порожній рядок — очистити картку */
@@ -115,6 +227,11 @@ export interface HrEmploymentWritePayload {
   payGroup: HrPayGroup;
   validFrom: string;
   validTo?: string | null;
+  personnelNumber?: string | null;
+  officialPosition?: string | null;
+  unofficialPosition?: string | null;
+  employeeCategory?: string | null;
+  benefitCode?: string | null;
 }
 
 export interface HrPayTermsWritePayload {
@@ -193,6 +310,7 @@ export interface HrTimesheetMonthDto {
 }
 
 export interface HrTimesheetEntryDto {
+  id?: number;
   employmentId: number;
   date: string;
   kind: HrTimesheetKind;
@@ -300,6 +418,141 @@ export interface HrPayrollPeriodDto {
   lockedByName: string | null;
 }
 
+export const HR_TAX_PAYERS = ['employer', 'employee'] as const;
+export type HrTaxPayer = (typeof HR_TAX_PAYERS)[number];
+
+export const HR_TAX_BASES = ['gross', 'accrued'] as const;
+export type HrTaxBase = (typeof HR_TAX_BASES)[number];
+
+export interface HrTaxRuleDto {
+  id: number;
+  code: string;
+  label: string;
+  rate: string;
+  payer: HrTaxPayer;
+  base: HrTaxBase;
+  payGroups: HrPayGroup[];
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface HrTaxRuleWritePayload {
+  code?: string;
+  label?: string;
+  rate?: string;
+  payer?: HrTaxPayer;
+  base?: HrTaxBase;
+  payGroups?: HrPayGroup[];
+  effectiveFrom?: string;
+  effectiveTo?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export interface HrTaxBreakdownItem {
+  code: string;
+  label: string;
+  rate: string;
+  amount: string;
+  payer: HrTaxPayer;
+}
+
+export const HR_BONUS_KINDS = ['production', 'quality', 'manual', 'other'] as const;
+export type HrBonusKind = (typeof HR_BONUS_KINDS)[number];
+
+export const HR_BONUS_KIND_LABELS: Record<HrBonusKind, string> = {
+  production: 'Виробнича',
+  quality: 'Якість',
+  manual: 'Ручна',
+  other: 'Інше',
+};
+
+export const HR_BONUS_STATUSES = ['draft', 'approved', 'locked'] as const;
+export type HrBonusStatus = (typeof HR_BONUS_STATUSES)[number];
+
+export const HR_BONUS_STATUS_LABELS: Record<HrBonusStatus, string> = {
+  draft: 'Чернетка',
+  approved: 'Затверджено',
+  locked: 'Заблоковано',
+};
+
+export interface HrBonusDto {
+  id: number;
+  employmentId: number;
+  displayName: string;
+  payGroup: HrPayGroup;
+  legalEntityName: string;
+  productionWeekId: number | null;
+  calendarWeekId: string | null;
+  amount: string;
+  kind: HrBonusKind;
+  note: string | null;
+  status: HrBonusStatus;
+  createdByUserId: number | null;
+  createdAt: string;
+}
+
+export interface HrBonusWritePayload {
+  employmentId: number;
+  productionWeekId?: number | null;
+  calendarWeekId?: string | null;
+  amount: string;
+  kind?: HrBonusKind;
+  note?: string | null;
+  status?: HrBonusStatus;
+}
+
+export interface HrProductionCalendarDto {
+  id: number;
+  isEnabled: boolean;
+  weekStartDay: number;
+  fopWeekdays: number[];
+  label: string;
+}
+
+export interface HrProductionCalendarWritePayload {
+  isEnabled?: boolean;
+  weekStartDay?: number;
+  fopWeekdays?: number[];
+  label?: string;
+}
+
+export interface HrProductionWeekDto {
+  id: number;
+  startDate: string;
+  endDate: string;
+  fopWeekdays: number[];
+  label: string;
+  year: number;
+  sequence: number;
+}
+
+export type HrFopPeriodKind = 'production' | 'calendar';
+
+export interface HrFopSummaryDto {
+  periodId: number | string;
+  periodKind: HrFopPeriodKind;
+  periodLabel: string;
+  calendarConfig: HrProductionCalendarDto | null;
+  fopWeekdays: number[];
+  totalEmployerCost: string;
+  byPayGroup: Record<HrPayGroup, string>;
+  byLegalEntity: Array<{ legalEntityCode: string; legalEntityName: string; employerTotalCost: string }>;
+  lines: Array<{
+    employmentId: number;
+    displayName: string;
+    payGroup: HrPayGroup;
+    employerTotalCost: string;
+    bonusAmount: string;
+    esvAmount: string;
+    includedDays: number;
+  }>;
+  source: 'snapshot' | 'preview';
+  warnings: string[];
+}
+
 export interface HrPayrollLineDto {
   id: number | null;
   employmentId: number;
@@ -321,6 +574,13 @@ export interface HrPayrollLineDto {
   accruedAmount: string;
   extraAmount: string;
   toPayAmount: string;
+  grossAccrued: string;
+  netToPay: string;
+  employerTotalCost: string;
+  bonusAmount: string;
+  esvAmount: string;
+  taxAmount: string;
+  taxBreakdown: HrTaxBreakdownItem[];
   skipReason: HrPayrollSkipReason | null;
   cardMasked: string | null;
   cardNumber: string | null;
@@ -407,70 +667,4 @@ export function hrEmployeeImportKeyCandidates(
   if (middleName?.trim()) return [primary];
   const swapped = hrEmployeeImportKey(firstName, lastName, null);
   return primary === swapped ? [primary] : [primary, swapped];
-}
-
-export interface HrXlsxImportSkipDto {
-  sheet: string;
-  reason: string;
-  detail: string;
-}
-
-export interface HrXlsxImportEmployeePreviewDto {
-  employeeKey: string;
-  displayName: string;
-  lastName: string;
-  firstName: string;
-  middleName: string | null;
-  cardMasked: string | null;
-  notes: string | null;
-  months: string[];
-  payGroups: HrPayGroup[];
-  legalEntityCodes: string[];
-  entryCount: number;
-  hasRate: boolean;
-}
-
-export interface HrXlsxImportEmploymentPreviewDto {
-  employmentImportKey: string;
-  employeeKey: string;
-  displayName: string;
-  legalEntityCode: string;
-  legalEntityName: string;
-  legalEntityKind: HrLegalEntityKind;
-  payGroup: HrPayGroup;
-  validFrom: string;
-  rateKind: HrPayTermsKind | null;
-  rateAmount: string | null;
-  entryCount: number;
-}
-
-export interface HrXlsxImportCountsDto {
-  sheets: number;
-  employees: number;
-  employments: number;
-  entries: number;
-  payTerms: number;
-  skippedRows: number;
-  skippedCells: number;
-}
-
-export interface HrXlsxImportPreviewDto {
-  year: number | null;
-  counts: HrXlsxImportCountsDto;
-  employees: HrXlsxImportEmployeePreviewDto[];
-  employments: HrXlsxImportEmploymentPreviewDto[];
-  skipped: HrXlsxImportSkipDto[];
-  warnings: string[];
-}
-
-export interface HrXlsxImportCommitDto {
-  preview: HrXlsxImportPreviewDto;
-  createdEmployees: number;
-  updatedEmployees: number;
-  createdLegalEntities: number;
-  createdEmployments: number;
-  reusedEmployments: number;
-  upsertedEntries: number;
-  createdPayTerms: number;
-  skippedClosedMonths: string[];
 }

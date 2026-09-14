@@ -22,6 +22,7 @@ import {
   type HrPayoutDto,
   type HrPayoutKind,
   type HrPayoutWritePayload,
+  type HrTaxBreakdownItem,
   type HrTimesheetKind,
   HR_PAYROLL_FORMULA_TABELL_2026_V1,
 } from '../../../shared/types/hr.js';
@@ -38,7 +39,13 @@ import {
 import { isTimesheetKind } from '../../../shared/utils/hrTimesheetCell.js';
 import { decryptCardNumber, maskCardLast4 } from './HrCardCrypto.js';
 import { HrError } from './HrService.js';
-import { HR_PAYROLL_FORMULA_V1, calculatePayrollLine, type PayrollEntryInput } from './payrollCalc.js';
+import { hrBonusService } from './HrBonusService.js';
+import { hrTaxRuleService } from './HrTaxRuleService.js';
+import {
+  HR_PAYROLL_FORMULA_V1,
+  calculatePayrollLineWithTaxes,
+  type PayrollEntryInput,
+} from './payrollCalc.js';
 
 const RATE_KINDS = ['salary', 'hourly'] as const;
 
@@ -151,6 +158,18 @@ function asBreakdown(value: unknown): HrPayrollBreakdownStep[] {
   });
 }
 
+function asTaxBreakdown(value: unknown): HrTaxBreakdownItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is HrTaxBreakdownItem => {
+    return Boolean(
+      item &&
+        typeof item === 'object' &&
+        typeof (item as HrTaxBreakdownItem).code === 'string' &&
+        typeof (item as HrTaxBreakdownItem).amount === 'string',
+    );
+  });
+}
+
 function pickPayTerms<
   T extends { effectiveFrom: Date; effectiveTo: Date | null; kind: string; amount: Prisma.Decimal },
 >(terms: T[], monthStart: Date, monthEnd: Date): T | null {
@@ -223,6 +242,7 @@ function summarize(lines: HrPayrollLineDto[], payouts: HrPayoutDto[]): HrPayroll
 const employmentInclude = {
   employee: true,
   legalEntity: true,
+  payGroup: true,
   payTerms: true,
 } satisfies Prisma.HrEmploymentInclude;
 
@@ -230,14 +250,14 @@ type EmploymentRow = Prisma.HrEmploymentGetPayload<{ include: typeof employmentI
 
 function toLineDtoFromCalc(
   employment: EmploymentRow,
-  calc: ReturnType<typeof calculatePayrollLine>,
+  calc: ReturnType<typeof calculatePayrollLineWithTaxes>,
   rate: string,
   rateKind: HrPayTermsKind,
   normHours: string,
   revealCard: boolean,
   lineId: number | null,
 ): HrPayrollLineDto {
-  const payGroup = isPayGroup(employment.payGroup) ? employment.payGroup : 'official_salary';
+  const payGroup = isPayGroup(employment.payGroup.slug) ? employment.payGroup.slug : 'official_salary';
   const employeeKey = hrEmployeeImportKey(
     employment.employee.lastName,
     employment.employee.firstName,
@@ -272,6 +292,13 @@ function toLineDtoFromCalc(
     accruedAmount: calc.accruedAmount,
     extraAmount: calc.extraAmount,
     toPayAmount: calc.toPayAmount,
+    grossAccrued: calc.grossAccrued,
+    netToPay: calc.netToPay,
+    employerTotalCost: calc.employerTotalCost,
+    bonusAmount: calc.bonusAmount,
+    esvAmount: calc.esvAmount,
+    taxAmount: calc.taxAmount,
+    taxBreakdown: calc.taxBreakdown,
     skipReason: calc.skipReason,
     cardMasked: maskCardLast4(employment.employee.cardLast4),
     cardNumber,
@@ -325,7 +352,7 @@ export class HrPayrollService {
         : [];
       const formula = period ? asFormulaSnapshot(period.formulaSnapshot) : HR_PAYROLL_FORMULA_V1;
       const normHours = timesheet ? Number(timesheet.normHours.toFixed(2)) : Number(meta.normHours);
-      lines = this.previewLines(employments, entries, idRemap, meta.weeks, monthStart, monthEnd, formula, normHours, revealCard);
+      lines = await this.previewLines(employments, entries, idRemap, meta.weeks, monthStart, monthEnd, formula, normHours, revealCard);
     }
 
     this.sortLines(lines);
@@ -390,7 +417,7 @@ export class HrPayrollService {
         ? await tx.hrTimesheetEntry.findMany({ where: { monthId: timesheet.id } })
         : [];
       const normHours = timesheet ? Number(timesheet.normHours.toFixed(2)) : Number(meta.normHours);
-      const preview = this.previewLines(
+      const preview = await this.previewLines(
         employments,
         entries,
         idRemap,
@@ -401,6 +428,7 @@ export class HrPayrollService {
         normHours,
         false,
       );
+      const employmentById = new Map(employments.map((row) => [row.id, row]));
 
       const period = existing
         ? await tx.hrPayrollPeriod.update({
@@ -428,10 +456,13 @@ export class HrPayrollService {
       await tx.hrPayrollLine.deleteMany({ where: { periodId: period.id } });
       if (preview.length > 0) {
         await tx.hrPayrollLine.createMany({
-          data: preview.map((line) => ({
+          data: preview.flatMap((line) => {
+            const employment = employmentById.get(line.employmentId);
+            if (!employment) return [];
+            return [{
             periodId: period.id,
             employmentId: line.employmentId,
-            payGroup: line.payGroup,
+            payGroupId: employment.payGroupId,
             formulaId: line.formulaId,
             rate: new Prisma.Decimal(line.rate),
             rateKind: line.rateKind,
@@ -443,8 +474,16 @@ export class HrPayrollService {
             accruedAmount: new Prisma.Decimal(line.accruedAmount),
             extraAmount: new Prisma.Decimal(line.extraAmount),
             toPayAmount: new Prisma.Decimal(line.toPayAmount),
+            grossAccrued: new Prisma.Decimal(line.grossAccrued),
+            netToPay: new Prisma.Decimal(line.netToPay),
+            employerTotalCost: new Prisma.Decimal(line.employerTotalCost),
+            bonusAmount: new Prisma.Decimal(line.bonusAmount),
+            esvAmount: new Prisma.Decimal(line.esvAmount),
+            taxAmount: new Prisma.Decimal(line.taxAmount),
+            taxBreakdown: line.taxBreakdown as unknown as Prisma.InputJsonValue,
             skipReason: line.skipReason,
-          })),
+            }];
+          }),
         });
       }
 
@@ -609,12 +648,12 @@ export class HrPayrollService {
         employee: { deletedAt: null },
       },
       include: employmentInclude,
-      orderBy: [{ payGroup: 'asc' }, { id: 'asc' }],
+      orderBy: [{ payGroup: { sortOrder: 'asc' } }, { id: 'asc' }],
     });
     return dedupeEmploymentsByEmployeePayGroup(rows);
   }
 
-  private previewLines(
+  private async previewLines(
     employments: EmploymentRow[],
     entries: Array<{ employmentId: number; date: Date; kind: string; hours: Prisma.Decimal | null }>,
     idRemap: Map<number, number>,
@@ -624,7 +663,7 @@ export class HrPayrollService {
     formula: HrPayrollFormulaSnapshot,
     normHours: number,
     revealCard: boolean,
-  ): HrPayrollLineDto[] {
+  ): Promise<HrPayrollLineDto[]> {
     const entriesByEmployment = new Map<number, PayrollEntryInput[]>();
     for (const entry of entries) {
       const canonicalId = remapEmploymentId(idRemap, entry.employmentId);
@@ -637,12 +676,20 @@ export class HrPayrollService {
       entriesByEmployment.set(canonicalId, list);
     }
 
-    return employments.map((employment) => {
-      const payGroup = isPayGroup(employment.payGroup) ? employment.payGroup : 'official_salary';
+    const bonusSums = await hrBonusService.sumByEmploymentForMonth(
+      monthStart.getUTCFullYear(),
+      monthStart.getUTCMonth() + 1,
+    );
+
+    const results: HrPayrollLineDto[] = [];
+    for (const employment of employments) {
+      const payGroup = isPayGroup(employment.payGroup.slug) ? employment.payGroup.slug : 'official_salary';
       const terms = pickPayTerms(employment.payTerms, monthStart, monthEnd);
       const rate = terms ? Number(terms.amount.toFixed(2)) : 0;
       const rateKind: HrPayTermsKind = terms && isRateKind(terms.kind) ? terms.kind : payGroup === 'official_salary' ? 'salary' : 'hourly';
-      const calc = calculatePayrollLine({
+      const taxRules = await hrTaxRuleService.getActiveForDate(payGroup, monthEnd);
+      const bonusAmount = bonusSums.get(employment.id) ?? 0;
+      const calc = calculatePayrollLineWithTaxes({
         payGroup,
         rateKind,
         rate,
@@ -650,17 +697,22 @@ export class HrPayrollService {
         entries: entriesByEmployment.get(employment.id) ?? [],
         weeks,
         formula,
+        taxRules,
+        bonusAmount,
       });
-      return toLineDtoFromCalc(
-        employment,
-        calc,
-        rate.toFixed(2),
-        rateKind,
-        normHours.toFixed(2),
-        revealCard,
-        null,
+      results.push(
+        toLineDtoFromCalc(
+          employment,
+          calc,
+          rate.toFixed(2),
+          rateKind,
+          normHours.toFixed(2),
+          revealCard,
+          null,
+        ),
       );
-    });
+    }
+    return results;
   }
 
   private lineFromSnapshot(
@@ -678,11 +730,18 @@ export class HrPayrollService {
       accruedAmount: Prisma.Decimal;
       extraAmount: Prisma.Decimal;
       toPayAmount: Prisma.Decimal;
+      grossAccrued?: Prisma.Decimal;
+      netToPay?: Prisma.Decimal;
+      employerTotalCost?: Prisma.Decimal;
+      bonusAmount?: Prisma.Decimal;
+      esvAmount?: Prisma.Decimal | null;
+      taxAmount?: Prisma.Decimal | null;
+      taxBreakdown?: Prisma.JsonValue;
       skipReason: string | null;
     },
     revealCard: boolean,
   ): HrPayrollLineDto {
-    const payGroup = isPayGroup(employment.payGroup) ? employment.payGroup : 'official_salary';
+    const payGroup = isPayGroup(employment.payGroup.slug) ? employment.payGroup.slug : 'official_salary';
     const employeeKey = hrEmployeeImportKey(
       employment.employee.lastName,
       employment.employee.firstName,
@@ -717,6 +776,13 @@ export class HrPayrollService {
       accruedAmount: moneyFromDecimal(line.accruedAmount),
       extraAmount: moneyFromDecimal(line.extraAmount),
       toPayAmount: moneyFromDecimal(line.toPayAmount),
+      grossAccrued: moneyFromDecimal(line.grossAccrued ?? line.toPayAmount),
+      netToPay: moneyFromDecimal(line.netToPay ?? line.toPayAmount),
+      employerTotalCost: moneyFromDecimal(line.employerTotalCost ?? line.toPayAmount),
+      bonusAmount: moneyFromDecimal(line.bonusAmount ?? new Prisma.Decimal(0)),
+      esvAmount: moneyFromDecimal(line.esvAmount ?? line.extraAmount),
+      taxAmount: moneyFromDecimal(line.taxAmount ?? new Prisma.Decimal(0)),
+      taxBreakdown: asTaxBreakdown(line.taxBreakdown),
       skipReason: isSkipReason(line.skipReason) ? line.skipReason : null,
       cardMasked: maskCardLast4(employment.employee.cardLast4),
       cardNumber,

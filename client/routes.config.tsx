@@ -38,6 +38,9 @@ import HrTimesheetPage from "./pages/Hr/HrTimesheetPage";
 import HrPayrollPage from "./pages/Hr/HrPayrollPage";
 import HrEmployeesPage from "./pages/Hr/Employees";
 import HrEmployersPage from "./pages/Hr/Employers";
+import HrPersonsPage from "./pages/Hr/Persons";
+import HrBonusesPage from "./pages/Hr/Bonuses";
+import HrFopPage from "./pages/Hr/Fop";
 import TestSerialCom from "./pages/test-serial-com";
 import MetaLogNotifications from './pages/MetaLogs';
 
@@ -449,6 +452,42 @@ export const appRoutes: AppRoute[] = [
     parent: 'hr',
     order: 3,
     permission: { name: 'employees' },
+  },
+  {
+    path: '/hr/persons',
+    component: HrPersonsPage,
+    title: 'Фіз. особи',
+    pageTitle: 'Фізичні особи | NK Backoffice',
+    navLabel: 'Фіз. особи',
+    icon: <DynamicIcon name="contact" size={16} />,
+    inNav: true,
+    parent: 'hr',
+    order: 4,
+    permission: { name: 'persons' },
+  },
+  {
+    path: '/hr/bonuses',
+    component: HrBonusesPage,
+    title: 'Премії',
+    pageTitle: 'Премії | NK Backoffice',
+    navLabel: 'Премії',
+    icon: <DynamicIcon name="gift" size={16} />,
+    inNav: true,
+    parent: 'hr',
+    order: 5,
+    permission: { name: 'bonuses' },
+  },
+  {
+    path: '/hr/fop',
+    component: HrFopPage,
+    title: 'Фонд оплати праці',
+    pageTitle: 'Фонд оплати праці | NK Backoffice',
+    navLabel: 'Фонд оплати праці',
+    icon: <DynamicIcon name="coins" size={16} />,
+    inNav: true,
+    parent: 'hr',
+    order: 6,
+    permission: { name: 'fop' },
   },
   {
     path: '/salesdrive-to-dilovod',

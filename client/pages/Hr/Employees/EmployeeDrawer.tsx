@@ -6,7 +6,6 @@ import {
   CardBody,
   CardHeader,
   DatePicker,
-  Divider,
   Drawer,
   DrawerBody,
   DrawerContent,
@@ -15,9 +14,7 @@ import {
   Input,
   Select,
   SelectItem,
-  Switch,
-  Textarea,
-  Tooltip,
+  Spinner,
 } from '@heroui/react';
 import { CalendarDate, parseDate, type DateValue } from '@internationalized/date';
 import { I18nProvider } from '@react-aria/i18n';
@@ -25,10 +22,14 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '@/services/ToastService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
+import { UserCard } from '@/components/person-card/UserCard';
+import type { UserCardInitialValues } from '@/components/person-card/UserCard.types';
+import { EmployeePersonCardPanel } from '@/components/person-card/panels/EmployeePersonCardPanel';
 import {
-  CreateUserDrawer,
-  type CreateUserInitialValues,
-} from '@/components/users/CreateUserDrawer';
+  PersonDrawer,
+  type PersonCardInitialValues,
+} from '../components/PersonDrawer';
+import { HrAuditAccordion } from '@/components/hr/HrAuditAccordion';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { PERMISSIONS } from '@shared/constants/permissions';
@@ -41,16 +42,20 @@ import {
   type HrEmploymentDto,
   type HrLegalEntityDto,
   type HrPayGroup,
+  type HrEmploymentWritePayload,
   type HrPayTermsDto,
   type HrPayTermsKind,
+  type HrPersonDto,
+  type HrPersonSummaryDto,
   type HrUserOptionDto,
 } from '@shared/types/hr';
 import {
   collectHrPayWarnings,
   hrDayBeforeYmd,
+  hrPeriodActive,
   overlappingPayTerms,
 } from '@shared/utils/hrPayHealth';
-import { HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
+import { HR_BTN_PRIMARY, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
 
 interface EmployeeDrawerProps {
   isOpen: boolean;
@@ -69,6 +74,7 @@ interface FormState {
   middleName: string;
   statusActive: boolean;
   userId: string;
+  personId: string;
   notes: string;
   cardNumber: string;
 }
@@ -86,6 +92,7 @@ const EMPTY_FORM: FormState = {
   middleName: '',
   statusActive: true,
   userId: '',
+  personId: '',
   notes: '',
   cardNumber: '',
 };
@@ -97,9 +104,14 @@ function snapshotEmployeeForm(form: FormState): string {
     middleName: form.middleName,
     statusActive: form.statusActive,
     userId: form.userId,
+    personId: form.personId,
     notes: form.notes,
     cardNumber: form.cardNumber.replace(/\D/g, ''),
   });
+}
+
+function normalizePersonName(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 const PAY_KIND_OPTIONS = HR_PAY_TERMS_KINDS.map((kind) => ({
@@ -159,9 +171,39 @@ function buildEmployeeFullName(form: FormState, fallback?: string | null): strin
   return '';
 }
 
+const CARD_MASKED_PREFIX = '•••• •••• ••••';
+
 function formatCardMask(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 16);
   return digits.replace(/(.{4})(?=.)/g, '$1 ');
+}
+
+function resolveCardDisplayLast4(
+  canRevealCard: boolean,
+  isCreate: boolean,
+  cardNumber: string,
+  cardLast4: string | null | undefined,
+  cardMasked: string | null | undefined,
+): string | null {
+  if (!canRevealCard && !isCreate) {
+    const last4 = cardLast4?.trim();
+    if (last4 && /^\d{4}$/.test(last4)) return last4;
+    const match = cardMasked?.match(/(\d{4})$/);
+    return match?.[1] ?? null;
+  }
+  const digits = cardNumber.replace(/\D/g, '');
+  return digits.length >= 4 ? digits.slice(-4) : null;
+}
+
+function shouldShowCardMasked(
+  canRevealCard: boolean,
+  isCreate: boolean,
+  cardVisible: boolean,
+  displayLast4: string | null,
+): boolean {
+  if (isCreate || !displayLast4) return false;
+  if (!canRevealCard) return true;
+  return !cardVisible;
 }
 
 function formatAmountMask(value: string): string {
@@ -201,6 +243,22 @@ function formatHrDate(value: string): string {
   const date = ymdToDateValue(value);
   if (!date) return value;
   return DATE_FORMATTER.format(new Date(date.year, date.month - 1, date.day));
+}
+
+function formatEmploymentPeriod(employment: HrEmploymentDto): string {
+  return `${formatHrDate(employment.validFrom)} – ${employment.validTo ? formatHrDate(employment.validTo) : 'досі'}`;
+}
+
+function describeEmploymentForMerge(employment: HrEmploymentDto): string {
+  const parts = [
+    employment.legalEntity.name,
+    HR_PAY_GROUP_LABELS[employment.payGroup],
+    formatEmploymentPeriod(employment),
+  ];
+  if (employment.personnelNumber) {
+    parts.push(`таб. № ${employment.personnelNumber}`);
+  }
+  return parts.join(' · ');
 }
 
 function formatMoney(value: string | number): string {
@@ -280,6 +338,7 @@ export function EmployeeDrawer({
 }: EmployeeDrawerProps) {
   const { hasPermission } = useRoleAccess();
   const canCreateUser = hasPermission(PERMISSIONS.ACTION_USERS_MANAGE);
+  const canManagePersons = hasPermission(PERMISSIONS.ACTION_HR_PERSONS_MANAGE);
   const isCreate = employeeId == null;
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [detail, setDetail] = useState<HrEmployeeDetailDto | null>(null);
@@ -298,8 +357,18 @@ export function EmployeeDrawer({
   const [deleteEmploymentId, setDeleteEmploymentId] = useState<number | null>(null);
   const [deletePayId, setDeletePayId] = useState<number | null>(null);
   const [addingEmployment, setAddingEmployment] = useState(false);
+  const [dirtyRateEmploymentIds, setDirtyRateEmploymentIds] = useState<Set<number>>(() => new Set());
   const [createUserOpen, setCreateUserOpen] = useState(false);
-  const [createUserInitial, setCreateUserInitial] = useState<CreateUserInitialValues | undefined>();
+  const [createUserInitial, setCreateUserInitial] = useState<UserCardInitialValues | undefined>();
+  const [createPersonOpen, setCreatePersonOpen] = useState(false);
+  const [createPersonInitial, setCreatePersonInitial] = useState<PersonCardInitialValues | undefined>();
+  const [mergeSourceId, setMergeSourceId] = useState<number | null>(null);
+  const [merging, setMerging] = useState(false);
+  const [auditRefreshKey, setAuditRefreshKey] = useState(0);
+  const [personSearch, setPersonSearch] = useState('');
+  const [personOptions, setPersonOptions] = useState<HrPersonDto[]>([]);
+  const [personSearchLoading, setPersonSearchLoading] = useState(false);
+  const [linkedPerson, setLinkedPerson] = useState<HrPersonSummaryDto | null>(null);
 
   const patchForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -335,12 +404,16 @@ export function EmployeeDrawer({
         middleName: employee.middleName ?? '',
         statusActive: employee.status === 'active',
         userId: employee.userId != null ? String(employee.userId) : '',
+        personId: employee.personId != null ? String(employee.personId) : '',
         notes: employee.notes ?? '',
         cardNumber: formatCardMask(employee.cardNumber ?? ''),
       };
       setForm(nextForm);
+      setLinkedPerson(employee.person ?? null);
+      setPersonSearch('');
       commitBaseline(nextForm);
       await loadUsers(id);
+      setAuditRefreshKey((key) => key + 1);
     } finally {
       setLoading(false);
     }
@@ -350,14 +423,20 @@ export function EmployeeDrawer({
     if (!isOpen) {
       baselineRef.current = '';
       setCreateUserOpen(false);
+      setCreatePersonOpen(false);
+      setDirtyRateEmploymentIds(new Set());
       return;
     }
     setCardVisible(false);
     setAddingEmployment(false);
+    setDirtyRateEmploymentIds(new Set());
     setCreateUserOpen(false);
+    setCreatePersonOpen(false);
     if (isCreate) {
       setDetail(null);
       setForm(EMPTY_FORM);
+      setLinkedPerson(null);
+      setPersonSearch('');
       commitBaseline(EMPTY_FORM);
       setEmploymentForm({
         legalEntityId: legalEntities[0] ? String(legalEntities[0].id) : '',
@@ -373,7 +452,53 @@ export function EmployeeDrawer({
     if (employeeId != null) void loadDetail(employeeId);
   }, [isOpen, isCreate, employeeId, legalEntities, loadDetail, loadUsers, commitBaseline]);
 
+  useEffect(() => {
+    if (!isOpen || isCreate) return;
+    const query = personSearch.trim();
+    if (!query) {
+      setPersonOptions([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setPersonSearchLoading(true);
+        try {
+          const response = await fetch(`/api/hr/persons?search=${encodeURIComponent(query)}`, {
+            credentials: 'include',
+          });
+          const data = await readJson(response);
+          if (!response.ok) return;
+          const rows = Array.isArray(data.data) ? data.data as HrPersonDto[] : [];
+          setPersonOptions(rows);
+        } finally {
+          setPersonSearchLoading(false);
+        }
+      })();
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [isOpen, isCreate, personSearch]);
+
   const selectedUserKeys = useMemo(() => (form.userId ? [form.userId] : ['none']), [form.userId]);
+
+  const selectedPerson = useMemo(() => {
+    if (!form.personId) return null;
+    if (linkedPerson && String(linkedPerson.id) === form.personId) return linkedPerson;
+    const fromOptions = personOptions.find((person) => String(person.id) === form.personId);
+    if (fromOptions) {
+      return {
+        id: fromOptions.id,
+        displayName: fromOptions.displayName,
+        taxCode: fromOptions.taxCode,
+        phone: fromOptions.phone,
+      };
+    }
+    return linkedPerson;
+  }, [form.personId, linkedPerson, personOptions]);
+
+  const personNameMismatch = useMemo(() => {
+    if (!selectedPerson || !detail?.displayName) return false;
+    return normalizePersonName(detail.displayName) !== normalizePersonName(selectedPerson.displayName);
+  }, [selectedPerson, detail?.displayName]);
 
   const userSelectOptions = useMemo(
     () => [
@@ -402,6 +527,18 @@ export function EmployeeDrawer({
     [detail?.employments],
   );
 
+  const mergePair = useMemo(() => {
+    if (mergeSourceId == null || !detail) return null;
+    const source = detail.employments.find((employment) => employment.id === mergeSourceId);
+    if (!source) return null;
+    const target = sortedEmployments.find(
+      (employment) =>
+        employment.id !== mergeSourceId && employment.payGroupId === source.payGroupId,
+    );
+    if (!target) return null;
+    return { source, target };
+  }, [mergeSourceId, detail, sortedEmployments]);
+
   const payWarnings = useMemo(
     () =>
       collectHrPayWarnings(
@@ -418,13 +555,66 @@ export function EmployeeDrawer({
     [detail?.employments, detail?.status],
   );
 
+  const employmentIdsWithMergeOption = useMemo(() => {
+    const today = todayYmd();
+    const activeByPayGroup = new Map<number, number>();
+    for (const employment of detail?.employments ?? []) {
+      if (!hrPeriodActive(employment.validFrom, employment.validTo, today)) continue;
+      activeByPayGroup.set(
+        employment.payGroupId,
+        (activeByPayGroup.get(employment.payGroupId) ?? 0) + 1,
+      );
+    }
+    return new Set(
+      (detail?.employments ?? [])
+        .filter((employment) => (activeByPayGroup.get(employment.payGroupId) ?? 0) > 1)
+        .map((employment) => employment.id),
+    );
+  }, [detail?.employments]);
+
+  const handleRateDirtyChange = useCallback((employmentId: number, dirty: boolean) => {
+    setDirtyRateEmploymentIds((prev) => {
+      const has = prev.has(employmentId);
+      if (dirty === has) return prev;
+      const next = new Set(prev);
+      if (dirty) next.add(employmentId);
+      else next.delete(employmentId);
+      return next;
+    });
+  }, []);
+
   const isDirty = useMemo(() => {
     if (!isOpen || !canManage) return false;
     if (!baselineRef.current) return false;
     if (!isCreate && loading) return false;
+    if (addingEmployment) return true;
+    if (dirtyRateEmploymentIds.size > 0) return true;
     void baselineVersion;
     return snapshotEmployeeForm(form) !== baselineRef.current;
-  }, [isOpen, canManage, isCreate, loading, form, baselineVersion]);
+  }, [isOpen, canManage, isCreate, loading, form, baselineVersion, addingEmployment, dirtyRateEmploymentIds]);
+
+  const cardDisplayLast4 = useMemo(
+    () => resolveCardDisplayLast4(
+      canRevealCard,
+      isCreate,
+      form.cardNumber,
+      detail?.cardLast4,
+      detail?.cardMasked,
+    ),
+    [canRevealCard, isCreate, form.cardNumber, detail?.cardLast4, detail?.cardMasked],
+  );
+
+  const showCardMasked = useMemo(
+    () => shouldShowCardMasked(canRevealCard, isCreate, cardVisible, cardDisplayLast4),
+    [canRevealCard, isCreate, cardVisible, cardDisplayLast4],
+  );
+
+  const openCreatePerson = useCallback(() => {
+    const displayName = detail?.displayName?.trim()
+      || [form.lastName, form.firstName, form.middleName].map((part) => part.trim()).filter(Boolean).join(' ');
+    setCreatePersonInitial({ displayName });
+    setCreatePersonOpen(true);
+  }, [detail?.displayName, form.firstName, form.lastName, form.middleName]);
 
   const handleSave = useCallback(async () => {
     const lastName = capitalizeUaName(form.lastName);
@@ -443,6 +633,7 @@ export function EmployeeDrawer({
         middleName: middleName || null,
         status: form.statusActive ? 'active' : 'inactive',
         userId: form.userId ? Number(form.userId) : null,
+        personId: form.personId ? Number(form.personId) : null,
         notes: form.notes.trim() || null,
         ...(canRevealCard || isCreate || form.cardNumber.trim()
           ? { cardNumber: form.cardNumber.replace(/\D/g, '') || null }
@@ -582,6 +773,7 @@ export function EmployeeDrawer({
         classNames={{
           base: 'flex flex-col',
           body: 'flex-1 min-h-0 overflow-y-auto',
+          closeButton: 'top-3 right-3',
         }}
       >
         <DrawerContent>
@@ -590,141 +782,72 @@ export function EmployeeDrawer({
               <DrawerHeader className="border-b border-border-subtle shrink-0">
                 {isCreate ? 'Новий співробітник' : detail?.displayName || 'Співробітник'}
               </DrawerHeader>
-              <DrawerBody className="gap-5 py-5 overflow-y-auto">
+              <DrawerBody className="flex flex-col gap-5 py-5 overflow-y-auto min-h-0">
                 <I18nProvider locale="uk-UA">
                 {loading ? (
-                  <div className="text-sm text-text-secondary">Завантаження...</div>
+                  <div className="flex flex-col items-center justify-center py-16 gap-3 text-text-secondary">
+                    <Spinner size="lg" color="primary" />
+                    <p className="text-sm">Завантаження…</p>
+                  </div>
                 ) : (
-                  <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Input
-                        label="Прізвище"
-                        labelPlacement="outside"
-                        value={form.lastName}
-                        onValueChange={(value) => patchForm('lastName', value)}
-                        onBlur={() => patchForm('lastName', capitalizeUaName(form.lastName))}
-                        isRequired
-                        isReadOnly={!canManage}
-                        autoComplete="off"
+                  <div className="flex flex-col min-h-full flex-1 gap-5">
+                    <EmployeePersonCardPanel
+                        isCreate={isCreate}
+                        canManage={canManage}
+                        canManagePersons={canManagePersons}
+                        canCreateUser={canCreateUser}
+                        canRevealCard={canRevealCard}
+                        form={form}
+                        detail={detail}
+                        linkedPerson={selectedPerson}
+                        personSearch={personSearch}
+                        personOptions={personOptions}
+                        personSearchLoading={personSearchLoading}
+                        userSelectOptions={userSelectOptions}
+                        selectedUserKeys={selectedUserKeys}
+                        cardVisible={cardVisible}
+                        showCardMasked={showCardMasked}
+                        cardDisplayLast4={cardDisplayLast4}
+                        onFormChange={patchForm}
+                        onSplitNameBlur={(field) => patchForm(field, capitalizeUaName(form[field]))}
+                        onPersonSearchChange={setPersonSearch}
+                        onPersonSelect={(person) => {
+                          if (person) {
+                            setLinkedPerson({
+                              id: person.id,
+                              displayName: person.displayName,
+                              taxCode: person.taxCode,
+                              phone: person.phone,
+                            });
+                          }
+                        }}
+                        onUnlinkPerson={() => {
+                          patchForm('personId', '');
+                          setLinkedPerson(null);
+                        }}
+                        onCreatePerson={openCreatePerson}
+                        onCreateUser={() => {
+                          setCreateUserInitial({
+                            name: buildEmployeeFullName(form, detail?.displayName),
+                          });
+                          setCreateUserOpen(true);
+                        }}
+                        onCardVisibilityToggle={() => setCardVisible((prev) => !prev)}
+                        onCardNumberChange={(value) => {
+                          const masked = formatCardMask(value);
+                          const hadCard = form.cardNumber.replace(/\D/g, '').length > 0;
+                          const hasCard = masked.replace(/\D/g, '').length > 0;
+                          if (!hadCard && hasCard) {
+                            setCardVisible(true);
+                          }
+                          patchForm('cardNumber', masked);
+                        }}
                       />
-                      <Input
-                        label="Імʼя"
-                        labelPlacement="outside"
-                        value={form.firstName}
-                        onValueChange={(value) => patchForm('firstName', value)}
-                        onBlur={() => patchForm('firstName', capitalizeUaName(form.firstName))}
-                        isRequired
-                        isReadOnly={!canManage}
-                        autoComplete="off"
-                      />
-                      <Input
-                        label="По батькові"
-                        labelPlacement="outside"
-                        value={form.middleName}
-                        onValueChange={(value) => patchForm('middleName', value)}
-                        onBlur={() => patchForm('middleName', capitalizeUaName(form.middleName))}
-                        isReadOnly={!canManage}
-                        autoComplete="off"
-                      />
-                      <div className="flex items-end gap-2">
-                        <Select
-                          label="Обліковий запис (опційно)"
-                          labelPlacement="outside"
-                          placeholder="Не привʼязано"
-                          items={userSelectOptions}
-                          selectedKeys={selectedUserKeys}
-                          onSelectionChange={(keys) => {
-                            const selected = Array.from(keys)[0];
-                            if (selected === 'none' || selected == null) {
-                              patchForm('userId', '');
-                              return;
-                            }
-                            patchForm('userId', typeof selected === 'string' ? selected : '');
-                          }}
-                          isDisabled={!canManage}
-                          className="min-w-0 flex-1"
-                        >
-                          {(item) => (
-                            <SelectItem key={item.key} textValue={item.textValue}>
-                              {item.label}
-                            </SelectItem>
-                          )}
-                        </Select>
-                        {canManage && canCreateUser ? (
-                          <Tooltip
-                            content="Створити обліковий запис на основі даних співробітника"
-                            placement='top-end'
-                            showArrow
-                            classNames={{
-                              base: 'before:rounded-[3px] before:bg-blue-500 before:z-[10]',
-                              content: 'bg-blue-500 text-white rounded-sm',
-                            }}
-                          >
-                            <Button
-                              isIconOnly
-                              size="md"
-                              className="bg-blue-200 text-blue-600"
-                              aria-label="Створити обліковий запис"
-                              isDisabled={Boolean(form.userId)}
-                              onPress={() => {
-                                setCreateUserInitial({
-                                  name: buildEmployeeFullName(form, detail?.displayName),
-                                });
-                                setCreateUserOpen(true);
-                              }}
-                            >
-                              <DynamicIcon name="plus" size={18} />
-                            </Button>
-                          </Tooltip>
-                        ) : null}
-                      </div>
-                      <Input
-                        label="Картка"
-                        labelPlacement="outside"
-                        placeholder={detail?.cardMasked && !canRevealCard ? detail.cardMasked : '0000 0000 0000 0000'}
-                        description={!canRevealCard && 'Повний номер доступний лише з окремим правом'}
-                        type={cardVisible && canRevealCard ? 'text' : 'password'}
-                        inputMode="numeric"
-                        maxLength={19}
-                        value={canRevealCard || isCreate ? form.cardNumber : ''}
-                        onValueChange={(value) => patchForm('cardNumber', formatCardMask(value))}
-                        isReadOnly={!canManage || (!canRevealCard && !isCreate)}
-                        autoComplete="off"
-                        endContent={
-                          canRevealCard ? (
-                            <button className="focus:outline-none" type="button" onClick={() => setCardVisible((prev) => !prev)} aria-label="Показати номер картки">
-                              <DynamicIcon name={cardVisible ? 'eye-off' : 'eye'} size={18} className="text-text-secondary" />
-                            </button>
-                          ) : null
-                        }
-                      />
-                      {!canRevealCard && detail?.cardMasked ? (
-                        <p className="text-sm text-text-secondary self-end pb-1">{detail.cardMasked}</p>
-                      ) : null}
-                      <Input
-                        label="Примітка"
-                        labelPlacement="outside"
-                        value={form.notes}
-                        onValueChange={(value) => patchForm('notes', value)}
-                        isReadOnly={!canManage}
-                      />
-                      {!isCreate && canManage ? (
-                        <Switch
-                          isSelected={form.statusActive}
-                          size="sm"
-                          onValueChange={(value) => patchForm('statusActive', value)}
-                        >
-                          Активний
-                        </Switch>
-                      ) : null}
-                    </div>
 
                     {!isCreate ? (
-                      <>
-                        <Divider />
-                        <div className="space-y-3">
+                      <div className="space-y-3 pt-8 mt-2 border-t border-border-subtle">
                           <div>
-                            <h3 className="text-sm font-semibold text-text-primary">Зайнятість</h3>
+                            <h3 className="text-sm font-semibold text-text-primary">Зайнятості</h3>
                             <p className="mt-1 text-xs text-text-secondary">
                               Це рядок у табелі та розрахунку (роботодавець + спосіб оплати + період). Ставки задають суму для цієї зайнятості.
                             </p>
@@ -748,9 +871,27 @@ export function EmployeeDrawer({
                                   employment={employment}
                                   canManage={canManage}
                                   canManagePayTerms={canManagePayTerms}
+                                  showMerge={employmentIdsWithMergeOption.has(employment.id)}
+                                  onRateDirtyChange={handleRateDirtyChange}
                                   onDelete={() => setDeleteEmploymentId(employment.id)}
+                                  onMerge={() => setMergeSourceId(employment.id)}
                                   onDeletePay={(id) => setDeletePayId(id)}
                                   onAddPayTerms={handleAddPayTerms}
+                                  onUpdateEmployment={async (payload) => {
+                                    const response = await fetch(`/api/hr/employments/${employment.id}`, {
+                                      method: 'PUT',
+                                      credentials: 'include',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify(payload),
+                                    });
+                                    const data = await readJson(response);
+                                    if (!response.ok) {
+                                      ToastService.show({ title: errorMessage(data, 'Не вдалося оновити'), color: 'danger' });
+                                      return false;
+                                    }
+                                    if (employeeId) await loadDetail(employeeId);
+                                    return true;
+                                  }}
                                 />
                               ))}
                             </div>
@@ -846,12 +987,20 @@ export function EmployeeDrawer({
                               </Button>
                             )
                           ) : null}
-                        </div>
-                      </>
+                      </div>
                     ) : (
                       <p className="text-xs text-text-secondary">Зайнятість і ставки можна додати після створення картки.</p>
                     )}
-                  </>
+
+                    {!isCreate ? (
+                      <HrAuditAccordion
+                        className="mt-auto pt-8 pb-4"
+                        entityType="employee"
+                        entityId={employeeId}
+                        refreshKey={auditRefreshKey}
+                      />
+                    ) : null}
+                  </div>
                 )}
                 </I18nProvider>
               </DrawerBody>
@@ -859,7 +1008,7 @@ export function EmployeeDrawer({
                 <Button variant="light" onPress={requestClose} isDisabled={saving}>Закрити</Button>
                 {canManage ? (
                   <Button
-                    color="primary"
+                    className={HR_BTN_PRIMARY}
                     isLoading={saving}
                     isDisabled={!isDirty || saving}
                     onPress={() => void handleSave().catch(() => undefined)}
@@ -884,6 +1033,72 @@ export function EmployeeDrawer({
         onCancel={() => setDeleteEmploymentId(null)}
       />
       <ConfirmModal
+        isOpen={mergeSourceId != null}
+        title="Об'єднати зайнятість?"
+        message={
+          mergePair ? (
+            <div className="space-y-3 text-sm text-text-primary">
+              <p>
+                Записи табеля, ставки та виплати з нижньої зайнятості будуть перенесені до верхньої.
+                Нижню зайнятість буде видалено — цю дію не можна скасувати.
+              </p>
+              <div className="space-y-2 rounded-[8px] border border-border-subtle bg-surface-page p-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-success-500">
+                    Залишиться
+                  </p>
+                  <p className="mt-0.5">{describeEmploymentForMerge(mergePair.target)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-danger-500">
+                    Буде видалено
+                  </p>
+                  <p className="mt-0.5">{describeEmploymentForMerge(mergePair.source)}</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            'Немає цільової зайнятості з тією ж групою оплати для обʼєднання.'
+          )
+        }
+        confirmText="Об'єднати"
+        cancelText="Скасувати"
+        confirmLoading={merging}
+        onConfirm={async () => {
+          if (mergeSourceId == null || !mergePair || merging) {
+            if (mergeSourceId != null && !mergePair) {
+              ToastService.show({ title: 'Немає цільової зайнятості для обʼєднання', color: 'danger' });
+              setMergeSourceId(null);
+            }
+            return;
+          }
+          setMerging(true);
+          try {
+            const response = await fetch(`/api/hr/employments/${mergeSourceId}/merge`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ targetEmploymentId: mergePair.target.id }),
+            });
+            const data = await readJson(response);
+            if (!response.ok) {
+              ToastService.show({ title: errorMessage(data, 'Не вдалося обʼєднати'), color: 'danger' });
+            } else {
+              ToastService.show({ title: 'Зайнятості обʼєднано', color: 'success' });
+              if (employeeId) await loadDetail(employeeId);
+              onSaved();
+            }
+            setMergeSourceId(null);
+          } finally {
+            setMerging(false);
+          }
+        }}
+        onCancel={() => {
+          if (merging) return;
+          setMergeSourceId(null);
+        }}
+      />
+      <ConfirmModal
         isOpen={deletePayId != null}
         title="Видалити ставку?"
         message="Цю дію не можна скасувати."
@@ -892,38 +1107,78 @@ export function EmployeeDrawer({
         onConfirm={() => void confirmDeletePay()}
         onCancel={() => setDeletePayId(null)}
       />
-      <CreateUserDrawer
+      <UserCard
         isOpen={createUserOpen}
         initialValues={createUserInitial}
         onClose={() => setCreateUserOpen(false)}
-        onCreated={(user) => {
+        onSaved={(user) => {
           patchForm('userId', String(user.id));
           void loadUsers(isCreate ? undefined : employeeId ?? undefined);
+        }}
+      />
+      <PersonDrawer
+        isOpen={createPersonOpen}
+        initialValues={createPersonInitial}
+        syncOnSave={false}
+        enableMerge={false}
+        onClose={() => setCreatePersonOpen(false)}
+        onSaved={(person) => {
+          patchForm('personId', String(person.id));
+          setLinkedPerson({
+            id: person.id,
+            displayName: person.displayName,
+            taxCode: person.taxCode,
+            phone: person.phone,
+          });
+          setPersonSearch('');
+          setPersonOptions([person]);
         }}
       />
     </>
   );
 }
 
+function isPayFormDirty(form: PayFormState, addingRate: boolean): boolean {
+  if (addingRate) return true;
+  return form.amount.trim() !== '' || form.effectiveTo.trim() !== '';
+}
+
 function EmploymentBlock({
   employment,
   canManage,
   canManagePayTerms,
+  showMerge = false,
+  onRateDirtyChange,
   onDelete,
+  onMerge,
   onDeletePay,
   onAddPayTerms,
+  onUpdateEmployment,
 }: {
   employment: HrEmploymentDto;
   canManage: boolean;
   canManagePayTerms: boolean;
+  showMerge?: boolean;
+  onRateDirtyChange?: (employmentId: number, dirty: boolean) => void;
   onDelete: () => void;
+  onMerge: () => void;
   onDeletePay: (id: number) => void;
   onAddPayTerms: (employmentId: number, payload: PayFormState, closePrevious?: boolean) => Promise<boolean>;
+  onUpdateEmployment: (payload: Partial<HrEmploymentWritePayload>) => Promise<boolean>;
 }) {
   const [payForm, setPayForm] = useState<PayFormState>(emptyPayForm);
   const [savingRate, setSavingRate] = useState(false);
   const [addingRate, setAddingRate] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  const [pushingPersonnel, setPushingPersonnel] = useState(false);
+  const [personnelConflict, setPersonnelConflict] = useState<{ local: string; remote: string } | null>(null);
+  const [localPersonnelNumber, setLocalPersonnelNumber] = useState(employment.personnelNumber ?? '');
+  useEffect(() => {
+    setLocalPersonnelNumber(employment.personnelNumber ?? '');
+  }, [employment.id, employment.personnelNumber]);
+  useEffect(() => {
+    onRateDirtyChange?.(employment.id, isPayFormDirty(payForm, addingRate));
+  }, [employment.id, payForm, addingRate, onRateDirtyChange]);
   const active = isEmploymentActive(employment, todayYmd());
   const amountMeta = payAmountFieldMeta(payForm.kind);
   const sortedTerms = sortPayTerms(employment.payTerms);
@@ -961,6 +1216,49 @@ function EmploymentBlock({
     void saveRate(false);
   };
 
+  const executePushPersonnel = async (): Promise<boolean> => {
+    const response = await fetch(`/api/hr/employments/${employment.id}/sync/push-personnel-number`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      ToastService.show({ title: errorMessage(data, 'Не вдалося відправити табельний №'), color: 'danger' });
+      return false;
+    }
+    ToastService.show({ title: 'Табельний № відправлено в Dilovod', color: 'success' });
+    setPersonnelConflict(null);
+    return true;
+  };
+
+  const handlePushPersonnelClick = async () => {
+    if (!employment.dilovodEmployeeId) return;
+    if (!localPersonnelNumber.trim()) {
+      ToastService.show({ title: 'Вкажіть табельний номер', color: 'danger' });
+      return;
+    }
+    setPushingPersonnel(true);
+    try {
+      const response = await fetch(`/api/hr/employments/${employment.id}/dilovod-personnel-number`, {
+        credentials: 'include',
+      });
+      const data = await readJson(response);
+      if (!response.ok) {
+        ToastService.show({ title: errorMessage(data, 'Не вдалося перевірити Dilovod'), color: 'danger' });
+        return;
+      }
+      const payload = data.data as { remoteCode?: string | null } | undefined;
+      const remoteCode = typeof payload?.remoteCode === 'string' ? payload.remoteCode : null;
+      if (remoteCode && remoteCode !== localPersonnelNumber.trim()) {
+        setPersonnelConflict({ local: localPersonnelNumber.trim(), remote: remoteCode });
+        return;
+      }
+      await executePushPersonnel();
+    } finally {
+      setPushingPersonnel(false);
+    }
+  };
+
   return (
     <>
       <Card shadow="none" className="border border-border-subtle bg-surface-card shadow-surface rounded-[12px]">
@@ -974,12 +1272,82 @@ function EmploymentBlock({
             )}
           </p>
           {canManage ? (
-            <Button size="sm" variant="light" color="danger" isIconOnly aria-label="Видалити зайнятість" onPress={onDelete}>
-              <DynamicIcon name="trash-2" size={14} />
-            </Button>
+            <div className="flex gap-1">
+              {showMerge ? (
+                <Button
+                  size="sm"
+                  variant="light"
+                  className="text-primary-500 bg-primary-500/10 hover:bg-primary-500/20! gap-1"
+                  startContent={<DynamicIcon name="merge" size={14} />}
+                  onPress={onMerge}
+                >
+                  Обʼєднати
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="light"
+                color="danger"
+                className="text-danger-500 bg-danger-500/10 hover:bg-danger-500/20!"
+                isIconOnly
+                aria-label="Видалити зайнятість"
+                onPress={onDelete}
+              >
+                <DynamicIcon name="trash-2" size={14} />
+              </Button>
+            </div>
           ) : null}
         </CardHeader>
         <CardBody className="space-y-3 px-3 pb-3 pt-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div className="flex items-end gap-2">
+              <Input
+                label="Табельний №"
+                labelPlacement="outside"
+                size="sm"
+                value={localPersonnelNumber}
+                isReadOnly={!canManage}
+                className="min-w-0 flex-1"
+                onValueChange={(value) => {
+                  setLocalPersonnelNumber(value);
+                  void onUpdateEmployment({
+                    legalEntityId: employment.legalEntityId,
+                    payGroup: employment.payGroup,
+                    validFrom: employment.validFrom,
+                    validTo: employment.validTo,
+                    personnelNumber: value,
+                  });
+                }}
+              />
+              {canManage && employment.dilovodEmployeeId ? (
+                <Button
+                  size="sm"
+                  variant="flat"
+                  className={HR_ADD_BUTTON_CLASS}
+                  isLoading={pushingPersonnel}
+                  onPress={() => void handlePushPersonnelClick()}
+                >
+                  Відправити в Dilovod
+                </Button>
+              ) : null}
+            </div>
+            <Input
+              label="Посада (офіційна)"
+              labelPlacement="outside"
+              size="sm"
+              value={employment.officialPosition ?? ''}
+              isReadOnly={!canManage}
+              onValueChange={(value) => {
+                void onUpdateEmployment({
+                  legalEntityId: employment.legalEntityId,
+                  payGroup: employment.payGroup,
+                  validFrom: employment.validFrom,
+                  validTo: employment.validTo,
+                  officialPosition: value,
+                });
+              }}
+            />
+          </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <HrSpecChip tokens={hrPayGroupTokens(employment.payGroup)} rounded="sm">
               {HR_PAY_GROUP_LABELS[employment.payGroup]}
@@ -1110,6 +1478,32 @@ function EmploymentBlock({
         overlayZClassName="z-[2000]"
         onConfirm={() => void saveRate(true)}
         onCancel={() => setCloseConfirmOpen(false)}
+      />
+      <ConfirmModal
+        isOpen={personnelConflict != null}
+        title="Розбіжність табельного №"
+        message={
+          personnelConflict
+            ? `У Dilovod: ${personnelConflict.remote}, у нас: ${personnelConflict.local}. Перезаписати в Dilovod?`
+            : ''
+        }
+        confirmText="Перезаписати"
+        cancelText="Скасувати"
+        confirmColor="warning"
+        confirmLoading={pushingPersonnel}
+        overlayZClassName="z-[2000]"
+        onConfirm={async () => {
+          setPushingPersonnel(true);
+          try {
+            await executePushPersonnel();
+          } finally {
+            setPushingPersonnel(false);
+          }
+        }}
+        onCancel={() => {
+          if (pushingPersonnel) return;
+          setPersonnelConflict(null);
+        }}
       />
     </>
   );

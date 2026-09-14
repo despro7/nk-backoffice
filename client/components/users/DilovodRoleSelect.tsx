@@ -26,7 +26,7 @@ export function DilovodRoleSelect({
     <div className="space-y-1">
       <Select
         label="Роль в Діловоді"
-        labelPlacement="outside"
+        // labelPlacement="outside"
         placeholder={loading ? 'Завантаження…' : 'Оберіть роль'}
         selectedKeys={selectedKeys}
         onSelectionChange={(keys) => {

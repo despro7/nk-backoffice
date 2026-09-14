@@ -102,6 +102,8 @@ const PAID_CELL = 'bg-lime-100!';
 const NAME_W = 220;
 const WEEK_W = 96;
 const TOTAL_W = 104;
+const ESV_W = 88;
+const FOP_W = 96;
 const PAID_W = 104;
 const TABLE_CLASS = 'w-full border-collapse text-sm table-fixed';
 
@@ -198,7 +200,7 @@ export function PayrollTable({
     return rows;
   }, [lines, paidByEmployment, weeks]);
 
-  const tableMinWidth = NAME_W + weeks.length * WEEK_W + TOTAL_W + PAID_W;
+  const tableMinWidth = NAME_W + weeks.length * WEEK_W + TOTAL_W + ESV_W + FOP_W + PAID_W;
 
   const renderColGroup = () => (
     <colgroup>
@@ -207,6 +209,8 @@ export function PayrollTable({
         <col key={week.id} style={{ width: WEEK_W }} />
       ))}
       <col style={{ width: TOTAL_W }} />
+      <col style={{ width: ESV_W }} />
+      <col style={{ width: FOP_W }} />
       <col style={{ width: PAID_W }} />
     </colgroup>
   );
@@ -326,6 +330,8 @@ export function PayrollTable({
         </th>
       ))}
       <th className={`${TH_CLASS} text-right`}>Разом</th>
+      <th className={`${TH_CLASS} text-right`}>ЄСВ</th>
+      <th className={`${TH_CLASS} text-right`}>ФОП</th>
       <th className={`${TH_CLASS} text-right rounded-tr-lg!`}>Виплачено</th>
     </tr>
   );
@@ -337,7 +343,7 @@ export function PayrollTable({
           const groupTokens = hrPayGroupTokens(row.payGroup);
           return (
             <tr key={row.key} className={`border-b ${groupTokens.border}`}>
-              <td colSpan={weeks.length + 3} className={`${groupTokens.bg} px-3 py-1.5`}>
+              <td colSpan={weeks.length + 5} className={`${groupTokens.bg} px-3 py-1.5`}>
                 <span className={`text-sm font-semibold uppercase tracking-wide ${groupTokens.text}`}>
                   Група: {HR_PAY_GROUP_LABELS[row.payGroup]}
                 </span>
@@ -361,6 +367,8 @@ export function PayrollTable({
               <td className={`${SUBTOTAL_TD} ${groupTokens.text} ${groupTokens.bg}`}>
                 {formatMoney(row.total)}
               </td>
+              <td className={`${SUBTOTAL_TD} ${groupTokens.text} ${groupTokens.bg}`}>—</td>
+              <td className={`${SUBTOTAL_TD} ${groupTokens.text} ${groupTokens.bg}`}>—</td>
               <td className={`${SUBTOTAL_TD} ${groupTokens.text} ${groupTokens.bg}`}>{formatMoney(row.paidTotal)}</td>
             </tr>
           );
@@ -376,6 +384,8 @@ export function PayrollTable({
                 </td>
               ))}
               <td className={`${GRANDTOTAL_TD} font-bold`}>{formatMoney(row.total)}</td>
+              <td className={`${GRANDTOTAL_TD} font-medium`}>—</td>
+              <td className={`${GRANDTOTAL_TD} font-medium`}>—</td>
               <td className={`${GRANDTOTAL_TD} font-medium`}>{formatMoney(row.paidTotal)}</td>
             </tr>
           );
@@ -418,6 +428,12 @@ export function PayrollTable({
                 isCellPaid(line.employmentId, null),
                 line.toPayAmount ? () => openCellAction(line, null, line.toPayAmount) : undefined,
               )}
+            </td>
+            <td className={`${AMOUNT_TD} text-text-secondary group-hover:bg-slate-50`}>
+              {line.esvAmount && line.esvAmount !== '0.00' ? formatMoney(line.esvAmount) : '—'}
+            </td>
+            <td className={`${AMOUNT_TD} font-medium text-text-primary group-hover:bg-slate-50`}>
+              {line.employerTotalCost && line.employerTotalCost !== '0.00' ? formatMoney(line.employerTotalCost) : '—'}
             </td>
             <td className={`${AMOUNT_TD} text-neutral-500 group-hover:bg-slate-50`}>{row.paid}</td>
           </tr>

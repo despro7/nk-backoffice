@@ -6,13 +6,13 @@ describe('dedupeEmploymentsByEmployeePayGroup', () => {
     const { employments, idRemap } = dedupeEmploymentsByEmployeePayGroup([
       {
         id: 1,
-        payGroup: 'official_salary',
+        payGroupId: 1,
         employee: { id: 10 },
         legalEntity: { code: 'fop', name: 'ФОП' },
       },
       {
         id: 2,
-        payGroup: 'official_salary',
+        payGroupId: 1,
         employee: { id: 10 },
         legalEntity: { code: 'fop_bubnova', name: 'ФОП Бубнова М.В.' },
       },

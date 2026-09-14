@@ -12,7 +12,7 @@
  * - formatNumber: форматирование чисел
  * - formatPercentage: форматирование процентов
  * - formatFileSize: форматирование размера файла
- * - formatPhone: форматирование телефона
+ * - formatPhone: форматування українського телефону
  * - getStatusColor: возвращает CSS классы для цвета статуса заказа
  * - ORDER_STATUSES: массив статусов заказа
  * - getStatusLabel: возвращает текстовое название статуса заказа
@@ -305,6 +305,19 @@ export const formatPrice = (price: number): string => {
 };
 
 /**
+ * Форматує грошову суму для HR-модулів (без символу валюти).
+ *
+ * @example
+ * formatMoney('1234.5') // "1 234,50"
+ * formatMoney(1000) // "1 000,00"
+ */
+export function formatMoney(value: string | number): string {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  return n.toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
  * Форматирует число с разделителями тысяч
  * @param number - число для форматирования
  * @returns отформатированная строка
@@ -352,34 +365,38 @@ export const formatFileSize = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
+export {
+  formatUkrainianPhone,
+  parseUkrainianPhone,
+  type FormatUkrainianPhoneOptions,
+  type ParsedUkrainianPhone,
+  type PhoneDisplayStyle,
+} from '@shared/utils/phoneFormat';
+
+import {
+  formatUkrainianPhone,
+  parseUkrainianPhone,
+  type FormatUkrainianPhoneOptions,
+  type PhoneDisplayStyle,
+} from '@shared/utils/phoneFormat';
+
 /**
- * Форматирует телефонный номер в украинском формате
- * @param phone - строка с телефоном
- * @returns отформатированная строка
- * 
+ * Форматує український номер телефону для відображення.
+ *
  * @example
- * formatPhone('380671234567') // "+380 67 123 45 67"
+ * formatPhone('380671234567', 'international') // "+38 (067) 123-45-67"
+ * formatPhone('0671234567', 'national') // "(067) 123-45-67"
  * formatPhone('0671234567') // "067 123 45 67"
- * formatPhone(null) // "-"
+ * formatPhone(null) // "—"
  */
-export const formatPhone = (phone: string): string => {
-  if (!phone) return "-";
+export const formatPhone = (
+  phone: string | null | undefined,
+  options?: PhoneDisplayStyle | FormatUkrainianPhoneOptions,
+): string => formatUkrainianPhone(phone, options);
 
-  // Убираем все нецифровые символы
-  const cleaned = phone.replace(/\D/g, '');
-
-  // Если номер начинается с 380, форматируем как +380
-  if (cleaned.startsWith('380') && cleaned.length === 12) {
-    return `+${cleaned.slice(0, 3)} ${cleaned.slice(3, 5)} ${cleaned.slice(5, 8)} ${cleaned.slice(8, 10)} ${cleaned.slice(10)}`;
-  }
-
-  // Если номер начинается с 0, форматируем как 0XX
-  if (cleaned.startsWith('0') && cleaned.length === 10) {
-    return `${cleaned.slice(0, 3)} ${cleaned.slice(3, 6)} ${cleaned.slice(6, 8)} ${cleaned.slice(8)}`;
-  }
-
-  return phone;
-};
+/** Перевіряє, чи номер у БД має валідний український формат. */
+export const isValidPhone = (phone: string | null | undefined): boolean =>
+  parseUkrainianPhone(phone).isValid;
 
 /**
  * Функція для правильного відмінювання українських слів

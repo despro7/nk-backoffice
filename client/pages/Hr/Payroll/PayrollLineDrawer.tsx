@@ -12,6 +12,8 @@ import {
   SelectItem,
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { ConfirmModal } from '@/components/modals/ConfirmModal';
+import { formatMoney } from '@/lib/formatUtils';
 import { ToastService } from '@/services/ToastService';
 import {
   HR_PAY_GROUP_LABELS,
@@ -24,12 +26,6 @@ import {
   type HrPayoutKind,
   type HrTimesheetWeekDto,
 } from '@shared/types/hr';
-
-function formatMoney(value: string | number): string {
-  const n = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(n)) return String(value);
-  return n.toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 interface PayrollLineDrawerProps {
   line: HrPayrollLineDto | null;
@@ -57,6 +53,7 @@ export function PayrollLineDrawer({
   const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
   const [showCard, setShowCard] = useState(false);
+  const [deletePayoutId, setDeletePayoutId] = useState<number | null>(null);
 
   const linePayouts = useMemo(
     () => (line ? payouts.filter((item) => item.employmentId === line.employmentId) : []),
@@ -149,6 +146,41 @@ export function PayrollLineDrawer({
                   )}
                 </div>
 
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-xs uppercase text-gray-500 mb-1">До утримань</div>
+                    <div className="tabular-nums font-medium">{formatMoney(line.grossAccrued)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-gray-500 mb-1">На руки</div>
+                    <div className="tabular-nums font-medium">{formatMoney(line.netToPay)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-gray-500 mb-1">ЄСВ</div>
+                    <div className="tabular-nums font-medium">{formatMoney(line.esvAmount)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-gray-500 mb-1">ФОП</div>
+                    <div className="tabular-nums font-semibold">{formatMoney(line.employerTotalCost)}</div>
+                  </div>
+                </div>
+
+                {line.taxBreakdown.length > 0 ? (
+                  <div>
+                    <div className="text-xs uppercase text-gray-500 mb-2">Податки та нарахування</div>
+                    <ul className="space-y-1 text-sm">
+                      {line.taxBreakdown.map((item) => (
+                        <li key={item.code} className="flex justify-between gap-3">
+                          <span className="text-gray-600">
+                            {item.label} ({item.payer === 'employer' ? 'роботодавець' : 'працівник'})
+                          </span>
+                          <span className="tabular-nums font-medium">{formatMoney(item.amount)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
                 <div>
                   <div className="text-xs uppercase text-gray-500 mb-2">Розкладка формули</div>
                   <ul className="space-y-1 text-sm">
@@ -191,7 +223,7 @@ export function PayrollLineDrawer({
                             {HR_PAYOUT_KIND_LABELS[item.kind]} · {formatMoney(item.amount)}
                           </span>
                           {canEditPayouts ? (
-                            <Button size="sm" variant="light" color="danger" onPress={() => void removePayout(item.id)}>
+                            <Button size="sm" variant="light" color="danger" onPress={() => setDeletePayoutId(item.id)}>
                               Видалити
                             </Button>
                           ) : null}
@@ -258,6 +290,19 @@ export function PayrollLineDrawer({
           ) : null
         }
       </DrawerContent>
+      <ConfirmModal
+        isOpen={deletePayoutId != null}
+        title="Видалити виплату?"
+        message="Запис про виплату буде видалено без можливості відновлення."
+        confirmText="Видалити"
+        cancelText="Скасувати"
+        onConfirm={() => {
+          if (deletePayoutId != null) {
+            void removePayout(deletePayoutId).finally(() => setDeletePayoutId(null));
+          }
+        }}
+        onCancel={() => setDeletePayoutId(null)}
+      />
     </Drawer>
   );
 }

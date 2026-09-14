@@ -43,6 +43,26 @@ export function formatYearMonth(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
+/** Усі календарні місяці (year, month), що перетинають діапазон дат включно. */
+export function listYearMonthsInRange(startDate: string, endDate: string): Array<{ year: number; month: number }> {
+  const months: Array<{ year: number; month: number }> = [];
+  let year = Number(startDate.slice(0, 4));
+  let month = Number(startDate.slice(5, 7));
+  const endYear = Number(endDate.slice(0, 4));
+  const endMonth = Number(endDate.slice(5, 7));
+
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    months.push({ year, month });
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+
+  return months;
+}
+
 export function buildTimesheetMonthMeta(year: number, month: number): {
   days: HrTimesheetDayDto[];
   weeks: HrTimesheetWeekDto[];

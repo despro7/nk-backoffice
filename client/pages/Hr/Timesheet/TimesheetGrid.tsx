@@ -162,6 +162,7 @@ interface TimesheetGridProps {
   liveMessage: string;
   onLiveMessage: (message: string) => void;
   kindHues: Partial<Record<HrTimesheetKindCode, string>>;
+  canViewAudit?: boolean;
 }
 
 function ariaCellLabel(name: string, day: HrTimesheetDayDto, value: HrTimesheetCellValue): string {
@@ -188,6 +189,7 @@ export function TimesheetGrid({
   liveMessage,
   onLiveMessage,
   kindHues,
+  canViewAudit = false,
 }: TimesheetGridProps) {
   const [focus, setFocus] = useState<TimesheetFocus>({ row: 0, col: 0 });
   const [hoursEdit, setHoursEdit] = useState<{ row: number; col: number; text: string } | null>(null);
@@ -375,7 +377,17 @@ export function TimesheetGrid({
     event.preventDefault();
     if (hoursEdit) commitHours(hoursEdit.row, hoursEdit.col, hoursEdit.text);
     setFocus({ row: rowIndex, col: colIndex });
-    setContextMenu({ row: rowIndex, col: colIndex, x: event.clientX, y: event.clientY });
+    const row = flatRows[rowIndex];
+    const day = days[colIndex];
+    if (!row || !day) return;
+    setContextMenu({
+      row: rowIndex,
+      col: colIndex,
+      x: event.clientX,
+      y: event.clientY,
+      employmentId: row.employmentId,
+      date: day.date,
+    });
   };
 
   const onGridKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -643,6 +655,7 @@ export function TimesheetGrid({
       <TimesheetCellContextMenu
         state={contextMenu}
         hueFor={(code) => kindHueOrDefault(code, kindHues)}
+        canViewAudit={canViewAudit}
         onClose={() => setContextMenu(null)}
         onClear={() => {
           if (!contextMenu) return;

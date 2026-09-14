@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { HrAuditLogDto } from '@shared/types/hr';
+import { HrAuditLogList } from '../components/HrAuditLogEntry';
 import { createPortal } from 'react-dom';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import {
@@ -14,11 +16,14 @@ export interface TimesheetCellContextMenuState {
   col: number;
   x: number;
   y: number;
+  employmentId: number;
+  date: string;
 }
 
 interface TimesheetCellContextMenuProps {
   state: TimesheetCellContextMenuState | null;
   hueFor: (code: HrTimesheetKindCode) => string;
+  canViewAudit?: boolean;
   onClose: () => void;
   onClear: () => void;
   onEditHours: () => void;
@@ -34,6 +39,7 @@ const TIMESHEET_CONTEXT_MENU_ITEM =
 export function TimesheetCellContextMenu({
   state,
   hueFor,
+  canViewAudit = false,
   onClose,
   onClear,
   onEditHours,
@@ -41,6 +47,9 @@ export function TimesheetCellContextMenu({
 }: TimesheetCellContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: state?.x ?? 0, y: state?.y ?? 0 });
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logs, setLogs] = useState<HrAuditLogDto[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   useLayoutEffect(() => {
     if (!state) return;
@@ -54,6 +63,39 @@ export function TimesheetCellContextMenu({
       y: Math.max(pad, Math.min(state.y, window.innerHeight - rect.height - pad)),
     });
   }, [state]);
+
+  useEffect(() => {
+    if (!state) {
+      setLogsOpen(false);
+      setLogs([]);
+      return;
+    }
+    if (!canViewAudit) return;
+
+    let cancelled = false;
+    setLogs([]);
+    setLogsLoading(true);
+
+    const load = async () => {
+      try {
+        const qs = new URLSearchParams({
+          entityType: 'timesheet_entry',
+          employmentId: String(state.employmentId),
+          date: state.date,
+          limit: '20',
+        });
+        const response = await fetch(`/api/hr/audit?${qs}`, { credentials: 'include' });
+        const json = await response.json().catch(() => ({}));
+        if (!cancelled && response.ok) {
+          setLogs(Array.isArray(json.data) ? json.data : []);
+        }
+      } finally {
+        if (!cancelled) setLogsLoading(false);
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [state, canViewAudit]);
 
   useEffect(() => {
     if (!state) return;
@@ -112,6 +154,36 @@ export function TimesheetCellContextMenu({
         <DynamicIcon name="eraser" size={14} className="shrink-0" />
         Очистити
       </button>
+      {canViewAudit ? (
+        <>
+          <button
+            type="button"
+            role="menuitem"
+            className={`${TIMESHEET_CONTEXT_MENU_ITEM} text-foreground hover:bg-default-100`}
+            onClick={() => setLogsOpen((v) => !v)}
+          >
+            <DynamicIcon name="history" size={14} className="shrink-0 text-default-500" />
+            <span>
+              Логи змін{' '}
+              <span className="text-default-500 text-xs">
+                ({logsLoading ? '…' : logs.length})
+              </span>
+            </span>
+            <DynamicIcon name="chevron-right" size={14} className={`ml-auto shrink-0 text-default-500 transition-transform duration-200 ${logsOpen ? 'rotate-90' : ''}`} />
+          </button>
+          {logsOpen ? (
+            <div className="max-h-48 overflow-y-auto rounded-md inset-shadow-sm bg-default-50 px-2 py-2 mt-1 mb-2 text-xs divide-y divide-secondary/15">
+              {logsLoading ? (
+                <div className="py-2 text-default-500">Завантаження...</div>
+              ) : logs.length === 0 ? (
+                <div className="py-2 text-default-500">Немає записів</div>
+              ) : (
+                <HrAuditLogList logs={logs} variant="timesheet" />
+              )}
+            </div>
+          ) : null}
+        </>
+      ) : null}
       <div className="my-1 border-t border-default-100" />
       {HR_TIMESHEET_KIND_CODES.map((code) => {
         const tokens = hrKindTokens(hueFor(code));

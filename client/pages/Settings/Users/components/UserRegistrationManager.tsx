@@ -1,18 +1,10 @@
-import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import {
   Button,
   Card,
   CardBody,
-  Checkbox,
   Chip,
-  Drawer,
-  DrawerBody,
-  DrawerContent,
-  DrawerFooter,
-  DrawerHeader,
   Input,
-  Select,
-  SelectItem,
   Table,
   TableBody,
   TableCell,
@@ -24,20 +16,10 @@ import {
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '@/services/ToastService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
+import { UserCard } from '@/components/person-card/UserCard';
+import type { EditableUser } from '@/components/person-card/UserCard.types';
 import { formatDateOnly, formatRelativeDate } from '@/lib/formatUtils';
-import { DilovodRoleSelect } from '@/components/users/DilovodRoleSelect';
-import { DilovodUserEmailFields } from '@/components/users/DilovodUserEmailFields';
-import { PasswordStrengthIndicator } from '@/components/users/PasswordStrengthIndicator';
-import { useDilovodRoles } from '@/hooks/useDilovodRoles';
-import { invalidateDilovodUsersCache, useDilovodUsers } from '@/hooks/useDilovodUsers';
-import { generatePassword } from '@shared/lib/generatePassword';
-import { DEFAULT_DILOVOD_ROLE_ID } from '@shared/types/dilovod';
 import { useAuth } from '@/contexts/AuthContext';
-
-interface RoleOption {
-  value: string;
-  label: string;
-}
 
 interface UserStats {
   orders: number;
@@ -67,26 +49,6 @@ interface UserRow {
   password?: string;
 }
 
-interface UserFormState {
-  email: string;
-  name: string;
-  password: string;
-  role: string;
-  dilovodUserId: string;
-  dilovodRoleId: string;
-  isActive: boolean;
-}
-
-const EMPTY_FORM: UserFormState = {
-  email: '',
-  name: '',
-  password: '',
-  role: '',
-  dilovodUserId: '',
-  dilovodRoleId: '',
-  isActive: true,
-};
-
 export interface UsersTabActions {
   openCreate: () => void;
 }
@@ -95,18 +57,9 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
-  const [availableRoles, setAvailableRoles] = useState<RoleOption[]>([]);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [userCardOpen, setUserCardOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
-  const [form, setForm] = useState<UserFormState>(EMPTY_FORM);
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [showFieldErrors, setShowFieldErrors] = useState(false);
-  const [createNewInDilovod, setCreateNewInDilovod] = useState(false);
-  const [dilovodStepComplete, setDilovodStepComplete] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
-  const { roles: dilovodRoles } = useDilovodRoles(drawerOpen);
-  const { users: dilovodUsers } = useDilovodUsers(drawerOpen);
 
   const fetchUsers = useCallback(async () => {
     setUsersLoading(true);
@@ -126,186 +79,21 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
     void fetchUsers();
   }, [fetchUsers]);
 
-  useEffect(() => {
-    const loadRoles = async () => {
-      try {
-        const response = await fetch('/api/auth/roles', { credentials: 'include' });
-        if (!response.ok) return;
-        const roles: RoleOption[] = await response.json();
-        setAvailableRoles(roles);
-      } catch {
-        // ignore
-      }
-    };
-    void loadRoles();
-  }, []);
-
   const openCreate = useCallback(() => {
     setEditingUser(null);
-    setForm(EMPTY_FORM);
-    setCreateNewInDilovod(false);
-    setDilovodStepComplete(false);
-    setIsPasswordVisible(false);
-    setShowFieldErrors(false);
-    setDrawerOpen(true);
+    setUserCardOpen(true);
   }, []);
 
   useImperativeHandle(ref, () => ({ openCreate }), [openCreate]);
 
   const openEdit = (user: UserRow) => {
     setEditingUser(user);
-    setForm({
-      email: user.email,
-      name: user.name,
-      password: '',
-      role: user.role,
-      dilovodUserId: user.dilovodUserId ?? '',
-      dilovodRoleId: '',
-      isActive: user.isActive,
-    });
-    setCreateNewInDilovod(false);
-    setDilovodStepComplete(true);
-    setIsPasswordVisible(false);
-    setShowFieldErrors(false);
-    setDrawerOpen(true);
+    setUserCardOpen(true);
   };
 
-  const closeDrawer = () => {
-    setDrawerOpen(false);
+  const closeUserCard = () => {
+    setUserCardOpen(false);
     setEditingUser(null);
-    setForm(EMPTY_FORM);
-    setCreateNewInDilovod(false);
-    setDilovodStepComplete(false);
-    setIsSaving(false);
-    setShowFieldErrors(false);
-  };
-
-  const patchForm = (field: keyof UserFormState, value: string | boolean) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const showDilovodRole = Boolean(editingUser || dilovodStepComplete)
-    && (createNewInDilovod || Boolean(form.dilovodUserId));
-
-  useEffect(() => {
-    if (!showDilovodRole || form.dilovodRoleId) return;
-    const defaultRole = dilovodRoles.find((role) => role.id === DEFAULT_DILOVOD_ROLE_ID) ?? dilovodRoles[0];
-    patchForm('dilovodRoleId', defaultRole?.id ?? DEFAULT_DILOVOD_ROLE_ID);
-  }, [showDilovodRole, form.dilovodRoleId, dilovodRoles]);
-
-  useEffect(() => {
-    if (!form.dilovodUserId || form.dilovodRoleId || dilovodUsers.length === 0) return;
-    const linkedUser = dilovodUsers.find((user) => user.id === form.dilovodUserId);
-    if (linkedUser?.roleId) {
-      patchForm('dilovodRoleId', linkedUser.roleId);
-    }
-  }, [form.dilovodUserId, form.dilovodRoleId, dilovodUsers]);
-
-  const handleGeneratePassword = async () => {
-    const password = generatePassword(10);
-    patchForm('password', password);
-    setIsPasswordVisible(true);
-    try {
-      await navigator.clipboard.writeText(password);
-      ToastService.show({ title: 'Пароль згенеровано і скопійовано', color: 'success' });
-    } catch {
-      ToastService.show({ title: 'Пароль згенеровано', color: 'success' });
-    }
-  };
-
-  const validateForm = (): string | null => {
-    if (!editingUser && !dilovodStepComplete) return 'Оберіть користувача в Діловоді або увімкніть створення нового';
-    if (!form.email.trim()) return 'Вкажіть email';
-    if (!editingUser && !form.password) return 'Вкажіть пароль';
-    if (form.password && form.password.length < 6) return 'Пароль повинен містити мінімум 6 символів';
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Некоректний email';
-    if (!form.role) return 'Оберіть роль';
-    if (!editingUser && !createNewInDilovod && !form.dilovodUserId) return 'Оберіть користувача в Діловоді';
-    if (!editingUser && createNewInDilovod && !form.name.trim()) return 'Вкажіть імʼя для нового користувача Dilovod';
-    return null;
-  };
-
-  const passwordFieldError = useMemo(() => {
-    if (editingUser && !form.password) return undefined;
-    if (!form.password) return 'Вкажіть пароль';
-    if (form.password.length < 6) return 'Пароль повинен містити мінімум 6 символів';
-    return undefined;
-  }, [editingUser, form.password]);
-
-  const handleSave = async () => {
-    setShowFieldErrors(true);
-    const error = validateForm();
-    if (error) {
-      ToastService.show({ title: error, color: 'danger' });
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      if (editingUser) {
-        const updates: Record<string, unknown> = {
-          name: form.name,
-          email: form.email,
-          role: form.role,
-          roleName: availableRoles.find((item) => item.value === form.role)?.label || form.role,
-          isActive: form.isActive,
-          dilovodUserId: form.dilovodUserId,
-          dilovodRoleId: form.dilovodRoleId || undefined,
-        };
-        if (form.password.trim()) updates.password = form.password;
-
-        const response = await fetch(`/api/auth/users/${editingUser.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify(updates),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          ToastService.show({ title: data.message || 'Помилка оновлення користувача', color: 'danger' });
-          return;
-        }
-        setUsers((prev) => prev.map((user) => (user.id === editingUser.id ? { ...user, ...data.user } : user)));
-        if (form.dilovodUserId) {
-          invalidateDilovodUsersCache();
-        }
-        ToastService.show({ title: 'Користувача оновлено', color: 'success' });
-        closeDrawer();
-        return;
-      }
-
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: form.email,
-          name: form.name || undefined,
-          password: form.password,
-          role: form.role,
-          roleName: availableRoles.find((item) => item.value === form.role)?.label || form.role,
-          dilovodUserId: createNewInDilovod ? undefined : (form.dilovodUserId || undefined),
-          dilovodRoleId: form.dilovodRoleId || undefined,
-          createDilovodUser: createNewInDilovod,
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        ToastService.show({ title: data.message || 'Помилка створення користувача', color: 'danger' });
-        return;
-      }
-      if (createNewInDilovod || form.dilovodUserId) {
-        invalidateDilovodUsersCache();
-      }
-      ToastService.show({ title: 'Користувача створено', color: 'success' });
-      closeDrawer();
-      await fetchUsers();
-    } catch (error) {
-      console.error('Error saving user:', error);
-      ToastService.show({ title: 'Помилка збереження користувача', color: 'danger' });
-    } finally {
-      setIsSaving(false);
-    }
   };
 
   const handleDelete = async (userId: number) => {
@@ -348,9 +136,16 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
     }
   };
 
-  const selectedRoleKeys = availableRoles.some((item) => item.value === form.role)
-    ? [form.role]
-    : [];
+  const editableUser: EditableUser | null = editingUser
+    ? {
+      id: editingUser.id,
+      email: editingUser.email,
+      name: editingUser.name,
+      role: editingUser.role,
+      isActive: editingUser.isActive,
+      dilovodUserId: editingUser.dilovodUserId,
+    }
+    : null;
 
   return (
     <div className="space-y-6">
@@ -456,121 +251,12 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
         </CardBody>
       </Card>
 
-      <Drawer
-        isOpen={drawerOpen}
-        onOpenChange={(open) => { if (!open) closeDrawer(); }}
-        placement="right"
-        size="md"
-        classNames={{
-          base: 'flex flex-col',
-          body: 'flex-1 min-h-0 overflow-y-auto',
-        }}
-      >
-        <DrawerContent>
-          {() => (
-            <>
-              <DrawerHeader className="border-b border-default-200 shrink-0">
-                {editingUser ? 'Редагувати користувача' : 'Створити користувача'}
-              </DrawerHeader>
-              <DrawerBody className="gap-5 py-5 overflow-y-auto">
-                <DilovodUserEmailFields
-                  key={editingUser ? `edit-${editingUser.id}` : 'create'}
-                  dilovodUserId={form.dilovodUserId}
-                  email={form.email}
-                  name={form.name}
-                  onDilovodUserIdChange={(value) => patchForm('dilovodUserId', value)}
-                  onEmailChange={(value) => patchForm('email', value)}
-                  onNameChange={(value) => patchForm('name', value)}
-                  onDilovodRoleIdChange={(value) => patchForm('dilovodRoleId', value)}
-                  createNewInDilovod={createNewInDilovod}
-                  onCreateNewInDilovodChange={setCreateNewInDilovod}
-                  onStepCompleteChange={setDilovodStepComplete}
-                  variant={editingUser ? 'edit' : 'create'}
-                  showEmailField={Boolean(editingUser) || dilovodStepComplete}
-                />
-
-                {(editingUser || dilovodStepComplete) ? (
-                  <>
-                    <Input
-                      type="text"
-                      label="Ім'я"
-                      labelPlacement="outside"
-                      placeholder="Іван Петренко"
-                      value={form.name}
-                      onValueChange={(value) => patchForm('name', value)}
-                      isRequired={!editingUser && createNewInDilovod}
-                      description={
-                        createNewInDilovod || form.dilovodUserId
-                          ? 'Синхронізується з обліковим записом Dilovod при збереженні'
-                          : undefined
-                      }
-                      autoComplete="off"
-                      isClearable
-                    />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <Select
-                        label="Роль"
-                        labelPlacement="outside"
-                        placeholder="Оберіть роль"
-                        selectedKeys={selectedRoleKeys}
-                        onSelectionChange={(keys) => {
-                          const selected = Array.from(keys)[0];
-                          if (typeof selected === 'string') patchForm('role', selected);
-                        }}
-                        isRequired
-                      >
-                        {availableRoles.map((role) => (
-                          <SelectItem key={role.value}>{role.label}</SelectItem>
-                        ))}
-                      </Select>
-                      {showDilovodRole ? (
-                        <DilovodRoleSelect
-                          value={form.dilovodRoleId}
-                          onChange={(value) => patchForm('dilovodRoleId', value)}
-                          isRequired={!editingUser && createNewInDilovod}
-                        />
-                      ) : null}
-                    </div>
-                    <div className="space-y-2">
-                      <Input
-                        type={isPasswordVisible ? 'text' : 'password'}
-                        label={editingUser ? 'Новий пароль' : 'Пароль'}
-                        labelPlacement="outside"
-                        placeholder={editingUser ? 'Залиште порожнім, щоб не змінювати' : 'Мінімум 6 символів'}
-                        value={form.password}
-                        onValueChange={(value) => patchForm('password', value)}
-                        isInvalid={showFieldErrors && Boolean(passwordFieldError)}
-                        errorMessage={showFieldErrors ? passwordFieldError : undefined}
-                        autoComplete="new-password"
-                        endContent={
-                          <button className="focus:outline-none" type="button" onClick={() => setIsPasswordVisible((prev) => !prev)}>
-                            <DynamicIcon name={isPasswordVisible ? 'eye-off' : 'eye'} size={18} className="text-default-400" />
-                          </button>
-                        }
-                      />
-                      <PasswordStrengthIndicator password={form.password} />
-                      <Button size="sm" variant="flat" onPress={() => void handleGeneratePassword()} startContent={<DynamicIcon name="key-round" size={14} />}>
-                        Згенерувати пароль
-                      </Button>
-                    </div>
-                    {editingUser && (
-                      <Checkbox isSelected={form.isActive} onValueChange={(checked) => patchForm('isActive', checked)}>
-                        Активний користувач
-                      </Checkbox>
-                    )}
-                  </>
-                ) : null}
-              </DrawerBody>
-              <DrawerFooter className="border-t border-default-200 shrink-0">
-                <Button variant="light" onPress={closeDrawer}>Скасувати</Button>
-                <Button color="primary" isLoading={isSaving} onPress={() => void handleSave()}>
-                  {editingUser ? 'Зберегти' : 'Створити'}
-                </Button>
-              </DrawerFooter>
-            </>
-          )}
-        </DrawerContent>
-      </Drawer>
+      <UserCard
+        isOpen={userCardOpen}
+        user={editableUser}
+        onClose={closeUserCard}
+        onSaved={() => { void fetchUsers(); }}
+      />
 
       <ConfirmModal
         isOpen={deleteId != null}

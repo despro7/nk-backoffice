@@ -5,6 +5,110 @@
 
 ---
 
+## 2026-09-14 — HR UX Фаза 2+: unsaved guard, архітектура person-card, merge modal
+
+**Files:** `client/components/person-card/UserCard.tsx`, `client/components/person-card/panels/UserCardPanel.tsx`, `client/pages/Hr/Employees/EmployeeDrawer.tsx`, `client/pages/Hr/Employers/ProductionCalendarTab.tsx`, `client/pages/Hr/Employers/index.tsx`, `client/components/hr/*`, `client/pages/Hr/components/PersonMergeModal.tsx`, `client/lib/formatUtils.ts`, `client/pages/Hr/Bonuses/index.tsx`, `client/pages/Hr/Fop/index.tsx`, `client/pages/Hr/Payroll/PayrollLineDrawer.tsx`, `server/modules/Hr/HrEmploymentMerge.spec.ts`, `server/modules/Hr/HrBonusService.spec.ts`, `server/modules/Hr/HrFopService.spec.ts`, `Docs/plans/hr-ux-phase2-plus.md`, `Docs/architecture/unsaved-guard.md`, `Docs/features/hr-module.md`
+
+### Unsaved guard (P0)
+
+- **`UserCard`:** snapshot форми + `onDirtyChange` → `useUnsavedGuard` + `UnsavedChangesModal` (патерн як у `PersonCard`).
+- **`EmployeeDrawer`:** `isDirty` враховує відкриту форму «Додати зайнятість» і незбережені форми ставок (`EmploymentBlock` → callback `onRateDirtyChange`).
+- **`ProductionCalendarTab`:** snapshot конфігу після load/save; «Зберегти» disabled коли clean; guard при перемиканні таба в `Employers/index.tsx` (`useUnsavedGuard` + `ref.save()`).
+
+### Архітектура та reuse (P2)
+
+- HR accordion/chip перенесені в **`client/components/hr/`** (`HrAuditAccordion`, `PersonDuplicatesAccordion`, `PersonMergedAccordion`, `PersonStatusChip`) — `PersonCardPanel` більше не залежить від `pages/Hr/components/`.
+- **`PersonMergeModal`** — спільний UI merge для `PersonCardPanel` (radio: головний запис) і `/hr/persons` (select: джерело → ціль).
+- **`formatMoney()`** — спільний helper у `client/lib/formatUtils.ts`; використовується в Преміях, Фонді оплати праці, drawer розрахунку.
+
+### Інше (P3)
+
+- **`/hr/fop`:** toast при помилці `GET /api/hr/fop`.
+- **Тести:** `HrEmploymentMerge` (dedupe pay terms), `HrBonusService` (валідація дат), `HrFopService` (warning при 0 годин у табелі).
+
+### Відкладено
+
+- П. 5 плану (`DrawerShell` + semantic tokens) — свідомо не виконувався через ризик візуальних регресій.
+
+---
+
+## 2026-09-14 — HR: фонд оплати праці, спільні пресети періоду
+
+**Files:** `shared/utils/hrWorkWeekPeriods.ts`, `shared/utils/hrWorkWeekPeriods.spec.ts`, `client/pages/Hr/shared/useHrWorkWeekPeriodFilter.ts`, `client/pages/Hr/Fop/index.tsx`, `client/pages/Hr/Bonuses/index.tsx`, `client/pages/Hr/Bonuses/BonusDrawer.tsx`, `server/modules/Hr/HrFopService.ts`, `server/modules/Hr/HrController.ts`, `shared/utils/hrProductionWeek.ts`, `shared/utils/hrEmploymentDedupe.ts`, `client/routes.config.tsx`, `Docs/features/hr-module.md`
+
+### UI
+
+- **`/hr/fop`:** перейменовано в навігації на **«Фонд оплати праці»** (без абревіатури «ФОП», щоб не плутати з типом роботодавця `kind: fop`).
+- Заголовок сторінки — лише з `Layout` (без дубля `h1` у контенті).
+- Фільтр періоду — ті самі пресети, що в **Преміях**: робочий тиждень (пн–пт) + діапазон дат через `ReportsFilterBuilder`.
+- Картки без тіні (`shadow="none"`, `border-border-subtle`); внутрішні summary-картки — `bg-surface-page`.
+- Статус джерела: **«Зі знімка розрахунку»** (locked payroll) / **«Попередній перегляд»** (`HrSpecChip` + `hrStatusTokens` / `hrKindTokens`).
+- Колонки таблиці: «Дні періоду», «Сума»; група оплати — `HrSpecChip` + `hrPayGroupTokens` (як у співробітниках і розрахунку).
+
+### Спільний модуль періоду
+
+- **`shared/utils/hrWorkWeekPeriods.ts`** — типи `HrPeriodOption`, `HrWorkWeekPeriod`; побудова робочих тижнів місяця, пошук тижня за датою, зіставлення пресету.
+- **`client/pages/Hr/shared/useHrWorkWeekPeriodFilter.ts`** — хук з готовими `filters` для `ReportsFilterBuilder`; використовується в Преміях і Фонді оплати праці.
+
+### Розрахунок фонду оплати праці
+
+- `HrFopService.getSummary` бере рядки через `hrPayrollService.loadMonth()` (snapshot при locked payroll, інакше preview).
+- Записи табеля зіставляються з рядками payroll через `dedupeEmploymentsByEmployeePayGroup` + `remapEmploymentId` (як у розрахунку зарплати).
+- API: `GET /api/hr/fop?dateFrom=&dateTo=` (основний спосіб); legacy `periodId` + `periodKind` збережено.
+- Календарний тиждень: кінець періоду — пʼятниця (+4 дні від понеділка), не неділя.
+- `aggregateFopFromTimesheet`: дні періоду рахуються лише при `hours > 0`.
+- Warning у відповіді, якщо є рядки payroll, але немає годин у табелі за обраний період (суми будуть 0).
+
+### Тести
+
+- `hrWorkWeekPeriods.spec.ts` — побудова тижнів, label, пресети.
+
+---
+
+## 2026-09-13 — HR × Dilovod: доопрацювання UI, audit і merge
+
+**Files:** `client/pages/Hr/**`, `client/components/hr/HrAuditLogEntry.tsx`, `shared/utils/hrAuditFormat.ts`, `shared/utils/hrAuditFormat.spec.ts`, `server/modules/Hr/HrEmploymentMerge.ts`, `server/modules/Hr/HrService.ts`, `server/modules/Hr/HrTimesheetService.ts`, `Docs/features/hr-module.md`
+
+### UI та UX
+
+- **`/hr/persons`:** `PageTabs`, HeroUI `Table`, виправлений endpoint sync (`POST /api/hr/persons/sync/pull`), іконки на кнопках (merge, move, edit).
+- **`/hr/employers`:** типи (`fop`/`tov`/`unofficial_cash`) приховані з таблиці роботодавців; окрема модалка редагування назви типу; таб «Групи оплати» — grid + DnD (`PUT /api/hr/pay-groups/reorder`), без дубля колонок Slug/Formula; код (slug) read-only за дизайном.
+- **`EmployeeDrawer`:** центрований `Spinner` при завантаженні; детальний текст `ConfirmModal` для merge зайнятостей; кнопка «Обʼєднати» лише при кількох активних зайнятостях в одній групі оплати (`hrPeriodActive`).
+
+### Merge зайнятостей
+
+- Виправлено `Transaction not found` — batch `updateMany`/`deleteMany` у транзакції, `maxWait`/`timeout`.
+- Дублікати ставок після merge видаляються (однакові `kind` + `amount` + перетин періодів).
+- Audit `employment_merged` з детальним payload; `refreshKey` для accordion «Історія змін».
+
+### Журнал дій (audit)
+
+- **`shared/utils/hrAuditFormat.ts`:** короткі описи комірок табеля («Встановлено «5 год»», «Зміна значення: …», «Комірку очищено»); форматування merge з кольоровими ключовими словами; `sortHrAuditLogsChronological` (нові знизу).
+- **`HrAuditLogEntry` / `HrAuditLogList`:** варіанти `default` і `timesheet`; сірі заголовки `дата • користувач`; роздільники без рамок.
+- **Табель:** лог «Комірку очищено» — `entryId` зберігається до `delete`; кількість логів у контекстному меню до розгортання секції.
+
+### Тести
+
+- `hrAuditFormat.spec.ts` — cell diff, cleared cell, хронологічне сортування.
+
+---
+
+## 2026-09-13 — HR × Dilovod: вирівнювання моделі даних
+**Files:** `prisma/schema.prisma`, `prisma/migrations/20260913120000_hr_dilovod_alignment/`, `server/modules/Hr/*`, `server/services/dilovod/DilovodApiClient.ts`, `shared/types/hr.ts`, `shared/constants/dilovod.ts`, `shared/constants/permissions.ts`, `client/pages/Hr/**`, `client/components/hr/HrAuditAccordion.tsx`, `scripts/hr-audit-employment-duplicates.ts`, `Docs/plans/hr-esv-taxes.md`
+
+- **Гібридна модель:** локальний master для табеля, payroll і груп оплати; синхронізація з Dilovod для firms, persons, employees; кадрові накази — read-only cache.
+- **HrAuditLog** (`hr_audit_log`) — журнал дій користувача (аналог `orders_history`); permission `action.hr.audit.view`; accordion у картці співробітника та «Логи змін» у контекстному меню табеля.
+- **Групи оплати:** таблиця `hr_pay_groups`, FK `payGroupId` на `HrEmployment` / `HrPayrollLine`; CRUD на `/hr/employers` → «Групи оплати»; label `unofficial_cash` → «Неофіційна ставка».
+- **Фіз. особи:** `hr_persons`, вибірковий pull з `catalogs.persons` (не повний dump), push при збереженні; сторінка `/hr/persons` (фільтри Працівники / Поза групою / Дублікати, merge, sync).
+- **Роботодавці:** `dilovodFirmId`, sync firms; таби Роботодавці / Типи / Групи оплати.
+- **Зайнятості:** `personnelNumber`, `dilovodEmployeeId`, посади; merge API `POST /api/hr/employments/:id/merge`; вкладки в `EmployeeDrawer` (Працівник / Зайнятості / Накази).
+- **Накази:** `hr_staff_orders` — pull `documents.staffOrder`, read-only UI.
+- **ЄСВ/податки:** placeholder `esvAmount`, `taxAmount` на `HrPayrollLine`; план — `Docs/plans/hr-esv-taxes.md`.
+- **Видалено:** Excel-імпорт табеля (`HrXlsxImportService`, `TimesheetImportModal`).
+- **API sync persons:** `POST /api/hr/persons/sync/pull`, push — `POST /api/hr/persons/:id/sync/push`.
+
+---
+
 ## 2026-09-11 — Користувачі: CreateUserDrawer, сила паролю, створення з картки HR
 **Files:** `CreateUserDrawer.tsx`, `PasswordStrengthIndicator.tsx`, `shared/lib/passwordStrength.ts`, `UserRegistrationManager.tsx`, `EmployeeDrawer.tsx`, `Docs/features/users-and-roles.md`, `Docs/features/hr-module.md`, `Docs/integrations/dilovod-metadata.md`
 

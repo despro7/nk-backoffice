@@ -3,7 +3,7 @@ export const HR_SEED_LEGAL_ENTITY_CODES = new Set(['fop', 'tov', 'unofficial_cas
 
 export type EmploymentDedupeRow = {
   id: number;
-  payGroup: string;
+  payGroupId: number;
   employee: { id: number };
   legalEntity: { code: string; name: string };
 };
@@ -15,7 +15,7 @@ export interface EmploymentDedupeResult<T extends EmploymentDedupeRow> {
 }
 
 function employmentDedupeKey(row: EmploymentDedupeRow): string {
-  return `${row.employee.id}::${row.payGroup}`;
+  return `${row.employee.id}::${row.payGroupId}`;
 }
 
 function pickCanonicalEmployment<T extends EmploymentDedupeRow>(group: T[]): T {

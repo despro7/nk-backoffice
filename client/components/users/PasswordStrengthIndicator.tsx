@@ -18,6 +18,13 @@ export function PasswordStrengthIndicator({ password }: PasswordStrengthIndicato
       label={strength.label}
       maxValue={100}
       size="sm"
+      classNames={{
+        base: 'gap-1',
+        // indicator: 'h-1',
+        label: `text-xs font-medium text-${strength.color}`,
+        // track: 'bg-default-200',
+        // value: 'bg-primary-500',
+      }}
       value={strength.score}
     />
   );

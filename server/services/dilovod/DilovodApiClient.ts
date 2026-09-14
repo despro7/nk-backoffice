@@ -655,6 +655,245 @@ export class DilovodApiClient {
     return resp;
   }
 
+  private buildPersonDetails(payload: {
+    name: string;
+    phone?: string | null;
+    email?: string | null;
+    address?: string | null;
+  }): string {
+    const multilangName = { ru: payload.name, uk: payload.name };
+    const details: Record<string, unknown> = {
+      names: [{ pr: multilangName, kind: 'fullName' }],
+    };
+    if (payload.phone) {
+      details.phones = [{ pr: payload.phone.replace(/\D+/g, ''), kind: 'phone' }];
+    }
+    if (payload.email) {
+      details.emails = [{ pr: payload.email, kind: 'email' }];
+    }
+    if (payload.address?.trim()) {
+      const cleanAddress = payload.address
+        .replace(/[''""&#039;]/g, "'")
+        .replace(/[:]/g, '')
+        .replace(/[&<>"'\\]/g, '');
+      if (cleanAddress.trim()) {
+        details.addresses = [{ pr: { uk: cleanAddress }, kind: 'legalAddress', detalize: '' }];
+      }
+    }
+    return JSON.stringify(details);
+  }
+
+  async getPersonsByIds(ids: string[]): Promise<any[]> {
+    const unique = [...new Set(ids.map((id) => String(id).trim()).filter(Boolean))];
+    if (unique.length === 0) return [];
+    await this.ensureReady();
+
+    const fields = {
+      id: 'id',
+      code: 'code',
+      name: 'name',
+      taxCode: 'taxCode',
+      phone: 'phone',
+      email: 'email',
+      address: 'address',
+      parent: 'parent',
+      personType: 'personType',
+      state: 'state',
+      delMark: 'delMark',
+      version: 'version',
+      details: 'details',
+    };
+
+    const results: any[] = [];
+    const chunkSize = 50;
+    for (let i = 0; i < unique.length; i += chunkSize) {
+      const chunk = unique.slice(i, i + chunkSize);
+      const request: DilovodApiRequest = {
+        version: '0.25',
+        key: this.apiKey,
+        action: 'request',
+        params: {
+          from: 'catalogs.persons',
+          fields,
+          filters: [{ alias: 'id', operator: 'IL', value: chunk }],
+        },
+      };
+      const resp = await this.makeRequest<any>(request);
+      if (resp?.error) throw new Error(`Dilovod API error: ${resp.error}`);
+      results.push(...this.normalizeToArray(resp));
+    }
+    return results;
+  }
+
+  async getPersonsByParent(parentId: string): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'request',
+      params: {
+        from: 'catalogs.persons',
+        fields: {
+          id: 'id',
+          code: 'code',
+          name: 'name',
+          taxCode: 'taxCode',
+          phone: 'phone',
+          email: 'email',
+          address: 'address',
+          parent: 'parent',
+          personType: 'personType',
+          state: 'state',
+          delMark: 'delMark',
+          version: 'version',
+          details: 'details',
+        },
+        filters: [{ alias: 'parent', operator: '=', value: parentId }],
+        limit: 500,
+      },
+    };
+    const resp = await this.makeRequest<any>(request);
+    if (resp?.error) throw new Error(`Dilovod API error: ${resp.error}`);
+    return this.normalizeToArray(resp);
+  }
+
+  async createPersonExtended(payload: {
+    name: string;
+    taxCode?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    address?: string | null;
+    parent?: string | null;
+    state?: string | null;
+    personType?: string | null;
+  }): Promise<{ id: string; code: string; version?: string }> {
+    await this.ensureReady();
+    const multilangName = { ru: payload.name, uk: payload.name };
+    const header: Record<string, unknown> = {
+      id: 'catalogs.persons',
+      name: multilangName,
+      details: this.buildPersonDetails(payload),
+    };
+    if (payload.taxCode) header.taxCode = payload.taxCode;
+    if (payload.parent) header.parent = payload.parent;
+    if (payload.state) header.state = payload.state;
+    if (payload.personType) header.personType = payload.personType;
+
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'saveObject',
+      params: { header },
+    };
+    const resp = await this.makeRequest<{ id: string; code: string; version?: string }>(request);
+    return resp;
+  }
+
+  async updatePerson(payload: {
+    id: string;
+    name?: string;
+    taxCode?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    address?: string | null;
+    parent?: string | null;
+    state?: string | null;
+    personnelNumber?: string | null;
+  }): Promise<{ id: string; code?: string; version?: string }> {
+    await this.ensureReady();
+    const header: Record<string, unknown> = { id: payload.id };
+    if (payload.name) header.name = { ru: payload.name, uk: payload.name };
+    if (payload.taxCode !== undefined) header.taxCode = payload.taxCode;
+    if (payload.parent !== undefined) header.parent = payload.parent;
+    if (payload.state !== undefined) header.state = payload.state;
+    if (payload.personnelNumber !== undefined) header.code = payload.personnelNumber;
+    if (payload.name || payload.phone || payload.email || payload.address) {
+      header.details = this.buildPersonDetails({
+        name: payload.name ?? '',
+        phone: payload.phone,
+        email: payload.email,
+        address: payload.address,
+      });
+    }
+
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'saveObject',
+      params: { header },
+    };
+    const resp = await this.makeRequest<{ id: string; code?: string; version?: string }>(request);
+    return { id: payload.id, ...resp };
+  }
+
+  async updateEmployee(payload: {
+    id: string;
+    code?: string | null;
+  }): Promise<{ id: string; code?: string }> {
+    await this.ensureReady();
+    const header: Record<string, unknown> = { id: payload.id };
+    if (payload.code !== undefined) header.code = payload.code;
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'saveObject',
+      params: { header },
+    };
+    const resp = await this.makeRequest<{ id: string; code?: string }>(request);
+    return { id: payload.id, ...resp };
+  }
+
+  async getEmployees(filters?: Array<{ alias: string; operator: string; value: unknown }>): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'request',
+      params: {
+        from: 'catalogs.employees',
+        fields: {
+          id: 'id',
+          code: 'code',
+          name: 'name',
+          person: 'person',
+          firm: 'firm',
+          version: 'version',
+        },
+        filters: filters ?? [],
+        limit: 1000,
+      },
+    };
+    const resp = await this.makeRequest<any>(request);
+    if (resp?.error) throw new Error(`Dilovod API error: ${resp.error}`);
+    return this.normalizeToArray(resp);
+  }
+
+  async getStaffOrders(filters?: Array<{ alias: string; operator: string; value: unknown }>): Promise<any[]> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'request',
+      params: {
+        from: 'documents.staffOrder',
+        fields: {
+          id: 'id',
+          number: 'number',
+          date: 'date',
+          employee: 'employee',
+          position: 'position',
+          hireDate: 'hireDate',
+          dismissDate: 'dismissDate',
+        },
+        filters: filters ?? [],
+        limit: 500,
+      },
+    };
+    const resp = await this.makeRequest<any>(request);
+    if (resp?.error) throw new Error(`Dilovod API error: ${resp.error}`);
+    return this.normalizeToArray(resp);
+  }
+
   // Тест підключення до API
   async testConnection(): Promise<boolean> {
     try {

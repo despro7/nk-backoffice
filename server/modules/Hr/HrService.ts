@@ -18,11 +18,15 @@ import {
   type HrPayTermsDto,
   type HrPayTermsKind,
   type HrPayTermsWritePayload,
+  type HrStaffOrderDto,
   type HrUserOptionDto,
 } from '../../../shared/types/hr.js';
+import { buildEmploymentAuditLabel } from '../../../shared/utils/hrAuditFormat.js';
 import { HR_SEED_LEGAL_ENTITY_CODES } from '../../../shared/utils/hrEmploymentDedupe.js';
 import { collectHrPayWarnings } from '../../../shared/utils/hrPayHealth.js';
+import { hrAuditService } from './HrAuditService.js';
 import { mergeEmploymentRecords } from './HrEmploymentMerge.js';
+import { hrPayGroupService } from './HrPayGroupService.js';
 import {
   cardLast4FromDigits,
   decryptCardNumber,
@@ -43,10 +47,18 @@ export class HrError extends Error {
   }
 }
 
+const employmentInclude = {
+  legalEntity: true,
+  payGroup: true,
+  payTerms: { orderBy: { effectiveFrom: 'desc' as const } },
+  staffOrders: { orderBy: { orderDate: 'desc' as const } },
+} satisfies Prisma.HrEmploymentInclude;
+
 const employeeInclude = {
   user: { select: { id: true, name: true, email: true } },
+  person: { select: { id: true, displayName: true, taxCode: true, phone: true } },
   employments: {
-    include: { legalEntity: true, payTerms: { orderBy: { effectiveFrom: 'desc' as const } } },
+    include: employmentInclude,
     orderBy: { validFrom: 'desc' as const },
   },
 } satisfies Prisma.HrEmployeeInclude;
@@ -95,13 +107,49 @@ function isLegalEntityKind(value: string): value is HrLegalEntityKind {
   return (HR_LEGAL_ENTITY_KINDS as readonly string[]).includes(value);
 }
 
-function toLegalEntityDto(row: { id: number; code: string; name: string; kind: string; isActive: boolean }): HrLegalEntityDto {
+function toLegalEntityDto(row: {
+  id: number;
+  code: string;
+  name: string;
+  kind: string;
+  dilovodFirmId?: string | null;
+  isActive: boolean;
+}): HrLegalEntityDto {
   return {
     id: row.id,
     code: row.code,
     name: row.name,
     kind: isLegalEntityKind(row.kind) ? row.kind : 'fop',
+    dilovodFirmId: row.dilovodFirmId ?? null,
     isActive: row.isActive,
+  };
+}
+
+function payGroupSlugFromRow(row: { payGroup: { slug: string } }): HrPayGroup {
+  return isPayGroup(row.payGroup.slug) ? row.payGroup.slug : 'official_salary';
+}
+
+function toStaffOrderDto(row: {
+  id: number;
+  employmentId: number;
+  kind: string;
+  position: string | null;
+  orderDate: Date;
+  orderNumber: string | null;
+  hireDate: Date | null;
+  dismissDate: Date | null;
+  dilovodDocId: string | null;
+}): HrStaffOrderDto {
+  return {
+    id: row.id,
+    employmentId: row.employmentId,
+    kind: row.kind,
+    position: row.position,
+    orderDate: toDateOnly(row.orderDate),
+    orderNumber: row.orderNumber,
+    hireDate: row.hireDate ? toDateOnly(row.hireDate) : null,
+    dismissDate: row.dismissDate ? toDateOnly(row.dismissDate) : null,
+    dilovodDocId: row.dilovodDocId,
   };
 }
 
@@ -142,16 +190,28 @@ function pickCurrentEmployment(employments: EmployeeRecord['employments']) {
   return (open[0] ?? employments[0] ?? null);
 }
 
-function toEmploymentDto(row: EmployeeRecord['employments'][number]): HrEmploymentDto {
+function toEmploymentDto(
+  row: Prisma.HrEmploymentGetPayload<{ include: typeof employmentInclude }>,
+): HrEmploymentDto {
+  const payGroupSlug = payGroupSlugFromRow(row);
   return {
     id: row.id,
     employeeId: row.employeeId,
     legalEntityId: row.legalEntityId,
-    payGroup: isPayGroup(row.payGroup) ? row.payGroup : 'official_salary',
+    payGroupId: row.payGroupId,
+    payGroupSlug,
+    payGroup: payGroupSlug,
+    personnelNumber: row.personnelNumber,
+    dilovodEmployeeId: row.dilovodEmployeeId,
+    officialPosition: row.officialPosition,
+    unofficialPosition: row.unofficialPosition,
+    employeeCategory: row.employeeCategory,
+    benefitCode: row.benefitCode,
     validFrom: toDateOnly(row.validFrom),
     validTo: row.validTo ? toDateOnly(row.validTo) : null,
     legalEntity: toLegalEntityDto(row.legalEntity),
     payTerms: row.payTerms.map(toPayTermsDto),
+    staffOrders: row.staffOrders.map(toStaffOrderDto),
   };
 }
 
@@ -159,7 +219,7 @@ function toListItem(row: EmployeeRecord): HrEmployeeListItemDto {
   const current = pickCurrentEmployment(row.employments);
   const payWarnings = collectHrPayWarnings(
     row.employments.map((item) => ({
-      payGroup: item.payGroup,
+      payGroup: payGroupSlugFromRow(item),
       validFrom: toDateOnly(item.validFrom),
       validTo: item.validTo ? toDateOnly(item.validTo) : null,
       legalEntityName: item.legalEntity.name,
@@ -178,12 +238,13 @@ function toListItem(row: EmployeeRecord): HrEmployeeListItemDto {
     middleName: row.middleName,
     displayName: row.displayName,
     status: isStatus(row.status) ? row.status : 'inactive',
+    personId: row.personId,
     userId: row.userId,
     userName: row.user?.name || row.user?.email || null,
     notes: row.notes,
     cardMasked: maskCardLast4(row.cardLast4),
     currentLegalEntityName: current?.legalEntity.name ?? null,
-    currentPayGroup: current && isPayGroup(current.payGroup) ? current.payGroup : null,
+    currentPayGroup: current ? payGroupSlugFromRow(current) : null,
     hasPayWarning: payWarnings.length > 0,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
   };
@@ -198,6 +259,14 @@ function toDetail(row: EmployeeRecord, revealCard: boolean): HrEmployeeDetailDto
     ...toListItem(row),
     cardLast4: row.cardLast4,
     cardNumber,
+    person: row.person
+      ? {
+          id: row.person.id,
+          displayName: row.person.displayName,
+          taxCode: row.person.taxCode,
+          phone: row.person.phone,
+        }
+      : null,
     employments: row.employments.map(toEmploymentDto),
   };
 }
@@ -238,7 +307,7 @@ export class HrService {
     return rows.map(toLegalEntityDto);
   }
 
-  async createLegalEntity(payload: HrLegalEntityWritePayload): Promise<HrLegalEntityDto> {
+  async createLegalEntity(payload: HrLegalEntityWritePayload, userId?: number): Promise<HrLegalEntityDto> {
     const name = payload.name?.trim();
     if (!name) throw new HrError('Вкажіть назву роботодавця');
     if (!isLegalEntityKind(payload.kind)) throw new HrError('Невідомий тип роботодавця');
@@ -258,11 +327,18 @@ export class HrService {
         isActive: payload.isActive ?? true,
       },
     });
+    await hrAuditService.log({
+      entityType: 'legal_entity',
+      entityId: created.id,
+      action: 'created',
+      userId,
+      payload: { code: created.code, name: created.name },
+    });
     logServer('[hr] created legal entity', { id: created.id, code: created.code });
     return toLegalEntityDto(created);
   }
 
-  async updateLegalEntity(id: number, payload: HrLegalEntityWritePayload): Promise<HrLegalEntityDto> {
+  async updateLegalEntity(id: number, payload: HrLegalEntityWritePayload, userId?: number): Promise<HrLegalEntityDto> {
     const existing = await prisma.hrLegalEntity.findUnique({ where: { id } });
     if (!existing) throw new HrError('Роботодавця не знайдено', 404);
 
@@ -288,10 +364,17 @@ export class HrService {
         isActive: nextActive,
       },
     });
+    await hrAuditService.log({
+      entityType: 'legal_entity',
+      entityId: id,
+      action: 'updated',
+      userId,
+      payload: { name: updated.name, isActive: updated.isActive },
+    });
     return toLegalEntityDto(updated);
   }
 
-  async deleteLegalEntity(sourceId: number, targetLegalEntityId: number): Promise<void> {
+  async deleteLegalEntity(sourceId: number, targetLegalEntityId: number, userId?: number): Promise<void> {
     if (sourceId === targetLegalEntityId) {
       throw new HrError('Оберіть іншого роботодавця для перенесення даних');
     }
@@ -339,7 +422,7 @@ export class HrService {
                 where: {
                   employeeId: employment.employeeId,
                   legalEntityId: targetLegalEntityId,
-                  payGroup: employment.payGroup,
+                  payGroupId: employment.payGroupId,
                   validFrom: employment.validFrom,
                 },
               });
@@ -355,6 +438,14 @@ export class HrService {
       },
       { maxWait: 10_000, timeout: 60_000 },
     );
+
+    await hrAuditService.log({
+      entityType: 'legal_entity',
+      entityId: targetLegalEntityId,
+      action: 'deleted',
+      userId,
+      payload: { sourceId, targetLegalEntityId, sourceCode: source.code },
+    });
 
     logServer('[hr] deleted legal entity with merge', {
       sourceId,
@@ -390,19 +481,32 @@ export class HrService {
 
   private buildEmployeeSearchWhere(q: string | undefined, deleted: boolean): Prisma.HrEmployeeWhereInput {
     const trimmed = q?.trim();
-    return {
+    const base: Prisma.HrEmployeeWhereInput = {
       deletedAt: deleted ? { not: null } : null,
-      ...(trimmed
-        ? {
-            OR: [
-              { displayName: { contains: trimmed } },
-              { lastName: { contains: trimmed } },
-              { firstName: { contains: trimmed } },
-              { notes: { contains: trimmed } },
-            ],
-          }
-        : {}),
     };
+    if (!trimmed) return base;
+
+    const tokens = trimmed.split(/\s+/).filter((token) => token.length >= 2);
+    const orConditions: Prisma.HrEmployeeWhereInput[] = [
+      { displayName: { contains: trimmed } },
+      { lastName: { contains: trimmed } },
+      { firstName: { contains: trimmed } },
+      { notes: { contains: trimmed } },
+    ];
+
+    if (tokens.length > 1) {
+      orConditions.push({
+        AND: tokens.map((token) => ({
+          OR: [
+            { displayName: { contains: token } },
+            { lastName: { contains: token } },
+            { firstName: { contains: token } },
+          ],
+        })),
+      });
+    }
+
+    return { ...base, OR: orConditions };
   }
 
   async listEmployees(search?: string, includeInactive = true): Promise<HrEmployeeListItemDto[]> {
@@ -435,7 +539,11 @@ export class HrService {
     return toDetail(row, revealCard);
   }
 
-  async createEmployee(payload: HrEmployeeWritePayload, revealCard: boolean): Promise<HrEmployeeDetailDto> {
+  async createEmployee(
+    payload: HrEmployeeWritePayload,
+    revealCard: boolean,
+    userId?: number,
+  ): Promise<HrEmployeeDetailDto> {
     const lastName = payload.lastName?.trim();
     const firstName = payload.firstName?.trim();
     if (!lastName || !firstName) throw new HrError('Вкажіть прізвище та імʼя');
@@ -443,6 +551,7 @@ export class HrService {
     const status = payload.status && isStatus(payload.status) ? payload.status : 'active';
     const card = applyCardUpdate(payload);
     await this.assertUserAvailable(payload.userId ?? null);
+    await this.assertPersonAvailable(payload.personId ?? null);
 
     const created = await prisma.hrEmployee.create({
       data: {
@@ -451,17 +560,30 @@ export class HrService {
         middleName,
         displayName: buildDisplayName(lastName, firstName, middleName),
         status,
+        personId: payload.personId ?? null,
         userId: payload.userId ?? null,
         notes: payload.notes?.trim() || null,
         ...(card ?? {}),
       },
       include: employeeInclude,
     });
+    await hrAuditService.log({
+      entityType: 'employee',
+      entityId: created.id,
+      action: 'created',
+      userId,
+      payload: { displayName: created.displayName },
+    });
     logServer('[hr] created employee', { id: created.id });
     return toDetail(created, revealCard);
   }
 
-  async updateEmployee(id: number, payload: HrEmployeeWritePayload, revealCard: boolean): Promise<HrEmployeeDetailDto> {
+  async updateEmployee(
+    id: number,
+    payload: HrEmployeeWritePayload,
+    revealCard: boolean,
+    userId?: number,
+  ): Promise<HrEmployeeDetailDto> {
     const existing = await prisma.hrEmployee.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new HrError('Співробітника не знайдено', 404);
 
@@ -475,6 +597,9 @@ export class HrService {
     if (payload.userId !== undefined) {
       await this.assertUserAvailable(payload.userId, id);
     }
+    if (payload.personId !== undefined) {
+      await this.assertPersonAvailable(payload.personId, id);
+    }
 
     const updated = await prisma.hrEmployee.update({
       where: { id },
@@ -484,16 +609,23 @@ export class HrService {
         middleName,
         displayName: buildDisplayName(lastName, firstName, middleName),
         status,
+        personId: payload.personId === undefined ? existing.personId : payload.personId,
         userId: payload.userId === undefined ? existing.userId : payload.userId,
         notes: payload.notes === undefined ? existing.notes : payload.notes?.trim() || null,
         ...(card ?? {}),
       },
       include: employeeInclude,
     });
+    await hrAuditService.log({
+      entityType: 'employee',
+      entityId: id,
+      action: 'updated',
+      userId,
+    });
     return toDetail(updated, revealCard);
   }
 
-  async deleteEmployee(id: number): Promise<void> {
+  async deleteEmployee(id: number, userId?: number): Promise<void> {
     const existing = await prisma.hrEmployee.findFirst({
       where: { id, deletedAt: null },
       select: { id: true },
@@ -507,10 +639,16 @@ export class HrService {
         status: 'inactive',
       },
     });
+    await hrAuditService.log({
+      entityType: 'employee',
+      entityId: id,
+      action: 'deleted',
+      userId,
+    });
     logServer('[hr] deleted employee', { id });
   }
 
-  async restoreEmployee(id: number): Promise<HrEmployeeListItemDto> {
+  async restoreEmployee(id: number, userId?: number): Promise<HrEmployeeListItemDto> {
     const existing = await prisma.hrEmployee.findFirst({
       where: { id, deletedAt: { not: null } },
       select: { id: true },
@@ -525,17 +663,105 @@ export class HrService {
       },
       include: employeeInclude,
     });
+    await hrAuditService.log({
+      entityType: 'employee',
+      entityId: id,
+      action: 'restored',
+      userId,
+    });
     logServer('[hr] restored employee', { id });
     return toListItem(restored);
   }
 
-  async createEmployment(employeeId: number, payload: HrEmploymentWritePayload): Promise<HrEmploymentDto> {
+  async mergeEmployment(fromId: number, toId: number, userId?: number): Promise<void> {
+    if (fromId === toId) throw new HrError('Оберіть іншу зайнятість для об\'єднання');
+    const [from, to] = await Promise.all([
+      prisma.hrEmployment.findUnique({ where: { id: fromId }, include: employmentInclude }),
+      prisma.hrEmployment.findUnique({ where: { id: toId }, include: employmentInclude }),
+    ]);
+    if (!from || !to) throw new HrError('Зайнятість не знайдено', 404);
+    if (from.employeeId !== to.employeeId) {
+      throw new HrError('Зайнятості належать різним співробітникам');
+    }
+    if (from.payGroupId !== to.payGroupId) {
+      throw new HrError('Об\'єднувати можна лише зайнятості з однаковою групою оплати');
+    }
+
+    const mergeStats = await prisma.$transaction(
+      async (tx) => mergeEmploymentRecords(tx, fromId, toId),
+      { maxWait: 10_000, timeout: 60_000 },
+    );
+
+    const toEmploymentLabel = (row: typeof from) => {
+      const payGroupSlug = row.payGroup.slug;
+      if (!isPayGroup(payGroupSlug)) {
+        throw new HrError('Некоректна група оплати');
+      }
+      return buildEmploymentAuditLabel({
+        legalEntityName: row.legalEntity.name,
+        payGroupSlug,
+        validFrom: row.validFrom.toISOString().slice(0, 10),
+        validTo: row.validTo ? row.validTo.toISOString().slice(0, 10) : null,
+        personnelNumber: row.personnelNumber,
+      });
+    };
+
+    await hrAuditService.log({
+      entityType: 'employee',
+      entityId: from.employeeId,
+      action: 'employment_merged',
+      userId,
+      payload: {
+        fromId,
+        toId,
+        removed: {
+          id: fromId,
+          label: toEmploymentLabel(from),
+          legalEntity: from.legalEntity.name,
+          payGroup: from.payGroup.label,
+          period: `${from.validFrom.toISOString().slice(0, 10)} – ${from.validTo ? from.validTo.toISOString().slice(0, 10) : 'досі'}`,
+          personnelNumber: from.personnelNumber,
+        },
+        kept: {
+          id: toId,
+          label: toEmploymentLabel(to),
+          legalEntity: to.legalEntity.name,
+          payGroup: to.payGroup.label,
+          period: `${to.validFrom.toISOString().slice(0, 10)} – ${to.validTo ? to.validTo.toISOString().slice(0, 10) : 'досі'}`,
+          personnelNumber: to.personnelNumber,
+        },
+        transferred: {
+          timesheetEntries: mergeStats.timesheetEntriesMoved,
+          payrollLines: mergeStats.payrollLinesMoved,
+          payTerms: mergeStats.payTermsMoved,
+        },
+        deletedDuplicates: {
+          timesheetEntries: mergeStats.timesheetEntriesDeleted,
+          payrollLines: mergeStats.payrollLinesDeleted,
+          payTerms: mergeStats.payTermsDeleted,
+        },
+      },
+    });
+  }
+
+  async createEmployment(
+    employeeId: number,
+    payload: HrEmploymentWritePayload,
+    userId?: number,
+  ): Promise<HrEmploymentDto> {
     await this.requireEmployee(employeeId);
     const data = await this.normalizeEmploymentPayload(payload);
     try {
       const created = await prisma.hrEmployment.create({
         data: { employeeId, ...data },
-        include: { legalEntity: true, payTerms: { orderBy: { effectiveFrom: 'desc' } } },
+        include: employmentInclude,
+      });
+      await hrAuditService.log({
+        entityType: 'employment',
+        entityId: created.id,
+        action: 'created',
+        userId,
+        payload: { employeeId, payGroupId: created.payGroupId },
       });
       return toEmploymentDto(created);
     } catch (error) {
@@ -544,7 +770,11 @@ export class HrService {
     }
   }
 
-  async updateEmployment(id: number, payload: HrEmploymentWritePayload): Promise<HrEmploymentDto> {
+  async updateEmployment(
+    id: number,
+    payload: HrEmploymentWritePayload,
+    userId?: number,
+  ): Promise<HrEmploymentDto> {
     const existing = await prisma.hrEmployment.findUnique({ where: { id } });
     if (!existing) throw new HrError('Зайнятість не знайдено', 404);
     const data = await this.normalizeEmploymentPayload(payload);
@@ -552,7 +782,13 @@ export class HrService {
       const updated = await prisma.hrEmployment.update({
         where: { id },
         data,
-        include: { legalEntity: true, payTerms: { orderBy: { effectiveFrom: 'desc' } } },
+        include: employmentInclude,
+      });
+      await hrAuditService.log({
+        entityType: 'employment',
+        entityId: id,
+        action: 'updated',
+        userId,
       });
       return toEmploymentDto(updated);
     } catch (error) {
@@ -561,7 +797,7 @@ export class HrService {
     }
   }
 
-  async deleteEmployment(id: number): Promise<void> {
+  async deleteEmployment(id: number, userId?: number): Promise<void> {
     const existing = await prisma.hrEmployment.findUnique({ where: { id } });
     if (!existing) throw new HrError('Зайнятість не знайдено', 404);
     const hasTimesheet = await prisma.hrTimesheetEntry.count({ where: { employmentId: id } });
@@ -569,9 +805,19 @@ export class HrService {
       throw new HrError('Неможливо видалити зайнятість: є записи табеля');
     }
     await prisma.hrEmployment.delete({ where: { id } });
+    await hrAuditService.log({
+      entityType: 'employment',
+      entityId: id,
+      action: 'deleted',
+      userId,
+    });
   }
 
-  async createPayTerms(employmentId: number, payload: HrPayTermsWritePayload): Promise<HrPayTermsDto> {
+  async createPayTerms(
+    employmentId: number,
+    payload: HrPayTermsWritePayload,
+    userId?: number,
+  ): Promise<HrPayTermsDto> {
     const employment = await prisma.hrEmployment.findUnique({ where: { id: employmentId } });
     if (!employment) throw new HrError('Зайнятість не знайдено', 404);
     const data = this.normalizePayTermsPayload(payload);
@@ -592,21 +838,40 @@ export class HrService {
         data: { employmentId, ...data },
       });
     });
+    await hrAuditService.log({
+      entityType: 'pay_terms',
+      entityId: created.id,
+      action: 'created',
+      userId,
+      payload: { employmentId },
+    });
     return toPayTermsDto(created);
   }
 
-  async updatePayTerms(id: number, payload: HrPayTermsWritePayload): Promise<HrPayTermsDto> {
+  async updatePayTerms(id: number, payload: HrPayTermsWritePayload, userId?: number): Promise<HrPayTermsDto> {
     const existing = await prisma.hrPayTerms.findUnique({ where: { id } });
     if (!existing) throw new HrError('Ставку не знайдено', 404);
     const data = this.normalizePayTermsPayload(payload);
     const updated = await prisma.hrPayTerms.update({ where: { id }, data });
+    await hrAuditService.log({
+      entityType: 'pay_terms',
+      entityId: id,
+      action: 'updated',
+      userId,
+    });
     return toPayTermsDto(updated);
   }
 
-  async deletePayTerms(id: number): Promise<void> {
+  async deletePayTerms(id: number, userId?: number): Promise<void> {
     const existing = await prisma.hrPayTerms.findUnique({ where: { id } });
     if (!existing) throw new HrError('Ставку не знайдено', 404);
     await prisma.hrPayTerms.delete({ where: { id } });
+    await hrAuditService.log({
+      entityType: 'pay_terms',
+      entityId: id,
+      action: 'deleted',
+      userId,
+    });
   }
 
   private async requireEmployee(id: number): Promise<void> {
@@ -629,8 +894,24 @@ export class HrService {
     if (taken) throw new HrError('Цей обліковий запис уже привʼязано до іншого співробітника');
   }
 
+  private async assertPersonAvailable(personId: number | null, excludeEmployeeId?: number): Promise<void> {
+    if (personId == null) return;
+    const person = await prisma.hrPerson.findUnique({ where: { id: personId }, select: { id: true } });
+    if (!person) throw new HrError('Фізичну особу не знайдено');
+    const taken = await prisma.hrEmployee.findFirst({
+      where: {
+        personId,
+        deletedAt: null,
+        ...(excludeEmployeeId ? { id: { not: excludeEmployeeId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (taken) throw new HrError('Цю фізичну особу уже привʼязано до іншого співробітника');
+  }
+
   private async normalizeEmploymentPayload(payload: HrEmploymentWritePayload) {
     if (!isPayGroup(payload.payGroup)) throw new HrError('Невідома група оплати');
+    const payGroupId = await hrPayGroupService.resolveId(payload.payGroup);
     const legalEntity = await prisma.hrLegalEntity.findUnique({ where: { id: Number(payload.legalEntityId) } });
     if (!legalEntity || !legalEntity.isActive) throw new HrError('Юрособу не знайдено');
     const validFrom = requireDateOnly(payload.validFrom, 'validFrom');
@@ -638,7 +919,12 @@ export class HrService {
     if (validTo && validTo < validFrom) throw new HrError('Дата завершення не може бути раніше початку');
     return {
       legalEntityId: legalEntity.id,
-      payGroup: payload.payGroup,
+      payGroupId,
+      personnelNumber: payload.personnelNumber?.trim() || null,
+      officialPosition: payload.officialPosition?.trim() || null,
+      unofficialPosition: payload.unofficialPosition?.trim() || null,
+      employeeCategory: payload.employeeCategory?.trim() || null,
+      benefitCode: payload.benefitCode?.trim() || null,
       validFrom,
       validTo,
     };

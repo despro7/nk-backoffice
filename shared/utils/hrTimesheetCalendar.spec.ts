@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTimesheetMonthMeta, parseYearMonth } from './hrTimesheetCalendar';
+import { buildTimesheetMonthMeta, listYearMonthsInRange, parseYearMonth } from './hrTimesheetCalendar';
 
 describe('hrTimesheetCalendar', () => {
   it('рахує будні вересня 2026 і тижневі вікна', () => {
@@ -15,5 +15,14 @@ describe('hrTimesheetCalendar', () => {
 
   it('парсить YYYY-MM', () => {
     expect(parseYearMonth('2026-09')).toEqual({ year: 2026, month: 9 });
+  });
+
+  it('повертає всі місяці в діапазоні дат', () => {
+    expect(listYearMonthsInRange('2026-07-15', '2026-07-28')).toEqual([{ year: 2026, month: 7 }]);
+    expect(listYearMonthsInRange('2026-07-28', '2026-09-05')).toEqual([
+      { year: 2026, month: 7 },
+      { year: 2026, month: 8 },
+      { year: 2026, month: 9 },
+    ]);
   });
 });
