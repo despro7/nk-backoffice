@@ -1,6 +1,6 @@
 import "./global.css";
 
-import React, { useEffect } from "react";
+import React, { Suspense, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -19,14 +19,25 @@ import { ServerStatusProvider } from "./hooks/ServerStatusContext";
 import { useEquipmentFromAuth } from "./contexts/AuthContext";
 import NotFound from "./pages/NotFound";
 import { Auth } from "./pages/Auth";
-import Dashboard from "./pages/Dashboard";
-import TestSerialCom from "./pages/test-serial-com";
+import { PageRouteFallback } from "./components/PageRouteFallback";
+import type { LazyPageComponent } from "./lib/lazyPage";
 import { ToastService } from "./services/ToastService";
 import { LoggingService } from "./services/LoggingService";
 import { initAudioContext } from "./lib/soundUtils";
 import { useIsMobile } from "./hooks/useTouchUi";
 
 const queryClient = new QueryClient();
+
+const dashboardRoute = appRoutes.find((route) => route.path === '/')!;
+const testSerialComRoute = appRoutes.find((route) => route.path === '/test-serial-com')!;
+
+function LazyRoutePage({ component: Component }: { component: LazyPageComponent }) {
+  return (
+    <Suspense fallback={<PageRouteFallback />}>
+      <Component />
+    </Suspense>
+  );
+}
 
 // Компонент для рендерінгу маршрутів із підтримкою ключів
 const AppRoutes = () => {
@@ -58,7 +69,7 @@ const AppRoutes = () => {
       <Route path="/" element={
         <ProtectedRoute>
           <Layout>
-            <Dashboard />
+            <LazyRoutePage component={dashboardRoute.component} />
           </Layout>
         </ProtectedRoute>
       } />
@@ -66,7 +77,7 @@ const AppRoutes = () => {
       {/* Маршрут без авторизації для тестування COM порту */}
       <Route path="/test-serial-com" element={
         <Layout>
-          <TestSerialCom />
+          <LazyRoutePage component={testSerialComRoute.component} />
         </Layout>
       } />
 
@@ -85,7 +96,7 @@ const AppRoutes = () => {
             element={
               <ProtectedRoute>
                 <Layout>
-                  <route.component />
+                  <LazyRoutePage component={route.component} />
                 </Layout>
               </ProtectedRoute>
             }

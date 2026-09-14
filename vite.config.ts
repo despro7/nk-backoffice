@@ -23,6 +23,22 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: "dist/client",
     chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+
+          if (id.includes("@heroui")) return "vendor-heroui";
+          if (id.includes("recharts")) return "vendor-recharts";
+          if (id.includes("@tiptap")) return "vendor-tiptap";
+          if (id.includes("/xlsx/")) return "vendor-xlsx";
+          if (id.includes("@zxing")) return "vendor-zxing";
+          if (id.includes("lucide-react")) return "vendor-lucide";
+          if (id.includes("framer-motion") || id.includes("/motion/")) return "vendor-motion";
+          if (id.includes("@tanstack/react-query")) return "vendor-query";
+        },
+      },
+    },
   },
   plugins: [react(), tailwindcss()],
   resolve: {
