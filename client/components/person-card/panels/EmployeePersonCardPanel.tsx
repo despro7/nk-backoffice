@@ -9,8 +9,7 @@ import {
   Tooltip,
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { ContactNameFields, type SplitNameValues } from '../fields/ContactNameFields';
-import type { HrEmployeeDetailDto, HrPersonDto, HrPersonSummaryDto, HrUserOptionDto } from '@shared/types/hr';
+import type { HrPersonDto, HrPersonSummaryDto, HrUserOptionDto } from '@shared/types/hr';
 
 export interface EmployeePersonCardFormState {
   lastName: string;
@@ -36,7 +35,6 @@ interface EmployeePersonCardPanelProps {
   canCreateUser: boolean;
   canRevealCard: boolean;
   form: EmployeePersonCardFormState;
-  detail?: HrEmployeeDetailDto | null;
   linkedPerson: HrPersonSummaryDto | null;
   personSearch: string;
   personOptions: HrPersonDto[];
@@ -47,7 +45,6 @@ interface EmployeePersonCardPanelProps {
   showCardMasked: boolean;
   cardDisplayLast4: string | null;
   onFormChange: <K extends keyof EmployeePersonCardFormState>(field: K, value: EmployeePersonCardFormState[K]) => void;
-  onSplitNameBlur: (field: keyof SplitNameValues) => void;
   onPersonSearchChange: (value: string) => void;
   onPersonSelect: (person: HrPersonDto | null) => void;
   onUnlinkPerson: () => void;
@@ -75,7 +72,6 @@ export function EmployeePersonCardPanel({
   canCreateUser,
   canRevealCard,
   form,
-  detail,
   linkedPerson,
   personSearch,
   personOptions,
@@ -86,7 +82,6 @@ export function EmployeePersonCardPanel({
   showCardMasked,
   cardDisplayLast4,
   onFormChange,
-  onSplitNameBlur,
   onPersonSearchChange,
   onPersonSelect,
   onUnlinkPerson,
@@ -99,31 +94,7 @@ export function EmployeePersonCardPanel({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {isCreate ? (
-        <ContactNameFields
-          mode="split"
-          splitName={{
-            lastName: form.lastName,
-            firstName: form.firstName,
-            middleName: form.middleName,
-          }}
-          canManage={canManage}
-          onSplitNameChange={(field, value) => onFormChange(field, value)}
-          onSplitNameBlur={onSplitNameBlur}
-        />
-      ) : (
-        <Input
-          label="ПІБ"
-          labelPlacement="outside"
-          value={detail?.displayName ?? ''}
-          isReadOnly
-          className="md:col-span-2"
-          autoComplete="off"
-        />
-      )}
-
-      {!isCreate ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 col-span-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 col-span-2">
           {selectedPerson ? (
             <div className="flex items-end gap-2">
               <div className="flex flex-col items-start flex-1 gap-1 px-3 py-2 bg-default-100 rounded-md">
@@ -277,8 +248,7 @@ export function EmployeePersonCardPanel({
               </Tooltip>
             ) : null}
           </div>
-        </div>
-      ) : null}
+      </div>
 
       <div className="flex flex-col gap-1">
         <Input

@@ -18,7 +18,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { ToastService } from '@/services/ToastService';
 import { HR_PAY_GROUP_LABELS, type HrEmployeeListItemDto } from '@shared/types/hr';
-import { HR_BTN_NEUTRAL, HR_TABLE_CLASS_NAMES, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens } from '../hrUi';
+import { HR_BTN_NEUTRAL, HR_TABLE_CLASS_NAMES, HrLinkedAccountIndicator, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens } from '../hrUi';
 
 interface EmployeesArchiveModalProps {
   isOpen: boolean;
@@ -135,8 +135,10 @@ export function EmployeesArchiveModal({ isOpen, onClose, onRestored }: Employees
                   {employees.map((employee) => (
                     <TableRow key={employee.id} className="opacity-70">
                       <TableCell>
-                        <div className="font-medium">{employee.displayName}</div>
-                        {employee.userName ? <div className="text-xs text-text-secondary">{employee.userName}</div> : null}
+                        <div className="flex items-center gap-1.5 font-medium">
+                          {employee.userName ? <HrLinkedAccountIndicator userName={employee.userName} /> : null}
+                          <span>{employee.displayName}</span>
+                        </div>
                       </TableCell>
                       <TableCell>
                         {employee.currentLegalEntityName ? (

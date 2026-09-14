@@ -159,18 +159,6 @@ function capitalizeUaName(value: string): string {
     .join('');
 }
 
-function buildEmployeeFullName(form: FormState, fallback?: string | null): string {
-  const parts = [form.lastName, form.firstName]
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.length > 0) return parts.join(' ');
-  if (fallback?.trim()) {
-    const words = fallback.trim().split(/\s+/);
-    return words.slice(0, 2).join(' ');
-  }
-  return '';
-}
-
 const CARD_MASKED_PREFIX = '•••• •••• ••••';
 
 function formatCardMask(value: string): string {
@@ -453,7 +441,7 @@ export function EmployeeDrawer({
   }, [isOpen, isCreate, employeeId, legalEntities, loadDetail, loadUsers, commitBaseline]);
 
   useEffect(() => {
-    if (!isOpen || isCreate) return;
+    if (!isOpen) return;
     const query = personSearch.trim();
     if (!query) {
       setPersonOptions([]);
@@ -476,7 +464,7 @@ export function EmployeeDrawer({
       })();
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [isOpen, isCreate, personSearch]);
+  }, [isOpen, personSearch]);
 
   const selectedUserKeys = useMemo(() => (form.userId ? [form.userId] : ['none']), [form.userId]);
 
@@ -610,27 +598,36 @@ export function EmployeeDrawer({
   );
 
   const openCreatePerson = useCallback(() => {
-    const displayName = detail?.displayName?.trim()
-      || [form.lastName, form.firstName, form.middleName].map((part) => part.trim()).filter(Boolean).join(' ');
-    setCreatePersonInitial({ displayName });
+    setCreatePersonInitial({ displayName: personSearch.trim() || undefined });
     setCreatePersonOpen(true);
-  }, [detail?.displayName, form.firstName, form.lastName, form.middleName]);
+  }, [personSearch]);
 
   const handleSave = useCallback(async () => {
+    if (isCreate && !form.personId) {
+      ToastService.show({ title: 'Оберіть фізичну особу', color: 'danger' });
+      throw new Error('Оберіть фізичну особу');
+    }
+
     const lastName = capitalizeUaName(form.lastName);
     const firstName = capitalizeUaName(form.firstName);
     const middleName = capitalizeUaName(form.middleName);
-    if (!lastName || !firstName) {
+    if (!isCreate && (!lastName || !firstName)) {
       ToastService.show({ title: 'Вкажіть прізвище та імʼя', color: 'danger' });
       throw new Error('Вкажіть прізвище та імʼя');
     }
-    setForm((prev) => ({ ...prev, lastName, firstName, middleName }));
+    if (!isCreate) {
+      setForm((prev) => ({ ...prev, lastName, firstName, middleName }));
+    }
     setSaving(true);
     try {
       const body = {
-        lastName,
-        firstName,
-        middleName: middleName || null,
+        ...(isCreate
+          ? {}
+          : {
+              lastName,
+              firstName,
+              middleName: middleName || null,
+            }),
         status: form.statusActive ? 'active' : 'inactive',
         userId: form.userId ? Number(form.userId) : null,
         personId: form.personId ? Number(form.personId) : null,
@@ -798,7 +795,6 @@ export function EmployeeDrawer({
                         canCreateUser={canCreateUser}
                         canRevealCard={canRevealCard}
                         form={form}
-                        detail={detail}
                         linkedPerson={selectedPerson}
                         personSearch={personSearch}
                         personOptions={personOptions}
@@ -809,7 +805,6 @@ export function EmployeeDrawer({
                         showCardMasked={showCardMasked}
                         cardDisplayLast4={cardDisplayLast4}
                         onFormChange={patchForm}
-                        onSplitNameBlur={(field) => patchForm(field, capitalizeUaName(form[field]))}
                         onPersonSearchChange={setPersonSearch}
                         onPersonSelect={(person) => {
                           if (person) {
@@ -828,7 +823,7 @@ export function EmployeeDrawer({
                         onCreatePerson={openCreatePerson}
                         onCreateUser={() => {
                           setCreateUserInitial({
-                            name: buildEmployeeFullName(form, detail?.displayName),
+                            name: selectedPerson?.displayName ?? detail?.displayName ?? '',
                           });
                           setCreateUserOpen(true);
                         }}

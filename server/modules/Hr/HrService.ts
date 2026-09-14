@@ -103,6 +103,28 @@ function buildDisplayName(lastName: string, firstName: string, middleName?: stri
   return [lastName, firstName, middleName].map((p) => p?.trim()).filter(Boolean).join(' ');
 }
 
+function parseUaDisplayName(displayName: string): {
+  lastName: string;
+  firstName: string;
+  middleName: string | null;
+} {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { lastName: '', firstName: '', middleName: null };
+  }
+  if (parts.length === 1) {
+    return { lastName: parts[0], firstName: '', middleName: null };
+  }
+  if (parts.length === 2) {
+    return { lastName: parts[0], firstName: parts[1], middleName: null };
+  }
+  return {
+    lastName: parts[0],
+    firstName: parts[1],
+    middleName: parts.slice(2).join(' ') || null,
+  };
+}
+
 function isLegalEntityKind(value: string): value is HrLegalEntityKind {
   return (HR_LEGAL_ENTITY_KINDS as readonly string[]).includes(value);
 }
@@ -544,10 +566,25 @@ export class HrService {
     revealCard: boolean,
     userId?: number,
   ): Promise<HrEmployeeDetailDto> {
-    const lastName = payload.lastName?.trim();
-    const firstName = payload.firstName?.trim();
-    if (!lastName || !firstName) throw new HrError('Вкажіть прізвище та імʼя');
-    const middleName = payload.middleName?.trim() || null;
+    if (!payload.personId) throw new HrError('Оберіть фізичну особу');
+
+    let lastName = payload.lastName?.trim() ?? '';
+    let firstName = payload.firstName?.trim() ?? '';
+    let middleName = payload.middleName?.trim() || null;
+
+    if (!lastName || !firstName) {
+      const person = await prisma.hrPerson.findUnique({
+        where: { id: payload.personId },
+        select: { displayName: true },
+      });
+      if (!person) throw new HrError('Фізичну особу не знайдено');
+      const parsed = parseUaDisplayName(person.displayName);
+      lastName = parsed.lastName;
+      firstName = parsed.firstName;
+      middleName = parsed.middleName;
+    }
+
+    if (!lastName || !firstName) throw new HrError('Не вдалося визначити ПІБ з обраної фізичної особи');
     const status = payload.status && isStatus(payload.status) ? payload.status : 'active';
     const card = applyCardUpdate(payload);
     await this.assertUserAvailable(payload.userId ?? null);

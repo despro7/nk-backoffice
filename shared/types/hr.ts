@@ -211,8 +211,8 @@ export interface HrEmployeeDetailDto extends HrEmployeeListItemDto {
 }
 
 export interface HrEmployeeWritePayload {
-  lastName: string;
-  firstName: string;
+  lastName?: string;
+  firstName?: string;
   middleName?: string | null;
   status?: HrEmployeeStatus;
   personId?: number | null;

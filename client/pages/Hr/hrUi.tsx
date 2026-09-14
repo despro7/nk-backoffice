@@ -1,4 +1,4 @@
-import { Chip } from '@heroui/react';
+import { Chip, Tooltip } from '@heroui/react';
 import type { ReactNode } from 'react';
 import {
   HR_PAY_GROUPS,
@@ -173,6 +173,18 @@ interface HrSpecChipProps {
   rounded?: 'full' | 'sm';
   selected?: boolean;
   onClick?: () => void;
+}
+
+export function HrLinkedAccountIndicator({ userName }: { userName: string }) {
+  const label = `Привʼязаний обліковий запис: ${userName}`;
+
+  return (
+    <Tooltip content={label} placement="top" showArrow>
+      <span className="inline-flex shrink-0" tabIndex={0} aria-label={label}>
+        <DynamicIcon name="link-2" size={15} className="text-blue-600" aria-hidden />
+      </span>
+    </Tooltip>
+  );
 }
 
 export function HrSpecChip({

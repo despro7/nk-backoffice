@@ -26,7 +26,7 @@ import {
 import { EmployeeDrawer } from './EmployeeDrawer';
 import { EmployeesArchiveModal } from './EmployeesArchiveModal';
 import { DEFAULT_EMPLOYEE_SORT, sortHrEmployees } from './employeeTableSort';
-import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HR_TABLE_CLASS_NAMES, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
+import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HR_TABLE_CLASS_NAMES, HrLinkedAccountIndicator, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
 
 export default function HrEmployeesPage() {
   const { hasPermission } = useRoleAccess();
@@ -232,6 +232,7 @@ export default function HrEmployeesPage() {
                     <TableCell>
                       <button type="button" className="text-left max-w-full" onClick={() => openEdit(employee.id)}>
                         <div className="flex items-center gap-1.5 font-medium">
+                          {employee.userName ? <HrLinkedAccountIndicator userName={employee.userName} /> : null}
                           {employee.hasPayWarning ? (
                             <DynamicIcon
                               name="triangle-alert"
@@ -245,7 +246,6 @@ export default function HrEmployeesPage() {
                         {employee.notes ? (
                           <div className="text-xs truncate max-w-full text-gray-400">{employee.notes}</div>
                         ) : null}
-                        {employee.userName ? <div className="text-xs text-text-secondary">{employee.userName}</div> : null}
                       </button>
                     </TableCell>
                     <TableCell>
