@@ -37,14 +37,8 @@ router.post('/register', authenticateToken, usersManage, async (req: Request<{},
         roleId: payload.dilovodRoleId,
       });
       payload.dilovodUserId = created.id;
-    } else if (payload.dilovodUserId) {
-      await dilovodService.updateUser({
-        id: payload.dilovodUserId,
-        name: payload.name?.trim() || undefined,
-        email: payload.email.trim(),
-        roleId: payload.dilovodRoleId,
-      });
     }
+    // Прив'язка існуючого dilovodUserId — лише локально в backoffice, без запису в Dilovod API.
 
     const result = await AuthService.register(payload);
     res.status(201).json({
@@ -326,7 +320,7 @@ router.get('/users', authenticateToken, usersManage, async (_req: Request, res: 
 router.put('/users/:id', authenticateToken, usersManage, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, email, password, role, roleName, isActive, dilovodUserId, dilovodRoleId } = req.body;
+    const { name, email, password, role, roleName, isActive, dilovodUserId } = req.body;
     const userId = parseInt(id, 10);
 
     if (email) {
@@ -370,20 +364,6 @@ router.put('/users/:id', authenticateToken, usersManage, async (req: Request, re
       data: updateData,
       select: USER_LIST_SELECT,
     });
-
-    const linkedDilovodUserId = typeof updatedUser.dilovodUserId === 'string'
-      ? updatedUser.dilovodUserId.trim()
-      : '';
-    if (linkedDilovodUserId) {
-      const { DilovodService } = await import('../services/dilovod/DilovodService.js');
-      const dilovodService = new DilovodService();
-      await dilovodService.updateUser({
-        id: linkedDilovodUserId,
-        name: typeof name === 'string' ? name.trim() : undefined,
-        email: typeof email === 'string' ? email.trim() : undefined,
-        roleId: typeof dilovodRoleId === 'string' ? dilovodRoleId.trim() : undefined,
-      });
-    }
 
     const stats = await loadUserStats([updatedUser.id]);
 
