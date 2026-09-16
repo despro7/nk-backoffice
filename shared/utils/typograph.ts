@@ -1,9 +1,14 @@
-import Typograf from 'typograf';
+import TypografModule from 'typograf';
 import type { ProductLabelPayload } from '../types/productLabel.js';
 
 const NBSP = '\u00A0';
 
-const labelTypograf = new Typograf({ locale: ['uk'] });
+/** typograf default export не має construct signature під NodeNext — явний cast. */
+type TypografCtor = new (prefs: { locale: string | string[] }) => {
+  execute(text: string): string;
+};
+
+const labelTypograf = new (TypografModule as unknown as TypografCtor)({ locale: ['uk'] });
 
 /** Нерозривний пробіл між числом і одиницями виміру на етикетках. */
 function applyLabelUnitNbsp(text: string): string {
