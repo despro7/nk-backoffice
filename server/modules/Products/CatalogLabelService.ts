@@ -265,7 +265,18 @@ export class CatalogLabelService {
       const buffer = await fs.readFile(abs);
       return { buffer, fileName: row.pdfFileName };
     } catch {
-      throw new Error('PDF файл не знайдено');
+      const payload = parseProductLabelPayload(row.payloadJson);
+      if (!payload) {
+        throw new Error('PDF файл не знайдено');
+      }
+
+      logServer(
+        `[CatalogLabel] PDF missing on disk for label ${labelId} (${row.pdfFileName}), regenerating from payload`,
+      );
+      await ensureLabelsDir(row.goodId);
+      const pdfBuffer = await renderLabelPdf(payload);
+      await fs.writeFile(abs, pdfBuffer);
+      return { buffer: pdfBuffer, fileName: row.pdfFileName };
     }
   }
 

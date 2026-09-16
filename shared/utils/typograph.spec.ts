@@ -10,9 +10,16 @@ describe('typographUk', () => {
     const result = typographUk(input);
 
     expect(result).toContain(`більше${NBSP}75%`);
-    expect(result).toContain(`до${NBSP}25ºС`);
+    expect(result).toContain(`до${NBSP}25°С`);
+    expect(result).toContain('0°С');
+    expect(result).not.toContain('º');
     expect(result).toContain(`24${NBSP}годин`);
     expect(result).not.toBe(input);
+  });
+
+  it('нормалізує º до ° перед С (PDF Arial)', () => {
+    expect(typographUk('від 0ºС до 25ºС')).toContain('0°С');
+    expect(typographUk('від 0ºС до 25ºС')).toContain(`до${NBSP}25°С`);
   });
 
   it('нормалізує лапки', () => {

@@ -2,6 +2,7 @@ import TypografModule from 'typograf';
 import type { ProductLabelPayload } from '../types/productLabel.js';
 
 const NBSP = '\u00A0';
+const DEGREE = '\u00B0';
 
 /** typograf default export не має construct signature під NodeNext — явний cast. */
 type TypografCtor = new (prefs: { locale: string | string[] }) => {
@@ -18,12 +19,18 @@ function applyLabelUnitNbsp(text: string): string {
   );
 }
 
+/** º (U+00BA) після числа — ordinal, не градус; Arial у PDF ламає наступну «С». */
+function normalizeLabelDegreeSign(text: string): string {
+  return text.replace(/(\d)\u00BA([CcСс])/g, `$1${DEGREE}$2`);
+}
+
 /** Типографує український текст: неразривні пробіли, лапки, тире тощо. */
 export function typographUk(text: string): string {
   const trimmed = text?.trim() ?? '';
   if (!trimmed) return text ?? '';
 
-  const result = labelTypograf.execute(text);
+  const normalized = normalizeLabelDegreeSign(text);
+  const result = labelTypograf.execute(normalized);
   return applyLabelUnitNbsp(result);
 }
 

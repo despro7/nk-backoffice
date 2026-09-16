@@ -276,11 +276,9 @@ export function ProductLabelPdfDocument({ payload }: ProductLabelPdfProps) {
               </View>
 
               <View style={{ width: L.manufacturerWidth }}>
-                <Text style={styles.manufacturerRegular}>
-                  <Text style={styles.manufacturerBold}>Виробник: </Text>
-                  {typographUk(S.manufacturer.name)}
-                </Text>
-                <Text style={styles.manufacturerRegular}>{S.manufacturer.fop}</Text>
+                <Text style={styles.manufacturerBold}>Виробник: </Text>
+                <Text style={styles.manufacturerRegular}>{typographUk(S.manufacturer.name)}</Text>
+                {/* <Text style={styles.manufacturerRegular}>{S.manufacturer.fop}</Text> */}
                 <Text style={[styles.manufacturerBold, { marginTop: 2 }]}>{S.manufacturer.emailLabel}</Text>
                 <Text style={styles.manufacturerRegular}>{S.manufacturer.email}</Text>
                 <Text style={{ marginTop: 1 }}>

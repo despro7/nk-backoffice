@@ -208,11 +208,9 @@ export function PortionLabelCanvas({ payload, onChange, disabled }: PortionLabel
               className="text-[6px] leading-[7px]"
               style={{ width: L.manufacturerWidth }}
             >
-              <p>
-                <span className="font-bold">Виробник: </span>
-                {typographUk(S.manufacturer.name)}
-              </p>
-              <p>{S.manufacturer.fop}</p>
+              <p className="font-bold">Виробник: </p>
+              <p>{typographUk(S.manufacturer.name)}</p>
+              {/* <p>{S.manufacturer.fop}</p> */}
               <p className="mt-[2px] font-bold">{S.manufacturer.emailLabel}</p>
               <p>{S.manufacturer.email}</p>
               <p className="mt-[1px]">
