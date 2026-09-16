@@ -110,6 +110,7 @@ type BatchNumbersRow = {
   quantity: number;
   firm: string;
   firmDisplayName: string;
+  expiration: string | null;
 };
 
 function batchLabelNeedsCatalogFallback(batch: Pick<BatchNumbersRow, 'batchId' | 'batchNumber'>): boolean {

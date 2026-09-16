@@ -705,6 +705,15 @@ export function unwrapDilovodName(value: unknown): string {
  * Людська назва партії зі словника goodPart (`getObject`).
  * Dilovod кладе номер то в `code`, то в `name.uk`, то в `number`.
  */
+/** Термін придатності партії зі словника goodPart (`getObject` → `header.expiration`). */
+export function extractBatchExpirationFromGoodPartHeader(
+  header: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!header || typeof header !== 'object') return null;
+  const expiration = String(header.expiration ?? '').trim();
+  return expiration || null;
+}
+
 export function extractBatchLabelFromGoodPartHeader(
   header: Record<string, unknown> | null | undefined,
   batchId: string,

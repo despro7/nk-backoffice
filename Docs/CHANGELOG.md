@@ -5,6 +5,70 @@
 
 ---
 
+## 2026-09-16 — Наліпки: UX друку, автозавантаження, видалення версій
+
+**Files:** `ProductLabelsTab.tsx`, `ProductLabelService.ts`, `CatalogLabelService.ts`, `ProductLabelsController.ts`, `shared/types/productLabel.ts`, `Docs/features/product-labels.md`
+
+### Зміни
+
+- При відкритті вкладки автоматично показується **остання згенерована версія** товару (партія підставляється з неї).
+- **Друк:** dropdown «Через браузер» / «Через QZ Tray»; поле **к-сті** для QZ (1–999).
+- **Аналітика** під превʼю: дата, автор (`publishedByName`), партія.
+- **Видалення версії** — кнопка лише для **ADMIN**; API `DELETE …/published/:id`.
+- API `GET …/published/latest?labelKind=` — остання версія по товару.
+
+---
+
+## 2026-09-16 — Типографіка текстів наліпок (typograf)
+
+**Files:** `shared/utils/typograph.ts`, `shared/utils/typograph.spec.ts`, `shared/utils/productLabel.ts`, `client/pages/Products/components/productDrawer/label/LabelEditableZone.tsx`, `LabelEditableBlock.tsx`, `PortionLabelCanvas.tsx`, `ProductLabelsTab.tsx`, `server/modules/Products/ProductLabelPdfDocument.tsx`, `package.json`, `Docs/features/product-labels.md`
+
+### Зміни
+
+- Підключено **`typograf`** (locale `uk`) — неразривні пробіли, лапки «», короткі слова.
+- `typographUk`, `typographProductLabelPayload`, `prepareProductLabelForRender`.
+- Додаткове правило: неразривний пробіл між числом і одиницею (`24 годин`, `75%`, `ккал`).
+- Типографіка при blur («Склад», умови зберігання), збереженні чернетки, генерації PDF і в превʼю Canvas.
+
+---
+
+## 2026-09-16 — Наліпки для друку (Products 2.0, тип «Порція»)
+
+**Files:** `client/pages/Products/components/productDrawer/ProductLabelsTab.tsx`, `ProductLabelPreview.tsx`, `label/*`, `client/services/ProductLabelService.ts`, `server/modules/Products/CatalogLabelService.ts`, `ProductLabelsController.ts`, `ProductLabelPdfDocument.tsx`, `productLabelPdfFonts.ts`, `shared/types/productLabel.ts`, `shared/utils/productLabel*.ts`, `shared/constants/productLabelPortionStatic.ts`, `server/services/dilovod/DilovodApiClient.ts`, `DilovodUtils.ts`, `prisma/schema.prisma`, `prisma/migrations/20260916010000_add_catalog_product_labels/`, `public/*.svg`, `public/CodeEAN13.woff`, `public/fonts/*`, `Docs/features/product-labels.md`
+
+### Функціонал
+
+- Вкладка **«Наліпки»** у `ProductDrawer`: вибір партії, чернетка, історія версій PDF, live-превʼю з inline-редагуванням, генерація / скачування / друк через QZ Tray.
+- Типи: **`portion`** (активний), **`box`** (заглушка).
+- Чернетки спільні між користувачами; `publishedBy` при генерації PDF.
+- PDF **100×100 мм**, макет Figma Auto Layout → Flexbox (Canvas + `@react-pdf/renderer`).
+- EAN-13 через шрифт **`CodeEAN13.woff`** (без растрового штрихкоду в PDF); графіка — SVG з `/public`.
+
+### Дані та seed
+
+- Таблиці `catalog_product_label_drafts`, `catalog_product_labels`; PDF у `uploads/catalog-labels/{goodId}/`.
+- Seed з BOM (склад), ваги, ШК партії, `splitProductTitle` для заголовка.
+- Поживна цінність: шаблон, 4 числові поля, валідація; автоккал (Atwater) з ручним override (`nutritionEnergyManual`).
+- **`expiresAt`**: Dilovod `expiration` → `MM.YYYY`; `resolveLabelExpiryDate` на клієнті; серверний fallback у `getDraft` / `seedDraft` через `getObject`.
+
+### Dilovod: expiration партій
+
+- `catalogs.goodParts` + `IN` повертає дати не для всіх партій → fallback **`getObject(header.expiration)`** у `enrichBatchExpirationsFromGoodParts`.
+- `extractBatchExpirationFromGoodPartHeader` у `DilovodUtils.ts`.
+
+### UI превʼю
+
+- Адаптивний масштаб; слот зверху для toolbar заголовка; рамка меж наліпки без overflow.
+- `LabelTitleBlock` — вирівнювання і ± розмір шрифту при фокусі.
+- `LabelEditableBlock` — суцільний outline для «Склад» / умов зберігання.
+- Чернетка без штрихкоду дозволена (`parseProductLabelPayload`).
+
+### Документація
+
+- `Docs/features/product-labels.md` — повний опис модуля.
+
+---
+
 ## 2026-09-14 — HR UX Фаза 2+: unsaved guard, архітектура person-card, merge modal
 
 **Files:** `client/components/person-card/UserCard.tsx`, `client/components/person-card/panels/UserCardPanel.tsx`, `client/pages/Hr/Employees/EmployeeDrawer.tsx`, `client/pages/Hr/Employers/ProductionCalendarTab.tsx`, `client/pages/Hr/Employers/index.tsx`, `client/components/hr/*`, `client/pages/Hr/components/PersonMergeModal.tsx`, `client/lib/formatUtils.ts`, `client/pages/Hr/Bonuses/index.tsx`, `client/pages/Hr/Fop/index.tsx`, `client/pages/Hr/Payroll/PayrollLineDrawer.tsx`, `server/modules/Hr/HrEmploymentMerge.spec.ts`, `server/modules/Hr/HrBonusService.spec.ts`, `server/modules/Hr/HrFopService.spec.ts`, `Docs/plans/hr-ux-phase2-plus.md`, `Docs/architecture/unsaved-guard.md`, `Docs/features/hr-module.md`

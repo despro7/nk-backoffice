@@ -26,11 +26,13 @@ import {
   isDilovodDisabledFlag,
   unwrapDilovodId,
   unwrapDilovodName,
+  extractBatchExpirationFromGoodPartHeader,
   extractBatchLabelFromGoodPartHeader,
 } from './DilovodUtils.js';
 import { delay } from './DilovodUtils.js';
 import {
   batchNumberNeedsResolution,
+  isMissingDilovodDate,
   isUsableDilovodBatchId,
   pickHumanBatchLabel,
 } from '../../../shared/utils/dilovodBatchId.js';
@@ -1808,6 +1810,7 @@ export class DilovodApiClient {
     quantity: number;
     firm: string;
     firmDisplayName: string;
+    expiration: string | null;
   }>> {
     await this.ensureReady();
 
@@ -1837,6 +1840,7 @@ export class DilovodApiClient {
       quantity: number;
       firm: string;
       firmDisplayName: string;
+      expiration: string | null;
     };
 
     const transformBatchRows = (rows: any[]): BatchNumbersRow[] => rows
@@ -1855,6 +1859,7 @@ export class DilovodApiClient {
           quantity: Number.isFinite(rawQty) ? rawQty : 0,
           firm: unwrapDilovodId(row.firm) || 'unknown',
           firmDisplayName: unwrapDilovodName(row.firm__pr) || 'невідома фірма',
+          expiration: null,
         };
       })
       .filter((row) =>
@@ -1923,7 +1928,8 @@ export class DilovodApiClient {
         console.log(`⚠️ [DilovodApiClient] SKU ${sku}: ${rows.length} сирих рядків, але 0 партій після фільтрації. Приклад:`, sample);
       }
 
-      const enriched = await this.enrichBatchLabelsFromGoodPartObjects(transformed);
+      const withLabels = await this.enrichBatchLabelsFromGoodPartObjects(transformed);
+      const enriched = await this.enrichBatchExpirationsFromGoodParts(withLabels);
       console.log(`✅ [DilovodApiClient] Трансформовано ${enriched.length} партій для SKU ${sku}`);
       return enriched;
     } catch (error) {
@@ -1983,6 +1989,82 @@ export class DilovodApiClient {
       const label = labelById.get(batch.batchId);
       return label ? { ...batch, batchNumber: label } : batch;
     });
+  }
+
+  /** Добирає expiration з catalogs.goodParts; fallback — getObject(header.expiration). */
+  private async enrichBatchExpirationsFromGoodParts<
+    T extends { batchId: string; expiration?: string | null },
+  >(batches: T[]): Promise<Array<T & { expiration: string | null }>> {
+    const ids = [...new Set(batches.map((batch) => batch.batchId).filter(Boolean))];
+    if (ids.length === 0) {
+      return batches.map((batch) => ({ ...batch, expiration: batch.expiration ?? null }));
+    }
+
+    const expirationById = new Map<string, string>();
+    for (const chunk of this.chunkArray(ids, 40)) {
+      try {
+        const resp = await this.makeRequest<unknown>({
+          version: '0.25',
+          key: this.apiKey,
+          action: 'request',
+          params: {
+            from: 'catalogs.goodParts',
+            fields: {
+              id: 'id',
+              expiration: 'expiration',
+            },
+            filters: [{ alias: 'id', operator: 'IN', value: chunk }],
+          },
+        });
+        const rows = this.normalizeToArray<Record<string, unknown>>(resp);
+        for (const row of rows) {
+          const id = unwrapDilovodId(row.id);
+          const expiration = String(row.expiration ?? '').trim();
+          if (id && expiration && !isMissingDilovodDate(expiration)) {
+            expirationById.set(id, expiration);
+          }
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.log(`⚠️ [DilovodApiClient] expiration lookup (catalog) failed: ${msg}`);
+      }
+    }
+
+    const missingIds = ids.filter((id) => !expirationById.has(id));
+    if (missingIds.length > 0) {
+      console.log(
+        `🔎 [DilovodApiClient] Дорезолв expiration через getObject: ${missingIds.length} id`,
+      );
+      for (const chunk of this.chunkArray(missingIds, 4)) {
+        await Promise.all(
+          chunk.map(async (id) => {
+            try {
+              const obj = await this.getObject(id);
+              if (this.extractDilovodError(obj)) return;
+              const header =
+                obj.header && typeof obj.header === 'object'
+                  ? (obj.header as Record<string, unknown>)
+                  : undefined;
+              const expiration = extractBatchExpirationFromGoodPartHeader(header);
+              if (expiration && !isMissingDilovodDate(expiration)) {
+                expirationById.set(id, expiration);
+              }
+            } catch (error) {
+              const msg = error instanceof Error ? error.message : String(error);
+              console.log(`⚠️ [DilovodApiClient] getObject(${id}) для expiration: ${msg}`);
+            }
+          }),
+        );
+      }
+      console.log(
+        `✅ [DilovodApiClient] Отримано ${expirationById.size}/${ids.length} expiration зі словника`,
+      );
+    }
+
+    return batches.map((batch) => ({
+      ...batch,
+      expiration: expirationById.get(batch.batchId) ?? batch.expiration ?? null,
+    }));
   }
 
   /**

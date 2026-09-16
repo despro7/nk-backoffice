@@ -9,8 +9,12 @@ import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 import { productOpsCache } from '../modules/Products/ProductOpsCache.js';
 import { productsCatalogService } from '../modules/Products/ProductsCatalogService.js';
 import { cronService } from '../services/cronService.js';
+import productLabelsRouter from '../modules/Products/ProductLabelsController.js';
 
 const router = express.Router();
+
+// Наліпки товару (до catch-all /:sku)
+router.use(productLabelsRouter);
 
 const productsEdit = requirePermission('products', 'edit', 'Редагувати товари (вага, штрихкод, порядок)');
 const productsSync = requirePermission('products', 'sync', 'Синхронізувати товари');

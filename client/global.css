@@ -1,5 +1,13 @@
 /* @tailwindcss v4 */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Nunito:wght@700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Days+One&family=Inter:wght@400;500;600;700&family=Nunito:wght@700;800&family=Open+Sans+Condensed:wght@700&display=swap');
+
+@font-face {
+  font-family: 'Code EAN13';
+  src: url('/CodeEAN13.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
 
 @import "tailwindcss";
 @plugin "./hero.ts";

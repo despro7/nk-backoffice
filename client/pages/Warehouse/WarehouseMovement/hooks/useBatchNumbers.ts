@@ -8,6 +8,8 @@ export interface BatchNumber {
   quantity: number;
   firm: string;
   firmDisplayName: string;
+  /** Термін придатності з Dilovod catalogs.goodParts.expiration */
+  expiration: string | null;
 }
 
 export interface FetchBatchesOptions {

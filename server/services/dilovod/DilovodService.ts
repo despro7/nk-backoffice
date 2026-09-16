@@ -671,13 +671,15 @@ export class DilovodService {
     firmId?: string,
     asOfDate?: Date,
     options?: { includeNonPositiveQty?: boolean },
-  ): Promise<Array<{    batchId: string;
+  ): Promise<Array<{
+    batchId: string;
     batchNumber: string;
     storage: string;
     storageDisplayName: string;
     quantity: number;
     firm: string;
     firmDisplayName: string;
+    expiration: string | null;
   }>> {
     try {
       const includeNonPositiveQty = Boolean(options?.includeNonPositiveQty);

@@ -27,6 +27,7 @@ model User {
   hrTimesheetLocks      HrTimesheetMonth[]
   hrPayrollLocks        HrPayrollPeriod[]  @relation("HrPayrollLockedBy")
   hrAuditLogs           HrAuditLog[]
+  catalogProductLabels  CatalogProductLabel[]
 
   @@map("users")
 }
@@ -490,6 +491,8 @@ model CatalogGood {
   prices     CatalogGoodPrice[]
   barcodes   CatalogGoodBarcode[]
   images     CatalogGoodImage[]
+  labelDrafts CatalogProductLabelDraft[]
+  labels     CatalogProductLabel[]
 
   @@index([parentId])
   @@index([parentId, sortOrder])
@@ -582,6 +585,43 @@ model CatalogGoodBarcode {
   @@index([code])
   @@index([goodPart])
   @@map("catalog_good_barcodes")
+}
+
+model CatalogProductLabelDraft {
+  id          Int      @id @default(autoincrement())
+  goodId      String   @db.VarChar(32)
+  batchId     String   @db.VarChar(32)
+  labelKind   String   @db.VarChar(16) // portion | box
+  batchNumber String   @db.VarChar(255)
+  payloadJson Json
+  updatedAt   DateTime @updatedAt
+
+  good CatalogGood @relation(fields: [goodId], references: [id], onDelete: Cascade)
+
+  @@unique([goodId, batchId, labelKind])
+  @@index([goodId])
+  @@map("catalog_product_label_drafts")
+}
+
+model CatalogProductLabel {
+  id            Int      @id @default(autoincrement())
+  goodId        String   @db.VarChar(32)
+  batchId       String   @db.VarChar(32)
+  labelKind     String   @db.VarChar(16)
+  batchNumber   String   @db.VarChar(255)
+  version       Int
+  barcode       String   @db.VarChar(64)
+  pdfFileName   String   @db.VarChar(255)
+  payloadJson   Json
+  publishedBy   Int?
+  publishedAt   DateTime @default(now())
+
+  good CatalogGood @relation(fields: [goodId], references: [id], onDelete: Cascade)
+  user User?       @relation(fields: [publishedBy], references: [id], onDelete: SetNull)
+
+  @@unique([goodId, batchId, labelKind, version])
+  @@index([goodId, batchId, labelKind])
+  @@map("catalog_product_labels")
 }
 
 /// Журнал дій HR (audit trail користувача)

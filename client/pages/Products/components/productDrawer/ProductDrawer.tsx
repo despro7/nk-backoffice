@@ -50,6 +50,7 @@ import {
 } from '../../ProductsTypes';
 import { DescriptionEditor } from '../DescriptionEditor';
 import { ProductImageUpload } from '../ProductImageUpload';
+import { ProductLabelsTab } from './ProductLabelsTab';
 import { StockBadge } from '@/components/StockBadge';
 import {
   areRequiredCatalogPricesFilled,
@@ -1076,19 +1077,8 @@ export function ProductDrawer({
                   </section>
                 )}
 
-                {cardTab === 'stickers' && hasObjectKind && !isFolder && (
-                  <section className="flex flex-col items-center justify-center gap-4 py-14 text-center">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-default-100">
-                      <DynamicIcon name="printer" size={28} className="text-default-400" />
-                    </div>
-                    <div className="max-w-sm space-y-1.5">
-                      <p className="text-sm font-semibold text-default-700">Наліпки для друку</p>
-                      <p className="text-sm leading-relaxed text-default-400">
-                        У цьому розділі буде генерація наліпок товару: назва, вага, штрихкод
-                        та інші дані для друку на етикетках.
-                      </p>
-                    </div>
-                  </section>
+                {cardTab === 'stickers' && hasObjectKind && !isFolder && detail && (
+                  <ProductLabelsTab detail={detail} readOnly={readOnly} isAdmin={isAdmin} />
                 )}
               </>
             )}

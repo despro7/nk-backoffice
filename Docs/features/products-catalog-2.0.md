@@ -1,6 +1,6 @@
 # Products 2.0 — домен керування каталогом Dilovod
 
-**Дата:** 2026-07-30 (оновлено 2026-09-10)  
+**Дата:** 2026-07-30 (оновлено 2026-09-16)  
 **Маршрут:** `/products` (`minRole: WAREHOUSE_MANAGER`)  
 **API:** `/api/catalog/`*
 
@@ -239,6 +239,12 @@ UI у `ProductDrawer` (секція «Штрихкоди»):
 - `onSelect`: `goodPart = batchId`, `goodPartName = batchNumber`.
 - Окремого Input «Партія (ID)» немає; у **debug mode** (`useDebug`) ID показується маленьким бейджем у полі номера партії.
 
+### Наліпки для друку
+
+Вкладка **«Наліпки»** у `ProductDrawer`: PDF-етикетки 100×100 мм для обраної партії (тип «Порція»), чернетка, версії, автопоказ останньої версії, друк (браузер / QZ). API: `/api/products/:goodId/labels/*`.  
+Тексти наліпки типографуються через **`typograf`** (`shared/utils/typograph.ts`) — неразривні пробіли, лапки, одиниці виміру.  
+Повний опис: **`Docs/features/product-labels.md`**.
+
 ---
 
 
@@ -258,7 +264,8 @@ client/pages/Products/
     CatalogToolbar.tsx          # Синхронізувати гілку (+ TEMP Legacy), вибірковий Legacy, archive/trash
     CatalogContextMenu.tsx      # Legacy Update, fromTrash / fromArchive (і в пошуку)
     MoveToFolderModal.tsx
-    ProductDrawer.tsx           # футер: Оновити Legacy; Tabs kind, BOM note, unitRatio Admin, …
+    ProductDrawer.tsx           # футер: Оновити Legacy; Tabs kind, BOM note, unitRatio Admin, Наліпки, …
+    ProductLabelsTab.tsx        # генерація PDF-етикеток (див. product-labels.md)
     DescriptionEditor.tsx
     ArchiveConfirmModal.tsx
     TrashDrawer.tsx             # ПКМ → context menu «Відновити»
