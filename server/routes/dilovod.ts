@@ -12,6 +12,7 @@ import type {
   DilovodSettingsRequest,
   DilovodDirectories
 } from '../../shared/types/dilovod.js';
+import { loadDilovodWarehouseDefaults } from '../services/dilovod/DilovodWarehouseDefaults.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -58,6 +59,8 @@ async function getDilovodSettings(): Promise<DilovodSettings> {
     return value === 'true' || value === '1';
   };
 
+  const warehouseDefaults = await loadDilovodWarehouseDefaults();
+
   return {
     apiUrl: settingsMap.get('dilovod_api_url'),
     apiKey: settingsMap.get('dilovod_api_key'),
@@ -70,8 +73,6 @@ async function getDilovodSettings(): Promise<DilovodSettings> {
     synchronizationInterval: (settingsMap.get('dilovod_synchronization_interval') as DilovodSettings['synchronizationInterval']) || 'daily',
     synchronizationHour: settingsMap.get('dilovod_synchronization_hour') !== undefined ? Number(settingsMap.get('dilovod_synchronization_hour')) : 6,
     synchronizationMinute: settingsMap.get('dilovod_synchronization_minute') !== undefined ? Number(settingsMap.get('dilovod_synchronization_minute')) : 0,
-    synchronizationRegularPrice: parseBool(settingsMap.get('dilovod_synchronization_regular_price')),
-    synchronizationSalePrice: parseBool(settingsMap.get('dilovod_synchronization_sale_price')),
     synchronizationStockQuantity: parseBool(settingsMap.get('dilovod_synchronization_stock_quantity')),
     ordersInterval: (settingsMap.get('dilovod_orders_interval') as DilovodSettings['ordersInterval']) || 'hourly',
     ordersHour: settingsMap.get('dilovod_orders_hour') !== undefined ? Number(settingsMap.get('dilovod_orders_hour')) : 5,
@@ -91,6 +92,10 @@ async function getDilovodSettings(): Promise<DilovodSettings> {
     logSendOrder: parseBool(settingsMap.get('dilovod_log_send_order')),
     liqpayCommission: parseBool(settingsMap.get('dilovod_liqpay_commission')),
     accPolicyColorMap: parseJsonSafe(settingsMap.get('dilovod_acc_policy_color_map'), {}),
+    warehouseBusinessId: warehouseDefaults.businessId,
+    warehouseUnitId: warehouseDefaults.unitId,
+    warehouseAccountId: warehouseDefaults.accountId,
+    warehouseSetAccountId: warehouseDefaults.setAccountId,
   };
 }
 
@@ -116,8 +121,6 @@ async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<Di
   if (settings.synchronizationInterval !== undefined) add('dilovod_synchronization_interval', settings.synchronizationInterval || 'daily', 'Інтервал синхронізації залишків');
   if (settings.synchronizationHour !== undefined) add('dilovod_synchronization_hour', String(settings.synchronizationHour ?? 6), 'Година запуску синхронізації залишків');
   if (settings.synchronizationMinute !== undefined) add('dilovod_synchronization_minute', String(settings.synchronizationMinute ?? 0), 'Хвилина запуску синхронізації залишків');
-  if (settings.synchronizationRegularPrice !== undefined) add('dilovod_synchronization_regular_price', String(settings.synchronizationRegularPrice ?? false), 'Синхронізація звичайних цін');
-  if (settings.synchronizationSalePrice !== undefined) add('dilovod_synchronization_sale_price', String(settings.synchronizationSalePrice ?? false), 'Синхронізація акційних цін');
   if (settings.synchronizationStockQuantity !== undefined) add('dilovod_synchronization_stock_quantity', String(settings.synchronizationStockQuantity ?? false), 'Синхронізація залишків');
   if (settings.ordersInterval !== undefined) add('dilovod_orders_interval', settings.ordersInterval || 'hourly', 'Інтервал синхронізації замовлень');
   if (settings.ordersHour !== undefined) add('dilovod_orders_hour', String(settings.ordersHour ?? 5), 'Година запуску синхронізації замовлень');
@@ -142,6 +145,18 @@ async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<Di
       JSON.stringify(settings.accPolicyColorMap || {}),
       'Закріплені кольори типів номенклатури (accPolicies)'
     );
+  }
+  if (settings.warehouseBusinessId !== undefined) {
+    add('dilovod_warehouse_business_id', settings.warehouseBusinessId || '', 'Напрям бізнесу для складських документів');
+  }
+  if (settings.warehouseUnitId !== undefined) {
+    add('dilovod_warehouse_unit_id', settings.warehouseUnitId || '', 'Одиниця виміру (шт.) для складських документів');
+  }
+  if (settings.warehouseAccountId !== undefined) {
+    add('dilovod_warehouse_account_id', settings.warehouseAccountId || '', 'Рахунок обліку звичайних товарів');
+  }
+  if (settings.warehouseSetAccountId !== undefined) {
+    add('dilovod_warehouse_set_account_id', settings.warehouseSetAccountId || '', 'Рахунок обліку наборів / монолітів');
   }
 
   if (settingsToSave.length === 0) {

@@ -1,5 +1,92 @@
 import { prisma } from '../lib/utils.js';
 
+/** Скільки днів зберігати записи історії синхронізацій */
+export const SYNC_HISTORY_RETENTION_DAYS = 7;
+
+export type SyncHistoryType = 'manual' | 'automatic' | 'background';
+
+export interface SyncHistoryDetailsInput {
+  totalProcessed?: number;
+  newOrders?: number;
+  updatedOrders?: number;
+  skippedOrders?: number;
+  errors?: number;
+  metadata?: Record<string, unknown>;
+  orderDetails?: unknown[];
+  startDate?: string;
+  endDate?: string;
+  syncMode?: string;
+  changesSummary?: Record<string, unknown>;
+  sampleOrders?: unknown[];
+  batchUpdateDuration?: number;
+  successRate?: number;
+}
+
+/** Повертає дату відсічення для retention-фільтра */
+export function getSyncHistoryRetentionCutoff(): Date {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - SYNC_HISTORY_RETENTION_DAYS);
+  return cutoff;
+}
+
+/**
+ * Нормалізує duration до секунд.
+ * Manual sync зберігав секунди, automatic — мілісекунди (legacy).
+ */
+export function normalizeDurationSeconds(duration: number): number {
+  if (!duration || duration <= 0) return 0;
+  // Значення > 1 год в «секундах» — ймовірно legacy ms
+  if (duration > 3600) return duration / 1000;
+  return duration;
+}
+
+/** Конвертує тривалість з мілісекунд у секунди для збереження в БД */
+export function durationMsToSeconds(durationMs: number): number {
+  if (!durationMs || durationMs <= 0) return 0;
+  return durationMs / 1000;
+}
+
+/** Формує details для запису історії залежно від режиму full-log */
+export function buildSyncHistoryDetails(
+  fullLog: boolean,
+  input: SyncHistoryDetailsInput,
+): Record<string, unknown> {
+  const minimal = {
+    totalProcessed: input.totalProcessed ?? 0,
+    newOrders: input.newOrders ?? 0,
+    updatedOrders: input.updatedOrders ?? 0,
+    skippedOrders: input.skippedOrders ?? 0,
+    errors: input.errors ?? 0,
+  };
+
+  if (!fullLog) {
+    return minimal;
+  }
+
+  const orderChanges = Array.isArray(input.orderDetails)
+    ? input.orderDetails.slice(0, 50)
+    : undefined;
+
+  return {
+    ...minimal,
+    ...(input.metadata ?? {}),
+    ...(input.startDate && {
+      dateRange: `${input.startDate}${input.endDate ? ` to ${input.endDate}` : ''}`,
+    }),
+    ...(input.syncMode && { syncMode: input.syncMode }),
+    ...(input.batchUpdateDuration !== undefined && {
+      batchUpdateDuration: input.batchUpdateDuration,
+    }),
+    ...(input.successRate !== undefined && { successRate: input.successRate }),
+    ...(input.changesSummary && Object.keys(input.changesSummary).length > 0 && {
+      changes: input.changesSummary,
+    }),
+    ...(input.sampleOrders && input.sampleOrders.length > 0 && {
+      sampleOrders: input.sampleOrders,
+    }),
+    ...(orderChanges && orderChanges.length > 0 && { orderChanges }),
+  };
+}
 
 export interface SyncHistoryRecord {
   id: number;
@@ -20,7 +107,7 @@ export interface SyncHistoryRecord {
 }
 
 export interface CreateSyncHistoryData {
-  syncType: 'manual' | 'automatic' | 'background';
+  syncType: SyncHistoryType;
   startDate?: string;
   endDate?: string;
   totalOrders: number;
@@ -75,11 +162,24 @@ export class SyncHistoryService {
       });
 
       console.log(`📝 [SYNC HISTORY] Created record: ${record.id} (${data.syncType})`);
-      return record;
+
+      // Асинхронно прибираємо записи старші retention-періоду
+      this.cleanupOldRecords(SYNC_HISTORY_RETENTION_DAYS).catch((err) => {
+        console.error('❌ [SYNC HISTORY] Background cleanup failed:', err);
+      });
+
+      return {
+        ...record,
+        details: this.parseDetails(record.details),
+      };
     } catch (error) {
       console.error('❌ [SYNC HISTORY] Failed to create sync record:', error);
       throw error;
     }
+  }
+
+  private getRetentionWhere() {
+    return { createdAt: { gte: getSyncHistoryRetentionCutoff() } };
   }
 
   /**
@@ -97,15 +197,18 @@ export class SyncHistoryService {
       const column = validColumns.includes(sortColumn) ? sortColumn : 'createdAt';
       const direction = sortDirection === 'ascending' ? 'asc' : 'desc';
 
+      const retentionWhere = this.getRetentionWhere();
+
       const [records, total] = await Promise.all([
         prisma.syncHistory.findMany({
+          where: retentionWhere,
           orderBy: {
             [column]: direction
           },
           take: limit,
           skip: offset
         }),
-        prisma.syncHistory.count()
+        prisma.syncHistory.count({ where: retentionWhere })
       ]);
 
       // Десериализуем поле details из JSON строки обратно в объект
@@ -136,8 +239,11 @@ export class SyncHistoryService {
     totalSize: number;
   }> {
     try {
+      const retentionWhere = this.getRetentionWhere();
+      const cutoffIso = getSyncHistoryRetentionCutoff().toISOString();
+
       const totalSizeQuery =
-        prisma.$queryRaw`SELECT SUM(CHAR_LENGTH(details)) as total_size FROM \`sync_history\``;
+        prisma.$queryRaw`SELECT SUM(CHAR_LENGTH(details)) as total_size FROM \`sync_history\` WHERE createdAt >= ${cutoffIso}`;
 
       const [
         totalRecords,
@@ -148,21 +254,23 @@ export class SyncHistoryService {
         lastRecord,
         totalSizeResult,
       ] = await Promise.all([
-        prisma.syncHistory.count(),
-        prisma.syncHistory.count({ where: { syncType: "manual" } }),
-        prisma.syncHistory.count({ where: { syncType: "automatic" } }),
-        prisma.syncHistory.count({ where: { syncType: "background" } }),
+        prisma.syncHistory.count({ where: retentionWhere }),
+        prisma.syncHistory.count({ where: { ...retentionWhere, syncType: "manual" } }),
+        prisma.syncHistory.count({ where: { ...retentionWhere, syncType: "automatic" } }),
+        prisma.syncHistory.count({ where: { ...retentionWhere, syncType: "background" } }),
         prisma.syncHistory.aggregate({
           _avg: {
             duration: true,
           },
           where: {
+            ...retentionWhere,
             duration: {
               gt: 0,
             },
           },
         }),
         prisma.syncHistory.findFirst({
+          where: retentionWhere,
           orderBy: {
             createdAt: "desc",
           },
@@ -172,6 +280,7 @@ export class SyncHistoryService {
 
       const successCount = await prisma.syncHistory.count({
         where: {
+          ...retentionWhere,
           status: 'success'
         }
       });
@@ -199,7 +308,7 @@ export class SyncHistoryService {
   /**
    * Удаляет старые записи истории (старше N дней)
    */
-  async cleanupOldRecords(daysToKeep: number = 30): Promise<number> {
+  async cleanupOldRecords(daysToKeep: number = SYNC_HISTORY_RETENTION_DAYS): Promise<number> {
     try {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
@@ -265,7 +374,7 @@ export class SyncHistoryService {
       const column = validColumns.includes(sortColumn) ? sortColumn : 'createdAt';
       const direction = sortDirection === 'ascending' ? 'asc' : 'desc';
 
-      const where = { syncType };
+      const where = { syncType, ...this.getRetentionWhere() };
       const [records, total] = await Promise.all([
         prisma.syncHistory.findMany({
           where,

@@ -26,6 +26,10 @@ function getProcessLevelCronRegistry(): Set<cron.ScheduledTask> {
 
 const cronJobsRegistry = getProcessLevelCronRegistry();
 
+function isAutomaticSyncEnabled(): boolean {
+  return process.env.NODE_ENV !== 'development';
+}
+
 /**
  * Stops all cron jobs that have been registered in the process-level registry.
  * This is the master function to prevent orphaned cron jobs during HMR.
@@ -142,6 +146,11 @@ export class CronService {
   }
 
   async startOrderSync(): Promise<void> {
+    if (!isAutomaticSyncEnabled()) {
+      console.log('ℹ️  Order sync cron is disabled in development (NODE_ENV=development).');
+      return;
+    }
+
     if (isCronJobActive) {
       return;
     }
@@ -229,6 +238,11 @@ export class CronService {
   // ─── Products Sync Job (тільки syncProductsWithDilovod) ──────────────────
 
   async startProductsSync(): Promise<void> {
+    if (!isAutomaticSyncEnabled()) {
+      console.log('ℹ️  Products sync cron is disabled in development (NODE_ENV=development).');
+      return;
+    }
+
     if (this.productsSyncJob) {
       console.log('⚠️  Products sync cron job already running.');
       return;
@@ -423,6 +437,11 @@ export class CronService {
   }
 
   async startStockSync(): Promise<void> {
+    if (!isAutomaticSyncEnabled()) {
+      console.log('ℹ️  Stock sync cron is disabled in development (NODE_ENV=development).');
+      return;
+    }
+
     if (this.stockSyncJob) {
       console.log('⚠️  Stock sync cron job already running.');
       return;
@@ -479,6 +498,11 @@ export class CronService {
    * (для замовлень без ID, до 100 за раз)
    */
   startOrderStatusCheck(): void {
+    if (!isAutomaticSyncEnabled()) {
+      console.log('ℹ️  Order status check cron is disabled in development (NODE_ENV=development).');
+      return;
+    }
+
     if (this.statusCheckJob) {
       console.log('⚠️ Status check cron job already running.');
       return;
@@ -554,6 +578,11 @@ export class CronService {
   }
 
   startAll(): void {
+    if (!isAutomaticSyncEnabled()) {
+      console.log('ℹ️  Automatic sync cron jobs are disabled in development (NODE_ENV=development).');
+      return;
+    }
+
     void this.startOrderSync();
     void this.startProductsSync();
     void this.startStockSync();
@@ -572,6 +601,11 @@ export class CronService {
   // ─── Warehouse auto-finalize о 23:55 ──────────────────────────────────────
 
   startWarehouseAutoFinalize(): void {
+    if (!isAutomaticSyncEnabled()) {
+      console.log('ℹ️  Warehouse auto-finalize cron is disabled in development (NODE_ENV=development).');
+      return;
+    }
+
     if (this.warehouseAutoFinalizeJob) return;
 
     // 55 23 * * * — щодня о 23:55 (Kyiv)

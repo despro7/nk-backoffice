@@ -3,9 +3,7 @@ import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder';
 import { Card, CardBody, CardHeader, Input, Button, ButtonGroup, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import DilovodSettingsManager from '../components/DilovodSettingsManager';
-import { DilovodCacheManager } from '../components/DilovodCacheManager';
 import { DilovodGoodPartsSerialAudit } from '../components/DilovodGoodPartsSerialAudit';
-import { SalesDriveCacheManager } from '../components/SalesDriveCacheManager';
 import { useDilovodSettings } from '../hooks/useDilovodSettings';
 
 const SettingsDilovod: React.FC = () => {
@@ -172,13 +170,7 @@ const SettingsDilovod: React.FC = () => {
 				<DilovodGoodPartsSerialAudit />
 			</div>
 
-			<div className="grid grid-cols-1 gap-6">				
-				{/* Dilovod Cache Manager */}
-				<div className="grid grid-cols-1 gap-6">
-					<DilovodCacheManager />
-					<SalesDriveCacheManager />
-				</div>
-
+			<div className="grid grid-cols-1 gap-6">
 				{/* Order Search Test */}
 				<Card>
 					<CardHeader className="border-b border-gray-200">

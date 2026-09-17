@@ -191,6 +191,17 @@ const SettingsOrders: React.FC = () => {
     }
   }, [dilovodSettings]);
 
+  const hasOrdersSyncChanges = useMemo(() => {
+    if (!dilovodSettings) return false;
+    return (
+      ordersInterval !== (dilovodSettings.ordersInterval ?? 'hourly')
+      || ordersHour !== (dilovodSettings.ordersHour ?? 5)
+      || ordersMinute !== (dilovodSettings.ordersMinute ?? 5)
+      || ordersBatchSize !== (dilovodSettings.ordersBatchSize ?? 50)
+      || ordersRetryAttempts !== (dilovodSettings.ordersRetryAttempts ?? 3)
+    );
+  }, [dilovodSettings, ordersInterval, ordersHour, ordersMinute, ordersBatchSize, ordersRetryAttempts]);
+
   const saveOrdersAutoSyncSettings = async () => {
     const ok = await saveDilovodSettings({
       ordersInterval: ordersInterval as any,
@@ -1681,172 +1692,22 @@ const SettingsOrders: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardBody className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Всього логів</p>
-                <p className="text-2xl font-bold text-gray-900">{syncLogs.length}</p>
-              </div>
-              <DynamicIcon name="file-text" size={24} className="text-gray-600" />
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Успішних синх.</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {syncLogs.filter(log => log.status === 'success').length}
-                </p>
-              </div>
-              <DynamicIcon name="check-circle" size={24} className="text-gray-600" />
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Помилок</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {syncLogs.filter(log => log.status === 'error').length}
-                </p>
-              </div>
-              <DynamicIcon name="alert-circle" size={24} className="text-gray-600" />
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Кеш хітрейт</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {cacheStats ? `${Math.round(cacheStats.cacheHitRate)}%` : '-'}
-                </p>
-              </div>
-              <DynamicIcon name="database" size={24} className="text-gray-600" />
-            </div>
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* Cache Statistics */}
-      <Card>
-        <CardHeader className="border-b border-gray-200">
-          <DynamicIcon name="database" size={20} className="text-gray-600 mr-2" />
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Кешування замовлень</h2>
-          </div>
-        </CardHeader>
-        <CardBody className="p-6">
-          <p className="text-sm text-gray-600 mb-2">Статистика та керування кешем розпакування комплектів</p>
-          {/* Cache Settings */}
-          <div className="flex flex-wrap gap-6 mb-6 p-4 bg-gray-50 rounded-lg">
-            <div className="flex items-center gap-3">
-              <Switch
-                isSelected={syncSettings.cacheEnabled}
-                onValueChange={(isSelected) => setSyncSettings(prev => ({
-                  ...prev,
-                  cacheEnabled: isSelected
-                }))}
-                size="sm"
-              />
-              <div>
-                <div className="text-sm font-medium text-gray-900">Вкл./Выкл. кешування</div>
-                <div className="text-xs text-gray-600">Автоматичне створення кеша при синхронізації</div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Switch
-                isSelected={!!syncSettings.cacheLoggingEnabled}
-                onValueChange={(isSelected) => setSyncSettings(prev => ({
-                  ...prev,
-                  cacheLoggingEnabled: isSelected
-                }))}
-                size="sm"
-              />
-              <div>
-                <div className="text-sm font-medium text-gray-900">Логування кешування</div>
-                <div className="text-xs text-gray-600">Детальні логи операцій кешування</div>
-              </div>
-            </div>
-          </div>
-
-          {cacheStatsLoading ? (
-            <div className="flex items-center justify-center p-8">
-              <DynamicIcon name="loader-2" className="animate-spin mr-2" size={16} />
-              <span>Завантаження...</span>
-            </div>
-          ) : cacheStats ? (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="text-center">
-                <div className="text-3xl font-bold text-gray-900">{cacheStats.totalOrders}</div>
-                <div className="text-sm text-gray-600">Всього замовлень</div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-gray-900">{cacheStats.cachedOrders}</div>
-                <div className="text-sm text-gray-600">Кешовано</div>
-                <div className="text-xs text-green-600 mt-1">
-                  {Math.round((cacheStats.cachedOrders / cacheStats.totalOrders) * 100)}%
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-gray-900">{Math.round(cacheStats.averageCacheTime)}h</div>
-                <div className="text-sm text-gray-600">Середній час життя кеша</div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-gray-900">{Math.round(cacheStats.totalCacheSize / 1024)}KB</div>
-                <div className="text-sm text-gray-600">Розмір кеша</div>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center text-gray-500">Немає даних про кеш</div>
-          )}
-
-          <div className="mt-6 flex justify-between items-center">
-            <div className="text-sm text-gray-600">
-              Останнє оновлення: {cacheStats?.lastCacheUpdate ? new Date(cacheStats.lastCacheUpdate).toLocaleString('uk-UA') : 'Невідомо'}
-            </div>
-            <div className="flex gap-3">
-              <Button
-                onPress={clearCache}
-                color="danger"
-                variant="bordered"
-                size="sm"
-                isDisabled={!syncSettings.cacheEnabled}
-              >
-                <DynamicIcon name="trash-2" size={16} />
-                Очистити кеш
-              </Button>
-              <Button
-                onPress={loadCacheStats}
-                color="primary"
-                variant="bordered"
-                size="sm"
-                isDisabled={!syncSettings.cacheEnabled}
-              >
-                <DynamicIcon name="refresh-cw" size={16} />
-                Оновити статистику
-              </Button>
-            </div>
-          </div>
-        </CardBody>
-      </Card>
-
       {/* Auto Orders Sync Settings */}
       <Card>
         <CardHeader className="border-b border-gray-200">
           <DynamicIcon name="timer" size={20} className="text-gray-600 mr-2" />
           <h2 className="text-lg font-semibold text-gray-900">Автоматична синхронізація замовлень</h2>
+          <Button
+            color="primary"
+            size="sm"
+            onPress={saveOrdersAutoSyncSettings}
+            isLoading={dilovodSaving}
+            isDisabled={!hasOrdersSyncChanges || dilovodSaving}
+            startContent={!dilovodSaving && <DynamicIcon name="save" size={16} />}
+            className="ml-auto"
+          >
+            {dilovodSaving ? 'Збереження...' : 'Зберегти'}
+          </Button>
         </CardHeader>
         <CardBody className="p-6 space-y-4">
           <div className="grid md:grid-cols-4 grid-cols-2 gap-4">
@@ -1926,17 +1787,6 @@ const SettingsOrders: React.FC = () => {
               </>
             )}
           </div>
-
-          <div className="flex justify-end pt-2">
-            <Button
-              color="primary"
-              onPress={saveOrdersAutoSyncSettings}
-              isLoading={dilovodSaving}
-              startContent={!dilovodSaving && <DynamicIcon name="save" size={16} />}
-            >
-              {dilovodSaving ? 'Збереження...' : 'Зберегти'}
-            </Button>
-          </div>
         </CardBody>
       </Card>
 
@@ -1950,7 +1800,7 @@ const SettingsOrders: React.FC = () => {
           <div className="flex flex-col gap-4 items-end">
 
             {/* Настройки синхронизации */}
-            <div className="col-span-full mb-4">
+            <div className="w-full mb-4">
               <h4 className="text-sm font-medium text-gray-700 mb-3">Налаштування синхронізації</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -2045,21 +1895,37 @@ const SettingsOrders: React.FC = () => {
               </I18nProvider>
             </div>
 
-            <div className="flex items-center gap-4 w-full">
+            <div className="flex items-end gap-4 w-full">
               <RadioGroup
                 label="Режим синхронізації"
                 orientation="horizontal"
                 value={manualSyncMode}
                 onValueChange={(value) => setManualSyncMode(value as 'smart' | 'force')}
                 classNames={{
-                  base: "flex-1",
-                  label: "text-sm font-medium text-gray-500 mb-0"
+                  label: "text-sm font-medium text-gray-700",
+                  wrapper: "flex items-center gap-6",
                 }}
               >
-                <Radio value="smart" description="Тільки замовлення з змінами">
+                <Radio
+                  value="smart"
+                  classNames={{
+                    base: "flex items-center gap-1",
+                    label: "font-semibold text-gray-700 leading-snug",
+                    description: "text-xs text-gray-500"
+                  }}
+                  description="Тільки замовлення з змінами"
+                >
                   Smart-синхронізація
                 </Radio>
-                <Radio value="force" description="Всі замовлення">
+                <Radio
+                  value="force"
+                  classNames={{
+                    base: "flex items-center gap-1",
+                    label: "font-semibold text-gray-700 leading-snug",
+                    description: "text-xs text-gray-500"
+                  }}
+                  description="Всі замовлення"
+                >
                   Повна синхронізація
                 </Radio>
               </RadioGroup>
@@ -2070,7 +1936,7 @@ const SettingsOrders: React.FC = () => {
                 color={syncPreviewLoading ? "danger" : "primary"}
                 size="lg"
                 disabled={manualSyncRunning || !manualSyncStartDate}
-                className="flex-1"
+                className="ml-auto"
               >
                 {syncPreviewLoading ? (
                   <>
@@ -2094,7 +1960,7 @@ const SettingsOrders: React.FC = () => {
                 onPress={manualSyncRunning ? () => stopOperation(currentSessionId, 'sync') : runManualSync}
                 color={manualSyncRunning ? "danger" : "success"}
                 size="lg"
-                className="text-white flex-1"
+                className="text-white"
                 disabled={!manualSyncStartDate}
               >
                 {manualSyncRunning ? (
@@ -2213,6 +2079,110 @@ const SettingsOrders: React.FC = () => {
               </Button>
             </div>
           )}
+        </CardBody>
+      </Card>
+
+      {/* Cache Statistics */}
+      <Card>
+        <CardHeader className="border-b border-gray-200">
+          <DynamicIcon name="database" size={20} className="text-gray-600 mr-2" />
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Кешування замовлень</h2>
+          </div>
+        </CardHeader>
+        <CardBody className="p-6">
+          <p className="text-sm text-gray-600 mb-2">Статистика та керування кешем розпакування комплектів</p>
+          {/* Cache Settings */}
+          <div className="flex flex-wrap gap-6 mb-6 p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-3">
+              <Switch
+                isSelected={syncSettings.cacheEnabled}
+                onValueChange={(isSelected) => setSyncSettings(prev => ({
+                  ...prev,
+                  cacheEnabled: isSelected
+                }))}
+                size="sm"
+              />
+              <div>
+                <div className="text-sm font-medium text-gray-900">Кешування увімкнено</div>
+                <div className="text-xs text-gray-600">Автоматичне створення кеша при синхронізації</div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Switch
+                isSelected={!!syncSettings.cacheLoggingEnabled}
+                onValueChange={(isSelected) => setSyncSettings(prev => ({
+                  ...prev,
+                  cacheLoggingEnabled: isSelected
+                }))}
+                size="sm"
+              />
+              <div>
+                <div className="text-sm font-medium text-gray-900">Логування кешування</div>
+                <div className="text-xs text-gray-600">Детальні логи операцій кешування</div>
+              </div>
+            </div>
+          </div>
+
+          {cacheStatsLoading ? (
+            <div className="flex items-center justify-center p-8">
+              <DynamicIcon name="loader-2" className="animate-spin mr-2" size={16} />
+              <span>Завантаження...</span>
+            </div>
+          ) : cacheStats ? (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-gray-900">{cacheStats.totalOrders}</div>
+                <div className="text-sm text-gray-600">Всього замовлень</div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-gray-900">{cacheStats.cachedOrders}</div>
+                <div className="text-sm text-gray-600">Кешовано</div>
+                <div className="text-xs text-green-600 mt-1">
+                  {Math.round((cacheStats.cachedOrders / cacheStats.totalOrders) * 100)}%
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-gray-900">{Math.round(cacheStats.averageCacheTime)}h</div>
+                <div className="text-sm text-gray-600">Середній час життя кеша</div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-gray-900">{Math.round(cacheStats.totalCacheSize / 1024)}KB</div>
+                <div className="text-sm text-gray-600">Розмір кеша</div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center text-gray-500">Немає даних про кеш</div>
+          )}
+
+          <div className="mt-6 flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              Останнє оновлення: {cacheStats?.lastCacheUpdate ? new Date(cacheStats.lastCacheUpdate).toLocaleString('uk-UA') : 'Невідомо'}
+            </div>
+            <div className="flex gap-3">
+              <Button
+                onPress={clearCache}
+                color="danger"
+                variant="bordered"
+                size="sm"
+                isDisabled={!syncSettings.cacheEnabled}
+              >
+                <DynamicIcon name="trash-2" size={16} />
+                Очистити кеш
+              </Button>
+              <Button
+                onPress={loadCacheStats}
+                color="primary"
+                variant="bordered"
+                size="sm"
+                isDisabled={!syncSettings.cacheEnabled}
+              >
+                <DynamicIcon name="refresh-cw" size={16} />
+                Оновити статистику
+              </Button>
+            </div>
+          </div>
         </CardBody>
       </Card>
 

@@ -11,12 +11,10 @@ export interface DilovodSettings {
   smallStorageId?: string;  // ID малого складу (для підрахунку smallStorage)
   storageId?: string;       // Основний склад для списання (при експорті замовлень)
   
-  // Налаштування синхронізації товарів (назви, ціни, комплекти)
+  // Налаштування синхронізації товарів (назви, комплекти)
   productsInterval: DilovodSyncInterval;
   productsHour?: number;              // Година запуску (0-23), для twicedaily/daily/every two days
   productsMinute?: number;            // Хвилина запуску (0-55, крок 5), для hourly/every two hours
-  synchronizationRegularPrice: boolean;
-  synchronizationSalePrice: boolean;
 
   // Налаштування синхронізації залишків (склади)
   synchronizationInterval: DilovodSyncInterval;
@@ -64,6 +62,27 @@ export interface DilovodSettings {
    * `accPolicyId` → hue name (`emerald`, `blue`, …).
    */
   accPolicyColorMap?: Record<string, string>;
+
+  /** Складські дефолти Діловода — спільні для переміщень, списань, комплектації, повернень */
+  warehouseBusinessId?: string;
+  warehouseUnitId?: string;
+  warehouseAccountId?: string;
+  warehouseSetAccountId?: string;
+}
+
+/** Дефолти складських payload-полів Діловода (business, unit, accGood) */
+export const DILOVOD_WAREHOUSE_DEFAULTS = {
+  businessId: '1115000000000001', // «Основний»
+  unitId: '1103600000000001', // шт.
+  accountId: '1119000000001076', // «Готова продукція»
+  setAccountId: '1119000000001079', // комплекти / монолітні набори
+} as const;
+
+export interface DilovodWarehouseDefaults {
+  businessId: string;
+  unitId: string;
+  accountId: string;
+  setAccountId: string;
 }
 
 // Константи для роботи з settings_base
@@ -83,8 +102,6 @@ export const DILOVOD_SETTINGS_KEYS = {
   SYNCHRONIZATION_INTERVAL: 'dilovod_synchronization_interval',
   SYNCHRONIZATION_HOUR: 'dilovod_synchronization_hour',
   SYNCHRONIZATION_MINUTE: 'dilovod_synchronization_minute',
-  SYNCHRONIZATION_REGULAR_PRICE: 'dilovod_synchronization_regular_price',
-  SYNCHRONIZATION_SALE_PRICE: 'dilovod_synchronization_sale_price',
   SYNCHRONIZATION_STOCK_QUANTITY: 'dilovod_synchronization_stock_quantity',
   ORDERS_INTERVAL: 'dilovod_orders_interval',
   ORDERS_HOUR: 'dilovod_orders_hour',
@@ -104,6 +121,10 @@ export const DILOVOD_SETTINGS_KEYS = {
   LOG_SEND_ORDER: 'dilovod_log_send_order',
   LIQPAY_COMMISSION: 'dilovod_liqpay_commission',
   ACC_POLICY_COLOR_MAP: 'dilovod_acc_policy_color_map',
+  WAREHOUSE_BUSINESS_ID: 'dilovod_warehouse_business_id',
+  WAREHOUSE_UNIT_ID: 'dilovod_warehouse_unit_id',
+  WAREHOUSE_ACCOUNT_ID: 'dilovod_warehouse_account_id',
+  WAREHOUSE_SET_ACCOUNT_ID: 'dilovod_warehouse_set_account_id',
 } as const;
 
 // Інтервали синхронізації

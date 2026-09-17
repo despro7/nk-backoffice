@@ -621,8 +621,6 @@ export class DilovodAutoExportService {
       storageId: map.get('dilovod_storage_id'),
       productsInterval: (map.get('dilovod_products_interval') as DilovodSettings['productsInterval']) || 'daily',
       synchronizationInterval: (map.get('dilovod_synchronization_interval') as DilovodSettings['synchronizationInterval']) || 'daily',
-      synchronizationRegularPrice: parseBool(map.get('dilovod_synchronization_regular_price')),
-      synchronizationSalePrice: parseBool(map.get('dilovod_synchronization_sale_price')),
       synchronizationStockQuantity: parseBool(map.get('dilovod_synchronization_stock_quantity')),
       ordersInterval: (map.get('dilovod_orders_interval') as DilovodSettings['ordersInterval']) || 'hourly',
       autoSendOrder: parseBool(map.get('dilovod_auto_send_order')),

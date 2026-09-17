@@ -19,7 +19,7 @@ export interface ExportWarehouseMovementParams {
   summaryItems: PayloadMovementProduct[];
   userId: number;
   movementDate?: Date | string | null;
-  overrides?: Partial<Pick<WarehouseMovementSettings, 'firmId' | 'storageFrom' | 'storageTo' | 'docMode'>>;
+  overrides?: Partial<Pick<WarehouseMovementSettings, 'firmId' | 'storageFrom' | 'storageTo'>>;
   dryRun?: boolean;
   isFinal?: boolean;
   sourceWarehouse?: string;

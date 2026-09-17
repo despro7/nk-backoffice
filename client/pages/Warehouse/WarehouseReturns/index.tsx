@@ -4,6 +4,8 @@ import { useMemo, useState, useEffect } from 'react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useDebug } from '@/contexts/DebugContext';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
+import { useDilovodSettings } from '@/hooks/useDilovodSettings';
+import { DILOVOD_WAREHOUSE_DEFAULTS } from '@shared/types/dilovod';
 import { useWarehouseReturns } from './useWarehouseReturns';
 import { OrderSearchInput } from './components/OrderSearchInput';
 import { ReturnsActionBar } from './components/ReturnsActionBar';
@@ -37,6 +39,8 @@ const sanitizeText = (s?: string | null) => {
 
 export default function WarehouseReturns() {
   const returns = useWarehouseReturns();
+  const { settings: dilovodSettings } = useDilovodSettings({ loadDirectories: false });
+  const monolithicAccGood = dilovodSettings?.warehouseSetAccountId ?? DILOVOD_WAREHOUSE_DEFAULTS.setAccountId;
 
   const itemsBatchesReady = returns.items.length > 0 && returns.items.every((item) => Array.isArray(item.availableBatches) && item.availableBatches.length > 0 && Boolean(item.selectedBatchId));
 
@@ -127,13 +131,11 @@ const dateValue = (() => {
         return parsed ? formatDate(parsed) : formatDate(new Date());
       })();
 
-      // Build shipment.bySku for monolithic sets (accGood = 1119000000001079)
-      // — той самий логіки, що й у sendReturn, щоб прев'ю збігався з реальним payload
       const monolithicItems = returns.items.filter(isMonolithicForReturn);
       const shipmentBySku: Record<string, { accGood: string; quantity: number }> = {};
       for (const item of monolithicItems) {
         shipmentBySku[item.sku] = {
-          accGood: '1119000000001079',
+          accGood: monolithicAccGood,
           quantity: item.quantity,
         };
       }

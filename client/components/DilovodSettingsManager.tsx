@@ -4,6 +4,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { useDilovodSettings } from '../hooks/useDilovodSettings';
 import { getBankIcon, getPaymentIcon } from '../lib/bankIcons';
 import type { DilovodSettings, SalesChannel, DilovodChannelMapping } from '../../shared/types/dilovod.js';
+import { DILOVOD_WAREHOUSE_DEFAULTS } from '../../shared/types/dilovod.js';
 import type { SalesDriveStatus, SalesDriveChannel } from '../../server/services/salesdrive/SalesDriveTypes.js';
 
 const DilovodSettingsManager: React.FC = () => {
@@ -318,7 +319,6 @@ const DilovodSettingsManager: React.FC = () => {
 			</Card>
 
 			<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
 				{/* Налаштування синхронізації */}
 				<Card key="sync-settings">
 					<CardHeader className="border-b border-gray-200">
@@ -411,6 +411,7 @@ const DilovodSettingsManager: React.FC = () => {
 						</div>*/}
 
 						<div className="space-y-4">
+							<h3 className="text-sm font-bold text-gray-700">Синхронізація товарів</h3>
 							<div className="grid grid-cols-2 gap-4">
 								<Select
 									color={formData.productsInterval === 'none sync' ? 'danger' : 'default'}
@@ -432,10 +433,10 @@ const DilovodSettingsManager: React.FC = () => {
 								{formData.productsInterval && ['twicedaily', 'daily', 'every two days'].includes(formData.productsInterval) && (
 									<Select
 										label={formData.productsInterval === 'twicedaily'
-											? `Час запуску (перший)`
+											? 'Час запуску (перший)'
 											: 'Час запуску'}
 										description={formData.productsInterval === 'twicedaily'
-											? `Другий запуск о ${String((( formData.productsHour ?? 6) + 12) % 24).padStart(2, '0')}:${String(formData.productsMinute ?? 0).padStart(2, '0')}`
+											? `Другий запуск о ${String(((formData.productsHour ?? 6) + 12) % 24).padStart(2, '0')}:${String(formData.productsMinute ?? 0).padStart(2, '0')}`
 											: undefined}
 										selectedKeys={[(formData.productsHour ?? 6).toString()]}
 										onSelectionChange={(keys) => {
@@ -469,25 +470,6 @@ const DilovodSettingsManager: React.FC = () => {
 									</Select>
 								)}
 							</div>
-
-							{formData.productsInterval && formData.productsInterval !== 'none sync' && (
-								<div className="grid grid-cols-1 gap-4 pl-2">
-									<Checkbox
-										isSelected={formData.synchronizationRegularPrice || false}
-										onValueChange={(checked) => handleFieldChange('synchronizationRegularPrice', checked)}
-										classNames={{ label: 'text-sm leading-tight' }}
-									>
-										Синхронізувати звичайну ціну
-									</Checkbox>
-									<Checkbox
-										isSelected={formData.synchronizationSalePrice || false}
-										onValueChange={(checked) => handleFieldChange('synchronizationSalePrice', checked)}
-										classNames={{ label: 'text-sm leading-tight' }}
-									>
-										Синхронізувати ціну зі знижкою
-									</Checkbox>
-								</div>
-							)}
 						</div>
 					</CardBody>
 				</Card>
@@ -1056,6 +1038,61 @@ const DilovodSettingsManager: React.FC = () => {
 					</CardBody>
 				</Card>
 			</div>
+
+			{/* Складські дефолти Діловода */}
+			<Card key="warehouse-defaults">
+				<CardHeader className="border-b border-gray-200">
+					<DynamicIcon name="package" size={20} className="text-gray-600 mr-2" />
+					<h2 className="text-lg font-semibold text-gray-900">Складські дефолти Діловода</h2>
+				</CardHeader>
+				<CardBody className="p-6">
+					<p className="text-sm text-gray-500 mb-4">
+						Спільні ID для переміщень, списань, комплектації та повернень (business, unit, accGood).
+					</p>
+					<div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+						<Input
+							label="Напрям бізнесу (business)"
+							labelPlacement="outside"
+							classNames={{ label: 'font-semibold' }}
+							placeholder={DILOVOD_WAREHOUSE_DEFAULTS.businessId}
+							value={formData.warehouseBusinessId ?? DILOVOD_WAREHOUSE_DEFAULTS.businessId}
+							onChange={(e) => handleFieldChange('warehouseBusinessId', e.target.value)}
+							description="«Основний» — аналітичний вимір у складських документах."
+							startContent={<DynamicIcon name="briefcase" size={16} className="text-gray-400" />}
+						/>
+						<Input
+							label="Одиниця виміру (unit)"
+							labelPlacement="outside"
+							classNames={{ label: 'font-semibold' }}
+							placeholder={DILOVOD_WAREHOUSE_DEFAULTS.unitId}
+							value={formData.warehouseUnitId ?? DILOVOD_WAREHOUSE_DEFAULTS.unitId}
+							onChange={(e) => handleFieldChange('warehouseUnitId', e.target.value)}
+							description="Штуки (шт.) у tpGoods складських документів."
+							startContent={<DynamicIcon name="ruler" size={16} className="text-gray-400" />}
+						/>
+						<Input
+							label="Рахунок обліку товарів (accGood)"
+							labelPlacement="outside"
+							classNames={{ label: 'font-semibold' }}
+							placeholder={DILOVOD_WAREHOUSE_DEFAULTS.accountId}
+							value={formData.warehouseAccountId ?? DILOVOD_WAREHOUSE_DEFAULTS.accountId}
+							onChange={(e) => handleFieldChange('warehouseAccountId', e.target.value)}
+							description="Звичайні товари («Готова продукція»)."
+							startContent={<DynamicIcon name="landmark" size={16} className="text-gray-400" />}
+						/>
+						<Input
+							label="Рахунок обліку наборів (accGood)"
+							labelPlacement="outside"
+							classNames={{ label: 'font-semibold' }}
+							placeholder={DILOVOD_WAREHOUSE_DEFAULTS.setAccountId}
+							value={formData.warehouseSetAccountId ?? DILOVOD_WAREHOUSE_DEFAULTS.setAccountId}
+							onChange={(e) => handleFieldChange('warehouseSetAccountId', e.target.value)}
+							description="Комплекти / монолітні набори (isSet)."
+							startContent={<DynamicIcon name="layers" size={16} className="text-gray-400" />}
+						/>
+					</div>
+				</CardBody>
+			</Card>
 
 			{/* Налаштування каналів продажів */}
 			<Card key="sales-channels">

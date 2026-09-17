@@ -13,9 +13,6 @@ const warehouseHistoryDelete = requirePermission('warehouse', 'history.delete', 
 const SET_RELEASE_DOC_ID = 'documents.goodWriteOff';
 const SET_RELEASE_DOC_MODE_KIT = '1004000000000305';
 const SET_RELEASE_DOC_MODE_UNKIT = '1004000000000306';
-const SET_RELEASE_ACC_COSTS = '1119000000001079';
-const SET_RELEASE_ACC_GOOD = '1119000000001076';
-
 function formatLocalDate(date: Date): string {
   const pad = (value: number): string => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
@@ -406,6 +403,8 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
     const formattedDate = formatLocalDate(parsedDate);
     const author = await getDilovodUserId(currentUserId, { logPrefix: '[SetRelease] ' }).catch(() => '');
     const dilovodConfig = await getDilovodConfigFromDB();
+    const { loadDilovodWarehouseDefaults } = await import('../../services/dilovod/DilovodWarehouseDefaults.js');
+    const warehouseDefaults = await loadDilovodWarehouseDefaults();
     const effectiveFirmId = (firmId != null && String(firmId).trim() !== '')
       ? String(firmId).trim()
       : (dilovodConfig.defaultFirmId ?? null);
@@ -418,7 +417,7 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
         firm: effectiveFirmId,
         storage: storageId ?? null,
         posted: 1,
-        accCosts: SET_RELEASE_ACC_COSTS,
+        accCosts: warehouseDefaults.setAccountId,
         docMode: resolvedDocMode,
         kitGood: resolvedKitGood,
         kitQty: resolvedKitQty,
@@ -450,9 +449,9 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
         tpGoods.push({
           rowNum: row,
           good: prod.dilovodId,
-          unit: '1103600000000001',
+          unit: warehouseDefaults.unitId,
           qty: Number(comp.quantity) || 0,
-          accGood: hasNestedSet ? SET_RELEASE_ACC_COSTS : SET_RELEASE_ACC_GOOD,
+          accGood: hasNestedSet ? warehouseDefaults.setAccountId : warehouseDefaults.accountId,
         });
         row++;
       }

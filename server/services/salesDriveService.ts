@@ -1,6 +1,11 @@
 import { orderDatabaseService } from './orderDatabaseService.js';
 import { syncSettingsService } from './syncSettingsService.js';
-import { syncHistoryService, CreateSyncHistoryData } from './syncHistoryService.js';
+import {
+  syncHistoryService,
+  CreateSyncHistoryData,
+  buildSyncHistoryDetails,
+  durationMsToSeconds,
+} from './syncHistoryService.js';
 import type { SyncSettings } from './syncSettingsService.js';
 import { buildExportPayload } from './productExportHelper.js';
 import { prisma } from '../lib/utils.js';
@@ -1739,11 +1744,21 @@ export class SalesDriveService {
 
       if (salesDriveOrders.length === 0) {
         console.log('✅ No new orders to sync');
+        const totalDuration = Date.now() - startTime;
         return {
           success: true,
           synced: 0,
           errors: 0,
-          details: []
+          details: [],
+          metadata: {
+            totalDuration,
+            totalProcessed: 0,
+            newOrders: 0,
+            updatedOrders: 0,
+            skippedOrders: 0,
+            efficiency: 100,
+            averageTimePerOrder: 0,
+          },
         };
       }
 
@@ -2027,13 +2042,14 @@ export class SalesDriveService {
    */
   private async recordSyncInHistory(result: { success: boolean; synced: number; errors: number; details: any[]; metadata?: any }, syncType: 'automatic' | 'manual' | 'background' = 'automatic'): Promise<void> {
     try {
+      const fullLog = await syncSettingsService.isSyncHistoryFullLogEnabled(syncType);
       const startDate = result.metadata?.startDate;
       const endDate = result.metadata?.endDate;
       const totalOrders = result.metadata?.totalProcessed || result.synced + result.errors;
       const newOrders = result.metadata?.newOrders || 0;
       const updatedOrders = result.metadata?.updatedOrders || result.synced;
       const skippedOrders = result.metadata?.skippedOrders || 0;
-      const duration = result.metadata?.totalDuration || 0;
+      const duration = durationMsToSeconds(result.metadata?.totalDuration || 0);
 
       const historyData: CreateSyncHistoryData = {
         syncType,
@@ -2045,11 +2061,20 @@ export class SalesDriveService {
         skippedOrders,
         errors: result.errors,
         duration,
-        details: {
-          ...result.metadata,
-          synced: result.synced,
-          errors: result.errors
-        },
+        details: buildSyncHistoryDetails(fullLog, {
+          totalProcessed: totalOrders,
+          newOrders,
+          updatedOrders,
+          skippedOrders,
+          errors: result.errors,
+          metadata: {
+            ...result.metadata,
+            synced: result.synced,
+          },
+          orderDetails: result.details,
+          startDate,
+          endDate,
+        }),
         status: result.success ? 'success' : (result.errors > 0 ? 'partial' : 'failed'),
         errorMessage: result.errors > 0 ? `${result.errors} orders failed to sync` : undefined
       };
@@ -2459,7 +2484,9 @@ export class SalesDriveService {
         const status = updateResult.totalErrors === 0 ? 'success' :
           (updateResult.totalCreated + updateResult.totalUpdated > 0 ? 'partial' : 'failed');
 
-        // Сохраняем детальную информацию в историю синхронизаций
+        const fullLog = await syncSettingsService.isSyncHistoryFullLogEnabled('manual');
+
+        // Сохраняем информацию в историю синхронизаций
         syncHistoryData = {
           syncType: 'manual',
           startDate: formattedStartDate,
@@ -2470,20 +2497,28 @@ export class SalesDriveService {
           skippedOrders: updateResult.totalSkipped || 0,
           errors: updateResult.totalErrors,
           duration: totalDuration,
-          details: {
-            processedOrders: totalProcessed,
-            totalFromSalesDrive: salesDriveOrders.length,
-            successRate: parseFloat(successRate),
-            dateRange: `${formattedStartDate} to ${formattedEndDate}`,
-            batchUpdateDuration: updateDuration,
+          details: buildSyncHistoryDetails(fullLog, {
+            totalProcessed,
+            newOrders: updateResult.totalCreated,
+            updatedOrders: updateResult.totalUpdated,
+            skippedOrders: updateResult.totalSkipped || 0,
+            errors: updateResult.totalErrors,
+            startDate: formattedStartDate,
+            endDate: formattedEndDate,
             syncMode,
-            changes: updateResult.changesSummary || {},
+            batchUpdateDuration: updateDuration,
+            successRate: parseFloat(successRate),
+            changesSummary: updateResult.changesSummary || {},
             sampleOrders: salesDriveOrders.slice(0, 5).filter(o => o && o.orderNumber).map(o => ({
               orderNumber: o.orderNumber,
               status: o.status || 'no status',
-              customerName: o.customerName || 'no name'
-            }))
-          },
+              customerName: o.customerName || 'no name',
+            })),
+            orderDetails: updateResult.results || [],
+            metadata: {
+              totalFromSalesDrive: salesDriveOrders.length,
+            },
+          }),
           status: status,
           errorMessage: updateResult.totalErrors > 0 ? `${updateResult.totalErrors} orders failed to sync` : undefined
         };

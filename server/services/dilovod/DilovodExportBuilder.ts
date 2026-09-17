@@ -944,8 +944,6 @@ export class DilovodExportBuilder {
       getPersonBy: (settingsMap.get('dilovod_get_person_by') as any) || 'end_user',
       productsInterval: 'daily',
       synchronizationInterval: 'daily',
-      synchronizationRegularPrice: false,
-      synchronizationSalePrice: false,
       synchronizationStockQuantity: false,
       ordersInterval: 'hourly',
       autoSendOrder: false,

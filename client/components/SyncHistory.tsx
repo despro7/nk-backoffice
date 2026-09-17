@@ -22,6 +22,7 @@ import {
   ModalBody,
   Pagination,
   Checkbox,
+  Switch,
 } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { addToast } from "@heroui/react";
@@ -29,9 +30,21 @@ import { SyncHistoryRecord } from "../types/sync";
 import {
   formatDateTime,
   formatRelativeDate,
-  formatDuration,
+  formatSyncHistoryDuration,
   formatFileSize,
 } from "../lib/formatUtils";
+
+interface SyncHistoryFullLogSettings {
+  manual: boolean;
+  automatic: boolean;
+  background: boolean;
+}
+
+const DEFAULT_FULL_LOG_SETTINGS: SyncHistoryFullLogSettings = {
+  manual: false,
+  automatic: false,
+  background: false,
+};
 
 export function SyncHistory() {
   const [syncHistory, setSyncHistory] = useState<SyncHistoryRecord[]>([]);
@@ -55,6 +68,24 @@ export function SyncHistory() {
   // Состояния для массового удаления
   const [selectedRecords, setSelectedRecords] = useState<Set<number>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Налаштування розширеного логування
+  const [fullLogSettings, setFullLogSettings] = useState<SyncHistoryFullLogSettings>(
+    DEFAULT_FULL_LOG_SETTINGS,
+  );
+  const [savedFullLogSettings, setSavedFullLogSettings] = useState<SyncHistoryFullLogSettings>(
+    DEFAULT_FULL_LOG_SETTINGS,
+  );
+  const [historySettingsLoading, setHistorySettingsLoading] = useState(false);
+  const [historySettingsSaving, setHistorySettingsSaving] = useState(false);
+
+  const isFullLogSettingsDirty = useMemo(
+    () =>
+      fullLogSettings.manual !== savedFullLogSettings.manual ||
+      fullLogSettings.automatic !== savedFullLogSettings.automatic ||
+      fullLogSettings.background !== savedFullLogSettings.background,
+    [fullLogSettings, savedFullLogSettings],
+  );
 
   // Функция для безопасного отображения значений
   const renderValue = (value: any): string => {
@@ -484,6 +515,72 @@ export function SyncHistory() {
     );
   };
 
+  const loadHistorySettings = async () => {
+    setHistorySettingsLoading(true);
+    try {
+      const response = await fetch("/api/orders-sync/sync/settings", {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const loaded =
+          data.settings?.syncHistoryFullLog ?? DEFAULT_FULL_LOG_SETTINGS;
+        setFullLogSettings(loaded);
+        setSavedFullLogSettings(loaded);
+      }
+    } catch (error) {
+      console.error("Error loading sync history settings:", error);
+    } finally {
+      setHistorySettingsLoading(false);
+    }
+  };
+
+  const saveHistorySettings = async () => {
+    setHistorySettingsSaving(true);
+    try {
+      const currentResponse = await fetch("/api/orders-sync/sync/settings", {
+        credentials: "include",
+      });
+      if (!currentResponse.ok) {
+        throw new Error("Failed to load current settings");
+      }
+
+      const currentData = await currentResponse.json();
+      const mergedSettings = {
+        ...currentData.settings,
+        syncHistoryFullLog: fullLogSettings,
+      };
+
+      const saveResponse = await fetch("/api/orders-sync/sync/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(mergedSettings),
+      });
+
+      if (!saveResponse.ok) {
+        throw new Error("Failed to save settings");
+      }
+
+      setSavedFullLogSettings(fullLogSettings);
+
+      addToast({
+        title: "Збережено",
+        description: "Налаштування логування історії оновлено",
+        color: "success",
+      });
+    } catch (error) {
+      console.error("Error saving sync history settings:", error);
+      addToast({
+        title: "Помилка",
+        description: "Не вдалося зберегти налаштування логування",
+        color: "danger",
+      });
+    } finally {
+      setHistorySettingsSaving(false);
+    }
+  };
+
   const loadSyncHistory = async (page: number = 1) => {
     setSyncHistoryLoading(true);
     try {
@@ -526,6 +623,10 @@ export function SyncHistory() {
       setSyncHistoryLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadHistorySettings();
+  }, []);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -817,7 +918,7 @@ export function SyncHistory() {
       case "duration":
         return (
           <span className="text-sm text-gray-900">
-            {formatDuration(item.duration, { unit: "s" })}
+            {formatSyncHistoryDuration(item.duration)}
           </span>
         );
       case "actions":
@@ -853,8 +954,8 @@ export function SyncHistory() {
             Історія синхронізацій
           </h2>
         </div>
-        <p className="text-sm text-gray-600 mt-1">
-          Детальна історія всіх операцій синхронізації з статистикою
+        <p className="text-sm text-text-secondary mt-1">
+          Записи за останні 7 днів. Детальна статистика — лише за увімкненим full-log.
         </p>
       </CardHeader>
       <CardBody className="p-6">
@@ -886,7 +987,7 @@ export function SyncHistory() {
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-gray-900">
-                  {formatDuration(syncHistoryStats.averageDuration, {unit: "s"})}
+                  {formatSyncHistoryDuration(syncHistoryStats.averageDuration)}
                 </div>
                 <div className="text-sm text-gray-600">Середній час</div>
               </div>
@@ -899,6 +1000,77 @@ export function SyncHistory() {
             </div>
           </div>
         )}
+
+        {/* Full-log settings */}
+        <div className="mb-6 rounded-[12px] border border-border-subtle bg-surface-page p-4">
+          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                Розширене логування (full-log)
+              </h3>
+              <p className="text-xs text-text-secondary">
+                За замовчуванням зберігається лише коротка статистика, щоб не засмічувати БД
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-8">
+            <div className="flex items-center gap-3">
+              <Switch
+                size="sm"
+                isSelected={fullLogSettings.manual}
+                onValueChange={(value) =>
+                  setFullLogSettings((prev) => ({ ...prev, manual: value }))
+                }
+                isDisabled={historySettingsLoading}
+              />
+              <div>
+                <div className="text-sm font-medium text-text-primary">Ручна</div>
+                <div className="text-xs text-text-secondary">manual sync</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch
+                size="sm"
+                isSelected={fullLogSettings.automatic}
+                onValueChange={(value) =>
+                  setFullLogSettings((prev) => ({ ...prev, automatic: value }))
+                }
+                isDisabled={historySettingsLoading}
+              />
+              <div>
+                <div className="text-sm font-medium text-text-primary">Автоматична</div>
+                <div className="text-xs text-text-secondary">automatic sync</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch
+                size="sm"
+                isSelected={fullLogSettings.background}
+                onValueChange={(value) =>
+                  setFullLogSettings((prev) => ({ ...prev, background: value }))
+                }
+                isDisabled={historySettingsLoading}
+              />
+              <div>
+                <div className="text-sm font-medium text-text-primary">Фонова</div>
+                <div className="text-xs text-text-secondary">background sync</div>
+              </div>
+            </div>
+
+            <Button
+              size="sm"
+              variant="solid"
+              color="primary"
+              className="ml-auto"
+              // startContent={<DynamicIcon name="save" size={16} />}
+              onPress={saveHistorySettings}
+              isLoading={historySettingsSaving}
+              isDisabled={historySettingsLoading || !isFullLogSettingsDirty}
+            >
+              Зберегти налаштування
+            </Button>
+          </div>
+        </div>
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-2 justify-between items-end">
@@ -1103,7 +1275,7 @@ export function SyncHistory() {
                           Тривалість
                         </label>
                         <p className="text-sm font-medium">
-                          {formatDuration(selectedHistory.duration)}
+                          {formatSyncHistoryDuration(selectedHistory.duration)}
                         </p>
                       </div>
                       <div>

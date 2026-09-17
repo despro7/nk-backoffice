@@ -2,7 +2,7 @@ import { prisma } from '../../lib/utils.js';
 import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
 import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
 import { WarehouseMovement, WarehouseMovementItem, StockUpdateResult, WarehouseMapping } from './WarehouseTypes.js';
-import type { PayloadMovementProduct } from './WarehousePayloadBuilder.js';
+import { WarehousePayloadBuilder, type PayloadMovementProduct } from './WarehousePayloadBuilder.js';
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 
 export class WarehouseService {
@@ -63,10 +63,15 @@ export class WarehouseService {
       }
     });
 
-    // Крок 2: одразу оновлюємо internalDocNumber на базі id (гарантовано унікальний)
+    // Крок 2: номер за шаблоном з налаштувань (дефолт П-{#####})
+    const settings = await WarehousePayloadBuilder.loadSettings();
+    const internalDocNumber = WarehousePayloadBuilder.generateDocumentNumber(
+      settings.numberTemplate,
+      String(tmp.id),
+    );
     const result = await prisma.warehouseMovement.update({
       where: { id: tmp.id },
-      data: { internalDocNumber: `П-${tmp.id.toString().padStart(5, '0')}` },
+      data: { internalDocNumber },
     });
 
     // Перетворюємо JsonValue в WarehouseMovementItem[]

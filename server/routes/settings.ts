@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import EquipmentSettingsService from '../services/settingsService.js';
 import { prisma } from '../lib/utils.js';
+import { WAREHOUSE_MOVEMENT_SETTING_DEFAULTS } from '../../shared/types/movement.js';
 
 const router = express.Router();
 const equipmentSettingsService = EquipmentSettingsService.getInstance();
@@ -240,15 +241,11 @@ router.get('/warehouse-movement', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       data: {
-        numberGeneration: (map['wm_numberGeneration'] === 'server' ? 'server' : 'dilovod') as 'server' | 'dilovod',
-        numberTemplate: map['wm_numberTemplate'] || 'WM-{YYYY}{MM}{DD}-{###}',
+        numberGeneration: (map['wm_numberGeneration'] === 'dilovod' ? 'dilovod' : 'server') as 'server' | 'dilovod',
+        numberTemplate: map['wm_numberTemplate'] || WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.numberTemplate,
         firmId,
         storageFrom,
         storageTo,
-        businessId: map['wm_businessId'] || '',
-        docMode: map['wm_docMode'] || '1004000000000409',
-        unitId: map['wm_unitId'] || '1103600000000001',
-        accountId: map['wm_accountId'] || '1119000000001076',
       },
     });
   } catch (error) {
@@ -263,24 +260,16 @@ router.put('/warehouse-movement', authenticateToken, async (req, res) => {
     const body = req.body as Partial<{
       numberGeneration: string;
       numberTemplate: string;
-      businessId: string;
       storageFrom: string;
       storageTo: string;
-      docMode: string;
-      unitId: string;
-      accountId: string;
     }>;
 
     // Маппінг поле→ключ у БД (firmId більше не зберігаємо — лише dilovod_default_firm_id)
     const fieldToKey: Record<string, string> = {
       numberGeneration: 'wm_numberGeneration',
       numberTemplate: 'wm_numberTemplate',
-      businessId: 'wm_businessId',
       storageFrom: 'wm_storageFrom',
       storageTo: 'wm_storageTo',
-      docMode: 'wm_docMode',
-      unitId: 'wm_unitId',
-      accountId: 'wm_accountId',
     };
 
     for (const [field, key] of Object.entries(fieldToKey)) {

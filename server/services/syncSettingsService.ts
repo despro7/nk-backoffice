@@ -1,10 +1,17 @@
 import { prisma } from '../lib/utils.js';
 
+export interface SyncHistoryFullLogSettings {
+  manual: boolean;
+  automatic: boolean;
+  background: boolean;
+}
+
 export interface SyncSettings {
   autoSyncEnabled: boolean;
   cacheEnabled: boolean;
   cacheTtl: number;
   maxConcurrentSyncs: number;
+  syncHistoryFullLog: SyncHistoryFullLogSettings;
   orders: {
     syncInterval: number;
     batchSize: number;
@@ -70,6 +77,11 @@ export class SyncSettingsService {
         cacheEnabled: true,
         cacheTtl: 60,
         maxConcurrentSyncs: 2,
+        syncHistoryFullLog: {
+          manual: false,
+          automatic: false,
+          background: false,
+        },
 
         orders: {
           syncInterval: 30,
@@ -131,6 +143,15 @@ export class SyncSettingsService {
             break;
           case 'max_concurrent_syncs':
             defaultSettings.maxConcurrentSyncs = parseInt(setting.value);
+            break;
+          case 'sync_history_full_log_manual':
+            defaultSettings.syncHistoryFullLog.manual = setting.value === 'true';
+            break;
+          case 'sync_history_full_log_automatic':
+            defaultSettings.syncHistoryFullLog.automatic = setting.value === 'true';
+            break;
+          case 'sync_history_full_log_background':
+            defaultSettings.syncHistoryFullLog.background = setting.value === 'true';
             break;
 
           // Настройки заказов
@@ -290,6 +311,30 @@ export class SyncSettingsService {
         })
       );
 
+      if (settings.syncHistoryFullLog) {
+        const fullLogSettings = [
+          { key: 'sync_history_full_log_manual', value: settings.syncHistoryFullLog.manual, desc: 'Розширене логування історії ручної синхронізації' },
+          { key: 'sync_history_full_log_automatic', value: settings.syncHistoryFullLog.automatic, desc: 'Розширене логування історії автоматичної синхронізації' },
+          { key: 'sync_history_full_log_background', value: settings.syncHistoryFullLog.background, desc: 'Розширене логування історії фонової синхронізації' },
+        ];
+
+        fullLogSettings.forEach(({ key, value, desc }) => {
+          settingPromises.push(
+            prisma.settingsBase.upsert({
+              where: { key },
+              update: { value: value.toString() },
+              create: {
+                key,
+                value: value.toString(),
+                description: desc,
+                category: 'orders_sync',
+                isActive: true,
+              },
+            }),
+          );
+        });
+      }
+
       // Настройки заказов
       const ordersSettings = [
         { key: 'orders_sync_interval', value: settings.orders.syncInterval, desc: 'Интервал синхронизации заказов (минуты)' },
@@ -398,6 +443,21 @@ export class SyncSettingsService {
     } catch (error) {
       console.error('Error saving sync settings:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Чи увімкнено розширене логування історії для типу синхронізації
+   */
+  async isSyncHistoryFullLogEnabled(
+    syncType: 'manual' | 'automatic' | 'background',
+  ): Promise<boolean> {
+    try {
+      const settings = await this.getSyncSettings();
+      return settings.syncHistoryFullLog?.[syncType] ?? false;
+    } catch (error) {
+      console.error(`Error checking sync history full-log for ${syncType}:`, error);
+      return false;
     }
   }
 

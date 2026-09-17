@@ -3,6 +3,7 @@ import { ToastService } from '@/services/ToastService';
 import { LoggingService } from '@/services/LoggingService';
 import { serializeMovementItems } from '../WarehouseMovementUtils';
 import type { MovementProduct, MovementDraft, MovementBatch } from '../WarehouseMovementTypes';
+import { DILOVOD_WAREHOUSE_DEFAULTS } from '@shared/types/dilovod';
 
 // ---------------------------------------------------------------------------
 // useMovementDraftState — стан і логіка чернетки переміщення
@@ -468,11 +469,11 @@ export const useMovementDraftState = (
                   rowNum: idx + 1,
                   good: good.good,
                   qty: parseFloat(good.qty) || 0,
-                  unit: good.unit || '1103600000000001',
+                  unit: good.unit || DILOVOD_WAREHOUSE_DEFAULTS.unitId,
                   amountCost: good.amountCost || 0,
                   goodPart: good.goodPart || '',
                   price: good.price || 0,
-                  accGood: good.accGood || '1119000000001076',
+                  accGood: good.accGood || DILOVOD_WAREHOUSE_DEFAULTS.accountId,
                   printName: good.good__pr || '',
                 })),
               ),

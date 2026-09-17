@@ -96,7 +96,7 @@ function Submenu({ label, icon, children, isExpanded, isChildrenActive, onToggle
       
       <div 
         className={cn(
-          "transition-all duration-300 ease-in-out w-full px-5",
+          "transition-all duration-300 ease-in-out w-full pl-5 pr-2",
           isExpanded
             ? `max-h-dvh opacity-100`
             : "max-h-0 opacity-0 overflow-hidden"

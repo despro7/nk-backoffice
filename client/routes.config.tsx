@@ -30,6 +30,7 @@ const SettingsOrders = lazyPage(() => import('./pages/SettingsOrders'));
 const SettingsAdmin = lazyPage(() => import('./pages/SettingsAdmin'));
 const SettingsUsers = lazyPage(() => import('./pages/Settings/Users'));
 const SettingsDilovod = lazyPage(() => import('./pages/SettingsDilovod'));
+const SettingsDirectoriesCache = lazyPage(() => import('./pages/SettingsDirectoriesCache'));
 const SettingsWarehouseMovement = lazyPage(() => import('./pages/SettingsWarehouseMovement'));
 const SalesDriveOrders = lazyPage(() => import('./pages/SalesDriveOrders'));
 const CashInImport = lazyPage(() => import('./pages/CashInImport'));
@@ -543,9 +544,9 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/settings/orders',
     component: SettingsOrders,
-    title: 'Налаштування синхронізации замовлень',
-    pageTitle: 'Налаштування синхронізації замовлень | NK Backoffice',
-    navLabel: 'Синхронізація замовлень',
+    title: 'Налаштування та синхронізація з SalesDrive',
+    pageTitle: 'Інтеграція з SalesDrive | NK Backoffice',
+    navLabel: 'Інтеграція з SalesDrive',
     icon: <DynamicIcon name="refresh-cw" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     parent: 'settings',
@@ -555,13 +556,25 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/settings/dilovod',
     component: SettingsDilovod,
-    title: 'Налаштування синхронізації SalesDrive ➝ Dilovod',
-    pageTitle: 'Налаштування синхронізації SalesDrive ➝ Dilovod | NK Backoffice',
-    navLabel: 'Синхронізація SalesDrive -> Dilovod',
+    title: 'Налаштування та синхронізація з Dilovod',
+    pageTitle: 'Інтеграція з Dilovod | NK Backoffice',
+    navLabel: 'Інтеграція з Dilovod',
     icon: <DynamicIcon name="building-2" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     parent: 'settings',
     order: 8,
+    permission: { name: 'dilovod' },
+  },
+  {
+    path: '/settings/directories-cache',
+    component: SettingsDirectoriesCache,
+    title: 'Кеш довідників',
+    pageTitle: 'Кеш довідників | NK Backoffice',
+    navLabel: 'Кеш довідників',
+    icon: <DynamicIcon name="database" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 8.5,
     permission: { name: 'dilovod' },
   },
   {

@@ -526,6 +526,20 @@ export const formatDuration = (
 };
 
 /**
+ * Нормалізує duration історії синхронізацій до секунд.
+ * Manual sync зберігав секунди, automatic — мілісекунди (legacy).
+ */
+export const normalizeSyncHistoryDurationSeconds = (duration: number): number => {
+  if (typeof duration !== "number" || duration <= 0) return 0;
+  if (duration > 3600) return duration / 1000;
+  return duration;
+};
+
+/** Форматує тривалість запису історії синхронізацій (завжди в секундах) */
+export const formatSyncHistoryDuration = (duration: number): string =>
+  formatDuration(normalizeSyncHistoryDurationSeconds(duration), { unit: "s" });
+
+/**
  * Форматує номер відстеження (ТТН) у зручний для читання формат
  * @param trackingId - номер відстеження
  * @param provider - провайдер доставки ('novaposhta' або 'ukrposhta')

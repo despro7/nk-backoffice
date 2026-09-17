@@ -1,15 +1,14 @@
 import { prisma } from '../../lib/utils.js';
 import { getDilovodUserId } from '../../services/dilovod/DilovodUtils.js';
 import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
-import type {
-  WarehouseMovementSettings,
-  DilovodMovementPayload,
-  DilovodMovementGoodItem,
+import {
+  WAREHOUSE_MOVEMENT_DOC_MODE,
+  WAREHOUSE_MOVEMENT_SETTING_DEFAULTS,
+  type WarehouseMovementSettings,
+  type DilovodMovementPayload,
+  type DilovodMovementGoodItem,
 } from '../../../shared/types/movement.js';
-
-// Статичні константи для рахунків обліку
-const DEFAULT_ACC_GOOD = '1119000000001076'; // Рахунок обліку звичайних товарів
-const SET_ACC_GOOD = '1119000000001079'; // Рахунок обліку комплектів
+import { loadDilovodWarehouseDefaults } from '../../services/dilovod/DilovodWarehouseDefaults.js';
 
 // Мінімальний тип товару для побудови payload (сумісний з MovementProduct на клієнті)
 export interface PayloadMovementProduct {
@@ -67,22 +66,23 @@ export class WarehousePayloadBuilder {
     if (!storageFrom) storageFrom = dilovodMap['dilovod_main_storage_id'] || '';
     if (!storageTo) storageTo = dilovodMap['dilovod_small_storage_id'] || '';
 
+    const warehouseDefaults = await loadDilovodWarehouseDefaults();
+
     return {
-      numberGeneration: (map['wm_numberGeneration'] === 'server' ? 'server' : 'dilovod') as 'server' | 'dilovod',
-      numberTemplate: map['wm_numberTemplate'] || 'WM-{YYYY}{MM}{DD}-{###}',
+      numberGeneration: (map['wm_numberGeneration'] === 'dilovod' ? 'dilovod' : 'server') as 'server' | 'dilovod',
+      numberTemplate: map['wm_numberTemplate'] || WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.numberTemplate,
       firmId,
-      businessId: map['wm_businessId'] || '',
+      businessId: warehouseDefaults.businessId,
       storageFrom,
       storageTo,
-      docMode: map['wm_docMode'] || '1004000000000409',
-      unitId: map['wm_unitId'] || '1103600000000001',
-      accountId: map['wm_accountId'] || '1119000000001076',
+      unitId: warehouseDefaults.unitId,
+      accountId: warehouseDefaults.accountId,
+      setAccountId: warehouseDefaults.setAccountId,
     };
   }
 
   // --------------------------------------------------------------------------
-  // Генерування номера документа за шаблоном
-  // Шаблон: WM-{YYYY}{MM}{DD}-{###}
+  // Генерування номера документа за шаблоном (напр. П-{#####})
   // --------------------------------------------------------------------------
   static generateDocumentNumber(template: string, internalDocNumber: string): string {
     const now = new Date();
@@ -171,7 +171,7 @@ export class WarehousePayloadBuilder {
     settings: WarehouseMovementSettings;
     movementDate: Date;
     authorDilovodId: string;
-    overrides?: Partial<Pick<WarehouseMovementSettings, 'firmId' | 'storageFrom' | 'storageTo' | 'docMode'>>;
+    overrides?: Partial<Pick<WarehouseMovementSettings, 'firmId' | 'storageFrom' | 'storageTo'>>;
   }): Promise<DilovodMovementPayload> {
     const { draft, summaryItems, settings, movementDate, authorDilovodId, overrides } = params;
 
@@ -182,24 +182,29 @@ export class WarehousePayloadBuilder {
     const firmId = overrides?.firmId || settings.firmId;
     const storageFrom = draft.sourceWarehouse || overrides?.storageFrom || settings.storageFrom;
     const storageTo = draft.destinationWarehouse || overrides?.storageTo || settings.storageTo;
-    const docMode = overrides?.docMode || settings.docMode;
 
     // Форматуємо дату у локальному часі (без UTC-конвертації)
     const pad = (n: number): string => String(n).padStart(2, '0');
     const formattedDate = `${movementDate.getFullYear()}-${pad(movementDate.getMonth() + 1)}-${pad(movementDate.getDate())} ${pad(movementDate.getHours())}:${pad(movementDate.getMinutes())}:${pad(movementDate.getSeconds())}`;
 
-    // Номер у Dilovod = внутрішній номер backoffice (напр. «П-00319»).
-    // При повторній відправці вже існуючого документа зберігаємо номер, який уже стоїть у Dilovod.
-    const docNumber = draft.dilovodDocId
-      ? (draft.docNumber || draft.internalDocNumber || undefined)
-      : (draft.internalDocNumber || undefined);
+    // Номер у Dilovod: для нових — лише якщо numberGeneration='server'.
+    // При повторній відправці зберігаємо номер, який уже стоїть у Dilovod.
+    let docNumber: string | undefined;
+    if (draft.dilovodDocId) {
+      docNumber = draft.docNumber || draft.internalDocNumber || undefined;
+    } else if (settings.numberGeneration === 'server') {
+      docNumber = draft.internalDocNumber || undefined;
+    }
 
     // Формуємо tpGoods з summaryItems
     const tpGoods: DilovodMovementGoodItem[] = [];
     let rowNum = 1;
 
+    const regularAccGood = settings.accountId;
+    const setAccGood = settings.setAccountId;
+
     for (const item of summaryItems) {
-      const itemAccGood = item.isSet ? SET_ACC_GOOD : DEFAULT_ACC_GOOD;
+      const itemAccGood = item.isSet ? setAccGood : regularAccGood;
 
       for (const batch of item.details.batches) {
         // Для комплектів (isSet=true) portionsPerBox може бути 0 або 1.
@@ -231,7 +236,7 @@ export class WarehousePayloadBuilder {
       firm: firmId,
       storage: storageFrom,
       storageTo,
-      docMode,
+      docMode: WAREHOUSE_MOVEMENT_DOC_MODE,
       ...(settings.businessId && { business: settings.businessId }), // Напрям бізнесу (необов'язково, але Діловод може вимагати)
       taxAccount: 1,
       remark: draft.notes || '',

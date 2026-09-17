@@ -20,9 +20,6 @@ const parseLocalDate = (dt: any): Date | null => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-const DEFAULT_ACC_GOOD = '1119000000001076';
-const OWN_STOCK_ACC_GOOD = '1119000000001079';
-
 const parseStockBalanceByStock = (value: any): Record<string, number> => {
   if (!value) return {};
   if (typeof value === 'object') return value as Record<string, number>;
@@ -65,7 +62,9 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
     const skuToProduct = new Map(products.map((p) => [p.sku, p]));
 
     const { getDilovodConfigFromDB } = await import('../../services/dilovod/DilovodUtils.js');
+    const { loadDilovodWarehouseDefaults } = await import('../../services/dilovod/DilovodWarehouseDefaults.js');
     const dilovodConfig = await getDilovodConfigFromDB();
+    const warehouseDefaults = await loadDilovodWarehouseDefaults();
 
     const pad = (n: number) => String(n).padStart(2, '0');
     const formatLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
@@ -133,13 +132,13 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
         continue;
       }
       const accGood = prod.set && hasOwnStockInWarehouse(prod.stockBalanceByStock)
-        ? OWN_STOCK_ACC_GOOD
-        : DEFAULT_ACC_GOOD;
+        ? warehouseDefaults.setAccountId
+        : warehouseDefaults.accountId;
       tpGoods.push({
         rowNum: row,
         good: prod.dilovodId,
         goodPart: it.batchId || null,
-        unit: '1103600000000001', // piece
+        unit: warehouseDefaults.unitId,
         qty: Number(it.quantity) || 0,
         accGood,
       });

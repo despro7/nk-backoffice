@@ -1,5 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardBody, CardHeader, Button, Chip } from '@heroui/react';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+	Card,
+	CardBody,
+	CardHeader,
+	Button,
+	Chip,
+	Table,
+	TableBody,
+	TableCell,
+	TableColumn,
+	TableHeader,
+	TableRow,
+	type SortDescriptor,
+} from '@heroui/react';
 import { ToastService } from '../services/ToastService';
 import { DirectoryModal } from './modals/DirectoryModal';
 import { DynamicIcon } from 'lucide-react/dynamic';
@@ -19,6 +32,25 @@ interface CacheStatus {
 	statuses: CacheMetadata;
 }
 
+const CACHE_TYPE_ORDER: Array<keyof CacheStatus> = [
+	'channels',
+	'paymentMethods',
+	'shippingMethods',
+	'statuses',
+];
+
+type CacheSortColumn = 'name' | 'status' | 'recordsCount' | 'lastUpdate';
+
+type CacheTableRow = {
+	type: keyof CacheStatus;
+	metadata: CacheMetadata;
+};
+
+const DEFAULT_CACHE_SORT: SortDescriptor = {
+	column: 'name',
+	direction: 'ascending',
+};
+
 interface DirectoryRecord {
 	id: string;
 	name: string;
@@ -33,6 +65,7 @@ export const SalesDriveCacheManager: React.FC = () => {
 		type: keyof CacheStatus;
 		data: any[];
 	} | null>(null);
+	const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>(DEFAULT_CACHE_SORT);
 
 	// Завантажити статус кешу
 	const fetchCacheStatus = async () => {
@@ -180,6 +213,47 @@ export const SalesDriveCacheManager: React.FC = () => {
 		}
 	};
 
+	const sortedCacheRows = useMemo((): CacheTableRow[] => {
+		if (!cacheStatus) return [];
+
+		const rows: CacheTableRow[] = CACHE_TYPE_ORDER
+			.filter((type) => cacheStatus[type])
+			.map((type) => ({ type, metadata: cacheStatus[type] }));
+
+		const column = String(sortDescriptor.column ?? 'name') as CacheSortColumn;
+		const dir = sortDescriptor.direction === 'descending' ? -1 : 1;
+
+		return [...rows].sort((left, right) => {
+			let cmp = 0;
+
+			switch (column) {
+				case 'name':
+					cmp = getName(left.type).localeCompare(getName(right.type), 'uk');
+					break;
+				case 'status':
+					cmp = Number(left.metadata.isValid) - Number(right.metadata.isValid);
+					break;
+				case 'recordsCount':
+					cmp = left.metadata.recordsCount - right.metadata.recordsCount;
+					break;
+				case 'lastUpdate': {
+					const leftTime = left.metadata.lastUpdate ? new Date(left.metadata.lastUpdate).getTime() : 0;
+					const rightTime = right.metadata.lastUpdate ? new Date(right.metadata.lastUpdate).getTime() : 0;
+					if (leftTime === 0 && rightTime === 0) cmp = 0;
+					else if (leftTime === 0) cmp = 1;
+					else if (rightTime === 0) cmp = -1;
+					else cmp = leftTime - rightTime;
+					break;
+				}
+				default:
+					cmp = CACHE_TYPE_ORDER.indexOf(left.type) - CACHE_TYPE_ORDER.indexOf(right.type);
+			}
+
+			if (cmp !== 0) return cmp * dir;
+			return CACHE_TYPE_ORDER.indexOf(left.type) - CACHE_TYPE_ORDER.indexOf(right.type);
+		});
+	}, [cacheStatus, sortDescriptor]);
+
 	// Отримати колонки для таблиці
 	const getColumns = (type: keyof CacheStatus) => {
 		switch (type) {
@@ -225,7 +299,7 @@ export const SalesDriveCacheManager: React.FC = () => {
 					{refreshing ? 'Оновлення...' : 'Оновити примусово'}
 				</Button>
 			</CardHeader>
-			<CardBody>
+			<CardBody className="p-6">
 				{loading ? (
 					<div className="flex justify-center items-center py-8">
 						<DynamicIcon name="loader-2" className="w-8 h-8 animate-spin text-primary" />
@@ -235,54 +309,66 @@ export const SalesDriveCacheManager: React.FC = () => {
 						<p className="text-sm text-default-500">
 							Кеш оновлюється автоматично раз на добу. Ви можете оновити вручну за потреби.
 						</p>
-						<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-							{(Object.keys(cacheStatus) as Array<keyof CacheStatus>).map((type) => {
-								const metadata = cacheStatus[type];
-								return (
-									<div
+						<Table
+							aria-label="Кеш довідників SalesDrive"
+							removeWrapper
+							sortDescriptor={sortDescriptor}
+							onSortChange={setSortDescriptor}
+							classNames={{
+								th: 'first:rounded-l-md last:rounded-e-md',
+							}}
+						>
+							<TableHeader>
+								<TableColumn key="name" allowsSorting>Довідник</TableColumn>
+								<TableColumn key="status" allowsSorting width={128}>Статус</TableColumn>
+								<TableColumn key="recordsCount" allowsSorting width={96} align="end">Записів</TableColumn>
+								<TableColumn key="lastUpdate" allowsSorting width={160}>Оновлено</TableColumn>
+								<TableColumn key="actions" width={160} align="end">Дії</TableColumn>
+							</TableHeader>
+							<TableBody emptyContent="Немає довідників у кеші">
+								{sortedCacheRows.map(({ type, metadata }) => (
+									<TableRow
 										key={type}
-										className="border border-default-200 rounded-lg p-4 space-y-2"
+										className="hover:bg-gray-100/60 transition-colors duration-50"
 									>
-										<div className="flex items-center justify-between">
-											<div className="flex gap-2">
+										<TableCell>
+											<div className="flex items-center gap-2">
 												<DynamicIcon name={getIcon(type)} className="w-4 h-4 text-primary shrink-0" />
-												<span className="font-semibold text-sm">{getName(type)}</span>
+												<span className="font-medium text-sm">{getName(type)}</span>
 											</div>
+										</TableCell>
+										<TableCell>
 											<Chip size="sm" color={metadata.isValid ? 'success' : 'warning'} variant="flat">
 												{metadata.isValid ? 'Актуальний' : 'Застарів'}
 											</Chip>
-										</div>
-										<div className="text-sm space-y-1">
-											<div className="flex gap-2 items-center">
-												<span className="text-default-500">Записів:</span>
-												<span className="font-medium">{metadata.recordsCount}</span>
-											</div>
-											<div className="flex gap-2 items-center">
-												<span className="text-default-500">Оновлено:</span>
-												<div className="flex items-center gap-2">
-													<span className="font-medium">{formatRelativeDate(metadata.lastUpdate)}</span>
+										</TableCell>
+										<TableCell className="text-right font-medium tabular-nums">
+											{metadata.recordsCount}
+										</TableCell>
+										<TableCell className="text-default-500 whitespace-nowrap">
+											{formatRelativeDate(metadata.lastUpdate)}
+										</TableCell>
+										<TableCell>
+											{metadata.recordsCount > 0 ? (
+												<div className="flex items-center justify-end">
+													<Button
+														size="sm"
+														variant="bordered"
+														color="primary"
+														className="border-0 border-neutral-300 shadow-sm bg-neutral-100"
+														startContent={<DynamicIcon name="eye" className="w-4 h-4" />}
+														onPress={() => viewDirectory(type)}
+														isDisabled={loading || refreshing}
+													>
+														Переглянути
+													</Button>
 												</div>
-											</div>
-										</div>
-										{metadata.recordsCount > 0 && (
-											<div className="mt-3">
-												<Button
-													size="sm"
-													variant="bordered"
-													color="primary"
-													className='border-0 border-neutral-300 shadow-sm bg-neutral-100'
-													startContent={<DynamicIcon name="eye" className="w-4 h-4" />}
-													onPress={() => viewDirectory(type)}
-													fullWidth
-												>
-													Переглянути записи
-												</Button>
-											</div>
-										)}
-									</div>
-								);
-							})}
-						</div>
+											) : null}
+										</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
 					</div>
 				) : (
 					<div className="text-center py-8 text-default-500">

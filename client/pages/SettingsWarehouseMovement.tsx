@@ -4,6 +4,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { useWarehouseMovementSettings } from '../hooks/useWarehouseMovementSettings';
 import { useDilovodSettings } from '../hooks/useDilovodSettings';
 import type { WarehouseMovementSettings } from '@shared/types/movement';
+import { WAREHOUSE_MOVEMENT_SETTING_DEFAULTS } from '@shared/types/movement';
 
 // ---------------------------------------------------------------------------
 // SettingsWarehouseMovement — налаштування переміщень між складами
@@ -89,14 +90,14 @@ const SettingsWarehouseMovement: React.FC = () => {
 					</CardHeader>
 					<CardBody className="p-6 space-y-4">
 						<RadioGroup
-							value={formData.numberGeneration ?? 'dilovod'}
+							value={formData.numberGeneration ?? WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.numberGeneration}
 							onValueChange={(val) => handleChange('numberGeneration', val as 'server' | 'dilovod')}
 							aria-label="Спосіб генерування номера"
 						>
-							<Radio value="dilovod" description="Діловод сам призначить номер при створенні документа" classNames={{ base: "items-baseline", labelWrapper: "pl-1.5", label: "text-md", description: "text-xs" }}>
-								На стороні Діловода (рекомендовано)
+							<Radio value="dilovod" description="Діловод сам призначить номер при створенні документа" classNames={{ base: "items-baseline", labelWrapper: "pl-1.5", label: "text-sm font-semibold", description: "text-xs" }}>
+								На стороні Діловода
 							</Radio>
-							<Radio value="server" description="Сервер генерує номер за шаблоном перед відправкою" classNames={{ base: "items-baseline", labelWrapper: "pl-1.5", label: "text-md", description: "text-xs" }}>
+							<Radio value="server" description="Сервер генерує номер за шаблоном перед відправкою" classNames={{ base: "items-baseline", labelWrapper: "pl-1.5", label: "text-sm font-semibold", description: "text-xs" }}>
 								На стороні сервера
 							</Radio>
 						</RadioGroup>
@@ -104,34 +105,12 @@ const SettingsWarehouseMovement: React.FC = () => {
 						{formData.numberGeneration === 'server' && (
 							<Input
 								label="Шаблон номера"
-								placeholder="WM-{YYYY}{MM}{DD}-{###}"
-								value={formData.numberTemplate ?? ''}
+								placeholder={WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.numberTemplate}
+								value={formData.numberTemplate ?? WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.numberTemplate}
 								onChange={(e) => handleChange('numberTemplate', e.target.value)}
 								description="Доступні змінні: {YYYY}, {MM}, {DD}, {HH}, {mm}, {###} (3 цифри), {#####} (5 цифр)"
 							/>
 						)}
-					</CardBody>
-				</Card>
-
-				{/* Напрям бізнесу (Business) */}
-				<Card>
-					<CardHeader className="border-b border-gray-200">
-						<DynamicIcon name="briefcase" size={18} className="text-gray-600 mr-2" />
-						<h2 className="text-base font-semibold text-gray-900">Напрям бізнесу (Business)</h2>
-					</CardHeader>
-					<CardBody className="p-6 space-y-4">
-						<Input
-							label="ID напряму бізнесу"
-							labelPlacement="outside"
-							classNames={{
-								label: "font-semibold"
-							}}
-							placeholder="За замовчуванням: 1115000000000001"
-							value={formData.businessId ?? '1115000000000001'}
-							onChange={(e) => handleChange('businessId', e.target.value)}
-							description="Аналітичний вимір Діловода — поле business в документі переміщення."
-							startContent={<DynamicIcon name="briefcase" size={14} className="text-gray-400" />}
-						/>
 					</CardBody>
 				</Card>
 
@@ -140,6 +119,7 @@ const SettingsWarehouseMovement: React.FC = () => {
 					<CardHeader className="border-b border-gray-200">
 						<DynamicIcon name="warehouse" size={18} className="text-gray-600 mr-2" />
 						<h2 className="text-base font-semibold text-gray-900">Склади</h2>
+						<p className="text-sm text-gray-400 ml-1">– вибір складів для переміщень за замовчуванням</p>
 					</CardHeader>
 					<CardBody className="p-6 space-y-5">
 						{loadingDirectories ? (
@@ -217,54 +197,6 @@ const SettingsWarehouseMovement: React.FC = () => {
 								)}
 							</>
 						)}
-					</CardBody>
-				</Card>
-
-				{/* Технічні параметри */}
-				<Card>
-					<CardHeader className="border-b border-gray-200">
-						<DynamicIcon name="settings-2" size={18} className="text-gray-600 mr-2" />
-						<h2 className="text-base font-semibold text-gray-900">Технічні параметри</h2>
-					</CardHeader>
-					<CardBody className="p-6 space-y-4">
-						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-							<Input
-								label="Режим документа (docMode)"
-								labelPlacement="outside"
-								classNames={{
-									label: "font-semibold"
-								}}
-								placeholder="1004000000000409"
-								value={formData.docMode ?? ''}
-								onChange={(e) => handleChange('docMode', e.target.value)}
-								description="ID режиму документа переміщення в Діловоді"
-								startContent={<DynamicIcon name="file-code" size={16} className="text-gray-400" />}
-							/>
-							<Input
-								label="Одиниця виміру (unitId)"
-								labelPlacement="outside"
-								classNames={{
-									label: "font-semibold"
-								}}
-								placeholder="1103600000000001"
-								value={formData.unitId ?? ''}
-								onChange={(e) => handleChange('unitId', e.target.value)}
-								description="ID одиниці виміру (шт.)"
-								startContent={<DynamicIcon name="ruler" size={16} className="text-gray-400" />}
-							/>
-							<Input
-								label="Рахунок обліку (accountId)"
-								labelPlacement="outside"
-								classNames={{
-									label: "font-semibold"
-								}}
-								placeholder="1119000000001076"
-								value={formData.accountId ?? ''}
-								onChange={(e) => handleChange('accountId', e.target.value)}
-								description="Рахунок обліку товарів на складі"
-								startContent={<DynamicIcon name="landmark" size={16} className="text-gray-400" />}
-							/>
-						</div>
 					</CardBody>
 				</Card>
 			</div>

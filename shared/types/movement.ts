@@ -154,6 +154,15 @@ export interface MovementDraft {
   
 }
 
+/** Режим документа documents.goodMoving в Діловоді (фіксований, не налаштовується) */
+export const WAREHOUSE_MOVEMENT_DOC_MODE = '1004000000000409';
+
+/** Дефолти для settings_base (category='warehouse_movement') */
+export const WAREHOUSE_MOVEMENT_SETTING_DEFAULTS = {
+  numberGeneration: 'server' as const,
+  numberTemplate: 'П-{#####}',
+};
+
 /**
  * Налаштування переміщень між складами (зберігаються в settings_base з category='warehouse_movement')
  */
@@ -161,12 +170,13 @@ export interface WarehouseMovementSettings {
   numberGeneration: 'server' | 'dilovod'; // wm_numberGeneration
   numberTemplate: string;                  // wm_numberTemplate
   firmId: string;                          // з dilovod_default_firm_id (read-only у WM settings)
-  businessId: string;                      // wm_businessId (Напрям бізнесу — аналітичний вимір Діловода)
   storageFrom: string;                     // wm_storageFrom
   storageTo: string;                       // wm_storageTo
-  docMode: string;                         // wm_docMode
-  unitId: string;                          // wm_unitId
-  accountId: string;                       // wm_accountId
+  /** З loadDilovodWarehouseDefaults() — dilovod_warehouse_* */
+  businessId: string;
+  unitId: string;
+  accountId: string;
+  setAccountId: string;
 }
 
 /**

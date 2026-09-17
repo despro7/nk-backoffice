@@ -6,6 +6,7 @@ import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApi } from '@/hooks/useApi';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { useWarehouseMovementSettings } from '@/hooks/useWarehouseMovementSettings';
 import { playSoundChoice } from '@/lib/soundUtils';
 import { ToastService } from '@/services/ToastService';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
@@ -63,9 +64,6 @@ import MovementMobProductEditDrawer from './components/MovementMobProductEditDra
 import MovementMobUndoBanner from './components/MovementMobUndoBanner';
 import type { MovementMobStorageOption } from './components/MovementMobWarehouseSelectors';
 
-const DEFAULT_SOURCE_ID = '1100700000001005';
-const DEFAULT_DEST_ID = '1100700000001019';
-
 interface MovementMobEditorPageProps {
   documentId: number | null;
   useMockBarcode?: boolean;
@@ -92,10 +90,11 @@ export default function MovementMobEditorPage({
   const { apiCall } = useApi();
   const { isDebugMode } = useDebug();
   const dirsCtx = useDilovodDirectories();
+  const { settings: wmSettings } = useWarehouseMovementSettings();
   const { document, loading, error, refetch } = useWarehouseMovementMobDocument(documentId);
 
-  const [sourceId, setSourceId] = useState(DEFAULT_SOURCE_ID);
-  const [destId, setDestId] = useState(DEFAULT_DEST_ID);
+  const [sourceId, setSourceId] = useState('');
+  const [destId, setDestId] = useState('');
   const [lines, setLines] = useState<MovementMobProductLineViewModel[]>([]);
   const [draft, setDraft] = useState<MovementMobScanDraft | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -131,6 +130,7 @@ export default function MovementMobEditorPage({
   const persistedIdRef = useRef<number | null>(documentId);
   const syncedDocIdRef = useRef<number | null>(null);
   const syncedStatusRef = useRef<string | null>(null);
+  const defaultDirectionAppliedRef = useRef(false);
   const lookupBusyRef = useRef(false);
   const sourceIdRef = useRef(sourceId);
   const destIdRef = useRef(destId);
@@ -171,10 +171,19 @@ export default function MovementMobEditorPage({
     syncedDocIdRef.current = document.id;
     syncedStatusRef.current = document.status;
     persistedIdRef.current = document.id;
+    defaultDirectionAppliedRef.current = true;
     setSourceId(document.sourceStorageId);
     setDestId(document.destStorageId);
     setLines(document.lines);
   }, [document]);
+
+  // Дефолтний напрямок для нового документа — з /settings/warehouse-movement
+  useEffect(() => {
+    if (documentId != null || defaultDirectionAppliedRef.current || !wmSettings) return;
+    if (wmSettings.storageFrom) setSourceId(wmSettings.storageFrom);
+    if (wmSettings.storageTo) setDestId(wmSettings.storageTo);
+    defaultDirectionAppliedRef.current = true;
+  }, [documentId, wmSettings]);
 
   const isSender = user?.id != null
     && document?.createdBy != null

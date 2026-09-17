@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
+import { useDilovodSettings } from '@/hooks/useDilovodSettings';
+import { DILOVOD_WAREHOUSE_DEFAULTS } from '@shared/types/dilovod';
 import { expandProductSets } from '@/lib/orderAssemblyUtils';
 import { useApi } from '@/hooks/useApi';
 import { ToastService } from '@/services/ToastService';
@@ -37,6 +39,8 @@ interface PrepareReturnResponse {
 
 export function useWarehouseReturns() {
   const { apiCall } = useApi();
+  const { settings: dilovodSettings } = useDilovodSettings({ loadDirectories: false });
+  const monolithicAccGood = dilovodSettings?.warehouseSetAccountId ?? DILOVOD_WAREHOUSE_DEFAULTS.setAccountId;
 
   // Remove emoji and other pictographic Unicode characters from user-provided text
   const sanitizeText = (s?: string | null) => {
@@ -557,7 +561,7 @@ export function useWarehouseReturns() {
       const shipmentBySku: Record<string, { accGood: string; quantity: number }> = {};
       for (const item of monolithicItems) {
         shipmentBySku[item.sku] = {
-          accGood: '1119000000001079',
+          accGood: monolithicAccGood,
           quantity: item.quantity,
         };
       }
@@ -624,7 +628,7 @@ export function useWarehouseReturns() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [apiCall, clientDeliveryCost, comment, customReason, receiveFirmId, receiveFirmName, shipFirmId, shipFirmName, items, returnAmount, returnDate, returnReason, selectedOrderId, selectedOrderNumber, ttn]);
+  }, [apiCall, clientDeliveryCost, comment, customReason, monolithicAccGood, receiveFirmId, receiveFirmName, shipFirmId, shipFirmName, items, returnAmount, returnDate, returnReason, selectedOrderId, selectedOrderNumber, ttn]);
 
   const handleNewReturn = useCallback(() => {
     // reset everything like a fresh page
