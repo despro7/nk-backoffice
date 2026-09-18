@@ -13,7 +13,8 @@ import {
   resolveBatchDisplayName,
   type MovementMobSkuStockTotals,
 } from './WarehouseMovementMobUtils';
-import { fetchBatchNumbersBySku } from './movementMobApi';
+import { fetchBatchNumbersBulk } from './movementMobApi';
+import type { MovementMobBatchRow } from './WarehouseMovementMobUtils';
 
 interface CatalogBatchLine {
   sku: string;
@@ -83,27 +84,6 @@ async function fetchStockTotalsBySku(
   return totals;
 }
 
-/** Послідовні запити до Dilovod — уникаємо multithreadApiSession при паралельних викликах. */
-async function fetchBatchesBySkuSequential(
-  apiCall: (url: string, options?: RequestInit) => Promise<Response>,
-  skus: string[],
-): Promise<Record<string, Awaited<ReturnType<typeof fetchBatchNumbersBySku>>>> {
-  const batchesBySku: Record<string, Awaited<ReturnType<typeof fetchBatchNumbersBySku>>> = {};
-  for (const sku of skus) {
-    let batches = await fetchBatchNumbersBySku(apiCall, sku, {
-      includeSmallStorage: true,
-    });
-    if (batches.length === 0) {
-      batches = await fetchBatchNumbersBySku(apiCall, sku, {
-        includeSmallStorage: true,
-        force: true,
-      });
-    }
-    batchesBySku[sku] = batches;
-  }
-  return batchesBySku;
-}
-
 function applyCatalogNames(
   lines: MovementMobProductLineViewModel[],
   catalogNames: Record<string, string>,
@@ -158,6 +138,10 @@ export function useMovementMobLinesEnrichment(
     () => [...new Set(lines.map((line) => line.sku).filter(Boolean))],
     [lines],
   );
+  const sortedSkusKey = useMemo(
+    () => [...skus].sort().join(','),
+    [skus],
+  );
   const lineKeys = useMemo(
     () => lines.map((line) => movementMobEnrichmentLineKey(line)).join('|'),
     [lines],
@@ -167,18 +151,35 @@ export function useMovementMobLinesEnrichment(
     [lines],
   );
 
-  const query = useQuery({
-    queryKey: ['warehouse-movement-mob-line-enrichment', skus, lineKeys],
+  const stockQuery = useQuery({
+    queryKey: ['warehouse-movement-mob-stock', sortedSkusKey],
     enabled: skus.length > 0,
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
     placeholderData: (previous) => previous,
-    queryFn: async () => {
-      const [stockTotalsBySku, batchesBySku] = await Promise.all([
-        fetchStockTotalsBySku(apiCall, skus),
-        fetchBatchesBySkuSequential(apiCall, skus),
-      ]);
+    queryFn: () => fetchStockTotalsBySku(apiCall, skus),
+  });
 
+  const batchesQuery = useQuery({
+    queryKey: ['warehouse-movement-mob-batches', sortedSkusKey],
+    enabled: skus.length > 0,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    placeholderData: (previous) => previous,
+    queryFn: () => fetchBatchNumbersBulk(apiCall, skus, {
+      includeSmallStorage: true,
+      skipExpiration: true,
+    }),
+  });
+
+  const catalogQuery = useQuery({
+    queryKey: ['warehouse-movement-mob-catalog', lineKeys, sortedSkusKey],
+    enabled: skus.length > 0 && batchesQuery.isSuccess,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    placeholderData: (previous) => previous,
+    queryFn: async () => {
+      const batchesBySku = batchesQuery.data ?? {};
       const unresolvedIds = [...new Set(
         lines.flatMap((line) => {
           const lookupId = effectiveBatchId(line.batchId, line.batchNumber);
@@ -187,7 +188,7 @@ export function useMovementMobLinesEnrichment(
           return lookupId ? [lookupId] : [];
         }),
       )];
-      const { names: catalogNames, lineMeta } = await fetchCatalogBatchEnrichment(
+      return fetchCatalogBatchEnrichment(
         apiCall,
         unresolvedIds,
         lines.map((line) => ({
@@ -197,31 +198,42 @@ export function useMovementMobLinesEnrichment(
           barcode: line.barcode,
         })),
       );
-
-      return { batchesBySku, catalogNames, lineMeta, stockTotalsBySku };
     },
   });
 
   const enrichedLines = useMemo(() => {
-    const hasEnrichment = Boolean(query.data);
-    const stockTotalsBySku = query.data?.stockTotalsBySku ?? {};
-    const lineMeta = query.data?.lineMeta;
+    const stockTotalsBySku = stockQuery.data ?? {};
+    const batchesBySku = (batchesQuery.data ?? {}) as Record<string, MovementMobBatchRow[]>;
+    const hasBatchData = Boolean(batchesQuery.data);
+    const lineMeta = catalogQuery.data?.lineMeta;
     const base = enrichMovementMobLines(
       lines,
-      query.data?.batchesBySku ?? {},
+      batchesBySku,
       stockTotalsBySku,
-      hasEnrichment ? (lineMeta ?? {}) : undefined,
+      hasBatchData ? (lineMeta ?? {}) : undefined,
     );
-    if (!hasEnrichment) return base;
-    return applyCatalogNames(base, query.data?.catalogNames ?? {}, lineMeta ?? {}, metaKeyByLineKey);
-  }, [lines, query.data, metaKeyByLineKey]);
+    if (!hasBatchData || !catalogQuery.data) return base;
+    return applyCatalogNames(
+      base,
+      catalogQuery.data.names,
+      catalogQuery.data.lineMeta,
+      metaKeyByLineKey,
+    );
+  }, [lines, stockQuery.data, batchesQuery.data, catalogQuery.data, metaKeyByLineKey]);
 
-  const enrichmentLoading = query.isLoading && !query.data;
-  const enrichmentRefreshing = query.isFetching && Boolean(query.data);
+  const stockLoading = stockQuery.isLoading && !stockQuery.data;
+  const stockRefreshing = stockQuery.isFetching && Boolean(stockQuery.data);
+  const batchLoading = batchesQuery.isLoading && !batchesQuery.data;
+  const batchRefreshing = batchesQuery.isFetching && Boolean(batchesQuery.data);
+  const catalogLoading = catalogQuery.isLoading && !catalogQuery.data && batchesQuery.isSuccess;
 
   return {
     lines: enrichedLines,
-    loading: enrichmentLoading,
-    refreshing: enrichmentRefreshing,
+    stockLoading,
+    stockRefreshing,
+    batchLoading: batchLoading || catalogLoading,
+    batchRefreshing: batchRefreshing || (catalogQuery.isFetching && Boolean(catalogQuery.data)),
+    loading: stockLoading || batchLoading || catalogLoading,
+    refreshing: stockRefreshing || batchRefreshing,
   };
 }

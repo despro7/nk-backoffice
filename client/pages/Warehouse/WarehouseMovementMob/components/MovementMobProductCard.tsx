@@ -22,20 +22,24 @@ interface MovementMobProductCardProps {
   qtyFocus?: 'sent' | 'received';
   onEditProduct?: (line: MovementMobProductLineViewModel) => void;
   onEditQty?: () => void;
-  enrichmentLoading?: boolean;
-  enrichmentRefreshing?: boolean;
+  stockLoading?: boolean;
+  stockRefreshing?: boolean;
+  batchLoading?: boolean;
+  batchRefreshing?: boolean;
 }
 
 function LineStockCard({
   variant,
   batchQty,
   totalQty,
-  loading = false,
+  batchLoading = false,
+  totalLoading = false,
 }: {
   variant: 'gp' | 'ms';
   batchQty: number | null;
   totalQty: number;
-  loading?: boolean;
+  batchLoading?: boolean;
+  totalLoading?: boolean;
 }) {
   return (
     <div className="flex-1 min-w-0 rounded-md bg-neutral-100 px-2.5 py-2.5">
@@ -43,15 +47,19 @@ function LineStockCard({
         <span className="text-[10px] uppercase tracking-wide text-default-400">партія / всього</span>
         <StockBadge variant={variant} size="10px" className="leading-none" />
       </div>
-      {loading ? (
-        <Skeleton className="mt-1.5 h-6 w-20 rounded-sm opacity-60" />
-      ) : (
-        <p className="mt-1 text-sm font-semibold text-default-800 leading-none tabular-nums">
-          {batchQty ?? '—'}
-          <span className="mx-1 text-default-400 font-normal">/</span>
-          {totalQty}
-        </p>
-      )}
+      <p className="mt-1 text-sm font-semibold text-default-800 leading-none tabular-nums">
+        {batchLoading ? (
+          <Skeleton className="inline-block h-5 w-8 rounded-sm opacity-60 align-middle" />
+        ) : (
+          <span>{batchQty ?? '—'}</span>
+        )}
+        <span className="mx-1 text-default-400 font-normal">/</span>
+        {totalLoading ? (
+          <Skeleton className="inline-block h-5 w-8 rounded-sm opacity-60 align-middle" />
+        ) : (
+          <span>{totalQty}</span>
+        )}
+      </p>
     </div>
   );
 }
@@ -91,11 +99,15 @@ export default function MovementMobProductCard({
   qtyFocus = 'received',
   onEditProduct,
   onEditQty,
-  enrichmentLoading = false,
-  enrichmentRefreshing = false,
+  stockLoading = false,
+  stockRefreshing = false,
+  batchLoading = false,
+  batchRefreshing = false,
 }: MovementMobProductCardProps) {
   const { isDebugMode } = useDebug();
-  const stockLoading = enrichmentLoading || enrichmentRefreshing;
+  const totalStockLoading = stockLoading || stockRefreshing;
+  const batchQtyLoading = batchLoading || batchRefreshing;
+  const batchLabelLoading = batchLoading || batchRefreshing;
   const projectedStock = useMemo(() => {
     const { sourceOut, destIn } = movementQtyForStockProjection(line, showReceipt);
     return computeProjectedLineStock(
@@ -221,9 +233,9 @@ export default function MovementMobProductCard({
                 )}
               </>
             )}
-            <BatchLabel line={line} loading={enrichmentLoading} />
+            <BatchLabel line={line} loading={batchLabelLoading} />
           </div>
-          {canEditProduct && !enrichmentLoading && (
+          {canEditProduct && !batchLabelLoading && (
             <Button
               isIconOnly
               variant="light"
@@ -245,13 +257,15 @@ export default function MovementMobProductCard({
             variant="gp"
             batchQty={projectedStock.batchGp}
             totalQty={projectedStock.totalGp}
-            loading={stockLoading}
+            batchLoading={batchQtyLoading}
+            totalLoading={totalStockLoading}
           />
           <LineStockCard
             variant="ms"
             batchQty={projectedStock.batchMs}
             totalQty={projectedStock.totalMs}
-            loading={stockLoading}
+            batchLoading={batchQtyLoading}
+            totalLoading={totalStockLoading}
           />
         </div>
 

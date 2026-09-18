@@ -223,7 +223,7 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 | Залишки після переміщення | прогноз `computeProjectedLineStock` (див. нижче) |
 | Статус прийому | «Відправлено: N / Отримано: M / Результат: збіг \| нестача \| надлишок» + кольорове кільце (`border-2`: success / danger / primary) |
 
-Skeleton (`@heroui/react`) на партії та залишках, поки `useMovementMobLinesEnrichment` у стані `loading` / `refreshing`.
+Skeleton (`@heroui/react`) **прогресивно**: залишки (`stockLoading` / `stockRefreshing`) і партії (`batchLoading` / `batchRefreshing`) незалежно — залишки можуть з’явитися раніше, ніж назви / кількості по партіях.
 
 ### Редагування товару на місці
 
@@ -233,15 +233,32 @@ Skeleton (`@heroui/react`) на партії та залишках, поки `us
 
 ## Збагачення рядків (`useMovementMobLinesEnrichment`)
 
-Хук підключається в `MovementMobDocumentScreen` і повертає `{ lines, loading, refreshing }`.
+Хук підключається в `MovementMobDocumentScreen` і повертає:
 
-**Джерела даних (паралельно + послідовно):**
+```ts
+{
+  lines,
+  stockLoading, stockRefreshing,
+  batchLoading, batchRefreshing,
+  loading, refreshing,  // агрегати для сумісності
+}
+```
 
-1. `GET /api/warehouse/stock-snapshot?skus=…` — загальні залишки ГП / МС по SKU (`mainStock` / `smallStock`).
-2. `GET /api/warehouse/batch-numbers/:sku?includeSmallStorage=true` — партії з Dilovod по SKU (послідовно по SKU, щоб уникнути `multithreadApiSession`; при порожній відповіді — повтор з `force=true`).
-3. `POST /api/warehouse/resolve-batch-names` — назви партій і метадані привʼязки з `catalog_good_barcodes` (за `batchId`, SKU, barcode).
+**Три незалежні React Query (паралельно на клієнті, серіалізовано в Dilovod):**
 
-**Кеш клієнта (React Query):** `staleTime` 10 хв, `gcTime` 30 хв, `placeholderData` — попередній знімок під час оновлення.
+| Query | Endpoint | Призначення |
+|-------|----------|-------------|
+| `stock` | `GET /api/warehouse/stock-snapshot?skus=…` | Загальні залишки ГП / МС (`mainStock` / `smallStock`) |
+| `batches` | `GET /api/warehouse/batch-numbers?skus=…&includeSmallStorage=true&skipExpiration=true` | Партії з Dilovod **одним bulk-запитом** на всі SKU документа |
+| `catalog` | `POST /api/warehouse/resolve-batch-names` | Назви партій і `batchLinked` з каталогу; `enabled` після успішного `batches` |
+
+**Ключі запитів:** `sortedSkusKey` (відсортований список SKU) — стабільний `queryKey` при зміні порядку рядків.
+
+**Кеш клієнта:** `staleTime` 10 хв, `gcTime` 30 хв, `placeholderData` — попередній знімок під час оновлення.
+
+**Серверний bulk `/batch-numbers`:** per-SKU lookup у in-memory кеші; cache-miss SKU збираються в один виклик `getBatchNumbersBySkus`. `skipExpiration=true` пропускає enrichment термінів придатності (для mob не потрібен).
+
+**Dilovod:** усі HTTP-запити йдуть через **глобальну чергу** `DilovodApiClient` (одна на процес) — паралельні API-ендпоінти backoffice не спричиняють `multithreadApiSession`. Див. `server/services/dilovod/README.md`.
 
 **`batchLinked`:** `true` лише якщо в каталозі для штрих-коду задано `goodPart` (Dilovod batch id). Інакше партія в документі може мати числовий id, але UI показує «не обрано!», а залишок **по партії** не виводиться (лише «всього»).
 
@@ -346,7 +363,8 @@ Pending: сіра точка, сірий заголовок, без імені �
 | `POST` | `/api/warehouse/:id/confirm-receipt` | Фіналізація + Dilovod; `{ dryRun: true }` — payload |
 | `POST` | `/api/warehouse/:id/sync-dilovod` | Перезапис finalized у Dilovod; теж `dryRun`; потрібен `movement.edit` |
 | `DELETE` | `/api/warehouse/:id` | Soft-delete + Dilovod `delMark` |
-| `GET` | `/api/warehouse/batch-numbers/:sku` | Партії з Dilovod по SKU (`includeSmallStorage`, `force`); серверний кеш 5 хв, порожні відповіді не кешуються |
+| `GET` | `/api/warehouse/batch-numbers?skus=…` | Bulk-партії з Dilovod (`includeSmallStorage`, `skipExpiration`, `force`); per-SKU кеш 5 хв / 12 год, порожні не кешуються |
+| `GET` | `/api/warehouse/batch-numbers/:sku` | Один SKU (legacy / інші екрани); ті самі query-параметри |
 | `POST` | `/api/warehouse/resolve-batch-names` | `{ batchIds?, lines? }` → `{ names, lineMeta }` з каталогу штрих-кодів |
 | `GET` | `/api/warehouse/stock-snapshot` | Загальні залишки ГП/МС по SKU (для збагачення рядків) |
 

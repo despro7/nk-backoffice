@@ -33,6 +33,35 @@ interface BatchNumbersResponse {
   error?: string;
 }
 
+interface BatchNumbersBulkResponse {
+  success?: boolean;
+  batchesBySku?: Record<string, Array<{
+    batchId?: string;
+    batchNumber?: string;
+    quantity?: number;
+    storage?: string;
+  }>>;
+  error?: string;
+}
+
+function mapBatchRows(
+  batches: Array<{
+    batchId?: string;
+    batchNumber?: string;
+    quantity?: number;
+    storage?: string;
+  }> = [],
+): MovementMobBatchRow[] {
+  return batches
+    .filter((batch) => isUsableDilovodBatchId(batch.batchId))
+    .map((batch) => ({
+      batchId: String(batch.batchId).trim(),
+      batchNumber: String(batch.batchNumber ?? batch.batchId ?? '').trim(),
+      storage: String(batch.storage ?? ''),
+      quantity: Number(batch.quantity) || 0,
+    }));
+}
+
 function asFiniteNumber(value: unknown): number | null {
   if (value == null || value === '') return null;
   const n = Number(value);
@@ -106,14 +135,49 @@ export async function fetchBatchNumbersBySku(
     return [];
   }
 
-  return (data.batches ?? [])
-    .filter((batch) => isUsableDilovodBatchId(batch.batchId))
-    .map((batch) => ({
-      batchId: String(batch.batchId).trim(),
-      batchNumber: String(batch.batchNumber ?? batch.batchId ?? '').trim(),
-      storage: String((batch as { storage?: string }).storage ?? ''),
-      quantity: Number(batch.quantity) || 0,
-    }));
+  return mapBatchRows(data.batches);
+}
+
+export async function fetchBatchNumbersBulk(
+  apiCall: ApiCall,
+  skus: string[],
+  options?: {
+    includeSmallStorage?: boolean;
+    force?: boolean;
+    skipExpiration?: boolean;
+  },
+): Promise<Record<string, MovementMobBatchRow[]>> {
+  const uniqueSkus = [...new Set(skus.map((sku) => sku.trim()).filter(Boolean))];
+  const emptyResult = Object.fromEntries(uniqueSkus.map((sku) => [sku, []]));
+  if (uniqueSkus.length === 0) return emptyResult;
+
+  const url = new URL('/api/warehouse/batch-numbers', window.location.origin);
+  url.searchParams.set('skus', uniqueSkus.join(','));
+  if (options?.includeSmallStorage) {
+    url.searchParams.set('includeSmallStorage', 'true');
+  }
+  if (options?.force) {
+    url.searchParams.set('force', 'true');
+  }
+  if (options?.skipExpiration) {
+    url.searchParams.set('skipExpiration', 'true');
+  }
+
+  const response = await apiCall(url.pathname + url.search);
+  if (!response.ok) {
+    return emptyResult;
+  }
+
+  const data = (await response.json().catch(() => null)) as BatchNumbersBulkResponse | null;
+  if (!data || data.success === false) {
+    return emptyResult;
+  }
+
+  const result: Record<string, MovementMobBatchRow[]> = { ...emptyResult };
+  for (const sku of uniqueSkus) {
+    result[sku] = mapBatchRows(data.batchesBySku?.[sku]);
+  }
+  return result;
 }
 
 export async function resolveBatchById(

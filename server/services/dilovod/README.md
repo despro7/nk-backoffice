@@ -39,7 +39,8 @@ dilovod/
 
 ### 3. DilovodApiClient.ts
 Клієнт для роботи з Dilovod API:
-- `makeRequest()` — основний метод для запитів
+- `makeRequest()` — основний метод для запитів (додає в глобальну чергу)
+- **Глобальна черга запитів** — `globalRequestQueue` + `processGlobalQueue()` на рівні модуля (не per-instance)
 - `listMetadata()` / `getMetadataByName()` / `getMetadataById()` — метадані об'єктів API
 - `getGoodsWithPrices()` — отримання товарів з цінами
 - `getGoodsFromCatalog()` — отримання товарів з каталогу
@@ -153,6 +154,27 @@ export const DEFAULT_DILOVOD_CONFIG: DilovodConfig = {
 - часові мітки для кожного повідомлення
 - структуровані логи для налагодження
 - єдиний формат для всіх модулів
+
+## Глобальна черга запитів
+
+Dilovod API дозволяє **лише один активний запит на сесію** (`multithreadApiSession`). Порушення → penalty ~30 с.
+
+У проєкті багато місць створюють власний `new DilovodApiClient()` (`DilovodService`, `WarehouseController`, `CatalogLabelService`, …). Раніше кожен інстанс мав **окрему** внутрішню чергу — паралельні HTTP-запити backoffice (напр. `stock-snapshot` + `batch-numbers`) могли одночасно піти в Dilovod і отримати penalty.
+
+**Рішення (з 2026-09-18):** черга, флаг обробки та `pauseUntil` винесені на рівень модуля:
+
+| Per-instance (було) | Global (стало) |
+|---------------------|----------------|
+| `this.requestQueue` | `globalRequestQueue` |
+| `this.pauseUntil` | `globalPauseUntil` |
+| `this.isProcessingQueue` | `isGlobalQueueProcessing` |
+| `this.processQueue()` | `processGlobalQueue()` |
+
+`makeRequest()` додає завдання з `apiUrl` інстансу в спільну чергу. Усі виклики Dilovod у процесі Node.js виконуються **послідовно**; при `multithread` — backoff і глобальна пауза 30 с перед retry.
+
+**Наслідок для клієнта:** можна безпечно паралелити кілька backoffice API (React Query), не боячись penalty — серіалізація на сервері.
+
+Див. також: `Docs/architecture/dilovod-error-formatting.md` (тип помилки `multithreadApiSession`).
 
 ## Обробка помилок
 

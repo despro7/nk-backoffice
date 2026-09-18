@@ -25,7 +25,7 @@
 
 ## API клієнта
 
-Усі виклики йдуть через існуючу чергу `DilovodApiClient.makeRequest` (ліміт потоків, retry `multithreadApiSession`). Мова метаданих — `uk`.
+Усі виклики йдуть через глобальну чергу `DilovodApiClient.makeRequest` (одна на процес, retry `multithreadApiSession`). Деталі: `server/services/dilovod/README.md` → «Глобальна черга запитів». Мова метаданих — `uk`.
 
 ```typescript
 await api.listMetadata('uk');

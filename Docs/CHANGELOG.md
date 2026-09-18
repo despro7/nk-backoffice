@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-09-18 — Мобільні переміщення: швидке збагачення рядків + глобальна черга Dilovod
+
+**Files:** `useMovementMobLinesEnrichment.ts`, `movementMobApi.ts`, `MovementMobProductCard.tsx`, `MovementMobDocumentScreen.tsx`, `WarehouseController.ts`, `DilovodApiClient.ts`, `DilovodService.ts`, `Docs/features/warehouse-movement-mob.md`, `server/services/dilovod/README.md`
+
+### Збагачення рядків (movement-mob)
+
+- **Bulk партії:** новий `GET /api/warehouse/batch-numbers?skus=…` — один Dilovod `balance` на кілька SKU замість N+1 викликів `/:sku`; per-SKU серверний кеш зберігається.
+- **`getBatchNumbersBySkus`:** у `DilovodApiClient` / `DilovodService`; опція `skipExpiration: true` для mob (без зайвих `getObject` по термінах придатності).
+- **Клієнт:** `fetchBatchNumbersBulk`; хук розділено на три React Query — `stock`, `batches`, `catalog` (каталог після успішних партій).
+- **Progressive UI:** `stockLoading` / `batchLoading` окремо в `MovementMobProductCard` — залишки з’являються раніше, ніж партії.
+- Прибрано автоматичний retry з `force=true` при порожніх партіях; `queryKey` стабілізовано через `sortedSkusKey`.
+
+### Глобальна черга Dilovod
+
+- `requestQueue`, `pauseUntil` і `processQueue` перенесені на **рівень модуля** (`globalRequestQueue`, `processGlobalQueue`) — спільні для всіх інстансів `DilovodApiClient` у процесі.
+- Виправлено race: паралельні HTTP-запити (напр. `stock-snapshot` + `batch-numbers`) через різні `new DilovodService()` більше не спричиняють `multithreadApiSession` і 30s penalty.
+- Деталі: `server/services/dilovod/README.md` (секція «Глобальна черга запитів»), `Docs/features/warehouse-movement-mob.md`.
+
+---
+
 ## 2026-09-18 — Мобільні переміщення: вікна редагування, валідація скану, `isWarehouseAccepted`
 
 **Files:** `MovementMobEditorPage.tsx`, `MovementMobDocumentScreen.tsx`, `MovementMobProductCard.tsx`, `WarehouseMovementMobUtils.ts`, `WarehouseMovementMobTypes.ts`, `SettingsWarehouseMovement.tsx`, `DurationMinutesField.tsx`, `shared/utils/warehouseMovementEdit.ts`, `shared/types/movement.ts`, `WarehouseService.ts`, `WarehouseController.ts`, `WarehousePayloadBuilder.ts`, `server/routes/settings.ts`, `Docs/features/warehouse-movement-mob.md`

@@ -117,6 +117,28 @@ function batchLabelNeedsCatalogFallback(batch: Pick<BatchNumbersRow, 'batchId' |
   return batchNumberNeedsResolution(batch.batchNumber, batch.batchId);
 }
 
+function filterBatchesByStorageMode(
+  batches: BatchNumbersRow[],
+  dilovodConfig: { smallStorageId: string },
+  options: {
+    targetStorageId?: string;
+    shouldOnlySmallStorage: boolean;
+    shouldIncludeSmallStorage: boolean;
+  },
+): BatchNumbersRow[] {
+  const { targetStorageId, shouldOnlySmallStorage, shouldIncludeSmallStorage } = options;
+  if (targetStorageId) {
+    return batches.filter((batch) => batch.storage === targetStorageId);
+  }
+  if (shouldOnlySmallStorage) {
+    return batches.filter((batch) => batch.storage === dilovodConfig.smallStorageId);
+  }
+  if (shouldIncludeSmallStorage) {
+    return batches;
+  }
+  return batches.filter((batch) => batch.storage !== dilovodConfig.smallStorageId);
+}
+
 /** Доповнює batchNumber з локального каталогу (catalog_good_barcodes.goodPartName). */
 async function enrichBatchNamesFromCatalog(batches: BatchNumbersRow[]): Promise<BatchNumbersRow[]> {
   const ids = [...new Set(
@@ -371,6 +393,162 @@ router.post('/resolve-batch-names', authenticateToken, async (req, res) => {
   }
 });
 
+// Bulk: партії для кількох SKU одним Dilovod-запитом
+router.get('/batch-numbers', authenticateToken, async (req, res) => {
+  try {
+    const {
+      skus: skusParam,
+      firmId,
+      asOfDate,
+      force,
+      includeSmallStorage,
+      onlySmallStorage,
+      storageId,
+      includeNonPositiveQty,
+      skipExpiration,
+    } = req.query;
+
+    const skuList = typeof skusParam === 'string'
+      ? skusParam.split(',').map((sku) => sku.trim()).filter(Boolean)
+      : [];
+    const uniqueSkus = [...new Set(skuList)];
+
+    if (uniqueSkus.length === 0) {
+      return res.status(400).json({ error: 'skus query param is required (comma-separated)' });
+    }
+
+    const forceRefresh = force === 'true';
+    const shouldIncludeSmallStorage = includeSmallStorage === 'true';
+    const shouldOnlySmallStorage = onlySmallStorage === 'true';
+    const shouldIncludeNonPositiveQty = includeNonPositiveQty === 'true';
+    const shouldSkipExpiration = skipExpiration === 'true';
+    const targetStorageId = typeof storageId === 'string' && storageId.trim() ? storageId.trim() : undefined;
+
+    let parsedDate: Date | undefined;
+    if (asOfDate && typeof asOfDate === 'string') {
+      parsedDate = new Date(asOfDate);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid date format. Expected ISO string (e.g., 2026-04-09T14:30:00Z)' });
+      }
+    }
+
+    const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
+    const { getDilovodConfigFromDB } = await import('../../services/dilovod/DilovodUtils.js');
+    const dilovodService = new DilovodService();
+    const dilovodConfig = await getDilovodConfigFromDB();
+
+    let finalFirmId = typeof firmId === 'string' ? firmId : undefined;
+    if (!finalFirmId) {
+      finalFirmId = dilovodConfig.defaultFirmId;
+    }
+
+    const storageMode: BatchStorageMode = shouldOnlySmallStorage
+      ? 'small-only'
+      : shouldIncludeSmallStorage
+        ? 'all'
+        : 'exclude-small';
+    const ttl = resolveBatchCacheTtl(parsedDate);
+    const ttlLabel = ttl === BATCH_CACHE_TTL_LONG ? '12 год' : '5 хв';
+
+    const batchesBySku: Record<string, BatchNumbersRow[]> = {};
+    const cacheMissSkus: string[] = [];
+    let fromCacheCount = 0;
+
+    for (const sku of uniqueSkus) {
+      const cacheKey = buildBatchCacheKey(
+        sku,
+        finalFirmId,
+        parsedDate,
+        storageMode,
+        targetStorageId,
+        shouldIncludeNonPositiveQty,
+      );
+
+      if (!forceRefresh) {
+        const cached = batchCache.get(cacheKey);
+        if (cached && isBatchCacheValid(cached)) {
+          const cachedBatches = await enrichBatchNamesFromCatalog(cached.data as BatchNumbersRow[]);
+          batchesBySku[sku] = cachedBatches;
+          fromCacheCount += 1;
+          continue;
+        }
+      } else {
+        batchCache.delete(cacheKey);
+      }
+
+      cacheMissSkus.push(sku);
+      batchesBySku[sku] = [];
+    }
+
+    if (cacheMissSkus.length > 0) {
+      console.log(
+        `📦 [Warehouse] GET /batch-numbers bulk — ${cacheMissSkus.length} cache miss, `
+        + `${fromCacheCount} з кешу, skipExpiration=${shouldSkipExpiration}`,
+      );
+
+      const fetchedBySku = await dilovodService.getBatchNumbersBySkus(
+        cacheMissSkus,
+        finalFirmId,
+        parsedDate,
+        {
+          includeNonPositiveQty: shouldIncludeNonPositiveQty,
+          skipExpiration: shouldSkipExpiration,
+        },
+      );
+
+      for (const sku of cacheMissSkus) {
+        const rawBatches = fetchedBySku[sku] ?? [];
+        const filteredBatches = await enrichBatchNamesFromCatalog(
+          filterBatchesByStorageMode(rawBatches, dilovodConfig, {
+            targetStorageId,
+            shouldOnlySmallStorage,
+            shouldIncludeSmallStorage,
+          }),
+        );
+        batchesBySku[sku] = filteredBatches;
+
+        if (filteredBatches.length > 0) {
+          const cacheKey = buildBatchCacheKey(
+            sku,
+            finalFirmId,
+            parsedDate,
+            storageMode,
+            targetStorageId,
+            shouldIncludeNonPositiveQty,
+          );
+          batchCache.set(cacheKey, { data: filteredBatches, timestamp: Date.now(), ttl });
+        }
+      }
+
+      console.log(
+        `✅ [Warehouse] Bulk партії: ${cacheMissSkus.length} SKU з Dilovod, кешуємо на ${ttlLabel}`,
+      );
+    } else {
+      console.log(`✅ [Warehouse] Bulk партії: всі ${uniqueSkus.length} SKU з кешу`);
+    }
+
+    const totalBatches = Object.values(batchesBySku).reduce((sum, rows) => sum + rows.length, 0);
+    res.json({
+      success: true,
+      batchesBySku,
+      count: totalBatches,
+      skuCount: uniqueSkus.length,
+      asOfDate: parsedDate ? parsedDate.toISOString() : null,
+      fromCache: cacheMissSkus.length === 0,
+      cachedSkuCount: fromCacheCount,
+      fetchedSkuCount: cacheMissSkus.length,
+      includeNonPositiveQty: shouldIncludeNonPositiveQty,
+      skipExpiration: shouldSkipExpiration,
+    });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Помилка bulk-отримання партій:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Внутрішня помилка сервера',
+    });
+  }
+});
+
 // Отримати доступні партії (batch numbers) по SKU
 router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
   try {
@@ -455,13 +633,11 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
     });
 
     const filteredBatches = await enrichBatchNamesFromCatalog(
-      targetStorageId
-        ? batches.filter(b => b.storage === targetStorageId)
-        : shouldOnlySmallStorage
-          ? batches.filter(b => b.storage === dilovodConfig.smallStorageId)
-          : shouldIncludeSmallStorage
-            ? batches
-            : batches.filter(b => b.storage !== dilovodConfig.smallStorageId),
+      filterBatchesByStorageMode(batches, dilovodConfig, {
+        targetStorageId,
+        shouldOnlySmallStorage,
+        shouldIncludeSmallStorage,
+      }),
     );
 
     const filterLabel = targetStorageId

@@ -45,20 +45,127 @@ type DilovodCashItemRow = {
   id__pr?: string;
 };
 
+/** Завдання глобальної черги — спільної для всіх інстансів DilovodApiClient */
+type DilovodQueueTask = {
+  apiUrl: string;
+  request: any;
+  signal?: AbortSignal;
+  resolve: (v: any) => void;
+  reject: (e: any) => void;
+};
+
+// Глобальна черга запитів — серіалізує всі виклики Dilovod API незалежно від інстансу клієнта
+const globalRequestQueue: DilovodQueueTask[] = [];
+// Якщо Dilovod повідомив про penalty — зупиняємо обробку черги до цього часу (ms)
+let globalPauseUntil: number | null = null;
+let isGlobalQueueProcessing = false;
+
+/** Обробник глобальної черги — один на весь процес */
+async function processGlobalQueue(): Promise<void> {
+  if (isGlobalQueueProcessing) return;
+  isGlobalQueueProcessing = true;
+
+  while (globalRequestQueue.length > 0) {
+    // Якщо встановлена пауза (penalty) — чекаємо
+    if (globalPauseUntil && Date.now() < globalPauseUntil) {
+      const waitMs = globalPauseUntil - Date.now();
+      console.log(`DilovodApiClient: Paused due to Dilovod penalty for ${waitMs}ms`);
+      await delay(waitMs);
+    }
+
+    const task = globalRequestQueue.shift();
+    if (!task) break;
+
+    const { apiUrl, request, signal, resolve, reject } = task;
+
+    // Якщо зовнішній сигнал уже скасовано — одразу відхиляємо
+    if (signal?.aborted) {
+      reject(new DOMException('Запит скасовано', 'AbortError'));
+      continue;
+    }
+
+    // Повторюємо спроби при тимчасових помилках (multithread)
+    const maxAttempts = 4;
+    let attempt = 0;
+    let lastError: any = null;
+
+    while (attempt < maxAttempts) {
+      attempt++;
+      try {
+        console.log('Відправляємо запит до Dilovod API (черга):', inspect({
+          ...request,
+          key: request.key ? `${String(request.key).substring(0, 6)}***` : undefined,
+          attempt
+        }, { depth: null, colors: true, compact: false }));
+
+        const resp = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+          signal,
+        });
+
+        const text = await resp.text();
+
+        if (!resp.ok) {
+          console.log('Помилка відповіді Dilovod API (черга):', { status: resp.status, statusText: resp.statusText, data: text });
+          throw new Error(`HTTP ${resp.status}: ${resp.statusText} ${text}`);
+        }
+
+        // Парсимо JSON (можливі помилки парсингу)
+        let data: any;
+        try { data = JSON.parse(text); } catch { data = text as any; }
+
+        // Якщо Dilovod повернув помилку multithread — ставимо паузу та retry
+        const errStr = data && (data.error || (typeof data === 'string' ? data : undefined));
+        if (errStr && String(errStr).toLowerCase().includes('multithread')) {
+          console.log('DilovodApiClient: Отримано multithread помилку від Dilovod — застосовуємо паузу 30s');
+          globalPauseUntil = Date.now() + 30_000;
+          lastError = new Error('Dilovod: multithreadApiSession');
+          const backoffMs = attempt < maxAttempts ? (attempt === 1 ? 1000 : attempt === 2 ? 2000 : 5000) : 30000;
+          await delay(backoffMs);
+          continue;
+        }
+
+        // Успіх — повертаємо результат
+        resolve(data);
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        const msg = handleDilovodApiError(err, 'Queue request');
+        // Якщо помилка містить multithread — застосовуємо паузу і спробуємо ще раз
+        if (String(msg).toLowerCase().includes('multithread')) {
+          console.log('DilovodApiClient: Помилка multithread в catch — чекаємо 30s перед retry');
+          globalPauseUntil = Date.now() + 30_000;
+          const backoffMs = attempt < maxAttempts ? (attempt === 1 ? 1000 : attempt === 2 ? 2000 : 5000) : 30000;
+          await delay(backoffMs);
+          continue;
+        }
+
+        // Якщо сигнал скасовано — відхиляємо без retry
+        if (signal?.aborted) {
+          reject(new DOMException('Запит скасовано', 'AbortError'));
+          break;
+        }
+
+        // Інші помилки — лог і retry з невеликою затримкою
+        console.log(`DilovodApiClient: Помилка запиту (attempt ${attempt}):`, msg);
+        const backoffMs = attempt < maxAttempts ? 500 * attempt : 1000 * attempt;
+        await delay(backoffMs);
+      }
+    }
+
+    if (lastError) {
+      const finalMsg = handleDilovodApiError(lastError, 'Final queue request');
+      reject(new Error(finalMsg));
+    }
+  }
+
+  isGlobalQueueProcessing = false;
+}
+
 export class DilovodApiClient {
-  // Простий внутрішній черговий механізм для серіалізації запитів
-  private requestQueue: Array<{
-    request: any;
-    signal?: AbortSignal;
-    resolve: (v: any) => void;
-    reject: (e: any) => void;
-  }> = [];
-
-  // Якщо Dilovod повідомив про penalty — зупиняємо обробку черги до цього часу (ms)
-  private pauseUntil: number | null = null;
-
-  // Чи запускається обробник черги
-  private isProcessingQueue = false;
 
   public getApiKey(): string {
     return this.apiKey;
@@ -161,117 +268,9 @@ export class DilovodApiClient {
     }
 
     return new Promise<T>((resolve, reject) => {
-      this.requestQueue.push({ request, signal, resolve, reject });
-      // Запускаємо обробку черги (якщо ще не запущено)
-      void this.processQueue();
+      globalRequestQueue.push({ apiUrl: this.apiUrl, request, signal, resolve, reject });
+      void processGlobalQueue();
     });
-  }
-
-  // Обробник черги запитів — серіалізує запити до Dilovod
-  private async processQueue(): Promise<void> {
-    if (this.isProcessingQueue) return;
-    this.isProcessingQueue = true;
-
-    while (this.requestQueue.length > 0) {
-      // Якщо встановлена пауза (penalty) — чекаємо
-      if (this.pauseUntil && Date.now() < this.pauseUntil) {
-        const waitMs = this.pauseUntil - Date.now();
-        console.log(`DilovodApiClient: Paused due to Dilovod penalty for ${waitMs}ms`);
-        await delay(waitMs);
-      }
-
-      const task = this.requestQueue.shift();
-      if (!task) break;
-
-      const { request, signal, resolve, reject } = task;
-
-      // Якщо зовнішній сигнал уже скасовано — одразу відхиляємо
-      if (signal?.aborted) {
-        reject(new DOMException('Запит скасовано', 'AbortError'));
-        continue;
-      }
-
-      // Повторюємо спроби при тимчасових помилках (multithread)
-      const maxAttempts = 4;
-      let attempt = 0;
-      let lastError: any = null;
-
-      while (attempt < maxAttempts) {
-        attempt++;
-        try {
-          console.log('Відправляємо запит до Dilovod API (черга):', inspect({
-            ...request,
-            key: request.key ? `${String(request.key).substring(0, 6)}***` : undefined,
-            attempt
-          }, { depth: null, colors: true, compact: false }));
-
-          const resp = await fetch(this.apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(request),
-            signal,
-          });
-
-          const text = await resp.text();
-
-          if (!resp.ok) {
-            console.log('Помилка відповіді Dilovod API (черга):', { status: resp.status, statusText: resp.statusText, data: text });
-            throw new Error(`HTTP ${resp.status}: ${resp.statusText} ${text}`);
-          }
-
-          // Парсимо JSON (можливі помилки парсингу)
-          let data: any;
-          try { data = JSON.parse(text); } catch { data = text as any; }
-
-          // Якщо Dilovod повернув помилку multithread — ставимо паузу та retry
-          const errStr = data && (data.error || (typeof data === 'string' ? data : undefined));
-          if (errStr && String(errStr).toLowerCase().includes('multithread')) {
-            console.log('DilovodApiClient: Отримано multithread помилку від Dilovod — застосовуємо паузу 30s');
-            // Встановлюємо паузу на 30 секунд
-            this.pauseUntil = Date.now() + 30_000;
-            lastError = new Error('Dilovod: multithreadApiSession');
-            // Якщо ще є спроби — зачекаємо зростаюче backoff
-            const backoffMs = attempt < maxAttempts ? (attempt === 1 ? 1000 : attempt === 2 ? 2000 : 5000) : 30000;
-            await delay(backoffMs);
-            continue;
-          }
-
-          // Успіх — повертаємо результат
-          resolve(data);
-          lastError = null;
-          break;
-        } catch (err) {
-          lastError = err;
-          const msg = handleDilovodApiError(err, 'Queue request');
-          // Якщо помилка містить multithread — застосовуємо паузу і спробуємо ще раз
-          if (String(msg).toLowerCase().includes('multithread')) {
-            console.log('DilovodApiClient: Помилка multithread в catch — чекаємо 30s перед retry');
-            this.pauseUntil = Date.now() + 30_000;
-            const backoffMs = attempt < maxAttempts ? (attempt === 1 ? 1000 : attempt === 2 ? 2000 : 5000) : 30000;
-            await delay(backoffMs);
-            continue;
-          }
-
-          // Якщо сигнал скасовано — відхиляємо без retry
-          if (signal?.aborted) {
-            reject(new DOMException('Запит скасовано', 'AbortError'));
-            break;
-          }
-
-          // Інші помилки — лог і retry з невеликою затримкою
-          console.log(`DilovodApiClient: Помилка запиту (attempt ${attempt}):`, msg);
-          const backoffMs = attempt < maxAttempts ? 500 * attempt : 1000 * attempt;
-          await delay(backoffMs);
-        }
-      }
-
-      if (lastError) {
-        const finalMsg = handleDilovodApiError(lastError, 'Final queue request');
-        reject(new Error(finalMsg));
-      }
-    }
-
-    this.isProcessingQueue = false;
   }
 
   // Отримання товарів з цінами
@@ -1797,11 +1796,12 @@ export class DilovodApiClient {
   // Отримання доступних партій (goodPart) по SKU з залишками по складах
   // Параметр asOfDate дозволяє отримати партії на конкретну дату
   // includeNonPositiveQty — виняток (напр. повернення): показувати партії з qty ≤ 0
+  // skipExpiration — пропустити lookup expiration (mob UI не використовує)
   async getBatchNumbersBySku(
     sku: string,
     firmId?: string,
     asOfDate?: Date,
-    options?: { includeNonPositiveQty?: boolean },
+    options?: { includeNonPositiveQty?: boolean; skipExpiration?: boolean },
   ): Promise<Array<{
     batchId: string;       // ID партії в Діловоді (goodPart) — для поля goodPart у payload
     batchNumber: string;   // Людська назва партії (goodPart__pr) — для відображення у UI
@@ -1812,27 +1812,49 @@ export class DilovodApiClient {
     firmDisplayName: string;
     expiration: string | null;
   }>> {
+    const bySku = await this.getBatchNumbersBySkus([sku], firmId, asOfDate, options);
+    return bySku[sku] ?? [];
+  }
+
+  /** Bulk-запит партій для кількох SKU — один balance-запит на chunk. */
+  async getBatchNumbersBySkus(
+    skus: string[],
+    firmId?: string,
+    asOfDate?: Date,
+    options?: { includeNonPositiveQty?: boolean; skipExpiration?: boolean },
+  ): Promise<Record<string, Array<{
+    batchId: string;
+    batchNumber: string;
+    storage: string;
+    storageDisplayName: string;
+    quantity: number;
+    firm: string;
+    firmDisplayName: string;
+    expiration: string | null;
+  }>>> {
+    const uniqueSkus = [...new Set(skus.map((sku) => sku.trim()).filter(Boolean))];
+    const emptyResult = Object.fromEntries(uniqueSkus.map((sku) => [sku, []]));
+    if (uniqueSkus.length === 0) return emptyResult;
+
     await this.ensureReady();
 
     const includeNonPositiveQty = Boolean(options?.includeNonPositiveQty);
-    
-    // Якщо дата передана, використовуємо її; інакше поточна дата
-    // Форматуємо дату до YYYY-MM-DD HH:mm:ss у часовому поясі Europe/Kyiv
+    const skipExpiration = Boolean(options?.skipExpiration);
+
     let formattedDate: string;
     if (asOfDate) {
       const date = new Date(asOfDate);
       const pad = (n: number) => n.toString().padStart(2, '0');
-      // Конвертуємо у Kyiv timezone
       const kyivDate = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' }));
       formattedDate = `${kyivDate.getFullYear()}-${pad(kyivDate.getMonth() + 1)}-${pad(kyivDate.getDate())} ${pad(kyivDate.getHours())}:${pad(kyivDate.getMinutes())}:${pad(kyivDate.getSeconds())}`;
     } else {
       formattedDate = formatDateForDilovod('Kyiv');
     }
-    
-    // Якщо firmId не передана, беремо з конфігурації
+
     const effectiveFirmId = firmId || this.config.defaultFirmId;
 
     type BatchNumbersRow = {
+      sku: string;
       batchId: string;
       batchNumber: string;
       storage: string;
@@ -1846,12 +1868,13 @@ export class DilovodApiClient {
     const transformBatchRows = (rows: any[]): BatchNumbersRow[] => rows
       .filter((row: any) => !row?.error)
       .map((row: any) => {
+        const sku = String(row.sku ?? '').trim();
         const batchId = unwrapDilovodId(row.goodPart);
-        // __pr часто порожній або = id; людський номер може бути лише в словнику партії
         const fromPr = unwrapDilovodName(row.goodPart__pr);
         const batchNumber = pickHumanBatchLabel(batchId, fromPr) || batchId || 'невідома';
         const rawQty = parseFloat(row.qty);
         return {
+          sku,
           batchId,
           batchNumber,
           storage: unwrapDilovodId(row.storage) || 'unknown',
@@ -1863,11 +1886,12 @@ export class DilovodApiClient {
         };
       })
       .filter((row) =>
-        isUsableDilovodBatchId(row.batchId)
+        row.sku
+        && isUsableDilovodBatchId(row.batchId)
         && (includeNonPositiveQty || row.quantity > 0),
       );
 
-    const buildRequest = (withFirmFilter: boolean): DilovodApiRequest => ({
+    const buildRequest = (skuList: string[], withFirmFilter: boolean): DilovodApiRequest => ({
       version: "0.25",
       key: this.apiKey,
       action: "request",
@@ -1876,7 +1900,7 @@ export class DilovodApiClient {
           type: "balance",
           register: "goods",
           date: formattedDate,
-          dimensions: ["good", "goodPart", "storage", "firm"]
+          dimensions: ["good", "goodPart", "storage", "firm"],
         },
         fields: {
           good: "id",
@@ -1884,57 +1908,72 @@ export class DilovodApiClient {
           goodPart: "goodPart",
           storage: "storage",
           qty: "qty",
-          firm: "firm"
+          firm: "firm",
         },
         filters: [
           {
             alias: "sku",
             operator: "IL",
-            value: [sku]
+            value: skuList,
           },
-          // За замовчуванням лише додатні залишки; для повернень можна зняти фільтр
           ...(!includeNonPositiveQty
             ? [{ alias: "qty", operator: ">", value: 0 }]
             : []),
           ...(withFirmFilter && effectiveFirmId
             ? [{ alias: "firm", operator: "=", value: effectiveFirmId }]
-            : [])
-        ]
-      }
+            : []),
+        ],
+      },
     });
 
     try {
-      console.log(`📦 [DilovodApiClient] Запит партій для SKU ${sku} на дату ${formattedDate}${effectiveFirmId ? ` з фірмою ${effectiveFirmId}` : ' (без фільтра по фірмі)'}${includeNonPositiveQty ? ' (вкл. qty≤0)' : ''}`);
+      console.log(
+        `📦 [DilovodApiClient] Bulk-запит партій для ${uniqueSkus.length} SKU на дату ${formattedDate}`
+        + `${effectiveFirmId ? ` з фірмою ${effectiveFirmId}` : ' (без фільтра по фірмі)'}`
+        + `${includeNonPositiveQty ? ' (вкл. qty≤0)' : ''}`
+        + `${skipExpiration ? ' (skipExpiration)' : ''}`,
+      );
 
-      let rows = this.normalizeToArray<any>(await this.makeRequest<any>(buildRequest(true)));
-      console.log(`📦 [DilovodApiClient] SKU ${sku}: ${rows.length} сирих рядків (фірма=${effectiveFirmId ?? '—'})`);
-      let transformed = transformBatchRows(rows);
+      const batchesBySku: Record<string, BatchNumbersRow[]> = { ...emptyResult };
 
-      if (transformed.length === 0 && effectiveFirmId) {
-        rows = this.normalizeToArray<any>(await this.makeRequest<any>(buildRequest(false)));
-        console.log(`📦 [DilovodApiClient] SKU ${sku}: ${rows.length} сирих рядків (fallback без фірми)`);
-        transformed = transformBatchRows(rows);
+      for (const skuChunk of this.chunkArray(uniqueSkus, 50)) {
+        let rows = this.normalizeToArray<any>(await this.makeRequest<any>(buildRequest(skuChunk, true)));
+        let transformed = transformBatchRows(rows);
+
+        if (transformed.length === 0 && effectiveFirmId) {
+          rows = this.normalizeToArray<any>(await this.makeRequest<any>(buildRequest(skuChunk, false)));
+          transformed = transformBatchRows(rows);
+        }
+
+        for (const row of transformed) {
+          if (!batchesBySku[row.sku]) {
+            batchesBySku[row.sku] = [];
+          }
+          batchesBySku[row.sku].push(row);
+        }
       }
 
-      if (transformed.length === 0 && rows.length > 0) {
-        const sample = rows.slice(0, 3).map((row: any) => ({
-          sku: row?.sku,
-          goodPart: row?.goodPart,
-          goodPart__pr: row?.goodPart__pr,
-          storage: row?.storage,
-          qty: row?.qty,
-          error: row?.error,
-        }));
-        console.log(`⚠️ [DilovodApiClient] SKU ${sku}: ${rows.length} сирих рядків, але 0 партій після фільтрації. Приклад:`, sample);
+      const allBatches = Object.values(batchesBySku).flat();
+      const withLabels = await this.enrichBatchLabelsFromGoodPartObjects(allBatches);
+      const enriched = skipExpiration
+        ? withLabels.map((batch) => ({ ...batch, expiration: batch.expiration ?? null }))
+        : await this.enrichBatchExpirationsFromGoodParts(withLabels);
+
+      const result: Record<string, Array<Omit<BatchNumbersRow, 'sku'>>> = { ...emptyResult };
+      for (const batch of enriched) {
+        const { sku, ...rest } = batch;
+        if (!result[sku]) {
+          result[sku] = [];
+        }
+        result[sku].push(rest);
       }
 
-      const withLabels = await this.enrichBatchLabelsFromGoodPartObjects(transformed);
-      const enriched = await this.enrichBatchExpirationsFromGoodParts(withLabels);
-      console.log(`✅ [DilovodApiClient] Трансформовано ${enriched.length} партій для SKU ${sku}`);
-      return enriched;
+      const totalBatches = Object.values(result).reduce((sum, rows) => sum + rows.length, 0);
+      console.log(`✅ [DilovodApiClient] Bulk: трансформовано ${totalBatches} партій для ${uniqueSkus.length} SKU`);
+      return result;
     } catch (error) {
-      console.error(`🚨 Помилка отримання партій для SKU ${sku}:`, error);
-      return [];
+      console.error(`🚨 Помилка bulk-отримання партій для ${uniqueSkus.length} SKU:`, error);
+      return emptyResult;
     }
   }
 

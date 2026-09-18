@@ -670,7 +670,7 @@ export class DilovodService {
     sku: string,
     firmId?: string,
     asOfDate?: Date,
-    options?: { includeNonPositiveQty?: boolean },
+    options?: { includeNonPositiveQty?: boolean; skipExpiration?: boolean },
   ): Promise<Array<{
     batchId: string;
     batchNumber: string;
@@ -690,6 +690,35 @@ export class DilovodService {
     } catch (error) {
       console.error(`🚨 [Dilovod] Помилка отримання партій для SKU ${sku}:`, error);
       return [];
+    }
+  }
+
+  /** Bulk-запит партій для кількох SKU (один Dilovod balance на chunk). */
+  async getBatchNumbersBySkus(
+    skus: string[],
+    firmId?: string,
+    asOfDate?: Date,
+    options?: { includeNonPositiveQty?: boolean; skipExpiration?: boolean },
+  ): Promise<Record<string, Array<{
+    batchId: string;
+    batchNumber: string;
+    storage: string;
+    storageDisplayName: string;
+    quantity: number;
+    firm: string;
+    firmDisplayName: string;
+    expiration: string | null;
+  }>>> {
+    try {
+      const uniqueSkus = [...new Set(skus.map((sku) => sku.trim()).filter(Boolean))];
+      console.log(`📦 [Dilovod] Bulk-запит партій для ${uniqueSkus.length} SKU${asOfDate ? ` на дату ${asOfDate.toLocaleString('uk-UA')}` : ''}`);
+      const batchesBySku = await this.apiClient.getBatchNumbersBySkus(uniqueSkus, firmId, asOfDate, options);
+      const total = Object.values(batchesBySku).reduce((sum, rows) => sum + rows.length, 0);
+      console.log(`✅ [Dilovod] Bulk: отримано ${total} партій для ${uniqueSkus.length} SKU`);
+      return batchesBySku;
+    } catch (error) {
+      console.error(`🚨 [Dilovod] Помилка bulk-отримання партій:`, error);
+      return Object.fromEntries(skus.map((sku) => [sku, []]));
     }
   }
 

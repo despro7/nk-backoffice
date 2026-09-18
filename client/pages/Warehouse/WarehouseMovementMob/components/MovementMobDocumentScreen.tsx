@@ -127,7 +127,13 @@ export default function MovementMobDocumentScreen({
       : isReceiving
         ? 'Прийом товарів'
         : 'Товари на переміщення';
-  const { lines: displayLines, loading: enrichmentLoading, refreshing: enrichmentRefreshing } = useMovementMobLinesEnrichment(lines);
+  const {
+    lines: displayLines,
+    stockLoading,
+    stockRefreshing,
+    batchLoading,
+    batchRefreshing,
+  } = useMovementMobLinesEnrichment(lines);
 
   return (
     <div className="flex flex-col gap-4 pb-24 px-3 md:px-0">
@@ -211,8 +217,10 @@ export default function MovementMobDocumentScreen({
                     qtyFocus={qtyFocus}
                     onEditProduct={onEditProduct}
                     onEditQty={isReceiving && onEditLine ? () => onEditLine(line) : undefined}
-                    enrichmentLoading={enrichmentLoading}
-                    enrichmentRefreshing={enrichmentRefreshing}
+                    stockLoading={stockLoading}
+                    stockRefreshing={stockRefreshing}
+                    batchLoading={batchLoading}
+                    batchRefreshing={batchRefreshing}
                   />
                 </SwipeActionRow>
               ))}
