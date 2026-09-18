@@ -161,6 +161,10 @@ export const WAREHOUSE_MOVEMENT_DOC_MODE = '1004000000000409';
 export const WAREHOUSE_MOVEMENT_SETTING_DEFAULTS = {
   numberGeneration: 'server' as const,
   numberTemplate: 'П-{#####}',
+  /** Хвилини після відправки, коли автор може правити відправлені кількості (0 = вимкнено) */
+  senderEditWindowMinutes: 0,
+  /** Хвилини після підтвердження отримання для правки отриманих кількостей (0 = вимкнено) */
+  receiverEditWindowMinutes: 0,
 };
 
 /**
@@ -172,6 +176,8 @@ export interface WarehouseMovementSettings {
   firmId: string;                          // з dilovod_default_firm_id (read-only у WM settings)
   storageFrom: string;                     // wm_storageFrom
   storageTo: string;                       // wm_storageTo
+  senderEditWindowMinutes: number;         // wm_senderEditWindowMinutes
+  receiverEditWindowMinutes: number;       // wm_receiverEditWindowMinutes
   /** З loadDilovodWarehouseDefaults() — dilovod_warehouse_* */
   businessId: string;
   unitId: string;

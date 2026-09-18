@@ -8,7 +8,7 @@ export type MovementMobScreenMode = 'formation' | 'receiving' | 'view';
 
 export type MovementMobEditorMode = 'empty' | 'formation' | 'receiving' | 'view';
 
-export type MovementMobActionBar = 'formation' | 'receiving' | 'awaitingReceipt' | 'adminEdit';
+export type MovementMobActionBar = 'formation' | 'receiving' | 'awaitingReceipt' | 'adminEdit' | 'senderEdit' | 'receiverEdit';
 
 /** Який список кількостей редагує адмін у вже отриманому документі. */
 export type MovementMobAdminQtySide = 'sent' | 'received';
@@ -205,7 +205,15 @@ export interface MovementMobDocumentViewModel {
   chronology: MovementMobChronologyEvent[];
   createdBy: number;
   createdByName: string | null;
+  receivedBy: number | null;
   receivedByName: string | null;
+  receiptScannedBy: number | null;
+  receiptScanStartedAt: string | null;
+  receiptScanEndedAt: string | null;
+  submittedAt: string | null;
+  receivedAt: string | null;
+  /** Етап «Прийнято на склад» (перед підтвердженням або після нього). */
+  isWarehouseAccepted: boolean;
 }
 
 export type MovementMobReceiptState = 'pending' | 'match' | 'shortage' | 'surplus';

@@ -53,10 +53,12 @@ interface MovementMobDocumentScreenProps {
   canAdminEdit?: boolean;
   canAdminDelete?: boolean;
   isFinalized?: boolean;
+  isWarehouseAccepted?: boolean;
   adminQtySide?: MovementMobAdminQtySide;
   onAdminQtySideChange?: (side: MovementMobAdminQtySide) => void;
   onSyncDilovod?: () => void;
   syncingDilovod?: boolean;
+  showSendButton?: boolean;
 }
 
 export default function MovementMobDocumentScreen({
@@ -93,26 +95,38 @@ export default function MovementMobDocumentScreen({
   canAdminEdit = true,
   canAdminDelete = true,
   isFinalized = false,
+  isWarehouseAccepted = false,
   adminQtySide = 'sent',
   onAdminQtySideChange,
   onSyncDilovod,
   syncingDilovod = false,
+  showSendButton = true,
 }: MovementMobDocumentScreenProps) {
   const isView = editorMode === 'view';
   const isEmpty = editorMode === 'empty';
   const isFormation = editorMode === 'formation';
   const isReceiving = editorMode === 'receiving';
   const [openSwipe, setOpenSwipe] = useState<{ key: string; side: Exclude<SwipeActionRest, 'closed'> } | null>(null);
-  const canSwipe = (isFormation || adminEditing) && Boolean(onEditLine && onDeleteLine);
-  const dualQty = isFinalized || isReceiving
-    || lines.some((line) => line.receivedTotalPortions > 0 || line.receivedBoxQuantity > 0);
-  const showReceipt = dualQty && (!adminEditing || isFinalized);
-  const qtyFocus: MovementMobAdminQtySide = adminEditing && isFinalized ? adminQtySide : 'received';
-  const listTitle = adminEditing && isFinalized
+  const canSwipeEdit = Boolean(onEditLine);
+  const canSwipeDelete = Boolean(onDeleteLine);
+  const canSwipe = (isFormation || adminEditing || isReceiving) && canSwipeEdit;
+  const hasReceivedLines = lines.some(
+    (line) => line.receivedTotalPortions > 0
+      || line.receivedBoxQuantity > 0
+      || line.receivedPortionQuantity > 0,
+  );
+  const inReceiptPhase = isFinalized || isReceiving || isWarehouseAccepted || hasReceivedLines;
+  const showReceipt = inReceiptPhase && (
+    !adminEditing || isWarehouseAccepted || isReceiving || hasReceivedLines
+  );
+  const qtyFocus: MovementMobAdminQtySide = adminEditing && isWarehouseAccepted ? adminQtySide : 'received';
+  const listTitle = adminEditing && isWarehouseAccepted
     ? (adminQtySide === 'received' ? 'Отримані товари' : 'Відправлені товари')
-    : isReceiving
-      ? 'Прийом товарів'
-      : 'Товари на переміщення';
+    : isReceiving && isFinalized
+      ? 'Отримані товари'
+      : isReceiving
+        ? 'Прийом товарів'
+        : 'Товари на переміщення';
   const { lines: displayLines, loading: enrichmentLoading, refreshing: enrichmentRefreshing } = useMovementMobLinesEnrichment(lines);
 
   return (
@@ -168,7 +182,7 @@ export default function MovementMobDocumentScreen({
               Немає позицій у документі
             </div>
           ) : (
-            <div className="flex flex-col md:grid md:grid-cols-2 md:gap-x-4">
+            <div className="flex flex-col md:grid md:grid-cols-2 md:gap-x-4 md:gap-y-2">
               {displayLines.map((line) => (
                 <SwipeActionRow
                   key={line.key}
@@ -182,11 +196,11 @@ export default function MovementMobDocumentScreen({
                     icon: <DynamicIcon name="pencil" size={18} strokeWidth={1.75} className="shrink-0" />,
                     onAction: () => onEditLine?.(line),
                   }}
-                  trailing={{
+                  trailing={canSwipeDelete ? {
                     label: 'Видалити',
                     icon: <DynamicIcon name="trash-2" size={18} strokeWidth={1.75} className="shrink-0" />,
                     onAction: () => onDeleteLine?.(line),
-                  }}
+                  } : undefined}
                   enterFromCollapsed={enterLineKey === line.key}
                 >
                   <MovementMobProductCard
@@ -196,6 +210,7 @@ export default function MovementMobDocumentScreen({
                     showReceipt={showReceipt}
                     qtyFocus={qtyFocus}
                     onEditProduct={onEditProduct}
+                    onEditQty={isReceiving && onEditLine ? () => onEditLine(line) : undefined}
                     enrichmentLoading={enrichmentLoading}
                     enrichmentRefreshing={enrichmentRefreshing}
                   />
@@ -206,7 +221,7 @@ export default function MovementMobDocumentScreen({
 
           <MovementMobDocumentSummary
             aggregates={aggregates}
-            receivedAggregates={isReceiving || isFinalized ? receivedAggregates : undefined}
+            receivedAggregates={isReceiving || isWarehouseAccepted ? receivedAggregates : undefined}
           />
         </section>
       )}
@@ -214,14 +229,32 @@ export default function MovementMobDocumentScreen({
       {actionBar === 'formation' && (
         <div className="flex items-stretch gap-3 mt-4">
           <MovementMobAddMoreButton onAdd={onAddMore} onManualBarcode={onManualBarcode} />
-          <Button
-            size="lg"
-            className="gap-2 bg-gradient-to-b from-lime-500 to-lime-600 text-white h-12 font-medium shadow-button-primary shrink-0 w-auto px-6 sm:min-w-0 sm:flex-1 sm:w-auto"
-            startContent={<DynamicIcon name="send" size={18} strokeWidth={1.5} className="shrink-0" />}
-            onPress={onSend}
-          >
-            Відправити
-          </Button>
+          {showSendButton && (
+            <Button
+              size="lg"
+              className="gap-2 bg-gradient-to-b from-lime-500 to-lime-600 text-white h-12 font-medium shadow-button-primary shrink-0 w-auto px-6 sm:min-w-0 sm:flex-1 sm:w-auto"
+              startContent={<DynamicIcon name="send" size={18} strokeWidth={1.5} className="shrink-0" />}
+              onPress={onSend}
+            >
+              Відправити
+            </Button>
+          )}
+        </div>
+      )}
+
+      {actionBar === 'senderEdit' && (
+        <div className="mt-4">
+          <MovementMobAddMoreButton onAdd={onAddMore} onManualBarcode={onManualBarcode} label="Додати товар" />
+        </div>
+      )}
+
+      {actionBar === 'receiverEdit' && (
+        <div className="mt-4">
+          <MovementMobAddMoreButton
+            onAdd={onAddMore}
+            onManualBarcode={onManualBarcode}
+            label="Сканувати позицію"
+          />
         </div>
       )}
 
@@ -264,8 +297,8 @@ export default function MovementMobDocumentScreen({
 
       {actionBar === 'adminEdit' && (
         <div className="flex flex-col gap-3 mt-4 w-full">
-          {isFinalized && (
-            <div className="grid grid-cols-2 gap-2 w-full">
+          {isWarehouseAccepted && (
+            <div className="grid grid-cols-2 gap-3 w-full">
               <Button
                 size="lg"
                 variant={adminQtySide === 'sent' ? 'solid' : 'flat'}
@@ -286,41 +319,43 @@ export default function MovementMobDocumentScreen({
               </Button>
             </div>
           )}
-          <MovementMobAddMoreButton
-            onAdd={onAddMore}
-            onManualBarcode={onManualBarcode}
-            label={isFinalized && adminQtySide === 'received' ? 'Сканувати позицію' : 'Додати товар'}
-          />
-          {isFinalized && onSyncDilovod && (
-            <div className="flex items-stretch gap-3 w-full">
-              {onShowPayload && (
+          <div className="flex flex-col md:grid md:grid-cols-2 gap-3 mt-4 w-full">
+            <MovementMobAddMoreButton
+              onAdd={onAddMore}
+              onManualBarcode={onManualBarcode}
+              label={isWarehouseAccepted && adminQtySide === 'received' ? 'Сканувати позицію' : 'Додати товар'}
+            />
+            {isFinalized && onSyncDilovod && (
+              <div className="flex items-stretch gap-3 w-full">
+                {onShowPayload && (
+                  <Button
+                    size="lg"
+                    variant="flat"
+                    color="primary"
+                    className="h-12 font-medium shrink-0 px-4 bg-blue-200 text-slate-900"
+                    isLoading={isLoadingPayload}
+                    startContent={
+                      !isLoadingPayload
+                        ? <DynamicIcon name="code-2" size={18} strokeWidth={1.5} className="shrink-0" />
+                        : undefined
+                    }
+                    onPress={onShowPayload}
+                  >
+                    Payload
+                  </Button>
+                )}
                 <Button
                   size="lg"
-                  variant="flat"
-                  color="primary"
-                  className="h-12 font-medium shrink-0 px-4 bg-blue-200 text-slate-900"
-                  isLoading={isLoadingPayload}
-                  startContent={
-                    !isLoadingPayload
-                      ? <DynamicIcon name="code-2" size={18} strokeWidth={1.5} className="shrink-0" />
-                      : undefined
-                  }
-                  onPress={onShowPayload}
+                  className="gap-2 bg-gradient-to-b from-blue-500 to-blue-600 text-white h-12 font-medium shadow-button-primary flex-1 min-w-0"
+                  isLoading={syncingDilovod}
+                  startContent={<DynamicIcon name="upload" size={18} strokeWidth={1.5} className="shrink-0" />}
+                  onPress={onSyncDilovod}
                 >
-                  Payload
+                  Зберегти в Dilovod
                 </Button>
-              )}
-              <Button
-                size="lg"
-                className="gap-2 bg-gradient-to-b from-blue-500 to-blue-600 text-white h-12 font-medium shadow-button-primary flex-1 min-w-0"
-                isLoading={syncingDilovod}
-                startContent={<DynamicIcon name="upload" size={18} strokeWidth={1.5} className="shrink-0" />}
-                onPress={onSyncDilovod}
-              >
-                Зберегти в Dilovod
-              </Button>
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

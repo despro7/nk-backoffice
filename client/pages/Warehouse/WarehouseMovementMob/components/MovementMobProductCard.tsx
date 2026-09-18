@@ -10,7 +10,6 @@ import {
   isHumanBatchLabel,
   lineReceiptState,
   movementQtyForStockProjection,
-  receiptDeltaClass,
   receiptReceivedClass,
   receiptResultLabel,
 } from '../WarehouseMovementMobUtils';
@@ -22,6 +21,7 @@ interface MovementMobProductCardProps {
   showReceipt?: boolean;
   qtyFocus?: 'sent' | 'received';
   onEditProduct?: (line: MovementMobProductLineViewModel) => void;
+  onEditQty?: () => void;
   enrichmentLoading?: boolean;
   enrichmentRefreshing?: boolean;
 }
@@ -90,6 +90,7 @@ export default function MovementMobProductCard({
   showReceipt = false,
   qtyFocus = 'received',
   onEditProduct,
+  onEditQty,
   enrichmentLoading = false,
   enrichmentRefreshing = false,
 }: MovementMobProductCardProps) {
@@ -112,14 +113,14 @@ export default function MovementMobProductCard({
   const focusReceived = showReceipt && qtyFocus !== 'sent';
   const ringClass =
     receiptState === 'match'
-      ? 'ring-2 ring-success-500'
+      ? 'border-success-500'
       : receiptState === 'shortage'
-        ? 'ring-2 ring-danger-500'
+        ? 'border-danger-500'
         : receiptState === 'surplus'
-          ? 'ring-2 ring-primary-500'
+          ? 'border-primary-500'
           : qtyFocus === 'sent' && showReceipt
-            ? 'ring-2 ring-default-300'
-            : '';
+            ? 'border-default-300'
+            : 'border-transparent';
   const qtyDelta = line.receivedTotalPortions - line.totalPortions;
   const primaryQty = focusReceived ? line.receivedTotalPortions : line.totalPortions;
   const primaryBoxes = focusReceived ? line.receivedBoxQuantity : line.boxQuantity;
@@ -128,7 +129,18 @@ export default function MovementMobProductCard({
   const canEditProduct = Boolean(onEditProduct && line.catalogGoodId);
 
   return (
-    <Card className={`bg-white shadow-none rounded-xl md:h-full ${ringClass}`}>
+    <Card
+      className={`bg-white shadow-none rounded-xl! md:h-full border-2 ${ringClass} ${onEditQty ? 'cursor-pointer active:scale-[0.99] transition-transform' : ''}`}
+      role={onEditQty ? 'button' : undefined}
+      tabIndex={onEditQty ? 0 : undefined}
+      onClick={onEditQty}
+      onKeyDown={onEditQty ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onEditQty();
+        }
+      } : undefined}
+    >
       <CardBody className="gap-1.5 p-3.5">
         <div className="flex items-start justify-between gap-2">
           <h4 className="font-semibold text-default-900 leading-5">{line.productName}</h4>
@@ -264,16 +276,6 @@ export default function MovementMobProductCard({
                 </span>
               </span>
             </div>
-            {receiptState === 'shortage' && (
-              <span className={`font-medium ${receiptDeltaClass(qtyDelta)}`}>
-                Δ {qtyDelta}
-              </span>
-            )}
-            {receiptState === 'surplus' && (
-              <span className={`font-medium ${receiptDeltaClass(qtyDelta)}`}>
-                Δ +{qtyDelta}
-              </span>
-            )}
           </div>
         )}
       </CardBody>

@@ -238,6 +238,13 @@ router.get('/warehouse-movement', authenticateToken, async (req, res) => {
     if (!storageFrom) storageFrom = dilovodMap['dilovod_main_storage_id'] || '';
     if (!storageTo) storageTo = dilovodMap['dilovod_small_storage_id'] || '';
 
+    const parseIntSetting = (key: string, fallback: number): number => {
+      const raw = map[key];
+      if (raw == null || raw === '') return fallback;
+      const parsed = Number.parseInt(raw, 10);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+    };
+
     res.json({
       success: true,
       data: {
@@ -246,6 +253,14 @@ router.get('/warehouse-movement', authenticateToken, async (req, res) => {
         firmId,
         storageFrom,
         storageTo,
+        senderEditWindowMinutes: parseIntSetting(
+          'wm_senderEditWindowMinutes',
+          WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.senderEditWindowMinutes,
+        ),
+        receiverEditWindowMinutes: parseIntSetting(
+          'wm_receiverEditWindowMinutes',
+          WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.receiverEditWindowMinutes,
+        ),
       },
     });
   } catch (error) {
@@ -262,6 +277,8 @@ router.put('/warehouse-movement', authenticateToken, async (req, res) => {
       numberTemplate: string;
       storageFrom: string;
       storageTo: string;
+      senderEditWindowMinutes: number;
+      receiverEditWindowMinutes: number;
     }>;
 
     // Маппінг поле→ключ у БД (firmId більше не зберігаємо — лише dilovod_default_firm_id)
@@ -270,6 +287,8 @@ router.put('/warehouse-movement', authenticateToken, async (req, res) => {
       numberTemplate: 'wm_numberTemplate',
       storageFrom: 'wm_storageFrom',
       storageTo: 'wm_storageTo',
+      senderEditWindowMinutes: 'wm_senderEditWindowMinutes',
+      receiverEditWindowMinutes: 'wm_receiverEditWindowMinutes',
     };
 
     for (const [field, key] of Object.entries(fieldToKey)) {

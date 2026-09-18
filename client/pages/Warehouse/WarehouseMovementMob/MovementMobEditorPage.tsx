@@ -23,12 +23,16 @@ import {
   aggregatesFromLines,
   aggregatesFromReceivedLines,
   breakdownStockPortions,
+  canReceiverEditAfterConfirm,
+  canSenderEditAfterSubmit,
   committedPortionsForSku,
   insertMovementMobLineAt,
+  isSentMovementLine,
   lineTotalPortions,
   movementMobLineKey,
   receiptDeviations,
   replaceMovementMobLine,
+  resolveWarehouseAcceptedState,
   serializeMobDraftItems,
   toDocumentViewModel,
 } from './WarehouseMovementMobUtils';
@@ -191,22 +195,39 @@ export default function MovementMobEditorPage({
   const isDeleted = document?.status === 'deleted';
   const isPendingReceipt = document?.status === 'pending_receipt';
   const isFinalized = document?.status === 'finalized';
+  const isWarehouseAccepted = useMemo(
+    () => resolveWarehouseAcceptedState(document ? { ...document, lines } : null),
+    [document, lines],
+  );
+  const senderEditWindowActive = canSenderEditAfterSubmit(document, user?.id ?? null, wmSettings);
+  const receiverEditWindowActive = canReceiverEditAfterConfirm(document, user?.id ?? null, wmSettings);
   const canReceive = isPendingReceipt && user?.id != null && !isSender && !adminEditing;
+  const canReceiverEdit = receiverEditWindowActive && !adminEditing;
   const adminCanEdit = canOverrideEdit && adminEditing && !isDeleted;
-  const editingReceived = adminCanEdit && isFinalized && adminQtySide === 'received';
-  const canEditDraft = (documentId == null || isSender || adminCanEdit) && !isDeleted;
+  const editingReceived = (adminCanEdit && isWarehouseAccepted && adminQtySide === 'received') || canReceiverEdit;
+  const canEditSentAsSender = (documentId == null || document?.status === 'draft' || senderEditWindowActive) && isSender;
+  const canEditDraft = (canEditSentAsSender || adminCanEdit) && !isDeleted;
 
   const editorMode: MovementMobEditorMode = useMemo(() => {
     if (isDeleted) return 'view';
     if (adminCanEdit) return lines.length === 0 ? 'empty' : 'formation';
+    if (canReceiverEdit) return lines.length === 0 ? 'empty' : 'receiving';
+    if (senderEditWindowActive) return lines.length === 0 ? 'empty' : 'formation';
     if (document?.mode === 'view') return 'view';
     if (isPendingReceipt) return canReceive ? 'receiving' : 'view';
     if (documentId != null && document != null && !isSender) return 'view';
     if (lines.length === 0) return 'empty';
     return 'formation';
-  }, [adminCanEdit, canReceive, document, document?.mode, documentId, isDeleted, isPendingReceipt, isSender, lines.length]);
+  }, [adminCanEdit, canReceive, canReceiverEdit, document, document?.mode, documentId, isDeleted, isPendingReceipt, isSender, lines.length, senderEditWindowActive]);
 
-  const canScan = !isDeleted && (documentId == null || document?.mode === 'formation' || canReceive || adminCanEdit);
+  const canScan = !isDeleted && (
+    documentId == null
+    || document?.mode === 'formation'
+    || canReceive
+    || canReceiverEdit
+    || senderEditWindowActive
+    || adminCanEdit
+  );
 
   const actionBar = useMemo<MovementMobActionBar | null>(() => {
     if (isDeleted) return null;
@@ -214,10 +235,12 @@ export default function MovementMobEditorPage({
       if (document?.status === 'draft' || documentId == null) return 'formation';
       return 'adminEdit';
     }
+    if (canReceiverEdit) return 'receiverEdit';
+    if (senderEditWindowActive) return 'senderEdit';
     if (isPendingReceipt) return canReceive ? 'receiving' : 'awaitingReceipt';
     if (editorMode === 'formation') return 'formation';
     return null;
-  }, [adminCanEdit, canReceive, document?.status, documentId, editorMode, isDeleted, isPendingReceipt]);
+  }, [adminCanEdit, canReceive, canReceiverEdit, document?.status, documentId, editorMode, isDeleted, isPendingReceipt, senderEditWindowActive]);
 
   const aggregates = useMemo(() => aggregatesFromLines(lines), [lines]);
   const receivedAggregates = useMemo(() => aggregatesFromReceivedLines(lines), [lines]);
@@ -230,6 +253,15 @@ export default function MovementMobEditorPage({
       editingReceived ? 'received' : 'sent',
     )
     : 0;
+  const draftSentTotalPortions = useMemo(() => {
+    if (!draft) return null;
+    const receiving = ((canReceive || canReceiverEdit) && !adminCanEdit) || editingReceived;
+    if (!receiving) return null;
+    const line = lines.find(
+      (item) => item.key === movementMobLineKey(draft.sku, draft.batchId, draft.batchNumber),
+    );
+    return line?.totalPortions ?? 0;
+  }, [adminCanEdit, canReceive, canReceiverEdit, draft, editingReceived, lines]);
 
   const notifyNotFound = useCallback((code: string) => {
     playSoundChoice('error', 'error');
@@ -241,9 +273,18 @@ export default function MovementMobEditorPage({
   }, []);
 
   const handleScan = useCallback(async (code: string) => {
-    if (documentId != null && document?.mode !== 'formation' && !canReceive && !adminCanEdit) return;
+    if (
+      documentId != null
+      && document?.mode !== 'formation'
+      && !canReceive
+      && !adminCanEdit
+      && !senderEditWindowActive
+      && !canReceiverEdit
+    ) {
+      return;
+    }
     const openDraft = draftRef.current;
-    const receiving = canReceive || editingReceived;
+    const receiving = canReceive || canReceiverEdit || editingReceived;
 
     if (lookupBusyRef.current && !openDraft) return;
     lookupBusyRef.current = true;
@@ -280,6 +321,16 @@ export default function MovementMobEditorPage({
         );
         batchId = resolved.batchId;
         batchNumber = resolved.batchNumber;
+      }
+
+      if (receiving && !adminCanEdit && !isSentMovementLine(linesRef.current, product.sku, batchId, batchNumber)) {
+        playSoundChoice('error', 'error');
+        ToastService.show({
+          title: 'Товар не у відправленні',
+          description: `SKU ${product.sku}: ${product.name} не входить до цього переміщення`,
+          color: 'danger',
+        });
+        return;
       }
 
       if (openDraft) {
@@ -332,7 +383,7 @@ export default function MovementMobEditorPage({
     } finally {
       lookupBusyRef.current = false;
     }
-  }, [adminCanEdit, apiCall, canReceive, document?.mode, documentId, editingReceived, notifyNotFound]);
+  }, [adminCanEdit, apiCall, canReceive, canReceiverEdit, document?.mode, documentId, editingReceived, notifyNotFound, senderEditWindowActive]);
 
   const scan = useMovementMobScan({
     enabled: canScan,
@@ -366,14 +417,14 @@ export default function MovementMobEditorPage({
       return;
     }
 
-    if (canReceive && !adminCanEdit) {
+    if ((canReceive || canReceiverEdit) && !adminCanEdit) {
       await saveReceipt(apiCall, existingId, items);
     } else {
       await updateWarehouseMovementDraft(apiCall, existingId, items);
     }
     await queryClient.invalidateQueries({ queryKey: ['warehouse-movement-mob-document', existingId] });
     await queryClient.invalidateQueries({ queryKey: ['warehouse-movement-mob-list'] });
-  }, [adminCanEdit, apiCall, canReceive, navigate, queryClient]);
+  }, [adminCanEdit, apiCall, canReceive, canReceiverEdit, navigate, queryClient]);
 
   const handleConfirm = useCallback(async () => {
     const current = draftRef.current;
@@ -388,7 +439,7 @@ export default function MovementMobEditorPage({
       const existing = previous.find(
         (line) => line.key === movementMobLineKey(current.sku, current.batchId, current.batchNumber),
       );
-      const receiving = (canReceive && !adminCanEdit) || editingReceived;
+      const receiving = ((canReceive || canReceiverEdit) && !adminCanEdit) || editingReceived;
       const incoming: MovementMobProductLineViewModel = receiving
         ? {
           key: movementMobLineKey(current.sku, current.batchId, current.batchNumber),
@@ -443,7 +494,7 @@ export default function MovementMobEditorPage({
     } finally {
       setConfirming(false);
     }
-  }, [adminCanEdit, canReceive, confirming, editingReceived, persistLines]);
+  }, [adminCanEdit, canReceive, canReceiverEdit, confirming, editingReceived, persistLines]);
 
   const closeDrawer = useCallback(() => {
     setDrawerOpen(false);
@@ -452,7 +503,7 @@ export default function MovementMobEditorPage({
   }, []);
 
   const handleEditLine = useCallback(async (line: MovementMobProductLineViewModel) => {
-    if ((!canEditDraft && !canReceive) || lookupBusyRef.current) return;
+    if ((!canEditDraft && !canReceive && !canReceiverEdit) || lookupBusyRef.current) return;
     playSoundChoice('tick', 'pending');
     lookupBusyRef.current = true;
     try {
@@ -472,8 +523,8 @@ export default function MovementMobEditorPage({
         barcodeKind: line.barcodeKind ?? 'portion',
         batchId: line.batchId,
         batchNumber: line.batchNumber === '—' ? '' : line.batchNumber,
-        boxes: (canReceive || editingReceived) ? line.receivedBoxQuantity : line.boxQuantity,
-        portions: (canReceive || editingReceived) ? line.receivedPortionQuantity : line.portionQuantity,
+        boxes: (canReceive || canReceiverEdit || editingReceived) ? line.receivedBoxQuantity : line.boxQuantity,
+        portions: (canReceive || canReceiverEdit || editingReceived) ? line.receivedPortionQuantity : line.portionQuantity,
         sourceStock: breakdownStockPortions(stocks.sourcePortions, portionsPerBox),
         destStock: breakdownStockPortions(stocks.destPortions, portionsPerBox),
       });
@@ -487,7 +538,7 @@ export default function MovementMobEditorPage({
     } finally {
       lookupBusyRef.current = false;
     }
-  }, [apiCall, canEditDraft, canReceive, editingReceived]);
+  }, [apiCall, canEditDraft, canReceive, canReceiverEdit, editingReceived]);
 
   const handleDeleteLine = useCallback(async (line: MovementMobProductLineViewModel) => {
     if (document?.mode === 'receiving' && !adminCanEdit) return;
@@ -495,9 +546,9 @@ export default function MovementMobEditorPage({
     const previous = linesRef.current;
     const index = previous.findIndex((item) => item.key === line.key);
 
-    const zeroReceived = isFinalized && adminCanEdit && adminQtySide === 'received'
+    const zeroReceived = isWarehouseAccepted && adminCanEdit && adminQtySide === 'received'
       && (line.totalPortions > 0 || line.boxQuantity > 0 || line.portionQuantity > 0);
-    const zeroSent = isFinalized && adminCanEdit && adminQtySide === 'sent'
+    const zeroSent = isWarehouseAccepted && adminCanEdit && adminQtySide === 'sent'
       && (line.receivedTotalPortions > 0 || line.receivedBoxQuantity > 0 || line.receivedPortionQuantity > 0);
 
     let nextLines: MovementMobProductLineViewModel[];
@@ -537,7 +588,7 @@ export default function MovementMobEditorPage({
         color: 'danger',
       });
     }
-  }, [adminCanEdit, adminQtySide, document?.mode, isFinalized, persistLines]);
+  }, [adminCanEdit, adminQtySide, document?.mode, isWarehouseAccepted, persistLines]);
 
   const dismissUndo = useCallback(() => setUndo(null), []);
 
@@ -769,7 +820,8 @@ export default function MovementMobEditorPage({
         onAddMore={handleAddMore}
         onManualBarcode={() => setManualOpen(true)}
         onEditLine={editorMode === 'formation' || editorMode === 'receiving' || adminCanEdit ? handleEditLine : undefined}
-        onDeleteLine={editorMode === 'formation' || adminCanEdit ? handleDeleteLine : undefined}
+        onDeleteLine={editorMode === 'formation' || adminCanEdit || senderEditWindowActive ? handleDeleteLine : undefined}
+        showSendButton={document?.status === 'draft' || documentId == null}
         onEditProduct={(line) => {
           if (line.catalogGoodId) setProductEditGoodId(line.catalogGoodId);
         }}
@@ -777,7 +829,7 @@ export default function MovementMobEditorPage({
         onSend={handleSend}
         onConfirmReceipt={handleConfirmReceiptPress}
         onShowPayload={
-          isDebugMode && (actionBar === 'receiving' || (actionBar === 'adminEdit' && isFinalized))
+          isDebugMode && (actionBar === 'receiving' || (actionBar === 'adminEdit' && isWarehouseAccepted))
             ? handleShowPayload
             : undefined
         }
@@ -786,6 +838,7 @@ export default function MovementMobEditorPage({
         actionBar={actionBar}
         isDeleted={isDeleted}
         isFinalized={isFinalized}
+        isWarehouseAccepted={isWarehouseAccepted}
         showAdminActions={(canOverrideEdit || canOverrideDelete) && documentId != null}
         adminEditing={adminCanEdit}
         adminQtySide={adminQtySide}
@@ -811,9 +864,10 @@ export default function MovementMobEditorPage({
         sourceLabel={storageName(sourceId)}
         destLabel={storageName(destId)}
         otherCommittedPortions={otherCommittedPortions}
+        sentTotalPortions={draftSentTotalPortions}
         confirming={confirming}
         qtySideHint={
-          adminCanEdit && isFinalized
+          adminCanEdit && isWarehouseAccepted
             ? (adminQtySide === 'received' ? 'Редагування отриманої кількості' : 'Редагування відправленої кількості')
             : undefined
         }

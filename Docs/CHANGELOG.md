@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-09-18 — Мобільні переміщення: вікна редагування, валідація скану, `isWarehouseAccepted`
+
+**Files:** `MovementMobEditorPage.tsx`, `MovementMobDocumentScreen.tsx`, `MovementMobProductCard.tsx`, `WarehouseMovementMobUtils.ts`, `WarehouseMovementMobTypes.ts`, `SettingsWarehouseMovement.tsx`, `DurationMinutesField.tsx`, `shared/utils/warehouseMovementEdit.ts`, `shared/types/movement.ts`, `WarehouseService.ts`, `WarehouseController.ts`, `WarehousePayloadBuilder.ts`, `server/routes/settings.ts`, `Docs/features/warehouse-movement-mob.md`
+
+### Вікна редагування (відправник / отримувач)
+
+- Налаштування в `/settings/warehouse-movement`: `senderEditWindowMinutes`, `receiverEditWindowMinutes` (0 = вимкнено).
+- UI: `DurationMinutesField` — груповий інпут з одиницею часу (хв / год / днів), у БД — хвилини.
+- **Відправник** (`pending_receipt`, автор): `actionBar = senderEdit`, правка відправлених кількостей через `PUT /:id`.
+- **Отримувач** (`finalized`, `receivedBy` / `receiptScannedBy`): `actionBar = receiverEdit`, правка отриманих через `PUT /:id/receipt`.
+- Адміни з `movement.edit` не обмежені вікнами.
+
+### Валідація скану отримувача
+
+- Отримувач не може сканувати SKU+партію, яких немає у відправленні.
+- Клієнт: `isSentMovementLine` + toast «Товар не у відправленні».
+- Сервер: `findUnknownReceiptItems` → 422.
+
+### UI / UX
+
+- Стан `isWarehouseAccepted` — етап «Прийнято на склад» (передфінальний крок степпера); замінює `isFinalized` для перемикача **Відправлене / Отримане** в адмін-режимі.
+- Картка товару: кольорове кільце збігу / нестачі / надлишку; тап по картці відкриває drawer у режимі прийому / `receiverEdit`.
+- Swipe «Редагувати» увімкнено для `receiving`; «Видалити» — лише в `formation` / адмін-режимі.
+
+### Документація
+
+- `Docs/features/warehouse-movement-mob.md` — вікна редагування, валідація, `isWarehouseAccepted`.
+
+---
+
 ## 2026-09-16 — Наліпки: UX друку, автозавантаження, видалення версій
 
 **Files:** `ProductLabelsTab.tsx`, `ProductLabelService.ts`, `CatalogLabelService.ts`, `ProductLabelsController.ts`, `shared/types/productLabel.ts`, `Docs/features/product-labels.md`

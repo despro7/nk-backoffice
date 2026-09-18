@@ -10,6 +10,11 @@ import {
   STORAGE_DISPLAY_MAP,
   resolveStorageDisplay,
 } from '../WarehouseMovement/storageDisplay';
+import {
+  isReceiverOfMovement,
+  isWithinEditWindow,
+} from '@shared/utils/warehouseMovementEdit';
+import type { WarehouseMovementSettings } from '@shared/types/movement';
 import type {
   MovementMobAggregates,
   MovementMobApiRecord,
@@ -209,6 +214,51 @@ function buildReceiptSummary(
   return summary;
 }
 
+export function hasMovementReceiptScanActivity(
+  record: Pick<MovementMobApiRecord, 'receiptScanStartedAt' | 'receiptScanEndedAt' | 'items'>,
+): boolean {
+  return Boolean(
+    record.receiptScanStartedAt
+    || record.receiptScanEndedAt
+    || parseMovementItems(record.items).some((item) => resolvedReceivedPortions(item) > 0),
+  );
+}
+
+/** Етап «Прийнято на склад» — перед підтвердженням або вже після нього. */
+export function isWarehouseAccepted(
+  record: Pick<MovementMobApiRecord, 'status' | 'receiptScanStartedAt' | 'receiptScanEndedAt' | 'items'>,
+): boolean {
+  if (record.status === 'finalized') return true;
+  if (record.status !== 'pending_receipt') return false;
+  return hasMovementReceiptScanActivity(record);
+}
+
+export function hasLocalReceivedActivity(
+  lines: Pick<MovementMobProductLineViewModel, 'receivedTotalPortions' | 'receivedBoxQuantity' | 'receivedPortionQuantity'>[],
+): boolean {
+  return lines.some(
+    (line) => line.receivedTotalPortions > 0
+      || line.receivedBoxQuantity > 0
+      || line.receivedPortionQuantity > 0,
+  );
+}
+
+export function resolveWarehouseAcceptedState(
+  document: Pick<
+    MovementMobDocumentViewModel,
+    'status' | 'receiptScanStartedAt' | 'receiptScanEndedAt' | 'lines'
+  > | null,
+): boolean {
+  if (!document) return false;
+  if (document.status === 'finalized') return true;
+  if (document.status !== 'pending_receipt') return false;
+  return Boolean(
+    document.receiptScanStartedAt
+    || document.receiptScanEndedAt
+    || hasLocalReceivedActivity(document.lines),
+  );
+}
+
 export function resolveShortStorageBadge(storageId?: string, fallbackName?: string): string {
   if (storageId && SHORT_BADGE_BY_STORAGE_ID[storageId]) {
     return SHORT_BADGE_BY_STORAGE_ID[storageId];
@@ -235,14 +285,9 @@ export function buildStepperSteps(
     || status === 'finalized';
   const sentDone = status === 'active' || status === 'pending_receipt' || status === 'finalized';
 
-  const hasScanActivity = Boolean(
-    record?.receiptScanStartedAt
-    || record?.receiptScanEndedAt
-    || (record?.items && parseMovementItems(record.items).some(
-      (item) => resolvedReceivedPortions(item) > 0,
-    )),
-  );
-  const acceptedDone = hasScanActivity || status === 'finalized';
+  const acceptedDone = record
+    ? isWarehouseAccepted({ status, ...record })
+    : status === 'finalized';
   const receivedDone = status === 'finalized';
 
   return [
@@ -716,12 +761,7 @@ export function buildChronology(
   const sourceBadge = resolveShortStorageBadge(record.sourceWarehouse);
   const destBadge = resolveShortStorageBadge(record.destinationWarehouse);
   const sentDone = record.status === 'active' || record.status === 'pending_receipt' || record.status === 'finalized';
-  const scanStarted = Boolean(record.receiptScanStartedAt);
-  const scanEnded = Boolean(record.receiptScanEndedAt);
-  const hasReceivedQty = parseMovementItems(record.items).some(
-    (item) => resolvedReceivedPortions(item) > 0,
-  );
-  const acceptedDone = scanStarted || scanEnded || hasReceivedQty || record.status === 'finalized';
+  const acceptedDone = isWarehouseAccepted(record);
   const receivedDone = record.status === 'finalized';
   const sentAt = record.submittedAt || record.sentToDilovodAt || record.lastSentToDilovodAt || record.draftLastEditedAt;
   const receivedAt = record.receivedAt || record.lastSentToDilovodAt || record.sentToDilovodAt;
@@ -792,8 +832,52 @@ export function toDocumentViewModel(
     chronology: buildChronology(record, destDirectoryName),
     createdBy: Number(record.createdBy) || 0,
     createdByName: record.createdByName ?? null,
+    receivedBy: record.receivedBy ?? null,
     receivedByName: record.receivedByName ?? null,
+    receiptScannedBy: record.receiptScannedBy ?? null,
+    receiptScanStartedAt: record.receiptScanStartedAt ?? null,
+    receiptScanEndedAt: record.receiptScanEndedAt ?? null,
+    submittedAt: record.submittedAt ?? null,
+    receivedAt: record.receivedAt ?? null,
+    isWarehouseAccepted: isWarehouseAccepted(record),
   };
+}
+
+export function canSenderEditAfterSubmit(
+  document: Pick<MovementMobDocumentViewModel, 'status' | 'createdBy' | 'submittedAt'> | null,
+  userId: number | null | undefined,
+  settings: Pick<WarehouseMovementSettings, 'senderEditWindowMinutes'> | null,
+): boolean {
+  if (!document || userId == null || !settings) return false;
+  if (document.status !== 'pending_receipt') return false;
+  if (Number(document.createdBy) !== Number(userId)) return false;
+  return isWithinEditWindow(document.submittedAt, settings.senderEditWindowMinutes);
+}
+
+export function canReceiverEditAfterConfirm(
+  document: Pick<
+    MovementMobDocumentViewModel,
+    'status' | 'receivedAt' | 'receivedBy' | 'receiptScannedBy'
+  > | null,
+  userId: number | null | undefined,
+  settings: Pick<WarehouseMovementSettings, 'receiverEditWindowMinutes'> | null,
+): boolean {
+  if (!document || userId == null || !settings) return false;
+  if (document.status !== 'finalized') return false;
+  if (!isReceiverOfMovement(userId, document)) return false;
+  return isWithinEditWindow(document.receivedAt, settings.receiverEditWindowMinutes);
+}
+
+/** Чи є позиція у відправленому списку переміщення (для валідації скану отримувача). */
+export function isSentMovementLine(
+  lines: MovementMobProductLineViewModel[],
+  sku: string,
+  batchId: string,
+  batchNumber: string,
+): boolean {
+  const key = movementMobLineKey(sku, batchId, batchNumber);
+  const line = lines.find((item) => item.key === key);
+  return Boolean(line && line.totalPortions > 0);
 }
 
 export function emptyReceivedQty(): Pick<

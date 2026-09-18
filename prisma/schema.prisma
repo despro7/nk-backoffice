@@ -216,9 +216,11 @@ model WarehouseMovement {
   internalDocNumber    String    @unique @default("00001")
   docNumber            String?   // Номер документа від Діловода (після відправки)
   dilovodDocId         String?   @unique // ID документа в Діловоді (унікальний — для upsert при імпорті з history)
-  items                String    @db.LongText
-  deviations           String?   @db.LongText
-  status               String    @default("draft") // 'draft' | 'active' | 'pending_receipt' | 'finalized' | 'deleted'
+  items                    String    @db.LongText
+  submittedItemsSnapshot   String?   @db.LongText // Snapshot відправлених порцій на момент submit
+  receivedItemsSnapshot    String?   @db.LongText // Snapshot отриманих порцій на момент confirm-receipt
+  deviations               String?   @db.LongText
+  status                   String    @default("draft") // 'draft' | 'active' | 'pending_receipt' | 'finalized' | 'deleted'
   sourceWarehouse      String
   destinationWarehouse String
   notes                String?

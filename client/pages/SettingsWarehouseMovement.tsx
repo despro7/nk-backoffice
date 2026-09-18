@@ -5,6 +5,7 @@ import { useWarehouseMovementSettings } from '../hooks/useWarehouseMovementSetti
 import { useDilovodSettings } from '../hooks/useDilovodSettings';
 import type { WarehouseMovementSettings } from '@shared/types/movement';
 import { WAREHOUSE_MOVEMENT_SETTING_DEFAULTS } from '@shared/types/movement';
+import { DurationMinutesField } from '@/components/ui/DurationMinutesField';
 
 // ---------------------------------------------------------------------------
 // SettingsWarehouseMovement — налаштування переміщень між складами
@@ -200,6 +201,40 @@ const SettingsWarehouseMovement: React.FC = () => {
 					</CardBody>
 				</Card>
 			</div>
+
+      {/* Вікно редагування після відправки / прийому */}
+      <Card>
+        <CardHeader className="border-b border-gray-200">
+          <DynamicIcon name="clock" size={18} className="text-gray-600 mr-2" />
+          <h2 className="text-base font-semibold text-gray-900">Редагування після відправки та прийому</h2>
+        </CardHeader>
+        <CardBody className="p-6 space-y-6">
+          <p className="text-sm text-gray-500">
+            Дозволяє відправнику та отримувачу окремо редагувати свої кількості протягом заданого часу.
+            Адміністратори з правом «Редагувати переміщення» не обмежені цими налаштуваннями.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-900">Відправник</h3>
+              <DurationMinutesField
+                label="Вікно редагування"
+                minutes={formData.senderEditWindowMinutes ?? WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.senderEditWindowMinutes}
+                onMinutesChange={(value) => handleChange('senderEditWindowMinutes', value)}
+                description="Після «Відправити» автор може змінювати відправлені кількості"
+              />
+            </div>
+            <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-900">Отримувач</h3>
+              <DurationMinutesField
+                label="Вікно редагування"
+                minutes={formData.receiverEditWindowMinutes ?? WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.receiverEditWindowMinutes}
+                onMinutesChange={(value) => handleChange('receiverEditWindowMinutes', value)}
+                description="Після підтвердження отримання — правка отриманих кількостей"
+              />
+            </div>
+          </div>
+        </CardBody>
+      </Card>
 
       {/* Кнопка збереження */}
       <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-5 py-4 shadow-sm">

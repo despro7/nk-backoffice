@@ -1,6 +1,11 @@
 import { prisma } from '../../lib/utils.js';
 import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
 import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
+import {
+  isWithinEditWindow,
+  isReceiverOfMovement,
+} from '../../../shared/utils/warehouseMovementEdit.js';
+import type { WarehouseMovementSettings } from '../../../shared/types/movement.js';
 import { WarehouseMovement, WarehouseMovementItem, StockUpdateResult, WarehouseMapping } from './WarehouseTypes.js';
 import { WarehousePayloadBuilder, type PayloadMovementProduct } from './WarehousePayloadBuilder.js';
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
@@ -484,7 +489,9 @@ export class WarehouseService {
   static mergeReceivedItems(
     storedItems: Record<string, unknown>[],
     clientItems: Record<string, unknown>[],
+    options?: { allowNewItems?: boolean },
   ): Record<string, unknown>[] {
+    const allowNewItems = options?.allowNewItems ?? true;
     const clientByKey = new Map(
       clientItems.map((item) => [WarehouseService.movementLineKey(item), item]),
     );
@@ -510,28 +517,72 @@ export class WarehouseService {
       };
     });
 
-    for (const client of clientItems) {
-      const key = WarehouseService.movementLineKey(client);
-      if (used.has(key)) continue;
-      merged.push({
-        sku: String(client.sku ?? ''),
-        productName: String(client.productName ?? client.sku ?? ''),
-        boxQuantity: 0,
-        portionQuantity: 0,
-        totalPortions: 0,
-        batchNumber: client.batchNumber ?? '',
-        batchId: client.batchId ?? '',
-        batchStorage: client.batchStorage,
-        forecast: 0,
-        barcode: client.barcode,
-        barcodeKind: client.barcodeKind,
-        receivedBoxQuantity: Number(client.receivedBoxQuantity) || 0,
-        receivedPortionQuantity: Number(client.receivedPortionQuantity) || 0,
-        receivedTotalPortions: Number(client.receivedTotalPortions) || 0,
-      });
+    if (allowNewItems) {
+      for (const client of clientItems) {
+        const key = WarehouseService.movementLineKey(client);
+        if (used.has(key)) continue;
+        merged.push({
+          sku: String(client.sku ?? ''),
+          productName: String(client.productName ?? client.sku ?? ''),
+          boxQuantity: 0,
+          portionQuantity: 0,
+          totalPortions: 0,
+          batchNumber: client.batchNumber ?? '',
+          batchId: client.batchId ?? '',
+          batchStorage: client.batchStorage,
+          forecast: 0,
+          barcode: client.barcode,
+          barcodeKind: client.barcodeKind,
+          receivedBoxQuantity: Number(client.receivedBoxQuantity) || 0,
+          receivedPortionQuantity: Number(client.receivedPortionQuantity) || 0,
+          receivedTotalPortions: Number(client.receivedTotalPortions) || 0,
+        });
+      }
     }
 
     return merged;
+  }
+
+  static canSenderEditAfterSubmit(
+    movement: {
+      status: string;
+      createdBy: number;
+      submittedAt?: Date | null;
+    },
+    userId: number,
+    settings: Pick<WarehouseMovementSettings, 'senderEditWindowMinutes'>,
+  ): boolean {
+    if (movement.status !== 'pending_receipt') return false;
+    if (movement.createdBy !== userId) return false;
+    return isWithinEditWindow(movement.submittedAt, settings.senderEditWindowMinutes);
+  }
+
+  static canReceiverEditAfterConfirm(
+    movement: {
+      status: string;
+      receivedAt?: Date | null;
+      receivedBy?: number | null;
+      receiptScannedBy?: number | null;
+    },
+    userId: number,
+    settings: Pick<WarehouseMovementSettings, 'receiverEditWindowMinutes'>,
+  ): boolean {
+    if (movement.status !== 'finalized') return false;
+    if (!isReceiverOfMovement(userId, movement)) return false;
+    return isWithinEditWindow(movement.receivedAt, settings.receiverEditWindowMinutes);
+  }
+
+  static findUnknownReceiptItems(
+    storedItems: Record<string, unknown>[],
+    clientItems: Record<string, unknown>[],
+  ): Record<string, unknown>[] {
+    const storedKeys = new Set(storedItems.map((item) => WarehouseService.movementLineKey(item)));
+    return clientItems.filter((item) => {
+      const key = WarehouseService.movementLineKey(item);
+      if (!storedKeys.has(key)) return true;
+      const stored = storedItems.find((row) => WarehouseService.movementLineKey(row) === key);
+      return WarehouseService.itemSentPortions(stored ?? {}) <= 0;
+    });
   }
 
   static buildReceiptDeviations(items: Record<string, unknown>[]): Array<{

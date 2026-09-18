@@ -3,7 +3,13 @@ import { BottomSheet } from '@/components/motion/bottom-sheet';
 import { StepperInput } from '@/pages/Warehouse/shared/StepperInput';
 import { pluralize } from '@/lib/formatUtils';
 import type { MovementMobScanDraft } from '../WarehouseMovementMobTypes';
-import { breakdownStockPortions, lineTotalPortions } from '../WarehouseMovementMobUtils';
+import {
+  breakdownStockPortions,
+  lineTotalPortions,
+  receiptReceivedClass,
+  receiptResultLabel,
+} from '../WarehouseMovementMobUtils';
+import type { MovementMobReceiptState } from '../WarehouseMovementMobTypes';
 import MovementMobSwipeConfirm from './MovementMobSwipeConfirm';
 
 interface MovementMobScanDrawerProps {
@@ -12,6 +18,8 @@ interface MovementMobScanDrawerProps {
   sourceLabel: string;
   destLabel: string;
   otherCommittedPortions?: number;
+  /** Відправлена кількість порцій — для показу нестачі/надлишку під час отримання. */
+  sentTotalPortions?: number | null;
   confirming?: boolean;
   qtySideHint?: string;
   onClose: () => void;
@@ -70,6 +78,7 @@ export default function MovementMobScanDrawer({
   sourceLabel,
   destLabel,
   otherCommittedPortions = 0,
+  sentTotalPortions = null,
   confirming = false,
   qtySideHint,
   onClose,
@@ -84,6 +93,14 @@ export default function MovementMobScanDrawer({
     ? lineTotalPortions(draft.boxes, draft.portions, portionsPerBox)
     : 0;
   const canConfirm = Boolean(draft) && total > 0 && !confirming;
+  const receiptState: MovementMobReceiptState | null = sentTotalPortions != null && total > 0
+    ? total === sentTotalPortions
+      ? 'match'
+      : total < sentTotalPortions
+        ? 'shortage'
+        : 'surplus'
+    : null;
+  const qtyDelta = sentTotalPortions != null ? total - sentTotalPortions : 0;
   const sourceBefore = Math.max(0, (draft?.sourceStock.portions ?? 0) - otherCommittedPortions);
   const destBefore = (draft?.destStock.portions ?? 0) + otherCommittedPortions;
   const sourceAfter = Math.max(0, sourceBefore - total);
@@ -204,6 +221,14 @@ export default function MovementMobScanDrawer({
             Разом{' '}
             <span className="font-semibold text-default-800">{total}</span>{' '}
             {pluralize(total, 'порція', 'порції', 'порцій')}
+            {receiptState && receiptState !== 'match' && (
+              <>
+                {' · '}
+                <span className={`font-medium ${receiptReceivedClass(receiptState)}`}>
+                  {receiptResultLabel(receiptState, qtyDelta)}
+                </span>
+              </>
+            )}
           </p>
 
           <MovementMobSwipeConfirm

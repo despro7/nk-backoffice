@@ -1,6 +1,6 @@
 # Мобільні переміщення між складами (`WarehouseMovementMob`)
 
-**Дата:** 2026-09-04 (оновлено)  
+**Дата:** 2026-09-18 (оновлено)  
 **Маршрути:** `/warehouse/movement-mob`, `/warehouse/movement-mob/new`, `/warehouse/movement-mob/:id`  
 **Дозвіл сторінки:** `page.warehouse.movementMob`
 
@@ -18,6 +18,8 @@
 | **Відправити** | автор (або `movement.edit`) | `POST /:id/submit` → `pending_receipt`, `submittedAt` | ні |
 | Прийом | **не** автор | сканування фактичних кількостей (`PUT /:id/receipt`) | ні |
 | **Підтвердити отримання** | не автор | `POST /:id/confirm-receipt` | так: `tpGoods` з **отриманих** порцій |
+| Вікно редагування відправлення | автор (`pending_receipt`) | `PUT /:id` протягом `senderEditWindowMinutes` після `submittedAt` | ні |
+| Вікно редагування отримання | отримувач (`finalized`) | `PUT /:id/receipt` протягом `receiverEditWindowMinutes` після `receivedAt` | ні (лише локальні правки; Dilovod — через адміна) |
 | Адмін-правка після отримання | `movement.edit` | окремо відправлене / отримане; `POST /:id/sync-dilovod` | перезапис існуючого документа |
 | Видалення | `movement.delete` | `status=deleted`; якщо є `dilovodDocId` — `delMark` | позначка видалення |
 
@@ -26,6 +28,42 @@
 Автор **не може** прийняти власне відправлення (403 на `receipt` / `confirm-receipt`). У UI відправник бачить неактивну кнопку «Документ відправлено». Чернетку до відправки редагує лише автор (іншим користувачам кнопки формування сховані), якщо немає `movement.edit`.
 
 Розбіжності кількості дозволені (менше / більше за відправлене). У Dilovod іде лише фактично отримане. `goodPart` не береться з `"0"`: `isUsableDilovodBatchId` (`shared/utils/dilovodBatchId.ts`); під час експорту порожні партії підставляються з Dilovod (`fillMissingBatchIds`).
+
+**Отримувач не може сканувати товар, якого немає у відправленні.** Клієнт перевіряє `isSentMovementLine`; сервер — `WarehouseService.findUnknownReceiptItems` (422, якщо SKU+партія не входять до відправленого списку або мають `sentPortions <= 0`). Адміністратор з `movement.edit` не обмежений цією перевіркою.
+
+---
+
+## Вікно редагування після відправки / прийому
+
+Налаштування: **Налаштування → Переміщення** (`/settings/warehouse-movement`), секція «Редагування після відправки та прийому».
+
+| Ключ `settings_base` | UI | Дефолт | Ефект |
+|----------------------|-----|--------|-------|
+| `wm_senderEditWindowMinutes` | Вікно редагування (відправник) | `0` (вимкнено) | Хвилини після `submittedAt`, коли **автор** може правити відправлені кількості в `pending_receipt` |
+| `wm_receiverEditWindowMinutes` | Вікно редагування (отримувач) | `0` (вимкнено) | Хвилини після `receivedAt`, коли **отримувач** може правити отримані кількості в `finalized` |
+
+Вводиться через `DurationMinutesField` (хв / год / днів); у БД зберігається як хвилини.
+
+Утиліти: `shared/utils/warehouseMovementEdit.ts` — `isWithinEditWindow`, `isReceiverOfMovement` (отримувач = `receivedBy` **або** `receiptScannedBy`).
+
+### Відправник (`senderEdit`)
+
+- Умови: `status === 'pending_receipt'`, `createdBy === userId`, вікно активне.
+- UI: `editorMode = formation`, `actionBar = senderEdit` — кнопка **Додати товар**, swipe редагування / видалення рядків.
+- API: `PUT /api/warehouse/:id` (той самий endpoint, що й для чернетки).
+- Після закінчення вікна — 403 «Час редагування відправлення минув».
+
+### Отримувач (`receiverEdit`)
+
+- Умови: `status === 'finalized'`, користувач — отримувач (`isReceiverOfMovement`), вікно активне.
+- UI: `editorMode = receiving`, `actionBar = receiverEdit` — кнопка **Сканувати позицію**; заголовок списку **«Отримані товари»**.
+- Редагування кількості: **тап по картці** або **swipe → Редагувати** (видалення рядка вимкнене).
+- API: `PUT /api/warehouse/:id/receipt` (збереження отриманих кількостей, без повторної фіналізації).
+- Після закінчення вікна — 409 «Редагування отриманих кількостей недоступне».
+
+Адміністратори з `action.warehouse.movement.edit` **не обмежені** вікнами — працюють через `adminEdit` (див. нижче).
+
+Клієнтські хелпери: `canSenderEditAfterSubmit`, `canReceiverEditAfterConfirm` у `WarehouseMovementMobUtils.ts`. Сервер: `WarehouseService.canSenderEditAfterSubmit`, `WarehouseService.canReceiverEditAfterConfirm`.
 
 ---
 
@@ -43,10 +81,25 @@
 
 - `empty` — склади обрані, рядків ще немає.
 - `formation` — можна сканувати, редагувати, видаляти, відправляти.
-- `receiving` — прийом: сканування в отримані кількості, «Підтвердити отримання».
-- `view` — документ далі чернетки / чужа чернетка / `deleted`; жести рядків вимкнені (окрім адмін-режиму).
+- `receiving` — прийом (`pending_receipt`) або вікно редагування отримання (`finalized` + `receiverEdit`): сканування / правка отриманих кількостей.
+- `view` — документ далі чернетки / чужа чернетка / `deleted`; жести рядків вимкнені (окрім `receiving` і адмін-режиму).
 
-Панель кнопок `MovementMobActionBar`: `formation` | `receiving` | `awaitingReceipt` | `adminEdit`.
+Панель кнопок `MovementMobActionBar`: `formation` | `receiving` | `awaitingReceipt` | `adminEdit` | `senderEdit` | `receiverEdit`.
+
+### Стан `isWarehouseAccepted` (клієнт)
+
+Похідний етап **«Прийнято на склад»** (передфінальний крок степпера):
+
+- `true`, якщо `status === 'finalized'`, **або**
+- `status === 'pending_receipt'` і є активність прийому: `receiptScanStartedAt` / `receiptScanEndedAt` / будь-які `receivedPortions > 0`.
+
+Використовується для:
+
+- кроку степпера `accepted` (`buildStepperSteps`);
+- перемикача **Відправлене / Отримане** в адмін-режимі (замість `isFinalized`);
+- відображення блоку «Відправлено / Отримано / Результат» і кольорового кільця на картці товару.
+
+Утиліти: `isWarehouseAccepted`, `resolveWarehouseAcceptedState`, `hasMovementReceiptScanActivity`, `hasLocalReceivedActivity` у `WarehouseMovementMobUtils.ts`.
 
 Прийом: кнопки на всю ширину, стовпчик — **Сканувати позицію**, потім **Підтвердити отримання**. У DebugMode поруч — **Payload** (dry-run Dilovod).
 
@@ -65,7 +118,7 @@
 
 ## Адмін-редагування отриманого документа
 
-Після `finalized` кнопка **Редагувати** вмикає `adminEdit` і перемикач **Відправлене / Отримане**:
+Після `finalized` (або коли `isWarehouseAccepted`) кнопка **Редагувати** вмикає `adminEdit`. Перемикач **Відправлене / Отримане** доступний лише користувачам з `action.warehouse.movement.edit` і лише коли `isWarehouseAccepted`:
 
 - **Відправлене** — drawer і сканування змінюють `boxQuantity` / `portionQuantity` / `totalPortions`.
 - **Отримане** — ті самі жести змінюють `received*`. Новий SKU можна додати як надлишок (відправлене = 0).
@@ -124,7 +177,8 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 На iPhone / iPad (`usesIosSwipeGestures` у `client/lib/touch.ts`): свайп рядка.
 
 - Вправо — **leading** (редагувати): кінетична капсула, сильний свайп розтягує кнопку на всю ширину, далі відкривається drawer.
-- Вліво — **trailing** (видалити): так само, потім collapse висоти рядка.
+- Вліво — **trailing** (видалити): так само, потім collapse висоти рядка. У режимі `receiving` (прийом / `receiverEdit`) trailing **вимкнений** — лише редагування.
+- У режимі `receiving` також працює **тап по картці** (`onEditQty` → той самий drawer).
 - Слабкий свайп залишає кнопку відкритою; тап по ній виконує дію. Поріг commit високий (`max(220px, 68% ширини)`), щоб випадковий жест не спрацьовував.
 - Під час горизонтального жесту блокується вертикальний скрол сторінки (`overflow: hidden` + `touchmove preventDefault`).
 - Кнопки заокруглені, іконка завжди, підпис з’являється лише за порогом commit.
@@ -167,7 +221,7 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 | Штрих-код | `line.barcode` (у debug — також SKU, ID партії, `catalogGoodId`) |
 | Партія | людська назва з Dilovod або каталогу; якщо `batchLinked === false` — **«Партія: не обрано!»** (червоний) |
 | Залишки після переміщення | прогноз `computeProjectedLineStock` (див. нижче) |
-| Статус прийому | «Відправлено: N / Отримано: M / Результат: збіг \| нестача \| надлишок» + кольорове кільце рядка |
+| Статус прийому | «Відправлено: N / Отримано: M / Результат: збіг \| нестача \| надлишок» + кольорове кільце (`border-2`: success / danger / primary) |
 
 Skeleton (`@heroui/react`) на партії та залишках, поки `useMovementMobLinesEnrichment` у стані `loading` / `refreshing`.
 
@@ -288,7 +342,7 @@ Pending: сіра точка, сірий заголовок, без імені �
 | `POST` | `/api/warehouse` | Створити чернетку |
 | `PUT` | `/api/warehouse/:id` | Оновити items (автор: draft/active; `movement.edit`: будь-який не `deleted`) |
 | `POST` | `/api/warehouse/:id/submit` | `draft` → `pending_receipt` |
-| `PUT` | `/api/warehouse/:id/receipt` | Зберегти отримані кількості; оновлює `receiptScan*` (не автор, лише `pending_receipt`) |
+| `PUT` | `/api/warehouse/:id/receipt` | Зберегти отримані кількості; оновлює `receiptScan*` (`pending_receipt` — прийом; `finalized` — вікно `receiverEdit`) |
 | `POST` | `/api/warehouse/:id/confirm-receipt` | Фіналізація + Dilovod; `{ dryRun: true }` — payload |
 | `POST` | `/api/warehouse/:id/sync-dilovod` | Перезапис finalized у Dilovod; теж `dryRun`; потрібен `movement.edit` |
 | `DELETE` | `/api/warehouse/:id` | Soft-delete + Dilovod `delMark` |
@@ -331,4 +385,7 @@ client/pages/Warehouse/WarehouseMovementMob/
     ├── MovementMobProductEditDrawer.tsx
     ├── MovementMobStatusStepper.tsx
     └── …
+
+shared/utils/warehouseMovementEdit.ts   — isWithinEditWindow, isReceiverOfMovement
+client/components/ui/DurationMinutesField.tsx — інпут тривалості (хв/год/днів) для налаштувань
 ```

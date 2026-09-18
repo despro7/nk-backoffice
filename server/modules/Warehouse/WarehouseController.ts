@@ -906,15 +906,27 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     const userRole = (req as any).user?.role;
     const canOverrideEdit = await canOverrideMovementEdit(userRole);
+    const wmSettings = await WarehousePayloadBuilder.loadSettings();
 
-    // Автор — свої draft/active; з правом movement.edit — будь-який невидалений документ
-    const existingDraft = await prisma.warehouseMovement.findFirst({
+    let existingDraft = await prisma.warehouseMovement.findFirst({
       where: {
         id: Number(id),
         ...(!canOverrideEdit && { createdBy: userId }),
         status: canOverrideEdit ? { not: 'deleted' } : { in: ['draft', 'active'] },
       }
     });
+
+    if (!existingDraft && !canOverrideEdit) {
+      const pendingDoc = await prisma.warehouseMovement.findFirst({
+        where: { id: Number(id), createdBy: userId, status: 'pending_receipt' },
+      });
+      if (
+        pendingDoc
+        && WarehouseService.canSenderEditAfterSubmit(pendingDoc, userId, wmSettings)
+      ) {
+        existingDraft = pendingDoc;
+      }
+    }
 
     if (!existingDraft) {
       // Перевіряємо чи документ існує взагалі (щоб дати точне повідомлення)
@@ -923,10 +935,13 @@ router.put('/:id', authenticateToken, async (req, res) => {
           id: Number(id),
           ...(!canOverrideEdit && { createdBy: userId }),
         },
-        select: { status: true },
+        select: { status: true, submittedAt: true, createdBy: true },
       });
       if (anyDoc?.status === 'deleted') {
         return res.status(409).json({ error: 'Документ видалено' });
+      }
+      if (anyDoc?.status === 'pending_receipt' && anyDoc.createdBy === userId) {
+        return res.status(403).json({ error: 'Час редагування відправлення минув' });
       }
       if (anyDoc?.status === 'finalized' || anyDoc?.status === 'pending_receipt') {
         return res.status(403).json({ error: 'Документ завершено і не може бути змінений' });
@@ -997,12 +1012,13 @@ router.post('/:id/submit', authenticateToken, async (req, res) => {
     }
 
     const now = new Date();
+    const zeroedItems = WarehouseService.zeroReceivedFields(items);
     const updated = await prisma.warehouseMovement.update({
       where: { id: movement.id },
       data: {
         status: 'pending_receipt',
         submittedAt: now,
-        items: JSON.stringify(WarehouseService.zeroReceivedFields(items)),
+        items: JSON.stringify(zeroedItems),
       },
     });
 
@@ -1021,6 +1037,9 @@ router.put('/:id/receipt', authenticateToken, async (req, res) => {
     const { items } = req.body as { items?: unknown };
     const userId = (req as { user?: { userId?: number; id?: number } }).user?.userId
       || (req as { user?: { id?: number } }).user?.id;
+    const userRole = (req as { user?: { role?: string } }).user?.role;
+    const canOverrideEdit = await canOverrideMovementEdit(userRole);
+    const wmSettings = await WarehousePayloadBuilder.loadSettings();
 
     if (!id || isNaN(Number(id))) {
       return res.status(400).json({ error: 'Invalid movement ID' });
@@ -1038,16 +1057,39 @@ router.put('/:id/receipt', authenticateToken, async (req, res) => {
     if (!movement) {
       return res.status(404).json({ error: 'Документ не знайдено' });
     }
-    if (movement.status !== 'pending_receipt') {
+
+    const receiverEditAfterConfirm = movement.status === 'finalized'
+      && !canOverrideEdit
+      && WarehouseService.canReceiverEditAfterConfirm(movement, userId, wmSettings);
+
+    if (movement.status === 'pending_receipt') {
+      if (movement.createdBy === userId) {
+        return res.status(403).json({ error: 'Автор документа не може прийняти власне відправлення' });
+      }
+    } else if (movement.status === 'finalized') {
+      if (!canOverrideEdit && !receiverEditAfterConfirm) {
+        return res.status(409).json({ error: 'Редагування отриманих кількостей недоступне' });
+      }
+    } else {
       return res.status(409).json({ error: 'Прийом доступний лише для відправлених документів' });
-    }
-    if (movement.createdBy === userId) {
-      return res.status(403).json({ error: 'Автор документа не може прийняти власне відправлення' });
     }
 
     const stored = WarehouseService.parseItems(movement.items) as unknown as Record<string, unknown>[];
     const clientItems = items as Record<string, unknown>[];
-    const merged = WarehouseService.mergeReceivedItems(stored, clientItems);
+
+    if (!canOverrideEdit) {
+      const unknownItems = WarehouseService.findUnknownReceiptItems(stored, clientItems);
+      if (unknownItems.length > 0) {
+        const label = String(unknownItems[0].productName ?? unknownItems[0].sku ?? 'товар');
+        return res.status(422).json({
+          error: `Товар «${label}» не входить до відправлення цього переміщення`,
+        });
+      }
+    }
+
+    const merged = WarehouseService.mergeReceivedItems(stored, clientItems, {
+      allowNewItems: canOverrideEdit,
+    });
 
     const now = new Date();
     const scanUpdate: Record<string, unknown> = {

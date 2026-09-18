@@ -155,11 +155,11 @@ function PanelActionRow({
       style={{ height: heightMv, opacity: cardOpacity }}
     >
       <div ref={boxRef} className={cn("pb-2.5", className)}>
-        <div className="overflow-hidden rounded-xl bg-white">
+        <div className="overflow-hidden rounded-xl">
           <div
             role="button"
             tabIndex={0}
-            className="relative z-10 bg-white text-left outline-none touch-manipulation [&>*]:rounded-none [&>*]:shadow-none"
+            className="relative z-10 text-left outline-none touch-manipulation [&>*]:rounded-none [&>*]:shadow-none"
             onClick={() => {
               if (exiting) return;
               onRestChange(open ? "closed" : "panel");
@@ -178,7 +178,7 @@ function PanelActionRow({
             initial={false}
             animate={{ height: open && !exiting ? PANEL_HEIGHT : 0 }}
             transition={SPRING_PANEL}
-            className="overflow-hidden"
+            className="overflow-hidden mx-5 rounded-b-xl"
           >
             <div className="flex h-12">
               {leading ? (
@@ -393,7 +393,7 @@ function IosSwipeRow({
   return (
     <motion.div className="overflow-hidden" style={{ height: heightMv }}>
       <div ref={boxRef} className={cn("pb-2.5", className)}>
-        <div className="relative overflow-hidden rounded-xl">
+        <div className="relative overflow-hidden">
           {leading ? (
             <motion.button
               type="button"

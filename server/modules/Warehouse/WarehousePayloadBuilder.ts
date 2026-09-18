@@ -68,6 +68,13 @@ export class WarehousePayloadBuilder {
 
     const warehouseDefaults = await loadDilovodWarehouseDefaults();
 
+    const parseIntSetting = (key: string, fallback: number): number => {
+      const raw = map[key];
+      if (raw == null || raw === '') return fallback;
+      const parsed = Number.parseInt(raw, 10);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+    };
+
     return {
       numberGeneration: (map['wm_numberGeneration'] === 'dilovod' ? 'dilovod' : 'server') as 'server' | 'dilovod',
       numberTemplate: map['wm_numberTemplate'] || WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.numberTemplate,
@@ -75,6 +82,14 @@ export class WarehousePayloadBuilder {
       businessId: warehouseDefaults.businessId,
       storageFrom,
       storageTo,
+      senderEditWindowMinutes: parseIntSetting(
+        'wm_senderEditWindowMinutes',
+        WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.senderEditWindowMinutes,
+      ),
+      receiverEditWindowMinutes: parseIntSetting(
+        'wm_receiverEditWindowMinutes',
+        WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.receiverEditWindowMinutes,
+      ),
       unitId: warehouseDefaults.unitId,
       accountId: warehouseDefaults.accountId,
       setAccountId: warehouseDefaults.setAccountId,
