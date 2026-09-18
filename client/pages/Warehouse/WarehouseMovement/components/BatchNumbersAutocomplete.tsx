@@ -1,6 +1,7 @@
 import { Drawer, DrawerContent, DrawerHeader, DrawerBody, DrawerFooter, Button } from '@heroui/react';
 import { motion } from 'framer-motion';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { useDebug } from '@/contexts/DebugContext';
 import type { BatchNumber } from '../hooks/useBatchNumbers';
 import { resolveStorageIconClass } from '../storageDisplay';
 
@@ -51,6 +52,7 @@ export const BatchNumbersAutocomplete = ({
   inputRef,
   overlayZClassName,
 }: BatchNumbersAutocompleteProps) => {
+  const { isDebugMode } = useDebug();
   const displayDate = selectedDateTime ?? new Date();
   const dateStr = displayDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const timeStr = displayDate.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
@@ -96,11 +98,14 @@ export const BatchNumbersAutocomplete = ({
               ) : batches.length > 0 ? (
                 <div className="space-y-3 pb-4">
                   {batches.map((batch, index) => {
-                    const isSelected = selectedBatch === batch.batchNumber && selectedStorage === batch.storage;
+                    const isSelected = (
+                      (selectedBatch === batch.batchNumber || selectedBatch === batch.batchId)
+                      && selectedStorage === batch.storage
+                    );
                     const isAlreadyAdded = addedBatchKeys?.has(`${batch.batchId}:${batch.storage}`) ?? false;
                     return (
                       <motion.button
-                        key={`${batch.batchNumber}-${batch.storage}`}
+                        key={`${batch.batchId}:${batch.storage}`}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.03 }}
@@ -127,6 +132,11 @@ export const BatchNumbersAutocomplete = ({
                             <div className="flex items-start gap-2 flex-wrap">
                               <span className="font-semibold text-gray-900">
                                 {batch.batchNumber}
+                                {isDebugMode && batch.batchId && (
+                                  <span className="ml-1.5 font-mono text-xs font-normal text-default-400">
+                                    · {batch.batchId}
+                                  </span>
+                                )}
                               </span>
                               {isSelected && (
                                 <DynamicIcon name="check-circle" size={18} className="text-blue-600 shrink-0" />

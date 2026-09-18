@@ -4,6 +4,7 @@ import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js'
 import {
   WAREHOUSE_MOVEMENT_DOC_MODE,
   WAREHOUSE_MOVEMENT_SETTING_DEFAULTS,
+  parseMobScanStepperMode,
   type WarehouseMovementSettings,
   type DilovodMovementPayload,
   type DilovodMovementGoodItem,
@@ -89,6 +90,10 @@ export class WarehousePayloadBuilder {
       receiverEditWindowMinutes: parseIntSetting(
         'wm_receiverEditWindowMinutes',
         WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.receiverEditWindowMinutes,
+      ),
+      mobScanStepperMode: parseMobScanStepperMode(
+        map['wm_mobScanStepperMode'],
+        map['wm_mobScanAutoIncrement'],
       ),
       unitId: warehouseDefaults.unitId,
       accountId: warehouseDefaults.accountId,

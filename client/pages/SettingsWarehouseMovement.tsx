@@ -200,42 +200,85 @@ const SettingsWarehouseMovement: React.FC = () => {
 						)}
 					</CardBody>
 				</Card>
-			</div>
 
-      {/* Вікно редагування після відправки / прийому */}
-      <Card>
-        <CardHeader className="border-b border-gray-200">
-          <DynamicIcon name="clock" size={18} className="text-gray-600 mr-2" />
-          <h2 className="text-base font-semibold text-gray-900">Редагування після відправки та прийому</h2>
-        </CardHeader>
-        <CardBody className="p-6 space-y-6">
-          <p className="text-sm text-gray-500">
-            Дозволяє відправнику та отримувачу окремо редагувати свої кількості протягом заданого часу.
-            Адміністратори з правом «Редагувати переміщення» не обмежені цими налаштуваннями.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4 rounded-lg border border-gray-200 p-4">
-              <h3 className="text-sm font-semibold text-gray-900">Відправник</h3>
-              <DurationMinutesField
-                label="Вікно редагування"
-                minutes={formData.senderEditWindowMinutes ?? WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.senderEditWindowMinutes}
-                onMinutesChange={(value) => handleChange('senderEditWindowMinutes', value)}
-                description="Після «Відправити» автор може змінювати відправлені кількості"
-              />
+        {/* Вікно редагування після відправки / прийому */}
+        <Card>
+          <CardHeader className="border-b border-gray-200">
+            <DynamicIcon name="clock" size={18} className="text-gray-600 mr-2" />
+            <h2 className="text-base font-semibold text-gray-900">Редагування після відправки та прийому</h2>
+          </CardHeader>
+          <CardBody className="p-6 space-y-6">
+            <p className="text-sm text-gray-500">
+              Дозволяє відправнику та отримувачу окремо редагувати свої кількості протягом заданого часу.
+              Адміністратори з правом «Редагувати переміщення» не обмежені цими налаштуваннями.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+                <h3 className="text-sm font-semibold text-gray-900">Відправник</h3>
+                <DurationMinutesField
+                  label="Вікно редагування"
+                  minutes={formData.senderEditWindowMinutes ?? WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.senderEditWindowMinutes}
+                  onMinutesChange={(value) => handleChange('senderEditWindowMinutes', value)}
+                  description="Після «Відправити» автор може змінювати відправлені кількості"
+                />
+              </div>
+              <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+                <h3 className="text-sm font-semibold text-gray-900">Отримувач</h3>
+                <DurationMinutesField
+                  label="Вікно редагування"
+                  minutes={formData.receiverEditWindowMinutes ?? WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.receiverEditWindowMinutes}
+                  onMinutesChange={(value) => handleChange('receiverEditWindowMinutes', value)}
+                  description="Після підтвердження отримання — правка отриманих кількостей"
+                />
+              </div>
             </div>
-            <div className="space-y-4 rounded-lg border border-gray-200 p-4">
-              <h3 className="text-sm font-semibold text-gray-900">Отримувач</h3>
-              <DurationMinutesField
-                label="Вікно редагування"
-                minutes={formData.receiverEditWindowMinutes ?? WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.receiverEditWindowMinutes}
-                onMinutesChange={(value) => handleChange('receiverEditWindowMinutes', value)}
-                description="Після підтвердження отримання — правка отриманих кількостей"
-              />
-            </div>
-          </div>
-        </CardBody>
-      </Card>
+          </CardBody>
+        </Card>
 
+        {/* Сканування — мобільний інтерфейс */}
+        <Card>
+          <CardHeader className="border-b border-gray-200">
+            <DynamicIcon name="scan-barcode" size={18} className="text-gray-600 mr-2" />
+            <h2 className="text-base font-semibold text-gray-900">Сканування (мобільний інтерфейс)</h2>
+          </CardHeader>
+          <CardBody className="p-6 space-y-4">
+            <p className="text-sm text-gray-500">
+              Поведінка drawer після сканування штрих-коду порції або коробки у мобільному редакторі переміщень.
+            </p>
+            <RadioGroup
+              value={formData.mobScanStepperMode ?? WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.mobScanStepperMode}
+              onValueChange={(val) => handleChange(
+                'mobScanStepperMode',
+                val as typeof WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.mobScanStepperMode,
+              )}
+              aria-label="Поведінка stepper при скануванні"
+            >
+              <Radio
+                value="increment"
+                description="При скануванні одразу додає 1 у stepper «Порцій» або «Коробок»"
+                classNames={{ base: 'items-baseline', labelWrapper: 'pl-1.5', label: 'text-sm font-semibold', description: 'text-xs' }}
+              >
+                Додавати 1 у stepper
+              </Radio>
+              <Radio
+                value="increment_box"
+                description="ШК коробки — +1 у «Коробок»; ШК порції — drawer без зміни stepper"
+                classNames={{ base: 'items-baseline', labelWrapper: 'pl-1.5', label: 'text-sm font-semibold', description: 'text-xs' }}
+              >
+                Додавати 1 коробку
+              </Radio>
+              <Radio
+                value="open_only"
+                description="Drawer відкривається з поточною кількістю рядка — користувач вводить значення сам"
+                classNames={{ base: 'items-baseline', labelWrapper: 'pl-1.5', label: 'text-sm font-semibold', description: 'text-xs' }}
+              >
+                Лише відкрити drawer
+              </Radio>
+            </RadioGroup>
+          </CardBody>
+        </Card>
+      </div>
+      
       {/* Кнопка збереження */}
       <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-5 py-4 shadow-sm">
         <div className="flex items-center gap-3">

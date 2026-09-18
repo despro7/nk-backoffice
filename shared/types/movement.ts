@@ -157,6 +157,9 @@ export interface MovementDraft {
 /** Режим документа documents.goodMoving в Діловоді (фіксований, не налаштовується) */
 export const WAREHOUSE_MOVEMENT_DOC_MODE = '1004000000000409';
 
+/** Режим stepper при скануванні в моб. редакторі переміщень */
+export type WarehouseMovementMobScanStepperMode = 'increment' | 'open_only' | 'increment_box';
+
 /** Дефолти для settings_base (category='warehouse_movement') */
 export const WAREHOUSE_MOVEMENT_SETTING_DEFAULTS = {
   numberGeneration: 'server' as const,
@@ -165,7 +168,37 @@ export const WAREHOUSE_MOVEMENT_SETTING_DEFAULTS = {
   senderEditWindowMinutes: 0,
   /** Хвилини після підтвердження отримання для правки отриманих кількостей (0 = вимкнено) */
   receiverEditWindowMinutes: 0,
+  /** Моб. переміщення: поведінка stepper після сканування ШК */
+  mobScanStepperMode: 'increment' as WarehouseMovementMobScanStepperMode,
 };
+
+/** Парсинг wm_mobScanStepperMode з fallback на legacy wm_mobScanAutoIncrement (true/false) */
+export function parseMobScanStepperMode(
+  raw: string | undefined,
+  legacyAutoIncrement?: string,
+): WarehouseMovementMobScanStepperMode {
+  if (raw === 'increment' || raw === 'open_only' || raw === 'increment_box') return raw;
+  if (legacyAutoIncrement === 'false') return 'open_only';
+  return WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.mobScanStepperMode;
+}
+
+/** Дельта для stepper після сканування (0 = лише відкрити drawer) */
+export function mobScanStepperDelta(
+  mode: WarehouseMovementMobScanStepperMode,
+  barcodeKind: 'box' | 'portion' | string,
+): { boxes: number; portions: number } {
+  const isBox = barcodeKind === 'box';
+  switch (mode) {
+    case 'increment':
+      return isBox ? { boxes: 1, portions: 0 } : { boxes: 0, portions: 1 };
+    case 'increment_box':
+      return isBox ? { boxes: 1, portions: 0 } : { boxes: 0, portions: 0 };
+    case 'open_only':
+      return { boxes: 0, portions: 0 };
+    default:
+      return { boxes: 0, portions: 0 };
+  }
+}
 
 /**
  * Налаштування переміщень між складами (зберігаються в settings_base з category='warehouse_movement')
@@ -178,6 +211,8 @@ export interface WarehouseMovementSettings {
   storageTo: string;                       // wm_storageTo
   senderEditWindowMinutes: number;         // wm_senderEditWindowMinutes
   receiverEditWindowMinutes: number;       // wm_receiverEditWindowMinutes
+  /** Моб. переміщення: поведінка stepper після сканування ШК */
+  mobScanStepperMode: WarehouseMovementMobScanStepperMode; // wm_mobScanStepperMode
   /** З loadDilovodWarehouseDefaults() — dilovod_warehouse_* */
   businessId: string;
   unitId: string;

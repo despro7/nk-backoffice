@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useDisclosure } from '@heroui/react';
 import { useDebug } from '@/contexts/DebugContext';
 import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,7 +11,9 @@ import { useWarehouseMovementSettings } from '@/hooks/useWarehouseMovementSettin
 import { playSoundChoice } from '@/lib/soundUtils';
 import { ToastService } from '@/services/ToastService';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
+import ResultDrawer from '@/components/ResultDrawer';
 import { PERMISSIONS } from '@shared/constants/permissions';
+import { WAREHOUSE_MOVEMENT_SETTING_DEFAULTS, mobScanStepperDelta } from '@shared/types/movement';
 import { isUsableDilovodBatchId } from '@shared/utils/dilovodBatchId';
 import type {
   MovementMobActionBar,
@@ -22,7 +25,9 @@ import type {
 import {
   aggregatesFromLines,
   aggregatesFromReceivedLines,
+  applyProductMetaToLines,
   breakdownStockPortions,
+  packageRatioToPortionsPerBox,
   canReceiverEditAfterConfirm,
   canSenderEditAfterSubmit,
   committedPortionsForSku,
@@ -42,6 +47,7 @@ import {
   deleteMovement,
   fetchBatchFallback,
   fetchConfirmReceiptPayload,
+  fetchMovementLogs,
   fetchMovementMobStocks,
   fetchProductByBarcode,
   resolveBatchNameForProduct,
@@ -51,6 +57,7 @@ import {
   updateWarehouseMovementDraft,
 } from './movementMobApi';
 import { useMovementMobScan } from './useMovementMobScan';
+import { invalidateMovementMobLineEnrichment } from './useMovementMobLinesEnrichment';
 import { useWarehouseMovementMobDocument } from './useWarehouseMovementMobDocument';
 import MovementMobCameraOverlay from './components/MovementMobCameraOverlay';
 import MovementMobDocumentScreen, { MovementMobDocumentScreenLoading } from './components/MovementMobDocumentScreen';
@@ -64,7 +71,9 @@ import MovementMobSubmitSheet from './components/MovementMobSubmitSheet';
 import MovementMobConfirmReceiptSheet from './components/MovementMobConfirmReceiptSheet';
 import MovementMobDeleteConfirmModal from './components/MovementMobDeleteConfirmModal';
 import MovementMobSyncDilovodModal from './components/MovementMobSyncDilovodModal';
-import MovementMobProductEditDrawer from './components/MovementMobProductEditDrawer';
+import MovementMobProductEditDrawer, {
+  type MovementMobProductSavedPayload,
+} from './components/MovementMobProductEditDrawer';
 import MovementMobUndoBanner from './components/MovementMobUndoBanner';
 import type { MovementMobStorageOption } from './components/MovementMobWarehouseSelectors';
 
@@ -111,6 +120,9 @@ export default function MovementMobEditorPage({
   const [payloadOpen, setPayloadOpen] = useState(false);
   const [payloadPreview, setPayloadPreview] = useState<Record<string, unknown> | null>(null);
   const [isLoadingPayload, setIsLoadingPayload] = useState(false);
+  const { isOpen: logsOpen, onOpen: openLogs, onOpenChange: onLogsOpenChange } = useDisclosure();
+  const [logsResult, setLogsResult] = useState<Record<string, unknown>[] | null>(null);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [undo, setUndo] = useState<{ line: MovementMobProductLineViewModel; index: number } | null>(null);
   const [receiveUndo, setReceiveUndo] = useState<{
@@ -164,6 +176,9 @@ export default function MovementMobEditorPage({
       name: s.name ?? String(s.id),
     }));
   }, [dirsCtx.directories]);
+
+  const mobScanStepperMode = wmSettings?.mobScanStepperMode
+    ?? WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.mobScanStepperMode;
 
   const storageName = useCallback((id: string) => {
     return storages.find((item) => item.id === id)?.name ?? id;
@@ -335,12 +350,16 @@ export default function MovementMobEditorPage({
 
       if (openDraft) {
         if (sameScanTarget(openDraft, product.sku, batchId, batchNumber)) {
+          const delta = mobScanStepperDelta(mobScanStepperMode, product.barcodeKind);
           setDraft((prev) => {
             if (!prev) return prev;
-            if (product.barcodeKind === 'box') {
-              return { ...prev, barcode: product.barcode, barcodeKind: product.barcodeKind, boxes: prev.boxes + 1 };
-            }
-            return { ...prev, barcode: product.barcode, barcodeKind: product.barcodeKind, portions: prev.portions + 1 };
+            return {
+              ...prev,
+              barcode: product.barcode,
+              barcodeKind: product.barcodeKind,
+              boxes: prev.boxes + delta.boxes,
+              portions: prev.portions + delta.portions,
+            };
           });
           return;
         }
@@ -363,6 +382,7 @@ export default function MovementMobEditorPage({
       const existing = linesRef.current.find((line) => line.key === lineKey);
       const baseBoxes = receiving ? (existing?.receivedBoxQuantity ?? 0) : (existing?.boxQuantity ?? 0);
       const basePortions = receiving ? (existing?.receivedPortionQuantity ?? 0) : (existing?.portionQuantity ?? 0);
+      const scanDelta = mobScanStepperDelta(mobScanStepperMode, product.barcodeKind);
       setDraft({
         sku: product.sku,
         name: product.name,
@@ -372,8 +392,8 @@ export default function MovementMobEditorPage({
         barcodeKind: product.barcodeKind,
         batchId,
         batchNumber,
-        boxes: baseBoxes + (product.barcodeKind === 'box' ? 1 : 0),
-        portions: basePortions + (product.barcodeKind === 'box' ? 0 : 1),
+        boxes: baseBoxes + scanDelta.boxes,
+        portions: basePortions + scanDelta.portions,
         sourceStock: breakdownStockPortions(stocks.sourcePortions, portionsPerBox),
         destStock: breakdownStockPortions(stocks.destPortions, portionsPerBox),
       });
@@ -383,7 +403,7 @@ export default function MovementMobEditorPage({
     } finally {
       lookupBusyRef.current = false;
     }
-  }, [adminCanEdit, apiCall, canReceive, canReceiverEdit, document?.mode, documentId, editingReceived, notifyNotFound, senderEditWindowActive]);
+  }, [adminCanEdit, apiCall, canReceive, canReceiverEdit, document?.mode, documentId, editingReceived, mobScanStepperMode, notifyNotFound, senderEditWindowActive]);
 
   const scan = useMovementMobScan({
     enabled: canScan,
@@ -425,6 +445,45 @@ export default function MovementMobEditorPage({
     await queryClient.invalidateQueries({ queryKey: ['warehouse-movement-mob-document', existingId] });
     await queryClient.invalidateQueries({ queryKey: ['warehouse-movement-mob-list'] });
   }, [adminCanEdit, apiCall, canReceive, canReceiverEdit, navigate, queryClient]);
+
+  const handleProductSaved = useCallback(async (saved: MovementMobProductSavedPayload) => {
+    const sku = saved.sku.trim();
+    if (!sku) return;
+
+    void invalidateMovementMobLineEnrichment(queryClient);
+
+    const portionsPerBox = packageRatioToPortionsPerBox(saved.packageRatio);
+    const nextLines = applyProductMetaToLines(linesRef.current, sku, {
+      weight: saved.weight,
+      portionsPerBox,
+      name: saved.name,
+    });
+    setLines(nextLines);
+
+    setDraft((current) => (
+      current?.sku === sku
+        ? {
+          ...current,
+          name: saved.name || current.name,
+          weight: saved.weight ?? current.weight,
+          portionsPerBox: portionsPerBox ?? current.portionsPerBox,
+        }
+        : current
+    ));
+
+    const canPersist = canEditDraft || canReceive || canReceiverEdit || adminCanEdit;
+    if (persistedIdRef.current && canPersist) {
+      try {
+        await persistLines(nextLines);
+      } catch (err) {
+        ToastService.show({
+          title: 'Не вдалося оновити рядки документа',
+          description: err instanceof Error ? err.message : undefined,
+          color: 'danger',
+        });
+      }
+    }
+  }, [adminCanEdit, canEditDraft, canReceive, canReceiverEdit, persistLines, queryClient]);
 
   const handleConfirm = useCallback(async () => {
     const current = draftRef.current;
@@ -668,6 +727,26 @@ export default function MovementMobEditorPage({
     }
   }, [apiCall, isFinalized, isLoadingPayload, persistLines]);
 
+  const handleShowLogs = useCallback(async () => {
+    const existingId = persistedIdRef.current ?? documentId;
+    if (!existingId || isLoadingLogs) return;
+    setIsLoadingLogs(true);
+    try {
+      const logs = await fetchMovementLogs(apiCall, existingId);
+      setLogsResult(logs);
+      openLogs();
+    } catch (err) {
+      setLogsResult(null);
+      ToastService.show({
+        title: 'Не вдалося завантажити логи',
+        description: err instanceof Error ? err.message : undefined,
+        color: 'danger',
+      });
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  }, [apiCall, documentId, isLoadingLogs, openLogs]);
+
   const handleConfirmReceiptPress = () => {
     if (receivedAggregates.totalPortions <= 0) {
       ToastService.show({
@@ -770,6 +849,11 @@ export default function MovementMobEditorPage({
     return <MovementMobDocumentScreenLoading />;
   }
 
+  const showAdminActions = (canOverrideEdit || canOverrideDelete) && documentId != null;
+  const canPreviewPayload = isDebugMode && documentId != null && (
+    document?.status === 'pending_receipt' || document?.status === 'finalized'
+  );
+
   if (documentId != null && error && !document) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2 text-danger px-4 text-center">
@@ -828,18 +912,17 @@ export default function MovementMobEditorPage({
         enterLineKey={enterLineKey}
         onSend={handleSend}
         onConfirmReceipt={handleConfirmReceiptPress}
-        onShowPayload={
-          isDebugMode && (actionBar === 'receiving' || (actionBar === 'adminEdit' && isWarehouseAccepted))
-            ? handleShowPayload
-            : undefined
-        }
+        onShowPayload={canPreviewPayload ? handleShowPayload : undefined}
         isLoadingPayload={isLoadingPayload}
+        showDebugPayload={canPreviewPayload && showAdminActions}
+        onShowLogs={showAdminActions ? handleShowLogs : undefined}
+        isLoadingLogs={isLoadingLogs}
         warehousesLocked={documentId != null || Boolean(persistedIdRef.current)}
         actionBar={actionBar}
         isDeleted={isDeleted}
         isFinalized={isFinalized}
         isWarehouseAccepted={isWarehouseAccepted}
-        showAdminActions={(canOverrideEdit || canOverrideDelete) && documentId != null}
+        showAdminActions={showAdminActions}
         adminEditing={adminCanEdit}
         adminQtySide={adminQtySide}
         canAdminEdit={canOverrideEdit}
@@ -925,6 +1008,14 @@ export default function MovementMobEditorPage({
         isLoading={isLoadingPayload}
       />
 
+      <ResultDrawer
+        isOpen={logsOpen}
+        onOpenChange={onLogsOpenChange}
+        result={logsResult}
+        title={document?.displayNumber ? `Логи документа ${document.displayNumber}` : 'Логи документа'}
+        type="logs"
+      />
+
       <MovementMobDeleteConfirmModal
         isOpen={deleteOpen}
         displayNumber={document?.displayNumber}
@@ -976,9 +1067,7 @@ export default function MovementMobEditorPage({
         catalogGoodId={productEditGoodId}
         open={Boolean(productEditGoodId)}
         onClose={() => setProductEditGoodId(null)}
-        onSaved={() => {
-          void queryClient.invalidateQueries({ queryKey: ['warehouse-movement-mob-line-enrichment'] });
-        }}
+        onSaved={handleProductSaved}
       />
     </>
   );

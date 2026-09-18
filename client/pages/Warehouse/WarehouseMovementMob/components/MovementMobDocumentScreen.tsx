@@ -42,6 +42,9 @@ interface MovementMobDocumentScreenProps {
   onConfirmReceipt?: () => void;
   onShowPayload?: () => void;
   isLoadingPayload?: boolean;
+  onShowLogs?: () => void;
+  isLoadingLogs?: boolean;
+  showDebugPayload?: boolean;
   warehousesLocked?: boolean;
   actionBar?: MovementMobActionBar | null;
   isDeleted?: boolean;
@@ -84,6 +87,9 @@ export default function MovementMobDocumentScreen({
   onConfirmReceipt,
   onShowPayload,
   isLoadingPayload = false,
+  onShowLogs,
+  isLoadingLogs = false,
+  showDebugPayload = false,
   warehousesLocked = false,
   actionBar = null,
   isDeleted = false,
@@ -274,23 +280,6 @@ export default function MovementMobDocumentScreen({
             label="Сканувати позицію"
           />
           <div className="flex items-stretch gap-3 w-full">
-            {onShowPayload && (
-              <Button
-                size="lg"
-                variant="flat"
-                color="primary"
-                className="h-12 font-medium shrink-0 px-4 bg-blue-200 text-slate-900"
-                isLoading={isLoadingPayload}
-                startContent={
-                  !isLoadingPayload
-                    ? <DynamicIcon name="code-2" size={18} strokeWidth={1.5} className="shrink-0" />
-                    : undefined
-                }
-                onPress={onShowPayload}
-              >
-                Payload
-              </Button>
-            )}
             <Button
               size="lg"
               className="gap-2 bg-gradient-to-b from-blue-500 to-blue-600 text-white h-12 font-medium shadow-button-primary flex-1 min-w-0"
@@ -335,23 +324,6 @@ export default function MovementMobDocumentScreen({
             />
             {isFinalized && onSyncDilovod && (
               <div className="flex items-stretch gap-3 w-full">
-                {onShowPayload && (
-                  <Button
-                    size="lg"
-                    variant="flat"
-                    color="primary"
-                    className="h-12 font-medium shrink-0 px-4 bg-blue-200 text-slate-900"
-                    isLoading={isLoadingPayload}
-                    startContent={
-                      !isLoadingPayload
-                        ? <DynamicIcon name="code-2" size={18} strokeWidth={1.5} className="shrink-0" />
-                        : undefined
-                    }
-                    onPress={onShowPayload}
-                  >
-                    Payload
-                  </Button>
-                )}
                 <Button
                   size="lg"
                   className="gap-2 bg-gradient-to-b from-blue-500 to-blue-600 text-white h-12 font-medium shadow-button-primary flex-1 min-w-0"
@@ -382,7 +354,37 @@ export default function MovementMobDocumentScreen({
       {chronology.length > 0 && <MovementMobChronology events={chronology} />}
 
       {showAdminActions && !isDeleted && (
-        <div className="flex items-stretch gap-2 mt-6">
+        <div className="flex flex-wrap items-stretch gap-2 mt-6">
+          {showDebugPayload && onShowPayload && (
+            <Button
+              variant="flat"
+              className="min-w-0 h-10 text-primary-700 border-1.5 border-primary-300 bg-primary-50 hover:bg-primary-100"
+              isLoading={isLoadingPayload}
+              startContent={
+                !isLoadingPayload
+                  ? <DynamicIcon name="code-2" size={16} strokeWidth={1.75} className="shrink-0" />
+                  : undefined
+              }
+              onPress={onShowPayload}
+            >
+              Payload
+            </Button>
+          )}
+          {onShowLogs && (
+            <Button
+              variant="flat"
+              className="min-w-0 h-10 text-default-700 border-1.5 border-default-600 bg-transparent hover:bg-default-100"
+              isLoading={isLoadingLogs}
+              startContent={
+                !isLoadingLogs
+                  ? <DynamicIcon name="scroll-text" size={16} strokeWidth={1.75} className="shrink-0" />
+                  : undefined
+              }
+              onPress={onShowLogs}
+            >
+              Logs
+            </Button>
+          )}
           {canAdminEdit && (adminEditing ? (
             <Button
               variant="flat"

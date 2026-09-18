@@ -462,3 +462,16 @@ export async function deleteMovement(
     throw new Error([err.errorTitle, err.error].filter(Boolean).join(' — ') || 'Не вдалося видалити документ');
   }
 }
+
+export async function fetchMovementLogs(
+  apiCall: ApiCall,
+  id: number,
+): Promise<Record<string, unknown>[]> {
+  const response = await apiCall(`/api/warehouse/${id}/logs`);
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(err.error || 'Не вдалося завантажити логи');
+  }
+  const data = await response.json();
+  return Array.isArray(data) ? data as Record<string, unknown>[] : [];
+}

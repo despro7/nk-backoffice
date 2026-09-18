@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/utils.js';
 import { resolveAuthorNames } from '../../lib/utils.js';
 import { authenticateToken } from '../../middleware/auth.js';
@@ -115,6 +116,19 @@ type BatchNumbersRow = {
 
 function batchLabelNeedsCatalogFallback(batch: Pick<BatchNumbersRow, 'batchId' | 'batchNumber'>): boolean {
   return batchNumberNeedsResolution(batch.batchNumber, batch.batchId);
+}
+
+/** Dilovod balance може повертати кілька рядків на одну пару batchId+storage (різні firm). */
+function dedupeBatchesByStorage(batches: BatchNumbersRow[]): BatchNumbersRow[] {
+  const seen = new Set<string>();
+  const result: BatchNumbersRow[] = [];
+  for (const batch of batches) {
+    const key = `${batch.batchId}:${batch.storage}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(batch);
+  }
+  return result;
 }
 
 function filterBatchesByStorageMode(
@@ -467,7 +481,9 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
       if (!forceRefresh) {
         const cached = batchCache.get(cacheKey);
         if (cached && isBatchCacheValid(cached)) {
-          const cachedBatches = await enrichBatchNamesFromCatalog(cached.data as BatchNumbersRow[]);
+          const cachedBatches = dedupeBatchesByStorage(
+            await enrichBatchNamesFromCatalog(cached.data as BatchNumbersRow[]),
+          );
           batchesBySku[sku] = cachedBatches;
           fromCacheCount += 1;
           continue;
@@ -498,12 +514,14 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
 
       for (const sku of cacheMissSkus) {
         const rawBatches = fetchedBySku[sku] ?? [];
-        const filteredBatches = await enrichBatchNamesFromCatalog(
-          filterBatchesByStorageMode(rawBatches, dilovodConfig, {
-            targetStorageId,
-            shouldOnlySmallStorage,
-            shouldIncludeSmallStorage,
-          }),
+        const filteredBatches = dedupeBatchesByStorage(
+          await enrichBatchNamesFromCatalog(
+            filterBatchesByStorageMode(rawBatches, dilovodConfig, {
+              targetStorageId,
+              shouldOnlySmallStorage,
+              shouldIncludeSmallStorage,
+            }),
+          ),
         );
         batchesBySku[sku] = filteredBatches;
 
@@ -610,7 +628,9 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
         const ageLabel = ageSeconds < 60 ? `${ageSeconds}с` : (ageSeconds < 3600 ? `${Math.round(ageSeconds / 60)}хв` : `${Math.round(ageSeconds / 3600)}год`);
         const cachedTtlLabel = cached.ttl === BATCH_CACHE_TTL_LONG ? '12 год' : '5 хв';
         console.log(`✅ [Warehouse] Партії для SKU ${sku} отримані з кешу (вік: ${ageLabel}, TTL запису: ${cachedTtlLabel}). Дата переміщення ${parsedDate ? `${parsedDate.toLocaleString('uk-UA')}` : 'не вказана'}.`);
-        const cachedBatches = await enrichBatchNamesFromCatalog(cached.data as BatchNumbersRow[]);
+        const cachedBatches = dedupeBatchesByStorage(
+          await enrichBatchNamesFromCatalog(cached.data as BatchNumbersRow[]),
+        );
         return res.json({
           success: true,
           sku,
@@ -632,12 +652,14 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
       includeNonPositiveQty: shouldIncludeNonPositiveQty,
     });
 
-    const filteredBatches = await enrichBatchNamesFromCatalog(
-      filterBatchesByStorageMode(batches, dilovodConfig, {
-        targetStorageId,
-        shouldOnlySmallStorage,
-        shouldIncludeSmallStorage,
-      }),
+    const filteredBatches = dedupeBatchesByStorage(
+      await enrichBatchNamesFromCatalog(
+        filterBatchesByStorageMode(batches, dilovodConfig, {
+          targetStorageId,
+          shouldOnlySmallStorage,
+          shouldIncludeSmallStorage,
+        }),
+      ),
     );
 
     const filterLabel = targetStorageId
@@ -1019,6 +1041,92 @@ router.patch('/:id/finalize-local', authenticateToken, async (req, res) => {
       success: false,
       error: error instanceof Error ? error.message : 'Внутрішня помилка сервера',
     });
+  }
+});
+
+// GET /api/warehouse/:id/logs — meta_logs для документа переміщення
+router.get('/:id/logs', authenticateToken, async (req, res) => {
+  try {
+    const movementId = Number(req.params.id);
+    if (!Number.isFinite(movementId)) {
+      return res.status(400).json({ error: 'Invalid movement ID' });
+    }
+
+    const movement = await prisma.warehouseMovement.findUnique({
+      where: { id: movementId },
+      select: { id: true, internalDocNumber: true, docNumber: true },
+    });
+    if (!movement) {
+      return res.status(404).json({ error: 'Movement not found' });
+    }
+
+    const orderNumbers = [movement.internalDocNumber, movement.docNumber]
+      .map((value) => (value != null ? String(value).trim() : ''))
+      .filter(Boolean);
+
+    const orderNumberClause = orderNumbers.length > 0
+      ? Prisma.sql`orderNumber IN (${Prisma.join(orderNumbers.map((value) => Prisma.sql`${value}`))})`
+      : Prisma.sql`FALSE`;
+
+    const logs = await prisma.$queryRaw<Array<{
+      id: number;
+      datetime: Date;
+      category: string;
+      title: string | null;
+      status: string;
+      message: string | null;
+      data: unknown;
+      orderNumber: string | null;
+      initiatedBy: string | null;
+    }>>`
+      SELECT id, datetime, category, title, status, message, data, orderNumber, initiatedBy
+      FROM meta_logs
+      WHERE (
+        ${orderNumberClause}
+        OR CAST(JSON_UNQUOTE(JSON_EXTRACT(data, '$.draftId')) AS UNSIGNED) = ${movement.id}
+        OR CAST(JSON_UNQUOTE(JSON_EXTRACT(data, '$.docId')) AS UNSIGNED) = ${movement.id}
+        OR JSON_UNQUOTE(JSON_EXTRACT(data, '$.internalDocNumber')) = ${movement.internalDocNumber}
+      )
+      ORDER BY datetime DESC
+      LIMIT 200
+    `;
+
+    const userIds = [...new Set(
+      logs
+        .map((log) => log.initiatedBy)
+        .filter((value): value is string => Boolean(value && /^\d+$/.test(value)))
+        .map((value) => parseInt(value, 10)),
+    )];
+
+    const usersMap: Record<number, { name: string | null; email: string }> = {};
+    if (userIds.length > 0) {
+      const users = await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, name: true, email: true },
+      });
+      for (const user of users) {
+        usersMap[user.id] = { name: user.name, email: user.email };
+      }
+    }
+
+    const logsWithNames = logs.map((log) => {
+      const raw = log.initiatedBy ?? null;
+      const isUserId = raw != null && /^\d+$/.test(raw);
+      const userRecord = isUserId ? usersMap[parseInt(raw, 10)] : undefined;
+      return {
+        ...log,
+        initiatedBy: {
+          raw,
+          name: userRecord?.name ?? null,
+          email: userRecord?.email ?? null,
+        },
+      };
+    });
+
+    res.json(logsWithNames);
+  } catch (error) {
+    console.error('❌ [Warehouse] Error fetching movement logs:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

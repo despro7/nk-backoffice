@@ -5,8 +5,8 @@ import { isNavBadgeVisible, type NavBadge, type NavBadgeColor } from '@/routes.c
 const NAV_BADGE_COLOR_CLASS: Record<NavBadgeColor, string> = {
   danger: 'bg-danger text-danger-foreground',
   primary: 'bg-primary text-primary-foreground',
-  success: 'bg-success text-success-foreground',
-  warning: 'bg-warning text-warning-foreground',
+  success: 'bg-success text-white',
+  warning: 'bg-warning text-white',
   secondary: 'bg-secondary text-secondary-foreground',
   default: 'bg-default-500 text-white',
 };
@@ -25,7 +25,7 @@ export function NavBadgePill({
     <span
       className={cn(
         'shrink-0 rounded-full px-1.5 py-1 text-[10px] font-semibold leading-none',
-        isNumeric ? 'tabular-nums tracking-normal' : 'uppercase tracking-wide',
+        isNumeric ? 'tabular-nums tracking-normal' : 'tracking-wide',
         NAV_BADGE_COLOR_CLASS[color] ?? NAV_BADGE_COLOR_CLASS.danger,
       )}
     >

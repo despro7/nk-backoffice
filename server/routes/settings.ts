@@ -2,7 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import EquipmentSettingsService from '../services/settingsService.js';
 import { prisma } from '../lib/utils.js';
-import { WAREHOUSE_MOVEMENT_SETTING_DEFAULTS } from '../../shared/types/movement.js';
+import { WAREHOUSE_MOVEMENT_SETTING_DEFAULTS, parseMobScanStepperMode } from '../../shared/types/movement.js';
 
 const router = express.Router();
 const equipmentSettingsService = EquipmentSettingsService.getInstance();
@@ -261,6 +261,10 @@ router.get('/warehouse-movement', authenticateToken, async (req, res) => {
           'wm_receiverEditWindowMinutes',
           WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.receiverEditWindowMinutes,
         ),
+        mobScanStepperMode: parseMobScanStepperMode(
+          map['wm_mobScanStepperMode'],
+          map['wm_mobScanAutoIncrement'],
+        ),
       },
     });
   } catch (error) {
@@ -279,6 +283,7 @@ router.put('/warehouse-movement', authenticateToken, async (req, res) => {
       storageTo: string;
       senderEditWindowMinutes: number;
       receiverEditWindowMinutes: number;
+      mobScanStepperMode: string;
     }>;
 
     // Маппінг поле→ключ у БД (firmId більше не зберігаємо — лише dilovod_default_firm_id)
@@ -289,6 +294,7 @@ router.put('/warehouse-movement', authenticateToken, async (req, res) => {
       storageTo: 'wm_storageTo',
       senderEditWindowMinutes: 'wm_senderEditWindowMinutes',
       receiverEditWindowMinutes: 'wm_receiverEditWindowMinutes',
+      mobScanStepperMode: 'wm_mobScanStepperMode',
     };
 
     for (const [field, key] of Object.entries(fieldToKey)) {

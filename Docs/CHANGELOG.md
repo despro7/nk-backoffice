@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-09-18 — Мобільні переміщення: sync після редагування товару, picker партій
+
+**Files:** `useMovementMobLinesEnrichment.ts`, `MovementMobProductEditDrawer.tsx`, `MovementMobEditorPage.tsx`, `WarehouseMovementMobUtils.ts`, `BatchNumbersAutocomplete.tsx`, `WarehouseController.ts`, `Docs/features/warehouse-movement-mob.md`
+
+- Після збереження товару з олівця на картці: інвалідація `warehouse-movement-mob-catalog`, оновлення `portionsPerBox` / ваги в рядках, перерахунок `totalPortions` / `receivedTotalPortions`, `persistLines` за наявності прав.
+- Виправлено помилковий query key `warehouse-movement-mob-line-enrichment` → `invalidateMovementMobLineEnrichment()`.
+- Партії в picker: dedupe `batchId+storage` на API; debug показує `batchId`; React key `batchId:storage`.
+
+---
+
+## 2026-09-18 — Мобільні переміщення: режим stepper при скануванні
+
+**Files:** `shared/types/movement.ts`, `server/routes/settings.ts`, `WarehousePayloadBuilder.ts`, `SettingsWarehouseMovement.tsx`, `MovementMobEditorPage.tsx`, `Docs/features/warehouse-movement-mob.md`
+
+- Налаштування `/settings/warehouse-movement`: `mobScanStepperMode` (`wm_mobScanStepperMode`) — три режими drawer після сканування ШК.
+- `increment` — +1 коробка або порція; `increment_box` — +1 лише для ШК коробки; `open_only` — лише відкрити drawer.
+- Спільний helper `mobScanStepperDelta()`; fallback з legacy `wm_mobScanAutoIncrement`.
+
+---
+
 ## 2026-09-18 — Мобільні переміщення: швидке збагачення рядків + глобальна черга Dilovod
 
 **Files:** `useMovementMobLinesEnrichment.ts`, `movementMobApi.ts`, `MovementMobProductCard.tsx`, `MovementMobDocumentScreen.tsx`, `WarehouseController.ts`, `DilovodApiClient.ts`, `DilovodService.ts`, `Docs/features/warehouse-movement-mob.md`, `server/services/dilovod/README.md`

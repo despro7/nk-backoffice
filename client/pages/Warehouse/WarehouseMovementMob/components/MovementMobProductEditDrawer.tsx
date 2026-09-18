@@ -7,6 +7,7 @@ import type {
   CatalogUpdateGoodInput,
 } from '@/pages/Products/ProductsTypes';
 import { ToastService } from '@/services/ToastService';
+import { invalidateMovementMobLineEnrichment } from '../useMovementMobLinesEnrichment';
 
 async function catalogFetch<T>(url: string, init?: Parameters<typeof fetch>[1]): Promise<T> {
   const res = await fetch(url, {
@@ -21,11 +22,18 @@ async function catalogFetch<T>(url: string, init?: Parameters<typeof fetch>[1]):
   return json.data as T;
 }
 
+export interface MovementMobProductSavedPayload {
+  sku: string;
+  name: string;
+  weight: number | null;
+  packageRatio: number | null;
+}
+
 interface MovementMobProductEditDrawerProps {
   catalogGoodId: string | null;
   open: boolean;
   onClose: () => void;
-  onSaved?: () => void;
+  onSaved?: (saved: MovementMobProductSavedPayload) => void;
 }
 
 export default function MovementMobProductEditDrawer({
@@ -71,9 +79,17 @@ export default function MovementMobProductEditDrawer({
         description: `«${data.name}» оновлено в Dilovod`,
         color: 'success',
       });
-      void queryClient.invalidateQueries({ queryKey: ['warehouse-movement-mob-line-enrichment'] });
+      void invalidateMovementMobLineEnrichment(queryClient);
+      const saved: MovementMobProductSavedPayload = {
+        sku: (data.sku ?? '').trim(),
+        name: data.name,
+        weight: data.weight ?? null,
+        packageRatio: data.packageRatio ?? null,
+      };
+      if (saved.sku) {
+        onSaved?.(saved);
+      }
       if (!variables.keepOpen) {
-        onSaved?.();
         onClose();
       }
     },

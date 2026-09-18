@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
 import type {
   MovementMobLineEnrichmentMeta,
@@ -130,6 +130,19 @@ function applyCatalogNames(
   });
 }
 
+/** Ключі React Query для enrichment рядків документа переміщення (mob). */
+export const movementMobEnrichmentQueryKeys = {
+  stock: (sortedSkusKey: string) => ['warehouse-movement-mob-stock', sortedSkusKey] as const,
+  batches: (sortedSkusKey: string) => ['warehouse-movement-mob-batches', sortedSkusKey] as const,
+  catalog: (lineKeys: string, sortedSkusKey: string) =>
+    ['warehouse-movement-mob-catalog', lineKeys, sortedSkusKey] as const,
+};
+
+/** Після зміни привʼязки ШК→партія в каталозі — оновити meta рядків (batchLinked, назва). */
+export function invalidateMovementMobLineEnrichment(queryClient: QueryClient): Promise<void> {
+  return queryClient.invalidateQueries({ queryKey: ['warehouse-movement-mob-catalog'] });
+}
+
 export function useMovementMobLinesEnrichment(
   lines: MovementMobProductLineViewModel[],
 ) {
@@ -152,7 +165,7 @@ export function useMovementMobLinesEnrichment(
   );
 
   const stockQuery = useQuery({
-    queryKey: ['warehouse-movement-mob-stock', sortedSkusKey],
+    queryKey: movementMobEnrichmentQueryKeys.stock(sortedSkusKey),
     enabled: skus.length > 0,
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
@@ -161,7 +174,7 @@ export function useMovementMobLinesEnrichment(
   });
 
   const batchesQuery = useQuery({
-    queryKey: ['warehouse-movement-mob-batches', sortedSkusKey],
+    queryKey: movementMobEnrichmentQueryKeys.batches(sortedSkusKey),
     enabled: skus.length > 0,
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
@@ -173,7 +186,7 @@ export function useMovementMobLinesEnrichment(
   });
 
   const catalogQuery = useQuery({
-    queryKey: ['warehouse-movement-mob-catalog', lineKeys, sortedSkusKey],
+    queryKey: movementMobEnrichmentQueryKeys.catalog(lineKeys, sortedSkusKey),
     enabled: skus.length > 0 && batchesQuery.isSuccess,
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,

@@ -900,6 +900,37 @@ export function lineTotalPortions(boxes: number, portions: number, portionsPerBo
   return boxes * perBox + portions;
 }
 
+/** packageRatio з каталогу → portionsPerBox для рядків переміщення. */
+export function packageRatioToPortionsPerBox(packageRatio: number | null | undefined): number | null {
+  if (packageRatio == null || Number.isNaN(Number(packageRatio))) return null;
+  return Math.max(1, Math.round(Number(packageRatio)));
+}
+
+/** Оновлює meta товару в рядках документа та перераховує totalPortions з box/loose qty. */
+export function applyProductMetaToLines(
+  lines: MovementMobProductLineViewModel[],
+  sku: string,
+  meta: MovementMobProductMeta & { name?: string },
+): MovementMobProductLineViewModel[] {
+  const perBox = meta.portionsPerBox && meta.portionsPerBox > 0 ? meta.portionsPerBox : null;
+  return lines.map((line) => {
+    if (line.sku !== sku) return line;
+    const perBoxNum = perBox ?? line.portionsPerBox ?? 0;
+    return {
+      ...line,
+      productName: meta.name?.trim() || line.productName,
+      weight: meta.weight ?? line.weight,
+      portionsPerBox: perBox,
+      totalPortions: lineTotalPortions(line.boxQuantity, line.portionQuantity, perBoxNum),
+      receivedTotalPortions: lineTotalPortions(
+        line.receivedBoxQuantity,
+        line.receivedPortionQuantity,
+        perBoxNum,
+      ),
+    };
+  });
+}
+
 export function breakdownStockPortions(totalPortions: number, portionsPerBox: number): MovementMobStockBreakdown {
   const portions = Number.isFinite(totalPortions) ? Math.max(0, totalPortions) : 0;
   const perBox = portionsPerBox > 0 ? portionsPerBox : 0;

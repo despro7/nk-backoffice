@@ -41,6 +41,7 @@
 |----------------------|-----|--------|-------|
 | `wm_senderEditWindowMinutes` | Вікно редагування (відправник) | `0` (вимкнено) | Хвилини після `submittedAt`, коли **автор** може правити відправлені кількості в `pending_receipt` |
 | `wm_receiverEditWindowMinutes` | Вікно редагування (отримувач) | `0` (вимкнено) | Хвилини після `receivedAt`, коли **отримувач** може правити отримані кількості в `finalized` |
+| `wm_mobScanStepperMode` | Stepper при скануванні (mob) | `increment` | Див. `Docs/features/warehouse-movement-mob.md` |
 
 Вводиться через `DurationMinutesField` (хв / год / днів); у БД зберігається як хвилини.
 
@@ -64,6 +65,28 @@
 Адміністратори з `action.warehouse.movement.edit` **не обмежені** вікнами — працюють через `adminEdit` (див. нижче).
 
 Клієнтські хелпери: `canSenderEditAfterSubmit`, `canReceiverEditAfterConfirm` у `WarehouseMovementMobUtils.ts`. Сервер: `WarehouseService.canSenderEditAfterSubmit`, `WarehouseService.canReceiverEditAfterConfirm`.
+
+---
+
+## Stepper при скануванні (налаштування)
+
+**UI:** `/settings/warehouse-movement` → «Сканування (мобільний інтерфейс)».
+
+| Ключ `settings_base` | Значення | Дефолт | Ефект |
+|----------------------|----------|--------|-------|
+| `wm_mobScanStepperMode` | `increment` \| `increment_box` \| `open_only` | `increment` | Поведінка drawer після сканування ШК у `MovementMobEditorPage` |
+
+| Режим | ШК коробки | ШК порції |
+|-------|------------|-----------|
+| `increment` | +1 у «Коробок» | +1 у «Порцій» |
+| `increment_box` | +1 у «Коробок» | drawer без змін stepper |
+| `open_only` | drawer без змін | drawer без змін |
+
+Повторне сканування того самого SKU+партії (drawer уже відкритий) додає ту саму дельту, що й перший скан.
+
+Legacy: якщо `wm_mobScanStepperMode` відсутній, читається `wm_mobScanAutoIncrement` (`false` → `open_only`, інакше → `increment`).
+
+Helper: `mobScanStepperDelta()` у `shared/types/movement.ts`.
 
 ---
 
@@ -164,7 +187,7 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 - Підсумок порцій.
 - `MovementMobSwipeConfirm` → `SlideActionButton` («Проведіть для підтвердження»).
 
-Повторне сканування того самого ШК **не створює новий рядок одразу**: drawer відкривається з уже накопиченою кількістю цього SKU+партія, плюс +1 коробка або +1 порція залежно від `barcodeKind`.
+Повторне сканування того самого ШК **не створює новий рядок одразу**: drawer лишається з кількістю цього SKU+партія; дельта stepper — згідно з `mobScanStepperMode` (див. вище).
 
 Редагування рядка відкриває той самий drawer; `barcode` / `barcodeKind` їдуть у `MovementMobRawItem` через `serializeMobDraftItems` / `buildProductLines`, інакше ШК у drawer зникав після збереження.
 
@@ -227,7 +250,15 @@ Skeleton (`@heroui/react`) **прогресивно**: залишки (`stockLoa
 
 ### Редагування товару на місці
 
-Якщо відомий `catalogGoodId`, поруч із партією — іконка олівця. Відкриває `MovementMobProductEditDrawer` (обгортка над `ProductDrawer` з Products 2.0): привʼязка партії до штрих-коду без переходу в розділ товарів. Після збереження інвалідується кеш `warehouse-movement-mob-line-enrichment`.
+Якщо відомий `catalogGoodId`, поруч із партією — іконка олівця. Відкриває `MovementMobProductEditDrawer` (обгортка над `ProductDrawer` з Products 2.0): привʼязка партії до штрих-коду, вага, **порцій у коробці** (`packageRatio`) — без переходу в розділ товарів.
+
+**Після «Зберегти»** (`handleProductSaved` у `MovementMobEditorPage`):
+
+1. **`invalidateMovementMobLineEnrichment`** — скидає React Query `warehouse-movement-mob-catalog` (meta `batchLinked`, назва партії).
+2. **`applyProductMetaToLines`** — оновлює рядки з тим самим SKU: `portionsPerBox`, `weight`, назва; **перераховує** `totalPortions` і `receivedTotalPortions` з `boxQuantity` / `portionQuantity` (не лишає старий snapshot, напр. `3×630=1890` після зміни на `22`).
+3. Якщо документ уже збережений і є права на редагування — **`persistLines`** (оновлення items у БД).
+
+**Партія «не обрано!»:** `batchLinked === true` лише коли для **штрих-коду рядка документа** (`line.barcode`) у каталозі задано `goodPart`. Призначення партії іншому ШК у drawer товару не знімає попередження.
 
 ---
 
@@ -252,11 +283,13 @@ Skeleton (`@heroui/react`) **прогресивно**: залишки (`stockLoa
 | `batches` | `GET /api/warehouse/batch-numbers?skus=…&includeSmallStorage=true&skipExpiration=true` | Партії з Dilovod **одним bulk-запитом** на всі SKU документа |
 | `catalog` | `POST /api/warehouse/resolve-batch-names` | Назви партій і `batchLinked` з каталогу; `enabled` після успішного `batches` |
 
-**Ключі запитів:** `sortedSkusKey` (відсортований список SKU) — стабільний `queryKey` при зміні порядку рядків.
+**Ключі запитів:** `warehouse-movement-mob-stock|batches|catalog` (+ `sortedSkusKey` / `lineKeys`); експорт `movementMobEnrichmentQueryKeys`, `invalidateMovementMobLineEnrichment()` у `useMovementMobLinesEnrichment.ts`.
 
 **Кеш клієнта:** `staleTime` 10 хв, `gcTime` 30 хв, `placeholderData` — попередній знімок під час оновлення.
 
-**Серверний bulk `/batch-numbers`:** per-SKU lookup у in-memory кеші; cache-miss SKU збираються в один виклик `getBatchNumbersBySkus`. `skipExpiration=true` пропускає enrichment термінів придатності (для mob не потрібен).
+**Серверний bulk `/batch-numbers`:** per-SKU lookup у in-memory кеші; cache-miss SKU збираються в один виклик `getBatchNumbersBySkus`. `skipExpiration=true` пропускає enrichment термінів придатності (для mob не потрібен). Після фільтрації складів — **`dedupeBatchesByStorage`** (однакові `batchId+storage`, часто дубль по `firm` у Dilovod balance).
+
+**Picker партій (Products / mob):** спільний `BatchNumbersAutocomplete`; ключ рядка `batchId:storage`; у debug-режимі біля номера показується Dilovod `batchId`.
 
 **Dilovod:** усі HTTP-запити йдуть через **глобальну чергу** `DilovodApiClient` (одна на процес) — паралельні API-ендпоінти backoffice не спричиняють `multithreadApiSession`. Див. `server/services/dilovod/README.md`.
 
