@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Card, CardBody } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { MovementMobListCardViewModel, MovementMobReceiptSummary } from '../WarehouseMovementMobTypes';
@@ -47,6 +48,27 @@ function PortionsLabel({ value, className = 'text-base font-semibold text-neutra
   );
 }
 
+function LeaderRow({
+  label,
+  children,
+  align = 'baseline',
+}: {
+  label: ReactNode;
+  children: ReactNode;
+  align?: 'baseline' | 'center';
+}) {
+  return (
+    <div className={`flex gap-2 w-full ${align === 'center' ? 'items-center' : 'items-baseline'}`}>
+      <span className="text-xs text-neutral-400 leading-none shrink-0">{label}</span>
+      <span
+        className={`flex-1 min-w-3 border-b border-dotted border-default-300 ${align === 'baseline' ? 'mb-[3px]' : ''}`}
+        aria-hidden
+      />
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
 function receiptStateFromSummary(summary: MovementMobReceiptSummary): 'match' | 'shortage' | 'surplus' | 'pending' {
   if (summary.pendingLines > 0 && summary.matchLines === 0 && summary.shortageLines === 0 && summary.surplusLines === 0) {
     return 'pending';
@@ -71,48 +93,52 @@ function ReceiptStatsRow({
       : String(summary.deltaPortions);
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-end justify-between gap-3">
-        <span className="text-xs text-neutral-400 leading-none">Отримано</span>
-        <div className="flex items-center gap-2.5 text-neutral-500 shrink-0">
+    <div className="flex flex-col gap-3">
+      <LeaderRow label="Отримано" align="center">
+        <div className="flex items-center gap-2.5 text-neutral-500">
           <QtyPills boxes={summary.receivedBoxes} loose={summary.receivedLoosePortions} />
           <PortionsLabel
             value={summary.receivedTotalPortions}
             className={`text-base font-semibold ${receiptReceivedClass(state)}`}
           />
         </div>
-      </div>
+      </LeaderRow>
 
-      <div className="flex items-center justify-end gap-1.5 flex-wrap">
-        {state === 'pending' && (
-          <span className="text-xs font-medium text-default-400">
-            ще не скановано
-          </span>
-        )}
-        {state === 'match' && summary.pendingLines === 0 && (
-          <span className={`text-xs font-medium ${receiptReceivedClass('match')}`}>збіг</span>
-        )}
-        {summary.deltaPortions !== 0 && (
-          <span className={`text-xs font-semibold ${receiptDeltaClass(summary.deltaPortions)}`}>
-            Δ {deltaLabel}
-          </span>
-        )}
-        {summary.pendingLines > 0 && state !== 'pending' && (
-          <span className="inline-flex items-center gap-0.5 text-[11px] bg-neutral-100 text-neutral-500 rounded px-1.5 py-0.5 ring-1 ring-neutral-300">
-            {summary.pendingLines} ще
-          </span>
-        )}
-        {summary.shortageLines > 0 && (
-          <span className="inline-flex items-center gap-0.5 text-[11px] bg-danger-50 text-danger-600 rounded px-1.5 py-0.5 ring-1 ring-danger-200">
-            {summary.shortageLines} нестача (−{summary.shortagePortions})
-          </span>
-        )}
-        {summary.surplusLines > 0 && (
-          <span className="inline-flex items-center gap-0.5 text-[11px] bg-primary-50 text-primary-600 rounded px-1.5 py-0.5 ring-1 ring-primary-200">
-            {summary.surplusLines} надлишок (+{summary.surplusPortions})
-          </span>
-        )}
-      </div>
+      <LeaderRow label="Результат" align="center">
+        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+          {state === 'pending' && (
+            <span className="text-xs font-medium text-default-400">
+              ще не скановано
+            </span>
+          )}
+          {state === 'match' && summary.pendingLines === 0 && (
+            <span className={`inline-flex items-center gap-1 text-xs font-medium ${receiptReceivedClass('match')}`}>
+              <DynamicIcon name="check-circle" size={14} strokeWidth={1.5} className="shrink-0" />
+              збіг
+            </span>
+          )}
+          {summary.deltaPortions !== 0 && (
+            <span className={`text-xs font-semibold ${receiptDeltaClass(summary.deltaPortions)}`}>
+              Δ {deltaLabel}
+            </span>
+          )}
+          {summary.pendingLines > 0 && state !== 'pending' && (
+            <span className="inline-flex items-center gap-0.5 text-[11px] bg-neutral-100 text-neutral-500 rounded px-1.5 py-0.5 ring-1 ring-neutral-300">
+              {summary.pendingLines} ще
+            </span>
+          )}
+          {summary.shortageLines > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[11px] bg-danger-50 text-danger-600 rounded px-1.5 py-0.5 ring-1 ring-danger-200">
+              {summary.shortageLines} нестача (−{summary.shortagePortions})
+            </span>
+          )}
+          {summary.surplusLines > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[11px] bg-primary-50 text-primary-600 rounded px-1.5 py-0.5 ring-1 ring-primary-200">
+              {summary.surplusLines} надлишок (+{summary.surplusPortions})
+            </span>
+          )}
+        </div>
+      </LeaderRow>
     </div>
   );
 }
@@ -143,7 +169,10 @@ export default function MovementMobDocumentCard({
           {receiptSummary ? (
             <>
               <div className="flex items-baseline justify-between gap-2">
-                <h3 className="text-lg font-bold text-default-900 leading-none">{card.displayNumber}</h3>
+                <div className="flex flex-col gap-0.5">
+                  <h3 className="text-lg font-bold text-default-900 leading-none">{card.displayNumber}</h3>
+                  
+                </div>
                 {aggregates.lineCount > 0 && (
                   <span className="text-base font-semibold text-neutral-600 shrink-0">
                     {aggregates.lineCount}{' '}
@@ -153,13 +182,12 @@ export default function MovementMobDocumentCard({
                   </span>
                 )}
               </div>
-              <div className="flex items-end justify-between gap-3">
-                <span className="text-xs text-neutral-400 leading-none">Відправлено</span>
-                <div className="flex items-center gap-2.5 text-neutral-500 shrink-0">
+              <LeaderRow label="Відправлено" align="center">
+                <div className="flex items-center gap-2.5 text-neutral-500">
                   <QtyPills boxes={aggregates.totalBoxes} loose={aggregates.totalLoosePortions} />
                   <PortionsLabel value={aggregates.totalPortions} />
                 </div>
-              </div>
+              </LeaderRow>
               <ReceiptStatsRow summary={receiptSummary} />
             </>
           ) : (

@@ -272,9 +272,51 @@ export function resolveShortStorageBadge(storageId?: string, fallbackName?: stri
   return display.shortName.replace(/^Склад\s+/i, '') || '—';
 }
 
+type MovementMobStepperDateRecord = Pick<
+  MovementMobApiRecord,
+  | 'receiptScanStartedAt'
+  | 'receiptScanEndedAt'
+  | 'items'
+  | 'sourceWarehouse'
+  | 'destinationWarehouse'
+  | 'draftCreatedAt'
+  | 'submittedAt'
+  | 'sentToDilovodAt'
+  | 'lastSentToDilovodAt'
+  | 'draftLastEditedAt'
+  | 'receivedAt'
+>;
+
+function resolveStepperCompletionDates(
+  status: string,
+  record: MovementMobStepperDateRecord,
+): Partial<Record<MovementMobStepperStep['key'], string | null>> {
+  const preparedDone =
+    status === 'draft'
+    || status === 'active'
+    || status === 'pending_receipt'
+    || status === 'finalized';
+  const sentDone = status === 'active' || status === 'pending_receipt' || status === 'finalized';
+  const acceptedDone = isWarehouseAccepted({ status, ...record });
+  const receivedDone = status === 'finalized';
+
+  return {
+    prepared: preparedDone ? record.draftCreatedAt : null,
+    sent: sentDone
+      ? (record.submittedAt || record.sentToDilovodAt || record.lastSentToDilovodAt || record.draftLastEditedAt)
+      : null,
+    accepted: acceptedDone
+      ? (record.receiptScanEndedAt ?? record.receiptScanStartedAt)
+      : null,
+    received: receivedDone
+      ? (record.receivedAt || record.lastSentToDilovodAt || record.sentToDilovodAt)
+      : null,
+  };
+}
+
 export function buildStepperSteps(
   status: string,
-  record?: Pick<MovementMobApiRecord, 'receiptScanStartedAt' | 'receiptScanEndedAt' | 'items' | 'sourceWarehouse' | 'destinationWarehouse'>,
+  record?: MovementMobStepperDateRecord,
 ): MovementMobStepperStep[] {
   const sourceBadge = resolveShortStorageBadge(record?.sourceWarehouse);
   const destBadge = resolveShortStorageBadge(record?.destinationWarehouse);
@@ -289,6 +331,7 @@ export function buildStepperSteps(
     ? isWarehouseAccepted({ status, ...record })
     : status === 'finalized';
   const receivedDone = status === 'finalized';
+  const completionDates = record ? resolveStepperCompletionDates(status, record) : {};
 
   return [
     {
@@ -296,24 +339,36 @@ export function buildStepperSteps(
       label: 'Підготовлено',
       shortLabel: 'Підготовлено',
       state: preparedDone ? 'done' : 'pending',
+      completedAt: completionDates.prepared
+        ? formatMovementDateTime(completionDates.prepared)
+        : undefined,
     },
     {
       key: 'sent',
       label: sentStepperLabel(sourceBadge),
       shortLabel: 'Відправлено',
       state: sentDone ? 'done' : 'pending',
+      completedAt: completionDates.sent
+        ? formatMovementDateTime(completionDates.sent)
+        : undefined,
     },
     {
       key: 'accepted',
       label: acceptedStepperLabel(destBadge),
       shortLabel: 'Прийнято',
       state: acceptedDone ? 'done' : 'pending',
+      completedAt: completionDates.accepted
+        ? formatMovementDateTime(completionDates.accepted)
+        : undefined,
     },
     {
       key: 'received',
       label: receivedDone ? 'Підтверджено' : 'Ще не підтверджено',
       shortLabel: receivedDone ? 'Підтверджено' : 'Очікує',
       state: receivedDone ? 'done' : 'pending',
+      completedAt: completionDates.received
+        ? formatMovementDateTime(completionDates.received)
+        : undefined,
     },
   ];
 }
@@ -452,6 +507,12 @@ export function toListCardViewModel(record: MovementMobApiRecord): MovementMobLi
       items: record.items,
       sourceWarehouse: record.sourceWarehouse,
       destinationWarehouse: record.destinationWarehouse,
+      draftCreatedAt: record.draftCreatedAt,
+      submittedAt: record.submittedAt,
+      sentToDilovodAt: record.sentToDilovodAt,
+      lastSentToDilovodAt: record.lastSentToDilovodAt,
+      draftLastEditedAt: record.draftLastEditedAt,
+      receivedAt: record.receivedAt,
     }),
     status: record.status,
   };

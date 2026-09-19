@@ -68,7 +68,7 @@ export default function MovementMobDocumentList({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
       {cards.map((card) => (
         <MovementMobDocumentCard
           key={card.id}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ActionBubble, ActionBubbleDock, ActionConfirmBubble } from '@/components/action-bubble';
-import { useTouchUi } from '@/hooks/useTouchUi';
+import { useMovementMobListTouchChrome } from './useMovementMobListLayout';
 import { PERMISSIONS } from '@shared/constants/permissions';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useApi } from '@/hooks/useApi';
@@ -20,7 +20,7 @@ export default function WarehouseMovementMob() {
   const canOverrideEdit = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_MOVEMENT_EDIT);
   const canOverrideDelete = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_MOVEMENT_DELETE);
   const list = useWarehouseMovementMobList();
-  const touchUi = useTouchUi();
+  const useTouchChrome = useMovementMobListTouchChrome();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; displayNumber: string } | null>(null);
@@ -35,12 +35,13 @@ export default function WarehouseMovementMob() {
       onDatePresetKeyChange={list.setDatePresetKey}
       onReset={list.resetFilters}
       loading={list.loading}
+      layout={useTouchChrome ? 'stacked' : 'inline'}
     />
   );
 
   return (
     <div className="flex flex-col gap-4 px-3 md:px-0">
-      {touchUi ? (
+      {useTouchChrome ? (
         <ActionBubbleDock>
           <ActionConfirmBubble
             id="create"

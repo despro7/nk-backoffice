@@ -12,8 +12,8 @@ export default function MovementMobStatusStepper({
   className = '',
 }: MovementMobStatusStepperProps) {
   return (
-    <div className={`w-full ${className}`}>
-      <div className={`flex items-center ${steps.length > 3 ? 'gap-4 sm:gap-8' : 'gap-12'}`}>
+    <div className={`w-full mt-auto ${className}`}>
+      <div className={`flex items-start ${steps.length > 3 ? 'gap-4 sm:gap-6' : 'gap-12'}`}>
         {steps.map((step, index) => {
           const isDone = step.state === 'done';
           const isFirst = index === 0;
@@ -25,12 +25,19 @@ export default function MovementMobStatusStepper({
               <div className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center ${isDone ? 'bg-success-500 text-white' : 'bg-default-200 text-default-500'}`}>
                 <DynamicIcon name={isDone ? 'check' : 'clock'} size={14} className="shrink-0" />
               </div>
-              <span className={`mt-1.5 w-full text-[10px] leading-tight text-center px-0.5 whitespace-nowrap ${isDone ? 'text-success-600/90 font-medium' : 'text-default-400'}`}>
-                <span className="sm:hidden">{step.shortLabel ?? step.label}</span>
-                <span className="hidden sm:inline">{step.label}</span>
+              <span className="mt-1.5 w-full text-[10px] leading-tight text-center px-0.5">
+                <span className={`block ${isDone ? 'text-success-600/90 font-medium' : 'text-default-400'}`}>
+                  <span className="sm:hidden whitespace-nowrap">{step.shortLabel ?? step.label}</span>
+                  <span className="hidden sm:inline text-[11px]">{step.label}</span>
+                </span>
+                {step.completedAt && (
+                  <span className="mt-0.5 block text-default-400 font-normal">
+                    {step.completedAt}
+                  </span>
+                )}
               </span>
               {!isLast && (
-                <div className={`absolute top-3.5 left-full w-[calc(100%-1rem)] h-0.5 rounded-full -translate-x-[calc(50%-0.5rem)] md:-translate-x-[calc(50%-1rem)] ${
+                <div className={`absolute top-3.5 left-full w-[calc(100%-0rem)] h-0.5 rounded-full -translate-x-[calc(50%-0.5rem)] md:-translate-x-[calc(50%-0.8rem)] ${
                     isDone && nextDone ? 'bg-success-500' : isDone ? 'bg-gradient-to-r from-success-500 to-default-200' : 'bg-default-200'}`}
                 />
               )}

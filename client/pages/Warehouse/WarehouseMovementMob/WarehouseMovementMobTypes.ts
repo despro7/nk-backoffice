@@ -91,6 +91,8 @@ export interface MovementMobStepperStep {
   /** Короткий підпис для вузьких екранів (список документів). */
   shortLabel?: string;
   state: MovementMobStepperStepState;
+  /** Дата виконання етапу (короткий формат, напр. «18.09.2026, 15:22»). */
+  completedAt?: string;
 }
 
 export interface MovementMobListCardViewModel {

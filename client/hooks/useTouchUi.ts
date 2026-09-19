@@ -34,6 +34,15 @@ export function useHasTouchScreen(): boolean {
   return hasTouch;
 }
 
+export function useViewportMinWidth(minWidth: number): boolean {
+  const query = `(min-width: ${minWidth}px)`;
+  const [matches, setMatches] = useState(() => readMatch(query));
+
+  useEffect(() => subscribe(query, setMatches), [query]);
+
+  return matches;
+}
+
 /** Compact viewport (< lg) або пристрій з coarse-pointer (планшет / тач). */
 export function useTouchUi(): boolean {
   const isCompact = useCompactViewport();

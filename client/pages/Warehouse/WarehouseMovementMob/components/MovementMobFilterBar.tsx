@@ -24,6 +24,8 @@ interface MovementMobFilterBarProps {
   onDatePresetKeyChange: (key: string | null) => void;
   onReset: () => void;
   loading?: boolean;
+  /** inline — десктопний рядок; stacked — мобільна панель фільтрів */
+  layout?: 'inline' | 'stacked';
 }
 
 export default function MovementMobFilterBar({
@@ -33,11 +35,13 @@ export default function MovementMobFilterBar({
   onDatePresetKeyChange,
   onReset,
   loading = false,
+  layout = 'stacked',
 }: MovementMobFilterBarProps) {
   const datePresets = useMemo(() => createStandardDatePresets(), []);
   const maxDate = useMemo(() => today(getLocalTimeZone()), []);
   const singleDay = isSingleDayRange(dateRange);
   const showReset = !isMovementMobFilterDefault(dateRange, datePresetKey);
+  const isInline = layout === 'inline';
 
   const filters = useMemo<ReportFilterConfig[]>(() => {
     const configs: ReportFilterConfig[] = [
@@ -57,7 +61,7 @@ export default function MovementMobFilterBar({
             ? [{ key: 'custom', label: 'Обраний період' }]
             : []),
         ],
-        className: 'min-w-0 w-full shrink-0',
+        className: isInline ? 'min-w-0 w-auto shrink-0' : 'min-w-0 w-full shrink-0',
         triggerClassName: 'h-10',
         iconName: 'calendar-days',
         placeholder: 'Період',
@@ -77,7 +81,7 @@ export default function MovementMobFilterBar({
             onDatePresetKeyChange(findPresetKeyForRange(nextRange, datePresets) ?? 'custom');
           },
           maxValue: maxDate,
-          // className: 'w-full basis-full',
+          className: isInline ? 'w-auto shrink-0' : 'w-full basis-full',
           triggerClassName: 'h-10 rounded-none',
           previousButtonClassName: 'h-10 rounded-r-none border-r-0',
           nextButtonClassName: 'h-10 rounded-l-none border-l-0',
@@ -96,7 +100,7 @@ export default function MovementMobFilterBar({
             onDatePresetKeyChange(findPresetKeyForRange(value, datePresets) ?? 'custom');
           },
           maxValue: maxDate,
-          className: 'w-full basis-full',
+          className: isInline ? 'w-auto shrink-0' : 'w-full basis-full',
           inputWrapperClassName: 'h-10',
         }),
       );
@@ -125,12 +129,17 @@ export default function MovementMobFilterBar({
     onReset,
     showReset,
     singleDay,
+    isInline,
   ]);
 
   return (
     <ReportsFilterBuilder
       filters={filters}
-      className="flex flex-wrap gap-2 items-end justify-end"
+      className={
+        isInline
+          ? 'flex flex-wrap gap-2 items-end'
+          : 'flex flex-wrap gap-2 items-end justify-end'
+      }
     />
   );
 }
