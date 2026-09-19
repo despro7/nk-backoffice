@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-09-20 — Звіти користувачів: «Сповістити адміна» + Telegram
+
+**Files:** `ReportProblemFab.tsx`, `ReportProblemModal.tsx`, `ScreenshotAnnotator*.tsx`, `ReportProblemService.ts`, `ClientLogBuffer.ts`, `SupportReportSettings.tsx`, `server/routes/support-reports.ts`, `TelegramAlertService.ts`, `ServerLogBuffer.ts`, `shared/types/supportReport.ts`, `Docs/features/support-user-reports.md`
+
+- Глобальна FAB **«Сповістити адміна»** (desktop): скриншот, коментар, анотації, відправка звіту.
+- Режими захоплення: native (Display Media), DOM viewport/fullpage (`modern-screenshot`); smart default native → viewport.
+- У звіт: metadata сесії, client logs (рівні в налаштуваннях), server console logs (`ServerLogBuffer`), server meta_logs користувача.
+- Telegram: скриншот document + caption, `.log` окремим повідомленням; налаштування в `/settings/admin`.
+- `meta_logs` (`user_report`); у NotificationBell — лише для admin.
+
+---
+
 ## 2026-09-18 — Мобільні переміщення: sync після редагування товару, picker партій
 
 **Files:** `useMovementMobLinesEnrichment.ts`, `MovementMobProductEditDrawer.tsx`, `MovementMobEditorPage.tsx`, `WarehouseMovementMobUtils.ts`, `BatchNumbersAutocomplete.tsx`, `WarehouseController.ts`, `Docs/features/warehouse-movement-mob.md`

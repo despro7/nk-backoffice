@@ -954,7 +954,7 @@ export function SyncHistory() {
             Історія синхронізацій
           </h2>
         </div>
-        <p className="text-sm text-text-secondary mt-1">
+        <p className="text-sm text-default-500 mt-1">
           Записи за останні 7 днів. Детальна статистика — лише за увімкненим full-log.
         </p>
       </CardHeader>
@@ -1002,13 +1002,13 @@ export function SyncHistory() {
         )}
 
         {/* Full-log settings */}
-        <div className="mb-6 rounded-[12px] border border-border-subtle bg-surface-page p-4">
+        <div className="mb-6 rounded-[12px] border border-default-200 bg-default-50 p-4">
           <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-text-primary">
+              <h3 className="text-sm font-semibold text-default-900">
                 Розширене логування (full-log)
               </h3>
-              <p className="text-xs text-text-secondary">
+              <p className="text-xs text-default-500">
                 За замовчуванням зберігається лише коротка статистика, щоб не засмічувати БД
               </p>
             </div>
@@ -1024,8 +1024,8 @@ export function SyncHistory() {
                 isDisabled={historySettingsLoading}
               />
               <div>
-                <div className="text-sm font-medium text-text-primary">Ручна</div>
-                <div className="text-xs text-text-secondary">manual sync</div>
+                <div className="text-sm font-medium text-default-900">Ручна</div>
+                <div className="text-xs text-default-500">manual sync</div>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -1038,8 +1038,8 @@ export function SyncHistory() {
                 isDisabled={historySettingsLoading}
               />
               <div>
-                <div className="text-sm font-medium text-text-primary">Автоматична</div>
-                <div className="text-xs text-text-secondary">automatic sync</div>
+                <div className="text-sm font-medium text-default-900">Автоматична</div>
+                <div className="text-xs text-default-500">automatic sync</div>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -1052,8 +1052,8 @@ export function SyncHistory() {
                 isDisabled={historySettingsLoading}
               />
               <div>
-                <div className="text-sm font-medium text-text-primary">Фонова</div>
-                <div className="text-xs text-text-secondary">background sync</div>
+                <div className="text-sm font-medium text-default-900">Фонова</div>
+                <div className="text-xs text-default-500">background sync</div>
               </div>
             </div>
 

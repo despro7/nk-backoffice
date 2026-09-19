@@ -23,9 +23,19 @@
   --breakpoint-xl: 1280px;
   --breakpoint-2xl: 1536px;
 
-  /* Основні кольори */
+  /* Основні кольори — primary = neutral grey (#374151), не default Tailwind blue */
   --color-primary: #374151;
   --color-primary-foreground: #ffffff;
+  --color-primary-50: #f9fafb;
+  --color-primary-100: #f3f4f6;
+  --color-primary-200: #e5e7eb;
+  --color-primary-300: #d1d5db;
+  --color-primary-400: #9ca3af;
+  --color-primary-500: #6b7280;
+  --color-primary-600: #4b5563;
+  --color-primary-700: #374151;
+  --color-primary-800: #1f2937;
+  --color-primary-900: #111827;
 
   --color-secondary: #9ca3af;
   --color-secondary-foreground: #ffffff;
@@ -213,6 +223,23 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+/*
+ * Primary flat — два варіанти без глобального override (уникаємо !important):
+ *   • theme:  color="primary" variant="flat"  → HeroUI bg-primary/20
+ *   • blue:    className={BTN_PRIMARY_BLUE_FLAT} з @/lib/buttonStyles
+ * Якщо потрібен opt-in через атрибут — data-btn-tone="primary-blue-flat".
+ */
+@layer components {
+  /* Opt-in blue flat — вища специфічність, без глобального override primary flat */
+  button[data-btn-tone='primary-blue-flat']:not([class*='bg-gradient']) {
+    @apply bg-blue-100! text-blue-700!;
+  }
+
+  button[data-btn-tone='primary-blue-flat']:not([class*='bg-gradient']):is(:hover, [data-hover='true'], [data-pressed='true']) {
+    @apply bg-blue-200!;
   }
 }
 
@@ -405,4 +432,10 @@ html.catalog-dnd-dragging [data-catalog-folder-id][data-catalog-drop-after] {
   background-color: rgb(113 113 122);
   border-radius: 999px;
   border: 2px solid rgb(228 228 231);
+}
+
+html.report-capture-ui-hidden [data-report-fab="true"],
+html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
+  opacity: 0 !important;
+  pointer-events: none !important;
 }

@@ -19,7 +19,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UserCard } from '@/components/person-card/UserCard';
 import type { EditableUser } from '@/components/person-card/UserCard.types';
 import { formatDateOnly, formatRelativeDate } from '@/lib/formatUtils';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/auth-context';
 
 interface UserStats {
   orders: number;

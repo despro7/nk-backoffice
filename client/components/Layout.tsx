@@ -12,6 +12,7 @@ import { DynamicIcon } from "lucide-react/dynamic";
 import { SidebarProvider } from "@/contexts/SidebarContext";
 import { MobileHeader } from "@/components/mobile/MobileHeader";
 import { MobileTabBar } from "@/components/mobile/MobileTabBar";
+import { ReportProblemFab } from "@/components/ReportProblemFab";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -112,6 +113,8 @@ export function Layout({ children }: LayoutProps) {
         />
 
         <UpdateNotificationBanner />
+
+        <ReportProblemFab />
       </div>
     </SidebarProvider>
   );

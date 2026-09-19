@@ -453,7 +453,7 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
 
   if (!sku) {
     return (
-      <p className="py-8 text-center text-sm text-text-secondary">
+      <p className="py-8 text-center text-sm text-default-500">
         Для наліпок потрібен артикул (SKU) товару.
       </p>
     );
@@ -531,7 +531,7 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
               ) : null}
             </div>
           ) : (
-            <p className="text-xs text-text-secondary">Ще немає опублікованих версій</p>
+            <p className="text-xs text-default-500">Ще немає опублікованих версій</p>
           )}
 
           {viewingVersion ? (
@@ -621,7 +621,7 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
             ) : null}
           </div>
 
-          <p className="text-xs text-text-secondary">
+          <p className="text-xs text-default-500">
             Чернетки спільні для всіх користувачів. Кожна генерація PDF створює нову незмінну версію.
           </p>
         </div>
@@ -653,7 +653,7 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
               ) : null}
             </div>
           ) : (
-            <div className="flex min-h-[360px] w-full flex-col items-center justify-center rounded-[12px] border border-dashed border-border-subtle bg-surface-page p-6 text-center">
+            <div className="flex min-h-[360px] w-full flex-col items-center justify-center rounded-[12px] border border-dashed border-default-200 bg-default-50 p-6 text-center">
               <DynamicIcon name="square-text" size={48} strokeWidth={1.5} className="mb-2 text-secondary" />
               <p className="text-sm max-w-2xs">Оберіть партію для попереднього перегляду наліпки</p>
             </div>

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Button, Input, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 
 interface CatalogToolbarProps {
   searchQuery: string;

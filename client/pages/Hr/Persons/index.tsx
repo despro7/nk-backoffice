@@ -25,7 +25,8 @@ import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
 import { FormattedPhone } from '@/components/FormattedPhone';
 import type { HrPersonDto } from '@shared/types/hr';
-import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HR_TABLE_CLASS_NAMES } from '../hrUi';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
+import { HR_BTN_NEUTRAL, HR_TABLE_CLASS_NAMES } from '../hrUi';
 
 type PersonFilter = 'employees' | 'outOfGroup' | 'duplicates';
 
@@ -186,8 +187,8 @@ export default function HrPersonsPage() {
             </div>
           ) : persons.length === 0 ? (
             <div className="p-10 text-center">
-              <DynamicIcon name="contact" size={28} className="mx-auto mb-2 text-text-secondary/50" />
-              <p className="text-sm text-text-secondary">Немає записів</p>
+              <DynamicIcon name="contact" size={28} className="mx-auto mb-2 text-default-500/50" />
+              <p className="text-sm text-default-500">Немає записів</p>
             </div>
           ) : (
             <Table aria-label="Фізичні особи" removeWrapper classNames={HR_TABLE_CLASS_NAMES}>
@@ -204,9 +205,9 @@ export default function HrPersonsPage() {
                   <TableRow key={person.id}>
                     <TableCell>
                       <button type="button" className="text-left" onClick={() => openEdit(person)}>
-                        <div className="font-medium text-text-primary">{person.displayName}</div>
+                        <div className="font-medium text-default-900">{person.displayName}</div>
                         {person.dilovodCode ? (
-                          <div className="text-xs text-text-secondary font-mono mt-0.5">#{person.dilovodCode}</div>
+                          <div className="text-xs text-default-500 font-mono mt-0.5">#{person.dilovodCode}</div>
                         ) : null}
                       </button>
                     </TableCell>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useEquipmentFromAuth } from '@/contexts/AuthContext';
+import { useEquipmentFromAuth } from '@/contexts/auth-context';
 import { playSoundChoice } from '@/lib/soundUtils';
 import { ToastService } from '@/services/ToastService';
 import {

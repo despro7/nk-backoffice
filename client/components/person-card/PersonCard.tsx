@@ -10,7 +10,7 @@ import {
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { PersonCardPanel, type PersonCardPanelHandle } from './panels/PersonCardPanel';
-import { HR_BTN_PRIMARY } from '@/pages/Hr/hrUi';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
 import type { PersonCardProps } from './PersonCard.types';
 
 export function PersonCard({
@@ -78,7 +78,7 @@ export function PersonCard({
         <DrawerContent>
           {() => (
             <>
-              <DrawerHeader className="border-b border-border-subtle shrink-0">
+              <DrawerHeader className="border-b border-default-200 shrink-0">
                 {title}
               </DrawerHeader>
               <DrawerBody className="flex flex-col gap-5 py-5 overflow-y-auto min-h-0">
@@ -96,7 +96,7 @@ export function PersonCard({
                   onDirtyChange={setIsDirty}
                 />
               </DrawerBody>
-              <DrawerFooter className="border-t border-border-subtle shrink-0">
+              <DrawerFooter className="border-t border-default-200 shrink-0">
                 <Button variant="light" onPress={closeDrawer} isDisabled={isBusy}>
                   {canManage ? 'Скасувати' : 'Закрити'}
                 </Button>

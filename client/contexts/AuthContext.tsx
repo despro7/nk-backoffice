@@ -1,49 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { UserType, LoginRequest, RegisterRequest } from '../../server/types/auth';
-import { useEquipment, EquipmentState, EquipmentActions } from '../hooks/useEquipment';
+import React, { useState, useEffect, ReactNode, useRef } from 'react';
+import { LoginRequest, RegisterRequest } from '../../server/types/auth';
+import { useEquipment } from '../hooks/useEquipment';
+import { AuthContext, type UserWithExpiry } from './auth-context';
 import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { LoggingService } from '../services/LoggingService';
 import { formatDuration } from '@/lib/formatUtils';
 import { ToastService } from '@/services/ToastService';
-
-// Розширений тип користувача з інформацією про час життя токена
-interface UserWithExpiry extends Omit<UserType, 'password' | 'refreshToken' | 'refreshTokenExpiresAt'> {
-  expiresIn?: number;
-  permissions?: string[];
-}
-
-interface AuthContextType {
-  user: UserWithExpiry | null;
-  isLoading: boolean;
-  login: (credentials: LoginRequest) => Promise<boolean>;
-  register: (userData: RegisterRequest) => Promise<boolean>;
-  logout: () => Promise<void>;
-  forceLogout: () => void;
-  refreshToken: () => Promise<boolean>;
-  checkAuthStatus: () => Promise<void>;
-  equipmentState: EquipmentState;
-  equipmentActions: EquipmentActions;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
-// Хук для доступу до стану обладнання через AuthContext
-export const useEquipmentFromAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useEquipmentFromAuth must be used within an AuthProvider');
-  }
-  const { equipmentState, equipmentActions } = context;
-  return [equipmentState, equipmentActions] as const;
-};
+import { ClientLogBuffer } from '@/services/ClientLogBuffer';
+import { ReportProblemService } from '@/services/ReportProblemService';
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -257,7 +221,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Ініціалізуємо сервіси навіть при використанні кешу
       await LoggingService.initialize();
       await ToastService.initialize();
-      
+      ClientLogBuffer.initialize();
+      void ReportProblemService.loadConfig(async (url, options) =>
+        fetch(url, { ...options, credentials: 'include' }),
+      );
+
       setUser(profileCacheRef.current.data);
       setIsLoading(false);
       return;
@@ -296,6 +264,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Ініціалізуємо сервіси після успішного отримання профілю
         await LoggingService.initialize();
         await ToastService.initialize();
+        ClientLogBuffer.initialize();
+        void ReportProblemService.loadConfig(async (url, options) =>
+          fetch(url, { ...options, credentials: 'include' }),
+        );
         await loadAuthSettings();
 
               // Підвантажуємо довідники Dilovod після авторизації, якщо є провайдер
@@ -532,7 +504,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setUser(null);
   };
 
-  const value: AuthContextType = {
+  const value = {
     user,
     isLoading,
     login,

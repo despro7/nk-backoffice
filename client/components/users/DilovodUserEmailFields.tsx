@@ -158,12 +158,12 @@ export function DilovodUserEmailFields({
     <div className="flex flex-col gap-6">
       <section className="space-y-4">
         {showStepControls ? (
-          <p className="text-sm font-semibold text-text-primary">1. Оберіть або створіть користувача в Діловоді</p>
+          <p className="text-sm font-semibold text-default-900">1. Оберіть або створіть користувача в Діловоді</p>
         ) : null}
 
         <div className="space-y-2">
           {loading ? (
-            <div className="flex items-center gap-2 text-sm text-text-secondary py-2">
+            <div className="flex items-center gap-2 text-sm text-default-500 py-2">
               <Spinner size="sm" />
               Завантаження користувачів Dilovod…
             </div>
@@ -210,7 +210,7 @@ export function DilovodUserEmailFields({
             }}
           >
             <div className="flex flex-col gap-1">
-              <p className="text-sm text-text-primary">Створити нового користувача в Діловоді</p>
+              <p className="text-sm text-default-900">Створити нового користувача в Діловоді</p>
               <p className="text-tiny text-default-400">
                 Якщо облікового запису ще немає – створимо автоматично під час збереження
               </p>
@@ -221,7 +221,7 @@ export function DilovodUserEmailFields({
 
       {emailMismatch ? (
         <div className="rounded-md border-2 border-warning/40 bg-warning/10 p-3 space-y-3">
-          <p className="text-sm text-text-primary">
+          <p className="text-sm text-default-900">
             Email у формі (<span className="font-mono text-xs">{emailMismatch.localEmail}</span>) відрізняється
             від Dilovod (<span className="font-mono text-xs">{emailMismatch.dilovodEmail}</span>
             {selectedDilovodUser?.name ? ` – ${selectedDilovodUser.name}` : ''}).
@@ -238,7 +238,7 @@ export function DilovodUserEmailFields({
       ) : null}
 
       {stepComplete ? (
-        <p className="text-sm font-semibold text-text-primary">2. Заповніть основні дані</p>
+        <p className="text-sm font-semibold text-default-900">2. Заповніть основні дані</p>
       ) : null}
 
       {showEmailField && (variant === 'edit' || stepComplete) ? (

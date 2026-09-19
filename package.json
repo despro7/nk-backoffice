@@ -70,6 +70,7 @@
     "express": "^5.1.0",
     "file-saver": "^2.0.5",
     "jsonwebtoken": "^9.0.2",
+    "modern-screenshot": "^4.7.0",
     "motion": "^13.1.1",
     "multer": "^2.1.1",
     "mysql2": "^3.14.3",

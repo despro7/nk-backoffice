@@ -341,11 +341,11 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
       </div>
 
       {!isCreate && displayPerson ? (
-        <div className="space-y-3 pt-4 border-t border-border-subtle">
+        <div className="space-y-3 pt-4 border-t border-default-200">
           <div className="flex flex-wrap items-center gap-2">
             <PersonStatusChip person={displayPerson} />
             {displayPerson.dilovodCode ? (
-              <span className="text-xs font-mono text-text-secondary" title="Код контрагента в Dilovod">
+              <span className="text-xs font-mono text-default-500" title="Код контрагента в Dilovod">
                 #{displayPerson.dilovodCode} (dilovod_id: {displayPerson.dilovodPersonTypeId})
               </span>
             ) : null}
@@ -374,13 +374,13 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
           />
 
           {displayPerson.lastSyncedAt ? (
-            <p className="text-xs text-text-secondary">
+            <p className="text-xs text-default-500">
               Синхронізовано: {formatDateTime(displayPerson.lastSyncedAt)}
             </p>
           ) : null}
         </div>
       ) : showUnresolvedDuplicate ? (
-        <div className="space-y-2 pt-4 border-t border-border-subtle">
+        <div className="space-y-2 pt-4 border-t border-default-200">
           <PersonStatusChip person={{
             id: -1,
             displayName: form.displayName ?? '',
@@ -406,7 +406,7 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
           {duplicates.length > 0 ? (
             <ul className="space-y-1.5">
               {duplicates.map((duplicate) => (
-                <li key={duplicate.id} className="text-sm text-text-secondary">
+                <li key={duplicate.id} className="text-sm text-default-500">
                   {duplicate.displayName}
                   {duplicate.taxCode ? ` · ІПН ${duplicate.taxCode}` : ''}
                 </li>

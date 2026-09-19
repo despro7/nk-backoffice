@@ -4,7 +4,7 @@ import { Chip, Spinner } from "@heroui/react";
 import type { SortDescriptor } from "@heroui/react";
 import { getValueColor } from "@/lib/utils";
 import { useApi } from "@/hooks/useApi";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/auth-context";
 import { useDilovodSettings } from "@/hooks/useDilovodSettings";
 import { getPercentChip, getPercentSortValue } from "./ReportsSalesDynamicsUtils";
 import type {

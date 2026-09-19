@@ -20,7 +20,8 @@ import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { ToastService } from '@/services/ToastService';
 import type { HrPayGroupDto, HrPayGroupWritePayload } from '@shared/types/hr';
-import { HR_BTN_PRIMARY, HrSpecChip, hrStatusTokens } from '../hrUi';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
+import { HrSpecChip, hrStatusTokens } from '../hrUi';
 
 interface PayGroupsTabProps {
   canManage: boolean;
@@ -166,12 +167,12 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
 
   return (
     <>
-      <p className="text-xs text-text-secondary">
+      <p className="text-xs text-default-500">
         Групи оплати визначають логіку розрахунку в табелі та нарахуваннях. Технічний код (slug) зафіксований у системі —
         редагується лише назва для відображення. Порядок змінюється перетягуванням рядків.
       </p>
 
-      <Card className="border border-border-subtle shadow-surface">
+      <Card className="border border-default-200 shadow-sm">
         <CardBody className="p-3">
           {loading && groups.length === 0 ? (
             <div className="flex justify-center py-16">
@@ -179,7 +180,7 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
             </div>
           ) : groups.length === 0 ? (
             <div className="p-10 text-center">
-              <p className="text-sm text-text-secondary">Немає груп оплати.</p>
+              <p className="text-sm text-default-500">Немає груп оплати.</p>
             </div>
           ) : (
             <>
@@ -207,7 +208,7 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
                               {...drag.draggableProps}
                               className={`${PAY_GROUP_ROW_GRID} px-3 py-2 my-0.5 rounded-md transition-colors ${
                                 !group.isActive ? 'opacity-50' : ''
-                              } ${snapshot.isDragging ? 'bg-neutral-100 shadow-surface' : 'hover:bg-neutral-100/60'}`}
+                              } ${snapshot.isDragging ? 'bg-neutral-100 shadow-sm' : 'hover:bg-neutral-100/60'}`}
                             >
                               <div
                                 {...drag.dragHandleProps}
@@ -220,9 +221,9 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
                               >
                                 <DynamicIcon name="grip-vertical" size={16} />
                               </div>
-                              <div className="font-medium text-text-primary">{group.label}</div>
+                              <div className="font-medium text-default-900">{group.label}</div>
                               <div>
-                                <span className="font-mono text-xs text-text-secondary">{group.slug}</span>
+                                <span className="font-mono text-xs text-default-500">{group.slug}</span>
                               </div>
                               <div>
                                 <HrSpecChip
@@ -294,12 +295,12 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
         <DrawerContent>
           {() => (
             <>
-              <DrawerHeader className="border-b border-border-subtle shrink-0">
+              <DrawerHeader className="border-b border-default-200 shrink-0">
                 Редагувати групу оплати
               </DrawerHeader>
               <DrawerBody className="gap-5 py-5 overflow-y-auto">
                 {editing ? (
-                  <p className="text-xs text-text-secondary">
+                  <p className="text-xs text-default-500">
                     Код: <span className="font-mono">{editing.slug}</span> — технічний ідентифікатор для формул і табеля,
                     його не можна змінити.
                   </p>
@@ -318,7 +319,7 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
                   Активна
                 </Switch>
               </DrawerBody>
-              <DrawerFooter className="border-t border-border-subtle shrink-0">
+              <DrawerFooter className="border-t border-default-200 shrink-0">
                 <Button variant="light" onPress={requestCloseDrawer}>Скасувати</Button>
                 <Button className={HR_BTN_PRIMARY} onPress={() => void save()} isDisabled={!isDirty}>
                   Зберегти

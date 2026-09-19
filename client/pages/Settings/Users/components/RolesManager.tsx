@@ -27,7 +27,7 @@ import {
 } from '@shared/constants/permissions';
 import { ROLES } from '@shared/constants/roles';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
-import { useRolePreview } from '@/contexts/RolePreviewContext';
+import { useRolePreview } from '@/contexts/role-preview-context';
 import { ToastService } from '@/services/ToastService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { notifyPermissionsChanged } from '@/lib/notifyPermissionsChanged';

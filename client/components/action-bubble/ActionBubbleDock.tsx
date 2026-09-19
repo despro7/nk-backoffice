@@ -7,6 +7,7 @@ import {
 } from 'react';
 import { cn } from '@/lib/utils';
 import { useTouchUi } from '@/hooks/useTouchUi';
+import { REPORT_CAPTURE_EXCLUDE_CLASS } from '@/services/ReportProblemService';
 import { DOCK_PLACEMENT_CLASS } from './presets';
 import type { ActionBubbleDockProps, ActionBubbleOffset, ActionBubblePlacement } from './types';
 
@@ -52,11 +53,13 @@ export function ActionBubbleDock({
   return (
     <ActionBubbleDockContext.Provider value={value}>
       <div
+        data-report-capture-chrome="true"
         className={cn(
-          'fixed z-50 flex gap-3',
+          'fixed z-50 flex gap-3 transition-opacity duration-150',
           isTop ? 'flex-col-reverse' : 'flex-col',
           DOCK_PLACEMENT_CLASS[placement as ActionBubblePlacement],
-          className
+          REPORT_CAPTURE_EXCLUDE_CLASS,
+          className,
         )}
         style={offsetStyle(offset)}
       >

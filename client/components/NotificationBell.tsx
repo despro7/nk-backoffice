@@ -10,8 +10,8 @@ import {
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { AppNotification, NotificationSeverity } from '../../shared/types/notifications';
 import { useNotifications } from '../hooks/useNotifications';
-import { useDebug } from '../contexts/DebugContext';
-import { useRolePreview } from '../contexts/RolePreviewContext';
+import { useDebug } from '../contexts/debug-context';
+import { useRolePreview } from '../contexts/role-preview-context';
 import ResultDrawer from './ResultDrawer';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -71,6 +71,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   'system':      		'Система',
   'manual':      		'Ручна дія',
   'product_sync': 		'Синхронізація товарів',
+  'user_report': 		'Звіт користувача',
+  'support_report': 	'Налаштування звітів',
   'default':     		'Загальне',
 };
 

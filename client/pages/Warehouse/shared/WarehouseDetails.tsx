@@ -1,5 +1,5 @@
 import { Card, Select, SelectItem, Tooltip } from '@heroui/react';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import { DateTimePicker } from '@/components/DateTimePicker';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useEffect, useState } from 'react';

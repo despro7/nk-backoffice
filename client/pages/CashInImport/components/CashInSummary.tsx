@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
 import { Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { useDebug } from '@/contexts/DebugContext';
-import { useRolePreview } from '@/contexts/RolePreviewContext';
+import { useDebug } from '@/contexts/debug-context';
+import { useRolePreview } from '@/contexts/role-preview-context';
 import type { CashInRow, CashInConfirmedRow } from '@shared/types/cashIn';
 
 interface CashInSummaryProps {

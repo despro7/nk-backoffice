@@ -1,5 +1,5 @@
 import { Card, Select, SelectItem } from '@heroui/react';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useState } from 'react';
 

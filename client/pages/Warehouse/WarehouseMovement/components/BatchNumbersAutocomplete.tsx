@@ -1,7 +1,7 @@
 import { Drawer, DrawerContent, DrawerHeader, DrawerBody, DrawerFooter, Button } from '@heroui/react';
 import { motion } from 'framer-motion';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import type { BatchNumber } from '../hooks/useBatchNumbers';
 import { resolveStorageIconClass } from '../storageDisplay';
 

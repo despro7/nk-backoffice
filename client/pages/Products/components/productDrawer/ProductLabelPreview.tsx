@@ -50,7 +50,7 @@ export function ProductLabelPreview({
   return (
     <div ref={containerRef} className="flex w-full flex-col items-center gap-2">
       <div className="flex w-full max-w-[720px] flex-col gap-1 text-center">
-        <p className="text-xs text-text-secondary">Клікніть на текст наліпки для редагування</p>
+        <p className="text-xs text-default-500">Клікніть на текст наліпки для редагування</p>
         {nutritionErrors.length > 0 ? (
           <p className="text-xs text-warning-600">
             Поживна цінність: {nutritionErrors[0]}

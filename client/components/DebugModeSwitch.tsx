@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Switch } from '@heroui/switch';
-import { useAuth } from '../contexts/AuthContext';
-import { useDebug } from '../contexts/DebugContext';
+import { useAuth } from '../contexts/auth-context';
+import { useDebug } from '../contexts/debug-context';
 import { cn } from '../lib/utils';
 
 interface DebugModeSwitchProps {

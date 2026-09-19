@@ -7,7 +7,7 @@ import OtherMetaLogTable from './components/OtherMetaLogTable';
 import useMetaLogs from './hooks/useMetaLogs';
 import { useNotifications } from '../../hooks/useNotifications';
 import { ToastService } from '../../services/ToastService';
-import { useRolePreview } from '../../contexts/RolePreviewContext';
+import { useRolePreview } from '../../contexts/role-preview-context';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 export default function MetaLogNotifications() {

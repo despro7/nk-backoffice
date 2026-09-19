@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 import { getCachedProduct, setCachedProduct } from '@/lib/productLookupCache';
 import { pluralize } from '@/lib/formatUtils';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';

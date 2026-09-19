@@ -88,7 +88,7 @@ export function HrAuditLogEntry({ item, variant = 'default' }: HrAuditLogEntryPr
           {isTimesheetCell ? details : (
             <>
               <span className={`font-medium ${actionColor}`}>{actionLabel}</span>
-              {details ? <span className="text-text-secondary"> — {details}</span> : null}
+              {details ? <span className="text-default-500"> — {details}</span> : null}
             </>
           )}
         </div>

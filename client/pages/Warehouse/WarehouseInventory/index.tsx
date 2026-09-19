@@ -1,8 +1,8 @@
 import { Tab } from '@heroui/react';
 import PageTabs from '@/components/PageTabs';
 import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useRolePreview } from '@/contexts/RolePreviewContext';
+import { useAuth } from '@/contexts/auth-context';
+import { useRolePreview } from '@/contexts/role-preview-context';
 import { ToastService } from '@/services/ToastService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';

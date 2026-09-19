@@ -8,7 +8,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { useEquipmentFromAuth } from '@/contexts/AuthContext';
+import { useEquipmentFromAuth } from '@/contexts/auth-context';
 import { receiptClientService } from '@/services/ReceiptService';
 import type { OrderChecklistItem } from '../types/orderAssembly';
 

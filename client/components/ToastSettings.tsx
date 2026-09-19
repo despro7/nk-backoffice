@@ -3,7 +3,7 @@ import { Card, CardHeader, CardBody, CardFooter, Switch, Button } from '@heroui/
 import { ToastService } from '../services/ToastService';
 import { ToastSettingsTypes } from '../types/toast';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/auth-context';
 
 export const ToastSettings: React.FC = () => {
   const [settings, setSettings] = useState<ToastSettingsTypes | null>(null);

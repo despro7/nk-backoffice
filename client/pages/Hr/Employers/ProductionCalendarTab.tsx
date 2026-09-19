@@ -13,7 +13,7 @@ import {
 import { ToastService } from '@/services/ToastService';
 import { HR_PRODUCTION_CALENDAR_PRESETS } from '@shared/utils/hrProductionWeek';
 import type { HrProductionCalendarDto, HrProductionWeekDto } from '@shared/types/hr';
-import { HR_BTN_PRIMARY } from '../hrUi';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
 
 const CUSTOM_PRESET_LABEL = 'Власні налаштування';
 
@@ -38,7 +38,7 @@ const WEEK_START_OPTIONS = [
 ];
 
 const SELECT_CLASS_NAMES = {
-  trigger: 'shadow-none border border-border-subtle bg-surface-card',
+  trigger: 'shadow-none border border-default-200 bg-background-paper',
 };
 
 function snapshotProductionConfig(config: HrProductionCalendarDto): string {
@@ -185,11 +185,11 @@ export const ProductionCalendarTab = forwardRef<ProductionCalendarTabHandle, Pro
 
     return (
       <div className="space-y-4">
-        <p className="text-xs text-text-secondary">
+        <p className="text-xs text-default-500">
           Опційний виробничий календар для агрегації ФОП. Табель лишається на календарних тижнях (пн–нд).
         </p>
 
-        <Card className="border border-border-subtle shadow-surface">
+        <Card className="border border-default-200 shadow-sm">
           <CardBody className="flex flex-col gap-4">
             <Switch
               size="sm"
@@ -284,10 +284,10 @@ export const ProductionCalendarTab = forwardRef<ProductionCalendarTabHandle, Pro
         </Card>
 
         {config.isEnabled && preview.length > 0 ? (
-          <Card className="border border-border-subtle shadow-surface">
+          <Card className="border border-default-200 shadow-sm">
             <CardBody className="space-y-2">
-              <div className="text-sm font-semibold text-text-primary">Превʼю найближчих періодів</div>
-              <ul className="space-y-1 text-sm text-text-secondary">
+              <div className="text-sm font-semibold text-default-900">Превʼю найближчих періодів</div>
+              <ul className="space-y-1 text-sm text-default-500">
                 {preview.map((week) => (
                   <li key={week.startDate}>{week.label}</li>
                 ))}

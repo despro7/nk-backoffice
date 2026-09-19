@@ -37,8 +37,8 @@ import {
   type HrTaxRuleDto,
   type HrTaxRuleWritePayload,
 } from '@shared/types/hr';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
 import {
-  HR_BTN_PRIMARY,
   HR_TABLE_CLASS_NAMES,
   HR_TAX_BASE_LABELS,
   HrSpecChip,
@@ -206,7 +206,7 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-text-secondary">
+        <p className="text-xs text-default-500">
           Правила ЄСВ і податків для групи «Офіційна ставка». Ставки з effective dates — історія змін.
         </p>
         {canManage ? (
@@ -221,7 +221,7 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
         ) : null}
       </div>
 
-      <Card className="border border-border-subtle shadow-surface">
+      <Card className="border border-default-200 shadow-sm">
         <CardBody>
           <Table aria-label="Податкові правила" removeWrapper classNames={HR_TABLE_CLASS_NAMES}>
             <TableHeader>
@@ -258,7 +258,7 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell className="text-xs text-text-secondary">{rule.effectiveFrom}</TableCell>
+                  <TableCell className="text-xs text-default-500">{rule.effectiveFrom}</TableCell>
                   <TableCell>
                     <HrSpecChip
                       tokens={hrStatusTokens(rule.isActive ? 'active' : 'inactive')}
@@ -338,7 +338,7 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
         <DrawerContent>
           {() => (
             <>
-              <DrawerHeader className="border-b border-border-subtle shrink-0">
+              <DrawerHeader className="border-b border-default-200 shrink-0">
                 {editing ? 'Редагувати правило' : 'Нове правило'}
               </DrawerHeader>
               <DrawerBody className="gap-5 py-5 overflow-y-auto">
@@ -418,7 +418,7 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
                   Активне
                 </Switch>
               </DrawerBody>
-              <DrawerFooter className="border-t border-border-subtle shrink-0">
+              <DrawerFooter className="border-t border-default-200 shrink-0">
                 <Button variant="light" onPress={requestCloseDrawer} isDisabled={saving}>
                   Скасувати
                 </Button>

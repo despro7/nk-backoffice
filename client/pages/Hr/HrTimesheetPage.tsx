@@ -28,7 +28,8 @@ import {
 import { TimesheetGrid } from './Timesheet/TimesheetGrid';
 import { TimesheetKindLegend } from './Timesheet/TimesheetKindLegend';
 import { useHrTimesheetKindColors } from './useHrTimesheetKindColors';
-import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HrSpecChip, hrPayGroupTokens } from './hrUi';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
+import { HR_BTN_NEUTRAL, HrSpecChip, hrPayGroupTokens } from './hrUi';
 
 const COLOR_SETTINGS_STORAGE_KEY = 'hr.timesheet.colorSettingsOpen';
 

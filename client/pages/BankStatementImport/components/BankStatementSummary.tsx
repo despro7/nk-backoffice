@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Chip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { useDebug } from '@/contexts/DebugContext';
-import { useRolePreview } from '@/contexts/RolePreviewContext';
+import { useDebug } from '@/contexts/debug-context';
+import { useRolePreview } from '@/contexts/role-preview-context';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import type { BankStatementConfirmedRow, BankStatementRow } from '@shared/types/bankStatement';
 import { toBankStatementConfirmed } from '@shared/types/bankStatement';

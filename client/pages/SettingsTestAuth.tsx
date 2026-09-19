@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/auth-context';
 import { useApi } from '../hooks/useApi';
 
 const SettingsTestAuth: React.FC = () => {

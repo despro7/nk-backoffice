@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useRolePreview } from '@/contexts/RolePreviewContext';
+import { useAuth } from '@/contexts/auth-context';
+import { useRolePreview } from '@/contexts/role-preview-context';
 import { permissionsFingerprint } from '@shared/constants/permissions';
 import {
   PERMISSIONS_REVISION_EVENT,

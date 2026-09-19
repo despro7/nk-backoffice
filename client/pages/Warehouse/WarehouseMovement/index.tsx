@@ -22,7 +22,7 @@ import { MovementDraftsTab } from './components/MovementDraftsTab';
 import { PayloadPreviewModal } from './components/PayloadPreviewModal';
 import { EmptyBatchesWarningModal, type EmptyBatchInfo } from './components/EmptyBatchesWarningModal';
 import MovementDirectionSelector from './components/MovementDirectionSelector';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import type { DilovodMovementPayload } from '@shared/types/movement';
 

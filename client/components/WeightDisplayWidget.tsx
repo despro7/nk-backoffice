@@ -5,9 +5,9 @@ import NumberFlow from '@number-flow/react';
 import { Play, Pause } from 'lucide-react';
 import { ScaleService } from '../services/ScaleService';
 import { LoggingService } from '@/services/LoggingService';
-import { useEquipmentFromAuth } from '../contexts/AuthContext';
+import { useEquipmentFromAuth } from '../contexts/auth-context';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 
 
 interface WeightDisplayWidgetProps {

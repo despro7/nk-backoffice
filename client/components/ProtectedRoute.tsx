@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { useRolePreview } from '../contexts/RolePreviewContext';
+import { useAuth } from '../contexts/auth-context';
+import { useRolePreview } from '../contexts/role-preview-context';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { findAppRouteByPath } from '../routes.config';
 import { canAccessRoute } from '@shared/constants/permissions';

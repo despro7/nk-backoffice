@@ -167,6 +167,10 @@ export const logServer = (message: string, data?: any) => {
   const timestamp = new Date().toISOString();
   const timeFromStart = (Date.now() - appStartTime) / 1000;
   console.log(`[${formatTimeOnly(timestamp)}] [${timeFromStart.toFixed(2)}s] ${message}`, data || '');
+  // Буфер для звітів користувачів (lazy import щоб уникнути циклічних deps)
+  void import('../services/ServerLogBuffer.js').then(({ ServerLogBuffer }) => {
+    ServerLogBuffer.push(message, data);
+  });
 };
 
 // Short-lived in-memory cache for firms lookup to avoid repeated calls per-request

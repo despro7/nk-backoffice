@@ -29,7 +29,8 @@ import { ReportsFilterBuilder } from '@/pages/Reports/shared/filters';
 import { BonusDrawer } from './BonusDrawer';
 import { useHrWorkWeekPeriodFilter } from '../shared/useHrWorkWeekPeriodFilter';
 import { formatMoney } from '@/lib/formatUtils';
-import { HR_BTN_PRIMARY, HR_TABLE_CLASS_NAMES, HrSpecChip, hrKindTokens, hrStatusTokens } from '../hrUi';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
+import { HR_TABLE_CLASS_NAMES, HrSpecChip, hrKindTokens, hrStatusTokens } from '../hrUi';
 
 interface EmploymentOption {
   id: number;
@@ -195,8 +196,8 @@ export default function HrBonusesPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <h2 className="text-2xl font-semibold text-text-primary mb-4">Доступ заборонено</h2>
-          <p className="text-text-secondary">У вас немає прав доступу до премій.</p>
+          <h2 className="text-2xl font-semibold text-default-900 mb-4">Доступ заборонено</h2>
+          <p className="text-default-500">У вас немає прав доступу до премій.</p>
         </div>
       </div>
     );
@@ -218,7 +219,7 @@ export default function HrBonusesPage() {
         ) : null}
       </div>
 
-      <Card shadow="none" className="border border-border-subtle">
+      <Card shadow="none" className="border border-default-200">
         <CardBody>
           {loading ? (
             <div className="flex justify-center py-8">

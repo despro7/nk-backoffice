@@ -560,7 +560,7 @@ export function TimesheetGrid({
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-border-subtle bg-surface-card p-8 text-center text-sm text-text-secondary">
+      <div className="rounded-lg border border-default-200 bg-background-paper p-8 text-center text-sm text-default-500">
         Немає зайнятостей у цьому місяці
       </div>
     );
@@ -581,7 +581,7 @@ export function TimesheetGrid({
         aria-rowcount={flatRows.length + grouped.length + 2}
         tabIndex={0}
         onKeyDown={onGridKeyDown}
-        className={`min-w-0 w-full max-w-full rounded-b-lg border-2 border-neutral-800 bg-surface-card outline-none ${isStuck ? 'rounded-tr-none' : 'rounded-tr-sm'}`}
+        className={`min-w-0 w-full max-w-full rounded-b-lg border-2 border-neutral-800 bg-background-paper outline-none ${isStuck ? 'rounded-tr-none' : 'rounded-tr-sm'}`}
       >
         <div
           className={`sticky top-0 z-20 overflow-hidden bg-neutral-800 transition-all duration-200 ${

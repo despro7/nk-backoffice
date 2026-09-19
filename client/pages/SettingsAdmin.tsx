@@ -8,6 +8,7 @@ import { ReportingDayStartHourSettings } from '../components/ReportingDayStartHo
 import { useRoleAccess } from '../hooks/useRoleAccess';
 import { DateFormatSettings } from "@/components/DateFormatSettings";
 import { PERMISSIONS } from '@shared/constants/permissions';
+import { SupportReportSettings } from '@/components/SupportReportSettings';
 
 const SettingsAdmin: React.FC = () => {
   const { hasPermission } = useRoleAccess();
@@ -25,6 +26,15 @@ const SettingsAdmin: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      {/* Звіти користувачів / Telegram */}
+      <section>
+        <h2 className="text-2xl font-semibold mb-2">Звіти користувачів</h2>
+        <p className="text-sm text-default-500 mb-4">
+          Кнопка «Сповістити адміна» та доставка в Telegram-канал
+        </p>
+        <SupportReportSettings />
+      </section>
+
       {/* Налаштування логування і toast */}
       <section>
         <h2 className="text-2xl font-semibold mb-2">Налаштування логування</h2>

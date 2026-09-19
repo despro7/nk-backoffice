@@ -38,8 +38,8 @@ import {
 import { PayGroupsTab } from './PayGroupsTab';
 import { TaxRulesTab } from './TaxRulesTab';
 import { ProductionCalendarTab, type ProductionCalendarTabHandle } from './ProductionCalendarTab';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
 import {
-  HR_BTN_PRIMARY,
   HR_TABLE_CLASS_NAMES,
   HrSpecChip,
   hrLegalEntityKindTokens,
@@ -49,11 +49,11 @@ import {
 const SEED_CODES = new Set(['fop', 'tov', 'unofficial_cash']);
 
 const INPUT_CLASS_NAMES = {
-  inputWrapper: 'shadow-none border border-border-subtle bg-surface-card group-data-[focus=true]:border-sky-500 group-data-[focus=true]:ring-1 group-data-[focus=true]:ring-sky-500/30',
+  inputWrapper: 'shadow-none border border-default-200 bg-background-paper group-data-[focus=true]:border-sky-500 group-data-[focus=true]:ring-1 group-data-[focus=true]:ring-sky-500/30',
 };
 
 const SELECT_CLASS_NAMES = {
-  trigger: 'shadow-none border border-border-subtle bg-surface-card data-[focus=true]:border-sky-500 data-[focus=true]:ring-1 data-[focus=true]:ring-sky-500/30',
+  trigger: 'shadow-none border border-default-200 bg-background-paper data-[focus=true]:border-sky-500 data-[focus=true]:ring-1 data-[focus=true]:ring-sky-500/30',
 };
 
 interface EmployerFormState {
@@ -349,8 +349,8 @@ export default function HrEmployersPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <h2 className="text-2xl font-semibold text-text-primary mb-4">Доступ заборонено</h2>
-          <p className="text-text-secondary">У вас немає прав доступу до довідника роботодавців.</p>
+          <h2 className="text-2xl font-semibold text-default-900 mb-4">Доступ заборонено</h2>
+          <p className="text-default-500">У вас немає прав доступу до довідника роботодавців.</p>
         </div>
       </div>
     );
@@ -397,11 +397,11 @@ export default function HrEmployersPage() {
 
       {activeTab === 'types' ? (
         <>
-          <p className="text-xs text-text-secondary">
+          <p className="text-xs text-default-500">
             Назви типів (ФОП, ТОВ, Нештатні) використовуються при створенні роботодавця. Технічний код типу не
             змінюється. Ці записи не показуються у списку роботодавців.
           </p>
-          <Card className="border border-border-subtle shadow-surface">
+          <Card className="border border-default-200 shadow-sm">
             <CardBody>
               <Table aria-label="Типи роботодавців" removeWrapper classNames={HR_TABLE_CLASS_NAMES}>
                 <TableHeader>
@@ -418,7 +418,7 @@ export default function HrEmployersPage() {
                         </HrSpecChip>
                       </TableCell>
                       <TableCell>
-                        <span className="font-mono text-xs text-text-secondary">{item.kind}</span>
+                        <span className="font-mono text-xs text-default-500">{item.kind}</span>
                       </TableCell>
                       <TableCell>
                         {canManage ? (
@@ -480,11 +480,11 @@ export default function HrEmployersPage() {
         ) : null}
       </div>
 
-      <p className="text-xs text-text-secondary">
+      <p className="text-xs text-default-500">
         Конкретизуйте роботодавців для табеля та розрахунку — наприклад «ФОП Бубнова М.В.» або «ТОВ Нова Кухня».
       </p>
 
-      <Card className="border border-border-subtle shadow-surface">
+      <Card className="border border-default-200 shadow-sm">
         <CardBody>
           {loading && regularEmployers.length === 0 ? (
             <div className="flex justify-center py-16">
@@ -492,8 +492,8 @@ export default function HrEmployersPage() {
             </div>
           ) : visibleEmployers.length === 0 ? (
             <div className="p-10 text-center">
-              <DynamicIcon name="building-2" size={28} className="mx-auto mb-2 text-text-secondary/50" />
-              <p className="text-sm text-text-secondary">
+              <DynamicIcon name="building-2" size={28} className="mx-auto mb-2 text-default-500/50" />
+              <p className="text-sm text-default-500">
                 {search.trim() ? 'Нічого не знайдено.' : 'Немає роботодавців.'}
               </p>
             </div>
@@ -518,9 +518,9 @@ export default function HrEmployersPage() {
                         className="text-left"
                         onClick={() => canManage && openEdit(item)}
                       >
-                        <div className="font-medium text-text-primary">{item.name}</div>
+                        <div className="font-medium text-default-900">{item.name}</div>
                         {!SEED_CODES.has(item.code) ? (
-                          <div className="text-xs text-text-secondary font-mono mt-0.5">{item.code}</div>
+                          <div className="text-xs text-default-500 font-mono mt-0.5">{item.code}</div>
                         ) : null}
                       </button>
                     </TableCell>
@@ -652,7 +652,7 @@ export default function HrEmployersPage() {
               <ModalHeader>Редагувати тип</ModalHeader>
               <ModalBody className="flex flex-col gap-4">
                 {editingTypeItem ? (
-                  <p className="text-xs text-text-secondary">
+                  <p className="text-xs text-default-500">
                     Код: <span className="font-mono">{editingTypeItem.kind}</span> — технічний ідентифікатор типу,
                     його не можна змінити.
                   </p>
@@ -697,7 +697,7 @@ export default function HrEmployersPage() {
             <>
               <ModalHeader>Видалити роботодавця</ModalHeader>
               <ModalBody className="flex flex-col gap-4">
-                <p className="text-sm text-text-secondary">
+                <p className="text-sm text-default-500">
                   Роботодавця «{deletingItem?.name}» буде видалено. Усі зайнятості, записи табеля,
                   ставки та виплати буде перенесено до обраного роботодавця.
                 </p>

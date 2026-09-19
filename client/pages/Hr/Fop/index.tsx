@@ -61,8 +61,8 @@ export default function HrFopPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <h2 className="text-2xl font-semibold text-text-primary mb-4">Доступ заборонено</h2>
-          <p className="text-text-secondary">У вас немає прав доступу до зведення фонду оплати праці.</p>
+          <h2 className="text-2xl font-semibold text-default-900 mb-4">Доступ заборонено</h2>
+          <p className="text-default-500">У вас немає прав доступу до зведення фонду оплати праці.</p>
         </div>
       </div>
     );
@@ -71,13 +71,13 @@ export default function HrFopPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-text-secondary max-w-md">
+        <p className="text-sm text-default-500 max-w-md">
           Зведення витрат роботодавця за період – база для майбутньої калькуляції собівартості
         </p>
         <ReportsFilterBuilder filters={filters} className="flex flex-wrap gap-2 items-end" />
       </div>
 
-      <Card shadow="none" className="border border-border-subtle">
+      <Card shadow="none" className="border border-default-200">
         <CardBody className="flex flex-col gap-4 p-4">
           {loading ? (
             <div className="flex justify-center py-8">
@@ -86,7 +86,7 @@ export default function HrFopPage() {
           ) : summary ? (
             <>
               <div className="flex flex-wrap items-center gap-3">
-                <div className="text-3xl font-semibold tabular-nums text-text-primary">
+                <div className="text-3xl font-semibold tabular-nums text-default-900">
                   {formatMoney(summary.totalEmployerCost)} ₴
                 </div>
                 <HrSpecChip
@@ -106,9 +106,9 @@ export default function HrFopPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {(Object.keys(summary.byPayGroup) as HrPayGroup[]).map((group) => (
-                  <Card key={group} shadow="none" className="border border-border-subtle bg-surface-page">
+                  <Card key={group} shadow="none" className="border border-default-200 bg-default-50">
                     <CardBody className="py-3">
-                      <div className="text-xs text-text-secondary">{HR_PAY_GROUP_LABELS[group]}</div>
+                      <div className="text-xs text-default-500">{HR_PAY_GROUP_LABELS[group]}</div>
                       <div className="text-lg font-semibold tabular-nums">{formatMoney(summary.byPayGroup[group])}</div>
                     </CardBody>
                   </Card>

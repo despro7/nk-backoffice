@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApi } from '../hooks/useApi';
-import { useAuth, useEquipmentFromAuth } from '../contexts/AuthContext';
+import { useAuth, useEquipmentFromAuth } from '../contexts/auth-context';
 import { useRoleAccess } from '../hooks/useRoleAccess';
-import { useDebug } from '../contexts/DebugContext';
+import { useDebug } from '../contexts/debug-context';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { LoggingService } from '@/services/LoggingService';
 import { ToastService } from '@/services/ToastService';

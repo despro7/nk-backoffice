@@ -35,6 +35,7 @@ import statRouter from './routes/stat.js';
 import expandRoutes from './routes/expand.js';
 import lalAudiencesRoutes from './routes/lal-audiences.js';
 import reportsWarehouseRoutes from './routes/reports-warehouse.js';
+import supportReportsRoutes from './routes/support-reports.js';
 
 // Збільшуємо ліміт слухачів для обробки подій, щоб уникнути попереджень про витік пам'яті при великій кількості одночасних cron задач або вебхуків.
 process.setMaxListeners(20);
@@ -115,7 +116,9 @@ export function createServer() {
     exposedHeaders: ['Set-Cookie', 'X-Role-Preview-Applied', 'X-Insufficient-Role']
   }));
   app.use(cookieParser());
+  // support-reports: base64 скриншот до ~5 МБ + логи; дефолт express.json (~100kb) замалий
   app.use(express.json({
+    limit: '12mb',
     verify: (req, res, buf) => {
       if (req.url.includes('/webhooks/')) {
         console.log('📦 Webhook raw body length:', buf.length);
@@ -183,6 +186,9 @@ export function createServer() {
 
   // Settings routes (все роуты в settings.ts, включая /logging и /toast)
   app.use("/api/settings", settingsRoutes);
+
+  // User problem reports → meta_logs + Telegram
+  app.use('/api/support-reports', supportReportsRoutes);
 
   // Warehouse routes
   app.use("/api/warehouse", warehouseRoutes);

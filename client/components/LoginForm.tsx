@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/auth-context';
 import { useServerStatus } from '../hooks/useServerStatus';
 import logo from '/logo.svg';
 import { Alert } from '@heroui/react';

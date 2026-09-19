@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Card, CardBody, CardHeader, Switch, Popover, PopoverTrigger, PopoverContent, Button, Chip, useDisclosure, Accordion, AccordionItem } from '@heroui/react';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import { RightPanel } from './RightPanel';
 import { WeightDisplayWidget } from './WeightDisplayWidget';
 import { BoxSelector } from './BoxSelector';

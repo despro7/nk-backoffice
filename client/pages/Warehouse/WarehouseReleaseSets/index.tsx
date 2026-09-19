@@ -9,7 +9,7 @@ import WarehouseDetails from '../shared/WarehouseDetails';
 import ActionsBar from './components/ActionsBar';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { ToastService } from '@/services/ToastService';

@@ -10,7 +10,7 @@ import React, { useState } from "react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { SidebarAdminFooter } from "@/components/SidebarAdminFooter";
-import { useRolePreview } from "@/contexts/RolePreviewContext";
+import { useRolePreview } from "@/contexts/role-preview-context";
 import { NavBadgePill } from "@/components/NavBadgePill";
 import {
   SALESDRIVE_ORDERS_PATH,

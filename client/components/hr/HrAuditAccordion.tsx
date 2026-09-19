@@ -9,8 +9,8 @@ const ACCORDION_CLASS_NAMES = {
   base: 'px-1',
   trigger: 'my-1 py-2 px-2 rounded-sm [&>div]:flex-row [&>div]:items-baseline [&>div]:gap-2 data-[open=true]:bg-default-100/75 transition-colors duration-200',
   indicator: '-rotate-180',
-  title: 'text-sm font-medium text-text-secondary data-[open=true]:text-text-primary transition-colors duration-200',
-  subtitle: 'text-xs text-text-secondary',
+  title: 'text-sm font-medium text-default-500 data-[open=true]:text-default-900 transition-colors duration-200',
+  subtitle: 'text-xs text-default-500',
   content: 'pb-3 px-2',
 };
 
@@ -77,7 +77,7 @@ export function HrAuditAccordion({
           {loading ? (
             <div className="flex justify-center py-4"><Spinner size="sm" /></div>
           ) : logs.length === 0 ? (
-            <p className="text-sm text-text-secondary/75">Змін ще немає...</p>
+            <p className="text-sm text-default-500/75">Змін ще немає...</p>
           ) : (
             <div className="divide-y divide-border-subtle">
               <HrAuditLogList logs={logs} />

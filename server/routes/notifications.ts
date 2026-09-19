@@ -59,6 +59,7 @@ function resolveSeverity(status: string): AppNotification['severity'] {
 router.get('/', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
+    const isAdmin = req.user!.role === 'admin';
     const limit  = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const severityParam = (req.query.severity as string | undefined)
       ?.split(',').map(s => s.trim()) ?? ['error', 'warning'];
@@ -105,8 +106,11 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
       },
     });
 
-    // Фільтруємо приховані поточним юзером (або _all)
-    const visibleLogs = logs.filter((log) => !isReadBy(parseReadBy(log.hiddenBy), userId));
+    // Фільтруємо приховані поточним юзером (або _all); user_report — лише для admin
+    const visibleLogs = logs.filter((log) => {
+      if (!isAdmin && log.category === 'user_report') return false;
+      return !isReadBy(parseReadBy(log.hiddenBy), userId);
+    });
 
     const notifications: AppNotification[] = visibleLogs.map((log) => {
       const readBy = parseReadBy(log.readBy);

@@ -1,26 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuth } from './AuthContext';
+import { useAuth } from './auth-context';
+import { RolePreviewContext } from './role-preview-context';
 import { ROLES } from '@shared/constants/roles';
 import { installRolePreviewFetch, setRolePreviewFetchRole } from '@/lib/rolePreviewFetch';
 import { PERMISSIONS_REVISION_EVENT } from '@/lib/notifyPermissionsChanged';
 import type { RoleDto } from '@shared/types/role';
 
 const STORAGE_KEY = 'rolePreview';
-
-interface RolePreviewContextType {
-  previewRole: string | null;
-  setPreviewRole: (role: string | null) => void;
-  effectiveRole: string | undefined;
-  effectivePermissions: string[];
-  previewRoles: RoleDto[];
-  refreshPreviewRoles: () => Promise<void>;
-  isPreviewing: boolean;
-  isRealAdmin: boolean;
-  isAdminView: boolean;
-}
-
-const RolePreviewContext = createContext<RolePreviewContextType | undefined>(undefined);
 
 function readStoredPreview(): string | null {
   try {
@@ -160,12 +147,4 @@ export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
       {children}
     </RolePreviewContext.Provider>
   );
-}
-
-export function useRolePreview() {
-  const context = useContext(RolePreviewContext);
-  if (context === undefined) {
-    throw new Error('useRolePreview must be used within a RolePreviewProvider');
-  }
-  return context;
 }

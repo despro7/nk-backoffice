@@ -1,6 +1,6 @@
 import printerService from "./printerService";
 import { ToastService } from "./ToastService";
-import { useEquipmentFromAuth } from '../contexts/AuthContext';
+import { useEquipmentFromAuth } from '../contexts/auth-context';
 
 export interface PrintTTNRequest {
   ttn: string;

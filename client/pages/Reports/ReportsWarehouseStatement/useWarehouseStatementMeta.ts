@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/auth-context';
 import type { WarehouseStatementMetaResponse } from '@shared/types/warehouseStatement';
 import { isMetaResponse, readApiError, unwrapPayload } from './warehouseStatementUtils';
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useEquipmentFromAuth } from '@/contexts/AuthContext';
+import { useEquipmentFromAuth } from '@/contexts/auth-context';
 
 type UnifiedWeightStatus = 'disconnected' | 'stale' | 'stable' | 'unstable' | 'warning' | 'error';
 

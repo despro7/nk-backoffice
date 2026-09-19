@@ -21,7 +21,7 @@ import {
 } from '@shared/types/hr';
 import type { HrPeriodOption } from '@shared/utils/hrWorkWeekPeriods';
 import { formatHrPeriodOptionLabel } from '@shared/utils/hrProductionWeek';
-import { HR_BTN_PRIMARY } from '../hrUi';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
 
 export type BonusPeriodOption = HrPeriodOption;
 
@@ -186,7 +186,7 @@ export function BonusDrawer({
         <DrawerContent>
           {() => (
             <>
-              <DrawerHeader className="border-b border-border-subtle shrink-0">
+              <DrawerHeader className="border-b border-default-200 shrink-0">
                 {isEdit ? 'Редагувати премію' : 'Нова премія'}
               </DrawerHeader>
               <DrawerBody className="gap-5 py-5 overflow-y-auto">
@@ -250,7 +250,7 @@ export function BonusDrawer({
                   onValueChange={(value) => setForm((prev) => ({ ...prev, note: value }))}
                 />
               </DrawerBody>
-              <DrawerFooter className="border-t border-border-subtle shrink-0">
+              <DrawerFooter className="border-t border-default-200 shrink-0">
                 <Button variant="light" onPress={closeDrawer} isDisabled={saving}>
                   Скасувати
                 </Button>

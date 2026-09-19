@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Select, SelectItem, Spinner, Tooltip, type SortDescriptor } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
-import { useRolePreview } from '@/contexts/RolePreviewContext';
+import { useRolePreview } from '@/contexts/role-preview-context';
 import { resolveCatalogFolderAccess, resolveCatalogVisualRootFolderId } from '@shared/utils/catalogFolderAccess';
 import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 import { ToastService } from '@/services/ToastService';

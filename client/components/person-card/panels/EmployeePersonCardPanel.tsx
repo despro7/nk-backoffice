@@ -99,7 +99,7 @@ export function EmployeePersonCardPanel({
             <div className="flex items-end gap-2">
               <div className="flex flex-col items-start flex-1 gap-1 px-3 py-2 bg-default-100 rounded-md">
                 <p className="text-xs subpixel-antialiased text-foreground-500">Фізична особа</p>
-                <p className="text-sm font-medium text-text-primary">{selectedPerson.displayName}</p>
+                <p className="text-sm font-medium text-default-900">{selectedPerson.displayName}</p>
               </div>
               {canManage ? (
                 <Tooltip
@@ -152,7 +152,7 @@ export function EmployeePersonCardPanel({
                   >
                     <div>
                       <div className="text-sm">{person.displayName}</div>
-                      <div className="text-xs text-text-secondary">{formatPersonSubtitle(person)}</div>
+                      <div className="text-xs text-default-500">{formatPersonSubtitle(person)}</div>
                     </div>
                   </AutocompleteItem>
                 )}
@@ -272,7 +272,7 @@ export function EmployeePersonCardPanel({
           endContent={
             canRevealCard && !isCreate && form.cardNumber !== '' ? (
               <button className="focus:outline-none" type="button" onClick={onCardVisibilityToggle} aria-label="Показати номер картки">
-                <DynamicIcon name={cardVisible ? 'eye-off' : 'eye'} size={18} className="text-text-secondary" />
+                <DynamicIcon name={cardVisible ? 'eye-off' : 'eye'} size={18} className="text-default-500" />
               </button>
             ) : null
           }

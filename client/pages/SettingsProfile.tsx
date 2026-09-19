@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/auth-context";
 import { useApi } from "@/hooks/useApi";
 import { Input, Button, Alert, Accordion, AccordionItem } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";

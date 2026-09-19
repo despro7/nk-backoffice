@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { cn } from '@/lib/utils';
 import { offsetStyle, useActionBubbleDock } from './ActionBubbleDock';
+import { REPORT_CAPTURE_EXCLUDE_CLASS } from '@/services/ReportProblemService';
 import { ACTION_BUBBLE_COLOR_PRESETS, DOCK_PLACEMENT_CLASS } from './presets';
 import type { ActionConfirmBubbleProps } from './types';
 
@@ -145,10 +146,12 @@ export function ActionConfirmBubble({
   return (
     <div
       data-action-bubble-id={id}
+      data-report-capture-chrome="true"
       className={cn(
-        'fixed z-50 flex items-end',
+        'fixed z-50 flex items-end transition-opacity duration-150',
         DOCK_PLACEMENT_CLASS[placement],
-        className
+        REPORT_CAPTURE_EXCLUDE_CLASS,
+        className,
       )}
       style={offsetStyle(offset)}
     >

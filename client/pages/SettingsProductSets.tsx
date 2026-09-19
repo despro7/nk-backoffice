@@ -7,7 +7,7 @@ import { ToastService } from '@/services/ToastService';
 import ProductsStatsSummary, { type ProductsStats } from '@/components/ProductsStatsSummary';
 import { LoggingService } from '@/services/LoggingService';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import {
   Table,
   TableHeader,

@@ -103,7 +103,7 @@ export function EmployeesArchiveModal({ isOpen, onClose, onRestored }: Employees
       <Modal isOpen={isOpen} onClose={handleClose} size="4xl" scrollBehavior="inside">
         <ModalContent>
           <ModalHeader className="flex items-center gap-2 text-lg font-semibold">
-            <DynamicIcon name="archive" size={18} className="shrink-0 text-text-secondary" />
+            <DynamicIcon name="archive" size={18} className="shrink-0 text-default-500" />
             Архів співробітників
           </ModalHeader>
           <ModalBody className="space-y-4">
@@ -119,9 +119,9 @@ export function EmployeesArchiveModal({ isOpen, onClose, onRestored }: Employees
             />
 
             {loading ? (
-              <div className="py-10 text-center text-text-secondary">Завантаження...</div>
+              <div className="py-10 text-center text-default-500">Завантаження...</div>
             ) : employees.length === 0 ? (
-              <div className="py-10 text-center text-text-secondary">Архів порожній</div>
+              <div className="py-10 text-center text-default-500">Архів порожній</div>
             ) : (
               <Table aria-label="Архів співробітників" removeWrapper classNames={HR_TABLE_CLASS_NAMES}>
                 <TableHeader>
@@ -155,11 +155,11 @@ export function EmployeesArchiveModal({ isOpen, onClose, onRestored }: Employees
                             {HR_PAY_GROUP_LABELS[employee.currentPayGroup]}
                           </HrSpecChip>
                         ) : (
-                          <span className="text-sm text-text-secondary">—</span>
+                          <span className="text-sm text-default-500">—</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm text-text-secondary">{formatDeletedAt(employee.deletedAt)}</span>
+                        <span className="text-sm text-default-500">{formatDeletedAt(employee.deletedAt)}</span>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-center">

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Button, Card, CardBody, Skeleton } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { StockBadge } from '@/components/StockBadge';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import type { MovementMobProductLineViewModel } from '../WarehouseMovementMobTypes';
 import { pluralize } from '@/lib/formatUtils';
 import {
@@ -47,7 +47,7 @@ function LineStockCard({
         <span className="text-[10px] uppercase tracking-wide text-default-400">партія / всього</span>
         <StockBadge variant={variant} size="10px" className="leading-none" />
       </div>
-      <p className="mt-1 text-sm font-semibold text-default-800 leading-none tabular-nums">
+      <div className="mt-1 text-sm font-semibold text-default-800 leading-none tabular-nums">
         {batchLoading ? (
           <Skeleton className="inline-block h-5 w-8 rounded-sm opacity-60 align-middle" />
         ) : (
@@ -59,7 +59,7 @@ function LineStockCard({
         ) : (
           <span>{totalQty}</span>
         )}
-      </p>
+      </div>
     </div>
   );
 }

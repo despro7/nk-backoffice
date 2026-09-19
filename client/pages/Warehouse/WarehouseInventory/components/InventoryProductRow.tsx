@@ -7,7 +7,7 @@ import { InfoDisplay } from '../../shared/InfoDisplay';
 import { pluralize } from '@/lib/formatUtils';
 import { StockBadge } from '@/components/StockBadge';
 import { totalPortions, totalPortionsGp, formatBalanceBreakdown } from '../WarehouseInventoryUtils';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import type { InventoryProduct } from '../WarehouseInventoryTypes';
 
 // ---------------------------------------------------------------------------

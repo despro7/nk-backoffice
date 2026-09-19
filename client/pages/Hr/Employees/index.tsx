@@ -26,7 +26,8 @@ import {
 import { EmployeeDrawer } from './EmployeeDrawer';
 import { EmployeesArchiveModal } from './EmployeesArchiveModal';
 import { DEFAULT_EMPLOYEE_SORT, sortHrEmployees } from './employeeTableSort';
-import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HR_TABLE_CLASS_NAMES, HrLinkedAccountIndicator, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
+import { HR_BTN_NEUTRAL, HR_TABLE_CLASS_NAMES, HrLinkedAccountIndicator, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
 
 export default function HrEmployeesPage() {
   const { hasPermission } = useRoleAccess();
@@ -159,8 +160,8 @@ export default function HrEmployeesPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <h2 className="text-2xl font-semibold text-text-primary mb-4">Доступ заборонено</h2>
-          <p className="text-text-secondary">У вас немає прав доступу до цієї сторінки.</p>
+          <h2 className="text-2xl font-semibold text-default-900 mb-4">Доступ заборонено</h2>
+          <p className="text-default-500">У вас немає прав доступу до цієї сторінки.</p>
         </div>
       </div>
     );
@@ -207,9 +208,9 @@ export default function HrEmployeesPage() {
       <Card className="hover:shadow-md transition-shadow">
         <CardBody className="p-3">
           {loading ? (
-            <div className="p-8 text-center text-text-secondary">Завантаження...</div>
+            <div className="p-8 text-center text-default-500">Завантаження...</div>
           ) : employees.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">Немає співробітників</div>
+            <div className="p-8 text-center text-default-500">Немає співробітників</div>
           ) : (
             <Table
               aria-label="Співробітники"
@@ -263,7 +264,7 @@ export default function HrEmployeesPage() {
                           {HR_PAY_GROUP_LABELS[employee.currentPayGroup]}
                         </HrSpecChip>
                       ) : (
-                        <span className="text-sm text-text-secondary">—</span>
+                        <span className="text-sm text-default-500">—</span>
                       )}
                     </TableCell>
                     <TableCell>

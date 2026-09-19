@@ -2,7 +2,7 @@ import { Card, CardBody, CardHeader, Select, SelectItem, Spinner, Input, Tab, Bu
 import PageTabs from '@/components/PageTabs';
 import { useMemo, useState, useEffect } from 'react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 import { DILOVOD_WAREHOUSE_DEFAULTS } from '@shared/types/dilovod';

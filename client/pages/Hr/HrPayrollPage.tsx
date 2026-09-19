@@ -23,7 +23,8 @@ import { PayrollTable } from './Payroll/PayrollTable';
 import { PayrollLineDrawer } from './Payroll/PayrollLineDrawer';
 import { PayrollHelpDrawer } from './Payroll/PayrollHelpDrawer';
 import { PayrollFormulaDrawer } from './Payroll/PayrollFormulaDrawer';
-import { HR_BTN_NEUTRAL, HR_BTN_PRIMARY, HR_BTN_WARNING, HrSpecChip } from './hrUi';
+import { HR_BTN_PRIMARY, HR_BTN_WARNING } from '@/lib/buttonStyles';
+import { HR_BTN_NEUTRAL, HrSpecChip } from './hrUi';
 
 function parseGroupParam(raw: string | null): HrTimesheetGroupFilter | null {
   if (!raw) return null;

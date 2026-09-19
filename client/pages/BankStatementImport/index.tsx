@@ -4,7 +4,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '@/services/ToastService';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import Timeline, { type TimelineStep } from '@/components/Timeline';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import FileUploadZone from '../CashInImport/components/FileUploadZone';
 import BankStatementPreviewTable from './components/BankStatementPreviewTable';
 import BankStatementSummary from './components/BankStatementSummary';

@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/auth-context';
 import { LoggingService } from '../services/LoggingService';
 
 export const useApi = () => {

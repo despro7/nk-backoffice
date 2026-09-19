@@ -1,7 +1,7 @@
 import { Button, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
 import HistoryAccordionItem from '../../shared/HistoryAccordionItem';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import { useState } from 'react';
 
 function DebugDilovodCheck({ mapped, onRefresh }: { mapped: any[]; onRefresh?: () => void }) {

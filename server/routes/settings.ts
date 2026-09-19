@@ -1,10 +1,14 @@
 import express from 'express';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requirePermission } from '../middleware/auth.js';
 import EquipmentSettingsService from '../services/settingsService.js';
-import { prisma } from '../lib/utils.js';
+import { prisma, logServer } from '../lib/utils.js';
 import { WAREHOUSE_MOVEMENT_SETTING_DEFAULTS, parseMobScanStepperMode } from '../../shared/types/movement.js';
+import { supportReportSettingsService } from '../services/SupportReportSettingsService.js';
+import { telegramAlertService } from '../services/TelegramAlertService.js';
+import type { SupportReportSettings } from '../../shared/types/supportReport.js';
 
 const router = express.Router();
+const settingsAdmin = requirePermission('settings', 'admin', 'Змінювати адмінські налаштування');
 const equipmentSettingsService = EquipmentSettingsService.getInstance();
 
 // Получить настройки оборудования
@@ -684,6 +688,67 @@ router.put('/salesdrive-export', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error updating salesdrive-export settings:', error);
     res.status(500).json({ success: false, error: 'Failed to update salesdrive-export settings' });
+  }
+});
+
+// === SUPPORT REPORT / TELEGRAM SETTINGS ===
+router.get('/support-reports', authenticateToken, settingsAdmin, async (req, res) => {
+  try {
+    if (req.query.revealToken === 'true') {
+      const settings = await supportReportSettingsService.getSettings();
+      return res.json({
+        success: true,
+        data: { telegramBotToken: settings.telegramBotToken },
+      });
+    }
+
+    const data = await supportReportSettingsService.getSettingsForAdmin();
+    res.json({ success: true, data });
+  } catch (error) {
+    logServer('Error getting support report settings', error);
+    res.status(500).json({ success: false, error: 'Failed to get support report settings' });
+  }
+});
+
+router.put('/support-reports', authenticateToken, settingsAdmin, async (req, res) => {
+  try {
+    const body = req.body as Partial<SupportReportSettings>;
+    const current = await supportReportSettingsService.getSettings();
+    const saved = await supportReportSettingsService.saveSettings(body, current.telegramBotToken);
+
+    await prisma.meta_logs.create({
+      data: {
+        category: 'support_report',
+        status: 'success',
+        title: 'Оновлено налаштування звітів',
+        message: 'Support report / Telegram settings updated',
+        initiatedBy: String(req.user!.userId),
+        data: {
+          telegramAlertsEnabled: saved.telegramAlertsEnabled,
+          hasToken: Boolean(saved.telegramBotToken),
+          hasChatId: Boolean(saved.telegramAlertChatId),
+        },
+      },
+    });
+
+    const data = await supportReportSettingsService.getSettingsForAdmin();
+    res.json({ success: true, message: 'Налаштування збережено', data });
+  } catch (error) {
+    logServer('Error saving support report settings', error);
+    res.status(500).json({ success: false, error: 'Failed to save support report settings' });
+  }
+});
+
+router.post('/support-reports/test', authenticateToken, settingsAdmin, async (_req, res) => {
+  try {
+    await telegramAlertService.sendTestMessage();
+    res.json({ success: true, message: 'Тестове повідомлення надіслано в Telegram' });
+  } catch (error) {
+    logServer('Error sending Telegram test message', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to send test message',
+    });
   }
 });
 

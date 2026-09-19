@@ -16,7 +16,7 @@ import { WriteOffHistoryTab } from './components/WriteOffHistoryTab';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { ToastService } from '@/services/ToastService';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { pluralize } from '@/lib';
 

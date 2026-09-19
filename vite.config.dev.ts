@@ -35,6 +35,9 @@ export default defineConfig(({ mode }) => ({
     "process.env.NODE_ENV": JSON.stringify(mode),
     "process.env.CLIENT_URL": JSON.stringify(process.env.CLIENT_URL),
   },
+  optimizeDeps: {
+    include: ["modern-screenshot"],
+  },
 }));
 
 function expressPlugin(): Plugin {

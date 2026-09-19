@@ -55,7 +55,8 @@ import {
   hrPeriodActive,
   overlappingPayTerms,
 } from '@shared/utils/hrPayHealth';
-import { HR_BTN_PRIMARY, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
+import { HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
 
 interface EmployeeDrawerProps {
   isOpen: boolean;
@@ -776,13 +777,13 @@ export function EmployeeDrawer({
         <DrawerContent>
           {() => (
             <>
-              <DrawerHeader className="border-b border-border-subtle shrink-0">
+              <DrawerHeader className="border-b border-default-200 shrink-0">
                 {isCreate ? 'Новий співробітник' : detail?.displayName || 'Співробітник'}
               </DrawerHeader>
               <DrawerBody className="flex flex-col gap-5 py-5 overflow-y-auto min-h-0">
                 <I18nProvider locale="uk-UA">
                 {loading ? (
-                  <div className="flex flex-col items-center justify-center py-16 gap-3 text-text-secondary">
+                  <div className="flex flex-col items-center justify-center py-16 gap-3 text-default-500">
                     <Spinner size="lg" color="primary" />
                     <p className="text-sm">Завантаження…</p>
                   </div>
@@ -840,10 +841,10 @@ export function EmployeeDrawer({
                       />
 
                     {!isCreate ? (
-                      <div className="space-y-3 pt-8 mt-2 border-t border-border-subtle">
+                      <div className="space-y-3 pt-8 mt-2 border-t border-default-200">
                           <div>
-                            <h3 className="text-sm font-semibold text-text-primary">Зайнятості</h3>
-                            <p className="mt-1 text-xs text-text-secondary">
+                            <h3 className="text-sm font-semibold text-default-900">Зайнятості</h3>
+                            <p className="mt-1 text-xs text-default-500">
                               Це рядок у табелі та розрахунку (роботодавець + спосіб оплати + період). Ставки задають суму для цієї зайнятості.
                             </p>
                           </div>
@@ -857,7 +858,7 @@ export function EmployeeDrawer({
                             </Alert>
                           ) : null}
                           {sortedEmployments.length === 0 ? (
-                            <p className="text-sm text-text-secondary">Немає зайнятості</p>
+                            <p className="text-sm text-default-500">Немає зайнятості</p>
                           ) : (
                             <div className="space-y-3">
                               {sortedEmployments.map((employment) => (
@@ -893,7 +894,7 @@ export function EmployeeDrawer({
                           )}
                           {canManage ? (
                             addingEmployment ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-[12px] border border-border-subtle p-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-[12px] border border-default-200 p-3">
                               <Select
                                 label="Роботодавець"
                                 labelPlacement="outside"
@@ -984,7 +985,7 @@ export function EmployeeDrawer({
                           ) : null}
                       </div>
                     ) : (
-                      <p className="text-xs text-text-secondary">Зайнятість і ставки можна додати після створення картки.</p>
+                      <p className="text-xs text-default-500">Зайнятість і ставки можна додати після створення картки.</p>
                     )}
 
                     {!isCreate ? (
@@ -999,7 +1000,7 @@ export function EmployeeDrawer({
                 )}
                 </I18nProvider>
               </DrawerBody>
-              <DrawerFooter className="border-t border-border-subtle shrink-0">
+              <DrawerFooter className="border-t border-default-200 shrink-0">
                 <Button variant="light" onPress={requestClose} isDisabled={saving}>Закрити</Button>
                 {canManage ? (
                   <Button
@@ -1032,12 +1033,12 @@ export function EmployeeDrawer({
         title="Об'єднати зайнятість?"
         message={
           mergePair ? (
-            <div className="space-y-3 text-sm text-text-primary">
+            <div className="space-y-3 text-sm text-default-900">
               <p>
                 Записи табеля, ставки та виплати з нижньої зайнятості будуть перенесені до верхньої.
                 Нижню зайнятість буде видалено — цю дію не можна скасувати.
               </p>
-              <div className="space-y-2 rounded-[8px] border border-border-subtle bg-surface-page p-3">
+              <div className="space-y-2 rounded-[8px] border border-default-200 bg-default-50 p-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-success-500">
                     Залишиться
@@ -1256,9 +1257,9 @@ function EmploymentBlock({
 
   return (
     <>
-      <Card shadow="none" className="border border-border-subtle bg-surface-card shadow-surface rounded-[12px]">
+      <Card shadow="none" className="border border-default-200 bg-background-paper shadow-sm rounded-[12px]">
         <CardHeader className="flex flex-row items-center justify-between gap-2 px-3 py-2.5">
-          <p className="flex min-w-0 items-center text-sm text-text-secondary">
+          <p className="flex min-w-0 items-center text-sm text-default-500">
             <span className="font-semibold mr-1">Період:</span> {formatHrDate(employment.validFrom)} – {employment.validTo ? formatHrDate(employment.validTo) : 'досі'}
             {active ? (
               <span className="text-success-500 border border-success-500 rounded px-1 py-0.5 ml-3 text-[10px] leading-none uppercase">Активна</span>
@@ -1353,13 +1354,13 @@ function EmploymentBlock({
           </div>
 
           <div className="space-y-2">
-            <h4 className="text-xs font-semibold text-text-primary">{ratesTitle}</h4>
+            <h4 className="text-xs font-semibold text-default-900">{ratesTitle}</h4>
             {sortedTerms.length > 0 ? (
-              <ul className="divide-y divide-border-subtle rounded-[8px] border border-border-subtle">
+              <ul className="divide-y divide-border-subtle rounded-[8px] border border-default-200">
                 {sortedTerms.map((term: HrPayTermsDto) => (
                   <li key={term.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-sm">
-                    <span className="text-text-primary">
-                      <span className="text-text-secondary">
+                    <span className="text-default-900">
+                      <span className="text-default-500">
                         {HR_PAY_TERMS_KIND_LABELS[term.kind]} · {formatMoney(term.amount)} {term.kind === 'hourly' ? 'грн/год' : 'грн/міс'} · з {formatHrDate(term.effectiveFrom)}
                         {term.effectiveTo ? ` по ${formatHrDate(term.effectiveTo)}` : ''}
                       </span>
@@ -1380,7 +1381,7 @@ function EmploymentBlock({
 
             {canManagePayTerms ? (
               addingRate ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start rounded-[8px] border border-border-subtle p-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start rounded-[8px] border border-default-200 p-3">
                   <Select
                     label="Тип"
                     labelPlacement="outside"
@@ -1410,7 +1411,7 @@ function EmploymentBlock({
                     inputMode="numeric"
                     value={payForm.amount}
                     onValueChange={(value) => setPayForm((prev) => ({ ...prev, amount: formatAmountMask(value) }))}
-                    endContent={<span className="text-xs text-text-secondary">грн</span>}
+                    endContent={<span className="text-xs text-default-500">грн</span>}
                     classNames={{
                       label: 'text-xs font-medium',
                       input: 'placeholder:opacity-50',

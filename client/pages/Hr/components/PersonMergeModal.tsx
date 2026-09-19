@@ -62,7 +62,7 @@ export function PersonMergeModal({
         <ModalBody className="gap-4">
           {variant === 'radio' ? (
             <>
-              <p className="text-sm text-text-secondary">
+              <p className="text-sm text-default-500">
                 Оберіть основний запис. Інші особи будуть позначені як дублікати, а привʼязки співробітників перенесуться до обраної особи.
               </p>
               <RadioGroup
@@ -77,7 +77,7 @@ export function PersonMergeModal({
                 {candidates.map((candidate) => (
                   <Radio key={String(candidate.id)} value={String(candidate.id)}>
                     <div className="text-sm font-medium">{candidate.displayName}</div>
-                    <div className="text-xs text-text-secondary">
+                    <div className="text-xs text-default-500">
                       {candidate.taxCode ? `ІПН ${candidate.taxCode}` : 'Без ІПН'}
                       {candidate.phone ? ` · ${candidate.phone}` : ''}
                       {candidate.id === currentPersonId ? ' · поточний запис' : ''}
@@ -88,7 +88,7 @@ export function PersonMergeModal({
             </>
           ) : (
             <>
-              <p className="text-sm text-text-secondary">
+              <p className="text-sm text-default-500">
                 Запис «{sourcePerson?.displayName}» буде позначено як дублікат, а привʼязки співробітників перенесуться до обраної особи.
               </p>
               <Select

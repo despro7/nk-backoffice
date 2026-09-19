@@ -1,5 +1,5 @@
-import { Chip, Tooltip } from '@heroui/react';
-import type { ReactNode } from 'react';
+import { Tooltip } from '@heroui/react';
+import { HrSpecChip, SpecChip } from '@/components/SpecChip';
 import {
   HR_PAY_GROUPS,
   HR_TIMESHEET_KIND_CODES,
@@ -16,6 +16,8 @@ import {
   type SpecColorTokens,
 } from '@shared/utils/specColorPalette';
 import { DynamicIcon } from 'lucide-react/dynamic';
+
+export { HrSpecChip, SpecChip };
 
 /** Закріплені hue як у довіднику «Облік (тип номенклатури)». */
 export const HR_PAY_GROUP_HUES: Record<HrPayGroup, string> = {
@@ -60,12 +62,6 @@ export const HR_TIMESHEET_KIND_DEFAULT_HUES: Record<HrTimesheetKindCode, string>
   Св: 'violet',
 };
 
-export const HR_BTN_PRIMARY =
-  'bg-blue-500 text-white font-medium';
-export const HR_BTN_SUCCESS =
-  'bg-lime-500 text-white font-medium';
-export const HR_BTN_WARNING =
-  'bg-amber-500 text-white font-medium';
 export const HR_BTN_NEUTRAL =
   'bg-slate-100 text-slate-800 hover:bg-slate-200 font-medium border border-slate-200';
 
@@ -153,28 +149,6 @@ export function timesheetKindCellClass(
   return hrKindClassName(kindHueOrDefault(kind, hues));
 }
 
-const HR_SPEC_CHIP_LUCIDE_ICONS = {
-  success: 'circle-check',
-  warning: 'triangle-alert',
-  error: 'circle-x',
-  info: 'info',
-  default: 'circle',
-  merge: 'merge',
-} as const;
-
-type HrSpecChipIcon = keyof typeof HR_SPEC_CHIP_LUCIDE_ICONS;
-
-interface HrSpecChipProps {
-  tokens: SpecColorTokens;
-  icon?: HrSpecChipIcon;
-  children: ReactNode;
-  className?: string;
-  size?: 'sm' | 'md';
-  rounded?: 'full' | 'sm';
-  selected?: boolean;
-  onClick?: () => void;
-}
-
 export function HrLinkedAccountIndicator({ userName }: { userName: string }) {
   const label = `Привʼязаний обліковий запис: ${userName}`;
 
@@ -187,36 +161,3 @@ export function HrLinkedAccountIndicator({ userName }: { userName: string }) {
   );
 }
 
-export function HrSpecChip({
-  tokens,
-  icon,
-  children,
-  className,
-  size = 'sm',
-  rounded = 'full',
-  selected = false,
-  onClick,
-}: HrSpecChipProps) {
-  const lucideIcon = icon ? HR_SPEC_CHIP_LUCIDE_ICONS[icon] : undefined;
-
-  return (
-    <Chip
-      size={size}
-      variant="flat"
-      className={onClick ? 'cursor-pointer' : undefined}
-      onClick={onClick}
-      startContent={lucideIcon ? <DynamicIcon name={lucideIcon} size={13} /> : undefined}
-      classNames={{
-        base: [
-          rounded ? `rounded-${rounded}` : 'rounded-full',
-          specColorToClassNames(tokens, { border: true, intensity: selected ? 'medium' : tokens.intensity }),
-          selected ? 'ring-2 ring-slate-800 ring-offset-1' : '',
-          className ?? rounded === 'full' ? 'px-1.5' : 'px-1',
-        ].join(' '),
-        content: 'font-medium leading-none ml-0.5',
-      }}
-    >
-      {children}
-    </Chip>
-  );
-}

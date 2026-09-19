@@ -33,9 +33,9 @@ export function TimesheetCellAuditPopover({ entryId, isOpen, onClose }: Timeshee
         <ModalHeader>Логи змін комірки</ModalHeader>
         <ModalBody>
           {!canView ? (
-            <p className="text-sm text-text-secondary">Немає доступу до журналу</p>
+            <p className="text-sm text-default-500">Немає доступу до журналу</p>
           ) : logs.length === 0 ? (
-            <p className="text-sm text-text-secondary">Змін не знайдено</p>
+            <p className="text-sm text-default-500">Змін не знайдено</p>
           ) : (
             <div className="divide-y divide-border-subtle">
               <HrAuditLogList logs={logs} variant="timesheet" />

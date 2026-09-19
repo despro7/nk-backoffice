@@ -56,16 +56,16 @@ export function PersonMergedAccordion({
         {loading ? (
           <div className="flex justify-center py-4"><Spinner size="sm" /></div>
         ) : merged.length === 0 ? (
-          <p className="text-sm text-text-secondary">Немає записів</p>
+          <p className="text-sm text-default-500">Немає записів</p>
         ) : (
           <ul className="space-y-1.5">
             {merged.map((record) => (
               <li
                 key={record.id}
-                className="rounded-[8px] border border-border-subtle bg-surface-page px-3 py-2 text-sm"
+                className="rounded-[8px] border border-default-200 bg-default-50 px-3 py-2 text-sm"
               >
-                <div className="font-medium text-text-primary">{record.displayName}</div>
-                <div className="text-xs text-text-secondary mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                <div className="font-medium text-default-900">{record.displayName}</div>
+                <div className="text-xs text-default-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
                   {record.taxCode ? <span>ІПН: {record.taxCode}</span> : null}
                   {record.phone ? (
                     <span>Тел.: <FormattedPhone phone={record.phone} style="national" /></span>

@@ -1,5 +1,6 @@
 // Централізований сервіс управління логуванням
 import { LoggingSettingsTypes } from '../types/logging';
+import { ClientLogBuffer } from './ClientLogBuffer';
 
 // Глобальна змінна для відстеження часу старту програми
 const appStartTime = Date.now();
@@ -117,8 +118,10 @@ export class LoggingService {
 
     const timestamp = new Date().toISOString();
     const timeFromStart = (Date.now() - appStartTime) / 1000;
+    const formatted = `\n════ [${this.formatTimeOnly(timestamp)}] ════ [${timeFromStart.toFixed(2)}s] ════\n${message}`;
+    ClientLogBuffer.pushFromLoggingCategory(category, formatted, data);
     console.log(
-      `\n════ [${this.formatTimeOnly(timestamp)}] ════ [${timeFromStart.toFixed(2)}s] ════\n${message}`,
+      formatted,
       ...(data !== undefined ? [data, '\n\n'] : ['\n\n'])
     );
   }

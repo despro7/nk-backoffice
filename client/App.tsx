@@ -1,7 +1,6 @@
 import "./global.css";
 
 import React, { Suspense, useEffect } from "react";
-import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HeroUIProvider, ToastProvider } from "@heroui/react";
@@ -10,13 +9,13 @@ import { Layout } from "./components/Layout";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { AuthProvider } from "./contexts/AuthContext";
+import { useAuth, useEquipmentFromAuth } from "./contexts/auth-context";
 import { DilovodDirectoriesProvider } from './contexts/DilovodDirectoriesContext';
 import { useDilovodDirectories } from './contexts/DilovodDirectoriesContext';
 import { DebugProvider } from "./contexts/DebugContext";
 import { RolePreviewProvider } from "./contexts/RolePreviewContext";
 import { ServerStatusProvider } from "./hooks/ServerStatusContext";
-import { useEquipmentFromAuth } from "./contexts/AuthContext";
 import NotFound from "./pages/NotFound";
 import { Auth } from "./pages/Auth";
 import { PageRouteFallback } from "./components/PageRouteFallback";
@@ -195,7 +194,8 @@ function AppToastProvider() {
   );
 }
 
-const App = () => (
+export default function App() {
+  return (
   <HeroUIProvider>
     <AppToastProvider />
     <QueryClientProvider client={queryClient}>
@@ -219,6 +219,5 @@ const App = () => (
       </BrowserRouter>
     </QueryClientProvider>
   </HeroUIProvider>
-);
-
-createRoot(document.getElementById("root")!).render(<App />);
+  );
+}

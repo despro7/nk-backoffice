@@ -7,7 +7,7 @@ import {
   DropdownSection,
   DropdownTrigger,
 } from '@heroui/react';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 
 export const CATALOG_ACTIONS_MENU_PANEL =
   'min-w-[200px] overflow-hidden rounded-lg border border-default-200 bg-content1 p-2 shadow-lg';

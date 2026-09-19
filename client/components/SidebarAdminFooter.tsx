@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { DebugModeSwitch } from '@/components/DebugModeSwitch';
 import { RolePreviewSelect } from '@/components/RolePreviewSelect';
-import { useRolePreview } from '@/contexts/RolePreviewContext';
-import { useDebug } from '@/contexts/DebugContext';
+import { useRolePreview } from '@/contexts/role-preview-context';
+import { useDebug } from '@/contexts/debug-context';
 import { cn } from '@/lib/utils';
 
 const STORAGE_KEY = 'sidebarAdminToolsOpen';

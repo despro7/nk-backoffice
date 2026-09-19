@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/auth-context';
 import type { NavBadge } from '@/routes.config';
 
 export const SALESDRIVE_ORDERS_PATH = '/salesdrive-to-dilovod';

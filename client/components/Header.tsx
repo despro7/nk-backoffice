@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
-import { useRolePreview } from "../contexts/RolePreviewContext";
+import { useAuth } from "../contexts/auth-context";
+import { useRolePreview } from "../contexts/role-preview-context";
 import { cn } from "@/lib/utils";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, User } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";

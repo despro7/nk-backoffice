@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { useRolePreview } from '@/contexts/RolePreviewContext';
+import { useRolePreview } from '@/contexts/role-preview-context';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { getNavGroups } from '@/routes.config';
 import { isPathInNavGroup } from '@/components/mobile/resolveMobileNavLabel';
 import { MobileGroupDrawer } from '@/components/mobile/MobileGroupDrawer';
 import { NavBadgePill } from '@/components/NavBadgePill';
 import { cn } from '@/lib/utils';
+import { REPORT_CAPTURE_EXCLUDE_CLASS } from '@/services/ReportProblemService';
 import type { NavGroup } from '@/routes.config';
 import {
   SALESDRIVE_ORDERS_PATH,
@@ -142,10 +143,12 @@ export function MobileTabBar() {
   return (
     <>
       <nav
+        data-report-capture-chrome="true"
         className={cn(
           'lg:hidden fixed bottom-6 left-0 right-0 z-20',
           'rounded-lg ring-1 ring-white bg-white/75 shadow-[0_15px_50px_-12px_theme(colors.gray.400),inset_0_1px_4px_0_theme(colors.white)] backdrop-blur-sm',
-          'mx-3'
+          'mx-3 transition-opacity duration-150',
+          REPORT_CAPTURE_EXCLUDE_CLASS,
         )}
         aria-label="Мобільна навігація"
       >

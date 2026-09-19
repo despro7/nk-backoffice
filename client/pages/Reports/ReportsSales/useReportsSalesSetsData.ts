@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DateRange } from "@react-types/datepicker";
 import { useApi } from "@/hooks/useApi";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/auth-context";
 import {
   CacheRefreshConfirmModal,
   CachePeriodSelectModal,

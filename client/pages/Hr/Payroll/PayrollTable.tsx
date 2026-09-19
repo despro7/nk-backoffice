@@ -302,7 +302,7 @@ export function PayrollTable({
     return (
       <button
         type="button"
-        className={`w-full text-right tabular-nums ${paid ? 'text-emerald-800' : 'text-text-primary hover:text-primary'}`}
+        className={`w-full text-right tabular-nums ${paid ? 'text-emerald-800' : 'text-default-900 hover:text-primary'}`}
         onClick={(event) => {
           event.stopPropagation();
           onClick();
@@ -315,7 +315,7 @@ export function PayrollTable({
 
   if (lines.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-text-secondary">
+      <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-default-500">
         Немає рядків розрахунку за ций місяць.
       </div>
     );
@@ -429,10 +429,10 @@ export function PayrollTable({
                 line.toPayAmount ? () => openCellAction(line, null, line.toPayAmount) : undefined,
               )}
             </td>
-            <td className={`${AMOUNT_TD} text-text-secondary group-hover:bg-slate-50`}>
+            <td className={`${AMOUNT_TD} text-default-500 group-hover:bg-slate-50`}>
               {line.esvAmount && line.esvAmount !== '0.00' ? formatMoney(line.esvAmount) : '—'}
             </td>
-            <td className={`${AMOUNT_TD} font-medium text-text-primary group-hover:bg-slate-50`}>
+            <td className={`${AMOUNT_TD} font-medium text-default-900 group-hover:bg-slate-50`}>
               {line.employerTotalCost && line.employerTotalCost !== '0.00' ? formatMoney(line.employerTotalCost) : '—'}
             </td>
             <td className={`${AMOUNT_TD} text-neutral-500 group-hover:bg-slate-50`}>{row.paid}</td>

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { saveAs } from 'file-saver';
 import type { DateRange } from '@react-types/datepicker';
 import { useApi } from '@/hooks/useApi';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/auth-context';
 import {
   LAL_DEFAULT_EXPORT_COLUMNS,
   LAL_DEFAULT_LOGIC,

@@ -10,7 +10,7 @@ import {
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { UserCardPanel, type UserCardPanelHandle } from './panels/UserCardPanel';
-import { HR_BTN_PRIMARY } from '@/pages/Hr/hrUi';
+import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
 import type { UserCardProps } from './UserCard.types';
 
 export function UserCard({
@@ -71,7 +71,7 @@ export function UserCard({
         <DrawerContent>
           {() => (
             <>
-              <DrawerHeader className="border-b border-border-subtle shrink-0">
+              <DrawerHeader className="border-b border-default-200 shrink-0">
                 {title}
               </DrawerHeader>
               <DrawerBody className="gap-5 py-5 overflow-y-auto">
@@ -86,7 +86,7 @@ export function UserCard({
                   onDirtyChange={setIsDirty}
                 />
               </DrawerBody>
-              <DrawerFooter className="border-t border-border-subtle shrink-0">
+              <DrawerFooter className="border-t border-default-200 shrink-0">
                 <Button variant="light" onPress={closeDrawer} isDisabled={isBusy}>
                   Скасувати
                 </Button>

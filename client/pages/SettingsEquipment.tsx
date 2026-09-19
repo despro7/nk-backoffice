@@ -4,7 +4,7 @@ import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Switch } from "@heroui/switch";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { useEquipmentFromAuth } from "../contexts/AuthContext";
+import { useEquipmentFromAuth } from "../contexts/auth-context";
 import { EquipmentConfig } from "../services/EquipmentService";
 import { Input } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";

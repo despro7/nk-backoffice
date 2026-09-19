@@ -1,5 +1,5 @@
-import { useAuth } from "@/contexts/AuthContext";
-import { useRolePreview } from "@/contexts/RolePreviewContext";
+import { useAuth } from "@/contexts/auth-context";
+import { useRolePreview } from "@/contexts/role-preview-context";
 import { hasAccess, ROLES } from "@/routes.config";
 import { hasPermission as hasPermissionKey } from "@shared/constants/permissions";
 

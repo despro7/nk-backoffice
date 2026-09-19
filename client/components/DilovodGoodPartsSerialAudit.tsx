@@ -182,10 +182,10 @@ export const DilovodGoodPartsSerialAudit: React.FC = () => {
 
   return (
     <Card>
-      <CardHeader className="border-b border-border-subtle">
-        <DynamicIcon name="hash" size={20} className="text-text-secondary mr-2" />
+      <CardHeader className="border-b border-default-200">
+        <DynamicIcon name="hash" size={20} className="text-default-500 mr-2" />
         <div className="flex-1 min-w-0">
-          <h2 className="text-lg font-semibold text-text-primary">Партії без серійного номеру</h2>
+          <h2 className="text-lg font-semibold text-default-900">Партії без серійного номеру</h2>
         </div>
         <Button
           color="primary"
@@ -204,35 +204,35 @@ export const DilovodGoodPartsSerialAudit: React.FC = () => {
 
         {summary ? (
           <div>
-            <p className="text-sm text-text-secondary">{summary}</p>
+            <p className="text-sm text-default-500">{summary}</p>
             <p className="text-xs text-neutral-500 mt-0.5">
               Поле Dilovod <span className="font-mono">catalogs.goodParts.code</span>
               {' '}(«Серійний №»). Генерація: YMMDD з дати партії (напр. 05.09.2026 → 60905).
             </p>
           </div>
         ) : (
-          <div className="text-sm text-text-secondary">
+          <div className="text-sm text-default-500">
             Натисніть «Знайти» для аудиту партій без серійного № у «Готова продукція».
           </div>
         )}
 
         {loading && !audit ? (
-          <div className="flex items-center gap-2 text-sm text-text-secondary">
+          <div className="flex items-center gap-2 text-sm text-default-500">
             <Spinner size="sm" />
             Завантаження з Dilovod…
           </div>
         ) : null}
 
         {audit && audit.items.length === 0 ? (
-          <div className="rounded-[8px] border border-border-subtle bg-surface-page px-4 py-3 text-sm text-text-secondary">
+          <div className="rounded-[8px] border border-default-200 bg-default-50 px-4 py-3 text-sm text-default-500">
             Порожніх серійних номерів не знайдено.
           </div>
         ) : null}
 
         {audit && audit.items.length > 0 ? (
-          <div className="overflow-x-auto rounded-[8px] border border-border-subtle">
+          <div className="overflow-x-auto rounded-[8px] border border-default-200">
             <table className="min-w-full text-sm">
-              <thead className="bg-surface-page text-left text-xs text-text-secondary">
+              <thead className="bg-default-50 text-left text-xs text-default-500">
                 <tr className="divide-x border-b [&>th]:px-3 [&>th]:py-2 [&>th]:font-medium [&>th]:bg-neutral-200/50">
                   <th>Товар</th>
                   <th>Дата</th>
@@ -253,8 +253,8 @@ export const DilovodGoodPartsSerialAudit: React.FC = () => {
                       className={`divide-x ${missingDate ? 'bg-danger-50/80' : ''}`}
                     >
                       <td className="px-3 py-2">
-                        <div className="font-medium text-text-primary">{item.ownerName}</div>
-                        <div className="text-xs text-text-secondary font-mono">
+                        <div className="font-medium text-default-900">{item.ownerName}</div>
+                        <div className="text-xs text-default-500 font-mono">
                           {item.sku ? `SKU ${item.sku}` : item.ownerId || '—'}
                         </div>
                         {missingDate ? (
@@ -265,7 +265,7 @@ export const DilovodGoodPartsSerialAudit: React.FC = () => {
                       </td>
                       <td
                         className={`px-3 py-2 whitespace-nowrap ${
-                          missingDate ? 'text-danger font-medium' : 'text-text-secondary'
+                          missingDate ? 'text-danger font-medium' : 'text-default-500'
                         }`}
                       >
                         <div>{missingDate ? 'немає дати' : formatDilovodDate(item.date)}</div>
@@ -275,7 +275,7 @@ export const DilovodGoodPartsSerialAudit: React.FC = () => {
                           </div>
                         ) : null}
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs text-text-secondary break-all">
+                      <td className="px-3 py-2 font-mono text-xs text-default-500 break-all">
                         {item.id}
                       </td>
                       <td className="px-3 py-2 min-w-[12rem]">

@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useDisclosure } from '@heroui/react';
-import { useDebug } from '@/contexts/DebugContext';
+import { useDebug } from '@/contexts/debug-context';
 import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/auth-context';
 import { useApi } from '@/hooks/useApi';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useWarehouseMovementSettings } from '@/hooks/useWarehouseMovementSettings';

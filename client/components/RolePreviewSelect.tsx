@@ -1,7 +1,7 @@
 import React from 'react';
 import { Select, SelectItem } from '@heroui/select';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useRolePreview } from '../contexts/RolePreviewContext';
+import { useRolePreview } from '../contexts/role-preview-context';
 import { ROLES } from '@shared/constants/roles';
 import { canAccessRoute } from '@shared/constants/permissions';
 import { findAppRouteByPath } from '@/routes.config';
