@@ -8,6 +8,48 @@ export type ParsedItems = {
   missing: string[];
 };
 
+/** Прибирає префікси та HTML з сирого тексту помилки Dilovod (fallback для старих відповідей API). */
+export function normalizeDilovodErrorText(raw: string): string {
+  if (!raw) return '';
+
+  if (/^Недостатн[^:\n]*:\s*\n-/m.test(raw)) {
+    return raw.trim();
+  }
+
+  let text = String(raw)
+    .replace(/^Помилка створення відвантаження для замовлення\s+\S+[:\s]*/i, '')
+    .replace(/^Помилка експорту замовлення\s+\S+\s+в Dilovod[:\s]*/i, '')
+    .replace(/^applicationLayerError\s*/i, '')
+    .replace(/^multithreadApiSession\s*/i, '')
+    .replace(/^Документ не збережено\.\s*/i, '')
+    .replace(/<span[^>]*>([^<]+)<\/span>/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  text = text
+    .replace(/Недостатня кількість\./gi, 'Недостатня кількість:')
+    .replace(/Артикул:\s*/gi, 'арт: ')
+    .replace(/Потрібно:\s*/gi, 'потрібно: ')
+    .replace(/Вільний залишок:\s*/gi, 'залишок: ')
+    .replace(/Недостатньо:\s*/gi, 'бракує: ');
+
+  if (/^Недостатн/i.test(text) && !text.includes('\n- ')) {
+    text = text.replace(/^([^:\n]+):\s*/, '$1:\n- ');
+    text = text.replace(/\s+-\s+/g, '\n- ');
+  }
+
+  return text.trim();
+}
+
+export function parseDilovodErrorText(errorText: string): ParsedItems {
+  const normalized = normalizeDilovodErrorText(errorText);
+  if (!normalized) {
+    return { names: [], skus: [], needed: [], stock: [], missing: [] };
+  }
+  return parseShipmentMessage({ message: normalized, rawMessage: normalized } as MetaLogRow);
+}
+
 export function parseShipmentMessage(row: MetaLogRow): ParsedItems {
   const raw = String((row.rawMessage ?? (row as any).message ?? (row.data && ((row.data.error as string) ?? (row.data.dilovodResponse && (row.data.dilovodResponse.error as string))))) ?? '');
 

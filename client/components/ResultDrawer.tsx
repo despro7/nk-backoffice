@@ -13,6 +13,7 @@ import { formatDate, formatRelativeDate } from "../lib/formatUtils";
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { useApi } from '@/hooks/useApi';
 import MetaLogJsonView from './MetaLogJsonView';
+import BulkExportResultsTable from './BulkExportResultsTable';
 
 interface ResultDrawerProps {
 	isOpen: boolean;
@@ -437,42 +438,7 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 
 										{/* Масовий експорт + відвантаження: bulkExportResults */}
 										{Array.isArray(result.bulkExportResults) && (
-											<div className="overflow-x-auto my-6">
-												<table className="min-w-full border text-sm">
-													<thead>
-														<tr className="bg-gray-100">
-															<th className="border px-2 py-1">№ замовл.</th>
-															<th className="border px-2 py-1">Експорт</th>
-															<th className="border px-2 py-1">Відвантаження</th>
-															<th className="border px-2 py-1">Помилки</th>
-														</tr>
-													</thead>
-													<tbody>
-														{result.bulkExportResults.map((item: any, idx: number) => (
-															<tr key={idx} className="odd:bg-white even:bg-gray-50">
-																<td className="border px-2 py-1 font-medium">{item.orderNumber}</td>
-																<td className="border px-2 py-1">
-																	{item.exportSuccess ? <Chip size="sm" color="success" variant="flat">OK</Chip> : <Chip size="sm" color="danger" variant="flat">Помилка</Chip>}
-																</td>
-																<td className="border px-2 py-1">
-																	{item.shipmentSuccess ? <Chip size="sm" color="success" variant="flat">OK</Chip> :
-																		item.exportSuccess ? <Chip size="sm" color="danger" variant="flat">Помилка</Chip> :
-																			<Chip size="sm" color="secondary" variant="flat" className="text-gray-400 px-4">—</Chip>}
-																</td>
-																<td className="border px-2 py-1">
-																	{item.errors && item.errors.length > 0 ? (
-																		<ul className="list-disc ml-4">
-																			{item.errors.map((err: string, i: number) => (
-																				<li key={i} className="text-red-600">{err}</li>
-																			))}
-																		</ul>
-																	) : <span className="text-gray-400">—</span>}
-																</td>
-															</tr>
-														))}
-													</tbody>
-												</table>
-											</div>
+											<BulkExportResultsTable items={result.bulkExportResults} />
 										)}
 
 										{/* Таблиця результатів (для масових операцій) */}

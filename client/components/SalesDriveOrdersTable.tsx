@@ -45,6 +45,10 @@ import type { SalesChannel } from "@shared/types/dilovod";
 // Функція для отримання класів каналу (статична — кольори визначаються по id)
 // Перенесено до client/lib/formatUtils.ts → getChannelClass
 
+function pickDilovodError(payload: { error?: string; message?: string; data?: { error?: string } }): string {
+  return payload.error || payload.data?.error || payload.message || 'Помилка';
+}
+
 interface SalesDriveOrdersTableProps {
   className?: string;
   initialSearch?: string;
@@ -932,8 +936,8 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
 
     const results: Array<{
       orderNumber: string,
-      exportSuccess: boolean,
-      shipmentSuccess: boolean,
+      exportSuccess: boolean | null,
+      shipmentSuccess: boolean | null,
       errors: string[]
     }> = [];
 
@@ -955,7 +959,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
             hideIcon: false,
             icon: "octagon-alert",
           });
-          results.push({ orderNumber: order.orderNumber, exportSuccess, shipmentSuccess: false, errors });
+          results.push({ orderNumber: order.orderNumber, exportSuccess, shipmentSuccess: null, errors });
           continue;
         }
         const token = validateResult?.metadata?.token;
@@ -976,10 +980,10 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
             timeout: 1500
           });
         } else {
-          errors.push(result.error || result.message || 'Помилка експорту');
+          errors.push(pickDilovodError(result) || 'Помилка експорту');
           ToastService.show({
             title: `Помилка експорту (${order.orderNumber})`,
-            description: result.error || result.message || 'Помилка',
+            description: pickDilovodError(result),
             color: 'danger',
             hideIcon: false,
             icon: "x-circle",
@@ -996,7 +1000,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
           icon: "x-circle",
         });
       }
-      results.push({ orderNumber: order.orderNumber, exportSuccess, shipmentSuccess: false, errors });
+      results.push({ orderNumber: order.orderNumber, exportSuccess, shipmentSuccess: null, errors });
     }
 
     setDrawerResult({ bulkExportResults: results });
@@ -1021,8 +1025,8 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
 
     const results: Array<{
       orderNumber: string,
-      exportSuccess: boolean,
-      shipmentSuccess: boolean,
+      exportSuccess: boolean | null,
+      shipmentSuccess: boolean | null,
       errors: string[]
     }> = [];
 
@@ -1052,10 +1056,10 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
           });
           if (token) setSaleTokens(prev => { const copy = { ...prev }; delete copy[order.id]; return copy; });
         } else {
-          errors.push(shipmentResult.error || shipmentResult.message || 'Помилка відвантаження');
+          errors.push(pickDilovodError(shipmentResult) || 'Помилка відвантаження');
           ToastService.show({
             title: `Помилка відвантаження (${order.orderNumber})`,
-            description: shipmentResult.error || shipmentResult.message || 'Помилка',
+            description: pickDilovodError(shipmentResult),
             color: 'danger',
             hideIcon: false,
             icon: "x-circle",
@@ -1072,7 +1076,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
           icon: "x-circle",
         });
       }
-      results.push({ orderNumber: order.orderNumber, exportSuccess: false, shipmentSuccess, errors });
+      results.push({ orderNumber: order.orderNumber, exportSuccess: null, shipmentSuccess, errors });
     }
 
     setDrawerResult({ bulkExportResults: results });
@@ -1097,8 +1101,8 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
 
     const results: Array<{
       orderNumber: string,
-      exportSuccess: boolean,
-      shipmentSuccess: boolean,
+      exportSuccess: boolean | null,
+      shipmentSuccess: boolean | null,
       errors: string[]
     }> = [];
 
@@ -1106,7 +1110,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
       const order = orders.find(o => String(o.id) === String(orderId));
       if (!order) continue;
       let exportSuccess = false;
-      let shipmentSuccess = false;
+      let shipmentSuccess: boolean | null = null;
       const errors: string[] = [];
 
       // Експорт
@@ -1148,10 +1152,10 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
             timeout: 1500
           });
         } else {
-          errors.push(result.error || result.message || 'Помилка експорту');
+          errors.push(pickDilovodError(result) || 'Помилка експорту');
           ToastService.show({
             title: `Помилка експорту (${order.orderNumber})`,
-            description: result.error || result.message || 'Помилка',
+            description: pickDilovodError(result),
             color: 'danger',
             hideIcon: false,
             icon: "x-circle",
@@ -1185,10 +1189,11 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                 timeout: 1500
               });
             } else {
-              errors.push(shipmentResult.error || shipmentResult.message || 'Помилка відвантаження');
+              shipmentSuccess = false;
+              errors.push(pickDilovodError(shipmentResult) || 'Помилка відвантаження');
               ToastService.show({
                 title: `Помилка відвантаження (${order.orderNumber})`,
-                description: shipmentResult.error || shipmentResult.message || 'Помилка',
+                description: pickDilovodError(shipmentResult),
                 color: 'danger',
                 hideIcon: false,
                 icon: "x-circle",

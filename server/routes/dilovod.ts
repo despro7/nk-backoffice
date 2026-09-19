@@ -1477,19 +1477,30 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, dilovodExpo
         data: metaLogData
       });
 
+      const cleanedExportErrorShort = isExportError && exportResult?.error
+        ? cleanDilovodErrorMessageShort(String(exportResult.error))
+        : '';
+      const cleanedExportErrorFull = isExportError && exportResult?.error
+        ? cleanDilovodErrorMessageFull(String(exportResult.error))
+        : '';
+
       const mainMessage = isExportError
-        ? `Помилка експорту замовлення ${orderNum} в Dilovod: ${exportErrorMessage}`
+        ? (cleanedExportErrorShort
+          ? `Помилка експорту замовлення ${orderNum}:\n${cleanedExportErrorShort}`
+          : `Помилка експорту замовлення ${orderNum} в Dilovod`)
         : `Замовлення ${orderNum} експортовано в Dilovod успішно`;
 
       res.json({
         success: !isExportError,
         message: mainMessage,
+        error: isExportError ? (cleanedExportErrorShort || exportErrorMessage || undefined) : undefined,
         exported: !isExportError,
         dilovodId: exportResult?.dilovodDocId,
         dilovodExportDate: !isExportError ? new Date().toISOString() : undefined,
         data: {
           orderId,
           exportResult: exportResponse,
+          error: isExportError ? (cleanedExportErrorFull || cleanedExportErrorShort || exportErrorMessage || undefined) : undefined,
           warnings: warnings.length > 0 ? warnings : undefined
         },
         metadata: {
@@ -1804,19 +1815,30 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, dilovodEx
         data: metaLogData
       });
 
+      const cleanedShipmentErrorShort = isExportError && exportResult?.error
+        ? cleanDilovodErrorMessageShort(String(exportResult.error))
+        : '';
+      const cleanedShipmentErrorFull = isExportError && exportResult?.error
+        ? cleanDilovodErrorMessageFull(String(exportResult.error))
+        : '';
+
       const mainMessage = isExportError
-        ? `Помилка створення відвантаження для замовлення ${orderNumber}: ${exportErrorMessage}`
+        ? (cleanedShipmentErrorShort
+          ? `Помилка створення відвантаження для замовлення ${orderNumber}:\n${cleanedShipmentErrorShort}`
+          : `Помилка створення відвантаження для замовлення ${orderNumber}`)
         : `Документ відвантаження для замовлення ${orderNumber} успішно створений`;
 
       res.json({
         success: !isExportError,
         created: !isExportError,
         message: mainMessage,
+        error: isExportError ? (cleanedShipmentErrorShort || exportErrorMessage || undefined) : undefined,
         dilovodSaleExportDate: !isExportError ? new Date().toISOString() : undefined,
         data: {
           orderId,
           baseDoc: order.dilovodDocId,
           exportResult: exportResponse,
+          error: isExportError ? (cleanedShipmentErrorFull || cleanedShipmentErrorShort || exportErrorMessage || undefined) : undefined,
           warnings: warnings.length > 0 ? warnings : undefined
         },
         metadata: {
