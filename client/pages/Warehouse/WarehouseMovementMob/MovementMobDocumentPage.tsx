@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import MovementMobEditorPage from './MovementMobEditorPage';
 import { useWarehouseMovementMobDocument } from './useWarehouseMovementMobDocument';
+import { formatMovementCreatedDateLabel } from './WarehouseMovementMobUtils';
 
 export default function MovementMobDocumentPage() {
   const navigate = useNavigate();
@@ -13,12 +14,12 @@ export default function MovementMobDocumentPage() {
 
   useEffect(() => {
     if (!document?.displayNumber) return;
-    window.document.title = `${document.displayNumber} | NK Backoffice`;
+    window.document.title = `Переміщення ${document.displayNumber} | NK Backoffice`;
   }, [document?.displayNumber]);
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2 px-3 md:px-0 mb-3">
+      <div className="flex items-center gap-3 px-3 md:px-0 mb-3">
         <Button
           isIconOnly
           size="md"
@@ -29,11 +30,15 @@ export default function MovementMobDocumentPage() {
         >
           <DynamicIcon name="arrow-left" size={18} />
         </Button>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-lg leading-tight font-bold text-default-900 truncate">
-            {document?.displayNumber ?? 'Переміщення'}
+        <div className="min-w-0 flex-1 flex flex-col gap-0.5">
+          <h1 className="text-lg md:text-xl leading-tight font-bold text-default-900 truncate">
+            {document?.displayNumber ? `Переміщення ${document.displayNumber}` : 'Переміщення'}
           </h1>
-          <p className="text-xs text-default-400 truncate">Деталі переміщення між складами</p>
+          <p className="text-xs md:text-sm text-default-400 truncate">
+            {document?.draftCreatedAt
+              ? formatMovementCreatedDateLabel(document.draftCreatedAt)
+              : 'Завантаження…'}
+          </p>
         </div>
       </div>
 

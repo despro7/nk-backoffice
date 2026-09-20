@@ -156,7 +156,7 @@ export default function MovementMobDocumentCard({
         onClick={() => onPress(card.id)}
       >
         <div className="flex items-start justify-between gap-2">
-          <span className="text-xs text-neutral-400">{card.displayDateTime}</span>
+          <span className="text-xs text-neutral-400" title="Дата створення документа переміщення">{card.displayDateTime}</span>
           <div className="flex items-center gap-1">
             <MovementMobDirectionBadges
               sourceBadge={card.sourceBadge}

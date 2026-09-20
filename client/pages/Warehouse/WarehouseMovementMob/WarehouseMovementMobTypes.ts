@@ -198,6 +198,8 @@ export interface MovementMobChronologyEvent {
 export interface MovementMobDocumentViewModel {
   id: number;
   displayNumber: string;
+  /** Фактична дата створення переміщення (ISO). */
+  draftCreatedAt: string;
   status: MovementMobDbStatus | string;
   mode: MovementMobScreenMode;
   sourceStorageId: string;

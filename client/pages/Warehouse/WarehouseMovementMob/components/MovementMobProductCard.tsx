@@ -78,14 +78,21 @@ function BatchLabel({
   const linked = line.batchLinked === true;
   const label = (line.batchNumber || '').trim();
   const showWarning = !linked || !isHumanBatchLabel(label);
+  const barcodeLabel = line.barcode?.trim() || null;
 
   return (
-    <p className="text-xs text-default-400">
+    <p className="text-xs text-default-400 truncate">
       Партія:{' '}
       {showWarning ? (
         <span className="text-danger-500 font-medium">не обрано!</span>
       ) : (
         <span className="text-default-500">{label}</span>
+      )}
+      {barcodeLabel && (
+        <>
+          <span className="text-default-300 mx-1.5">|</span>
+          ШК: <span className="font-mono text-default-500">{barcodeLabel}</span>
+        </>
       )}
     </p>
   );
@@ -137,7 +144,6 @@ export default function MovementMobProductCard({
   const primaryQty = focusReceived ? line.receivedTotalPortions : line.totalPortions;
   const primaryBoxes = focusReceived ? line.receivedBoxQuantity : line.boxQuantity;
   const primaryLoose = focusReceived ? line.receivedPortionQuantity : line.portionQuantity;
-  const barcodeLabel = line.barcode?.trim() || null;
   const canEditProduct = Boolean(onEditProduct && line.catalogGoodId);
 
   return (
@@ -216,11 +222,6 @@ export default function MovementMobProductCard({
                 <p className="text-xs text-default-400 truncate">
                   SKU: <span className="font-mono text-default-500">{line.sku}</span>
                 </p>
-                {barcodeLabel && (
-                  <p className="text-xs text-default-400 truncate">
-                    ШК: <span className="font-mono text-default-500">{barcodeLabel}</span>
-                  </p>
-                )}
                 {(line.batchId || line.batchNumber) && (
                   <p className="text-xs text-default-400 truncate">
                     ID партії: <span className="font-mono text-default-500">{line.batchId || line.batchNumber}</span>

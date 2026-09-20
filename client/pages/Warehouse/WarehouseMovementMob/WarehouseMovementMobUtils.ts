@@ -393,6 +393,19 @@ export function formatMovementDateTime(iso: string | null | undefined): string {
   });
 }
 
+/** «від 20 вересня 2026 року» — для заголовка документа. */
+export function formatMovementCreatedDateLabel(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  const formatted = date.toLocaleDateString('uk-UA', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+  return `від ${formatted} року`;
+}
+
 export function formatChronologyDateTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   const date = new Date(iso);
@@ -489,12 +502,10 @@ export function sentStepperLabel(storageBadge: string): string {
 export function toListCardViewModel(record: MovementMobApiRecord): MovementMobListCardViewModel {
   const items = parseMovementItems(record.items);
   const aggregates = aggregateMovementItems(items);
-  const displayAt = record.movementDate || record.draftCreatedAt;
-
   return {
     id: record.id,
     displayNumber: formatDocNumber(record.internalDocNumber),
-    displayDateTime: formatMovementDateTime(displayAt),
+    displayDateTime: formatMovementDateTime(record.draftCreatedAt),
     sourceStorageId: record.sourceWarehouse,
     destStorageId: record.destinationWarehouse,
     sourceBadge: resolveShortStorageBadge(record.sourceWarehouse),
@@ -884,6 +895,7 @@ export function toDocumentViewModel(
   return {
     id: record.id,
     displayNumber: formatDocNumber(record.internalDocNumber),
+    draftCreatedAt: record.draftCreatedAt,
     status: record.status,
     mode: resolveScreenMode(record.status),
     sourceStorageId: record.sourceWarehouse,

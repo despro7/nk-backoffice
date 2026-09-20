@@ -5,6 +5,7 @@ import { lazyPage, type LazyPageComponent } from './lib/lazyPage';
 const Dashboard = lazyPage(() => import('./pages/Dashboard'));
 const Orders = lazyPage(() => import('./pages/Orders'));
 const WarehouseMovement = lazyPage(() => import('./pages/Warehouse/WarehouseMovement'));
+const WarehouseBatches = lazyPage(() => import('./pages/Warehouse/WarehouseBatches'));
 const WarehouseMovementMob = lazyPage(() => import('./pages/Warehouse/WarehouseMovementMob'));
 const MovementMobDocumentPage = lazyPage(() => import('./pages/Warehouse/WarehouseMovementMob/MovementMobDocumentPage'));
 const MovementMobCreatePage = lazyPage(() => import('./pages/Warehouse/WarehouseMovementMob/MovementMobCreatePage'));
@@ -159,6 +160,24 @@ export const appRoutes: AppRoute[] = [
     inNav: false,
     permission: { name: 'orders' },
     hasOwnTitle: true,
+  },
+  {
+    path: '/warehouse/batches',
+    component: WarehouseBatches,
+    title: 'Партії',
+    pageTitle: 'Партії | NK Backoffice',
+    navLabel: 'Партії',
+    icon: <DynamicIcon name="layers" size={16} />,
+    inNav: true,
+    order: -1,
+    parent: 'warehouse',
+    permission: { name: 'batches' },
+    hasOwnTitle: true,
+    navBadge: {
+      label: 'NEW',
+      color: 'danger',
+      until: '2026-09-30',
+    },
   },
   {
     path: '/warehouse/movement-mob',

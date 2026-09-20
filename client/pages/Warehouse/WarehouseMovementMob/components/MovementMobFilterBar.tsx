@@ -61,8 +61,8 @@ export default function MovementMobFilterBar({
             ? [{ key: 'custom', label: 'Обраний період' }]
             : []),
         ],
-        className: isInline ? 'min-w-0 w-auto shrink-0' : 'min-w-0 w-full shrink-0',
-        triggerClassName: 'h-10',
+        className: isInline ? 'min-w-0 w-48 shrink-0' : 'min-w-0 w-full shrink-0',
+        triggerClassName: 'h-10 data-[hover=true]:bg-white/80 data-[open=true]:bg-white',
         iconName: 'calendar-days',
         placeholder: 'Період',
         ariaLabel: 'Період переміщень',
@@ -101,7 +101,7 @@ export default function MovementMobFilterBar({
           },
           maxValue: maxDate,
           className: isInline ? 'w-auto shrink-0' : 'w-full basis-full',
-          inputWrapperClassName: 'h-10',
+          inputWrapperClassName: 'h-10 hover:bg-white/80! data-[focus=true]:bg-white',
         }),
       );
     }

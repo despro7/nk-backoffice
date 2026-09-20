@@ -20,6 +20,7 @@ import {
 } from '../../services/orderShipmentMetricsService.js';
 import { safeParseItems } from './historyNormalize.js';
 import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
+import { warehouseBatchesService } from './WarehouseBatchesService.js';
 import { productsCatalogService } from '../Products/ProductsCatalogService.js';
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 import {
@@ -404,6 +405,37 @@ router.post('/resolve-batch-names', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('🚨 [Warehouse] resolve-batch-names:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// GET /api/warehouse/batches — список партій готової продукції
+router.get('/batches', authenticateToken, async (req, res) => {
+  try {
+    const onlyWithStock = req.query.onlyWithStock !== 'false';
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const forceRefresh = req.query.force === 'true';
+
+    const result = await warehouseBatchesService.list({
+      onlyWithStock,
+      limit,
+      forceRefresh,
+    });
+
+    res.json({
+      success: true,
+      data: result.items,
+      meta: {
+        total: result.items.length,
+        onlyWithStock: result.onlyWithStock,
+        limit: result.limit,
+      },
+    });
+  } catch (error) {
+    console.error('🚨 [Warehouse] GET /batches:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Внутрішня помилка сервера',
+    });
   }
 });
 
