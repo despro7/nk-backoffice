@@ -19,6 +19,7 @@ import { portionLabelPdfAsset } from './productLabelPdfFonts.js';
 const S = PORTION_LABEL_STATIC;
 const L = PORTION_LABEL_LAYOUT;
 const PAGE = PORTION_LABEL_PDF_SIZE_PT;
+const CONTENT_WIDTH = PAGE - L.padX * 2;
 
 function titleAlignStyle(align: ProductLabelTitleAlign) {
   if (align === 'left') return 'left' as const;
@@ -34,6 +35,15 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontFamily: 'Arial',
     position: 'relative',
+  },
+  main: {
+    paddingLeft: L.padX,
+    paddingRight: L.padX,
+    paddingTop: L.padTop,
+    paddingBottom: L.padBottom + L.bottomRowReserve,
+  },
+  body: {
+    marginTop: 7,
   },
   titleLine: {
     fontFamily: 'DaysOne',
@@ -75,6 +85,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Arial',
     fontWeight: 700,
   },
+  bottomRow: {
+    position: 'absolute',
+    left: L.padX,
+    bottom: L.bottomRowBottom,
+    width: L.bottomRowWidth,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
   netWeightLabel: {
     fontFamily: 'OpenSansCondensed',
     fontWeight: 700,
@@ -107,6 +126,19 @@ const styles = StyleSheet.create({
     fontSize: 6,
     lineHeight: 1.17,
   },
+  warning: {
+    position: 'absolute',
+    left: 0,
+    bottom: 0,
+    backgroundColor: '#000000',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: portionFigmaPx(6),
+    paddingBottom: portionFigmaPx(9),
+    paddingLeft: portionFigmaPx(12),
+    paddingRight: portionFigmaPx(9),
+    borderTopRightRadius: 5,
+  },
   warningText: {
     fontFamily: 'OpenSansCondensed',
     fontWeight: 700,
@@ -114,6 +146,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     textTransform: 'uppercase',
     lineHeight: 1.1,
+    marginLeft: L.headerGap,
   },
   barcodeFont: {
     fontFamily: 'CodeEAN13',
@@ -174,28 +207,33 @@ export function ProductLabelPdfDocument({ payload }: ProductLabelPdfProps) {
           </View>
         ) : null}
 
-        {/* Main */}
-        <View
-          style={{
-            flex: 1,
-            paddingLeft: L.padX,
-            paddingRight: L.padX,
-            paddingTop: L.padTop,
-            paddingBottom: L.padBottom,
-          }}
-        >
+        {/* Main flow content */}
+        <View style={styles.main}>
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Image
               src={portionLabelPdfAsset('nk-food-logo.svg')}
               style={{ width: L.logoSize, height: L.logoSize }}
             />
-            <View style={{ width: L.titleWidth, paddingRight: portionFigmaPx(4), alignItems: titleAlign === 'center' ? 'center' : titleAlign === 'right' ? 'flex-end' : 'flex-start' }}>
+            <View
+              style={{
+                width: L.titleWidth,
+                paddingRight: portionFigmaPx(4),
+                alignItems:
+                  titleAlign === 'center' ? 'center' : titleAlign === 'right' ? 'flex-end' : 'flex-start',
+              }}
+            >
               {title.line1 ? (
-                <Text style={[styles.titleLine, { fontSize: line1Size, textAlign: titleAlign }]}>{title.line1}</Text>
+                <Text style={[styles.titleLine, { fontSize: line1Size, textAlign: titleAlign }]}>
+                  {title.line1}
+                </Text>
               ) : null}
               {title.line2 ? (
-                <Text style={[styles.titleLine, { fontSize: line2Size, textAlign: titleAlign, marginTop: 1 }]}>{title.line2}</Text>
+                <Text
+                  style={[styles.titleLine, { fontSize: line2Size, textAlign: titleAlign, marginTop: 1 }]}
+                >
+                  {title.line2}
+                </Text>
               ) : null}
             </View>
             <Image
@@ -205,114 +243,103 @@ export function ProductLabelPdfDocument({ payload }: ProductLabelPdfProps) {
           </View>
 
           {/* Body */}
-          <View style={{ flex: 1, marginTop: 7, justifyContent: 'space-between' }}>
-            <View>
-              <View style={{ marginBottom: L.bodyGap }}>
-                <Text>
-                  <Text style={styles.ingredientsBold}>Склад: </Text>
-                  <Text style={styles.ingredientsRegular}>{ingredientsText}</Text>
-                </Text>
-              </View>
-
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: L.instructionTextGap }}>
-                <Image
-                  src={portionLabelPdfAsset('portion-instruction.svg')}
-                  style={{ width: L.instructionWidth, height: L.instructionHeight }}
-                />
-                <View style={{ width: L.infoColumnWidth, gap: L.infoColumnGap }}>
-                  <View style={{ gap: L.nutritionGap }}>
-                    <Text style={styles.nutritionHeader}>{typographUk(S.nutritionHeader)}</Text>
-                    <View style={{ gap: L.nutritionLineGap }}>
-                      <Text style={styles.nutritionLine}>
-                        Білки <Text style={styles.nutritionValue}>{nutrition.proteins || '—'}</Text>г
-                      </Text>
-                      <Text style={styles.nutritionLine}>
-                        Жири <Text style={styles.nutritionValue}>{nutrition.fats || '—'}</Text>г
-                      </Text>
-                      <Text style={styles.nutritionLine}>
-                        Вуглеводи <Text style={styles.nutritionValue}>{nutrition.carbs || '—'}</Text>г
-                      </Text>
-                      <Text style={styles.nutritionLine}>
-                        Енергетична цінність <Text style={styles.nutritionValue}>{nutrition.energy || '—'}</Text> ккал
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.storage}>{storageText}</Text>
-
-                  <View style={{ gap: L.batchGap }}>
-                    <Text style={styles.batchLine}>
-                      {S.batchLabel} <Text style={styles.batchValue}>{batchNumber || '—'}</Text>
-                    </Text>
-                    <Text style={styles.batchLine}>
-                      {S.expiryLabel} <Text style={styles.batchValue}>{expiresAt}</Text>
-                    </Text>
-                  </View>
-                </View>
-              </View>
+          <View style={styles.body}>
+            <View style={{ marginBottom: L.bodyGap, width: CONTENT_WIDTH }}>
+              <Text>
+                <Text style={styles.ingredientsBold}>Склад: </Text>
+                <Text style={styles.ingredientsRegular}>{ingredientsText}</Text>
+              </Text>
             </View>
 
-            <View
-              style={{
-                width: L.bottomRowWidth,
-                flexDirection: 'row',
-                alignItems: 'flex-end',
-                justifyContent: 'space-between',
-              }}
-            >
-              <View style={{ gap: L.netWeightGap, paddingRight: 3, marginBottom: L.netWeightBlockLift }}>
-                <Text style={styles.netWeightLabel}>{S.netWeightLabel}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
-                  <Text style={styles.netWeightValue}>{netWeightLabel}</Text>
-                  <Image
-                    src={portionLabelPdfAsset('estimated.svg')}
-                    style={{
-                      width: L.estimatedSize,
-                      height: L.estimatedSize,
-                      transform: `translateY(${L.estimatedIconDrop})`,
-                    }}
-                  />
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+              <Image
+                src={portionLabelPdfAsset('portion-instruction.svg')}
+                style={{ width: L.instructionWidth, height: L.instructionHeight }}
+              />
+              <View style={{ width: L.instructionTextGap }} />
+              <View style={{ width: L.infoColumnWidth }}>
+                <View style={{ marginBottom: L.infoColumnGap }}>
+                  <Text style={[styles.nutritionHeader, { marginBottom: L.nutritionGap }]}>
+                    {typographUk(S.nutritionHeader)}
+                  </Text>
+                  <View>
+                    <Text style={[styles.nutritionLine, { marginBottom: L.nutritionLineGap }]}>
+                      Білки <Text style={styles.nutritionValue}>{nutrition.proteins || '—'}</Text>г
+                    </Text>
+                    <Text style={[styles.nutritionLine, { marginBottom: L.nutritionLineGap }]}>
+                      Жири <Text style={styles.nutritionValue}>{nutrition.fats || '—'}</Text>г
+                    </Text>
+                    <Text style={[styles.nutritionLine, { marginBottom: L.nutritionLineGap }]}>
+                      Вуглеводи <Text style={styles.nutritionValue}>{nutrition.carbs || '—'}</Text>г
+                    </Text>
+                    <Text style={styles.nutritionLine}>
+                      Енергетична цінність{' '}
+                      <Text style={styles.nutritionValue}>{nutrition.energy || '—'}</Text> ккал
+                    </Text>
+                  </View>
                 </View>
-              </View>
 
-              <View style={{ width: L.manufacturerWidth }}>
-                <Text style={styles.manufacturerBold}>Виробник: </Text>
-                <Text style={styles.manufacturerRegular}>{typographUk(S.manufacturer.name)}</Text>
-                {/* <Text style={styles.manufacturerRegular}>{S.manufacturer.fop}</Text> */}
-                <Text style={[styles.manufacturerBold, { marginTop: 2 }]}>{S.manufacturer.emailLabel}</Text>
-                <Text style={styles.manufacturerRegular}>{S.manufacturer.email}</Text>
-                <Text style={{ marginTop: 1 }}>
-                  <Text style={styles.manufacturerBold}>{S.manufacturer.siteLabel} </Text>
-                  <Text style={styles.manufacturerRegular}>{S.manufacturer.site}</Text>
+                <Text style={[styles.storage, { marginBottom: L.infoColumnGap, width: L.infoColumnWidth }]}>
+                  {storageText}
                 </Text>
-              </View>
 
-              <View style={{ width: L.addressWidth }}>
-                <Text style={styles.addressBold}>{S.address.title[0]}</Text>
-                <Text style={styles.addressBold}>{S.address.title[1]}</Text>
-                <Text style={[styles.addressRegular, { marginTop: 2 }]}>{typographUk(S.address.line)}</Text>
+                <View>
+                  <Text style={[styles.batchLine, { marginBottom: L.batchGap }]}>
+                    {S.batchLabel} <Text style={styles.batchValue}>{batchNumber || '—'}</Text>
+                  </Text>
+                  <Text style={styles.batchLine}>
+                    {S.expiryLabel} <Text style={styles.batchValue}>{expiresAt}</Text>
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
         </View>
 
+        {/* Bottom row — fixed above warning band */}
+        <View style={styles.bottomRow}>
+          <View
+            style={{
+              paddingRight: 3,
+              transform: `translateY(-${L.netWeightBlockLift})`,
+            }}
+          >
+            <Text style={[styles.netWeightLabel, { marginBottom: L.netWeightGap }]}>
+              {S.netWeightLabel}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+              <Text style={[styles.netWeightValue, { marginRight: 4 }]}>{netWeightLabel}</Text>
+              <Image
+                src={portionLabelPdfAsset('estimated.svg')}
+                style={{
+                  width: L.estimatedSize,
+                  height: L.estimatedSize,
+                  transform: `translateY(${L.estimatedIconDrop})`,
+                }}
+              />
+            </View>
+          </View>
+
+          <View style={{ width: L.manufacturerWidth }}>
+            <Text style={styles.manufacturerBold}>Виробник: </Text>
+            <Text style={styles.manufacturerRegular}>{typographUk(S.manufacturer.name)}</Text>
+            <Text style={[styles.manufacturerBold, { marginTop: 2 }]}>{S.manufacturer.emailLabel}</Text>
+            <Text style={styles.manufacturerRegular}>{S.manufacturer.email}</Text>
+            <Text style={{ marginTop: 1 }}>
+              <Text style={styles.manufacturerBold}>{S.manufacturer.siteLabel} </Text>
+              <Text style={styles.manufacturerRegular}>{S.manufacturer.site}</Text>
+            </Text>
+          </View>
+
+          <View style={{ width: L.addressWidth }}>
+            <Text style={styles.addressBold}>{S.address.title[0]}</Text>
+            <Text style={styles.addressBold}>{S.address.title[1]}</Text>
+            <Text style={[styles.addressRegular, { marginTop: 2 }]}>{typographUk(S.address.line)}</Text>
+          </View>
+        </View>
+
         {/* Warning */}
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            bottom: 0,
-            backgroundColor: '#000000',
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: L.headerGap,
-            paddingTop: portionFigmaPx(6),
-            paddingBottom: portionFigmaPx(9),
-            paddingLeft: portionFigmaPx(12),
-            paddingRight: portionFigmaPx(9),
-            borderTopRightRadius: 5,
-          }}
-        >
+        <View style={styles.warning}>
           <Image
             src={portionLabelPdfAsset('icon-warning.svg')}
             style={{ width: L.warningIconSize, height: L.warningIconSize }}

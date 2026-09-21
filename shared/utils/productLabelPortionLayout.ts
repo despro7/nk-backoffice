@@ -46,6 +46,10 @@ export const PORTION_LABEL_LAYOUT = {
   barcodeHeight: portionFigmaPx(149),
   barcodeFontSize: portionFigmaPx(54),
   netWeightGap: 1,
+  /** Відступ низу bottom row від нижнього краю canvas (зона над warning). */
+  bottomRowBottom: portionFigmaPx(41),
+  /** Резерв висоти під bottom row, щоб текст не накладався. */
+  bottomRowReserve: portionFigmaPx(58),
   /** Підняти блок ваги, щоб низ збігався з рядком «Сайт: …». */
   netWeightBlockLift: portionFigmaPx(9),
   /** Опустити ℮ відносно значення ваги (translateY, без впливу на висоту рядка). */

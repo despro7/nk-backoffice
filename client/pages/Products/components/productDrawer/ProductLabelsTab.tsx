@@ -59,6 +59,10 @@ const EMPTY_PAYLOAD = (kind: ProductLabelKind): ProductLabelPayload => ({
   netWeightLabel: '',
 });
 
+function labelPayloadKey(payload: ProductLabelPayload): string {
+  return JSON.stringify(prepareProductLabelForRender(payload));
+}
+
 export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductLabelsTabProps) {
   const [labelKind, setLabelKind] = useState<ProductLabelKind>('portion');
   const [payload, setPayload] = useState<ProductLabelPayload>(() => EMPTY_PAYLOAD('portion'));
@@ -221,6 +225,12 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
     }
   };
 
+  /** Чи макет відрізняється від обраної опублікованої версії. */
+  const isDirty = useMemo(() => {
+    if (!selectedVersion) return true;
+    return labelPayloadKey(payload) !== labelPayloadKey(selectedVersion.payload);
+  }, [payload, selectedVersion]);
+
   const nutritionErrors = useMemo(
     () => getNutritionValidationErrors(payload.nutritionText),
     [payload.nutritionText],
@@ -283,6 +293,7 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
         labelKind,
       );
       setPublished(versions);
+      setPayload(row.payload);
       setSelectedVersionId(String(row.id));
       setViewingVersion(true);
       ToastService.show({
@@ -557,7 +568,7 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
               color="primary"
               onPress={handleGenerate}
               isLoading={generating}
-              isDisabled={!selectedBatch || readOnly || loading}
+              isDisabled={!selectedBatch || readOnly || loading || !isDirty}
             >
               Згенерувати PDF
             </Button>

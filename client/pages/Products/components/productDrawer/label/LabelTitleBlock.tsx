@@ -6,6 +6,7 @@ import {
   PORTION_TITLE_LINE2_MAX_PX,
   portionTitleFontSize,
 } from '@shared/utils/productLabelPortionLayout';
+import { applyManualTitleBreak, TITLE_MANUAL_BREAK } from '@shared/utils/splitProductTitle';
 import { LabelEditableZone } from './LabelEditableZone';
 
 const MIN_FONT = 9;
@@ -62,6 +63,11 @@ export function LabelTitleBlock({ title, onChange, disabled }: LabelTitleBlockPr
 
   const patchTitle = (patch: Partial<ProductLabelTitleLayout>) => {
     onChange({ ...title, ...patch });
+  };
+
+  const handleLine1Change = (rawLine1: string) => {
+    const next = applyManualTitleBreak(rawLine1, title.line2);
+    patchTitle(next);
   };
 
   const adjustFont = (delta: number) => {
@@ -136,6 +142,12 @@ export function LabelTitleBlock({ title, onChange, disabled }: LabelTitleBlockPr
               <Plus className="h-[9px] w-[9px]" strokeWidth={2.25} />
             </ToolbarButton>
           </div>
+
+          <span className="h-[14px] w-px bg-neutral-400/50" />
+
+          <span className="whitespace-nowrap px-[2px] text-[8px] leading-none text-white/80">
+            {TITLE_MANUAL_BREAK} — перенос
+          </span>
         </div>
       ) : null}
 
@@ -148,8 +160,7 @@ export function LabelTitleBlock({ title, onChange, disabled }: LabelTitleBlockPr
             setFocused(true);
             setActiveLine(1);
           }}
-          onBlur={handleBlur}
-          onChange={(line1) => patchTitle({ line1 })}
+          onChange={handleLine1Change}
           className="font-['Days_One',sans-serif] font-normal leading-[1.02] whitespace-nowrap"
           style={{ fontSize: line1Size, maxWidth: '100%' }}
         />
@@ -163,7 +174,6 @@ export function LabelTitleBlock({ title, onChange, disabled }: LabelTitleBlockPr
             setFocused(true);
             setActiveLine(2);
           }}
-          onBlur={handleBlur}
           onChange={(line2) => patchTitle({ line2 })}
           className="font-['Days_One',sans-serif] font-normal leading-[1.02] whitespace-nowrap"
           style={{ fontSize: line2Size, marginTop: 1, maxWidth: '100%' }}
