@@ -32,6 +32,7 @@ export default defineConfig(({ mode }) => ({
           if (id.includes("recharts")) return "vendor-recharts";
           if (id.includes("@tiptap")) return "vendor-tiptap";
           if (id.includes("/xlsx/")) return "vendor-xlsx";
+          if (id.includes("@react-pdf")) return "vendor-react-pdf";
           if (id.includes("@zxing")) return "vendor-zxing";
           if (id.includes("lucide-react")) return "vendor-lucide";
           if (id.includes("framer-motion") || id.includes("/motion/")) return "vendor-motion";

@@ -30,7 +30,6 @@ import {
 } from '../../ProductsUtils';
 import type { BomRow } from './productDrawerTypes';
 import { parseSpecQtyInput } from './productDrawerUtils';
-import { exportTechCardExcel, exportTechCardPdf, printTechCardPdf } from './techCardExport';
 
 const DEFAULT_TECH_CARD_PORTIONS = 1000;
 
@@ -121,6 +120,7 @@ export function TechCardModal({
 
     setPrinting(true);
     try {
+      const { printTechCardPdf } = await import('./techCardPdfExport');
       await printTechCardPdf(productName, parsedSpecQty, safePortions, techCard);
     } catch (err) {
       ToastService.show({
@@ -146,8 +146,10 @@ export function TechCardModal({
     setExporting(true);
     try {
       if (format === 'pdf') {
+        const { exportTechCardPdf } = await import('./techCardPdfExport');
         await exportTechCardPdf(productName, parsedSpecQty, safePortions, techCard);
       } else {
+        const { exportTechCardExcel } = await import('./techCardExcelExport');
         await exportTechCardExcel(productName, parsedSpecQty, safePortions, techCard);
       }
     } catch (err) {

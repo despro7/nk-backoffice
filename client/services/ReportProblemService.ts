@@ -1,4 +1,3 @@
-import { domToJpeg } from 'modern-screenshot';
 import type {
   SupportReportPayload,
   SupportReportPublicConfig,
@@ -28,7 +27,14 @@ const DEFAULT_CONFIG: SupportReportPublicConfig = {
 const CAPTURE_JPEG_QUALITY = 0.88;
 
 let cachedConfig: SupportReportPublicConfig | null = null;
-let screenshotWarmupPromise: Promise<void> | null = null;
+let screenshotModulePromise: Promise<typeof import('modern-screenshot')> | null = null;
+
+function loadScreenshotModule(): Promise<typeof import('modern-screenshot')> {
+  if (!screenshotModulePromise) {
+    screenshotModulePromise = import('modern-screenshot');
+  }
+  return screenshotModulePromise;
+}
 
 export const REPORT_CAPTURE_EXCLUDE_CLASS = 'report-capture-exclude';
 export const REPORT_CAPTURE_CHROME_ATTR = 'data-report-capture-chrome';
@@ -245,9 +251,7 @@ async function captureDomScreenshot(mode: 'viewport' | 'fullpage'): Promise<stri
   try {
     await waitBeforeDomCapture();
     await waitForNextPaint();
-    if (screenshotWarmupPromise) {
-      await screenshotWarmupPromise;
-    }
+    const { domToJpeg } = await loadScreenshotModule();
     return await domToJpeg(target, buildDomCaptureOptions(mode));
   } catch (error) {
     console.error('ReportProblemService: DOM screenshot failed', error);
@@ -257,8 +261,7 @@ async function captureDomScreenshot(mode: 'viewport' | 'fullpage'): Promise<stri
 
 export class ReportProblemService {
   static warmupScreenshotCapture(): void {
-    if (screenshotWarmupPromise) return;
-    screenshotWarmupPromise = import('modern-screenshot').then(() => undefined);
+    void loadScreenshotModule();
   }
 
   static async loadConfig(

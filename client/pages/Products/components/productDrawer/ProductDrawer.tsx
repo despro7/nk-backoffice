@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Button,
@@ -95,10 +95,13 @@ import {
 } from './productDrawerUtils';
 import { BarcodesSection } from './BarcodesSection';
 import { BomSection, newBomRowFromSearch } from './BomSection';
-import { TechCardModal } from './TechCardModal';
 import { PricesSection } from './PricesSection';
 import { RequisitesSection } from './RequisitesSection';
 import { UsedInSection } from './UsedInSection';
+
+const TechCardModal = lazy(() =>
+  import('./TechCardModal').then((module) => ({ default: module.TechCardModal }))
+);
 
 async function fetchCatalogGoodDetail(id: string): Promise<CatalogGoodDetailDto> {
   const res = await fetch(`/api/catalog/goods/${id}`, { credentials: 'include' });
@@ -1319,16 +1322,18 @@ export function ProductDrawer({
           readOnly={readOnly}
         />
       )}
-      {showBom && isGood && (
-        <TechCardModal
-          isOpen={techCardOpen}
-          productName={form.name.trim() || detail?.name || 'Товар'}
-          components={components}
-          units={units}
-          specQty={form.specQty}
-          onClose={() => setTechCardOpen(false)}
-          overlayZClassName={overlayZ}
-        />
+      {showBom && isGood && techCardOpen && (
+        <Suspense fallback={null}>
+          <TechCardModal
+            isOpen
+            productName={form.name.trim() || detail?.name || 'Товар'}
+            components={components}
+            units={units}
+            specQty={form.specQty}
+            onClose={() => setTechCardOpen(false)}
+            overlayZClassName={overlayZ}
+          />
+        </Suspense>
       )}
       <PayloadPreviewModal
         isOpen={showPayloadPreview}
