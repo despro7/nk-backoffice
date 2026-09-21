@@ -1,6 +1,7 @@
 /**
  * Еталонні className для кнопок backoffice.
- * Див. /settings/design — секція «Кнопки» (id для copy: design:btn-*).
+ * Вітрина: /settings/design — секція «Кнопки» (id для copy: design:btn-*).
+ * Карта файлів дизайн-системи: Docs/guides/design-system.md
  */
 
 /** Primary-blue solid — toolbar, коли синій акцент доречніший за theme primary. */

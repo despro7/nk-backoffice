@@ -1,3 +1,8 @@
+/**
+ * Жива вітрина UI-патернів для /settings/design.
+ * Карта файлів і інструкції для змін: Docs/guides/design-system.md
+ * Кнопки etalon: ETALON_BUTTON_PATTERNS + ButtonPatternGrid (3×3, copy JSX).
+ */
 import { useMemo, useState, type ReactNode } from 'react';
 import type { SortDescriptor } from '@heroui/react';
 import {
@@ -31,7 +36,9 @@ import { SpecChip } from '@/components/SpecChip';
 import { StockBadge } from '@/components/StockBadge';
 import { ACTION_BUBBLE_COLOR_PRESETS } from '@/components/action-bubble/presets';
 import {
+  BTN_GLOW_DANGER,
   BTN_GLOW_PRIMARY,
+  BTN_GLOW_SUCCESS,
   BTN_PRIMARY_BLUE,
   BTN_VIVID_SUCCESS,
   BTN_VIVID_WARNING,
@@ -165,12 +172,281 @@ function RowActionIcons({ size = 'sm' }: { size?: 'sm' | 'md' }) {
   );
 }
 
+const BUTTON_PATTERN_LABEL = 'Дія';
+const BUTTON_PATTERN_SIZES = ['lg', 'md', 'sm'] as const;
+type ButtonPatternSize = (typeof BUTTON_PATTERN_SIZES)[number];
+
+const BUTTON_PATTERN_ICON_SIZE: Record<ButtonPatternSize, number> = {
+  lg: 18,
+  md: 16,
+  sm: 14,
+};
+
+type ButtonPatternColor = 'primary' | 'secondary' | 'success' | 'danger' | 'warning';
+type ButtonPatternVariant = 'flat' | 'light' | 'bordered';
+
+type ButtonPatternConfig = {
+  color?: ButtonPatternColor;
+  variant?: ButtonPatternVariant;
+  baseClassName?: string;
+  baseToken?: string;
+  dataBtnTone?: string;
+  shadow?: string;
+  shadowToken?: string;
+};
+
+type EtalonButtonPattern = {
+  id: string;
+  label: string;
+  hint: string;
+  snippet: string;
+  pattern: ButtonPatternConfig;
+};
+
+function resolveRenderClassName(pattern: ButtonPatternConfig, withShadow: boolean): string | undefined {
+  const parts: string[] = [];
+  if (pattern.baseClassName) parts.push(pattern.baseClassName);
+  if (withShadow && pattern.shadow) parts.push(pattern.shadow);
+  return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
+function resolveSnippetClassName(pattern: ButtonPatternConfig, withShadow: boolean): string | undefined {
+  const tokens: string[] = [];
+  const literals: string[] = [];
+
+  if (pattern.baseToken) tokens.push(pattern.baseToken);
+  if (withShadow) {
+    if (pattern.shadowToken) tokens.push(pattern.shadowToken);
+    else if (pattern.shadow) literals.push(pattern.shadow);
+  }
+
+  const totalParts = tokens.length + literals.length;
+  if (totalParts === 0) return undefined;
+  if (totalParts === 1 && tokens.length === 1) return `className={${tokens[0]}}`;
+
+  const inner = [...tokens.map((token) => `\${${token}}`), ...literals].join(' ');
+  return `className={\`${inner}\`}`;
+}
+
+function buildButtonSnippet(
+  pattern: ButtonPatternConfig,
+  opts: { size: ButtonPatternSize; withIcon: boolean; withShadow: boolean },
+): string {
+  const attrs: string[] = [];
+  if (pattern.color) attrs.push(`color="${pattern.color}"`);
+  if (pattern.variant) attrs.push(`variant="${pattern.variant}"`);
+  attrs.push(`size="${opts.size}"`);
+  if (pattern.dataBtnTone) attrs.push(`data-btn-tone="${pattern.dataBtnTone}"`);
+  const className = resolveSnippetClassName(pattern, opts.withShadow);
+  if (className) attrs.push(className);
+  if (opts.withIcon) {
+    const iconSize = BUTTON_PATTERN_ICON_SIZE[opts.size];
+    attrs.push(`startContent={<DynamicIcon name="plus" size={${iconSize}} />}`);
+  }
+  return `<Button ${attrs.join(' ')}>${BUTTON_PATTERN_LABEL}</Button>`;
+}
+
+function ButtonPatternGrid({ pattern }: { pattern: ButtonPatternConfig }) {
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const rows = [
+    { key: 'plain', withIcon: false, withShadow: false },
+    { key: 'icon', withIcon: true, withShadow: false },
+    { key: 'shadow', withIcon: true, withShadow: true },
+  ] as const;
+
+  const handleCopy = async (key: string, snippet: string) => {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey(null), 1500);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {rows.map((row) => (
+        <div key={row.key} className="flex items-end gap-2">
+          {BUTTON_PATTERN_SIZES.map((size) => {
+            const key = `${row.key}-${size}`;
+            const snippet = buildButtonSnippet(pattern, {
+              size,
+              withIcon: row.withIcon,
+              withShadow: row.withShadow,
+            });
+            const className = resolveRenderClassName(pattern, row.withShadow);
+            const iconSize = BUTTON_PATTERN_ICON_SIZE[size];
+            const copied = copiedKey === key;
+
+            return (
+              <div key={key} className="relative">
+                <Button
+                  color={pattern.color}
+                  variant={pattern.variant}
+                  size={size}
+                  className={className}
+                  data-btn-tone={pattern.dataBtnTone}
+                  startContent={row.withIcon ? <DynamicIcon name="package" size={iconSize} /> : undefined}
+                  onPress={() => void handleCopy(key, snippet)}
+                >
+                  {BUTTON_PATTERN_LABEL}
+                </Button>
+                {copied ? (
+                  <span className="absolute inset-0 flex items-center justify-center rounded-medium bg-warning/75 pointer-events-none">
+                    <DynamicIcon name="check" size={14} className="text-success-foreground" />
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const ETALON_BUTTON_PATTERNS: EtalonButtonPattern[] = [
+  {
+    id: 'btn-primary-solid',
+    label: 'Primary (solid)',
+    hint: 'color=primary — theme #374151. ProductDrawer «Зберегти», головний CTA',
+    snippet: 'design:btn-primary-solid → <Button color="primary">',
+    pattern: { color: 'primary', shadow: BTN_GLOW_PRIMARY, shadowToken: 'BTN_GLOW_PRIMARY' },
+  },
+  {
+    id: 'btn-primary-flat',
+    label: 'Primary (flat)',
+    hint: 'color=primary variant=flat — theme HeroUI (bg-primary/20). Без global override',
+    snippet: 'design:btn-primary-flat → <Button color="primary" variant="flat">',
+    pattern: { color: 'primary', variant: 'flat', shadow: BTN_GLOW_PRIMARY, shadowToken: 'BTN_GLOW_PRIMARY' },
+  },
+  {
+    id: 'btn-secondary-solid',
+    label: 'Secondary (solid)',
+    hint: 'color=secondary — другорядні дії з theme secondary',
+    snippet: 'design:btn-secondary-solid → <Button color="secondary">',
+    pattern: { color: 'secondary', shadow: BTN_GLOW_PRIMARY, shadowToken: 'BTN_GLOW_PRIMARY' },
+  },
+  {
+    id: 'btn-secondary-flat',
+    label: 'Secondary (flat)',
+    hint: "color=secondary variant=flat — м'який фон другорядних дій",
+    snippet: 'design:btn-secondary-flat → <Button color="secondary" variant="flat">',
+    pattern: { color: 'secondary', variant: 'flat', shadow: BTN_GLOW_PRIMARY, shadowToken: 'BTN_GLOW_PRIMARY' },
+  },
+  {
+    id: 'btn-primary-blue-solid',
+    label: 'Primary-blue (solid)',
+    hint: 'BTN_PRIMARY_BLUE — toolbar, коли синій акцент доречніший',
+    snippet: 'design:btn-primary-blue-solid → className={BTN_PRIMARY_BLUE}',
+    pattern: {
+      baseClassName: BTN_PRIMARY_BLUE,
+      baseToken: 'BTN_PRIMARY_BLUE',
+      shadow: 'shadow-button-blue',
+    },
+  },
+  {
+    id: 'btn-primary-blue-flat',
+    label: 'Primary-blue (flat)',
+    hint: 'data-btn-tone=primary-blue-flat — другорядні сині дії',
+    snippet: 'design:btn-primary-blue-flat → data-btn-tone="primary-blue-flat"',
+    pattern: {
+      color: 'primary',
+      variant: 'flat',
+      dataBtnTone: 'primary-blue-flat',
+      shadow: 'shadow-button-blue',
+    },
+  },
+  {
+    id: 'btn-vivid-success',
+    label: 'Vivid success',
+    hint: 'BTN_VIVID_SUCCESS — яскрава альтернатива HeroUI color=success',
+    snippet: 'design:btn-vivid-success → className={BTN_VIVID_SUCCESS}',
+    pattern: {
+      baseClassName: BTN_VIVID_SUCCESS,
+      baseToken: 'BTN_VIVID_SUCCESS',
+      shadow: BTN_GLOW_SUCCESS,
+      shadowToken: 'BTN_GLOW_SUCCESS',
+    },
+  },
+  {
+    id: 'btn-vivid-warning',
+    label: 'Vivid warning',
+    hint: 'BTN_VIVID_WARNING — яскрава альтернатива HeroUI color=warning',
+    snippet: 'design:btn-vivid-warning → className={BTN_VIVID_WARNING}',
+    pattern: {
+      baseClassName: BTN_VIVID_WARNING,
+      baseToken: 'BTN_VIVID_WARNING',
+      shadow: 'shadow-button-orange',
+    },
+  },
+  {
+    id: 'btn-success-solid',
+    label: 'Success (solid)',
+    hint: 'color=success — HeroUI semantic success',
+    snippet: 'design:btn-success-solid → <Button color="success">',
+    pattern: { color: 'success', shadow: BTN_GLOW_SUCCESS, shadowToken: 'BTN_GLOW_SUCCESS' },
+  },
+  {
+    id: 'btn-success-flat',
+    label: 'Success (flat)',
+    hint: "color=success variant=flat — м'який success",
+    snippet: 'design:btn-success-flat → <Button color="success" variant="flat">',
+    pattern: { color: 'success', variant: 'flat', shadow: BTN_GLOW_SUCCESS, shadowToken: 'BTN_GLOW_SUCCESS' },
+  },
+  {
+    id: 'btn-danger-solid',
+    label: 'Danger (solid)',
+    hint: 'color=danger — небезпечні дії',
+    snippet: 'design:btn-danger-solid → <Button color="danger">',
+    pattern: { color: 'danger', shadow: BTN_GLOW_DANGER, shadowToken: 'BTN_GLOW_DANGER' },
+  },
+  {
+    id: 'btn-danger-flat',
+    label: 'Danger (flat)',
+    hint: "color=danger variant=flat — м'який danger",
+    snippet: 'design:btn-danger-flat → <Button color="danger" variant="flat">',
+    pattern: { color: 'danger', variant: 'flat', shadow: BTN_GLOW_DANGER, shadowToken: 'BTN_GLOW_DANGER' },
+  },
+  {
+    id: 'btn-warning-solid',
+    label: 'Warning (solid)',
+    hint: 'color=warning — попередження',
+    snippet: 'design:btn-warning-solid → <Button color="warning">',
+    pattern: { color: 'warning', shadow: 'shadow-button-orange' },
+  },
+  {
+    id: 'btn-warning-flat',
+    label: 'Warning (flat)',
+    hint: "color=warning variant=flat — м'який warning",
+    snippet: 'design:btn-warning-flat → <Button color="warning" variant="flat">',
+    pattern: { color: 'warning', variant: 'flat', shadow: 'shadow-button-orange' },
+  },
+  {
+    id: 'btn-light',
+    label: 'Light',
+    hint: 'variant=light — другорядні дії без рамки',
+    snippet: 'design:btn-light → <Button variant="light">',
+    pattern: { variant: 'light', shadow: BTN_GLOW_PRIMARY, shadowToken: 'BTN_GLOW_PRIMARY' },
+  },
+  {
+    id: 'btn-bordered',
+    label: 'Bordered',
+    hint: 'variant=bordered — другорядні дії з рамкою',
+    snippet: 'design:btn-bordered → <Button variant="bordered">',
+    pattern: { variant: 'bordered', shadow: BTN_GLOW_PRIMARY, shadowToken: 'BTN_GLOW_PRIMARY' },
+  },
+];
+
 function ButtonShowcase({
   id,
   label,
   kind,
   hint,
   snippet,
+  pattern,
   children,
 }: {
   id: string;
@@ -179,7 +455,8 @@ function ButtonShowcase({
   hint?: string;
   /** Текст для clipboard; за замовчуванням design:{id} */
   snippet?: string;
-  children: ReactNode;
+  pattern?: ButtonPatternConfig;
+  children?: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
   const copyKey = `design:${id}`;
@@ -221,7 +498,7 @@ function ButtonShowcase({
         </button>
       </div>
       {hint ? <p className="text-[11px] text-default-400 leading-snug">{hint}</p> : null}
-      <div className="pt-1">{children}</div>
+      <div className="pt-1">{pattern ? <ButtonPatternGrid pattern={pattern} /> : children}</div>
     </div>
   );
 }
@@ -615,79 +892,21 @@ export function DesignSystemPatterns() {
 
       <Section
         title="Кнопки — еталон і доменні патерни"
-        description="Стилі для нового UI. Клік copy → design:btn-* для агента."
+        description="Стилі для нового UI. Клік на кнопку → JSX у clipboard; copy у заголовку → design:btn-* для агента."
         reference="buttonStyles.ts · global.css · ProductDrawer · hrUi.tsx"
       >
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <ButtonShowcase
-            id="btn-primary-solid"
-            kind="etalon"
-            label="Primary (solid)"
-            hint="color=primary — theme #374151. ProductDrawer «Зберегти», головний CTA"
-            snippet='design:btn-primary-solid → <Button color="primary">'
-          >
-            <Button color="primary" startContent={<DynamicIcon name="save" size={14} />}>Зберегти</Button>
-          </ButtonShowcase>
-
-          <ButtonShowcase
-            id="btn-primary-flat"
-            kind="etalon"
-            label="Primary (flat)"
-            hint="color=primary variant=flat — theme HeroUI (bg-primary/20). Без global override"
-            snippet='design:btn-primary-flat → <Button color="primary" variant="flat">'
-          >
-            <Button color="primary" variant="flat">Primary flat</Button>
-          </ButtonShowcase>
-
-          <ButtonShowcase
-            id="btn-primary-blue-solid"
-            kind="etalon"
-            label="Primary-blue (solid)"
-            hint="BTN_PRIMARY_BLUE — toolbar, коли синій акцент доречніший"
-            snippet='design:btn-primary-blue-solid → className={BTN_PRIMARY_BLUE}'
-          >
-            <Button className={BTN_PRIMARY_BLUE} startContent={<DynamicIcon name="plus" size={16} />}>Новий запис</Button>
-          </ButtonShowcase>
-
-          <ButtonShowcase
-            id="btn-primary-blue-flat"
-            kind="etalon"
-            label="Primary-blue (flat)"
-            hint="BTN_PRIMARY_BLUE_FLAT — явний className або data-btn-tone=primary-blue-flat"
-            snippet='design:btn-primary-blue-flat → className={BTN_PRIMARY_BLUE_FLAT}'
-          >
-            <Button color="primary" variant="flat" data-btn-tone="primary-blue-flat">Primary-blue flat</Button>
-          </ButtonShowcase>
-
-          <ButtonShowcase
-            id="btn-vivid-success"
-            kind="etalon"
-            label="Vivid success"
-            hint="BTN_VIVID_SUCCESS — яскрава альтернатива HeroUI color=success"
-            snippet="design:btn-vivid-success → className={BTN_VIVID_SUCCESS}"
-          >
-            <Button size="sm" className={BTN_VIVID_SUCCESS}>Success</Button>
-          </ButtonShowcase>
-
-          <ButtonShowcase
-            id="btn-vivid-warning"
-            kind="etalon"
-            label="Vivid warning"
-            hint="BTN_VIVID_WARNING — яскрава альтернатива HeroUI color=warning"
-            snippet="design:btn-vivid-warning → className={BTN_VIVID_WARNING}"
-          >
-            <Button size="sm" className={BTN_VIVID_WARNING}>Warning</Button>
-          </ButtonShowcase>
-
-          <ButtonShowcase
-            id="btn-glow-primary"
-            kind="etalon"
-            label="Shadow-button glow"
-            hint="shadow-button-* з global.css @theme — акcent-кнопки з glow-тінню"
-            snippet='design:btn-glow-primary → className={BTN_GLOW_PRIMARY}'
-          >
-            <Button color="primary" className={BTN_GLOW_PRIMARY}>Glow primary</Button>
-          </ButtonShowcase>
+        <div className="grid gap-3 grid-cols-1 md:grid-cols-3">
+          {ETALON_BUTTON_PATTERNS.map((item) => (
+            <ButtonShowcase
+              key={item.id}
+              id={item.id}
+              kind="etalon"
+              label={item.label}
+              hint={item.hint}
+              snippet={item.snippet}
+              pattern={item.pattern}
+            />
+          ))}
 
           <ButtonShowcase
             id="btn-loading-icon"
@@ -698,10 +917,10 @@ export function DesignSystemPatterns() {
           >
             <Button
               color="primary"
-              variant="flat"
+              variant="solid"
               startContent={
                 <DynamicIcon
-                  name={loadingGood ? 'loader-circle' : 'table-properties'}
+                  name={loadingGood ? 'loader-circle' : 'flask-conical'}
                   size={16}
                   className={loadingGood ? 'animate-spin' : ''}
                 />

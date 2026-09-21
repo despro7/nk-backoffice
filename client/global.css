@@ -49,6 +49,8 @@
   --color-danger-500: #e3484b;
   --color-danger-700: #da291c;
 
+  --color-success: #5bb434;
+  --color-success-foreground: #ffffff;
   --color-success-100: #e9f2e0;
   --color-success-200: #bfef90;
   --color-success-400: #cbdeb7;
@@ -56,6 +58,8 @@
   --color-success-600: #409b18;
   --color-success-700: #5e8f2d;
 
+  --color-warning: #ebcb69;
+  --color-warning-foreground: #ffffff;
   --color-warning-400: #ffebad;
   --color-warning-500: #ebcb69;
   --color-warning-600: #e2bf55;
@@ -240,6 +244,28 @@
 
   button[data-btn-tone='primary-blue-flat']:not([class*='bg-gradient']):is(:hover, [data-hover='true'], [data-pressed='true']) {
     @apply bg-blue-200!;
+  }
+
+  /* Secondary flat — темніший текст замість HeroUI text-secondary-600 */
+  button.bg-secondary\/20:not([class*='bg-gradient']) {
+    @apply text-neutral-700!;
+  }
+
+  /* Success solid — text-white замість темного success-foreground */
+  button.bg-success.text-success-foreground:not([class*='bg-gradient']) {
+    @apply text-white!;
+  }
+
+  /* Warning solid — text-white замість темного warning-foreground */
+  button.bg-warning.text-warning-foreground:not([class*='bg-gradient']) {
+    @apply text-white!;
+  }
+
+  /* Button defaults — px-4, gap-1.5 для всіх розмірів (крім icon-only) */
+  button.min-w-16:not(.min-w-0),
+  button.min-w-20:not(.min-w-0),
+  button.min-w-24:not(.min-w-0) {
+    @apply px-4! gap-1.5!;
   }
 }
 
@@ -438,4 +464,32 @@ html.report-capture-ui-hidden [data-report-fab="true"],
 html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
   opacity: 0 !important;
   pointer-events: none !important;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .tech-card-modal,
+  .tech-card-modal * {
+    visibility: visible;
+  }
+
+  .tech-card-modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: none;
+    box-shadow: none;
+  }
+
+  .tech-card-print-hide {
+    display: none !important;
+  }
+
+  .tech-card-print-only {
+    display: block !important;
+  }
 }
