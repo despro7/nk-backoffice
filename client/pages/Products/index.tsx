@@ -922,7 +922,12 @@ export default function ProductsPage() {
         onClose={catalog.closeDrawer}
         onCreate={(input) => catalog.createMutation.mutateAsync(input)}
         onUpdate={(id, input, opts) =>
-          catalog.updateMutation.mutateAsync({ id, input, keepOpen: opts?.keepOpen })
+          catalog.updateMutation.mutateAsync({
+            id,
+            input,
+            keepOpen: opts?.keepOpen,
+            silent: opts?.silent,
+          })
         }
         onRestore={(id) => requestRestoreFromTrash(id)}
         catalogSearch={catalogSearch}

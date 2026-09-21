@@ -858,20 +858,133 @@ export type ExpectedBomWeight = {
   missingCount: number;
 };
 
+export type BomWeightComponent = {
+  qty: number;
+  unitId: string;
+  componentWeight: number | null;
+  cookingLossPercent?: number | null;
+};
+
+export type TechCardRow = {
+  name: string;
+  nameDisplay: string;
+  recipeDisplay: string;
+  lossDisplay: string;
+  netDisplay: string;
+  grossDisplay: string;
+  massKgRecipe: number | null;
+  massKgNetTotal: number | null;
+  massKgGrossTotal: number | null;
+};
+
+export type TechCardMassPrecision = 'auto' | 0 | 1 | 2 | 3;
+
+export type TechCardResult = {
+  rows: TechCardRow[];
+  totalRecipeMassKg: number | null;
+  totalNetMassKg: number | null;
+  totalGrossMassKg: number | null;
+  nonMassCount: number;
+  massPrecision: TechCardMassPrecision;
+};
+
+/** Обмежує % втрат діапазоном 0–100. */
+export function clampCookingLossPercent(value: number | null | undefined): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, n));
+}
+
+/** Формат кількості з одиницею виміру, напр. «58 г». */
+export function formatBomQtyDisplay(qty: number, unitName: string): string {
+  const rounded = Math.round(qty * 1000) / 1000;
+  const text = Number.isInteger(rounded)
+    ? String(rounded)
+    : rounded.toLocaleString('uk-UA', { maximumFractionDigits: 3 });
+  const unit = unitName.trim();
+  return unit ? `${text} ${unit}` : text;
+}
+
+/** % втрат для техкарти; 0 — порожній рядок. */
+export function formatTechCardLossPercent(value: number | null | undefined): string {
+  const loss = clampCookingLossPercent(value);
+  if (loss <= 0) return '';
+  const rounded = Math.round(loss * 10) / 10;
+  const text = Number.isInteger(rounded)
+    ? String(rounded)
+    : rounded.toLocaleString('uk-UA', { maximumFractionDigits: 1 });
+  return `${text} %`;
+}
+
+/** Текст у першій парі дужок у назві інгредієнта → примітка; дужки прибираються з назви. */
+export function extractParenthesizedTextFromName(name: string): {
+  cleanName: string;
+  extracted: string | null;
+} {
+  const match = name.match(/\(([^)]+)\)/);
+  if (!match) return { cleanName: name, extracted: null };
+  const extracted = match[1].trim();
+  if (!extracted) return { cleanName: name, extracted: null };
+  const cleanName = name.replace(/\s*\([^)]+\)\s*/, ' ').replace(/\s+/g, ' ').trim();
+  return { cleanName, extracted };
+}
+
+export function hasParenthesizedTextInName(name: string): boolean {
+  return /\([^)]+\)/.test(name);
+}
+
+/** Назва інгредієнта з приміткою рядка специфікації. */
+export function formatTechCardIngredientName(name: string, note?: string | null): string {
+  const trimmedName = name.trim();
+  const trimmedNote = note?.trim() ?? '';
+  if (!trimmedNote) return trimmedName;
+  return trimmedName ? `${trimmedName} (${trimmedNote})` : `(${trimmedNote})`;
+}
+
+/** Маса в кг для техкарти; без маси — «—». */
+export function formatTechCardMassKg(
+  kg: number | null,
+  precision: TechCardMassPrecision = 'auto'
+): string {
+  if (kg == null || !Number.isFinite(kg)) return '—';
+  if (precision === 'auto') {
+    const rounded = Math.round(kg * 1000) / 1000;
+    const text = rounded.toLocaleString('uk-UA', { maximumFractionDigits: 3 });
+    return `${text} кг`;
+  }
+  const factor = 10 ** precision;
+  const rounded = Math.round(kg * factor) / factor;
+  const text = rounded.toLocaleString('uk-UA', {
+    minimumFractionDigits: precision,
+    maximumFractionDigits: precision,
+  });
+  return `${text} кг`;
+}
+
+function bomRowGrossKg(
+  row: BomWeightComponent,
+  unitById: Map<string, { id: string; name: string; code?: string | null }>
+): number | null {
+  const qty = Number(row.qty);
+  if (!Number.isFinite(qty) || qty <= 0) return null;
+  const massFactor = massUnitToKgFactor(unitById.get(row.unitId));
+  if (massFactor != null) return qty * massFactor;
+  const w = row.componentWeight;
+  if (w != null && Number.isFinite(w) && w > 0) return qty * w;
+  return null;
+}
+
 /**
  * Очікувана вага картки, кг:
  * — рядок у кг/г/л/мл → qty (зведена до кг; 1 л = 1 кг);
- * — шт. тощо → qty × вага картки компонента, якщо вона є.
+ * — шт. тощо → qty × вага картки компонента, якщо вона є;
+ * — qty у специфікації — маса нетто (без перерахунку на % втрат).
  * У продукції шт. без ваги ігноруються (не попередження).
  * У наборі шт. без ваги порції не входять у суму, але `missingCount` > 0.
  * Для продукції `divideBy` = «Розрахунок на N шт.» (вага порції).
  */
 export function expectedBomWeightKg(
-  components: Array<{
-    qty: number;
-    unitId: string;
-    componentWeight: number | null;
-  }>,
+  components: BomWeightComponent[],
   units: Array<{ id: string; name: string; code?: string | null }>,
   options?: { divideBy?: number; warnMissingPieceWeight?: boolean }
 ): ExpectedBomWeight | null {
@@ -885,23 +998,144 @@ export function expectedBomWeightKg(
     const row = components[i];
     const qty = Number(row.qty);
     if (!Number.isFinite(qty) || qty <= 0) continue;
-    const massFactor = massUnitToKgFactor(unitById.get(row.unitId));
-    if (massFactor != null) {
-      sum += qty * massFactor;
+    const netKg = bomRowGrossKg(row, unitById);
+    if (netKg != null && netKg > 0) {
+      sum += netKg;
       used += 1;
       continue;
     }
-    const w = row.componentWeight;
-    if (w != null && Number.isFinite(w) && w > 0) {
-      sum += qty * w;
-      used += 1;
-    } else if (warnMissing) {
+    const massFactor = massUnitToKgFactor(unitById.get(row.unitId));
+    if (massFactor == null && warnMissing) {
       missingCount += 1;
     }
   }
   if (used === 0 && missingCount === 0) return null;
   const divideBy = options?.divideBy != null && options.divideBy > 0 ? options.divideBy : 1;
   return { kg: Math.round((sum / divideBy) * 100) / 100, missingCount };
+}
+
+/** Ймовірно неправильний «Розрахунок на» — вага порції стає нереалістично малою. */
+export function isSuspiciousSpecQty(
+  components: BomWeightComponent[],
+  units: Array<{ id: string; name: string; code?: string | null }>,
+  specQty: number
+): boolean {
+  if (!Number.isFinite(specQty) || specQty <= 1) return false;
+  const undivided = expectedBomWeightKg(components, units, { divideBy: 1 });
+  const divided = expectedBomWeightKg(components, units, { divideBy: specQty });
+  if (!undivided || undivided.kg < 0.05) return false;
+  return divided == null || divided.kg < 0.05;
+}
+
+/** Поріг підозріло малої маси інгредієнта (0.01 г). */
+const SUSPICIOUS_INGREDIENT_MASS_KG = 0.00001;
+
+/**
+ * Ймовірно неправильна кількість інгредієнта — маса нетто менше 0.01 г
+ * (типова помилка: 70 → 0,07 або пропущена цифра).
+ */
+export function isSuspiciousBomIngredientQty(
+  row: BomWeightComponent,
+  units: Array<{ id: string; name: string; code?: string | null }>
+): boolean {
+  const qty = Number(row.qty);
+  if (!Number.isFinite(qty) || qty <= 0) return false;
+
+  const unitById = new Map(units.map((u) => [u.id, u]));
+  const grossKg = bomRowGrossKg(row, unitById);
+  if (grossKg != null) {
+    return grossKg < SUSPICIOUS_INGREDIENT_MASS_KG;
+  }
+
+  const pieceWeightKg = row.componentWeight;
+  if (pieceWeightKg != null && Number.isFinite(pieceWeightKg) && pieceWeightKg > 0) {
+    return qty * pieceWeightKg < SUSPICIOUS_INGREDIENT_MASS_KG;
+  }
+
+  return false;
+}
+
+/** Рядки техкарти для N порцій: нетто з урахуванням % втрат, брутто = нетто / (1 − loss%). */
+export function buildTechCardRows(
+  components: Array<{
+    componentName: string;
+    qty: number;
+    unitId: string;
+    componentWeight: number | null;
+    note?: string | null;
+    cookingLossPercent?: number | null;
+  }>,
+  units: Array<{ id: string; name: string; code?: string | null }>,
+  specQty: number,
+  portions: number,
+  massPrecision: TechCardMassPrecision = 'auto'
+): TechCardResult {
+  const unitById = new Map(units.map((u) => [u.id, u]));
+  const safeSpecQty = Number.isFinite(specQty) && specQty > 0 ? specQty : 1;
+  const safePortions = Number.isFinite(portions) && portions > 0 ? portions : 1;
+  const scale = safePortions / safeSpecQty;
+
+  let totalRecipeMassKg = 0;
+  let totalNetMassKg = 0;
+  let totalGrossMassKg = 0;
+  let hasRecipeMass = false;
+  let hasNetMass = false;
+  let hasGrossMass = false;
+  let nonMassCount = 0;
+
+  const rows: TechCardRow[] = components
+    .filter((c) => Number(c.qty) > 0)
+    .map((c) => {
+      const unit = unitById.get(c.unitId);
+      const unitName = unit?.name?.trim() || '';
+      const recipeQty = c.qty;
+      const loss = clampCookingLossPercent(c.cookingLossPercent);
+      const netRecipe = bomRowGrossKg(
+        { qty: recipeQty, unitId: c.unitId, componentWeight: c.componentWeight },
+        unitById
+      );
+      const netTotal = netRecipe != null ? netRecipe * scale : null;
+      const grossTotal =
+        netTotal != null && loss < 100 ? netTotal / (1 - loss / 100) : netTotal;
+
+      if (netRecipe != null) {
+        totalRecipeMassKg += netRecipe;
+        hasRecipeMass = true;
+      } else {
+        nonMassCount += 1;
+      }
+      if (netTotal != null) {
+        totalNetMassKg += netTotal;
+        hasNetMass = true;
+      }
+      if (grossTotal != null) {
+        totalGrossMassKg += grossTotal;
+        hasGrossMass = true;
+      }
+
+      return {
+        name: c.componentName,
+        nameDisplay: formatTechCardIngredientName(c.componentName, c.note),
+        recipeDisplay: formatBomQtyDisplay(recipeQty, unitName),
+        lossDisplay: formatTechCardLossPercent(loss),
+        netDisplay: formatTechCardMassKg(netTotal, massPrecision),
+        grossDisplay: formatTechCardMassKg(grossTotal, massPrecision),
+        massKgRecipe: netRecipe,
+        massKgNetTotal: netTotal,
+        massKgGrossTotal: grossTotal,
+      };
+    });
+
+  const roundKg = (value: number) => Math.round(value * 1000) / 1000;
+
+  return {
+    rows,
+    totalRecipeMassKg: hasRecipeMass ? roundKg(totalRecipeMassKg) : null,
+    totalNetMassKg: hasNetMass ? roundKg(totalNetMassKg) : null,
+    totalGrossMassKg: hasGrossMass ? roundKg(totalGrossMassKg) : null,
+    nonMassCount,
+    massPrecision,
+  };
 }
 
 /** Військові: основа − 5 грн × порції набору; звичайний товар — основа − 5 грн. */

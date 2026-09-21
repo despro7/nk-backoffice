@@ -217,14 +217,22 @@ export class ProductsLocalSync {
       unitId?: string | null;
       note?: string | null;
       dilovodRowId?: string | null;
+      cookingLossPercent?: number | null;
     }>
   ): Promise<void> {
     // Примітки: Dilovod SoT (remark). Якщо payload.note === undefined — зберігаємо попереднє
     // (structure-only sync без BOM). Якщо null/рядок — пишемо з Dilovod / UI.
+    // cookingLossPercent — лише локально: undefined = зберегти попереднє.
     // Ключ по rowNum: один інгредієнт може бути в кількох рядках.
     const existingRows = await tx.catalogGoodComponent.findMany({
       where: { parentGoodId },
-      select: { componentGoodId: true, rowNum: true, note: true, dilovodRowId: true },
+      select: {
+        componentGoodId: true,
+        rowNum: true,
+        note: true,
+        dilovodRowId: true,
+        cookingLossPercent: true,
+      },
     });
     const noteByRow = new Map(
       existingRows
@@ -236,7 +244,11 @@ export class ProductsLocalSync {
         .filter((r) => r.dilovodRowId != null && String(r.dilovodRowId).trim() !== '')
         .map((r) => [`${r.rowNum}:${r.componentGoodId}`, r.dilovodRowId as string])
     );
-
+    const lossByRow = new Map(
+      existingRows
+        .filter((r) => r.cookingLossPercent != null && Number.isFinite(r.cookingLossPercent))
+        .map((r) => [`${r.rowNum}:${r.componentGoodId}`, r.cookingLossPercent as number])
+    );
     await tx.catalogGoodComponent.deleteMany({ where: { parentGoodId } });
     if (components.length === 0) return;
 
@@ -281,6 +293,14 @@ export class ProductsLocalSync {
             : rowIdByRow.get(`${c.rowNum}:${c.componentGoodId}`) ??
               rowIdByRow.get(`${rowNum}:${c.componentGoodId}`) ??
               null;
+        const lossFromPayload =
+          c.cookingLossPercent !== undefined ? this.normalizeCookingLossPercent(c.cookingLossPercent) : undefined;
+        const cookingLossPercent =
+          lossFromPayload !== undefined
+            ? lossFromPayload
+            : lossByRow.get(`${c.rowNum}:${c.componentGoodId}`) ??
+              lossByRow.get(`${rowNum}:${c.componentGoodId}`) ??
+              0;
         return {
           parentGoodId,
           componentGoodId: c.componentGoodId,
@@ -289,9 +309,16 @@ export class ProductsLocalSync {
           dilovodRowId,
           unitId: c.unitId ?? null,
           note,
+          cookingLossPercent,
         };
       }),
     });
+  }
+
+  private normalizeCookingLossPercent(value: number | null | undefined): number {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.min(100, Math.max(0, n));
   }
 
   private async replacePrices(

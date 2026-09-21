@@ -59,6 +59,8 @@ import {
   catalogNameContainsWeight,
   expectedBomWeightKg,
   expectedMilitaryPrice,
+  extractParenthesizedTextFromName,
+  isSuspiciousSpecQty,
   formatCatalogName,
   isArchiveFolderId,
   listCatalogFolderOptions,
@@ -93,8 +95,10 @@ import {
 } from './productDrawerUtils';
 import { BarcodesSection } from './BarcodesSection';
 import { BomSection, newBomRowFromSearch } from './BomSection';
+import { TechCardModal } from './TechCardModal';
 import { PricesSection } from './PricesSection';
 import { RequisitesSection } from './RequisitesSection';
+import { UsedInSection } from './UsedInSection';
 
 async function fetchCatalogGoodDetail(id: string): Promise<CatalogGoodDetailDto> {
   const res = await fetch(`/api/catalog/goods/${id}`, { credentials: 'include' });
@@ -169,6 +173,8 @@ export function ProductDrawer({
   const [bomQuery, setBomQuery] = useState('');
   const [bomSuggestions, setBomSuggestions] = useState<CatalogSearchHit[]>([]);
   const [nestedGoodId, setNestedGoodId] = useState<string | null>(null);
+  const [renamingComponentGoodId, setRenamingComponentGoodId] = useState<string | null>(null);
+  const [techCardOpen, setTechCardOpen] = useState(false);
 
   const baselineRef = useRef<string>('');
   const [baselineVersion, setBaselineVersion] = useState(0);
@@ -241,6 +247,58 @@ export function ProductDrawer({
       )
     );
   }, []);
+
+  const handleMoveParenthesesToNote = useCallback(
+    async (idx: number) => {
+      const row = components[idx];
+      if (!row?.componentGoodId || readOnly) return;
+
+      const { cleanName, extracted } = extractParenthesizedTextFromName(row.componentName);
+      if (!extracted) return;
+
+      const trimmedNote = row.note.trim();
+      const nextNote = trimmedNote ? `${trimmedNote} (${extracted})` : extracted;
+      const previousNote = row.note;
+
+      setComponents((prev) =>
+        prev.map((r, i) => (i === idx ? { ...r, note: nextNote.slice(0, 150) } : r))
+      );
+
+      if (cleanName === row.componentName.trim()) return;
+
+      setRenamingComponentGoodId(row.componentGoodId);
+      ToastService.show({
+        title: 'Оновлюємо назву в Dilovod',
+        description: `«${cleanName}» зберігається у фоновому режимі — можна продовжувати роботу`,
+        color: 'primary',
+        icon: 'loader-circle',
+        iconSpin: true,
+        timeout: 4000,
+      });
+      try {
+        await onUpdate(row.componentGoodId, { name: cleanName }, { keepOpen: true, silent: true });
+        applyNestedSaveToBom(row.componentGoodId, { name: cleanName });
+        ToastService.show({
+          title: 'Назву інгредієнта оновлено',
+          description: `«${cleanName}» збережено в Dilovod. Текст із дужок перенесено до примітки.`,
+          color: 'success',
+          icon: 'circle-check-big',
+        });
+      } catch (err) {
+        setComponents((prev) =>
+          prev.map((r, i) => (i === idx ? { ...r, note: previousNote } : r))
+        );
+        ToastService.show({
+          title: 'Не вдалося оновити назву в Dilovod',
+          description: err instanceof Error ? err.message : undefined,
+          color: 'danger',
+        });
+      } finally {
+        setRenamingComponentGoodId(null);
+      }
+    },
+    [components, readOnly, onUpdate, applyNestedSaveToBom]
+  );
 
   useEffect(() => {
     const portions = pendingMilitarySyncRef.current;
@@ -350,6 +408,7 @@ export function ProductDrawer({
         note: c.note || '',
         componentWeight: c.componentWeight ?? null,
         componentAccPolicyId: c.componentAccPolicyId ?? null,
+        cookingLossPercent: c.cookingLossPercent ?? 0,
       }));
       const nextPrices = detail.prices.map((p) => ({
         priceType: p.priceType,
@@ -473,6 +532,7 @@ export function ProductDrawer({
               unitId: c.unitId || form.mainUnitId || CATALOG_DEFAULT_MAIN_UNIT_ID,
               // Примітка лише для специфікації продукції (не для товарних наборів)
               note: isKit ? null : c.note.trim() || null,
+              cookingLossPercent: isKit ? undefined : c.cookingLossPercent,
             }))
           : [],
         prices: prices.map((p) => ({
@@ -795,6 +855,13 @@ export function ProductDrawer({
         : null,
     [showBom, components, units, isGood, isKit, form.specQty]
   );
+  const specQtySuspicious = useMemo(
+    () =>
+      isGood
+        ? isSuspiciousSpecQty(components, units, parseSpecQtyInput(form.specQty))
+        : false,
+    [isGood, components, units, form.specQty]
+  );
   const currentWeightKg = parseNumberInput(form.weight);
   const canFillWeightFromBom = bomWeightExpected != null && bomWeightExpected.kg > 0;
   const weightMismatch =
@@ -961,6 +1028,7 @@ export function ProductDrawer({
                       <>
                         {showBom && (
                           <BomSection
+                            key={detail?.id ?? mode ?? 'new'}
                             form={form}
                             components={components}
                             units={units}
@@ -978,6 +1046,8 @@ export function ProductDrawer({
                             bomWeightExpected={bomWeightExpected}
                             canFillWeightFromBom={canFillWeightFromBom}
                             showExpectedWeightHint={showExpectedWeightHint}
+                            specQtySuspicious={specQtySuspicious}
+                            onOpenTechCard={() => setTechCardOpen(true)}
                             onFormChange={setForm}
                             onBomQueryChange={setBomQuery}
                             onAddComponent={(hit) => {
@@ -1003,7 +1073,25 @@ export function ProductDrawer({
                                 weight: formatWeightKg(bomWeightExpected.kg, 3),
                               }));
                             }}
+                            renamingComponentGoodId={renamingComponentGoodId}
+                            onMoveParenthesesToNote={handleMoveParenthesesToNote}
                             isReadOnly={readOnly}
+                          />
+                        )}
+                        {isEdit && detail?.id && isOther && (
+                          <UsedInSection
+                            goodId={detail.id}
+                            scope="products"
+                            units={units}
+                            onOpenNested={openNestedComponent}
+                          />
+                        )}
+                        {isEdit && detail?.id && isGood && (
+                          <UsedInSection
+                            goodId={detail.id}
+                            scope="kits"
+                            units={units}
+                            onOpenNested={openNestedComponent}
                           />
                         )}
                         <Divider className="bg-default-200/60" />
@@ -1229,6 +1317,17 @@ export function ProductDrawer({
           stackLevel={stackLevel + 1}
           stackGoodIds={currentStackGoodIds}
           readOnly={readOnly}
+        />
+      )}
+      {showBom && isGood && (
+        <TechCardModal
+          isOpen={techCardOpen}
+          productName={form.name.trim() || detail?.name || 'Товар'}
+          components={components}
+          units={units}
+          specQty={form.specQty}
+          onClose={() => setTechCardOpen(false)}
+          overlayZClassName={overlayZ}
         />
       )}
       <PayloadPreviewModal

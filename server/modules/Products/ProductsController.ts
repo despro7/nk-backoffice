@@ -25,8 +25,11 @@ import {
   invalidateCatalogAclIndex,
   loadCatalogAclIndex,
 } from './catalogFolderAcl.js';
-import { CATALOG_TRASH_ID } from '../../../shared/types/catalog.js';
-import { normalizeCatalogFolderId } from '../../../shared/utils/catalogFolderAccess.js';
+import { CATALOG_TRASH_ID, type CatalogGoodUsedInScope } from '../../../shared/types/catalog.js';
+import {
+  canViewCatalogItem,
+  normalizeCatalogFolderId,
+} from '../../../shared/utils/catalogFolderAccess.js';
 import { DilovodService, dilovodService } from '../../services/dilovod/DilovodService.js';
 import type { DilovodSyncResult } from '../../services/dilovod/DilovodTypes.js';
 import {
@@ -203,6 +206,55 @@ router.get('/barcode/next', ...authOnly, async (req, res) => {
     res.json({ success: true, data: { code } });
   } catch (error) {
     handleError(res, error, 'GET /barcode/next');
+  }
+});
+
+// GET /api/catalog/goods/:id/used-in?scope=products|kits
+router.get('/goods/:id/used-in', ...authOnly, async (req, res) => {
+  try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+
+    const goodId = String(req.params.id);
+    const scopeRaw = String(req.query.scope || '');
+    if (scopeRaw !== 'products' && scopeRaw !== 'kits') {
+      res.status(400).json({ success: false, error: 'scope має бути products або kits' });
+      return;
+    }
+    const scope = scopeRaw as CatalogGoodUsedInScope;
+
+    const current = await prisma.catalogGood.findUnique({
+      where: { id: goodId },
+      select: { id: true, isGroup: true, parentId: true },
+    });
+    if (!current) {
+      res.status(404).json({ success: false, error: 'Товар не знайдено' });
+      return;
+    }
+
+    const index = await loadCatalogAclIndex();
+    const folderId = current.isGroup ? current.id : current.parentId;
+    if (!assertFolderView(res, perms, folderId, index.parentById)) return;
+
+    const rows = await productsCatalogService.getGoodUsedIn(goodId, scope);
+    const parentIds = rows.map((row) => row.parentGoodId);
+    const parents =
+      parentIds.length > 0
+        ? await prisma.catalogGood.findMany({
+            where: { id: { in: parentIds } },
+            select: { id: true, isGroup: true, parentId: true },
+          })
+        : [];
+    const parentByItemId = new Map(parents.map((parent) => [parent.id, parent]));
+
+    const data = rows.filter((row) => {
+      const parent = parentByItemId.get(row.parentGoodId);
+      return parent && canViewCatalogItem(parent, perms, index.parentById);
+    });
+
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'GET /goods/:id/used-in');
   }
 });
 

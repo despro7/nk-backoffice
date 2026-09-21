@@ -17,6 +17,8 @@ export type {
   CatalogUpdateGoodInput,
   CatalogStockDto,
   CatalogMissingRequired,
+  CatalogGoodUsedInDto,
+  CatalogGoodUsedInScope,
 } from '@shared/types/catalog';
 
 export {

@@ -536,6 +536,8 @@ model CatalogGoodComponent {
   unitId          String?  @db.VarChar(32)
   /// Примітка рядка tpGoods → Dilovod `remark` (varchar 150)
   note            String?  @db.VarChar(512)
+  /// Локально: % втрат при готуванні (0–100)
+  cookingLossPercent Float? @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildTechCardRows,
+  extractParenthesizedTextFromName,
+  hasParenthesizedTextInName,
   catalogMissingNameLabels,
   expectedBomWeightKg,
+  formatBomQtyDisplay,
   getMissingRequiredCatalogFields,
+  isSuspiciousBomIngredientQty,
+  isSuspiciousSpecQty,
   massUnitToKgFactor,
 } from './ProductsUtils';
 import {
@@ -130,6 +136,163 @@ describe('expectedBomWeightKg', () => {
       units
     );
     expect(r).toEqual({ kg: 1, missingCount: 0 });
+  });
+
+  it('qty у специфікації — нетто, % втрат не зменшує вагу порції', () => {
+    const r = expectedBomWeightKg(
+      [{ qty: 1, unitId: 'kg', componentWeight: null, cookingLossPercent: 10 }],
+      units
+    );
+    expect(r).toEqual({ kg: 1, missingCount: 0 });
+  });
+
+  it('нетто + divideBy для продукції', () => {
+    const r = expectedBomWeightKg(
+      [{ qty: 1, unitId: 'kg', componentWeight: null, cookingLossPercent: 20 }],
+      units,
+      { divideBy: 10 }
+    );
+    expect(r?.kg).toBe(0.1);
+  });
+});
+
+describe('isSuspiciousBomIngredientQty', () => {
+  it('підозріла кількість — менше 0.01 г', () => {
+    expect(
+      isSuspiciousBomIngredientQty({ qty: 0.005, unitId: 'g', componentWeight: null }, units)
+    ).toBe(true);
+    expect(
+      isSuspiciousBomIngredientQty({ qty: 0.009, unitId: 'g', componentWeight: null }, units)
+    ).toBe(true);
+  });
+
+  it('нормальна кількість — без попередження', () => {
+    expect(
+      isSuspiciousBomIngredientQty({ qty: 0.07, unitId: 'g', componentWeight: null }, units)
+    ).toBe(false);
+    expect(
+      isSuspiciousBomIngredientQty({ qty: 3, unitId: 'g', componentWeight: null }, units)
+    ).toBe(false);
+    expect(
+      isSuspiciousBomIngredientQty({ qty: 0.5, unitId: 'g', componentWeight: null }, units)
+    ).toBe(false);
+    expect(
+      isSuspiciousBomIngredientQty({ qty: 270, unitId: 'ml', componentWeight: null }, units)
+    ).toBe(false);
+  });
+
+  it('нуль або відсутня кількість — без попередження', () => {
+    expect(
+      isSuspiciousBomIngredientQty({ qty: 0, unitId: 'g', componentWeight: null }, units)
+    ).toBe(false);
+  });
+});
+
+describe('isSuspiciousSpecQty', () => {
+  const recipe = [
+    { qty: 58, unitId: 'g', componentWeight: null },
+    { qty: 216, unitId: 'ml', componentWeight: null },
+  ];
+
+  it('підозрілий specQty, коли вага порції стає занадто малою', () => {
+    expect(isSuspiciousSpecQty(recipe, units, 3120)).toBe(true);
+  });
+
+  it('нормальний specQty — без попередження', () => {
+    expect(isSuspiciousSpecQty(recipe, units, 1)).toBe(false);
+    expect(isSuspiciousSpecQty(recipe, units, 5)).toBe(false);
+  });
+});
+
+describe('buildTechCardRows', () => {
+  it('масштабує масу нетто/брутто на кількість порцій', () => {
+    const result = buildTechCardRows(
+      [{ componentName: 'Картопля', qty: 58, unitId: 'g', componentWeight: null, cookingLossPercent: 0 }],
+      units,
+      10,
+      100
+    );
+    expect(result.rows[0]?.recipeDisplay).toBe(formatBomQtyDisplay(58, 'г'));
+    expect(result.rows[0]?.netDisplay).toBe('0,58 кг');
+    expect(result.rows[0]?.grossDisplay).toBe('0,58 кг');
+    expect(result.totalNetMassKg).toBe(0.58);
+    expect(result.totalGrossMassKg).toBe(0.58);
+    expect(result.totalRecipeMassKg).toBe(0.058);
+  });
+
+  it('враховує % втрат для нетто/брутто', () => {
+    const result = buildTechCardRows(
+      [{ componentName: "М'ясо", qty: 100, unitId: 'g', componentWeight: null, cookingLossPercent: 10 }],
+      units,
+      1,
+      1
+    );
+    expect(result.rows[0]?.massKgNetTotal).toBeCloseTo(0.1);
+    expect(result.rows[0]?.massKgGrossTotal).toBeCloseTo(0.1 / 0.9);
+    expect(result.rows[0]?.netDisplay).toBe('0,1 кг');
+    expect(result.rows[0]?.grossDisplay).toBe('0,111 кг');
+  });
+
+  it('додає примітку до назви інгредієнта', () => {
+    const result = buildTechCardRows(
+      [{ componentName: 'Цибуля', qty: 10, unitId: 'g', componentWeight: null, note: 'різана' }],
+      units,
+      1,
+      1
+    );
+    expect(result.rows[0]?.nameDisplay).toBe('Цибуля (різана)');
+  });
+
+  it('показує % втрат лише якщо вони > 0', () => {
+    const withLoss = buildTechCardRows(
+      [{ componentName: "М'ясо", qty: 100, unitId: 'g', componentWeight: null, cookingLossPercent: 10 }],
+      units,
+      1,
+      1
+    );
+    const withoutLoss = buildTechCardRows(
+      [{ componentName: 'Цибуля', qty: 10, unitId: 'g', componentWeight: null, cookingLossPercent: 0 }],
+      units,
+      1,
+      1
+    );
+    expect(withLoss.rows[0]?.lossDisplay).toBe('10 %');
+    expect(withoutLoss.rows[0]?.lossDisplay).toBe('');
+  });
+
+  it('форматує масу з фіксованою точністю', () => {
+    const result = buildTechCardRows(
+      [{ componentName: "М'ясо", qty: 100, unitId: 'g', componentWeight: null, cookingLossPercent: 10 }],
+      units,
+      1,
+      1,
+      2
+    );
+    expect(result.rows[0]?.netDisplay).toBe('0,10 кг');
+    expect(result.rows[0]?.grossDisplay).toBe('0,11 кг');
+    expect(result.massPrecision).toBe(2);
+  });
+});
+
+describe('extractParenthesizedTextFromName', () => {
+  it('переносить текст з дужок у примітку', () => {
+    expect(extractParenthesizedTextFromName('Курячі кістки(суповий)')).toEqual({
+      cleanName: 'Курячі кістки',
+      extracted: 'суповий',
+    });
+    expect(extractParenthesizedTextFromName('Сир (твердий) знежирений')).toEqual({
+      cleanName: 'Сир знежирений',
+      extracted: 'твердий',
+    });
+  });
+
+  it('без дужок — без змін', () => {
+    expect(extractParenthesizedTextFromName('Цибуля')).toEqual({
+      cleanName: 'Цибуля',
+      extracted: null,
+    });
+    expect(hasParenthesizedTextInName('Цибуля')).toBe(false);
+    expect(hasParenthesizedTextInName('Курячі кістки(суповий)')).toBe(true);
   });
 });
 

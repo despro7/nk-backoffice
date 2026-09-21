@@ -231,6 +231,8 @@
 }
 
 /*
+ * Глобальні override кнопок — Docs/guides/design-system.md (секція «Кнопки»).
+ *
  * Primary flat — два варіанти без глобального override (уникаємо !important):
  *   • theme:  color="primary" variant="flat"  → HeroUI bg-primary/20
  *   • blue:    className={BTN_PRIMARY_BLUE_FLAT} з @/lib/buttonStyles
@@ -464,32 +466,4 @@ html.report-capture-ui-hidden [data-report-fab="true"],
 html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
   opacity: 0 !important;
   pointer-events: none !important;
-}
-
-@media print {
-  body * {
-    visibility: hidden;
-  }
-
-  .tech-card-modal,
-  .tech-card-modal * {
-    visibility: visible;
-  }
-
-  .tech-card-modal {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    max-width: none;
-    box-shadow: none;
-  }
-
-  .tech-card-print-hide {
-    display: none !important;
-  }
-
-  .tech-card-print-only {
-    display: block !important;
-  }
 }

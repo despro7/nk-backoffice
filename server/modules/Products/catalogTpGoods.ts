@@ -12,6 +12,8 @@ export type CatalogComponentSaveInput = {
   rowNum?: number;
   unitId?: string | null;
   note?: string | null;
+  /** Локально: % втрат при готуванні (0–100) */
+  cookingLossPercent?: number | null;
 };
 
 export type CatalogComponentRowRef = {

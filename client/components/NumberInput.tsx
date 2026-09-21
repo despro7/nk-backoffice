@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type FocusEvent, type WheelEvent } from 'react';
-import { Input } from '@heroui/react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type FocusEvent,
+  type ReactNode,
+  type WheelEvent,
+} from 'react';
+import { Input, Tooltip, type TooltipProps } from '@heroui/react';
 import { cn } from '@/lib/utils';
 import {
   formatNumberInput,
@@ -12,8 +21,27 @@ import {
 
 type HeroInputProps = ComponentProps<typeof Input>;
 
+/** Параметри HeroUI Tooltip без `children`. */
+export type NumberInputTooltipProps = Omit<TooltipProps, 'children'>;
+
+const NUMBER_INPUT_TOOLTIP_DEFAULTS = {
+  color: 'default',
+  placement: 'top',
+  showArrow: true,
+  delay: 200,
+  classNames: {
+    base: 'before:rounded-[2px] before:z-[10] before:shadow-[1px_1px_1px_rgba(0,0,0,0.08)]',
+    content: 'rounded-sm',
+  },
+} as const satisfies Partial<NumberInputTooltipProps>;
+
 export interface NumberInputProps
   extends Omit<HeroInputProps, 'type' | 'inputMode' | 'value' | 'onValueChange'> {
+  /**
+   * Обгортає поле в Tooltip.
+   * `true` — дефолти; `content` за замовчуванням береться з `aria-label`.
+   */
+  tooltip?: boolean | NumberInputTooltipProps;
   value: string;
   onValueChange: (value: string) => void;
   decimalSeparator?: DecimalSeparator;
@@ -34,6 +62,45 @@ export interface NumberInputProps
 const SPIN_HIDE =
   '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
 
+function wrapNumberInputWithTooltip(
+  node: ReactNode,
+  tooltip: NumberInputProps['tooltip'],
+  ariaLabel: HeroInputProps['aria-label'],
+): ReactNode {
+  if (!tooltip) return node;
+
+  const config: NumberInputTooltipProps = typeof tooltip === 'boolean' ? {} : tooltip;
+  const content = config.content ?? ariaLabel;
+  if (content == null || content === '') return node;
+
+  const {
+    content: _content,
+    color = NUMBER_INPUT_TOOLTIP_DEFAULTS.color,
+    placement = NUMBER_INPUT_TOOLTIP_DEFAULTS.placement,
+    showArrow = NUMBER_INPUT_TOOLTIP_DEFAULTS.showArrow,
+    delay = NUMBER_INPUT_TOOLTIP_DEFAULTS.delay,
+    classNames,
+    ...tooltipRest
+  } = config;
+
+  return (
+    <Tooltip
+      {...tooltipRest}
+      content={content}
+      color={color}
+      placement={placement}
+      showArrow={showArrow}
+      delay={delay}
+      classNames={{
+        base: cn(NUMBER_INPUT_TOOLTIP_DEFAULTS.classNames.base, classNames?.base),
+        content: cn(NUMBER_INPUT_TOOLTIP_DEFAULTS.classNames.content, classNames?.content),
+      }}
+    >
+      {node}
+    </Tooltip>
+  );
+}
+
 export function NumberInput({
   value,
   onValueChange,
@@ -48,6 +115,8 @@ export function NumberInput({
   emptyOnBlur = 'keep',
   trimTrailingZeros = false,
   allowNegative,
+  tooltip,
+  'aria-label': ariaLabel,
   onBlur,
   onFocus,
   onWheel,
@@ -130,10 +199,11 @@ export function NumberInput({
     [onWheel],
   );
 
-  return (
+  return wrapNumberInputWithTooltip(
     <Input
       {...rest}
       ref={inputRef}
+      aria-label={ariaLabel}
       type="text"
       inputMode={decimalPlaces > 0 ? 'decimal' : 'numeric'}
       value={value}
@@ -148,7 +218,9 @@ export function NumberInput({
         ...classNames,
         input: cn(SPIN_HIDE, classNames?.input),
       }}
-    />
+    />,
+    tooltip,
+    ariaLabel,
   );
 }
 

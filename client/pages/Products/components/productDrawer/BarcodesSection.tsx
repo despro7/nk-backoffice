@@ -39,6 +39,7 @@ export function BarcodesSection({
             placeholder="Введіть або згенеруйте штрихкод"
             classNames={{
               base: 'flex-1',
+              inputWrapper: 'border-1 border-default-200',
             }}
             value={b.code}
             onValueChange={(v) =>
@@ -81,7 +82,7 @@ export function BarcodesSection({
             isReadOnly
             classNames={{
               base: 'flex-1',
-              inputWrapper: 'cursor-pointer',
+              inputWrapper: 'cursor-pointer border-1 border-default-200',
               input: 'cursor-pointer py-2',
             }}
             onClick={() => onOpenBatchPicker(idx)}

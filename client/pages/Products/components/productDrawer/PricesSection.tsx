@@ -67,7 +67,7 @@ export function PricesSection({
                   size="md"
                   aria-label="Тип ціни"
                   selectedKeys={p.priceType ? [p.priceType] : []}
-                  classNames={{ base: 'min-w-0', popoverContent: 'bg-default-100' }}
+                  classNames={{ base: 'min-w-0', popoverContent: 'bg-default-100', trigger: 'border-1 border-default-200' }}
                   onSelectionChange={(keys) => {
                     const v = Array.from(keys)[0];
                     if (!v) return;
@@ -95,6 +95,9 @@ export function PricesSection({
                 trimTrailingZeros={false}
                 isInvalid={p.price <= 0}
                 color={militaryMismatch ? 'danger' : 'default'}
+                classNames={{
+                  inputWrapper: 'border-1 border-default-200',
+                }}
                 endContent={<span className="text-xs text-default-400/75">грн</span>}
                 onChange={(price) => onApplyPriceRowChange(idx, { price })}
               />

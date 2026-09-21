@@ -16,6 +16,8 @@ import {
   CatalogGoodDetailDto,
   CatalogGoodDto,
   CatalogGoodImageDto,
+  CatalogGoodUsedInDto,
+  CatalogGoodUsedInScope,
   CatalogReorderInput,
   CatalogTreeNodeDto,
   CatalogUnitDto,
@@ -790,6 +792,94 @@ export class ProductsCatalogService {
     return this.readGoodDetailFromLocal(id);
   }
 
+  /**
+   * Зворотний BOM: де використовується компонент (інгредієнт → продукція, продукція → комплект).
+   */
+  async getGoodUsedIn(
+    goodId: string,
+    scope: CatalogGoodUsedInScope
+  ): Promise<CatalogGoodUsedInDto[]> {
+    const targetAccPolicyId =
+      scope === 'kits' ? CATALOG_ACC_POLICY_KIT : CATALOG_ACC_POLICY_GOOD;
+
+    const rows = await prisma.catalogGoodComponent.findMany({
+      where: { componentGoodId: goodId },
+      select: {
+        qty: true,
+        unitId: true,
+        parentGood: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            accPolicyId: true,
+            parentId: true,
+            isGroup: true,
+            delMark: true,
+          },
+        },
+      },
+      orderBy: [{ parentGood: { name: 'asc' } }, { rowNum: 'asc' }],
+    });
+
+    const grouped = new Map<
+      string,
+      {
+        parentName: string;
+        parentSku: string | null;
+        parentIsKit: boolean;
+        qty: number;
+        unitId: string | null;
+        rowCount: number;
+      }
+    >();
+
+    for (const row of rows) {
+      const parent = row.parentGood;
+      if (
+        !parent ||
+        parent.isGroup ||
+        parent.delMark ||
+        parent.parentId === CATALOG_TRASH_ID ||
+        parent.accPolicyId !== targetAccPolicyId
+      ) {
+        continue;
+      }
+
+      const unitId = row.unitId ?? null;
+      const existing = grouped.get(parent.id);
+      if (!existing) {
+        grouped.set(parent.id, {
+          parentName: parent.name,
+          parentSku: parent.sku,
+          parentIsKit: isKitAccPolicy(parent.accPolicyId),
+          qty: row.qty,
+          unitId,
+          rowCount: 1,
+        });
+        continue;
+      }
+
+      existing.qty += row.qty;
+      existing.rowCount += 1;
+      if (existing.unitId && unitId && existing.unitId !== unitId) {
+        existing.unitId = null;
+      }
+    }
+
+    return [...grouped.entries()]
+      .map(([parentGoodId, item]) => ({
+        parentGoodId,
+        parentName: item.parentName,
+        parentSku: item.parentSku,
+        parentIsKit: item.parentIsKit,
+        qty: item.qty,
+        unitId: item.unitId,
+        rowCount: item.rowCount,
+      }))
+      .sort((a, b) => a.parentName.localeCompare(b.parentName, 'uk'));
+  }
+
   private async syncGoodFromDilovodLive(id: string): Promise<void> {
     const obj = await productsDilovodGateway.getObject(id);
     const mapped = productsDilovodGateway.mapObjectToLocal(obj);
@@ -857,7 +947,14 @@ export class ProductsCatalogService {
       dilovodRowId: row.dilovodRowId,
       unitId: row.unitId || mainUnitId,
       note: row.note?.trim() || null,
+      cookingLossPercent: this.normalizeCookingLossPercent(row.cookingLossPercent),
     }));
+  }
+
+  private normalizeCookingLossPercent(value: number | null | undefined): number {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.min(100, Math.max(0, n));
   }
 
   private async readGoodDetailFromLocal(id: string): Promise<CatalogGoodDetailDto | null> {
@@ -936,6 +1033,7 @@ export class ProductsCatalogService {
         dilovodRowId: c.dilovodRowId ?? null,
         unitId: c.unitId ?? null,
         note: c.note ?? null,
+        cookingLossPercent: c.cookingLossPercent ?? 0,
       })),
       prices: row.prices.map((p) => ({
         id: p.id,
@@ -1017,6 +1115,7 @@ export class ProductsCatalogService {
       rowNum: c.rowNum,
       unitId: c.unitId || mainUnitId,
       note: c.note?.trim() || null,
+      cookingLossPercent: this.normalizeCookingLossPercent(c.cookingLossPercent),
     }));
     const { tpGoods, componentsWithRowIds } = !isGroup && hasComponents
       ? await resolveTpGoodsForSave({
@@ -1141,14 +1240,22 @@ export class ProductsCatalogService {
       // Відновлюємо notes компонентів (по rowNum — дублікати інгредієнтів дозволені)
       if (input.components?.length) {
         for (const [idx, c] of input.components.entries()) {
-          if (c.note == null || !String(c.note).trim()) continue;
+          const rowNum = c.rowNum ?? idx + 1;
+          const patch: { note?: string; cookingLossPercent?: number } = {};
+          if (c.note != null && String(c.note).trim()) {
+            patch.note = String(c.note).trim();
+          }
+          if (c.cookingLossPercent !== undefined) {
+            patch.cookingLossPercent = this.normalizeCookingLossPercent(c.cookingLossPercent);
+          }
+          if (Object.keys(patch).length === 0) continue;
           await prisma.catalogGoodComponent.updateMany({
             where: {
               parentGoodId: dilovodId,
               componentGoodId: c.componentGoodId,
-              rowNum: c.rowNum ?? idx + 1,
+              rowNum,
             },
-            data: { note: String(c.note).trim() },
+            data: patch,
           });
         }
       }
@@ -1184,6 +1291,7 @@ export class ProductsCatalogService {
       rowNum: c.rowNum,
       unitId: c.unitId ?? null,
       note: c.note ?? null,
+      cookingLossPercent: c.cookingLossPercent ?? 0,
     }));
     const componentInputs: CatalogComponentSaveInput[] = components.map((c) => ({
       componentGoodId: c.componentGoodId,
@@ -1191,6 +1299,9 @@ export class ProductsCatalogService {
       rowNum: c.rowNum,
       unitId: c.unitId ?? mainUnitId,
       note: 'note' in c ? (c.note ?? null) : null,
+      cookingLossPercent: this.normalizeCookingLossPercent(
+        'cookingLossPercent' in c ? c.cookingLossPercent : 0
+      ),
     }));
     const hasComponents = !isGroup && components.length > 0;
     const accPolicyId = isGroup
@@ -1428,14 +1539,22 @@ export class ProductsCatalogService {
       }
       if (input.components?.length) {
         for (const [idx, c] of input.components.entries()) {
-          if (c.note === undefined) continue;
+          const rowNum = c.rowNum ?? idx + 1;
+          const patch: { note?: string | null; cookingLossPercent?: number } = {};
+          if (c.note !== undefined) {
+            patch.note = c.note?.trim() || null;
+          }
+          if (c.cookingLossPercent !== undefined) {
+            patch.cookingLossPercent = this.normalizeCookingLossPercent(c.cookingLossPercent);
+          }
+          if (Object.keys(patch).length === 0) continue;
           await prisma.catalogGoodComponent.updateMany({
             where: {
               parentGoodId: id,
               componentGoodId: c.componentGoodId,
-              rowNum: c.rowNum ?? idx + 1,
+              rowNum,
             },
-            data: { note: c.note?.trim() || null },
+            data: patch,
           });
         }
       }

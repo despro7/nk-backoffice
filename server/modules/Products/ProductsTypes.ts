@@ -118,6 +118,7 @@ export interface LocalSyncGoodPayload {
     dilovodRowId?: string | null;
     unitId?: string | null;
     note?: string | null;
+    cookingLossPercent?: number | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{

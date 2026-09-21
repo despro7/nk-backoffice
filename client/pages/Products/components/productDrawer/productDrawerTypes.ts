@@ -24,7 +24,7 @@ export interface ProductDrawerProps {
   onUpdate: (
     id: string,
     input: CatalogUpdateGoodInput,
-    opts?: { keepOpen?: boolean }
+    opts?: { keepOpen?: boolean; silent?: boolean }
   ) => void | Promise<unknown>;
   /** Відновити зі смітника (вибір папки ззовні) */
   onRestore?: (id: string) => void;
@@ -61,6 +61,8 @@ export interface BomRow {
   /** Вага компонента з картки, кг */
   componentWeight: number | null;
   componentAccPolicyId: string | null;
+  /** % втрат при готуванні (0–100) */
+  cookingLossPercent: number;
 }
 
 export interface PriceRow {

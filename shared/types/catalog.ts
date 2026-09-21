@@ -117,6 +117,21 @@ export interface CatalogTreeNodeDto {
   sortOrder?: number;
 }
 
+/** Зворотний звʼязок BOM: де використовується поточний компонент. */
+export interface CatalogGoodUsedInDto {
+  parentGoodId: string;
+  parentName: string;
+  parentSku: string | null;
+  parentIsKit: boolean;
+  /** Сума qty по всіх рядках BOM */
+  qty: number;
+  unitId: string | null;
+  /** Скільки рядків tpGoods посилаються на цей компонент */
+  rowCount: number;
+}
+
+export type CatalogGoodUsedInScope = 'products' | 'kits';
+
 export interface CatalogGoodComponentDto {
   id?: number;
   parentGoodId: string;
@@ -135,6 +150,8 @@ export interface CatalogGoodComponentDto {
   unitId?: string | null;
   /** Примітка рядка специфікації ↔ Dilovod tpGoods.remark */
   note?: string | null;
+  /** Локально: % втрат при готуванні (0–100) */
+  cookingLossPercent?: number | null;
 }
 
 export interface CatalogGoodPriceDto {
@@ -213,6 +230,7 @@ export interface CatalogCreateGoodInput {
     rowNum?: number;
     unitId?: string | null;
     note?: string | null;
+    cookingLossPercent?: number | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{
@@ -244,6 +262,7 @@ export interface CatalogUpdateGoodInput {
     rowNum?: number;
     unitId?: string | null;
     note?: string | null;
+    cookingLossPercent?: number | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{

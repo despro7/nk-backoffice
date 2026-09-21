@@ -304,20 +304,23 @@ export function useProductsCatalog() {
       id: string;
       input: CatalogUpdateGoodInput;
       keepOpen?: boolean;
+      silent?: boolean;
     }) =>
       catalogFetch<CatalogGoodDetailDto>(`/api/catalog/goods/${id}`, {
         method: 'PUT',
         body: JSON.stringify(input),
       }),
     onSuccess: (data, variables) => {
-      const skuPart = data.sku ? ` · SKU ${data.sku}` : '';
-      ToastService.show({
-        title: 'Збережено',
-        description: data.isGroup
-          ? `Група «${data.name}» оновлена в Dilovod`
-          : `«${data.name}»${skuPart} оновлено в Dilovod`,
-        color: 'success',
-      });
+      if (!variables.silent) {
+        const skuPart = data.sku ? ` · SKU ${data.sku}` : '';
+        ToastService.show({
+          title: 'Збережено',
+          description: data.isGroup
+            ? `Група «${data.name}» оновлена в Dilovod`
+            : `«${data.name}»${skuPart} оновлено в Dilovod`,
+          color: 'success',
+        });
+      }
       if (variables.keepOpen) {
         queryClient.setQueryData(['catalog', 'good', variables.id], data);
         void queryClient.invalidateQueries({
