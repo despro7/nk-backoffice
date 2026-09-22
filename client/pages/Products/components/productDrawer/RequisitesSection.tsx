@@ -1,5 +1,6 @@
 import { Button, Input, Autocomplete, AutocompleteItem, Select, SelectItem, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { NumberInput } from '@/components/NumberInput';
 import { formatCatalogName, type CatalogFolderOption } from '../../ProductsUtils';
 import type { CatalogDictItemDto } from '../../ProductsTypes';
 import type { DrawerForm, DrawerObjectKind } from './productDrawerTypes';
@@ -144,7 +145,7 @@ export function RequisitesSection({
         />
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className={`grid grid-cols-2 gap-3 ${isOther ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
         <Select
           label="Тип обʼєкта"
           placeholder="Оберіть тип"
@@ -233,6 +234,18 @@ export function RequisitesSection({
             </Tooltip>
           }
         />
+        {isOther && (
+          <NumberInput
+            label="Вага, кг"
+            value={form.weight}
+            decimalPlaces={3}
+            min={0}
+            max={20}
+            step={0.01}
+            isDisabled={saving}
+            onValueChange={(v) => patchForm({ weight: v })}
+          />
+        )}
       </div>
     </section>
   );
