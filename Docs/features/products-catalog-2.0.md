@@ -1,6 +1,6 @@
 # Products 2.0 — домен керування каталогом Dilovod
 
-**Дата:** 2026-07-30 (оновлено 2026-09-16)  
+**Дата:** 2026-07-30 (оновлено 2026-09-22)  
 **Маршрут:** `/products` (`minRole: WAREHOUSE_MANAGER`)  
 **API:** `/api/catalog/`*
 
@@ -33,7 +33,7 @@
 | Таблиця                   | Призначення                                                              |
 | ------------------------- | ------------------------------------------------------------------------ |
 | `catalog_goods`           | Папки (`isGroup`) і товари; PK = Dilovod `id`                            |
-| `catalog_good_components` | BOM / `tpGoods` (+ `note` ↔ Dilovod `remark`)                            |
+| `catalog_good_components` | BOM / `tpGoods` (+ `note` ↔ Dilovod `remark`; `cookingLossPercent` — лише локально) |
 | `catalog_good_prices`     | Snapshot `informationRegisters.goodsPrices`                              |
 | `catalog_good_barcodes`   | Snapshot `informationRegisters.barCodes` (+ `goodPart` / `goodPartName`) |
 | `catalog_good_images`     | Локальні зображення товару                                               |
@@ -50,6 +50,8 @@
 | `stockBalanceByStock` | JSON залишків; дзеркало з Dilovod stock sync + dual-write у `products`      |
 
 `catalog_good_components.note` — примітка рядка специфікації продукції ↔ Dilovod `tpGoods.remark` (varchar до 150 у gateway; у БД до 512). **Не використовується** для товарних наборів (`accPolicy` kit) у UI/save.
+
+`catalog_good_components.cookingLossPercent` — **лише локально**: % втрат при готуванні (0–100) для рядків специфікації продукції; у Dilovod не пишеться. При sync з Dilovod існуюче значення зберігається (`ProductsLocalSync` merge). Міграція: `prisma/migrations/20260920120000_catalog_component_cooking_loss/`.
 
 Константи (`shared/types/catalog.ts`):
 
@@ -117,6 +119,7 @@ server/modules/Products/
 | GET    | `/sku/next`            | Наступний вільний SKU у папці (`?parentId=&excludeId=`)                           |
 | GET    | `/barcode/next`        | Наступний вільний внутрішній EAN-13 (серія `22…`) з Dilovod `barCodes`           |
 | GET    | `/goods/:id`           | Картка (header + BOM + prices + barcodes + stock RO); live-pull з Dilovod        |
+| GET    | `/goods/:id/used-in`   | Зворотний BOM: `?scope=products` (страви) або `kits` (комплекти); ACL на батьків |
 | POST   | `/goods`               | Створити товар/папку                                                             |
 | PUT    | `/goods/:id`           | Оновити (вкл. BOM, ціни, ШК)                                                     |
 | POST   | `/goods/:id/duplicate` | Дублікат (новий SKU, ШК лише якщо вільні)                                        |
@@ -165,6 +168,13 @@ Dilovod повертає `description: { uk, ru }`. Раніше `String(obj)` �
 - Live-pull картки (`syncGoodFromDilovodLive`) **передає** `mapped.components` у `productsLocalSync.syncGood`.
 - Create/update пишуть `tpGoods` у Dilovod (з `remark` з `note`, slice 150) і замінюють локальний BOM.
 - `ProductsLocalSync`: якщо sync payload **без** `note`, існуючі локальні примітки зберігаються (merge).
+
+### Зворотний BOM (`GET /goods/:id/used-in`)
+
+- Запит по `componentGoodId` у `catalog_good_components`; відповідь — `CatalogGoodUsedInDto[]` (унікальні батьки, `qty` = сума рядків, `rowCount`).
+- `scope=products` — батьки з `accPolicy` продукції (`CATALOG_ACC_POLICY_GOOD`); `scope=kits` — комплекти (`CATALOG_ACC_POLICY_KIT`).
+- Виключаються групи, `delMark`, елементи в смітнику; ACL — `canViewCatalogItem` на кожного батька.
+- UI: `UsedInSection` (lazy `useQuery`), не входить у `getGoodDetail`.
 
 ### Dual-write ops → `products`
 
@@ -264,7 +274,18 @@ client/pages/Products/
     CatalogToolbar.tsx          # Синхронізувати гілку (+ TEMP Legacy), вибірковий Legacy, archive/trash
     CatalogContextMenu.tsx      # Legacy Update, fromTrash / fromArchive (і в пошуку)
     MoveToFolderModal.tsx
-    ProductDrawer.tsx           # футер: Оновити Legacy; Tabs kind, BOM note, unitRatio Admin, Наліпки, …
+    ProductDrawer.tsx           # футер: Оновити Legacy; Tabs kind, BOM, UsedIn, техкарта, unitRatio Admin, Наліпки, …
+    productDrawer/
+      BomSection.tsx            # специфікація / склад; сортування, DnD, втрати %, техкарта
+      bomSectionSort.ts         # сортування колонок + reorder рядків BOM
+      UsedInSection.tsx         # зворотний BOM (де використовується інгредієнт / продукція)
+      TechCardModal.tsx         # модалка техкарти (PDF / Excel / друк)
+      techCardPdfExport.ts      # експорт / друк PDF (@react-pdf/renderer)
+      techCardExcelExport.ts    # експорт Excel
+      TechCardPdfDocument.tsx   # layout PDF техкарти
+      PricesSection.tsx
+      BarcodesSection.tsx
+      RequisitesSection.tsx
     ProductLabelsTab.tsx        # генерація PDF-етикеток (див. product-labels.md)
     DescriptionEditor.tsx
     ArchiveConfirmModal.tsx
@@ -294,9 +315,16 @@ client/pages/Products/
 ### UI: ProductDrawer
 
 - Тип обʼєкта: Tabs **Продукція / Товарні набори / Група / Інший** (`DrawerObjectKind` ↔ `accPolicyId` / `isGroup`).
-- BOM:
+- BOM (`BomSection`):
   - **Продукція** — «Специфікація товару»; qty через `NumberInputFromNumber` (див. `Docs/architecture/number-input.md`); **примітка** (Chip + Popover, Dilovod remark); мікро-конфірм видалення примітки (іконка → «Видалити?» → clear).
-  - **Товарні набори** — «Склад комплекту»; qty `StepperInput`; **без** примітки (`note: null` у save).
+  - **Продукція** — колонка **% втрат** (`cookingLossPercent`, локально); підсвітка підозрілої qty (`isSuspiciousBomIngredientQty`); кнопка переносу тексту з дужок назви в примітку (`extractParenthesizedTextFromName`).
+  - **Продукція** — сортування колонок (назва, втрати, qty, од. вим.) + опційне **ручне сортування** перетягуванням (`bomSectionSort.ts`, `@hello-pangea/dnd`).
+  - **Продукція** — **«Друк техкарти»** → `TechCardModal`: розрахунок на N порцій, нетто/брутто з урахуванням втрат, експорт PDF/Excel, друк (`buildTechCardRows` у `ProductsUtils.ts`).
+  - **Товарні набори** — «Склад комплекту»; qty `StepperInput`; **без** примітки та втрат (`note: null` у save).
+- **Зворотний BOM** (`UsedInSection`, лише edit, між BOM і цінами):
+  - **Інгредієнт** (`other`) — «Використовується в стравах» (`GET …/used-in?scope=products`).
+  - **Продукція** (`good`) — «Використовується в комплектах» (`scope=kits`).
+  - Секція не рендериться, якщо список порожній / loading / error; клік по рядку відкриває батьківську картку у стеку drawer.
 - `unitRatio` — поле лише для Admin (продукція).
 - Одиниці / типи цін / валюти — Select з `GET /dictionaries`.
 - Опис — `DescriptionEditor` (не name/printName).
@@ -434,7 +462,7 @@ client/pages/Products/
 
 1. Перший запуск UI без даних → **Refresh Dilovod** (`POST /api/catalog/refresh`); довідники — `/settings/dilovod` «Оновити все» або перший `GET /dictionaries`.
 2. Створення/редагування → Dilovod `saveObject` (+ регістри) → `ProductsLocalSync.syncGood` → dual-write ops у `products`.
-3. Відкриття картки → live-pull header + prices + barcodes + **BOM** (з `remark`/`note`).
+3. Відкриття картки → live-pull header + prices + barcodes + **BOM** (з `remark`/`note`); зворотний BOM — окремий lazy `GET /goods/:id/used-in` у `UsedInSection`.
 4. Archive / Trash → зміна `parent` + `setDelMark`.
 5. Restore з архіву → батьківська папка архіву + `delMark: 0`; зі смітника → move picker.
 6. DnD: drop на папку = move; між siblings = `POST /reorder`.
@@ -452,7 +480,7 @@ client/pages/Products/
 | Шар       | Файли                                                                                                          |
 | --------- | -------------------------------------------------------------------------------------------------------------- |
 | Schema    | `prisma/schema.prisma`, migrations `20260727010000_*`, `20260803090000_catalog_ops_fields_and_sort`           |
-| Shared    | `shared/types/catalog.ts`, `shared/types/dilovod.ts`, `shared/utils/catalogSortOrder.ts`                       |
+| Shared    | `shared/types/catalog.ts` (+ `CatalogGoodUsedInDto`), `shared/types/dilovod.ts`, `shared/utils/catalogSortOrder.ts` |
 | Server    | `server/modules/Products/*` (`listSkusInFolderSubtree`, `partitionCatalogSkusByArchive`, TEMP legacy після refresh гілки), `server/routes/catalog.ts`, `server/routes/products.ts` (`sync-manual` + archive→`isOutdated`), `server/lib/utils.ts` (HMR-safe `prisma`), `DilovodService` / `DilovodSyncManager` / `DilovodCacheService` |
 | Client    | `client/pages/Products/**`, `client/hooks/useUrlHashSync.ts`, `client/components/modals/ProductOrdersModal.tsx`, `ReportsShipment` (спільна модалка), `DilovodCacheManager.tsx`, `routes.config.tsx` |
 | Nav badge | `NavBadge` / `isNavBadgeVisible` у `routes.config.tsx`, рендер у `Sidebar.tsx`                                 |

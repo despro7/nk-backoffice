@@ -1195,23 +1195,23 @@ export function formatCatalogName(raw: string): string {
   if (!raw) return raw;
   let s = raw.replace(/\u00a0/g, ' ');
 
-  s = s.replace(/(\p{L})(\d)/gu, '$1 $2');
-  s = s.replace(/(\d)(\p{L})/gu, '$1 $2');
-  s = s.replace(/\s*\+\s*/g, ' + ');
-  s = s.replace(/\s*\(/g, ' (');
-  s = s.replace(/\(\s+/g, '(');
-  s = s.replace(/\s+\)/g, ')');
-  s = s.replace(/\)(?=[\p{L}\p{N}])/gu, ') ');
+  // s = s.replace(/(\p{L})(\d)/gu, '$1 $2'); // між буквою і цифрою
+  // s = s.replace(/(\d)(\p{L})/gu, '$1 $2'); // між цифрою і буквою
+  s = s.replace(/\s*\+\s*/g, ' + '); // між знаком +
+  s = s.replace(/\s*\(/g, ' ('); // перед дужкою
+  s = s.replace(/\(\s+/g, '('); // перед дужкою
+  s = s.replace(/\s+\)/g, ')'); // після дужки
+  s = s.replace(/\)(?=[\p{L}\p{N}])/gu, ') '); // після дужки і перед буквою або цифрою
 
-  s = s.replace(/\s+([,.;:!?])/g, '$1');
-  s = s.replace(/,(?=\p{L})/gu, ', ');
-  s = s.replace(/\.(?=\p{L})/gu, '. ');
-  s = s.replace(/;(?=\S)/g, '; ');
-  s = s.replace(/:(?=\S)/g, ': ');
-  s = s.replace(/!(?=\S)/g, '! ');
-  s = s.replace(/\?(?=\S)/g, '? ');
+  s = s.replace(/\s+([,.;:!?])/g, '$1'); // після знака пунктуації
+  s = s.replace(/,(?=\p{L})/gu, ', '); // після коми і перед буквою
+  s = s.replace(/\.(?=\p{L})/gu, '. '); // після крапки і перед буквою
+  s = s.replace(/;(?=\S)/g, '; '); // після крапки і перед буквою
+  s = s.replace(/:(?=\S)/g, ': '); // після коми і перед буквою
+  s = s.replace(/!(?=\S)/g, '! '); // після крапки і перед буквою
+  s = s.replace(/\?(?=\S)/g, '? '); // після крапки і перед буквою
 
-  return s.replace(/ {2,}/g, ' ');
+  return s.replace(/ {2,}/g, ' '); // два і більше пробілів
 }
 
 /** Чи в назві є вага з одиницею (кг/г) — для неї є окреме поле. */

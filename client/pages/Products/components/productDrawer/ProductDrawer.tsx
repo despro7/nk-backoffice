@@ -1081,22 +1081,6 @@ export function ProductDrawer({
                             isReadOnly={readOnly}
                           />
                         )}
-                        {isEdit && detail?.id && isOther && (
-                          <UsedInSection
-                            goodId={detail.id}
-                            scope="products"
-                            units={units}
-                            onOpenNested={openNestedComponent}
-                          />
-                        )}
-                        {isEdit && detail?.id && isGood && (
-                          <UsedInSection
-                            goodId={detail.id}
-                            scope="kits"
-                            units={units}
-                            onOpenNested={openNestedComponent}
-                          />
-                        )}
                         <Divider className="bg-default-200/60" />
                         <PricesSection
                           prices={prices}
@@ -1124,6 +1108,22 @@ export function ProductDrawer({
                           onOpenBatchPicker={openBatchPicker}
                           onRowDeleteConfirm={setRowDeleteConfirm}
                         />
+                        {isEdit && detail?.id && isOther && (
+                          <UsedInSection
+                            goodId={detail.id}
+                            scope="products"
+                            units={units}
+                            onOpenNested={openNestedComponent}
+                          />
+                        )}
+                        {isEdit && detail?.id && isGood && (
+                          <UsedInSection
+                            goodId={detail.id}
+                            scope="kits"
+                            units={units}
+                            onOpenNested={openNestedComponent}
+                          />
+                        )}
                       </>
                     )}
                   </>
@@ -1289,7 +1289,7 @@ export function ProductDrawer({
                 isDisabled={!hasObjectKind || !form.name.trim() || saving || !isDirty || !requiredFieldsOk}
                 startContent={saving ? <DynamicIcon name="loader-2" className="animate-spin" size={14} /> : <DynamicIcon name="save" size={14} />}
               >
-                Зберегти
+                Зберегти і закрити
               </Button>
               )}
             </DrawerFooter>

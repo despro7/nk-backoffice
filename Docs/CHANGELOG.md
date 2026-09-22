@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-09-22 — Products 2.0: зворотний BOM, техкарта, втрати при готуванні
+
+**Files:** `UsedInSection.tsx`, `ProductsCatalogService.ts`, `ProductsController.ts`, `shared/types/catalog.ts`, `TechCardModal.tsx`, `techCardPdfExport.ts`, `techCardExcelExport.ts`, `TechCardPdfDocument.tsx`, `BomSection.tsx`, `bomSectionSort.ts`, `ProductsUtils.ts`, `ProductDrawer.tsx`, `ProductsLocalSync.ts`, `prisma/migrations/20260920120000_catalog_component_cooking_loss/`, `Docs/features/products-catalog-2.0.md`
+
+### Секція «Де використовується» (`UsedInSection`)
+
+- Read-only блок у `ProductDrawer` після секції «Штрихкоди» (лише **edit**).
+- **Інгредієнт** (`other`) → «Використовується в стравах» (`scope=products`, батьки з `accPolicy` продукції).
+- **Продукція** (`good`) → «Використовується в комплектах» (`scope=kits`, батьки з `accPolicy` набору).
+- API: `GET /api/catalog/goods/:id/used-in?scope=products|kits`; групування qty по `parentGoodId`; ACL на батьківських картках.
+- Секція **ховається**, якщо список порожній, під час loading або при помилці; клік по рядку → вкладений drawer (`openNestedComponent`).
+
+### Техкарта (специфікація продукції)
+
+- Кнопка **Техкарта»** у `BomSection` (продукція) → `TechCardModal`.
+- Розрахунок на N порцій (за замовч. 1000), точність маси (авто / 0–3 знаки).
+- Колонки: інгредієнт, рецептура, % втрат, нетто, брутто; підсумки по масі.
+- Експорт **PDF** (`@react-pdf/renderer`) і **Excel**; друк PDF у новому вікні.
+- Логіка розрахунку: `buildTechCardRows` у `ProductsUtils.ts` (нетто з qty, брутто з урахуванням `cookingLossPercent`).
+
+### BOM / специфікація
+
+- Локальне поле **`cookingLossPercent`** (0–100) на рядку `catalog_good_components`; UI лише для продукції; не синхронізується в Dilovod.
+- Міграція: `20260920120000_catalog_component_cooking_loss`.
+- Сортування колонок специфікації + **ручне сортування** (DnD) з `bomSectionSort.ts`; скидання до ручного порядку.
+- Підозріла кількість інгредієнта (`isSuspiciousBomIngredientQty`) — червоне поле qty + tooltip.
+- Дія **«Перенести текст з дужок до примітки»** (`extractParenthesizedTextFromName`) з оновленням назви компонента в Dilovod.
+
+---
+
 ## 2026-09-20 — Звіти користувачів: «Сповістити адміна» + Telegram
 
 **Files:** `ReportProblemFab.tsx`, `ReportProblemModal.tsx`, `ScreenshotAnnotator*.tsx`, `ReportProblemService.ts`, `ClientLogBuffer.ts`, `SupportReportSettings.tsx`, `server/routes/support-reports.ts`, `TelegramAlertService.ts`, `ServerLogBuffer.ts`, `shared/types/supportReport.ts`, `Docs/features/support-user-reports.md`

@@ -71,19 +71,19 @@ export function UsedInSection({ goodId, scope, units, onOpenNested }: UsedInSect
     <>
       <Divider className="bg-default-200/60" />
       <section className="space-y-3">
-        <h3 className="text-sm font-semibold flex items-center gap-1">
+        <h3 className="text-sm text-success-700 font-semibold flex items-center gap-1">
           <DynamicIcon name={meta.icon} size={14} />
           <span>{meta.title}</span>
         </h3>
 
-        <div className="hidden md:flex flex-nowrap items-center gap-2 px-0.5 py-2.5 mb-0 rounded-md bg-default-100">
-          <span className="text-xs font-semibold text-default-500 text-right min-w-4.5 tabular-nums">
+        <div className="hidden md:flex flex-nowrap items-center gap-2 px-0.5 py-2.5 mb-0 rounded-md bg-success-100">
+          <span className="text-xs font-semibold text-success-700/75 text-right min-w-4.5 tabular-nums">
             #
           </span>
-          <span className="min-w-0 flex-1 text-xs font-semibold text-default-500">
-            {scope === 'kits' ? 'Назва комплекту' : 'Назва страви'}
+          <span className="min-w-0 flex-1 text-xs font-semibold text-success-700/75">
+            {scope === 'kits' ? 'Назва комплекту' : 'Назва страви'} <span className="font-normal text-success-700/60 bg-success-700/10 px-1 py-0.5 ml-2 rounded">артикул</span>
           </span>
-          <span className="w-24 text-xs font-semibold text-default-500 text-center">
+          <span className="w-24 text-xs font-semibold text-success-700/75 text-center">
             {meta.qtyLabel}
           </span>
         </div>
