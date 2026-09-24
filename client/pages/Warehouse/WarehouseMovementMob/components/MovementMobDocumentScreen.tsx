@@ -17,7 +17,6 @@ import MovementMobProductCard from './MovementMobProductCard';
 import MovementMobWarehouseSelectors, {
   type MovementMobStorageOption,
 } from './MovementMobWarehouseSelectors';
-import { useMovementMobLinesEnrichment } from '../useMovementMobLinesEnrichment';
 
 interface MovementMobDocumentScreenProps {
   editorMode: MovementMobEditorMode;
@@ -62,6 +61,12 @@ interface MovementMobDocumentScreenProps {
   onSyncDilovod?: () => void;
   syncingDilovod?: boolean;
   showSendButton?: boolean;
+  requireBatch?: boolean;
+  adminDualEdit?: boolean;
+  stockLoading?: boolean;
+  stockRefreshing?: boolean;
+  batchLoading?: boolean;
+  batchRefreshing?: boolean;
 }
 
 export default function MovementMobDocumentScreen({
@@ -107,6 +112,12 @@ export default function MovementMobDocumentScreen({
   onSyncDilovod,
   syncingDilovod = false,
   showSendButton = true,
+  requireBatch = false,
+  adminDualEdit = false,
+  stockLoading = false,
+  stockRefreshing = false,
+  batchLoading = false,
+  batchRefreshing = false,
 }: MovementMobDocumentScreenProps) {
   const isView = editorMode === 'view';
   const isEmpty = editorMode === 'empty';
@@ -125,21 +136,21 @@ export default function MovementMobDocumentScreen({
   const showReceipt = inReceiptPhase && (
     !adminEditing || isWarehouseAccepted || isReceiving || hasReceivedLines
   );
-  const qtyFocus: MovementMobAdminQtySide = adminEditing && isWarehouseAccepted ? adminQtySide : 'received';
-  const listTitle = adminEditing && isWarehouseAccepted
+  const qtyFocus: MovementMobAdminQtySide | 'both' = adminDualEdit
+    ? 'both'
+    : adminEditing && isWarehouseAccepted
+      ? adminQtySide
+      : 'received';
+  const listTitle = adminDualEdit
+    ? 'Товари (відправлено / отримано)'
+    : adminEditing && isWarehouseAccepted
     ? (adminQtySide === 'received' ? 'Отримані товари' : 'Відправлені товари')
     : isReceiving && isFinalized
       ? 'Отримані товари'
       : isReceiving
         ? 'Прийом товарів'
         : 'Товари на переміщення';
-  const {
-    lines: displayLines,
-    stockLoading,
-    stockRefreshing,
-    batchLoading,
-    batchRefreshing,
-  } = useMovementMobLinesEnrichment(lines);
+  const displayLines = lines;
 
   return (
     <div className="flex flex-col gap-4 pb-24 px-3 md:px-0">
@@ -221,8 +232,9 @@ export default function MovementMobDocumentScreen({
                     destStorageId={destId}
                     showReceipt={showReceipt}
                     qtyFocus={qtyFocus}
+                    requireBatch={requireBatch}
                     onEditProduct={onEditProduct}
-                    onEditQty={isReceiving && onEditLine ? () => onEditLine(line) : undefined}
+                    onEditQty={(isReceiving || adminDualEdit) && onEditLine ? () => onEditLine(line) : undefined}
                     stockLoading={stockLoading}
                     stockRefreshing={stockRefreshing}
                     batchLoading={batchLoading}
@@ -294,33 +306,11 @@ export default function MovementMobDocumentScreen({
 
       {actionBar === 'adminEdit' && (
         <div className="flex flex-col gap-3 mt-4 w-full">
-          {isWarehouseAccepted && (
-            <div className="grid grid-cols-2 gap-3 w-full">
-              <Button
-                size="lg"
-                variant={adminQtySide === 'sent' ? 'solid' : 'flat'}
-                color={adminQtySide === 'sent' ? 'primary' : 'default'}
-                className={`h-11 font-medium ${adminQtySide === 'sent' ? 'text-white bg-blue-600' : ''}`}
-                onPress={() => onAdminQtySideChange?.('sent')}
-              >
-                Відправлене
-              </Button>
-              <Button
-                size="lg"
-                variant={adminQtySide === 'received' ? 'solid' : 'flat'}
-                color={adminQtySide === 'received' ? 'primary' : 'default'}
-                className={`h-11 font-medium ${adminQtySide === 'received' ? 'text-white bg-blue-600' : ''}`}
-                onPress={() => onAdminQtySideChange?.('received')}
-              >
-                Отримане
-              </Button>
-            </div>
-          )}
           <div className="flex flex-col md:grid md:grid-cols-2 gap-3 mt-4 w-full">
             <MovementMobAddMoreButton
               onAdd={onAddMore}
               onManualBarcode={onManualBarcode}
-              label={isWarehouseAccepted && adminQtySide === 'received' ? 'Сканувати позицію' : 'Додати товар'}
+              label={adminDualEdit ? 'Додати / сканувати' : isWarehouseAccepted && adminQtySide === 'received' ? 'Сканувати позицію' : 'Додати товар'}
             />
             {isFinalized && onSyncDilovod && (
               <div className="flex items-stretch gap-3 w-full">

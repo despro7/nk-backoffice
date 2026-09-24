@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-09-24 — Моб. переміщення: адмін dual-edit, зміна партії, заборона відправки без партії
+
+**Files:** `MovementMobEditorPage.tsx`, `MovementMobScanDrawer.tsx`, `MovementMobProductCard.tsx`, `MovementMobDocumentScreen.tsx`, `MovementMobBatchPickerSheet.tsx`, `movementMobApi.ts`, `WarehouseMovementMobUtils.ts`, `WarehouseController.ts`, `shared/types/movement.ts`, `SettingsWarehouseMovement.tsx`, `server/routes/settings.ts`
+
+- **Адмін dual-edit:** після прийому (`isWarehouseAccepted`) — один drawer з stepper «Відправлено» + «Отримано»; swipe видаляє рядок повністю.
+- **Зміна партії:** кнопка ↻ у drawer → picker партій; `GET /api/warehouse/barcode-for-batch` оновлює ШК з каталогу без видалення позиції.
+- **Налаштування `wm_mobRequireBatch`:** позиції без `batchLinked` — червоний фон; «Відправити» блокується з toast.
+
+---
+
 ## 2026-09-22 — Products 2.0: зворотний BOM, техкарта, втрати при готуванні
 
 **Files:** `UsedInSection.tsx`, `ProductsCatalogService.ts`, `ProductsController.ts`, `shared/types/catalog.ts`, `TechCardModal.tsx`, `techCardPdfExport.ts`, `techCardExcelExport.ts`, `TechCardPdfDocument.tsx`, `BomSection.tsx`, `bomSectionSort.ts`, `ProductsUtils.ts`, `ProductDrawer.tsx`, `ProductsLocalSync.ts`, `prisma/migrations/20260920120000_catalog_component_cooking_loss/`, `Docs/features/products-catalog-2.0.md`

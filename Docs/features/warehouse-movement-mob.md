@@ -1,6 +1,6 @@
 # Мобільні переміщення між складами (`WarehouseMovementMob`)
 
-**Дата:** 2026-09-18 (оновлено)  
+**Дата:** 2026-09-24 (оновлено)  
 **Маршрути:** `/warehouse/movement-mob`, `/warehouse/movement-mob/new`, `/warehouse/movement-mob/:id`  
 **Дозвіл сторінки:** `page.warehouse.movementMob`
 
@@ -20,7 +20,7 @@
 | **Підтвердити отримання** | не автор | `POST /:id/confirm-receipt` | так: `tpGoods` з **отриманих** порцій |
 | Вікно редагування відправлення | автор (`pending_receipt`) | `PUT /:id` протягом `senderEditWindowMinutes` після `submittedAt` | ні |
 | Вікно редагування отримання | отримувач (`finalized`) | `PUT /:id/receipt` протягом `receiverEditWindowMinutes` після `receivedAt` | ні (лише локальні правки; Dilovod — через адміна) |
-| Адмін-правка після отримання | `movement.edit` | окремо відправлене / отримане; `POST /:id/sync-dilovod` | перезапис існуючого документа |
+| Адмін-правка після отримання | `movement.edit` | одночасно відправлене + отримане в одному drawer; `POST /:id/sync-dilovod` | перезапис існуючого документа |
 | Видалення | `movement.delete` | `status=deleted`; якщо є `dilovodDocId` — `delMark` | позначка видалення |
 
 Внутрішній номер генерується на сервері: `П-{id}` з padding (`П-00316`).
@@ -41,7 +41,8 @@
 |----------------------|-----|--------|-------|
 | `wm_senderEditWindowMinutes` | Вікно редагування (відправник) | `0` (вимкнено) | Хвилини після `submittedAt`, коли **автор** може правити відправлені кількості в `pending_receipt` |
 | `wm_receiverEditWindowMinutes` | Вікно редагування (отримувач) | `0` (вимкнено) | Хвилини після `receivedAt`, коли **отримувач** може правити отримані кількості в `finalized` |
-| `wm_mobScanStepperMode` | Stepper при скануванні (mob) | `increment` | Див. `Docs/features/warehouse-movement-mob.md` |
+| `wm_mobScanStepperMode` | Stepper при скануванні (mob) | `increment` | Див. нижче |
+| `wm_mobRequireBatch` | Заборона відправки без партії | `false` | Підсвітка рядків без `batchLinked`; блок «Відправити» |
 
 Вводиться через `DurationMinutesField` (хв / год / днів); у БД зберігається як хвилини.
 
@@ -75,6 +76,7 @@
 | Ключ `settings_base` | Значення | Дефолт | Ефект |
 |----------------------|----------|--------|-------|
 | `wm_mobScanStepperMode` | `increment` \| `increment_box` \| `open_only` | `increment` | Поведінка drawer після сканування ШК у `MovementMobEditorPage` |
+| `wm_mobRequireBatch` | `true` \| `false` | `false` | Якщо `true` — рядки без привʼязки ШК→`goodPart` підсвічуються червоним; відправка блокується |
 
 | Режим | ШК коробки | ШК порції |
 |-------|------------|-----------|
@@ -119,7 +121,7 @@ Helper: `mobScanStepperDelta()` у `shared/types/movement.ts`.
 Використовується для:
 
 - кроку степпера `accepted` (`buildStepperSteps`);
-- перемикача **Відправлене / Отримане** в адмін-режимі (замість `isFinalized`);
+- dual-edit адміна (відправлене + отримане в одному drawer);
 - відображення блоку «Відправлено / Отримано / Результат» і кольорового кільця на картці товару.
 
 Утиліти: `isWarehouseAccepted`, `resolveWarehouseAcceptedState`, `hasMovementReceiptScanActivity`, `hasLocalReceivedActivity` у `WarehouseMovementMobUtils.ts`.
@@ -141,15 +143,15 @@ Helper: `mobScanStepperDelta()` у `shared/types/movement.ts`.
 
 ## Адмін-редагування отриманого документа
 
-Після `finalized` (або коли `isWarehouseAccepted`) кнопка **Редагувати** вмикає `adminEdit`. Перемикач **Відправлене / Отримане** доступний лише користувачам з `action.warehouse.movement.edit` і лише коли `isWarehouseAccepted`:
+Після `finalized` (або коли `isWarehouseAccepted`) кнопка **Редагувати** вмикає `adminEdit` (`adminDualEdit`):
 
-- **Відправлене** — drawer і сканування змінюють `boxQuantity` / `portionQuantity` / `totalPortions`.
-- **Отримане** — ті самі жести змінюють `received*`. Новий SKU можна додати як надлишок (відправлене = 0).
-- Swipe «видалити»: якщо в іншому списку ще є кількість — обнуляється лише активний бік; інакше рядок знімається.
-- Картка показує обидва числа; велике (σ) — активний список; кольори збігу / нестачі / надлишку.
-- **Зберегти в Dilovod** (`MovementMobSyncDilovodModal`) перезаписує документ у Dilovod **отриманими** кількостями (`saveType: 1` + існуючий `dilovodDocId`). Відправлений список лишається лише в бек-офісі.
+- Drawer (`MovementMobScanDrawer`) — **два блоки stepper**: «Відправлено» і «Отримано» в одному sheet.
+- Картка показує `відправлено / отримано`; кольорове кільце — збіг / нестача / надлишок.
+- Swipe **Видалити** — прибирає рядок повністю; обнулити одну сторону — через stepper у drawer.
+- **Зміна партії** — кнопка ↻ біля партії в drawer → `MovementMobBatchPickerSheet`; `GET /api/warehouse/barcode-for-batch` підставляє ШК з каталогу; ключ рядка оновлюється через `editingLineKey` без видалення позиції.
+- **Зберегти в Dilovod** (`MovementMobSyncDilovodModal`) — перезапис у Dilovod **отриманими** кількостями.
 
-Чернетка й `pending_receipt` в адмін-режимі як і раніше правлять відправлений список (отриманого ще немає або його набирає отримувач).
+Чернетка й `pending_receipt` в адмін-режимі правлять лише відправлений список (dual-edit ще недоступний).
 
 ---
 
@@ -178,8 +180,8 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 
 Усередині:
 
-- Назва, SKU, вага, шт. у коробці, партія, **ШК** (зберігається в рядку чернетки).
-- У адмін-режимі finalized — підказка «Редагування відправленої / отриманої кількості».
+- Назва, SKU, вага, шт. у коробці, партія, **ШК** (зберігається в рядку чернетки); ↻ — зміна партії.
+- У `adminDualEdit` — підказка «Редагування відправленого та отриманого» + два блоки stepper.
 - Дві картки залишків: склад-джерело і склад-призначення. Показ **до → після** з урахуванням:
   - поточного введення в drawer;
   - уже доданих у документ порцій цього SKU (`committedPortionsForSku(..., side)`), окрім рядка, який зараз редагується (`side` = sent або received).
@@ -242,7 +244,7 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 |---------|------------------|
 | Назва, σ-порції, коробки / розсип | рядок документа |
 | Штрих-код | `line.barcode` (у debug — також SKU, ID партії, `catalogGoodId`) |
-| Партія | людська назва з Dilovod або каталогу; якщо `batchLinked === false` — **«Партія: не обрано!»** (червоний) |
+| Партія | людська назва з Dilovod або каталогу; якщо `batchLinked === false` — **«Партія: не обрано!»** (червоний); при `wm_mobRequireBatch` — червоний фон картки |
 | Залишки після переміщення | прогноз `computeProjectedLineStock` (див. нижче) |
 | Статус прийому | «Відправлено: N / Отримано: M / Результат: збіг \| нестача \| надлишок» + кольорове кільце (`border-2`: success / danger / primary) |
 

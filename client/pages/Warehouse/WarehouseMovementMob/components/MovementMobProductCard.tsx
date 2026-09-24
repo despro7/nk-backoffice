@@ -19,7 +19,8 @@ interface MovementMobProductCardProps {
   sourceStorageId: string;
   destStorageId: string;
   showReceipt?: boolean;
-  qtyFocus?: 'sent' | 'received';
+  qtyFocus?: 'sent' | 'received' | 'both';
+  requireBatch?: boolean;
   onEditProduct?: (line: MovementMobProductLineViewModel) => void;
   onEditQty?: () => void;
   stockLoading?: boolean;
@@ -104,6 +105,7 @@ export default function MovementMobProductCard({
   destStorageId,
   showReceipt = false,
   qtyFocus = 'received',
+  requireBatch = false,
   onEditProduct,
   onEditQty,
   stockLoading = false,
@@ -129,7 +131,9 @@ export default function MovementMobProductCard({
   const weightLabel = line.weight != null ? `${line.weight} г.` : null;
   const perBoxLabel = line.portionsPerBox != null ? `${line.portionsPerBox} шт.` : null;
   const receiptState = showReceipt ? lineReceiptState(line) : null;
-  const focusReceived = showReceipt && qtyFocus !== 'sent';
+  const focusReceived = showReceipt && qtyFocus === 'received';
+  const focusBoth = qtyFocus === 'both';
+  const missingBatch = requireBatch && line.totalPortions > 0 && line.batchLinked === false;
   const ringClass =
     receiptState === 'match'
       ? 'border-success-500'
@@ -141,14 +145,26 @@ export default function MovementMobProductCard({
             ? 'border-default-300'
             : 'border-transparent';
   const qtyDelta = line.receivedTotalPortions - line.totalPortions;
-  const primaryQty = focusReceived ? line.receivedTotalPortions : line.totalPortions;
-  const primaryBoxes = focusReceived ? line.receivedBoxQuantity : line.boxQuantity;
-  const primaryLoose = focusReceived ? line.receivedPortionQuantity : line.portionQuantity;
+  const primaryQty = focusBoth
+    ? line.totalPortions
+    : focusReceived
+      ? line.receivedTotalPortions
+      : line.totalPortions;
+  const primaryBoxes = focusBoth
+    ? line.boxQuantity
+    : focusReceived
+      ? line.receivedBoxQuantity
+      : line.boxQuantity;
+  const primaryLoose = focusBoth
+    ? line.portionQuantity
+    : focusReceived
+      ? line.receivedPortionQuantity
+      : line.portionQuantity;
   const canEditProduct = Boolean(onEditProduct && line.catalogGoodId);
 
   return (
     <Card
-      className={`bg-white shadow-none rounded-xl! md:h-full border-2 ${ringClass} ${onEditQty ? 'cursor-pointer active:scale-[0.99] transition-transform' : ''}`}
+      className={`${missingBatch ? 'bg-danger-50' : 'bg-white'} shadow-none rounded-xl! md:h-full border-2 ${ringClass} ${onEditQty ? 'cursor-pointer active:scale-[0.99] transition-transform' : ''}`}
       role={onEditQty ? 'button' : undefined}
       tabIndex={onEditQty ? 0 : undefined}
       onClick={onEditQty}
@@ -163,13 +179,25 @@ export default function MovementMobProductCard({
         <div className="flex items-start justify-between gap-2">
           <h4 className="font-semibold text-default-900 leading-5">{line.productName}</h4>
           <span className="inline-flex items-center gap-0.5 leading-5 text-default-800 shrink-0">
-            <DynamicIcon name="sigma" size={15} strokeWidth={1.5} className="shrink-0 text-neutral-400 mb-[1px]" />
-            <span className={`font-bold ${showReceipt && receiptState ? receiptReceivedClass(receiptState) : ''}`}>
-              {primaryQty}
-            </span>
-            <span className="text-xs font-extralight">
-              {pluralize(primaryQty, 'порція', 'порції', 'порцій')}
-            </span>
+            {focusBoth ? (
+              <span className="text-xs text-default-500 tabular-nums">
+                <span className="font-bold text-default-800">{line.totalPortions}</span>
+                <span className="mx-0.5">/</span>
+                <span className={`font-bold ${receiptState ? receiptReceivedClass(receiptState) : 'text-default-800'}`}>
+                  {line.receivedTotalPortions}
+                </span>
+              </span>
+            ) : (
+              <>
+                <DynamicIcon name="sigma" size={15} strokeWidth={1.5} className="shrink-0 text-neutral-400 mb-[1px]" />
+                <span className={`font-bold ${showReceipt && receiptState ? receiptReceivedClass(receiptState) : ''}`}>
+                  {primaryQty}
+                </span>
+                <span className="text-xs font-extralight">
+                  {pluralize(primaryQty, 'порція', 'порції', 'порцій')}
+                </span>
+              </>
+            )}
           </span>
         </div>
 

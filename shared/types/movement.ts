@@ -170,7 +170,16 @@ export const WAREHOUSE_MOVEMENT_SETTING_DEFAULTS = {
   receiverEditWindowMinutes: 0,
   /** Моб. переміщення: поведінка stepper після сканування ШК */
   mobScanStepperMode: 'increment' as WarehouseMovementMobScanStepperMode,
+  /** Моб. переміщення: заборона відправки без привʼязаної партії */
+  mobRequireBatch: false,
 };
+
+/** Парсинг wm_mobRequireBatch (true/false/1/0) */
+export function parseMobRequireBatch(raw: string | undefined): boolean {
+  if (raw === 'true' || raw === '1') return true;
+  if (raw === 'false' || raw === '0') return false;
+  return WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.mobRequireBatch;
+}
 
 /** Парсинг wm_mobScanStepperMode з fallback на legacy wm_mobScanAutoIncrement (true/false) */
 export function parseMobScanStepperMode(
@@ -213,6 +222,8 @@ export interface WarehouseMovementSettings {
   receiverEditWindowMinutes: number;       // wm_receiverEditWindowMinutes
   /** Моб. переміщення: поведінка stepper після сканування ШК */
   mobScanStepperMode: WarehouseMovementMobScanStepperMode; // wm_mobScanStepperMode
+  /** Моб. переміщення: заборона відправки без привʼязаної партії (ШК → goodPart) */
+  mobRequireBatch: boolean; // wm_mobRequireBatch
   /** З loadDilovodWarehouseDefaults() — dilovod_warehouse_* */
   businessId: string;
   unitId: string;

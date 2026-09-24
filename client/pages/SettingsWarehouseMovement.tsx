@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardBody, CardHeader, Input, Button, Select, SelectItem, RadioGroup, Radio, Chip } from '@heroui/react';
+import { Card, CardBody, CardHeader, Input, Button, Select, SelectItem, RadioGroup, Radio, Chip, Switch } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useWarehouseMovementSettings } from '../hooks/useWarehouseMovementSettings';
 import { useDilovodSettings } from '../hooks/useDilovodSettings';
@@ -275,6 +275,18 @@ const SettingsWarehouseMovement: React.FC = () => {
                 Лише відкрити drawer
               </Radio>
             </RadioGroup>
+            <div className="pt-2 border-t border-gray-200">
+              <Switch
+                isSelected={formData.mobRequireBatch ?? WAREHOUSE_MOVEMENT_SETTING_DEFAULTS.mobRequireBatch}
+                onValueChange={(value) => handleChange('mobRequireBatch', value)}
+                classNames={{ label: 'text-sm font-semibold text-gray-900' }}
+              >
+                Заборона відправки без партії
+              </Switch>
+              <p className="text-xs text-gray-500 mt-2 ml-1">
+                Позиції без привʼязки партії до штрих-коду підсвічуються червоним; відправити документ неможливо, доки партія не обрана.
+              </p>
+            </div>
           </CardBody>
         </Card>
       </div>

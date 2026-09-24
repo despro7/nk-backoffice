@@ -185,6 +185,12 @@ export interface MovementMobScanDraft {
   portions: number;
   sourceStock: MovementMobStockBreakdown;
   destStock: MovementMobStockBreakdown;
+  /** Ключ рядка при редагуванні (для зміни партії без видалення позиції). */
+  editingLineKey?: string;
+  /** Адмін: одночасне редагування відправленого та отриманого. */
+  receivedBoxes?: number;
+  receivedPortions?: number;
+  dualQtyMode?: boolean;
 }
 
 export interface MovementMobChronologyEvent {

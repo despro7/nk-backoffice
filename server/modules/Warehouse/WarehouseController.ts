@@ -842,6 +842,62 @@ router.post('/stock-snapshot', authenticateToken, async (req, res) => {
 });
 
 /**
+ * GET /api/warehouse/barcode-for-batch?sku=…&batchId=…
+ *
+ * Штрих-код каталогу, привʼязаний до партії (goodPart) для SKU.
+ */
+router.get('/barcode-for-batch', authenticateToken, async (req, res) => {
+  try {
+    const sku = typeof req.query.sku === 'string' ? req.query.sku.trim() : '';
+    const batchId = typeof req.query.batchId === 'string' ? req.query.batchId.trim() : '';
+    if (!sku || !isUsableDilovodBatchId(batchId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Параметри "sku" та "batchId" обовʼязкові',
+      });
+    }
+
+    const good = await prisma.catalogGood.findFirst({
+      where: { sku, delMark: false, isGroup: false },
+      select: { id: true },
+    });
+    if (!good) {
+      return res.status(404).json({ success: false, error: 'Товар не знайдено в каталозі' });
+    }
+
+    const barcodeRow = await prisma.catalogGoodBarcode.findFirst({
+      where: {
+        goodId: good.id,
+        goodPart: batchId,
+        activity: true,
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      select: { code: true, goodPartName: true },
+    });
+
+    if (!barcodeRow?.code) {
+      return res.json({
+        success: true,
+        barcode: null,
+        barcodeKind: 'portion',
+        batchNumber: null,
+      });
+    }
+
+    const batchNumber = sanitizeStoredBatchName(barcodeRow.goodPartName, batchId) || batchId;
+    res.json({
+      success: true,
+      barcode: barcodeRow.code,
+      barcodeKind: 'portion',
+      batchNumber,
+    });
+  } catch (error) {
+    console.error('🚨 [Warehouse] barcode-for-batch:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+/**
  * GET /api/warehouse/product-by-barcode?code=…
  *
  * Lookup товару за ШК для мобільного скану.

@@ -1158,6 +1158,13 @@ export function serializeMobDraftItems(
   }));
 }
 
+/** Рядки без привʼязаної партії до ШК (для валідації відправки). */
+export function linesMissingBatchLink(
+  lines: MovementMobProductLineViewModel[],
+): MovementMobProductLineViewModel[] {
+  return lines.filter((line) => line.totalPortions > 0 && line.batchLinked !== true);
+}
+
 export function findPresetKeyForRange(
   range: DateRange | null,
   presets: ReturnType<typeof createStandardDatePresets>,

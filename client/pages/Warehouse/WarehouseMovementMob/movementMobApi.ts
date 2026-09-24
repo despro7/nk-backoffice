@@ -89,6 +89,34 @@ function toProductByBarcode(
   };
 }
 
+export async function fetchBarcodeForBatch(
+  apiCall: ApiCall,
+  sku: string,
+  batchId: string,
+): Promise<{ barcode: string | null; barcodeKind: 'portion' | 'box'; batchNumber: string | null }> {
+  const url = new URL('/api/warehouse/barcode-for-batch', window.location.origin);
+  url.searchParams.set('sku', sku);
+  url.searchParams.set('batchId', batchId);
+  const response = await apiCall(url.pathname + url.search);
+  if (!response.ok) {
+    return { barcode: null, barcodeKind: 'portion', batchNumber: null };
+  }
+  const data = (await response.json().catch(() => null)) as {
+    success?: boolean;
+    barcode?: string | null;
+    barcodeKind?: string;
+    batchNumber?: string | null;
+  } | null;
+  if (!data || data.success === false) {
+    return { barcode: null, barcodeKind: 'portion', batchNumber: null };
+  }
+  return {
+    barcode: data.barcode ?? null,
+    barcodeKind: data.barcodeKind === 'box' ? 'box' : 'portion',
+    batchNumber: data.batchNumber ?? null,
+  };
+}
+
 export async function fetchProductByBarcode(
   apiCall: ApiCall,
   code: string,

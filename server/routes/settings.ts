@@ -2,7 +2,11 @@ import express from 'express';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
 import EquipmentSettingsService from '../services/settingsService.js';
 import { prisma, logServer } from '../lib/utils.js';
-import { WAREHOUSE_MOVEMENT_SETTING_DEFAULTS, parseMobScanStepperMode } from '../../shared/types/movement.js';
+import {
+  WAREHOUSE_MOVEMENT_SETTING_DEFAULTS,
+  parseMobRequireBatch,
+  parseMobScanStepperMode,
+} from '../../shared/types/movement.js';
 import { supportReportSettingsService } from '../services/SupportReportSettingsService.js';
 import { telegramAlertService } from '../services/TelegramAlertService.js';
 import type { SupportReportSettings } from '../../shared/types/supportReport.js';
@@ -269,6 +273,7 @@ router.get('/warehouse-movement', authenticateToken, async (req, res) => {
           map['wm_mobScanStepperMode'],
           map['wm_mobScanAutoIncrement'],
         ),
+        mobRequireBatch: parseMobRequireBatch(map['wm_mobRequireBatch']),
       },
     });
   } catch (error) {
@@ -288,6 +293,7 @@ router.put('/warehouse-movement', authenticateToken, async (req, res) => {
       senderEditWindowMinutes: number;
       receiverEditWindowMinutes: number;
       mobScanStepperMode: string;
+      mobRequireBatch: boolean;
     }>;
 
     // Маппінг поле→ключ у БД (firmId більше не зберігаємо — лише dilovod_default_firm_id)
@@ -299,17 +305,19 @@ router.put('/warehouse-movement', authenticateToken, async (req, res) => {
       senderEditWindowMinutes: 'wm_senderEditWindowMinutes',
       receiverEditWindowMinutes: 'wm_receiverEditWindowMinutes',
       mobScanStepperMode: 'wm_mobScanStepperMode',
+      mobRequireBatch: 'wm_mobRequireBatch',
     };
 
     for (const [field, key] of Object.entries(fieldToKey)) {
       const value = (body as any)[field];
       if (value !== undefined) {
+        const storedValue = field === 'mobRequireBatch' ? String(Boolean(value)) : String(value);
         await prisma.settingsBase.upsert({
           where: { key },
-          update: { value: String(value) },
+          update: { value: storedValue },
           create: {
             key,
-            value: String(value),
+            value: storedValue,
             category: 'warehouse_movement',
             description: `Warehouse Movement: ${field}`,
           },

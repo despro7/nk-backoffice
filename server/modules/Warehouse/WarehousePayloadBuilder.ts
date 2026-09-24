@@ -4,6 +4,7 @@ import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js'
 import {
   WAREHOUSE_MOVEMENT_DOC_MODE,
   WAREHOUSE_MOVEMENT_SETTING_DEFAULTS,
+  parseMobRequireBatch,
   parseMobScanStepperMode,
   type WarehouseMovementSettings,
   type DilovodMovementPayload,
@@ -95,6 +96,7 @@ export class WarehousePayloadBuilder {
         map['wm_mobScanStepperMode'],
         map['wm_mobScanAutoIncrement'],
       ),
+      mobRequireBatch: parseMobRequireBatch(map['wm_mobRequireBatch']),
       unitId: warehouseDefaults.unitId,
       accountId: warehouseDefaults.accountId,
       setAccountId: warehouseDefaults.setAccountId,
