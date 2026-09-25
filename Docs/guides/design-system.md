@@ -2,7 +2,19 @@
 
 Жива вітрина: **`/settings/design`** (`client/pages/DesignSystem.tsx`).
 
-Правило Cursor (завжди активне): `.cursor/rules/design-system.mdc` — стислі патерни та anti-patterns. Цей документ — **карта файлів і інструкція «що редагувати»**.
+## Модульні Cursor rules (scope)
+
+Правила в `.cursor/rules/` підключаються **за контекстом файлів** (globs) і **за описом** (agent подтягує модуль, коли тема релевантна — напр. таблиці без drawer):
+
+| Модуль | Файл rule | Коли |
+|--------|-----------|------|
+| **Hub** | `design-system-hub.mdc` | Будь-який `client/**` — кольори, типографіка, карта файлів |
+| **Таблиці** | `design-system-tables.mdc` | `*Table*.tsx`, HR Employees list |
+| **Drawer** | `design-system-drawer.mdc` | `*Drawer*`, `productDrawer/**` |
+| **Кнопки** | `design-system-buttons.mdc` | `buttonStyles.ts`, `global.css`, вітрина, CatalogToolbar |
+| **Chips** | `design-system-chips.mdc` | `SpecChip`, `hrUi`, hue maps |
+
+Цей документ — **повна карта файлів, процедури, JSX-еталони і чеклист**. Rule-модулі — оперативний шар для агента; деталі нижче.
 
 ---
 
@@ -20,7 +32,7 @@
 | **Маршрут** | `client/routes.config.tsx` | `/settings/design` |
 | **Chips, hue maps** | `client/components/SpecChip.tsx`, `client/pages/Hr/hrUi.tsx` | `specColorPalette` |
 | **Action bubble presets** | `client/components/action-bubble/presets.ts` | FAB / mobile |
-| **Еталонні UI в продукті** | Див. таблицю reference у `design-system.mdc` | HR Employees, Products Catalog, ProductDrawer… |
+| **Еталонні UI в продукті** | Див. таблицю reference у `design-system-*` rules | HR Employees, Products Catalog, ProductDrawer… |
 
 ---
 

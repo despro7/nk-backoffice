@@ -5,6 +5,55 @@
 
 ---
 
+## 2026-09-25 — Cursor rules: модульний design-system, зменшення always-on overhead
+
+**Files:** `.cursor/rules/agent-workflow.mdc`, `.cursor/rules/project-context.mdc`, `.cursor/rules/design-system-hub.mdc`, `.cursor/rules/design-system-tables.mdc`, `.cursor/rules/design-system-drawer.mdc`, `.cursor/rules/design-system-buttons.mdc`, `.cursor/rules/design-system-chips.mdc`, `.cursor/rules/component-reuse.mdc`, `.cursor/rules/codegraph.mdc`, `Docs/guides/design-system.md`  
+**Removed:** `.cursor/rules/design-system.mdc`, `.cursor/rules/flex.mdc`
+
+### Мета
+
+Зменшити input tokens на кожен turn (особливо backend/API/architecture сесії), не втративши оперативні UI-патерни та архітектурний контекст проєкту.
+
+### Було → стало
+
+| Шар | Було | Стало |
+|-----|------|-------|
+| **Always-on rules** | ~21.5 KB (~5–6k tokens/turn): монолітний `design-system.mdc` + `project-context` + workflow + reuse + `flex.mdc` | **~9.9 KB (~2.5k tokens/turn):** `agent-workflow`, `project-context`, `component-reuse` |
+| **Design system** | один файл `alwaysApply: true` (~10.3 KB) | **hub + 4 scoped modules** за `globs` і `description` (~9 KB сумарно, підключаються за контекстом) |
+| **CodeGraph** | globs на ts/js | без змін |
+
+### Модульна структура design-system
+
+| Модуль | Файл | Коли підключається |
+|--------|------|-------------------|
+| Hub | `design-system-hub.mdc` | `client/**/*.{tsx,ts,css}` — кольори, типографіка, anti-patterns |
+| Таблиці | `design-system-tables.mdc` | `*Table*.tsx`, HR Employees list |
+| Drawer | `design-system-drawer.mdc` | `*Drawer*`, `productDrawer/**` |
+| Кнопки | `design-system-buttons.mdc` | `buttonStyles.ts`, `global.css`, вітрина, CatalogToolbar |
+| Chips | `design-system-chips.mdc` | SpecChip, hrUi, hue maps |
+
+Повний довідник (JSX-еталони, чеклист, процедури) — **`Docs/guides/design-system.md`** і вітрина **`/settings/design`**. Rule-модулі — оперативний шар для агента.
+
+### Орієнтовна економія rules overhead
+
+| Сценарій | Економія vs моноліт |
+|----------|---------------------|
+| Backend / API / Prisma (без UI) | **~−54%** (~2.8k tokens/turn) |
+| Client UI (hub) | ~−42% |
+| Таблиці / drawer / TS (hub + модуль) | ~−32…−41% |
+
+### Інші зміни в rules
+
+- **`agent-workflow.mdc`:** Cavecrew — лише після явного тригера («use cavecrew»); semi-auto **нагадування** перед широким map (3+ файли), без auto-spawn subagent.
+- **`project-context.mdc`:** відновлено до середнього рівня (архітектура, singleton services, Dilovod etalon, frontend, ролі, npm-команди) після проміжного over-trim.
+- **`flex.mdc`:** видалено (порожній артефакт).
+
+### Безпека патернів
+
+Оперативні патерни (таблиці, drawer JSX/footer, BTN_* matrix, SpecChip, primary = сірий #374151) збережені в scoped rules; деталі — у `Docs/guides/design-system.md`. Ризик пропуску rule для таблиць без `*Table*` у назві файлу — додавати path у `design-system-tables.mdc` за потреби.
+
+---
+
 ## 2026-09-24 — Моб. переміщення: адмін dual-edit, зміна партії, заборона відправки без партії
 
 **Files:** `MovementMobEditorPage.tsx`, `MovementMobScanDrawer.tsx`, `MovementMobProductCard.tsx`, `MovementMobDocumentScreen.tsx`, `MovementMobBatchPickerSheet.tsx`, `movementMobApi.ts`, `WarehouseMovementMobUtils.ts`, `WarehouseController.ts`, `shared/types/movement.ts`, `SettingsWarehouseMovement.tsx`, `server/routes/settings.ts`
