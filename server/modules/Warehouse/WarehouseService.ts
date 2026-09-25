@@ -122,6 +122,71 @@ export class WarehouseService {
     } as unknown as WarehouseMovement;
   }
 
+  /** Скасувати підтвердження отримання: UNREGISTER у Dilovod + повернення на pending_receipt. */
+  static async cancelReceiptConfirmation(id: number): Promise<WarehouseMovement> {
+    const movement = await prisma.warehouseMovement.findUnique({ where: { id } });
+    if (!movement) {
+      throw new Error('Документ не знайдено');
+    }
+    if (movement.status !== 'finalized') {
+      throw new Error('Скасувати підтвердження можна лише для завершених документів');
+    }
+
+    if (movement.dilovodDocId) {
+      const unregister = await WarehouseService.unregisterDilovodMovement(movement.dilovodDocId);
+      if (!unregister.success && !unregister.notFound) {
+        throw new Error(unregister.error || 'Не вдалося скасувати проведення документа у Діловоді');
+      }
+    }
+
+    const result = await prisma.warehouseMovement.update({
+      where: { id },
+      data: {
+        status: 'pending_receipt',
+        receivedBy: null,
+        receivedAt: null,
+        deviations: null,
+        receivedItemsSnapshot: null,
+      },
+    });
+
+    return {
+      ...result,
+      items: WarehouseService.parseItems(result.items),
+    } as unknown as WarehouseMovement;
+  }
+
+  /** Скасувати проведення документа переміщення в Dilovod (saveType: 2, UNREGISTER). */
+  static async unregisterDilovodMovement(dilovodDocId: string): Promise<{
+    success: boolean;
+    notFound: boolean;
+    error?: string;
+  }> {
+    const { dilovodExportFlowService } = await import('../../services/dilovod/index.js');
+    const payload = { saveType: 2, header: { id: dilovodDocId } };
+    const exportResult = await dilovodExportFlowService.send({
+      payload,
+      dryRun: false,
+      warnings: [],
+      label: '[WarehouseMovement]',
+    });
+    if (exportResult.success) {
+      return { success: true, notFound: false };
+    }
+    const msg = String(
+      exportResult.error
+      || (exportResult.dilovodResponse as { error?: string; message?: string } | undefined)?.error
+      || (exportResult.dilovodResponse as { message?: string } | undefined)?.message
+      || 'Unknown error',
+    );
+    const lower = msg.toLowerCase();
+    const notFound = lower.includes('not found')
+      || lower.includes('object with id')
+      || lower.includes('не знайдено')
+      || lower.includes('не знайден');
+    return { success: false, notFound, error: msg };
+  }
+
   /** Позначити документ переміщення як видалений у Dilovod (delMark). */
   static async markDilovodMovementDeleted(dilovodDocId: string): Promise<{
     success: boolean;

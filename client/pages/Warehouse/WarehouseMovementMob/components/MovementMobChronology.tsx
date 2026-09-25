@@ -1,11 +1,18 @@
+import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { MovementMobChronologyEvent } from '../WarehouseMovementMobTypes';
 
 interface MovementMobChronologyProps {
   events: MovementMobChronologyEvent[];
+  onCancelReceipt?: () => void;
+  cancelingReceipt?: boolean;
 }
 
-export default function MovementMobChronology({ events }: MovementMobChronologyProps) {
+export default function MovementMobChronology({
+  events,
+  onCancelReceipt,
+  cancelingReceipt = false,
+}: MovementMobChronologyProps) {
   if (events.length === 0) {
     return null;
   }
@@ -43,10 +50,24 @@ export default function MovementMobChronology({ events }: MovementMobChronologyP
                 <DynamicIcon name={isDone ? 'check' : 'clock'} size={14} />
               </div>
 
-              <div className="flex flex-col gap-0.5 min-w-0 pt-1">
-                <span className={`text-sm font-medium ${isDone ? 'text-default-800' : 'text-default-400'}`}>
-                  {event.title}
-                </span>
+              <div className="flex flex-col gap-0.5 min-w-0 flex-1 pt-1">
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-medium ${isDone ? 'text-default-800' : 'text-default-400'}`}>
+                    {event.title}
+                  </span>
+                  {event.key === 'received' && isDone && onCancelReceipt ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      color="danger"
+                      className="shrink-0 text-xs font-medium min-h-0 h-auto min-w-0 px-2 py-1 border-1"
+                      isLoading={cancelingReceipt}
+                      onPress={onCancelReceipt}
+                    >
+                      Скасувати
+                    </Button>
+                  ) : null}
+                </div>
                 {event.occurredAt ? (
                   <span className={`text-xs ${isDone ? 'text-default-400' : 'text-default-400'}`}>
                     {event.occurredAt}

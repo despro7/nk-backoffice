@@ -397,6 +397,18 @@ function parseConfirmReceiptError(err: {
   );
 }
 
+export async function cancelReceiptConfirmation(
+  apiCall: ApiCall,
+  id: number,
+): Promise<MovementMobApiRecord> {
+  const response = await apiCall(`/api/warehouse/${id}/cancel-receipt`, { method: 'POST' });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({})) as { error?: string; errorTitle?: string };
+    throw new Error([err.errorTitle, err.error].filter(Boolean).join(' — ') || 'Не вдалося скасувати підтвердження');
+  }
+  return (await response.json()) as MovementMobApiRecord;
+}
+
 export async function confirmReceipt(
   apiCall: ApiCall,
   id: number,

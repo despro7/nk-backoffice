@@ -1644,6 +1644,31 @@ router.post('/:id/confirm-receipt', authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/warehouse/:id/cancel-receipt — скасувати підтвердження отримання (admin)
+router.post('/:id/cancel-receipt', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userRole = (req as { user?: { role?: string } }).user?.role;
+    const canOverrideEdit = await canOverrideMovementEdit(userRole);
+
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ error: 'Invalid movement ID' });
+    }
+    if (!canOverrideEdit) {
+      return res.status(403).json({ error: 'Немає права скасовувати підтвердження отримання' });
+    }
+
+    const updated = await WarehouseService.cancelReceiptConfirmation(Number(id));
+    const [withAuthor] = await resolveAuthorNames([updated as { createdBy: number | null }]);
+    return res.json({ ...withAuthor, receivedByName: null, receiptScannedByName: null });
+  } catch (error) {
+    console.error('🚨 [Warehouse] Error canceling receipt confirmation:', error);
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    const status = message.includes('не знайдено') ? 404 : message.includes('лише для') ? 409 : 422;
+    res.status(status).json({ error: message });
+  }
+});
+
 // POST /api/warehouse/:id/sync-dilovod — перезапис уже отриманого документа в Dilovod
 router.post('/:id/sync-dilovod', authenticateToken, async (req, res) => {
   try {

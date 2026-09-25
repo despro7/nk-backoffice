@@ -60,6 +60,8 @@ interface MovementMobDocumentScreenProps {
   onAdminQtySideChange?: (side: MovementMobAdminQtySide) => void;
   onSyncDilovod?: () => void;
   syncingDilovod?: boolean;
+  onCancelReceipt?: () => void;
+  cancelingReceipt?: boolean;
   showSendButton?: boolean;
   requireBatch?: boolean;
   adminDualEdit?: boolean;
@@ -111,6 +113,8 @@ export default function MovementMobDocumentScreen({
   onAdminQtySideChange,
   onSyncDilovod,
   syncingDilovod = false,
+  onCancelReceipt,
+  cancelingReceipt = false,
   showSendButton = true,
   requireBatch = false,
   adminDualEdit = false,
@@ -341,7 +345,13 @@ export default function MovementMobDocumentScreen({
         </Button>
       )}
 
-      {chronology.length > 0 && <MovementMobChronology events={chronology} />}
+      {chronology.length > 0 && (
+        <MovementMobChronology
+          events={chronology}
+          onCancelReceipt={isFinalized ? onCancelReceipt : undefined}
+          cancelingReceipt={cancelingReceipt}
+        />
+      )}
 
       {showAdminActions && !isDeleted && (
         <div className="flex flex-wrap items-stretch gap-2 mt-6">

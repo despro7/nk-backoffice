@@ -941,6 +941,109 @@ export function canReceiverEditAfterConfirm(
   return isWithinEditWindow(document.receivedAt, settings.receiverEditWindowMinutes);
 }
 
+export type ReceivingScanVerdict =
+  | { kind: 'match'; line: MovementMobProductLineViewModel }
+  | { kind: 'not_in_shipment' }
+  | { kind: 'wrong_batch'; skuLines: MovementMobProductLineViewModel[] };
+
+/** Чи збігається партія скану з рядком відправлення (id, назва або їх перехресне співпадіння). */
+export function movementLineMatchesBatch(
+  line: Pick<MovementMobProductLineViewModel, 'batchId' | 'batchNumber'>,
+  batchId: string,
+  batchNumber: string,
+): boolean {
+  const scanEff = effectiveBatchId(batchId, batchNumber);
+  const lineEff = effectiveBatchId(line.batchId, line.batchNumber);
+  if (scanEff && lineEff && scanEff === lineEff) return true;
+
+  const scanLabel = (batchNumber || '').trim();
+  const lineLabel = (line.batchNumber || '').trim();
+  if (scanLabel && lineLabel && scanLabel === lineLabel && scanLabel !== '—') return true;
+
+  if (scanEff && lineLabel && scanEff === lineLabel) return true;
+  if (lineEff && scanLabel && lineEff === scanLabel) return true;
+  if (scanEff && (line.batchId || '').trim() === scanEff) return true;
+  if (scanLabel && (line.batchId || '').trim() === scanLabel) return true;
+
+  return false;
+}
+
+export function getSentLinesForSku(
+  lines: MovementMobProductLineViewModel[],
+  sku: string,
+): MovementMobProductLineViewModel[] {
+  return lines.filter((line) => line.sku === sku && line.totalPortions > 0);
+}
+
+function movementLineMatchesScan(
+  line: Pick<MovementMobProductLineViewModel, 'batchId' | 'batchNumber' | 'barcode'>,
+  batchId: string,
+  batchNumber: string,
+  scannedBarcode: string,
+): boolean {
+  const scanned = scannedBarcode.trim();
+  const lineBarcode = (line.barcode || '').trim();
+  if (scanned && lineBarcode && scanned === lineBarcode) return true;
+  return movementLineMatchesBatch(line, batchId, batchNumber);
+}
+
+/** Класифікація скану під час приймання: немає у відправленні / невірна партія / збіг. */
+export function classifyReceivingScan(
+  lines: MovementMobProductLineViewModel[],
+  sku: string,
+  batchId: string,
+  batchNumber: string,
+  scannedBarcode = '',
+): ReceivingScanVerdict {
+  const sentForSku = getSentLinesForSku(lines, sku);
+  if (sentForSku.length === 0) {
+    return { kind: 'not_in_shipment' };
+  }
+
+  const matched = sentForSku.find((line) => movementLineMatchesScan(
+    line,
+    batchId,
+    batchNumber,
+    scannedBarcode,
+  ));
+  if (matched) {
+    return { kind: 'match', line: matched };
+  }
+
+  return { kind: 'wrong_batch', skuLines: sentForSku };
+}
+
+export function findSentLineForScan(
+  lines: MovementMobProductLineViewModel[],
+  sku: string,
+  batchId: string,
+  batchNumber: string,
+  scannedBarcode = '',
+): MovementMobProductLineViewModel | undefined {
+  const verdict = classifyReceivingScan(lines, sku, batchId, batchNumber, scannedBarcode);
+  return verdict.kind === 'match' ? verdict.line : undefined;
+}
+
+export function hasSentShipmentLines(lines: MovementMobProductLineViewModel[]): boolean {
+  return lines.some((line) => line.totalPortions > 0);
+}
+
+/** Пошук рядка: точний key, потім гнучке зіставлення партії. */
+export function findMovementMobLine(
+  lines: MovementMobProductLineViewModel[],
+  sku: string,
+  batchId: string,
+  batchNumber: string,
+  scannedBarcode = '',
+): MovementMobProductLineViewModel | undefined {
+  const exactKey = movementMobLineKey(sku, batchId, batchNumber);
+  const exact = lines.find((line) => line.key === exactKey);
+  if (exact) return exact;
+  return lines.find(
+    (line) => line.sku === sku && movementLineMatchesScan(line, batchId, batchNumber, scannedBarcode),
+  );
+}
+
 /** Чи є позиція у відправленому списку переміщення (для валідації скану отримувача). */
 export function isSentMovementLine(
   lines: MovementMobProductLineViewModel[],
@@ -948,9 +1051,7 @@ export function isSentMovementLine(
   batchId: string,
   batchNumber: string,
 ): boolean {
-  const key = movementMobLineKey(sku, batchId, batchNumber);
-  const line = lines.find((item) => item.key === key);
-  return Boolean(line && line.totalPortions > 0);
+  return classifyReceivingScan(lines, sku, batchId, batchNumber).kind === 'match';
 }
 
 export function emptyReceivedQty(): Pick<

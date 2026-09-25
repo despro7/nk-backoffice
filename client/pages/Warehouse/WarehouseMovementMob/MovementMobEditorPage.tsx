@@ -30,9 +30,13 @@ import {
   packageRatioToPortionsPerBox,
   canReceiverEditAfterConfirm,
   canSenderEditAfterSubmit,
+  classifyReceivingScan,
   committedPortionsForSku,
+  findMovementMobLine,
+  findSentLineForScan,
+  hasSentShipmentLines,
   insertMovementMobLineAt,
-  isSentMovementLine,
+  movementLineMatchesBatch,
   lineTotalPortions,
   linesMissingBatchLink,
   movementMobLineKey,
@@ -44,6 +48,7 @@ import {
 } from './WarehouseMovementMobUtils';
 import type { MovementMobBatchRow } from './WarehouseMovementMobUtils';
 import {
+  cancelReceiptConfirmation,
   confirmReceipt,
   createWarehouseMovementDraft,
   deleteMovement,
@@ -73,6 +78,7 @@ import MovementMobMockBarcodeBar, {
 import MovementMobScanDrawer from './components/MovementMobScanDrawer';
 import MovementMobSubmitSheet from './components/MovementMobSubmitSheet';
 import MovementMobConfirmReceiptSheet from './components/MovementMobConfirmReceiptSheet';
+import MovementMobCancelReceiptModal from './components/MovementMobCancelReceiptModal';
 import MovementMobDeleteConfirmModal from './components/MovementMobDeleteConfirmModal';
 import MovementMobSyncDilovodModal from './components/MovementMobSyncDilovodModal';
 import MovementMobProductEditDrawer, {
@@ -89,8 +95,12 @@ interface MovementMobEditorPageProps {
 }
 
 function sameScanTarget(draft: MovementMobScanDraft, sku: string, batchId: string, batchNumber: string): boolean {
-  return movementMobLineKey(draft.sku, draft.batchId, draft.batchNumber)
-    === movementMobLineKey(sku, batchId, batchNumber);
+  if (draft.sku !== sku) return false;
+  return movementLineMatchesBatch(
+    { batchId: draft.batchId, batchNumber: draft.batchNumber },
+    batchId,
+    batchNumber,
+  );
 }
 
 export default function MovementMobEditorPage({
@@ -143,6 +153,8 @@ export default function MovementMobEditorPage({
   const [deleting, setDeleting] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncingDilovod, setSyncingDilovod] = useState(false);
+  const [cancelReceiptOpen, setCancelReceiptOpen] = useState(false);
+  const [cancelingReceipt, setCancelingReceipt] = useState(false);
   const [productEditGoodId, setProductEditGoodId] = useState<string | null>(null);
   const [enterLineKey, setEnterLineKey] = useState<string | null>(null);
   const [mockEnabled, setMockEnabled] = useState(() => useMockBarcodeProp ?? readMovementMobMock().enabled);
@@ -291,9 +303,7 @@ export default function MovementMobEditorPage({
     if (!draft) return null;
     const receiving = ((canReceive || canReceiverEdit) && !adminCanEdit) || editingReceived;
     if (!receiving) return null;
-    const line = lines.find(
-      (item) => item.key === movementMobLineKey(draft.sku, draft.batchId, draft.batchNumber),
-    );
+    const line = findMovementMobLine(lines, draft.sku, draft.batchId, draft.batchNumber);
     return line?.totalPortions ?? 0;
   }, [adminCanEdit, canReceive, canReceiverEdit, draft, editingReceived, lines]);
 
@@ -329,52 +339,84 @@ export default function MovementMobEditorPage({
         return;
       }
 
-      const receiving = canReceive || canReceiverEdit || editingReceived
-        || (adminDualEdit && linesRef.current.some(
-          (line) => line.sku === product.sku && line.totalPortions > 0,
-        ));
+      const scanBatchId = product.batchId ?? '';
+      const scanBatchNumber = product.batchNumber ?? '';
+      const sentShipment = hasSentShipmentLines(linesRef.current);
+      const isFormationDoc = documentId == null || document?.status === 'draft';
 
-      let batchId = product.batchId ?? '';
-      let batchNumber = product.batchNumber ?? '';
-      if (!isUsableDilovodBatchId(batchId)) {
-        if (mobRequireBatch) {
-          batchId = '';
-          batchNumber = '';
-        } else {
-          const fallback = await fetchBatchFallback(apiCall, product.sku, sourceIdRef.current);
-          if (!fallback?.batchId) {
-            playSoundChoice('error', 'error');
-            ToastService.show({
-              title: 'Немає партії',
-              description: 'Для цього товару немає партії на складі-джерелі',
-              color: 'danger',
-            });
-            return;
-          }
-          batchId = fallback.batchId;
-          batchNumber = fallback.batchNumber || batchNumber;
-        }
-      } else {
-        const resolved = await resolveBatchNameForProduct(
-          apiCall,
+      let matchedSentLine: MovementMobProductLineViewModel | undefined;
+      let batchId = scanBatchId;
+      let batchNumber = scanBatchNumber;
+
+      if (sentShipment) {
+        const verdict = classifyReceivingScan(
+          linesRef.current,
           product.sku,
-          batchId,
-          batchNumber,
-          sourceIdRef.current,
+          scanBatchId,
+          scanBatchNumber,
+          product.barcode,
         );
-        batchId = resolved.batchId;
-        batchNumber = resolved.batchNumber;
+        if (verdict.kind === 'match') {
+          matchedSentLine = verdict.line;
+          batchId = verdict.line.batchId;
+          batchNumber = verdict.line.batchNumber;
+        } else if (verdict.kind === 'wrong_batch') {
+          playSoundChoice('error', 'error');
+          const hasBatchOnBarcode = isUsableDilovodBatchId(scanBatchId)
+            || Boolean(scanBatchNumber.trim());
+          ToastService.show({
+            title: hasBatchOnBarcode
+              ? 'Сканований штрихкод належить іншій партії'
+              : 'Невірна партія товару',
+            description: `${product.name} (SKU ${product.sku}) є у відправленні, але з іншою партією`,
+            color: 'danger',
+          });
+          return;
+        } else if (!isFormationDoc) {
+          playSoundChoice('error', 'error');
+          ToastService.show({
+            title: 'Товар не у відправленні',
+            description: `${product.name} (SKU ${product.sku}) не входить до цього переміщення`,
+            color: 'danger',
+          });
+          return;
+        }
       }
 
-      if (receiving && !adminCanEdit && !isSentMovementLine(linesRef.current, product.sku, batchId, batchNumber)) {
-        playSoundChoice('error', 'error');
-        ToastService.show({
-          title: 'Товар не у відправленні',
-          description: `SKU ${product.sku}: ${product.name} не входить до цього переміщення`,
-          color: 'danger',
-        });
-        return;
+      if (!matchedSentLine) {
+        if (!isUsableDilovodBatchId(batchId)) {
+          if (mobRequireBatch) {
+            batchId = '';
+            batchNumber = '';
+          } else {
+            const fallback = await fetchBatchFallback(apiCall, product.sku, sourceIdRef.current);
+            if (!fallback?.batchId) {
+              playSoundChoice('error', 'error');
+              ToastService.show({
+                title: 'Немає партії',
+                description: 'Для цього товару немає партії на складі-джерелі',
+                color: 'danger',
+              });
+              return;
+            }
+            batchId = fallback.batchId;
+            batchNumber = fallback.batchNumber || batchNumber;
+          }
+        } else {
+          const resolved = await resolveBatchNameForProduct(
+            apiCall,
+            product.sku,
+            batchId,
+            batchNumber,
+            sourceIdRef.current,
+          );
+          batchId = resolved.batchId;
+          batchNumber = resolved.batchNumber;
+        }
       }
+
+      const receiving = canReceive || canReceiverEdit || editingReceived || adminDualEdit
+        || (adminCanEdit && matchedSentLine != null && adminQtySide === 'received');
 
       if (openDraft) {
         if (sameScanTarget(openDraft, product.sku, batchId, batchNumber)) {
@@ -409,18 +451,21 @@ export default function MovementMobEditorPage({
         destIdRef.current,
       );
       const portionsPerBox = product.portionsPerBox && product.portionsPerBox > 0 ? product.portionsPerBox : 0;
-      const lineKey = movementMobLineKey(product.sku, batchId, batchNumber);
-      const existing = linesRef.current.find((line) => line.key === lineKey);
-      const baseBoxes = receiving && !adminDualEdit
-        ? (existing?.receivedBoxQuantity ?? 0)
-        : (existing?.boxQuantity ?? 0);
-      const basePortions = receiving && !adminDualEdit
-        ? (existing?.receivedPortionQuantity ?? 0)
-        : (existing?.portionQuantity ?? 0);
+      const existing = matchedSentLine
+        ?? findMovementMobLine(linesRef.current, product.sku, batchId, batchNumber, product.barcode);
       const scanDelta = mobScanStepperDelta(mobScanStepperMode, product.barcodeKind);
+      const baseBoxes = adminDualEdit
+        ? (existing?.boxQuantity ?? 0)
+        : receiving
+          ? (existing?.receivedBoxQuantity ?? 0)
+          : (existing?.boxQuantity ?? 0);
+      const basePortions = adminDualEdit
+        ? (existing?.portionQuantity ?? 0)
+        : receiving
+          ? (existing?.receivedPortionQuantity ?? 0)
+          : (existing?.portionQuantity ?? 0);
       const receivedBaseBoxes = adminDualEdit ? (existing?.receivedBoxQuantity ?? 0) : 0;
       const receivedBasePortions = adminDualEdit ? (existing?.receivedPortionQuantity ?? 0) : 0;
-      const scanAddsToReceived = adminDualEdit && receiving;
       setDraft({
         sku: product.sku,
         name: product.name,
@@ -428,12 +473,22 @@ export default function MovementMobEditorPage({
         portionsPerBox,
         barcode: product.barcode,
         barcodeKind: product.barcodeKind,
-        batchId,
-        batchNumber,
-        boxes: scanAddsToReceived ? (existing?.boxQuantity ?? 0) : baseBoxes + scanDelta.boxes,
-        portions: scanAddsToReceived ? (existing?.portionQuantity ?? 0) : basePortions + scanDelta.portions,
-        receivedBoxes: scanAddsToReceived ? receivedBaseBoxes + scanDelta.boxes : receivedBaseBoxes,
-        receivedPortions: scanAddsToReceived ? receivedBasePortions + scanDelta.portions : receivedBasePortions,
+        batchId: existing?.batchId ?? batchId,
+        batchNumber: existing?.batchNumber && existing.batchNumber !== '—'
+          ? existing.batchNumber
+          : batchNumber,
+        boxes: adminDualEdit
+          ? (existing?.boxQuantity ?? 0)
+          : baseBoxes + scanDelta.boxes,
+        portions: adminDualEdit
+          ? (existing?.portionQuantity ?? 0)
+          : basePortions + scanDelta.portions,
+        receivedBoxes: adminDualEdit
+          ? receivedBaseBoxes + scanDelta.boxes
+          : receivedBaseBoxes,
+        receivedPortions: adminDualEdit
+          ? receivedBasePortions + scanDelta.portions
+          : receivedBasePortions,
         dualQtyMode: adminDualEdit,
         editingLineKey: existing?.key,
         sourceStock: breakdownStockPortions(stocks.sourcePortions, portionsPerBox),
@@ -445,7 +500,7 @@ export default function MovementMobEditorPage({
     } finally {
       lookupBusyRef.current = false;
     }
-  }, [adminCanEdit, adminDualEdit, apiCall, canReceive, canReceiverEdit, document?.mode, documentId, editingReceived, mobRequireBatch, mobScanStepperMode, notifyNotFound, senderEditWindowActive]);
+  }, [adminCanEdit, adminDualEdit, adminQtySide, apiCall, canReceive, canReceiverEdit, document?.mode, document?.status, documentId, editingReceived, mobRequireBatch, mobScanStepperMode, notifyNotFound, senderEditWindowActive]);
 
   const scan = useMovementMobScan({
     enabled: canScan,
@@ -544,20 +599,25 @@ export default function MovementMobEditorPage({
     setConfirming(true);
     try {
       const previous = linesRef.current;
-      const newKey = movementMobLineKey(current.sku, current.batchId, current.batchNumber);
-      const existing = previous.find(
-        (line) => line.key === newKey,
-      ) ?? (current.editingLineKey
-        ? previous.find((line) => line.key === current.editingLineKey)
-        : undefined);
       const receiving = ((canReceive || canReceiverEdit) && !adminCanEdit) || editingReceived;
+      const newKey = movementMobLineKey(current.sku, current.batchId, current.batchNumber);
+      const existing = findMovementMobLine(previous, current.sku, current.batchId, current.batchNumber)
+        ?? (receiving
+          ? findSentLineForScan(previous, current.sku, current.batchId, current.batchNumber)
+          : previous.find((line) => line.key === newKey))
+        ?? (current.editingLineKey
+          ? previous.find((line) => line.key === current.editingLineKey)
+          : undefined);
+      const resolvedKey = existing?.key ?? newKey;
+      const resolvedBatchId = existing?.batchId ?? current.batchId;
+      const resolvedBatchNumber = existing?.batchNumber ?? (current.batchNumber || '—');
       const incoming: MovementMobProductLineViewModel = current.dualQtyMode
         ? {
-          key: newKey,
+          key: resolvedKey,
           sku: current.sku,
           productName: current.name,
-          batchId: current.batchId,
-          batchNumber: current.batchNumber || '—',
+          batchId: resolvedBatchId,
+          batchNumber: resolvedBatchNumber,
           boxQuantity: current.boxes,
           portionQuantity: current.portions,
           totalPortions: sentTotal,
@@ -571,11 +631,11 @@ export default function MovementMobEditorPage({
         }
         : receiving
           ? {
-            key: newKey,
+            key: resolvedKey,
             sku: current.sku,
             productName: current.name,
-            batchId: current.batchId,
-            batchNumber: current.batchNumber || '—',
+            batchId: resolvedBatchId,
+            batchNumber: resolvedBatchNumber,
             boxQuantity: existing?.boxQuantity ?? 0,
             portionQuantity: existing?.portionQuantity ?? 0,
             totalPortions: existing?.totalPortions ?? 0,
@@ -588,11 +648,11 @@ export default function MovementMobEditorPage({
             receivedTotalPortions: sentTotal,
           }
           : {
-            key: newKey,
+            key: resolvedKey,
             sku: current.sku,
             productName: current.name,
-            batchId: current.batchId,
-            batchNumber: current.batchNumber || '—',
+            batchId: resolvedBatchId,
+            batchNumber: resolvedBatchNumber,
             boxQuantity: current.boxes,
             portionQuantity: current.portions,
             totalPortions: sentTotal,
@@ -606,11 +666,11 @@ export default function MovementMobEditorPage({
           };
 
       let nextLines = previous;
-      if (current.editingLineKey && current.editingLineKey !== newKey) {
+      if (current.editingLineKey && current.editingLineKey !== resolvedKey) {
         nextLines = previous.filter((line) => line.key !== current.editingLineKey);
       }
       if (sentTotal <= 0 && receivedTotal <= 0) {
-        nextLines = nextLines.filter((line) => line.key !== newKey && line.key !== current.editingLineKey);
+        nextLines = nextLines.filter((line) => line.key !== resolvedKey && line.key !== current.editingLineKey);
       } else {
         nextLines = replaceMovementMobLine(nextLines, incoming);
       }
@@ -913,6 +973,41 @@ export default function MovementMobEditorPage({
     }
   }, [apiCall, confirmingReceipt, persistLines, queryClient, refetch]);
 
+  const handleCancelReceipt = useCallback(async () => {
+    const existingId = persistedIdRef.current;
+    if (!existingId || cancelingReceipt) return;
+    setCancelingReceipt(true);
+    try {
+      const updated = await cancelReceiptConfirmation(apiCall, existingId);
+      setCancelReceiptOpen(false);
+      setAdminEditing(false);
+      setAdminQtySide('sent');
+      ToastService.show({
+        title: 'Підтвердження скасовано',
+        description: 'Документ повернуто на етап очікування отримання. У Діловоді скасовано проведення',
+        color: 'success',
+      });
+      const viewModel = toDocumentViewModel(
+        updated,
+        Object.fromEntries(
+          linesRef.current.map((line) => [line.sku, { weight: line.weight, portionsPerBox: line.portionsPerBox }]),
+        ),
+        storages.find((item) => item.id === destIdRef.current)?.name,
+      );
+      queryClient.setQueryData(['warehouse-movement-mob-document', existingId], viewModel);
+      await queryClient.invalidateQueries({ queryKey: ['warehouse-movement-mob-list'] });
+      await refetch();
+    } catch (err) {
+      ToastService.show({
+        title: 'Не вдалося скасувати підтвердження',
+        description: err instanceof Error ? err.message : undefined,
+        color: 'danger',
+      });
+    } finally {
+      setCancelingReceipt(false);
+    }
+  }, [apiCall, cancelingReceipt, queryClient, refetch, storages]);
+
   const handleSyncDilovod = useCallback(async () => {
     const existingId = persistedIdRef.current;
     if (!existingId || syncingDilovod) return;
@@ -1072,6 +1167,8 @@ export default function MovementMobEditorPage({
         }}
         onSyncDilovod={() => setSyncOpen(true)}
         syncingDilovod={syncingDilovod}
+        onCancelReceipt={isFinalized && canOverrideEdit ? () => setCancelReceiptOpen(true) : undefined}
+        cancelingReceipt={cancelingReceipt}
       />
 
       <MovementMobScanDrawer
@@ -1167,6 +1264,14 @@ export default function MovementMobEditorPage({
         result={logsResult}
         title={document?.displayNumber ? `Логи документа ${document.displayNumber}` : 'Логи документа'}
         type="logs"
+      />
+
+      <MovementMobCancelReceiptModal
+        isOpen={cancelReceiptOpen}
+        displayNumber={document?.displayNumber}
+        canceling={cancelingReceipt}
+        onClose={() => setCancelReceiptOpen(false)}
+        onConfirm={() => { void handleCancelReceipt(); }}
       />
 
       <MovementMobDeleteConfirmModal
