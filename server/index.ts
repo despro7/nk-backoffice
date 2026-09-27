@@ -10,6 +10,7 @@ import protectedRoutes from "./routes/protected.js";
 import ordersRoutes from "./routes/orders.js";
 import productsRoutes from "./routes/products.js";
 import catalogRoutes from "./routes/catalog.js";
+import storefrontRoutes from "./routes/storefront.js";
 import boxesRoutes from "./routes/boxes.js";
 import settingsRoutes from "./routes/settings.js";
 import webhookRoutes from './routes/webhooks.js';
@@ -176,6 +177,9 @@ export function createServer() {
 
   // Products 2.0 catalog
   app.use("/api/catalog", catalogRoutes);
+
+  // WooCommerce storefront (Phase 1 — BO only)
+  app.use("/api/storefront", storefrontRoutes);
 
   // Boxes routes
   app.use("/api/boxes", boxesRoutes);

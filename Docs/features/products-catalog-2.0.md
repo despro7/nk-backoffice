@@ -316,6 +316,7 @@ client/pages/Products/
 
 - Тип обʼєкта: Tabs **Продукція / Товарні набори / Група / Інший** (`DrawerObjectKind` ↔ `accPolicyId` / `isGroup`).
 - BOM (`BomSection`):
+  - **Права:** редагування BOM / `specQty` — окремий ключ `action.products.editSpec` (seed лише admin; не залежить від ACL папки). Упаковка (вага, порції в коробці) — за ACL папки. Деталі: [`woocommerce-storefront-phase1.md`](./woocommerce-storefront-phase1.md#права-доступу-rbac).
   - **Продукція** — «Специфікація товару»; qty через `NumberInputFromNumber` (див. `Docs/architecture/number-input.md`); **примітка** (Chip + Popover, Dilovod remark); мікро-конфірм видалення примітки (іконка → «Видалити?» → clear).
   - **Продукція** — колонка **% втрат** (`cookingLossPercent`, локально); підсвітка підозрілої qty (`isSuspiciousBomIngredientQty`); кнопка переносу тексту з дужок назви в примітку (`extractParenthesizedTextFromName`).
   - **Продукція** — сортування колонок (назва, втрати, qty, од. вим.) + опційне **ручне сортування** перетягуванням (`bomSectionSort.ts`, `@hello-pangea/dnd`).

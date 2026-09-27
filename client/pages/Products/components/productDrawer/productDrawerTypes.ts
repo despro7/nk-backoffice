@@ -1,4 +1,5 @@
 import type { IconName } from 'lucide-react/dynamic';
+import type { ProductNutritionJson } from '@shared/types/storefront';
 import type {
   CatalogCreateGoodInput,
   CatalogDictionariesDto,
@@ -90,6 +91,13 @@ export interface DrawerForm {
   description: string;
   fullDescription: string;
   accPolicyId: string;
+  doNotPublish: boolean;
+  storefrontPresetId: string;
+  productIngredientsJson: string[];
+  productNutritionJson: ProductNutritionJson | null;
+  /** TipTap JSON string */
+  storefrontDescriptionDoc: string;
+  grossWeight: string;
 }
 
 /** 4 основні типи обʼєкта в drawer */

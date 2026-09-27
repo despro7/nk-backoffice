@@ -5,6 +5,71 @@
 
 ---
 
+## 2026-09-27 — Storefront: RBAC + UX редактора та склад-тегів
+
+**Files:** `shared/constants/permissions.ts`, `shared/constants/permissions.spec.ts`, `shared/utils/catalogProductFieldAccess.ts`, `shared/utils/catalogProductFieldAccess.spec.ts`, `server/routes/storefront.ts`, `server/modules/Products/catalogProductPermissions.ts`, `server/modules/Products/ProductsController.ts`, `client/routes.config.tsx`, `client/pages/SettingsStorefront.tsx`, `client/pages/Products/components/productDrawer/ProductDrawer.tsx`, `client/pages/Products/components/productDrawer/ProductContentTab.tsx`, `client/pages/Products/components/productDrawer/BomSection.tsx`, `client/pages/Products/components/productDrawer/RowDeleteButton.tsx`, `client/pages/Products/components/productDrawer/ProductIngredientsTags.tsx`, `client/pages/Products/components/productDrawer/StorefrontDescriptionEditor.tsx`, `client/global.css`, `Docs/features/woocommerce-storefront-phase1.md`
+
+### RBAC (налаштування ролей)
+
+- **`action.storefront.read`** — GET preset/settings, preview; seed від `warehouse-manager` (Директор отримує read за замовчуванням).
+- **`action.storefront.edit`** — контент вітрини на вкладці «Контент»; перевірка лише при **фактичній** зміні полів на `PUT /api/catalog/goods/:id`.
+- **`action.storefront.manage`** — CRUD preset/meta, dry-run; seed лише `admin`.
+- **`action.products.editSpec`** — ексклюзивне право на BOM + `specQty` («Основні дані»); seed лише `admin`; UI + server ACL.
+- **`page.settings.storefront`** — маршрут `/settings/storefront` (замість `page.settings.admin`).
+
+### UX
+
+- **`ProductIngredientsTags`:** підтвердження видалення chip (`ConfirmModal`); ✕ chip — червоний hover.
+- **`StorefrontDescriptionEditor`:** hover на bound і overridable блоках; `cursor: not-allowed` + Tooltip на frozen placeholder; floating Tooltip при hover на preview; кнопка **strike** у toolbar; виправлення TS (`globalThis.Node`, trailing node options).
+
+**Документація:** [`Docs/features/woocommerce-storefront-phase1.md`](features/woocommerce-storefront-phase1.md) — секції «Права доступу», «UX редактора», оновлена таблиця API.
+
+---
+
+## 2026-09-27 — Storefront: doc-редактор «Повний опис» + bound-блоки
+
+**Files:** `Docs/features/woocommerce-storefront-phase1.md`, `shared/utils/storefrontDescription.ts`, `shared/utils/storefrontDescription.spec.ts`, `client/pages/Products/components/productDrawer/StorefrontDescriptionEditor.tsx`, `client/pages/Products/components/productDrawer/ProductContentTab.tsx`, `client/pages/Products/components/productDrawer/ProductIngredientsTags.tsx`, `client/global.css`, `server/modules/Storefront/StorefrontDescriptionBuilder.ts`, `server/modules/Products/catalogStorefrontFields.ts`, `prisma/migrations/20260927120000_storefront_description_refactor/`
+
+### Модель даних
+
+- `catalog_goods.storefrontDescriptionDoc` — TipTap JSON (маркетинговий абзац + atom-блоки preset).
+- `catalog_goods.productIngredientsJson` — теги складу замість `productIngredientsText` / `productIngredientsMode`.
+- Видалено per-field override-и (`productMarketingText`, `productStorageText`, `productHeatingOverride`, …).
+
+### Редактор «Повний опис» (`StorefrontDescriptionEditor`)
+
+- Bound-блоки (`ingredients`, `nutrition`, `netWeight`, `grossWeight`, `kitComponents`): preview з live-даними; edit — лише обрамлення шаблону.
+- У edit mode плейсхолдери показують **read-only live-вміст** (`templateHtmlForStorefrontEditorLive`), у JSON лишаються `{{placeholders}}`.
+- Overridable-блоки (`storage`, `heating`, `salt`, `template`): повний WYSIWYG override.
+
+### TipTap / UX fixes
+
+- Прибрано ghost trailing `<p>` після списків і в кінці doc (`normalizeStorefrontBlockHtml`, `trailingNode`, CSS).
+- Backspace після atom-блоку більше не видаляє «Маса брутто» (`StorefrontAtomBackspaceGuard`).
+- Blur bound mini-editor — з першого разу (deferred `activeElement` check).
+
+**Документація:** [`Docs/features/woocommerce-storefront-phase1.md`](features/woocommerce-storefront-phase1.md) — секція «Повний опис».
+
+---
+
+## 2026-09-26 — WooCommerce Storefront: Фаза 1 (конструктор опису + поля товару)
+
+**Files:** `Docs/features/woocommerce-storefront-phase1.md`, `shared/types/storefront.ts`, `shared/constants/storefrontDefaults.ts`, `shared/utils/storefrontDescription.ts`, `server/modules/Storefront/*`, `server/routes/storefront.ts`, `server/modules/Products/catalogStorefrontFields.ts`, `client/pages/SettingsStorefront.tsx`, `client/pages/Products/components/productDrawer/ProductContentTab.tsx`, `client/services/StorefrontService.ts`, `prisma/migrations/20260925180000_catalog_storefront_phase1/`
+
+### Фаза 1 (backoffice)
+
+- Поля вітрини на `catalog_goods`, preset-и в `catalog_storefront_presets`, глобальні meta-ключі в `settings_base`.
+- Сторінка **`/settings/storefront`**: meta-ключі CRUD, конструктор блоків (drag-and-drop, WYSIWYG-шаблони, inline-edit назви).
+- Усі блоки — шаблон навколо плейсхолдера (`{{ingredients}}`, `{{_nk_ingredients}}`, …); resolver визначає джерело даних, meta-ключ — лише дубль у WC (Phase 2).
+- Захист від видалення: лише `ingredients`, `nutrition`, `kitComponents`.
+- Preview і `dry-run-push` API; WooCommerce REST — заглушка.
+
+**Документація:** [`Docs/features/woocommerce-storefront-phase1.md`](features/woocommerce-storefront-phase1.md)
+
+**Далі:** порядок у картці товару (вкладка «Контент») → **Фаза 2** (WC REST sync).
+
+---
+
 ## 2026-09-25 — Cursor rules: модульний design-system, зменшення always-on overhead
 
 **Files:** `.cursor/rules/agent-workflow.mdc`, `.cursor/rules/project-context.mdc`, `.cursor/rules/design-system-hub.mdc`, `.cursor/rules/design-system-tables.mdc`, `.cursor/rules/design-system-drawer.mdc`, `.cursor/rules/design-system-buttons.mdc`, `.cursor/rules/design-system-chips.mdc`, `.cursor/rules/component-reuse.mdc`, `.cursor/rules/codegraph.mdc`, `Docs/guides/design-system.md`  

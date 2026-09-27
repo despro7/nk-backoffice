@@ -79,7 +79,7 @@ npx prisma migrate deploy
 | Префікс | Приклад | Де |
 | --- | --- | --- |
 | `page.*` | `page.settings.users` | меню, `ProtectedRoute` |
-| `action.*` | `action.users.manage`, `action.warehouse.history.delete` | API і кнопки, суворіші за сторінку |
+| `action.*` | `action.users.manage`, `action.storefront.read`, `action.products.editSpec` | API і кнопки, суворіші за сторінку |
 
 Групування API — за доменом, не 1:1 з handler. Seed системних ролей повторює стару матрицю `minRole` / `roles` (день релізу без зміни доступу). Далі адмін може звужувати/розширювати кастомні й системні (крім admin).
 
@@ -121,5 +121,7 @@ npx prisma migrate deploy
 - `getNavGroups(role, permissions)` / `ProtectedRoute` — `canAccessRoute` (спочатку `route.permission`).
 - `useRoleAccess().hasPermission(key)` дивиться на `effectivePermissions` з `RolePreviewContext`.
 - `isAdmin()` — реальний slug `admin` і не в прев’ю (debug / інструменти). Продуктові кнопки (історія складу, редагування товарів) — конкретні `action.*`.
+
+**Storefront / spec (Products 2.0):** `action.storefront.read|edit|manage`, `action.products.editSpec` — деталі seed і перевірки на save у [`woocommerce-storefront-phase1.md`](./woocommerce-storefront-phase1.md#права-доступу-rbac).
 
 Тести: `npm test` (vitest). Юніти: `shared/constants/*.spec.ts`, `RoleService.spec.ts`, `requirePermission.spec.ts`.

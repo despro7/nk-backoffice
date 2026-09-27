@@ -2,6 +2,8 @@
  * Shared types for Products 2.0 catalog domain (`catalog_*` + /api/catalog).
  */
 
+import type { ProductNutritionJson, StorefrontDescriptionDoc } from './storefront.js';
+
 /** Dilovod trash folder id («Видалені обʼєкти(смітник)») */
 export const CATALOG_TRASH_ID = '1100300000001805';
 
@@ -88,6 +90,17 @@ export interface CatalogGoodDto {
   description: string | null;
   /** Повний опис лише локально (WP) */
   fullDescription: string | null;
+  /** Не публікувати на вітрину (WC) */
+  doNotPublish?: boolean;
+  /** Preset конструктора опису; null = default */
+  storefrontPresetId?: string | null;
+  productIngredientsJson?: string[] | null;
+  productNutritionJson?: ProductNutritionJson | null;
+  storefrontDescriptionDoc?: StorefrontDescriptionDoc | null;
+  /** Брутто, кг; null → computed з BOM */
+  grossWeight?: number | null;
+  wooProductId?: number | null;
+  wooLastSyncedAt?: string | null;
   /** Локальний порядок siblings (інтервал крок 10) */
   sortOrder: number;
   /** Локальний коеф. порцій; dual-write → products.unitRatio */
@@ -221,6 +234,12 @@ export interface CatalogCreateGoodInput {
   printName?: string | null;
   description?: string | null;
   fullDescription?: string | null;
+  doNotPublish?: boolean;
+  storefrontPresetId?: string | null;
+  productIngredientsJson?: string[] | null;
+  productNutritionJson?: ProductNutritionJson | null;
+  storefrontDescriptionDoc?: StorefrontDescriptionDoc | null;
+  grossWeight?: number | null;
   unitRatio?: number | null;
   /** Staging-сесія зображень — commit після create */
   stagingSessionId?: string | null;
@@ -255,6 +274,12 @@ export interface CatalogUpdateGoodInput {
   printName?: string | null;
   description?: string | null;
   fullDescription?: string | null;
+  doNotPublish?: boolean;
+  storefrontPresetId?: string | null;
+  productIngredientsJson?: string[] | null;
+  productNutritionJson?: ProductNutritionJson | null;
+  storefrontDescriptionDoc?: StorefrontDescriptionDoc | null;
+  grossWeight?: number | null;
   unitRatio?: number | null;
   components?: Array<{
     componentGoodId: string;

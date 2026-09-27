@@ -25,6 +25,10 @@ import {
   invalidateCatalogAclIndex,
   loadCatalogAclIndex,
 } from './catalogFolderAcl.js';
+import {
+  assertCatalogProductFieldPermissions,
+  assertCatalogProductFieldPermissionsForUpdate,
+} from './catalogProductPermissions.js';
 import { CATALOG_TRASH_ID, type CatalogGoodUsedInScope } from '../../../shared/types/catalog.js';
 import {
   canViewCatalogItem,
@@ -41,6 +45,8 @@ import {
 
 const router = Router();
 requirePermission('catalog', 'manage', 'Каталог Товари 2.0');
+requirePermission('products', 'editSpec', 'Редагування специфікації товару (BOM)');
+requirePermission('storefront', 'edit', 'Редагування контенту вітрини товару');
 const catalogFullRefresh = requirePermission('catalog', 'fullRefresh', 'Повний refresh каталогу з Dilovod');
 const authOnly = [authenticateToken] as const;
 
@@ -285,7 +291,9 @@ router.post('/goods', ...authOnly, async (req, res) => {
     const parentId = normalizeCatalogFolderId(req.body?.parentId);
     const index = await loadCatalogAclIndex();
     if (!assertFolderEdit(res, perms, parentId, index.parentById)) return;
-    const data = await productsCatalogService.createGood(req.body || {});
+    const body = req.body || {};
+    if (!assertCatalogProductFieldPermissions(res, perms, body)) return;
+    const data = await productsCatalogService.createGood(body);
     invalidateCatalogAclIndex();
     res.status(201).json({ success: true, data });
   } catch (error) {
@@ -309,7 +317,20 @@ router.put('/goods/:id', ...authOnly, async (req, res) => {
         return;
       }
     }
-    const data = await productsCatalogService.updateGood(req.params.id, req.body || {});
+    const body = req.body || {};
+    if (
+      !(await assertCatalogProductFieldPermissionsForUpdate(
+        req,
+        res,
+        perms,
+        req.params.id,
+        body,
+        (id) => productsCatalogService.getGoodDetail(id),
+      ))
+    ) {
+      return;
+    }
+    const data = await productsCatalogService.updateGood(req.params.id, body);
     invalidateCatalogAclIndex();
     res.json({ success: true, data });
   } catch (error) {

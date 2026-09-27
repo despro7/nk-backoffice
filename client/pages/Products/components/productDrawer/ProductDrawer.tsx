@@ -24,6 +24,8 @@ import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { useDebug } from '@/contexts/debug-context';
 import { useRolePreview } from '@/contexts/role-preview-context';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { PERMISSIONS } from '@shared/constants/permissions';
 import { ToastService } from '@/services/ToastService';
 import { sanitizeStoredBatchName } from '@shared/utils/dilovodBatchId';
 import { BatchNumbersAutocomplete } from '@/pages/Warehouse/WarehouseMovement/components/BatchNumbersAutocomplete';
@@ -48,12 +50,12 @@ import {
   CATALOG_ROOT_ID,
   CATALOG_TRASH_ID,
 } from '../../ProductsTypes';
-import { DescriptionEditor } from '../DescriptionEditor';
-import { ProductImageUpload } from '../ProductImageUpload';
 import { ProductLabelsTab } from './ProductLabelsTab';
+import { ProductContentTab } from './ProductContentTab';
 import { StockBadge } from '@/components/StockBadge';
 import {
   areRequiredCatalogPricesFilled,
+  buildTechCardRows,
   catalogKitPortionCount,
   catalogMainPrice,
   catalogNameContainsWeight,
@@ -135,6 +137,10 @@ export function ProductDrawer({
   const open = mode != null;
   const isEdit = mode === 'edit';
   const fieldsLocked = saving || readOnly;
+  const { hasPermission } = useRoleAccess();
+  const canReadStorefront = hasPermission(PERMISSIONS.ACTION_STOREFRONT_READ);
+  const canEditStorefront = hasPermission(PERMISSIONS.ACTION_STOREFRONT_EDIT);
+  const canEditSpec = hasPermission(PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC);
   const isTrashed = isEdit && detail?.parentId === CATALOG_TRASH_ID;
   const { isDebugMode } = useDebug();
   const { isAdminView: isAdmin } = useRolePreview();
@@ -384,6 +390,15 @@ export function ProductDrawer({
         printName: detail.printName || '',
         description: detail.description === '[object Object]' ? '' : detail.description || '',
         fullDescription: detail.fullDescription || '',
+        doNotPublish: detail.doNotPublish ?? false,
+        storefrontPresetId: detail.storefrontPresetId || '',
+        productIngredientsJson: detail.productIngredientsJson ?? [],
+        productNutritionJson: detail.productNutritionJson ?? null,
+        storefrontDescriptionDoc: detail.storefrontDescriptionDoc
+          ? JSON.stringify(detail.storefrontDescriptionDoc)
+          : '',
+        grossWeight:
+          detail.grossWeight != null ? formatWeightKg(Number(detail.grossWeight), 3) : '',
         accPolicyId:
           resolvedKind === 'kit'
             ? CATALOG_ACC_POLICY_KIT
@@ -521,6 +536,16 @@ export function ProductDrawer({
       description: form.description.trim() || null,
       fullDescription: isFolder ? null : form.fullDescription.trim() || null,
       accPolicyId,
+      doNotPublish: isFolder ? undefined : form.doNotPublish,
+      storefrontPresetId: isFolder ? undefined : form.storefrontPresetId.trim() || null,
+      productIngredientsJson: isFolder ? undefined : form.productIngredientsJson,
+      productNutritionJson: isFolder ? undefined : form.productNutritionJson,
+      storefrontDescriptionDoc: isFolder
+        ? undefined
+        : form.storefrontDescriptionDoc.trim()
+          ? (JSON.parse(form.storefrontDescriptionDoc) as CatalogUpdateGoodInput['storefrontDescriptionDoc'])
+          : null,
+      grossWeight: isFolder ? undefined : parseNumberInput(form.grossWeight),
     };
 
     if (!isFolder) {
@@ -871,6 +896,23 @@ export function ProductDrawer({
     bomWeightExpected != null &&
     (currentWeightKg == null || !weightsAlmostEqual(currentWeightKg, bomWeightExpected.kg));
   const showExpectedWeightHint = canFillWeightFromBom && weightMismatch;
+  const autoGrossKg = useMemo(() => {
+    if (!showBom || !components.length) return null;
+    const rows = buildTechCardRows(
+      components.map((c) => ({
+        componentName: c.componentName,
+        qty: c.qty,
+        unitId: c.unitId,
+        componentWeight: c.componentWeight,
+        note: c.note,
+        cookingLossPercent: isKit ? 0 : c.cookingLossPercent,
+      })),
+      units,
+      parseSpecQtyInput(form.specQty),
+      1,
+    );
+    return rows.totalGrossMassKg;
+  }, [showBom, components, units, form.specQty, isKit]);
   const weightFieldInvalid = weightInvalid && !canFillWeightFromBom;
   const requiredFieldsOk = requiredPricesOk && !packageRatioInvalid && !weightInvalid;
   const nameHasWeight = catalogNameContainsWeight(form.name);
@@ -1049,6 +1091,7 @@ export function ProductDrawer({
                             bomWeightExpected={bomWeightExpected}
                             canFillWeightFromBom={canFillWeightFromBom}
                             showExpectedWeightHint={showExpectedWeightHint}
+                            autoGrossKg={autoGrossKg}
                             specQtySuspicious={specQtySuspicious}
                             onOpenTechCard={() => setTechCardOpen(true)}
                             onFormChange={setForm}
@@ -1079,6 +1122,7 @@ export function ProductDrawer({
                             renamingComponentGoodId={renamingComponentGoodId}
                             onMoveParenthesesToNote={handleMoveParenthesesToNote}
                             isReadOnly={readOnly}
+                            canEditSpec={canEditSpec}
                           />
                         )}
                         <Divider className="bg-default-200/60" />
@@ -1130,42 +1174,22 @@ export function ProductDrawer({
                 )}
 
                 {cardTab === 'content' && hasObjectKind && !isFolder && (
-                  <section className="space-y-4">
-                    <h3 className="text-sm font-semibold flex items-center gap-1">
-                      <DynamicIcon name="file-text" size={14} />
-                      <span>Короткий опис</span>
-                    </h3>
-                    <DescriptionEditor
-                      aria-label="Короткий опис"
-                      value={form.description}
-                      onChange={(html) => setForm((f) => ({ ...f, description: html }))}
-                      isDisabled={fieldsLocked}
-                    />
-                    
-                    <h3 className="text-sm font-semibold flex items-center gap-1 pt-4">
-                      <DynamicIcon name="file-text" size={14} />
-                      <span>Повний опис</span>
-                    </h3>
-                    <DescriptionEditor
-                      aria-label="Повний опис"
-                      value={form.fullDescription}
-                      onChange={(html) => setForm((f) => ({ ...f, fullDescription: html }))}
-                      minHeightClass="min-h-[160px]"
-                      isDisabled={fieldsLocked}
-                    />
-                    
-                    <h3 className="text-sm font-semibold flex items-center gap-1 pt-4">
-                      <DynamicIcon name="image" size={14} />
-                      <span>Зображення</span>
-                    </h3>
-                    <ProductImageUpload
-                      goodId={isEdit ? detail?.id : null}
-                      stagingSessionId={!isEdit ? stagingSessionId : null}
-                      images={images}
-                      isDisabled={fieldsLocked}
-                      onImagesChange={setImages}
-                    />
-                  </section>
+                  <ProductContentTab
+                    form={form}
+                    setForm={setForm}
+                    components={components}
+                    detail={detail}
+                    isEdit={isEdit}
+                    isKit={isKit}
+                    isAdmin={isAdmin}
+                    fieldsLocked={fieldsLocked}
+                    canReadStorefront={canReadStorefront}
+                    canEditStorefront={canEditStorefront}
+                    images={images}
+                    stagingSessionId={stagingSessionId}
+                    units={units}
+                    onImagesChange={setImages}
+                  />
                 )}
 
                 {cardTab === 'stickers' && hasObjectKind && !isFolder && detail && (

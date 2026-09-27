@@ -59,6 +59,7 @@ interface BomSectionProps {
   bomWeightExpected: ExpectedBomWeight | null;
   canFillWeightFromBom: boolean;
   showExpectedWeightHint: boolean;
+  autoGrossKg: number | null;
   specQtySuspicious: boolean;
   onOpenTechCard: () => void;
   onFormChange: (updater: (prev: DrawerForm) => DrawerForm) => void;
@@ -74,6 +75,8 @@ interface BomSectionProps {
   renamingComponentGoodId: string | null;
   onMoveParenthesesToNote: (idx: number) => void | Promise<void>;
   isReadOnly?: boolean;
+  /** Окреме право на BOM / specQty (не входить до ACL папки). */
+  canEditSpec?: boolean;
 }
 
 function BomRowWeightHint({
@@ -150,6 +153,7 @@ export function BomSection({
   bomWeightExpected,
   canFillWeightFromBom,
   showExpectedWeightHint,
+  autoGrossKg,
   specQtySuspicious,
   onOpenTechCard,
   onFormChange,
@@ -165,8 +169,10 @@ export function BomSection({
   renamingComponentGoodId,
   onMoveParenthesesToNote,
   isReadOnly = false,
+  canEditSpec = false,
 }: BomSectionProps) {
-  const packCols = isAdmin ? (isKit ? '3' : '4') : isKit ? '2' : '3';
+  const packCols = isAdmin ? (isKit ? '4' : '5') : isKit ? '3' : '4';
+  const isSpecReadOnly = isReadOnly || !canEditSpec;
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>(BOM_MANUAL_SORT);
   const [listSortEnabled, setListSortEnabled] = useState(false);
 
@@ -176,7 +182,7 @@ export function BomSection({
   );
   const isManualSort = isBomManualSort(sortDescriptor);
   const listSortDisabled = !isManualSort;
-  const canManualReorder = isManualSort && listSortEnabled && !isReadOnly;
+  const canManualReorder = isManualSort && listSortEnabled && !isSpecReadOnly;
   const showDragHandle = canManualReorder;
 
   const handleSortColumn = useCallback((column: Exclude<BomSortColumn, 'sortOrder'>) => {
@@ -339,7 +345,7 @@ export function BomSection({
                           isIconOnly
                           aria-label="Перенести текст з дужок до примітки"
                           isDisabled={
-                            isReadOnly ||
+                            isSpecReadOnly ||
                             renamingComponentGoodId === c.componentGoodId ||
                             !hasParenthesizedTextInName(c.componentName)
                           }
@@ -424,7 +430,7 @@ export function BomSection({
                 },
               }}
               endContent={<span className="text-xs text-default-400">%</span>}
-              isReadOnly={isReadOnly}
+              isReadOnly={isSpecReadOnly}
               onChange={(cookingLossPercent) =>
                 onComponentsChange((prev) =>
                   prev.map((row, i) => (i === idx ? { ...row, cookingLossPercent } : row))
@@ -442,6 +448,7 @@ export function BomSection({
                 min={0}
                 decimalPlaces={3}
                 isInvalid={c.qty <= 0}
+                isReadOnly={isSpecReadOnly}
                 color={qtySuspicious ? 'danger' : 'default'}
                 classNames={{
                   inputWrapper: `border-1 ${
@@ -475,6 +482,7 @@ export function BomSection({
               inputClassName="text-sm"
               aria-label="Кількість"
               value={c.qty || 0}
+              disabled={isSpecReadOnly}
               onChange={(v) =>
                 onPatchKitComponents((prev) =>
                   prev.map((row, i) => (i === idx ? { ...row, qty: v } : row))
@@ -498,6 +506,7 @@ export function BomSection({
             <Select
               aria-label="Од. виміру"
               size="sm"
+              isDisabled={isSpecReadOnly}
               classNames={{
                 base: 'w-20 order-last sm:order-none',
                 trigger: 'border-1 border-default-200',
@@ -520,6 +529,7 @@ export function BomSection({
           <RowDeleteButton
             ariaLabel="Видалити компонент"
             className="ml-auto md:ml-0"
+            isDisabled={isSpecReadOnly}
             confirming={rowDeleteConfirm?.kind === 'component' && rowDeleteConfirm.idx === idx}
             onRequest={() => onRowDeleteConfirm({ kind: 'component', idx })}
             onConfirm={() => {
@@ -571,7 +581,7 @@ export function BomSection({
           )}
           <div className="min-w-0">
             <NumberInput
-              label="Вага, кг"
+              label="Маса нетто, кг"
               value={form.weight}
               decimalPlaces={3}
               min={0}
@@ -607,6 +617,37 @@ export function BomSection({
                   <span className="text-xs text-warning-700">
                     У деяких позицій не вказана вага
                   </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 space-y-1">
+            <NumberInput
+              label="Маса брутто, кг"
+              value={form.grossWeight}
+              decimalPlaces={3}
+              min={0}
+              max={20}
+              step={0.01}
+              isDisabled={isReadOnly}
+              description={
+                autoGrossKg != null ? `auto: ${formatWeightKg(autoGrossKg, 3)} кг` : undefined
+              }
+              onValueChange={(v) => onFormChange((f) => ({ ...f, grossWeight: v }))}
+            />
+            {autoGrossKg != null && (
+              <div className="flex items-center gap-2">
+                <Chip size="sm" variant="flat">
+                  auto: {formatWeightKg(autoGrossKg, 3)} кг
+                </Chip>
+                {!isReadOnly && (
+                  <Button
+                    size="sm"
+                    variant="light"
+                    onPress={() => onFormChange((f) => ({ ...f, grossWeight: '' }))}
+                  >
+                    Скинути до auto
+                  </Button>
                 )}
               </div>
             )}
@@ -659,6 +700,7 @@ export function BomSection({
                 decimalPlaces={0}
                 emptyOnBlur="min"
                 value={form.specQty}
+                isDisabled={isSpecReadOnly}
                 color={specQtySuspicious ? 'danger' : 'default'}
                 classNames={{
                   base: 'w-20',
@@ -682,7 +724,7 @@ export function BomSection({
                 color="primary"
                 data-btn-tone="primary-blue-flat"
                 className="h-8 min-w-6 gap-1 text-sm"
-                isDisabled={components.length === 0 || isReadOnly}
+                isDisabled={components.length === 0 || isSpecReadOnly}
                 startContent={<DynamicIcon name="file-text" size={14} />}
                 onPress={onOpenTechCard}
               >
@@ -694,6 +736,7 @@ export function BomSection({
         <div className="flex flex-col gap-1 mb-4 md:mb-0">
           <Input
             aria-label="Додати компонент"
+            isDisabled={isSpecReadOnly}
             placeholder={
               isKit
                 ? `Пошук товарів в категорії «${CATALOG_FINISHED_PRODUCTS_FOLDER_NAME}» (за назвою або sku)`
@@ -714,7 +757,8 @@ export function BomSection({
                 <button
                   key={s.id}
                   type="button"
-                  className="grid grid-cols-[auto_40px] gap-2 w-full items-center justify-between px-3 py-2 text-left text-sm leading-tight hover:bg-default-200/50 [&:not(:last-child)]:border-b border-default-200/50"
+                  disabled={isSpecReadOnly}
+                  className="grid grid-cols-[auto_40px] gap-2 w-full items-center justify-between px-3 py-2 text-left text-sm leading-tight hover:bg-default-200/50 [&:not(:last-child)]:border-b border-default-200/50 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => onAddComponent(s)}
                 >
                   <span>{s.name}</span>
@@ -749,7 +793,7 @@ export function BomSection({
               >
                 <Button
                   size="sm"
-                  isDisabled={listSortDisabled || isReadOnly}
+                  isDisabled={listSortDisabled || isSpecReadOnly}
                   aria-label="Ручне сортування"
                   aria-pressed={listSortEnabled && !listSortDisabled}
                   className={`h-6 min-w-6 gap-1 pl-2 pr-2.5 ${

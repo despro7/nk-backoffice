@@ -239,6 +239,15 @@
  * Якщо потрібен opt-in через атрибут — data-btn-tone="primary-blue-flat".
  */
 @layer components {
+  /* Primary blue solid */
+  button[data-btn-tone='primary-blue-solid']:not([class*='bg-gradient']) {
+    @apply bg-blue-500! text-white!;
+  }
+
+  button[data-btn-tone='primary-blue-solid']:not([class*='bg-gradient']):is(:hover, [data-hover='true'], [data-pressed='true']) {
+    @apply bg-blue-500!;
+  }
+
   /* Opt-in blue flat — вища специфічність, без глобального override primary flat */
   button[data-btn-tone='primary-blue-flat']:not([class*='bg-gradient']) {
     @apply bg-blue-100! text-blue-700!;
@@ -466,4 +475,183 @@ html.report-capture-ui-hidden [data-report-fab="true"],
 html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
   opacity: 0 !important;
   pointer-events: none !important;
+}
+
+/* Storefront description editor — marketing paragraphs + bound blocks */
+.storefront-description-editor,
+.storefront-description-editor .ProseMirror {
+  background-color: #fff;
+}
+
+/* ProseMirror root carries storefront-description-editor; use direct child selectors */
+.storefront-description-editor > p,
+.storefront-description-editor > ul,
+.storefront-description-editor > ol,
+.storefront-description-editor > div[data-storefront-block],
+.storefront-description-editor > .storefront-block,
+.storefront-description-editor .ProseMirror > p,
+.storefront-description-editor .ProseMirror > ul,
+.storefront-description-editor .ProseMirror > ol,
+.storefront-description-editor .ProseMirror > div[data-storefront-block],
+.storefront-description-editor .ProseMirror > .storefront-block {
+  margin-bottom: 1rem;
+}
+
+.storefront-description-editor > p:has(+ ul),
+.storefront-description-editor > p:has(+ ol),
+.storefront-description-editor .ProseMirror > p:has(+ ul),
+.storefront-description-editor .ProseMirror > p:has(+ ol) {
+  margin-bottom: 0.25rem;
+}
+
+.storefront-description-editor > *:last-child,
+.storefront-description-editor .ProseMirror > *:last-child,
+.storefront-block__preview > *:last-child,
+.storefront-block__wysiwyg > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Inner flow inside multi-element blocks (e.g. heading + list) */
+.storefront-block__preview p:not(:last-child):not(:has(+ ul)):not(:has(+ ol)),
+.storefront-block__wysiwyg p:not(:last-child):not(:has(+ ul)):not(:has(+ ol)) {
+  margin-bottom: 1rem;
+}
+
+.storefront-block__preview p:has(+ ul),
+.storefront-block__preview p:has(+ ol),
+.storefront-block__wysiwyg p:has(+ ul),
+.storefront-block__wysiwyg p:has(+ ol) {
+  margin-bottom: 0.25rem;
+}
+
+/* TipTap trailing empty paragraph after lists or at doc end */
+.storefront-block__preview > ol + p:empty,
+.storefront-block__preview > ul + p:empty,
+.storefront-block__preview > p:last-child:empty,
+.storefront-block__wysiwyg .ProseMirror > ol + p:empty,
+.storefront-block__wysiwyg .ProseMirror > ul + p:empty,
+.storefront-block__wysiwyg .ProseMirror > p:last-child:empty,
+.storefront-block__wysiwyg .ProseMirror > p:last-child:has(> br.ProseMirror-trailingBreak:only-child),
+.storefront-description-editor > p:last-child:empty,
+.storefront-description-editor .ProseMirror > p:last-child:empty,
+.storefront-description-editor .ProseMirror > p:last-child:has(> br.ProseMirror-trailingBreak:only-child) {
+  display: none;
+  margin: 0 !important;
+  min-height: 0;
+  padding: 0;
+}
+
+.storefront-block--protected {
+  position: relative;
+}
+
+.storefront-block--overridable {
+  position: relative;
+}
+
+.storefront-block--protected::before {
+  content: '';
+  position: absolute;
+  /* px-3 on editor — sit in left gutter without shifting text */
+  left: -0.75rem;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: rgb(251 191 36 / 0.85);
+  pointer-events: none;
+}
+
+.storefront-block--overridable:not(.storefront-block--editing)::before {
+  content: '';
+  position: absolute;
+  left: -0.75rem;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: rgb(100 116 139 / 0.75);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.storefront-block--overridable:not(.storefront-block--editing):hover::before {
+  opacity: 1;
+}
+
+.storefront-block {
+  user-select: none;
+}
+
+.storefront-block .ProseMirror {
+  user-select: text;
+}
+
+.storefront-block__preview {
+  border-radius: 0.25rem;
+  transition: background-color 0.15s ease, outline-color 0.15s ease;
+}
+
+.storefront-block__preview:hover {
+  background: rgb(243 244 246 / 0.35);
+}
+
+.storefront-block--protected:not(.storefront-block--editing):hover .storefront-block__preview {
+  background: rgb(254 243 199 / 0.35);
+}
+
+.storefront-block__preview--editable {
+  cursor: pointer;
+  outline: 1px solid transparent;
+  outline-offset: 1px;
+}
+
+.storefront-block__preview--editable:hover {
+  background: rgb(243 244 246 / 0.55);
+  outline-color: rgb(203 213 225 / 0.85);
+}
+
+.storefront-block--protected:not(.storefront-block--editing):hover
+  .storefront-block__preview--editable {
+  background: rgb(254 243 199 / 0.45);
+  outline-color: rgb(251 191 36 / 0.55);
+}
+
+.storefront-block--protected.storefront-block--editing {
+  background: rgb(254 243 199 / 0.45);
+  border-radius: 0.25rem;
+}
+
+.storefront-block--override.storefront-block--editing {
+  background: rgb(243 244 246 / 0.55);
+  border-radius: 0.25rem;
+}
+
+.storefront-block__wysiwyg .ProseMirror {
+  outline: none;
+  min-height: 1.5em;
+}
+
+.storefront-ph-atom {
+  display: inline;
+  border-radius: 0.125rem;
+  background: rgb(243 244 246 / 0.85);
+  color: inherit;
+  padding: 0 0.125rem;
+  font: inherit;
+  line-height: inherit;
+  user-select: none;
+  cursor: not-allowed;
+  white-space: pre-wrap;
+}
+
+.storefront-ph-atom:hover {
+  background: rgb(229 231 235 / 0.95);
+}
+
+.storefront-ph-atom--empty {
+  background: rgb(243 244 246 / 0.55);
+  color: var(--color-default-400);
+  font-style: italic;
 }

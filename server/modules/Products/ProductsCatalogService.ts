@@ -47,6 +47,11 @@ import {
   type CatalogComponentRowRef,
   type CatalogComponentSaveInput,
 } from './catalogTpGoods.js';
+import {
+  buildStorefrontPatchFromInput,
+  hasStorefrontInput,
+  mapStorefrontFieldsToDto,
+} from './catalogStorefrontFields.js';
 
 const BRANCH_REFRESH_MAX_NODES = 2000;
 const BRANCH_REFRESH_MAX_DEPTH = 20;
@@ -128,6 +133,14 @@ function mapGoodDto(
     stockBalanceByStock?: string | null;
     syncedAt: Date;
     updatedAt: Date;
+    doNotPublish?: boolean;
+    storefrontPresetId?: string | null;
+    productIngredientsJson?: string | null;
+    productNutritionJson?: string | null;
+    storefrontDescriptionDoc?: string | null;
+    grossWeight?: number | null;
+    wooProductId?: number | null;
+    wooLastSyncedAt?: Date | null;
     _count?: { components?: number };
     prices?: Array<{ priceType: string; price: number }>;
   },
@@ -166,6 +179,7 @@ function mapGoodDto(
       packageRatio: row.packageRatio,
       prices: row.prices,
     }),
+    ...mapStorefrontFieldsToDto(row),
   };
 }
 
@@ -1261,6 +1275,13 @@ export class ProductsCatalogService {
       }
     }
 
+    if (hasStorefrontInput(input)) {
+      await prisma.catalogGood.update({
+        where: { id: dilovodId },
+        data: buildStorefrontPatchFromInput(input),
+      });
+    }
+
     await this.syncCatalogOpsFieldsToProducts(dilovodId);
 
     const stagingSessionId = input.stagingSessionId?.trim();
@@ -1558,6 +1579,13 @@ export class ProductsCatalogService {
           });
         }
       }
+    }
+
+    if (hasStorefrontInput(input)) {
+      await prisma.catalogGood.update({
+        where: { id },
+        data: buildStorefrontPatchFromInput(input),
+      });
     }
 
     await this.syncCatalogOpsFieldsToProducts(id);

@@ -103,7 +103,20 @@ describe('seedPermissionKeysForRole', () => {
   it('warehouse-manager can open products 2.0; storekeeper cannot', () => {
     expect(seedPermissionKeysForRole(ROLES.WAREHOUSE_MANAGER)).toContain(PERMISSIONS.PAGE_PRODUCTS);
     expect(seedPermissionKeysForRole(ROLES.WAREHOUSE_MANAGER)).toContain(PERMISSIONS.ACTION_CATALOG_MANAGE);
+    expect(seedPermissionKeysForRole(ROLES.WAREHOUSE_MANAGER)).toContain(PERMISSIONS.ACTION_STOREFRONT_READ);
+    expect(seedPermissionKeysForRole(ROLES.WAREHOUSE_MANAGER)).toContain(PERMISSIONS.ACTION_STOREFRONT_EDIT);
     expect(seedPermissionKeysForRole(ROLES.STOREKEEPER)).not.toContain(PERMISSIONS.PAGE_PRODUCTS);
+  });
+
+  it('storefront manage and editSpec are admin-only by default', () => {
+    const admin = seedPermissionKeysForRole(ROLES.ADMIN);
+    const boss = seedPermissionKeysForRole(ROLES.BOSS);
+    expect(admin).toContain(PERMISSIONS.ACTION_STOREFRONT_MANAGE);
+    expect(admin).toContain(PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC);
+    expect(boss).toContain(PERMISSIONS.ACTION_STOREFRONT_READ);
+    expect(boss).toContain(PERMISSIONS.ACTION_STOREFRONT_EDIT);
+    expect(boss).not.toContain(PERMISSIONS.ACTION_STOREFRONT_MANAGE);
+    expect(boss).not.toContain(PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC);
   });
 
   it('accounting cash-in page is admin-only in seed', () => {

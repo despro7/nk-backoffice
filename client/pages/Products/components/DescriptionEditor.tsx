@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Button, Divider, Textarea } from '@heroui/react';
@@ -25,6 +25,7 @@ export function DescriptionEditor({
   const [sourceText, setSourceText] = useState('');
   /** Тригер ре-рендеру тулбару після undo/redo / setContent */
   const [, setToolbarTick] = useState(0);
+  const skipUpdateRef = useRef(true);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -40,9 +41,10 @@ export function DescriptionEditor({
         },
       }),
     ],
-    content: value || '',
+    content: '',
     editable: !isDisabled,
     onUpdate: ({ editor: ed }) => {
+      if (skipUpdateRef.current) return;
       const html = ed.isEmpty ? '' : ed.getHTML();
       onChange(html);
     },
@@ -59,14 +61,19 @@ export function DescriptionEditor({
   // Зовнішнє оновлення (load detail) — без зайвого onChange
   useEffect(() => {
     if (!editor) return;
+    skipUpdateRef.current = true;
     if (showSource) {
       setSourceText(value || '');
+      skipUpdateRef.current = false;
       return;
     }
     const current = editor.isEmpty ? '' : editor.getHTML();
     if ((value || '') !== current) {
       editor.commands.setContent(value || '', { emitUpdate: false });
     }
+    requestAnimationFrame(() => {
+      skipUpdateRef.current = false;
+    });
   }, [value, editor, showSource]);
 
   useEffect(() => {
@@ -108,7 +115,7 @@ export function DescriptionEditor({
   return (
     <div className="flex flex-col gap-1.5">
       <div
-        className={`overflow-hidden rounded-medium border border-default-200 bg-default-50 ${
+        className={`overflow-hidden rounded-medium border border-default-200 bg-default-100 ${
           isDisabled ? 'opacity-60' : ''
         }`}
       >
@@ -160,7 +167,6 @@ export function DescriptionEditor({
             isIconOnly
             size="sm"
             variant={editor?.isActive('strike') ? 'flat' : 'light'}
-            className="hidden md:block"
             aria-label="Закреслений"
             isDisabled={fmtDisabled}
             onPress={() => editor?.chain().focus().toggleStrike().run()}
@@ -233,13 +239,17 @@ export function DescriptionEditor({
             isDisabled={isDisabled}
             onValueChange={handleSourceChange}
             classNames={{
+              base: 'bg-white',
               inputWrapper:
-                'shadow-none bg-transparent border-0 rounded-none px-0',
-              input: `${minHeightClass} px-3 py-2 font-mono text-xs leading-relaxed`,
+                'shadow-none border-0 rounded-none px-0 bg-white!',
+              input: `${minHeightClass} px-3 py-2 font-mono text-xs leading-relaxed bg-white!`,
             }}
           />
         ) : (
-          <EditorContent editor={editor} />
+          <EditorContent
+            editor={editor}
+            className="bg-default-50 [&_.tiptap]:bg-default-50 [&_.ProseMirror]:bg-default-50"
+          />
         )}
       </div>
     </div>

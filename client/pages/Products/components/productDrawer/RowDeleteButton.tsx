@@ -6,12 +6,14 @@ export function RowDeleteButton({
   ariaLabel,
   className,
   confirming,
+  isDisabled,
   onRequest,
   onConfirm,
 }: {
   ariaLabel: string;
   className?: string;
   confirming: boolean;
+  isDisabled?: boolean;
   onRequest: () => void;
   onConfirm: () => void;
 }) {
@@ -20,6 +22,7 @@ export function RowDeleteButton({
       size="sm"
       variant="light"
       color="danger"
+      isDisabled={isDisabled}
       aria-label={confirming ? `Підтвердити: ${ariaLabel}` : ariaLabel}
       className={[
         'h-8 min-w-8 gap-0 overflow-hidden px-2.5 transition-[min-width,padding] duration-200 ease-out',

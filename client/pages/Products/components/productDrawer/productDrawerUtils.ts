@@ -42,6 +42,12 @@ export const emptyForm = (): DrawerForm => ({
   description: '',
   fullDescription: '',
   accPolicyId: CATALOG_ACC_POLICY_GOOD,
+  doNotPublish: false,
+  storefrontPresetId: '',
+  productIngredientsJson: [],
+  productNutritionJson: null,
+  storefrontDescriptionDoc: '',
+  grossWeight: '',
 });
 
 export function snapshotState(

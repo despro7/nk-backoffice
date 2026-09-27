@@ -478,6 +478,20 @@ model CatalogGood {
   description     String?  @db.Text // короткий опис → Dilovod
   /// Повний опис лише локально (WP-експорт); Dilovod sync не затирає
   fullDescription String?  @db.Text
+  /// Не публікувати на вітрину WooCommerce
+  doNotPublish    Boolean  @default(false)
+  /// Preset конструктора опису; null = default preset
+  storefrontPresetId String? @db.VarChar(36)
+  /// Склад товару — JSON-масив тегів (lowercase)
+  productIngredientsJson String? @db.Text
+  productNutritionJson String? @db.Text
+  /// TipTap JSON документ повного опису вітрини (storefrontBlock nodes + абзаци)
+  storefrontDescriptionDoc String? @db.Text
+  /// Брутто, кг; null → computed з BOM/tech card
+  grossWeight     Float?
+  /// Phase 2: WooCommerce product id
+  wooProductId    Int?
+  wooLastSyncedAt DateTime?
   /// Локальний порядок siblings (інтервал крок 10); не в Dilovod
   sortOrder       Int      @default(0)
   /// Локальний коеф. порцій; dual-write → products.unitRatio
@@ -501,7 +515,22 @@ model CatalogGood {
   @@index([isGroup])
   @@index([delMark])
   @@index([name])
+  @@index([storefrontPresetId])
   @@map("catalog_goods")
+}
+
+/// Presets конструктора опису вітрини (WooCommerce)
+model CatalogStorefrontPreset {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  name       String   @db.VarChar(128)
+  isDefault  Boolean  @default(false)
+  /// JSON: [{ id, enabled }] — порядок блоків
+  blocksJson String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([isDefault])
+  @@map("catalog_storefront_presets")
 }
 
 /// Локальні зображення товару (не в Dilovod; для WP-експорту)

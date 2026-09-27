@@ -29,6 +29,7 @@ const SettingsOrderAssembly = lazyPage(() => import('./pages/SettingsOrderAssemb
 const SettingsEquipment = lazyPage(() => import('./pages/SettingsEquipment'));
 const SettingsOrders = lazyPage(() => import('./pages/SettingsOrders'));
 const SettingsAdmin = lazyPage(() => import('./pages/SettingsAdmin'));
+const SettingsStorefront = lazyPage(() => import('./pages/SettingsStorefront'));
 const SettingsUsers = lazyPage(() => import('./pages/Settings/Users'));
 const SettingsDilovod = lazyPage(() => import('./pages/SettingsDilovod'));
 const SettingsDirectoriesCache = lazyPage(() => import('./pages/SettingsDirectoriesCache'));
@@ -688,6 +689,18 @@ export const appRoutes: AppRoute[] = [
     parent: 'settings',
     order: 10,
     permission: { name: 'admin' },
+  },
+  {
+    path: '/settings/storefront',
+    component: SettingsStorefront,
+    title: 'Вітрина WooCommerce',
+    pageTitle: 'Вітрина WooCommerce | NK Backoffice',
+    navLabel: 'Вітрина WooCommerce',
+    icon: <DynamicIcon name="store" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 10.5,
+    permission: { name: 'storefront', label: 'Вітрина WooCommerce' },
   },
   {
     path: '/test-serial-com',

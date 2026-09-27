@@ -22,6 +22,14 @@ import {
 } from '../../../shared/utils/productLabel.js';
 import { isMissingDilovodDate } from '../../../shared/utils/dilovodBatchId.js';
 import { getNutritionValidationErrors } from '../../../shared/utils/productLabelNutrition.js';
+import {
+  nutritionJsonToText,
+  parseProductIngredientsJson,
+  parseProductNutritionJson,
+  resolveIngredientsText,
+} from '../../../shared/utils/storefrontDescription.js';
+import { ensureStorageText } from '../../../shared/utils/productLabel.js';
+import { PORTION_LABEL_STATIC } from '../../../shared/constants/productLabelPortionStatic.js';
 import { DilovodApiClient } from '../../services/dilovod/DilovodApiClient.js';
 import { extractBatchExpirationFromGoodPartHeader } from '../../services/dilovod/DilovodUtils.js';
 import { ProductLabelPdfDocument } from './ProductLabelPdfDocument.js';
@@ -368,6 +376,12 @@ export class CatalogLabelService {
       qty: c.qty,
     }));
 
+    const nutritionJson = parseProductNutritionJson(good.productNutritionJson);
+    const nutritionText = nutritionJson ? nutritionJsonToText(nutritionJson) : undefined;
+    const storageText = ensureStorageText(PORTION_LABEL_STATIC.storageText);
+    const ingredientsJson = parseProductIngredientsJson(good.productIngredientsJson);
+    const { text: ingredientsText } = resolveIngredientsText(ingredientsJson, ingredients);
+
     const batchBarcode = good.barcodes.find(
       (b) => b.activity && b.goodPart === input.batchId,
     );
@@ -387,7 +401,11 @@ export class CatalogLabelService {
       weightKg: good.weight,
       ingredients,
       expiration,
+      nutritionText,
     });
+
+    payload.ingredientsText = ingredientsText;
+    payload.storageText = storageText;
 
     return this.saveDraft(goodId, {
       batchId: input.batchId,
