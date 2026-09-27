@@ -22,7 +22,13 @@ import {
   CATALOG_FINISHED_PRODUCTS_FOLDER_NAME,
 } from '../../ProductsTypes';
 import type { CatalogDictItemDto } from '../../ProductsTypes';
-import { hasParenthesizedTextInName, isSuspiciousBomIngredientQty, type ExpectedBomWeight } from '../../ProductsUtils';
+import {
+  hasParenthesizedTextInName,
+  isSuspiciousBomIngredientQty,
+  weightsAlmostEqual,
+  type ExpectedBomWeight,
+} from '../../ProductsUtils';
+import { parseNumberInput } from '@/lib/numberInput';
 import type { BomRow, CatalogSearchHit, DrawerForm, RowDeleteKind } from './productDrawerTypes';
 import {
   formatWeightKg,
@@ -57,8 +63,6 @@ interface BomSectionProps {
   noteDeleteConfirmIdx: number | null;
   rowDeleteConfirm: { kind: RowDeleteKind; idx: number } | null;
   bomWeightExpected: ExpectedBomWeight | null;
-  canFillWeightFromBom: boolean;
-  showExpectedWeightHint: boolean;
   autoGrossKg: number | null;
   specQtySuspicious: boolean;
   onOpenTechCard: () => void;
@@ -71,7 +75,6 @@ interface BomSectionProps {
   onEditingNoteIdx: (idx: number | null) => void;
   onNoteDeleteConfirmIdx: (idx: number | null) => void;
   onRowDeleteConfirm: (next: { kind: RowDeleteKind; idx: number } | null) => void;
-  onFillExpectedWeight: () => void;
   renamingComponentGoodId: string | null;
   onMoveParenthesesToNote: (idx: number) => void | Promise<void>;
   isReadOnly?: boolean;
@@ -151,8 +154,6 @@ export function BomSection({
   noteDeleteConfirmIdx,
   rowDeleteConfirm,
   bomWeightExpected,
-  canFillWeightFromBom,
-  showExpectedWeightHint,
   autoGrossKg,
   specQtySuspicious,
   onOpenTechCard,
@@ -165,7 +166,6 @@ export function BomSection({
   onEditingNoteIdx,
   onNoteDeleteConfirmIdx,
   onRowDeleteConfirm,
-  onFillExpectedWeight,
   renamingComponentGoodId,
   onMoveParenthesesToNote,
   isReadOnly = false,
@@ -184,6 +184,11 @@ export function BomSection({
   const listSortDisabled = !isManualSort;
   const canManualReorder = isManualSort && listSortEnabled && !isSpecReadOnly;
   const showDragHandle = canManualReorder;
+  const showExpectedWeightHint = useMemo(() => {
+    if (!bomWeightExpected || bomWeightExpected.kg <= 0) return false;
+    const currentWeightKg = parseNumberInput(form.weight);
+    return currentWeightKg == null || !weightsAlmostEqual(currentWeightKg, bomWeightExpected.kg);
+  }, [bomWeightExpected, form.weight]);
 
   const handleSortColumn = useCallback((column: Exclude<BomSortColumn, 'sortOrder'>) => {
     setSortDescriptor((prev) => nextBomSortDescriptor(prev, column));
@@ -593,32 +598,10 @@ export function BomSection({
               errorMessage={weightFieldInvalid ? 'Має бути більше 0' : undefined}
               onValueChange={(v) => onFormChange((f) => ({ ...f, weight: v }))}
             />
-            {bomWeightExpected && (showExpectedWeightHint || bomWeightExpected.missingCount > 0) && (
-              <div className="mt-1 flex flex-col gap-1">
-                {showExpectedWeightHint && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-warning-700">
-                      Очікується {formatWeightKg(bomWeightExpected.kg, 2)}&nbsp;кг
-                    </span>
-                    {canFillWeightFromBom && (
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="warning"
-                        className="h-5 min-w-0 px-1.5 text-[11px] rounded"
-                        onPress={onFillExpectedWeight}
-                      >
-                        Заповнити
-                      </Button>
-                    )}
-                  </div>
-                )}
-                {bomWeightExpected.missingCount > 0 && (
-                  <span className="text-xs text-warning-700">
-                    У деяких позицій не вказана вага
-                  </span>
-                )}
-              </div>
+            {bomWeightExpected && bomWeightExpected.missingCount > 0 && (
+              <span className="block text-xs text-warning-700 px-3">
+                У деяких позицій не вказано вагу
+              </span>
             )}
           </div>
           <div className="min-w-0 space-y-1">
@@ -630,32 +613,26 @@ export function BomSection({
               max={20}
               step={0.01}
               isDisabled={isReadOnly}
-              description={
-                autoGrossKg != null ? `auto: ${formatWeightKg(autoGrossKg, 3)} кг` : undefined
-              }
               onValueChange={(v) => onFormChange((f) => ({ ...f, grossWeight: v }))}
             />
-            {autoGrossKg != null && (
-              <div className="flex items-center gap-2">
-                <Chip size="sm" variant="flat">
-                  auto: {formatWeightKg(autoGrossKg, 3)} кг
-                </Chip>
-                {!isReadOnly && (
-                  <Button
-                    size="sm"
-                    variant="light"
-                    onPress={() => onFormChange((f) => ({ ...f, grossWeight: '' }))}
-                  >
-                    Скинути до auto
-                  </Button>
-                )}
-              </div>
+            {bomWeightExpected && bomWeightExpected.missingCount > 0 ? (
+              <span className="block text-xs text-warning-700/90 px-3">
+                У деяких позицій не вказано вагу
+              </span>
+            ) : autoGrossKg != null && autoGrossKg > 0.01 ? (
+              <span className="block text-xs text-warning-700/90 px-3">
+                Приблизно {formatWeightKg(autoGrossKg, 2)} кг
+              </span>
+            ) : (
+              <span className="block text-xs text-danger px-3">
+                Помилка розрахунку
+              </span>
             )}
           </div>
           {isAdmin && (
             <NumberInput
               className="md:max-w-xs"
-              label="Коефіцієнт (unitRatio)"
+              label="Коефіцієнт ваги"
               value={form.unitRatio}
               decimalPlaces={3}
               min={0}

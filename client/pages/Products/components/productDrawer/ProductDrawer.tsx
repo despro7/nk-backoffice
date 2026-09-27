@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
   Divider,
@@ -12,6 +12,7 @@ import {
   DropdownItem,
   DropdownMenu,
   DropdownTrigger,
+  Modal,
   Spinner,
   Tab,
   Tabs,
@@ -52,6 +53,8 @@ import {
 } from '../../ProductsTypes';
 import { ProductLabelsTab } from './ProductLabelsTab';
 import { ProductContentTab } from './ProductContentTab';
+import { StorefrontPullConfirmModal } from './StorefrontPullConfirmModal';
+import { storefrontApi } from '@/services/StorefrontService';
 import { StockBadge } from '@/components/StockBadge';
 import {
   areRequiredCatalogPricesFilled,
@@ -66,7 +69,6 @@ import {
   formatCatalogName,
   isArchiveFolderId,
   listCatalogFolderOptions,
-  weightsAlmostEqual,
   withSyncedDerivedPrices,
 } from '../../ProductsUtils';
 import type {
@@ -100,18 +102,60 @@ import { BomSection, newBomRowFromSearch } from './BomSection';
 import { PricesSection } from './PricesSection';
 import { RequisitesSection } from './RequisitesSection';
 import { UsedInSection } from './UsedInSection';
+import MetaLogJsonView from '@/components/MetaLogJsonView';
 
 const TechCardModal = lazy(() =>
   import('./TechCardModal').then((module) => ({ default: module.TechCardModal }))
 );
 
-async function fetchCatalogGoodDetail(id: string): Promise<CatalogGoodDetailDto> {
-  const res = await fetch(`/api/catalog/goods/${id}`, { credentials: 'include' });
+async function fetchCatalogGoodDetail(
+  id: string,
+  opts?: { livePull?: boolean },
+): Promise<CatalogGoodDetailDto> {
+  const qs = opts?.livePull === false ? '?livePull=false' : '';
+  const res = await fetch(`/api/catalog/goods/${id}${qs}`, { credentials: 'include' });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json?.success === false) {
     throw new Error(json?.error || `HTTP ${res.status}`);
   }
   return json.data as CatalogGoodDetailDto;
+}
+
+function mergePulledPrices(
+  current: PriceRow[],
+  fresh: CatalogGoodDetailDto['prices'],
+): PriceRow[] {
+  if (fresh.length === 0) return current;
+  if (current.length === 0) {
+    return fresh.map((p) => ({
+      priceType: p.priceType,
+      price: p.price,
+      currency: p.currency || CATALOG_DEFAULT_CURRENCY_ID,
+    }));
+  }
+
+  const freshByType = new Map(fresh.map((p) => [p.priceType, p]));
+  const merged = current.map((row) => {
+    const pulled = freshByType.get(row.priceType);
+    if (!pulled) return row;
+    return {
+      ...row,
+      price: pulled.price,
+      currency: pulled.currency || row.currency || CATALOG_DEFAULT_CURRENCY_ID,
+    };
+  });
+
+  for (const pulled of fresh) {
+    if (!merged.some((row) => row.priceType === pulled.priceType)) {
+      merged.push({
+        priceType: pulled.priceType,
+        price: pulled.price,
+        currency: pulled.currency || CATALOG_DEFAULT_CURRENCY_ID,
+      });
+    }
+  }
+
+  return merged;
 }
 
 export function ProductDrawer({
@@ -140,10 +184,13 @@ export function ProductDrawer({
   const { hasPermission } = useRoleAccess();
   const canReadStorefront = hasPermission(PERMISSIONS.ACTION_STOREFRONT_READ);
   const canEditStorefront = hasPermission(PERMISSIONS.ACTION_STOREFRONT_EDIT);
+  const canPullStorefront = hasPermission(PERMISSIONS.ACTION_STOREFRONT_PULL);
+  const canPushStorefront = hasPermission(PERMISSIONS.ACTION_STOREFRONT_PUSH);
   const canEditSpec = hasPermission(PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC);
   const isTrashed = isEdit && detail?.parentId === CATALOG_TRASH_ID;
   const { isDebugMode } = useDebug();
   const { isAdminView: isAdmin } = useRolePreview();
+  const queryClient = useQueryClient();
   const { batches, loading: batchesLoading, fetchBatches } = useBatchNumbers();
   const [editingNoteIdx, setEditingNoteIdx] = useState<number | null>(null);
   /** Мікро-конфірм видалення примітки: idx, для якого показано «Видалити?» */
@@ -184,6 +231,12 @@ export function ProductDrawer({
   const [nestedGoodId, setNestedGoodId] = useState<string | null>(null);
   const [renamingComponentGoodId, setRenamingComponentGoodId] = useState<string | null>(null);
   const [techCardOpen, setTechCardOpen] = useState(false);
+  const [pullModalOpen, setPullModalOpen] = useState(false);
+  const [inspectModalOpen, setInspectModalOpen] = useState(false);
+  const [inspectResult, setInspectResult] = useState<string | null>(null);
+  const [inspectLoading, setInspectLoading] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushConfirmOpen, setPushConfirmOpen] = useState(false);
 
   const baselineRef = useRef<string>('');
   const [baselineVersion, setBaselineVersion] = useState(0);
@@ -248,9 +301,13 @@ export function ProductDrawer({
               componentName: input.name?.trim() || row.componentName,
               componentSku: input.sku === undefined ? row.componentSku : input.sku,
               componentWeight:
-                input.weight != null && Number.isFinite(Number(input.weight))
-                  ? Number(input.weight)
-                  : row.componentWeight,
+                input.weight === undefined
+                  ? row.componentWeight
+                  : input.weight != null &&
+                      Number.isFinite(Number(input.weight)) &&
+                      Number(input.weight) > 0
+                    ? Number(input.weight)
+                    : null,
             }
           : row
       )
@@ -502,6 +559,42 @@ export function ProductDrawer({
     void baselineVersion;
     return snapshotState(form, components, prices, barcodes, objectKind, isEdit ? detail?.parentId : createParentId) !== baselineRef.current;
   }, [open, readOnly, form, components, prices, barcodes, objectKind, baselineVersion, isEdit, detail, createParentId]);
+
+  const handleStorefrontInspect = useCallback(async () => {
+    if (!detail?.sku) return;
+    setInspectLoading(true);
+    setInspectResult(null);
+    setInspectModalOpen(true);
+    try {
+      const result = await storefrontApi.inspectWooProduct(detail.sku);
+      setInspectResult(JSON.stringify(result.summary, null, 2));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setInspectResult(message);
+      ToastService.show({ title: 'Помилка inspect', description: message, color: 'danger' });
+    } finally {
+      setInspectLoading(false);
+    }
+  }, [detail?.sku]);
+
+  const handleStorefrontPush = useCallback(async () => {
+    if (!detail?.id) return;
+    setPushLoading(true);
+    try {
+      const result = await storefrontApi.pushApply(detail.id);
+      ToastService.show({
+        title: result.created ? 'Товар створено на вітрині' : 'Товар оновлено на вітрині',
+        description: `WC#${result.wooProductId}`,
+        color: 'success',
+      });
+      setPushConfirmOpen(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      ToastService.show({ title: 'Помилка push', description: message, color: 'danger' });
+    } finally {
+      setPushLoading(false);
+    }
+  }, [detail?.id]);
 
   const buildPayload = useCallback((): CatalogCreateGoodInput | CatalogUpdateGoodInput | null => {
     if (!objectKind) return null;
@@ -878,7 +971,7 @@ export function ProductDrawer({
       showBom
         ? expectedBomWeightKg(components, units, {
             divideBy: isGood ? parseSpecQtyInput(form.specQty) : undefined,
-            warnMissingPieceWeight: isKit,
+            warnMissingPieceWeight: true,
           })
         : null,
     [showBom, components, units, isGood, isKit, form.specQty]
@@ -890,12 +983,6 @@ export function ProductDrawer({
         : false,
     [isGood, components, units, form.specQty]
   );
-  const currentWeightKg = parseNumberInput(form.weight);
-  const canFillWeightFromBom = bomWeightExpected != null && bomWeightExpected.kg > 0;
-  const weightMismatch =
-    bomWeightExpected != null &&
-    (currentWeightKg == null || !weightsAlmostEqual(currentWeightKg, bomWeightExpected.kg));
-  const showExpectedWeightHint = canFillWeightFromBom && weightMismatch;
   const autoGrossKg = useMemo(() => {
     if (!showBom || !components.length) return null;
     const rows = buildTechCardRows(
@@ -913,7 +1000,6 @@ export function ProductDrawer({
     );
     return rows.totalGrossMassKg;
   }, [showBom, components, units, form.specQty, isKit]);
-  const weightFieldInvalid = weightInvalid && !canFillWeightFromBom;
   const requiredFieldsOk = requiredPricesOk && !packageRatioInvalid && !weightInvalid;
   const nameHasWeight = catalogNameContainsWeight(form.name);
 
@@ -1082,15 +1168,13 @@ export function ProductDrawer({
                             isAdmin={isAdmin}
                             kitPortionCount={kitPortionCount}
                             packageRatioInvalid={packageRatioInvalid}
-                            weightFieldInvalid={weightFieldInvalid}
+                            weightFieldInvalid={weightInvalid}
                             bomQuery={bomQuery}
                             bomSuggestions={bomSuggestions}
                             editingNoteIdx={editingNoteIdx}
                             noteDeleteConfirmIdx={noteDeleteConfirmIdx}
                             rowDeleteConfirm={rowDeleteConfirm}
                             bomWeightExpected={bomWeightExpected}
-                            canFillWeightFromBom={canFillWeightFromBom}
-                            showExpectedWeightHint={showExpectedWeightHint}
                             autoGrossKg={autoGrossKg}
                             specQtySuspicious={specQtySuspicious}
                             onOpenTechCard={() => setTechCardOpen(true)}
@@ -1112,13 +1196,6 @@ export function ProductDrawer({
                             onEditingNoteIdx={setEditingNoteIdx}
                             onNoteDeleteConfirmIdx={setNoteDeleteConfirmIdx}
                             onRowDeleteConfirm={setRowDeleteConfirm}
-                            onFillExpectedWeight={() => {
-                              if (!bomWeightExpected) return;
-                              setForm((f) => ({
-                                ...f,
-                                weight: formatWeightKg(bomWeightExpected.kg, 3),
-                              }));
-                            }}
                             renamingComponentGoodId={renamingComponentGoodId}
                             onMoveParenthesesToNote={handleMoveParenthesesToNote}
                             isReadOnly={readOnly}
@@ -1202,6 +1279,8 @@ export function ProductDrawer({
               {!readOnly && (isDebugMode ||
                 (isTrashed && detail && onRestore) ||
                 (isEdit && !isFolder && detail?.sku && onLegacyUpdate) ||
+                (canPullStorefront && isEdit && !isFolder && detail?.sku) ||
+                (canPushStorefront && isEdit && !isFolder && detail?.sku) ||
                 (isAdmin && isEdit && detail)) && (
                 <div className="mr-auto">
                   <Dropdown placement="top-start">
@@ -1226,6 +1305,15 @@ export function ProductDrawer({
                             break;
                           case 'legacyUpdate':
                             if (detail && onLegacyUpdate) onLegacyUpdate(detail.id);
+                            break;
+                          case 'storefrontInspect':
+                            void handleStorefrontInspect();
+                            break;
+                          case 'storefrontPull':
+                            setPullModalOpen(true);
+                            break;
+                          case 'storefrontPush':
+                            setPushConfirmOpen(true);
                             break;
                           default:
                             break;
@@ -1265,7 +1353,47 @@ export function ProductDrawer({
                           />
                         }
                       >
-                        Синхронізувати товар
+                        Оновити legacy cache
+                      </DropdownItem>
+                      <DropdownItem
+                        key="storefrontInspect"
+                        className={
+                          canPullStorefront && isEdit && !isFolder && detail?.sku
+                            ? 'text-primary'
+                            : 'hidden'
+                        }
+                        startContent={<DynamicIcon name="search" size={16} className="shrink-0" />}
+                      >
+                        Інспектувати на вітрині
+                      </DropdownItem>
+                      <DropdownItem
+                        key="storefrontPull"
+                        className={
+                          canPullStorefront && isEdit && !isFolder && detail?.sku
+                            ? 'text-primary'
+                            : 'hidden'
+                        }
+                        startContent={<DynamicIcon name="cloud-download" size={16} className="shrink-0" />}
+                      >
+                        Завантажити з вітрини
+                      </DropdownItem>
+                      <DropdownItem
+                        key="storefrontPush"
+                        className={
+                          canPushStorefront && isEdit && !isFolder && detail?.sku
+                            ? 'text-success'
+                            : 'hidden'
+                        }
+                        isDisabled={pushLoading}
+                        startContent={
+                          <DynamicIcon
+                            name={pushLoading ? 'refresh-cw' : 'cloud-upload'}
+                            size={16}
+                            className={`shrink-0 ${pushLoading ? 'animate-spin' : ''}`}
+                          />
+                        }
+                      >
+                        Синхронізувати на вітрину
                       </DropdownItem>
                       <DropdownItem
                         key="dilovodId"
@@ -1364,6 +1492,86 @@ export function ProductDrawer({
         onClose={() => setShowPayloadPreview(false)}
         payload={payloadPreview}
         title="Перегляд Payload картки товару"
+        overlayZClassName={overlayZ}
+      />
+      <StorefrontPullConfirmModal
+        isOpen={pullModalOpen}
+        goodId={detail?.id ?? null}
+        sku={detail?.sku ?? null}
+        localFullDescription={form.fullDescription}
+        localShortDescription={form.description}
+        onApplied={() => {
+          if (!detail?.id) return;
+          void fetchCatalogGoodDetail(detail.id, { livePull: false }).then((fresh) => {
+            queryClient.setQueryData(['catalog', 'good', detail.id], fresh);
+            setImages(fresh.images || []);
+            setForm((f) => {
+              const nextForm = {
+                ...f,
+                fullDescription: fresh.fullDescription || '',
+                description:
+                  fresh.description === '[object Object]' ? '' : fresh.description || '',
+                weight:
+                  fresh.weight != null
+                    ? formatWeightKg(Number(fresh.weight), 3)
+                    : f.weight,
+                doNotPublish: fresh.doNotPublish ?? f.doNotPublish,
+                storefrontDescriptionDoc: fresh.storefrontDescriptionDoc
+                  ? JSON.stringify(fresh.storefrontDescriptionDoc)
+                  : f.storefrontDescriptionDoc,
+                productIngredientsJson: fresh.productIngredientsJson ?? f.productIngredientsJson,
+                productNutritionJson: fresh.productNutritionJson || f.productNutritionJson,
+              };
+              setPrices((currentPrices) => {
+                const nextPrices = mergePulledPrices(currentPrices, fresh.prices);
+                commitBaseline(
+                  nextForm,
+                  components,
+                  nextPrices,
+                  barcodes,
+                  objectKind,
+                  detail.parentId,
+                );
+                return nextPrices;
+              });
+              return nextForm;
+            });
+          });
+        }}
+        onClose={() => setPullModalOpen(false)}
+      />
+      <ConfirmModal
+        isOpen={inspectModalOpen}
+        title={`Inspect WC — ${detail?.sku || ''}`}
+        message={
+          inspectLoading ? (
+            <div className="flex items-center gap-2">
+              <DynamicIcon name="loader-2" className="animate-spin" size={16} />
+              Завантаження…
+            </div>
+          ) : (
+            <MetaLogJsonView
+              value={inspectResult}
+              className="h-full min-h-0"
+            />
+          )
+        }
+        confirmText="Закрити"
+        confirmColor="primary"
+        cancelText="Скасувати"
+        onConfirm={() => setInspectModalOpen(false)}
+        onCancel={() => setInspectModalOpen(false)}
+        overlayZClassName={overlayZ}
+      />
+      <ConfirmModal
+        isOpen={pushConfirmOpen}
+        title="Синхронізувати на вітрину?"
+        message="Опис, meta та статус публікації будуть відправлені на WooCommerce. Переконайтесь, що дані коректні."
+        confirmText="Синхронізувати"
+        confirmColor="primary"
+        confirmLoading={pushLoading}
+        onConfirm={() => void handleStorefrontPush()}
+        onCancel={() => setPushConfirmOpen(false)}
         overlayZClassName={overlayZ}
       />
       <UnsavedChangesModal {...guard.modalProps} overlayZClassName={overlayZ} />

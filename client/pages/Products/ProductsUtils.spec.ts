@@ -67,12 +67,21 @@ describe('expectedBomWeightKg', () => {
     expect(r).toEqual({ kg: 0.75, missingCount: 0 });
   });
 
-  it('продукція: шт. без ваги ігнорується, без попередження', () => {
+  it('продукція: шт. без ваги ігнорується без warnMissingPieceWeight', () => {
     const r = expectedBomWeightKg(
       [{ qty: 2, unitId: 'pcs', componentWeight: null }],
       units
     );
     expect(r).toBeNull();
+  });
+
+  it('продукція: шт. без ваги — missingCount за warnMissingPieceWeight', () => {
+    const r = expectedBomWeightKg(
+      [{ qty: 2, unitId: 'pcs', componentWeight: null }],
+      units,
+      { warnMissingPieceWeight: true }
+    );
+    expect(r).toEqual({ kg: 0, missingCount: 1 });
   });
 
   it('продукція: шт. без ваги не впливає на суму', () => {
@@ -85,6 +94,19 @@ describe('expectedBomWeightKg', () => {
       units
     );
     expect(r).toEqual({ kg: 1.4, missingCount: 0 });
+  });
+
+  it('продукція: шт. без ваги + warnMissingPieceWeight — missingCount, сума без змін', () => {
+    const r = expectedBomWeightKg(
+      [
+        { qty: 1, unitId: 'kg', componentWeight: null },
+        { qty: 2, unitId: 'pcs', componentWeight: null },
+        { qty: 4, unitId: 'pcs', componentWeight: 0.1 },
+      ],
+      units,
+      { warnMissingPieceWeight: true }
+    );
+    expect(r).toEqual({ kg: 1.4, missingCount: 1 });
   });
 
   it('набір: шт. без ваги порції — missingCount, без суми', () => {
@@ -136,6 +158,18 @@ describe('expectedBomWeightKg', () => {
       units
     );
     expect(r).toEqual({ kg: 1, missingCount: 0 });
+  });
+
+  it('продукція: порожня кількість — missingCount за warnMissingPieceWeight', () => {
+    const r = expectedBomWeightKg(
+      [
+        { qty: 58, unitId: 'g', componentWeight: null },
+        { qty: 0, unitId: 'g', componentWeight: null },
+      ],
+      units,
+      { warnMissingPieceWeight: true }
+    );
+    expect(r).toEqual({ kg: 0.06, missingCount: 1 });
   });
 
   it('qty у специфікації — нетто, % втрат не зменшує вагу порції', () => {

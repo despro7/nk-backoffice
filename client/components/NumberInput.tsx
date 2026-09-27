@@ -247,11 +247,27 @@ export function NumberInputFromNumber({
     formatNumberInput(value, { decimalPlaces, trimTrailingZeros, min, max }),
   );
 
+  const emptyValue = min != null && Number.isFinite(min) ? min : 0;
+
   useEffect(() => {
     if (!focusedRef.current) {
       setText(formatNumberInput(value, { decimalPlaces, trimTrailingZeros, min, max }));
     }
   }, [value, decimalPlaces, trimTrailingZeros, min, max]);
+
+  const commitValue = useCallback(
+    (raw: string) => {
+      const n = parseNumberInput(raw);
+      if (n != null) {
+        onChange(n);
+        return;
+      }
+      if (raw.trim() === '') {
+        onChange(emptyValue);
+      }
+    },
+    [onChange, emptyValue],
+  );
 
   return (
     <NumberInput
@@ -263,8 +279,7 @@ export function NumberInputFromNumber({
       value={text}
       onValueChange={(v) => {
         setText(v);
-        const n = parseNumberInput(v);
-        if (n != null) onChange(n);
+        commitValue(v);
       }}
       onFocus={(e) => {
         focusedRef.current = true;
@@ -272,6 +287,7 @@ export function NumberInputFromNumber({
       }}
       onBlur={(e) => {
         focusedRef.current = false;
+        commitValue(text);
         onBlur?.(e);
       }}
     />

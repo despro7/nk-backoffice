@@ -979,8 +979,7 @@ function bomRowGrossKg(
  * — рядок у кг/г/л/мл → qty (зведена до кг; 1 л = 1 кг);
  * — шт. тощо → qty × вага картки компонента, якщо вона є;
  * — qty у специфікації — маса нетто (без перерахунку на % втрат).
- * У продукції шт. без ваги ігноруються (не попередження).
- * У наборі шт. без ваги порції не входять у суму, але `missingCount` > 0.
+ * За `warnMissingPieceWeight`: `missingCount` для рядків без qty або без можливості порахувати вагу (шт. без ваги картки).
  * Для продукції `divideBy` = «Розрахунок на N шт.» (вага порції).
  */
 export function expectedBomWeightKg(
@@ -997,7 +996,10 @@ export function expectedBomWeightKg(
   for (let i = 0; i < components.length; i += 1) {
     const row = components[i];
     const qty = Number(row.qty);
-    if (!Number.isFinite(qty) || qty <= 0) continue;
+    if (!Number.isFinite(qty) || qty <= 0) {
+      if (warnMissing) missingCount += 1;
+      continue;
+    }
     const netKg = bomRowGrossKg(row, unitById);
     if (netKg != null && netKg > 0) {
       sum += netKg;
