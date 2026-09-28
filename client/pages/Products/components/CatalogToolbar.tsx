@@ -41,7 +41,7 @@ export function CatalogToolbar({
     <div className="flex flex-wrap items-center gap-2 px-3 md:px-0">
       <Input
         aria-label="Пошук у каталозі"
-        placeholder="Пошук за назвою або SKU…"
+        placeholder="Пошук за назвою, SKU або ШК…"
         value={searchQuery}
         isClearable
         onValueChange={onSearchChange}

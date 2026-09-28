@@ -165,6 +165,8 @@ export interface CatalogGoodComponentDto {
   note?: string | null;
   /** Локально: % втрат при готуванні (0–100) */
   cookingLossPercent?: number | null;
+  /** Батьківська папка компонента в каталозі (для групування складу комплекту) */
+  componentCategoryName?: string | null;
 }
 
 export interface CatalogGoodPriceDto {

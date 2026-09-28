@@ -693,14 +693,14 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/settings/storefront',
     component: SettingsStorefront,
-    title: 'Вітрина WooCommerce',
-    pageTitle: 'Вітрина WooCommerce | NK Backoffice',
-    navLabel: 'Вітрина WooCommerce',
+    title: 'Сайт WooCommerce',
+    pageTitle: 'Сайт WooCommerce | NK Backoffice',
+    navLabel: 'Сайт WooCommerce',
     icon: <DynamicIcon name="store" size={20} className="max-w-full max-h-full" />,
     inNav: true,
     parent: 'settings',
     order: 10.5,
-    permission: { name: 'storefront', label: 'Вітрина WooCommerce' },
+    permission: { name: 'storefront', label: 'Сайт WooCommerce' },
   },
   {
     path: '/test-serial-com',

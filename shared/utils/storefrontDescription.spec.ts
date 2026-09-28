@@ -4,6 +4,8 @@ import {
   buildKitComponentsHtml,
   buildStorefrontBoundValues,
   buildStorefrontDescriptionDocFromPreset,
+  storefrontDescriptionNeedsPresetSync,
+  syncStorefrontDescriptionDocWithPreset,
   formatIngredientsList,
   formatProductNutritionHtml,
   ingredientsListsEqual,
@@ -135,21 +137,168 @@ describe('protected bound resolvers', () => {
 });
 
 describe('storefront description doc', () => {
+  it('removes disabled preset blocks from saved doc on sync', () => {
+    const presetBlocks = [
+      { id: 'netWeight', label: 'Net', enabled: true, resolver: 'netWeight' as const, template: '{{netWeight}}', metaKeyId: null },
+      { id: 'grossWeight', label: 'Gross', enabled: false, resolver: 'grossWeight' as const, template: '{{grossWeight}}', metaKeyId: null },
+    ];
+    const doc = {
+      type: 'doc' as const,
+      content: [
+        { type: 'storefrontBlock', attrs: { blockId: 'netWeight', resolver: 'netWeight', template: '{{netWeight}}', overrideContent: null } },
+        { type: 'storefrontBlock', attrs: { blockId: 'grossWeight', resolver: 'grossWeight', template: '{{grossWeight}}', overrideContent: null } },
+      ],
+    };
+
+    expect(storefrontDescriptionNeedsPresetSync(doc, presetBlocks)).toBe(true);
+    const synced = syncStorefrontDescriptionDocWithPreset(doc, presetBlocks);
+    expect(walkStorefrontDescriptionBlocks(synced).map((block) => block.blockId)).toEqual(['netWeight']);
+  });
+
+  it('syncs saved doc block order with preset', () => {
+    const presetBlocks = [
+      { id: 'natural', label: 'A', enabled: true, resolver: 'template' as const, template: 'a', metaKeyId: null },
+      { id: 'kitComponents', label: 'Kit', enabled: true, resolver: 'kitComponents' as const, template: '{{kitComponents}}', metaKeyId: null },
+      { id: 'nutrition', label: 'N', enabled: true, resolver: 'nutrition' as const, template: '{{nutrition}}', metaKeyId: null },
+    ];
+    const doc = {
+      type: 'doc' as const,
+      content: [
+        { type: 'storefrontBlock', attrs: { blockId: 'natural', resolver: 'template', template: 'a', overrideContent: null } },
+        { type: 'storefrontBlock', attrs: { blockId: 'nutrition', resolver: 'nutrition', template: '{{nutrition}}', overrideContent: null } },
+        { type: 'storefrontBlock', attrs: { blockId: 'kitComponents', resolver: 'kitComponents', template: '{{kitComponents}}', overrideContent: null } },
+      ],
+    };
+
+    expect(storefrontDescriptionNeedsPresetSync(doc, presetBlocks, { isKit: true })).toBe(true);
+    const synced = syncStorefrontDescriptionDocWithPreset(doc, presetBlocks, { isKit: true });
+    const order = walkStorefrontDescriptionBlocks(synced).map((block) => block.resolver);
+    expect(order).toEqual(['template', 'kitComponents', 'nutrition']);
+  });
+
+  it('builds kit doc with kitComponents and without ingredients', () => {
+    const doc = buildStorefrontDescriptionDocFromPreset(STOREFRONT_DEFAULT_BLOCKS, { isKit: true });
+    const blocks = walkStorefrontDescriptionBlocks(doc);
+    expect(blocks.some((b) => b.resolver === 'kitComponents')).toBe(true);
+    expect(blocks.some((b) => b.resolver === 'ingredients')).toBe(false);
+  });
+
+  it('renders inline-only list items in storefront description html', () => {
+    const html = resolveStorefrontDescriptionDocHtml(
+      {
+        type: 'doc',
+        content: [
+          {
+            type: 'heading',
+            attrs: { level: 5 },
+            content: [{ type: 'text', text: 'Способи розігріву:' }],
+          },
+          {
+            type: 'orderedList',
+            content: [
+              {
+                type: 'listItem',
+                content: [{ type: 'text', text: 'Розігріти у мікрохвильовій печі 2 хвилини.' }],
+              },
+              {
+                type: 'listItem',
+                content: [{ type: 'text', text: 'Розігріти на сковорідці 5–7 хвилин.' }],
+              },
+            ],
+          },
+        ],
+      },
+      {
+        ingredients: '',
+        nutrition: '',
+        netWeight: '',
+        grossWeight: '',
+        storage: '',
+        heating: '',
+        salt: '',
+        kitComponents: '',
+      },
+      [],
+    );
+    expect(html).toContain('<h5>Способи розігріву:</h5>');
+    expect(html).toContain('<ol>');
+    expect(html).toContain('<li>Розігріти у мікрохвильовій печі 2 хвилини.</li>');
+    expect(html).toContain('<li>Розігріти на сковорідці 5–7 хвилин.</li>');
+  });
+
+  it('renders heading nodes in storefront description html', () => {
+    const html = resolveStorefrontDescriptionDocHtml(
+      {
+        type: 'doc',
+        content: [
+          {
+            type: 'heading',
+            attrs: { level: 3 },
+            content: [{ type: 'text', text: 'Заголовок набору' }],
+          },
+        ],
+      },
+      {
+        ingredients: '',
+        nutrition: '',
+        netWeight: '',
+        grossWeight: '',
+        storage: '',
+        heating: '',
+        salt: '',
+        kitComponents: '',
+      },
+      [],
+    );
+    expect(html).toBe('<h3>Заголовок набору</h3>');
+  });
+
   it('builds doc from preset with storefront blocks', () => {
     const doc = buildStorefrontDescriptionDocFromPreset(STOREFRONT_DEFAULT_BLOCKS);
     const blocks = walkStorefrontDescriptionBlocks(doc);
     expect(blocks.some((b) => b.resolver === 'ingredients')).toBe(true);
-    const html = resolveStorefrontDescriptionDocHtml(doc, {
-      ingredients: 'картопля',
-      nutrition: '<p>Білки 1г</p>',
-      netWeight: '300г',
-      grossWeight: '320г',
-      storage: '',
-      heating: '',
-      salt: '',
-      kitComponents: '',
-    });
+    const html = resolveStorefrontDescriptionDocHtml(
+      doc,
+      {
+        ingredients: 'картопля',
+        nutrition: '<p>Білки 1г</p>',
+        netWeight: '300г',
+        grossWeight: '320г',
+        storage: '',
+        heating: '',
+        salt: '',
+        kitComponents: '',
+      },
+      [],
+      { isKit: false },
+    );
     expect(html).toContain('картопля');
+  });
+
+  it('skips ingredients block for kits in saved doc', () => {
+    const doc = buildStorefrontDescriptionDocFromPreset(STOREFRONT_DEFAULT_BLOCKS, { isKit: true });
+    const html = resolveStorefrontDescriptionDocHtml(
+      doc,
+      {
+        ingredients: 'борщ, плов',
+        nutrition: '',
+        netWeight: '',
+        grossWeight: '',
+        storage: '',
+        heating: '',
+        salt: '',
+        kitComponents: '',
+      },
+      [],
+      {
+        isKit: true,
+        kitComponentRows: [
+          { componentName: 'Борщ', qty: 2, componentCategoryName: 'Перші страви', componentWeight: 0.4 },
+        ],
+      },
+    );
+    expect(html).not.toContain('борщ, плов');
+    expect(html).toContain('Борщ');
   });
 });
 
@@ -213,6 +362,64 @@ describe('formatProductNutritionHtml with salt', () => {
   });
 });
 
+describe('nutrition split placeholders', () => {
+  it('buildStorefrontBoundValues exposes proteins/fats/carbs/energy separately', () => {
+    const values = buildStorefrontBoundValues({
+      ingredientsJson: [],
+      nutrition: { proteins: '4,4', fats: '3,1', carbs: '5,0', energy: '68' },
+      netLabel: '',
+      grossLabel: '',
+      storageTemplate: '',
+      heatingTemplate: '',
+      saltTemplate: '',
+      kitComponentsHtml: '',
+    });
+    expect(values.proteins).toBe('4,4');
+    expect(values.fats).toBe('3,1');
+    expect(values.carbs).toBe('5,0');
+    expect(values.energy).toBe('68');
+  });
+
+  it('substitutes split nutrition placeholders in custom template', () => {
+    const template = '<p>Білки {{proteins}} г · Жири {{fats}} г</p>';
+    const values = buildStorefrontBoundValues({
+      ingredientsJson: [],
+      nutrition: { proteins: '2,5', fats: '1,2', carbs: '8,0', energy: '55' },
+      netLabel: '',
+      grossLabel: '',
+      storageTemplate: '',
+      heatingTemplate: '',
+      saltTemplate: '',
+      kitComponentsHtml: '',
+    });
+    const html = substituteStorefrontPlaceholders(template, values);
+    expect(html).toContain('Білки 2,5 г');
+    expect(html).toContain('Жири 1,2 г');
+  });
+
+  it('renders nutrition block from preset with split placeholders', () => {
+    const doc = buildStorefrontDescriptionDocFromPreset(STOREFRONT_DEFAULT_BLOCKS);
+    const nutritionBlock = doc.content.find(
+      (node) => node.type === 'storefrontBlock' && node.attrs?.blockId === 'nutrition',
+    );
+    expect(nutritionBlock?.attrs?.template).toContain('{{proteins}}');
+
+    const placeholders = buildStorefrontBoundValues({
+      ingredientsJson: [],
+      nutrition: { proteins: '2,5', fats: '1,2', carbs: '8,0', energy: '55' },
+      netLabel: '',
+      grossLabel: '',
+      storageTemplate: '',
+      heatingTemplate: '',
+      saltTemplate: '',
+      kitComponentsHtml: '',
+    });
+    const html = resolveStorefrontDescriptionDocHtml(doc, placeholders, STOREFRONT_DEFAULT_META_KEYS);
+    expect(html).toContain('Білки 2,5 г');
+    expect(html).toContain('Енергетична цінність 55 ккал');
+  });
+});
+
 describe('storefront template editor html', () => {
   it('wraps placeholders for TipTap atoms', () => {
     const html = templateHtmlForStorefrontEditor('<p><strong>Склад: </strong>{{ingredients}}</p>');
@@ -269,6 +476,26 @@ describe('storefront template editor html', () => {
       }),
     );
     expect(templateFromStorefrontEditorHtml(editable)).toBe('<p>Маса нетто: {{netWeight}}</p>');
+  });
+
+  it('unwraps single paragraph inside list items', () => {
+    expect(
+      normalizeStorefrontBlockHtml(`<ul><li><p><strong>one</strong></p></li></ul>`),
+    ).toBe(`<ul><li><strong>one</strong></li></ul>`);
+  });
+
+  it('unwraps multiple paragraphs inside list items', () => {
+    expect(
+      normalizeStorefrontBlockHtml(`<ol><li><p>one</p><p></p></li><li><p>two</p></li></ol>`),
+    ).toBe(`<ol><li>one</li><li>two</li></ol>`);
+  });
+
+  it('unwraps paragraphs inside nested list items', () => {
+    expect(
+      normalizeStorefrontBlockHtml(
+        `<ol><li><p>outer</p><ol><li><p>inner</p></li></ol></li></ol>`,
+      ),
+    ).toBe(`<ol><li>outer<ol><li>inner</li></ol></li></ol>`);
   });
 
   it('strips trailing empty paragraphs from block html', () => {

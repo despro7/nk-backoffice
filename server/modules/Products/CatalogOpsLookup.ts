@@ -311,7 +311,11 @@ export class CatalogOpsLookup {
     const q = params.search?.trim().toLowerCase();
     if (q) {
       filtered = filtered.filter(
-        (p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.sku.toLowerCase().includes(q) ||
+          (p.barcode?.toLowerCase().includes(q) ?? false) ||
+          p.barcodes.some((code) => code.toLowerCase().includes(q))
       );
     }
     if (params.category) {

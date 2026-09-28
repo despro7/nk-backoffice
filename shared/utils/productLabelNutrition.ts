@@ -18,12 +18,30 @@ const EMPTY_NUTRITION: NutritionValues = {
   energy: '',
 };
 
-const NUTRITION_LABELS: Array<{ key: keyof NutritionValues; label: string; unit: string }> = [
+const NUTRITION_LABELS: Array<{
+  key: keyof NutritionValues;
+  label: string;
+  aliases?: string[];
+  unit: string;
+}> = [
   { key: 'proteins', label: 'Білки', unit: 'г' },
   { key: 'fats', label: 'Жири', unit: 'г' },
   { key: 'carbs', label: 'Вуглеводи', unit: 'г' },
-  { key: 'energy', label: 'Енергетична цінність', unit: 'ккал' },
+  {
+    key: 'energy',
+    label: 'Енергетична цінність',
+    aliases: ['Енергетична', 'Калорійність'],
+    unit: 'ккал',
+  },
 ];
+
+/** Роздільник між міткою та числом: `:`, пробіли, `-`, `–`, `—`. */
+const NUTRITION_LABEL_VALUE_SEP = '(?:[-–—:\\s]+)?';
+
+function nutritionLabelPatterns(rule: (typeof NUTRITION_LABELS)[number]): string[] {
+  const labels = [rule.label, ...(rule.aliases ?? [])];
+  return labels.sort((a, b) => b.length - a.length);
+}
 
 function hasNumericValue(value: string): boolean {
   const trimmed = value.trim();
@@ -58,19 +76,17 @@ export function parseNutritionValues(text: string | null | undefined): Nutrition
   const trimmed = text?.trim() ?? '';
   if (!trimmed) return { ...EMPTY_NUTRITION };
 
-  const lines = trimmed
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
   const values: NutritionValues = { ...EMPTY_NUTRITION };
 
   for (const rule of NUTRITION_LABELS) {
-    const line = lines.find((entry) => entry.toLowerCase().startsWith(rule.label.toLowerCase()));
-    if (!line) continue;
-
-    const match = line.match(/([\d,.]+)/);
-    values[rule.key] = match?.[1]?.trim() ?? '';
+    for (const label of nutritionLabelPatterns(rule)) {
+      const re = new RegExp(`${label}\\s*${NUTRITION_LABEL_VALUE_SEP}([\\d,.]+)`, 'i');
+      const match = trimmed.match(re);
+      if (match?.[1]) {
+        values[rule.key] = match[1].trim();
+        break;
+      }
+    }
   }
 
   return values;

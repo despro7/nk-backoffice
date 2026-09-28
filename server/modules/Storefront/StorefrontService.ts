@@ -5,19 +5,26 @@
 import { prisma, logServer } from '../../lib/utils.js';
 import {
   STOREFRONT_DEFAULT_BLOCKS,
+  STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS,
   STOREFRONT_DEFAULT_META_KEYS,
   STOREFRONT_DEFAULT_PRESET_NAME,
   STOREFRONT_SETTINGS_KEYS,
   normalizeStorefrontBlocks,
+  normalizeStorefrontKitComponentSettings,
   normalizeStorefrontMetaKeys,
 } from '../../../shared/constants/storefrontDefaults.js';
 import type {
   StorefrontBlockConfig,
+  StorefrontKitComponentSettings,
   StorefrontMetaKeyConfig,
   StorefrontPresetDto,
   StorefrontPresetInput,
   StorefrontSettingsDto,
+  StorefrontWooSettingsInput,
+  WooConnectionTestResult,
 } from '../../../shared/types/storefront.js';
+import type { WooCommerceCredentials } from './WooCommerceApiClient.js';
+import { createWooCommerceClient } from './WooCommerceApiClient.js';
 
 const DEFAULT_PRESET_ID = '00000000-0000-4000-8000-000000000001';
 
@@ -29,6 +36,17 @@ async function readMetaKeys(): Promise<StorefrontMetaKeyConfig[]> {
   } catch (err) {
     logServer('[StorefrontService] metaKeys parse failed', err);
     return [...STOREFRONT_DEFAULT_META_KEYS];
+  }
+}
+
+async function readKitComponentSettings(): Promise<StorefrontKitComponentSettings> {
+  const raw = await readSetting(STOREFRONT_SETTINGS_KEYS.kitComponentSettings);
+  if (!raw) return normalizeStorefrontKitComponentSettings(STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS);
+  try {
+    return normalizeStorefrontKitComponentSettings(JSON.parse(raw) as unknown);
+  } catch (err) {
+    logServer('[StorefrontService] kitComponentSettings parse failed', err);
+    return normalizeStorefrontKitComponentSettings(STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS);
   }
 }
 
@@ -69,6 +87,29 @@ async function readSetting(key: string): Promise<string | null> {
   return row?.value ?? null;
 }
 
+function maskConsumerSecret(secret: string): string {
+  if (!secret) return '';
+  if (secret.length <= 4) return 'cs_***';
+  return `cs_***${secret.slice(-4)}`;
+}
+
+async function readWooEnabled(): Promise<boolean> {
+  const raw = await readSetting(STOREFRONT_SETTINGS_KEYS.woo.enabled);
+  return raw === 'true' || raw === '1';
+}
+
+export async function readWooCredentialsRaw(): Promise<WooCommerceCredentials | null> {
+  const siteUrl = await readSetting(STOREFRONT_SETTINGS_KEYS.woo.siteUrl);
+  const consumerKey = await readSetting(STOREFRONT_SETTINGS_KEYS.woo.consumerKey);
+  const consumerSecret = await readSetting(STOREFRONT_SETTINGS_KEYS.woo.consumerSecret);
+  if (!siteUrl?.trim() || !consumerKey?.trim() || !consumerSecret?.trim()) return null;
+  return {
+    siteUrl: siteUrl.trim(),
+    consumerKey: consumerKey.trim(),
+    consumerSecret: consumerSecret.trim(),
+  };
+}
+
 async function writeSetting(key: string, value: string, description?: string): Promise<void> {
   await prisma.settingsBase.upsert({
     where: { key },
@@ -102,7 +143,16 @@ export class StorefrontService {
       await writeSetting(
         STOREFRONT_SETTINGS_KEYS.metaKeys,
         JSON.stringify(STOREFRONT_DEFAULT_META_KEYS),
-        'Meta-ключі WooCommerce для вітрини',
+        'Meta-ключі WooCommerce для сайту',
+      );
+    }
+
+    const kitSettingsRaw = await readSetting(STOREFRONT_SETTINGS_KEYS.kitComponentSettings);
+    if (!kitSettingsRaw) {
+      await writeSetting(
+        STOREFRONT_SETTINGS_KEYS.kitComponentSettings,
+        JSON.stringify(STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS),
+        'Категорії компонентів комплекту для шаблону kitComponents',
       );
     }
 
@@ -115,7 +165,7 @@ export class StorefrontService {
       await writeSetting(
         STOREFRONT_SETTINGS_KEYS.defaultPresetId,
         preset?.id ?? DEFAULT_PRESET_ID,
-        'Default preset id для конструктора опису вітрини',
+        'Default preset id для конструктора опису сайту',
       );
     }
   }
@@ -240,26 +290,122 @@ export class StorefrontService {
     await writeSetting(STOREFRONT_SETTINGS_KEYS.defaultPresetId, id);
   }
 
+  /** Credentials для read-only операцій (inspect, pull-preview, test-connection). */
+  async getWooCredentialsConfigured(): Promise<WooCommerceCredentials> {
+    const creds = await readWooCredentialsRaw();
+    if (!creds) {
+      throw new Error(
+        'WooCommerce credentials не налаштовані. Заповніть їх у Налаштування → Сайт.',
+      );
+    }
+    return creds;
+  }
+
+  /** Credentials для sync-операцій (pull-apply, push, media). Потребує увімкненої інтеграції. */
+  async getWooCredentialsInternal(): Promise<WooCommerceCredentials> {
+    const creds = await this.getWooCredentialsConfigured();
+    const enabled = await readWooEnabled();
+    if (!enabled) {
+      throw new Error(
+        'WooCommerce інтеграція вимкнена. Увімкніть перемикач у Налаштування → Сайт та збережіть credentials.',
+      );
+    }
+    return creds;
+  }
+
+  async testWooConnection(
+    override?: Partial<WooCommerceCredentials>,
+  ): Promise<WooConnectionTestResult> {
+    const saved = await readWooCredentialsRaw();
+    const creds: WooCommerceCredentials = {
+      siteUrl: override?.siteUrl?.trim() || saved?.siteUrl || '',
+      consumerKey: override?.consumerKey?.trim() || saved?.consumerKey || '',
+      consumerSecret: override?.consumerSecret?.trim() || saved?.consumerSecret || '',
+    };
+    if (!creds.siteUrl || !creds.consumerKey || !creds.consumerSecret) {
+      return { ok: false, error: 'Заповніть URL, Consumer Key та Consumer Secret' };
+    }
+    return createWooCommerceClient(creds).testConnection();
+  }
+
   async getSettings(): Promise<StorefrontSettingsDto> {
     await this.ensureSeed();
     const metaKeys = await readMetaKeys();
+    const kitComponentSettings = await readKitComponentSettings();
     const defaultPresetId = await readSetting(STOREFRONT_SETTINGS_KEYS.defaultPresetId);
+    const siteUrl = (await readSetting(STOREFRONT_SETTINGS_KEYS.woo.siteUrl))?.trim() || '';
+    const mediaPublicBaseUrl =
+      (await readSetting(STOREFRONT_SETTINGS_KEYS.woo.mediaPublicBaseUrl))?.trim() || '';
+    const consumerKey = (await readSetting(STOREFRONT_SETTINGS_KEYS.woo.consumerKey))?.trim() || '';
+    const consumerSecretRaw =
+      (await readSetting(STOREFRONT_SETTINGS_KEYS.woo.consumerSecret))?.trim() || '';
+    const enabled = await readWooEnabled();
 
     return {
       defaultPresetId: defaultPresetId?.trim() || null,
       metaKeys,
+      kitComponentSettings,
       wooCommerce: {
-        enabled: false,
-        siteUrl: '',
-        consumerKey: '',
-        consumerSecret: '',
+        enabled,
+        siteUrl,
+        mediaPublicBaseUrl,
+        consumerKey,
+        consumerSecret: maskConsumerSecret(consumerSecretRaw),
+        hasConsumerSecret: Boolean(consumerSecretRaw),
+        connectionStatus:
+          siteUrl && consumerKey && consumerSecretRaw
+            ? enabled
+              ? 'ok'
+              : 'unconfigured'
+            : 'unconfigured',
       },
     };
+  }
+
+  async updateWooSettings(input: StorefrontWooSettingsInput): Promise<StorefrontSettingsDto> {
+    if (input.enabled !== undefined) {
+      await writeSetting(
+        STOREFRONT_SETTINGS_KEYS.woo.enabled,
+        String(Boolean(input.enabled)),
+        'WooCommerce інтеграція увімкнена',
+      );
+    }
+    if (input.siteUrl !== undefined) {
+      await writeSetting(
+        STOREFRONT_SETTINGS_KEYS.woo.siteUrl,
+        input.siteUrl.trim(),
+        'WooCommerce site URL',
+      );
+    }
+    if (input.mediaPublicBaseUrl !== undefined) {
+      await writeSetting(
+        STOREFRONT_SETTINGS_KEYS.woo.mediaPublicBaseUrl,
+        input.mediaPublicBaseUrl.trim(),
+        'Backoffice public URL for catalog media',
+      );
+    }
+    if (input.consumerKey !== undefined) {
+      await writeSetting(
+        STOREFRONT_SETTINGS_KEYS.woo.consumerKey,
+        input.consumerKey.trim(),
+        'WooCommerce consumer key',
+      );
+    }
+    if (input.consumerSecret !== undefined && input.consumerSecret.trim()) {
+      await writeSetting(
+        STOREFRONT_SETTINGS_KEYS.woo.consumerSecret,
+        input.consumerSecret.trim(),
+        'WooCommerce consumer secret',
+      );
+    }
+    return this.getSettings();
   }
 
   async updateSettings(input: {
     defaultPresetId?: string | null;
     metaKeys?: StorefrontMetaKeyConfig[];
+    kitComponentSettings?: StorefrontKitComponentSettings;
+    wooCommerce?: StorefrontWooSettingsInput;
   }): Promise<StorefrontSettingsDto> {
     if (input.defaultPresetId) {
       const preset = await prisma.catalogStorefrontPreset.findUnique({
@@ -274,8 +420,21 @@ export class StorefrontService {
       await writeSetting(
         STOREFRONT_SETTINGS_KEYS.metaKeys,
         JSON.stringify(normalized),
-        'Meta-ключі WooCommerce для вітрини',
+        'Meta-ключі WooCommerce для сайту',
       );
+    }
+
+    if (input.kitComponentSettings) {
+      const normalized = normalizeStorefrontKitComponentSettings(input.kitComponentSettings);
+      await writeSetting(
+        STOREFRONT_SETTINGS_KEYS.kitComponentSettings,
+        JSON.stringify(normalized),
+        'Категорії компонентів комплекту для шаблону kitComponents',
+      );
+    }
+
+    if (input.wooCommerce) {
+      await this.updateWooSettings(input.wooCommerce);
     }
 
     return this.getSettings();

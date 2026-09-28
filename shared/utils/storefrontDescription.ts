@@ -16,6 +16,7 @@ import type {
   StorefrontDescriptionNode,
   StorefrontGrossResolveInput,
   StorefrontGrossResolveResult,
+  StorefrontKitComponentSettings,
   StorefrontMetaKeyConfig,
   StorefrontProtectedBoundResolver,
   StorefrontPublishStatus,
@@ -26,12 +27,38 @@ import {
   STOREFRONT_WC_META,
 } from '../types/storefront.js';
 import { STOREFRONT_BUILTIN_DEFAULTS } from '../constants/storefrontDefaults.js';
+import {
+  buildKitComponentsLegacyHtml,
+  renderKitComponentsTemplate,
+  type KitComponentRow,
+} from './kitComponentsTemplate.js';
+
+export {
+  renderKitComponentsTemplate,
+  groupKitComponents,
+  hasKitComponentLoops,
+} from './kitComponentsTemplate.js';
+export type { KitComponentRow } from './kitComponentsTemplate.js';
+
+export type StorefrontRenderOptions = {
+  isKit?: boolean;
+  kitComponentRows?: KitComponentRow[];
+  kitComponentSettings?: StorefrontKitComponentSettings;
+  /** Якщо задано — рендеряться лише блоки з цього набору (enabled у preset). */
+  enabledBlockIds?: ReadonlySet<string>;
+};
 
 export type StorefrontPlaceholderValues = {
   netWeight?: string;
   grossWeight?: string;
   ingredients?: string;
+  /** Повний КБЖВ-блок (legacy {{nutrition}}) */
   nutrition?: string;
+  proteins?: string;
+  fats?: string;
+  carbs?: string;
+  energy?: string;
+  nutritionSalt?: string;
   storage?: string;
   heating?: string;
   salt?: string;
@@ -43,6 +70,11 @@ const STOREFRONT_SEMANTIC_PLACEHOLDERS: Array<keyof StorefrontPlaceholderValues>
   'grossWeight',
   'ingredients',
   'nutrition',
+  'proteins',
+  'fats',
+  'carbs',
+  'energy',
+  'nutritionSalt',
   'storage',
   'heating',
   'salt',
@@ -58,6 +90,11 @@ const STOREFRONT_META_KEY_TO_PLACEHOLDER: Partial<Record<string, keyof Storefron
 const EMPTY_BOUND_VALUES: StorefrontBoundBlockValues = {
   ingredients: '',
   nutrition: '',
+  proteins: '',
+  fats: '',
+  carbs: '',
+  energy: '',
+  nutritionSalt: '',
   netWeight: '',
   grossWeight: '',
   storage: '',
@@ -65,6 +102,44 @@ const EMPTY_BOUND_VALUES: StorefrontBoundBlockValues = {
   salt: '',
   kitComponents: '',
 };
+
+export function buildNutritionPlaceholderValues(
+  nutrition: ProductNutritionJson | null | undefined,
+): Pick<
+  StorefrontPlaceholderValues,
+  'nutrition' | 'proteins' | 'fats' | 'carbs' | 'energy' | 'nutritionSalt'
+> {
+  if (!nutrition) {
+    return {
+      nutrition: '',
+      proteins: '',
+      fats: '',
+      carbs: '',
+      energy: '',
+      nutritionSalt: '',
+    };
+  }
+
+  return {
+    proteins: nutrition.proteins?.trim() || '',
+    fats: nutrition.fats?.trim() || '',
+    carbs: nutrition.carbs?.trim() || '',
+    energy: nutrition.energy?.trim() || '',
+    nutritionSalt: nutrition.salt?.trim() || '',
+    nutrition: formatProductNutritionHtml(nutrition),
+  };
+}
+
+export function hasNutritionPlaceholderValues(values: StorefrontPlaceholderValues): boolean {
+  return Boolean(
+    values.nutrition?.trim() ||
+      values.proteins?.trim() ||
+      values.fats?.trim() ||
+      values.carbs?.trim() ||
+      values.energy?.trim() ||
+      values.nutritionSalt?.trim(),
+  );
+}
 
 /** Папка архіву Dilovod: «Архів – {parentName}». */
 export function isArchiveFolderName(name: string): boolean {
@@ -129,7 +204,6 @@ export function getStorefrontResolverPrimaryPlaceholder(
 ): string | null {
   const map: Partial<Record<StorefrontBlockResolver, keyof StorefrontPlaceholderValues>> = {
     ingredients: 'ingredients',
-    nutrition: 'nutrition',
     netWeight: 'netWeight',
     grossWeight: 'grossWeight',
     kitComponents: 'kitComponents',
@@ -214,9 +288,41 @@ export function templateFromStorefrontEditorHtml(html: string): string {
 const STOREFRONT_TRAILING_EMPTY_P_RE =
   /<p(?:\s[^>]*)?>(?:\s|<br\s*\/?>|<br[^>]*>|&nbsp;)*<\/p>\s*$/i;
 
+const STOREFRONT_LIST_ITEM_RE = /<li(\s[^>]*)?>([\s\S]*?)<\/li>/gi;
+
+const STOREFRONT_EMPTY_INLINE_P_RE =
+  /<p(\s[^>]*)?>(?:\s|<br\s*\/?>|<br[^>]*>|&nbsp;)*<\/p>/gi;
+
+const STOREFRONT_INLINE_P_RE = /<p(\s[^>]*)?>([\s\S]*?)<\/p>/gi;
+
+function unwrapParagraphMarkup(inner: string): string {
+  let result = inner.replace(STOREFRONT_EMPTY_INLINE_P_RE, '');
+  let prev = '';
+  while (result !== prev) {
+    prev = result;
+    result = result.replace(STOREFRONT_INLINE_P_RE, '$2');
+  }
+  return result;
+}
+
+/** Unwrap paragraph wrappers inside list items: <li><p>text</p></li> → <li>text</li>. */
+export function unwrapListItemParagraphs(html: string): string {
+  if (!/<li[\s>]/i.test(html)) return html;
+  let result = html;
+  let prev = '';
+  while (result !== prev) {
+    prev = result;
+    result = result.replace(STOREFRONT_LIST_ITEM_RE, (match, liAttrs = '', inner: string) => {
+      const unwrapped = unwrapParagraphMarkup(inner);
+      return unwrapped === inner ? match : `<li${liAttrs}>${unwrapped}</li>`;
+    });
+  }
+  return result;
+}
+
 /** Strip TipTap trailing empty paragraphs from block HTML before save/preview. */
 export function normalizeStorefrontBlockHtml(html: string): string {
-  let result = html.trim();
+  let result = unwrapListItemParagraphs(html.trim());
   let prev = '';
   while (result !== prev) {
     prev = result;
@@ -294,20 +400,11 @@ export function toHtmlBlock(text: string): string {
 export function buildKitComponentsHtml(
   components: Array<{ componentName: string; qty: number }>,
 ): string {
-  if (!components.length) return '';
-  const items = components
-    .map((c) => {
-      const name = escapeHtml(c.componentName.trim());
-      const qty = Number(c.qty);
-      const qtyText = Number.isFinite(qty) ? String(qty) : '1';
-      return `<li>${name} × ${qtyText}</li>`;
-    })
-    .join('');
-  return `<ul>${items}</ul>`;
+  return buildKitComponentsLegacyHtml(components);
 }
 
 export function normalizeIngredientTag(text: string): string {
-  return text.trim().toLowerCase();
+  return text.trim().replace(/[.,;]+$/g, '').toLowerCase();
 }
 
 export function formatIngredientsList(items: string[]): string {
@@ -594,7 +691,80 @@ function blockNodeFromPreset(block: StorefrontBlockConfig): StorefrontDescriptio
   };
 }
 
-/** Build initial TipTap doc from preset blocks (marketing = freeform paragraphs in editor). */
+/** Id блоків preset, які мають бути в doc (лише enabled). */
+export function getStorefrontEnabledBlockIds(
+  presetBlocks: StorefrontBlockConfig[],
+  opts?: { isKit?: boolean },
+): Set<string> {
+  const ids = new Set<string>();
+  for (const block of presetBlocks) {
+    if (opts?.isKit && block.resolver === 'ingredients') continue;
+    if (!opts?.isKit && block.resolver === 'kitComponents') continue;
+    const forceKitComponents = Boolean(opts?.isKit && block.resolver === 'kitComponents');
+    if (!block.enabled && !forceKitComponents) continue;
+    ids.add(block.id);
+  }
+  return ids;
+}
+
+export function storefrontDescriptionNeedsPresetSync(
+  doc: StorefrontDescriptionDoc,
+  presetBlocks: StorefrontBlockConfig[],
+  opts?: { isKit?: boolean },
+): boolean {
+  const expected = [...getStorefrontEnabledBlockIds(presetBlocks, opts)];
+  const actual = walkStorefrontDescriptionBlocks(doc).map((block) => block.blockId);
+  if (expected.length !== actual.length) return true;
+  if (actual.some((id) => !expected.includes(id))) return true;
+  return expected.some((id, index) => actual[index] !== id);
+}
+
+function isStorefrontBlockEnabledInPreset(
+  blockId: string,
+  renderOptions?: StorefrontRenderOptions,
+): boolean {
+  if (!renderOptions?.enabledBlockIds?.size) return true;
+  return renderOptions.enabledBlockIds.has(blockId);
+}
+
+/** Вирівнює порядок і склад блоків у збереженому doc за поточним preset. */
+export function syncStorefrontDescriptionDocWithPreset(
+  doc: StorefrontDescriptionDoc,
+  presetBlocks: StorefrontBlockConfig[],
+  opts?: { isKit?: boolean },
+): StorefrontDescriptionDoc {
+  const marketingNodes = (doc.content || []).filter((node) => node.type !== 'storefrontBlock');
+  const existingBlocks = new Map<string, StorefrontBlockNodeAttrs>();
+
+  for (const node of doc.content || []) {
+    const attrs = getBlockNodeAttrs(node);
+    if (attrs) existingBlocks.set(attrs.blockId, attrs);
+  }
+
+  const blockNodes: StorefrontDescriptionNode[] = [];
+  for (const block of presetBlocks) {
+    if (opts?.isKit && block.resolver === 'ingredients') continue;
+    if (!opts?.isKit && block.resolver === 'kitComponents') continue;
+    const forceKitComponents = Boolean(opts?.isKit && block.resolver === 'kitComponents');
+    if (!block.enabled && !forceKitComponents) continue;
+
+    const existing = existingBlocks.get(block.id);
+    if (existing) {
+      blockNodes.push({
+        type: 'storefrontBlock',
+        attrs: existing,
+      });
+      continue;
+    }
+    blockNodes.push(blockNodeFromPreset(block));
+  }
+
+  return normalizeStorefrontDescriptionDoc({
+    type: 'doc',
+    content: [...marketingNodes, ...blockNodes],
+  });
+}
+
 export function buildStorefrontDescriptionDocFromPreset(
   presetBlocks: StorefrontBlockConfig[],
   opts?: { isKit?: boolean },
@@ -608,8 +778,10 @@ export function buildStorefrontDescriptionDocFromPreset(
   ];
 
   for (const block of presetBlocks) {
-    if (!block.enabled) continue;
-    if (block.resolver === 'kitComponents' && !opts?.isKit) continue;
+    if (opts?.isKit && block.resolver === 'ingredients') continue;
+    if (!opts?.isKit && block.resolver === 'kitComponents') continue;
+    const forceKitComponents = Boolean(opts?.isKit && block.resolver === 'kitComponents');
+    if (!block.enabled && !forceKitComponents) continue;
     content.push(blockNodeFromPreset(block));
   }
 
@@ -622,7 +794,7 @@ export function ensureStorefrontDescriptionDoc(
   opts?: { isKit?: boolean },
 ): StorefrontDescriptionDoc {
   const parsed = parseStorefrontDescriptionDoc(raw);
-  if (parsed) return parsed;
+  if (parsed) return syncStorefrontDescriptionDocWithPreset(parsed, presetBlocks, opts);
   return buildStorefrontDescriptionDocFromPreset(presetBlocks, opts);
 }
 
@@ -642,7 +814,29 @@ function resolveBlockNodeHtml(
   attrs: StorefrontBlockNodeAttrs,
   placeholders: StorefrontPlaceholderValues,
   metaKeys: StorefrontMetaKeyConfig[],
+  renderOptions?: StorefrontRenderOptions,
 ): string | null {
+  if (!isStorefrontBlockEnabledInPreset(attrs.blockId, renderOptions)) return null;
+  if (renderOptions?.isKit && attrs.resolver === 'ingredients') return null;
+
+  if (attrs.resolver === 'kitComponents') {
+    const rows = renderOptions?.kitComponentRows ?? [];
+    const html = renderKitComponentsTemplate(
+      attrs.template,
+      rows,
+      renderOptions?.kitComponentSettings,
+    );
+    if (!html.trim()) return null;
+    return normalizeStorefrontBlockHtml(html);
+  }
+
+  if (attrs.resolver === 'nutrition') {
+    if (!hasNutritionPlaceholderValues(placeholders)) return null;
+    const text = substituteStorefrontPlaceholders(attrs.template, placeholders, metaKeys);
+    if (!text.trim()) return null;
+    return toHtmlBlock(text);
+  }
+
   const primaryKey = getStorefrontResolverPrimaryPlaceholder(attrs.resolver);
   const primaryValue =
     primaryKey?.replace(/^\{\{|\}\}$/g, '') as keyof StorefrontPlaceholderValues | undefined;
@@ -670,11 +864,12 @@ function renderTipTapNodeToHtml(
   node: StorefrontDescriptionNode,
   placeholders: StorefrontPlaceholderValues,
   metaKeys: StorefrontMetaKeyConfig[],
+  renderOptions?: StorefrontRenderOptions,
 ): string {
   if (node.type === 'storefrontBlock') {
     const attrs = getBlockNodeAttrs(node);
     if (!attrs) return '';
-    return resolveBlockNodeHtml(attrs, placeholders, metaKeys) || '';
+    return resolveBlockNodeHtml(attrs, placeholders, metaKeys, renderOptions) || '';
   }
 
   if (node.type === 'paragraph') {
@@ -684,18 +879,43 @@ function renderTipTapNodeToHtml(
     return `<p${cls}>${inner}</p>`;
   }
 
+  if (node.type === 'heading') {
+    const level = Number(node.attrs?.level);
+    if (!Number.isInteger(level) || level < 1 || level > 6) return '';
+    const inner = renderInlineContent(node.content);
+    if (!inner) return '';
+    return `<h${level}>${inner}</h${level}>`;
+  }
+
   if (node.type === 'bulletList' || node.type === 'orderedList') {
     const tag = node.type === 'bulletList' ? 'ul' : 'ol';
     const items = (node.content || [])
-      .map((child) => renderTipTapNodeToHtml(child as StorefrontDescriptionNode, placeholders, metaKeys))
+      .map((child) =>
+        renderTipTapNodeToHtml(child as StorefrontDescriptionNode, placeholders, metaKeys, renderOptions),
+      )
       .filter(Boolean)
       .join('');
     return items ? `<${tag}>${items}</${tag}>` : '';
   }
 
   if (node.type === 'listItem') {
-    const inner = (node.content || [])
-      .map((child) => renderTipTapNodeToHtml(child as StorefrontDescriptionNode, placeholders, metaKeys))
+    const children = node.content || [];
+    const hasBlockChild = children.some(
+      (child) => child.type !== 'text' && child.type !== 'hardBreak',
+    );
+    if (!hasBlockChild) {
+      const inner = renderInlineContent(children);
+      return inner ? `<li>${inner}</li>` : '';
+    }
+    if (children.length === 1 && children[0].type === 'paragraph') {
+      const paragraph = children[0] as StorefrontDescriptionNode;
+      const inner = renderInlineContent(paragraph.content);
+      return inner ? `<li>${inner}</li>` : '';
+    }
+    const inner = children
+      .map((child) =>
+        renderTipTapNodeToHtml(child as StorefrontDescriptionNode, placeholders, metaKeys, renderOptions),
+      )
       .join('');
     return inner ? `<li>${inner}</li>` : '';
   }
@@ -741,10 +961,16 @@ export function buildStorefrontBoundValues(input: {
   storageTemplate: string;
   heatingTemplate: string;
   saltTemplate: string;
-  kitComponentsHtml: string;
+  kitComponentRows?: KitComponentRow[];
+  kitComponentsTemplate?: string;
+  kitComponentsHtml?: string;
+  kitComponentSettings?: StorefrontKitComponentSettings;
 }): StorefrontBoundBlockValues {
   const ingredients = formatIngredientsList(input.ingredientsJson);
-  const nutrition = input.nutrition ? stripHtmlToText(formatProductNutritionHtml(input.nutrition)) : '';
+  const nutritionParts = buildNutritionPlaceholderValues(input.nutrition);
+  const nutrition = nutritionParts.nutrition
+    ? stripHtmlToText(nutritionParts.nutrition)
+    : '';
   const saltFromNutrition = input.nutrition?.salt?.trim()
     ? `Містить сіль. Сіль ${input.nutrition.salt.trim()}г на 100г продукту.`
     : input.saltTemplate;
@@ -752,12 +978,25 @@ export function buildStorefrontBoundValues(input: {
   return {
     ingredients,
     nutrition,
+    proteins: nutritionParts.proteins,
+    fats: nutritionParts.fats,
+    carbs: nutritionParts.carbs,
+    energy: nutritionParts.energy,
+    nutritionSalt: nutritionParts.nutritionSalt,
     netWeight: input.netLabel,
     grossWeight: input.grossLabel,
     storage: input.storageTemplate,
     heating: input.heatingTemplate,
     salt: saltFromNutrition,
-    kitComponents: input.kitComponentsHtml,
+    kitComponents:
+      input.kitComponentsHtml ??
+      (input.kitComponentRows?.length
+        ? renderKitComponentsTemplate(
+            input.kitComponentsTemplate || STOREFRONT_BUILTIN_DEFAULTS.kitComponents.template || '{{kitComponents}}',
+            input.kitComponentRows,
+            input.kitComponentSettings,
+          )
+        : ''),
   };
 }
 
@@ -765,9 +1004,10 @@ export function resolveStorefrontDescriptionDocHtml(
   doc: StorefrontDescriptionDoc,
   placeholders: StorefrontPlaceholderValues,
   metaKeys: StorefrontMetaKeyConfig[] = [],
+  renderOptions?: StorefrontRenderOptions,
 ): string {
   return (doc.content || [])
-    .map((node) => renderTipTapNodeToHtml(node, placeholders, metaKeys))
+    .map((node) => renderTipTapNodeToHtml(node, placeholders, metaKeys, renderOptions))
     .filter(Boolean)
     .join('\n');
 }
@@ -777,6 +1017,12 @@ export function resolveStorefrontBlockPreviewText(
   boundValues: StorefrontBoundBlockValues,
 ): string {
   const placeholders: StorefrontPlaceholderValues = { ...boundValues };
+
+  if (attrs.resolver === 'nutrition') {
+    if (!hasNutritionPlaceholderValues(placeholders)) return attrs.template;
+    return substituteStorefrontPlaceholders(attrs.template, placeholders);
+  }
+
   const primaryKey = getStorefrontResolverPrimaryPlaceholder(attrs.resolver);
   const semanticKey = primaryKey?.replace(/^\{\{|\}\}$/g, '') as keyof StorefrontPlaceholderValues | undefined;
 
@@ -795,19 +1041,20 @@ export function resolveStorefrontBlockPreviewHtml(
   attrs: StorefrontBlockNodeAttrs,
   boundValues: StorefrontBoundBlockValues,
   metaKeys: StorefrontMetaKeyConfig[] = [],
+  renderOptions?: StorefrontRenderOptions,
 ): string {
   const placeholders: StorefrontPlaceholderValues = { ...boundValues };
-  const html = resolveBlockNodeHtml(attrs, placeholders, metaKeys);
+  const html = resolveBlockNodeHtml(attrs, placeholders, metaKeys, renderOptions);
   if (html) return html;
 
   if (isStorefrontProtectedBoundResolver(attrs.resolver)) {
     return '';
   }
 
-  const raw = attrs.overrideContent?.trim() || attrs.template;
+  const raw = normalizeStorefrontBlockHtml(attrs.overrideContent?.trim() || attrs.template);
   const substituted = substituteStorefrontPlaceholders(raw, placeholders, metaKeys);
   if (!substituted.trim()) return '';
-  return toHtmlBlock(substituted);
+  return normalizeStorefrontBlockHtml(toHtmlBlock(substituted));
 }
 
 export function walkStorefrontDescriptionBlocks(

@@ -11,6 +11,7 @@ import {
 import type {
   StorefrontBlockConfig,
   StorefrontDryRunPushPayload,
+  StorefrontKitComponentSettings,
   StorefrontMetaKeyConfig,
   StorefrontPreviewResult,
   StorefrontResolvedBlock,
@@ -18,13 +19,14 @@ import type {
 import { STOREFRONT_WC_META } from '../../../shared/types/storefront.js';
 import { formatNetWeightLabel } from '../../../shared/utils/productLabel.js';
 import {
-  buildKitComponentsHtml,
   ensureStorefrontDescriptionDoc,
   extractBlockMetaValue,
   formatGrossWeightLabel,
-  formatProductNutritionHtml,
+  buildNutritionPlaceholderValues,
+  hasNutritionPlaceholderValues,
   parseProductIngredientsJson,
   parseProductNutritionJson,
+  renderKitComponentsTemplate,
   resolveGrossWeightKg,
   resolveIngredientsText,
   resolveStorefrontDescriptionDocHtml,
@@ -33,7 +35,9 @@ import {
   substituteStorefrontPlaceholders,
   toHtmlBlock,
   walkStorefrontDescriptionBlocks,
+  type KitComponentRow,
   type StorefrontPlaceholderValues,
+  type StorefrontRenderOptions,
 } from '../../../shared/utils/storefrontDescription.js';
 import { productsDilovodGateway } from '../Products/ProductsDilovodGateway.js';
 import { storefrontService } from './StorefrontService.js';
@@ -70,7 +74,16 @@ type ResolveCtx = {
   grossLabel: string;
   nutrition: ReturnType<typeof parseProductNutritionJson>;
   ingredientRows: Array<{ componentName: string; qty: number }>;
-  bomComponents: Array<{ componentName: string; qty: number }>;
+  bomComponents: Array<{
+    componentName: string;
+    qty: number;
+    unitId: string | null;
+    componentWeight: number | null;
+    cookingLossPercent: number | null;
+    componentCategoryName: string | null;
+  }>;
+  kitComponentRows: KitComponentRow[];
+  kitComponentSettings: StorefrontKitComponentSettings;
 };
 
 type LoadCtx = Awaited<ReturnType<StorefrontDescriptionBuilder['loadContext']>>;
@@ -137,7 +150,7 @@ export class StorefrontDescriptionBuilder {
         components: {
           orderBy: { rowNum: 'asc' },
           include: {
-            componentGood: { select: { name: true, weight: true } },
+            componentGood: { select: { name: true, weight: true, parentId: true } },
           },
         },
       },
@@ -164,12 +177,39 @@ export class StorefrontDescriptionBuilder {
     ]);
 
     const isKit = good.accPolicyId === CATALOG_ACC_POLICY_KIT;
-    const bomComponents = good.components.map((c) => ({
-      componentName: c.componentGood?.name || c.componentGoodId,
-      qty: c.qty,
-      unitId: c.unitId || good.mainUnitId || '1103600000000001',
-      componentWeight: c.componentGood?.weight ?? null,
-      cookingLossPercent: c.cookingLossPercent,
+    const componentParentIds = [
+      ...new Set(
+        good.components
+          .map((c) => c.componentGood?.parentId)
+          .filter((parentId): parentId is string => Boolean(parentId)),
+      ),
+    ];
+    const componentParents =
+      componentParentIds.length > 0
+        ? await prisma.catalogGood.findMany({
+            where: { id: { in: componentParentIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const componentParentNameById = new Map(componentParents.map((row) => [row.id, row.name]));
+
+    const bomComponents = good.components.map((c) => {
+      const parentId = c.componentGood?.parentId;
+      return {
+        componentName: c.componentGood?.name || c.componentGoodId,
+        qty: c.qty,
+        unitId: c.unitId || good.mainUnitId || '1103600000000001',
+        componentWeight: c.componentGood?.weight ?? null,
+        cookingLossPercent: c.cookingLossPercent,
+        componentCategoryName: parentId ? componentParentNameById.get(parentId) ?? null : null,
+      };
+    });
+
+    const kitComponentRows: KitComponentRow[] = bomComponents.map((row) => ({
+      componentName: row.componentName,
+      qty: row.qty,
+      componentWeight: row.componentWeight,
+      componentCategoryName: row.componentCategoryName,
     }));
 
     const ingredientRows = bomComponents.map((c) => ({
@@ -183,7 +223,9 @@ export class StorefrontDescriptionBuilder {
       parentFolderName,
       presetBlocks: preset.blocks,
       metaKeys: settings.metaKeys,
+      kitComponentSettings: settings.kitComponentSettings,
       bomComponents,
+      kitComponentRows,
       ingredientRows,
       units: unitsList,
     };
@@ -209,6 +251,16 @@ export class StorefrontDescriptionBuilder {
       nutrition: parseProductNutritionJson(loaded.good.productNutritionJson),
       ingredientRows: loaded.ingredientRows,
       bomComponents: loaded.bomComponents,
+      kitComponentRows: loaded.kitComponentRows,
+      kitComponentSettings: loaded.kitComponentSettings,
+    };
+  }
+
+  private getRenderOptions(ctx: ResolveCtx): StorefrontRenderOptions {
+    return {
+      isKit: ctx.isKit,
+      kitComponentRows: ctx.kitComponentRows,
+      kitComponentSettings: ctx.kitComponentSettings,
     };
   }
 
@@ -219,11 +271,18 @@ export class StorefrontDescriptionBuilder {
       netWeight: ctx.netLabel,
       grossWeight: ctx.grossLabel,
       ingredients: ingredientsText,
-      nutrition: ctx.nutrition ? formatProductNutritionHtml(ctx.nutrition) : '',
+      ...buildNutritionPlaceholderValues(ctx.nutrition),
       storage: STOREFRONT_BUILTIN_DEFAULTS.storage.template,
       heating: STOREFRONT_BUILTIN_DEFAULTS.heating.template,
       salt: STOREFRONT_BUILTIN_DEFAULTS.salt.template,
-      kitComponents: ctx.isKit ? buildKitComponentsHtml(ctx.bomComponents) : '',
+      kitComponents: ctx.isKit
+        ? renderKitComponentsTemplate(
+            ctx.presetBlocks.find((block) => block.resolver === 'kitComponents')?.template ||
+              '{{kitComponents}}',
+            ctx.kitComponentRows,
+            ctx.kitComponentSettings,
+          )
+        : '',
     };
   }
 
@@ -232,7 +291,12 @@ export class StorefrontDescriptionBuilder {
       isKit: ctx.isKit,
     });
     const placeholders = this.buildPlaceholderValues(ctx);
-    return resolveStorefrontDescriptionDocHtml(doc, placeholders, ctx.metaKeys);
+    return resolveStorefrontDescriptionDocHtml(
+      doc,
+      placeholders,
+      ctx.metaKeys,
+      this.getRenderOptions(ctx),
+    );
   }
 
   private assembleBlocks(ctx: ResolveCtx): StorefrontResolvedBlock[] {
@@ -252,6 +316,7 @@ export class StorefrontDescriptionBuilder {
       let source: StorefrontResolvedBlock['source'] = 'template';
 
       if (primaryKey === 'ingredients') {
+        if (ctx.isKit) continue;
         const text = placeholders.ingredients || '';
         if (!text) continue;
         html = toHtmlBlock(
@@ -261,16 +326,8 @@ export class StorefrontDescriptionBuilder {
           ? 'product'
           : 'bom';
       } else if (primaryKey === 'nutrition') {
-        if (!placeholders.nutrition) continue;
-        html = toHtmlBlock(
-          resolveStorefrontTemplate(
-            attrs.template,
-            'nutrition',
-            placeholders.nutrition,
-            placeholders,
-            ctx.metaKeys,
-          ),
-        );
+        if (!hasNutritionPlaceholderValues(placeholders)) continue;
+        html = toHtmlBlock(substituteStorefrontPlaceholders(attrs.template, placeholders, ctx.metaKeys));
         source = 'product';
       } else if (primaryKey === 'netWeight' || primaryKey === 'grossWeight') {
         const value = placeholders[primaryKey] || '';
@@ -280,16 +337,14 @@ export class StorefrontDescriptionBuilder {
         );
         source = 'computed';
       } else if (primaryKey === 'kitComponents') {
-        if (!placeholders.kitComponents) continue;
-        html = toHtmlBlock(
-          resolveStorefrontTemplate(
-            attrs.template,
-            'kitComponents',
-            placeholders.kitComponents,
-            placeholders,
-            ctx.metaKeys,
-          ),
+        if (!ctx.isKit) continue;
+        const kitHtml = renderKitComponentsTemplate(
+          attrs.template,
+          ctx.kitComponentRows,
+          ctx.kitComponentSettings,
         );
+        if (!kitHtml.trim()) continue;
+        html = kitHtml;
         source = 'bom';
       } else {
         const raw = attrs.overrideContent?.trim() || attrs.template;
@@ -333,6 +388,7 @@ export class StorefrontDescriptionBuilder {
         return { ...base, html: toHtmlBlock(text), source: 'template' };
       }
       case 'ingredients': {
+        if (ctx.isKit) return null;
         const text = placeholders.ingredients || '';
         if (!text) return null;
         return {
@@ -344,17 +400,11 @@ export class StorefrontDescriptionBuilder {
         };
       }
       case 'nutrition': {
-        if (!placeholders.nutrition) return null;
+        if (!hasNutritionPlaceholderValues(placeholders)) return null;
         return {
           ...base,
           html: toHtmlBlock(
-            resolveStorefrontTemplate(
-              block.template,
-              'nutrition',
-              placeholders.nutrition,
-              placeholders,
-              ctx.metaKeys,
-            ),
+            substituteStorefrontPlaceholders(block.template, placeholders, ctx.metaKeys),
           ),
           source: 'product',
         };
@@ -372,18 +422,16 @@ export class StorefrontDescriptionBuilder {
         };
       }
       case 'kitComponents': {
-        if (!ctx.isKit || !placeholders.kitComponents) return null;
+        if (!ctx.isKit) return null;
+        const kitHtml = renderKitComponentsTemplate(
+          block.template,
+          ctx.kitComponentRows,
+          ctx.kitComponentSettings,
+        );
+        if (!kitHtml.trim()) return null;
         return {
           ...base,
-          html: toHtmlBlock(
-            resolveStorefrontTemplate(
-              block.template,
-              'kitComponents',
-              placeholders.kitComponents,
-              placeholders,
-              ctx.metaKeys,
-            ),
-          ),
+          html: kitHtml,
           source: 'bom',
         };
       }

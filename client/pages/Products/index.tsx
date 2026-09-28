@@ -39,6 +39,8 @@ import {
 import type { CatalogOrdersTabKey } from './components/CatalogTable';
 import { pluralize } from '@/lib/formatUtils';
 import { useTouchUi } from '@/hooks/useTouchUi';
+import { hasPermission, PERMISSIONS } from '@shared/constants/permissions';
+import { storefrontApi } from '@/services/StorefrontService';
 
 const MANUAL_SORT: SortDescriptor = {
   column: 'sortOrder',
@@ -47,6 +49,7 @@ const MANUAL_SORT: SortDescriptor = {
 
 export default function ProductsPage() {
   const { isAdminView: isAdmin, effectivePermissions } = useRolePreview();
+  const canPushStorefront = hasPermission(effectivePermissions, PERMISSIONS.ACTION_STOREFRONT_PUSH);
   const catalog = useProductsCatalog();
   const visualRootId =
     resolveCatalogVisualRootFolderId(catalog.treeNodes, effectivePermissions) ?? CATALOG_ROOT_ID;
@@ -72,6 +75,8 @@ export default function ProductsPage() {
   const syncStartedAtRef = useRef(0);
   const [syncConfirmIds, setSyncConfirmIds] = useState<string[] | null>(null);
   const [legacyUpdateConfirmIds, setLegacyUpdateConfirmIds] = useState<string[] | null>(null);
+  const [pushStorefrontConfirmIds, setPushStorefrontConfirmIds] = useState<string[] | null>(null);
+  const [pushStorefrontLoading, setPushStorefrontLoading] = useState(false);
   const [portionsBySku, setPortionsBySku] = useState<
     Map<string, { newQty: number; confirmedQty: number; holdQty: number }>
   >(new Map());
@@ -567,6 +572,28 @@ export default function ProductsPage() {
     ]
   );
 
+  const requestPushStorefront = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      catalog.setSelectedIds(ids);
+      const labels = resolveCatalogItemLabels(ids, {
+        tableRows: [...catalog.tableRows, ...(catalog.detail ? [catalog.detail] : [])],
+        treeItems: catalog.treeItemsFull,
+      });
+      const goods = labels.filter((l) => !l.isGroup && l.sku?.trim());
+      if (goods.length === 0) {
+        ToastService.show({
+          title: 'Немає товарів для push',
+          description: 'Оберіть товари з артикулом.',
+          color: 'warning',
+        });
+        return;
+      }
+      setPushStorefrontConfirmIds(ids);
+    },
+    [catalog.setSelectedIds, catalog.tableRows, catalog.detail, catalog.treeItemsFull],
+  );
+
   const openProductOrders = useCallback(
     (row: CatalogGoodDto, tab: CatalogOrdersTabKey) => {
       const sku = row.sku?.trim();
@@ -648,12 +675,20 @@ export default function ProductsPage() {
       if (!res.ok || json?.success === false) return [];
       return (json.data || [])
         .filter((r: { isGroup?: boolean }) => !r.isGroup)
-        .map((r: { id: string; name: string; sku: string | null; weight?: number | null; accPolicyId?: string | null }) => ({
+        .map((r: {
+          id: string;
+          name: string;
+          sku: string | null;
+          weight?: number | null;
+          accPolicyId?: string | null;
+          parentName?: string | null;
+        }) => ({
           id: r.id,
           name: r.name,
           sku: r.sku,
           weight: r.weight ?? null,
           accPolicyId: r.accPolicyId ?? null,
+          parentName: r.parentName ?? null,
         }));
     },
     []
@@ -724,6 +759,8 @@ export default function ProductsPage() {
             onEdit={catalog.openEdit}
             onSyncFromDilovod={requestSyncFromDilovod}
             onLegacyUpdate={requestLegacyUpdate}
+            onPushStorefront={requestPushStorefront}
+            canPushStorefront={canPushStorefront}
             onMoveTo={(ids) => {
               if (selectionInTrash) requestRestoreFromTrash(ids);
               else requestMoveTo(ids);
@@ -1127,7 +1164,7 @@ export default function ProductsPage() {
           <div className="space-y-1">
             <p>
               Буде виконано оновлення залишків всіх товарів:{' '}
-              <b>Dilovod → Backoffice → SalesDrive → WooCommerce (вітрина)</b>.
+              <b>Dilovod → Backoffice → SalesDrive → WooCommerce (сайт)</b>.
             </p>
             <p className="text-default-400 text-sm mt-2">
               Операція зазвичай займає не більше 10 секунд...
@@ -1221,6 +1258,38 @@ export default function ProductsPage() {
           const skus = legacyUpdateSkus;
           setLegacyUpdateConfirmIds(null);
           if (skus.length) catalog.legacySyncMutation.mutate(skus);
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(pushStorefrontConfirmIds?.length)}
+        title={`Синхронізувати з сайтом ${pushStorefrontConfirmIds?.length || 0} ${pluralize(pushStorefrontConfirmIds?.length || 0, 'товар', 'товари', 'товарів')}?`}
+        message="Опис, meta та статус публікації будуть відправлені на WooCommerce для обраних товарів."
+        confirmText="Синхронізувати"
+        confirmColor="primary"
+        cancelText="Скасувати"
+        confirmLoading={pushStorefrontLoading}
+        onCancel={() => setPushStorefrontConfirmIds(null)}
+        onConfirm={() => {
+          const ids = pushStorefrontConfirmIds;
+          setPushStorefrontConfirmIds(null);
+          if (!ids?.length) return;
+          setPushStorefrontLoading(true);
+          void storefrontApi
+            .pushBulk(ids)
+            .then((result) => {
+              const ok = result.results.filter((r) => r.ok).length;
+              const fail = result.results.filter((r) => !r.ok).length;
+              ToastService.show({
+                title: 'Синхронізація з сайтом завершена',
+                description: `Успішно: ${ok}, помилок: ${fail}`,
+                color: fail > 0 ? 'warning' : 'success',
+              });
+            })
+            .catch((err) => {
+              ToastService.error('Помилка push', err instanceof Error ? err.message : String(err));
+            })
+            .finally(() => setPushStorefrontLoading(false));
         }}
       />
 

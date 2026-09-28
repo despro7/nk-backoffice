@@ -457,7 +457,7 @@ export function BomSection({
                 color={qtySuspicious ? 'danger' : 'default'}
                 classNames={{
                   inputWrapper: `border-1 ${
-                    qtySuspicious
+                    qtySuspicious || c.qty <= 0
                       ? 'bg-danger-50 border-danger-500 data-[hover=true]:bg-danger-50/75 data-[focus=true]:bg-danger-50/75'
                       : 'border-default-200'
                   }`,
@@ -598,11 +598,6 @@ export function BomSection({
               errorMessage={weightFieldInvalid ? 'Має бути більше 0' : undefined}
               onValueChange={(v) => onFormChange((f) => ({ ...f, weight: v }))}
             />
-            {bomWeightExpected && bomWeightExpected.missingCount > 0 && (
-              <span className="block text-xs text-warning-700 px-3">
-                У деяких позицій не вказано вагу
-              </span>
-            )}
           </div>
           <div className="min-w-0 space-y-1">
             <NumberInput
@@ -875,6 +870,7 @@ export function newBomRowFromSearch(hit: CatalogSearchHit, mainUnitId: string): 
     note: '',
     componentWeight: hit.weight ?? null,
     componentAccPolicyId: hit.accPolicyId ?? null,
+    componentCategoryName: hit.parentName ?? null,
     cookingLossPercent: 0,
   };
 }

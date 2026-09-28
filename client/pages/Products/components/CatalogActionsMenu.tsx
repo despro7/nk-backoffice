@@ -21,6 +21,8 @@ export interface CatalogActionsMenuItemsProps {
   onEdit?: (id: string) => void;
   onSyncFromDilovod: (ids: string[]) => void;
   onLegacyUpdate: (ids: string[]) => void;
+  onPushStorefront?: (ids: string[]) => void;
+  canPushStorefront?: boolean;
   onMoveTo: (ids: string[]) => void;
   onChangeType: (ids: string[]) => void;
   onDuplicate: (ids: string[]) => void;
@@ -41,6 +43,8 @@ export function CatalogActionsMenuItems({
   onEdit,
   onSyncFromDilovod,
   onLegacyUpdate,
+  onPushStorefront,
+  canPushStorefront,
   onMoveTo,
   onChangeType,
   onDuplicate,
@@ -90,10 +94,18 @@ export function CatalogActionsMenuItems({
       {!onlyGroups && (
         <CatalogMenuItem
           icon="database"
-          label="Синхронізувати товар(и)"
+          label="Оновити legacy cache"
           disabled={!canBulk}
           legacy
           onSelect={() => run(onLegacyUpdate)}
+        />
+      )}
+      {!onlyGroups && canPushStorefront && onPushStorefront && (
+        <CatalogMenuItem
+          icon="cloud-upload"
+          label="Синхронізувати з сайтом"
+          disabled={!canBulk}
+          onSelect={() => run(onPushStorefront)}
         />
       )}
       <CatalogMenuItem
@@ -167,6 +179,7 @@ function CatalogMenuItem({
     | 'folder-input'
     | 'archive-restore'
     | 'cloud-download'
+    | 'cloud-upload'
     | 'database'
     | 'pencil'
     | 'shapes';
@@ -228,6 +241,8 @@ export function CatalogActionsDropdown({
   onEdit,
   onSyncFromDilovod,
   onLegacyUpdate,
+  onPushStorefront,
+  canPushStorefront,
   onMoveTo,
   onChangeType,
   onDuplicate,
@@ -318,6 +333,9 @@ export function CatalogActionsDropdown({
               break;
             case 'legacyUpdate':
               onLegacyUpdate(ids);
+              break;
+            case 'pushStorefront':
+              onPushStorefront?.(ids);
               break;
             case 'moveTo':
               onMoveTo(ids);
@@ -422,7 +440,15 @@ export function CatalogActionsDropdown({
             isDisabled={!canBulk}
             startContent={<DynamicIcon name="database" size={16} className="shrink-0" />}
           >
-            Синхронізувати товар(и)
+            Оновити legacy cache
+          </DropdownItem>
+          <DropdownItem
+            key="pushStorefront"
+            className={onlyGroups || !canPushStorefront ? 'hidden' : 'text-success'}
+            isDisabled={!canBulk}
+            startContent={<DynamicIcon name="cloud-upload" size={16} className="shrink-0" />}
+          >
+            Синхронізувати з сайтом
           </DropdownItem>
           <DropdownItem
             key="moveTo"

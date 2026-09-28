@@ -257,6 +257,8 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: actionKey('storefront', 'read'), seed: min(ROLES.WAREHOUSE_MANAGER) },
   { key: actionKey('storefront', 'edit'), seed: min(ROLES.WAREHOUSE_MANAGER) },
   { key: actionKey('storefront', 'manage'), seed: only(ROLES.ADMIN) },
+  { key: actionKey('storefront', 'pull'), seed: only(ROLES.ADMIN) },
+  { key: actionKey('storefront', 'push'), seed: min(ROLES.WAREHOUSE_MANAGER) },
 
   { key: actionKey('warehouse', 'operate'), seed: min(ROLES.STOREKEEPER) },
   { key: actionKey('warehouse', 'history.delete'), seed: only(ROLES.ADMIN) },
@@ -341,6 +343,8 @@ export const PERMISSIONS = {
   ACTION_STOREFRONT_READ: actionKey('storefront', 'read'),
   ACTION_STOREFRONT_EDIT: actionKey('storefront', 'edit'),
   ACTION_STOREFRONT_MANAGE: actionKey('storefront', 'manage'),
+  ACTION_STOREFRONT_PULL: actionKey('storefront', 'pull'),
+  ACTION_STOREFRONT_PUSH: actionKey('storefront', 'push'),
   ACTION_WAREHOUSE_OPERATE: actionKey('warehouse', 'operate'),
   ACTION_WAREHOUSE_HISTORY_DELETE: actionKey('warehouse', 'history.delete'),
   ACTION_WAREHOUSE_MOVEMENT_EDIT: actionKey('warehouse', 'movement.edit'),

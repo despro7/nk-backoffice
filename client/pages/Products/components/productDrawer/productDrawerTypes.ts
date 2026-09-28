@@ -48,6 +48,8 @@ export interface CatalogSearchHit {
   sku: string | null;
   weight?: number | null;
   accPolicyId?: string | null;
+  /** Батьківська папка компонента в каталозі */
+  parentName?: string | null;
 }
 
 export interface BomRow {
@@ -64,6 +66,8 @@ export interface BomRow {
   componentAccPolicyId: string | null;
   /** % втрат при готуванні (0–100) */
   cookingLossPercent: number;
+  /** Батьківська папка компонента в каталозі */
+  componentCategoryName?: string | null;
 }
 
 export interface PriceRow {

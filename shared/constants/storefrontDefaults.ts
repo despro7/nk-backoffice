@@ -3,6 +3,8 @@ import type {
   StorefrontBlockConfig,
   StorefrontBlockId,
   StorefrontBlockResolver,
+  StorefrontKitComponentCategoryConfig,
+  StorefrontKitComponentSettings,
   StorefrontMetaKeyConfig,
 } from '../types/storefront.js';
 import { STOREFRONT_BLOCK_IDS, STOREFRONT_WC_META } from '../types/storefront.js';
@@ -25,9 +27,47 @@ const DEFAULT_TEMPLATES = {
   netWeight: 'Маса нетто: {{netWeight}}',
   grossWeight: 'Маса брутто: {{grossWeight}}',
   ingredients: 'Склад: {{ingredients}}',
-  nutrition: '{{nutrition}}',
-  kitComponents: '{{kitComponents}}',
+  nutrition: `<p>Енергетична цінність:</p>
+<ul>
+<li>Білки {{proteins}} г</li>
+<li>Жири {{fats}} г</li>
+<li>Вуглеводи {{carbs}} г</li>
+<li>Калорійність {{energy}} ккал</li>
+</ul>`,
+  kitComponents: `{{#kitGroups}}
+{{#if groupTotalQty > 1 || groupItemCount > 1}}
+<h3>{{groupTotalQty}} {{groupTotalQtyLabel}} {{groupLabelGenitive}}{{groupWeightSuffix}}:</h3>
+{{/if}}
+<ul>
+{{#kitItems}}
+<li>{{name}} – {{qty}} {{qtyLabel}} {{#if qty > 1 }}по {{/if}}{{itemWeight}}</li>
+{{/kitItems}}
+</ul>
+{{/kitGroups}}`,
 } as const;
+
+/** Дефолтні категорії компонентів комплекту (seed) */
+export const STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS: StorefrontKitComponentSettings = {
+  categories: [
+    {
+      id: 'kit-cat-first',
+      label: 'Перші страви',
+      genitive: 'перших страв',
+      defaultWeightKg: 0.4,
+      order: 1,
+    },
+    {
+      id: 'kit-cat-second',
+      label: 'Другі страви',
+      genitive: 'других страв',
+      defaultWeightKg: 0.3,
+      order: 2,
+    },
+  ],
+  fallbackGenitive: 'з інших категорій',
+  fallbackDefaultWeightKg: 0.3,
+  fallbackOrder: 100,
+};
 
 /** Default meta key registry (seed) */
 export const STOREFRONT_DEFAULT_META_KEYS: StorefrontMetaKeyConfig[] = [
@@ -101,13 +141,15 @@ export const STOREFRONT_RESOLVER_HINTS: Record<StorefrontBlockResolver, string> 
   template: 'Вільний текст; доступні {{netWeight}} та {{grossWeight}}',
   ingredients:
     'Плейсхолдер {{ingredients}} або {{_nk_ingredients}} — теги складу на вкладці «Контент»',
-  nutrition: 'Плейсхолдер {{nutrition}} або {{_nk_nutrition}} — поле «КБЖВ»',
+  nutrition:
+    'Плейсхолдери {{proteins}}, {{fats}}, {{carbs}}, {{energy}}, {{nutritionSalt}}; {{nutrition}} — повний блок; {{_nk_nutrition}} — meta',
   storage: 'Шаблон нижче; можна override у редакторі опису',
   heating: 'Шаблон нижче; можна override у редакторі опису',
   salt: 'Шаблон нижче; можна override у редакторі опису',
   netWeight: 'Плейсхолдер {{netWeight}} — маса нетто з основної вкладки',
   grossWeight: 'Плейсхолдер {{grossWeight}} — маса брутто з основної вкладки',
-  kitComponents: 'Плейсхолдер {{kitComponents}} — HTML-список компонентів комплекту (лише kits)',
+  kitComponents:
+    'Шаблон з циклами та плейсхолдерами для групування компонентів комплекту за категоріями BOM',
 };
 
 export function storefrontBlockUsesTemplate(_resolver: StorefrontBlockResolver): boolean {
@@ -146,6 +188,111 @@ export function createCustomStorefrontMetaKey(label = 'Новий meta-ключ'
       ? crypto.randomUUID()
       : `meta-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   return { id, label, key: '' };
+}
+
+export function createCustomKitComponentCategory(
+  label = 'Нова категорія',
+  order = 100,
+): StorefrontKitComponentCategoryConfig {
+  const id =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `kit-cat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return {
+    id,
+    label: label.trim(),
+    genitive: label.trim() ? label.trim().toLowerCase() : '',
+    defaultWeightKg: 0.3,
+    order,
+  };
+}
+
+function normalizeWeightMaxKg(
+  minKg: number,
+  maxKg: number | null | undefined,
+): number | null {
+  if (maxKg == null || !Number.isFinite(maxKg) || maxKg <= minKg) return null;
+  return maxKg;
+}
+
+function isKitComponentCategoryConfig(row: unknown): row is StorefrontKitComponentCategoryConfig {
+  if (!row || typeof row !== 'object') return false;
+  const r = row as Partial<StorefrontKitComponentCategoryConfig>;
+  return (
+    typeof r.id === 'string' &&
+    typeof r.label === 'string' &&
+    typeof r.genitive === 'string' &&
+    typeof r.defaultWeightKg === 'number' &&
+    typeof r.order === 'number' &&
+    (r.defaultWeightMaxKg === undefined ||
+      r.defaultWeightMaxKg === null ||
+      typeof r.defaultWeightMaxKg === 'number')
+  );
+}
+
+export function normalizeStorefrontKitComponentSettings(
+  input: unknown,
+): StorefrontKitComponentSettings {
+  if (!input || typeof input !== 'object') {
+    return { ...STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS, categories: [...STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS.categories] };
+  }
+
+  const raw = input as Partial<StorefrontKitComponentSettings>;
+  const seenIds = new Set<string>();
+  const seenLabels = new Set<string>();
+  const categories: StorefrontKitComponentCategoryConfig[] = [];
+
+  if (Array.isArray(raw.categories)) {
+    for (const row of raw.categories) {
+      if (!isKitComponentCategoryConfig(row)) continue;
+      const label = row.label.trim();
+      const genitive = row.genitive.trim();
+      const id = row.id.trim();
+      if (!id || !label || !genitive || seenIds.has(id) || seenLabels.has(label)) continue;
+      const defaultWeightKg = Number.isFinite(row.defaultWeightKg) && row.defaultWeightKg > 0
+        ? row.defaultWeightKg
+        : 0.3;
+      const defaultWeightMaxKg = normalizeWeightMaxKg(defaultWeightKg, row.defaultWeightMaxKg);
+      const order = Number.isFinite(row.order) ? row.order : 100;
+      seenIds.add(id);
+      seenLabels.add(label);
+      categories.push({ id, label, genitive, defaultWeightKg, defaultWeightMaxKg, order });
+    }
+  }
+
+  const fallbackGenitive =
+    typeof raw.fallbackGenitive === 'string' && raw.fallbackGenitive.trim()
+      ? raw.fallbackGenitive.trim()
+      : STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS.fallbackGenitive;
+  const fallbackDefaultWeightKg =
+    Number.isFinite(raw.fallbackDefaultWeightKg) && raw.fallbackDefaultWeightKg > 0
+      ? raw.fallbackDefaultWeightKg
+      : STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS.fallbackDefaultWeightKg;
+  const fallbackDefaultWeightMaxKg = normalizeWeightMaxKg(
+    fallbackDefaultWeightKg,
+    raw.fallbackDefaultWeightMaxKg,
+  );
+  const fallbackOrder =
+    Number.isFinite(raw.fallbackOrder)
+      ? raw.fallbackOrder
+      : STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS.fallbackOrder;
+
+  categories.sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'uk'));
+  const normalizedCategories = categories.map((row, index) => ({
+    ...row,
+    order: index + 1,
+  }));
+
+  return {
+    categories:
+      normalizedCategories.length > 0
+        ? normalizedCategories
+        : [...STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS.categories],
+    fallbackGenitive,
+    fallbackDefaultWeightKg,
+    fallbackDefaultWeightMaxKg,
+    fallbackOrder,
+  };
 }
 
 function isStorefrontBlockConfig(row: unknown): row is StorefrontBlockConfig {
@@ -234,9 +381,24 @@ export function resolveStorefrontMetaKey(
 
 export const STOREFRONT_SETTINGS_KEYS = {
   metaKeys: 'storefront.metaKeys',
+  kitComponentSettings: 'storefront.kitComponentSettings',
   defaultPresetId: 'storefront.defaultPresetId',
+  woo: {
+    siteUrl: 'storefront.woo.siteUrl',
+    consumerKey: 'storefront.woo.consumerKey',
+    consumerSecret: 'storefront.woo.consumerSecret',
+    enabled: 'storefront.woo.enabled',
+    mediaPublicBaseUrl: 'storefront.woo.mediaPublicBaseUrl',
+  },
 } as const;
 
 export function metaKeysEqual(a: StorefrontMetaKeyConfig[], b: StorefrontMetaKeyConfig[]): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export function kitComponentSettingsEqual(
+  a: StorefrontKitComponentSettings,
+  b: StorefrontKitComponentSettings,
+): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }

@@ -46,7 +46,7 @@ import {
 const router = Router();
 requirePermission('catalog', 'manage', 'Каталог Товари 2.0');
 requirePermission('products', 'editSpec', 'Редагування специфікації товару (BOM)');
-requirePermission('storefront', 'edit', 'Редагування контенту вітрини товару');
+requirePermission('storefront', 'edit', 'Редагування контенту сайту товару');
 const catalogFullRefresh = requirePermission('catalog', 'fullRefresh', 'Повний refresh каталогу з Dilovod');
 const authOnly = [authenticateToken] as const;
 
@@ -269,7 +269,8 @@ router.get('/goods/:id', ...authOnly, async (req, res) => {
   try {
     const perms = await assertCanUseCatalogApi(req, res);
     if (!perms) return;
-    const data = await productsCatalogService.getGoodDetail(req.params.id, { livePull: true });
+    const livePull = req.query.livePull !== 'false';
+    const data = await productsCatalogService.getGoodDetail(req.params.id, { livePull });
     if (!data) {
       res.status(404).json({ success: false, error: 'Товар не знайдено' });
       return;

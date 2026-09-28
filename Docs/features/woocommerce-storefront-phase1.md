@@ -1,6 +1,6 @@
 # WooCommerce Storefront — Фаза 1 (backoffice)
 
-**Дата:** 2026-09-26 (оновлено 2026-09-27)  
+**Дата:** 2026-09-26 (оновлено 2026-09-28)  
 **Маршрут налаштувань:** `/settings/storefront` (`page.settings.storefront`)  
 **API:** `/api/storefront/*`  
 **Повʼязаний домен:** [Products 2.0](./products-catalog-2.0.md) — вкладки «Контент» і «Основні дані» у `ProductDrawer`  
@@ -10,17 +10,16 @@
 
 ## Огляд
 
-Фаза 1 — **підготовка даних і конструктора опису в backoffice** без реального push у WooCommerce REST. Мета: зібрати на рівні товару всі поля для опису вітрини, дозволити адміну налаштувати preset блоків і meta-ключів, збирати HTML опис + payload для Phase 2.
+Фаза 1 — **підготовка даних і конструктора опису в backoffice**. Фаза 2 (2026-09-28) — **реальний WooCommerce REST**: pull/push опису, зображень, привʼязка `wooProductId`.
 
-| Що | Фаза 1 | Фаза 2 (заплановано) |
-|----|--------|----------------------|
-| Поля товару (маркетинг, склад, КБЖВ…) | ✅ UI + БД | sync у WC |
+| Що | Фаза 1 | Фаза 2 |
+|----|--------|--------|
+| Поля товару (маркетинг, склад, КБЖВ…) | ✅ UI + БД | ✅ push/pull |
 | Конструктор блоків / preset | ✅ | — |
-| Реєстр WC meta-ключів | ✅ CRUD у settings | запис у `post_meta` |
-| WooCommerce REST | заглушка в UI | реальне підключення + push |
-| Preview / dry-run | ✅ API | live sync |
-
-**Наступний крок після Фази 1:** Phase 2 (WooCommerce REST sync). Решта UX картки товару — за потреби.
+| Реєстр WC meta-ключів | ✅ CRUD у settings | ✅ запис у `post_meta` |
+| WooCommerce REST | заглушка в UI | ✅ credentials, test, pull/push |
+| Preview / dry-run | ✅ API | ✅ live sync + bulk push |
+| Медіа товару | локально в BO | ✅ upload у WC + `wooMediaId` |
 
 ---
 
@@ -52,8 +51,15 @@ Assembly (server)
 | Defaults / normalize | `shared/constants/storefrontDefaults.ts` |
 | Placeholders / nutrition / gross | `shared/utils/storefrontDescription.ts` |
 | Product description editor | `client/pages/Products/components/productDrawer/StorefrontDescriptionEditor.tsx` |
+| Editor shared utils | `client/components/editor/editorFormatting.ts`, `HtmlCodeMirror.tsx` |
+| Bubble toolbar | `client/pages/Products/components/productDrawer/storefrontEditorBubbleToolbar.lib.ts` |
+| WC pull modal | `client/pages/Products/components/productDrawer/StorefrontPullConfirmModal.tsx` |
+| WC description parser | `shared/utils/storefrontDescriptionParser.ts` |
+| Kit components template | `shared/utils/kitComponentsTemplate.ts` |
 | API routes | `server/routes/storefront.ts` |
 | Presets & settings | `server/modules/Storefront/StorefrontService.ts` |
+| WC REST client / sync | `server/modules/Storefront/WooCommerceApiClient.ts`, `WooCommerceSyncService.ts` |
+| WC media sync | `server/modules/Storefront/WooCommerceMediaService.ts` |
 | HTML assembly | `server/modules/Storefront/StorefrontDescriptionBuilder.ts` |
 | Catalog fields map | `server/modules/Products/catalogStorefrontFields.ts` |
 | Field-level ACL (detect changes) | `shared/utils/catalogProductFieldAccess.ts` |
@@ -171,7 +177,9 @@ Seed preset «Стандарт»: `00000000-0000-4000-8000-000000000001`.
 | `page.settings.storefront` | Вітрина WooCommerce | лише `admin` | Сторінка `/settings/storefront` у меню |
 | `action.storefront.read` | Читання шаблонів вітрини | від `warehouse-manager` | GET `/api/storefront/presets`, `/settings`; preview; селект preset у картці товару |
 | `action.storefront.edit` | Редагування контенту вітрини товару | від `warehouse-manager` | Поля вкладки «Контент» + збереження через PUT `/api/catalog/goods/:id` (лише якщо змінились storefront-поля) |
-| `action.storefront.manage` | Керування налаштуваннями вітрини (CRUD) | лише `admin` | POST/PUT/DELETE preset, PUT settings, dry-run push; кнопки збереження на `/settings/storefront` |
+| `action.storefront.manage` | Керування налаштуваннями вітрини (CRUD) | лише `admin` | POST/PUT/DELETE preset, PUT settings, dry-run push, WC credentials, orphan media |
+| `action.storefront.pull` | Pull опису з WooCommerce | лише `admin` | `pull-preview` / `pull-apply`, inspect WC |
+| `action.storefront.push` | Push опису на WooCommerce | від `warehouse-manager` | `push-preview` / `push-apply`, bulk push, upload media |
 | `action.products.editSpec` | Редагування специфікації товару (BOM) | лише `admin` | BOM + `specQty` на «Основні дані»; **не** входить у ACL папки каталогу |
 
 **Storefront-поля для перевірки `edit`** (порівняння зі збереженим товаром, `catalogProductFieldAccess.ts`):
@@ -194,8 +202,9 @@ Layout **1/3 + 2/3**:
 
 | Ліва колонка | Права колонка |
 |--------------|---------------|
-| WooCommerce API (заглушка Phase 2) | Конструктор опису |
+| WooCommerce API (URL, keys, enable, test connection, media base URL) | Конструктор опису |
 | Meta-ключі (CRUD) | Presets, drag-and-drop блоків, шаблони |
+| Orphan WC media audit | Налаштування `kitComponents` (категорії BOM) |
 
 ### Конструктор блоків
 
@@ -239,15 +248,17 @@ HTML для WC збирає `StorefrontDescriptionBuilder.resolveDescriptionDocH
 
 Візуально bound-блоки мають жовту смужку зліва (`storefront-block--protected`).
 
-**UX редактора (2026-09-27):**
+**UX редактора (2026-09-28):**
 
 | Елемент | Поведінка |
 |---------|-----------|
-| Hover на bound / overridable блок | Легкий фон + outline (`global.css`); курсор pointer на preview — «клікніть, щоб редагувати блок» |
-| Frozen placeholder atoms (`.storefront-ph-atom`) | `cursor: not-allowed`; HeroUI Tooltip — значення змінюється у «Склад», «КБЖВ» тощо, не в редакторі |
-| Hover на bound/overridable preview | Floating Tooltip (event delegation) з підказкою про клік і bound-поля |
-| Toolbar | Bold, italic, **strike**, lists, link — паритет з `DescriptionEditor` |
-| TypeScript | `ignoreMutation` — `globalThis.Node`; `STOREFRONT_TRAILING_NODE_OPTIONS` без `as const` на `notAfter` |
+| Toolbar | H2–H6 select, bold/italic/strike, lists, link, **очистити форматування** (знімає marks, заголовки, списки, `class` параграфа) |
+| Bubble menu | Спільний для основного редактора і bound mini-editor; одночасно активний лише один екземпляр |
+| JSON source | CodeMirror для `storefrontDescriptionDoc`; після повернення bound-блоки знову інтерактивні |
+| HTML preview | Модалка з фінальним HTML для WC (`StorefrontHtmlPreviewModal`) |
+| Списки | `StorefrontListItem` (`inline*`) — `<li>текст</li>` без зайвого `<p>`; коректний HTML у WC |
+| Hover на bound / overridable блок | Фон + outline; delete-кнопка; floating tooltip — **лише в preview** (після blur з edit mode) |
+| Frozen placeholder atoms | Read-only live-значення; редагуються у полях товару, не в шаблоні |
 
 **Права на вкладці:** завантаження preset — `storefront.read` (без API — fallback `STOREFRONT_DEFAULT_BLOCKS`); редагування полів — `storefront.edit` (`publishLocked` / `storefrontFieldsLocked`).
 
@@ -265,7 +276,7 @@ HTML для WC збирає `StorefrontDescriptionBuilder.resolveDescriptionDocH
 - У шаблоні плейсхолдери (`{{ingredients}}`, …) показуються як **read-only inline atoms** з **поточним live-текстом** (`templateHtmlForStorefrontEditorLive`), а не як `{{key}}`.
 - Порожнє значення → курсивне «немає даних» (`.storefront-ph-atom--empty`).
 - При зміні полів товару placeholder-и оновлюються без виходу з edit mode.
-- При blur → назад у preview (одразу, через перевірку `document.activeElement`).
+- При blur / фокусі основного редактора → назад у preview (`attachMiniEditorBlurHandler`; кліки в scroll-області не вважаються toolbar chrome).
 - У JSON зберігається шаблон з `{{placeholders}}` (`templateFromStorefrontEditorHtml`).
 
 **Захист placeholder-ів:** `StorefrontPlaceholderGuard` забороняє видалити atom placeholder з mini-editor.
@@ -281,6 +292,17 @@ HTML для WC збирає `StorefrontDescriptionBuilder.resolveDescriptionDocH
 
 Стилі: `client/global.css` — `.storefront-block*`, `.storefront-ph-atom`, приховання trailing empty `<p>`.
 
+### WooCommerce sync (картка товару + каталог)
+
+| Дія | UI | API |
+|-----|-----|-----|
+| Pull з WC | `StorefrontPullConfirmModal` — preview полів, вибір що застосувати | `POST /woo/pull-preview`, `/woo/pull-apply` |
+| Push на WC | Меню drawer / bulk у каталозі | `POST /woo/push-preview`, `/woo/push-apply`, `/woo/push-bulk` |
+| Upload зображень | `ProductImageUpload` + push | `POST /woo/media/upload` |
+| Inspect WC | Admin drawer | `POST /woo/inspect` |
+
+Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `storefrontDescriptionDoc`, склад, КБЖВ, ціни. Після sync оновлюються `wooProductId`, `wooLastSyncedAt`; зображення — `catalog_good_images.wooMediaId`.
+
 ---
 
 ## API
@@ -293,10 +315,20 @@ HTML для WC збирає `StorefrontDescriptionBuilder.resolveDescriptionDocH
 | POST | `/presets` | `action.storefront.manage` | створити |
 | PUT | `/presets/:id` | `action.storefront.manage` | оновити blocks / name |
 | DELETE | `/presets/:id` | `action.storefront.manage` | видалити (не default) |
-| GET | `/settings` | `action.storefront.read` | metaKeys + defaultPresetId + woo stub |
-| PUT | `/settings` | `action.storefront.manage` | metaKeys, defaultPresetId |
+| GET | `/settings` | `action.storefront.read` | metaKeys, defaultPresetId, kitComponentSettings, wooCommerce |
+| PUT | `/settings` | `action.storefront.manage` | metaKeys, defaultPresetId, kitComponentSettings, wooCommerce |
 | POST | `/preview` | `action.storefront.read` | HTML preview для `goodId` |
-| POST | `/dry-run-push` | `action.storefront.manage` | payload Phase 2 без HTTP у WC |
+| POST | `/dry-run-push` | `action.storefront.manage` | payload без HTTP у WC |
+| POST | `/woo/test-connection` | `action.storefront.manage` | перевірка credentials |
+| POST | `/woo/inspect` | `action.storefront.pull` | summary WC product за SKU |
+| POST | `/woo/pull-preview` | `action.storefront.pull` | порівняння local vs WC |
+| POST | `/woo/pull-apply` | `action.storefront.pull` | застосувати вибрані поля |
+| POST | `/woo/push-preview` | `action.storefront.push` | preview push |
+| POST | `/woo/push-apply` | `action.storefront.push` | push одного товару |
+| POST | `/woo/push-bulk` | `action.storefront.push` | bulk push |
+| POST | `/woo/media/upload` | `action.storefront.push` | upload зображень товару |
+| GET | `/woo/media/orphans` | `action.storefront.manage` | audit orphan WC media |
+| POST | `/woo/media/orphans/delete` | `action.storefront.manage` | видалити orphan media |
 
 **Збереження товару** (`PUT/POST /api/catalog/goods`): додаткові перевірки в `ProductsController` через `catalogProductPermissions.ts` — див. таблицю RBAC вище.
 
@@ -335,12 +367,15 @@ Status `draft`: `doNotPublish` або товар у папці «Архів – 
 ## Тести
 
 - `shared/constants/storefrontDefaults.spec.ts` — normalize, protected blocks
-- `shared/utils/storefrontDescription.spec.ts` — placeholders, gross, nutrition, template editor live/normalize
+- `shared/utils/storefrontDescription.spec.ts` — placeholders, gross, nutrition, inline list items, template editor
+- `shared/utils/storefrontDescriptionParser.spec.ts` — парсинг WC HTML/meta при pull
+- `shared/utils/kitComponentsTemplate.spec.ts` — шаблон `{{kitComponents}}`
+- `server/modules/Storefront/WooCommerceSyncService.spec.ts`, `WooCommerceApiClient.spec.ts`
 - `shared/utils/catalogProductFieldAccess.spec.ts` — detect spec/storefront field changes
 - `shared/constants/permissions.spec.ts` — seed для `storefront.*`, `products.editSpec`
 
 ```bash
-npm run test -- shared/constants/storefrontDefaults.spec.ts shared/utils/storefrontDescription.spec.ts shared/utils/catalogProductFieldAccess.spec.ts shared/constants/permissions.spec.ts
+npm run test -- shared/utils/storefrontDescription.spec.ts shared/utils/storefrontDescriptionParser.spec.ts server/modules/Storefront/WooCommerceSyncService.spec.ts
 ```
 
 ---
@@ -353,5 +388,6 @@ npm run test -- shared/constants/storefrontDefaults.spec.ts shared/utils/storefr
 | **Картка товару** — doc-редактор «Повний опис», bound/overridable блоки | ✅ (2026-09-27) |
 | **Картка товару** — UX редактора (hover, tooltips, strike, ingredients confirm) | ✅ (2026-09-27) |
 | **RBAC** — storefront read/edit/manage + `products.editSpec` | ✅ (2026-09-27) |
-| **Картка товару** — решта UX/полів вітрини | 🔜 |
-| **Фаза 2** — WooCommerce REST, credentials, push/sync, `wooProductId` | заплановано |
+| **Редактор «Повний опис»** — toolbar, bubble menu, JSON source, lists, WC HTML preview | ✅ (2026-09-28) |
+| **Фаза 2** — WooCommerce REST pull/push, media, bulk | ✅ (2026-09-28) |
+| **Фаза 2** — ціни Dilovod→WC, cron sync, conflict UX | 🔜 |

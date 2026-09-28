@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
+  ButtonGroup,
   Divider,
   Drawer,
   DrawerBody,
@@ -483,6 +484,7 @@ export function ProductDrawer({
         note: c.note || '',
         componentWeight: c.componentWeight ?? null,
         componentAccPolicyId: c.componentAccPolicyId ?? null,
+        componentCategoryName: c.componentCategoryName ?? null,
         cookingLossPercent: c.cookingLossPercent ?? 0,
       }));
       const nextPrices = detail.prices.map((p) => ({
@@ -577,24 +579,37 @@ export function ProductDrawer({
     }
   }, [detail?.sku]);
 
-  const handleStorefrontPush = useCallback(async () => {
-    if (!detail?.id) return;
+  const pushGoodToStorefront = useCallback(async (goodId: string) => {
     setPushLoading(true);
     try {
-      const result = await storefrontApi.pushApply(detail.id);
+      const result = await storefrontApi.pushApply(goodId);
+      const imageWarning = result.imageErrors?.length
+        ? `Зображення: ${result.imageErrors.join('; ')}`
+        : undefined;
       ToastService.show({
-        title: result.created ? 'Товар створено на вітрині' : 'Товар оновлено на вітрині',
-        description: `WC#${result.wooProductId}`,
-        color: 'success',
+        title: result.created ? 'Товар створено на сайті' : 'Товар оновлено на сайті',
+        description: [
+          `WC#${result.wooProductId}`,
+          result.imagesUploaded ? `Завантажено зображень: ${result.imagesUploaded}` : null,
+          imageWarning,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        color: result.imageErrors?.length ? 'warning' : 'success',
       });
       setPushConfirmOpen(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      ToastService.show({ title: 'Помилка push', description: message, color: 'danger' });
+      ToastService.show({ title: 'Помилка синхронізації', description: message, color: 'danger' });
     } finally {
       setPushLoading(false);
     }
-  }, [detail?.id]);
+  }, []);
+
+  const handleStorefrontPush = useCallback(async () => {
+    if (!detail?.id) return;
+    await pushGoodToStorefront(detail.id);
+  }, [detail?.id, pushGoodToStorefront]);
 
   const buildPayload = useCallback((): CatalogCreateGoodInput | CatalogUpdateGoodInput | null => {
     if (!objectKind) return null;
@@ -688,47 +703,73 @@ export function ProductDrawer({
     }).catch(() => undefined);
   }, []);
 
-  const handleSave = useCallback(async () => {
-    const payload = buildPayload();
-    if (!payload) return;
+  const handleSave = useCallback(
+    async (opts?: { closeAfter?: boolean; pushStorefrontAfter?: boolean }) => {
+      const payload = buildPayload();
+      if (!payload) return;
 
-    if (isGood || isKit) {
-      const missing: string[] = [];
-      if (isGood && !isRequiredPositiveField(form.packageRatio)) missing.push('порцій у коробці');
-      if (!isRequiredPositiveField(form.weight)) missing.push('вага');
-      if (!areRequiredCatalogPricesFilled(prices)) missing.push('основні ціни');
-      if (missing.length > 0) {
-        ToastService.show({
-          title: 'Не заповнені обовʼязкові поля',
-          description: `Вкажіть: ${missing.join(', ')}. Значення не можуть бути порожніми або 0.`,
-          color: 'warning',
-          icon: 'alert-triangle'
-        });
-        setCardTab('main');
+      if (isGood || isKit) {
+        const missing: string[] = [];
+        if (isGood && !isRequiredPositiveField(form.packageRatio)) missing.push('порцій у коробці');
+        if (!isRequiredPositiveField(form.weight)) missing.push('вага');
+        if (!areRequiredCatalogPricesFilled(prices)) missing.push('основні ціни');
+        if (missing.length > 0) {
+          ToastService.show({
+            title: 'Не заповнені обовʼязкові поля',
+            description: `Вкажіть: ${missing.join(', ')}. Значення не можуть бути порожніми або 0.`,
+            color: 'warning',
+            icon: 'alert-triangle',
+          });
+          setCardTab('main');
+          return;
+        }
+      }
+
+      const shouldPushStorefront =
+        Boolean(opts?.pushStorefrontAfter) && canPushStorefront && !isFolder;
+
+      if (isEdit && detail) {
+        const input: CatalogUpdateGoodInput = {
+          ...payload,
+          parentId: detail.parentId,
+          parentName: detail.parentName,
+          isGroup: isFolder,
+        };
+        await onUpdate(detail.id, input, { keepOpen: !opts?.closeAfter });
+        if (shouldPushStorefront) {
+          await pushGoodToStorefront(detail.id);
+        }
         return;
       }
-    }
 
-    if (isEdit && detail) {
-      const input: CatalogUpdateGoodInput = {
-        ...payload,
-        parentId: detail.parentId,
-        parentName: detail.parentName,
+      const input: CatalogCreateGoodInput = {
+        ...(payload as CatalogCreateGoodInput),
+        parentId: createParentId === CATALOG_ROOT_ID ? null : createParentId,
         isGroup: isFolder,
       };
-      await onUpdate(detail.id, input);
-      return;
-    }
-
-    const input: CatalogCreateGoodInput = {
-      ...(payload as CatalogCreateGoodInput),
-      parentId: createParentId === CATALOG_ROOT_ID ? null : createParentId,
-      isGroup: isFolder,
-    };
-    // Staging commit на сервері через stagingSessionId у payload
-    await onCreate(input);
-    setStagingSessionId(null);
-  }, [buildPayload, isEdit, detail, onUpdate, onCreate, createParentId, isFolder, isGood, isKit, prices, form.packageRatio, form.weight]);
+      const created = (await onCreate(input)) as CatalogGoodDetailDto | null | undefined;
+      setStagingSessionId(null);
+      if (shouldPushStorefront && created?.id) {
+        await pushGoodToStorefront(created.id);
+      }
+    },
+    [
+      buildPayload,
+      isEdit,
+      detail,
+      onUpdate,
+      onCreate,
+      createParentId,
+      isFolder,
+      isGood,
+      isKit,
+      prices,
+      form.packageRatio,
+      form.weight,
+      canPushStorefront,
+      pushGoodToStorefront,
+    ],
+  );
 
   /** Debug: показати payload, який піде на create/update */
   const handleShowPayload = useCallback(() => {
@@ -770,7 +811,7 @@ export function ProductDrawer({
 
   const guard = useUnsavedGuard({
     isDirty,
-    onSaveDraft: handleSave,
+    onSaveDraft: () => handleSave({ closeAfter: true }),
   });
 
   const requestClose = guard.guardAction(closeAndDiscardStaging, {
@@ -1266,6 +1307,7 @@ export function ProductDrawer({
                     stagingSessionId={stagingSessionId}
                     units={units}
                     onImagesChange={setImages}
+                    overlayZClassName={overlayZ}
                   />
                 )}
 
@@ -1364,7 +1406,7 @@ export function ProductDrawer({
                         }
                         startContent={<DynamicIcon name="search" size={16} className="shrink-0" />}
                       >
-                        Інспектувати на вітрині
+                        Інспектувати на сайті
                       </DropdownItem>
                       <DropdownItem
                         key="storefrontPull"
@@ -1375,7 +1417,7 @@ export function ProductDrawer({
                         }
                         startContent={<DynamicIcon name="cloud-download" size={16} className="shrink-0" />}
                       >
-                        Завантажити з вітрини
+                        Завантажити з сайту
                       </DropdownItem>
                       <DropdownItem
                         key="storefrontPush"
@@ -1393,7 +1435,7 @@ export function ProductDrawer({
                           />
                         }
                       >
-                        Синхронізувати на вітрину
+                        Синхронізувати з сайтом
                       </DropdownItem>
                       <DropdownItem
                         key="dilovodId"
@@ -1435,14 +1477,72 @@ export function ProductDrawer({
                 {readOnly ? 'Закрити' : 'Скасувати'}
               </Button>
               {!readOnly && (
-              <Button
-                color="primary"
-                onPress={() => void handleSave()}
-                isDisabled={!hasObjectKind || !form.name.trim() || saving || !isDirty || !requiredFieldsOk}
-                startContent={saving ? <DynamicIcon name="loader-2" className="animate-spin" size={14} /> : <DynamicIcon name="save" size={14} />}
-              >
-                Зберегти і закрити
-              </Button>
+                <ButtonGroup>
+                  <Button
+                    color="primary"
+                    onPress={() => void handleSave()}
+                    isDisabled={
+                      !hasObjectKind ||
+                      !form.name.trim() ||
+                      saving ||
+                      pushLoading ||
+                      !isDirty ||
+                      !requiredFieldsOk
+                    }
+                    startContent={
+                      saving || pushLoading ? (
+                        <DynamicIcon name="loader-2" className="animate-spin" size={14} />
+                      ) : (
+                        <DynamicIcon name="save" size={14} />
+                      )
+                    }
+                  >
+                    {isEdit ? 'Зберегти' : 'Створити'}
+                  </Button>
+                  <Dropdown placement="top-end">
+                    <DropdownTrigger>
+                      <Button
+                        isIconOnly
+                        color="primary"
+                        aria-label="Додаткові дії збереження"
+                        isDisabled={
+                          !hasObjectKind ||
+                          !form.name.trim() ||
+                          saving ||
+                          pushLoading ||
+                          !isDirty ||
+                          !requiredFieldsOk
+                        }
+                      >
+                        <DynamicIcon name="chevron-down" size={14} />
+                      </Button>
+                    </DropdownTrigger>
+                    <DropdownMenu
+                      aria-label="Варіанти збереження"
+                      onAction={(key) => {
+                        if (key === 'close') void handleSave({ closeAfter: true });
+                        if (key === 'sync') void handleSave({ pushStorefrontAfter: true });
+                      }}
+                    >
+                      <DropdownItem
+                        key="close"
+                        className={isEdit ? undefined : 'hidden'}
+                        startContent={<DynamicIcon name="panel-right-close" size={14} className="shrink-0" />}
+                      >
+                        Зберегти і закрити
+                      </DropdownItem>
+                      <DropdownItem
+                        key="sync"
+                        className={
+                          canPushStorefront && !isFolder ? 'text-success' : 'hidden'
+                        }
+                        startContent={<DynamicIcon name="cloud-upload" size={14} className="shrink-0" />}
+                      >
+                        {isEdit ? 'Зберегти і синхронізувати з сайтом' : 'Створити і синхронізувати з сайтом'}
+                      </DropdownItem>
+                    </DropdownMenu>
+                  </Dropdown>
+                </ButtonGroup>
               )}
             </DrawerFooter>
           )}
@@ -1565,7 +1665,7 @@ export function ProductDrawer({
       />
       <ConfirmModal
         isOpen={pushConfirmOpen}
-        title="Синхронізувати на вітрину?"
+        title="Синхронізувати з сайтом?"
         message="Опис, meta та статус публікації будуть відправлені на WooCommerce. Переконайтесь, що дані коректні."
         confirmText="Синхронізувати"
         confirmColor="primary"

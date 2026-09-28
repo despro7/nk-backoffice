@@ -1,9 +1,21 @@
 import type {
+  StorefrontKitComponentSettings,
   StorefrontMetaKeyConfig,
   StorefrontPresetDto,
   StorefrontPresetInput,
   StorefrontPreviewResult,
   StorefrontSettingsDto,
+  StorefrontWooSettingsInput,
+  WooConnectionTestResult,
+  WooInspectResult,
+  WooMediaUploadResult,
+  WooOrphanAuditResult,
+  WooPullApplyInput,
+  WooPullApplyResult,
+  WooPullPreviewResult,
+  WooPushApplyResult,
+  WooPushBulkResult,
+  WooPushPreviewResult,
 } from '@shared/types/storefront';
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -56,6 +68,8 @@ export const storefrontApi = {
   async updateSettings(input: {
     defaultPresetId?: string | null;
     metaKeys?: StorefrontMetaKeyConfig[];
+    kitComponentSettings?: StorefrontKitComponentSettings;
+    wooCommerce?: StorefrontWooSettingsInput;
   }): Promise<StorefrontSettingsDto> {
     const res = await fetch('/api/storefront/settings', {
       method: 'PUT',
@@ -72,6 +86,105 @@ export const storefrontApi = {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ goodId }),
+    });
+    return parseJson(res);
+  },
+
+  async testWooConnection(input?: {
+    siteUrl?: string;
+    consumerKey?: string;
+    consumerSecret?: string;
+  }): Promise<WooConnectionTestResult> {
+    const res = await fetch('/api/storefront/woo/test-connection', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input || {}),
+    });
+    return parseJson(res);
+  },
+
+  async inspectWooProduct(sku: string): Promise<WooInspectResult> {
+    const res = await fetch('/api/storefront/woo/inspect', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sku }),
+    });
+    return parseJson(res);
+  },
+
+  async pullPreview(goodId: string): Promise<WooPullPreviewResult> {
+    const res = await fetch('/api/storefront/woo/pull-preview', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goodId }),
+    });
+    return parseJson(res);
+  },
+
+  async pullApply(input: WooPullApplyInput): Promise<WooPullApplyResult> {
+    const res = await fetch('/api/storefront/woo/pull-apply', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    return parseJson(res);
+  },
+
+  async pushPreview(goodId: string): Promise<WooPushPreviewResult> {
+    const res = await fetch('/api/storefront/woo/push-preview', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goodId }),
+    });
+    return parseJson(res);
+  },
+
+  async pushApply(goodId: string): Promise<WooPushApplyResult> {
+    const res = await fetch('/api/storefront/woo/push-apply', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goodId }),
+    });
+    return parseJson(res);
+  },
+
+  async pushBulk(goodIds: string[]): Promise<WooPushBulkResult> {
+    const res = await fetch('/api/storefront/woo/push-bulk', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goodIds }),
+    });
+    return parseJson(res);
+  },
+
+  async uploadWooMedia(goodId: string): Promise<WooMediaUploadResult> {
+    const res = await fetch('/api/storefront/woo/media/upload', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goodId }),
+    });
+    return parseJson(res);
+  },
+
+  async auditWooOrphans(): Promise<WooOrphanAuditResult> {
+    const res = await fetch('/api/storefront/woo/media/orphans', { credentials: 'include' });
+    return parseJson(res);
+  },
+
+  async deleteWooOrphans(wooMediaIds: number[]): Promise<{ deleted: number; errors: string[] }> {
+    const res = await fetch('/api/storefront/woo/media/orphans/delete', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wooMediaIds }),
     });
     return parseJson(res);
   },

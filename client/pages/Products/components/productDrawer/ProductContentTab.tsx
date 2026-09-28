@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Accordion,
   AccordionItem,
+  Chip,
   Select,
   SelectItem,
   Switch,
@@ -16,20 +17,24 @@ import { StorefrontNutritionFields } from './StorefrontNutritionFields';
 import { ProductIngredientsTags } from './ProductIngredientsTags';
 import { StorefrontDescriptionEditor } from './StorefrontDescriptionEditor';
 import { storefrontApi } from '@/services/StorefrontService';
-import type { StorefrontPresetDto } from '@shared/types/storefront';
+import type { StorefrontKitComponentSettings, StorefrontPresetDto } from '@shared/types/storefront';
 import {
   STOREFRONT_BUILTIN_DEFAULTS,
   STOREFRONT_DEFAULT_BLOCKS,
+  STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS,
 } from '@shared/constants/storefrontDefaults';
 import {
   buildIngredientsJsonFromBom,
-  buildKitComponentsHtml,
   buildStorefrontBoundValues,
-  ensureStorefrontDescriptionDoc,
+  buildStorefrontDescriptionDocFromPreset,
+  getStorefrontEnabledBlockIds,
+  parseStorefrontDescriptionDoc,
+  storefrontDescriptionNeedsPresetSync,
+  syncStorefrontDescriptionDocWithPreset,
   formatGrossWeightLabel,
   formatProductNutritionHtml,
-  parseStorefrontDescriptionDoc,
   stringifyStorefrontDescriptionDoc,
+  type KitComponentRow,
 } from '@shared/utils/storefrontDescription';
 import { formatNetWeightLabel } from '@shared/utils/productLabel';
 import { buildTechCardRows } from '../../ProductsUtils';
@@ -49,6 +54,7 @@ interface ProductContentTabProps {
   stagingSessionId: string | null;
   units: Array<{ id: string; name: string; code?: string | null }>;
   onImagesChange: (images: CatalogGoodImageDto[]) => void;
+  overlayZClassName?: string;
 }
 
 export function ProductContentTab({
@@ -66,9 +72,13 @@ export function ProductContentTab({
   stagingSessionId,
   units,
   onImagesChange,
+  overlayZClassName,
 }: ProductContentTabProps) {
   const [presets, setPresets] = useState<StorefrontPresetDto[]>([]);
   const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
+  const [kitComponentSettings, setKitComponentSettings] = useState<StorefrontKitComponentSettings>(
+    STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS,
+  );
 
   useEffect(() => {
     if (!canReadStorefront) return;
@@ -76,6 +86,7 @@ export function ProductContentTab({
       .then(([presetRows, settings]) => {
         setPresets(presetRows);
         setDefaultPresetId(settings.defaultPresetId);
+        setKitComponentSettings(settings.kitComponentSettings);
       })
       .catch(() => undefined);
   }, [canReadStorefront]);
@@ -129,6 +140,43 @@ export function ProductContentTab({
     return '';
   }, [form.weight]);
 
+  const kitComponentRows = useMemo<KitComponentRow[]>(
+    () =>
+      isKit
+        ? components.map((c) => ({
+            componentName: c.componentName,
+            qty: c.qty,
+            componentWeight: c.componentWeight,
+            componentCategoryName: c.componentCategoryName ?? null,
+          }))
+        : [],
+    [components, isKit],
+  );
+
+  const kitComponentsTemplate = useMemo(() => {
+    const presetBlock = activePreset.blocks.find((block) => block.resolver === 'kitComponents');
+    return (
+      presetBlock?.template ||
+      STOREFRONT_BUILTIN_DEFAULTS.kitComponents.template ||
+      '{{kitComponents}}'
+    );
+  }, [activePreset.blocks]);
+
+  const enabledBlockIds = useMemo(
+    () => getStorefrontEnabledBlockIds(activePreset.blocks, { isKit }),
+    [activePreset.blocks, isKit],
+  );
+
+  const storefrontRenderOptions = useMemo(
+    () => ({
+      isKit,
+      kitComponentRows,
+      kitComponentSettings,
+      enabledBlockIds,
+    }),
+    [isKit, kitComponentRows, kitComponentSettings, enabledBlockIds],
+  );
+
   const boundValues = useMemo(
     () =>
       buildStorefrontBoundValues({
@@ -139,30 +187,51 @@ export function ProductContentTab({
         storageTemplate: STOREFRONT_BUILTIN_DEFAULTS.storage.template,
         heatingTemplate: STOREFRONT_BUILTIN_DEFAULTS.heating.template,
         saltTemplate: STOREFRONT_BUILTIN_DEFAULTS.salt.template,
-        kitComponentsHtml: isKit
-          ? buildKitComponentsHtml(
-              components.map((c) => ({ componentName: c.componentName, qty: c.qty })),
-            )
-          : '',
+        kitComponentRows,
+        kitComponentsTemplate,
+        kitComponentSettings,
       }),
-    [form.productIngredientsJson, form.productNutritionJson, netLabel, grossLabel, isKit, components],
+    [
+      form.productIngredientsJson,
+      form.productNutritionJson,
+      netLabel,
+      grossLabel,
+      kitComponentRows,
+      kitComponentsTemplate,
+      kitComponentSettings,
+    ],
   );
 
   useEffect(() => {
     if (!activePreset) return;
-    if (form.storefrontDescriptionDoc.trim()) return;
-    const doc = ensureStorefrontDescriptionDoc(null, activePreset.blocks, { isKit });
-    setForm((f) => ({ ...f, storefrontDescriptionDoc: stringifyStorefrontDescriptionDoc(doc) }));
-  }, [activePreset, isKit, form.storefrontDescriptionDoc, setForm]);
+    setForm((f) => {
+      const parsed = parseStorefrontDescriptionDoc(f.storefrontDescriptionDoc);
+      if (parsed) {
+        if (!storefrontDescriptionNeedsPresetSync(parsed, activePreset.blocks, { isKit })) {
+          return f;
+        }
+        const next = stringifyStorefrontDescriptionDoc(
+          syncStorefrontDescriptionDocWithPreset(parsed, activePreset.blocks, { isKit }),
+        );
+        if (next === f.storefrontDescriptionDoc) return f;
+        return { ...f, storefrontDescriptionDoc: next };
+      }
+      if (f.storefrontDescriptionDoc.trim()) return f;
+      const next = stringifyStorefrontDescriptionDoc(
+        buildStorefrontDescriptionDocFromPreset(activePreset.blocks, { isKit }),
+      );
+      return { ...f, storefrontDescriptionDoc: next };
+    });
+  }, [activePreset?.id, activePreset?.blocks, isKit, form.storefrontDescriptionDoc, setForm]);
 
   useEffect(() => {
-    if (form.productIngredientsJson.length > 0) return;
+    if (isKit || form.productIngredientsJson.length > 0) return;
     const bomTags = buildIngredientsJsonFromBom(
       components.map((c) => ({ componentName: c.componentName, qty: c.qty })),
     );
     if (!bomTags.length) return;
     setForm((f) => ({ ...f, productIngredientsJson: bomTags }));
-  }, [components, form.productIngredientsJson.length, setForm]);
+  }, [components, form.productIngredientsJson.length, isKit, setForm]);
 
   const nutritionPreview = form.productNutritionJson
     ? formatProductNutritionHtml(form.productNutritionJson)
@@ -171,9 +240,7 @@ export function ProductContentTab({
   const resolvedBoundValues = useMemo(
     () => ({
       ...boundValues,
-      nutrition: nutritionPreview
-        ? nutritionPreview
-        : boundValues.nutrition,
+      nutrition: nutritionPreview || boundValues.nutrition,
     }),
     [boundValues, nutritionPreview],
   );
@@ -182,12 +249,14 @@ export function ProductContentTab({
 
   return (
     <section className="space-y-6">
-      <ProductIngredientsTags
-        value={form.productIngredientsJson}
-        components={components}
-        disabled={storefrontFieldsLocked}
-        onChange={(next) => setForm((f) => ({ ...f, productIngredientsJson: next }))}
-      />
+      {!isKit && (
+        <ProductIngredientsTags
+          value={form.productIngredientsJson}
+          components={components}
+          disabled={storefrontFieldsLocked}
+          onChange={(next) => setForm((f) => ({ ...f, productIngredientsJson: next }))}
+        />
+      )}
 
       <StorefrontNutritionFields
         value={form.productNutritionJson}
@@ -207,7 +276,7 @@ export function ProductContentTab({
             isDisabled={storefrontFieldsLocked}
             onValueChange={(v) => setForm((f) => ({ ...f, doNotPublish: v }))}
           >
-            Не публікувати на вітрині
+            Не публікувати на сайті
           </Switch>
         </div>
       </div>
@@ -237,7 +306,7 @@ export function ProductContentTab({
               if (!id) return;
               const preset = presets.find((p) => p.id === id);
               const doc = preset
-                ? ensureStorefrontDescriptionDoc(null, preset.blocks, { isKit })
+                ? buildStorefrontDescriptionDocFromPreset(preset.blocks, { isKit })
                 : parseStorefrontDescriptionDoc(form.storefrontDescriptionDoc);
               setForm((f) => ({
                 ...f,
@@ -259,9 +328,11 @@ export function ProductContentTab({
         <StorefrontDescriptionEditor
           value={storefrontDocValue}
           boundValues={resolvedBoundValues}
+          renderOptions={storefrontRenderOptions}
           isDisabled={publishLocked}
           onChange={(json) => setForm((f) => ({ ...f, storefrontDescriptionDoc: json }))}
           minHeightClass="min-h-[200px]"
+          overlayZClassName={overlayZClassName}
         />
       </div>
 
@@ -298,11 +369,24 @@ export function ProductContentTab({
             key="legacy-full-description"
             aria-label="Legacy full description"
             title="Legacy fullDescription (admin)"
-            subtitle="Лише для WP pull / майбутнього парсингу"
+            subtitle={
+              detail?.wooLastSyncedAt
+                ? `Оновлено з WC ${new Date(detail.wooLastSyncedAt).toLocaleString('uk-UA')}`
+                : 'Лише для WP pull / парсингу'
+            }
             classNames={{
-              trigger: 'py-2',
+              base: 'data-[hover=true]:bg-default-100',
+              trigger: 'py-2 flex-row-reverse',
+              title: 'text-sm',
+              subtitle: 'text-xs text-default-400/75',
+              indicator: '-rotate-180',
             }}
           >
+            {detail?.wooLastSyncedAt && (
+              <Chip size="sm" variant="flat" color="success" className="mb-2">
+                Оновлено з WC {new Date(detail.wooLastSyncedAt).toLocaleString('uk-UA')}
+              </Chip>
+            )}
             <DescriptionEditor
               aria-label="Legacy full description"
               value={form.fullDescription}

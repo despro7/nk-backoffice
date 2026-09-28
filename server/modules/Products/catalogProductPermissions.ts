@@ -24,7 +24,7 @@ export function assertCatalogProductFieldPermissions(
       hasStorefrontFieldsChanged(input, existing) &&
       !hasPermission(permissions, PERMISSIONS.ACTION_STOREFRONT_EDIT)
     ) {
-      sendInsufficientRole(res, 'Немає права редагувати контент вітрини');
+      sendInsufficientRole(res, 'Немає права редагувати контент сайту');
       return false;
     }
     if (
@@ -41,7 +41,7 @@ export function assertCatalogProductFieldPermissions(
     hasStorefrontFieldsOnCreate(input as CatalogCreateGoodInput) &&
     !hasPermission(permissions, PERMISSIONS.ACTION_STOREFRONT_EDIT)
   ) {
-    sendInsufficientRole(res, 'Немає права редагувати контент вітрини');
+    sendInsufficientRole(res, 'Немає права редагувати контент сайту');
     return false;
   }
   if (

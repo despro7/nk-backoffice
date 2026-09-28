@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-09-28 — Storefront: WooCommerce sync (Phase 2) + редактор «Повний опис»
+
+**Files:** `server/modules/Storefront/WooCommerce*.ts`, `server/routes/storefront.ts`, `shared/utils/storefrontDescriptionParser.ts`, `shared/utils/kitComponentsTemplate.ts`, `client/pages/SettingsStorefront.tsx`, `client/pages/Products/components/productDrawer/StorefrontDescriptionEditor.tsx`, `client/pages/Products/components/productDrawer/StorefrontPullConfirmModal.tsx`, `client/pages/Products/components/productDrawer/ProductDrawer.tsx`, `client/pages/Products/index.tsx`, `client/components/editor/*`, `prisma/migrations/20260927140000_catalog_good_image_woo_media_id/`, `Docs/features/woocommerce-storefront-phase1.md`
+
+### WooCommerce REST (Phase 2)
+
+- Реальні credentials у `/settings/storefront`: test connection, enable sync, media public URL.
+- **Pull** з WC: preview порівняння + модалка вибору полів (`StorefrontPullConfirmModal`); парсинг HTML/meta → `storefrontDescriptionDoc`.
+- **Push** на WC: з картки товару та bulk з каталогу; оновлення `wooProductId`, `wooLastSyncedAt`.
+- **Медіа:** upload зображень у WC, `catalog_good_images.wooMediaId`, audit orphan media.
+- RBAC: `action.storefront.pull` (admin), `action.storefront.push` (від warehouse-manager).
+
+### Редактор «Повний опис»
+
+- Спільний toolbar/bubble menu (`editorFormatting`, `StorefrontListItem`): H2–H6, lists, clear formatting (включно з `class`), link.
+- JSON source (CodeMirror) + HTML preview для WC; один активний Bubble Menu.
+- Виправлення: bound-блоки після JSON source; inline `<li>` у WC HTML; повернення bound-блоку в preview після зняття фокусу.
+
+### Інше
+
+- Налаштування шаблону `kitComponents` (категорії BOM) у settings.
+- `DescriptionEditor` — паритет toolbar з повним описом.
+
+**Документація:** [`Docs/features/woocommerce-storefront-phase1.md`](features/woocommerce-storefront-phase1.md) — Phase 2, API, RBAC, UX редактора.
+
+---
+
 ## 2026-09-27 — Storefront: RBAC + UX редактора та склад-тегів
 
 **Files:** `shared/constants/permissions.ts`, `shared/constants/permissions.spec.ts`, `shared/utils/catalogProductFieldAccess.ts`, `shared/utils/catalogProductFieldAccess.spec.ts`, `server/routes/storefront.ts`, `server/modules/Products/catalogProductPermissions.ts`, `server/modules/Products/ProductsController.ts`, `client/routes.config.tsx`, `client/pages/SettingsStorefront.tsx`, `client/pages/Products/components/productDrawer/ProductDrawer.tsx`, `client/pages/Products/components/productDrawer/ProductContentTab.tsx`, `client/pages/Products/components/productDrawer/BomSection.tsx`, `client/pages/Products/components/productDrawer/RowDeleteButton.tsx`, `client/pages/Products/components/productDrawer/ProductIngredientsTags.tsx`, `client/pages/Products/components/productDrawer/StorefrontDescriptionEditor.tsx`, `client/global.css`, `Docs/features/woocommerce-storefront-phase1.md`

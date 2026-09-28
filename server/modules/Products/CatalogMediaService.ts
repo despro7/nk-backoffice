@@ -417,7 +417,7 @@ export class CatalogMediaService {
       orderedIds.map((id, idx) =>
         prisma.catalogGoodImage.update({
           where: { id },
-          data: { sortOrder: idx },
+          data: { sortOrder: idx, isPrimary: idx === 0 },
         })
       )
     );

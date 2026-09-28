@@ -687,6 +687,7 @@ export class ProductsCatalogService {
           { name: { contains: query } },
           { sku: { contains: query } },
           { printName: { contains: query } },
+          { barcodes: { some: { code: { contains: query } } } },
         ],
       },
       include: catalogListInclude,
@@ -925,13 +926,15 @@ export class ProductsCatalogService {
         price: p.price,
         currency: p.currency,
       })),
-      barcodes: barcodes.map((b) => ({
-        code: b.code,
-        activity: b.activity,
-        dilovodRegisterId: b.dilovodRegisterId,
-        goodPart: b.goodPart,
-        goodPartName: b.goodPartName,
-      })),
+      barcodes: barcodes
+        .filter((b) => b.activity)
+        .map((b) => ({
+          code: b.code,
+          activity: true,
+          dilovodRegisterId: b.dilovodRegisterId,
+          goodPart: b.goodPart,
+          goodPartName: b.goodPartName,
+        })),
     };
 
     await productsLocalSync.syncGood(payload);
@@ -989,10 +992,32 @@ export class ProductsCatalogService {
       componentIds.length > 0
         ? await prisma.catalogGood.findMany({
             where: { id: { in: componentIds } },
-            select: { id: true, name: true, sku: true, weight: true, accPolicyId: true },
+            select: {
+              id: true,
+              name: true,
+              sku: true,
+              weight: true,
+              accPolicyId: true,
+              parentId: true,
+            },
           })
         : [];
     const componentMap = new Map(componentGoods.map((g) => [g.id, g]));
+    const componentParentIds = [
+      ...new Set(
+        componentGoods
+          .map((g) => g.parentId)
+          .filter((parentId): parentId is string => Boolean(parentId)),
+      ),
+    ];
+    const componentParents =
+      componentParentIds.length > 0
+        ? await prisma.catalogGood.findMany({
+            where: { id: { in: componentParentIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const componentParentNameById = new Map(componentParents.map((p) => [p.id, p.name]));
 
     let parentName: string | null = null;
     const parentId = row.parentId?.trim();
@@ -1034,21 +1059,28 @@ export class ProductsCatalogService {
 
     return {
       ...mapGoodDto(row, parentName),
-      components: row.components.map((c) => ({
-        id: c.id,
-        parentGoodId: c.parentGoodId,
-        componentGoodId: c.componentGoodId,
-        componentName: componentMap.get(c.componentGoodId)?.name,
-        componentSku: componentMap.get(c.componentGoodId)?.sku ?? null,
-        componentWeight: componentMap.get(c.componentGoodId)?.weight ?? null,
-        componentAccPolicyId: componentMap.get(c.componentGoodId)?.accPolicyId ?? null,
-        qty: c.qty,
-        rowNum: c.rowNum,
-        dilovodRowId: c.dilovodRowId ?? null,
-        unitId: c.unitId ?? null,
-        note: c.note ?? null,
-        cookingLossPercent: c.cookingLossPercent ?? 0,
-      })),
+      components: row.components.map((c) => {
+        const componentGood = componentMap.get(c.componentGoodId);
+        const componentParentId = componentGood?.parentId;
+        const componentCategoryName =
+          componentParentId ? componentParentNameById.get(componentParentId) ?? null : null;
+        return {
+          id: c.id,
+          parentGoodId: c.parentGoodId,
+          componentGoodId: c.componentGoodId,
+          componentName: componentGood?.name,
+          componentSku: componentGood?.sku ?? null,
+          componentWeight: componentGood?.weight ?? null,
+          componentAccPolicyId: componentGood?.accPolicyId ?? null,
+          componentCategoryName,
+          qty: c.qty,
+          rowNum: c.rowNum,
+          dilovodRowId: c.dilovodRowId ?? null,
+          unitId: c.unitId ?? null,
+          note: c.note ?? null,
+          cookingLossPercent: c.cookingLossPercent ?? 0,
+        };
+      }),
       prices: row.prices.map((p) => ({
         id: p.id,
         goodId: p.goodId,
@@ -1412,15 +1444,37 @@ export class ProductsCatalogService {
       }));
 
     if (!isGroup && input.prices) {
+      let dilovodPriceByType = new Map<
+        string,
+        { price: number; currency: string | null }
+      >();
+      try {
+        const dilovodPrices = await productsDilovodGateway.fetchPricesForGoods([id]);
+        dilovodPriceByType = new Map(
+          dilovodPrices.map((row) => [
+            row.priceType,
+            { price: row.price, currency: row.currency },
+          ]),
+        );
+      } catch (err) {
+        logServer('[ProductsCatalogService] fetch Dilovod prices before save failed', err);
+      }
+
       for (const p of prices) {
         if (!p.priceType) continue;
         const prev = existing.prices.find((x) => x.priceType === p.priceType);
-        const samePrice =
+        const dilovod = dilovodPriceByType.get(p.priceType);
+        const sameAsLocal =
           prev != null &&
           Number(prev.price) === Number(p.price) &&
           (prev.currency || null) === (p.currency || null);
-        // Не чіпаємо Dilovod, якщо ціна не змінилась (інакше «вже встановлена» на той самий день)
-        if (samePrice) continue;
+        const sameAsDilovod =
+          dilovod != null &&
+          Number(dilovod.price) === Number(p.price) &&
+          (dilovod.currency || null) === (p.currency || null);
+        // Пропускаємо лише якщо і локально, і в Dilovod уже та сама ціна (після pull локальна БД
+        // може збігатися з формою, але ERP ще ні — тоді savePrice обовʼязковий).
+        if (sameAsLocal && sameAsDilovod) continue;
         await productsDilovodGateway.savePrice({
           goodId: id,
           priceType: p.priceType,
@@ -1495,6 +1549,26 @@ export class ProductsCatalogService {
             || safeGoodPartName(existingBarcode?.goodPartName, goodPart)
             || null,
         });
+      }
+
+      for (const prev of existing.barcodes) {
+        const key = catalogBarcodeRowKey(prev);
+        if (usedBarcodeKeys.has(key)) continue;
+        try {
+          await productsDilovodGateway.removeBarcode({
+            goodId: id,
+            code: prev.code,
+            goodPart: prev.goodPart,
+            registerId: prev.dilovodRegisterId,
+          });
+        } catch (err) {
+          logServer('[ProductsCatalogService] remove barcode from Dilovod failed', {
+            goodId: id,
+            code: prev.code,
+            goodPart: prev.goodPart,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     } else if (!isGroup) {
       savedBarcodes.push(
@@ -2068,13 +2142,15 @@ export class ProductsCatalogService {
           price: p.price,
           currency: p.currency,
         })),
-        barcodes: (barcodesByGood.get(g.id) || []).map((b) => ({
-          code: b.code,
-          activity: b.activity,
-          dilovodRegisterId: b.dilovodRegisterId,
-          goodPart: b.goodPart,
-          goodPartName: b.goodPartName,
-        })),
+        barcodes: (barcodesByGood.get(g.id) || [])
+          .filter((b) => b.activity)
+          .map((b) => ({
+            code: b.code,
+            activity: true,
+            dilovodRegisterId: b.dilovodRegisterId,
+            goodPart: b.goodPart,
+            goodPartName: b.goodPartName,
+          })),
       }));
 
     const result = await productsLocalSync.syncGoodsBatch(payloads);

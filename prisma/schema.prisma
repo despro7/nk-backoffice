@@ -543,6 +543,8 @@ model CatalogGoodImage {
   size         Int
   sortOrder    Int      @default(0)
   isPrimary    Boolean  @default(false)
+  /// Phase 2d: WooCommerce media attachment id
+  wooMediaId   Int?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

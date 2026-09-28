@@ -676,6 +676,60 @@ export class ProductsDilovodGateway {
     return resp?.id ? String(resp.id) : params.registerId || null;
   }
 
+  /**
+   * Деактивувати запис ШК у Dilovod (informationRegisters.barCodes).
+   * delMark для регістрів не підтримується — лише activity: 0 через saveObject.
+   */
+  async removeBarcode(params: {
+    goodId: string;
+    code: string;
+    goodPart?: string | null;
+    registerId?: string | null;
+  }): Promise<void> {
+    await this.api.ensureReady();
+
+    const code = String(params.code || '').trim();
+    if (!code) return;
+
+    const goodPart = this.normalizeBarcodeGoodPart(params.goodPart);
+    let registerId = params.registerId?.trim() || null;
+
+    if (!registerId) {
+      const rows = await this.fetchBarcodesForGoods([params.goodId]);
+      const match = rows.find(
+        (row) =>
+          row.code === code &&
+          this.normalizeBarcodeGoodPart(row.goodPart) === goodPart &&
+          row.activity
+      );
+      registerId = match?.dilovodRegisterId ?? null;
+    }
+
+    if (!registerId) {
+      logServer('[ProductsDilovodGateway] removeBarcode: register id not found', {
+        goodId: params.goodId,
+        code,
+        goodPart,
+      });
+      return;
+    }
+
+    await this.saveBarcode({
+      goodId: params.goodId,
+      code,
+      activity: false,
+      registerId,
+      goodPart,
+    });
+  }
+
+  /** Dilovod: порожньо / "0" = ШК без привʼязки до партії. */
+  private normalizeBarcodeGoodPart(goodPart: string | null | undefined): string | null {
+    const trimmed = String(goodPart ?? '').trim();
+    if (!trimmed || trimmed === '0') return null;
+    return trimmed;
+  }
+
   mapObjectToLocal(obj: any): {
     id: string;
     parentId: string | null;

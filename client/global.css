@@ -485,16 +485,66 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
 
 /* ProseMirror root carries storefront-description-editor; use direct child selectors */
 .storefront-description-editor > p,
+.storefront-description-editor > h2,
+.storefront-description-editor > h3,
+.storefront-description-editor > h4,
+.storefront-description-editor > h5,
+.storefront-description-editor > h6,
 .storefront-description-editor > ul,
 .storefront-description-editor > ol,
 .storefront-description-editor > div[data-storefront-block],
 .storefront-description-editor > .storefront-block,
 .storefront-description-editor .ProseMirror > p,
+.storefront-description-editor .ProseMirror > h2,
+.storefront-description-editor .ProseMirror > h3,
+.storefront-description-editor .ProseMirror > h4,
+.storefront-description-editor .ProseMirror > h5,
+.storefront-description-editor .ProseMirror > h6,
 .storefront-description-editor .ProseMirror > ul,
 .storefront-description-editor .ProseMirror > ol,
 .storefront-description-editor .ProseMirror > div[data-storefront-block],
 .storefront-description-editor .ProseMirror > .storefront-block {
   margin-bottom: 1rem;
+}
+
+.storefront-description-editor > h2,
+.storefront-description-editor .ProseMirror > h2 {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
+  margin-bottom: 1rem;
+}
+
+.storefront-description-editor > h3,
+.storefront-description-editor .ProseMirror > h3 {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 0.8rem;
+}
+
+.storefront-description-editor > h4,
+.storefront-description-editor .ProseMirror > h4 {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-bottom: 0.6rem;
+}
+
+.storefront-description-editor > h5,
+.storefront-description-editor .ProseMirror > h5 {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 0.6rem;
+}
+
+.storefront-description-editor > h6,
+.storefront-description-editor .ProseMirror > h6 {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 0.6rem;
 }
 
 .storefront-description-editor > p:has(+ ul),
@@ -588,6 +638,41 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
   user-select: text;
 }
 
+.storefront-block__shell {
+  position: relative;
+}
+
+.storefront-block__delete {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.2rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  border: none;
+  border-radius: 1rem;
+  background: rgb(17 24 39 / 0.72);
+  color: rgb(248 250 252);
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.storefront-block:hover .storefront-block__delete,
+.storefront-block__delete:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.storefront-block__delete:hover {
+  background: rgb(220 38 38 / 0.9);
+}
+
 .storefront-block__preview {
   border-radius: 0.25rem;
   transition: background-color 0.15s ease, outline-color 0.15s ease;
@@ -605,6 +690,7 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
   cursor: pointer;
   outline: 1px solid transparent;
   outline-offset: 1px;
+  padding-right: 1rem;
 }
 
 .storefront-block__preview--editable:hover {
@@ -631,6 +717,38 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
 .storefront-block__wysiwyg .ProseMirror {
   outline: none;
   min-height: 1.5em;
+}
+
+/* Settings storefront block templates (DescriptionEditor) */
+.description-template-editor ul,
+.description-template-editor .ProseMirror ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+}
+
+.description-template-editor ol,
+.description-template-editor .ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+}
+
+.description-template-editor li > p,
+.description-template-editor .ProseMirror li > p {
+  margin: 0;
+  display: contents;
+}
+
+.description-template-editor > ol + p:empty,
+.description-template-editor > ul + p:empty,
+.description-template-editor > p:last-child:empty,
+.description-template-editor .ProseMirror > ol + p:empty,
+.description-template-editor .ProseMirror > ul + p:empty,
+.description-template-editor .ProseMirror > p:last-child:empty,
+.description-template-editor .ProseMirror > p:last-child:has(> br.ProseMirror-trailingBreak:only-child) {
+  display: none;
+  margin: 0 !important;
+  min-height: 0;
+  padding: 0;
 }
 
 .storefront-ph-atom {

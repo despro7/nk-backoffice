@@ -15,12 +15,12 @@ export const STOREFRONT_BLOCK_IDS = [
   'natural',
   'salt',
   'ingredients',
+  'kitComponents',
   'nutrition',
   'storage',
   'heating',
   'netWeight',
   'grossWeight',
-  'kitComponents',
 ] as const;
 
 export type StorefrontBlockId = (typeof STOREFRONT_BLOCK_IDS)[number];
@@ -54,6 +54,30 @@ export interface StorefrontMetaKeyConfig {
   label: string;
   /** WooCommerce meta key, e.g. _nk_ingredients */
   key: string;
+}
+
+/** Категорія компонента комплекту (назва батьківської папки в каталозі) */
+export interface StorefrontKitComponentCategoryConfig {
+  id: string;
+  /** Назва батьківської папки в каталозі, напр. «Перші страви» */
+  label: string;
+  /** Відмінок для заголовка групи, напр. «перших страв» */
+  genitive: string;
+  /** Дефолтна вага порції (кг), якщо у компонента не задано */
+  defaultWeightKg: number;
+  /** Верхня межа ваги порції (кг) для діапазону, напр. 0.45 → «400-450г» */
+  defaultWeightMaxKg?: number | null;
+  /** Порядок групи у виводі (визначається позицією в списку) */
+  order: number;
+}
+
+export interface StorefrontKitComponentSettings {
+  categories: StorefrontKitComponentCategoryConfig[];
+  fallbackGenitive: string;
+  fallbackDefaultWeightKg: number;
+  /** Верхня межа fallback-ваги (кг) для діапазону */
+  fallbackDefaultWeightMaxKg?: number | null;
+  fallbackOrder: number;
 }
 
 export interface StorefrontBlockConfig {
@@ -142,16 +166,202 @@ export interface StorefrontPresetDto {
   updatedAt: string;
 }
 
+export type StorefrontWooConnectionStatus = 'unconfigured' | 'ok' | 'error';
+
+export interface StorefrontWooCommerceSettingsDto {
+  enabled: boolean;
+  siteUrl: string;
+  /** Публічна URL backoffice для sideload зображень у WC (/uploads/catalog/…) */
+  mediaPublicBaseUrl: string;
+  consumerKey: string;
+  /** Masked after save: cs_***last4 */
+  consumerSecret: string;
+  hasConsumerSecret: boolean;
+  connectionStatus?: StorefrontWooConnectionStatus;
+}
+
 export interface StorefrontSettingsDto {
   defaultPresetId: string | null;
   metaKeys: StorefrontMetaKeyConfig[];
-  /** Phase 2 stub */
-  wooCommerce: {
-    enabled: false;
-    siteUrl: string;
-    consumerKey: string;
-    consumerSecret: string;
+  kitComponentSettings: StorefrontKitComponentSettings;
+  wooCommerce: StorefrontWooCommerceSettingsDto;
+}
+
+export interface StorefrontWooSettingsInput {
+  enabled?: boolean;
+  siteUrl?: string;
+  mediaPublicBaseUrl?: string;
+  consumerKey?: string;
+  consumerSecret?: string;
+}
+
+export interface WooCommerceMetaData {
+  id?: number;
+  key: string;
+  value: string | Record<string, unknown>;
+}
+
+export interface WooCommerceProduct {
+  id: number;
+  name: string;
+  sku: string;
+  description: string;
+  short_description: string;
+  regular_price: string;
+  /** Актуальна ціна (може бути заповнена, коли regular_price порожній) */
+  price?: string;
+  weight: string;
+  stock_quantity: number | null;
+  status: string;
+  meta_data: WooCommerceMetaData[];
+  images?: Array<{ id: number; src: string; name: string; alt?: string }>;
+}
+
+export interface WooConnectionTestResult {
+  ok: boolean;
+  wcVersion?: string;
+  productCount?: number;
+  error?: string;
+}
+
+export interface WooInspectSummary {
+  id: number;
+  sku: string;
+  name: string;
+  descriptionLength: number;
+  descriptionPreview: string;
+  shortDescription: string;
+  regularPrice: string;
+  weight: string;
+  stockQuantity: number | null;
+  nkMeta: Record<string, string>;
+  unknownMeta: Array<{ key: string; value: string }>;
+}
+
+export interface WooInspectResult {
+  summary: WooInspectSummary;
+  raw: WooCommerceProduct;
+}
+
+export interface StorefrontPullParseResult {
+  storefrontDescriptionDoc: StorefrontDescriptionDoc;
+  productIngredientsJson: string[];
+  productNutritionJson: ProductNutritionJson | null;
+  parseWarnings: string[];
+  unparsedHtmlChunks: string[];
+}
+
+export interface WooPullConflict {
+  field: string;
+  localValue: string | null;
+  remoteValue: string | null;
+}
+
+export interface WooPullLocalSnapshot {
+  weight: number | null;
+  regularPrice: string | null;
+  doNotPublish: boolean;
+  imageCount: number;
+  storefrontDescriptionDoc: string | null;
+  productIngredientsJson: string | null;
+  productNutritionJson: string | null;
+}
+
+export interface WooPullPreviewResult {
+  goodId: string;
+  sku: string;
+  wooProductId: number;
+  wcRaw: WooCommerceProduct;
+  local: WooPullLocalSnapshot;
+  proposed: {
+    fullDescription: string | null;
+    shortDescription: string | null;
+    weight: number | null;
+    regularPrice: string | null;
+    doNotPublish: boolean;
+    imageCount: number;
+    meta: Record<string, string>;
+    parsed: StorefrontPullParseResult;
   };
+  conflicts: WooPullConflict[];
+}
+
+export interface WooPullApplyInput {
+  goodId: string;
+  apply: {
+    fullDescription?: boolean;
+    shortDescription?: boolean;
+    storefrontDescriptionDoc?: boolean;
+    productIngredientsJson?: boolean;
+    productNutritionJson?: boolean;
+    weight?: boolean;
+    regularPrice?: boolean;
+    doNotPublish?: boolean;
+    images?: boolean;
+    replaceImages?: boolean;
+    wooProductId?: boolean;
+  };
+}
+
+export interface WooPullApplyResult {
+  goodId: string;
+  wooProductId: number;
+  wooLastSyncedAt: string;
+  appliedFields: string[];
+}
+
+export interface WooPushPreviewResult {
+  goodId: string;
+  sku: string;
+  wooProductId: number | null;
+  payload: StorefrontDryRunPushPayload;
+  isCreate: boolean;
+}
+
+export interface WooPushApplyResult {
+  goodId: string;
+  wooProductId: number;
+  wooLastSyncedAt: string;
+  created: boolean;
+  imagesUploaded?: number;
+  imageErrors?: string[];
+}
+
+export interface WooPushBulkResult {
+  results: Array<{
+    goodId: string;
+    sku: string;
+    ok: boolean;
+    error?: string;
+    wooProductId?: number;
+    created?: boolean;
+  }>;
+}
+
+export interface WooMediaUploadResult {
+  goodId: string;
+  uploaded: Array<{ imageId: number; wooMediaId: number }>;
+  errors: string[];
+}
+
+export interface WooMediaPullResult {
+  goodId: string;
+  imported: number;
+  replaced: boolean;
+  errors: string[];
+}
+
+export interface WooOrphanMediaItem {
+  wooMediaId: number;
+  src: string;
+  name: string;
+  linkedGoodId: string | null;
+  linkedSku: string | null;
+}
+
+export interface WooOrphanAuditResult {
+  orphans: WooOrphanMediaItem[];
+  totalWcImages: number;
 }
 
 export interface StorefrontPresetInput {
@@ -182,10 +392,28 @@ export interface StorefrontGrossResolveResult {
   source: 'override' | 'computed' | 'none';
 }
 
+/** Окремі плейсхолдери КБЖВ у шаблоні блоку nutrition */
+export const STOREFRONT_NUTRITION_PLACEHOLDER_KEYS = [
+  'proteins',
+  'fats',
+  'carbs',
+  'energy',
+  'nutritionSalt',
+] as const;
+
+export type StorefrontNutritionPlaceholderKey = (typeof STOREFRONT_NUTRITION_PLACEHOLDER_KEYS)[number];
+
 /** Live resolved values for storefrontBlock nodes in the editor */
 export interface StorefrontBoundBlockValues {
   ingredients: string;
+  /** Повний КБЖВ-блок (legacy {{nutrition}}) */
   nutrition: string;
+  proteins: string;
+  fats: string;
+  carbs: string;
+  energy: string;
+  /** Сіль з productNutritionJson, г/100г */
+  nutritionSalt: string;
   netWeight: string;
   grossWeight: string;
   storage: string;

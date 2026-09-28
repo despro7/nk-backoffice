@@ -24,6 +24,17 @@ describe('productLabelNutrition', () => {
     );
   });
 
+  it('parses inline comma-separated text with en-dash and калорійність', () => {
+    const text =
+      'білки – 2,17 г, жири – 5,27 г, вуглеводи – 4,55 г, калорійність – 72,55 ккал.';
+    expect(parseNutritionValues(text)).toEqual({
+      proteins: '2,17',
+      fats: '5,27',
+      carbs: '4,55',
+      energy: '72,55',
+    });
+  });
+
   it('parses and formats nutrition values', () => {
     const values = {
       proteins: '4,4',

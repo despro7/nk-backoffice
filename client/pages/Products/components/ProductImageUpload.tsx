@@ -3,7 +3,25 @@
  * Патерн натхненний beUI file-upload; стилізація HeroUI.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Button, Chip, Progress, Spinner } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '@/services/ToastService';
@@ -45,6 +63,106 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** exp).toFixed(exp === 0 ? 0 : 1)} ${units[exp]}`;
 }
 
+function sortCatalogImages(images: CatalogGoodImageDto[]): CatalogGoodImageDto[] {
+  return [...images].sort((a, b) => {
+    if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
+    const sortDiff = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    if (sortDiff !== 0) return sortDiff;
+    return a.id - b.id;
+  });
+}
+
+interface SortableSavedImageProps {
+  image: CatalogGoodImageDto;
+  isPrimary: boolean;
+  isDisabled?: boolean;
+  isSorting: boolean;
+  onDelete: () => void;
+}
+
+function SortableSavedImage({
+  image,
+  isPrimary,
+  isDisabled,
+  isSorting,
+  onDelete,
+}: SortableSavedImageProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: image.id, disabled: isDisabled });
+
+  const style: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    ...(isDragging
+      ? {
+          position: 'relative',
+          zIndex: 50,
+          boxShadow: '0 12px 28px rgba(0, 0, 0, 0.22)',
+        }
+      : undefined),
+  };
+
+  const dragProps = isDisabled ? {} : { ...attributes, ...listeners };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      data-image-card
+      className={`group relative overflow-hidden rounded-md border bg-default-50 ${
+        isDragging
+          ? 'border-primary-300 ring-2 ring-primary-300/70'
+          : 'border-default-200'
+      } ${isSorting ? 'ring-1 ring-primary-200/70' : ''}`}
+    >
+      <div
+        className={`relative touch-none ${
+          isDisabled ? '' : 'cursor-grab active:cursor-grabbing'
+        }`}
+        aria-label="Перетягнути зображення"
+        {...dragProps}
+      >
+        <img
+          src={image.url}
+          alt={image.originalName}
+          draggable={false}
+          className="pointer-events-none aspect-square w-full select-none object-cover"
+        />
+        {isPrimary && (
+          <Chip
+            size="sm"
+            color="primary"
+            variant="solid"
+            className="pointer-events-none absolute right-1 top-1 h-5 text-[10px]"
+          >
+            Головне
+          </Chip>
+        )}
+      </div>
+      <div className="relative z-10 flex items-center justify-between gap-1 bg-black/55 px-1.5 py-1">
+        <span className="truncate text-[10px] text-white">{image.originalName}</span>
+        <Button
+          isIconOnly
+          size="sm"
+          variant="flat"
+          className="h-6 w-6 min-w-6 bg-white/20 text-white"
+          aria-label="Видалити"
+          isDisabled={isDisabled}
+          onPress={onDelete}
+        >
+          <DynamicIcon name="trash-2" size={12} />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 async function uploadFiles(
   url: string,
   files: File[]
@@ -81,9 +199,18 @@ export function ProductImageUpload({
     }>
   >([]);
   const [loadingList, setLoadingList] = useState(false);
+  const [activeImageId, setActiveImageId] = useState<number | null>(null);
+  const [isReordering, setIsReordering] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const sortedSaved = useMemo(() => sortCatalogImages(saved), [saved]);
 
   useEffect(() => {
-    setSaved(images);
+    setSaved(sortCatalogImages(images));
   }, [images]);
 
   // Завантажити staging list при create
@@ -263,35 +390,67 @@ export function ProductImageUpload({
     }
   };
 
-  const handleSetPrimary = async (image: CatalogGoodImageDto) => {
+  const persistImageOrder = async (ordered: CatalogGoodImageDto[]) => {
+    if (!goodId) return;
+    const orderedIds = ordered.map((img) => img.id);
+    setIsReordering(true);
     try {
-      const res = await fetch(`/api/catalog/images/${image.id}`, {
-        method: 'PATCH',
+      const res = await fetch(`/api/catalog/goods/${encodeURIComponent(goodId)}/images/order`, {
+        method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isPrimary: true }),
+        body: JSON.stringify({ orderedIds }),
       });
       const json = (await res.json()) as {
         success?: boolean;
-        data?: CatalogGoodImageDto;
+        data?: CatalogGoodImageDto[];
         error?: string;
       };
-      if (!res.ok || !json.success || !json.data) throw new Error(json.error || 'Помилка');
-      setSaved((prev) => {
-        const next = prev.map((i) => ({
-          ...i,
-          isPrimary: i.id === image.id,
-        }));
-        onImagesChange?.(next);
-        return next;
-      });
+      if (!res.ok || !json.success || !json.data) {
+        throw new Error(json.error || 'Не вдалося зберегти порядок зображень');
+      }
+      const next = sortCatalogImages(json.data);
+      setSaved(next);
+      onImagesChange?.(next);
     } catch (err) {
       ToastService.show({
-        title: 'Помилка',
+        title: 'Помилка сортування',
         description: err instanceof Error ? err.message : 'Unknown',
         color: 'danger',
       });
+    } finally {
+      setIsReordering(false);
     }
+  };
+
+  const resetDragState = () => {
+    setActiveImageId(null);
+  };
+
+  const handleDragStart = (event: DragStartEvent) => {
+    if (isDisabled) return;
+    setActiveImageId(Number(event.active.id));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    resetDragState();
+    if (isDisabled || !goodId) return;
+
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const fromIdx = sortedSaved.findIndex((img) => img.id === Number(active.id));
+    const toIdx = sortedSaved.findIndex((img) => img.id === Number(over.id));
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+
+    const reordered = arrayMove(sortedSaved, fromIdx, toIdx).map((img, idx) => ({
+      ...img,
+      sortOrder: idx,
+      isPrimary: idx === 0,
+    }));
+    setSaved(reordered);
+    onImagesChange?.(reordered);
+    void persistImageOrder(reordered);
   };
 
   const handleDeleteStaging = async (fileName: string) => {
@@ -324,7 +483,7 @@ export function ProductImageUpload({
     setQueue((prev) => prev.filter((q) => q.localId !== item.localId));
   };
 
-  const displaySaved = goodId ? saved : [];
+  const displaySaved = goodId ? sortedSaved : [];
   const displayStaging = !goodId ? stagingItems : [];
 
   return (
@@ -437,55 +596,32 @@ export function ProductImageUpload({
 
       {/* Збережені (edit) */}
       {displaySaved.length > 0 && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {displaySaved.map((img) => (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={resetDragState}
+        >
+          <SortableContext items={displaySaved.map((img) => img.id)} strategy={rectSortingStrategy}>
             <div
-              key={img.id}
-              className="group relative overflow-hidden rounded-xl border border-default-200 bg-default-50"
+              className={`grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 ${
+                activeImageId != null ? 'bg-default-100/60 ring-1 ring-primary-200/70 rounded-lg' : ''
+              }`}
             >
-              <img src={img.url} alt={img.originalName} className="aspect-square w-full object-cover" />
-              <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/55 px-1.5 py-1">
-                <span className="truncate text-[10px] text-white">{img.originalName}</span>
-                <div className="flex shrink-0 gap-0.5">
-                  {!img.isPrimary && (
-                    <Button
-                      isIconOnly
-                      size="sm"
-                      variant="flat"
-                      className="h-6 w-6 min-w-6 bg-white/20 text-white"
-                      aria-label="Зробити головним"
-                      isDisabled={isDisabled}
-                      onPress={() => void handleSetPrimary(img)}
-                    >
-                      <DynamicIcon name="star" size={12} />
-                    </Button>
-                  )}
-                  <Button
-                    isIconOnly
-                    size="sm"
-                    variant="flat"
-                    className="h-6 w-6 min-w-6 bg-white/20 text-white"
-                    aria-label="Видалити"
-                    isDisabled={isDisabled}
-                    onPress={() => void handleDeleteSaved(img)}
-                  >
-                    <DynamicIcon name="trash-2" size={12} />
-                  </Button>
-                </div>
-              </div>
-              {img.isPrimary && (
-                <Chip
-                  size="sm"
-                  color="primary"
-                  variant="solid"
-                  className="absolute left-1 top-1 h-5 text-[10px]"
-                >
-                  Головне
-                </Chip>
-              )}
+              {displaySaved.map((img, idx) => (
+                <SortableSavedImage
+                  key={img.id}
+                  image={img}
+                  isPrimary={idx === 0}
+                  isDisabled={isDisabled || isReordering}
+                  isSorting={activeImageId != null}
+                  onDelete={() => void handleDeleteSaved(img)}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       {/* Staging (create) */}
